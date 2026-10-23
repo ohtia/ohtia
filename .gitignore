@@ -1,0 +1,48 @@
+# Local credentials and environment configuration
+.env
+.env.*
+!.env.example
+*.local
+.aws/
+.codex/
+.claude/settings.local.json
+
+# Operating system files
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# Dependencies and tool caches
+node_modules/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.cache/
+.pytest_cache/
+.ruff_cache/
+*.tsbuildinfo
+
+# Build output and installer artifacts
+dist/
+build/
+out/
+artifacts/
+
+# Coverage and test reports
+.coverage
+.coverage.*
+coverage/
+coverage.xml
+htmlcov/
+.reports/
+playwright-report/
+test-results/
+
+# Temporary files and logs
+tmp/
+*.log
+*.swp
+*.swo
+*~

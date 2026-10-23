@@ -1,0 +1,22 @@
+# Generated files and local-only data
+node_modules/
+.venv/
+__pycache__/
+.cache/
+dist/
+build/
+out/
+artifacts/
+coverage/
+htmlcov/
+.reports/
+playwright-report/
+test-results/
+tmp/
+.aws/
+.codex/
+
+# Generated dependency lockfiles
+pnpm-lock.yaml
+package-lock.json
+yarn.lock

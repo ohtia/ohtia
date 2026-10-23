@@ -1,0 +1,23 @@
+# Normalize text in Git and working trees across desktop platforms.
+* text=auto eol=lf
+
+# Windows command scripts retain their native working-tree line endings.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Keep common assets and distributables out of text conversion and text diffs.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.zip binary
+*.exe binary
+*.msi binary
+*.dmg binary
+*.AppImage binary

@@ -1,0 +1,45 @@
+{
+  "editor.fontFamily": "'IBM Plex Mono', monospace",
+  "editor.fontLigatures": false,
+  "editor.fontSize": 16,
+  "editor.lineHeight": 1.5,
+  "editor.renderWhitespace": "selection",
+  "editor.wordWrap": "on",
+  "editor.rulers": [100],
+  "editor.stickyScroll.enabled": true,
+  "editor.bracketPairColorization.enabled": true,
+  "editor.guides.bracketPairs": true,
+  "editor.minimap.enabled": false,
+  "terminal.integrated.fontFamily": "'IBM Plex Mono', monospace",
+  "terminal.integrated.fontSize": 14,
+  "terminal.integrated.lineHeight": 1.2,
+  "breadcrumbs.enabled": true,
+  "workbench.editor.enablePreview": false,
+  "workbench.editor.enablePreviewFromQuickOpen": false,
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.venv": true,
+    "**/.cache": true,
+    "**/dist": true,
+    "**/build": true,
+    "**/out": true,
+    "**/artifacts": true,
+    "**/coverage": true,
+    "**/tmp": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/.venv/**": true,
+    "**/.cache/**": true,
+    "**/dist/**": true,
+    "**/build/**": true,
+    "**/out/**": true,
+    "**/artifacts/**": true,
+    "**/coverage/**": true,
+    "**/tmp/**": true
+  },
+  "[javascript][javascriptreact][typescript][typescriptreact][json][jsonc][yaml][markdown][html][css][scss]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  }
+}
