@@ -1,0 +1,112 @@
+[
+  {
+    "name": "bug",
+    "color": "d73a4a",
+    "description": "Something isn't working"
+  },
+  {
+    "name": "documentation",
+    "color": "0075ca",
+    "description": "Improvements or additions to documentation"
+  },
+  {
+    "name": "duplicate",
+    "color": "cfd3d7",
+    "description": "This issue or pull request already exists"
+  },
+  {
+    "name": "enhancement",
+    "color": "a2eeef",
+    "description": "New feature or request"
+  },
+  {
+    "name": "good first issue",
+    "color": "7057ff",
+    "description": "Good for newcomers"
+  },
+  {
+    "name": "help wanted",
+    "color": "008672",
+    "description": "Extra attention is needed"
+  },
+  {
+    "name": "invalid",
+    "color": "e4e669",
+    "description": "This doesn't seem right"
+  },
+  {
+    "name": "question",
+    "color": "d876e3",
+    "description": "Further information is requested"
+  },
+  {
+    "name": "wontfix",
+    "color": "ffffff",
+    "description": "This will not be worked on"
+  },
+  {
+    "name": "accessibility",
+    "color": "f143ab",
+    "description": "Barrier affecting people with disabilities"
+  },
+  {
+    "name": "epic",
+    "color": "5319e7",
+    "description": "Coordinated work delivered through native story sub-issues"
+  },
+  {
+    "name": "story",
+    "color": "1d76db",
+    "description": "An implementable unit of work within an epic"
+  },
+  {
+    "name": "dependencies",
+    "color": "0366d6",
+    "description": "Dependency or toolchain changes"
+  },
+  {
+    "name": "security",
+    "color": "b60205",
+    "description": "Work specifically addressing security: vulnerabilities, security-driven upgrades, or hardening"
+  },
+  {
+    "name": "translation",
+    "color": "fbca04",
+    "description": "Interface translation, localization, and linguistic review"
+  },
+  {
+    "name": "comp:docs",
+    "color": "c5def5",
+    "description": "Product, architecture, and contribution documentation"
+  },
+  {
+    "name": "comp:tooling",
+    "color": "c5def5",
+    "description": "Development tools, CI, repository configuration, and automation"
+  },
+  {
+    "name": "comp:desktop",
+    "color": "c5def5",
+    "description": "Electron application shell and operating-system integration"
+  },
+  {
+    "name": "comp:app",
+    "color": "c5def5",
+    "description": "Research workspace, user interface, and editor"
+  },
+  {
+    "name": "comp:storage",
+    "color": "c5def5",
+    "description": "Local project persistence, versioning, backup, and portable exports"
+  },
+  {
+    "name": "comp:llm",
+    "color": "c5def5",
+    "description": "Inference adapters, model interactions, and agent execution"
+  },
+  {
+    "name": "comp:search",
+    "color": "c5def5",
+    "description": "Search-provider adapters, discovery, and result provenance"
+  }
+]
