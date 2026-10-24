@@ -1,0 +1,245 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1224" height="704" viewBox="0 0 1224 704" role="img" aria-label="Ohtia: character dimensions">
+  <title>Ohtia: character dimensions</title>
+  <style>
+    :root { --page: #faf8f5; --panel: #f4f1ed; --line: #dad7d2; --grid: #ebe7e2; --fg: #1f1d19; --fg2: #4e4a43; }
+    @media (prefers-color-scheme: dark) {
+      :root { --page: #151411; --panel: #1a1815; --line: #35322e; --grid: #262420; --fg: #ebe7e2; --fg2: #c1bdb7; }
+    }
+    .sheet { fill: var(--page); }
+    .grid { stroke: var(--grid); stroke-width: 1; }
+    .grid-major { stroke: var(--line); stroke-width: 1; }
+    .axis { font: 400 11px 'IBM Plex Sans', sans-serif; fill: var(--fg2); }
+    .title { font: 600 16px 'IBM Plex Sans', sans-serif; fill: var(--fg); }
+    .legend { font: 400 13px 'IBM Plex Sans', sans-serif; fill: var(--fg); }
+    .legend-note { font: 400 12px 'IBM Plex Sans', sans-serif; fill: var(--fg2); }
+    .mark { fill: none; stroke: var(--fg); stroke-width: 1.25; vector-effect: non-scaling-stroke; }
+    .lead { fill: none; stroke: var(--fg2); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+    .badge { fill: var(--page); stroke: var(--fg); stroke-width: 1.25; }
+    .badge-text { font: 600 11px 'IBM Plex Sans', sans-serif; fill: var(--fg); text-anchor: middle; }
+
+    .gl-line { fill: none; stroke: #6f2b55; stroke-width: 4; stroke-linecap: round; }
+    .gl-lens { fill: #fae9f2; stroke: #6f2b55; stroke-width: 4.5; }
+    .gl-pupil { fill: #6f2b55; }
+    .bd-hair { fill: #6f2b55; stroke: #6f2b55; stroke-width: 2; stroke-linejoin: round; }
+    .bd-face, .bd-skin { fill: #fae9f2; stroke: #6f2b55; stroke-width: 3; }
+    .bd-coat { fill: #fae9f2; stroke: #6f2b55; stroke-width: 3; stroke-linejoin: round; }
+    .bd-line { fill: none; stroke: #6f2b55; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .bd-pocket { fill: none; stroke: #6f2b55; stroke-width: 2.5; }
+    .bd-pencil { fill: none; stroke: #6f2b55; stroke-width: 3.5; stroke-linecap: round; }
+    .bd-strand { fill: none; stroke: #6f2b55; stroke-width: 3.5; stroke-linecap: round; }
+    .bd-bun { fill: #6f2b55; stroke: #6f2b55; stroke-width: 1.5; }
+    .bd-curl { fill: none; stroke: #fae9f2; stroke-width: 2; stroke-linecap: round; }
+    .bd-pencil-band { stroke: #fae9f2; stroke-width: 1.5; }
+    .bd-brow { fill: none; stroke: #6f2b55; stroke-width: 3.5; stroke-linecap: round; }
+    .bd-mouth { fill: none; stroke: #6f2b55; stroke-width: 3; stroke-linecap: round; }
+    .m-flat, .m-o { opacity: 0; }
+    @media (prefers-color-scheme: dark) {
+      .gl-line { fill: none; stroke: #edaed1; stroke-width: 4; stroke-linecap: round; }
+      .gl-lens { fill: #341e2b; stroke: #edaed1; stroke-width: 4.5; }
+      .gl-pupil { fill: #edaed1; }
+      .bd-hair { fill: #edaed1; stroke: #edaed1; stroke-width: 2; stroke-linejoin: round; }
+      .bd-face, .bd-skin { fill: #341e2b; stroke: #edaed1; stroke-width: 3; }
+      .bd-coat { fill: #341e2b; stroke: #edaed1; stroke-width: 3; stroke-linejoin: round; }
+      .bd-line { fill: none; stroke: #edaed1; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+      .bd-pocket { fill: none; stroke: #edaed1; stroke-width: 2.5; }
+      .bd-pencil { fill: none; stroke: #edaed1; stroke-width: 3.5; stroke-linecap: round; }
+      .bd-strand { fill: none; stroke: #edaed1; stroke-width: 3.5; stroke-linecap: round; }
+      .bd-bun { fill: #edaed1; stroke: #edaed1; stroke-width: 1.5; }
+      .bd-curl { fill: none; stroke: #341e2b; stroke-width: 2; stroke-linecap: round; }
+      .bd-pencil-band { stroke: #341e2b; stroke-width: 1.5; }
+      .bd-brow { fill: none; stroke: #edaed1; stroke-width: 3.5; stroke-linecap: round; }
+      .bd-mouth { fill: none; stroke: #edaed1; stroke-width: 3; stroke-linecap: round; }
+      .m-flat, .m-o { opacity: 0; }
+    }
+    </style>
+  <rect class="sheet" width="1224" height="704"/>
+  <line class="grid-major" x1="56" y1="40" x2="56" y2="648"/>
+  <text class="axis" x="56" y="32" text-anchor="middle">-16</text>
+  <line class="grid" x1="88" y1="40" x2="88" y2="648"/>
+  <line class="grid-major" x1="120" y1="40" x2="120" y2="648"/>
+  <text class="axis" x="120" y="32" text-anchor="middle">0</text>
+  <line class="grid" x1="152" y1="40" x2="152" y2="648"/>
+  <line class="grid-major" x1="184" y1="40" x2="184" y2="648"/>
+  <text class="axis" x="184" y="32" text-anchor="middle">16</text>
+  <line class="grid" x1="216" y1="40" x2="216" y2="648"/>
+  <line class="grid-major" x1="248" y1="40" x2="248" y2="648"/>
+  <text class="axis" x="248" y="32" text-anchor="middle">32</text>
+  <line class="grid" x1="280" y1="40" x2="280" y2="648"/>
+  <line class="grid-major" x1="312" y1="40" x2="312" y2="648"/>
+  <text class="axis" x="312" y="32" text-anchor="middle">48</text>
+  <line class="grid" x1="344" y1="40" x2="344" y2="648"/>
+  <line class="grid-major" x1="376" y1="40" x2="376" y2="648"/>
+  <text class="axis" x="376" y="32" text-anchor="middle">64</text>
+  <line class="grid" x1="408" y1="40" x2="408" y2="648"/>
+  <line class="grid-major" x1="440" y1="40" x2="440" y2="648"/>
+  <text class="axis" x="440" y="32" text-anchor="middle">80</text>
+  <line class="grid" x1="472" y1="40" x2="472" y2="648"/>
+  <line class="grid-major" x1="504" y1="40" x2="504" y2="648"/>
+  <text class="axis" x="504" y="32" text-anchor="middle">96</text>
+  <line class="grid" x1="536" y1="40" x2="536" y2="648"/>
+  <line class="grid-major" x1="568" y1="40" x2="568" y2="648"/>
+  <text class="axis" x="568" y="32" text-anchor="middle">112</text>
+  <line class="grid" x1="600" y1="40" x2="600" y2="648"/>
+  <line class="grid-major" x1="632" y1="40" x2="632" y2="648"/>
+  <text class="axis" x="632" y="32" text-anchor="middle">128</text>
+  <line class="grid" x1="664" y1="40" x2="664" y2="648"/>
+  <line class="grid-major" x1="56" y1="40" x2="664" y2="40"/>
+  <text class="axis" x="48" y="44" text-anchor="end">0</text>
+  <line class="grid" x1="56" y1="72" x2="664" y2="72"/>
+  <line class="grid-major" x1="56" y1="104" x2="664" y2="104"/>
+  <text class="axis" x="48" y="108" text-anchor="end">16</text>
+  <line class="grid" x1="56" y1="136" x2="664" y2="136"/>
+  <line class="grid-major" x1="56" y1="168" x2="664" y2="168"/>
+  <text class="axis" x="48" y="172" text-anchor="end">32</text>
+  <line class="grid" x1="56" y1="200" x2="664" y2="200"/>
+  <line class="grid-major" x1="56" y1="232" x2="664" y2="232"/>
+  <text class="axis" x="48" y="236" text-anchor="end">48</text>
+  <line class="grid" x1="56" y1="264" x2="664" y2="264"/>
+  <line class="grid-major" x1="56" y1="296" x2="664" y2="296"/>
+  <text class="axis" x="48" y="300" text-anchor="end">64</text>
+  <line class="grid" x1="56" y1="328" x2="664" y2="328"/>
+  <line class="grid-major" x1="56" y1="360" x2="664" y2="360"/>
+  <text class="axis" x="48" y="364" text-anchor="end">80</text>
+  <line class="grid" x1="56" y1="392" x2="664" y2="392"/>
+  <line class="grid-major" x1="56" y1="424" x2="664" y2="424"/>
+  <text class="axis" x="48" y="428" text-anchor="end">96</text>
+  <line class="grid" x1="56" y1="456" x2="664" y2="456"/>
+  <line class="grid-major" x1="56" y1="488" x2="664" y2="488"/>
+  <text class="axis" x="48" y="492" text-anchor="end">112</text>
+  <line class="grid" x1="56" y1="520" x2="664" y2="520"/>
+  <line class="grid-major" x1="56" y1="552" x2="664" y2="552"/>
+  <text class="axis" x="48" y="556" text-anchor="end">128</text>
+  <line class="grid" x1="56" y1="584" x2="664" y2="584"/>
+  <line class="grid-major" x1="56" y1="616" x2="664" y2="616"/>
+  <text class="axis" x="48" y="620" text-anchor="end">144</text>
+  <line class="grid" x1="56" y1="648" x2="664" y2="648"/>
+  <g transform="translate(120 40) scale(4)"><g class="bd-all">
+    <g class="bd-rest bd-body">
+      <g class="bd-piece bd-coatset">
+        <rect class="bd-skin" x="53" y="88" width="14" height="18"/>
+        <path class="bd-coat" d="M24 152 L30 116 Q60 100 90 116 L96 152 Z"/>
+        <path class="bd-line" d="M48 107 L60 128 L72 107"/>
+        <path class="bd-line" d="M60 128 L60 152"/>
+        <rect class="bd-pocket" x="74" y="128" width="12" height="9" rx="1.5"/>
+      </g>
+    </g>
+    <g class="bd-head">
+      <g class="bd-rest bd-piece bd-hair">
+        <path d="M33.2 77.5 Q15.0 75.5 29.1 63.8 Q11.7 53.5 31.5 49.7 Q19.1 31.5 40.1 38.3 Q38.9 20.0 52.9 31.8 Q60.0 13.0 67.1 31.8 Q82.9 16.4 79.9 38.3 Q97.7 33.9 88.5 49.7 Q108.3 53.5 90.9 63.8 Q108.9 76.6 86.8 77.5 Z"/>
+        <path class="bd-strand" d="M31 50 Q22 66 28 80 Q33 90 27 98"/>
+        <path class="bd-strand" d="M89 50 Q98 66 92 80 Q87 90 93 98"/>
+      </g>
+      <g class="bd-rest bd-piece bd-bun-grp">
+        <circle class="bd-bun" cx="60" cy="17" r="12"/>
+        <path class="bd-curl" d="M52.5 14 Q55 8.5 61.5 8.5"/>
+      </g>
+      <g class="bd-rest bd-piece bd-pencil">
+        <path d="M46 24 L76 6"/>
+        <path class="bd-pencil-band" d="M69.5 7.6 L71.5 11"/>
+      </g>
+      <g class="bd-rest bd-piece bd-facegrp">
+        <circle class="bd-face" cx="60" cy="66" r="30"/>
+        <path class="bd-brow bd-brow-l" d="M38 45 Q47 40 56 44"/>
+        <path class="bd-brow bd-brow-r" d="M64 44 Q73 40 82 45"/>
+        <path class="bd-mouth m-smile" d="M51 84 Q60 91 69 84"/>
+        <path class="bd-mouth m-flat" d="M53 86 L67 86"/>
+        <ellipse class="bd-mouth m-o" cx="60" cy="86" rx="3.5" ry="4.5"/>
+      </g>
+      <g transform="translate(28 30)">
+        <g class="gl">
+          <path class="gl-line" d="M8.6 29.5 L4.5 22.5"/>
+          <path class="gl-line" d="M55.4 29.5 L59.5 22.5"/>
+          <path class="gl-line" d="M28.5 31.5 Q32 27.5 35.5 31.5"/>
+          <circle class="gl-lens" cx="19" cy="34" r="11"/>
+          <circle class="gl-lens" cx="45" cy="34" r="11"/>
+          <circle class="gl-pupil gl-l" cx="19" cy="34" r="4.2"/>
+          <circle class="gl-pupil gl-r" cx="45" cy="34" r="4.2"/>
+        </g>
+      </g>
+    </g>
+  </g></g>
+  <rect class="lead" x="232" y="160" width="256" height="256"/><circle class="mark" cx="360" cy="304" r="4"/>
+  <line class="lead" x1="246.4" y1="344" x2="96" y2="376"/>
+  <circle class="mark" cx="246.4" cy="344" r="3"/>
+  <circle class="badge" cx="96" cy="376" r="10"/>
+  <text class="badge-text" x="96" y="380">1</text>
+  <line class="lead" x1="412" y1="296" x2="616" y2="320"/>
+  <circle class="mark" cx="412" cy="296" r="3"/>
+  <circle class="badge" cx="616" cy="320" r="10"/>
+  <text class="badge-text" x="616" y="324">2</text>
+  <line class="lead" x1="412" y1="202" x2="568" y2="160"/>
+  <circle class="mark" cx="412" cy="202" r="3"/>
+  <circle class="badge" cx="568" cy="160" r="10"/>
+  <text class="badge-text" x="568" y="164">3</text>
+  <line class="lead" x1="360" y1="390" x2="536" y2="424"/>
+  <circle class="mark" cx="360" cy="390" r="3"/>
+  <circle class="badge" cx="536" cy="424" r="10"/>
+  <text class="badge-text" x="536" y="428">4</text>
+  <line class="lead" x1="224" y1="232" x2="88" y2="184"/>
+  <circle class="mark" cx="224" cy="232" r="3"/>
+  <circle class="badge" cx="88" cy="184" r="10"/>
+  <text class="badge-text" x="88" y="188">5</text>
+  <line class="lead" x1="228" y1="432" x2="96" y2="480"/>
+  <circle class="mark" cx="228" cy="432" r="3"/>
+  <circle class="badge" cx="96" cy="480" r="10"/>
+  <text class="badge-text" x="96" y="484">6</text>
+  <line class="lead" x1="360" y1="60" x2="232" y2="64"/>
+  <circle class="mark" cx="360" cy="60" r="3"/>
+  <circle class="badge" cx="232" cy="64" r="10"/>
+  <text class="badge-text" x="232" y="68">7</text>
+  <line class="lead" x1="424" y1="64" x2="536" y2="80"/>
+  <circle class="mark" cx="424" cy="64" r="3"/>
+  <circle class="badge" cx="536" cy="80" r="10"/>
+  <text class="badge-text" x="536" y="84">8</text>
+  <line class="lead" x1="360" y1="424" x2="264" y2="504"/>
+  <circle class="mark" cx="360" cy="424" r="3"/>
+  <circle class="badge" cx="264" cy="504" r="10"/>
+  <text class="badge-text" x="264" y="508">9</text>
+  <line class="lead" x1="494" y1="600" x2="616" y2="624"/>
+  <circle class="mark" cx="494" cy="600" r="3"/>
+  <circle class="badge" cx="616" cy="624" r="10"/>
+  <text class="badge-text" x="616" y="628">10</text>
+  <line class="lead" x1="464" y1="570" x2="616" y2="536"/>
+  <circle class="mark" cx="464" cy="570" r="3"/>
+  <circle class="badge" cx="616" cy="536" r="10"/>
+  <text class="badge-text" x="616" y="540">11</text>
+  <text class="title" x="704" y="30">Ohtia character: dimensions</text>
+  <circle class="badge" cx="714" cy="56" r="10"/><text class="badge-text" x="714" y="60">1</text>
+  <text class="legend" x="734" y="60">Face: center (60; 66), radius 30, stroke 3.</text>
+  <circle class="badge" cx="714" cy="86" r="10"/><text class="badge-text" x="714" y="90">2</text>
+  <text class="legend" x="734" y="90">Glasses: the 64 × 64 piece translated to (28; 30);</text>
+  <text class="legend" x="734" y="108">lenses at (47; 64) and (73; 64).</text>
+  <circle class="badge" cx="714" cy="134" r="10"/><text class="badge-text" x="714" y="138">3</text>
+  <text class="legend" x="734" y="138">Eyebrows, stroke 3.5: left from (38; 45) to (56; 44), control</text>
+  <text class="legend" x="734" y="156">(47; 40); right from (64; 44) to (82; 45), control (73; 40).</text>
+  <circle class="badge" cx="714" cy="182" r="10"/><text class="badge-text" x="714" y="186">4</text>
+  <text class="legend" x="734" y="186">Mouth, stroke 3: smile from (51; 84) to (69; 84), control (60; 91);</text>
+  <text class="legend" x="734" y="204">straight from (53; 86) to (67; 86); open, ellipse at (60; 86)</text>
+  <text class="legend" x="734" y="222">with radii 3.5 and 4.5.</text>
+  <circle class="badge" cx="714" cy="248" r="10"/><text class="badge-text" x="714" y="252">5</text>
+  <text class="legend" x="734" y="252">Curls: 9 quadratic curves around (60; 62), from 150° to 390°;</text>
+  <text class="legend" x="734" y="270">valleys at radius 31, controls cycling through radii 47, 49, 51;</text>
+  <text class="legend" x="734" y="288">fill and stroke 2.</text>
+  <circle class="badge" cx="714" cy="314" r="10"/><text class="badge-text" x="714" y="318">6</text>
+  <text class="legend" x="734" y="318">Strands, stroke 3.5: M31 50 Q22 66 28 80 Q33 90 27 98</text>
+  <text class="legend" x="734" y="336">and its reflection about x = 60.</text>
+  <circle class="badge" cx="714" cy="362" r="10"/><text class="badge-text" x="714" y="366">7</text>
+  <text class="legend" x="734" y="366">Bun: center (60; 17), radius 12, stroke 1.5; highlight from (52.5; 14)</text>
+  <text class="legend" x="734" y="384">to (61.5; 8.5) with control (55; 8.5), stroke 2.</text>
+  <circle class="badge" cx="714" cy="410" r="10"/><text class="badge-text" x="714" y="414">8</text>
+  <text class="legend" x="734" y="414">Pencil: from (46; 24) to (76; 6), stroke 3.5; tip at (46; 24);</text>
+  <text class="legend" x="734" y="432">band from (69.5; 7.6) to (71.5; 11), stroke 1.5.</text>
+  <circle class="badge" cx="714" cy="458" r="10"/><text class="badge-text" x="714" y="462">9</text>
+  <text class="legend" x="734" y="462">Neck: rectangle at (53; 88), 14 × 18, stroke 3.</text>
+  <circle class="badge" cx="714" cy="488" r="10"/><text class="badge-text" x="714" y="492">10</text>
+  <text class="legend" x="734" y="492">Lab coat: M24 152 L30 116 Q60 100 90 116 L96 152 Z, stroke 3;</text>
+  <text class="legend" x="734" y="510">lapels M48 107 L60 128 L72 107 and opening M60 128 L60 152,</text>
+  <text class="legend" x="734" y="528">stroke 2.5.</text>
+  <circle class="badge" cx="714" cy="554" r="10"/><text class="badge-text" x="714" y="558">11</text>
+  <text class="legend" x="734" y="558">Pocket: rectangle at (74; 128), 12 × 9, corner radius 1.5,</text>
+  <text class="legend" x="734" y="576">stroke 2.5, no fill.</text>
+  <text class="legend-note" x="704" y="612">Frame: viewBox from (−16; 0) to (136; 152). Grid every 8, dimensions every 16.</text>
+  <text class="legend-note" x="704" y="630">The dashed rectangle is the glasses piece: the destination of the</text>
+  <text class="legend-note" x="704" y="648">character-to-brand transition. Fills in voice.ohtia.surface; strokes, hair,</text>
+  <text class="legend-note" x="704" y="666">bun and pencil in voice.ohtia.content. Character used from 96 px.</text>
+</svg>

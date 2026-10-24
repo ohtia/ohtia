@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1078" height="608" viewBox="0 0 1078 608" role="img" aria-label="Ohtia: glasses dimensions">
+  <title>Ohtia: glasses dimensions</title>
+  <style>
+    :root { --page: #faf8f5; --panel: #f4f1ed; --line: #dad7d2; --grid: #ebe7e2; --fg: #1f1d19; --fg2: #4e4a43; }
+    @media (prefers-color-scheme: dark) {
+      :root { --page: #151411; --panel: #1a1815; --line: #35322e; --grid: #262420; --fg: #ebe7e2; --fg2: #c1bdb7; }
+    }
+    .sheet { fill: var(--page); }
+    .grid { stroke: var(--grid); stroke-width: 1; }
+    .grid-major { stroke: var(--line); stroke-width: 1; }
+    .axis { font: 400 11px 'IBM Plex Sans', sans-serif; fill: var(--fg2); }
+    .title { font: 600 16px 'IBM Plex Sans', sans-serif; fill: var(--fg); }
+    .legend { font: 400 13px 'IBM Plex Sans', sans-serif; fill: var(--fg); }
+    .legend-note { font: 400 12px 'IBM Plex Sans', sans-serif; fill: var(--fg2); }
+    .mark { fill: none; stroke: var(--fg); stroke-width: 1.25; vector-effect: non-scaling-stroke; }
+    .lead { fill: none; stroke: var(--fg2); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+    .badge { fill: var(--page); stroke: var(--fg); stroke-width: 1.25; }
+    .badge-text { font: 600 11px 'IBM Plex Sans', sans-serif; fill: var(--fg); text-anchor: middle; }
+
+    .gl-line { fill: none; stroke: #6f2b55; stroke-width: 4; stroke-linecap: round; }
+    .gl-lens { fill: #fae9f2; stroke: #6f2b55; stroke-width: 4.5; }
+    .gl-pupil { fill: #6f2b55; }
+    @media (prefers-color-scheme: dark) {
+      .gl-line { fill: none; stroke: #edaed1; stroke-width: 4; stroke-linecap: round; }
+      .gl-lens { fill: #341e2b; stroke: #edaed1; stroke-width: 4.5; }
+      .gl-pupil { fill: #edaed1; }
+    }
+    </style>
+  <rect class="sheet" width="1078" height="608"/>
+  <line class="grid-major" x1="56" y1="56" x2="56" y2="568"/>
+  <text class="axis" x="56" y="48" text-anchor="middle">0</text>
+  <line class="grid" x1="88" y1="56" x2="88" y2="568"/>
+  <line class="grid-major" x1="120" y1="56" x2="120" y2="568"/>
+  <text class="axis" x="120" y="48" text-anchor="middle">8</text>
+  <line class="grid" x1="152" y1="56" x2="152" y2="568"/>
+  <line class="grid-major" x1="184" y1="56" x2="184" y2="568"/>
+  <text class="axis" x="184" y="48" text-anchor="middle">16</text>
+  <line class="grid" x1="216" y1="56" x2="216" y2="568"/>
+  <line class="grid-major" x1="248" y1="56" x2="248" y2="568"/>
+  <text class="axis" x="248" y="48" text-anchor="middle">24</text>
+  <line class="grid" x1="280" y1="56" x2="280" y2="568"/>
+  <line class="grid-major" x1="312" y1="56" x2="312" y2="568"/>
+  <text class="axis" x="312" y="48" text-anchor="middle">32</text>
+  <line class="grid" x1="344" y1="56" x2="344" y2="568"/>
+  <line class="grid-major" x1="376" y1="56" x2="376" y2="568"/>
+  <text class="axis" x="376" y="48" text-anchor="middle">40</text>
+  <line class="grid" x1="408" y1="56" x2="408" y2="568"/>
+  <line class="grid-major" x1="440" y1="56" x2="440" y2="568"/>
+  <text class="axis" x="440" y="48" text-anchor="middle">48</text>
+  <line class="grid" x1="472" y1="56" x2="472" y2="568"/>
+  <line class="grid-major" x1="504" y1="56" x2="504" y2="568"/>
+  <text class="axis" x="504" y="48" text-anchor="middle">56</text>
+  <line class="grid" x1="536" y1="56" x2="536" y2="568"/>
+  <line class="grid-major" x1="568" y1="56" x2="568" y2="568"/>
+  <text class="axis" x="568" y="48" text-anchor="middle">64</text>
+  <line class="grid-major" x1="56" y1="56" x2="568" y2="56"/>
+  <text class="axis" x="48" y="60" text-anchor="end">0</text>
+  <line class="grid" x1="56" y1="88" x2="568" y2="88"/>
+  <line class="grid-major" x1="56" y1="120" x2="568" y2="120"/>
+  <text class="axis" x="48" y="124" text-anchor="end">8</text>
+  <line class="grid" x1="56" y1="152" x2="568" y2="152"/>
+  <line class="grid-major" x1="56" y1="184" x2="568" y2="184"/>
+  <text class="axis" x="48" y="188" text-anchor="end">16</text>
+  <line class="grid" x1="56" y1="216" x2="568" y2="216"/>
+  <line class="grid-major" x1="56" y1="248" x2="568" y2="248"/>
+  <text class="axis" x="48" y="252" text-anchor="end">24</text>
+  <line class="grid" x1="56" y1="280" x2="568" y2="280"/>
+  <line class="grid-major" x1="56" y1="312" x2="568" y2="312"/>
+  <text class="axis" x="48" y="316" text-anchor="end">32</text>
+  <line class="grid" x1="56" y1="344" x2="568" y2="344"/>
+  <line class="grid-major" x1="56" y1="376" x2="568" y2="376"/>
+  <text class="axis" x="48" y="380" text-anchor="end">40</text>
+  <line class="grid" x1="56" y1="408" x2="568" y2="408"/>
+  <line class="grid-major" x1="56" y1="440" x2="568" y2="440"/>
+  <text class="axis" x="48" y="444" text-anchor="end">48</text>
+  <line class="grid" x1="56" y1="472" x2="568" y2="472"/>
+  <line class="grid-major" x1="56" y1="504" x2="568" y2="504"/>
+  <text class="axis" x="48" y="508" text-anchor="end">56</text>
+  <line class="grid" x1="56" y1="536" x2="568" y2="536"/>
+  <line class="grid-major" x1="56" y1="568" x2="568" y2="568"/>
+  <text class="axis" x="48" y="572" text-anchor="end">64</text>
+  <g transform="translate(56 56) scale(8)"><g class="gl">
+    <path class="gl-line" d="M8.6 29.5 L4.5 22.5"/>
+    <path class="gl-line" d="M55.4 29.5 L59.5 22.5"/>
+    <path class="gl-line" d="M28.5 31.5 Q32 27.5 35.5 31.5"/>
+    <circle class="gl-lens" cx="19" cy="34" r="11"/>
+    <circle class="gl-lens" cx="45" cy="34" r="11"/>
+    <circle class="gl-pupil gl-l" cx="19" cy="34" r="4.2"/>
+    <circle class="gl-pupil gl-r" cx="45" cy="34" r="4.2"/>
+  </g></g>
+  <circle class="lead" cx="208" cy="328" r="36.0"/><circle class="lead" cx="416" cy="328" r="36.0"/><circle class="mark" cx="312" cy="276.0" r="5"/>
+  <line class="lead" x1="208" y1="328" x2="208" y2="488"/>
+  <circle class="mark" cx="208" cy="328" r="3"/>
+  <circle class="badge" cx="208" cy="488" r="10"/>
+  <text class="badge-text" x="208" y="492">1</text>
+  <line class="lead" x1="416" y1="328" x2="416" y2="488"/>
+  <circle class="mark" cx="416" cy="328" r="3"/>
+  <circle class="badge" cx="416" cy="488" r="10"/>
+  <text class="badge-text" x="416" y="492">2</text>
+  <line class="lead" x1="312" y1="276" x2="312" y2="168"/>
+  <circle class="mark" cx="312" cy="276" r="3"/>
+  <circle class="badge" cx="312" cy="168" r="10"/>
+  <text class="badge-text" x="312" y="172">3</text>
+  <line class="lead" x1="92" y1="236" x2="88" y2="136"/>
+  <circle class="mark" cx="92" cy="236" r="3"/>
+  <circle class="badge" cx="88" cy="136" r="10"/>
+  <text class="badge-text" x="88" y="140">4</text>
+  <line class="lead" x1="532" y1="236" x2="536" y2="136"/>
+  <circle class="mark" cx="532" cy="236" r="3"/>
+  <circle class="badge" cx="536" cy="136" r="10"/>
+  <text class="badge-text" x="536" y="140">5</text>
+  <line class="lead" x1="241.6" y1="328" x2="152" y2="472"/>
+  <circle class="mark" cx="241.6" cy="328" r="3"/>
+  <circle class="badge" cx="152" cy="472" r="10"/>
+  <text class="badge-text" x="152" y="476">6</text>
+  <line class="lead" x1="452" y1="328" x2="520" y2="456"/>
+  <circle class="mark" cx="452" cy="328" r="3"/>
+  <circle class="badge" cx="520" cy="456" r="10"/>
+  <text class="badge-text" x="520" y="460">7</text>
+  <text class="title" x="608" y="40">Ohtia glasses: dimensions</text>
+  <circle class="badge" cx="618" cy="66" r="10"/><text class="badge-text" x="618" y="70">1</text>
+  <text class="legend" x="638" y="70">Left lens: center (19; 34), radius 11, stroke 4.5.</text>
+  <circle class="badge" cx="618" cy="96" r="10"/><text class="badge-text" x="618" y="100">2</text>
+  <text class="legend" x="638" y="100">Right lens: center (45; 34), radius 11, stroke 4.5.</text>
+  <circle class="badge" cx="618" cy="126" r="10"/><text class="badge-text" x="618" y="130">3</text>
+  <text class="legend" x="638" y="130">Bridge: quadratic curve from (28.5; 31.5) to (35.5; 31.5)</text>
+  <text class="legend" x="638" y="148">with control at (32; 27.5), stroke 4.</text>
+  <circle class="badge" cx="618" cy="174" r="10"/><text class="badge-text" x="618" y="178">4</text>
+  <text class="legend" x="638" y="178">Left temple: from (8.6; 29.5) to (4.5; 22.5), stroke 4.</text>
+  <circle class="badge" cx="618" cy="204" r="10"/><text class="badge-text" x="618" y="208">5</text>
+  <text class="legend" x="638" y="208">Right temple: from (55.4; 29.5) to (59.5; 22.5), stroke 4.</text>
+  <circle class="badge" cx="618" cy="234" r="10"/><text class="badge-text" x="618" y="238">6</text>
+  <text class="legend" x="638" y="238">Pupils: radius 4.2, centered in the lenses at rest.</text>
+  <circle class="badge" cx="618" cy="264" r="10"/><text class="badge-text" x="618" y="268">7</text>
+  <text class="legend" x="638" y="268">Pupil travel: its center moves no farther</text>
+  <text class="legend" x="638" y="286">than 4.5 from the lens center.</text>
+  <text class="legend-note" x="608" y="322">64 × 64 unit grid; lines every 4 and dimensions every 8.</text>
+  <text class="legend-note" x="608" y="340">Round-ended strokes. Lens fill in voice.ohtia.surface;</text>
+  <text class="legend-note" x="608" y="358">strokes and pupils in voice.ohtia.content.</text>
+  <text class="legend-note" x="608" y="376">24 px icon: same geometry scaled by 0.375 and shifted −0.75</text>
+  <text class="legend-note" x="608" y="394">on y; unfilled lenses and all strokes using icon.stroke.</text>
+</svg>

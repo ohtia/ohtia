@@ -1,0 +1,1131 @@
+<!doctype html>
+<html lang="es-ES">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Muestra del símbolo y el personaje de Ohtia</title>
+<!--
+  Muestra renderizable de la sección «Símbolo y personaje de Ohtia» de docs/design-system.md.
+  Los anteojos, el personaje, su utilería y sus animaciones son dibujos propios de Ohtia: referencia para la ilustración final.
+  Fuentes IBM Plex, commit 71f558992315a12ca1f06a2215d57962a1992162, SIL OFL 1.1.
+  Procedencia: https://github.com/IBM/plex/tree/71f558992315a12ca1f06a2215d57962a1992162
+  Licencia: https://github.com/IBM/plex/blob/71f558992315a12ca1f06a2215d57962a1992162/LICENSE.txt
+-->
+<style>
+@font-face { font-family: "IBM Plex Sans"; font-weight: 400; font-style: normal; font-display: swap; src: url("https://raw.githubusercontent.com/IBM/plex/71f558992315a12ca1f06a2215d57962a1992162/packages/plex-sans/fonts/complete/ttf/IBMPlexSans-Regular.ttf"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 500; font-style: normal; font-display: swap; src: url("https://raw.githubusercontent.com/IBM/plex/71f558992315a12ca1f06a2215d57962a1992162/packages/plex-sans/fonts/complete/ttf/IBMPlexSans-Medium.ttf"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 600; font-style: normal; font-display: swap; src: url("https://raw.githubusercontent.com/IBM/plex/71f558992315a12ca1f06a2215d57962a1992162/packages/plex-sans/fonts/complete/ttf/IBMPlexSans-SemiBold.ttf"); }
+@font-face { font-family: "IBM Plex Serif"; font-weight: 600; font-style: normal; font-display: swap; src: url("https://raw.githubusercontent.com/IBM/plex/71f558992315a12ca1f06a2215d57962a1992162/packages/plex-serif/fonts/complete/ttf/IBMPlexSerif-SemiBold.ttf"); }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 400; font-style: normal; font-display: swap; src: url("https://raw.githubusercontent.com/IBM/plex/71f558992315a12ca1f06a2215d57962a1992162/packages/plex-mono/fonts/complete/ttf/IBMPlexMono-Regular.ttf"); }
+:root {
+  --page: #faf8f5; --panel: #f4f1ed; --emph: #ebe7e2; --fg: #1f1d19; --fg2: #4e4a43; --line: #dad7d2; --control: #87827b;
+  --o-ink: #6f2b55; --o-surface: #fae9f2; --o-border: #ae648f; --ev-surface: #f6e5a4; --ev-line: #977e0d;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+:root[data-scheme="dark"] {
+  --page: #151411; --panel: #1a1815; --emph: #262420; --fg: #ebe7e2; --fg2: #c1bdb7; --line: #35322e; --control: #87827b;
+  --o-ink: #edaed1; --o-surface: #341e2b; --o-border: #be79a0; --ev-surface: #483c0d; --ev-line: #bca341;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--fg); font: 15px/1.55 "IBM Plex Sans", "Noto Sans", sans-serif; }
+.wrap { max-width: 960px; margin: 0 auto; padding: 32px 16px 64px; display: grid; gap: 32px; }
+h1, h2 { font-family: "IBM Plex Serif", "Noto Serif", serif; font-weight: 600; margin: 0; line-height: 1.2; }
+h1 { font-size: 30px; }
+h2 { font-size: 22px; }
+p { margin: 0; max-width: 70ch; }
+.secondary { color: var(--fg2); }
+code { font-family: "IBM Plex Mono", monospace; font-size: 0.9em; }
+section { display: grid; gap: 16px; }
+.demo { display: grid; grid-template-columns: minmax(0, 260px) minmax(0, 1fr); gap: 24px; align-items: start; }
+.stage { position: sticky; top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; aspect-ratio: 1; display: grid; place-items: center; overflow: hidden; }
+.stage svg { width: 88%; height: auto; }
+.controls { display: grid; gap: 10px; min-width: 0; }
+.group-label { font-size: 12px; font-weight: 600; color: var(--fg2); }
+.states { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn { font: inherit; font-size: 14px; font-weight: 500; color: var(--fg); background: var(--page); border: 1px solid var(--control); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.btn:hover { background: var(--emph); }
+.btn[aria-pressed="true"] { background: var(--fg); color: var(--page); border-color: var(--fg); }
+.btn:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+.caption { min-height: 4.8em; font-size: 14px; color: var(--fg2); }
+.caption strong { color: var(--fg); font-weight: 600; }
+.twin { display: flex; align-items: center; gap: 14px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; }
+.twin svg { width: 56px; height: 56px; flex: none; overflow: visible; }
+.twin p { font-size: 13px; color: var(--fg2); }
+.twin .gl { transform-box: fill-box; transform-origin: 50% 100%; }
+.zoom-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 13px; color: var(--fg2); }
+.sizes { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 18px 22px; padding: 16px 18px; border: 1px dashed var(--line); border-radius: 8px; }
+.sizes figure, .poses figure { margin: 0; display: grid; justify-items: center; gap: 6px; }
+.sizes figcaption, .poses figcaption { font-size: 12px; color: var(--fg2); text-align: center; font-variant-numeric: tabular-nums; }
+.sizes .divider { align-self: stretch; width: 1px; background: var(--line); }
+.poses { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 16px; }
+.poses svg { width: 120px; height: 120px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.poses h3 { grid-column: 1 / -1; margin: 8px 0 0; font-size: 13px; color: var(--fg2); font-weight: 600; }
+.still .bd-mouth { transition: none; }
+@media (max-width: 620px) { .demo { grid-template-columns: minmax(0, 1fr); } .stage { position: static; max-width: 260px; } }
+@media (prefers-reduced-motion: reduce) { .bd-mouth { transition: none; } }
+/* Anteojos: la misma geometría en la marca y en la investigadora */
+.gl-line { fill: none; stroke: var(--o-ink); stroke-width: 4; stroke-linecap: round; }
+.gl-lens { fill: var(--o-surface); stroke: var(--o-ink); stroke-width: 4.5; }
+.gl-pupil { fill: var(--o-ink); transform-box: fill-box; transform-origin: center; }
+
+/* Investigadora */
+.bd-hair { fill: var(--o-ink); stroke: var(--o-ink); stroke-width: 2; stroke-linejoin: round; }
+.bd-face, .bd-skin { fill: var(--o-surface); stroke: var(--o-ink); stroke-width: 3; }
+.bd-coat { fill: var(--o-surface); stroke: var(--o-ink); stroke-width: 3; stroke-linejoin: round; }
+.bd-line { fill: none; stroke: var(--o-ink); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.bd-pocket { fill: none; stroke: var(--o-ink); stroke-width: 2.5; }
+.bd-pencil { fill: none; stroke: var(--o-ink); stroke-width: 3.5; stroke-linecap: round; }
+.bd-strand { fill: none; stroke: var(--o-ink); stroke-width: 3.5; stroke-linecap: round; }
+.bd-bun { fill: var(--o-ink); stroke: var(--o-ink); stroke-width: 1.5; }
+.bd-curl { fill: none; stroke: var(--o-surface); stroke-width: 2; stroke-linecap: round; }
+.bd-pencil-band { fill: none; stroke: var(--o-surface); stroke-width: 1.5; }
+.bd-brow { fill: none; stroke: var(--o-ink); stroke-width: 3.5; stroke-linecap: round; transform-box: fill-box; transform-origin: center; }
+.bd-mouth { fill: none; stroke: var(--o-ink); stroke-width: 3; stroke-linecap: round; transition: opacity 120ms var(--ease); }
+.m-flat, .m-o { opacity: 0; }
+.bd-head { transform-box: fill-box; transform-origin: 50% 88%; }
+.bd-piece, .bd-head .gl { transform-box: fill-box; transform-origin: center; }
+.bd-all { transform-box: fill-box; transform-origin: 50% 100%; }
+.bd-prop { opacity: 0; transform-box: fill-box; transform-origin: center; }
+.bd-hand { fill: var(--o-surface); stroke: var(--o-ink); stroke-width: 3; }
+.bd-paper { fill: var(--o-surface); stroke: var(--o-ink); stroke-width: 2.5; stroke-linejoin: round; }
+.bd-write { fill: none; stroke: var(--o-ink); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 100; }
+.bd-book { transform-box: fill-box; transform-origin: 50% 100%; }
+/* Utilería de las actividades */
+.bd-all [class*="pr-"] { transform-box: fill-box; transform-origin: center; }
+.bd-all .pr-scope, .bd-all .pr-cover, .bd-all .pr-flip, .bd-all .pr-tape { transform-origin: 0% 50%; }
+.bd-all .pr-mhand, .bd-all .pr-flapl, .bd-all .pr-flapr, .bd-all .pr-sheetmap, .bd-all .pr-bow { transform-origin: 50% 100%; }
+.bd-all .pr-bubble { transform-origin: 0% 100%; }
+.pr-coverr, .pr-capb { fill: var(--o-ink); stroke: var(--o-ink); stroke-width: 1.5; stroke-linejoin: round; }
+.pr-fill { fill: var(--o-ink); }
+.pr-txt { font-family: "IBM Plex Sans", "Noto Sans", sans-serif; font-weight: 600; font-size: 9px; fill: var(--o-surface); text-anchor: middle; }
+.pr-txt-ink { fill: var(--o-ink); }
+.pr-bubble .pr-txt { font-size: 18px; }
+.pr-hl { fill: none; stroke: var(--ev-surface); stroke-width: 6; stroke-dasharray: 100; stroke-dashoffset: 100; }
+.pr-tip { fill: var(--ev-line); }
+.pr-thread { fill: none; stroke: var(--o-ink); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 100; }
+.pr-glass { fill: var(--o-surface); fill-opacity: 0.45; stroke: var(--o-ink); stroke-width: 3; }
+.pr-handle { stroke-width: 4; }
+.pr-taper { fill: var(--o-surface); stroke: var(--o-ink); stroke-width: 2; }
+.pr-stripe { fill: none; stroke: var(--o-ink); stroke-width: 2.5; }
+.pr-route { fill: none; stroke: var(--o-ink); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.pr-rib, .pr-q { stroke-width: 3; }
+
+.bd-all .pr-hello { transform-origin: 20% 100%; }
+.pr-hello .pr-txt { font-size: 8.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Símbolo y personaje de Ohtia</h1>
+    <p class="secondary">Muestra renderizable de la sección «Símbolo y personaje de Ohtia» de docs/design-system.md: los anteojos, la investigadora, sus tamaños, las 31 animaciones y sus poses clave. Es la referencia para la ilustración final. Añade <code>#dark</code> a la dirección para ver el tema oscuro.</p>
+  </header>
+
+  <section aria-labelledby="h-personaje">
+    <h2 id="h-personaje">Personaje y animaciones</h2>
+    <div class="demo">
+      <div class="stage" id="b-stage"></div>
+      <div class="controls">
+        <span class="group-label">Estados</span>
+        <div class="states" role="group" aria-label="Estados" id="b-states"></div>
+        <span class="group-label">Gestos</span>
+        <div class="states" role="group" aria-label="Gestos" id="b-anims"></div>
+        <div class="controls" id="b-more"></div>
+        <p class="caption" id="b-caption" aria-live="polite">Pulsa un estado o una animación para verla.</p>
+        <div class="twin">
+          <span id="b-twin"></span>
+          <p>Los anteojos solos, en el mismo estado.</p>
+        </div>
+        <div class="zoom-row">
+          <button class="btn" type="button" id="b-zoom" aria-pressed="false">Acercar a los anteojos</button>
+          <span>Paso del personaje a la marca.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-tamanos">
+    <h2 id="h-tamanos">Tamaños</h2>
+    <div class="sizes" id="b-sizes" aria-label="Los anteojos y el personaje en varios tamaños"></div>
+  </section>
+
+  <section aria-labelledby="h-poses">
+    <h2 id="h-poses">Poses clave</h2>
+    <p class="secondary">Cada figura es la animación detenida en el instante indicado, como fracción de su duración. La primera de cada animación es la pose principal, la que se muestra sin transición cuando el sistema pide movimiento reducido.</p>
+    <div class="poses" id="b-poses"></div>
+  </section>
+</div>
+<script>
+(function () {
+  "use strict";
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+  function reduced() { return reduce.matches; }
+  var EASE = "cubic-bezier(0.2, 0, 0, 1)";
+  if (location.hash === "#dark") document.documentElement.dataset.scheme = "dark";
+
+  /* ---------- Marcas ---------- */
+  /* Los anteojos en coordenadas 0..64: la misma pieza para la marca y para la investigadora. */
+  function glassesGroup() {
+    return '<g class="gl">' +
+      '<path class="gl-line" d="M8.6 29.5 L4.5 22.5"/><path class="gl-line" d="M55.4 29.5 L59.5 22.5"/>' +
+      '<path class="gl-line" d="M28.5 31.5 Q32 27.5 35.5 31.5"/>' +
+      '<circle class="gl-lens" cx="19" cy="34" r="11"/><circle class="gl-lens" cx="45" cy="34" r="11"/>' +
+      '<circle class="gl-pupil gl-l" cx="19" cy="34" r="4.2"/><circle class="gl-pupil gl-r" cx="45" cy="34" r="4.2"/></g>';
+  }
+  function glasses() {
+    return '<svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">' + glassesGroup() + '</svg>';
+  }
+
+  /* Pelo: rizos alrededor de la cabeza; los mechones y el rodete se dibujan aparte. */
+  function hairPath() {
+    var cx = 60, cy = 62, bumps = 9, from = 150, span = 240, d = "";
+    function pt(a, r) {
+      a = a * Math.PI / 180;
+      return (cx + r * Math.cos(a)).toFixed(1) + " " + (cy + r * Math.sin(a)).toFixed(1);
+    }
+    for (var i = 0; i < bumps; i++) {
+      var a0 = from + span * i / bumps, a1 = from + span * (i + 1) / bumps;
+      if (i === 0) d += "M" + pt(a0, 31);
+      d += " Q" + pt((a0 + a1) / 2, 47 + (i % 3) * 2) + " " + pt(a1, 31);
+    }
+    return d + " Z";
+  }
+
+  var BUDDY_VB = [-16, 0, 152, 152];
+  var GLASSES_VB = [28, 30, 64, 64];
+  /* Utilería: invisible en reposo; cada animación muestra solo la que usa. */
+  var PROPS_BACK =
+    '<g class="bd-prop bd-notebook">' +
+      '<rect class="bd-paper" x="-10" y="104" width="28" height="26" rx="2"/>' +
+      '<path class="bd-line" d="M-10 108.5 L18 108.5"/>' +
+      '<path class="bd-write" pathLength="100" d="M-5 113 L13 113"/>' +
+      '<path class="bd-write" pathLength="100" d="M-5 119 L9 119"/>' +
+      '<path class="bd-write" pathLength="100" d="M-5 125 L11 125"/>' +
+      '<circle class="bd-hand" cx="-9" cy="130" r="6"/>' +
+    '</g>';
+  var PROPS_UNDER =
+    '<g class="bd-prop bd-openbook">' +
+      '<path class="bd-paper" d="M28 138 Q44 130 60 136 Q76 130 92 138 L92 150 Q76 142 60 148 Q44 142 28 150 Z"/>' +
+      '<path class="bd-line" d="M60 136 L60 148"/>' +
+    '</g>';
+  var BOOKS = [[36, 128, 48], [39, 119, 42], [37, 110, 46], [41, 101, 38]].map(function (b) {
+    return '<g class="bd-book"><rect class="bd-paper" x="' + b[0] + '" y="' + b[1] + '" width="' + b[2] + '" height="9" rx="1.5"/>' +
+      '<path class="bd-line" d="M' + (b[0] + 6) + ' ' + b[1] + ' L' + (b[0] + 6) + ' ' + (b[1] + 9) + '"/></g>';
+  }).join("");
+  var PROPS_OVER =
+    '<g class="bd-prop bd-squint"><path class="bd-line" d="M41 65 Q47 61 53 65"/><path class="bd-line" d="M67 65 Q73 61 79 65"/></g>' +
+    '<g class="bd-prop bd-zzz"><path class="bd-line" d="M90 34 L97 34 L90 42 L97 42"/>' +
+      '<path class="bd-line" d="M101 22 L106 22 L101 28 L106 28"/><path class="bd-line" d="M110 12 L114 12 L110 17 L114 17"/></g>' +
+    '<circle class="bd-prop bd-hand bd-holdhand" cx="117" cy="56" r="6"/>' +
+    '<g class="bd-prop bd-cloth"><rect class="bd-paper" x="68" y="63.5" width="18" height="13" rx="3"/>' +
+      '<path class="bd-line" d="M71.5 70 L82.5 70"/><circle class="bd-hand" cx="77" cy="81" r="6"/></g>' +
+    '<g class="bd-prop bd-stack">' + BOOKS +
+      '<g class="bd-stackhands"><circle class="bd-hand" cx="34" cy="132" r="6"/><circle class="bd-hand" cx="86" cy="132" r="6"/></g></g>';
+
+  var FILE_CARDS = [46, 43, 49].map(function (x) {
+    return '<g class="pr-card"><rect class="bd-paper" x="' + x + '" y="110" width="28" height="18" rx="1.5"/>' +
+      '<path class="bd-line" d="M' + (x + 4) + ' 116 L' + (x + 20) + ' 116 M' + (x + 4) + ' 121 L' + (x + 16) + ' 121"/></g>';
+  }).join("");
+  var PROPS_MORE =
+    /* Catalejo */
+    '<g class="bd-prop pr-scope"><rect class="bd-paper" x="66" y="58" width="20" height="12" rx="2"/>' +
+      '<rect class="bd-paper" x="85" y="56.5" width="18" height="15" rx="2"/><rect class="bd-paper" x="102" y="54.5" width="20" height="19" rx="2"/>' +
+      '<circle class="bd-hand" cx="92" cy="77" r="6"/></g>' +
+    /* Fichero */
+    '<g class="bd-prop pr-files">' + FILE_CARDS +
+      '<rect class="bd-paper" x="36" y="120" width="48" height="22" rx="2"/><path class="bd-line" d="M54 128 L66 128"/>' +
+      '<circle class="bd-hand" cx="33" cy="136" r="6"/><circle class="bd-hand" cx="87" cy="136" r="6"/></g>' +
+    /* Guardar sin tirar */
+    '<g class="bd-prop pr-bin"><path class="bd-paper" d="M-8 126 L16 126 L13 150 L-5 150 Z"/>' +
+      '<path class="bd-line" d="M-11 126 L19 126 M0 131 L1 146 M8 131 L7 146"/></g>' +
+    '<g class="bd-prop pr-sheet"><rect class="bd-paper" x="50" y="112" width="20" height="26" rx="1.5"/>' +
+      '<path class="bd-line" d="M54 119 L66 119 M54 125 L64 125"/><circle class="bd-hand" cx="49" cy="136" r="6"/></g>' +
+    '<g class="bd-prop pr-cab"><rect class="bd-paper" x="98" y="112" width="34" height="38" rx="2"/>' +
+      '<g class="pr-drawer"><rect class="bd-paper" x="101" y="116" width="28" height="14" rx="1.5"/><path class="bd-line" d="M110 123 L120 123"/></g>' +
+      '<rect class="bd-paper" x="101" y="133" width="28" height="14" rx="1.5"/></g>' +
+    /* Subrayar */
+    '<g class="bd-prop pr-page"><rect class="bd-paper" x="32" y="108" width="56" height="38" rx="2"/>' +
+      '<path class="pr-hl" pathLength="100" d="M37 125 L81 125"/>' +
+      '<path class="bd-line" d="M38 116 L80 116 M38 125 L82 125 M38 134 L74 134"/>' +
+      '<circle class="bd-hand" cx="30" cy="140" r="6"/><circle class="bd-hand" cx="90" cy="140" r="6"/></g>' +
+    '<g class="bd-prop pr-marker"><rect class="bd-paper" x="34" y="102" width="7" height="17" rx="2"/><rect class="pr-tip" x="35" y="119" width="5" height="6" rx="1"/></g>' +
+    /* Diccionario */
+    '<g class="bd-prop pr-dict">' +
+      '<g class="pr-spread"><rect class="bd-paper" x="30" y="110" width="60" height="34" rx="2"/>' +
+        '<path class="bd-line" d="M60 110 L60 144 M35 118 L55 118 M35 124 L53 124 M35 130 L55 130 M65 118 L85 118 M65 124 L83 124 M65 130 L85 130"/>' +
+        '<circle class="bd-hand" cx="28" cy="140" r="6"/><circle class="bd-hand" cx="92" cy="140" r="6"/></g>' +
+      '<g class="pr-flip"><rect class="bd-paper" x="60" y="110" width="30" height="34" rx="1"/><path class="bd-line" d="M65 118 L85 118 M65 124 L83 124"/></g>' +
+      '<g class="pr-cover"><rect class="pr-coverr" x="60" y="110" width="30" height="34" rx="2"/><text class="pr-txt" x="75" y="130">A–Z</text></g>' +
+    '</g>' +
+    /* Ficha vacía */
+    '<g class="bd-prop pr-blank"><rect class="bd-paper" x="36" y="106" width="48" height="32" rx="2"/><path class="bd-line" d="M40 112 L80 112"/>' +
+      '<path class="bd-write pr-q" pathLength="100" d="M54 120 Q54 115.5 60 115.5 Q66 115.5 66 120 Q66 124 60 126 L60 129"/>' +
+      '<circle class="pr-fill pr-dot" cx="60" cy="133.5" r="1.8"/>' +
+      '<circle class="bd-hand" cx="34" cy="132" r="6"/><circle class="bd-hand" cx="86" cy="132" r="6"/></g>' +
+    /* Unir con un hilo */
+    '<g class="bd-prop pr-link">' +
+      '<g class="pr-pa"><rect class="bd-paper" x="-12" y="94" width="26" height="32" rx="1.5"/><path class="bd-line" d="M-7 101 L9 101 M-7 107 L5 107"/><circle class="pr-fill" cx="1" cy="116" r="2.5"/></g>' +
+      '<g class="pr-pb"><rect class="bd-paper" x="106" y="94" width="26" height="32" rx="1.5"/><path class="bd-line" d="M111 101 L127 101 M111 107 L123 107"/><circle class="pr-fill" cx="119" cy="116" r="2.5"/></g>' +
+      '<path class="pr-thread" pathLength="100" d="M1 116 Q60 152 119 116"/>' +
+      '<circle class="bd-hand pr-linkhand" cx="1" cy="116" r="6"/></g>' +
+    /* Cotejar */
+    '<g class="bd-prop pr-cmp">' +
+      '<rect class="bd-paper" x="16" y="104" width="32" height="38" rx="1.5"/><path class="bd-line" d="M21 112 L43 112 M21 118 L39 118 M21 124 L42 124 M21 130 L36 130"/>' +
+      '<rect class="bd-paper" x="72" y="104" width="32" height="38" rx="1.5"/><path class="bd-line" d="M77 112 L99 112 M77 118 L95 118 M77 124 L98 124 M77 130 L92 130"/>' +
+      '<circle class="bd-hand" cx="13" cy="138" r="6"/><circle class="bd-hand" cx="107" cy="138" r="6"/></g>' +
+    '<g class="bd-prop pr-mag"><circle class="pr-glass" cx="32" cy="118" r="9"/><path class="bd-line pr-handle" d="M38.5 124.5 L46 132"/></g>' +
+    /* Balanza */
+    '<g class="bd-prop pr-scale"><path class="bd-line" d="M60 108 L60 148 M46 148 L74 148"/>' +
+      '<path class="bd-line pr-beam" d="M30 108 L90 108"/>' +
+      '<g class="pr-panl"><path class="bd-line" d="M30 108 L22 128 M30 108 L38 128"/><path class="bd-paper" d="M19 128 L41 128 Q30 137 19 128 Z"/>' +
+        '<rect class="bd-paper" x="24" y="119" width="12" height="9" rx="1"/></g>' +
+      '<g class="pr-panr"><path class="bd-line" d="M90 108 L82 128 M90 108 L98 128"/><path class="bd-paper" d="M79 128 L101 128 Q90 137 79 128 Z"/>' +
+        '<rect class="pr-coverr" x="84" y="119" width="12" height="9" rx="1"/></g>' +
+      '<circle class="pr-fill" cx="60" cy="108" r="3"/></g>' +
+    /* Mapa enorme */
+    '<g class="bd-prop pr-map">' +
+      '<g class="pr-sheetmap"><rect class="bd-paper" x="48" y="116" width="24" height="20" rx="1" vector-effect="non-scaling-stroke"/>' +
+        '<path class="bd-line" d="M56 116 L56 136 M64 116 L64 136" vector-effect="non-scaling-stroke"/>' +
+        '<path class="pr-route" d="M50 133 Q54 121 58 128 T67 121 T71 124" vector-effect="non-scaling-stroke"/></g>' +
+      '<g class="pr-pinmap"><path class="pr-fill" d="M68 124 C63 118 63 112 68 112 C73 112 73 118 68 124 Z"/><circle class="bd-paper" cx="68" cy="115.5" r="1.6"/></g>' +
+    '</g>' +
+    /* Reloj de bolsillo */
+    '<g class="bd-prop pr-watch"><circle class="bd-paper" cx="40" cy="118" r="10"/><circle class="pr-fill" cx="40" cy="106.5" r="2"/>' +
+      '<path class="bd-line" d="M40 118 L44 120"/><path class="bd-line pr-mhand" d="M40 118 L40 110.5"/><circle class="bd-hand" cx="40" cy="132" r="6"/></g>' +
+    /* Levantar la mano */
+    '<g class="bd-prop pr-raise"><circle class="bd-hand" cx="0" cy="40" r="6.5"/></g>' +
+    '<g class="bd-prop pr-bubble"><path class="bd-paper" d="M100 4 H128 A4 4 0 0 1 132 8 V24 A4 4 0 0 1 128 28 H110 L103 34 V28 H100 A4 4 0 0 1 96 24 V8 A4 4 0 0 1 100 4 Z"/>' +
+      '<text class="pr-txt pr-txt-ink" x="114" y="22">?</text></g>' +
+    /* Libro con candado */
+    '<g class="bd-prop pr-locked"><g class="pr-lbook"><rect class="pr-coverr" x="40" y="108" width="40" height="32" rx="2"/>' +
+      '<rect class="bd-paper" x="64" y="108" width="8" height="32"/><path class="bd-line" d="M74 119 V115 A4 4 0 0 1 82 115 V119"/>' +
+      '<rect class="bd-paper" x="72" y="119" width="12" height="10" rx="1.5"/></g>' +
+      '<circle class="bd-hand" cx="36" cy="132" r="6"/><circle class="bd-hand" cx="88" cy="132" r="6"/></g>' +
+    /* Cinta de uso restringido */
+    '<g class="bd-prop pr-restr"><rect class="bd-paper" x="44" y="106" width="32" height="40" rx="1.5"/>' +
+      '<path class="bd-line" d="M49 114 L71 114 M49 120 L67 120 M49 126 L70 126 M49 132 L64 132"/>' +
+      '<g class="pr-tape"><g transform="rotate(-18 60 127)"><rect class="pr-taper" x="36" y="123" width="48" height="8"/>' +
+        '<path class="pr-stripe" d="M42 123 L46 131 M50 123 L54 131 M58 123 L62 131 M66 123 L70 131 M74 123 L78 131"/></g></g>' +
+      '<circle class="bd-hand" cx="41" cy="142" r="6"/><circle class="bd-hand" cx="79" cy="142" r="6"/></g>' +
+    /* Paquete con moño */
+    '<g class="bd-prop pr-pack">' +
+      '<rect class="bd-paper pr-sh1" x="42" y="110" width="36" height="30" rx="1.5"/><rect class="bd-paper pr-sh2" x="42" y="110" width="36" height="30" rx="1.5"/>' +
+      '<rect class="bd-paper pr-sh3" x="42" y="110" width="36" height="30" rx="1.5"/>' +
+      '<path class="bd-write pr-rib" pathLength="100" d="M60 110 L60 140"/><path class="bd-write pr-rib" pathLength="100" d="M42 125 L78 125"/>' +
+      '<path class="bd-paper pr-bow" d="M60 110 C52 100 47 109 60 110 C73 109 68 100 60 110 Z"/>' +
+      '<circle class="bd-hand" cx="38" cy="134" r="6"/><circle class="bd-hand" cx="82" cy="134" r="6"/></g>' +
+    /* Caja de exportación */
+    '<g class="bd-prop pr-box">' +
+      '<rect class="bd-paper pr-it1" x="42" y="122" width="12" height="16" rx="1"/><rect class="bd-paper pr-it2" x="55" y="126" width="14" height="10" rx="1"/>' +
+      '<rect class="pr-coverr pr-it3" x="70" y="122" width="9" height="16" rx="1"/>' +
+      '<path class="bd-paper pr-flapl" d="M36 118 L60 118 L55 106 L31 108 Z"/><path class="bd-paper pr-flapr" d="M60 118 L84 118 L89 108 L65 106 Z"/>' +
+      '<rect class="bd-paper" x="36" y="118" width="48" height="30" rx="1.5"/><text class="pr-txt pr-txt-ink" x="47" y="137">OKF</text>' +
+      '<path class="bd-write pr-rib" pathLength="100" d="M60 118 L60 148"/>' +
+      '<circle class="bd-hand" cx="32" cy="140" r="6"/><circle class="bd-hand" cx="88" cy="140" r="6"/></g>' +
+    /* Birrete */
+    '<g class="bd-prop pr-cap"><path class="pr-capb" d="M46 26 L46 34 Q60 40 74 34 L74 26 L60 30 Z"/><path class="pr-capb" d="M60 14 L90 22 L60 30 L30 22 Z"/>' +
+      '<path class="bd-line" d="M90 22 L90 33"/><circle class="pr-fill" cx="90" cy="35" r="2.2"/></g>';
+
+  var HELLO_PROP =
+    '<g class="bd-prop pr-hello"><path class="bd-paper" d="M86 1 H130 A4 4 0 0 1 134 5 V21 A4 4 0 0 1 130 25 H98 L92 31 V25 H86 A4 4 0 0 1 82 21 V5 A4 4 0 0 1 86 1 Z"/>' +
+    '<text class="pr-txt pr-txt-ink" x="108" y="11.4">¡Cuánto</text><text class="pr-txt pr-txt-ink" x="108" y="20.4">tiempo!</text></g>';
+
+  function buddy() {
+    return '<svg viewBox="' + BUDDY_VB.join(" ") + '" aria-hidden="true" focusable="false">' +
+      '<g class="bd-all">' + PROPS_BACK +
+      '<g class="bd-rest bd-body">' +
+        '<g class="bd-piece bd-coatset">' +
+          '<rect class="bd-skin" x="53" y="88" width="14" height="18"/>' +
+          '<path class="bd-coat" d="M24 152 L30 116 Q60 100 90 116 L96 152 Z"/>' +
+          '<path class="bd-line" d="M48 107 L60 128 L72 107"/><path class="bd-line" d="M60 128 L60 152"/>' +
+          '<rect class="bd-pocket" x="74" y="128" width="12" height="9" rx="1.5"/>' +
+        '</g>' +
+      '</g>' + PROPS_UNDER +
+      '<g class="bd-head">' +
+        '<g class="bd-rest bd-piece bd-hair"><path d="' + hairPath() + '"/>' +
+          '<path class="bd-strand" d="M31 50 Q22 66 28 80 Q33 90 27 98"/><path class="bd-strand" d="M89 50 Q98 66 92 80 Q87 90 93 98"/></g>' +
+        '<g class="bd-rest bd-piece bd-bun-grp"><circle class="bd-bun" cx="60" cy="17" r="12"/>' +
+          '<path class="bd-curl" d="M52.5 14 Q55 8.5 61.5 8.5"/></g>' +
+        '<g class="bd-rest bd-piece bd-pencil"><path d="M46 24 L76 6"/><path class="bd-pencil-band" d="M69.5 7.6 L71.5 11"/></g>' +
+        '<g class="bd-rest bd-piece bd-facegrp">' +
+          '<circle class="bd-face" cx="60" cy="66" r="30"/>' +
+          '<path class="bd-brow bd-brow-l" d="M38 45 Q47 40 56 44"/>' +
+          '<path class="bd-brow bd-brow-r" d="M64 44 Q73 40 82 45"/>' +
+          '<path class="bd-mouth m-smile" d="M51 84 Q60 91 69 84"/>' +
+          '<path class="bd-mouth m-flat" d="M53 86 L67 86"/>' +
+          '<ellipse class="bd-mouth m-o" cx="60" cy="86" rx="3.5" ry="4.5"/>' +
+        '</g>' +
+        '<g transform="translate(' + GLASSES_VB[0] + ' ' + GLASSES_VB[1] + ')">' + glassesGroup() + '</g>' +
+      '</g>' + PROPS_OVER + PROPS_MORE + HELLO_PROP + '</g></svg>';
+  }
+
+  function sizes(id, items) {
+    var host = document.getElementById(id);
+    items.forEach(function (it) {
+      if (it === "|") { var d = document.createElement("span"); d.className = "divider"; host.appendChild(d); return; }
+      var fig = document.createElement("figure");
+      fig.innerHTML = it.make() + "<figcaption>" + it.label + "</figcaption>";
+      var svg = fig.querySelector("svg");
+      svg.setAttribute("width", it.s); svg.setAttribute("height", it.s);
+      host.appendChild(fig);
+    });
+  }
+
+  /* opts.shared: botones de varios grupos que comparten la selección; opts.primary: false no preselecciona. */
+  function stateButtons(id, captionId, states, run, opts) {
+    opts = opts || {};
+    var host = document.getElementById(id);
+    var cap = document.getElementById(captionId);
+    var buttons = opts.shared || [];
+    var primary = opts.primary !== false;
+    states.forEach(function (st, i) {
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "btn"; b.id = id + "-" + st.key; b.textContent = st.label;
+      b.setAttribute("aria-pressed", primary && i === 0 ? "true" : "false");
+      b.addEventListener("click", function () {
+        buttons.forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+        cap.innerHTML = st.caption;
+        run(st.key);
+      });
+      buttons.push(b); host.appendChild(b);
+    });
+    if (primary) cap.innerHTML = states[0].caption;
+  }
+
+  /* Salto corto del personaje o de los anteojos. */
+  function hop(target) {
+    if (reduced() && !FREEZE) return;
+    keep(target.animate([{ transform: "translateY(0px) scale(1)" }, { transform: "translateY(-10px) scale(1.06)", offset: 0.45 },
+      { transform: "translateY(0px) scale(1)" }], { duration: 420, easing: EASE }));
+  }
+
+  /* ---------- Los anteojos y la investigadora ---------- */
+  var bStage = document.getElementById("b-stage");
+  bStage.innerHTML = buddy();
+  var bSvg = bStage.querySelector("svg");
+  var twinHost = document.getElementById("b-twin");
+  twinHost.outerHTML = glasses();
+  var twinSvg = document.querySelector(".twin svg");
+
+  var part = {
+    head: bSvg.querySelector(".bd-head"),
+    body: bSvg.querySelector(".bd-body"),
+    coat: bSvg.querySelector(".bd-coatset"),
+    pencil: bSvg.querySelector(".bd-pencil"),
+    bun: bSvg.querySelector(".bd-bun-grp"),
+    hair: bSvg.querySelector(".bd-hair"),
+    face: bSvg.querySelector(".bd-facegrp"),
+    glasses: bSvg.querySelector(".bd-head .gl"),
+    browL: bSvg.querySelector(".bd-brow-l"),
+    browR: bSvg.querySelector(".bd-brow-r"),
+    mouths: { smile: bSvg.querySelector(".m-smile"), flat: bSvg.querySelector(".m-flat"), o: bSvg.querySelector(".m-o") }
+  };
+  var P = {
+    all: bSvg.querySelector(".bd-all"),
+    notebook: bSvg.querySelector(".bd-notebook"),
+    writes: bSvg.querySelectorAll(".bd-write"),
+    openbook: bSvg.querySelector(".bd-openbook"),
+    squint: bSvg.querySelector(".bd-squint"),
+    zzz: bSvg.querySelector(".bd-zzz"),
+    holdhand: bSvg.querySelector(".bd-holdhand"),
+    cloth: bSvg.querySelector(".bd-cloth"),
+    stack: bSvg.querySelector(".bd-stack"),
+    books: bSvg.querySelectorAll(".bd-book"),
+    stackhands: bSvg.querySelector(".bd-stackhands")
+  };
+  var eyes = [
+    { l: bSvg.querySelector(".gl-l"), r: bSvg.querySelector(".gl-r") },
+    { l: twinSvg.querySelector(".gl-l"), r: twinSvg.querySelector(".gl-r") }
+  ];
+  var bRunning = [], bTimers = [];
+
+  function mouth(name) {
+    Object.keys(part.mouths).forEach(function (k) { part.mouths[k].style.opacity = k === name ? "1" : "0"; });
+  }
+  /* START: instante, en ms, en que empieza la animación que se registra; FREEZE: detención en curso. */
+  var START = 0, FREEZE = null;
+  function keep(a) { a._start = START; bRunning.push(a); return a; }
+  /* Mantiene una pose entre el 25 % y el 75 % de la duración y vuelve al reposo. */
+  function pose(el, t, ms) {
+    return keep(el.animate([{ transform: "none" }, { transform: t, offset: 0.25 }, { transform: t, offset: 0.75 }, { transform: "none" }], { duration: ms, easing: EASE }));
+  }
+  /* frames: [x, y, scaleY?, offset?] para los dos ojos, o [[izquierdo], [derecho]]. */
+  function look(frames, opts) {
+    eyes.forEach(function (pair) {
+      [pair.l, pair.r].forEach(function (el, i) {
+        keep(el.animate(frames.map(function (fr) {
+          var p = Array.isArray(fr[0]) ? fr[i] : fr;
+          var v = clampEye(p[0], p[1]);
+          var k = { transform: "translate(" + v[0] + "px," + v[1] + "px) scaleY(" + (p[2] === undefined ? 1 : p[2]) + ")" };
+          if (p[3] !== undefined) k.offset = p[3];
+          return k;
+        }), opts));
+      });
+    });
+  }
+  /* El centro de la pupila se aleja como máximo 4,5 del centro del cristal. */
+  var EYE_MAX = 4.5;
+  function clampEye(x, y) {
+    var d = Math.sqrt(x * x + y * y);
+    return d > EYE_MAX ? [x * EYE_MAX / d, y * EYE_MAX / d] : [x, y];
+  }
+  function hold(ms, fn) { if (FREEZE) FREEZE.queue.push([ms, fn]); else bTimers.push(setTimeout(fn, ms)); }
+  /* Línea de tiempo: [[offset, transform, easing?], ...] sobre una duración. */
+  function tl(el, frames, ms) {
+    return keep(el.animate(frames.map(function (f) {
+      return { offset: f[0], transform: f[1], easing: f[2] || EASE };
+    }), { duration: ms }));
+  }
+  /* Muestra un elemento entre los offsets a y b. */
+  function fade(el, a, b, ms) {
+    var f = [{ opacity: 0, offset: 0 }, { opacity: 0, offset: a }, { opacity: 1, offset: Math.min(a + 0.04, b) },
+      { opacity: 1, offset: b }, { opacity: 0, offset: Math.min(1, b + 0.04) }];
+    if (b + 0.04 < 1) f.push({ opacity: 0, offset: 1 });
+    keep(el.animate(f, { duration: ms }));
+  }
+  /* Dibuja un trazo entre los offsets a y b y lo deja dibujado. */
+  function ink(el, a, b, ms) {
+    keep(el.animate([{ strokeDashoffset: 100, offset: 0 }, { strokeDashoffset: 100, offset: a },
+      { strokeDashoffset: 0, offset: b }, { strokeDashoffset: 0, offset: 1 }], { duration: ms }));
+  }
+  function each(list, fn) { Array.prototype.forEach.call(list, fn); }
+  function tf(p) { return "translate(" + p.x + "px," + p.y + "px) rotate(" + p.r + "deg)"; }
+  var HOME = { x: 0, y: 0, r: 0 };
+  /* Una pieza cae con gravedad, rebota, espera y vuelve a su sitio con un pequeño sobrepaso. */
+  function scatter(el, down, back, done, ms) {
+    var bounce = { x: down.x, y: down.y - 8, r: down.r * 0.92 };
+    return keep(el.animate([
+      { transform: tf(HOME), offset: 0, easing: "cubic-bezier(0.55, 0, 1, 0.45)" },
+      { transform: tf(down), offset: 0.16, easing: "ease-out" },
+      { transform: tf(bounce), offset: 0.21, easing: "ease-in" },
+      { transform: tf(down), offset: 0.26 },
+      { transform: tf(down), offset: back, easing: EASE },
+      { transform: tf({ x: 0, y: -5, r: 0 }), offset: done - 0.03, easing: "ease-in" },
+      { transform: tf(HOME), offset: done },
+      { transform: tf(HOME), offset: 1 }
+    ], { duration: ms }));
+  }
+
+  var CATALOG = [{"group": "Estados", "items": [{"key": "read", "label": "Leer", "expresa": "atención a una lectura", "ms": 2400, "poses": [0.4, 0.8], "hace": "Las pupilas recorren dos líneas de izquierda a derecha y las cejas bajan un poco.", "piezas": ["pupilas", "cejas"], "utileria": []}, {"key": "think", "label": "Pensar", "expresa": "reflexión", "ms": 1600, "poses": [0.5], "hace": "Mira hacia arriba, levanta la ceja derecha, inclina la cabeza y deja la boca recta.", "piezas": ["pupilas", "ceja derecha", "cabeza", "boca"], "utileria": []}, {"key": "split", "label": "Desacuerdo", "expresa": "dos posiciones que no coinciden", "ms": 1800, "poses": [0.5], "hace": "Cada pupila mira hacia un lado, las cejas quedan a distinta altura y la cabeza se inclina.", "piezas": ["pupilas", "cejas", "cabeza", "boca"], "utileria": []}, {"key": "notyet", "label": "Todavía no", "expresa": "evidencia insuficiente", "ms": 1800, "poses": [0.5], "hace": "Baja la mirada, sube los extremos interiores de las cejas, sube los hombros y deja la boca recta.", "piezas": ["pupilas", "cejas", "guardapolvo", "boca"], "utileria": []}, {"key": "blink", "label": "Parpadear", "expresa": "fin de una acción", "ms": 260, "poses": [0.5], "hace": "Las pupilas se cierran y se abren.", "piezas": ["pupilas"], "utileria": []}, {"key": "hop", "label": "Hito", "expresa": "alegría breve", "ms": 520, "poses": [0.36], "hace": "Da un salto corto con la boca abierta y las cejas levantadas.", "piezas": ["personaje entero", "cejas", "boca"], "utileria": []}, {"key": "apart", "label": "Desarmarse", "expresa": "algo que se rehace", "ms": 3600, "poses": [0.3, 0.36, 0.8], "hace": "Las piezas caen y rebotan; los anteojos, en el suelo, buscan con la mirada; las piezas vuelven a su sitio en orden y los anteojos vuelven al final.", "piezas": ["guardapolvo", "cara", "pelo", "rodete", "lápiz", "anteojos", "pupilas", "boca"], "utileria": []}, {"key": "noglasses", "label": "Sin anteojos", "expresa": "falta de visión", "ms": 2600, "poses": [0.45], "hace": "Se le caen los anteojos, levanta las cejas con preocupación y los anteojos vuelven a su lugar con un salto.", "piezas": ["anteojos", "cejas", "boca"], "utileria": []}]}, {"group": "Gestos", "items": [{"key": "wake", "label": "Despertar", "expresa": "retomar el trabajo", "ms": 3800, "poses": [0.85, 0.2, 0.52], "hace": "Duerme con la cabeza inclinada sobre un libro abierto, los ojos cerrados y unas «Z» que suben; se despierta de golpe, abre mucho los ojos, mira a los dos lados y le aparece un globo de historieta con un saludo, como «¡Cuánto tiempo!».", "piezas": ["cabeza", "pupilas", "cejas", "boca"], "utileria": ["libro abierto", "«Z»", "globo con un saludo"]}, {"key": "clean", "label": "Limpiar los anteojos", "expresa": "mirar de nuevo con cuidado", "ms": 3600, "poses": [0.35, 0.5], "hace": "Una mano sostiene los anteojos fuera de la cara mientras entrecierra los ojos; otra los frota con un paño; los anteojos vuelven y parpadea.", "piezas": ["anteojos", "cejas", "pupilas", "boca"], "utileria": ["dos manos flotantes", "paño", "ojos entrecerrados"]}, {"key": "bristle", "label": "Pelo de punta", "expresa": "sorpresa ante un hallazgo", "ms": 1700, "poses": [0.3], "hace": "El pelo se eriza y tiembla, el rodete y el lápiz se sacuden, las pupilas se achican y la boca se abre.", "piezas": ["pelo", "rodete", "lápiz", "pupilas", "cejas", "cabeza", "boca"], "utileria": []}, {"key": "peek", "label": "Asomarse", "expresa": "llegada", "ms": 3000, "poses": [0.4, 0.86], "hace": "Entra inclinada desde el borde derecho, mira hacia la izquierda, retrocede un poco y entra hasta su lugar.", "piezas": ["personaje entero", "pupilas", "cejas", "boca"], "utileria": []}, {"key": "stack", "label": "Pila de libros", "expresa": "carga de material", "ms": 3800, "poses": [0.4, 0.8], "hace": "Sube una pila de cuatro libros que se tambalea; la equilibra moviendo la cabeza, la mira, la apoya y la suelta.", "piezas": ["cabeza", "pupilas", "boca"], "utileria": ["cuatro libros", "dos manos flotantes"]}, {"key": "note", "label": "Anotar", "expresa": "registro", "ms": 3600, "poses": [0.38, 0.66], "hace": "Aparece una libreta a su lado; el lápiz sale del rodete, escribe tres líneas y vuelve.", "piezas": ["lápiz", "pupilas", "cejas", "boca"], "utileria": ["libreta con mano flotante"]}]}, {"group": "Buscar y seleccionar", "items": [{"key": "scope", "label": "Catalejo", "expresa": "búsqueda", "ms": 3200, "poses": [0.3, 0.5], "hace": "Extiende un catalejo desde el ojo derecho, guiña el izquierdo y recorre el horizonte; abre la boca al encontrar algo y recoge el catalejo.", "piezas": ["pupilas", "cejas", "boca"], "utileria": ["catalejo con mano flotante"]}, {"key": "files", "label": "Fichero", "expresa": "entrega de elementos para decidir", "ms": 3800, "poses": [0.24, 0.3], "hace": "Saca tres fichas de una caja, una por una; cada ficha sube, la mira y sale hacia quien mira la pantalla.", "piezas": ["pupilas", "boca"], "utileria": ["caja con tres fichas", "dos manos flotantes"]}, {"key": "archive", "label": "Guardar sin tirar", "expresa": "conservar lo descartado", "ms": 4200, "poses": [0.3, 0.62], "hace": "Acerca una hoja a una papelera, niega con la cabeza y la guarda en un cajón que se abre y se cierra.", "piezas": ["cabeza", "pupilas", "boca"], "utileria": ["hoja con mano flotante", "papelera", "archivador"]}]}, {"group": "Leer y extraer", "items": [{"key": "highlight", "label": "Subrayar", "expresa": "marcar evidencia", "ms": 3000, "poses": [0.46], "hace": "Sostiene una página y pasa un marcador sobre la línea central, que queda resaltada en `evidence.surface`.", "piezas": ["pupilas", "cejas", "boca"], "utileria": ["página con dos manos flotantes", "marcador con punta en `evidence.line`"]}, {"key": "dict", "label": "Diccionario", "expresa": "consulta de otro idioma", "ms": 3800, "poses": [0.38, 0.7], "hace": "Abre un diccionario cerrado, pasa dos páginas, lee y asiente.", "piezas": ["pupilas", "cabeza", "boca"], "utileria": ["diccionario con dos manos flotantes"]}, {"key": "blank", "label": "Ficha vacía", "expresa": "dato que falta", "ms": 3200, "poses": [0.5], "hace": "Muestra una ficha en blanco y dibuja en ella un signo de pregunta; la ficha se balancea mientras inclina la cabeza y levanta una ceja.", "piezas": ["cabeza", "ceja derecha", "pupilas", "boca"], "utileria": ["ficha con dos manos flotantes"]}]}, {"group": "Relacionar y contrastar", "items": [{"key": "thread", "label": "Unir con un hilo", "expresa": "propuesta de relación", "ms": 3800, "poses": [0.4, 0.68], "hace": "Aparecen dos papeles clavados a los lados; una mano tiende un hilo de uno a otro y los papeles laten una vez.", "piezas": ["pupilas", "cejas", "boca"], "utileria": ["dos papeles con chinchetas", "hilo", "mano flotante"]}, {"key": "compare", "label": "Cotejar", "expresa": "comparación", "ms": 3800, "poses": [0.32, 0.44], "hace": "Sostiene dos textos y pasa una lupa de uno a otro dos veces, siguiéndola con la mirada y la cabeza; al final asiente.", "piezas": ["pupilas", "cabeza", "cejas", "boca"], "utileria": ["dos textos con manos flotantes", "lupa"]}, {"key": "balance", "label": "Balanza indecisa", "expresa": "apoyo parcial", "ms": 3800, "poses": [0.22, 0.82], "hace": "Una balanza con una afirmación en un plato y una fuente en el otro oscila sin inclinarse; al final sube los hombros con las cejas preocupadas.", "piezas": ["pupilas", "guardapolvo", "cejas", "boca"], "utileria": ["balanza"]}]}, {"group": "Planificar", "items": [{"key": "map", "label": "Mapa enorme", "expresa": "orientarse en el plan", "ms": 4200, "poses": [0.36, 0.74], "hace": "Despliega un mapa que crece hasta taparle la boca y se enreda; lo reduce a un tamaño manejable y cae un alfiler.", "piezas": ["pupilas", "cejas", "boca"], "utileria": ["mapa", "alfiler"]}, {"key": "watch", "label": "Reloj de bolsillo", "expresa": "pregunta sobre el tiempo", "ms": 3400, "poses": [0.35, 0.7], "hace": "Saca un reloj del bolsillo, la aguja larga da dos vueltas y mira a quien tiene delante con la cabeza inclinada; después guarda el reloj.", "piezas": ["pupilas", "cabeza", "cejas", "boca"], "utileria": ["reloj con mano flotante"]}, {"key": "raise", "label": "Levantar la mano", "expresa": "pregunta", "ms": 3000, "poses": [0.45], "hace": "Una mano sube y saluda, aparece un globo con un signo de pregunta, inclina la cabeza y levanta las cejas.", "piezas": ["cabeza", "cejas", "boca"], "utileria": ["mano flotante", "globo"]}]}, {"group": "Límites y problemas", "items": [{"key": "locked", "label": "Libro con candado", "expresa": "acceso imposible", "ms": 4600, "poses": [0.18, 0.48, 0.75], "hace": "Intenta abrir un libro cerrado con candado, que se sacude dos veces; sube los hombros y anota con el lápiz del rodete en su libreta.", "piezas": ["guardapolvo", "cejas", "lápiz", "pupilas", "boca"], "utileria": ["libro con candado", "dos manos flotantes", "libreta con mano flotante"]}, {"key": "restricted", "label": "Cinta de uso restringido", "expresa": "restricción de uso", "ms": 3600, "poses": [0.3, 0.7], "hace": "Envuelve una hoja con una cinta rayada y la aparta a un lado con las cejas serias.", "piezas": ["pupilas", "cejas", "boca"], "utileria": ["hoja con dos manos flotantes", "cinta rayada"]}]}, {"group": "Entregar y celebrar", "items": [{"key": "pack", "label": "Paquete con moño", "expresa": "entrega en mano", "ms": 4000, "poses": [0.45, 0.8], "hace": "Junta tres hojas, las ata con una cinta en cruz, aparece un moño y acerca el paquete hacia quien mira.", "piezas": ["pupilas", "cejas", "boca"], "utileria": ["tres hojas", "cinta", "moño", "dos manos flotantes"]}, {"key": "box", "label": "Caja de exportación", "expresa": "cierre de un conjunto", "ms": 4000, "poses": [0.58, 0.24, 0.7], "hace": "Tres piezas caen en una caja con la etiqueta OKF; las solapas se cierran, una cinta la ata y da un salto corto.", "piezas": ["pupilas", "boca", "personaje entero"], "utileria": ["caja con solapas y dos manos flotantes", "tres piezas", "cinta"]}, {"key": "cap", "label": "Birrete", "expresa": "cierre del proyecto", "ms": 3800, "poses": [0.39, 0.16, 0.82], "hace": "Se le posa un birrete, salta, lo lanza dando vueltas y el birrete vuelve a caer en su cabeza.", "piezas": ["personaje entero", "pupilas", "cejas", "boca"], "utileria": ["birrete"]}]}];
+  var DUR = {}, POSES = {};
+  CATALOG.forEach(function (g) {
+    g.items.forEach(function (it) {
+      DUR[it.key] = it.ms;
+      POSES[it.key] = it.poses;
+      it.caption = "<strong>Expresa " + it.expresa + ".</strong> " + it.hace.replace(/`([^`]+)`/g, "<code>$1</code>");
+    });
+  });
+  var bStates = CATALOG[0].items, bAnims = CATALOG[1].items;
+  var bGroups = CATALOG.slice(2).map(function (g, i) { return { id: "b-g-" + i, label: g.group, items: g.items }; });
+
+  var ANIMATE = typeof Element.prototype.animate === "function";
+  function runB(key) {
+    if (!ANIMATE) return;
+    if (!FREEZE) unzoomNow();
+    bRunning.forEach(function (a) { a.cancel(); }); bRunning = [];
+    bTimers.forEach(clearTimeout); bTimers = [];
+    mouth("smile");
+    part.hair.style.transformOrigin = "";
+    bSvg.classList.remove("still");
+    if (reduced() && !FREEZE) { showStill(key); return; }
+    var ms;
+    if (key === "wake") {
+      ms = 3800;
+      fade(P.openbook, 0, 0.86, ms);
+      var hello = bSvg.querySelector(".pr-hello");
+      op(hello, [[0, 0], [0.68, 0], [0.71, 1], [0.97, 1], [1, 0]], ms);
+      tl(hello, [[0, "scale(0)"], [0.68, "scale(0)", "ease-out"], [0.75, "scale(1.08)"], [0.79, "scale(1)"], [1, "scale(1)"]], ms);
+      fade(P.zzz, 0, 0.44, ms);
+      tl(P.zzz, [[0, "translateY(6px)", "linear"], [0.44, "translateY(-12px)"], [1, "translateY(-12px)"]], ms);
+      tl(part.head, [[0, "translateY(5px) rotate(16deg)"], [0.46, "translateY(5px) rotate(16deg)", "ease-out"],
+        [0.52, "translateY(-7px) rotate(-4deg)"], [0.62, "translateY(0px) rotate(0deg)"], [1, "translateY(0px) rotate(0deg)"]], ms);
+      look([[0, 2, 0.15, 0], [0, 2, 0.15, 0.47], [0, 0, 1.25, 0.52], [-4, 0, 1, 0.64], [4, 0, 1, 0.78], [0, 0, 1, 0.9], [0, 0, 1, 1]], { duration: ms });
+      [part.browL, part.browR].forEach(function (b) {
+        tl(b, [[0, "translateY(3px)"], [0.47, "translateY(3px)", "ease-out"], [0.52, "translateY(-6px)"], [0.72, "translateY(0px)"], [1, "translateY(0px)"]], ms);
+      });
+      mouth("flat");
+      hold(ms * 0.5, function () { mouth("o"); });
+      hold(ms * 0.66, function () { mouth("smile"); });
+    }
+    if (key === "clean") {
+      ms = 3600;
+      var off = "translate(30px,6px) rotate(-8deg)";
+      tl(part.glasses, [[0, "translate(0px,0px) rotate(0deg)"], [0.14, off], [0.76, off],
+        [0.9, "translate(0px,-3px) rotate(0deg)", "ease-in"], [0.95, "translate(0px,0px) rotate(0deg)"], [1, "translate(0px,0px) rotate(0deg)"]], ms);
+      fade(P.holdhand, 0.1, 0.8, ms);
+      fade(P.squint, 0.12, 0.86, ms);
+      fade(P.cloth, 0.18, 0.72, ms);
+      tl(P.cloth, [[0, "translate(0px,0px)"], [0.2, "translate(0px,0px)"], [0.3, "translate(26px,-3px)"], [0.4, "translate(0px,3px)"],
+        [0.5, "translate(26px,-3px)"], [0.6, "translate(0px,3px)"], [0.7, "translate(13px,0px)"], [1, "translate(13px,0px)"]], ms);
+      tl(part.browL, [[0, "rotate(0deg)"], [0.12, "rotate(10deg)"], [0.86, "rotate(10deg)"], [0.94, "rotate(0deg)"], [1, "rotate(0deg)"]], ms);
+      tl(part.browR, [[0, "rotate(0deg)"], [0.12, "rotate(-10deg)"], [0.86, "rotate(-10deg)"], [0.94, "rotate(0deg)"], [1, "rotate(0deg)"]], ms);
+      look([[0, 0, 1, 0], [0, 0, 1, 0.92], [0, 0, 0.1, 0.96], [0, 0, 1, 1]], { duration: ms });
+      mouth("flat");
+      hold(ms * 0.9, function () { mouth("smile"); });
+    }
+    if (key === "bristle") {
+      ms = 1700;
+      part.hair.style.transformOrigin = "50% 75%";
+      tl(part.hair, [[0, "scale(1, 1) rotate(0deg)", "ease-out"], [0.1, "scale(1.1, 1.16) rotate(0deg)"], [0.18, "scale(1.08, 1.13) rotate(3deg)"],
+        [0.26, "scale(1.1, 1.16) rotate(-3deg)"], [0.34, "scale(1.08, 1.14) rotate(0deg)"], [0.6, "scale(1.08, 1.14) rotate(0deg)"],
+        [0.85, "scale(1, 1) rotate(0deg)"], [1, "scale(1, 1) rotate(0deg)"]], ms);
+      [part.bun, part.pencil].forEach(function (el) {
+        tl(el, [[0, "rotate(0deg)"], [0.1, "rotate(-10deg)"], [0.18, "rotate(8deg)"], [0.26, "rotate(-6deg)"], [0.34, "rotate(0deg)"], [1, "rotate(0deg)"]], ms);
+      });
+      eyes.forEach(function (pair) {
+        [pair.l, pair.r].forEach(function (el) {
+          tl(el, [[0, "scale(1)"], [0.1, "scale(0.6)"], [0.6, "scale(0.6)"], [0.8, "scale(1)"], [1, "scale(1)"]], ms);
+        });
+      });
+      [part.browL, part.browR].forEach(function (b) {
+        tl(b, [[0, "translateY(0px)"], [0.1, "translateY(-7px)"], [0.6, "translateY(-7px)"], [0.8, "translateY(0px)"], [1, "translateY(0px)"]], ms);
+      });
+      tl(part.head, [[0, "translateY(0px)"], [0.08, "translateY(-4px)"], [0.2, "translateY(0px)"], [1, "translateY(0px)"]], ms);
+      mouth("o");
+      hold(ms * 0.75, function () { mouth("smile"); });
+    }
+    if (key === "peek") {
+      ms = 3000;
+      tl(P.all, [[0, "translate(150px,0px) rotate(0deg)"], [0.22, "translate(80px,0px) rotate(-14deg)"], [0.55, "translate(80px,0px) rotate(-14deg)"],
+        [0.64, "translate(92px,0px) rotate(-12deg)"], [0.7, "translate(92px,0px) rotate(-12deg)"], [0.86, "translate(-6px,0px) rotate(3deg)"],
+        [0.94, "translate(0px,0px) rotate(0deg)"], [1, "translate(0px,0px) rotate(0deg)"]], ms);
+      look([[0, 0, 1, 0], [-4, 0, 1, 0.24], [-4, 1, 1, 0.5], [0, 0, 1, 0.64], [0, 0, 1, 1]], { duration: ms });
+      [part.browL, part.browR].forEach(function (b) {
+        tl(b, [[0, "translateY(0px)"], [0.2, "translateY(-4px)"], [0.55, "translateY(-4px)"], [0.64, "translateY(0px)"], [1, "translateY(0px)"]], ms);
+      });
+      mouth("o");
+      hold(ms * 0.62, function () { mouth("smile"); });
+    }
+    if (key === "stack") {
+      ms = 3800;
+      fade(P.stack, 0, 0.86, ms);
+      fade(P.stackhands, 0, 0.7, ms);
+      tl(P.stack, [[0, "translateY(36px)", "ease-out"], [0.14, "translateY(0px)"], [0.62, "translateY(0px)"], [0.76, "translateY(14px)"], [1, "translateY(14px)"]], ms);
+      each(P.books, function (b, i) {
+        tl(b, [[0, "translateX(0px) rotate(0deg)"], [0.2, "translateX(0px) rotate(0deg)"], [0.3, "translateX(" + 3 * i + "px) rotate(" + 2 * i + "deg)"],
+          [0.4, "translateX(" + -4 * i + "px) rotate(" + -2.5 * i + "deg)"], [0.5, "translateX(" + 3 * i + "px) rotate(" + 1.5 * i + "deg)"],
+          [0.58, "translateX(0px) rotate(0deg)"], [1, "translateX(0px) rotate(0deg)"]], ms);
+      });
+      tl(part.head, [[0, "rotate(0deg)"], [0.2, "rotate(0deg)"], [0.3, "rotate(-5deg)"], [0.4, "rotate(6deg)"], [0.5, "rotate(-3deg)"],
+        [0.58, "rotate(0deg)"], [1, "rotate(0deg)"]], ms);
+      look([[0, 0, 1, 0], [0, -3, 1, 0.15], [3, -3, 1, 0.3], [-3, -3, 1, 0.4], [2, -3, 1, 0.5], [0, -3, 1, 0.58], [0, 3, 1, 0.72], [0, 0, 1, 0.86], [0, 0, 1, 1]], { duration: ms });
+      hold(ms * 0.15, function () { mouth("flat"); });
+      hold(ms * 0.8, function () { mouth("smile"); });
+    }
+    if (key === "note") {
+      ms = 3600;
+      fade(P.notebook, 0.04, 0.88, ms);
+      tl(P.notebook, [[0, "translateY(24px)", "ease-out"], [0.14, "translateY(0px)"], [1, "translateY(0px)"]], ms);
+      tl(part.pencil, [[0, "translate(0px,0px)"], [0.22, "translate(-51px,89px)"], [0.3, "translate(-51px,89px)", "linear"],
+        [0.44, "translate(-33px,89px)"], [0.48, "translate(-51px,95px)", "linear"], [0.6, "translate(-37px,95px)"],
+        [0.63, "translate(-51px,101px)", "linear"], [0.75, "translate(-35px,101px)"], [0.88, "translate(0px,0px)"], [1, "translate(0px,0px)"]], ms);
+      ink(P.writes[0], 0.3, 0.44, ms);
+      ink(P.writes[1], 0.48, 0.6, ms);
+      ink(P.writes[2], 0.63, 0.75, ms);
+      look([[0, 0, 1, 0], [-4, 3, 1, 0.2], [-3, 3, 1, 0.44], [-4, 3, 1, 0.48], [-3, 3, 1, 0.6], [-4, 3, 1, 0.63], [-3, 3, 1, 0.75], [0, 0, 1, 0.88], [0, 0, 1, 1]], { duration: ms });
+      [part.browL, part.browR].forEach(function (b) {
+        tl(b, [[0, "translateY(0px)"], [0.2, "translateY(2px)"], [0.78, "translateY(2px)"], [0.88, "translateY(0px)"], [1, "translateY(0px)"]], ms);
+      });
+      mouth("flat");
+      hold(ms * 0.88, function () { mouth("smile"); });
+    }
+    if (key === "read") {
+      look([[0, 0], [-4, 1], [4, 1], [-4, 3], [4, 3], [0, 0]], { duration: 2400, easing: "linear" });
+      pose(part.browL, "translateY(2px)", 2400); pose(part.browR, "translateY(2px)", 2400);
+    }
+    if (key === "think") {
+      look([[0, 0], [2.5, -4], [2.5, -4], [0, 0]], { duration: 1600, easing: EASE });
+      pose(part.browR, "translateY(-4px) rotate(-6deg)", 1600);
+      pose(part.head, "rotate(7deg)", 1600);
+      mouth("flat"); hold(1450, function () { mouth("smile"); });
+    }
+    if (key === "split") {
+      look([[[0, 0], [0, 0]], [[-4, -1], [4, -1]], [[-4, -1], [4, -1]], [[0, 0], [0, 0]]], { duration: 1800, easing: EASE });
+      pose(part.browL, "translateY(-4px)", 1800); pose(part.browR, "translateY(2px) rotate(6deg)", 1800);
+      pose(part.head, "rotate(-6deg)", 1800);
+      mouth("flat"); hold(1650, function () { mouth("smile"); });
+    }
+    if (key === "notyet") {
+      look([[0, 0], [0, 3.5], [0, 3.5], [0, 0]], { duration: 1800, easing: EASE });
+      pose(part.browL, "rotate(-12deg)", 1800); pose(part.browR, "rotate(12deg)", 1800);
+      pose(part.body, "translateY(-5px)", 1800);
+      mouth("flat"); hold(1650, function () { mouth("smile"); });
+    }
+    if (key === "blink") {
+      look([[0, 0, 1], [0, 0, 0.1], [0, 0, 1]], { duration: 260, easing: "ease-in-out" });
+    }
+    if (key === "hop") {
+      mouth("o"); hold(400, function () { mouth("smile"); });
+      pose(part.browL, "translateY(-4px)", 520); pose(part.browR, "translateY(-4px)", 520);
+      hop(P.all); hop(twinSvg.querySelector(".gl"));
+    }
+    if (key === "apart") {
+      var ms = 3600;
+      scatter(part.coat, { x: -4, y: 8, r: -7 }, 0.52, 0.62, ms);
+      scatter(part.face, { x: 26, y: 52, r: 110 }, 0.58, 0.69, ms);
+      scatter(part.hair, { x: -34, y: 60, r: -40 }, 0.65, 0.76, ms);
+      scatter(part.bun, { x: 44, y: 100, r: 220 }, 0.72, 0.81, ms);
+      scatter(part.pencil, { x: -41, y: 122, r: -150 }, 0.76, 0.85, ms);
+      scatter(part.glasses, { x: -14, y: 64, r: -12 }, 0.84, 0.96, ms);
+      mouth("o");
+      hold(500, function () { mouth("flat"); });
+      hold(1050, function () { look([[0, 0], [-4, 1], [4, 1], [-4, 1], [0, 0]], { duration: 900, easing: EASE }); });
+      hold(ms * 0.69, function () { mouth("smile"); });
+    }
+    if (key === "noglasses") {
+      scatter(part.glasses, { x: 0, y: 66, r: -14 }, 0.68, 0.86, 2600);
+      pose(part.browL, "translateY(-5px) rotate(-10deg)", 2600);
+      pose(part.browR, "translateY(-5px) rotate(10deg)", 2600);
+      mouth("o");
+      hold(700, function () { mouth("flat"); });
+      hold(2200, function () { mouth("smile"); });
+    }
+    if (MORE[key]) MORE[key]();
+  }
+
+  function Q(s) { return bSvg.querySelector(s); }
+  function QA(s) { return bSvg.querySelectorAll(s); }
+  /* Opacidad por puntos: [[offset, opacidad], ...]. */
+  function op(el, pts, ms) {
+    keep(el.animate(pts.map(function (p) { return { offset: p[0], opacity: p[1] }; }), { duration: ms }));
+  }
+  function mouthAt(name, ms, t) { hold(ms * t, function () { mouth(name); }); }
+  function slideUp(el, ms) { tl(el, [[0, "translateY(30px)", "ease-out"], [0.1, "translateY(0px)"], [1, "translateY(0px)"]], ms); }
+  /* Mantiene una transformación entre a y b, con entrada y salida suaves. */
+  function between(el, t, a, b, ms, rest) {
+    rest = rest || "translateY(0px)";
+    tl(el, [[0, rest], [Math.max(0, a - 0.06), rest], [a, t], [b, t], [Math.min(1, b + 0.08), rest], [1, rest]], ms);
+  }
+  function browsUp(a, b, ms) { [part.browL, part.browR].forEach(function (x) { between(x, "translateY(-5px)", a, b, ms); }); }
+  function browsDown(a, b, ms) { [part.browL, part.browR].forEach(function (x) { between(x, "translateY(2px)", a, b, ms); }); }
+  function browsWorried(a, b, ms) {
+    between(part.browL, "rotate(-12deg)", a, b, ms, "rotate(0deg)");
+    between(part.browR, "rotate(12deg)", a, b, ms, "rotate(0deg)");
+  }
+  function browsSerious(a, b, ms) {
+    between(part.browL, "rotate(8deg)", a, b, ms, "rotate(0deg)");
+    between(part.browR, "rotate(-8deg)", a, b, ms, "rotate(0deg)");
+  }
+  function nod(a, ms) {
+    tl(part.head, [[0, "translateY(0px)"], [a, "translateY(0px)"], [a + 0.03, "translateY(3px)"], [a + 0.06, "translateY(0px)"],
+      [a + 0.09, "translateY(3px)"], [a + 0.12, "translateY(0px)"], [1, "translateY(0px)"]], ms);
+  }
+  function shrug(a, b, ms) { between(part.body, "translateY(-5px)", a, b, ms); }
+
+  var MORE = {
+    scope: function () {
+      var ms = 3200, s = Q(".pr-scope");
+      fade(s, 0.04, 0.84, ms);
+      tl(s, [[0, "scaleX(0.3) rotate(0deg)"], [0.15, "scaleX(1) rotate(0deg)"], [0.3, "scaleX(1) rotate(-10deg)"], [0.5, "scaleX(1) rotate(8deg)"],
+        [0.66, "scaleX(1) rotate(-3deg)"], [0.74, "scaleX(1) rotate(0deg)"], [0.84, "scaleX(0.3) rotate(0deg)"], [1, "scaleX(0.3) rotate(0deg)"]], ms);
+      look([[[0, 0, 1, 0], [0, 0, 1, 0]], [[0, 0, 0.15, 0.12], [0, 0, 1, 0.12]], [[0, 0, 0.15, 0.8], [0, 0, 1, 0.8]],
+        [[0, 0, 1, 0.88], [0, 0, 1, 0.88]], [[0, 0, 1, 1], [0, 0, 1, 1]]], { duration: ms });
+      between(part.browL, "translateY(3px)", 0.12, 0.8, ms);
+      between(part.browR, "translateY(-4px)", 0.12, 0.8, ms);
+      mouth("flat"); mouthAt("o", ms, 0.66); mouthAt("smile", ms, 0.86);
+    },
+    files: function () {
+      var ms = 3800, g = Q(".pr-files"), cards = QA(".pr-card"), eyesF = [[0, 0, 1, 0]];
+      fade(g, 0.02, 0.9, ms); slideUp(g, ms);
+      for (var i = 0; i < 3; i++) {
+        var c = cards[2 - i], s = 0.14 + i * 0.24;
+        tl(c, [[0, "translate(0px,0px) scale(1)"], [s, "translate(0px,0px) scale(1)"], [s + 0.07, "translate(0px,-16px) scale(1)"],
+          [s + 0.13, "translate(0px,-16px) scale(1)", "ease-in"], [s + 0.2, "translate(70px,-6px) scale(1.15)"], [1, "translate(70px,-6px) scale(1.15)"]], ms);
+        op(c, [[0, 1], [s + 0.17, 1], [s + 0.2, 0], [1, 0]], ms);
+        eyesF.push([0, 3, 1, s + 0.07], [0, 3, 1, s + 0.13], [4, 1, 1, s + 0.2]);
+      }
+      eyesF.push([0, 0, 1, 0.9], [0, 0, 1, 1]);
+      look(eyesF, { duration: ms });
+      mouth("flat"); mouthAt("smile", ms, 0.86);
+    },
+    archive: function () {
+      var ms = 4200, sh = Q(".pr-sheet");
+      fade(Q(".pr-bin"), 0.02, 0.88, ms); fade(Q(".pr-cab"), 0.02, 0.9, ms); fade(sh, 0.02, 0.7, ms);
+      tl(sh, [[0, "translate(0px,0px) rotate(0deg)"], [0.15, "translate(-56px,-14px) rotate(-8deg)"], [0.38, "translate(-56px,-14px) rotate(-8deg)"],
+        [0.55, "translate(55px,-16px) rotate(4deg)"], [0.6, "translate(55px,-16px) rotate(0deg)", "ease-in"], [0.68, "translate(55px,-2px) rotate(0deg)"],
+        [1, "translate(55px,-2px) rotate(0deg)"]], ms);
+      tl(Q(".pr-drawer"), [[0, "translateX(0px)"], [0.44, "translateX(0px)"], [0.52, "translateX(-6px)"], [0.68, "translateX(-6px)"],
+        [0.76, "translateX(0px)"], [1, "translateX(0px)"]], ms);
+      tl(part.head, [[0, "rotate(0deg)"], [0.2, "rotate(0deg)"], [0.25, "rotate(-5deg)"], [0.3, "rotate(5deg)"], [0.35, "rotate(-4deg)"],
+        [0.4, "rotate(0deg)"], [1, "rotate(0deg)"]], ms);
+      look([[0, 0, 1, 0], [-4, 3, 1, 0.15], [-4, 3, 1, 0.4], [4, 2, 1, 0.55], [4, 3, 1, 0.72], [0, 0, 1, 0.85], [0, 0, 1, 1]], { duration: ms });
+      mouth("flat"); mouthAt("smile", ms, 0.76);
+    },
+    highlight: function () {
+      var ms = 3000, pg = Q(".pr-page"), mk = Q(".pr-marker");
+      fade(pg, 0.02, 0.88, ms); slideUp(pg, ms);
+      fade(mk, 0.12, 0.76, ms);
+      tl(mk, [[0, "translate(20px,-10px)"], [0.14, "translate(20px,-10px)"], [0.22, "translate(0px,0px)"], [0.26, "translate(0px,0px)", "linear"],
+        [0.66, "translate(44px,0px)"], [0.76, "translate(60px,-14px)"], [1, "translate(60px,-14px)"]], ms);
+      ink(Q(".pr-hl"), 0.26, 0.66, ms);
+      look([[0, 0, 1, 0], [-4, 3, 1, 0.22], [-4, 3, 1, 0.26], [4, 3, 1, 0.66], [0, 0, 1, 0.8], [0, 0, 1, 1]], { duration: ms });
+      browsDown(0.2, 0.7, ms);
+      mouth("flat"); mouthAt("smile", ms, 0.8);
+    },
+    dict: function () {
+      var ms = 3800, d = Q(".pr-dict"), fl = Q(".pr-flip");
+      fade(d, 0.02, 0.9, ms);
+      tl(d, [[0, "translate(-15px,30px)", "ease-out"], [0.12, "translate(-15px,0px)"], [0.18, "translate(-15px,0px)"], [0.28, "translate(0px,0px)"],
+        [1, "translate(0px,0px)"]], ms);
+      op(Q(".pr-spread"), [[0, 0], [0.2, 0], [0.24, 1], [1, 1]], ms);
+      tl(Q(".pr-cover"), [[0, "scaleX(1)"], [0.18, "scaleX(1)"], [0.28, "scaleX(-1)"], [1, "scaleX(-1)"]], ms);
+      op(Q(".pr-cover .pr-txt"), [[0, 1], [0.22, 1], [0.23, 0], [1, 0]], ms);
+      op(Q(".pr-cover"), [[0, 1], [0.28, 1], [0.29, 0], [1, 0]], ms);
+      op(fl, [[0, 0], [0.32, 0], [0.33, 1], [0.57, 1], [0.58, 0], [1, 0]], ms);
+      tl(fl, [[0, "scaleX(1)"], [0.33, "scaleX(1)"], [0.43, "scaleX(-1)"], [0.44, "scaleX(1)"], [0.45, "scaleX(1)"], [0.55, "scaleX(-1)"], [1, "scaleX(-1)"]], ms);
+      look([[0, 0, 1, 0], [0, 3, 1, 0.15], [0, 3, 1, 0.58], [-3, 3, 1, 0.62], [3, 3, 1, 0.7], [-3, 3, 1, 0.72], [3, 3, 1, 0.8], [0, 0, 1, 0.9], [0, 0, 1, 1]], { duration: ms });
+      nod(0.8, ms);
+      mouth("flat"); mouthAt("o", ms, 0.8); mouthAt("smile", ms, 0.9);
+    },
+    blank: function () {
+      var ms = 3200, b = Q(".pr-blank");
+      fade(b, 0.02, 0.9, ms);
+      tl(b, [[0, "translate(0px,30px) scale(0.6) rotate(0deg)", "ease-out"], [0.15, "translate(0px,0px) scale(1) rotate(0deg)"],
+        [0.55, "translate(0px,0px) scale(1) rotate(0deg)"], [0.6, "translate(0px,0px) scale(1) rotate(-4deg)"],
+        [0.65, "translate(0px,0px) scale(1) rotate(4deg)"], [0.7, "translate(0px,0px) scale(1) rotate(0deg)"], [1, "translate(0px,0px) scale(1) rotate(0deg)"]], ms);
+      ink(Q(".pr-q"), 0.18, 0.4, ms);
+      op(Q(".pr-dot"), [[0, 0], [0.4, 0], [0.42, 1], [1, 1]], ms);
+      between(part.head, "rotate(6deg)", 0.2, 0.8, ms, "rotate(0deg)");
+      between(part.browR, "translateY(-5px)", 0.2, 0.8, ms);
+      look([[0, 0, 1, 0], [0, 3, 1, 0.18], [0, 3, 1, 0.4], [0, 0, 1, 0.48], [0, 0, 1, 1]], { duration: ms });
+      mouth("flat"); mouthAt("smile", ms, 0.9);
+    },
+    thread: function () {
+      var ms = 3800, h = Q(".pr-linkhand");
+      fade(Q(".pr-link"), 0.02, 0.9, ms);
+      tl(Q(".pr-pa"), [[0, "scale(0)", "ease-out"], [0.08, "scale(1)"], [0.62, "scale(1)"], [0.67, "scale(1.12)"], [0.72, "scale(1)"], [1, "scale(1)"]], ms);
+      tl(Q(".pr-pb"), [[0, "scale(0)"], [0.06, "scale(0)", "ease-out"], [0.14, "scale(1)"], [0.62, "scale(1)"], [0.67, "scale(1.12)"], [0.72, "scale(1)"], [1, "scale(1)"]], ms);
+      op(h, [[0, 0], [0.16, 0], [0.2, 1], [0.62, 1], [0.66, 0], [1, 0]], ms);
+      tl(h, [[0, "translate(0px,0px)"], [0.2, "translate(0px,0px)", "linear"], [0.3, "translate(29.5px,13.5px)", "linear"], [0.4, "translate(59px,18px)", "linear"],
+        [0.5, "translate(88.5px,13.5px)", "linear"], [0.6, "translate(118px,0px)"], [1, "translate(118px,0px)"]], ms);
+      ink(Q(".pr-thread"), 0.2, 0.6, ms);
+      look([[0, 0, 1, 0], [-4, 2, 1, 0.2], [-2, 3, 1, 0.3], [0, 3, 1, 0.4], [2, 3, 1, 0.5], [4, 2, 1, 0.6], [0, 0, 1, 0.75], [0, 0, 1, 1]], { duration: ms });
+      browsUp(0.64, 0.8, ms);
+      mouth("flat"); mouthAt("o", ms, 0.62); mouthAt("smile", ms, 0.8);
+    },
+    compare: function () {
+      var ms = 3800, cmp = Q(".pr-cmp"), mag = Q(".pr-mag");
+      fade(cmp, 0.02, 0.9, ms); slideUp(cmp, ms);
+      fade(mag, 0.1, 0.86, ms);
+      tl(mag, [[0, "translate(0px,0px)"], [0.2, "translate(0px,0px)"], [0.32, "translate(56px,0px)"], [0.44, "translate(0px,0px)"],
+        [0.56, "translate(56px,0px)"], [0.66, "translate(0px,0px)"], [0.76, "translate(28px,-6px)"], [1, "translate(28px,-6px)"]], ms);
+      look([[0, 0, 1, 0], [-4, 3, 1, 0.2], [4, 3, 1, 0.32], [-4, 3, 1, 0.44], [4, 3, 1, 0.56], [-4, 3, 1, 0.66], [0, 0, 1, 0.78], [0, 0, 1, 1]], { duration: ms });
+      tl(part.head, [[0, "translateY(0px) rotate(0deg)"], [0.2, "translateY(0px) rotate(-3deg)"], [0.32, "translateY(0px) rotate(3deg)"],
+        [0.44, "translateY(0px) rotate(-3deg)"], [0.56, "translateY(0px) rotate(3deg)"], [0.66, "translateY(0px) rotate(-3deg)"],
+        [0.76, "translateY(0px) rotate(0deg)"], [0.8, "translateY(0px) rotate(0deg)"], [0.83, "translateY(3px) rotate(0deg)"],
+        [0.86, "translateY(0px) rotate(0deg)"], [1, "translateY(0px) rotate(0deg)"]], ms);
+      browsDown(0.2, 0.7, ms);
+      mouth("flat"); mouthAt("smile", ms, 0.9);
+    },
+    balance: function () {
+      var ms = 3800, sc = Q(".pr-scale");
+      fade(sc, 0.02, 0.9, ms); slideUp(sc, ms);
+      var A = [[0, 0], [0.14, 0], [0.22, -12], [0.32, 9], [0.42, -6], [0.52, 4], [0.6, -2], [0.68, 0], [1, 0]];
+      function dy(a, side) { return (side * 30 * Math.sin(a * Math.PI / 180)).toFixed(2); }
+      tl(Q(".pr-beam"), A.map(function (p) { return [p[0], "rotate(" + p[1] + "deg)", "ease-in-out"]; }), ms);
+      tl(Q(".pr-panl"), A.map(function (p) { return [p[0], "translateY(" + dy(p[1], -1) + "px)", "ease-in-out"]; }), ms);
+      tl(Q(".pr-panr"), A.map(function (p) { return [p[0], "translateY(" + dy(p[1], 1) + "px)", "ease-in-out"]; }), ms);
+      look([[0, 0, 1, 0], [0, 3, 1, 0.14], [-3, 3, 1, 0.22], [3, 3, 1, 0.32], [-3, 3, 1, 0.42], [3, 3, 1, 0.52], [0, 3, 1, 0.68], [0, 0, 1, 0.76], [0, 0, 1, 1]], { duration: ms });
+      shrug(0.76, 0.88, ms);
+      browsWorried(0.74, 0.9, ms);
+      mouth("flat"); mouthAt("smile", ms, 0.96);
+    },
+    map: function () {
+      var ms = 4200, m = Q(".pr-map"), pin = Q(".pr-pinmap");
+      fade(m, 0.02, 0.88, ms); slideUp(m, ms);
+      tl(Q(".pr-sheetmap"), [[0, "scale(1, 1) rotate(0deg)"], [0.12, "scale(1, 1) rotate(0deg)", "ease-out"], [0.24, "scale(5.2, 2.8) rotate(0deg)"],
+        [0.3, "scale(5, 2.8) rotate(-5deg)"], [0.36, "scale(5.1, 2.7) rotate(4deg)"], [0.42, "scale(5, 2.8) rotate(-2deg)"],
+        [0.5, "scale(5, 2.8) rotate(0deg)"], [0.6, "scale(3, 1.4) rotate(0deg)"], [1, "scale(3, 1.4) rotate(0deg)"]], ms);
+      op(pin, [[0, 0], [0.62, 0], [0.63, 1], [1, 1]], ms);
+      tl(pin, [[0, "translateY(-70px)"], [0.62, "translateY(-70px)", "ease-in"], [0.7, "translateY(0px)", "ease-out"],
+        [0.74, "translateY(-5px)", "ease-in"], [0.78, "translateY(0px)"], [1, "translateY(0px)"]], ms);
+      look([[0, 0, 1, 0], [0, 3, 1, 0.12], [-4, 0, 1, 0.3], [4, 0, 1, 0.38], [-4, 0, 1, 0.46], [0, 3, 1, 0.58], [2, 3, 1, 0.7], [0, 0, 1, 0.86], [0, 0, 1, 1]], { duration: ms });
+      between(part.browL, "translateY(-5px)", 0.24, 0.5, ms);
+      between(part.browR, "translateY(2px)", 0.24, 0.5, ms);
+      mouthAt("o", ms, 0.24); mouthAt("smile", ms, 0.8);
+    },
+    watch: function () {
+      var ms = 3400, w = Q(".pr-watch");
+      fade(w, 0.02, 0.88, ms);
+      tl(w, [[0, "translate(40px,12px) scale(0.3)", "ease-out"], [0.15, "translate(0px,0px) scale(1)"], [0.8, "translate(0px,0px) scale(1)", "ease-in"],
+        [0.9, "translate(40px,12px) scale(0.3)"], [1, "translate(40px,12px) scale(0.3)"]], ms);
+      tl(Q(".pr-mhand"), [[0, "rotate(0deg)"], [0.2, "rotate(0deg)", "ease-in-out"], [0.5, "rotate(720deg)"], [1, "rotate(720deg)"]], ms);
+      look([[0, 0, 1, 0], [-3, 3, 1, 0.15], [-3, 3, 1, 0.52], [0, 0, 1, 0.58], [0, 0, 1, 1]], { duration: ms });
+      between(part.head, "rotate(6deg)", 0.58, 0.84, ms, "rotate(0deg)");
+      browsUp(0.58, 0.84, ms);
+      mouth("flat"); mouthAt("smile", ms, 0.9);
+    },
+    raise: function () {
+      var ms = 3000, h = Q(".pr-raise"), bub = Q(".pr-bubble");
+      fade(h, 0.02, 0.86, ms);
+      tl(h, [[0, "translate(0px,90px)", "ease-out"], [0.18, "translate(0px,-4px)"], [0.22, "translate(0px,0px)"], [0.32, "translate(-4px,0px)"],
+        [0.4, "translate(4px,0px)"], [0.48, "translate(-4px,0px)"], [0.56, "translate(0px,0px)"], [0.78, "translate(0px,0px)", "ease-in"],
+        [0.9, "translate(0px,90px)"], [1, "translate(0px,90px)"]], ms);
+      op(bub, [[0, 0], [0.24, 0], [0.27, 1], [0.82, 1], [0.86, 0], [1, 0]], ms);
+      tl(bub, [[0, "scale(0)"], [0.24, "scale(0)", "ease-out"], [0.32, "scale(1)"], [1, "scale(1)"]], ms);
+      between(part.head, "rotate(-5deg)", 0.22, 0.8, ms, "rotate(0deg)");
+      browsUp(0.2, 0.82, ms);
+      mouthAt("o", ms, 0.2); mouthAt("smile", ms, 0.85);
+    },
+    locked: function () {
+      var ms = 4600, lk = Q(".pr-locked");
+      fade(lk, 0.02, 0.5, ms); slideUp(lk, ms);
+      tl(Q(".pr-lbook"), [[0, "rotate(0deg)"], [0.12, "rotate(0deg)"], [0.15, "rotate(-4deg)"], [0.18, "rotate(4deg)"], [0.21, "rotate(-4deg)"],
+        [0.24, "rotate(0deg)"], [0.3, "rotate(0deg)"], [0.33, "rotate(-5deg)"], [0.36, "rotate(5deg)"], [0.39, "rotate(0deg)"], [1, "rotate(0deg)"]], ms);
+      shrug(0.42, 0.52, ms);
+      browsWorried(0.4, 0.56, ms);
+      fade(P.notebook, 0.5, 0.94, ms);
+      tl(P.notebook, [[0, "translateY(24px)"], [0.5, "translateY(24px)", "ease-out"], [0.58, "translateY(0px)"], [1, "translateY(0px)"]], ms);
+      tl(part.pencil, [[0, "translate(0px,0px)"], [0.58, "translate(0px,0px)"], [0.65, "translate(-51px,89px)"], [0.68, "translate(-51px,89px)", "linear"],
+        [0.82, "translate(-33px,89px)"], [0.92, "translate(0px,0px)"], [1, "translate(0px,0px)"]], ms);
+      ink(P.writes[0], 0.68, 0.82, ms);
+      look([[0, 0, 1, 0], [0, 3, 1, 0.1], [0, 3, 1, 0.4], [0, 0, 1, 0.44], [0, 0, 1, 0.56], [-4, 3, 1, 0.64], [-3, 3, 1, 0.82], [0, 0, 1, 0.92], [0, 0, 1, 1]], { duration: ms });
+      mouth("flat"); mouthAt("smile", ms, 0.94);
+    },
+    restricted: function () {
+      var ms = 3600, r = Q(".pr-restr");
+      fade(r, 0.02, 0.88, ms);
+      tl(r, [[0, "translate(0px,30px) rotate(0deg)", "ease-out"], [0.12, "translate(0px,0px) rotate(0deg)"], [0.46, "translate(0px,0px) rotate(0deg)"],
+        [0.64, "translate(44px,6px) rotate(8deg)"], [1, "translate(44px,6px) rotate(8deg)"]], ms);
+      tl(Q(".pr-tape"), [[0, "scaleX(0)"], [0.18, "scaleX(0)", "ease-out"], [0.32, "scaleX(1)"], [1, "scaleX(1)"]], ms);
+      look([[0, 0, 1, 0], [0, 3, 1, 0.15], [0, 3, 1, 0.46], [4, 2, 1, 0.64], [4, 2, 1, 0.8], [0, 0, 1, 0.9], [0, 0, 1, 1]], { duration: ms });
+      browsSerious(0.15, 0.85, ms);
+      mouthAt("o", ms, 0.3); mouthAt("flat", ms, 0.4); mouthAt("smile", ms, 0.9);
+    },
+    pack: function () {
+      var ms = 4000, pk = Q(".pr-pack"), ribs = QA(".pr-pack .pr-rib");
+      fade(pk, 0.02, 0.9, ms);
+      tl(pk, [[0, "translate(0px,30px) scale(1)", "ease-out"], [0.1, "translate(0px,0px) scale(1)"], [0.66, "translate(0px,0px) scale(1)"],
+        [0.78, "translate(0px,8px) scale(1.3)"], [1, "translate(0px,8px) scale(1.3)"]], ms);
+      tl(Q(".pr-sh1"), [[0, "rotate(-12deg)"], [0.14, "rotate(-12deg)"], [0.26, "rotate(0deg)"], [1, "rotate(0deg)"]], ms);
+      tl(Q(".pr-sh2"), [[0, "rotate(9deg)"], [0.16, "rotate(9deg)"], [0.28, "rotate(0deg)"], [1, "rotate(0deg)"]], ms);
+      ink(ribs[0], 0.3, 0.42, ms);
+      ink(ribs[1], 0.42, 0.54, ms);
+      tl(Q(".pr-bow"), [[0, "scale(0)"], [0.54, "scale(0)", "ease-out"], [0.6, "scale(1.25)"], [0.64, "scale(1)"], [1, "scale(1)"]], ms);
+      look([[0, 0, 1, 0], [0, 3, 1, 0.1], [0, 3, 1, 0.62], [0, 0, 1, 0.7], [0, 0, 1, 1]], { duration: ms });
+      browsUp(0.7, 0.9, ms);
+      mouth("flat"); mouthAt("smile", ms, 0.66);
+    },
+    box: function () {
+      var ms = 4000, bx = Q(".pr-box"), ribs = QA(".pr-box .pr-rib");
+      fade(bx, 0.02, 0.9, ms); slideUp(bx, ms);
+      [".pr-it1", ".pr-it2", ".pr-it3"].forEach(function (sel, i) {
+        var it = Q(sel), s = 0.14 + i * 0.1;
+        op(it, [[0, 0], [s, 0], [s + 0.01, 1], [1, 1]], ms);
+        tl(it, [[0, "translateY(-90px)"], [s, "translateY(-90px)", "ease-in"], [s + 0.09, "translateY(0px)"], [1, "translateY(0px)"]], ms);
+      });
+      tl(Q(".pr-flapl"), [[0, "scaleY(1)"], [0.48, "scaleY(1)"], [0.56, "scaleY(0.12)"], [1, "scaleY(0.12)"]], ms);
+      tl(Q(".pr-flapr"), [[0, "scaleY(1)"], [0.51, "scaleY(1)"], [0.59, "scaleY(0.12)"], [1, "scaleY(0.12)"]], ms);
+      ink(ribs[0], 0.6, 0.72, ms);
+      look([[0, 0, 1, 0], [0, -4, 1, 0.14], [0, 3, 1, 0.23], [0, -4, 1, 0.24], [0, 3, 1, 0.33], [0, -4, 1, 0.34], [0, 3, 1, 0.43], [0, 3, 1, 0.72],
+        [0, 0, 1, 0.8], [0, 0, 1, 1]], { duration: ms });
+      mouth("flat"); mouthAt("smile", ms, 0.78);
+      hold(ms * 0.8, function () { hop(P.all); });
+    },
+    cap: function () {
+      var ms = 3800, c = Q(".pr-cap");
+      fade(c, 0, 0.94, ms);
+      tl(c, [[0, "translateY(-40px) rotate(0deg)", "ease-in"], [0.12, "translateY(0px) rotate(0deg)"], [0.16, "translateY(-3px) rotate(0deg)"],
+        [0.2, "translateY(0px) rotate(0deg)"], [0.38, "translateY(0px) rotate(0deg)", "ease-out"], [0.56, "translateY(-120px) rotate(360deg)"],
+        [0.62, "translateY(-120px) rotate(400deg)", "ease-in"], [0.8, "translateY(0px) rotate(720deg)"], [0.84, "translateY(-4px) rotate(720deg)"],
+        [0.88, "translateY(0px) rotate(720deg)"], [1, "translateY(0px) rotate(720deg)"]], ms);
+      tl(P.all, [[0, "translate(0px,0px) rotate(0deg)"], [0.3, "translate(0px,0px) rotate(0deg)", "ease-out"], [0.38, "translate(0px,-12px) rotate(0deg)", "ease-in"],
+        [0.46, "translate(0px,0px) rotate(0deg)"], [1, "translate(0px,0px) rotate(0deg)"]], ms);
+      look([[0, 0, 1, 0], [0, -4, 1, 0.12], [0, 0, 1, 0.2], [0, 0, 1, 0.38], [0, -4, 1, 0.5], [0, -4, 1, 0.7], [0, 0, 1, 0.82], [0, 0, 1, 1]], { duration: ms });
+      browsUp(0.38, 0.85, ms);
+      mouthAt("o", ms, 0.38); mouthAt("smile", ms, 0.82);
+    }
+  };
+
+  var bButtons = [];
+  stateButtons("b-states", "b-caption", bStates, runB, { shared: bButtons, primary: false });
+  stateButtons("b-anims", "b-caption", bAnims, runB, { shared: bButtons, primary: false });
+  var moreHost = document.getElementById("b-more");
+  bGroups.forEach(function (g) {
+    var lab = document.createElement("span");
+    lab.className = "group-label"; lab.textContent = g.label;
+    var box = document.createElement("div");
+    box.className = "states"; box.id = g.id;
+    box.setAttribute("role", "group"); box.setAttribute("aria-label", g.label);
+    moreHost.appendChild(lab); moreHost.appendChild(box);
+    stateButtons(g.id, "b-caption", g.items, runB, { shared: bButtons, primary: false });
+  });
+
+  /* Acercar: el viewBox viaja del cuerpo entero al recuadro exacto de la marca. */
+  var zoomBtn = document.getElementById("b-zoom");
+  var rest = bSvg.querySelectorAll(".bd-rest");
+  var zoomed = false, zoomRaf = 0, zoomP = 0;
+  function applyZoom(p) {
+    zoomP = p;
+    var vb = BUDDY_VB.map(function (v, i) { return (v + (GLASSES_VB[i] - v) * p).toFixed(2); });
+    bSvg.setAttribute("viewBox", vb.join(" "));
+    var o = Math.max(0, 1 - p * 1.6).toFixed(3);
+    rest.forEach(function (el) { el.style.opacity = o; });
+  }
+  zoomBtn.addEventListener("click", function () {
+    zoomed = !zoomed;
+    zoomBtn.setAttribute("aria-pressed", zoomed ? "true" : "false");
+    zoomBtn.textContent = zoomed ? "Volver al personaje entero" : "Acercar a los anteojos";
+    if (zoomRaf) cancelAnimationFrame(zoomRaf);
+    var from = zoomP, to = zoomed ? 1 : 0;
+    var ms = 700 * Math.abs(to - from);
+    if (reduced() || !ms) { applyZoom(to); zoomRaf = 0; return; }
+    var start = performance.now();
+    (function frame(now) {
+      var t = Math.min(1, (now - start) / ms);
+      var e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      applyZoom(from + (to - from) * e);
+      zoomRaf = t < 1 ? requestAnimationFrame(frame) : 0;
+    })(start);
+  });
+
+  sizes("b-sizes", [16, 20, 24].map(function (s) {
+    return { s: s, label: s + " px · icono", make: iconGlasses };
+  }).concat([32, 48].map(function (s) {
+    return { s: s, label: s + " px", make: glasses };
+  })).concat(["|"], [96, 128].map(function (s) {
+    return { s: s, label: s + " px · personaje", make: buddy };
+  })));
+
+
+  /* ---------- Poses clave ---------- */
+  /* Una animación del personaje siempre se ve con el personaje entero. */
+  function unzoomNow() {
+    if (!zoomed && !zoomRaf) return;
+    if (zoomRaf) cancelAnimationFrame(zoomRaf);
+    zoomRaf = 0;
+    zoomed = false;
+    zoomBtn.setAttribute("aria-pressed", "false");
+    zoomBtn.textContent = "Acercar a los anteojos";
+    applyZoom(0);
+  }
+  /* Variante de icono de 24 px: sin relleno y con el trazo de los iconos. */
+  function iconGlasses() {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="var(--o-ink)" stroke-width="1.75" stroke-linecap="round">' +
+      '<path d="M3.225 10.3125 1.6875 7.6875"/><path d="M20.775 10.3125 22.3125 7.6875"/><path d="M10.6875 11.0625Q12 9.5625 13.3125 11.0625"/>' +
+      '<circle cx="7.125" cy="12" r="4.125"/><circle cx="16.875" cy="12" r="4.125"/>' +
+      '<circle cx="7.125" cy="12" r="1.575" fill="var(--o-ink)" stroke="none"/><circle cx="16.875" cy="12" r="1.575" fill="var(--o-ink)" stroke="none"/></svg>';
+  }
+  function resetStage() {
+    bRunning.forEach(function (a) { a.cancel(); }); bRunning = [];
+    bTimers.forEach(clearTimeout); bTimers = [];
+    mouth("smile");
+    part.hair.style.transformOrigin = "";
+    bSvg.classList.remove("still");
+  }
+  /* Detiene una animación en el instante relativo t sin reproducirla. */
+  function freezeAt(key, t) {
+    var T = DUR[key] * t;
+    FREEZE = { queue: [] };
+    START = 0;
+    try {
+      runB(key);
+      bSvg.classList.add("still");
+      var queue = FREEZE.queue.slice().sort(function (a, b) { return a[0] - b[0]; });
+      for (var i = 0; i < queue.length && queue[i][0] <= T; i++) {
+        START = queue[i][0];
+        queue[i][1]();
+      }
+      bRunning.forEach(function (a) { a.pause(); a.currentTime = Math.max(0, T - a._start); });
+    } finally {
+      START = 0;
+      FREEZE = null;
+    }
+  }
+  /* Con movimiento reducido: la pose principal, sin transición, durante lo que duraría la animación. */
+  function showStill(key) {
+    if (key === "blink" || key === "hop") return;
+    freezeAt(key, POSES[key][0]);
+    bTimers.push(setTimeout(resetStage, DUR[key]));
+  }
+  /* Copia el dibujo detenido en coordenadas absolutas: cada forma con su matriz, su opacidad efectiva y su pintura
+     resuelta, expresada con las variables de color para que la copia siga el tema. */
+  var GEOMETRY = ["d", "cx", "cy", "r", "rx", "ry", "x", "y", "width", "height", "pathLength", "vector-effect"];
+  var PAINT = ["fill", "fill-opacity", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-dasharray",
+    "font-family", "font-size", "font-weight", "text-anchor"];
+  var COLOR_TOKENS = ["--o-ink", "--o-surface", "--ev-surface", "--ev-line"];
+  function tokenColors() {
+    var probe = document.createElement("span"), map = {};
+    document.body.appendChild(probe);
+    COLOR_TOKENS.forEach(function (t) { probe.style.color = "var(" + t + ")"; map[getComputedStyle(probe).color] = "var(" + t + ")"; });
+    probe.remove();
+    return map;
+  }
+  function bake(svg) {
+    var inv = svg.getScreenCTM().inverse(), out = [], colors = tokenColors();
+    svg.querySelectorAll("path, circle, rect, ellipse, text").forEach(function (el) {
+      var o = 1;
+      for (var n = el; n && n !== svg; n = n.parentNode) o *= parseFloat(getComputedStyle(n).opacity);
+      if (o < 0.01) return;
+      var m = inv.multiply(el.getScreenCTM());
+      var attrs = GEOMETRY.filter(function (a) { return el.hasAttribute(a); }).map(function (a) {
+        return " " + a + '="' + el.getAttribute(a) + '"';
+      }).join("");
+      var cs = getComputedStyle(el);
+      var style = PAINT.map(function (p) {
+        var v = cs.getPropertyValue(p);
+        if (p === "fill" || p === "stroke") v = colors[v] || v;
+        return p + ":" + v.replace(/"/g, "'");
+      });
+      if (cs.strokeDasharray !== "none") style.push("stroke-dashoffset:" + cs.strokeDashoffset);
+      attrs += ' style="' + style.join(";") + '"';
+      if (o < 0.999) attrs += ' opacity="' + o.toFixed(3) + '"';
+      attrs += ' transform="matrix(' + [m.a, m.b, m.c, m.d, m.e, m.f].map(function (v) { return +v.toFixed(4); }).join(" ") + ')"';
+      var tag = el.tagName.toLowerCase();
+      out.push(tag === "text" ? "<text" + attrs + ">" + el.textContent + "</text>" : "<" + tag + attrs + "/>");
+    });
+    return out.join("");
+  }
+  var POSE_SHEET = [];
+  function addPose(host, label, markup) {
+    var fig = document.createElement("figure");
+    fig.innerHTML = '<svg viewBox="' + BUDDY_VB.join(" ") + '" role="img" aria-label="' + label + '">' + markup + "</svg><figcaption>" + label + "</figcaption>";
+    host.appendChild(fig);
+  }
+  var posesHost = document.getElementById("b-poses");
+  if (!ANIMATE) {
+    document.querySelectorAll(".states .btn").forEach(function (b) { b.disabled = true; });
+    document.getElementById("b-caption").textContent = "Este navegador no admite la Web Animations API: la muestra no puede reproducir las animaciones ni calcular las poses.";
+  }
+  resetStage();
+  var restMarkup = bake(bSvg);
+  POSE_SHEET.push({ group: "Reposo", label: "Reposo", markup: restMarkup });
+  addPose(posesHost, "Reposo", restMarkup);
+  if (ANIMATE) CATALOG.forEach(function (g) {
+    var h = document.createElement("h3");
+    h.textContent = g.group;
+    posesHost.appendChild(h);
+    g.items.forEach(function (it) {
+      it.poses.forEach(function (t, i) {
+        freezeAt(it.key, t);
+        var label = it.label + " · " + Math.round(t * 100) + " %" + (i === 0 ? " · principal" : "");
+        var markup = bake(bSvg);
+        POSE_SHEET.push({ group: g.group, label: label, markup: markup });
+        addPose(posesHost, label, markup);
+        resetStage();
+      });
+    });
+  });
+  /* Si el sistema pide movimiento reducido a mitad de una animación, se detiene todo al instante. */
+  if (reduce.addEventListener) reduce.addEventListener("change", function () {
+    if (!reduce.matches) return;
+    if (zoomRaf) { cancelAnimationFrame(zoomRaf); zoomRaf = 0; applyZoom(zoomed ? 1 : 0); }
+    if (!ANIMATE) return;
+    resetStage();
+    if (bSvg.getAnimations) bSvg.getAnimations({ subtree: true }).forEach(function (a) { a.finish(); });
+  });
+  /* Duración real de cada animación, para comprobar que coincide con el catálogo. */
+  function measuredDuration(key) {
+    freezeAt(key, 1);
+    var end = 0;
+    bRunning.forEach(function (a) { end = Math.max(end, a._start + a.effect.getComputedTiming().endTime); });
+    resetStage();
+    return end;
+  }
+  window.ohtiaSpecimen = { poses: POSE_SHEET, catalog: CATALOG, measuredDuration: measuredDuration };
+})();
+</script>
+</body>
+</html>

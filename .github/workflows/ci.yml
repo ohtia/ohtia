@@ -25,6 +25,35 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Record tested revision
+        run: |
+          python3 -I - <<'PYTHON'
+          import json
+          import os
+          import subprocess
+
+          with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as stream:
+              event = json.load(stream)
+          pull = event.get("pull_request") or {}
+          def revision(ref):
+              return subprocess.check_output(["git", "rev-parse", ref], text=True).strip()
+          receipt = {
+              "schema_version": 1,
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "event": os.environ["GITHUB_EVENT_NAME"],
+              "ref": os.environ["GITHUB_REF"],
+              "run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "pull_request": event.get("number") if pull else None,
+              "head_sha": pull.get("head", {}).get("sha"),
+              "base_sha": pull.get("base", {}).get("sha"),
+              "github_sha": os.environ["GITHUB_SHA"],
+              "checkout_sha": revision("HEAD"),
+              "tree_sha": revision("HEAD^{tree}"),
+          }
+          print("OHTIA_" + "CI_PROVENANCE=" + json.dumps(receipt, separators=(",", ":")))
+          PYTHON
+
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:

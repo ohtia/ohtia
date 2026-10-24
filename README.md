@@ -1,6 +1,6 @@
 # Ohtia
 
-An open-source desktop workspace for academic research. Keep your projects local, connect your own AI agents and search providers, and develop theses and scientific papers grounded in traceable evidence.
+Ohtia (pronounced “oh-tee-ah”) is an open-source desktop workspace for academic research. Keep your projects local, connect your own AI agents and search providers, and develop theses and scientific papers grounded in traceable evidence.
 
 ## Product direction
 
@@ -12,13 +12,19 @@ Ohtia is being designed to help undergraduate students, graduate students, and r
 - **Human judgment.** AI-generated proposals remain separate from knowledge the researcher has reviewed and confirmed. Uncertainty and incomplete coverage must stay visible.
 - **Connected inference.** The initial integrations are planned for OpenAI and Anthropic products, using supported access methods. Support for additional agents will be added through adapters in the near future.
 - **Configurable search.** Researchers choose which search providers to enable. Each adapter should support the public, API key, or sign-in access methods offered by its provider.
-- **Durable research.** Projects should preserve versions, provenance, and decisions, with backups and portable exports that remain useful beyond a particular model or subscription.
+- **Durable research.** Projects should preserve versions, provenance, and decisions, with recoverable schema upgrades and manuscript outputs that remain useful beyond a particular model or subscription.
 
 Local project storage does not mean all processing happens locally. Enabled AI and search connections may send requests or selected content to external services. Connections must make those transfers clear and respect the restrictions attached to research materials.
 
 ## Planned desktop platforms
 
 Windows, macOS, and Linux, distributed as graphical desktop applications using Electron. React and TypeScript are the intended interface stack. Tablet and phone applications are outside the initial scope.
+
+## Product and architecture
+
+The [product definition](docs/product-definition.md) sets Ohtia's purpose, trust and scope, and the [thesis workflow](docs/thesis-workflow.md) describes how it supports research and scientific papers. The [system architecture](docs/architecture.md) defines local execution and provider boundaries; the [frontend architecture](docs/frontend-architecture.md) defines the graphical desktop experience.
+
+The [design system](docs/design-system.md) defines visual identity, tokens and interaction patterns. [Workspace layout](docs/workspace-layout.md) defines panel geometry, accessible controls and layout preferences. The [Exploration–Action Framework](docs/exploration-action-framework.md) defines the workflow's notation. The [data model](docs/data-model.md) defines the source library, research projects and versioned manuscripts. The [academic draft format](docs/draft-format.md) defines the manuscript independently of its editor. Significant choices and their rationale live in the [architecture decision register](docs/adr/index.md).
 
 ## Contributing
 

@@ -71,6 +71,9 @@ def load_config(directory: Path) -> dict:
         "automated_security_fixes": True,
     }:
         raise PolicyError("Dependency security controls must remain enabled")
+    approval = result["actions-permissions"].get("fork_pr_contributor_approval")
+    if approval != {"approval_policy": "all_external_contributors"}:
+        raise PolicyError("Fork workflows must require approval for all external contributors")
     return result
 
 
@@ -265,6 +268,12 @@ def plan(github: GitHub, config: dict, stage: str) -> dict:
             f"{REPO}/actions/permissions/workflow",
             actions["workflow"],
             github.get(f"{REPO}/actions/permissions/workflow"),
+        )
+        add(
+            "actions.fork_pr_contributor_approval",
+            f"{REPO}/actions/permissions/fork-pr-contributor-approval",
+            actions["fork_pr_contributor_approval"],
+            github.get(f"{REPO}/actions/permissions/fork-pr-contributor-approval"),
         )
         for name in config["security"]:
             add(

@@ -1,0 +1,159 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1480" height="606" viewBox="0 0 1480 606" role="img" aria-labelledby="title description">
+  <title id="title">Thesis workflow: phases and output artifacts</title>
+  <desc id="description">Read the seven stages from left to right. Onboarding, Investigate and Describe are activity lines. Topic–Problem, Literature, Methodology and Interpret are exploration diamonds with their avenues named along the sloping sides. Every phase ends in an output circle A to G. Consecutive diamonds share that point, with no line between them. The Artifacts legend identifies each output.</desc>
+  <style>
+    text { font-family: "DejaVu Sans", sans-serif; fill: #1e293b; text-anchor: middle; }
+    .phase { font-size: 20px; font-weight: 700; }
+    .branch { font-size: 17px; font-weight: 500; }
+    .result { font-size: 14px; text-anchor: start; }
+    .legend-title { font-size: 20px; font-weight: 700; text-anchor: start; }
+    .legend-reference { font-size: 20px; font-weight: 700; text-anchor: start; }
+    .reference { font-size: 18px; font-weight: 500; fill: #ffffff; }
+    .flow { fill: none; stroke: #43546a; stroke-width: 2.3; }
+    .outline { fill: none; stroke: #315fae; stroke-width: 2.3; stroke-linejoin: round; }
+    .output { fill: #43546a; stroke: #ffffff; stroke-width: 2; }
+  </style>
+  <rect width="1480" height="606" fill="#ffffff" />
+  <text x="74" y="28" class="phase">1. Onboarding</text>
+  <text x="260" y="28" class="phase">2. Topic–Problem</text>
+  <text x="500" y="28" class="phase">3. Literature</text>
+  <text x="740" y="28" class="phase">4. Methodology</text>
+  <text x="930" y="28" class="phase">5. Investigate</text>
+  <text x="1070" y="28" class="phase">6. Describe</text>
+  <text x="1260" y="28" class="phase">7. Interpret</text>
+  <g id="topic-problem">
+    <path d="M 140 190 L 260 60 L 260 320 Z" fill="#eff5ff" />
+    <path d="M 260 60 L 380 190 L 260 320 Z" fill="#dce9ff" />
+    <path d="M 140 190 L 260 60 L 380 190 L 260 320 Z" class="outline" />
+    <g transform="translate(200 125) rotate(-47.29)">
+      <text y="-30" class="branch">Interests</text>
+      <text y="-10" class="branch">and motivation</text>
+    </g>
+    <g transform="translate(200 255) rotate(47.29)">
+      <text y="25" class="branch">Researchable</text>
+      <text y="45" class="branch">problems</text>
+    </g>
+  </g>
+  <g id="literature">
+    <path d="M 380 190 L 500 60 L 500 320 Z" fill="#eff5ff" />
+    <path d="M 500 60 L 620 190 L 500 320 Z" fill="#dce9ff" />
+    <path d="M 380 190 L 500 60 L 620 190 L 500 320 Z" class="outline" />
+    <g transform="translate(440 125) rotate(-47.29)">
+      <text y="-30" class="branch">Theoretical</text>
+      <text y="-10" class="branch">framework</text>
+    </g>
+    <g transform="translate(440 255) rotate(47.29)">
+      <text y="25" class="branch">Prior research</text>
+    </g>
+  </g>
+  <g id="methodology">
+    <path d="M 620 190 L 740 60 L 740 320 Z" fill="#eff5ff" />
+    <path d="M 740 60 L 860 190 L 740 320 Z" fill="#dce9ff" />
+    <path d="M 620 190 L 740 60 L 860 190 L 740 320 Z" class="outline" />
+    <g transform="translate(680 125) rotate(-47.29)">
+      <text y="-10" class="branch">Method fit</text>
+    </g>
+    <g transform="translate(680 255) rotate(47.29)">
+      <text y="25" class="branch">Feasibility and ethics</text>
+    </g>
+  </g>
+  <g id="interpretation">
+    <path d="M 1140 190 L 1260 60 L 1260 320 Z" fill="#eff5ff" />
+    <path d="M 1260 60 L 1380 190 L 1260 320 Z" fill="#dce9ff" />
+    <path d="M 1140 190 L 1260 60 L 1380 190 L 1260 320 Z" class="outline" />
+    <g transform="translate(1200 125) rotate(-47.29)">
+      <text y="-30" class="branch">Theory</text>
+      <text y="-10" class="branch">and explanations</text>
+    </g>
+    <g transform="translate(1200 255) rotate(47.29)">
+      <text y="25" class="branch">Contrast</text>
+      <text y="45" class="branch">and alternatives</text>
+    </g>
+  </g>
+  <path id="onboarding" d="M 10 190 H 140" class="flow" />
+  <path id="research" d="M 860 190 H 1000" class="flow" />
+  <path id="description-stage" d="M 1000 190 H 1140" class="flow" />
+  <g id="output-a">
+    <title>Output A: Onboarding</title>
+    <circle cx="140" cy="190" r="13" class="output" />
+    <text x="140" y="196" class="reference">A</text>
+  </g>
+  <g id="output-b">
+    <title>Output B: Topic–Problem</title>
+    <circle cx="380" cy="190" r="13" class="output" />
+    <text x="380" y="196" class="reference">B</text>
+  </g>
+  <g id="output-c">
+    <title>Output C: Literature</title>
+    <circle cx="620" cy="190" r="13" class="output" />
+    <text x="620" y="196" class="reference">C</text>
+  </g>
+  <g id="output-d">
+    <title>Output D: Methodology</title>
+    <circle cx="860" cy="190" r="13" class="output" />
+    <text x="860" y="196" class="reference">D</text>
+  </g>
+  <g id="output-e">
+    <title>Output E: Investigate</title>
+    <circle cx="1000" cy="190" r="13" class="output" />
+    <text x="1000" y="196" class="reference">E</text>
+  </g>
+  <g id="output-f">
+    <title>Output F: Describe</title>
+    <circle cx="1140" cy="190" r="13" class="output" />
+    <text x="1140" y="196" class="reference">F</text>
+  </g>
+  <g id="output-g">
+    <title>Output G: Interpret</title>
+    <circle cx="1380" cy="190" r="13" class="output" />
+    <text x="1380" y="196" class="reference">G</text>
+  </g>
+  <g id="legend" role="group" aria-labelledby="legend-title">
+    <rect x="16" y="366" width="1448" height="224" fill="#f5f7fa" stroke="#cbd5e1" stroke-width="1.3" />
+    <text id="legend-title" x="40" y="398" class="legend-title">Artifacts</text>
+    <g transform="translate(0 64)">
+      <g id="legend-a">
+        <text x="40" y="374" class="legend-reference">A</text>
+        <text x="40" y="404" class="result">• Thesis profile (initial)</text>
+      </g>
+      <g id="legend-b">
+        <text x="240" y="374" class="legend-reference">B</text>
+        <text x="240" y="404" class="result">• Thesis profile (refined)</text>
+      </g>
+      <g id="legend-c">
+        <text x="440" y="374" class="legend-reference">C</text>
+        <text x="440" y="404" class="result">• Search strategy</text>
+        <text x="453" y="424" class="result">and log</text>
+        <text x="440" y="444" class="result">• Examined sources</text>
+        <text x="440" y="464" class="result">• outline.md</text>
+        <text x="440" y="484" class="result">• Prior research synthesis</text>
+        <text x="440" y="504" class="result">• Theoretical framework</text>
+      </g>
+      <g id="legend-d">
+        <text x="640" y="374" class="legend-reference">D</text>
+        <text x="640" y="404" class="result">• Methodological design</text>
+        <text x="640" y="424" class="result">• Work schedule</text>
+      </g>
+      <g id="legend-e">
+        <text x="840" y="374" class="legend-reference">E</text>
+        <text x="840" y="404" class="result">• Documented data</text>
+        <text x="853" y="424" class="result">or corpus</text>
+        <text x="840" y="444" class="result">• Instruments used</text>
+        <text x="840" y="464" class="result">• Execution record</text>
+        <text x="853" y="484" class="result">and coverage</text>
+      </g>
+      <g id="legend-f">
+        <text x="1040" y="374" class="legend-reference">F</text>
+        <text x="1040" y="404" class="result">• Descriptions and</text>
+        <text x="1053" y="424" class="result">traceable results</text>
+      </g>
+      <g id="legend-g">
+        <text x="1240" y="374" class="legend-reference">G</text>
+        <text x="1240" y="404" class="result">• Researcher arguments</text>
+        <text x="1240" y="424" class="result">• Discussion matrix</text>
+        <text x="1240" y="444" class="result">• Answer, contribution</text>
+        <text x="1253" y="464" class="result">and limits</text>
+      </g>
+    </g>
+  </g>
+</svg>

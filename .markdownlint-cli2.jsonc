@@ -2,6 +2,9 @@
   "config": {
     "default": true,
     "line-length": false,
+    "table-column-style": {
+      "style": "aligned"
+    },
     "no-trailing-spaces": true,
     "no-duplicate-heading": {
       "siblings_only": true
