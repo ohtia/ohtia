@@ -258,6 +258,26 @@ def current_pr(github, number: int, head: str, base: str) -> dict:
     return pr
 
 
+def merge_ref_sha(github, number: int) -> str:
+    """Read the exact test-merge ref after refreshing PR mergeability."""
+    try:
+        reference = github.get(f"{REPO}/git/ref/pull/{number}/merge")
+    except Exception as error:
+        raise VerificationError(
+            "Cannot read the synthetic merge reference; retry the complete verification"
+        ) from error
+    require(
+        isinstance(reference, dict) and reference.get("ref") == f"refs/pull/{number}/merge",
+        "Synthetic merge reference does not match the pull request",
+    )
+    target = reference.get("object")
+    require(
+        isinstance(target, dict) and target.get("type") == "commit",
+        "Synthetic merge reference must identify a commit",
+    )
+    return sha(target.get("sha"))
+
+
 def verify(
     github,
     policy: dict,
@@ -287,7 +307,7 @@ def verify(
         "Unexpected repository",
     )
     pr = current_pr(github, number, head, base)
-    merge = sha(pr["merge_commit_sha"])
+    merge = merge_ref_sha(github, number)
     comparison = github.get(f"{REPO}/compare/{base}...{head}")
     require(
         comparison["behind_by"] == 0 and comparison["merge_base_commit"]["sha"] == base,
@@ -413,8 +433,10 @@ def verify(
         ),
         "Checkout provenance does not match the reviewed PR and run",
     )
-    final = current_pr(github, number, head, base)
-    require(final["merge_commit_sha"] == merge, "The merge candidate changed during verification")
+    current_pr(github, number, head, base)
+    require(
+        merge_ref_sha(github, number) == merge, "The merge candidate changed during verification"
+    )
     final_recent = object_list(
         github,
         f"{REPO}/actions/workflows/{workflow_id}/runs?event=pull_request&head_sha={head}",
