@@ -145,7 +145,15 @@ def download_log(
     """Bound the gh process, its output and lifetime; never print CLI diagnostics."""
     positive(job_id)
     require(os.name == "posix", "Log verification requires a POSIX development host")
-    command = ["gh", "api", "--hostname", "github.com", f"{REPO}/actions/jobs/{job_id}/logs"]
+    # Capture raw log bytes in this bounded pipe; never forward escape sequences to a terminal.
+    command = [
+        "gh",
+        "api",
+        "--hostname",
+        "github.com",
+        "--allow-escape-sequences",
+        f"{REPO}/actions/jobs/{job_id}/logs",
+    ]
     chunks = []
     size = 0
     with subprocess.Popen(
@@ -229,10 +237,14 @@ def current_pr(github, number: int, head: str, base: str) -> dict:
         pr["number"] == number
         and pr["state"] == "open"
         and pr["merged"] is False
-        and pr["draft"] is False
-        and pr["mergeable"] is True,
-        "PR must be open, ready and mergeable",
+        and pr["draft"] is False,
+        "PR must be open and ready",
     )
+    require(
+        pr["mergeable"] is not None,
+        "GitHub is computing mergeability; retry the complete verification after it finishes",
+    )
+    require(pr["mergeable"] is True, "PR must be mergeable")
     require(
         pr["base"]["repo"]["full_name"] == REPOSITORY and pr["base"]["ref"] == "main",
         "PR targets a different repository or branch",

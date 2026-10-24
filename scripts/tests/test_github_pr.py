@@ -485,6 +485,54 @@ class TrustAndTransportTests(unittest.TestCase):
             self.assertEqual(record["base_sha"], BASE)
 
     @unittest.skipUnless(os.name == "posix", "POSIX development-host transport")
+    def test_colored_job_logs_are_captured_without_cli_escape_refusal(self):
+        github = FakeGitHub()
+        original = subprocess.Popen
+        colored = "\x1b[32mSynthetic tool output\x1b[0m\n" + github.log(300)
+        cli = (
+            "import sys\n"
+            "if '--allow-escape-sequences' not in sys.argv: raise SystemExit(1)\n"
+            f"sys.stdout.buffer.write({colored.encode()!r})\n"
+        )
+        control = subprocess.run(
+            [sys.executable, "-c", cli, "api"], capture_output=True, check=False
+        )
+        self.assertNotEqual(control.returncode, 0)
+
+        def spawn(command, **options):
+            return original([sys.executable, "-c", cli, *command[1:]], **options)
+
+        with patch.object(pr_check.subprocess, "Popen", side_effect=spawn):
+            log = pr_check.download_log(300, root=ROOT)
+        self.assertEqual(log, colored)
+        self.assertEqual(
+            pr_check.receipt_from_log(log, policy_module.unique_object), github.receipt
+        )
+
+    def test_pending_mergeability_is_unavailable_evidence_with_retry_guidance(self):
+        github = FakeGitHub()
+        github.pr["mergeable"] = None
+        with self.assertRaisesRegex(pr_check.VerificationError, "retry the complete verification"):
+            pr_check.current_pr(github, 5, HEAD, BASE)
+        self.assertNotIn(f"{pr_check.REPO}/git/ref/heads/main", github.calls)
+
+    def test_ineligible_pr_with_null_mergeability_reports_state_without_retry(self):
+        for state, merged, draft in (
+            ("closed", True, False),
+            ("closed", False, False),
+            ("open", True, False),
+            ("open", False, True),
+        ):
+            with self.subTest(state=state, merged=merged, draft=draft):
+                github = FakeGitHub()
+                github.pr.update(state=state, merged=merged, draft=draft, mergeable=None)
+                with self.assertRaisesRegex(
+                    pr_check.VerificationError, "PR must be open and ready"
+                ):
+                    pr_check.current_pr(github, 5, HEAD, BASE)
+                self.assertNotIn(f"{pr_check.REPO}/git/ref/heads/main", github.calls)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX development-host transport")
     def test_log_download_bounds_and_failures_use_real_child_processes(self):
         original = subprocess.Popen
 

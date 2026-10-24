@@ -12,7 +12,7 @@ verified:
 
 ## Context
 
-An acquisition filename can contain spaces, accents, script-specific characters or OS-specific path syntax, and the researcher can later move or delete that original. Ohtia must retain the imported bytes independently of their acquisition path. Using original names also introduces collisions; using a random name alone does not identify duplicate bytes.
+An acquisition filename can contain spaces, accents, script-specific characters or OS-specific path syntax, and the researcher can later move or delete that original. Ohtia must retain the imported bytes independently of their acquisition path. Using original names also introduces collisions; using a random name alone does not identify duplicate bytes. Referencing only the acquisition path leaves availability dependent on external file management; embedding every binary in SQLite would combine transactional records and large-file storage. Managed immutable object files preserve the selected storage split and allow byte-level reuse without merging source identity.
 
 ## Decision
 

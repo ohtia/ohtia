@@ -12,7 +12,7 @@ verified:
 
 ## Context
 
-Mocks help reproduce error handling but do not prove database constraints, native input, OS confinement or installed-process behavior. The cloud predecessor's real-service principle remains useful while its PostgreSQL/S3/Clerk fixtures do not define this desktop.
+Mocks help reproduce error handling but do not prove database constraints, native input, OS confinement or installed-process behavior. An all-mock suite offers speed and deterministic failures but cannot demonstrate the actual SQLite driver, Electron IPC or OS boundaries. Real-boundary integration complements those focused doubles with evidence from the components that enforce the contract.
 
 ## Decision
 

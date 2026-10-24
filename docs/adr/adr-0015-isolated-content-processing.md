@@ -24,4 +24,4 @@ Demonstrate the OS-specific confinement mechanism before enabling the processor.
 
 ## Consequences
 
-Containment adds packaging and platform verification work while limiting a parser compromise. Test malformed and expansion-heavy files, forbidden reads/network, inherited environment, timeouts, oversized output and cleanup after crashes. Re-evaluate before granting a format additional capabilities. No AWS roles, PostgreSQL RLS or developer-installed Docker are prerequisites for the installed app.
+Containment adds packaging and platform verification work while limiting a parser compromise. Test malformed and expansion-heavy files, forbidden reads/network, inherited environment, timeouts, oversized output and cleanup after crashes. Re-evaluate before granting a format additional capabilities. The installed app uses verified native confinement mechanisms with graphical dependency diagnostics.

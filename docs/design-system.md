@@ -1072,6 +1072,8 @@ Component names are identifiers and remain in English.
 
 #### Voice
 
+The `voice.ohtia.*` tokens identify system-origin proposals. They do not define assistant roles or grant research authority or human authorship.
+
 - **`VoiceLabel`.** Identifies the speaker: Ohtia, with its glasses and `voice.ohtia.*`; the supervisor, with `user-round` and `voice.tutor.*`. Researcher text carries no label.
 - **`EvidenceHighlight`.** Marks an anchored source passage with `evidence.surface` and the `evidence.line` rule. A confirmed claim has a fill and solid rule; a proposed claim has only a 2 px dashed underline in `evidence.line`. The accessible name states source, page or location, and state.
 - **`TutorComment`.** Shows the original comment in quotation marks, the author according to the file or user declaration, and the submitted version. Ohtia's interpretation is nested below with its own `VoiceLabel`.
@@ -1212,9 +1214,9 @@ Groups `ObservationCard`, `TutorComment` and `ReviewRequired` by draft position.
 
 ## Renderable specimen
 
-[`assets/design-system-specimen.html`](assets/design-system-specimen.html) is a preserved web reference illustrating tokens and typography with fictitious content: extended reading with notes, italics, a block quotation, table and rendered formulas; literal LaTeX code and a code table containing Hangul; a Korean paragraph with Latin, numerals, Hanja and emphasis; a narrow column containing a URL; voices and states; and an editor passage in a review pass. It shows the light theme by default and dark when `#dark` is added to the address.
+[`assets/design-system-specimen.html`](assets/design-system-specimen.html) is a renderable reference illustrating tokens and typography with fictitious content: extended reading with notes, italics, a block quotation, table and rendered formulas; literal LaTeX code and a code table containing Hangul; a Korean paragraph with Latin, numerals, Hanja and emphasis; a narrow column containing a URL; voices and states; and an editor passage in a review pass. It shows the light theme by default and dark when `#dark` is added to the address.
 
-The specimen and its captures retain the original Spanish reference content. Their Offline/unsaved and safe-in-this-browser labels describe the predecessor specimen, not the desktop save-state contract: [SaveStatus](#saving) separates provider connectivity from local persistence and reports only established buffer safety. The specimen's ADR-0036 comment is a historical font-reference identifier, unrelated to this repository's ADR-0036 preference decision; [ADR-0025](adr/adr-0025-bundled-plex-and-noto-fonts.md) owns this desktop's font distribution. Those preserved labels/comments are not implementation requirements.
+The specimen and its captures retain the original Spanish reference content. Their Offline/unsaved and safe-in-this-browser labels describe the reference specimen, not the desktop save-state contract: [SaveStatus](#saving) separates provider connectivity from local persistence and reports only established buffer safety. [ADR-0025](adr/adr-0025-bundled-plex-and-noto-fonts.md) owns font distribution; the specimen demonstrates rendering rather than packaged distribution. Those preserved labels/comments are not implementation requirements.
 
 The specimen loads fonts from pinned IBM Plex and Noto CJK commits so its measured result can be reproduced without copying font files. It does not load the current Noto Sans U+207F fallback and cannot qualify that glyph's document/code rendering. Product distribution and required glyph coverage follow ADR-0025 and the current [font stacks](#families-and-stacks). Icons are Lucide SVGs from the cited commit, with their license notice, except Ohtia's glasses.
 
@@ -1272,37 +1274,37 @@ Each key pose is obtained by stopping its animation at the indicated instant, wi
 
 On October 20, 2026, using Playwright 1.64.0's Chromium 156.0.8078.4, the reference specimen loaded without console errors, with motion and reduced motion. All 31 buttons were pressed, and each animation's measured duration matched the catalog. When the system switched to reduced motion midway through an animation, the specimen stopped without pending animations. Without the Web Animations API, it disables its buttons and explains why. The dimensioned drawings and pose sheet use, in addition to `voice.ohtia.*` and Highlighting's `evidence.*`, interface neutrals for backgrounds, grids and labels.
 
-## Open questions
+## Integration requirements
 
 - **Language of quotations and manuscript text.** The first two [conformance blockers](#conformance-blockers) cover mixed-language passages and unknown or inaccurate revision-language metadata. Correct language identification is required both for accessibility and for applying each passage's script-specific typographic rules.
 - **Stack and integration.** Complete pages must integrate primitives and their checks on the stack in [ADR-0022](adr/adr-0022-react-vite-renderer.md). Editor and export integration must resolve the font for Hangul inside formulas, save-announcement frequency, focus rules for scrollable containers within the editor and Korean emphasis in exports.
 - **Signs outside the stacks.** U+207F is covered by Noto Sans 2.008, restricted to that glyph. Other academic signs appearing in quotations and sources are checked per file before incorporation; coverage is not inferred from a family's name.
-- **Information architecture.** Main navigation sections are defined with the product's EPICs.
-- **Brand.** The wordmark lies outside this document. Until defined, the interface shows the Ohtia name in `type.ui.subheading` beside glasses in `voice.ohtia.content`.
-- **Character illustration.** The final illustration is needed. This reference defines it but does not replace it, and the illustration preserves what [Final illustration](#final-illustration) specifies.
-- **Animation events.** Events must be decided for animations without one, as must Falling apart's frequency rule.
-- **Coincident events.** Behavior when several events coincide on opening the Navigator remains to be decided, such as Waking up or Peeking in with a pending Hair standing on end: order, priority and whether they are chained.
-- **Native review of the name.** A native speaker of every interface language must confirm that “Ohtia” has no other connotations.
-- **Native review.** Korean typography needs review by a native speaker.
+- **Information architecture.** Define the main navigation sections with their product feature contracts and verify complete keyboard journeys across them.
+- **Brand.** Show the Ohtia name in `type.ui.subheading` beside glasses in `voice.ohtia.content`. A wordmark has its own visual contract and must preserve this identity and legibility.
+- **Character illustration.** The delivered illustration must preserve every requirement in [Final illustration](#final-illustration); validate its geometry, layers, scaling and key poses against that contract.
+- **Animation events.** Each enabled animation declares its event binding; Falling apart also declares its frequency rule. Verify those bindings before connecting animations to product events.
+- **Coincident events.** Navigator integration declares event ordering, priority and chaining, including Waking up or Peeking in coinciding with a pending Hair standing on end. Verify these collisions rather than inventing an implicit animation queue.
+- **Native review of the name.** A native speaker of every interface language reviews the connotations of “Ohtia”; record the actual linguistic scope and result.
+- **Native review.** A native Korean speaker reviews typography in the implemented reading and interface journeys; automated coverage does not replace that review.
 
-[^wcag22]: W3C, [Web Content Accessibility Guidelines (WCAG) 2.2](https://www.w3.org/TR/WCAG22/), recommendation of December 12, 2024. Cited criteria, contrast formula and compatibility with WCAG 2.1 and 2.0.
+[^wcag22]: W3C, Web Content Accessibility Guidelines (WCAG) 2.2, recommendation of December 12, 2024. Cited criteria, contrast formula and compatibility with WCAG 2.1 and 2.0.
 
-[^wcag-conformance]: W3C, [Understanding Conformance](https://www.w3.org/WAI/WCAG22/Understanding/conformance). Recommendation about Level AAA and statements of partial conformance due to third-party content.
+[^wcag-conformance]: W3C, Understanding Conformance. Recommendation about Level AAA and statements of partial conformance due to third-party content.
 
-[^wcag-visual-presentation]: W3C, [Understanding Success Criterion 1.4.8: Visual Presentation](https://www.w3.org/WAI/WCAG22/Understanding/visual-presentation.html). Line length, alignment, line height and paragraph spacing.
+[^wcag-visual-presentation]: W3C, Understanding Success Criterion 1.4.8: Visual Presentation. Line length, alignment, line height and paragraph spacing.
 
-[^atag20]: W3C, [Authoring Tool Accessibility Guidelines (ATAG) 2.0](https://www.w3.org/TR/ATAG20/). Part B: support for producing accessible content.
+[^atag20]: W3C, Authoring Tool Accessibility Guidelines (ATAG) 2.0. Part B: support for producing accessible content.
 
-[^apg]: W3C, [ARIA Authoring Practices Guide](https://www.w3.org/WAI/ARIA/apg/). Base-component patterns.
+[^apg]: W3C, ARIA Authoring Practices Guide. Base-component patterns.
 
-[^css-color-4]: W3C, [CSS Color Module Level 4](https://www.w3.org/TR/css-color-4/#ok-lab). Definition of OKLab and OKLCH.
+[^css-color-4]: W3C, CSS Color Module Level 4. Definition of OKLab and OKLCH.
 
-[^plex]: IBM, [IBM Plex at commit `71f5589`](https://github.com/IBM/plex/tree/71f558992315a12ca1f06a2215d57962a1992162/packages). Examined static and variable files and licenses.
+[^plex]: IBM, IBM Plex at commit `71f5589`. Examined static and variable files and licenses.
 
-[^noto-cjk-sans]: [Noto CJK Sans at tag `Sans2.004`](https://github.com/notofonts/noto-cjk/tree/523d033d6cb47f4a80c58a35753646f5c3608a78/Sans). Examined Noto Sans KR and Noto Sans Mono CJK KR.
+[^noto-cjk-sans]: Noto CJK Sans at tag `Sans2.004`. Examined Noto Sans KR and Noto Sans Mono CJK KR.
 
-[^noto-cjk-serif]: [Noto CJK Serif at tag `Serif2.003`](https://github.com/notofonts/noto-cjk/tree/9b0f1436e455d902de067a2501422e5dc71ad16b/Serif). Examined Noto Serif KR.
+[^noto-cjk-serif]: Noto CJK Serif at tag `Serif2.003`. Examined Noto Serif KR.
 
-[^noto-sans-superscript]: [Noto Sans Regular 2.008](https://github.com/notofonts/noto-fonts/blob/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSans/NotoSans-Regular.ttf). Examined fallback file for U+207F.
+[^noto-sans-superscript]: Noto Sans Regular 2.008. Examined fallback file for U+207F.
 
-[^lucide]: Lucide, [repository at commit `1ef60af`](https://github.com/lucide-icons/lucide/tree/1ef60af944de207e0d5176905a0759ba12e6ee8d). ISC and MIT licenses and verified icon names.
+[^lucide]: Lucide, repository at commit `1ef60af`. ISC and MIT licenses and verified icon names.

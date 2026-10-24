@@ -31,7 +31,7 @@ sources:
 
 ## Context
 
-System-installed fonts vary and external font downloads introduce dependencies unrelated to reading private research. Code typography does not imply mathematical shaping or all-script coverage. Academic templates can impose different document fonts.
+System-installed fonts vary and external font downloads introduce dependencies unrelated to reading private research. Code typography does not imply mathematical shaping or all-script coverage. Academic templates can impose different document fonts. System-only fonts reduce distribution size but leave availability and metrics dependent on the host; a Noto-only family set offers broad script coverage but a different visual identity and still needs mathematical-role evaluation. Bundled Plex with checked Noto supplements keeps the chosen reading/interface identity and an explicit coverage boundary at the cost of package size and font maintenance.
 
 ## Decision
 
@@ -53,7 +53,7 @@ Exporter font selections retain their versions and distribution/embedding requir
 
 ## Consequences
 
-Bundling improves control at the cost of package bytes and font maintenance. Verify glyph coverage, Korean/mixed-script wrapping, missing glyphs, weights, math shaping, offline loading and DOCX/PDF substitution. Do not copy a prior prototype's font inspection or export result as new verification.
+Bundling improves control at the cost of package bytes and font maintenance. Verify glyph coverage, Korean/mixed-script wrapping, missing glyphs, weights, math shaping, offline loading and DOCX/PDF substitution. Each font inspection and export result must identify the actual tested files, artifact and environment.
 
 [^plex]: IBM publishes separate font families; the selected file, license and shaping tests determine the delivered behavior.
 

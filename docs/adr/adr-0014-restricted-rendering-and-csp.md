@@ -20,7 +20,7 @@ Render only validated document structures admitted by [Draft format](../draft-fo
 
 Resolve resources to authorized local bytes, with no implicit external downloads when opening a document. Restrict active SVG or render a safe derivative while retaining the original. Block dangerous URL schemes and external navigation/window creation unless a named trusted action permits them.
 
-Ship a restrictive CSP with scripts, styles, fonts, images, connections and frames limited to actual needs. Avoid arbitrary inline code and evaluation. Main/preload privileges remain governed by [ADR-0003](adr-0003-electron-desktop-boundaries.md); no Clerk/authentication resource exception is inherited. Renderer requests do not bypass the broker's source/connection controls.
+Ship a restrictive CSP with scripts, styles, fonts, images, connections and frames limited to actual needs. Avoid arbitrary inline code and evaluation. Main/preload privileges remain governed by [ADR-0003](adr-0003-electron-desktop-boundaries.md). Rendered resources grant no additional application authority. Renderer requests do not bypass the broker's source/connection controls.
 
 ## Consequences
 

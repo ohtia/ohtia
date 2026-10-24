@@ -10,6 +10,15 @@ sources:
   - id: sqlite-backup
     resource: "https://www.sqlite.org/backup.html"
     title: "SQLite — Backup API"
+  - id: sqlite-erasure
+    resource: "https://www.sqlite.org/pragma.html#pragma_secure_delete"
+    title: "SQLite — secure_delete limitations"
+  - id: sqlite-vacuum
+    resource: "https://www.sqlite.org/lang_vacuum.html"
+    title: "SQLite — VACUUM and deleted content"
+  - id: sqlite-wal
+    resource: "https://www.sqlite.org/wal.html#avoiding_excessively_large_wal_files"
+    title: "SQLite — WAL file reuse and cleanup"
 ---
 
 # ADR-0010 — Pre-migration database recovery
@@ -59,8 +68,26 @@ Activate the validated recovery database only with all operational connections c
 
 This is an upgrade recovery path, not a destination-picker or general backup-management surface. [Architecture](../architecture.md#schema-migration-recovery-and-manuscript-delivery) owns its runtime placement.
 
+### Retention, erasure and disclosure
+
+Before starting a schema upgrade, explain that its checkpoint contains a complete local database snapshot and pins its referenced objects. The copy has the same sensitivity and use restrictions as the working store. Disclose failed-state, journal and partial copies retained during recovery as well. Once recovery establishes a verified usable state, remove its failed-state/journal and partial copies as part of recovery cleanup; report and track any removal failure rather than silently retaining them indefinitely. Keeping any copy is not evidence that deleted research content has been erased.
+
+Before accepting a destructive erasure that promises to remove private content or retained originals, the broker must remove all managed pre-migration checkpoints, partial checkpoint directories and retained failed-database/journal copies. Purge complete copies rather than editing their protected snapshot bytes or manifests. Release object-retention pins only after removal is verified. Hold the same exclusive admission boundary from that purge through the erasure transaction, subsequent database sanitization and verified cleanup, so another migration cannot copy pre-erasure or residual deleted bytes between those operations. A purge failure or uncertain outcome blocks acceptance and completion of the erasure and identifies the retained-copy problem; never announce erasure based only on the working database change.
+
+SQL deletion alone does not establish erasure: free pages can retain deleted content, and a later page-copy checkpoint can reproduce it.[^sqlite-backup][^sqlite-vacuum] Before enabling destructive erasure, define and qualify a storage sanitization procedure for the packaged binding, schema and extensions. It must remove the requested content from the live database, its free/unused pages, applicable virtual-table storage and Ohtia-managed WAL, journal and temporary database files before reporting completion. `secure_delete` alone is not proof for virtual-table shadow storage, and ordinary WAL checkpointing can leave a reusable WAL file.[^sqlite-erasure][^sqlite-wal] Database rebuilding or scrubbing and journal cleanup must use supported SQLite operations after the erasure transaction ends; never unlink a live journal to simulate success. Keep migration/snapshot admission closed through this procedure and across interruption until its outcome is resolved. A sanitization failure or uncertain outcome cannot produce an erasure-complete result. Verify that subsequent migration snapshots also exclude the erased content.
+
+An unresolved upgrade keeps its normal-access gate closed. Recovery must establish a consistent source/target state before normal destructive commands are admitted. A checkpoint predating accepted erasure cannot later be restored. The erasure confirmation explains that removing recovery copies also removes their rollback path. Removing a project association or soft-deleting a row is not an erasure guarantee; the feature's contract must cover the requested records, history and original bytes before it can claim completion.
+
+This rule covers Ohtia-managed retained copies. It does not promise forensic erasure of storage media or deletion of independent OS snapshots, externally shared files or provider copies. Test erasure after an upgrade, stale checkpoints, failed-state/partial copies, blocked deletion, interruption during purge or sanitization, concurrent migration admission and attempted restoration after erasure. Use synthetic identifiable deleted content to inspect the live database, free pages, managed journals/temporary files and a later migration snapshot; cover virtual-table storage when enabled. Storage-media remnants after managed file removal remain outside the forensic-erasure guarantee. Retained snapshots remain available between upgrades only while these erasure and restriction rules permit them.
+
 ## Consequences
 
 Schema upgrades preserve a bounded recoverable database state at the cost of a database copy and object-retention pins. The checkpoint stays in the application data directory and is not a disaster-recovery promise for device loss. Test interrupted checkpoint/migration/publication, disk-full, concurrent startup/writes, a corrupt snapshot, foreign-key violations, incompatible schema, changed migration artifacts and restoration without unintended provider work. Cover failure before commit, failure after commit and an uncertain commit outcome; verify that restoration keeps the schema revision, Kysely history and artifact metadata consistent with the restored research data. The library bytes are protected against migration/cleanup effects, not copied into a general archive.
 
 [^sqlite-backup]: SQLite's backup API produces a database snapshot; Ohtia defines exclusive migration access, validation and retention.
+
+[^sqlite-erasure]: SQLite documents limitations of secure deletion for virtual-table shadow storage.
+
+[^sqlite-vacuum]: SQLite documents residual deleted content and database rebuilding.
+
+[^sqlite-wal]: SQLite documents WAL reuse without ordinary truncation and cleanup after the last connection closes.

@@ -6,17 +6,13 @@ generated:
   by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
-sources:
-  - id: workspace-reference
-    resource: https://github.com/ohtia-edu/ohtia/blob/5b3264e23500b4457806f7436a58cc7e3832c8e5/docs/epics/EPIC-003-identidad-proyectos-e-interfaz-de-producto/epic.md
-    title: Ohtia web — Workspace interaction reference at commit 5b3264e
 ---
 
 # Workspace layout
 
 ## Scope and ownership
 
-This document owns workspace geometry, panel interaction, the non-sensitive layout preference record and their acceptance scenarios. [System architecture](architecture.md#application-preferences-and-bootstrap) owns shared preference storage and bootstrap. It adopts the reference workspace's visual and interaction rules within Ohtia's desktop boundaries.[^workspace-reference] All required behavior is defined here or in the linked local specifications; the reference is supporting provenance.
+This document owns workspace geometry, panel interaction, the non-sensitive layout preference record and their acceptance scenarios. [System architecture](architecture.md#application-preferences-and-bootstrap) owns shared preference storage and bootstrap. All required behavior is defined here or in the linked local specifications.
 
 [Design system](design-system.md) owns visual tokens, typography, icons and component appearance. [Frontend architecture](frontend-architecture.md) owns the application port, renderer state, manuscript editing and connection/task presentation. [Product definition](product-definition.md) owns research meaning and authorship. Layout actions preserve research state under PRIN-002, PRIN-004 and PRIN-013; they do not authorize domain mutations or provider work. [ADR-0011](adr/adr-0011-bounded-durable-local-tasks.md) owns execution and cessation, independently of whether a panel is visible.
 
@@ -82,7 +78,7 @@ Capture only the initiating pointer. Pointerup confirms the gesture; Esc, `point
 
 ## Visibility, focus mode and narrow layout
 
-Panel controls are always available in the context bar. They have stable `aria-controls`, `aria-expanded` matching visibility, localized tooltips and these names/icons:
+PascalCase icon names below identify `lucide-react` exports; the design system uses Lucide's official kebab-case icon names. Both name the same assets. Panel controls are always available in the context bar. They have stable `aria-controls`, `aria-expanded` matching visibility, localized tooltips and these names/icons:
 
 - `PanelLeft`: Fold project contents when open; Open project contents when hidden or on its rail.
 - `AppWindow`: Hide documents/Open documents.
@@ -102,7 +98,7 @@ The reading order is skip link, context bar, explorer, documents and chat; DOM a
 
 ## Desktop preference boundary
 
-Persist only the exact layout record `{version: 1, visible: {explorer, documents, chat}, preferredWidths: {explorer, documents, chat}}` as `workspace_layout` through the [application preference boundary](architecture.md#application-preferences-and-bootstrap). It is application-wide across research projects. The trusted broker owns the persisted record; do not use browser `localStorage` or copy the web reference's browser/origin key. No content tables, selected project IDs or provider credentials belong in this record.
+Persist only the exact layout record `{version: 1, visible: {explorer, documents, chat}, preferredWidths: {explorer, documents, chat}}` as `workspace_layout` through the [application preference boundary](architecture.md#application-preferences-and-bootstrap). It is application-wide across research projects. The trusted broker owns the persisted record; the renderer has no independent browser-storage authority for this preference. No content tables, selected project IDs or provider credentials belong in this record.
 
 Before use, validate exact keys, version 1, three booleans with at least one true, and finite widths between each panel's minimum and 100000 CSS px. Reject extra fields, malformed data, unknown versions and invalid types. Missing or unusable preferences select defaults without blocking the workspace. An unavailable or failed write preserves the current in-memory layout and announces once per application session that the layout could not be remembered; it does not report success. Failure to load the layout preference alone does not make research storage unavailable.
 
@@ -146,5 +142,3 @@ Verify the delivered controls with synthetic data under the packaged CSP, in bot
 - **V18 — Synchronization/reading:** receive partial output while reading above the end and artifact/title events while chat is hidden and a manuscript has pending edits. No event reveals chat, replaces the edit, applies a stale title or mixes project scope. Returning restores input/anchor; live and confirmed views preserve semantic content and provenance.
 
 Record results by scenario, artifact, viewport, theme and locale, including failed and unexecuted checks. Pure layout tests do not establish real provider cessation, native IME, persistent research correctness or complete accessibility conformance.
-
-[^workspace-reference]: The pinned reference defines web workspace geometry, controls and scenarios. The complete desktop requirements above use the local application preference boundary, fixed Navigator and canonical task/research contracts; browser authentication and storage mechanisms are not adopted.

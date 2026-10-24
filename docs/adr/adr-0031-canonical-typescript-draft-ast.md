@@ -12,7 +12,7 @@ verified:
 
 ## Context
 
-A generic Markdown library's default extensions do not implement Ohtia's identity and fidelity rules. Maintaining independent Python and browser parsers would duplicate interpretation. In this desktop the trusted data service is TypeScript, so the web predecessor's reason for a Python-only canonical parser no longer applies.
+A generic Markdown library's default extensions do not implement Ohtia's identity and fidelity rules. Maintaining independent Python and browser parsers would duplicate interpretation. A single parser in the TypeScript data service provides one authority for interpretation and serialization.
 
 ## Decision
 
@@ -26,4 +26,4 @@ Verify parse/serialize/parse semantic identity, deterministic/idempotent seriali
 
 ## Consequences
 
-One implementation keeps save, anchoring and delivery aligned but Ohtia must maintain its grammar, AST schema and converters. Previous Python parser timings/corpus passes do not validate a new TypeScript implementation. Measure long manuscripts and record unsupported constructs without discarding them. Reconsider if a maintained compatible full-profile implementation becomes available.
+One implementation keeps save, anchoring and delivery aligned but Ohtia must maintain its grammar, AST schema and converters. Validate the TypeScript implementation against the profile corpus and runtime bounds. Measure long manuscripts and record unsupported constructs without discarding them. Reconsider if a maintained compatible full-profile implementation becomes available.

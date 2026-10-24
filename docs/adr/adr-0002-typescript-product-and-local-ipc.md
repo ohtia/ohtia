@@ -22,7 +22,7 @@ sources:
 
 ## Context
 
-Electron already provides a Node environment for privileged local components.[^electron] The desktop has no hosted API or account service, and its application data service can validate storage and manuscript contracts in the same language as other product components. Retaining a Python backend and HTTP transport solely because the web predecessor used them would add another shipped runtime and interface without an identified requirement.
+Electron already provides a Node environment for privileged local components.[^electron] The desktop has no hosted API or account service, and its application data service can validate storage and manuscript contracts in the same language as other product components. A separate Python service and HTTP transport would add another shipped runtime and interface without an identified requirement.
 
 ## Decision
 

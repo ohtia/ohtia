@@ -12,11 +12,11 @@ verified:
 
 ## Context
 
-Project, job and attempt IDs identify work but are not secret proof of authority. A compromised process that can declare another attempt must not gain that attempt's inputs or effects. SQLite does not provide the old PostgreSQL role/RLS/function mechanism, so the local broker must enforce the boundary.
+Project, task and attempt IDs identify work but are not secret proof of authority. A compromised process that can declare another attempt must not gain that attempt's inputs or effects. The trusted local broker enforces the boundary for every process effect.
 
 ## Decision
 
-When claiming a task, generate a fresh 256-bit cryptographically random secret bound to the immutable job/project/attempt identity. Give it only through the attempt's private channel, not logs, command arguments or inherited environment. Retain only the scoped verification digest in trusted task state; identifiers or a model-supplied scope never substitute for the capability.
+When claiming a task, generate a fresh 256-bit cryptographically random secret bound to the immutable task/project/attempt identity. Give it only through the attempt's private channel, not logs, command arguments or inherited environment. Retain only the scoped verification digest in trusted task state; identifiers or a model-supplied scope never substitute for the capability.
 
 Every tool/read/proposal/result command resolves identity from trusted attempt state and validates the secret, current generation, lease/deadline where applicable, cancellation and expected input versions. Research effects require the task/attempt execution states allowed by [ADR-0011](adr-0011-bounded-durable-local-tasks.md); cancellation or uncertainty revokes that authority. Workers have no raw SQLite path or general SQL grant. A new claim replaces execution authority; an old process cannot finalize, audit or write a newer attempt. Constant-time secret validation and digest handling are implementation requirements, not an authorization bypass through error paths.
 

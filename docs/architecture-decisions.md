@@ -20,7 +20,7 @@ An ADR records one significant technical choice, why it fits Ohtia and what it c
 
 Use a short context, decision and consequences structure informed by Michael Nygard's original guidance.[^nygard] Before adding a record, identify a concrete choice, plausible alternatives, the affected boundary or quality guarantee, and the reason the choice matters. A component name, list of aspirations or implementation task does not by itself justify a record.
 
-Keep schemas, full contracts and operating procedures in their canonical specifications. The ADR links them and explains the choice; it does not maintain a second version of their detail. Closely related mechanisms can share a record only when they form one justified choice with common consequences.
+Keep each schema, contract and operating procedure in one canonical location. An ADR may own a complete integrated contract when the choice and its safety invariants need to be reviewed together; identify that responsibility explicitly and have referring specifications link to it. ADR-0007 owns the repository/migration boundary and ADR-0011 owns task/attempt execution: preserve their full contracts rather than summarizing away agreed guarantees. Extract a separate specification only through a reviewed change that preserves every normative requirement and updates its references. Closely related mechanisms can share a record when they form one justified choice with common consequences.
 
 ## Structure
 
@@ -34,7 +34,7 @@ A record is reviewable technical content, not proof of implemented behavior or a
 
 ## Organization and evolution
 
-The [register](adr/index.md) lives inside the single `docs/` bundle. Use four-digit IDs from `ADR-0000`, increment without gaps reserved for nonexistent documents, and use descriptive English slugs. This guide has no ADR number. Arrange the initial register from general technical foundations toward specialized research behavior, beginning with the security verification framework as ADR-0000. Once integrated, identifiers remain stable and new records append to the sequence; do not renumber published decisions to maintain thematic order. The new register does not inherit the old web project's IDs or imply compatibility with its choices.
+The [register](adr/index.md) lives inside the single `docs/` bundle. Use four-digit IDs from `ADR-0000`, increment without gaps reserved for nonexistent documents, and use descriptive English slugs. This guide has no ADR number. Arrange the initial register from general technical foundations toward specialized research behavior, beginning with the security verification framework as ADR-0000. Once integrated, identifiers remain stable and new records append to the sequence; do not renumber published decisions to maintain thematic order. Identifiers refer to decisions defined in this repository and do not imply compatibility with unrelated architecture choices.
 
 Review changes together with their affected product/architecture contracts. Security and data-authority boundaries precede enabling mechanisms that depend on them. The owner's review of these local documents happens before a commit; integration follows the repository PR rules. Local drafting does not itself approve an architectural choice.
 

@@ -12,7 +12,7 @@ verified:
 
 ## Context
 
-Ingestion-time permission and prompt instructions cannot control a later tool result, fallback or retry. Conversely, keeping database locks across network calls damages recovery and cannot establish the instant bytes leave. Agent runtimes can own internal requests that Ohtia cannot individually observe.
+Ingestion-time permission and prompt instructions cannot control a later tool result, fallback or retry. Conversely, keeping database locks across network calls damages recovery and cannot establish the instant bytes leave. Agent runtimes can own internal requests that Ohtia cannot individually observe. Alternatives are authorization only at ingestion, cached startup permission, or a current admission check for each application-controlled dispatch. The first two retain stale authority after restrictions change; per-dispatch admission supplies an explicit consistency point while acknowledging the limits of already transmitted bytes and runtime-owned calls.
 
 ## Decision
 
@@ -22,7 +22,7 @@ Complete capacity waits before admission. Commit authorization and the manifest 
 
 For directly controlled HTTP adapters, use short-lived single-dispatch permits and guards before invoking the SDK and before releasing the body through a supported transport hook. The initial two-second validity is a versioned parameter requiring measured validation, not a response deadline or physical transmission guarantee. Use verified suspend-aware timing or invalidate on sleep/resume; do not silently use a clock that loses suspension time. Observed expiry/revocation blocks dispatch. No permit extension, replay, hidden retry or silent redirect is allowed. Proven zero dispatch permits a complete readmission within the operation's single retry budget; uncertain dispatch does not.
 
-An agent adapter admits a bounded authorized agent action and declares the runtime controls it can prove. It must not claim per-HTTP guards for internally owned provider calls it cannot observe. Unsupported containment leaves the operation unavailable. External data treatment follows [product](../architecture.md#transfers-credentials-and-privacy); account access and consent are not inferred from a provider name.
+An agent adapter admits a bounded authorized agent action and declares the runtime controls it can prove. It must not claim per-HTTP guards for internally owned provider calls it cannot observe. Unsupported containment leaves the operation unavailable. External data treatment follows the [architecture](../architecture.md#transfers-credentials-and-privacy); account access and consent are not inferred from a provider name.
 
 ## Consequences
 

@@ -19,7 +19,7 @@ sources:
 
 ## Context
 
-The academic editor and workspace need DOM editing, semantic structure and shared frontend tooling. A hosted SPA deployment, authentication resources and native/mobile wrappers are separate concerns. Raw bundler success does not establish Electron runtime isolation.
+The academic editor and workspace need DOM editing, semantic structure and shared frontend tooling. A hosted SPA deployment, authentication resources and native/mobile wrappers are separate concerns. Raw bundler success does not establish Electron runtime isolation. Vue and Svelte are viable component alternatives; Webpack or a custom build pipeline are bundling alternatives. React with Vite keeps the selected TypeScript/DOM editing stack under one familiar component/build boundary, while preserving explicit ports for domain state and privileged services. This is an integration choice, not a measured claim of superior performance.
 
 ## Decision
 
@@ -27,11 +27,11 @@ Use matching React and React DOM `19.3.*` packages for the renderer, with Vite `
 
 Package the built renderer assets locally with the actual CSP and narrow preload. Do not ship a dev server, development catalog, test fixture entry points or a hosted-login flow. Treat main, preload and utility processes as separate runtime/build targets with their own permitted imports. Vite is not the installer/signing/update mechanism.
 
-Keep styles/assets compatible with the packaged CSP; no Clerk-specific resource exception or external font request is inherited. The editor lives behind its own module boundary rather than exposing ProseMirror internals across React features. Expo/react-native-web/mobile delivery are outside this desktop decision.
+Keep styles/assets compatible with the packaged CSP. Load application styles and fonts from packaged resources under the declared policy. The editor lives behind its own module boundary rather than exposing ProseMirror internals across React features. Mobile delivery is outside this desktop decision.
 
 ## Consequences
 
-The web editing ecosystem can be used without a hosted backend, but OS/native lifecycle verification still applies. Test actual asset URLs, CSP, source maps and accidental privileged imports in release-equivalent output. Verify Vite/React/TypeScript/Electron compatibility with exact locked patches when creating packages; no web prototype proves packaging.
+The web editing ecosystem can be used without a hosted backend, but OS/native lifecycle verification still applies. Test actual asset URLs, CSP, source maps and accidental privileged imports in release-equivalent output. Verify Vite/React/TypeScript/Electron compatibility with exact locked patches when creating packages; packaged compatibility requires its own evidence.
 
 [^vite]: Vite separates its development server and production build; Ohtia packages only production renderer assets.
 

@@ -7,6 +7,9 @@ generated:
 verified:
   by: human:AdrianMastronardi
 sources:
+  - id: github-pull-request-api
+    resource: https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request
+    title: GitHub — Pull request mergeability
   - id: github-actions-permissions
     resource: https://docs.github.com/en/rest/actions/permissions
     title: GitHub Actions permissions API
@@ -104,6 +107,8 @@ The verifier checks the open PR's current head/base, an up-to-date candidate tre
 
 CI records `OHTIA_CI_PROVENANCE` before installing/running repository-controlled tooling. The record contains the actual checked-out commit/tree and GitHub-provided run/attempt/event/ref identities. The verifier reads bounded job logs and requires exactly one valid matching receipt, together with exact workflow bytes and successful required steps; the receipt alone cannot establish trust. Missing logs, extra jobs, undeclared steps, skipped mandatory work or a missing/mismatched receipt fail verification. Explicit optional cleanup steps may be absent/skipped; their executed failures still fail verification.
 
+GitHub can return `mergeable: null` while computing a synthetic merge; the verifier reports that evidence as pending, and the maintainer retries the complete verification after GitHub finishes.[^github-pull-request-api] It never interprets unknown mergeability as success. Logs that are not valid UTF-8 remain unavailable evidence rather than being decoded by guesswork. The verifier requires a GitHub CLI supporting `api --allow-escape-sequences`: it captures raw log bytes in the bounded pipe for receipt parsing and never prints their escape sequences to a terminal.
+
 The verifier uses POSIX process/pipe controls, an eight-MiB log-read bound and a 60-second download deadline on the development host. GitHub API calls retain the policy transport's timeout. No candidate script, artifact or log content is executed. The report records both the PR head and the synthetic merge SHA actually tested, which are different identities. It rereads candidate/run state before reporting success; the maintainer rechecks immediately before merging, because a previous report cannot authorize a later head/base.
 
 Workflow and inventory changes are reviewed together. The selected trusted verifier revision must contain the exact workflow and inventory approved for the candidate; a mismatch fails rather than silently adopting the PR's version. Provenance reports remain supporting review evidence, not an additional GitHub-enforced merge rule.
@@ -130,6 +135,8 @@ Review the entire update, retain full SHA references for Actions, and run the re
 8. Close the scaffolding issue only after integration and all acceptance criteria are verified. Keep failed or unavailable checks explicit and leave the issue open while obligations remain.
 
 [^github-actions-permissions]: GitHub Actions permissions API.
+
+[^github-pull-request-api]: GitHub documents unknown mergeability while a background computation runs and recommends requesting the result again afterward.
 
 [^github-repository-rules]: GitHub repository rules API.
 

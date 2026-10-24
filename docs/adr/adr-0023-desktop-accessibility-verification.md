@@ -19,7 +19,7 @@ sources:
 
 ## Context
 
-Accessible web semantics are useful inside Electron but cannot certify native dialogs, input methods or assistive behavior by themselves. The previous web project's testing exclusions arose from its delivery scope and do not establish desktop OS evidence. Alternatives are an automation-only web checklist, full AAA conformance or a scoped AA target with selected additional criteria and native verification. Automation-only evidence misses assistive/input and native-dialog behavior; a blanket AAA requirement would exceed what every research-content surface can support. The scoped target supplies concrete complete-process obligations while retaining explicit evidence for the actual packaged platform and selected higher-level criteria.
+Accessible web semantics are useful inside Electron but cannot certify native dialogs, input methods or assistive behavior by themselves. Alternatives are an automation-only web checklist, full AAA conformance or a scoped AA target with selected additional criteria and native verification. Automation-only evidence misses assistive/input and native-dialog behavior; a blanket AAA requirement would exceed what every research-content surface can support. The scoped target supplies concrete complete-process obligations while retaining explicit evidence for the actual packaged platform and selected higher-level criteria.
 
 ## Decision
 
@@ -27,7 +27,7 @@ Target WCAG `2.2` AA on complete interface surfaces/processes and retain the ele
 
 Verify keyboard-only journeys, focus/restoration, names/roles/states, accessibility tree, contrast, zoom/reflow/text spacing, forced colors, reduced motion, themes, pseudolocalization and Korean. Automated checks and tree inspection do not establish screen-reader usability. Delivery evidence identifies the actual OS, artifact, tools and checked criteria; unknown or untested combinations do not become a green result.
 
-The packaged release matrix governs native/assistive verification, separately from a Linux developer environment or portable browser tests. Specify the necessary manual journeys for the capability before claiming tested support; record actual Orca/NVDA/VoiceOver runs only when executed. No new platform or reader result is inherited from the web project.
+The packaged release matrix governs native/assistive verification, separately from a Linux developer environment or portable browser tests. Specify the necessary manual journeys for the capability before claiming tested support; record actual Orca/NVDA/VoiceOver runs only when executed. Each platform and assistive-technology result identifies its tested artifact and journeys.
 
 DOCX structure and PDF/UA have their own output checks. Do not claim complete WCAG, ATAG or PDF/UA conformance from a library choice, an axe pass or a tagged PDF header. Third-party material limitations remain attributed to the actual content/control boundary.
 

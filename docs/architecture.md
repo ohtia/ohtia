@@ -225,7 +225,7 @@ The checkpoint contains `ohtia.db3` and `manifest.json`. Original files remain i
 
 An interrupted or failed migration blocks normal database access until retry or verified pre-migration recovery is resolved. Close connections before replacing database state, verify the restored schema against a compatible app path, and never restart pending provider work automatically. A release that does not migrate the schema does not create this checkpoint merely because its version changed.
 
-Deleting research work follows its explicit retention rules and protects material still referenced by research history or an unresolved/retained migration checkpoint. Removing local data does not retract prior deliveries or provider transmissions.
+Deleting research work follows its explicit retention rules and protects material still referenced by research history or an unresolved/retained migration checkpoint. Before admitting destructive erasure, apply the [checkpoint purge boundary](adr/adr-0010-pre-migration-recovery.md#retention-erasure-and-disclosure) so retained recovery or failed-state copies cannot silently retain the erased content. Removing local data does not retract prior deliveries or provider transmissions.
 
 Manuscript DOCX/PDF and generated Markdown/BibLaTeX outputs retain their own fidelity contracts. The complete knowledge-interchange serialization is a later contract preserving stable identities, content versions, relationships and provenance. It does not define the internal migration checkpoint. Repository documentation follows the existing OKF conventions in [AGENTS.md](../AGENTS.md#documentation-and-open-knowledge-format).
 
@@ -235,7 +235,7 @@ Desktop application foundation must demonstrate process/IPC isolation, data-serv
 
 Before release, select the supported OS versions/CPU architectures, packaging/signing/update tooling and platform-specific confinement mechanisms. Verify the selected SQLite binding's native artifact and embedded engine in each packaged target. Before enabling an agent, demonstrate effective policy, permitted account access, scoped tool execution, cancellation and unknown/partial-result behavior. Before editor/export delivery, validate the selected components against the [format corpus](draft-format.md#fidelity-and-validation), packaging and dependency-license obligations.
 
-[Shared quality and coverage gates](adr/adr-0016-shared-quality-and-coverage-gates.md), [real-boundary integration](adr/adr-0017-real-boundary-integration-tests.md) and [versioned artifacts](adr/adr-0021-versioned-desktop-artifacts.md) define verification and release responsibilities. These are bounded delivery prerequisites, not evidence that a prior web prototype validates the desktop implementation. The local definitions and ADRs remain reviewable together before their integration.
+[Shared quality and coverage gates](adr/adr-0016-shared-quality-and-coverage-gates.md), [real-boundary integration](adr/adr-0017-real-boundary-integration-tests.md) and [versioned artifacts](adr/adr-0021-versioned-desktop-artifacts.md) define verification and release responsibilities. These are bounded delivery prerequisites whose evidence identifies the actual desktop implementation. The local definitions and ADRs remain reviewable together before their integration.
 
 [^electron-security]: Electron's documented isolation, sandbox, navigation and IPC guidance informs the desktop trust boundary.
 

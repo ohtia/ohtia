@@ -107,7 +107,7 @@ Changing UI locale does not change source language, rewrite existing model outpu
 
 Use WCAG 2.2 AA as the interface's accessibility target, with the selected AAA criteria and evidence scope defined in [ADR-0023](adr/adr-0023-desktop-accessibility-verification.md).[^wcag] Verify complete keyboard journeys, focus order/restoration, perceivable loading/errors, contrast, text scaling, reduced motion and semantic names. Announce completed actions and task outcomes without announcing every streaming token. Large source lists remain navigable when virtualized; item counts and keyboard focus must describe the real collection.
 
-Electron exposes Chromium's accessibility support to assistive technology, which makes an accessible HTML interface technically viable; it does not certify WCAG conformance.[^electron-accessibility] Automated accessibility tests do not establish conformance. Each release's evidence names the tested OS, packaged artifact, assistive technology and journeys where manual testing was performed, and states omissions. Do not inherit a web project's platform exclusions or claim screen-reader validation from DOM checks.
+Electron exposes Chromium's accessibility support to assistive technology, which makes an accessible HTML interface technically viable; it does not certify WCAG conformance.[^electron-accessibility] Automated accessibility tests do not establish conformance. Each release's evidence names the tested OS, packaged artifact, assistive technology and journeys where manual testing was performed, and states omissions. Declare supported combinations and record actual screen-reader journeys separately from DOM checks.
 
 ## Design system
 

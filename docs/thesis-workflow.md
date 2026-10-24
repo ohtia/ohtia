@@ -63,6 +63,20 @@ Artifact names describe research outputs, not new database entities, mandatory o
 
 The map shows common dependencies, not a compulsory stage sequence. Literature and methodological preparation may overlap; a sufficiently documented subset may be described while collection continues. Existing advanced research enters at its actual point. Writing and review run throughout. Finishing Interpret does not mean a thesis is ready for delivery, defense or final closure; that later academic route needs its own definition.
 
+## Stable stage identifiers
+
+The stage identifiers are fixed machine values, independent of translated labels, section wording, output letters and the current focus. They classify research progress; they are not entity UUIDs or evidence of milestone completion.
+
+- `onboarding` — Onboarding, described in [1. Onboarding](#1-onboarding).
+- `topic_problem` — Topic–Problem, described in [2. Define the topic and problem](#2-define-the-topic-and-problem).
+- `literature` — Literature, described in [3. Develop the bibliography](#3-develop-the-bibliography).
+- `methodology` — Methodology, described in [4. Design the methodology](#4-design-the-methodology).
+- `investigate` — Investigate, described in [5. Investigate](#5-investigate).
+- `describe` — Describe, described in [6. Describe](#6-describe).
+- `interpret` — Interpret, described in [7. Interpret](#7-interpret).
+
+Navigator state and persisted stage references use these identifiers. Changing a label, route focus or plan does not rename the identifier or transfer an earlier review to new content.
+
 ## Entry and project context
 
 Begin with the material the researcher has: interests, an existing project, selected sources or a draft passage. Gather context progressively: work type, institution and known requirements, discipline and reasoning approach, research question, stage, target languages, available corpus, method, deadline and realistic availability. Unknown values remain unknown.
