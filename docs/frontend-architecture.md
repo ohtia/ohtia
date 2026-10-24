@@ -2,8 +2,6 @@
 type: Specification
 title: "Frontend architecture"
 description: "Graphical research workflows, Electron interface boundaries, state ownership, editing, localization, and verification."
-generated:
-  by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
 sources:
@@ -59,7 +57,13 @@ The Navigator is the default project surface, showing stage, focus, relevant art
 
 A source reader and a draft finding can open side by side with the exact evidence highlighted. Show source/version, representation, examined scope and limitations near the finding. Missing access and outdated anchors remain visible; a scroll position or a highlighted sentence is not proof the user reviewed it.
 
-Conversation is one interaction surface, not the authoritative knowledge store. Useful outputs become attributable proposals or analysis records with stable local identities. Chat history, derived knowledge, source notes and researcher manuscript text remain distinguishable. Model-generated prose is not inserted into the manuscript by a generic accept button.
+Conversation is one interaction surface, not the authoritative knowledge store. Useful outputs become attributable proposals or analysis records with stable local identities. Chat history, derived knowledge, source notes and researcher manuscript text remain distinguishable. Model-generated prose remains a proposal until the researcher approves explicit, version-bound editorial changes through the [editorial review flow](agent-collaboration.md#editorial-proposals-and-approval). Show original/proposed content, rationale and provenance; keep the approval command separate from accepting a chat response or confirming evidence.
+
+## Contributor identity and character presentation
+
+Use [Ohtia and agent identity](agent-identity.md) for the active contributor label, specialist identity and distinction from the product character and human supervisor. Named AI contributions remain attributable in every panel arrangement; the central region or a full-width chat does not determine their author. Opening a contributor profile, switching a visual mode or showing a stored notice starts no inference.
+
+Expose **Settings → Appearance → Characters** through the named `character_presentation` preference. The identity specification owns its exact values, defaults, cross-window behavior and reduced-motion precedence. Dispatch only committed, relevant presentation events, coalesce coincident notices, preserve static recovery and keep all information/actions usable with characters hidden. [Design system](design-system.md) owns illustration and animation rendering; no new character artwork or runtime event binding is implied by the specification.
 
 ## State and command lifecycle
 
