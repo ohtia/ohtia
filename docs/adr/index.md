@@ -8,7 +8,7 @@ The conventions for this register are defined in [Architecture decisions](../arc
 - [ADR-0001 — One repository with explicit build boundaries](adr-0001-monorepo-and-component-boundaries.md) — Use one repository and declared package interfaces while assembling compatible components into the desktop release.
 - [ADR-0002 — TypeScript product services with local IPC](adr-0002-typescript-product-and-local-ipc.md) — Use strict TypeScript across the desktop product and exchange validated local messages without a Python application server.
 - [ADR-0003 — Electron desktop with explicit privilege boundaries](adr-0003-electron-desktop-boundaries.md) — Use Electron with a React and TypeScript renderer separated from privileged local services.
-- [ADR-0004 — Node, pnpm, ESLint and Prettier toolchain](adr-0004-javascript-development-toolchain.md) — Use a locked TypeScript workspace with reproducible tools and separate type, lint and format checks.
+- [ADR-0004 — Node, pnpm, ESLint and Prettier toolchain](adr-0004-javascript-development-toolchain.md) — Use a locked TypeScript workspace with reproducible tools, a native Windows contributor shell and separate type, lint and format checks.
 - [ADR-0005 — Isolated Python tooling for repository maintenance](adr-0005-python-repository-tooling.md) — Use CPython, uv, Ruff and Pyrefly for developer tooling without making Python an installed-product dependency.
 
 ## Data and files
@@ -66,3 +66,7 @@ The conventions for this register are defined in [Architecture decisions](../arc
 ## Research-agent collaboration
 
 - [ADR-0037 — Application-mediated collaboration among specialist agents](adr-0037-application-mediated-agent-collaboration.md) — Coordinate bounded specialist contributions through durable application records while preserving direct interaction and human authority.
+
+## Native delivery mechanisms
+
+- [ADR-0038 — Native desktop packages with authenticated update admission](adr-0038-desktop-delivery-mechanisms.md) — Select provisional six-target packages, native signing and updater admission while preserving immutable candidate bytes and recovery boundaries.

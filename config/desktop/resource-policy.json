@@ -1,0 +1,463 @@
+{
+  "schema_version": 1,
+  "policy_id": "foundation-1",
+  "measurement": "UTF-8 bytes of compact JSON with no BOM or insignificant whitespace; JSONL adds exactly one LF byte. Integers only; booleans are not numeric values. No coercion, truncation or silent clamping.",
+  "budgets": {
+    "message_bytes": {
+      "value": 65536,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 65536,
+        "maximum": 65536
+      },
+      "owner": "003",
+      "scope": "Each complete request, result or event in either direction",
+      "failure": "reject_before_dispatch",
+      "rationale": "Small status/preferences need no bulk channel"
+    },
+    "string_bytes": {
+      "value": 4096,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 4096,
+        "maximum": 4096
+      },
+      "owner": "003",
+      "scope": "Each string value and object key inside an envelope",
+      "failure": "invalid_message",
+      "rationale": "Bounds text allocation independently of character count"
+    },
+    "identifier_bytes": {
+      "value": 128,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 128,
+        "maximum": 128
+      },
+      "owner": "003",
+      "scope": "Each correlation, generation, operation and subscription identifier",
+      "failure": "invalid_message",
+      "rationale": "Opaque IDs fit without accepting free-form descriptions"
+    },
+    "container_items": {
+      "value": 128,
+      "unit": "item",
+      "permitted": {
+        "minimum": 128,
+        "maximum": 128
+      },
+      "owner": "003",
+      "scope": "Each array length and each object own-key count",
+      "failure": "invalid_message",
+      "rationale": "Prevents wide small-value containers"
+    },
+    "message_nodes": {
+      "value": 512,
+      "unit": "node",
+      "permitted": {
+        "minimum": 512,
+        "maximum": 512
+      },
+      "owner": "003",
+      "scope": "All JSON values, including containers, in one envelope",
+      "failure": "invalid_message",
+      "rationale": "Caps total decoder work"
+    },
+    "message_depth": {
+      "value": 8,
+      "unit": "level",
+      "permitted": {
+        "minimum": 8,
+        "maximum": 8
+      },
+      "owner": "003",
+      "scope": "JSON root depth is one; each container child adds one",
+      "failure": "invalid_message",
+      "rationale": "No recursive research documents on initial port"
+    },
+    "pending_per_window": {
+      "value": 16,
+      "unit": "request",
+      "permitted": {
+        "minimum": 16,
+        "maximum": 16
+      },
+      "owner": "003",
+      "scope": "Unsettled requests admitted from one live window",
+      "failure": "busy_before_acceptance",
+      "rationale": "Keeps interactive requests bounded"
+    },
+    "pending_global": {
+      "value": 64,
+      "unit": "request",
+      "permitted": {
+        "minimum": 64,
+        "maximum": 64
+      },
+      "owner": "004",
+      "scope": "All unsettled requests across broker and service",
+      "failure": "busy_before_acceptance",
+      "rationale": "Aggregate cap prevents multiplication by windows"
+    },
+    "windows": {
+      "value": 4,
+      "unit": "window",
+      "permitted": {
+        "minimum": 4,
+        "maximum": 4
+      },
+      "owner": "004",
+      "scope": "Application windows attached to the single broker",
+      "failure": "window_limit",
+      "rationale": "Bounds aggregate initial UI/process load"
+    },
+    "subscriptions_per_window": {
+      "value": 4,
+      "unit": "subscription",
+      "permitted": {
+        "minimum": 4,
+        "maximum": 4
+      },
+      "owner": "003",
+      "scope": "Active status or preference subscriptions in one window",
+      "failure": "busy_before_acceptance",
+      "rationale": "Initial surfaces require few live streams"
+    },
+    "event_queue_items": {
+      "value": 32,
+      "unit": "event",
+      "permitted": {
+        "minimum": 32,
+        "maximum": 32
+      },
+      "owner": "003",
+      "scope": "Per subscription unconsumed events",
+      "failure": "sequence_gap_then_resubscribe",
+      "rationale": "No unbounded streaming backlog"
+    },
+    "event_queue_bytes": {
+      "value": 262144,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 262144,
+        "maximum": 262144
+      },
+      "owner": "003",
+      "scope": "Sum of encoded complete events per subscription",
+      "failure": "sequence_gap_then_resubscribe",
+      "rationale": "Count and byte caps apply together"
+    },
+    "request_deadline_ms": {
+      "value": 5000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 5000,
+        "maximum": 5000
+      },
+      "owner": "003",
+      "scope": "Status and preference requests from admission to reply; includes queues",
+      "failure": "timeout_or_uncertain",
+      "rationale": "Short local operations must return control promptly"
+    },
+    "service_start_ms": {
+      "value": 10000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 10000,
+        "maximum": 10000
+      },
+      "owner": "004",
+      "scope": "Utility spawn to authenticated ready handshake",
+      "failure": "service_unavailable",
+      "rationale": "Allows cold native startup without indefinite waits"
+    },
+    "application_start_ms": {
+      "value": 15000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 15000,
+        "maximum": 15000
+      },
+      "owner": "004",
+      "scope": "Process launch to responsive bootstrap/status surface; excludes human choice and migration",
+      "failure": "startup_failed",
+      "rationale": "A visible recovery surface bounds first-use waiting"
+    },
+    "shutdown_grace_ms": {
+      "value": 5000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 5000,
+        "maximum": 5000
+      },
+      "owner": "004",
+      "scope": "Normal data-service drain and close after confirmed exit decision",
+      "failure": "escalate_owned_tree",
+      "rationale": "Preserves ordinary writes before escalation"
+    },
+    "shutdown_termination_ms": {
+      "value": 5000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 5000,
+        "maximum": 5000
+      },
+      "owner": "004",
+      "scope": "Escalation to verified owned local-tree cessation receipt",
+      "failure": "uncertain_no_clean_exit",
+      "rationale": "Bounds termination observation without fabricating cessation"
+    },
+    "shutdown_total_ms": {
+      "value": 10000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 10000,
+        "maximum": 10000
+      },
+      "owner": "004",
+      "scope": "Confirmed quit to clean process-tree exit; excludes human save/discard decision",
+      "failure": "uncertain_no_clean_exit",
+      "rationale": "Composes drain and termination budgets"
+    },
+    "process_tree_count": {
+      "value": 16,
+      "unit": "process",
+      "permitted": {
+        "minimum": 16,
+        "maximum": 16
+      },
+      "owner": "004",
+      "scope": "Broker, all renderer/GPU/network/crash helpers and utility descendants",
+      "failure": "resource_failure",
+      "rationale": "Includes Electron helpers; not only application JS processes"
+    },
+    "process_tree_rss_bytes": {
+      "value": 1073741824,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 1073741824,
+        "maximum": 1073741824
+      },
+      "owner": "018",
+      "scope": "Sum of resident working sets across complete owned tree during initial journeys",
+      "failure": "qualification_failed",
+      "rationale": "Conservative 1 GiB envelope on 8 GiB reference hardware"
+    },
+    "process_tree_cpu_ms": {
+      "value": 10000,
+      "unit": "cpu-millisecond",
+      "permitted": {
+        "minimum": 10000,
+        "maximum": 10000
+      },
+      "owner": "018",
+      "scope": "Sum of user plus system CPU over initial-operation measurement window",
+      "failure": "qualification_failed",
+      "rationale": "Bounds active CPU across cores rather than wall time alone"
+    },
+    "measurement_window_ms": {
+      "value": 30000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 30000,
+        "maximum": 30000
+      },
+      "owner": "018",
+      "scope": "Launch, ready, status read, appearance read/change and orderly shutdown fixture",
+      "failure": "qualification_failed",
+      "rationale": "Same finite synthetic journey on each native target"
+    },
+    "initial_input_bytes": {
+      "value": 1024,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 1024,
+        "maximum": 1024
+      },
+      "owner": "003",
+      "scope": "Payload only for each initial status or appearance read/change operation",
+      "failure": "invalid_message",
+      "rationale": "No research text or arbitrary preference records"
+    },
+    "initial_input_items": {
+      "value": 8,
+      "unit": "field",
+      "permitted": {
+        "minimum": 8,
+        "maximum": 8
+      },
+      "owner": "003",
+      "scope": "Total own fields in initial operation payload",
+      "failure": "invalid_message",
+      "rationale": "Named operations have small explicit shapes"
+    },
+    "initial_output_bytes": {
+      "value": 32768,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 32768,
+        "maximum": 32768
+      },
+      "owner": "003",
+      "scope": "Payload only for each initial operation result",
+      "failure": "invalid_service_result",
+      "rationale": "Allows bounded component identities and controlled codes"
+    },
+    "initial_work_units": {
+      "value": 1,
+      "unit": "operation",
+      "permitted": {
+        "minimum": 1,
+        "maximum": 1
+      },
+      "owner": "005",
+      "scope": "One status snapshot, preference read or atomic appearance replacement per request",
+      "failure": "invalid_message",
+      "rationale": "No batches or hidden research work"
+    },
+    "sqlite_busy_ms": {
+      "value": 1000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 1000,
+        "maximum": 1000
+      },
+      "owner": "005",
+      "scope": "Busy timeout on initial operational data-service connection",
+      "failure": "storage_busy",
+      "rationale": "Leaves time for bounded request handling"
+    },
+    "automatic_service_restarts": {
+      "value": 1,
+      "unit": "restart",
+      "permitted": {
+        "minimum": 1,
+        "maximum": 1
+      },
+      "owner": "004",
+      "scope": "Automatic service restarts per app session after proven cessation",
+      "failure": "manual_retry_required",
+      "rationale": "No crash/restart loop; never replays mutations"
+    },
+    "locator_bytes": {
+      "value": 65536,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 65536,
+        "maximum": 65536
+      },
+      "owner": "004",
+      "scope": "Fixed locator file; inherited from architecture bootstrap contract",
+      "failure": "locator_invalid",
+      "rationale": "Preserves existing 64 KiB bootstrap bound"
+    },
+    "diagnostic_event_bytes": {
+      "value": 8192,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 8192,
+        "maximum": 8192
+      },
+      "owner": "006",
+      "scope": "Complete UTF-8 JSONL event including LF",
+      "failure": "diagnostic_rejected",
+      "rationale": "Keeps logging bounded and content-free"
+    },
+    "diagnostic_queue_items": {
+      "value": 128,
+      "unit": "event",
+      "permitted": {
+        "minimum": 128,
+        "maximum": 128
+      },
+      "owner": "006",
+      "scope": "Broker pending diagnostic write queue",
+      "failure": "diagnostic_degraded",
+      "rationale": "No write backlog growth on denied or slow I/O"
+    },
+    "diagnostic_queue_bytes": {
+      "value": 262144,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 262144,
+        "maximum": 262144
+      },
+      "owner": "006",
+      "scope": "Sum of complete encoded queued diagnostic events",
+      "failure": "diagnostic_degraded",
+      "rationale": "Complements count cap"
+    },
+    "diagnostic_file_bytes": {
+      "value": 5242880,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 5242880,
+        "maximum": 5242880
+      },
+      "owner": "006",
+      "scope": "Each log file; inherited from ADR-0013",
+      "failure": "rotate_or_degraded",
+      "rationale": "Preserves canonical 5 MiB file limit"
+    },
+    "diagnostic_files": {
+      "value": 5,
+      "unit": "file",
+      "permitted": {
+        "minimum": 5,
+        "maximum": 5
+      },
+      "owner": "006",
+      "scope": "Active plus archives; inherited from ADR-0013",
+      "failure": "diagnostic_degraded",
+      "rationale": "Preserves canonical five-file retention"
+    },
+    "setup_active_ms": {
+      "value": 3600000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 3600000,
+        "maximum": 3600000
+      },
+      "owner": "018",
+      "scope": "Contributor active work from clean checkout to local unsigned package",
+      "failure": "setup_budget_review_required",
+      "rationale": "Initial 60 minute acceptance hypothesis, not measured universal performance"
+    },
+    "setup_cold_download_ms": {
+      "value": 1800000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 1800000,
+        "maximum": 1800000
+      },
+      "owner": "018",
+      "scope": "Separately timed aggregate cold download wall time",
+      "failure": "setup_budget_review_required",
+      "rationale": "Initial 30 minute reference-network envelope; never hides active work"
+    },
+    "ci_retention_days": {
+      "value": 14,
+      "unit": "day",
+      "permitted": {
+        "minimum": 14,
+        "maximum": 14
+      },
+      "owner": "012",
+      "scope": "Disposable quality packages and review artifacts after run",
+      "failure": "retention_policy_failure",
+      "rationale": "Bounded review window; permanent release storage is separate"
+    },
+    "release_retirement_notice_days": {
+      "value": 90,
+      "unit": "day",
+      "permitted": {
+        "minimum": 90,
+        "maximum": 90
+      },
+      "owner": "016",
+      "scope": "Minimum public notice before retiring a supported release baseline",
+      "failure": "retirement_refused",
+      "rationale": "Provides an explicit upgrade/recovery transition window"
+    }
+  }
+}
