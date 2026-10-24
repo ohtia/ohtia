@@ -1,0 +1,32 @@
+{
+  "contracts": {
+    "packages": [],
+    "external": [],
+    "builtins": []
+  },
+  "domain": {
+    "packages": ["@ohtia/contracts"],
+    "external": [],
+    "builtins": []
+  },
+  "renderer": {
+    "packages": ["@ohtia/contracts", "@ohtia/domain"],
+    "external": ["react", "react-dom"],
+    "builtins": []
+  },
+  "preload": {
+    "packages": ["@ohtia/contracts"],
+    "external": ["electron"],
+    "builtins": []
+  },
+  "main": {
+    "packages": ["@ohtia/contracts"],
+    "external": ["electron"],
+    "builtins": ["node:path"]
+  },
+  "utility": {
+    "packages": ["@ohtia/contracts", "@ohtia/domain"],
+    "external": ["better-sqlite3", "kysely"],
+    "builtins": []
+  }
+}

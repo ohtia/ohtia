@@ -21,6 +21,8 @@ When reporting a wording problem, include the locale, where the text appears, th
 
 ## Prepare repository changes
 
+Use the [locked developer workspace](docs/developer-workspace.md) for checkout-local tool bootstrap, frozen installation and the common build/check/development commands.
+
 - Create a branch and task worktree for the associated issue before changing files, following [Branches and worktrees](AGENTS.md#branches-and-worktrees).
 - Use English for documentation, code comments, issues, pull requests, and commit messages.
 - Keep each pull request focused on one change.

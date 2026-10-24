@@ -46,3 +46,7 @@ tmp/
 *.swp
 *.swo
 *~
+
+# Checkout-local pinned contributor runtimes
+.tooling/
+.pyrefly_cache/

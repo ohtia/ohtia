@@ -94,6 +94,56 @@
         "integrity": "sha512-wYum2HmT09Fky16JSPMrLAbuhUSH4GzY2GeBNC+z5btGNDZwNHEehoArqpw3vqkGzhkprQjXCITJfYAd8TOJpg==",
         "bytes": 1045824,
         "inspection": "downloaded-integrity-checked"
+      },
+      "artifacts": {
+        "linux-x64": {
+          "url": "https://registry.npmjs.org/@pnpm/exe.linux-x64/-/exe.linux-x64-12.14.0.tgz",
+          "sha256": "1de98ed2e9621113b0887b06322b461efb9df73d913fc1d151039b10b7117a41",
+          "integrity": "sha512-F6K8e/jWxiuEYJaQtRRUG9ynBSTEHa+t7Lf86MKuOO5UA7WVVMbi+oB8nY6iKW++ncWS2yG6T9faXZGxqNsfoQ==",
+          "bytes": 24385246,
+          "source": "https://registry.npmjs.org/@pnpm/exe.linux-x64/12.14.0",
+          "inspection": "downloaded-integrity-checked"
+        },
+        "linux-arm64": {
+          "url": "https://registry.npmjs.org/@pnpm/exe.linux-arm64/-/exe.linux-arm64-12.14.0.tgz",
+          "sha256": "e7ca24224eb626a032828ec584c67903ad2f389911b849d009ed70a19f70d8d3",
+          "integrity": "sha512-7joGShZ44Nk3WpNU+60JoOPjCXlgxhJAq11S2UiVtwCUDgTer1yTPPfxGW8pxaD6046actYLIYDbZNlubHWs0A==",
+          "bytes": 22245722,
+          "source": "https://registry.npmjs.org/@pnpm/exe.linux-arm64/12.14.0",
+          "inspection": "downloaded-integrity-checked"
+        },
+        "win32-x64": {
+          "url": "https://registry.npmjs.org/@pnpm/exe.win32-x64/-/exe.win32-x64-12.14.0.tgz",
+          "sha256": "fad4bbad7048f28164e2000a18c88aa4b1507a6e26307c55574556c1d6815da3",
+          "integrity": "sha512-/LSX6mew/sLf08XqcjemuklNKf1K/Ftpgj4//hK/HKzI2dKbmxDB27a/2OaQ5a0O3/3OFzlssXDziZsi+yVBwQ==",
+          "bytes": 23217913,
+          "source": "https://registry.npmjs.org/@pnpm/exe.win32-x64/12.14.0",
+          "inspection": "downloaded-integrity-checked"
+        },
+        "win32-arm64": {
+          "url": "https://registry.npmjs.org/@pnpm/exe.win32-arm64/-/exe.win32-arm64-12.14.0.tgz",
+          "sha256": "0eff006b6dd8ff6662e6309be772aaa3b003fa3fff8181dcebeff6e97277d1fd",
+          "integrity": "sha512-DOjlkVB6TtTKeAAe0hNZXn5S7YqESmo1Z6SGbR4BZNQ4isRg31XVHjX2RFTbY8gnZq68IwzyLmPqlEjMmYxofg==",
+          "bytes": 21344466,
+          "source": "https://registry.npmjs.org/@pnpm/exe.win32-arm64/12.14.0",
+          "inspection": "downloaded-integrity-checked"
+        },
+        "darwin-x64": {
+          "url": "https://registry.npmjs.org/@pnpm/exe.darwin-x64/-/exe.darwin-x64-12.14.0.tgz",
+          "sha256": "4fe5aa6c0ba3013f8aefb1cc23dd3c54f7272814be4b0275eb4d6a98d7769e26",
+          "integrity": "sha512-vlBfGkruqQRsEHTW43cPwpYd7QlbIJ//cvpAdb3bVXkI8SgTPoXhCnc05m+ZNiPrrEkBsX/t7KHw9aXpkzPm3Q==",
+          "bytes": 23533580,
+          "source": "https://registry.npmjs.org/@pnpm/exe.darwin-x64/12.14.0",
+          "inspection": "downloaded-integrity-checked"
+        },
+        "darwin-arm64": {
+          "url": "https://registry.npmjs.org/@pnpm/exe.darwin-arm64/-/exe.darwin-arm64-12.14.0.tgz",
+          "sha256": "06136920c9cccad4f615bb080e054d9ac086fedfc32497bd87a892b7a4586f6f",
+          "integrity": "sha512-tnrdUB8ecJoehuKKqi1YHCBVl61xtJ9XVGcx5EviC6fWO4DeGI8GtXrjvJxDBM3nuVjJeWistgsUp/N142x4sw==",
+          "bytes": 21261646,
+          "source": "https://registry.npmjs.org/@pnpm/exe.darwin-arm64/12.14.0",
+          "inspection": "downloaded-integrity-checked"
+        }
       }
     },
     "react": {

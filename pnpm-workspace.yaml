@@ -1,0 +1,20 @@
+packages:
+  - packages/*
+
+supportedArchitectures:
+  os: [linux, win32, darwin]
+  cpu: [x64, arm64]
+  libc: [glibc]
+
+strictPeerDependencies: true
+minimumReleaseAge: 1440
+onlyBuiltDependencies: []
+
+storeDir: .cache/pnpm/store
+cacheDir: .cache/pnpm/cache
+engineStrict: true
+saveExact: true
+
+# Commands must fail on drift instead of triggering an implicit install.
+verifyDepsBeforeRun: error
+frozenLockfile: true

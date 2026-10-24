@@ -36,6 +36,7 @@ okf_version: "0.2"
 
 ## Repository
 
+- [Locked developer workspace](developer-workspace.md) — Bootstrap isolated contributor tools, build the six package boundaries and verify the frozen workspace without changing research data.
 - [Repository policy](repository-policy.md) — GitHub repository configuration, dependency updates, quality checks, and verification procedures.
 - [Desktop builds, releases and change notes](release-policy.md) — Quality-build triggers, immutable release promotion, public versioning and user-facing change communication.
 - [EPICs](epics/index.md) — Published delivery specifications and their native GitHub story sub-issues.

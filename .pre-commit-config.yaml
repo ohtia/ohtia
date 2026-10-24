@@ -1,5 +1,7 @@
 minimum_pre_commit_version: "4.0.0"
 default_stages: [pre-commit]
+default_language_version:
+  node: 26.12.1
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -11,6 +13,7 @@ repos:
       - id: check-illegal-windows-names
       - id: check-json
       - id: check-yaml
+        args: [--allow-multiple-documents]
       - id: check-toml
       - id: check-symlinks
       - id: end-of-file-fixer
