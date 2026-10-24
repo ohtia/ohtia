@@ -600,7 +600,7 @@ STORY-001-018 phase prerequisites: integrate requires D1a from STORY-001-001; in
 
 ## Dependencies
 
-Local design and controlled fixtures may proceed before integration or completion evidence. A start gate, if declared, precedes executable implementation; integration gates precede integration or use of changed authority, and completion gates precede closing the complete consumer. Runtime, storage and privileged execution always obey their admission controls. Gates belong only to their named consumer. Verify the required output on the actual consumer base or external facility with passing checks; issue closure is not delivery evidence. No story waits for its consumers. Internal start constraints alone may use native blocked-by edges; integration, completion and external conditions are documented. Every future issue body includes its own complete input definitions, these semantics, ordered tasks and acceptance criteria. Include every routed SPEC block in full in the body or, when needed for size, in numbered continuation comments linked from the body. Keep each block whole and preserve a complete ordered index. Verify comment content and permalinks by readback; the issue is not complete until its body and all required comments are present and linked. Bare codes, bundle links or omitted qualifiers cannot replace the applicable text.
+Local design and controlled fixtures may proceed before integration or completion evidence. A start gate, if declared, precedes executable implementation; integration gates precede integration or use of changed authority, and completion gates precede closing the complete consumer. Runtime, storage and privileged execution always obey their admission controls. Gates belong only to their named consumer. Verify the required output on the actual consumer base or external facility with passing checks; issue closure is not delivery evidence. No story waits for its consumers. Native blocked-by relationships represent every declared inter-story prerequisite, including integration and completion gates. The documented phase and output evidence determine when each dependency applies; these relationships add no start prohibition for work permitted before that phase and do not make producer closure a substitute for usable output. External prerequisites without an issue remain documented. Every future issue body includes its own complete input definitions, these semantics, ordered tasks and acceptance criteria. Include every routed SPEC block in full in the body or, when needed for size, in numbered continuation comments linked from the body. Keep each block whole and preserve a complete ordered index. Verify comment content and permalinks by readback; the issue is not complete until its body and all required comments are present and linked. Bare codes, bundle links or omitted qualifiers cannot replace the applicable text.
 
 ### Output contracts
 
@@ -632,98 +632,98 @@ Local design and controlled fixtures may proceed before integration or completio
 
 | Producer             | Consumer      | Output | Phase     | Release condition | Projection | Spec         |
 | -------------------- | ------------- | ------ | --------- | ----------------- | ---------- | ------------ |
-| STORY-001-001        | STORY-001-002 | D1a    | integrate | Base+checks       | documented | SPEC-001-004 |
-| STORY-001-001        | STORY-001-003 | D1a    | integrate | Base+checks       | documented | SPEC-001-005 |
-| STORY-001-002        | STORY-001-003 | W2     | integrate | Base+checks       | documented | SPEC-001-005 |
-| STORY-001-001        | STORY-001-004 | D1a    | integrate | Base+checks       | documented | SPEC-001-006 |
-| STORY-001-002        | STORY-001-004 | W2     | integrate | Base+checks       | documented | SPEC-001-006 |
-| STORY-001-003        | STORY-001-004 | P3     | integrate | Base+checks       | documented | SPEC-001-006 |
-| STORY-001-018        | STORY-001-004 | D1b    | complete  | Base+checks       | documented | SPEC-001-006 |
+| STORY-001-001        | STORY-001-002 | D1a    | integrate | Base+checks       | native     | SPEC-001-004 |
+| STORY-001-001        | STORY-001-003 | D1a    | integrate | Base+checks       | native     | SPEC-001-005 |
+| STORY-001-002        | STORY-001-003 | W2     | integrate | Base+checks       | native     | SPEC-001-005 |
+| STORY-001-001        | STORY-001-004 | D1a    | integrate | Base+checks       | native     | SPEC-001-006 |
+| STORY-001-002        | STORY-001-004 | W2     | integrate | Base+checks       | native     | SPEC-001-006 |
+| STORY-001-003        | STORY-001-004 | P3     | integrate | Base+checks       | native     | SPEC-001-006 |
+| STORY-001-018        | STORY-001-004 | D1b    | complete  | Base+checks       | native     | SPEC-001-006 |
 | Native hosts         | STORY-001-004 | NH     | complete  | External evidence | documented | SPEC-001-006 |
-| STORY-001-002        | STORY-001-005 | W2     | integrate | Base+checks       | documented | SPEC-001-007 |
-| STORY-001-003        | STORY-001-005 | P3     | integrate | Base+checks       | documented | SPEC-001-007 |
-| STORY-001-018        | STORY-001-005 | D1b    | integrate | Base+checks       | documented | SPEC-001-007 |
-| STORY-001-004        | STORY-001-005 | R4     | complete  | Base+checks       | documented | SPEC-001-007 |
+| STORY-001-002        | STORY-001-005 | W2     | integrate | Base+checks       | native     | SPEC-001-007 |
+| STORY-001-003        | STORY-001-005 | P3     | integrate | Base+checks       | native     | SPEC-001-007 |
+| STORY-001-018        | STORY-001-005 | D1b    | integrate | Base+checks       | native     | SPEC-001-007 |
+| STORY-001-004        | STORY-001-005 | R4     | complete  | Base+checks       | native     | SPEC-001-007 |
 | Native hosts         | STORY-001-005 | NH     | complete  | External evidence | documented | SPEC-001-007 |
-| STORY-001-003        | STORY-001-006 | P3     | integrate | Base+checks       | documented | SPEC-001-008 |
-| STORY-001-004        | STORY-001-006 | R4     | integrate | Base+checks       | documented | SPEC-001-008 |
-| STORY-001-005        | STORY-001-006 | S5     | integrate | Base+checks       | documented | SPEC-001-008 |
+| STORY-001-003        | STORY-001-006 | P3     | integrate | Base+checks       | native     | SPEC-001-008 |
+| STORY-001-004        | STORY-001-006 | R4     | integrate | Base+checks       | native     | SPEC-001-008 |
+| STORY-001-005        | STORY-001-006 | S5     | integrate | Base+checks       | native     | SPEC-001-008 |
 | Native hosts         | STORY-001-006 | NH     | complete  | External evidence | documented | SPEC-001-008 |
-| STORY-001-002        | STORY-001-007 | W2     | integrate | Base+checks       | documented | SPEC-001-009 |
+| STORY-001-002        | STORY-001-007 | W2     | integrate | Base+checks       | native     | SPEC-001-009 |
 | Policy authority     | STORY-001-007 | PA     | integrate | External evidence | documented | SPEC-001-009 |
-| STORY-001-002        | STORY-001-008 | W2     | integrate | Base+checks       | documented | SPEC-001-010 |
-| STORY-001-007        | STORY-001-008 | Q7     | integrate | Base+checks       | documented | SPEC-001-010 |
-| STORY-001-018        | STORY-001-008 | D1b    | integrate | Base+checks       | documented | SPEC-001-010 |
+| STORY-001-002        | STORY-001-008 | W2     | integrate | Base+checks       | native     | SPEC-001-010 |
+| STORY-001-007        | STORY-001-008 | Q7     | integrate | Base+checks       | native     | SPEC-001-010 |
+| STORY-001-018        | STORY-001-008 | D1b    | integrate | Base+checks       | native     | SPEC-001-010 |
 | Policy authority     | STORY-001-008 | PA     | integrate | External evidence | documented | SPEC-001-010 |
-| STORY-001-004        | STORY-001-008 | R4     | complete  | Base+checks       | documented | SPEC-001-010 |
+| STORY-001-004        | STORY-001-008 | R4     | complete  | Base+checks       | native     | SPEC-001-010 |
 | Native hosts         | STORY-001-008 | NH     | complete  | External evidence | documented | SPEC-001-010 |
-| STORY-001-002        | STORY-001-009 | W2     | integrate | Base+checks       | documented | SPEC-001-012 |
-| STORY-001-018        | STORY-001-009 | D1b    | integrate | Base+checks       | documented | SPEC-001-012 |
-| STORY-001-004        | STORY-001-009 | R4     | complete  | Base+checks       | documented | SPEC-001-012 |
-| STORY-001-005        | STORY-001-009 | S5     | complete  | Base+checks       | documented | SPEC-001-012 |
-| STORY-001-007        | STORY-001-009 | Q7     | complete  | Base+checks       | documented | SPEC-001-012 |
-| STORY-001-008        | STORY-001-009 | L8     | complete  | Base+checks       | documented | SPEC-001-012 |
-| STORY-001-012        | STORY-001-009 | B12    | complete  | Base+checks       | documented | SPEC-001-012 |
+| STORY-001-002        | STORY-001-009 | W2     | integrate | Base+checks       | native     | SPEC-001-012 |
+| STORY-001-018        | STORY-001-009 | D1b    | integrate | Base+checks       | native     | SPEC-001-012 |
+| STORY-001-004        | STORY-001-009 | R4     | complete  | Base+checks       | native     | SPEC-001-012 |
+| STORY-001-005        | STORY-001-009 | S5     | complete  | Base+checks       | native     | SPEC-001-012 |
+| STORY-001-007        | STORY-001-009 | Q7     | complete  | Base+checks       | native     | SPEC-001-012 |
+| STORY-001-008        | STORY-001-009 | L8     | complete  | Base+checks       | native     | SPEC-001-012 |
+| STORY-001-012        | STORY-001-009 | B12    | complete  | Base+checks       | native     | SPEC-001-012 |
 | Native hosts         | STORY-001-009 | NH     | complete  | External evidence | documented | SPEC-001-012 |
-| STORY-001-002        | STORY-001-010 | W2     | integrate | Base+checks       | documented | SPEC-001-013 |
-| STORY-001-018        | STORY-001-010 | D1b    | integrate | Base+checks       | documented | SPEC-001-013 |
-| STORY-001-004        | STORY-001-010 | R4     | complete  | Base+checks       | documented | SPEC-001-013 |
-| STORY-001-005        | STORY-001-010 | S5     | complete  | Base+checks       | documented | SPEC-001-013 |
-| STORY-001-007        | STORY-001-010 | Q7     | complete  | Base+checks       | documented | SPEC-001-013 |
-| STORY-001-012        | STORY-001-010 | B12    | complete  | Base+checks       | documented | SPEC-001-013 |
+| STORY-001-002        | STORY-001-010 | W2     | integrate | Base+checks       | native     | SPEC-001-013 |
+| STORY-001-018        | STORY-001-010 | D1b    | integrate | Base+checks       | native     | SPEC-001-013 |
+| STORY-001-004        | STORY-001-010 | R4     | complete  | Base+checks       | native     | SPEC-001-013 |
+| STORY-001-005        | STORY-001-010 | S5     | complete  | Base+checks       | native     | SPEC-001-013 |
+| STORY-001-007        | STORY-001-010 | Q7     | complete  | Base+checks       | native     | SPEC-001-013 |
+| STORY-001-012        | STORY-001-010 | B12    | complete  | Base+checks       | native     | SPEC-001-013 |
 | Native hosts         | STORY-001-010 | NH     | complete  | External evidence | documented | SPEC-001-013 |
-| STORY-001-002        | STORY-001-011 | W2     | integrate | Base+checks       | documented | SPEC-001-014 |
-| STORY-001-018        | STORY-001-011 | D1b    | integrate | Base+checks       | documented | SPEC-001-014 |
-| STORY-001-004        | STORY-001-011 | R4     | complete  | Base+checks       | documented | SPEC-001-014 |
-| STORY-001-005        | STORY-001-011 | S5     | complete  | Base+checks       | documented | SPEC-001-014 |
-| STORY-001-007        | STORY-001-011 | Q7     | complete  | Base+checks       | documented | SPEC-001-014 |
-| STORY-001-012        | STORY-001-011 | B12    | complete  | Base+checks       | documented | SPEC-001-014 |
+| STORY-001-002        | STORY-001-011 | W2     | integrate | Base+checks       | native     | SPEC-001-014 |
+| STORY-001-018        | STORY-001-011 | D1b    | integrate | Base+checks       | native     | SPEC-001-014 |
+| STORY-001-004        | STORY-001-011 | R4     | complete  | Base+checks       | native     | SPEC-001-014 |
+| STORY-001-005        | STORY-001-011 | S5     | complete  | Base+checks       | native     | SPEC-001-014 |
+| STORY-001-007        | STORY-001-011 | Q7     | complete  | Base+checks       | native     | SPEC-001-014 |
+| STORY-001-012        | STORY-001-011 | B12    | complete  | Base+checks       | native     | SPEC-001-014 |
 | Native hosts         | STORY-001-011 | NH     | complete  | External evidence | documented | SPEC-001-014 |
-| STORY-001-002        | STORY-001-012 | W2     | integrate | Base+checks       | documented | SPEC-001-015 |
-| STORY-001-007        | STORY-001-012 | Q7     | integrate | Base+checks       | documented | SPEC-001-015 |
-| STORY-001-018        | STORY-001-012 | D1b    | integrate | Base+checks       | documented | SPEC-001-015 |
+| STORY-001-002        | STORY-001-012 | W2     | integrate | Base+checks       | native     | SPEC-001-015 |
+| STORY-001-007        | STORY-001-012 | Q7     | integrate | Base+checks       | native     | SPEC-001-015 |
+| STORY-001-018        | STORY-001-012 | D1b    | integrate | Base+checks       | native     | SPEC-001-015 |
 | Policy authority     | STORY-001-012 | PA     | integrate | External evidence | documented | SPEC-001-015 |
-| STORY-001-004        | STORY-001-012 | R4     | complete  | Base+checks       | documented | SPEC-001-015 |
-| STORY-001-005        | STORY-001-012 | S5     | complete  | Base+checks       | documented | SPEC-001-015 |
-| STORY-001-006        | STORY-001-012 | G6     | complete  | Base+checks       | documented | SPEC-001-015 |
-| STORY-001-008        | STORY-001-012 | L8     | complete  | Base+checks       | documented | SPEC-001-015 |
+| STORY-001-004        | STORY-001-012 | R4     | complete  | Base+checks       | native     | SPEC-001-015 |
+| STORY-001-005        | STORY-001-012 | S5     | complete  | Base+checks       | native     | SPEC-001-015 |
+| STORY-001-006        | STORY-001-012 | G6     | complete  | Base+checks       | native     | SPEC-001-015 |
+| STORY-001-008        | STORY-001-012 | L8     | complete  | Base+checks       | native     | SPEC-001-015 |
 | Native hosts         | STORY-001-012 | NH     | complete  | External evidence | documented | SPEC-001-015 |
-| STORY-001-012        | STORY-001-013 | B12    | integrate | Base+checks       | documented | SPEC-001-016 |
-| STORY-001-018        | STORY-001-013 | D1b    | integrate | Base+checks       | documented | SPEC-001-016 |
+| STORY-001-012        | STORY-001-013 | B12    | integrate | Base+checks       | native     | SPEC-001-016 |
+| STORY-001-018        | STORY-001-013 | D1b    | integrate | Base+checks       | native     | SPEC-001-016 |
 | Policy authority     | STORY-001-013 | PA     | integrate | External evidence | documented | SPEC-001-016 |
 | Native facilities    | STORY-001-013 | NF     | complete  | External evidence | documented | SPEC-001-016 |
 | Native hosts         | STORY-001-013 | NH     | complete  | External evidence | documented | SPEC-001-016 |
-| STORY-001-012        | STORY-001-015 | B12    | integrate | Base+checks       | documented | SPEC-001-018 |
-| STORY-001-013        | STORY-001-015 | I13    | integrate | Base+checks       | documented | SPEC-001-018 |
-| STORY-001-014        | STORY-001-015 | N14    | integrate | Base+checks       | documented | SPEC-001-018 |
+| STORY-001-012        | STORY-001-015 | B12    | integrate | Base+checks       | native     | SPEC-001-018 |
+| STORY-001-013        | STORY-001-015 | I13    | integrate | Base+checks       | native     | SPEC-001-018 |
+| STORY-001-014        | STORY-001-015 | N14    | integrate | Base+checks       | native     | SPEC-001-018 |
 | Policy authority     | STORY-001-015 | PA     | integrate | External evidence | documented | SPEC-001-018 |
 | Native facilities    | STORY-001-015 | NF     | complete  | External evidence | documented | SPEC-001-018 |
 | Native hosts         | STORY-001-015 | NH     | complete  | External evidence | documented | SPEC-001-018 |
 | Release authority    | STORY-001-015 | RA     | complete  | External evidence | documented | SPEC-001-018 |
-| STORY-001-013        | STORY-001-016 | I13    | integrate | Base+checks       | documented | SPEC-001-019 |
-| STORY-001-014        | STORY-001-016 | N14    | integrate | Base+checks       | documented | SPEC-001-019 |
-| STORY-001-015        | STORY-001-016 | C15    | integrate | Base+checks       | documented | SPEC-001-019 |
+| STORY-001-013        | STORY-001-016 | I13    | integrate | Base+checks       | native     | SPEC-001-019 |
+| STORY-001-014        | STORY-001-016 | N14    | integrate | Base+checks       | native     | SPEC-001-019 |
+| STORY-001-015        | STORY-001-016 | C15    | integrate | Base+checks       | native     | SPEC-001-019 |
 | Policy authority     | STORY-001-016 | PA     | integrate | External evidence | documented | SPEC-001-019 |
 | Release authority    | STORY-001-016 | RA     | complete  | External evidence | documented | SPEC-001-019 |
-| STORY-001-009        | STORY-001-017 | U9     | complete  | Base+checks       | documented | SPEC-001-021 |
-| STORY-001-010        | STORY-001-017 | U10    | complete  | Base+checks       | documented | SPEC-001-021 |
-| STORY-001-011        | STORY-001-017 | U11    | complete  | Base+checks       | documented | SPEC-001-021 |
-| STORY-001-012        | STORY-001-017 | B12    | complete  | Base+checks       | documented | SPEC-001-021 |
-| STORY-001-013        | STORY-001-017 | I13    | complete  | Base+checks       | documented | SPEC-001-021 |
-| STORY-001-014        | STORY-001-017 | N14    | complete  | Base+checks       | documented | SPEC-001-021 |
-| STORY-001-015        | STORY-001-017 | C15    | complete  | Base+checks       | documented | SPEC-001-021 |
-| STORY-001-016        | STORY-001-017 | F16    | complete  | Base+checks       | documented | SPEC-001-021 |
-| STORY-001-018        | STORY-001-017 | D1b    | complete  | Base+checks       | documented | SPEC-001-021 |
+| STORY-001-009        | STORY-001-017 | U9     | complete  | Base+checks       | native     | SPEC-001-021 |
+| STORY-001-010        | STORY-001-017 | U10    | complete  | Base+checks       | native     | SPEC-001-021 |
+| STORY-001-011        | STORY-001-017 | U11    | complete  | Base+checks       | native     | SPEC-001-021 |
+| STORY-001-012        | STORY-001-017 | B12    | complete  | Base+checks       | native     | SPEC-001-021 |
+| STORY-001-013        | STORY-001-017 | I13    | complete  | Base+checks       | native     | SPEC-001-021 |
+| STORY-001-014        | STORY-001-017 | N14    | complete  | Base+checks       | native     | SPEC-001-021 |
+| STORY-001-015        | STORY-001-017 | C15    | complete  | Base+checks       | native     | SPEC-001-021 |
+| STORY-001-016        | STORY-001-017 | F16    | complete  | Base+checks       | native     | SPEC-001-021 |
+| STORY-001-018        | STORY-001-017 | D1b    | complete  | Base+checks       | native     | SPEC-001-021 |
 | Native facilities    | STORY-001-017 | NF     | complete  | External evidence | documented | SPEC-001-021 |
 | Native hosts         | STORY-001-017 | NH     | complete  | External evidence | documented | SPEC-001-021 |
 | New contributors     | STORY-001-017 | NC     | complete  | External evidence | documented | SPEC-001-021 |
 | Release authority    | STORY-001-017 | RA     | complete  | External evidence | documented | SPEC-001-021 |
 | UI review facilities | STORY-001-017 | UR     | complete  | External evidence | documented | SPEC-001-021 |
-| STORY-001-001        | STORY-001-018 | D1a    | integrate | Base+checks       | documented | SPEC-001-027 |
-| STORY-001-002        | STORY-001-018 | W2     | integrate | Base+checks       | documented | SPEC-001-027 |
+| STORY-001-001        | STORY-001-018 | D1a    | integrate | Base+checks       | native     | SPEC-001-027 |
+| STORY-001-002        | STORY-001-018 | W2     | integrate | Base+checks       | native     | SPEC-001-027 |
 | Native hosts         | STORY-001-018 | NH     | complete  | External evidence | documented | SPEC-001-027 |
 
-Base+checks means the full named output is integrated and its required checks pass on the actual consumer base. External evidence means the output registry's observed facility or authorization conditions hold. All current rows use documented phase gates: no native implementation-start blocker is needed. Setup owners need B12 for final package acceptance while their environment construction proceeds earlier. Refresh actual delivery and GitHub relationships before a future publication; this table is design, not live blocker state.
+Base+checks means the full named output is integrated and its required checks pass on the actual consumer base. External evidence means the output registry's observed facility or authorization conditions hold. Every internal row uses a native blocked-by relationship together with its documented phase and output gate. External rows remain documented because no corresponding issue exists. Setup owners need B12 for final package acceptance while their environment construction proceeds earlier. Refresh actual delivery and GitHub relationships before a future publication; this table is design, not live blocker state.
 
 ## Execution order
 
