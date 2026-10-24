@@ -50,3 +50,6 @@ tmp/
 # Checkout-local pinned contributor runtimes
 .tooling/
 .pyrefly_cache/
+
+# Build-time projection of the canonical desktop resource policy
+packages/contracts/src/generated/

@@ -16,3 +16,6 @@ export function rendererWebPreferences(preloadPath: string): WebPreferences {
     webviewTag: false,
   };
 }
+
+export { PortAdmission } from "./port-admission.js";
+export type { FrameSender, WindowAuthority } from "./port-admission.js";

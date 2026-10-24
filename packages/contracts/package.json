@@ -13,8 +13,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "build": "node ../../tooling/generate-port-policy.mjs && tsc -p tsconfig.json",
+    "typecheck": "node ../../tooling/generate-port-policy.mjs && tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {},
   "devDependencies": {

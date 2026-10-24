@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { inspectWorkspace } from "./boundaries.mjs";
 import { assertPackagePins } from "./pins.mjs";
+import { generatePortPolicy } from "./port-policy.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const tools = JSON.parse(fs.readFileSync(path.join(root, "config/desktop/toolchain.json"))).tools;
@@ -45,6 +46,7 @@ function boundaries() {
   return result.ordered;
 }
 function compile(noEmit = false) {
+  generatePortPolicy(root);
   const packages = boundaries();
   for (const item of packages)
     fs.rmSync(path.join(item.directory, "dist"), { recursive: true, force: true });

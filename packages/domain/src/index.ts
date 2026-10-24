@@ -7,3 +7,10 @@ export function appearanceOrDefault(value: unknown): Appearance {
 export function resolveColorScheme(appearance: Appearance, systemDark: boolean): ColorScheme {
   return appearance === "system" ? (systemDark ? "dark" : "light") : appearance;
 }
+
+export { applyAppearanceCommand } from "./appearance-command.js";
+export type {
+  AppearanceCommand,
+  RecordedAppearanceCommand,
+  AppearanceTransaction,
+} from "./appearance-command.js";

@@ -30,3 +30,6 @@ docs/assets/ohtia-personaje-muestra.html
 
 # JSONC guidance is outside the configured formatting hook file types.
 .markdownlint-cli2.jsonc
+
+# Build-time projection of the canonical desktop resource policy
+packages/contracts/src/generated/
