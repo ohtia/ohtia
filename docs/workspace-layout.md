@@ -2,8 +2,6 @@
 type: Specification
 title: Workspace layout
 description: Deterministic workspace geometry, accessible panel controls, desktop layout preferences and interaction acceptance scenarios.
-generated:
-  by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
 ---
@@ -34,7 +32,7 @@ Rail, separator/guard and target measurements use the existing `component.rail.*
 
 The workspace fills the available window. The context bar occupies its own row above three ordered panels: `explorer`, `documents` and `chat`. Panel widths include border and padding. Scrollable children can shrink in both dimensions; wide code, tables and formulas scroll within their own blocks, without horizontal page scrolling. Headers, footers and the chat composer remain outside their panel's scrolling content.
 
-The context bar uses the named workspace context-bar minimum, padding and gap tokens. It contains the Ohtia symbol/name, active-project selector, adjacent `Plus` control for creating a project, optional selected-document context, the three panel controls and `RotateCcw` for Reset layout. It remains outside hideable panels. At narrow widths its controls wrap into additional rows; essential controls never disappear into overflow. Truncated names retain their complete accessible text and tooltip.
+The [product character and contributor identities](agent-identity.md) retain their meaning across every region arrangement. A named AI contributor keeps its visible name/role in central-only or chat-only mode; Ohtia's contextual character never substitutes for its avatar or author label. Hiding a region or decorative character preserves contributor attribution, pending notices and research actions. The context bar uses the named workspace context-bar minimum, padding and gap tokens. It contains the Ohtia symbol/name, active-project selector, adjacent `Plus` control for creating a project, optional selected-document context, the three panel controls and `RotateCcw` for Reset layout. It remains outside hideable panels. At narrow widths its controls wrap into additional rows; essential controls never disappear into overflow. Truncated names retain their complete accessible text and tooltip.
 
 - `explorer`: uses its workspace initial/minimum width tokens. Its heading is Project contents; it contains the active project's materials, the Navigator entry and Settings. When hidden in wide layout, it leaves the `component.rail.width` control rail, or `component.rail.coarse` with a coarse pointer. The rail is not a visible panel and contains no project collection.
 - `documents`: uses its workspace minimum width token and initial width given by the calculation below. It contains the Documents heading, tabs, active document and focus-mode control. Navigator is the fixed first tab, cannot be closed and is activated when a project opens. Hiding documents leaves zero width and no rail.

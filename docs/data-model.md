@@ -2,8 +2,6 @@
 type: Specification
 title: "Data model"
 description: "Source entities, research-project relationships, and versioned Markdown manuscripts in SQLite."
-generated:
-  by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
 sources:
@@ -218,7 +216,7 @@ Stable IDs survive renaming, movement and supported migration. Content/represent
 
 Deleting a research project affects its owned work and associations under explicit retention rules; it does not cascade through library sources or files used elsewhere. Removing library material requires checking references across all projects and historical evidence. A pre-migration checkpoint records and protects the retained object identities referenced by its database snapshot; it does not create a general library backup. [ADR-0010](adr/adr-0010-pre-migration-recovery.md#retention-erasure-and-disclosure) requires purging managed recovery/failed-state copies before accepting destructive erasure. Mere association removal or soft deletion does not establish erasure of the requested content, history or originals.
 
-Credentials, provider-owned authentication files, transient host paths and disposable execution contexts do not enter these research records or pre-migration checkpoints. [ADR-0011](adr/adr-0011-bounded-durable-local-tasks.md) defines logical task/attempt identities, states, transition receipts and admission/recovery invariants. Physical task/provider tables are specified with their implementation, preserving that contract, project scoping and current restrictions. The complete knowledge-interchange serialization is a later contract; identifiers, version links, relationships and provenance are preserved now so it can be built without reconstructing missing research history.
+Credentials, provider-owned authentication files, transient host paths and disposable execution contexts do not enter these research records or pre-migration checkpoints. [ADR-0011](adr/adr-0011-bounded-durable-local-tasks.md) defines logical task/attempt identities, states, transition receipts and admission/recovery invariants. Physical task/provider tables are specified with their implementation, preserving that contract, project scoping and current restrictions. [Agent collaboration](agent-collaboration.md#intervention-and-contribution-records) owns logical intervention, contribution, memory and editorial-proposal records; their physical schema must retain project ownership, immutable input/artifact links and separate human approval receipts. The complete knowledge-interchange serialization is a later contract; identifiers, version links, relationships and provenance are preserved now so it can be built without reconstructing missing research history.
 
 [^biblatex]: BibLaTeX defines the bibliography types/fields and processes `.bib` bibliographic data. Ohtia retains those entries instead of defining a competing bibliography vocabulary; this does not select a LaTeX compiler or parser implementation.
 

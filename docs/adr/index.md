@@ -62,3 +62,7 @@ The conventions for this register are defined in [Architecture decisions](../arc
 ## Application configuration
 
 - [ADR-0036 — Typed SQLite preferences with a separate bootstrap locator](adr-0036-application-preferences-and-bootstrap.md) — Keep application preferences with transactional services and resolve the data directory through a fixed native configuration locator.
+
+## Research-agent collaboration
+
+- [ADR-0037 — Application-mediated collaboration among specialist agents](adr-0037-application-mediated-agent-collaboration.md) — Coordinate bounded specialist contributions through durable application records while preserving direct interaction and human authority.

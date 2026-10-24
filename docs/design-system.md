@@ -2,14 +2,12 @@
 type: Specification
 title: Ohtia design system
 description: Visual identity, tokens, symbol and character, typography, composition, accessibility, localization, components and patterns of Ohtia's interface.
+verified:
+  by: human:AdrianMastronardi
 tags:
   - design
   - accessibility
   - localization
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: wcag22
     resource: https://www.w3.org/TR/WCAG22/
@@ -53,6 +51,7 @@ This document defines the visual identity and design system of Ohtia's interface
 ## Scope and relationship to other documents
 
 - The [product definition](product-definition.md) retains authority over entity meanings, trust policy, comparison outcomes, levels of criticism and the pace indicator. This document defines their presentation without redefining them.
+- [Ohtia and agent identity](agent-identity.md) owns the distinction between the product character, named AI contributors and human supervisors, along with labels, event-batch behavior and character-presentation preferences. [Agent collaboration](agent-collaboration.md) owns the specialists' research responsibilities and authority.
 - [ADR-0025](adr/adr-0025-bundled-plex-and-noto-fonts.md) establishes the IBM Plex roles and justifies distribution, loading, coverage, fallback and use in exports. This document specifies stacks by script, evaluated files, scales and weights.
 - [ADR-0024](adr/adr-0024-typed-localization-catalogs.md) defines message catalogs and locale resolution. This document establishes visual localization rules.
 - [ADR-0023](adr/adr-0023-desktop-accessibility-verification.md) sets the accessibility target: WCAG 2.2 AA and the adopted AAA criteria. This document defines their application, blockers and verification.
@@ -179,8 +178,8 @@ Two additional tokens complete overlay layers:
 #### Color usage rules
 
 - Researcher text, notes and decisions use `content.primary` without another color.
-- `voice.ohtia.*` is reserved for content attributed to Ohtia, its symbol and its character. It is not used for links, actions, states or decoration.
-- `voice.tutor.*` identifies the original supervisor comment in a returned document. Ohtia's extraction and interpretation of that comment use Ohtia's voice.
+- `voice.ohtia.*` is reserved for system/AI-origin contributions, the product symbol and its character. Named AI contributors share this provenance family while retaining their own author labels; using it does not attribute their text to the Ohtia character. It is not used for links, actions, states or unrelated decoration.
+- `voice.tutor.*` identifies the original human supervisor comment from a returned document. Agent extraction and interpretation of that comment use `voice.ohtia.*` with the actual AI contributor's label, without inheriting human authorship.
 - Primary actions use `action.primary.*`, in ink. Links use `content.primary` and are always underlined.
 - `attention.*` indicates something awaiting a researcher decision: content needing review, a comparison result worth examining, a save conflict, invalid form input or a pace behind the plan.
 - `danger.*` is reserved for risk of data loss, operation failure and destructive actions. It is not used for comparison outcomes, criticism or counts.
@@ -466,7 +465,7 @@ Icons for comparison outcomes are defined in [domain components](#comparison-out
 
 ## Ohtia's symbol and character
 
-Ohtia is represented by round glasses. In large spaces, the full character appears: a female researcher wearing those same glasses. Brand and character use only `voice.ohtia.*`, according to the [color usage rules](#color-usage-rules), and always accompany text identifying the voice.
+Ohtia is represented by round glasses. In large spaces, the full character appears: a female researcher wearing those same glasses. She represents the product and research environment, separately from Virgilio and the specialist contributors. Brand and character use only `voice.ohtia.*`, according to the [color usage rules](#color-usage-rules), and always accompany text identifying the actual voice. The [identity contract](agent-identity.md) preserves that distinction when she accompanies another contributor's finding.
 
 This section is the reference for the final illustration. It specifies geometry, sizes, personality and animations so they can be redrawn without interpretation, but does not replace that illustration. The [character specimen](#character-specimen) reproduces the drawings and all 31 animations.
 
@@ -515,9 +514,9 @@ She is drawn within the frame from (−16; 0) to (136; 152). The [dimensioned dr
 Fills use `voice.ohtia.surface`; strokes, curls, bun and pencil use `voice.ohtia.content`. The bun highlight and pencil band use `voice.ohtia.surface`. Open lines (lapels, opening, strands, pencil, highlight, eyebrows and mouth) have round ends; the lab-coat outline, curls and lapels have round joins.
 
 - **Threshold:** the character is used from 96 px upward; below that, only the glasses appear. To move between the two, the framing travels from the full frame to the glasses' rectangle over 700 ms, with a cubic ease-in-out curve, while the remaining pieces fade with opacity 1 − 1.6 × p, where p is the framing's progress from 0 to 1. If the transition reverses halfway, it starts from its current point and lasts the proportional remaining duration. With reduced motion, the change is instantaneous. This transition is used only when available space changes, never to enter or exit because of an event.
-- **Tone:** she is a curious colleague, not a mentor. She neither approves nor orders: she shows doubts, disagreements and what is missing. The supervisor retains a separate voice. Eccentricity stays in her appearance, not in what she says.
+- **Tone:** she is a curious colleague, not the AI research guide or a human supervisor. She neither approves nor orders: she expresses the product's curiosity, doubts and willingness to examine what is missing. A finding retains its actual agent/source attribution, and a human supervisor retains a separate voice. Eccentricity stays in her appearance, not in what she says.
 - **When she appears:** only for specific events. The rest of the time, Ohtia is identified by its small glasses.
-- **Where she appears:** only in a large space: the central area when it does not show the draft, such as the Navigator, welcome view or an empty screen, and chat when it occupies almost the entire screen because the central panel is hidden or only chat is visible.
+- **Where she appears:** only in a large space: the central area when it does not show the draft, such as the Navigator, welcome view or an empty screen, and a contextual notice or empty state in nearly full-screen chat. She never replaces Virgilio's or a specialist's conversational avatar; location does not confer authorship. The character-presentation preference and event-batch rules in [Ohtia and agent identity](agent-identity.md) further constrain these appearances.
 - **Where she does not appear:** never over or beside the draft, according to PRIN-002 and the first [identity principle](#identity-principles). When the draft is visible, Ohtia appears only as small glasses in voice labels, always still, without pupil movement.
 - **Decided events:**
   - a contradiction between sources, with [Hair standing on end](#hair-standing-on-end);
@@ -526,7 +525,7 @@ Fills use `voice.ohtia.surface`; strokes, curls, bun and pencil use `voice.ohtia
   - welcome and first use, with [Peeking in](#peeking-in);
   - returning to a project after 168 hours or more without accessing it, with [Waking up](#waking-up), once per return.
 - **Waking up greeting:** the bubble shows a short greeting from the message catalog, translated into each locale. It is warm and does not reproach the absence, because research advances with pauses. “Long time no see!” is the specimen's example greeting, translated from “¡Cuánto tiempo!”. The bubble is an interface element beside the character, not part of the drawing: its text uses the interface scale, never less than 12 px, and the bubble grows with each locale's text. The same greeting forms part of the character's accompanying text so it reaches assistive technologies.
-- **Contradiction while the draft is visible:** notify with text and the small glasses. Hair standing on end appears the next time the Navigator opens, beside the contradiction notice and its text. If the contradiction has already been resolved, it does not appear; if several remain pending, it appears only once.
+- **Contradiction while the draft is visible:** notify with text and the small static glasses. The first explicit opening of the Navigator may present Hair standing on end beside the qualified notice only under the [single deferred-presentation rule](agent-identity.md#events-attention-and-scientific-uncertainty). It consumes the original event batch's animation allowance and checks current relevance, presentation mode and whether that batch already animated. Passive restoration or restart shows the notice statically; resolved findings produce no reaction, and several pending findings do not create an animation queue.
 - **Entry and exit:** the character appears without a transition when the event occurs, except as specified for a contradiction while the draft is visible, performs her animation once and disappears without a transition; the small glasses remain. With reduced motion, follow each animation's declaration: generally, she remains still in the main pose for the animation's duration; in Milestone, still at rest, and in Blinking, unchanged.
 - **Accessibility:** she is decorative and hidden from assistive technologies; her accompanying text communicates the state.
 
@@ -541,7 +540,7 @@ Fills use `voice.ohtia.surface`; strokes, curls, bun and pencil use `voice.ohtia
 
 Character and glasses animations are the only exception to the [motion](#motion) rule excluding decorative movement:
 
-- They occur only because of an event, play once and never loop. They last at most 4.6 s, and because the character's entry and exit have no transition, no sequence exceeds criterion 2.2.2's five seconds.
+- They occur only because of a committed, relevant event, play once and never loop. They last at most 4.6 s, and because the character's entry and exit have no transition, no sequence exceeds criterion 2.2.2's five seconds. Use [event-batch coalescing and character-presentation controls](agent-identity.md#events-attention-and-scientific-uncertainty) to prevent consecutive events from creating a continuous animation queue; an expression never certifies scientific validity.
 - None is the only notification: accompanying text communicates the same information, as with icons.
 - With `prefers-reduced-motion: reduce`, there is no movement. Each animation declares its behavior; generally, the main pose appears without a transition and disappears when the duration ends.
 - The glasses alone repeat pupil movements and the Milestone jump; the rest belongs to the character. They move only where no draft is visible and the full character does not fit.
@@ -1072,11 +1071,11 @@ Component names are identifiers and remain in English.
 
 #### Voice
 
-The `voice.ohtia.*` tokens identify system-origin proposals. They do not define assistant roles or grant research authority or human authorship.
+The `voice.ohtia.*` tokens identify system/AI-origin contributions and the product character. Named AI contributors share this provenance family while retaining their distinct avatar/symbol, name and role under [Ohtia and agent identity](agent-identity.md#visual-family-and-attribution). These tokens do not define specialist capabilities, grant research authority or imply human authorship. `voice.tutor.*` remains reserved for original human supervisor feedback; Virgilio never inherits that treatment.
 
-- **`VoiceLabel`.** Identifies the speaker: Ohtia, with its glasses and `voice.ohtia.*`; the supervisor, with `user-round` and `voice.tutor.*`. Researcher text carries no label.
+- **`VoiceLabel`.** Identifies the actual speaker: Ohtia for product notices, with its glasses; a named AI contributor, with its own static symbol/avatar, name, localized role and AI label; or the human supervisor, with `user-round` and `voice.tutor.*`. Product and AI-origin labels use `voice.ohtia.*` without merging their authorship. Researcher text retains the ordinary unlabelled treatment. A composed response preserves attribution to its linked specialist findings.
 - **`EvidenceHighlight`.** Marks an anchored source passage with `evidence.surface` and the `evidence.line` rule. A confirmed claim has a fill and solid rule; a proposed claim has only a 2 px dashed underline in `evidence.line`. The accessible name states source, page or location, and state.
-- **`TutorComment`.** Shows the original comment in quotation marks, the author according to the file or user declaration, and the submitted version. Ohtia's interpretation is nested below with its own `VoiceLabel`.
+- **`TutorComment`.** Shows the original human supervisor comment in quotation marks, the author according to the file or user declaration, and the submitted version. An AI interpretation is nested below with its own actual contributor's `VoiceLabel`; neither the product character nor a named agent inherits the human comment's authority.
 
 #### Trust policy
 
@@ -1283,7 +1282,8 @@ On October 20, 2026, using Playwright 1.64.0's Chromium 156.0.8078.4, the refere
 - **Brand.** Show the Ohtia name in `type.ui.subheading` beside glasses in `voice.ohtia.content`. A wordmark has its own visual contract and must preserve this identity and legibility.
 - **Character illustration.** The delivered illustration must preserve every requirement in [Final illustration](#final-illustration); validate its geometry, layers, scaling and key poses against that contract.
 - **Animation events.** Each enabled animation declares its event binding; Falling apart also declares its frequency rule. Verify those bindings before connecting animations to product events.
-- **Coincident events.** Navigator integration declares event ordering, priority and chaining, including Waking up or Peeking in coinciding with a pending Hair standing on end. Verify these collisions rather than inventing an implicit animation queue.
+- **Coincident events.** Navigator integration applies [the identity contract's event-batch rules](agent-identity.md#events-attention-and-scientific-uncertainty), including Waking up or Peeking in coinciding with a pending Hair standing on end. Present at most one animation per batch, keep other notices static and verify current relevance rather than creating an implicit animation queue.
+- **Named contributors.** Verify recognition of Ohtia, Virgilio, specialists and a human supervisor across layouts, reduced-motion and hidden-character modes. New role artwork must preserve the shared design family without reusing the human supervisor's identity or implying a capability not established by its operation contract.
 - **Native review of the name.** A native speaker of every interface language reviews the connotations of “Ohtia”; record the actual linguistic scope and result.
 - **Native review.** A native Korean speaker reviews typography in the implemented reading and interface journeys; automated coverage does not replace that review.
 
