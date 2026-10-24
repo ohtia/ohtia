@@ -3,9 +3,7 @@ type: Playbook
 title: Repository policy
 description: GitHub repository configuration, dependency updates, quality checks, and verification procedures.
 generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
+  by: claude-code/claude-opus-5-5
 sources:
   - id: github-pull-request-api
     resource: https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request
@@ -30,7 +28,7 @@ GitHub repository settings are declared in `config/github/`. The policy tool use
 
 ## Declared configuration
 
-- `repository.json` permits merge commits, disables squash, rebase, and auto-merge, and permits updating a pull request branch. Branch deletion remains part of the post-merge workflow.
+- `repository.json` permits merge commits, disables squash, rebase, and auto-merge, permits updating a pull request branch, enables Discussions, and disables the wiki. Branch deletion remains part of the post-merge workflow.
 - `actions-permissions.json` permits only `actions/checkout` and `actions/setup-python`, requires full commit SHAs, and gives workflow tokens read-only access without pull request approval privileges. The action patterns apply to this public repository.[^github-actions-permissions] It also requires `all_external_contributors` approval for fork workflows, including contributors with previously accepted changes. Approval authorizes workflow execution, not fork creation or PR integration.
 - `ci-verification.json` declares the expected workflow/event, mandatory jobs/steps and explicitly optional cleanup steps used by the read-only pre-merge verifier. Review this inventory with workflow changes.
 - `security.json` enables dependency vulnerability alerts and automated security fixes.
