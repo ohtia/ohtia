@@ -29,6 +29,11 @@ okf_version: "0.2"
 - [Architecture decisions](architecture-decisions.md) — Criteria, structure, version ownership, numbering, and review of significant Ohtia architecture choices.
 - [Architecture decision register](adr/index.md) — Significant desktop architecture choices and their consequences.
 
+## Desktop foundation
+
+- [Desktop foundation contract](desktop-foundation-contract.md) — Six-target qualification inputs, pinned candidate metadata, numeric resource policy and native evidence ownership for the desktop foundation.
+- [Foundation security applicability](foundation-security.md) — Versioned security applicability, enforcing boundaries and reproducible evidence obligations for the desktop foundation.
+
 ## Repository
 
 - [Repository policy](repository-policy.md) — GitHub repository configuration, dependency updates, quality checks, and verification procedures.

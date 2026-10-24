@@ -1,0 +1,685 @@
+{
+  "schema_version": 1,
+  "tools": {
+    "typescript": {
+      "version": "6.0.3",
+      "adr": "0002",
+      "source": "https://registry.npmjs.org/typescript/6.0.3",
+      "engines": {
+        "node": ">=14.17"
+      },
+      "peers": {},
+      "license": "Apache-2.0",
+      "artifact": {
+        "url": "https://registry.npmjs.org/typescript/-/typescript-6.0.3.tgz",
+        "sha256": "33cd0ee1beaa8c9e9d15a9da836c62ddea4c34a42d7c2d349dbc80d94165d22a",
+        "integrity": "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==",
+        "bytes": 4515854,
+        "inspection": "downloaded-integrity-checked"
+      }
+    },
+    "electron": {
+      "version": "45.0.0",
+      "adr": "0003",
+      "source": "https://registry.npmjs.org/electron/45.0.0",
+      "engines": {
+        "node": ">= 22.12.0"
+      },
+      "peers": {},
+      "license": "MIT",
+      "artifact": {
+        "url": "https://registry.npmjs.org/electron/-/electron-45.0.0.tgz",
+        "sha256": "99cb34bfd34836bf32dde8c251e5df94bf95cbf21619608dd5d7bc97841bc194",
+        "integrity": "sha512-yjz4uhMBcO6L5X7CWgRMobf2EMJPnb9j4zuf+nu/TU/6E4Sqfx7fn/a2eACo4qngjml/0JnsoZhxYroJLxLd2w==",
+        "bytes": 208744,
+        "inspection": "downloaded-integrity-checked"
+      },
+      "embedded_runtime_metadata": {
+        "node": "24.22.0",
+        "chrome": "156.0.8078.48",
+        "v8": "15.6.75.19",
+        "modules": "150"
+      },
+      "artifacts": {
+        "linux-x64": {
+          "url": "https://github.com/electron/electron/releases/download/v45.0.0/electron-v45.0.0-linux-x64.zip",
+          "sha256": "22f6a10bd3f7fef987ddbb379d3375ce664ad0c98a9a50f80c89f1718a0c3e3a",
+          "bytes": 123909792,
+          "inspection": "published-metadata-only"
+        },
+        "linux-arm64": {
+          "url": "https://github.com/electron/electron/releases/download/v45.0.0/electron-v45.0.0-linux-arm64.zip",
+          "sha256": "a80d92b1ad6c111545a12632b8a75cedce614a41866e500810d4050d947f90e9",
+          "bytes": 125036164,
+          "inspection": "published-metadata-only"
+        },
+        "win32-x64": {
+          "url": "https://github.com/electron/electron/releases/download/v45.0.0/electron-v45.0.0-win32-x64.zip",
+          "sha256": "ae53887a23bb640369c93dbd38c408a2af5c0deb86f2fa76c6c244cb444b7f47",
+          "bytes": 158223852,
+          "inspection": "published-metadata-only"
+        },
+        "win32-arm64": {
+          "url": "https://github.com/electron/electron/releases/download/v45.0.0/electron-v45.0.0-win32-arm64.zip",
+          "sha256": "fbae273960b24b81ab7a5cdcf34dd83a8781ee6799ccc621c1d85d5ce197252d",
+          "bytes": 156031428,
+          "inspection": "published-metadata-only"
+        },
+        "darwin-x64": {
+          "url": "https://github.com/electron/electron/releases/download/v45.0.0/electron-v45.0.0-darwin-x64.zip",
+          "sha256": "7877c282e74a52f8d87949536a25735cf9982de1265b544c9cd258dd14eff4de",
+          "bytes": 125049130,
+          "inspection": "published-metadata-only"
+        },
+        "darwin-arm64": {
+          "url": "https://github.com/electron/electron/releases/download/v45.0.0/electron-v45.0.0-darwin-arm64.zip",
+          "sha256": "896c3a50b148e89a158dca08a6996a022ddf39b23aac871e107f5b4087f8caa9",
+          "bytes": 120706020,
+          "inspection": "published-metadata-only"
+        }
+      }
+    },
+    "pnpm": {
+      "version": "12.14.0",
+      "adr": "0004",
+      "source": "https://registry.npmjs.org/pnpm/12.14.0",
+      "engines": {
+        "node": ">=18.*"
+      },
+      "peers": {},
+      "license": "MIT",
+      "artifact": {
+        "url": "https://registry.npmjs.org/pnpm/-/pnpm-12.14.0.tgz",
+        "sha256": "ea206e35474bf87be9564a85ca70ed1c8ebdc45da55aafb0a3bf09d1ba69b179",
+        "integrity": "sha512-wYum2HmT09Fky16JSPMrLAbuhUSH4GzY2GeBNC+z5btGNDZwNHEehoArqpw3vqkGzhkprQjXCITJfYAd8TOJpg==",
+        "bytes": 1045824,
+        "inspection": "downloaded-integrity-checked"
+      }
+    },
+    "react": {
+      "version": "19.3.1",
+      "adr": "0022",
+      "source": "https://registry.npmjs.org/react/19.3.1",
+      "engines": {
+        "node": ">=0.10.0"
+      },
+      "peers": {},
+      "license": "MIT",
+      "artifact": {
+        "url": "https://registry.npmjs.org/react/-/react-19.3.1.tgz",
+        "sha256": "56936913918dcf1f7a6fe58784e79df54b18200a88655ce809cf5e9c4ef871aa",
+        "integrity": "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw==",
+        "bytes": 26394,
+        "inspection": "downloaded-integrity-checked"
+      }
+    },
+    "react-dom": {
+      "version": "19.3.1",
+      "adr": "0022",
+      "source": "https://registry.npmjs.org/react-dom/19.3.1",
+      "engines": {},
+      "peers": {
+        "react": "^19.3.1"
+      },
+      "license": "MIT",
+      "artifact": {
+        "url": "https://registry.npmjs.org/react-dom/-/react-dom-19.3.1.tgz",
+        "sha256": "8b49975821eec6311e00d2b3f4b8337923253c876517388a33f9839c61ab262e",
+        "integrity": "sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ==",
+        "bytes": 1410652,
+        "inspection": "downloaded-integrity-checked"
+      }
+    },
+    "vite": {
+      "version": "8.0.16",
+      "adr": "0022",
+      "source": "https://registry.npmjs.org/vite/8.0.16",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "peers": {
+        "tsx": "^4.8.1",
+        "jiti": ">=1.21.0",
+        "less": "^4.0.0",
+        "sass": "^1.70.0",
+        "yaml": "^2.4.2",
+        "stylus": ">=0.54.8",
+        "terser": "^5.16.0",
+        "esbuild": "^0.27.0 || ^0.28.0",
+        "sugarss": "^5.0.0",
+        "@types/node": "^20.19.0 || >=22.12.0",
+        "sass-embedded": "^1.70.0",
+        "@vitejs/devtools": "^0.1.18"
+      },
+      "license": "MIT",
+      "artifact": {
+        "url": "https://registry.npmjs.org/vite/-/vite-8.0.16.tgz",
+        "sha256": "3af821aa696cac7f3722ba8db24eff8da9d8739ce8279bc318e1549fa9ec5287",
+        "integrity": "sha512-h9bXPmJichP5fLmVQo3PyaGSDE2n3aPuomeAlVRm0JLmt4rY6zmPKd59HYI4LNW8oTK7tlTsuC7l/m7awx9Jcw==",
+        "bytes": 538260,
+        "inspection": "downloaded-integrity-checked"
+      }
+    },
+    "eslint": {
+      "version": "10.13.0",
+      "adr": "0004",
+      "source": "https://registry.npmjs.org/eslint/10.13.0",
+      "engines": {
+        "node": "^20.19.0 || ^22.13.0 || >=24"
+      },
+      "peers": {
+        "jiti": "*"
+      },
+      "license": "MIT",
+      "artifact": {
+        "url": "https://registry.npmjs.org/eslint/-/eslint-10.13.0.tgz",
+        "sha256": "05da899bc1602385a199570db5ad7cff488010fb103e659994065eed38f479f3",
+        "integrity": "sha512-UohDjD4zSzEwhf58M3O7vc/ycc8O1I7dNlhtD0WxE8Px8EHNJKtUwzBqrzeGhisRuv2ag4sAYswszCJRgKXYUg==",
+        "bytes": 629155,
+        "inspection": "downloaded-integrity-checked"
+      }
+    },
+    "typescript-eslint": {
+      "version": "8.71.2",
+      "adr": "0004",
+      "source": "https://registry.npmjs.org/typescript-eslint/8.71.2",
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      },
+      "peers": {
+        "eslint": "^8.57.0 || ^9.0.0 || ^10.0.0",
+        "typescript": ">=4.8.4 <6.1.0"
+      },
+      "license": "MIT",
+      "artifact": {
+        "url": "https://registry.npmjs.org/typescript-eslint/-/typescript-eslint-8.71.2.tgz",
+        "sha256": "88706cf87882d1c388ffcb6b68e0623abbb997c497c09f3f7711315940827ed6",
+        "integrity": "sha512-Rz4effbMy2g9wnvOJZG6SbVavX313Lap1vNEbk1RUochzickvzP8P4HB+bkNg5e50eVz1hQGjh9K1omI1xB4Bw==",
+        "bytes": 9373,
+        "inspection": "downloaded-integrity-checked"
+      }
+    },
+    "prettier": {
+      "version": "3.9.10",
+      "adr": "0004",
+      "source": "https://registry.npmjs.org/prettier/3.9.10",
+      "engines": {
+        "node": ">=14"
+      },
+      "peers": {},
+      "license": "MIT",
+      "artifact": {
+        "url": "https://registry.npmjs.org/prettier/-/prettier-3.9.10.tgz",
+        "sha256": "9dc72045591793dff972432fb78722f7ab91aaa90a7fa8c1261ede55969246b7",
+        "integrity": "sha512-skGHTH1Yb9QvaTC4hWnRTzEYtCpApF0UMBPz+t/0ZPzP8ihefo/btKd+QA7pUE0fEwA1SbS/NmhyEcstdXOIdA==",
+        "bytes": 2801570,
+        "inspection": "downloaded-integrity-checked"
+      }
+    },
+    "vitest": {
+      "version": "5.0.5",
+      "adr": "0018",
+      "source": "https://registry.npmjs.org/vitest/5.0.5",
+      "engines": {
+        "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
+      },
+      "peers": {
+        "vite": "^6.4.0 || ^7.0.0 || ^8.0.0",
+        "jsdom": "*",
+        "happy-dom": "*",
+        "@vitest/ui": "5.0.5",
+        "@types/node": "^22.0.0 || >=24.0.0",
+        "@edge-runtime/vm": "*",
+        "@opentelemetry/api": "^1.9.0",
+        "@vitest/coverage-v8": "5.0.5",
+        "@vitest/browser-preview": "5.0.5",
+        "@vitest/coverage-istanbul": "5.0.5",
+        "@vitest/browser-playwright": "5.0.5",
+        "@vitest/browser-webdriverio": "^5.0.0-beta.5 || >=5.0.0"
+      },
+      "license": "MIT",
+      "artifact": {
+        "url": "https://registry.npmjs.org/vitest/-/vitest-5.0.5.tgz",
+        "sha256": "c66696882320ad7724b0c84f68f1e4ddcac561a928cc86715b72da167aedd9ef",
+        "integrity": "sha512-cPODOMF8YnkiiYtDdHo6n4wWmBrOBBbOIYH2d33M4l3CdNn72h+qMmO6uXffUN6A5AZFXNND/d+krS9mgkXRfg==",
+        "bytes": 710235,
+        "inspection": "downloaded-integrity-checked"
+      }
+    },
+    "@playwright/test": {
+      "version": "1.64.1",
+      "adr": "0018",
+      "source": "https://registry.npmjs.org/@playwright/test/1.64.1",
+      "engines": {
+        "node": ">=20"
+      },
+      "peers": {},
+      "license": "Apache-2.0",
+      "artifact": {
+        "url": "https://registry.npmjs.org/@playwright/test/-/test-1.64.1.tgz",
+        "sha256": "9bc8fb4bf5c8f395c1c6b6999e5480607a5aaaead17e9fe6e58181002b4086e3",
+        "integrity": "sha512-IaYGml/nSOiZWROfPtuIL7neuu9qDOZ3TNvNljUIrhDMxiGTgPjzj/g9p9RxpS2tSepPDRY+UwAaEeiKtUvIAg==",
+        "bytes": 8748,
+        "inspection": "downloaded-integrity-checked"
+      }
+    },
+    "better-sqlite3": {
+      "version": "13.0.3",
+      "adr": "0007",
+      "source": "https://registry.npmjs.org/better-sqlite3/13.0.3",
+      "engines": {
+        "node": ">=22"
+      },
+      "peers": {},
+      "license": "MIT",
+      "artifact": {
+        "url": "https://registry.npmjs.org/better-sqlite3/-/better-sqlite3-13.0.3.tgz",
+        "sha256": "77e0513dc1a469fb3bceec4c7fb5ad3f403109787eda05be047ec17fd56868cb",
+        "integrity": "sha512-RbOBxmLBG8uvFUc15X9+9SFemKcQ0WBuISBVkpuiaUB2qblC8UWlHEjdWVoZ8AdhSwmoEgsiXKfopX0CQxaACQ==",
+        "bytes": 11402131,
+        "inspection": "downloaded-integrity-checked"
+      },
+      "node_api_version": 10,
+      "artifacts": {
+        "linux-x64": {
+          "path": "package/prebuilds/linux-x64.node",
+          "bytes": 2226168,
+          "sha256": "6fd4292c6c5f352436cd85c9e1cb286978efa43c20ae350973f83414ced9991d",
+          "architecture": "x64",
+          "inspection": "downloaded-header-and-hash-checked",
+          "observed_symbol_requirements": {
+            "glibc_maximum": "2.34",
+            "glibcxx_maximum": "3.4.29"
+          }
+        },
+        "linux-arm64": {
+          "path": "package/prebuilds/linux-arm64.node",
+          "bytes": 2066328,
+          "sha256": "8ba771f284dfd9430e3ef8e2ffc373ed7cc5a92fc7c4c0c7baf39dd672863485",
+          "architecture": "arm64",
+          "inspection": "downloaded-header-and-hash-checked",
+          "observed_symbol_requirements": {
+            "glibc_maximum": "2.34",
+            "glibcxx_maximum": "3.4.29"
+          }
+        },
+        "win32-x64": {
+          "path": "package/prebuilds/win32-x64.node",
+          "bytes": 1989632,
+          "sha256": "e21e5efd71fba66578e95b62554d9028064a80dafd7221bf8a8ef155de8d240a",
+          "architecture": "x64",
+          "inspection": "downloaded-header-and-hash-checked",
+          "observed_imports": ["KERNEL32.dll"]
+        },
+        "win32-arm64": {
+          "path": "package/prebuilds/win32-arm64.node",
+          "bytes": 1903104,
+          "sha256": "a47870d114b98baecaff0baa51cfb93d6280d43f064280adaadefafb6949f1bf",
+          "architecture": "arm64",
+          "inspection": "downloaded-header-and-hash-checked"
+        },
+        "darwin-x64": {
+          "path": "package/prebuilds/darwin-x64.node",
+          "bytes": 1982880,
+          "sha256": "e6db154afe9d250e242e2ea3d45d273718ab80a0751d08873637553031752d21",
+          "architecture": "x64",
+          "inspection": "downloaded-header-and-hash-checked"
+        },
+        "darwin-arm64": {
+          "path": "package/prebuilds/darwin-arm64.node",
+          "bytes": 1980736,
+          "sha256": "98e0e8acd01c632fe5615243e1296af0372826f8783b18fc31c506f73c47459c",
+          "architecture": "arm64",
+          "inspection": "downloaded-header-and-hash-checked"
+        }
+      }
+    },
+    "kysely": {
+      "version": "0.29.7",
+      "adr": "0007",
+      "source": "https://registry.npmjs.org/kysely/0.29.7",
+      "engines": {
+        "node": ">=22.0.0"
+      },
+      "peers": {},
+      "license": "MIT",
+      "artifact": {
+        "url": "https://registry.npmjs.org/kysely/-/kysely-0.29.7.tgz",
+        "sha256": "59373f150db1f6e5bad8bcd78ffb6ea63b09a989039ca1ae57fb2b97a0b82e9c",
+        "integrity": "sha512-fmIq+7kv4WbFm2tcfznRzikqB4cuNpgZ40PSU2fAJ2/OO5XhojqnTPrmgrCjYSRJVwBln03XcRXJGnw9H099IQ==",
+        "bytes": 325969,
+        "inspection": "downloaded-integrity-checked"
+      }
+    },
+    "electron-builder": {
+      "version": "26.18.0",
+      "adr": "0038",
+      "source": "https://registry.npmjs.org/electron-builder/26.18.0",
+      "engines": {
+        "node": ">=14.0.0"
+      },
+      "peers": {},
+      "license": "MIT",
+      "artifact": {
+        "url": "https://registry.npmjs.org/electron-builder/-/electron-builder-26.18.0.tgz",
+        "sha256": "fb27ff1656881bf59e4d397c185d1a27e3aa7fdebba2ffb81c5e7de14d9a2512",
+        "integrity": "sha512-ASgIuQnOq4RuD8jMhS9hI0LS3EMRT1I/M5R6utqifB/BHN80IcCjBdt+DED+NmNPvmBgEtrlExXZitNdA7kXOg==",
+        "bytes": 22342,
+        "inspection": "downloaded-integrity-checked"
+      }
+    },
+    "electron-updater": {
+      "version": "6.8.11",
+      "adr": "0038",
+      "source": "https://registry.npmjs.org/electron-updater/6.8.11",
+      "engines": {},
+      "peers": {},
+      "license": "MIT",
+      "artifact": {
+        "url": "https://registry.npmjs.org/electron-updater/-/electron-updater-6.8.11.tgz",
+        "sha256": "f1344e79b420da2c390761ffedee2668ca9baf1792786df966ffefce6845e1b2",
+        "integrity": "sha512-12U/mbzaIKQS3Q543aQ7DjyAZMXeVJy1Wpu0qdq5ne4RXpIQDpWYm25zRjgXngAoo6swMrm4C4owGyiIipelsg==",
+        "bytes": 141301,
+        "inspection": "downloaded-integrity-checked"
+      }
+    },
+    "uv": {
+      "version": "0.13.5",
+      "adr": "0005",
+      "source": "https://pypi.org/pypi/uv/0.13.5/json",
+      "artifacts": {
+        "linux-x64": {
+          "url": "https://files.pythonhosted.org/packages/3a/ad/3c2a81d66d1839063662e5b6c0002ec31f8ee987dbc5295747627ca6160a/uv-0.13.5-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "sha256": "fa8d26e08e34c29c0c4e820cf3181757086d547240b4f4d31ff1d8bd810ca946",
+          "bytes": 17211825,
+          "inspection": "published-metadata-only",
+          "requires_python": ">=3.8",
+          "yanked": false
+        },
+        "linux-arm64": {
+          "url": "https://files.pythonhosted.org/packages/e8/2e/5bf9acf9d11fb790420e258a875e13bba36bc890858350642aca185efe0e/uv-0.13.5-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.musllinux_1_1_aarch64.whl",
+          "sha256": "2386c2dc9b59fc1d39b1c500e4319d71d3268232eb3b38e29cd6775d6269e8d4",
+          "bytes": 17784583,
+          "inspection": "published-metadata-only",
+          "requires_python": ">=3.8",
+          "yanked": false
+        },
+        "win32-x64": {
+          "url": "https://files.pythonhosted.org/packages/32/ea/771744a784b16aa21d195cb5d5d5a2878d72fa00fc26f11ea3f9646994fe/uv-0.13.5-py3-none-win_amd64.whl",
+          "sha256": "1fb29fc46ba12033e2ef95a95ac79d649e71bbb1358419bbbcbd19d86026ef2f",
+          "bytes": 15358650,
+          "inspection": "published-metadata-only",
+          "requires_python": ">=3.8",
+          "yanked": false
+        },
+        "win32-arm64": {
+          "url": "https://files.pythonhosted.org/packages/52/67/1f31243f75ece410f2db1afdfc9a9f9722fdee2385e4a347c3ca1dee6d13/uv-0.13.5-py3-none-win_arm64.whl",
+          "sha256": "0548460d46c8667488b1f089e936f29f0edfb1cc753f9152ffbd8bc84a46aa20",
+          "bytes": 15533668,
+          "inspection": "published-metadata-only",
+          "requires_python": ">=3.8",
+          "yanked": false
+        },
+        "darwin-x64": {
+          "url": "https://files.pythonhosted.org/packages/e3/2a/dcae794203261e49564bb9ff7c4b64a093f69ac73476cc8ce54c1deed3a1/uv-0.13.5-py3-none-macosx_10_12_x86_64.whl",
+          "sha256": "337a14829bb499e114989df4f908f134ff37f1fb6c33497541cfb05b28080e39",
+          "bytes": 17335724,
+          "inspection": "published-metadata-only",
+          "requires_python": ">=3.8",
+          "yanked": false
+        },
+        "darwin-arm64": {
+          "url": "https://files.pythonhosted.org/packages/d2/26/9ac45211123244ea68be852775093af487a64debc13621a2de239f8ebe73/uv-0.13.5-py3-none-macosx_11_0_arm64.whl",
+          "sha256": "a42c85fa8156e1e5e2cecdbc77bb818ea1dcf5f78b8e2a8f84c7fe4f16f0702e",
+          "bytes": 14470685,
+          "inspection": "published-metadata-only",
+          "requires_python": ">=3.8",
+          "yanked": false
+        }
+      }
+    },
+    "ruff": {
+      "version": "0.17.2",
+      "adr": "0005",
+      "source": "https://pypi.org/pypi/ruff/0.17.2/json",
+      "artifacts": {
+        "linux-x64": {
+          "url": "https://files.pythonhosted.org/packages/c3/d8/59894cf630d2d86882457a2a6a0a1533410c5c805bfbac6f6eb4b5aef69d/ruff-0.17.2-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "sha256": "c60f93fec7142dba5b8f487f94bf2f6231dae24dc11e4c48648347c8b0720004",
+          "bytes": 10528000,
+          "inspection": "published-metadata-only",
+          "requires_python": ">=3.7",
+          "yanked": false
+        },
+        "linux-arm64": {
+          "url": "https://files.pythonhosted.org/packages/b7/b6/6a64fae86ca5e5e29d5adc311e5481de726cedf9aee607435a16c31c442a/ruff-0.17.2-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+          "sha256": "b7d0906677d89bbf3cf73cde64b5bbe2ab35df3ae43e49ee2627301e91265bac",
+          "bytes": 10047078,
+          "inspection": "published-metadata-only",
+          "requires_python": ">=3.7",
+          "yanked": false
+        },
+        "win32-x64": {
+          "url": "https://files.pythonhosted.org/packages/1c/9a/c7da96c2c96d20704cf9027f7a5121da272a8c05f1d1531ba949e3b3df04/ruff-0.17.2-py3-none-win_amd64.whl",
+          "sha256": "1b59d447f197bef9ef48a22ba1a6016137753c6099e9bac9c36eb566e422424c",
+          "bytes": 10282826,
+          "inspection": "published-metadata-only",
+          "requires_python": ">=3.7",
+          "yanked": false
+        },
+        "win32-arm64": {
+          "url": "https://files.pythonhosted.org/packages/81/60/a3604c79cb02777b6cb84da894104021986f06c4bc41375102cc95049a32/ruff-0.17.2-py3-none-win_arm64.whl",
+          "sha256": "195ad918027f817c119310ca89a42d347887dfc28934aaa869325e9c5dc9d962",
+          "bytes": 9827036,
+          "inspection": "published-metadata-only",
+          "requires_python": ">=3.7",
+          "yanked": false
+        },
+        "darwin-x64": {
+          "url": "https://files.pythonhosted.org/packages/e8/61/12cc2ff7b2fa90a268ce1e2162c23aaf76e601d22623f6a31b0eeaa764b0/ruff-0.17.2-py3-none-macosx_10_12_x86_64.whl",
+          "sha256": "39c5b55c960515cdb32be16e69efb5734c589c06a0eb38a22694524a336b889d",
+          "bytes": 10210904,
+          "inspection": "published-metadata-only",
+          "requires_python": ">=3.7",
+          "yanked": false
+        },
+        "darwin-arm64": {
+          "url": "https://files.pythonhosted.org/packages/e8/7c/b8850a8e4ad29f64a827dd6c6902db4a9aa538fb2b9eef4e26084001a3bb/ruff-0.17.2-py3-none-macosx_11_0_arm64.whl",
+          "sha256": "92a80d2f44584dabb0189b3a6c393e37e525e04942838482010575cb81945be7",
+          "bytes": 9408439,
+          "inspection": "published-metadata-only",
+          "requires_python": ">=3.7",
+          "yanked": false
+        }
+      }
+    },
+    "pyrefly": {
+      "version": "1.4.0",
+      "adr": "0005",
+      "source": "https://pypi.org/pypi/pyrefly/1.4.0/json",
+      "artifacts": {
+        "linux-x64": {
+          "url": "https://files.pythonhosted.org/packages/2c/65/b44a1cb23667bcbcdc88558cbef79fa9e07a1152c2a1da148036b1a2e0d1/pyrefly-1.4.0-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "sha256": "b6951f51687304caebfedf13dd1a943aeafdbc95abcc4e24a683b97467a77007",
+          "bytes": 16066345,
+          "inspection": "published-metadata-only",
+          "requires_python": ">=3.8",
+          "yanked": false
+        },
+        "linux-arm64": {
+          "url": "https://files.pythonhosted.org/packages/23/97/dfcfec6a9d8948ab4b2746f7e87558a82bffabb7a54c22e7d3ce4bdc1932/pyrefly-1.4.0-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+          "sha256": "8f1b16923a6583a6764e8aec07787e2ef4df644c7030294cba71339783a9451c",
+          "bytes": 15438858,
+          "inspection": "published-metadata-only",
+          "requires_python": ">=3.8",
+          "yanked": false
+        },
+        "win32-x64": {
+          "url": "https://files.pythonhosted.org/packages/03/02/18f075d4de0e255f184f42fc28c1f0ecc9f49dd528678479fc90cf12246c/pyrefly-1.4.0-py3-none-win_amd64.whl",
+          "sha256": "7aff37c2b711c8240ed650da0c6148237b327bf7e5dfacee65884f1adea22305",
+          "bytes": 15726220,
+          "inspection": "published-metadata-only",
+          "requires_python": ">=3.8",
+          "yanked": false
+        },
+        "win32-arm64": {
+          "url": "https://files.pythonhosted.org/packages/92/62/92947076681550904c72a9dd03b24e92694ede9a48548f5e487c849e66ea/pyrefly-1.4.0-py3-none-win_arm64.whl",
+          "sha256": "88879f0cb749e5fea81d9ff4c2d5431a70349c458bcdf0b61de72c79214d90a5",
+          "bytes": 14943690,
+          "inspection": "published-metadata-only",
+          "requires_python": ">=3.8",
+          "yanked": false
+        },
+        "darwin-x64": {
+          "url": "https://files.pythonhosted.org/packages/6a/17/dfce6611acc00cb26667e5e1011438cc510f3067f961e0f07f7a0c68f416/pyrefly-1.4.0-py3-none-macosx_10_12_x86_64.whl",
+          "sha256": "460cec39bc8743915e9c2c8c10ba926ad0b29b099d89c1859fb97e0059f42fa7",
+          "bytes": 15705624,
+          "inspection": "published-metadata-only",
+          "requires_python": ">=3.8",
+          "yanked": false
+        },
+        "darwin-arm64": {
+          "url": "https://files.pythonhosted.org/packages/a6/78/a7b96442123fa6ed733de0d1ea933e35d6fc6b7c9cf16e05279abb493493/pyrefly-1.4.0-py3-none-macosx_11_0_arm64.whl",
+          "sha256": "5a6370d686b6cbbac8869832f09a52012888371956fbc68d446a349bc85ccd43",
+          "bytes": 14978669,
+          "inspection": "published-metadata-only",
+          "requires_python": ">=3.8",
+          "yanked": false
+        }
+      }
+    },
+    "node": {
+      "version": "26.12.1",
+      "adr": "0004",
+      "source": "https://nodejs.org/dist/index.json",
+      "modules": "147",
+      "artifacts": {
+        "linux-x64": {
+          "url": "https://nodejs.org/dist/v26.12.1/node-v26.12.1-linux-x64.tar.xz",
+          "sha256": "6170b2d474e1c626f43cff3adc118df9fe3b573258a4fc3d850c8dbc6b079bbd",
+          "inspection": "published-metadata-only"
+        },
+        "linux-arm64": {
+          "url": "https://nodejs.org/dist/v26.12.1/node-v26.12.1-linux-arm64.tar.xz",
+          "sha256": "42aa04922591ee5d4dbc7740d452621acf28508239daa512f5ee8c47ee224fdb",
+          "inspection": "published-metadata-only"
+        },
+        "win32-x64": {
+          "url": "https://nodejs.org/dist/v26.12.1/node-v26.12.1-win-x64.zip",
+          "sha256": "b3efd5c70cba3308ed46e7e699a9b8aac075bbc6b027fcb39c84c31acc25e2b4",
+          "inspection": "published-metadata-only"
+        },
+        "win32-arm64": {
+          "url": "https://nodejs.org/dist/v26.12.1/node-v26.12.1-win-arm64.zip",
+          "sha256": "34567581ee63967b37afb6b7a0cc63a2d550a43d5d838adb75982d7e356f2e2c",
+          "inspection": "published-metadata-only"
+        },
+        "darwin-x64": {
+          "url": "https://nodejs.org/dist/v26.12.1/node-v26.12.1-darwin-x64.tar.gz",
+          "sha256": "b85c2ea4420ad0bc4abf2dc6cf1f55130ed681f1cabf60cf3f526e4c9e2712ff",
+          "inspection": "published-metadata-only"
+        },
+        "darwin-arm64": {
+          "url": "https://nodejs.org/dist/v26.12.1/node-v26.12.1-darwin-arm64.tar.gz",
+          "sha256": "1901d539912c02afa10d1cc126943a8855a7eedebe830119463470db5e6c59e8",
+          "inspection": "published-metadata-only"
+        }
+      }
+    },
+    "python": {
+      "version": "3.14.8",
+      "adr": "0005",
+      "source": "https://www.python.org/downloads/release/python-3148/",
+      "artifact": {
+        "url": "https://www.python.org/ftp/python/3.14.8/Python-3.14.8.tar.xz",
+        "sha256": "c2215904f02b175596dc49351585104f4bc20341e1c47378b26a2c274360ce73",
+        "bytes": 24130644,
+        "inspection": "downloaded-hash-computed"
+      },
+      "variant": "conventional-gil",
+      "artifacts": {
+        "linux-x64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.14.8%2B20261013-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+          "sha256": "d8faa1b588506b9e3e5a3f57807bb056d534a1641a6b10d15b6ea3f0b413b960",
+          "build": "20261013",
+          "inspection": "published-metadata-only"
+        },
+        "linux-arm64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.14.8%2B20261013-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+          "sha256": "d8ae14f303d3971431184cf423ae5467202de2bc19bf6491a490250b87647d4b",
+          "build": "20261013",
+          "inspection": "published-metadata-only"
+        },
+        "win32-x64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.14.8%2B20261013-x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
+          "sha256": "dce851f280b986764037bd952d40819e94ccceb08ac914004123f43ce17f4095",
+          "build": "20261013",
+          "inspection": "published-metadata-only"
+        },
+        "win32-arm64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.14.8%2B20261013-aarch64-pc-windows-msvc-install_only_stripped.tar.gz",
+          "sha256": "9c0b221413b0353550bdbf8f0b7bba21c02c8a1199b39dd6af08f06cd6be6851",
+          "build": "20261013",
+          "inspection": "published-metadata-only"
+        },
+        "darwin-x64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.14.8%2B20261013-x86_64-apple-darwin-install_only_stripped.tar.gz",
+          "sha256": "f0137337ecf6234b30c9c955219dae2d71e1a00387c4d204d6c6929e24bf9a90",
+          "build": "20261013",
+          "inspection": "published-metadata-only"
+        },
+        "darwin-arm64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.14.8%2B20261013-aarch64-apple-darwin-install_only_stripped.tar.gz",
+          "sha256": "994adadc202c5df0b4570192cc9a70e3f2c131e512f4a125c56efa8562f44b28",
+          "build": "20261013",
+          "inspection": "published-metadata-only"
+        }
+      },
+      "managed_distribution_source": "https://raw.githubusercontent.com/astral-sh/uv/0.13.5/crates/uv-python-managed/download-metadata.json",
+      "managed_distribution_source_sha256": "884c5b669a65eef299e17156cab286d3e6310bcc0fa8a741a1ee62105ea8d456",
+      "ci_artifact": {
+        "url": "https://github.com/actions/python-versions/releases/download/3.14.8-36806082737/python-3.14.8-linux-26.04-x64.tar.gz",
+        "sha256": "53eb0aed7bfb9a3d28b0842ada81dc7b1432fd697cb35653b79156b1efd0d3fa",
+        "bytes": 110477772,
+        "inspection": "published-metadata-only",
+        "os": "ubuntu-26.04",
+        "arch": "x64"
+      },
+      "ci_source": "https://raw.githubusercontent.com/actions/python-versions/9834b4e4911ca2950ff6c3b7547f09eacc006848/versions-manifest.json",
+      "ci_source_sha256": "cd09353c884196ca2d33f2273cce58a2950e39f558890e82ab19f1c5ebeb2072"
+    },
+    "sqlite": {
+      "version": "3.53.4",
+      "adr": "0006",
+      "source": "https://www.sqlite.org/2026/sqlite-amalgamation-3530400.zip",
+      "source_id": "2026-07-24 19:02:57 bf7c7f30031888f4e796e429ab3978879485813aaca6f641c7b33e4e09459bcc",
+      "artifact": {
+        "url": "https://www.sqlite.org/2026/sqlite-amalgamation-3530400.zip",
+        "sha256": "1e71ddf93849c6a6ecf58b827c0692073d2dd7ee40196158068f7b29f422e87d",
+        "bytes": 2946650,
+        "inspection": "downloaded-hash-computed"
+      },
+      "distribution": "better-sqlite3-bundled"
+    },
+    "powershell": {
+      "version": "7.6.8",
+      "adr": "0004",
+      "source": "https://github.com/PowerShell/PowerShell/releases/tag/v7.6.8",
+      "artifacts": {
+        "win32-x64": {
+          "url": "https://github.com/PowerShell/PowerShell/releases/download/v7.6.8/PowerShell-7.6.8-win-x64.zip",
+          "sha256": "b9f074f923c499b51ec99d313da8e9ae90d17a9f3adf00c73d6189f34d908528",
+          "bytes": 106353859,
+          "inspection": "published-metadata-only"
+        },
+        "win32-arm64": {
+          "url": "https://github.com/PowerShell/PowerShell/releases/download/v7.6.8/PowerShell-7.6.8-win-arm64.zip",
+          "sha256": "e889c9bfa6c3a9796bd6268cbeeb389e3968f77c6db46cb282178274d71c160b",
+          "bytes": 99560755,
+          "inspection": "published-metadata-only"
+        }
+      },
+      "platforms": ["win32-x64", "win32-arm64"]
+    }
+  }
+}
