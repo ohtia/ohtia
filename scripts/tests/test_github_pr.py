@@ -44,9 +44,12 @@ class FakeGitHub:
             "merged": False,
             "draft": False,
             "mergeable": True,
-            "merge_commit_sha": MERGE,
             "base": {"repo": {"id": 42, "full_name": "ohtia/ohtia"}, "ref": "main", "sha": BASE},
             "head": {"repo": {"id": 43, "full_name": "contributor/ohtia"}, "sha": HEAD},
+        }
+        self.merge_ref = {
+            "ref": "refs/pull/5/merge",
+            "object": {"type": "commit", "sha": MERGE},
         }
         self.run = {
             "id": 100,
@@ -112,6 +115,7 @@ class FakeGitHub:
             },
             f"{repo}/pulls/5": self.pr,
             f"{repo}/git/ref/heads/main": {"object": {"sha": BASE}},
+            f"{repo}/git/ref/pull/5/merge": self.merge_ref,
             f"{repo}/compare/{BASE}...{HEAD}": {"behind_by": 0, "merge_base_commit": {"sha": BASE}},
             f"{repo}/git/commits/{HEAD}": {"sha": HEAD, "tree": {"sha": TREE}},
             f"{repo}/git/commits/{MERGE}": {
@@ -168,7 +172,8 @@ class VerificationTests(unittest.TestCase):
         options.update(overrides)
         return pr_check.verify(self.github, POLICY, **options)
 
-    def test_real_merge_identity_and_empty_pr_list_can_pass(self):
+    def test_current_api_response_without_legacy_merge_sha_can_pass(self):
+        self.assertNotIn("merge_commit_sha", self.github.pr)
         result = self.verify()
         self.assertEqual(result["result"], "verified")
         self.assertEqual(result["tested_sha"], MERGE)
@@ -177,6 +182,73 @@ class VerificationTests(unittest.TestCase):
         self.assertTrue(
             all("{owner}/{repo}" in c or c == "apps/github-actions" for c in self.github.calls)
         )
+
+    def test_wrong_or_malformed_synthetic_merge_reference_is_rejected(self):
+        valid = copy.deepcopy(self.github.merge_ref)
+        malformed = (
+            None,
+            [],
+            {},
+            {**valid, "ref": "refs/pull/6/merge"},
+            {**valid, "ref": "refs/pull/5/merge-extra"},
+            {**valid, "object": None},
+            {**valid, "object": {"type": "tag", "sha": MERGE}},
+            {**valid, "object": {"type": "commit"}},
+            {**valid, "object": {"type": "commit", "sha": "not-a-sha"}},
+        )
+        for value in malformed:
+            with self.subTest(reference=value):
+                self.github = FakeGitHub()
+                self.github.responses[f"{pr_check.REPO}/git/ref/pull/5/merge"] = value
+                with self.assertRaises(pr_check.VerificationError):
+                    self.verify()
+
+    def test_unavailable_synthetic_merge_reference_has_controlled_diagnostic(self):
+        def unavailable(endpoint):
+            if endpoint.endswith("/git/ref/pull/5/merge"):
+                raise policy_module.PolicyError("PRIVATE_RESPONSE_MARKER")
+
+        self.github.on_read = unavailable
+        with self.assertRaisesRegex(
+            pr_check.VerificationError, "Cannot read the synthetic merge reference"
+        ) as caught:
+            self.verify()
+        self.assertNotIn("PRIVATE_RESPONSE_MARKER", str(caught.exception))
+
+    def test_pending_mergeability_does_not_admit_a_stale_merge_reference(self):
+        self.github.pr["mergeable"] = None
+        with self.assertRaisesRegex(pr_check.VerificationError, "retry the complete verification"):
+            self.verify()
+        self.assertNotIn(f"{pr_check.REPO}/git/ref/pull/5/merge", self.github.calls)
+
+    def test_synthetic_merge_reference_is_refreshed_and_rechecked(self):
+        def changed_merge(endpoint):
+            if endpoint.endswith("/git/ref/pull/5/merge"):
+                self.assertEqual(
+                    self.github.calls.count(f"{pr_check.REPO}/pulls/5"),
+                    self.github.calls.count(endpoint),
+                )
+                if self.github.calls.count(endpoint) > 1:
+                    self.github.merge_ref["object"]["sha"] = BASE
+
+        self.github.on_read = changed_merge
+        with self.assertRaisesRegex(pr_check.VerificationError, "merge candidate changed"):
+            self.verify()
+        ref = f"{pr_check.REPO}/git/ref/pull/5/merge"
+        pull = f"{pr_check.REPO}/pulls/5"
+        self.assertEqual(
+            [endpoint for endpoint in self.github.calls if endpoint in (pull, ref)],
+            [pull, ref, pull, ref],
+        )
+
+    def test_disappearing_synthetic_merge_reference_cannot_pass_final_check(self):
+        def disappeared(endpoint):
+            if endpoint.endswith("/git/ref/pull/5/merge") and self.github.calls.count(endpoint) > 1:
+                raise policy_module.PolicyError("HTTP 404")
+
+        self.github.on_read = disappeared
+        with self.assertRaisesRegex(pr_check.VerificationError, "Cannot read the synthetic merge"):
+            self.verify()
 
     def test_wrong_workflow_event_head_and_run_identity_fail(self):
         mutations = [
