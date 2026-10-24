@@ -93,6 +93,12 @@ Complete the applicable [read-only worktree review](AGENTS.md#code-review-before
 
 Every pull request must reference its associated issue and explain the problem, your changes, and how you verified them. Use a closing reference such as `Closes #123` only when the pull request fully resolves that issue.
 
+## Builds, releases and change notes
+
+Atomic issues and pull requests receive the quality checks defined in [Desktop builds, releases and change notes](docs/release-policy.md). Integration does not publish a public release; a maintainer separately selects a candidate and authorizes publication of its verified packages.
+
+Every pull request states whether it affects installed users. Include a short proposed change note for a relevant change, following the fields in [Change-note capture and editorial review](docs/release-policy.md#change-note-capture-and-editorial-review). When no public note is needed, explain why. The release policy owns collection, editorial review and public presentation; Conventional Commit subjects remain technical history rather than final release copy.
+
 ## License
 
 Contributions are made under the project's [MIT license](LICENSE).
