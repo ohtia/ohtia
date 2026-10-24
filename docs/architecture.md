@@ -2,8 +2,8 @@
 type: Specification
 title: "System architecture"
 description: "Application data authority, execution boundaries, provider adapters, and schema-migration recovery."
-verified:
-  by: human:AdrianMastronardi
+generated:
+  by: codex/gpt-6.1-sol
 sources:
   - id: electron-security
     resource: "https://www.electronjs.org/docs/latest/tutorial/security"
@@ -185,7 +185,7 @@ Deduplicate candidates by well-founded identifiers while retaining original reco
 
 Metadata discovery and full-text retrieval have separate capabilities and permissions. Preview the outbound query, including potentially sensitive topics or unpublished hypotheses. Authentication or a user's ability to view a page is not evidence that automated download, local reuse or external inference is permitted. The provider's conditions and material restrictions apply to every stage.
 
-Individual discovery providers are selected with the discovery delivery work. This foundation fixes the contract; it does not promise every named academic index has a public endpoint or complete coverage.
+The [product roadmap](product-roadmap.md#initial-ai-and-search-connections) owns the initial discovery-provider selection and future integration candidates. Discovery delivery work qualifies each selected provider's endpoints, permitted access modes, query mappings and coverage through this contract; selection does not establish working access. This foundation does not promise that every academic index has a public endpoint or complete coverage.
 
 ## Transfers, credentials and privacy
 
@@ -231,7 +231,7 @@ Manuscript DOCX/PDF and generated Markdown/BibLaTeX outputs retain their own fid
 
 Desktop application foundation must demonstrate process/IPC isolation, data-service startup, exclusive data-store opening, a minimal durable command, safe shutdown, graphical dependency diagnostics and deterministic tests without provider credentials. Later integrations prove real protocol/authentication and isolation on every supported platform using synthetic data and explicit permission for chargeable tests.
 
-Before release, select the supported OS versions/CPU architectures, packaging/signing/update tooling and platform-specific confinement mechanisms. Verify the selected SQLite binding's native artifact and embedded engine in each packaged target. Before enabling an agent, demonstrate effective policy, permitted account access, scoped tool execution, cancellation and unknown/partial-result behavior. Before editor/export delivery, validate the selected components against the [format corpus](draft-format.md#fidelity-and-validation), packaging and dependency-license obligations.
+Qualify the [roadmap's six required OS/CPU targets](product-roadmap.md#desktop-systems-and-processor-architectures) from the desktop foundation. Before release, select their supported OS versions, packaging/signing/update tooling and platform-specific confinement mechanisms. Verify the selected SQLite binding's native artifact and embedded engine in each packaged target. Before enabling an agent, demonstrate effective policy, permitted account access, scoped tool execution, cancellation and unknown/partial-result behavior. Before editor/export delivery, validate the selected components against the [format corpus](draft-format.md#fidelity-and-validation), packaging and dependency-license obligations.
 
 [Shared quality and coverage gates](adr/adr-0016-shared-quality-and-coverage-gates.md), [real-boundary integration](adr/adr-0017-real-boundary-integration-tests.md) and [versioned artifacts](adr/adr-0021-versioned-desktop-artifacts.md) define verification and release responsibilities. These are bounded delivery prerequisites whose evidence identifies the actual desktop implementation. The local definitions and ADRs remain reviewable together before their integration.
 

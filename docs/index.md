@@ -6,6 +6,7 @@ okf_version: "0.2"
 
 ## Product and research
 
+- [Product roadmap](product-roadmap.md) — Desktop research capabilities, delivery sequence, dependencies and readiness conditions for Ohtia.
 - [Product definition](product-definition.md) — Purpose, academic workflows, trust, and scope of the local Ohtia desktop workspace.
 - [Thesis workflow](thesis-workflow.md) — Research stages, artifacts, review milestones, and reentry paths for theses and scientific papers.
 - [Exploration–Action Framework](exploration-action-framework.md) — Diamonds, activity flows, exploration avenues and evidence-based transitions for modeling exploration and execution.

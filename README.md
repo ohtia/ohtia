@@ -24,6 +24,8 @@ Windows, macOS, and Linux, distributed as graphical desktop applications using E
 
 The [product definition](docs/product-definition.md) sets Ohtia's purpose, trust and scope, and the [thesis workflow](docs/thesis-workflow.md) describes how it supports research and scientific papers. The [system architecture](docs/architecture.md) defines local execution and provider boundaries; the [frontend architecture](docs/frontend-architecture.md) defines the graphical desktop experience.
 
+The [product roadmap](docs/product-roadmap.md) explains the delivery sequence, researcher outcomes and contributor foundations. Availability follows verified release readiness rather than fixed dates.
+
 The [design system](docs/design-system.md) defines visual identity, tokens and interaction patterns. [Workspace layout](docs/workspace-layout.md) defines panel geometry, accessible controls and layout preferences. The [Exploration–Action Framework](docs/exploration-action-framework.md) defines the workflow's notation. The [data model](docs/data-model.md) defines the source library, research projects and versioned manuscripts. The [academic draft format](docs/draft-format.md) defines the manuscript independently of its editor. Significant choices and their rationale live in the [architecture decision register](docs/adr/index.md).
 
 ## Contributing
