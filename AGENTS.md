@@ -10,6 +10,10 @@ Working instructions for coding agents contributing to Ohtia. Keep shared instru
 - Build product code from scratch. Use earlier work as learning material; bring over code, files, or configuration only when the user explicitly authorizes it.
 - Preserve researcher authorship, the distinction between evidence and inference, provenance, coverage, and human confirmation when implementing product behavior.
 
+## Product and architecture
+
+Before implementing product behavior, read the [product definition](docs/product-definition.md) and the applicable [thesis workflow](docs/thesis-workflow.md), [system architecture](docs/architecture.md), [frontend architecture](docs/frontend-architecture.md), [design system](docs/design-system.md), [workspace layout](docs/workspace-layout.md), [Exploration–Action Framework](docs/exploration-action-framework.md), [data model](docs/data-model.md) and [draft format](docs/draft-format.md). Cite product principles by `PRIN-NNN`. Significant choices follow [Architecture decisions](docs/architecture-decisions.md) and the [ADR register](docs/adr/index.md). Follow the guide's [technology-version ownership rules](docs/architecture-decisions.md#technology-versions-and-ownership): the adopting ADR owns the version line; referring documents link to it. Resolve contradictions and component-enabling conditions before implementing them; documented requirements do not establish implemented desktop capabilities.
+
 ## Language and documentation
 
 - Write documentation, technical comments, docstrings, developer diagnostics, commit messages, and GitHub issues, pull requests, and comments in English.
@@ -18,10 +22,11 @@ Working instructions for coding agents contributing to Ohtia. Keep shared instru
 - Add documentation when there is useful content or an actual procedure to describe. Keep each decision in one canonical location and link to it rather than duplicating it.
 - Keep substantial product and architecture documentation under `docs/`. Root-level repository guidance such as README, CONTRIBUTING, AGENTS, and CLAUDE remains at the root.
 - Use relative links between repository files and verify their targets. Refer only to files, commands, and tools that exist.
+- Keep repository content and published issue/PR descriptions self-contained. Reference this repository and primary external sources; do not link or refer to other Ohtia repositories.
 - Do not invent sources, quotations, authors, dates, approvals, or verification results. Check current authoritative sources when external facts can change.
-- Write one source line per Markdown paragraph and let the editor wrap it visually. Prettier uses `proseWrap: "never"`.
+- Write one source line per Markdown paragraph and let the editor wrap it visually. Prettier uses `proseWrap: "preserve"`, which keeps existing paragraph line breaks rather than creating or removing them. Write each paragraph on one source line before formatting. This setting permits aligned source tables; it does not enforce paragraph line count, which remains an authoring and review requirement.
 - Use real Markdown headings, dash bullets, fenced code blocks with a language, and blank lines around headings and lists. Bold text is emphasis, not a substitute for a heading.
-- Keep Markdown tables readable and at most 140 characters wide per complete formatted row. If a table does not fit, use clearly separated items and fields without losing information.
+- Keep Markdown tables readable, with vertically aligned columns enforced by Markdownlint MD060 (`style: "aligned"`), and at most 140 characters wide per complete formatted row. If a table does not fit, use clearly separated items and fields without losing information.
 
 ## Documentation and Open Knowledge Format
 
@@ -29,7 +34,7 @@ Repository documentation under `docs/` forms one Open Knowledge Format (OKF) v0.
 
 - Use [docs/index.md](docs/index.md) as the bundle entry point. Its frontmatter contains only `okf_version: "0.2"`. Other `index.md` files have no frontmatter.
 - Every Markdown concept under `docs/` has YAML frontmatter with nonempty `type`, `title`, and `description`. OKF requires `type`; this repository also requires the title and a one-sentence description. The body has one level-one heading matching `title`.
-- Use `Specification` for product and architecture definitions, `Playbook` for workflows and operating procedures, `Reference` for reference material, and `Analysis` for evidence-based evaluations. Define additional document types here before using them.
+- Use `Specification` for product and architecture definitions, `Playbook` for workflows and operating procedures, `Reference` for reference material, and `Analysis` for evidence-based evaluations. Define additional document types here before using them. Use `DecisionRecord` for a significant architecture choice with context, alternatives, decision and consequences, following [Architecture decisions](docs/architecture-decisions.md). Keep the ADR register under `docs/adr/` within the same bundle; numbering starts at `ADR-0000`, and ADRs follow this repository's provenance and no-status-metadata conventions.
 - Each directory containing concepts has an `index.md`. Its entries list that directory's concepts and subdirectory indexes exactly once, using the concept titles and descriptions. Keep deeper entries in their own directory's index.
 - Use relative links within the repository and verify their targets and heading fragments. Keep the bundle self-contained and preserve existing paths when extending it.
 - Optional `sources` entries identify concrete supporting resources, each with a `resource` URL or path. Give cited sources unique, stable `id` values and use matching Markdown footnote labels for individual claims. Keep source details in frontmatter rather than a duplicate body references list, and omit `sources` when there are none to declare. Review declarations describe the review actually performed; keep Git and pull requests as the evidence of repository review and history.
@@ -104,6 +109,7 @@ git diff --check
 
 - Use `pre-commit run --files <paths>` to include new, untracked files in a focused check. `--all-files` selects files known to Git.
 - Review formatter changes and repeat the affected checks until they pass. Check new files as well as the tracked diff.
+- Preserve normative examples in custom Markdown dialects against embedded formatting with `<!-- prettier-ignore -->`. After hooks run, compare every example with its source contract, including line boundaries inside fenced code blocks.
 - Run tests appropriate to the changed behavior. Add tests that verify a meaningful contract or prevent a regression; prose-only edits do not need artificial tests.
 - Report skipped, failed, or unexecuted checks accurately. Local checks, hosted CI, and integration into the default branch are separate evidence.
 - Keep [.editorconfig](.editorconfig), [.gitattributes](.gitattributes), [.prettierrc.json](.prettierrc.json), and the editor configuration consistent. Preserve LF text conventions and the explicit CRLF exception for Windows batch files.

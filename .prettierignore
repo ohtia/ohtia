@@ -20,3 +20,7 @@ tmp/
 pnpm-lock.yaml
 package-lock.json
 yarn.lock
+
+# Preserve imported reference specimens byte-for-byte with their measured assets.
+docs/assets/design-system-specimen.html
+docs/assets/ohtia-personaje-muestra.html

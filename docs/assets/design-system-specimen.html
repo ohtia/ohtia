@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="es-ES">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Muestra del sistema de diseño de Ohtia</title>
+<!--
+  Muestra renderizable de docs/design-system.md. Contenido ficticio.
+  Las fuentes se cargan desde commits fijados de IBM/plex y notofonts/noto-cjk (SIL OFL 1.1) para reproducir la evidencia;
+  Product font distribution is defined in ADR-0025; these requests serve the rendering specimen.
+  Símbolo de Ohtia: anteojos propios, sin relación con Lucide; su geometría se define en docs/design-system.md.
+  Los demás iconos proceden de Lucide, commit 1ef60af944de207e0d5176905a0759ba12e6ee8d.
+  ISC License. Copyright (c) 2026 Lucide Icons and Contributors. Permission to use, copy, modify, and/or distribute this
+  software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this
+  permission notice appear in all copies. THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+  REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR
+  BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF
+  USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+  CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  Los iconos check y lock derivan de Feather: The MIT License (MIT). Copyright (c) 2013-present Cole
+  Bemis. Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+  documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+  rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+  persons to whom the Software is furnished to do so, subject to the following conditions: The above copyright notice and
+  this permission notice shall be included in all copies or substantial portions of the Software. THE SOFTWARE IS
+  PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+  HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+  ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+-->
+<style>
+@font-face { font-family: "IBM Plex Sans"; font-weight: 400; font-style: normal; font-display: swap; src: url("https://raw.githubusercontent.com/IBM/plex/71f558992315a12ca1f06a2215d57962a1992162/packages/plex-sans/fonts/complete/ttf/IBMPlexSans-Regular.ttf"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 400; font-style: italic; font-display: swap; src: url("https://raw.githubusercontent.com/IBM/plex/71f558992315a12ca1f06a2215d57962a1992162/packages/plex-sans/fonts/complete/ttf/IBMPlexSans-Italic.ttf"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 500; font-style: normal; font-display: swap; src: url("https://raw.githubusercontent.com/IBM/plex/71f558992315a12ca1f06a2215d57962a1992162/packages/plex-sans/fonts/complete/ttf/IBMPlexSans-Medium.ttf"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 600; font-style: normal; font-display: swap; src: url("https://raw.githubusercontent.com/IBM/plex/71f558992315a12ca1f06a2215d57962a1992162/packages/plex-sans/fonts/complete/ttf/IBMPlexSans-SemiBold.ttf"); }
+@font-face { font-family: "IBM Plex Serif"; font-weight: 400; font-style: normal; font-display: swap; src: url("https://raw.githubusercontent.com/IBM/plex/71f558992315a12ca1f06a2215d57962a1992162/packages/plex-serif/fonts/complete/ttf/IBMPlexSerif-Regular.ttf"); }
+@font-face { font-family: "IBM Plex Serif"; font-weight: 400; font-style: italic; font-display: swap; src: url("https://raw.githubusercontent.com/IBM/plex/71f558992315a12ca1f06a2215d57962a1992162/packages/plex-serif/fonts/complete/ttf/IBMPlexSerif-Italic.ttf"); }
+@font-face { font-family: "IBM Plex Serif"; font-weight: 600; font-style: normal; font-display: swap; src: url("https://raw.githubusercontent.com/IBM/plex/71f558992315a12ca1f06a2215d57962a1992162/packages/plex-serif/fonts/complete/ttf/IBMPlexSerif-SemiBold.ttf"); }
+@font-face { font-family: "IBM Plex Serif"; font-weight: 600; font-style: italic; font-display: swap; src: url("https://raw.githubusercontent.com/IBM/plex/71f558992315a12ca1f06a2215d57962a1992162/packages/plex-serif/fonts/complete/ttf/IBMPlexSerif-SemiBoldItalic.ttf"); }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 400; font-style: normal; font-display: swap; src: url("https://raw.githubusercontent.com/IBM/plex/71f558992315a12ca1f06a2215d57962a1992162/packages/plex-mono/fonts/complete/ttf/IBMPlexMono-Regular.ttf"); }
+@font-face { font-family: "IBM Plex Math"; font-weight: 400; font-style: normal; font-display: swap; src: url("https://raw.githubusercontent.com/IBM/plex/71f558992315a12ca1f06a2215d57962a1992162/packages/plex-math/fonts/complete/ttf/IBMPlexMath-Regular.ttf"); }
+@font-face { font-family: "IBM Plex Sans KR"; font-weight: 400; font-style: normal; font-display: swap; src: url("https://raw.githubusercontent.com/IBM/plex/71f558992315a12ca1f06a2215d57962a1992162/packages/plex-sans-kr/fonts/complete/otf/IBMPlexSansKR-Regular.otf"); }
+@font-face { font-family: "IBM Plex Sans KR"; font-weight: 500; font-style: normal; font-display: swap; src: url("https://raw.githubusercontent.com/IBM/plex/71f558992315a12ca1f06a2215d57962a1992162/packages/plex-sans-kr/fonts/complete/otf/IBMPlexSansKR-Medium.otf"); }
+@font-face { font-family: "IBM Plex Sans KR"; font-weight: 600; font-style: normal; font-display: swap; src: url("https://raw.githubusercontent.com/IBM/plex/71f558992315a12ca1f06a2215d57962a1992162/packages/plex-sans-kr/fonts/complete/otf/IBMPlexSansKR-SemiBold.otf"); }
+@font-face { font-family: "Noto Sans KR"; font-weight: 400; font-style: normal; font-display: swap; src: url("https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/Sans/SubsetOTF/KR/NotoSansKR-Regular.otf"); }
+@font-face { font-family: "Noto Sans KR"; font-weight: 500; font-style: normal; font-display: swap; src: url("https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/Sans/SubsetOTF/KR/NotoSansKR-Medium.otf"); }
+@font-face { font-family: "Noto Sans KR"; font-weight: 700; font-style: normal; font-display: swap; src: url("https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/Sans/SubsetOTF/KR/NotoSansKR-Bold.otf"); }
+@font-face { font-family: "Noto Serif KR"; font-weight: 400; font-style: normal; font-display: swap; src: url("https://raw.githubusercontent.com/notofonts/noto-cjk/9b0f1436e455d902de067a2501422e5dc71ad16b/Serif/SubsetOTF/KR/NotoSerifKR-Regular.otf"); }
+@font-face { font-family: "Noto Serif KR"; font-weight: 600; font-style: normal; font-display: swap; src: url("https://raw.githubusercontent.com/notofonts/noto-cjk/9b0f1436e455d902de067a2501422e5dc71ad16b/Serif/SubsetOTF/KR/NotoSerifKR-SemiBold.otf"); }
+:root {
+  --surface-page: #faf8f5;
+  --surface-panel: #f4f1ed;
+  --surface-emphasis: #ebe7e2;
+  --content-primary: #1f1d19;
+  --content-secondary: #4e4a43;
+  --content-disabled: #87827b;
+  --border-subtle: #dad7d2;
+  --border-control: #87827b;
+  --border-strong: #1f1d19;
+  --action-primary-surface: #1f1d19;
+  --action-primary-surface-hover: #35322e;
+  --action-primary-content: #faf8f5;
+  --focus-ring: #1f1d19;
+  --selection-surface: #c1dbf4;
+  --voice-ohtia-content: #6f2b55;
+  --voice-ohtia-surface: #fae9f2;
+  --voice-ohtia-border: #ae648f;
+  --voice-tutor-content: #184a75;
+  --voice-tutor-surface: #e4f0fc;
+  --voice-tutor-border: #5385b4;
+  --evidence-surface: #f6e5a4;
+  --evidence-line: #977e0d;
+  --attention-content: #6b4306;
+  --attention-surface: #fcecd9;
+  --attention-border: #b77610;
+  --danger-content: #8b1e1c;
+  --danger-surface: #fceae7;
+  --danger-border: #c8433c;
+  color-scheme: light;
+}
+:root[data-scheme="dark"] {
+  --surface-page: #151411;
+  --surface-panel: #1a1815;
+  --surface-emphasis: #262420;
+  --content-primary: #ebe7e2;
+  --content-secondary: #c1bdb7;
+  --content-disabled: #87827b;
+  --border-subtle: #35322e;
+  --border-control: #87827b;
+  --border-strong: #ebe7e2;
+  --action-primary-surface: #ebe7e2;
+  --action-primary-surface-hover: #c1bdb7;
+  --action-primary-content: #151411;
+  --focus-ring: #ebe7e2;
+  --selection-surface: #184a75;
+  --voice-ohtia-content: #edaed1;
+  --voice-ohtia-surface: #341e2b;
+  --voice-ohtia-border: #be79a0;
+  --voice-tutor-content: #a1c9f0;
+  --voice-tutor-surface: #182837;
+  --voice-tutor-border: #6a97c1;
+  --evidence-surface: #483c0d;
+  --evidence-line: #bca341;
+  --attention-content: #f5bf81;
+  --attention-surface: #37250e;
+  --attention-border: #c78a3b;
+  --danger-content: #f8a59b;
+  --danger-surface: #3e1f1b;
+  --danger-border: #db6c62;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: var(--surface-page); color: var(--content-primary); font-family: "IBM Plex Sans", "IBM Plex Sans KR", "Noto Sans KR", sans-serif; font-size: 16px; line-height: 24px; font-synthesis: none; }
+:lang(ko) { word-break: keep-all; overflow-wrap: anywhere; }
+code, pre { font-family: "IBM Plex Mono", "Noto Sans KR", monospace; }
+em:lang(ko) { font-style: normal; text-emphasis: filled dot; text-emphasis-position: over right; }
+main { max-width: 1120px; margin: 0 auto; padding: 32px 24px 64px; display: grid; gap: 48px; }
+header.page { display: grid; gap: 8px; max-width: 34em; }
+h1 { font-size: 32px; line-height: 40px; font-weight: 600; margin: 0; }
+h2 { font-size: 24px; line-height: 32px; font-weight: 600; margin: 0; }
+h3 { font-size: 20px; line-height: 28px; font-weight: 600; margin: 0; }
+p { margin: 0; }
+.secondary { color: var(--content-secondary); }
+.caption { font-size: 12px; line-height: 18px; color: var(--content-secondary); }
+section.sample { display: grid; gap: 16px; border-top: 1px solid var(--border-subtle); padding-top: 24px; }
+.i { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; vertical-align: -4px; }
+a { color: var(--content-primary); text-underline-offset: 3px; }
+:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+
+/* Documento */
+.doc { font-family: "IBM Plex Serif", "Noto Serif KR", serif; max-width: 34em; font-size: 18px; line-height: 30px; }
+.doc > * + * { margin-top: 18px; }
+.doc h3 { font-family: inherit; font-size: 26px; line-height: 34px; }
+.doc blockquote { margin: 18px 0 0; padding-inline-start: 24px; }
+.doc sup a { font-family: "IBM Plex Sans", sans-serif; font-size: 12px; text-decoration: underline; }
+.doc table { border-collapse: collapse; font-size: 15px; line-height: 24px; width: 100%; }
+.doc caption { caption-side: top; text-align: start; font-size: 15px; line-height: 24px; padding-bottom: 8px; }
+.doc th, .doc td { border-bottom: 1px solid var(--border-subtle); padding: 6px 12px 6px 0; text-align: start; }
+.doc th { font-weight: 600; }
+.doc td.num, .doc th.num { text-align: end; font-variant-numeric: tabular-nums; }
+.doc pre { font-family: inherit; font-size: 15px; line-height: 24px; background: var(--surface-panel); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 12px 16px; overflow-x: auto; margin: 18px 0 0; }
+.doc math { font-family: "IBM Plex Math", math; font-size: 18px; }
+.doc .notes { font-size: 15px; line-height: 24px; padding-inline-start: 1.5em; border-top: 1px solid var(--border-subtle); padding-top: 12px; }
+.doc .notes li + li { margin-top: 8px; }
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 32px; align-items: start; }
+.narrow { width: 280px; border: 1px dashed var(--border-control); padding: 8px; font-family: "IBM Plex Sans", "IBM Plex Sans KR", "Noto Sans KR", sans-serif; font-size: 16px; line-height: 24px; }
+
+/* Interfaz */
+.ui-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+.group { display: grid; gap: 10px; align-content: start; }
+.group h3 { font-size: 16px; line-height: 24px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.who { display: inline-flex; align-items: center; gap: 4px; font-size: 14px; line-height: 20px; font-weight: 500; padding: 2px 10px 2px 6px; border-radius: 9999px; border: 1px solid; }
+.who-ohtia { color: var(--voice-ohtia-content); background: var(--voice-ohtia-surface); border-color: var(--voice-ohtia-border); }
+.who-tutor { color: var(--voice-tutor-content); background: var(--voice-tutor-surface); border-color: var(--voice-tutor-border); }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; line-height: 20px; font-weight: 500; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border-control); background: var(--surface-emphasis); color: var(--content-primary); }
+.chip.attention { color: var(--attention-content); background: var(--attention-surface); border-color: var(--attention-border); }
+.chip.danger { color: var(--danger-content); background: var(--danger-surface); border-color: var(--danger-border); }
+.chip.unverified { background: transparent; border-style: dashed; }
+.state { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; line-height: 20px; padding: 4px 10px; border-radius: 6px; background: var(--surface-page); }
+.state.proposal { border: 2px dashed var(--voice-ohtia-border); color: var(--voice-ohtia-content); background: var(--voice-ohtia-surface); }
+.state.confirmed { border: 2px solid var(--border-strong); }
+.state.pending { border: 1px dashed var(--border-control); color: var(--content-secondary); }
+.state.rejected { border: 1px solid var(--border-subtle); color: var(--content-secondary); }
+.level { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; line-height: 20px; color: var(--voice-ohtia-content); }
+.marks { display: inline-flex; gap: 2px; }
+.marks span { width: 5px; height: 12px; border-radius: 1px; border: 1px solid var(--voice-ohtia-border); }
+.marks span.on { background: var(--voice-ohtia-content); border-color: var(--voice-ohtia-content); }
+.btn { font: inherit; font-size: 14px; line-height: 20px; font-weight: 500; min-height: 32px; padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border-control); background: var(--surface-page); color: var(--content-primary); display: inline-flex; align-items: center; gap: 6px; }
+.btn.primary { background: var(--action-primary-surface); color: var(--action-primary-content); border-color: var(--action-primary-surface); }
+.btn.quiet { border-color: transparent; background: transparent; text-decoration: underline; text-underline-offset: 3px; }
+.btn.destructive { color: var(--danger-content); background: var(--danger-surface); border-color: var(--danger-border); }
+.editor { display: grid; grid-template-columns: minmax(0, 1fr) 340px; border: 1px solid var(--border-subtle); border-radius: 10px; overflow: hidden; }
+.editor .ms { padding: 20px 24px; font-family: "IBM Plex Serif", "Noto Serif KR", serif; font-size: 18px; line-height: 30px; }
+.editor .anchor { text-decoration: underline 2px var(--voice-ohtia-border); text-underline-offset: 5px; }
+.editor .pin { font-family: "IBM Plex Sans", sans-serif; font-size: 12px; line-height: 12px; font-weight: 600; padding: 2px 6px; border-radius: 9999px; border: 1px solid var(--voice-ohtia-border); color: var(--voice-ohtia-content); background: var(--voice-ohtia-surface); vertical-align: 2px; }
+.editor .panel { background: var(--surface-panel); border-left: 1px solid var(--border-subtle); padding: 16px; display: grid; gap: 12px; align-content: start; }
+.card { background: var(--surface-page); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 12px; display: grid; gap: 8px; font-size: 14px; line-height: 21px; }
+.card.proposal { border: 2px dashed var(--voice-ohtia-border); }
+.card .fragment { font-family: "IBM Plex Serif", serif; color: var(--content-secondary); }
+.evidence { background: var(--evidence-surface); box-shadow: inset 0 -2px 0 var(--evidence-line); }
+.coverage { font-size: 14px; line-height: 21px; color: var(--content-secondary); }
+
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+<symbol id="i-ohtia" viewBox="0 0 24 24"><path d="M3.225 10.3125 1.6875 7.6875" /> <path d="M20.775 10.3125 22.3125 7.6875" /> <path d="M10.6875 11.0625Q12 9.5625 13.3125 11.0625" /> <circle cx="7.125" cy="12" r="4.125" /> <circle cx="16.875" cy="12" r="4.125" /> <circle cx="7.125" cy="12" r="1.575" fill="currentColor" stroke="none" /> <circle cx="16.875" cy="12" r="1.575" fill="currentColor" stroke="none" /></symbol>
+<symbol id="i-user-round" viewBox="0 0 24 24"><circle cx="12" cy="8" r="5" /> <path d="M20 21a8 8 0 0 0-16 0" /></symbol>
+<symbol id="i-circle-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="m16 9-5.5 5.5L8 12" /></symbol>
+<symbol id="i-circle-dashed" viewBox="0 0 24 24"><path d="M10.1 2.182a10 10 0 0 1 3.8 0" /> <path d="M13.9 21.818a10 10 0 0 1-3.8 0" /> <path d="M17.609 3.721a10 10 0 0 1 2.69 2.7" /> <path d="M2.182 13.9a10 10 0 0 1 0-3.8" /> <path d="M20.279 17.609a10 10 0 0 1-2.7 2.69" /> <path d="M21.818 10.1a10 10 0 0 1 0 3.8" /> <path d="M3.721 6.391a10 10 0 0 1 2.7-2.69" /> <path d="M6.391 20.279a10 10 0 0 1-2.69-2.7" /></symbol>
+<symbol id="i-circle-x" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="m15 9-6 6" /> <path d="m9 9 6 6" /></symbol>
+<symbol id="i-refresh-cw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /> <path d="M21 3v5h-5" /> <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /> <path d="M8 16H3v5" /></symbol>
+<symbol id="i-circle-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1" /> <circle cx="12" cy="12" r="10" /></symbol>
+<symbol id="i-contrast" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="M12 18a6 6 0 0 0 0-12v12z" /></symbol>
+<symbol id="i-circle-question-mark" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /> <path d="M12 17h.01" /></symbol>
+<symbol id="i-search-x" viewBox="0 0 24 24"><path d="m13.5 8.5-5 5" /> <path d="m8.5 8.5 5 5" /> <circle cx="11" cy="11" r="8" /> <path d="m21 21-4.3-4.3" /></symbol>
+<symbol id="i-arrow-left-right" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4" /> <path d="M4 7h16" /> <path d="m16 21 4-4-4-4" /> <path d="M20 17H4" /></symbol>
+<symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="M4.929 4.929 19.07 19.071" /></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
+<symbol id="i-cloud-off" viewBox="0 0 24 24"><path d="M10.94 5.274A7 7 0 0 1 15.71 10h1.79a4.5 4.5 0 0 1 4.222 6.057" /> <path d="M18.796 18.81A4.5 4.5 0 0 1 17.5 19H9A7 7 0 0 1 5.79 5.78" /> <path d="m2 2 20 20" /></symbol>
+<symbol id="i-git-compare" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3" /> <circle cx="6" cy="6" r="3" /> <path d="M13 6h3a2 2 0 0 1 2 2v7" /> <path d="M11 18H8a2 2 0 0 1-2-2V9" /></symbol>
+<symbol id="i-triangle-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" /> <path d="M12 9v4" /> <path d="M12 17h.01" /></symbol>
+<symbol id="i-octagon-alert" viewBox="0 0 24 24"><path d="M12 16h.01" /> <path d="M12 8v4" /> <path d="M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z" /></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /> <path d="M7 11V7a5 5 0 0 1 10 0v4" /></symbol>
+<symbol id="i-calendar-clock" viewBox="0 0 24 24"><path d="M16 14v2.2l1.6 1" /> <path d="M16 2v3" /> <path d="M21 7.338V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h2.338" /> <path d="M3 9h5.859" /> <path d="M8 2v3" /> <circle cx="16" cy="16" r="6" /></symbol>
+<symbol id="i-file-text" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" /> <path d="M14 2v5a1 1 0 0 0 1 1h5" /> <path d="M10 9H8" /> <path d="M16 13H8" /> <path d="M16 17H8" /></symbol>
+</svg>
+<main>
+<header class="page">
+  <h1>Muestra del sistema de diseño de Ohtia</h1>
+  <p class="secondary">Tokens, tipografía, estados y composición de docs/design-system.md. El contenido es ficticio. Añade <code>#dark</code> a la dirección para ver el tema oscuro.</p>
+</header>
+
+<section class="sample" id="documento" aria-labelledby="h-documento">
+  <h2 id="h-documento">Documento</h2>
+  <article class="doc" lang="es-ES">
+    <h3>2.3 Retroalimentación y rendimiento</h3>
+    <p>La investigación sobre evaluación formativa distingue entre la información que recibe el estudiante y el uso que hace de ella. Moreno (2021, p. 14) observa que la retroalimentación entregada en la misma sesión de trabajo se asocia con mejores resultados en la prueba final, aunque limita esa observación a dos asignaturas.<sup><a href="#nota-1" id="ref-1">1</a></sup> En esta investigación entiendo por retroalimentación inmediata la que el docente entrega antes de que termine la sesión.</p>
+    <p>La distinción importa porque los estudios disponibles miden el efecto con instrumentos distintos. Mientras unos registran la calificación de una prueba común, otros comparan tareas abiertas corregidas con rúbricas que cada centro adapta. <em>Evaluar para aprender</em> propone tratar esas diferencias como parte del problema y no como ruido que deba eliminarse antes de comparar.<sup><a href="#nota-2" id="ref-2">2</a></sup></p>
+    <blockquote><p>Un efecto medido en dos asignaturas no autoriza a hablar de todas; autoriza a preguntar por las demás.</p></blockquote>
+    <table>
+      <caption>Tabla 1. Participantes y media de la prueba final por grupo.</caption>
+      <thead><tr><th scope="col">Grupo</th><th scope="col">Asignatura</th><th scope="col" class="num">Participantes</th><th scope="col" class="num">Media (0–10)</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">A</th><td>Matemáticas</td><td class="num">20</td><td class="num">7,4</td></tr>
+        <tr><th scope="row">B</th><td>Ciencias</td><td class="num">24</td><td class="num">6,9</td></tr>
+        <tr><th scope="row">C</th><td>Lengua</td><td class="num">18</td><td class="num">6,2</td></tr>
+      </tbody>
+    </table>
+    <p>La media de cada grupo se calcula como</p>
+    <math display="block"><mover><mi>x</mi><mo>¯</mo></mover><mo>=</mo><mfrac><mn>1</mn><mi>n</mi></mfrac><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover><msub><mi>x</mi><mi>i</mi></msub></math>
+    <math display="block"><mi>f</mi><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo><mrow><mo>{</mo><mtable><mtr><mtd><msqrt><mi>x</mi></msqrt></mtd><mtd><mi>x</mi><mo>≥</mo><mn>0</mn></mtd></mtr><mtr><mtd><mn>0</mn></mtd><mtd><mi>x</mi><mo>&lt;</mo><mn>0</mn></mtd></mtr></mtable></mrow><mspace width="1em"></mspace><mo>∇</mo><mi>f</mi><mo>:</mo><msup><mi mathvariant="normal">ℝ</mi><mi>n</mi></msup><mo>→</mo><mi mathvariant="normal">ℝ</mi><mo>,</mo><mspace width="0.5em"></mspace><mi>α</mi><mo>∈</mo><mo stretchy="false">(</mo><mn>0</mn><mo>,</mo><mn>1</mn><mo stretchy="false">)</mo></math>
+    <p>El mismo cálculo, escrito como código LaTeX literal, y una tabla alineada con espacios que contiene Hangul:</p>
+    <pre><code>\bar{x} = \frac{1}{n}\sum_{i=1}^{n} x_i
+
+과목       n   media
+수학       20  7,4
+Ciencias   24  6,9</code></pre>
+    <ol class="notes">
+      <li id="nota-1">Moreno no recogió datos de otras asignaturas; la generalización requiere un estudio adicional. <a href="#ref-1">Volver a la llamada 1</a></li>
+      <li id="nota-2">Título ficticio usado como ejemplo de obra citada en cursiva. <a href="#ref-2">Volver a la llamada 2</a></li>
+    </ol>
+  </article>
+</section>
+
+<section class="sample" id="coreano" aria-labelledby="h-coreano">
+  <h2 id="h-coreano">Texto mixto coreano y latino</h2>
+  <div class="cols">
+    <article class="doc" lang="ko-KR">
+      <p>조선 후기 지방 행정 문서의 보존 양상을 분석한 선행 연구는 대체로 중앙 관청의 기록에 집중하였다(Kim, 2021, p. 34). 그러나 본 연구는 1876년부터 1910년까지 작성된 향촌 문서 2,418건을 대상으로, 문서의 생산 주체와 유통 경로를 함께 검토한다. 특히 <em>기록의 공백</em>이라는 개념은 사료의 부재를 단순한 결핍이 아니라 해석의 대상으로 다루기 위해 도입되었다. 원문 표기(예: 韓國, 文書)는 그대로 유지하였다.</p>
+    </article>
+    <div class="group">
+      <p class="caption">Columna de 280 px en la pila de interfaz.</p>
+      <p class="narrow" lang="ko-KR">그러나 본 연구는 향촌문서보존양상분석보고서를 비롯한 문서 2,418건을 대상으로 한다. 자료 목록: https://doi.org/10.0000/ohtia.test.2026.0417/supplementary-materials</p>
+      <div class="row" lang="ko-KR"><button class="btn primary" type="button">출처에서 열기</button><button class="btn" type="button">답글 달기</button></div>
+    </div>
+  </div>
+</section>
+
+<section class="sample" id="interfaz" aria-labelledby="h-interfaz">
+  <h2 id="h-interfaz">Interfaz</h2>
+  <div class="ui-grid">
+    <div class="group">
+      <h3>Voces</h3>
+      <div class="row"><span class="who who-ohtia"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-ohtia"/></svg>Ohtia</span><span class="who who-tutor"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-user-round"/></svg>Tutor</span></div>
+      <p><span class="evidence">Pasaje anclado en la fuente</span></p>
+      <p style="font-family: 'IBM Plex Serif', serif">Texto del investigador, sin marca.</p>
+    </div>
+    <div class="group">
+      <h3>Política de confianza</h3>
+      <div class="row"><span class="state proposal"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-circle-dashed"/></svg>Propuesta de Ohtia</span></div>
+      <div class="row"><span class="state confirmed"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-circle-check"/></svg>Confirmado por el investigador</span></div>
+      <div class="row"><span class="state pending"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-circle-dashed"/></svg>Pendiente</span><span class="state rejected"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-circle-x"/></svg>Rechazado: fuera de alcance</span></div>
+      <div class="row"><span class="chip attention"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-refresh-cw"/></svg>Requiere revisión</span></div>
+    </div>
+    <div class="group">
+      <h3>Resultados del contraste</h3>
+      <div class="row"><span class="chip"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-circle-dot"/></svg>Respaldada por el contenido examinado</span></div>
+      <div class="row"><span class="chip attention"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-contrast"/></svg>Parcialmente respaldada</span><span class="chip attention"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-circle-question-mark"/></svg>Ambigua</span></div>
+      <div class="row"><span class="chip attention"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-search-x"/></svg>No localizada en el contenido examinado</span></div>
+      <div class="row"><span class="chip attention"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-arrow-left-right"/></svg>Contradicha por el contenido examinado</span></div>
+      <div class="row"><span class="chip unverified"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-ban"/></svg>No verificada por Ohtia: texto completo inaccesible</span></div>
+    </div>
+    <div class="group">
+      <h3>Crítica</h3>
+      <span class="level"><span class="marks" aria-hidden="true"><span class="on"></span><span class="on"></span><span class="on"></span></span>Error verificable</span>
+      <span class="level"><span class="marks" aria-hidden="true"><span class="on"></span><span class="on"></span><span></span></span>Debilidad defendible</span>
+      <span class="level"><span class="marks" aria-hidden="true"><span class="on"></span><span></span><span></span></span>Un revisor te va a preguntar esto</span>
+    </div>
+    <div class="group">
+      <h3>Operaciones</h3>
+      <div class="row"><span class="chip"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>Guardado · versión 14</span></div>
+      <div class="row"><span class="chip attention"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-cloud-off"/></svg>Sin conexión · 3 cambios sin guardar</span></div>
+      <div class="row"><span class="chip attention"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-git-compare"/></svg>Conflicto con la versión 15</span></div>
+      <div class="row"><span class="chip danger"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-octagon-alert"/></svg>No se pudo guardar; tu texto está a salvo en este navegador</span></div>
+      <div class="row"><button class="btn primary" type="button">Confirmar claim</button><button class="btn" type="button">Corregir</button><button class="btn quiet" type="button">Dejar pendiente</button><button class="btn destructive" type="button">Eliminar fuente</button></div>
+    </div>
+    <div class="group">
+      <h3>Ritmo y restricciones</h3>
+      <div class="row"><span class="chip"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-calendar-clock"/></svg>Al ritmo del plan</span><span class="chip attention"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-calendar-clock"/></svg>Por detrás del plan</span></div>
+      <p class="secondary">Sin plan acordado no se calcula el ritmo.</p>
+      <div class="row"><span class="chip"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg>Uso restringido</span><span class="chip"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-file-text"/></svg>Documento · publicado</span></div>
+    </div>
+  </div>
+
+  <h3>Editor en pasada de revisión</h3>
+  <div class="editor">
+    <div class="ms" lang="es-ES">
+      <p><span class="anchor">La retroalimentación inmediata mejora el rendimiento en todas las asignaturas</span> (Moreno, 2021, p. 14). <span class="pin">1</span></p>
+    </div>
+    <div class="panel">
+      <p class="coverage">Examiné el texto completo de 2 de las 3 fuentes citadas. Lindqvist y Park (2019) está tras un muro de pago: no verificada por Ohtia.</p>
+      <div class="card proposal">
+        <div class="row"><span class="who who-ohtia"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-ohtia"/></svg>Ohtia</span><span class="level"><span class="marks" aria-hidden="true"><span class="on"></span><span class="on"></span><span></span></span>Debilidad defendible</span></div>
+        <p class="fragment">«…mejora el rendimiento en todas las asignaturas»</p>
+        <span class="chip attention"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-search-x"/></svg>No localizada en el contenido examinado</span>
+        <p>Moreno (2021) informa el efecto en dos asignaturas. No encontré respaldo para «todas las asignaturas» en las páginas 1 a 32.</p>
+        <div class="row"><button class="btn primary" type="button">Abrir en la fuente</button><button class="btn quiet" type="button">Descartar con motivo</button></div>
+      </div>
+      <div class="card">
+        <div class="row"><span class="who who-tutor"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-user-round"/></svg>Tutor</span><span class="caption">Entrega v12 · DOCX</span></div>
+        <p>«Revisa la generalización del primer párrafo.»</p>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<script>
+  if (location.hash === "#dark") document.documentElement.dataset.scheme = "dark";
+</script>
+</body>
+</html>

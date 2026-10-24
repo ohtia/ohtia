@@ -7,6 +7,9 @@ generated:
 verified:
   by: human:AdrianMastronardi
 sources:
+  - id: github-pull-request-api
+    resource: https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request
+    title: GitHub — Pull request mergeability
   - id: github-actions-permissions
     resource: https://docs.github.com/en/rest/actions/permissions
     title: GitHub Actions permissions API
@@ -28,7 +31,8 @@ GitHub repository settings are declared in `config/github/`. The policy tool use
 ## Declared configuration
 
 - `repository.json` permits merge commits, disables squash, rebase, and auto-merge, and permits updating a pull request branch. Branch deletion remains part of the post-merge workflow.
-- `actions-permissions.json` permits only `actions/checkout` and `actions/setup-python`, requires full commit SHAs, and gives workflow tokens read-only access without pull request approval privileges. The action patterns apply to this public repository.[^github-actions-permissions]
+- `actions-permissions.json` permits only `actions/checkout` and `actions/setup-python`, requires full commit SHAs, and gives workflow tokens read-only access without pull request approval privileges. The action patterns apply to this public repository.[^github-actions-permissions] It also requires `all_external_contributors` approval for fork workflows, including contributors with previously accepted changes. Approval authorizes workflow execution, not fork creation or PR integration.
+- `ci-verification.json` declares the expected workflow/event, mandatory jobs/steps and explicitly optional cleanup steps used by the read-only pre-merge verifier. Review this inventory with workflow changes.
 - `security.json` enables dependency vulnerability alerts and automated security fixes.
 - `labels.json` defines managed label names, colors, and descriptions. Unmanaged labels are preserved.
 - `ruleset-main.json` protects the default branch with pull requests, verified signatures, resolved conversations, merge commits only, and the `ci` check against an up-to-date base. No actor bypasses the rules. Zero approving reviews accommodates the single-maintainer workflow; the maintainer performs the human review and merge.[^github-repository-rules]
@@ -43,7 +47,7 @@ The policy tool uses `gh api` with literal repository placeholders. It does not 
 
 ## Plan, apply, and verify
 
-The `base` stage manages repository settings, Actions permissions, dependency security settings, and labels. The `ruleset` stage manages only the `main` ruleset. Planning and verification never write to GitHub.
+The `base` stage manages repository settings, Actions permissions (including fork contributor approval), dependency security settings, and labels. The `ruleset` stage manages only the `main` ruleset. Planning and verification never write to GitHub.
 
 ```bash
 python3 scripts/github_policy.py plan --stage base
@@ -67,7 +71,7 @@ Exit codes are `0` for conformity, `1` for declared differences, and `2` when a 
 
 ## Repository checks
 
-The `ci` workflow runs on pull requests targeting `main` and pushes to `main`, using the configured formatting and lint hooks, a committed-history secret scan, and the policy-tool unit tests. The local branch guard is skipped in CI, where GitHub enforces branch protection, and the staged-file secret scan is replaced by the history scan. Its only job is named `ci`, matching the required check. Superseded pull request runs may be cancelled; each push to `main` retains its own execution.
+The `ci` workflow runs on pull requests targeting `main` and pushes to `main`, using the configured formatting and lint hooks, a committed-history secret scan, and the policy-tool unit tests. The local branch guard is skipped in CI, where GitHub enforces branch protection, and the staged-file secret scan is replaced by the history scan. Its only job is named `ci`, matching the required check; it records the tested revision before repository-controlled tooling runs. Superseded pull request runs may be cancelled; each push to `main` retains its own execution.
 
 The workflow uses a read-only token, does not persist checkout credentials, and has no administrative credentials. It tests the policy tool with synthetic GitHub responses; it does not claim to verify live administrative settings. Maintainers run live verification separately.
 
@@ -79,6 +83,35 @@ git diff --check
 ```
 
 The unit tests exercise planning, reviewed-plan confirmation, permission errors, write failures and readback, label preservation, rule conflicts, check provenance, and stage isolation. The configured Ruff hooks format and lint the Python tooling. Follow [CONTRIBUTING.md](../CONTRIBUTING.md) to install and run the hooks.
+
+## Pre-merge CI provenance
+
+[ADR-0020](adr/adr-0020-github-policy-and-trusted-ci.md) defines the trust boundary. The required `ci` check remains bound to GitHub Actions; GitHub's check-name/app requirement does not establish the workflow path or event. The maintainer supplements it with the read-only `scripts/github_pr.py` verifier and human review of CI/policy changes.
+
+Select an explicitly reviewed Git revision containing the verifier, policy tool, CI inventory and workflow. Invoke the verifier from a separate trusted checkout at that revision, with those files unchanged. It checks their exact Git bytes before importing the policy transport and checks them again afterward. This detects local drift; the maintainer must establish that the selected revision was reviewed. A candidate cannot authorize its own verifier version. For a PR introducing or changing the verifier, workflow or inventory, the maintainer may explicitly select that PR's exact signed head after independent review and human review of those bytes; run it from a separate trusted checkout. Its presence in the PR and successful CI alone do not establish that trust. An introduction or update of the verifier follows the independent worktree-review and human-review requirements before choosing its revision for a real merge decision.
+
+Supply the PR number, selected run ID, reviewed head/base SHAs, candidate tree SHA and trusted verifier revision explicitly. For example, from the trusted checkout with the review variables already set:
+
+```bash
+python3 -I scripts/github_pr.py 123 \
+  --run-id 456 \
+  --head "$OHTIA_REVIEWED_HEAD" \
+  --base "$OHTIA_REVIEWED_BASE" \
+  --tree "$OHTIA_REVIEWED_TREE" \
+  --verifier-revision "$OHTIA_VERIFIER_REVISION"
+```
+
+The command performs GitHub reads only. Exit `0` emits a JSON evidence report; exit `2` means verification failed or required evidence is unavailable. Save the report in the task's ignored review directory. It never approves workflows, changes repository settings or merges a PR.
+
+The verifier checks the open PR's current head/base, an up-to-date candidate tree, the synthetic merge's parents/tree, exact reviewed workflow bytes, registered workflow ID/path, `pull_request` event, repository identities, latest run/attempt, originating GitHub Actions app and complete mandatory job/step results. It does not rely on the run `pull_requests` array because the trusted workflow's checkout receipt separately binds the actual PR merge ref and its head/base. Candidate-authored arbitrary success messages are not evidence.
+
+CI records `OHTIA_CI_PROVENANCE` before installing/running repository-controlled tooling. The record contains the actual checked-out commit/tree and GitHub-provided run/attempt/event/ref identities. The verifier reads bounded job logs and requires exactly one valid matching receipt, together with exact workflow bytes and successful required steps; the receipt alone cannot establish trust. Missing logs, extra jobs, undeclared steps, skipped mandatory work or a missing/mismatched receipt fail verification. Explicit optional cleanup steps may be absent/skipped; their executed failures still fail verification.
+
+GitHub can return `mergeable: null` while computing a synthetic merge; the verifier reports that evidence as pending, and the maintainer retries the complete verification after GitHub finishes.[^github-pull-request-api] It never interprets unknown mergeability as success. Logs that are not valid UTF-8 remain unavailable evidence rather than being decoded by guesswork. The verifier requires a GitHub CLI supporting `api --allow-escape-sequences`: it captures raw log bytes in the bounded pipe for receipt parsing and never prints their escape sequences to a terminal.
+
+The verifier uses POSIX process/pipe controls, an eight-MiB log-read bound and a 60-second download deadline on the development host. GitHub API calls retain the policy transport's timeout. No candidate script, artifact or log content is executed. The report records both the PR head and the synthetic merge SHA actually tested, which are different identities. It rereads candidate/run state before reporting success; the maintainer rechecks immediately before merging, because a previous report cannot authorize a later head/base.
+
+Workflow and inventory changes are reviewed together. The selected trusted verifier revision must contain the exact workflow and inventory approved for the candidate; a mismatch fails rather than silently adopting the PR's version. Provenance reports remain supporting review evidence, not an additional GitHub-enforced merge rule.
 
 ## Dependency updates
 
@@ -102,6 +135,8 @@ Review the entire update, retain full SHA references for Actions, and run the re
 8. Close the scaffolding issue only after integration and all acceptance criteria are verified. Keep failed or unavailable checks explicit and leave the issue open while obligations remain.
 
 [^github-actions-permissions]: GitHub Actions permissions API.
+
+[^github-pull-request-api]: GitHub documents unknown mergeability while a background computation runs and recommends requesting the result again afterward.
 
 [^github-repository-rules]: GitHub repository rules API.
 

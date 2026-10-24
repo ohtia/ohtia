@@ -61,6 +61,7 @@ class FakeGitHub(policy.GitHub):
                     f"{base}/actions/permissions": "permissions",
                     f"{base}/actions/permissions/selected-actions": "selected_actions",
                     f"{base}/actions/permissions/workflow": "workflow",
+                    f"{base}/actions/permissions/fork-pr-contributor-approval": "fork_pr_contributor_approval",
                 }[endpoint]
                 return 200, copy.deepcopy(self.actions[key])
             if endpoint == f"{base}/vulnerability-alerts":
@@ -107,6 +108,7 @@ class FakeGitHub(policy.GitHub):
                 f"{base}/actions/permissions": "permissions",
                 f"{base}/actions/permissions/selected-actions": "selected_actions",
                 f"{base}/actions/permissions/workflow": "workflow",
+                f"{base}/actions/permissions/fork-pr-contributor-approval": "fork_pr_contributor_approval",
             }[endpoint]
             self.actions[key] = copy.deepcopy(payload)
         elif endpoint == f"{base}/vulnerability-alerts":
@@ -144,6 +146,42 @@ class PolicyTests(unittest.TestCase):
         for stage in ("base", "ruleset"):
             self.assertEqual(policy.plan(self.github, CONFIG, stage)["changes"], [])
         self.assertEqual(self.github.writes, [])
+
+    def test_external_approval_drift_is_planned_applied_and_read_back(self):
+        self.github.actions["fork_pr_contributor_approval"] = {
+            "approval_policy": "first_time_contributors"
+        }
+        candidate = policy.plan(self.github, CONFIG, "base")
+        self.assertEqual(len(candidate["changes"]), 1)
+        change = candidate["changes"][0]
+        self.assertEqual(change["resource"], "actions.fork_pr_contributor_approval")
+        self.assertEqual(change["method"], "PUT")
+        self.assertEqual(change["after"], {"approval_policy": "all_external_contributors"})
+        self.assertEqual(self.github.writes, [])
+        self.apply("base")
+        self.assertEqual(len(self.github.writes), 1)
+        self.assertEqual(policy.plan(self.github, CONFIG, "base")["changes"], [])
+
+    def test_external_approval_read_failure_blocks_all_writes(self):
+        self.github.repository["allow_squash_merge"] = True
+        self.github.fail_read = f"{policy.REPO}/actions/permissions/fork-pr-contributor-approval"
+        with self.assertRaises(policy.PolicyError):
+            self.apply("base")
+        self.assertEqual(self.github.writes, [])
+
+    def test_missing_external_approval_field_is_not_conformity(self):
+        self.github.actions["fork_pr_contributor_approval"] = {}
+        with self.assertRaises(policy.PolicyError):
+            policy.plan(self.github, CONFIG, "base")
+        self.assertEqual(self.github.writes, [])
+
+    def test_external_approval_ignored_write_is_detected(self):
+        self.github.actions["fork_pr_contributor_approval"]["approval_policy"] = (
+            "first_time_contributors"
+        )
+        self.github.discard_write = True
+        with self.assertRaisesRegex(policy.PolicyError, "Readback differs"):
+            self.apply("base")
 
     def test_update_only_declared_repository_fields(self):
         self.github.repository.update(allow_squash_merge=True, homepage="https://example.org")
