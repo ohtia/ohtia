@@ -1,0 +1,16 @@
+[project]
+name = "ohtia-repository-tools"
+version = "0.0.0"
+requires-python = "==3.14.8"
+
+[tool.uv]
+package = false
+required-version = "==0.13.5"
+
+[dependency-groups]
+dev = ["pre-commit==4.6.2", "ruff==0.17.2", "pyrefly==1.4.0"]
+
+[tool.pyrefly]
+preset = "strict"
+project-includes = ["scripts/workspace.py", "scripts/package_workspace.py"]
+python-version = "3.12"

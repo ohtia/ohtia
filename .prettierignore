@@ -24,3 +24,9 @@ yarn.lock
 # Preserve imported reference specimens byte-for-byte with their measured assets.
 docs/assets/design-system-specimen.html
 docs/assets/ohtia-personaje-muestra.html
+
+.tooling/
+.pyrefly_cache/
+
+# JSONC guidance is outside the configured formatting hook file types.
+.markdownlint-cli2.jsonc

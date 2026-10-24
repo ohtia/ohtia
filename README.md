@@ -30,7 +30,7 @@ The [design system](docs/design-system.md) defines visual identity, tokens and i
 
 ## Contributing
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening an issue or submitting a pull request. We especially welcome help translating the interface and reviewing linguistic quality. Maintainers can find GitHub configuration and verification procedures in [Repository policy](docs/repository-policy.md).
+The [locked developer workspace](docs/developer-workspace.md) provides contributor setup and build/check commands. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening an issue or submitting a pull request. We especially welcome help translating the interface and reviewing linguistic quality. Maintainers can find GitHub configuration and verification procedures in [Repository policy](docs/repository-policy.md).
 
 Documentation starts at [docs/index.md](docs/index.md); its format is defined in [AGENTS.md](AGENTS.md#documentation-and-open-knowledge-format).
 
