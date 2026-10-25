@@ -1,9 +1,9 @@
 ---
+generated:
+  by: claude-code/claude-opus-5-5
 type: Specification
 title: Ohtia design system
 description: Visual identity, tokens, symbol and character, typography, composition, accessibility, localization, components and patterns of Ohtia's interface.
-verified:
-  by: human:AdrianMastronardi
 tags:
   - design
   - accessibility
@@ -372,7 +372,7 @@ The following were not verified:
 - Firefox, Safari, other systems and other screen densities;
 - variable-font rendering and network loading with `unicode-range`;
 - vertical text, ancient Hangul and Unicode normalization;
-- typographic review by a native speaker.
+- optional typographic review by a native speaker.
 
 ### Spacing
 
@@ -410,6 +410,7 @@ The following component tokens prevent scattered visual values in primitives:
 - `component.panel.header-minimum`: 48 px. Allows controls and growth for translations.
 - `component.dialog.max-width`: 480 px. Applies the Settings dialog's width limit, preserving at least `space.4` on each side of the window.
 - `component.tooltip.max-width`: 256 px; `component.menu.max-width`: 384 px. Bound the help and action layers, which are also constrained to the viewport and positioned using CSSOM.
+- `component.palette.max-width`: 600 px. Bounds the command palette, which is also constrained to the viewport with at least `space.4` on each side.
 
 ### Elevation and layers
 
@@ -435,31 +436,37 @@ Icons come from Lucide, under the ISC license, except Feather derivatives, which
 
 Fixed mappings:
 
-| Meaning                       | Icon              |
-| ----------------------------- | ----------------- |
-| Ohtia                         | Original glasses  |
-| Navigator                     | `signpost`        |
-| Supervisor                    | `user-round`      |
-| `document`                    | `file-text`       |
-| `dataset`                     | `database`        |
-| `media`                       | `image`           |
-| `software`                    | `code`            |
-| `object`                      | `archive`         |
-| Researcher-confirmed          | `circle-check`    |
-| Proposed or pending           | `circle-dashed`   |
-| Rejected                      | `circle-x`        |
-| Requires review               | `refresh-cw`      |
-| Restricted use                | `lock`            |
-| Saved                         | `check`           |
-| Copied                        | `clipboard-check` |
-| Saving operation in timeline  | `save`            |
-| Archive conversation          | `folder-archive`  |
-| Offline                       | `cloud-off`       |
-| Version conflict              | `git-compare`     |
-| Attention in a form or notice | `triangle-alert`  |
-| Operation failure             | `octagon-alert`   |
-| Information                   | `info`            |
-| Plan pace                     | `calendar-clock`  |
+| Meaning                       | Icon                   |
+| ----------------------------- | ---------------------- |
+| Ohtia                         | Original glasses       |
+| Navigator                     | `signpost`             |
+| Supervisor                    | `user-round`           |
+| `document`                    | `file-text`            |
+| `dataset`                     | `database`             |
+| `media`                       | `image`                |
+| `software`                    | `code`                 |
+| `object`                      | `archive`              |
+| Researcher-confirmed          | `circle-check`         |
+| Proposed or pending           | `circle-dashed`        |
+| Rejected                      | `circle-x`             |
+| Requires review               | `refresh-cw`           |
+| Restricted use                | `lock`                 |
+| Saved                         | `check`                |
+| Copied                        | `clipboard-check`      |
+| Saving operation in timeline  | `save`                 |
+| Archive conversation          | `folder-archive`       |
+| Offline                       | `cloud-off`            |
+| Version conflict              | `git-compare`          |
+| Attention in a form or notice | `triangle-alert`       |
+| Operation failure             | `octagon-alert`        |
+| Information                   | `info`                 |
+| Plan pace                     | `calendar-clock`       |
+| Application menu              | `menu`                 |
+| Interface zoom indicator      | `zoom-in`              |
+| Command palette               | `search`               |
+| Keyboard shortcuts            | `keyboard`             |
+| Ohtia help                    | `circle-question-mark` |
+| Separator grip                | `grip-vertical`        |
 
 Icons for comparison outcomes are defined in [domain components](#comparison-outcomes).
 
@@ -1177,6 +1184,20 @@ An error states what failed, whether data is safe and what the user can do. It u
 - **Disagreement between sources.** Is represented as such, with propositions, their evidence and comparison conditions, according to PRIN-008. It is not presented as an error.
 - **Comment on changed text.** Remains at its original version with `ReviewRequired`.
 
+### Preference saving
+
+Application preferences save immediately, without Save or Cancel buttons, and each Settings group shows its own state beside its heading. Every state has text and an icon; none uses color alone, and there is no success color.
+
+- **Submitting.** The control keeps the new value; `circle-dashed` with Saving… in `content.secondary`.
+- **Confirmed.** `check` with Saved in `content.secondary`.
+- **Rejected or failed.** Inline danger notice with `octagon-alert` and an alert role, naming the setting and the retained previous value; Try again creates a new explicit intent.
+- **Uncertain.** Inline attention notice with `triangle-alert` and a status role, stating that the outcome is not yet known and is being checked without resending; Check queries the original receipt.
+- **Conflict.** Inline attention notice with `git-compare`, stating that another window saved a value meanwhile and that value is now used; Choose again.
+- **Saved but not applied in this window.** Inline attention notice with `triangle-alert`; Apply again retries only the rendering application.
+- **Changed from another window.** Inside an open Settings dialog only, a neutral `info` status that never moves focus.
+
+Failure notices stay inline and inspectable. The [EPIC-002 Settings specification](epics/EPIC-002-basic-interface/epic.md#spec-002-025-settings-presentation-and-preference-save-states) and its [reference specimen](epics/EPIC-002-basic-interface/epic.md#spec-002-027-reference-specimen-captures-and-measurements) show each treatment.
+
 ### Reference screens
 
 These descriptions establish composition and states for the main tasks. They are not an implementation and do not decide the product's information architecture.
@@ -1284,8 +1305,8 @@ On October 20, 2026, using Playwright 1.64.0's Chromium 156.0.8078.4, the refere
 - **Animation events.** Each enabled animation declares its event binding; Falling apart also declares its frequency rule. Verify those bindings before connecting animations to product events.
 - **Coincident events.** Navigator integration applies [the identity contract's event-batch rules](agent-identity.md#events-attention-and-scientific-uncertainty), including Waking up or Peeking in coinciding with a pending Hair standing on end. Present at most one animation per batch, keep other notices static and verify current relevance rather than creating an implicit animation queue.
 - **Named contributors.** Verify recognition of Ohtia, Virgilio, specialists and a human supervisor across layouts, reduced-motion and hidden-character modes. New role artwork must preserve the shared design family without reusing the human supervisor's identity or implying a capability not established by its operation contract.
-- **Native review of the name.** A native speaker of every interface language reviews the connotations of “Ohtia”; record the actual linguistic scope and result.
-- **Native review.** A native Korean speaker reviews typography in the implemented reading and interface journeys; automated coverage does not replace that review.
+- **Optional review of the name.** Fluent or native speakers may review the connotations of “Ohtia”; record the actual reviewed language and scope. This is not a prerequisite for delivery.
+- **Optional Korean linguistic review.** Native Korean readers may assess naturalness and typographic quality in the implemented journeys. Record that review only when performed; it is not a prerequisite for delivery. Required glyph, wrapping, emphasis, native input and assistive checks remain separate.
 
 [^wcag22]: W3C, Web Content Accessibility Guidelines (WCAG) 2.2, recommendation of December 12, 2024. Cited criteria, contrast formula and compatibility with WCAG 2.1 and 2.0.
 

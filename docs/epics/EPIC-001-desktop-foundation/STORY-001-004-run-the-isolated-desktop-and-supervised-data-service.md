@@ -5,7 +5,6 @@ description: "Launch a minimal graphical Electron application with a single brok
 tags: ["story", "comp:desktop", "comp:app"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/18
-verified: { by: human:AdrianMastronardi }
 generated:
   by: codex/gpt-6.1-sol
 epic: "EPIC-001"
@@ -56,7 +55,7 @@ Launch a minimal graphical Electron application with a single broker, safe boots
 - [ ] Completion gate: verify STORY-001-018 output D1b and its full release condition in the Dependencies output registry and SPEC-001-006.
 - [ ] Completion gate: verify Native hosts output NH and its full release condition in the Dependencies output registry and SPEC-001-006.
 - [ ] Stable or unverified profile launch is refused without reading/migrating stable sentinels on all six required native targets.
-- [ ] All delivered status/bootstrap/error messages and accessible labels use complete product-locale catalogs and the one resolver; automated packaged keyboard, focus and accessibility-tree checks pass. Manual assistive and linguistic acceptance belongs to 017.
+- [ ] All delivered status/bootstrap/error messages and accessible labels use complete product-locale catalogs and the one resolver; automated packaged keyboard, focus and accessibility-tree checks pass. Manual assistive acceptance belongs to 017.
 - [ ] All six required native runtime/bootstrap records identify the actual host, executable and utility architecture.
 - [ ] The built graphical window exchanges real status messages through all process boundaries without provider access.
 - [ ] Active CSP/sandbox and a narrow bridge reject privileged imports, invalid senders/resources and development fixture inclusion.

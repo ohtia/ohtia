@@ -4,8 +4,6 @@ title: "Product roadmap"
 description: "Desktop research capabilities, delivery sequence, dependencies and readiness conditions for Ohtia."
 generated:
   by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: electron-platforms
     resource: "https://github.com/electron/electron/blob/main/README.md#platform-support"
@@ -201,7 +199,7 @@ Role definitions and conversation routing are available from EPIC-003. Research 
 
 **First stories:** implement the menu-command registry and native integration; build semantic React primitives and the separate synthetic development catalog; implement global locale resolution and complete typed catalogs for delivered messages; add system/light/dark appearance; implement the one workspace controller, deterministic geometry, hide/resize/focus/reset and narrow presentation under the canonical layout contract. Deliver Animated/Static/Hidden controls, static fallback, cross-window preference behavior and system reduced-motion precedence. Preserve the original character geometry and validate any delivered illustration/event bindings; use static, attributed contributor identifiers. Add research-component visual specimens for attributed voices, proposals, evidence, coverage and conflicts, with actual domain actions supplied by later features.
 
-**Done when:** every menu and setting delivered here works through the application port. Verify focus/shortcut behavior, theme changes without state loss, permitted contrast pairs, all declared type/font roles, Korean coverage, forced colors, reduced motion, 40% pseudolocalization expansion and 320-px reflow. The component catalog is excluded from the product build. Verify workspace scenarios V01–V12 for the controls delivered here; later project/chat capabilities complete the same scenarios through EPIC-003–007. Review complete pages as well as primitives, native connotations of the product name in every interface language and implemented Korean typography with competent human reviewers.
+**Done when:** every menu and setting delivered here works through the application port. Verify focus/shortcut behavior, theme changes without state loss, permitted contrast pairs, all declared type/font roles, Korean coverage, forced colors, reduced motion, 40% pseudolocalization expansion and 320-px reflow. The component catalog is excluded from the product build. Verify workspace scenarios V01–V12 for the controls delivered here; later project/chat capabilities complete the same scenarios through EPIC-003–007. Review complete pages as well as primitives and verify locale structure, contextual rendering, Korean typography and actual model-generation provenance. Human linguistic review of translations, terminology, name connotations and typography is a voluntary future improvement, not a delivery prerequisite.
 
 **Enabling contracts:** design system, workspace layout, agent identity, frontend composition, ADR-0022–0025, ADR-0036 and packaged CSP. This epic establishes the common visual language and interaction infrastructure consumed by all later screens.
 

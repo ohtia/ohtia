@@ -1,9 +1,9 @@
 ---
+generated:
+  by: codex/gpt-6.1-sol
 type: Specification
 title: "Product definition"
 description: "Purpose, academic workflows, trust, and scope of the local Ohtia desktop workspace."
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # Product definition
@@ -176,7 +176,7 @@ Disconnecting or disabling a provider prevents new work through that connection 
 
 The repository's English documentation is independent of interface and manuscript language. The interface baseline covers `en-US`, `en-GB`, `en-AU`, `en-CA`, `es-ES`, `es-MX`, `es-AR`, `pt-BR`, `pt-PT`, `fr-FR`, `fr-CA`, `fr-BE`, `de-DE`, `de-AT`, `de-CH`, `it-IT`, `nl-NL`, `nl-BE`, `sv-SE`, `da-DK`, `nb-NO`, `fi-FI`, `ca-AD`, `ca-ES` and `ko-KR`. Locale selection has an explicit user override; [ADR-0024](adr/adr-0024-typed-localization-catalogs.md#interface-locale-resolution) defines system preference matching and the fallback policy.
 
-Interface translation, analysis language, source language and manuscript language are separate settings. Changing a setting does not translate existing research or relabel its original language. A catalog's structural completeness does not establish linguistic quality. Human review and machine assistance are disclosed honestly.
+Interface translation, analysis language, source language and manuscript language are separate settings. Changing a setting does not translate existing research or relabel its original language. A catalog's structural completeness does not establish linguistic quality. Model-generated translations may be delivered without human linguistic review; disclose the actual producer and unreviewed state. Human review is an optional future improvement and is recorded only for the version and scope actually reviewed.
 
 The interface targets WCAG 2.2 AA with keyboard-operable research workflows, readable focus, scalable text and meaningful announcements; the [frontend architecture](frontend-architecture.md) defines verification. Model output quality must be evaluated for each enabled operation and language; translated labels do not establish model competence.
 
