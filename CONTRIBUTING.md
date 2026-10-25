@@ -2,11 +2,19 @@
 
 Thank you for helping improve Ohtia. Bug reports, documentation improvements, and code contributions are welcome. We especially welcome help creating interface translations and reviewing their linguistic quality.
 
+## Code of conduct
+
+Everyone taking part in Ohtia follows the [code of conduct](CODE_OF_CONDUCT.md), which also explains how to report a possible violation.
+
 ## Work from an issue
 
 Every code change must be associated with a GitHub issue before implementation begins. This includes bug fixes, enhancements, refactoring, tests, dependency updates, and changes to build, CI, or tooling configuration.
 
 Search existing issues first. If no suitable issue exists, create one describing the purpose, scope, and expected outcome of the change.
+
+## Report a security issue
+
+Do not report vulnerabilities in public issues, discussions or pull requests. Follow the [security policy](SECURITY.md) instead.
 
 ## Translation and linguistic review
 

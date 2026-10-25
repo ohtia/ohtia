@@ -20,7 +20,7 @@ Before implementing product behavior, read the [product definition](docs/product
 - Keep identifiers in English. Preserve quotations and translated interface text in their original or target language, with English explanations.
 - Documents describe their subject directly. Do not add status sections, status metadata, inventories of missing features, session transcripts, or alternative histories. Git preserves their evolution.
 - Add documentation when there is useful content or an actual procedure to describe. Keep each decision in one canonical location and link to it rather than duplicating it.
-- Keep substantial product and architecture documentation under `docs/`. Root-level repository guidance such as README, CONTRIBUTING, AGENTS, and CLAUDE remains at the root.
+- Keep substantial product and architecture documentation under `docs/`. Root-level repository guidance such as README, CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, AGENTS, and CLAUDE remains at the root.
 - Use relative links between repository files and verify their targets. Refer only to files, commands, and tools that exist.
 - Keep repository content and published issue/PR descriptions self-contained. Reference this repository and primary external sources; do not link or refer to other Ohtia repositories.
 - Do not invent sources, quotations, authors, dates, approvals, or verification results. Check current authoritative sources when external facts can change.
@@ -41,7 +41,7 @@ Repository documentation under `docs/` forms one Open Knowledge Format (OKF) v0.
 - Use relative links within the repository and verify their targets and heading fragments. Keep the bundle self-contained and preserve existing paths when extending it.
 - Optional `sources` entries identify concrete supporting resources, each with a `resource` URL or path. Give cited sources unique, stable `id` values and use matching Markdown footnote labels for individual claims. Keep source details in frontmatter rather than a duplicate body references list, and omit `sources` when there are none to declare. Review declarations describe the review actually performed; keep Git and pull requests as the evidence of repository review and history.
 - Apply the documentation rules above: paragraphs stay on one source line, and document status metadata, parallel histories, and `log.md` files are excluded from this repository profile.
-- Root-level README, CONTRIBUTING, AGENTS, and CLAUDE files remain repository guidance outside the bundle. Ignored `tmp/` holds disposable work and review evidence; neither belongs in the documentation index or receives concept frontmatter.
+- Root-level README, CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, AGENTS, and CLAUDE files remain repository guidance outside the bundle. Ignored `tmp/` holds disposable work and review evidence; neither belongs in the documentation index or receives concept frontmatter.
 
 When adding or changing a document, update its directory index, review its frontmatter and links, and run the configured repository hooks. Product storage and export formats are defined in the product and architecture documents.
 
