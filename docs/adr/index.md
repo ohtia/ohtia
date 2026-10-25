@@ -42,6 +42,7 @@ The conventions for this register are defined in [Architecture decisions](../arc
 - [ADR-0023 — WCAG 2.2 AA and scoped desktop accessibility evidence](adr-0023-desktop-accessibility-verification.md) — Target WCAG 2.2 AA and selected AAA criteria while reporting actual packaged-interface and assistive-technology coverage.
 - [ADR-0024 — Typed catalogs and operating-system locale selection](adr-0024-typed-localization-catalogs.md) — Resolve interface language from user choice, ordered OS preferences and explicit regional fallbacks through one typed catalog service.
 - [ADR-0025 — Bundled IBM Plex typography with Noto fallback](adr-0025-bundled-plex-and-noto-fonts.md) — Distribute identified local fonts for interface, manuscript, code and mathematics without remote font requests.
+- [ADR-0039 — Integrated window title bar](adr-0039-integrated-window-title-bar.md) — Combine the window title bar, application-menu entry and workspace context bar in one 48 px row drawn with platform window controls.
 
 ## Inference and search integrations
 

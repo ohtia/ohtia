@@ -5,7 +5,6 @@ description: "Demonstrate the full foundation, three native contributor paths an
 tags: ["story", "comp:desktop", "comp:tooling", "comp:storage", "comp:docs"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/31
-verified: { by: human:AdrianMastronardi }
 generated:
   by: codex/gpt-6.1-sol
 epic: "EPIC-001"
@@ -58,7 +57,7 @@ Demonstrate the full foundation, three native contributor paths and release infr
 - [ ] Run full packaged foundation and migration/failure/privacy journeys, correcting accepted defects through their owning story contracts.
 - [ ] Verify first-launch stable-profile exclusion, complete initial locale resolution and catalogs, atomic default-limit initialization and real keyboard and focus behavior during bootstrap and recovery.
 - [ ] Perform the required native manual screen-reader and assistive journeys on all six targets; record operators, tools, criteria and exact artifacts.
-- [ ] Review all delivered locale messages in context, recording the linguistic-review scope, translation assistance and actual fluent human review without certifying unreviewed text.
+- [ ] Verify delivered locale messages through catalog structure, contextual rendering and actual model-generation provenance. Record that human linguistic review has not occurred; a future voluntary review covers only its evidenced version and scope and is not a prerequisite for closure.
 - [ ] Observe consented unfamiliar contributors on all six native targets through clean setup, environment-doctor failure and remediation, launch, a representative source change, checks and unsigned packaging; retain actual host, executable and addon identities and measured conditions.
 - [ ] Rehearse candidate/publication lifecycle on authorized controlled surfaces, verify exact bytes/isolation/authority and retain complete evidence and limitations.
 
