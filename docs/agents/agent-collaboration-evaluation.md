@@ -2,6 +2,8 @@
 type: Playbook
 title: "Agent collaboration evaluation"
 description: "Evaluate research usefulness, evidence fidelity, human review, and bounded execution against a single-agent baseline."
+generated:
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 ---
@@ -89,6 +91,23 @@ Use the [identity contract](agent-identity.md) to compare recognition in welcome
 Repeat in central-only, chat-only and narrow layouts, with a manuscript visible, in grayscale, by keyboard and with reduced motion or full characters hidden. The same evidence, contributor labels and actions remain usable. Measure whether characters help identify work or add interruption/review burden before expanding the illustrated roster. A preferred character or attractive portrait is not evidence of specialist quality.
 
 Verify the `character_presentation` preference's accepted values, invalid/unavailable fallback, failed-write behavior, cross-window application and restart persistence. Activate reduced motion mid-animation and cancel all pending motion without replay after re-enabling it. Deliver coincident, repeated and restored event notices: at most one relevant animation plays per batch, existing notices restore statically and no animation changes inference, access or review state. For a manuscript-visible event, verify that only the first explicit Navigator opening can consume the one deferred presentation, using the original unused batch allowance; passive restoration, restart, resolution and nonanimated modes cannot replay it. Queued work cannot appear to be actively reading, and completion art cannot imply that citations or conclusions were verified.
+
+### Contributor animation recognition
+
+Compare the seven contributors' static symbols/avatars, full static illustrations and the initial three-gesture repertoire using representative conversation tasks. The [design-system contract](../design-system.md#contributor-characters-and-avatars) owns variants, duration and static poses; [identity event bindings](agent-identity.md#contributor-presentation-events) own eligibility and batch consumption. Declare recognition, interruption and mistaken-approval assessment criteria before trials; liking a character is not proof that it improves attribution.
+
+Ask participants to identify the current contributor and role, the producer of an earlier result, whether work actually started, whether a result is partial and whether anyone approved its content. Include an explicit introduction, direct specialist work, a handoff, coordinated findings, delayed delivery and a truthful unavailable capability. Compare with name-and-role text plus a static symbol under equivalent tasks; record attribution errors, misunderstanding of activity/approval, time to identify the contributor and distraction or interruption of reading/writing.
+
+Verify these deterministic presentation cases before animation enablement:
+
+- First explicit introduction versus repeated delivery, ordinary conversation opening, restored history and an attempt to automatically introduce the whole roster. No case starts inference or transfers context through presentation.
+- An actually active attempt versus accepted-but-queued, awaiting-permission, paused, disconnected and uncertain work. No static wait acquires a working animation.
+- A committed accepted result versus streamed prose, invalid output, another contributor's result, cancelled work and unresolved execution. Partial results retain exact omissions and never look human-approved.
+- Introduction, active and result events in one intervention/project-opening batch, including a coincident Ohtia reaction, retries and handoffs. Consume at most one shared allowance and never build a playback queue. If start animates, result stays static.
+- A manuscript visible, an insufficiently sized area, a background result, changed contributor/project, closed surface, cancellation and invalidated relevance. Keep labels and notices usable; no motion overlays, shifts or takes focus from the manuscript, and suppressed contributor gestures do not enter the deferred Navigator mechanism.
+- Light/dark themes, grayscale, simulated color-vision deficiencies, small avatars/symbols, keyboard/screen-reader use, Static/Hidden settings and reduced motion changed mid-gesture. Preserve text and attribution; stop movement immediately, use the appropriate still state and do not replay after restoration or preference changes.
+
+Run drawing and in-context animation checks on the actual assets and surface before declaring the family enabled. Documentation review, timing specifications and synthetic event fixtures do not prove rendered recognition, accessibility or researcher benefit. Retain trial scope, versions, methods and limitations as evaluation evidence.
 
 ## Evidence and enablement
 

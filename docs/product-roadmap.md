@@ -4,6 +4,8 @@ title: "Product roadmap"
 description: "Desktop research capabilities, delivery sequence, dependencies and readiness conditions for Ohtia."
 generated:
   by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: electron-platforms
     resource: "https://github.com/electron/electron/blob/main/README.md#platform-support"
@@ -601,12 +603,12 @@ All 38 ADRs in the [register][register] have a delivery owner below. The table c
 [decisions]: architecture-decisions.md
 [register]: adr/index.md
 [design]: design-system.md
-[collaboration]: agent-collaboration.md
-[evaluation]: agent-collaboration-evaluation.md
-[references]: agent-coordination-references.md
+[collaboration]: agents/agent-collaboration.md
+[evaluation]: agents/agent-collaboration-evaluation.md
+[references]: agents/agent-coordination-references.md
 [policy]: repository-policy.md
 [workspace]: workspace-layout.md
-[identity]: agent-identity.md
+[identity]: agents/agent-identity.md
 [release]: release-policy.md
 [release-handoff]: release-policy.md#scaffolding-implementation-handoff
 [design-blockers]: design-system.md#conformance-blockers

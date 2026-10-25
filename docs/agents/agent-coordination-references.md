@@ -2,6 +2,8 @@
 type: Analysis
 title: "Agent coordination implementation references"
 description: "Source-backed lessons from provider documentation, Paperclip, and Multica for Ohtia's agent collaboration boundary."
+generated:
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 sources:

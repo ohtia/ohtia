@@ -1,9 +1,11 @@
 ---
-generated:
-  by: codex/gpt-6.1-sol
 type: Specification
 title: "Product definition"
 description: "Purpose, academic workflows, trust, and scope of the local Ohtia desktop workspace."
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # Product definition
@@ -40,7 +42,7 @@ The researcher chooses the destination and the next action. Ohtia explains possi
 
 ### PRIN-002. Preserve researcher authorship
 
-The researcher directs and takes responsibility for the thesis or paper. Ohtia offers questions, source summaries, criticism, structural alternatives and proposed wording changes, with their origins identified. An agent proposal remains separate from the manuscript until the researcher explicitly reviews and approves the exact changes. Preserve agent contribution and researcher approval as distinct provenance; accepting wording does not itself confirm its evidence or citations. [Agent collaboration](agent-collaboration.md#editorial-proposals-and-approval) defines the review and application contract.
+The researcher directs and takes responsibility for the thesis or paper. Ohtia offers questions, source summaries, criticism, structural alternatives and proposed wording changes, with their origins identified. An agent proposal remains separate from the manuscript until the researcher explicitly reviews and approves the exact changes. Preserve agent contribution and researcher approval as distinct provenance; accepting wording does not itself confirm its evidence or citations. [Agent collaboration](agents/agent-collaboration.md#editorial-proposals-and-approval) defines the review and application contract.
 
 ### PRIN-003. Guide intellectual work
 
@@ -158,7 +160,7 @@ Criticism adapts to the research question and its disciplinary reasoning. Quanti
 
 ## Navigator and workflow
 
-The Navigator explains where the researcher left off, what needs attention and why a next action is useful. It works from the first project opening, including an empty corpus. Its stage, current focus and pending reviews are distinct; research can advance on several fronts and revisit a completed milestone. [Virgilio and the research specialists](agent-collaboration.md) provide on-demand guidance and bounded contributions through that workspace, while stored Navigator information remains available without inference. [Ohtia and agent identity](agent-identity.md) separates the female product character from named AI contributors and human supervisors; a character reaction does not confer authorship, confirmation or scientific validity.
+The Navigator explains where the researcher left off, what needs attention and why a next action is useful. It works from the first project opening, including an empty corpus. Its stage, current focus and pending reviews are distinct; research can advance on several fronts and revisit a completed milestone. [Virgilio and the research specialists](agents/agent-collaboration.md) provide on-demand guidance and bounded contributions through that workspace, while stored Navigator information remains available without inference. [Ohtia and agent identity](agents/agent-identity.md) separates the female product character from named AI contributors and human supervisors; a character reaction does not confer authorship, confirmation or scientific validity.
 
 The seven-stage thesis route, outputs, reentry paths and paper adaptation live in [Thesis workflow](thesis-workflow.md). A schedule indicator is available only with an agreed plan, dates and availability. It describes pace against that plan, never intellectual quality. No green badge certifies an argument or replaces examination of its support.
 

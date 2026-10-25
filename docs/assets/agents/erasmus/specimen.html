@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Erasmus specimen</title>
+<style>
+  :root { --page: #faf8f5; --panel: #f4f1ed; --line: #dad7d2; --fg: #1f1d19; --fg2: #4e4a43; color-scheme: light; }
+  :root.dark { --page: #151411; --panel: #1a1815; --line: #35322e; --fg: #ebe7e2; --fg2: #c1bdb7; color-scheme: dark; }
+  body { margin: 0; background: var(--page); color: var(--fg); font: 15px/1.5 'IBM Plex Sans', system-ui, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 32px 16px 64px; display: grid; gap: 28px; }
+  h1 { font-size: 24px; font-weight: 600; margin: 0; }
+  h2 { font-size: 17px; font-weight: 600; margin: 0 0 12px; }
+  p { margin: 0; color: var(--fg2); max-width: 70ch; }
+  .stage { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: 24px; align-items: start; }
+  .frame { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+  .frame svg { display: block; width: 100%; height: auto; }
+  .controls { display: grid; gap: 10px; align-content: start; }
+  button { font: inherit; text-align: left; padding: 10px 14px; border-radius: 4px; border: 1px solid var(--fg2); background: var(--page); color: var(--fg); cursor: pointer; }
+  button span { color: var(--fg2); font-size: 13px; margin-left: 6px; }
+  button[aria-disabled="true"] { cursor: default; opacity: .6; }
+  button:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+  #status { min-height: 1.5em; }
+  .strip { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+  .strip img { display: block; }
+  .part, .prop { transform-box: view-box; }
+  .c-surface { fill: #edf1df; stroke: #444e05; stroke-width: 3; stroke-linejoin: round; }
+  .c-accent { fill: #b8c77c; stroke: #444e05; stroke-width: 3; stroke-linejoin: round; }
+  .c-paper { fill: #edf1df; stroke: #444e05; stroke-width: 2.5; stroke-linejoin: round; }
+  .c-line { fill: none; stroke: #444e05; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+  .c-thin { fill: none; stroke: #444e05; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .c-hair { fill: #444e05; stroke: #444e05; stroke-width: 2; stroke-linejoin: round; }
+  .c-hair-line { fill: none; stroke: #edf1df; stroke-width: 2; stroke-linecap: round; }
+  .c-brow { fill: none; stroke: #444e05; stroke-width: 3.5; stroke-linecap: round; }
+  .c-mouth { fill: none; stroke: #444e05; stroke-width: 3; stroke-linecap: round; }
+  .c-fill { fill: #444e05; }
+  .c-hole { fill: #edf1df; stroke: #444e05; stroke-width: 1.8; }
+  .c-dash { fill: none; stroke: #444e05; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+  .c-trail { fill: none; stroke: #444e05; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 100 110; stroke-dashoffset: 105; }
+  .prop { opacity: 0; }
+  :root.dark .c-surface { fill: #252915; stroke: #c5d38f; stroke-width: 3; stroke-linejoin: round; }
+  :root.dark .c-accent { fill: #596423; stroke: #c5d38f; stroke-width: 3; stroke-linejoin: round; }
+  :root.dark .c-paper { fill: #252915; stroke: #c5d38f; stroke-width: 2.5; stroke-linejoin: round; }
+  :root.dark .c-line { fill: none; stroke: #c5d38f; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+  :root.dark .c-thin { fill: none; stroke: #c5d38f; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  :root.dark .c-hair { fill: #c5d38f; stroke: #c5d38f; stroke-width: 2; stroke-linejoin: round; }
+  :root.dark .c-hair-line { fill: none; stroke: #252915; stroke-width: 2; stroke-linecap: round; }
+  :root.dark .c-brow { fill: none; stroke: #c5d38f; stroke-width: 3.5; stroke-linecap: round; }
+  :root.dark .c-mouth { fill: none; stroke: #c5d38f; stroke-width: 3; stroke-linecap: round; }
+  :root.dark .c-fill { fill: #c5d38f; }
+  :root.dark .c-hole { fill: #252915; stroke: #c5d38f; stroke-width: 1.8; }
+  :root.dark .c-dash { fill: none; stroke: #c5d38f; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+  :root.dark .c-trail { fill: none; stroke: #c5d38f; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 100 110; stroke-dashoffset: 105; }
+  :root.dark .prop { opacity: 0; }
+  @media (max-width: 640px) { .stage { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Erasmus specimen</h1>
+    <p>Reference prototype for Erasmus's three gestures. Each plays once, from neutral to its main pose at 50% and back, with the shared standard easing. With reduced motion, the main pose appears without movement for the gesture's duration. Add <code>#dark</code> to the address for the dark theme.</p>
+  </header>
+  <section class="stage">
+    <div class="frame">
+      <svg viewBox="-16 0 152 152" role="img" aria-label="Erasmus">
+<g>
+    <path class="c-accent" d="M24 152 L29 113 L48 104 L60 112 L72 104 L91 113 L96 152 Z" />
+    <path class="c-line" d="M60 112 L60 152" />
+    <circle class="c-fill" cx="60" cy="126" r="1.8" />
+    <circle class="c-fill" cx="60" cy="140" r="1.8" />
+  </g>
+
+<g><rect class="c-surface" x="54" y="84" width="12" height="22" /></g>
+
+<g><path class="c-accent" d="M48 106 L45 89 L57 96 L60 110 L63 96 L75 89 L72 106 L60 112 Z" /></g>
+
+<g id="head" class="part">
+<g><path class="c-surface" d="M36 52 Q36 34 60 33 Q84 34 84 52 L82 71 Q79 85 60 88 Q41 85 38 71 Z" /></g>
+
+<g>
+    <path class="c-hair" d="M35 54 L35.5 42 Q35.5 34 42 33.5 Q43.5 27.5 50 29.5 Q53.5 24.5 60 27.5 Q66.5 24.5 70 29.5 Q76.5 27.5 78 33.5 Q84.5 34 84.5 42 L85 54 Q80 45 60 44 Q40 45 35 54 Z" />
+    <path class="c-hair-line" d="M45 37 Q47 34.5 50 35" />
+    <path class="c-hair-line" d="M57 34 Q60 32 63 34" />
+    <path class="c-hair-line" d="M70 35 Q73 34.5 75 37" />
+  </g>
+
+<g id="brows" class="part"><g>
+    <path class="c-brow" d="M43 55 L54 54" />
+    <path class="c-brow" d="M66 54 L77 55" />
+  </g>
+  </g>
+<g id="eyes" class="part"><g>
+    <ellipse class="c-fill" cx="49" cy="62" rx="2.5" ry="3.1" />
+    <ellipse class="c-fill" cx="71" cy="62" rx="2.5" ry="3.1" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M55 75 Q60 77 65 75" /></g>
+  </g>
+<g>
+    <path id="mouth-smile" class="c-mouth prop" d="M54 74 Q60 79 66 74" />
+  </g>
+
+</g>
+<g id="left-doc" class="part">
+<g transform="rotate(-6 24 146)">
+    <rect class="c-paper" x="12" y="116" width="24" height="31" rx="2.5" />
+    <path class="c-thin" d="M17 123 L31 123" />
+    <path class="c-thin" d="M17 129 L31 129" />
+    <path class="c-thin" d="M17 135 L26 135" />
+  </g>
+
+<g><circle class="c-surface" cx="24" cy="146" r="6" /></g>
+
+</g>
+<g id="right-doc" class="part">
+<g transform="rotate(6 96 146)">
+    <rect class="c-paper" x="84" y="116" width="24" height="31" rx="2.5" />
+    <path class="c-thin" d="M89 123 L103 123" />
+    <path class="c-thin" d="M89 129 L98 129" />
+    <path class="c-thin" d="M89 135 L103 135" />
+  </g>
+
+<g><circle class="c-surface" cx="96" cy="146" r="6" /></g>
+
+</g>
+<g>
+    <g id="links" class="prop">
+      <path class="c-dash" d="M52 115 L68 115" />
+      <circle class="c-fill" cx="51" cy="115" r="1.6" />
+      <circle class="c-fill" cx="69" cy="115" r="1.6" />
+      <path class="c-dash" d="M52 121 L68 121" />
+      <circle class="c-fill" cx="51" cy="121" r="1.6" />
+      <circle class="c-fill" cx="69" cy="121" r="1.6" />
+      <path class="c-dash" d="M52 127 L68 127" />
+      <circle class="c-fill" cx="51" cy="127" r="1.6" />
+      <circle class="c-fill" cx="69" cy="127" r="1.6" />
+    </g>
+  </g>
+
+      </svg>
+    </div>
+    <div class="controls">
+        <button type="button" data-gesture="introduction">Introduction <span>1200 ms</span></button>
+        <button type="button" data-gesture="active">Active contribution <span>1000 ms</span></button>
+        <button type="button" data-gesture="result">Result available <span>1200 ms</span></button>
+      <p id="status" role="status"></p>
+    </div>
+  </section>
+  <section>
+    <h2>Representations</h2>
+    <div class="strip">
+      <img src="avatar.svg" width="48" height="48" alt="Erasmus avatar, 48 px">
+      <img src="avatar.svg" width="32" height="32" alt="Erasmus avatar, 32 px">
+      <img src="avatar.svg" width="24" height="24" alt="Erasmus avatar, 24 px">
+      <img src="symbol.svg" width="24" height="24" alt="Erasmus symbol, 24 px">
+      <img src="symbol.svg" width="16" height="16" alt="Erasmus symbol, 16 px">
+    </div>
+  </section>
+  <section>
+    <h2>Key poses</h2>
+    <img src="poses.svg" alt="Erasmus gestures frozen at 25%, 50% and 75%" style="max-width: 100%; height: auto;">
+  </section>
+</main>
+<script id="gesture-data" type="application/json">{"gestures": [{"key": "introduction", "name": "Introduction", "ms": 1200, "tracks": {"left-doc": [{"t": [0, 0, 0, 1, 1]}, {"t": [4, -28, 6, 1, 1]}, {"t": [1, -6, 2, 1, 1]}, {"t": [0, -2, 1, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "right-doc": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}, {"t": [-4, -28, -6, 1, 1]}, {"t": [-2, -12, -3, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "head": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, 1, -3, 1, 1]}, {"t": [0, 1, 3, 1, 1]}, {"t": [0, 0.5, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "eyes": [{"t": [0, 0, 0, 1, 1]}, {"t": [-2, 0, 0, 1, 1]}, {"t": [2, 0, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "brows": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, -1, 0, 1, 1]}, {"t": [0, -1.5, 0, 1, 1]}, {"t": [0, -1, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "mouth-rest": [{"o": 1}, {"o": 0}, {"o": 0}, {"o": 0}, {"o": 1}], "mouth-smile": [{"o": 0}, {"o": 1}, {"o": 1}, {"o": 1}, {"o": 0}]}}, {"key": "active", "name": "Active contribution", "ms": 1000, "tracks": {"left-doc": [{"t": [0, 0, 0, 1, 1]}, {"t": [14, -5, 4, 1, 1]}, {"t": [22, -8, 6, 1, 1]}, {"t": [14, -5, 4, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "right-doc": [{"t": [0, 0, 0, 1, 1]}, {"t": [-14, -5, -4, 1, 1]}, {"t": [-22, -8, -6, 1, 1]}, {"t": [-14, -5, -4, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "links": [{"o": 0}, {"o": 0}, {"o": 1}, {"o": 0.4}, {"o": 0}], "eyes": [{"t": [0, 0, 0, 1, 1]}, {"t": [-2, 1, 0, 1, 1]}, {"t": [2, 1, 0, 1, 1]}, {"t": [-1, 1, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "brows": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, 0.8, 0, 1, 1]}, {"t": [0, 0.8, 0, 1, 1]}, {"t": [0, 0.8, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}]}}, {"key": "result", "name": "Result available", "ms": 1200, "tracks": {"left-doc": [{"t": [0, 0, 0, 1, 1]}, {"t": [12, -14, 4, 1.08, 1.08]}, {"t": [20, -26, 6, 1.18, 1.18]}, {"t": [12, -14, 4, 1.08, 1.08]}, {"t": [0, 0, 0, 1, 1]}], "right-doc": [{"t": [0, 0, 0, 1, 1]}, {"t": [-12, -14, -4, 1.08, 1.08]}, {"t": [-20, -26, -6, 1.18, 1.18]}, {"t": [-12, -14, -4, 1.08, 1.08]}, {"t": [0, 0, 0, 1, 1]}], "brows": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, -1.5, 0, 1, 1]}, {"t": [0, -2.5, 0, 1, 1]}, {"t": [0, -1.5, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "mouth-rest": [{"o": 1}, {"o": 0}, {"o": 0}, {"o": 0}, {"o": 1}], "mouth-smile": [{"o": 0}, {"o": 1}, {"o": 1}, {"o": 1}, {"o": 0}]}}], "origins": {"head": [60, 88], "left-doc": [24, 146], "right-doc": [96, 146], "eyes": [60, 62], "brows": [60, 54], "mouth-rest": [60, 76]}, "keys": [0, 0.25, 0.5, 0.75, 1]}</script>
+<script>
+(function () {
+  var DATA = JSON.parse(document.getElementById("gesture-data").textContent);
+  var EASE = "cubic-bezier(0.2, 0, 0, 1)";
+  var root = document.documentElement;
+  function theme() { root.classList.toggle("dark", location.hash === "#dark"); }
+  theme();
+  window.addEventListener("hashchange", theme);
+  var buttons = Array.prototype.slice.call(document.querySelectorAll("button[data-gesture]"));
+  var status = document.getElementById("status");
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+  var running = [], touched = [], timer = 0, busy = false;
+  Object.keys(DATA.origins).forEach(function (id) {
+    var o = DATA.origins[id];
+    document.getElementById(id).style.transformOrigin = o[0] + "px " + o[1] + "px";
+  });
+  function frame(f, offset) {
+    var k = { offset: offset, easing: EASE };
+    if (f.t) k.transform = "translate(" + f.t[0] + "px, " + f.t[1] + "px) rotate(" + f.t[2] + "deg) scale(" + f.t[3] + ", " + f.t[4] + ")";
+    if (f.o !== undefined) k.opacity = f.o;
+    if (f.d !== undefined) k.strokeDashoffset = f.d;
+    return k;
+  }
+  function reset() {
+    running.forEach(function (a) { a.cancel(); });
+    running = [];
+    clearTimeout(timer);
+    touched.forEach(function (e) { e.style.transform = ""; e.style.opacity = ""; e.style.strokeDashoffset = ""; });
+    touched = [];
+    busy = false;
+    buttons.forEach(function (b) { b.removeAttribute("aria-disabled"); });
+  }
+  function play(g) {
+    reset();
+    busy = true;
+    buttons.forEach(function (b) { b.setAttribute("aria-disabled", "true"); });
+    Object.keys(g.tracks).forEach(function (id) {
+      var e = document.getElementById(id), frames = g.tracks[id];
+      touched.push(e);
+      if (reduced.matches) {
+        var k = frame(frames[2], 0);
+        if (k.transform) e.style.transform = k.transform;
+        if (k.opacity !== undefined) e.style.opacity = k.opacity;
+        if (k.strokeDashoffset !== undefined) e.style.strokeDashoffset = k.strokeDashoffset;
+      } else {
+        running.push(e.animate(frames.map(function (f, i) { return frame(f, DATA.keys[i]); }), { duration: g.ms }));
+      }
+    });
+    status.textContent = reduced.matches ? g.name + ": main pose shown without movement for " + g.ms + " ms." : g.name + ": playing once, " + g.ms + " ms.";
+    timer = setTimeout(function () { reset(); status.textContent = g.name + ": back at rest."; }, g.ms);
+  }
+  if (typeof Element.prototype.animate !== "function") {
+    buttons.forEach(function (b) { b.disabled = true; });
+    status.textContent = "This browser lacks the Web Animations API, so the gestures cannot play here.";
+    return;
+  }
+  buttons.forEach(function (b) {
+    b.addEventListener("click", function () {
+      if (busy) return;
+      play(DATA.gestures.filter(function (g) { return g.key === b.dataset.gesture; })[0]);
+    });
+  });
+  reduced.addEventListener("change", function () { reset(); status.textContent = "Motion preference changed: stopped without replay."; });
+})();
+</script>
+</body>
+</html>

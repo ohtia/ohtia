@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" role="img" aria-label="Thomas: symbol" viewBox="0 0 24 24">
+  <title>Thomas: symbol</title>
+  <style>
+    .s-panel { fill: #fae9f2; stroke: #6f2b55; stroke-linecap: round; stroke-linejoin: round; }
+    .s-line { fill: none; stroke: #6f2b55; stroke-linecap: round; stroke-linejoin: round; }
+    .s-fill { fill: #6f2b55; stroke-linecap: round; stroke-linejoin: round; }
+    @media (prefers-color-scheme: dark) {
+      .s-panel { fill: #341e2b; stroke: #edaed1; stroke-linecap: round; stroke-linejoin: round; }
+      .s-line { fill: none; stroke: #edaed1; stroke-linecap: round; stroke-linejoin: round; }
+      .s-fill { fill: #edaed1; stroke-linecap: round; stroke-linejoin: round; }
+    }
+  </style>
+  <g><rect class="s-panel" x="2.5" y="3.5" width="19" height="17" rx="2.5" stroke-width="1.8" /></g>
+    <g><path class="s-line" d="M7 16 L12 8 L17 16 Z" stroke-width="1.4" fill="none" /></g>
+    <g>
+      <circle class="s-panel" cx="12" cy="8" r="2" stroke-width="1.5" />
+      <circle class="s-panel" cx="7" cy="16" r="2" stroke-width="1.5" />
+      <circle class="s-panel" cx="17" cy="16" r="2" stroke-width="1.5" />
+    </g>
+</svg>

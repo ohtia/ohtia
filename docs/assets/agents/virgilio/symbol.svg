@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" role="img" aria-label="Virgilio: symbol" viewBox="0 0 24 24">
+  <title>Virgilio: symbol</title>
+  <style>
+    .s-panel { fill: #fae9f2; stroke: #6f2b55; stroke-linecap: round; stroke-linejoin: round; }
+    .s-line { fill: none; stroke: #6f2b55; stroke-linecap: round; stroke-linejoin: round; }
+    .s-fill { fill: #6f2b55; stroke-linecap: round; stroke-linejoin: round; }
+    @media (prefers-color-scheme: dark) {
+      .s-panel { fill: #341e2b; stroke: #edaed1; stroke-linecap: round; stroke-linejoin: round; }
+      .s-line { fill: none; stroke: #edaed1; stroke-linecap: round; stroke-linejoin: round; }
+      .s-fill { fill: #edaed1; stroke-linecap: round; stroke-linejoin: round; }
+    }
+  </style>
+  <g><rect class="s-panel" x="3" y="4" width="18" height="16" rx="2.5" stroke-width="2" /></g>
+    <g><path class="s-line" d="M7.5 16 Q7 10.5 12 12 Q17 13.5 16.5 8.5" stroke-width="2" /></g>
+    <g><circle class="s-fill" cx="7.5" cy="16" r="1.6" /></g>
+    <g><circle class="s-panel" cx="16.5" cy="8" r="1.8" stroke-width="1.6" /></g>
+</svg>

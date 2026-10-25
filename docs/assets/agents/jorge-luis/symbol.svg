@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" role="img" aria-label="Jorge Luis: symbol" viewBox="0 0 24 24">
+  <title>Jorge Luis: symbol</title>
+  <style>
+    .s-panel { fill: #fae9f2; stroke: #6f2b55; stroke-linecap: round; stroke-linejoin: round; }
+    .s-line { fill: none; stroke: #6f2b55; stroke-linecap: round; stroke-linejoin: round; }
+    .s-fill { fill: #6f2b55; stroke-linecap: round; stroke-linejoin: round; }
+    @media (prefers-color-scheme: dark) {
+      .s-panel { fill: #341e2b; stroke: #edaed1; stroke-linecap: round; stroke-linejoin: round; }
+      .s-line { fill: none; stroke: #edaed1; stroke-linecap: round; stroke-linejoin: round; }
+      .s-fill { fill: #edaed1; stroke-linecap: round; stroke-linejoin: round; }
+    }
+  </style>
+  <g><rect class="s-fill" x="15" y="3" width="3.6" height="6" rx="0.8" /></g>
+    <g><path class="s-panel" d="M2.5 7.5 Q7 5.5 12 7.5 L12 19 Q7 17 2.5 19 Z" stroke-width="1.8" /></g>
+    <g><path class="s-panel" d="M12 7.5 Q17 5.5 21.5 7.5 L21.5 19 Q17 17 12 19 Z" stroke-width="1.8" /></g>
+    <g><path class="s-line" d="M5 11 Q7.3 10 9.6 11" stroke-width="1.4" /></g>
+</svg>

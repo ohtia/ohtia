@@ -46,7 +46,7 @@ sources:
     resource: "https://www.w3.org/TR/WCAG22/"
     title: "W3C — WCAG 2.2"
   - id: "character-raster"
-    resource: "../../assets/ohtia-personaje.png"
+    resource: "../../assets/ohtia/illustration.png"
     title: "Ohtia character raster approved for About"
   - id: "electron-zoom"
     resource: "https://www.electronjs.org/docs/latest/api/web-contents#contentssetzoomfactorfactor"
@@ -176,7 +176,7 @@ Use local Lucide assets with their licenses and actual export checks; pin their 
 
 Verification: mutate a token, remove an alias, introduce an unlisted color pair and alter a font byte/CSS range; each appropriate check must fail. Exercise both themes, system changes, forced colors, 40% expansion, offline font loading and each type role with Latin/Korean specimens. This story delivers styling/assets and scoped automated checks, without waiting for downstream primitives or claiming manual linguistic/accessibility certification.
 
-Publication moves the retained original PNG into `docs/assets/ohtia-personaje.png`, beside the existing SVG, and rebases its references. It must not leave a duplicate product image in the published EPIC directory. Preparation retains the one staging copy until that approved move.
+Publication moves the retained original PNG into `docs/assets/ohtia/illustration.png`, beside the existing SVG, and rebases its references. It must not leave a duplicate product image in the published EPIC directory. Preparation retains the one staging copy until that approved move.
 
 ### SPEC-002-004: One locale service and complete catalogs
 
@@ -220,7 +220,7 @@ Agreed About layout from the mockup review:[^mockups] a modal dialog using `comp
 
 The name, description, version/build and license/notices remain available offline; visiting external links is an explicit broker-authorized action. Updating/checking for updates retains the separately delivered foundation lifecycle and is not an implied About capability. The image is static, uses the 128-CSS-px size and PNG/SVG density rule in SPEC-002-003, and preserves transparency and aspect ratio and accompanies textual branding; treat it as decorative for assistive technology when the adjacent name already conveys its meaning. Test its actual bounds, theme/background treatment, hidden-character behavior and zoom without claiming that a raster is an animation asset.
 
-![Ohtia's character supplied for the About illustration: a researcher wearing round glasses and a lab coat, with curly hair, a bun and pencil.](../../assets/ohtia-personaje.png)
+![Ohtia's character supplied for the About illustration: a researcher wearing round glasses and a lab coat, with curly hair, a bun and pencil.](../../assets/ohtia/illustration.png)
 
 View's Increase zoom, Decrease zoom and Actual size actions use the named commands, platform shortcuts and single preference contract defined in SPEC-002-019.
 
@@ -292,7 +292,7 @@ Verify all mode transitions, OS overrides, canceled/deferred batches, restart st
 
 ### SPEC-002-012: Research visual specimens without domain authority
 
-Reuse the already-present local reference assets: [the interface and document specimen](../../assets/design-system-specimen.html), its [light interface capture](../../assets/design-system-interfaz-claro.png), [dark interface capture](../../assets/design-system-interfaz-oscuro.png), [document capture](../../assets/design-system-documento.png) and [Korean capture](../../assets/design-system-coreano.png). Brand geometry and poses are in the local [glasses](../../assets/ohtia-anteojos.svg), [character](../../assets/ohtia-personaje.svg), [glasses dimensions](../../assets/ohtia-anteojos-cotas.svg), [character dimensions](../../assets/ohtia-personaje-cotas.svg), [pose sheet](../../assets/ohtia-poses.svg) and [character specimen](../../assets/ohtia-personaje-muestra.html). These links resolve to the current repository assets during preparation; publication rebases them to the same canonical assets at the new directory depth, without copying or replacing those references.
+Reuse the already-present local reference assets: [the interface and document specimen](../../assets/design-system-specimen.html), its [light interface capture](../../assets/design-system-interfaz-claro.png), [dark interface capture](../../assets/design-system-interfaz-oscuro.png), [document capture](../../assets/design-system-documento.png) and [Korean capture](../../assets/design-system-coreano.png). Brand geometry and poses are in the local [glasses](../../assets/ohtia/symbol.svg), [character](../../assets/ohtia/illustration.svg), [glasses dimensions](../../assets/ohtia/symbol-dimensions.svg), [character dimensions](../../assets/ohtia/illustration-dimensions.svg), [pose sheet](../../assets/ohtia/poses.svg) and [character specimen](../../assets/ohtia/specimen.html). These links resolve to the current repository assets during preparation; publication rebases them to the same canonical assets at the new directory depth, without copying or replacing those references.
 
 The reference documents already live in this repository and are the starting points for comparing typography, provenance shapes, outcomes and state treatments. Preserve their original specimen content and historical evidence; examples are references, not production data or current native/conformance results. The reference HTML's pinned external-font requests and historical Offline/save-safety captions do not define product packaging or current save behavior. The new development catalog reuses those visual contracts with packaged local fonts, complete current messages and the real application CSP; it does not ship the documentation specimen or copy obsolete protocol/asset references over current ones.
 
@@ -547,7 +547,7 @@ Publication applies these amendments with the EPIC, after an exact patch preview
 - Amend design-system.md: add the icon mappings `menu` for the application menu, `zoom-in` for the zoom indicator, `search` for the command palette, `keyboard` for keyboard shortcuts and `grip-vertical` for the separator grip, and add the preference save-state treatments of SPEC-002-025 to Patterns and states.
 - Amend architecture.md's preference-key inventory with `window_bounds`, beside `interface_zoom`, linking each to its value contract.
 - Add the component token `component.palette.max-width` (600 px) to design-system.md's component measurements and the icon mapping `circle-question-mark` for Ohtia help.
-- Move the reference specimen and its twelve captures of SPEC-002-027 from this EPIC's `assets/` directory into `docs/assets/`, beside `ohtia-personaje.png`, and rebase their links; leave no duplicate in the published EPIC directory, as SPEC-002-003 requires for the character PNG.
+- Move the reference specimen and its twelve captures of SPEC-002-027 from this EPIC's `assets/` directory into `docs/assets/`, beside `ohtia/illustration.png`, and rebase their links; leave no duplicate in the published EPIC directory, as SPEC-002-003 requires for the character PNG.
 
 ### SPEC-002-027: Reference specimen, captures and measurements
 

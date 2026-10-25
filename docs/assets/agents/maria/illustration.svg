@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" role="img" aria-label="María: illustration at rest" viewBox="-16 0 152 152">
+  <title>María: illustration at rest</title>
+  <style>
+    .c-surface { fill: #f6eafa; stroke: #593963; stroke-width: 3; stroke-linejoin: round; }
+    .c-accent { fill: #d6ace3; stroke: #593963; stroke-width: 3; stroke-linejoin: round; }
+    .c-paper { fill: #f6eafa; stroke: #593963; stroke-width: 2.5; stroke-linejoin: round; }
+    .c-line { fill: none; stroke: #593963; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .c-thin { fill: none; stroke: #593963; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .c-hair { fill: #593963; stroke: #593963; stroke-width: 2; stroke-linejoin: round; }
+    .c-hair-line { fill: none; stroke: #f6eafa; stroke-width: 2; stroke-linecap: round; }
+    .c-brow { fill: none; stroke: #593963; stroke-width: 3.5; stroke-linecap: round; }
+    .c-mouth { fill: none; stroke: #593963; stroke-width: 3; stroke-linecap: round; }
+    .c-fill { fill: #593963; }
+    .c-hole { fill: #f6eafa; stroke: #593963; stroke-width: 1.8; }
+    .c-dash { fill: none; stroke: #593963; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+    @media (prefers-color-scheme: dark) {
+      .c-surface { fill: #2e2132; stroke: #e1bbed; stroke-width: 3; stroke-linejoin: round; }
+      .c-accent { fill: #704f7b; stroke: #e1bbed; stroke-width: 3; stroke-linejoin: round; }
+      .c-paper { fill: #2e2132; stroke: #e1bbed; stroke-width: 2.5; stroke-linejoin: round; }
+      .c-line { fill: none; stroke: #e1bbed; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+      .c-thin { fill: none; stroke: #e1bbed; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .c-hair { fill: #e1bbed; stroke: #e1bbed; stroke-width: 2; stroke-linejoin: round; }
+      .c-hair-line { fill: none; stroke: #2e2132; stroke-width: 2; stroke-linecap: round; }
+      .c-brow { fill: none; stroke: #e1bbed; stroke-width: 3.5; stroke-linecap: round; }
+      .c-mouth { fill: none; stroke: #e1bbed; stroke-width: 3; stroke-linecap: round; }
+      .c-fill { fill: #e1bbed; }
+      .c-hole { fill: #2e2132; stroke: #e1bbed; stroke-width: 1.8; }
+      .c-dash { fill: none; stroke: #e1bbed; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+    }
+  </style>
+  <g>
+      <path class="c-accent" d="M31 152 L28 120 Q30 106 60 103 Q90 106 92 120 L89 152 Z" />
+      <path class="c-line" d="M48 105 Q60 113 72 105" />
+    </g>
+    <g><rect class="c-surface" x="53" y="84" width="14" height="20" /></g>
+    <g><circle class="c-surface" cx="60" cy="62" r="27" /></g>
+    <g>
+      <path class="c-hair" d="M35 81 Q24.5 80 26 71 Q20.5 63 27 55.5 Q23.5 44 33 37 Q43.5 25.5 60 27 Q76.5 25.5 87 37 Q96.5 44 93 55.5 Q99.5 63 94 71 Q95.5 80 85 81 Q86.5 72 86.5 64 Q86.5 53 80 46.5 Q73 43.5 67 39.5 Q61 46 51 44.5 Q42 44.5 37.5 51 Q33.5 57 33.5 65 Q33.5 73 35 81 Z" />
+      <path class="c-hair-line" d="M29 62 Q31 66 29.5 70" />
+      <path class="c-hair-line" d="M91 62 Q89 66 90.5 70" />
+      <path class="c-hair-line" d="M30 47 Q32 51 31 55" />
+      <path class="c-hair-line" d="M90 47 Q88 51 89 55" />
+      <path class="c-hair-line" d="M50 33 Q57 30.5 64 32" />
+    </g>
+    <g>
+      <path class="c-brow" d="M44 56 Q49 54 54 55.5" />
+      <path class="c-brow" d="M66 55.5 Q71 54 76 56" />
+    </g>
+    <g>
+      <ellipse class="c-fill" cx="49" cy="63" rx="2.5" ry="3.1" />
+      <ellipse class="c-fill" cx="71" cy="63" rx="2.5" ry="3.1" />
+    </g>
+    <g><path class="c-mouth" d="M55 74 Q60 78 65 74" /></g>
+    <g transform="rotate(-6 50 132)">
+      <rect class="c-paper" x="33" y="118" width="34" height="26" rx="2.5" />
+      <path class="c-thin" d="M42 125 L61 125" />
+      <path class="c-thin" d="M42 131 L61 131" />
+      <path class="c-thin" d="M42 137 L54 137" />
+      <path class="c-line" d="M39 128 L37.5 128 L37.5 134 L39 134" />
+    </g>
+    <g transform="rotate(16 83 126)">
+      <rect class="c-accent" x="79.5" y="110" width="7" height="25" rx="1.5" />
+      <path class="c-paper" d="M79.5 135 L86.5 135 L83 142 Z" />
+    </g>
+    <g><circle class="c-surface" cx="85" cy="124" r="6" /></g>
+</svg>

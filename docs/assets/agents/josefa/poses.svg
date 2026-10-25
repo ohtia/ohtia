@@ -1,0 +1,939 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="974" height="750" viewBox="0 0 974 750" role="img" aria-label="Josefa: gesture key poses">
+  <title>Josefa: gesture key poses</title>
+  <style>
+    :root { --page: #faf8f5; --panel: #f4f1ed; --line: #dad7d2; --grid: #ebe7e2; --fg: #1f1d19; --fg2: #4e4a43; }
+    @media (prefers-color-scheme: dark) {
+      :root { --page: #151411; --panel: #1a1815; --line: #35322e; --grid: #262420; --fg: #ebe7e2; --fg2: #c1bdb7; }
+    }
+    .sheet { fill: var(--page); }
+    .grid { stroke: var(--grid); stroke-width: 1; }
+    .grid-major { stroke: var(--line); stroke-width: 1; }
+    .axis { font: 400 11px 'IBM Plex Sans', sans-serif; fill: var(--fg2); }
+    .title { font: 600 16px 'IBM Plex Sans', sans-serif; fill: var(--fg); }
+    .legend { font: 400 13px 'IBM Plex Sans', sans-serif; fill: var(--fg); }
+    .legend-note { font: 400 12px 'IBM Plex Sans', sans-serif; fill: var(--fg2); }
+    .mark { fill: none; stroke: var(--fg); stroke-width: 1.25; vector-effect: non-scaling-stroke; }
+    .lead { fill: none; stroke: var(--fg2); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+    .badge { fill: var(--page); stroke: var(--fg); stroke-width: 1.25; }
+    .badge-text { font: 600 11px 'IBM Plex Sans', sans-serif; fill: var(--fg); text-anchor: middle; }
+    .c-surface { fill: #feeae1; stroke: #6c371d; stroke-width: 3; stroke-linejoin: round; }
+    .c-accent { fill: #f1ab8b; stroke: #6c371d; stroke-width: 3; stroke-linejoin: round; }
+    .c-paper { fill: #feeae1; stroke: #6c371d; stroke-width: 2.5; stroke-linejoin: round; }
+    .c-line { fill: none; stroke: #6c371d; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .c-thin { fill: none; stroke: #6c371d; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .c-hair { fill: #6c371d; stroke: #6c371d; stroke-width: 2; stroke-linejoin: round; }
+    .c-hair-line { fill: none; stroke: #feeae1; stroke-width: 2; stroke-linecap: round; }
+    .c-brow { fill: none; stroke: #6c371d; stroke-width: 3.5; stroke-linecap: round; }
+    .c-mouth { fill: none; stroke: #6c371d; stroke-width: 3; stroke-linecap: round; }
+    .c-fill { fill: #6c371d; }
+    .c-hole { fill: #feeae1; stroke: #6c371d; stroke-width: 1.8; }
+    .c-dash { fill: none; stroke: #6c371d; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+    .c-trail { fill: none; stroke: #6c371d; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 100 110; stroke-dashoffset: 105; }
+    .prop { opacity: 0; }
+    @media (prefers-color-scheme: dark) {
+      .c-surface { fill: #352118; stroke: #faba9d; stroke-width: 3; stroke-linejoin: round; }
+      .c-accent { fill: #854d33; stroke: #faba9d; stroke-width: 3; stroke-linejoin: round; }
+      .c-paper { fill: #352118; stroke: #faba9d; stroke-width: 2.5; stroke-linejoin: round; }
+      .c-line { fill: none; stroke: #faba9d; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+      .c-thin { fill: none; stroke: #faba9d; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .c-hair { fill: #faba9d; stroke: #faba9d; stroke-width: 2; stroke-linejoin: round; }
+      .c-hair-line { fill: none; stroke: #352118; stroke-width: 2; stroke-linecap: round; }
+      .c-brow { fill: none; stroke: #faba9d; stroke-width: 3.5; stroke-linecap: round; }
+      .c-mouth { fill: none; stroke: #faba9d; stroke-width: 3; stroke-linecap: round; }
+      .c-fill { fill: #faba9d; }
+      .c-hole { fill: #352118; stroke: #faba9d; stroke-width: 1.8; }
+      .c-dash { fill: none; stroke: #faba9d; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+      .c-trail { fill: none; stroke: #faba9d; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 100 110; stroke-dashoffset: 105; }
+      .prop { opacity: 0; }
+    }
+    .panel { fill: var(--panel); stroke: var(--line); stroke-width: 1; }
+  </style>
+  <rect class="sheet" width="974" height="750"/>
+  <text class="title" x="24" y="32">Josefa: gesture key poses</text>
+  <text class="legend-note" x="245.0" y="56" text-anchor="middle">Rest</text>
+  <text class="legend-note" x="451.0" y="56" text-anchor="middle">25%</text>
+  <text class="legend-note" x="657.0" y="56" text-anchor="middle">50% (main)</text>
+  <text class="legend-note" x="863.0" y="56" text-anchor="middle">75%</text>
+  <text class="legend" x="24" y="161.0">Introduction</text>
+  <text class="legend-note" x="24" y="179.0">1200 ms</text>
+  <rect class="panel" x="150" y="66" width="190" height="190" rx="6"/>
+  <svg x="150" y="66" width="190" height="190" viewBox="-16 0 152 152">
+<g>
+    <path class="c-accent" d="M18 152 L23 114 Q60 98 97 114 L102 152 Z" />
+    <path class="c-surface" d="M47 107 L60 128 L73 107 Z" />
+    <path class="c-line" d="M60 128 L60 152" />
+    <circle class="c-fill" cx="64.5" cy="136" r="1.8" />
+    <circle class="c-fill" cx="64.5" cy="146" r="1.8" />
+  </g>
+
+<g id="head" class="part">
+<g><path class="c-hair" d="M26 84 L26 58 Q26 26 60 26 Q94 26 94 58 L94 84 Q94 87 91 87 L29 87 Q26 87 26 84 Z" /></g>
+
+<g><rect class="c-surface" x="53" y="86" width="14" height="18" /></g>
+
+<g><circle class="c-surface" cx="60" cy="62" r="27" /></g>
+
+<g><path class="c-hair" d="M33 55 Q33 32 60 31 Q87 32 87 55 Q74 49 60 50 Q46 49 33 55 Z" /></g>
+
+<g id="brows" class="part"><g>
+    <path class="c-brow" d="M43 58 Q48 56 53 58" />
+    <path class="c-brow" d="M67 58 Q72 56 77 58" />
+  </g>
+  </g>
+<g id="eyes" class="part"><g>
+    <ellipse class="c-fill" cx="48" cy="65" rx="2.6" ry="3.2" />
+    <ellipse class="c-fill" cx="72" cy="65" rx="2.6" ry="3.2" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M54 75 Q60 79 66 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M54 74 Q60 82 66 74 Z" />
+  </g>
+
+</g>
+<g transform="rotate(-14 34 138)">
+    <rect class="c-paper" x="21" y="112" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M25 118 L39 118" />
+    <circle class="c-hole" cx="34" cy="128" r="1.8" />
+  </g>
+
+<g transform="rotate(8 34 138)">
+    <rect class="c-paper" x="23" y="114" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M27 120 L43 120" />
+    <path class="c-thin" d="M27 125 L37 125" />
+    <circle class="c-hole" cx="36" cy="130" r="1.8" />
+  </g>
+
+<g><circle class="c-surface" cx="34" cy="138" r="6" /></g>
+
+<g>
+    <g id="drawer" class="prop">
+      <g id="drawer-cards" class="part">
+        <g id="dcard-1" class="part"><rect class="c-paper" x="79" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M81 128 L85 128" /></g>
+        <g id="dcard-2" class="part"><rect class="c-paper" x="89" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M91 128 L95 128" /></g>
+        <g id="dcard-3" class="part"><rect class="c-paper" x="99" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M101 128 L105 128" /></g>
+        <g id="dcard-4" class="part"><rect class="c-paper" x="109" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M111 128 L115 128" /></g>
+      </g>
+      <rect class="c-paper" x="74" y="122" width="48" height="34" rx="2" />
+      <rect class="c-paper" x="91" y="129" width="14" height="7" rx="1" />
+      <circle class="c-fill" cx="98" cy="144" r="2.5" />
+      <g id="found-card" class="prop">
+        <rect class="c-paper" x="86" y="86" width="28" height="20" rx="2.5" />
+        <path class="c-thin" d="M90 92 L106 92" />
+        <path class="c-thin" d="M90 97 L101 97" />
+        <circle class="c-hole" cx="100" cy="102" r="1.8" />
+      </g>
+    </g>
+    <circle id="free-hand" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+  </svg>
+  <rect class="panel" x="356" y="66" width="190" height="190" rx="6"/>
+  <svg x="356" y="66" width="190" height="190" viewBox="-16 0 152 152">
+<g>
+    <path class="c-accent" d="M18 152 L23 114 Q60 98 97 114 L102 152 Z" />
+    <path class="c-surface" d="M47 107 L60 128 L73 107 Z" />
+    <path class="c-line" d="M60 128 L60 152" />
+    <circle class="c-fill" cx="64.5" cy="136" r="1.8" />
+    <circle class="c-fill" cx="64.5" cy="146" r="1.8" />
+  </g>
+
+<g id="head" transform="translate(60 104) rotate(-2) scale(1 1) translate(-60 -104)" class="part">
+<g><path class="c-hair" d="M26 84 L26 58 Q26 26 60 26 Q94 26 94 58 L94 84 Q94 87 91 87 L29 87 Q26 87 26 84 Z" /></g>
+
+<g><rect class="c-surface" x="53" y="86" width="14" height="18" /></g>
+
+<g><circle class="c-surface" cx="60" cy="62" r="27" /></g>
+
+<g><path class="c-hair" d="M33 55 Q33 32 60 31 Q87 32 87 55 Q74 49 60 50 Q46 49 33 55 Z" /></g>
+
+<g id="brows" transform="translate(60 55) rotate(0) scale(1 1) translate(-60 -57)" class="part"><g>
+    <path class="c-brow" d="M43 58 Q48 56 53 58" />
+    <path class="c-brow" d="M67 58 Q72 56 77 58" />
+  </g>
+  </g>
+<g id="eyes" class="part"><g>
+    <ellipse class="c-fill" cx="48" cy="65" rx="2.6" ry="3.2" />
+    <ellipse class="c-fill" cx="72" cy="65" rx="2.6" ry="3.2" />
+  </g>
+  </g>
+<g id="mouth-rest" style="opacity: 0" class="part"><g><path class="c-mouth" d="M54 75 Q60 79 66 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" style="opacity: 1" class="c-hair prop" d="M54 74 Q60 82 66 74 Z" />
+  </g>
+
+</g>
+<g transform="rotate(-14 34 138)">
+    <rect class="c-paper" x="21" y="112" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M25 118 L39 118" />
+    <circle class="c-hole" cx="34" cy="128" r="1.8" />
+  </g>
+
+<g transform="rotate(8 34 138)">
+    <rect class="c-paper" x="23" y="114" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M27 120 L43 120" />
+    <path class="c-thin" d="M27 125 L37 125" />
+    <circle class="c-hole" cx="36" cy="130" r="1.8" />
+  </g>
+
+<g><circle class="c-surface" cx="34" cy="138" r="6" /></g>
+
+<g>
+    <g id="drawer" transform="translate(98 152) rotate(0) scale(1 1) translate(-98 -152)" style="opacity: 1" class="prop">
+      <g id="drawer-cards" transform="translate(0 0) rotate(0) scale(1 1) translate(0 0)" class="part">
+        <g id="dcard-1" class="part"><rect class="c-paper" x="79" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M81 128 L85 128" /></g>
+        <g id="dcard-2" class="part"><rect class="c-paper" x="89" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M91 128 L95 128" /></g>
+        <g id="dcard-3" class="part"><rect class="c-paper" x="99" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M101 128 L105 128" /></g>
+        <g id="dcard-4" class="part"><rect class="c-paper" x="109" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M111 128 L115 128" /></g>
+      </g>
+      <rect class="c-paper" x="74" y="122" width="48" height="34" rx="2" />
+      <rect class="c-paper" x="91" y="129" width="14" height="7" rx="1" />
+      <circle class="c-fill" cx="98" cy="144" r="2.5" />
+      <g id="found-card" class="prop">
+        <rect class="c-paper" x="86" y="86" width="28" height="20" rx="2.5" />
+        <path class="c-thin" d="M90 92 L106 92" />
+        <path class="c-thin" d="M90 97 L101 97" />
+        <circle class="c-hole" cx="100" cy="102" r="1.8" />
+      </g>
+    </g>
+    <circle id="free-hand" transform="translate(98 146) rotate(0) scale(1 1) translate(0 0)" style="opacity: 1" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+  </svg>
+  <rect class="panel" x="562" y="66" width="190" height="190" rx="6"/>
+  <svg x="562" y="66" width="190" height="190" viewBox="-16 0 152 152">
+<g>
+    <path class="c-accent" d="M18 152 L23 114 Q60 98 97 114 L102 152 Z" />
+    <path class="c-surface" d="M47 107 L60 128 L73 107 Z" />
+    <path class="c-line" d="M60 128 L60 152" />
+    <circle class="c-fill" cx="64.5" cy="136" r="1.8" />
+    <circle class="c-fill" cx="64.5" cy="146" r="1.8" />
+  </g>
+
+<g id="head" transform="translate(60 104) rotate(-3) scale(1 1) translate(-60 -104)" class="part">
+<g><path class="c-hair" d="M26 84 L26 58 Q26 26 60 26 Q94 26 94 58 L94 84 Q94 87 91 87 L29 87 Q26 87 26 84 Z" /></g>
+
+<g><rect class="c-surface" x="53" y="86" width="14" height="18" /></g>
+
+<g><circle class="c-surface" cx="60" cy="62" r="27" /></g>
+
+<g><path class="c-hair" d="M33 55 Q33 32 60 31 Q87 32 87 55 Q74 49 60 50 Q46 49 33 55 Z" /></g>
+
+<g id="brows" transform="translate(60 54) rotate(0) scale(1 1) translate(-60 -57)" class="part"><g>
+    <path class="c-brow" d="M43 58 Q48 56 53 58" />
+    <path class="c-brow" d="M67 58 Q72 56 77 58" />
+  </g>
+  </g>
+<g id="eyes" class="part"><g>
+    <ellipse class="c-fill" cx="48" cy="65" rx="2.6" ry="3.2" />
+    <ellipse class="c-fill" cx="72" cy="65" rx="2.6" ry="3.2" />
+  </g>
+  </g>
+<g id="mouth-rest" style="opacity: 0" class="part"><g><path class="c-mouth" d="M54 75 Q60 79 66 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" style="opacity: 1" class="c-hair prop" d="M54 74 Q60 82 66 74 Z" />
+  </g>
+
+</g>
+<g transform="rotate(-14 34 138)">
+    <rect class="c-paper" x="21" y="112" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M25 118 L39 118" />
+    <circle class="c-hole" cx="34" cy="128" r="1.8" />
+  </g>
+
+<g transform="rotate(8 34 138)">
+    <rect class="c-paper" x="23" y="114" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M27 120 L43 120" />
+    <path class="c-thin" d="M27 125 L37 125" />
+    <circle class="c-hole" cx="36" cy="130" r="1.8" />
+  </g>
+
+<g><circle class="c-surface" cx="34" cy="138" r="6" /></g>
+
+<g>
+    <g id="drawer" transform="translate(98 152) rotate(0) scale(1.05 1.05) translate(-98 -152)" style="opacity: 1" class="prop">
+      <g id="drawer-cards" transform="translate(0 -12) rotate(0) scale(1 1) translate(0 0)" class="part">
+        <g id="dcard-1" class="part"><rect class="c-paper" x="79" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M81 128 L85 128" /></g>
+        <g id="dcard-2" class="part"><rect class="c-paper" x="89" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M91 128 L95 128" /></g>
+        <g id="dcard-3" class="part"><rect class="c-paper" x="99" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M101 128 L105 128" /></g>
+        <g id="dcard-4" class="part"><rect class="c-paper" x="109" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M111 128 L115 128" /></g>
+      </g>
+      <rect class="c-paper" x="74" y="122" width="48" height="34" rx="2" />
+      <rect class="c-paper" x="91" y="129" width="14" height="7" rx="1" />
+      <circle class="c-fill" cx="98" cy="144" r="2.5" />
+      <g id="found-card" class="prop">
+        <rect class="c-paper" x="86" y="86" width="28" height="20" rx="2.5" />
+        <path class="c-thin" d="M90 92 L106 92" />
+        <path class="c-thin" d="M90 97 L101 97" />
+        <circle class="c-hole" cx="100" cy="102" r="1.8" />
+      </g>
+    </g>
+    <circle id="free-hand" transform="translate(98 148) rotate(0) scale(1 1) translate(0 0)" style="opacity: 1" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+  </svg>
+  <rect class="panel" x="768" y="66" width="190" height="190" rx="6"/>
+  <svg x="768" y="66" width="190" height="190" viewBox="-16 0 152 152">
+<g>
+    <path class="c-accent" d="M18 152 L23 114 Q60 98 97 114 L102 152 Z" />
+    <path class="c-surface" d="M47 107 L60 128 L73 107 Z" />
+    <path class="c-line" d="M60 128 L60 152" />
+    <circle class="c-fill" cx="64.5" cy="136" r="1.8" />
+    <circle class="c-fill" cx="64.5" cy="146" r="1.8" />
+  </g>
+
+<g id="head" transform="translate(60 104) rotate(-2) scale(1 1) translate(-60 -104)" class="part">
+<g><path class="c-hair" d="M26 84 L26 58 Q26 26 60 26 Q94 26 94 58 L94 84 Q94 87 91 87 L29 87 Q26 87 26 84 Z" /></g>
+
+<g><rect class="c-surface" x="53" y="86" width="14" height="18" /></g>
+
+<g><circle class="c-surface" cx="60" cy="62" r="27" /></g>
+
+<g><path class="c-hair" d="M33 55 Q33 32 60 31 Q87 32 87 55 Q74 49 60 50 Q46 49 33 55 Z" /></g>
+
+<g id="brows" transform="translate(60 55) rotate(0) scale(1 1) translate(-60 -57)" class="part"><g>
+    <path class="c-brow" d="M43 58 Q48 56 53 58" />
+    <path class="c-brow" d="M67 58 Q72 56 77 58" />
+  </g>
+  </g>
+<g id="eyes" class="part"><g>
+    <ellipse class="c-fill" cx="48" cy="65" rx="2.6" ry="3.2" />
+    <ellipse class="c-fill" cx="72" cy="65" rx="2.6" ry="3.2" />
+  </g>
+  </g>
+<g id="mouth-rest" style="opacity: 0" class="part"><g><path class="c-mouth" d="M54 75 Q60 79 66 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" style="opacity: 1" class="c-hair prop" d="M54 74 Q60 82 66 74 Z" />
+  </g>
+
+</g>
+<g transform="rotate(-14 34 138)">
+    <rect class="c-paper" x="21" y="112" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M25 118 L39 118" />
+    <circle class="c-hole" cx="34" cy="128" r="1.8" />
+  </g>
+
+<g transform="rotate(8 34 138)">
+    <rect class="c-paper" x="23" y="114" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M27 120 L43 120" />
+    <path class="c-thin" d="M27 125 L37 125" />
+    <circle class="c-hole" cx="36" cy="130" r="1.8" />
+  </g>
+
+<g><circle class="c-surface" cx="34" cy="138" r="6" /></g>
+
+<g>
+    <g id="drawer" transform="translate(98 152) rotate(0) scale(1 1) translate(-98 -152)" style="opacity: 1" class="prop">
+      <g id="drawer-cards" transform="translate(0 -4) rotate(0) scale(1 1) translate(0 0)" class="part">
+        <g id="dcard-1" class="part"><rect class="c-paper" x="79" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M81 128 L85 128" /></g>
+        <g id="dcard-2" class="part"><rect class="c-paper" x="89" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M91 128 L95 128" /></g>
+        <g id="dcard-3" class="part"><rect class="c-paper" x="99" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M101 128 L105 128" /></g>
+        <g id="dcard-4" class="part"><rect class="c-paper" x="109" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M111 128 L115 128" /></g>
+      </g>
+      <rect class="c-paper" x="74" y="122" width="48" height="34" rx="2" />
+      <rect class="c-paper" x="91" y="129" width="14" height="7" rx="1" />
+      <circle class="c-fill" cx="98" cy="144" r="2.5" />
+      <g id="found-card" class="prop">
+        <rect class="c-paper" x="86" y="86" width="28" height="20" rx="2.5" />
+        <path class="c-thin" d="M90 92 L106 92" />
+        <path class="c-thin" d="M90 97 L101 97" />
+        <circle class="c-hole" cx="100" cy="102" r="1.8" />
+      </g>
+    </g>
+    <circle id="free-hand" transform="translate(98 146) rotate(0) scale(1 1) translate(0 0)" style="opacity: 1" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+  </svg>
+  <text class="legend" x="24" y="391.0">Active contribution</text>
+  <text class="legend-note" x="24" y="409.0">1000 ms</text>
+  <rect class="panel" x="150" y="296" width="190" height="190" rx="6"/>
+  <svg x="150" y="296" width="190" height="190" viewBox="-16 0 152 152">
+<g>
+    <path class="c-accent" d="M18 152 L23 114 Q60 98 97 114 L102 152 Z" />
+    <path class="c-surface" d="M47 107 L60 128 L73 107 Z" />
+    <path class="c-line" d="M60 128 L60 152" />
+    <circle class="c-fill" cx="64.5" cy="136" r="1.8" />
+    <circle class="c-fill" cx="64.5" cy="146" r="1.8" />
+  </g>
+
+<g id="head" class="part">
+<g><path class="c-hair" d="M26 84 L26 58 Q26 26 60 26 Q94 26 94 58 L94 84 Q94 87 91 87 L29 87 Q26 87 26 84 Z" /></g>
+
+<g><rect class="c-surface" x="53" y="86" width="14" height="18" /></g>
+
+<g><circle class="c-surface" cx="60" cy="62" r="27" /></g>
+
+<g><path class="c-hair" d="M33 55 Q33 32 60 31 Q87 32 87 55 Q74 49 60 50 Q46 49 33 55 Z" /></g>
+
+<g id="brows" class="part"><g>
+    <path class="c-brow" d="M43 58 Q48 56 53 58" />
+    <path class="c-brow" d="M67 58 Q72 56 77 58" />
+  </g>
+  </g>
+<g id="eyes" class="part"><g>
+    <ellipse class="c-fill" cx="48" cy="65" rx="2.6" ry="3.2" />
+    <ellipse class="c-fill" cx="72" cy="65" rx="2.6" ry="3.2" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M54 75 Q60 79 66 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M54 74 Q60 82 66 74 Z" />
+  </g>
+
+</g>
+<g transform="rotate(-14 34 138)">
+    <rect class="c-paper" x="21" y="112" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M25 118 L39 118" />
+    <circle class="c-hole" cx="34" cy="128" r="1.8" />
+  </g>
+
+<g transform="rotate(8 34 138)">
+    <rect class="c-paper" x="23" y="114" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M27 120 L43 120" />
+    <path class="c-thin" d="M27 125 L37 125" />
+    <circle class="c-hole" cx="36" cy="130" r="1.8" />
+  </g>
+
+<g><circle class="c-surface" cx="34" cy="138" r="6" /></g>
+
+<g>
+    <g id="drawer" class="prop">
+      <g id="drawer-cards" class="part">
+        <g id="dcard-1" class="part"><rect class="c-paper" x="79" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M81 128 L85 128" /></g>
+        <g id="dcard-2" class="part"><rect class="c-paper" x="89" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M91 128 L95 128" /></g>
+        <g id="dcard-3" class="part"><rect class="c-paper" x="99" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M101 128 L105 128" /></g>
+        <g id="dcard-4" class="part"><rect class="c-paper" x="109" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M111 128 L115 128" /></g>
+      </g>
+      <rect class="c-paper" x="74" y="122" width="48" height="34" rx="2" />
+      <rect class="c-paper" x="91" y="129" width="14" height="7" rx="1" />
+      <circle class="c-fill" cx="98" cy="144" r="2.5" />
+      <g id="found-card" class="prop">
+        <rect class="c-paper" x="86" y="86" width="28" height="20" rx="2.5" />
+        <path class="c-thin" d="M90 92 L106 92" />
+        <path class="c-thin" d="M90 97 L101 97" />
+        <circle class="c-hole" cx="100" cy="102" r="1.8" />
+      </g>
+    </g>
+    <circle id="free-hand" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+  </svg>
+  <rect class="panel" x="356" y="296" width="190" height="190" rx="6"/>
+  <svg x="356" y="296" width="190" height="190" viewBox="-16 0 152 152">
+<g>
+    <path class="c-accent" d="M18 152 L23 114 Q60 98 97 114 L102 152 Z" />
+    <path class="c-surface" d="M47 107 L60 128 L73 107 Z" />
+    <path class="c-line" d="M60 128 L60 152" />
+    <circle class="c-fill" cx="64.5" cy="136" r="1.8" />
+    <circle class="c-fill" cx="64.5" cy="146" r="1.8" />
+  </g>
+
+<g id="head" transform="translate(60 104) rotate(2) scale(1 1) translate(-60 -104)" class="part">
+<g><path class="c-hair" d="M26 84 L26 58 Q26 26 60 26 Q94 26 94 58 L94 84 Q94 87 91 87 L29 87 Q26 87 26 84 Z" /></g>
+
+<g><rect class="c-surface" x="53" y="86" width="14" height="18" /></g>
+
+<g><circle class="c-surface" cx="60" cy="62" r="27" /></g>
+
+<g><path class="c-hair" d="M33 55 Q33 32 60 31 Q87 32 87 55 Q74 49 60 50 Q46 49 33 55 Z" /></g>
+
+<g id="brows" transform="translate(60 58) rotate(0) scale(1 1) translate(-60 -57)" class="part"><g>
+    <path class="c-brow" d="M43 58 Q48 56 53 58" />
+    <path class="c-brow" d="M67 58 Q72 56 77 58" />
+  </g>
+  </g>
+<g id="eyes" transform="translate(62 67) rotate(0) scale(1 1) translate(-60 -65)" class="part"><g>
+    <ellipse class="c-fill" cx="48" cy="65" rx="2.6" ry="3.2" />
+    <ellipse class="c-fill" cx="72" cy="65" rx="2.6" ry="3.2" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M54 75 Q60 79 66 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M54 74 Q60 82 66 74 Z" />
+  </g>
+
+</g>
+<g transform="rotate(-14 34 138)">
+    <rect class="c-paper" x="21" y="112" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M25 118 L39 118" />
+    <circle class="c-hole" cx="34" cy="128" r="1.8" />
+  </g>
+
+<g transform="rotate(8 34 138)">
+    <rect class="c-paper" x="23" y="114" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M27 120 L43 120" />
+    <path class="c-thin" d="M27 125 L37 125" />
+    <circle class="c-hole" cx="36" cy="130" r="1.8" />
+  </g>
+
+<g><circle class="c-surface" cx="34" cy="138" r="6" /></g>
+
+<g>
+    <g id="drawer" style="opacity: 1" class="prop">
+      <g id="drawer-cards" transform="translate(0 -12) rotate(0) scale(1 1) translate(0 0)" class="part">
+        <g id="dcard-1" transform="translate(83 140) rotate(-18) scale(1 1) translate(-83 -140)" class="part"><rect class="c-paper" x="79" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M81 128 L85 128" /></g>
+        <g id="dcard-2" transform="translate(93 132) rotate(0) scale(1 1) translate(-93 -132)" class="part"><rect class="c-paper" x="89" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M91 128 L95 128" /></g>
+        <g id="dcard-3" class="part"><rect class="c-paper" x="99" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M101 128 L105 128" /></g>
+        <g id="dcard-4" class="part"><rect class="c-paper" x="109" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M111 128 L115 128" /></g>
+      </g>
+      <rect class="c-paper" x="74" y="122" width="48" height="34" rx="2" />
+      <rect class="c-paper" x="91" y="129" width="14" height="7" rx="1" />
+      <circle class="c-fill" cx="98" cy="144" r="2.5" />
+      <g id="found-card" class="prop">
+        <rect class="c-paper" x="86" y="86" width="28" height="20" rx="2.5" />
+        <path class="c-thin" d="M90 92 L106 92" />
+        <path class="c-thin" d="M90 97 L101 97" />
+        <circle class="c-hole" cx="100" cy="102" r="1.8" />
+      </g>
+    </g>
+    <circle id="free-hand" transform="translate(84 104) rotate(0) scale(1 1) translate(0 0)" style="opacity: 1" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+  </svg>
+  <rect class="panel" x="562" y="296" width="190" height="190" rx="6"/>
+  <svg x="562" y="296" width="190" height="190" viewBox="-16 0 152 152">
+<g>
+    <path class="c-accent" d="M18 152 L23 114 Q60 98 97 114 L102 152 Z" />
+    <path class="c-surface" d="M47 107 L60 128 L73 107 Z" />
+    <path class="c-line" d="M60 128 L60 152" />
+    <circle class="c-fill" cx="64.5" cy="136" r="1.8" />
+    <circle class="c-fill" cx="64.5" cy="146" r="1.8" />
+  </g>
+
+<g id="head" transform="translate(60 104) rotate(3) scale(1 1) translate(-60 -104)" class="part">
+<g><path class="c-hair" d="M26 84 L26 58 Q26 26 60 26 Q94 26 94 58 L94 84 Q94 87 91 87 L29 87 Q26 87 26 84 Z" /></g>
+
+<g><rect class="c-surface" x="53" y="86" width="14" height="18" /></g>
+
+<g><circle class="c-surface" cx="60" cy="62" r="27" /></g>
+
+<g><path class="c-hair" d="M33 55 Q33 32 60 31 Q87 32 87 55 Q74 49 60 50 Q46 49 33 55 Z" /></g>
+
+<g id="brows" transform="translate(60 58.2) rotate(0) scale(1 1) translate(-60 -57)" class="part"><g>
+    <path class="c-brow" d="M43 58 Q48 56 53 58" />
+    <path class="c-brow" d="M67 58 Q72 56 77 58" />
+  </g>
+  </g>
+<g id="eyes" transform="translate(63 67) rotate(0) scale(1 1) translate(-60 -65)" class="part"><g>
+    <ellipse class="c-fill" cx="48" cy="65" rx="2.6" ry="3.2" />
+    <ellipse class="c-fill" cx="72" cy="65" rx="2.6" ry="3.2" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M54 75 Q60 79 66 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M54 74 Q60 82 66 74 Z" />
+  </g>
+
+</g>
+<g transform="rotate(-14 34 138)">
+    <rect class="c-paper" x="21" y="112" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M25 118 L39 118" />
+    <circle class="c-hole" cx="34" cy="128" r="1.8" />
+  </g>
+
+<g transform="rotate(8 34 138)">
+    <rect class="c-paper" x="23" y="114" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M27 120 L43 120" />
+    <path class="c-thin" d="M27 125 L37 125" />
+    <circle class="c-hole" cx="36" cy="130" r="1.8" />
+  </g>
+
+<g><circle class="c-surface" cx="34" cy="138" r="6" /></g>
+
+<g>
+    <g id="drawer" style="opacity: 1" class="prop">
+      <g id="drawer-cards" transform="translate(0 -12) rotate(0) scale(1 1) translate(0 0)" class="part">
+        <g id="dcard-1" transform="translate(83 140) rotate(-18) scale(1 1) translate(-83 -140)" class="part"><rect class="c-paper" x="79" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M81 128 L85 128" /></g>
+        <g id="dcard-2" transform="translate(93 132) rotate(-18) scale(1 1) translate(-93 -132)" class="part"><rect class="c-paper" x="89" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M91 128 L95 128" /></g>
+        <g id="dcard-3" class="part"><rect class="c-paper" x="99" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M101 128 L105 128" /></g>
+        <g id="dcard-4" class="part"><rect class="c-paper" x="109" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M111 128 L115 128" /></g>
+      </g>
+      <rect class="c-paper" x="74" y="122" width="48" height="34" rx="2" />
+      <rect class="c-paper" x="91" y="129" width="14" height="7" rx="1" />
+      <circle class="c-fill" cx="98" cy="144" r="2.5" />
+      <g id="found-card" class="prop">
+        <rect class="c-paper" x="86" y="86" width="28" height="20" rx="2.5" />
+        <path class="c-thin" d="M90 92 L106 92" />
+        <path class="c-thin" d="M90 97 L101 97" />
+        <circle class="c-hole" cx="100" cy="102" r="1.8" />
+      </g>
+    </g>
+    <circle id="free-hand" transform="translate(94 104) rotate(0) scale(1 1) translate(0 0)" style="opacity: 1" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+  </svg>
+  <rect class="panel" x="768" y="296" width="190" height="190" rx="6"/>
+  <svg x="768" y="296" width="190" height="190" viewBox="-16 0 152 152">
+<g>
+    <path class="c-accent" d="M18 152 L23 114 Q60 98 97 114 L102 152 Z" />
+    <path class="c-surface" d="M47 107 L60 128 L73 107 Z" />
+    <path class="c-line" d="M60 128 L60 152" />
+    <circle class="c-fill" cx="64.5" cy="136" r="1.8" />
+    <circle class="c-fill" cx="64.5" cy="146" r="1.8" />
+  </g>
+
+<g id="head" transform="translate(60 104) rotate(2) scale(1 1) translate(-60 -104)" class="part">
+<g><path class="c-hair" d="M26 84 L26 58 Q26 26 60 26 Q94 26 94 58 L94 84 Q94 87 91 87 L29 87 Q26 87 26 84 Z" /></g>
+
+<g><rect class="c-surface" x="53" y="86" width="14" height="18" /></g>
+
+<g><circle class="c-surface" cx="60" cy="62" r="27" /></g>
+
+<g><path class="c-hair" d="M33 55 Q33 32 60 31 Q87 32 87 55 Q74 49 60 50 Q46 49 33 55 Z" /></g>
+
+<g id="brows" transform="translate(60 58) rotate(0) scale(1 1) translate(-60 -57)" class="part"><g>
+    <path class="c-brow" d="M43 58 Q48 56 53 58" />
+    <path class="c-brow" d="M67 58 Q72 56 77 58" />
+  </g>
+  </g>
+<g id="eyes" transform="translate(62 67) rotate(0) scale(1 1) translate(-60 -65)" class="part"><g>
+    <ellipse class="c-fill" cx="48" cy="65" rx="2.6" ry="3.2" />
+    <ellipse class="c-fill" cx="72" cy="65" rx="2.6" ry="3.2" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M54 75 Q60 79 66 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M54 74 Q60 82 66 74 Z" />
+  </g>
+
+</g>
+<g transform="rotate(-14 34 138)">
+    <rect class="c-paper" x="21" y="112" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M25 118 L39 118" />
+    <circle class="c-hole" cx="34" cy="128" r="1.8" />
+  </g>
+
+<g transform="rotate(8 34 138)">
+    <rect class="c-paper" x="23" y="114" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M27 120 L43 120" />
+    <path class="c-thin" d="M27 125 L37 125" />
+    <circle class="c-hole" cx="36" cy="130" r="1.8" />
+  </g>
+
+<g><circle class="c-surface" cx="34" cy="138" r="6" /></g>
+
+<g>
+    <g id="drawer" style="opacity: 1" class="prop">
+      <g id="drawer-cards" transform="translate(0 -12) rotate(0) scale(1 1) translate(0 0)" class="part">
+        <g id="dcard-1" transform="translate(83 140) rotate(-9) scale(1 1) translate(-83 -140)" class="part"><rect class="c-paper" x="79" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M81 128 L85 128" /></g>
+        <g id="dcard-2" transform="translate(93 132) rotate(-9) scale(1 1) translate(-93 -132)" class="part"><rect class="c-paper" x="89" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M91 128 L95 128" /></g>
+        <g id="dcard-3" class="part"><rect class="c-paper" x="99" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M101 128 L105 128" /></g>
+        <g id="dcard-4" class="part"><rect class="c-paper" x="109" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M111 128 L115 128" /></g>
+      </g>
+      <rect class="c-paper" x="74" y="122" width="48" height="34" rx="2" />
+      <rect class="c-paper" x="91" y="129" width="14" height="7" rx="1" />
+      <circle class="c-fill" cx="98" cy="144" r="2.5" />
+      <g id="found-card" class="prop">
+        <rect class="c-paper" x="86" y="86" width="28" height="20" rx="2.5" />
+        <path class="c-thin" d="M90 92 L106 92" />
+        <path class="c-thin" d="M90 97 L101 97" />
+        <circle class="c-hole" cx="100" cy="102" r="1.8" />
+      </g>
+    </g>
+    <circle id="free-hand" transform="translate(94 110) rotate(0) scale(1 1) translate(0 0)" style="opacity: 1" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+  </svg>
+  <text class="legend" x="24" y="621.0">Result available</text>
+  <text class="legend-note" x="24" y="639.0">1200 ms</text>
+  <rect class="panel" x="150" y="526" width="190" height="190" rx="6"/>
+  <svg x="150" y="526" width="190" height="190" viewBox="-16 0 152 152">
+<g>
+    <path class="c-accent" d="M18 152 L23 114 Q60 98 97 114 L102 152 Z" />
+    <path class="c-surface" d="M47 107 L60 128 L73 107 Z" />
+    <path class="c-line" d="M60 128 L60 152" />
+    <circle class="c-fill" cx="64.5" cy="136" r="1.8" />
+    <circle class="c-fill" cx="64.5" cy="146" r="1.8" />
+  </g>
+
+<g id="head" class="part">
+<g><path class="c-hair" d="M26 84 L26 58 Q26 26 60 26 Q94 26 94 58 L94 84 Q94 87 91 87 L29 87 Q26 87 26 84 Z" /></g>
+
+<g><rect class="c-surface" x="53" y="86" width="14" height="18" /></g>
+
+<g><circle class="c-surface" cx="60" cy="62" r="27" /></g>
+
+<g><path class="c-hair" d="M33 55 Q33 32 60 31 Q87 32 87 55 Q74 49 60 50 Q46 49 33 55 Z" /></g>
+
+<g id="brows" class="part"><g>
+    <path class="c-brow" d="M43 58 Q48 56 53 58" />
+    <path class="c-brow" d="M67 58 Q72 56 77 58" />
+  </g>
+  </g>
+<g id="eyes" class="part"><g>
+    <ellipse class="c-fill" cx="48" cy="65" rx="2.6" ry="3.2" />
+    <ellipse class="c-fill" cx="72" cy="65" rx="2.6" ry="3.2" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M54 75 Q60 79 66 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M54 74 Q60 82 66 74 Z" />
+  </g>
+
+</g>
+<g transform="rotate(-14 34 138)">
+    <rect class="c-paper" x="21" y="112" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M25 118 L39 118" />
+    <circle class="c-hole" cx="34" cy="128" r="1.8" />
+  </g>
+
+<g transform="rotate(8 34 138)">
+    <rect class="c-paper" x="23" y="114" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M27 120 L43 120" />
+    <path class="c-thin" d="M27 125 L37 125" />
+    <circle class="c-hole" cx="36" cy="130" r="1.8" />
+  </g>
+
+<g><circle class="c-surface" cx="34" cy="138" r="6" /></g>
+
+<g>
+    <g id="drawer" class="prop">
+      <g id="drawer-cards" class="part">
+        <g id="dcard-1" class="part"><rect class="c-paper" x="79" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M81 128 L85 128" /></g>
+        <g id="dcard-2" class="part"><rect class="c-paper" x="89" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M91 128 L95 128" /></g>
+        <g id="dcard-3" class="part"><rect class="c-paper" x="99" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M101 128 L105 128" /></g>
+        <g id="dcard-4" class="part"><rect class="c-paper" x="109" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M111 128 L115 128" /></g>
+      </g>
+      <rect class="c-paper" x="74" y="122" width="48" height="34" rx="2" />
+      <rect class="c-paper" x="91" y="129" width="14" height="7" rx="1" />
+      <circle class="c-fill" cx="98" cy="144" r="2.5" />
+      <g id="found-card" class="prop">
+        <rect class="c-paper" x="86" y="86" width="28" height="20" rx="2.5" />
+        <path class="c-thin" d="M90 92 L106 92" />
+        <path class="c-thin" d="M90 97 L101 97" />
+        <circle class="c-hole" cx="100" cy="102" r="1.8" />
+      </g>
+    </g>
+    <circle id="free-hand" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+  </svg>
+  <rect class="panel" x="356" y="526" width="190" height="190" rx="6"/>
+  <svg x="356" y="526" width="190" height="190" viewBox="-16 0 152 152">
+<g>
+    <path class="c-accent" d="M18 152 L23 114 Q60 98 97 114 L102 152 Z" />
+    <path class="c-surface" d="M47 107 L60 128 L73 107 Z" />
+    <path class="c-line" d="M60 128 L60 152" />
+    <circle class="c-fill" cx="64.5" cy="136" r="1.8" />
+    <circle class="c-fill" cx="64.5" cy="146" r="1.8" />
+  </g>
+
+<g id="head" transform="translate(60 104) rotate(1) scale(1 1) translate(-60 -104)" class="part">
+<g><path class="c-hair" d="M26 84 L26 58 Q26 26 60 26 Q94 26 94 58 L94 84 Q94 87 91 87 L29 87 Q26 87 26 84 Z" /></g>
+
+<g><rect class="c-surface" x="53" y="86" width="14" height="18" /></g>
+
+<g><circle class="c-surface" cx="60" cy="62" r="27" /></g>
+
+<g><path class="c-hair" d="M33 55 Q33 32 60 31 Q87 32 87 55 Q74 49 60 50 Q46 49 33 55 Z" /></g>
+
+<g id="brows" transform="translate(60 55.5) rotate(0) scale(1 1) translate(-60 -57)" class="part"><g>
+    <path class="c-brow" d="M43 58 Q48 56 53 58" />
+    <path class="c-brow" d="M67 58 Q72 56 77 58" />
+  </g>
+  </g>
+<g id="eyes" transform="translate(61 64.5) rotate(0) scale(1 1) translate(-60 -65)" class="part"><g>
+    <ellipse class="c-fill" cx="48" cy="65" rx="2.6" ry="3.2" />
+    <ellipse class="c-fill" cx="72" cy="65" rx="2.6" ry="3.2" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M54 75 Q60 79 66 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M54 74 Q60 82 66 74 Z" />
+  </g>
+
+</g>
+<g transform="rotate(-14 34 138)">
+    <rect class="c-paper" x="21" y="112" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M25 118 L39 118" />
+    <circle class="c-hole" cx="34" cy="128" r="1.8" />
+  </g>
+
+<g transform="rotate(8 34 138)">
+    <rect class="c-paper" x="23" y="114" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M27 120 L43 120" />
+    <path class="c-thin" d="M27 125 L37 125" />
+    <circle class="c-hole" cx="36" cy="130" r="1.8" />
+  </g>
+
+<g><circle class="c-surface" cx="34" cy="138" r="6" /></g>
+
+<g>
+    <g id="drawer" style="opacity: 1" class="prop">
+      <g id="drawer-cards" transform="translate(0 -12) rotate(0) scale(1 1) translate(0 0)" class="part">
+        <g id="dcard-1" class="part"><rect class="c-paper" x="79" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M81 128 L85 128" /></g>
+        <g id="dcard-2" transform="translate(93 122) rotate(0) scale(1 1) translate(-93 -132)" style="opacity: 1" class="part"><rect class="c-paper" x="89" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M91 128 L95 128" /></g>
+        <g id="dcard-3" class="part"><rect class="c-paper" x="99" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M101 128 L105 128" /></g>
+        <g id="dcard-4" class="part"><rect class="c-paper" x="109" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M111 128 L115 128" /></g>
+      </g>
+      <rect class="c-paper" x="74" y="122" width="48" height="34" rx="2" />
+      <rect class="c-paper" x="91" y="129" width="14" height="7" rx="1" />
+      <circle class="c-fill" cx="98" cy="144" r="2.5" />
+      <g id="found-card" transform="translate(100 96) rotate(0) scale(0.4 0.4) translate(-100 -96)" style="opacity: 0" class="prop">
+        <rect class="c-paper" x="86" y="86" width="28" height="20" rx="2.5" />
+        <path class="c-thin" d="M90 92 L106 92" />
+        <path class="c-thin" d="M90 97 L101 97" />
+        <circle class="c-hole" cx="100" cy="102" r="1.8" />
+      </g>
+    </g>
+    <circle id="free-hand" transform="translate(93 128) rotate(0) scale(1 1) translate(0 0)" style="opacity: 1" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+  </svg>
+  <rect class="panel" x="562" y="526" width="190" height="190" rx="6"/>
+  <svg x="562" y="526" width="190" height="190" viewBox="-16 0 152 152">
+<g>
+    <path class="c-accent" d="M18 152 L23 114 Q60 98 97 114 L102 152 Z" />
+    <path class="c-surface" d="M47 107 L60 128 L73 107 Z" />
+    <path class="c-line" d="M60 128 L60 152" />
+    <circle class="c-fill" cx="64.5" cy="136" r="1.8" />
+    <circle class="c-fill" cx="64.5" cy="146" r="1.8" />
+  </g>
+
+<g id="head" transform="translate(60 104) rotate(2) scale(1 1) translate(-60 -104)" class="part">
+<g><path class="c-hair" d="M26 84 L26 58 Q26 26 60 26 Q94 26 94 58 L94 84 Q94 87 91 87 L29 87 Q26 87 26 84 Z" /></g>
+
+<g><rect class="c-surface" x="53" y="86" width="14" height="18" /></g>
+
+<g><circle class="c-surface" cx="60" cy="62" r="27" /></g>
+
+<g><path class="c-hair" d="M33 55 Q33 32 60 31 Q87 32 87 55 Q74 49 60 50 Q46 49 33 55 Z" /></g>
+
+<g id="brows" transform="translate(60 54.5) rotate(0) scale(1 1) translate(-60 -57)" class="part"><g>
+    <path class="c-brow" d="M43 58 Q48 56 53 58" />
+    <path class="c-brow" d="M67 58 Q72 56 77 58" />
+  </g>
+  </g>
+<g id="eyes" transform="translate(62 64) rotate(0) scale(1 1) translate(-60 -65)" class="part"><g>
+    <ellipse class="c-fill" cx="48" cy="65" rx="2.6" ry="3.2" />
+    <ellipse class="c-fill" cx="72" cy="65" rx="2.6" ry="3.2" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M54 75 Q60 79 66 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M54 74 Q60 82 66 74 Z" />
+  </g>
+
+</g>
+<g transform="rotate(-14 34 138)">
+    <rect class="c-paper" x="21" y="112" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M25 118 L39 118" />
+    <circle class="c-hole" cx="34" cy="128" r="1.8" />
+  </g>
+
+<g transform="rotate(8 34 138)">
+    <rect class="c-paper" x="23" y="114" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M27 120 L43 120" />
+    <path class="c-thin" d="M27 125 L37 125" />
+    <circle class="c-hole" cx="36" cy="130" r="1.8" />
+  </g>
+
+<g><circle class="c-surface" cx="34" cy="138" r="6" /></g>
+
+<g>
+    <g id="drawer" style="opacity: 1" class="prop">
+      <g id="drawer-cards" transform="translate(0 -12) rotate(0) scale(1 1) translate(0 0)" class="part">
+        <g id="dcard-1" class="part"><rect class="c-paper" x="79" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M81 128 L85 128" /></g>
+        <g id="dcard-2" transform="translate(93 114) rotate(0) scale(1 1) translate(-93 -132)" style="opacity: 0" class="part"><rect class="c-paper" x="89" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M91 128 L95 128" /></g>
+        <g id="dcard-3" class="part"><rect class="c-paper" x="99" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M101 128 L105 128" /></g>
+        <g id="dcard-4" class="part"><rect class="c-paper" x="109" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M111 128 L115 128" /></g>
+      </g>
+      <rect class="c-paper" x="74" y="122" width="48" height="34" rx="2" />
+      <rect class="c-paper" x="91" y="129" width="14" height="7" rx="1" />
+      <circle class="c-fill" cx="98" cy="144" r="2.5" />
+      <g id="found-card" transform="translate(100 96) rotate(0) scale(1.2 1.2) translate(-100 -96)" style="opacity: 1" class="prop">
+        <rect class="c-paper" x="86" y="86" width="28" height="20" rx="2.5" />
+        <path class="c-thin" d="M90 92 L106 92" />
+        <path class="c-thin" d="M90 97 L101 97" />
+        <circle class="c-hole" cx="100" cy="102" r="1.8" />
+      </g>
+    </g>
+    <circle id="free-hand" transform="translate(87 112) rotate(0) scale(1 1) translate(0 0)" style="opacity: 1" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+  </svg>
+  <rect class="panel" x="768" y="526" width="190" height="190" rx="6"/>
+  <svg x="768" y="526" width="190" height="190" viewBox="-16 0 152 152">
+<g>
+    <path class="c-accent" d="M18 152 L23 114 Q60 98 97 114 L102 152 Z" />
+    <path class="c-surface" d="M47 107 L60 128 L73 107 Z" />
+    <path class="c-line" d="M60 128 L60 152" />
+    <circle class="c-fill" cx="64.5" cy="136" r="1.8" />
+    <circle class="c-fill" cx="64.5" cy="146" r="1.8" />
+  </g>
+
+<g id="head" transform="translate(60 104) rotate(1) scale(1 1) translate(-60 -104)" class="part">
+<g><path class="c-hair" d="M26 84 L26 58 Q26 26 60 26 Q94 26 94 58 L94 84 Q94 87 91 87 L29 87 Q26 87 26 84 Z" /></g>
+
+<g><rect class="c-surface" x="53" y="86" width="14" height="18" /></g>
+
+<g><circle class="c-surface" cx="60" cy="62" r="27" /></g>
+
+<g><path class="c-hair" d="M33 55 Q33 32 60 31 Q87 32 87 55 Q74 49 60 50 Q46 49 33 55 Z" /></g>
+
+<g id="brows" transform="translate(60 55.5) rotate(0) scale(1 1) translate(-60 -57)" class="part"><g>
+    <path class="c-brow" d="M43 58 Q48 56 53 58" />
+    <path class="c-brow" d="M67 58 Q72 56 77 58" />
+  </g>
+  </g>
+<g id="eyes" transform="translate(61 64.5) rotate(0) scale(1 1) translate(-60 -65)" class="part"><g>
+    <ellipse class="c-fill" cx="48" cy="65" rx="2.6" ry="3.2" />
+    <ellipse class="c-fill" cx="72" cy="65" rx="2.6" ry="3.2" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M54 75 Q60 79 66 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M54 74 Q60 82 66 74 Z" />
+  </g>
+
+</g>
+<g transform="rotate(-14 34 138)">
+    <rect class="c-paper" x="21" y="112" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M25 118 L39 118" />
+    <circle class="c-hole" cx="34" cy="128" r="1.8" />
+  </g>
+
+<g transform="rotate(8 34 138)">
+    <rect class="c-paper" x="23" y="114" width="26" height="20" rx="2.5" />
+    <path class="c-thin" d="M27 120 L43 120" />
+    <path class="c-thin" d="M27 125 L37 125" />
+    <circle class="c-hole" cx="36" cy="130" r="1.8" />
+  </g>
+
+<g><circle class="c-surface" cx="34" cy="138" r="6" /></g>
+
+<g>
+    <g id="drawer" style="opacity: 1" class="prop">
+      <g id="drawer-cards" transform="translate(0 -12) rotate(0) scale(1 1) translate(0 0)" class="part">
+        <g id="dcard-1" class="part"><rect class="c-paper" x="79" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M81 128 L85 128" /></g>
+        <g id="dcard-2" transform="translate(93 122) rotate(0) scale(1 1) translate(-93 -132)" style="opacity: 1" class="part"><rect class="c-paper" x="89" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M91 128 L95 128" /></g>
+        <g id="dcard-3" class="part"><rect class="c-paper" x="99" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M101 128 L105 128" /></g>
+        <g id="dcard-4" class="part"><rect class="c-paper" x="109" y="124" width="8" height="16" rx="1" /><path class="c-thin" d="M111 128 L115 128" /></g>
+      </g>
+      <rect class="c-paper" x="74" y="122" width="48" height="34" rx="2" />
+      <rect class="c-paper" x="91" y="129" width="14" height="7" rx="1" />
+      <circle class="c-fill" cx="98" cy="144" r="2.5" />
+      <g id="found-card" transform="translate(100 96) rotate(0) scale(0.4 0.4) translate(-100 -96)" style="opacity: 0" class="prop">
+        <rect class="c-paper" x="86" y="86" width="28" height="20" rx="2.5" />
+        <path class="c-thin" d="M90 92 L106 92" />
+        <path class="c-thin" d="M90 97 L101 97" />
+        <circle class="c-hole" cx="100" cy="102" r="1.8" />
+      </g>
+    </g>
+    <circle id="free-hand" transform="translate(93 128) rotate(0) scale(1 1) translate(0 0)" style="opacity: 1" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+  </svg>
+</svg>
