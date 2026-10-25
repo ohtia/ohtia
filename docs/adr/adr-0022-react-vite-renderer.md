@@ -1,7 +1,7 @@
 ---
 type: DecisionRecord
 title: "ADR-0022 — React renderer built with Vite"
-description: "Build the local renderer with React and Vite while keeping Electron privileges outside the web component tree."
+description: "Build local renderer assets with React and Vite while keeping Electron privileges outside the web component tree."
 generated:
   by: codex/gpt-6.1-sol
 verified:
@@ -10,6 +10,9 @@ sources:
   - id: vite
     resource: "https://vite.dev/guide/"
     title: "Vite — Getting started"
+  - id: vite-security
+    resource: https://github.com/vitejs/vite/blob/v8.1.6/packages/vite/CHANGELOG.md
+    title: "Vite — HTML, filesystem and bundled editor-launch security fixes"
   - id: react
     resource: "https://registry.npmjs.org/react-dom/19.3.1"
     title: "React DOM — Package metadata"
@@ -23,7 +26,7 @@ The academic editor and workspace need DOM editing, semantic structure and share
 
 ## Decision
 
-Use matching React and React DOM `19.3.*` packages for the renderer, with Vite `8.0.*` builds.[^react] Use the strict TypeScript compiler selected in [ADR-0002](adr-0002-typescript-product-and-local-ipc.md). React's component structure presents controlled state; domain commands and process authority remain outside components. Vite supports development and production asset builds, while type checking is a separate gate.[^vite]
+Use matching React and React DOM `19.3.*` packages for the renderer, with Vite `8.1.*` builds.[^react] Require the upstream fixes for development HTML transforms, filesystem access and the bundled editor launcher in the locked patch.[^vite-security] Use the strict TypeScript compiler selected in [ADR-0002](adr-0002-typescript-product-and-local-ipc.md). React's component structure presents controlled state; domain commands and process authority remain outside components. Vite supports development and production asset builds, while type checking is a separate gate.[^vite]
 
 Package the built renderer assets locally with the actual CSP and narrow preload. Do not ship a dev server, development catalog, test fixture entry points or a hosted-login flow. Treat main, preload and utility processes as separate runtime/build targets with their own permitted imports. Vite is not the installer/signing/update mechanism.
 
@@ -34,5 +37,7 @@ Keep styles/assets compatible with the packaged CSP. Load application styles and
 The web editing ecosystem can be used without a hosted backend, but OS/native lifecycle verification still applies. Test actual asset URLs, CSP, source maps and accidental privileged imports in release-equivalent output. Verify Vite/React/TypeScript/Electron compatibility with exact locked patches when creating packages; packaged compatibility requires its own evidence.
 
 [^vite]: Vite separates its development server and production build; Ohtia packages only production renderer assets.
+
+[^vite-security]: The upstream changelog identifies the HTML-transform and filesystem fixes and the bundled editor-launcher update; the exact corrected patch and artifact identity belong in the toolchain manifest and lockfile.
 
 [^react]: React DOM declares its React peer requirement; select matching locked patches within the adopted line.

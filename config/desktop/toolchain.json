@@ -181,9 +181,9 @@
       }
     },
     "vite": {
-      "version": "8.0.16",
+      "version": "8.1.6",
       "adr": "0022",
-      "source": "https://registry.npmjs.org/vite/8.0.16",
+      "source": "https://registry.npmjs.org/vite/8.1.6",
       "engines": {
         "node": "^20.19.0 || >=22.12.0"
       },
@@ -199,14 +199,14 @@
         "sugarss": "^5.0.0",
         "@types/node": "^20.19.0 || >=22.12.0",
         "sass-embedded": "^1.70.0",
-        "@vitejs/devtools": "^0.1.18"
+        "@vitejs/devtools": "^0.3.0"
       },
       "license": "MIT",
       "artifact": {
-        "url": "https://registry.npmjs.org/vite/-/vite-8.0.16.tgz",
-        "sha256": "3af821aa696cac7f3722ba8db24eff8da9d8739ce8279bc318e1549fa9ec5287",
-        "integrity": "sha512-h9bXPmJichP5fLmVQo3PyaGSDE2n3aPuomeAlVRm0JLmt4rY6zmPKd59HYI4LNW8oTK7tlTsuC7l/m7awx9Jcw==",
-        "bytes": 538260,
+        "url": "https://registry.npmjs.org/vite/-/vite-8.1.6.tgz",
+        "sha256": "4e512df2b82176a9b7462d72188e984bda6d55629a46d506f43cff7848957ee1",
+        "integrity": "sha512-aRAHIxx5SW5zc1sMqFwJU/t5qaFfXb5Hj0J7W0VXihu/X99+346tz6080tO1T1xVIJORX/b3zVTXGFqUXh35uw==",
+        "bytes": 550992,
         "inspection": "downloaded-integrity-checked"
       }
     },
