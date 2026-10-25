@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" role="img" aria-label="Josefa: illustration at rest" viewBox="-16 0 152 152">
+  <title>Josefa: illustration at rest</title>
+  <style>
+    .c-surface { fill: #feeae1; stroke: #6c371d; stroke-width: 3; stroke-linejoin: round; }
+    .c-accent { fill: #f1ab8b; stroke: #6c371d; stroke-width: 3; stroke-linejoin: round; }
+    .c-paper { fill: #feeae1; stroke: #6c371d; stroke-width: 2.5; stroke-linejoin: round; }
+    .c-line { fill: none; stroke: #6c371d; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .c-thin { fill: none; stroke: #6c371d; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .c-hair { fill: #6c371d; stroke: #6c371d; stroke-width: 2; stroke-linejoin: round; }
+    .c-hair-line { fill: none; stroke: #feeae1; stroke-width: 2; stroke-linecap: round; }
+    .c-brow { fill: none; stroke: #6c371d; stroke-width: 3.5; stroke-linecap: round; }
+    .c-mouth { fill: none; stroke: #6c371d; stroke-width: 3; stroke-linecap: round; }
+    .c-fill { fill: #6c371d; }
+    .c-hole { fill: #feeae1; stroke: #6c371d; stroke-width: 1.8; }
+    .c-dash { fill: none; stroke: #6c371d; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+    @media (prefers-color-scheme: dark) {
+      .c-surface { fill: #352118; stroke: #faba9d; stroke-width: 3; stroke-linejoin: round; }
+      .c-accent { fill: #854d33; stroke: #faba9d; stroke-width: 3; stroke-linejoin: round; }
+      .c-paper { fill: #352118; stroke: #faba9d; stroke-width: 2.5; stroke-linejoin: round; }
+      .c-line { fill: none; stroke: #faba9d; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+      .c-thin { fill: none; stroke: #faba9d; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .c-hair { fill: #faba9d; stroke: #faba9d; stroke-width: 2; stroke-linejoin: round; }
+      .c-hair-line { fill: none; stroke: #352118; stroke-width: 2; stroke-linecap: round; }
+      .c-brow { fill: none; stroke: #faba9d; stroke-width: 3.5; stroke-linecap: round; }
+      .c-mouth { fill: none; stroke: #faba9d; stroke-width: 3; stroke-linecap: round; }
+      .c-fill { fill: #faba9d; }
+      .c-hole { fill: #352118; stroke: #faba9d; stroke-width: 1.8; }
+      .c-dash { fill: none; stroke: #faba9d; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+    }
+  </style>
+  <g>
+      <path class="c-accent" d="M18 152 L23 114 Q60 98 97 114 L102 152 Z" />
+      <path class="c-surface" d="M47 107 L60 128 L73 107 Z" />
+      <path class="c-line" d="M60 128 L60 152" />
+      <circle class="c-fill" cx="64.5" cy="136" r="1.8" />
+      <circle class="c-fill" cx="64.5" cy="146" r="1.8" />
+    </g>
+    <g><path class="c-hair" d="M26 84 L26 58 Q26 26 60 26 Q94 26 94 58 L94 84 Q94 87 91 87 L29 87 Q26 87 26 84 Z" /></g>
+    <g><rect class="c-surface" x="53" y="86" width="14" height="18" /></g>
+    <g><circle class="c-surface" cx="60" cy="62" r="27" /></g>
+    <g><path class="c-hair" d="M33 55 Q33 32 60 31 Q87 32 87 55 Q74 49 60 50 Q46 49 33 55 Z" /></g>
+    <g>
+      <path class="c-brow" d="M43 58 Q48 56 53 58" />
+      <path class="c-brow" d="M67 58 Q72 56 77 58" />
+    </g>
+    <g>
+      <ellipse class="c-fill" cx="48" cy="65" rx="2.6" ry="3.2" />
+      <ellipse class="c-fill" cx="72" cy="65" rx="2.6" ry="3.2" />
+    </g>
+    <g><path class="c-mouth" d="M54 75 Q60 79 66 75" /></g>
+    <g transform="rotate(-14 34 138)">
+      <rect class="c-paper" x="21" y="112" width="26" height="20" rx="2.5" />
+      <path class="c-thin" d="M25 118 L39 118" />
+      <circle class="c-hole" cx="34" cy="128" r="1.8" />
+    </g>
+    <g transform="rotate(8 34 138)">
+      <rect class="c-paper" x="23" y="114" width="26" height="20" rx="2.5" />
+      <path class="c-thin" d="M27 120 L43 120" />
+      <path class="c-thin" d="M27 125 L37 125" />
+      <circle class="c-hole" cx="36" cy="130" r="1.8" />
+    </g>
+    <g><circle class="c-surface" cx="34" cy="138" r="6" /></g>
+</svg>

@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" role="img" aria-label="Boris: illustration at rest" viewBox="-16 0 152 152">
+  <title>Boris: illustration at rest</title>
+  <style>
+    .c-surface { fill: #f1eee9; stroke: #4b4741; stroke-width: 3; stroke-linejoin: round; }
+    .c-accent { fill: #c2bdb5; stroke: #4b4741; stroke-width: 3; stroke-linejoin: round; }
+    .c-paper { fill: #f1eee9; stroke: #4b4741; stroke-width: 2.5; stroke-linejoin: round; }
+    .c-line { fill: none; stroke: #4b4741; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .c-thin { fill: none; stroke: #4b4741; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .c-hair { fill: #4b4741; stroke: #4b4741; stroke-width: 2; stroke-linejoin: round; }
+    .c-hair-line { fill: none; stroke: #f1eee9; stroke-width: 2; stroke-linecap: round; }
+    .c-brow { fill: none; stroke: #4b4741; stroke-width: 3.5; stroke-linecap: round; }
+    .c-mouth { fill: none; stroke: #4b4741; stroke-width: 3; stroke-linecap: round; }
+    .c-fill { fill: #4b4741; }
+    .c-hole { fill: #f1eee9; stroke: #4b4741; stroke-width: 1.8; }
+    .c-dash { fill: none; stroke: #4b4741; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+    @media (prefers-color-scheme: dark) {
+      .c-surface { fill: #292622; stroke: #cfcac2; stroke-width: 3; stroke-linejoin: round; }
+      .c-accent { fill: #615d56; stroke: #cfcac2; stroke-width: 3; stroke-linejoin: round; }
+      .c-paper { fill: #292622; stroke: #cfcac2; stroke-width: 2.5; stroke-linejoin: round; }
+      .c-line { fill: none; stroke: #cfcac2; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+      .c-thin { fill: none; stroke: #cfcac2; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .c-hair { fill: #cfcac2; stroke: #cfcac2; stroke-width: 2; stroke-linejoin: round; }
+      .c-hair-line { fill: none; stroke: #292622; stroke-width: 2; stroke-linecap: round; }
+      .c-brow { fill: none; stroke: #cfcac2; stroke-width: 3.5; stroke-linecap: round; }
+      .c-mouth { fill: none; stroke: #cfcac2; stroke-width: 3; stroke-linecap: round; }
+      .c-fill { fill: #cfcac2; }
+      .c-hole { fill: #292622; stroke: #cfcac2; stroke-width: 1.8; }
+      .c-dash { fill: none; stroke: #cfcac2; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+    }
+  </style>
+  <g>
+      <path class="c-accent" d="M21 152 L23 113 Q25 105 34 104 L86 104 Q95 105 97 113 L99 152 Z" />
+      <path class="c-surface" d="M48 104 L72 104 L65 121 L69 152 L51 152 L55 121 Z" />
+      <path class="c-line" d="M48 104 L55 121 L51 152" />
+      <path class="c-line" d="M72 104 L65 121 L69 152" />
+    </g>
+    <g><rect class="c-surface" x="53" y="84" width="14" height="20" /></g>
+    <g><rect class="c-surface" x="33" y="36" width="54" height="52" rx="19" /></g>
+    <g>
+      <path class="c-hair" d="M33 52 Q33 34 60 33 Q87 34 87 52 Q78 44 60 44 Q42 44 33 52 Z" />
+      <circle class="c-hair" cx="31.5" cy="56" r="5.5" />
+      <circle class="c-hair" cx="33.5" cy="46" r="6" />
+      <circle class="c-hair" cx="39" cy="37" r="6.5" />
+      <circle class="c-hair" cx="49" cy="32" r="6.5" />
+      <circle class="c-hair" cx="60" cy="30" r="6.5" />
+      <circle class="c-hair" cx="71" cy="32" r="6.5" />
+      <circle class="c-hair" cx="81" cy="37" r="6.5" />
+      <circle class="c-hair" cx="88.5" cy="56" r="5.5" />
+      <circle class="c-hair" cx="86.5" cy="46" r="6" />
+      <path class="c-hair-line" d="M45 31 Q47 28 51 28.5" />
+      <path class="c-hair-line" d="M57 28 Q60 26 63 27" />
+      <path class="c-hair-line" d="M69 29 Q72 28 74 30" />
+    </g>
+    <g>
+      <path class="c-brow" d="M43 56 Q48 53.5 53 55.5" />
+      <path class="c-brow" d="M67 55.5 Q72 53.5 77 56" />
+    </g>
+    <g>
+      <ellipse class="c-fill" cx="48" cy="63" rx="2.6" ry="3.2" />
+      <ellipse class="c-fill" cx="72" cy="63" rx="2.6" ry="3.2" />
+    </g>
+    <g><path class="c-mouth" d="M53 75 Q60 80 67 75" /></g>
+    <g transform="rotate(5 92 130)">
+      <rect class="c-paper" x="78" y="110" width="28" height="38" rx="2.5" />
+      <rect class="c-accent" x="83" y="116" width="18" height="7" rx="1.5" />
+      <rect class="c-accent" x="83" y="127" width="18" height="7" rx="1.5" />
+      <rect class="c-accent" x="83" y="138" width="11" height="5" rx="1.5" />
+    </g>
+    <g><circle class="c-surface" cx="78" cy="138" r="6" /></g>
+</svg>

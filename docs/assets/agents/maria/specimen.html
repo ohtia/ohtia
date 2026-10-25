@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>María specimen</title>
+<style>
+  :root { --page: #faf8f5; --panel: #f4f1ed; --line: #dad7d2; --fg: #1f1d19; --fg2: #4e4a43; color-scheme: light; }
+  :root.dark { --page: #151411; --panel: #1a1815; --line: #35322e; --fg: #ebe7e2; --fg2: #c1bdb7; color-scheme: dark; }
+  body { margin: 0; background: var(--page); color: var(--fg); font: 15px/1.5 'IBM Plex Sans', system-ui, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 32px 16px 64px; display: grid; gap: 28px; }
+  h1 { font-size: 24px; font-weight: 600; margin: 0; }
+  h2 { font-size: 17px; font-weight: 600; margin: 0 0 12px; }
+  p { margin: 0; color: var(--fg2); max-width: 70ch; }
+  .stage { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: 24px; align-items: start; }
+  .frame { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+  .frame svg { display: block; width: 100%; height: auto; }
+  .controls { display: grid; gap: 10px; align-content: start; }
+  button { font: inherit; text-align: left; padding: 10px 14px; border-radius: 4px; border: 1px solid var(--fg2); background: var(--page); color: var(--fg); cursor: pointer; }
+  button span { color: var(--fg2); font-size: 13px; margin-left: 6px; }
+  button[aria-disabled="true"] { cursor: default; opacity: .6; }
+  button:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+  #status { min-height: 1.5em; }
+  .strip { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+  .strip img { display: block; }
+  .part, .prop { transform-box: view-box; }
+  .c-surface { fill: #f6eafa; stroke: #593963; stroke-width: 3; stroke-linejoin: round; }
+  .c-accent { fill: #d6ace3; stroke: #593963; stroke-width: 3; stroke-linejoin: round; }
+  .c-paper { fill: #f6eafa; stroke: #593963; stroke-width: 2.5; stroke-linejoin: round; }
+  .c-line { fill: none; stroke: #593963; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+  .c-thin { fill: none; stroke: #593963; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .c-hair { fill: #593963; stroke: #593963; stroke-width: 2; stroke-linejoin: round; }
+  .c-hair-line { fill: none; stroke: #f6eafa; stroke-width: 2; stroke-linecap: round; }
+  .c-brow { fill: none; stroke: #593963; stroke-width: 3.5; stroke-linecap: round; }
+  .c-mouth { fill: none; stroke: #593963; stroke-width: 3; stroke-linecap: round; }
+  .c-fill { fill: #593963; }
+  .c-hole { fill: #f6eafa; stroke: #593963; stroke-width: 1.8; }
+  .c-dash { fill: none; stroke: #593963; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+  .c-trail { fill: none; stroke: #593963; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 100 110; stroke-dashoffset: 105; }
+  .prop { opacity: 0; }
+  :root.dark .c-surface { fill: #2e2132; stroke: #e1bbed; stroke-width: 3; stroke-linejoin: round; }
+  :root.dark .c-accent { fill: #704f7b; stroke: #e1bbed; stroke-width: 3; stroke-linejoin: round; }
+  :root.dark .c-paper { fill: #2e2132; stroke: #e1bbed; stroke-width: 2.5; stroke-linejoin: round; }
+  :root.dark .c-line { fill: none; stroke: #e1bbed; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+  :root.dark .c-thin { fill: none; stroke: #e1bbed; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  :root.dark .c-hair { fill: #e1bbed; stroke: #e1bbed; stroke-width: 2; stroke-linejoin: round; }
+  :root.dark .c-hair-line { fill: none; stroke: #2e2132; stroke-width: 2; stroke-linecap: round; }
+  :root.dark .c-brow { fill: none; stroke: #e1bbed; stroke-width: 3.5; stroke-linecap: round; }
+  :root.dark .c-mouth { fill: none; stroke: #e1bbed; stroke-width: 3; stroke-linecap: round; }
+  :root.dark .c-fill { fill: #e1bbed; }
+  :root.dark .c-hole { fill: #2e2132; stroke: #e1bbed; stroke-width: 1.8; }
+  :root.dark .c-dash { fill: none; stroke: #e1bbed; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+  :root.dark .c-trail { fill: none; stroke: #e1bbed; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 100 110; stroke-dashoffset: 105; }
+  :root.dark .prop { opacity: 0; }
+  @media (max-width: 640px) { .stage { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>María specimen</h1>
+    <p>Reference prototype for María's three gestures. Each plays once, from neutral to its main pose at 50% and back, with the shared standard easing. With reduced motion, the main pose appears without movement for the gesture's duration. Add <code>#dark</code> to the address for the dark theme.</p>
+  </header>
+  <section class="stage">
+    <div class="frame">
+      <svg viewBox="-16 0 152 152" role="img" aria-label="María">
+<g>
+    <path class="c-accent" d="M31 152 L28 120 Q30 106 60 103 Q90 106 92 120 L89 152 Z" />
+    <path class="c-line" d="M48 105 Q60 113 72 105" />
+  </g>
+
+<g><rect class="c-surface" x="53" y="84" width="14" height="20" /></g>
+
+<g id="head" class="part">
+<g><circle class="c-surface" cx="60" cy="62" r="27" /></g>
+
+<g>
+    <path class="c-hair" d="M35 81 Q24.5 80 26 71 Q20.5 63 27 55.5 Q23.5 44 33 37 Q43.5 25.5 60 27 Q76.5 25.5 87 37 Q96.5 44 93 55.5 Q99.5 63 94 71 Q95.5 80 85 81 Q86.5 72 86.5 64 Q86.5 53 80 46.5 Q73 43.5 67 39.5 Q61 46 51 44.5 Q42 44.5 37.5 51 Q33.5 57 33.5 65 Q33.5 73 35 81 Z" />
+    <path class="c-hair-line" d="M29 62 Q31 66 29.5 70" />
+    <path class="c-hair-line" d="M91 62 Q89 66 90.5 70" />
+    <path class="c-hair-line" d="M30 47 Q32 51 31 55" />
+    <path class="c-hair-line" d="M90 47 Q88 51 89 55" />
+    <path class="c-hair-line" d="M50 33 Q57 30.5 64 32" />
+  </g>
+
+<g id="brows" class="part"><g>
+    <path class="c-brow" d="M44 56 Q49 54 54 55.5" />
+    <path class="c-brow" d="M66 55.5 Q71 54 76 56" />
+  </g>
+  </g>
+<g id="eyes" class="part"><g>
+    <ellipse class="c-fill" cx="49" cy="63" rx="2.5" ry="3.1" />
+    <ellipse class="c-fill" cx="71" cy="63" rx="2.5" ry="3.1" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M55 74 Q60 78 65 74" /></g>
+  </g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M55 73 Q60 80 65 73 Z" />
+  </g>
+
+</g>
+<g id="card" class="part">
+<g transform="rotate(-6 50 132)">
+    <rect class="c-paper" x="33" y="118" width="34" height="26" rx="2.5" />
+    <path class="c-thin" d="M42 125 L61 125" />
+    <path class="c-thin" d="M42 131 L61 131" />
+    <path class="c-thin" d="M42 137 L54 137" />
+    <path class="c-line" d="M39 128 L37.5 128 L37.5 134 L39 134" />
+  </g>
+
+<g transform="rotate(-6 50 132)">
+    <path id="query-wave" class="c-trail prop" pathLength="100" d="M42 140.5 Q43.5 138.5 45 140.5 Q46.5 142.5 48 140.5 Q49.5 138.5 51 140.5 Q52.5 142.5 54 140.5" />
+    <path id="caret" class="c-line prop" d="M49.5 128 L53 121.5 L56.5 128" />
+  </g>
+
+</g>
+<g id="pencil" class="part">
+<g transform="rotate(16 83 126)">
+    <rect class="c-accent" x="79.5" y="110" width="7" height="25" rx="1.5" />
+    <path class="c-paper" d="M79.5 135 L86.5 135 L83 142 Z" />
+  </g>
+
+<g><circle class="c-surface" cx="85" cy="124" r="6" /></g>
+
+</g>
+      </svg>
+    </div>
+    <div class="controls">
+        <button type="button" data-gesture="introduction">Introduction <span>1200 ms</span></button>
+        <button type="button" data-gesture="active">Active contribution <span>1000 ms</span></button>
+        <button type="button" data-gesture="result">Result available <span>1200 ms</span></button>
+      <p id="status" role="status"></p>
+    </div>
+  </section>
+  <section>
+    <h2>Representations</h2>
+    <div class="strip">
+      <img src="avatar.svg" width="48" height="48" alt="María avatar, 48 px">
+      <img src="avatar.svg" width="32" height="32" alt="María avatar, 32 px">
+      <img src="avatar.svg" width="24" height="24" alt="María avatar, 24 px">
+      <img src="symbol.svg" width="24" height="24" alt="María symbol, 24 px">
+      <img src="symbol.svg" width="16" height="16" alt="María symbol, 16 px">
+    </div>
+  </section>
+  <section>
+    <h2>Key poses</h2>
+    <img src="poses.svg" alt="María gestures frozen at 25%, 50% and 75%" style="max-width: 100%; height: auto;">
+  </section>
+</main>
+<script id="gesture-data" type="application/json">{"gestures": [{"key": "introduction", "name": "Introduction", "ms": 1200, "tracks": {"pencil": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, -6, -120, 1, 1]}, {"t": [0, -10, -240, 1, 1]}, {"t": [0, -6, -330, 1, 1]}, {"t": [0, 0, -360, 1, 1]}], "head": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, 0, -1, 1, 1]}, {"t": [0, 0, -3, 1, 1]}, {"t": [0, 0, -2, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "brows": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, -1.5, 0, 1, 1]}, {"t": [0, -3, 0, 1, 1]}, {"t": [0, -2, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "mouth-rest": [{"o": 1}, {"o": 0}, {"o": 0}, {"o": 0}, {"o": 1}], "mouth-open": [{"o": 0}, {"o": 1}, {"o": 1}, {"o": 1}, {"o": 0}]}}, {"key": "active", "name": "Active contribution", "ms": 1000, "tracks": {"pencil": [{"t": [0, 0, 0, 1, 1]}, {"t": [-36, -1.5, 0, 1, 1]}, {"t": [-24, -2.5, 0, 1, 1]}, {"t": [-22, -6, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "query-wave": [{"d": 105, "o": 0}, {"d": 105, "o": 1}, {"d": 0, "o": 1}, {"d": 0, "o": 1}, {"d": 0, "o": 0}], "eyes": [{"t": [0, 0, 0, 1, 1]}, {"t": [-3, 3, 0, 1, 1]}, {"t": [-2, 3, 0, 1, 1]}, {"t": [-2, 2.5, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "brows": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, 1, 0, 1, 1]}, {"t": [0, 1.2, 0, 1, 1]}, {"t": [0, 1, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "head": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, 0, -1.5, 1, 1]}, {"t": [0, 0, -2.5, 1, 1]}, {"t": [0, 0, -1.5, 1, 1]}, {"t": [0, 0, 0, 1, 1]}]}}, {"key": "result", "name": "Result available", "ms": 1200, "tracks": {"card": [{"t": [0, 0, 0, 1, 1]}, {"t": [4, -6, 3, 1.08, 1.08]}, {"t": [8, -12, 6, 1.18, 1.18]}, {"t": [4, -6, 3, 1.08, 1.08]}, {"t": [0, 0, 0, 1, 1]}], "caret": [{"o": 0}, {"o": 0.5}, {"o": 1}, {"o": 0.5}, {"o": 0}], "pencil": [{"t": [0, 0, 0, 1, 1]}, {"t": [3, 4, 6, 1, 1]}, {"t": [5, 6, 10, 1, 1]}, {"t": [3, 4, 6, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "brows": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, -1.5, 0, 1, 1]}, {"t": [0, -2.5, 0, 1, 1]}, {"t": [0, -1.5, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "mouth-rest": [{"o": 1}, {"o": 0}, {"o": 0}, {"o": 0}, {"o": 1}], "mouth-open": [{"o": 0}, {"o": 1}, {"o": 1}, {"o": 1}, {"o": 0}]}}], "origins": {"head": [60, 88], "card": [50, 132], "pencil": [85, 124], "eyes": [60, 63], "brows": [60, 55], "mouth-rest": [60, 76]}, "keys": [0, 0.25, 0.5, 0.75, 1]}</script>
+<script>
+(function () {
+  var DATA = JSON.parse(document.getElementById("gesture-data").textContent);
+  var EASE = "cubic-bezier(0.2, 0, 0, 1)";
+  var root = document.documentElement;
+  function theme() { root.classList.toggle("dark", location.hash === "#dark"); }
+  theme();
+  window.addEventListener("hashchange", theme);
+  var buttons = Array.prototype.slice.call(document.querySelectorAll("button[data-gesture]"));
+  var status = document.getElementById("status");
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+  var running = [], touched = [], timer = 0, busy = false;
+  Object.keys(DATA.origins).forEach(function (id) {
+    var o = DATA.origins[id];
+    document.getElementById(id).style.transformOrigin = o[0] + "px " + o[1] + "px";
+  });
+  function frame(f, offset) {
+    var k = { offset: offset, easing: EASE };
+    if (f.t) k.transform = "translate(" + f.t[0] + "px, " + f.t[1] + "px) rotate(" + f.t[2] + "deg) scale(" + f.t[3] + ", " + f.t[4] + ")";
+    if (f.o !== undefined) k.opacity = f.o;
+    if (f.d !== undefined) k.strokeDashoffset = f.d;
+    return k;
+  }
+  function reset() {
+    running.forEach(function (a) { a.cancel(); });
+    running = [];
+    clearTimeout(timer);
+    touched.forEach(function (e) { e.style.transform = ""; e.style.opacity = ""; e.style.strokeDashoffset = ""; });
+    touched = [];
+    busy = false;
+    buttons.forEach(function (b) { b.removeAttribute("aria-disabled"); });
+  }
+  function play(g) {
+    reset();
+    busy = true;
+    buttons.forEach(function (b) { b.setAttribute("aria-disabled", "true"); });
+    Object.keys(g.tracks).forEach(function (id) {
+      var e = document.getElementById(id), frames = g.tracks[id];
+      touched.push(e);
+      if (reduced.matches) {
+        var k = frame(frames[2], 0);
+        if (k.transform) e.style.transform = k.transform;
+        if (k.opacity !== undefined) e.style.opacity = k.opacity;
+        if (k.strokeDashoffset !== undefined) e.style.strokeDashoffset = k.strokeDashoffset;
+      } else {
+        running.push(e.animate(frames.map(function (f, i) { return frame(f, DATA.keys[i]); }), { duration: g.ms }));
+      }
+    });
+    status.textContent = reduced.matches ? g.name + ": main pose shown without movement for " + g.ms + " ms." : g.name + ": playing once, " + g.ms + " ms.";
+    timer = setTimeout(function () { reset(); status.textContent = g.name + ": back at rest."; }, g.ms);
+  }
+  if (typeof Element.prototype.animate !== "function") {
+    buttons.forEach(function (b) { b.disabled = true; });
+    status.textContent = "This browser lacks the Web Animations API, so the gestures cannot play here.";
+    return;
+  }
+  buttons.forEach(function (b) {
+    b.addEventListener("click", function () {
+      if (busy) return;
+      play(DATA.gestures.filter(function (g) { return g.key === b.dataset.gesture; })[0]);
+    });
+  });
+  reduced.addEventListener("change", function () { reset(); status.textContent = "Motion preference changed: stopped without replay."; });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1059 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="974" height="750" viewBox="0 0 974 750" role="img" aria-label="Jorge Luis: gesture key poses">
+  <title>Jorge Luis: gesture key poses</title>
+  <style>
+    :root { --page: #faf8f5; --panel: #f4f1ed; --line: #dad7d2; --grid: #ebe7e2; --fg: #1f1d19; --fg2: #4e4a43; }
+    @media (prefers-color-scheme: dark) {
+      :root { --page: #151411; --panel: #1a1815; --line: #35322e; --grid: #262420; --fg: #ebe7e2; --fg2: #c1bdb7; }
+    }
+    .sheet { fill: var(--page); }
+    .grid { stroke: var(--grid); stroke-width: 1; }
+    .grid-major { stroke: var(--line); stroke-width: 1; }
+    .axis { font: 400 11px 'IBM Plex Sans', sans-serif; fill: var(--fg2); }
+    .title { font: 600 16px 'IBM Plex Sans', sans-serif; fill: var(--fg); }
+    .legend { font: 400 13px 'IBM Plex Sans', sans-serif; fill: var(--fg); }
+    .legend-note { font: 400 12px 'IBM Plex Sans', sans-serif; fill: var(--fg2); }
+    .mark { fill: none; stroke: var(--fg); stroke-width: 1.25; vector-effect: non-scaling-stroke; }
+    .lead { fill: none; stroke: var(--fg2); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+    .badge { fill: var(--page); stroke: var(--fg); stroke-width: 1.25; }
+    .badge-text { font: 600 11px 'IBM Plex Sans', sans-serif; fill: var(--fg); text-anchor: middle; }
+    .c-surface { fill: #eaeefe; stroke: #3b4372; stroke-width: 3; stroke-linejoin: round; }
+    .c-accent { fill: #adbaf7; stroke: #3b4372; stroke-width: 3; stroke-linejoin: round; }
+    .c-paper { fill: #eaeefe; stroke: #3b4372; stroke-width: 2.5; stroke-linejoin: round; }
+    .c-line { fill: none; stroke: #3b4372; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .c-thin { fill: none; stroke: #3b4372; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .c-hair { fill: #3b4372; stroke: #3b4372; stroke-width: 2; stroke-linejoin: round; }
+    .c-hair-line { fill: none; stroke: #eaeefe; stroke-width: 2; stroke-linecap: round; }
+    .c-brow { fill: none; stroke: #3b4372; stroke-width: 3.5; stroke-linecap: round; }
+    .c-mouth { fill: none; stroke: #3b4372; stroke-width: 3; stroke-linecap: round; }
+    .c-fill { fill: #3b4372; }
+    .c-hole { fill: #eaeefe; stroke: #3b4372; stroke-width: 1.8; }
+    .c-dash { fill: none; stroke: #3b4372; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+    .c-trail { fill: none; stroke: #3b4372; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 100 110; stroke-dashoffset: 105; }
+    .prop { opacity: 0; }
+    @media (prefers-color-scheme: dark) {
+      .c-surface { fill: #212538; stroke: #bbc7fe; stroke-width: 3; stroke-linejoin: round; }
+      .c-accent { fill: #505a8b; stroke: #bbc7fe; stroke-width: 3; stroke-linejoin: round; }
+      .c-paper { fill: #212538; stroke: #bbc7fe; stroke-width: 2.5; stroke-linejoin: round; }
+      .c-line { fill: none; stroke: #bbc7fe; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+      .c-thin { fill: none; stroke: #bbc7fe; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .c-hair { fill: #bbc7fe; stroke: #bbc7fe; stroke-width: 2; stroke-linejoin: round; }
+      .c-hair-line { fill: none; stroke: #212538; stroke-width: 2; stroke-linecap: round; }
+      .c-brow { fill: none; stroke: #bbc7fe; stroke-width: 3.5; stroke-linecap: round; }
+      .c-mouth { fill: none; stroke: #bbc7fe; stroke-width: 3; stroke-linecap: round; }
+      .c-fill { fill: #bbc7fe; }
+      .c-hole { fill: #212538; stroke: #bbc7fe; stroke-width: 1.8; }
+      .c-dash { fill: none; stroke: #bbc7fe; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+      .c-trail { fill: none; stroke: #bbc7fe; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 100 110; stroke-dashoffset: 105; }
+      .prop { opacity: 0; }
+    }
+    .panel { fill: var(--panel); stroke: var(--line); stroke-width: 1; }
+  </style>
+  <rect class="sheet" width="974" height="750"/>
+  <text class="title" x="24" y="32">Jorge Luis: gesture key poses</text>
+  <text class="legend-note" x="245.0" y="56" text-anchor="middle">Rest</text>
+  <text class="legend-note" x="451.0" y="56" text-anchor="middle">25%</text>
+  <text class="legend-note" x="657.0" y="56" text-anchor="middle">50% (main)</text>
+  <text class="legend-note" x="863.0" y="56" text-anchor="middle">75%</text>
+  <text class="legend" x="24" y="161.0">Introduction</text>
+  <text class="legend-note" x="24" y="179.0">1200 ms</text>
+  <rect class="panel" x="150" y="66" width="190" height="190" rx="6"/>
+  <svg x="150" y="66" width="190" height="190" viewBox="-16 0 152 152">
+<g><path class="c-surface" d="M29 152 L33 114 Q60 101 87 114 L91 152 Z" /></g>
+
+<g>
+    <path class="c-accent" d="M39 152 L40 117 Q49 112 53 105 L60 130 L67 105 Q71 112 80 117 L81 152 Z" />
+    <path class="c-line" d="M53 105 L57 112 L60 106 L63 112 L67 105" />
+  </g>
+
+<g id="head" class="part">
+<g><rect class="c-surface" x="54" y="84" width="12" height="20" /></g>
+
+<g><ellipse class="c-surface" cx="60" cy="59" rx="24" ry="28" /></g>
+
+<g>
+    <path class="c-hair" d="M35.5 59 Q32.5 41 40.5 34 Q46.5 27.5 54.5 29 Q61 24.5 68.5 28 Q79.5 29.5 84 40 Q87.5 47 85 53 Q88 57 84 61 Q81.5 53 76.5 49 Q72.5 44.5 67 47 Q61.5 41.5 54.5 44.5 Q48.5 43 45 47.5 Q39.5 52 35.5 59 Z" />
+    <path class="c-hair-line" d="M47 32 Q44.5 37.5 46 44" />
+    <path class="c-hair-line" d="M58 33.5 Q64 31 70 34" />
+    <path class="c-hair-line" d="M74 37 Q78.5 39.5 80 44.5" />
+  </g>
+
+<g id="brows" class="part"><g>
+    <path class="c-brow" d="M44 55 Q49 52.5 54 54.5" />
+    <path class="c-brow" d="M66 54 Q71 51 76 53.5" />
+  </g>
+  </g>
+<g id="eyes" class="part"><g>
+    <ellipse class="c-fill" cx="49" cy="63" rx="2.5" ry="3.1" />
+    <ellipse class="c-fill" cx="71" cy="63" rx="2.5" ry="3.1" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M55 75 Q60 78 65 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M55 74 Q60 81 65 74 Z" />
+  </g>
+
+</g>
+<g id="book" class="part">
+<g><rect class="c-accent" x="74" y="118" width="7" height="13" rx="1.2" /></g>
+
+<g>
+    <path class="c-paper" d="M36 128 Q49 122 62 128 L62 150 Q49 144 36 150 Z" />
+    <path class="c-thin" d="M41 134 Q48.5 131 56 134" />
+    <path class="c-thin" d="M41 140 Q48.5 137 56 140" />
+  </g>
+
+<g>
+    <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+    <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+  </g>
+
+<g>
+    <g id="turning-page" class="prop">
+      <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+      <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+      <path class="c-thin" d="M68 140 Q75.5 137 83 140" />
+    </g>
+  </g>
+
+<g>
+    <circle class="c-surface" cx="36" cy="147" r="6" />
+    <circle class="c-surface" cx="88" cy="147" r="6" />
+  </g>
+
+<g>
+    <g id="quote-note" class="prop">
+      <rect class="c-paper" x="80" y="88" width="30" height="18" rx="2" />
+      <circle class="c-fill" cx="86" cy="98" r="1.7" />
+      <path class="c-thin" d="M84.5 98 Q84.5 94.8 87.2 93.8" />
+      <circle class="c-fill" cx="90.5" cy="98" r="1.7" />
+      <path class="c-thin" d="M89.0 98 Q89.0 94.8 91.7 93.8" />
+      <circle class="c-fill" cx="100" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M101.5 93.5 Q101.5 96.7 98.8 97.7" />
+      <circle class="c-fill" cx="104.5" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M106.0 93.5 Q106.0 96.7 103.3 97.7" />
+      <path class="c-thin" d="M86 102 L104 102" />
+    </g>
+    <circle id="free-hand" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+</g>
+  </svg>
+  <rect class="panel" x="356" y="66" width="190" height="190" rx="6"/>
+  <svg x="356" y="66" width="190" height="190" viewBox="-16 0 152 152">
+<g><path class="c-surface" d="M29 152 L33 114 Q60 101 87 114 L91 152 Z" /></g>
+
+<g>
+    <path class="c-accent" d="M39 152 L40 117 Q49 112 53 105 L60 130 L67 105 Q71 112 80 117 L81 152 Z" />
+    <path class="c-line" d="M53 105 L57 112 L60 106 L63 112 L67 105" />
+  </g>
+
+<g id="head" transform="translate(60 104) rotate(0) scale(1 1) translate(-60 -104)" class="part">
+<g><rect class="c-surface" x="54" y="84" width="12" height="20" /></g>
+
+<g><ellipse class="c-surface" cx="60" cy="59" rx="24" ry="28" /></g>
+
+<g>
+    <path class="c-hair" d="M35.5 59 Q32.5 41 40.5 34 Q46.5 27.5 54.5 29 Q61 24.5 68.5 28 Q79.5 29.5 84 40 Q87.5 47 85 53 Q88 57 84 61 Q81.5 53 76.5 49 Q72.5 44.5 67 47 Q61.5 41.5 54.5 44.5 Q48.5 43 45 47.5 Q39.5 52 35.5 59 Z" />
+    <path class="c-hair-line" d="M47 32 Q44.5 37.5 46 44" />
+    <path class="c-hair-line" d="M58 33.5 Q64 31 70 34" />
+    <path class="c-hair-line" d="M74 37 Q78.5 39.5 80 44.5" />
+  </g>
+
+<g id="brows" transform="translate(60 53) rotate(0) scale(1 1) translate(-60 -54)" class="part"><g>
+    <path class="c-brow" d="M44 55 Q49 52.5 54 54.5" />
+    <path class="c-brow" d="M66 54 Q71 51 76 53.5" />
+  </g>
+  </g>
+<g id="eyes" transform="translate(60 61.5) rotate(0) scale(1 1) translate(-60 -63)" class="part"><g>
+    <ellipse class="c-fill" cx="49" cy="63" rx="2.5" ry="3.1" />
+    <ellipse class="c-fill" cx="71" cy="63" rx="2.5" ry="3.1" />
+  </g>
+  </g>
+<g id="mouth-rest" style="opacity: 1" class="part"><g><path class="c-mouth" d="M55 75 Q60 78 65 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" style="opacity: 0" class="c-hair prop" d="M55 74 Q60 81 65 74 Z" />
+  </g>
+
+</g>
+<g id="book" transform="translate(62 86) rotate(0) scale(1 1) translate(-62 -140)" class="part">
+<g><rect class="c-accent" x="74" y="118" width="7" height="13" rx="1.2" /></g>
+
+<g>
+    <path class="c-paper" d="M36 128 Q49 122 62 128 L62 150 Q49 144 36 150 Z" />
+    <path class="c-thin" d="M41 134 Q48.5 131 56 134" />
+    <path class="c-thin" d="M41 140 Q48.5 137 56 140" />
+  </g>
+
+<g>
+    <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+    <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+  </g>
+
+<g>
+    <g id="turning-page" class="prop">
+      <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+      <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+      <path class="c-thin" d="M68 140 Q75.5 137 83 140" />
+    </g>
+  </g>
+
+<g>
+    <circle class="c-surface" cx="36" cy="147" r="6" />
+    <circle class="c-surface" cx="88" cy="147" r="6" />
+  </g>
+
+<g>
+    <g id="quote-note" class="prop">
+      <rect class="c-paper" x="80" y="88" width="30" height="18" rx="2" />
+      <circle class="c-fill" cx="86" cy="98" r="1.7" />
+      <path class="c-thin" d="M84.5 98 Q84.5 94.8 87.2 93.8" />
+      <circle class="c-fill" cx="90.5" cy="98" r="1.7" />
+      <path class="c-thin" d="M89.0 98 Q89.0 94.8 91.7 93.8" />
+      <circle class="c-fill" cx="100" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M101.5 93.5 Q101.5 96.7 98.8 97.7" />
+      <circle class="c-fill" cx="104.5" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M106.0 93.5 Q106.0 96.7 103.3 97.7" />
+      <path class="c-thin" d="M86 102 L104 102" />
+    </g>
+    <circle id="free-hand" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+</g>
+  </svg>
+  <rect class="panel" x="562" y="66" width="190" height="190" rx="6"/>
+  <svg x="562" y="66" width="190" height="190" viewBox="-16 0 152 152">
+<g><path class="c-surface" d="M29 152 L33 114 Q60 101 87 114 L91 152 Z" /></g>
+
+<g>
+    <path class="c-accent" d="M39 152 L40 117 Q49 112 53 105 L60 130 L67 105 Q71 112 80 117 L81 152 Z" />
+    <path class="c-line" d="M53 105 L57 112 L60 106 L63 112 L67 105" />
+  </g>
+
+<g id="head" transform="translate(60 104) rotate(-3) scale(1 1) translate(-60 -104)" class="part">
+<g><rect class="c-surface" x="54" y="84" width="12" height="20" /></g>
+
+<g><ellipse class="c-surface" cx="60" cy="59" rx="24" ry="28" /></g>
+
+<g>
+    <path class="c-hair" d="M35.5 59 Q32.5 41 40.5 34 Q46.5 27.5 54.5 29 Q61 24.5 68.5 28 Q79.5 29.5 84 40 Q87.5 47 85 53 Q88 57 84 61 Q81.5 53 76.5 49 Q72.5 44.5 67 47 Q61.5 41.5 54.5 44.5 Q48.5 43 45 47.5 Q39.5 52 35.5 59 Z" />
+    <path class="c-hair-line" d="M47 32 Q44.5 37.5 46 44" />
+    <path class="c-hair-line" d="M58 33.5 Q64 31 70 34" />
+    <path class="c-hair-line" d="M74 37 Q78.5 39.5 80 44.5" />
+  </g>
+
+<g id="brows" transform="translate(60 51) rotate(0) scale(1 1) translate(-60 -54)" class="part"><g>
+    <path class="c-brow" d="M44 55 Q49 52.5 54 54.5" />
+    <path class="c-brow" d="M66 54 Q71 51 76 53.5" />
+  </g>
+  </g>
+<g id="eyes" transform="translate(60 63) rotate(0) scale(1 1) translate(-60 -63)" class="part"><g>
+    <ellipse class="c-fill" cx="49" cy="63" rx="2.5" ry="3.1" />
+    <ellipse class="c-fill" cx="71" cy="63" rx="2.5" ry="3.1" />
+  </g>
+  </g>
+<g id="mouth-rest" style="opacity: 0" class="part"><g><path class="c-mouth" d="M55 75 Q60 78 65 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" style="opacity: 1" class="c-hair prop" d="M55 74 Q60 81 65 74 Z" />
+  </g>
+
+</g>
+<g id="book" transform="translate(62 134) rotate(0) scale(1 1) translate(-62 -140)" class="part">
+<g><rect class="c-accent" x="74" y="118" width="7" height="13" rx="1.2" /></g>
+
+<g>
+    <path class="c-paper" d="M36 128 Q49 122 62 128 L62 150 Q49 144 36 150 Z" />
+    <path class="c-thin" d="M41 134 Q48.5 131 56 134" />
+    <path class="c-thin" d="M41 140 Q48.5 137 56 140" />
+  </g>
+
+<g>
+    <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+    <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+  </g>
+
+<g>
+    <g id="turning-page" class="prop">
+      <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+      <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+      <path class="c-thin" d="M68 140 Q75.5 137 83 140" />
+    </g>
+  </g>
+
+<g>
+    <circle class="c-surface" cx="36" cy="147" r="6" />
+    <circle class="c-surface" cx="88" cy="147" r="6" />
+  </g>
+
+<g>
+    <g id="quote-note" class="prop">
+      <rect class="c-paper" x="80" y="88" width="30" height="18" rx="2" />
+      <circle class="c-fill" cx="86" cy="98" r="1.7" />
+      <path class="c-thin" d="M84.5 98 Q84.5 94.8 87.2 93.8" />
+      <circle class="c-fill" cx="90.5" cy="98" r="1.7" />
+      <path class="c-thin" d="M89.0 98 Q89.0 94.8 91.7 93.8" />
+      <circle class="c-fill" cx="100" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M101.5 93.5 Q101.5 96.7 98.8 97.7" />
+      <circle class="c-fill" cx="104.5" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M106.0 93.5 Q106.0 96.7 103.3 97.7" />
+      <path class="c-thin" d="M86 102 L104 102" />
+    </g>
+    <circle id="free-hand" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+</g>
+  </svg>
+  <rect class="panel" x="768" y="66" width="190" height="190" rx="6"/>
+  <svg x="768" y="66" width="190" height="190" viewBox="-16 0 152 152">
+<g><path class="c-surface" d="M29 152 L33 114 Q60 101 87 114 L91 152 Z" /></g>
+
+<g>
+    <path class="c-accent" d="M39 152 L40 117 Q49 112 53 105 L60 130 L67 105 Q71 112 80 117 L81 152 Z" />
+    <path class="c-line" d="M53 105 L57 112 L60 106 L63 112 L67 105" />
+  </g>
+
+<g id="head" transform="translate(60 104) rotate(-1.5) scale(1 1) translate(-60 -104)" class="part">
+<g><rect class="c-surface" x="54" y="84" width="12" height="20" /></g>
+
+<g><ellipse class="c-surface" cx="60" cy="59" rx="24" ry="28" /></g>
+
+<g>
+    <path class="c-hair" d="M35.5 59 Q32.5 41 40.5 34 Q46.5 27.5 54.5 29 Q61 24.5 68.5 28 Q79.5 29.5 84 40 Q87.5 47 85 53 Q88 57 84 61 Q81.5 53 76.5 49 Q72.5 44.5 67 47 Q61.5 41.5 54.5 44.5 Q48.5 43 45 47.5 Q39.5 52 35.5 59 Z" />
+    <path class="c-hair-line" d="M47 32 Q44.5 37.5 46 44" />
+    <path class="c-hair-line" d="M58 33.5 Q64 31 70 34" />
+    <path class="c-hair-line" d="M74 37 Q78.5 39.5 80 44.5" />
+  </g>
+
+<g id="brows" transform="translate(60 52) rotate(0) scale(1 1) translate(-60 -54)" class="part"><g>
+    <path class="c-brow" d="M44 55 Q49 52.5 54 54.5" />
+    <path class="c-brow" d="M66 54 Q71 51 76 53.5" />
+  </g>
+  </g>
+<g id="eyes" transform="translate(60 63) rotate(0) scale(1 1) translate(-60 -63)" class="part"><g>
+    <ellipse class="c-fill" cx="49" cy="63" rx="2.5" ry="3.1" />
+    <ellipse class="c-fill" cx="71" cy="63" rx="2.5" ry="3.1" />
+  </g>
+  </g>
+<g id="mouth-rest" style="opacity: 0" class="part"><g><path class="c-mouth" d="M55 75 Q60 78 65 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" style="opacity: 1" class="c-hair prop" d="M55 74 Q60 81 65 74 Z" />
+  </g>
+
+</g>
+<g id="book" transform="translate(62 138) rotate(0) scale(1 1) translate(-62 -140)" class="part">
+<g><rect class="c-accent" x="74" y="118" width="7" height="13" rx="1.2" /></g>
+
+<g>
+    <path class="c-paper" d="M36 128 Q49 122 62 128 L62 150 Q49 144 36 150 Z" />
+    <path class="c-thin" d="M41 134 Q48.5 131 56 134" />
+    <path class="c-thin" d="M41 140 Q48.5 137 56 140" />
+  </g>
+
+<g>
+    <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+    <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+  </g>
+
+<g>
+    <g id="turning-page" class="prop">
+      <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+      <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+      <path class="c-thin" d="M68 140 Q75.5 137 83 140" />
+    </g>
+  </g>
+
+<g>
+    <circle class="c-surface" cx="36" cy="147" r="6" />
+    <circle class="c-surface" cx="88" cy="147" r="6" />
+  </g>
+
+<g>
+    <g id="quote-note" class="prop">
+      <rect class="c-paper" x="80" y="88" width="30" height="18" rx="2" />
+      <circle class="c-fill" cx="86" cy="98" r="1.7" />
+      <path class="c-thin" d="M84.5 98 Q84.5 94.8 87.2 93.8" />
+      <circle class="c-fill" cx="90.5" cy="98" r="1.7" />
+      <path class="c-thin" d="M89.0 98 Q89.0 94.8 91.7 93.8" />
+      <circle class="c-fill" cx="100" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M101.5 93.5 Q101.5 96.7 98.8 97.7" />
+      <circle class="c-fill" cx="104.5" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M106.0 93.5 Q106.0 96.7 103.3 97.7" />
+      <path class="c-thin" d="M86 102 L104 102" />
+    </g>
+    <circle id="free-hand" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+</g>
+  </svg>
+  <text class="legend" x="24" y="391.0">Active contribution</text>
+  <text class="legend-note" x="24" y="409.0">1000 ms</text>
+  <rect class="panel" x="150" y="296" width="190" height="190" rx="6"/>
+  <svg x="150" y="296" width="190" height="190" viewBox="-16 0 152 152">
+<g><path class="c-surface" d="M29 152 L33 114 Q60 101 87 114 L91 152 Z" /></g>
+
+<g>
+    <path class="c-accent" d="M39 152 L40 117 Q49 112 53 105 L60 130 L67 105 Q71 112 80 117 L81 152 Z" />
+    <path class="c-line" d="M53 105 L57 112 L60 106 L63 112 L67 105" />
+  </g>
+
+<g id="head" class="part">
+<g><rect class="c-surface" x="54" y="84" width="12" height="20" /></g>
+
+<g><ellipse class="c-surface" cx="60" cy="59" rx="24" ry="28" /></g>
+
+<g>
+    <path class="c-hair" d="M35.5 59 Q32.5 41 40.5 34 Q46.5 27.5 54.5 29 Q61 24.5 68.5 28 Q79.5 29.5 84 40 Q87.5 47 85 53 Q88 57 84 61 Q81.5 53 76.5 49 Q72.5 44.5 67 47 Q61.5 41.5 54.5 44.5 Q48.5 43 45 47.5 Q39.5 52 35.5 59 Z" />
+    <path class="c-hair-line" d="M47 32 Q44.5 37.5 46 44" />
+    <path class="c-hair-line" d="M58 33.5 Q64 31 70 34" />
+    <path class="c-hair-line" d="M74 37 Q78.5 39.5 80 44.5" />
+  </g>
+
+<g id="brows" class="part"><g>
+    <path class="c-brow" d="M44 55 Q49 52.5 54 54.5" />
+    <path class="c-brow" d="M66 54 Q71 51 76 53.5" />
+  </g>
+  </g>
+<g id="eyes" class="part"><g>
+    <ellipse class="c-fill" cx="49" cy="63" rx="2.5" ry="3.1" />
+    <ellipse class="c-fill" cx="71" cy="63" rx="2.5" ry="3.1" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M55 75 Q60 78 65 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M55 74 Q60 81 65 74 Z" />
+  </g>
+
+</g>
+<g id="book" class="part">
+<g><rect class="c-accent" x="74" y="118" width="7" height="13" rx="1.2" /></g>
+
+<g>
+    <path class="c-paper" d="M36 128 Q49 122 62 128 L62 150 Q49 144 36 150 Z" />
+    <path class="c-thin" d="M41 134 Q48.5 131 56 134" />
+    <path class="c-thin" d="M41 140 Q48.5 137 56 140" />
+  </g>
+
+<g>
+    <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+    <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+  </g>
+
+<g>
+    <g id="turning-page" class="prop">
+      <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+      <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+      <path class="c-thin" d="M68 140 Q75.5 137 83 140" />
+    </g>
+  </g>
+
+<g>
+    <circle class="c-surface" cx="36" cy="147" r="6" />
+    <circle class="c-surface" cx="88" cy="147" r="6" />
+  </g>
+
+<g>
+    <g id="quote-note" class="prop">
+      <rect class="c-paper" x="80" y="88" width="30" height="18" rx="2" />
+      <circle class="c-fill" cx="86" cy="98" r="1.7" />
+      <path class="c-thin" d="M84.5 98 Q84.5 94.8 87.2 93.8" />
+      <circle class="c-fill" cx="90.5" cy="98" r="1.7" />
+      <path class="c-thin" d="M89.0 98 Q89.0 94.8 91.7 93.8" />
+      <circle class="c-fill" cx="100" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M101.5 93.5 Q101.5 96.7 98.8 97.7" />
+      <circle class="c-fill" cx="104.5" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M106.0 93.5 Q106.0 96.7 103.3 97.7" />
+      <path class="c-thin" d="M86 102 L104 102" />
+    </g>
+    <circle id="free-hand" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+</g>
+  </svg>
+  <rect class="panel" x="356" y="296" width="190" height="190" rx="6"/>
+  <svg x="356" y="296" width="190" height="190" viewBox="-16 0 152 152">
+<g><path class="c-surface" d="M29 152 L33 114 Q60 101 87 114 L91 152 Z" /></g>
+
+<g>
+    <path class="c-accent" d="M39 152 L40 117 Q49 112 53 105 L60 130 L67 105 Q71 112 80 117 L81 152 Z" />
+    <path class="c-line" d="M53 105 L57 112 L60 106 L63 112 L67 105" />
+  </g>
+
+<g id="head" transform="translate(60 104) rotate(1) scale(1 1) translate(-60 -104)" class="part">
+<g><rect class="c-surface" x="54" y="84" width="12" height="20" /></g>
+
+<g><ellipse class="c-surface" cx="60" cy="59" rx="24" ry="28" /></g>
+
+<g>
+    <path class="c-hair" d="M35.5 59 Q32.5 41 40.5 34 Q46.5 27.5 54.5 29 Q61 24.5 68.5 28 Q79.5 29.5 84 40 Q87.5 47 85 53 Q88 57 84 61 Q81.5 53 76.5 49 Q72.5 44.5 67 47 Q61.5 41.5 54.5 44.5 Q48.5 43 45 47.5 Q39.5 52 35.5 59 Z" />
+    <path class="c-hair-line" d="M47 32 Q44.5 37.5 46 44" />
+    <path class="c-hair-line" d="M58 33.5 Q64 31 70 34" />
+    <path class="c-hair-line" d="M74 37 Q78.5 39.5 80 44.5" />
+  </g>
+
+<g id="brows" transform="translate(60 55) rotate(0) scale(1 1) translate(-60 -54)" class="part"><g>
+    <path class="c-brow" d="M44 55 Q49 52.5 54 54.5" />
+    <path class="c-brow" d="M66 54 Q71 51 76 53.5" />
+  </g>
+  </g>
+<g id="eyes" transform="translate(58 65) rotate(0) scale(1 1) translate(-60 -63)" class="part"><g>
+    <ellipse class="c-fill" cx="49" cy="63" rx="2.5" ry="3.1" />
+    <ellipse class="c-fill" cx="71" cy="63" rx="2.5" ry="3.1" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M55 75 Q60 78 65 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M55 74 Q60 81 65 74 Z" />
+  </g>
+
+</g>
+<g id="book" class="part">
+<g><rect class="c-accent" x="74" y="118" width="7" height="13" rx="1.2" /></g>
+
+<g>
+    <path class="c-paper" d="M36 128 Q49 122 62 128 L62 150 Q49 144 36 150 Z" />
+    <path class="c-thin" d="M41 134 Q48.5 131 56 134" />
+    <path class="c-thin" d="M41 140 Q48.5 137 56 140" />
+  </g>
+
+<g>
+    <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+    <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+  </g>
+
+<g>
+    <g id="turning-page" transform="translate(62 133) rotate(0) scale(0.6 1) translate(-62 -139)" style="opacity: 1" class="prop">
+      <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+      <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+      <path class="c-thin" d="M68 140 Q75.5 137 83 140" />
+    </g>
+  </g>
+
+<g>
+    <circle class="c-surface" cx="36" cy="147" r="6" />
+    <circle class="c-surface" cx="88" cy="147" r="6" />
+  </g>
+
+<g>
+    <g id="quote-note" class="prop">
+      <rect class="c-paper" x="80" y="88" width="30" height="18" rx="2" />
+      <circle class="c-fill" cx="86" cy="98" r="1.7" />
+      <path class="c-thin" d="M84.5 98 Q84.5 94.8 87.2 93.8" />
+      <circle class="c-fill" cx="90.5" cy="98" r="1.7" />
+      <path class="c-thin" d="M89.0 98 Q89.0 94.8 91.7 93.8" />
+      <circle class="c-fill" cx="100" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M101.5 93.5 Q101.5 96.7 98.8 97.7" />
+      <circle class="c-fill" cx="104.5" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M106.0 93.5 Q106.0 96.7 103.3 97.7" />
+      <path class="c-thin" d="M86 102 L104 102" />
+    </g>
+    <circle id="free-hand" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+</g>
+  </svg>
+  <rect class="panel" x="562" y="296" width="190" height="190" rx="6"/>
+  <svg x="562" y="296" width="190" height="190" viewBox="-16 0 152 152">
+<g><path class="c-surface" d="M29 152 L33 114 Q60 101 87 114 L91 152 Z" /></g>
+
+<g>
+    <path class="c-accent" d="M39 152 L40 117 Q49 112 53 105 L60 130 L67 105 Q71 112 80 117 L81 152 Z" />
+    <path class="c-line" d="M53 105 L57 112 L60 106 L63 112 L67 105" />
+  </g>
+
+<g id="head" transform="translate(60 104) rotate(2) scale(1 1) translate(-60 -104)" class="part">
+<g><rect class="c-surface" x="54" y="84" width="12" height="20" /></g>
+
+<g><ellipse class="c-surface" cx="60" cy="59" rx="24" ry="28" /></g>
+
+<g>
+    <path class="c-hair" d="M35.5 59 Q32.5 41 40.5 34 Q46.5 27.5 54.5 29 Q61 24.5 68.5 28 Q79.5 29.5 84 40 Q87.5 47 85 53 Q88 57 84 61 Q81.5 53 76.5 49 Q72.5 44.5 67 47 Q61.5 41.5 54.5 44.5 Q48.5 43 45 47.5 Q39.5 52 35.5 59 Z" />
+    <path class="c-hair-line" d="M47 32 Q44.5 37.5 46 44" />
+    <path class="c-hair-line" d="M58 33.5 Q64 31 70 34" />
+    <path class="c-hair-line" d="M74 37 Q78.5 39.5 80 44.5" />
+  </g>
+
+<g id="brows" transform="translate(60 55.2) rotate(0) scale(1 1) translate(-60 -54)" class="part"><g>
+    <path class="c-brow" d="M44 55 Q49 52.5 54 54.5" />
+    <path class="c-brow" d="M66 54 Q71 51 76 53.5" />
+  </g>
+  </g>
+<g id="eyes" transform="translate(62 65) rotate(0) scale(1 1) translate(-60 -63)" class="part"><g>
+    <ellipse class="c-fill" cx="49" cy="63" rx="2.5" ry="3.1" />
+    <ellipse class="c-fill" cx="71" cy="63" rx="2.5" ry="3.1" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M55 75 Q60 78 65 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M55 74 Q60 81 65 74 Z" />
+  </g>
+
+</g>
+<g id="book" class="part">
+<g><rect class="c-accent" x="74" y="118" width="7" height="13" rx="1.2" /></g>
+
+<g>
+    <path class="c-paper" d="M36 128 Q49 122 62 128 L62 150 Q49 144 36 150 Z" />
+    <path class="c-thin" d="M41 134 Q48.5 131 56 134" />
+    <path class="c-thin" d="M41 140 Q48.5 137 56 140" />
+  </g>
+
+<g>
+    <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+    <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+  </g>
+
+<g>
+    <g id="turning-page" transform="translate(62 129) rotate(0) scale(-0.4 1) translate(-62 -139)" style="opacity: 1" class="prop">
+      <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+      <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+      <path class="c-thin" d="M68 140 Q75.5 137 83 140" />
+    </g>
+  </g>
+
+<g>
+    <circle class="c-surface" cx="36" cy="147" r="6" />
+    <circle class="c-surface" cx="88" cy="147" r="6" />
+  </g>
+
+<g>
+    <g id="quote-note" class="prop">
+      <rect class="c-paper" x="80" y="88" width="30" height="18" rx="2" />
+      <circle class="c-fill" cx="86" cy="98" r="1.7" />
+      <path class="c-thin" d="M84.5 98 Q84.5 94.8 87.2 93.8" />
+      <circle class="c-fill" cx="90.5" cy="98" r="1.7" />
+      <path class="c-thin" d="M89.0 98 Q89.0 94.8 91.7 93.8" />
+      <circle class="c-fill" cx="100" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M101.5 93.5 Q101.5 96.7 98.8 97.7" />
+      <circle class="c-fill" cx="104.5" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M106.0 93.5 Q106.0 96.7 103.3 97.7" />
+      <path class="c-thin" d="M86 102 L104 102" />
+    </g>
+    <circle id="free-hand" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+</g>
+  </svg>
+  <rect class="panel" x="768" y="296" width="190" height="190" rx="6"/>
+  <svg x="768" y="296" width="190" height="190" viewBox="-16 0 152 152">
+<g><path class="c-surface" d="M29 152 L33 114 Q60 101 87 114 L91 152 Z" /></g>
+
+<g>
+    <path class="c-accent" d="M39 152 L40 117 Q49 112 53 105 L60 130 L67 105 Q71 112 80 117 L81 152 Z" />
+    <path class="c-line" d="M53 105 L57 112 L60 106 L63 112 L67 105" />
+  </g>
+
+<g id="head" transform="translate(60 104) rotate(1) scale(1 1) translate(-60 -104)" class="part">
+<g><rect class="c-surface" x="54" y="84" width="12" height="20" /></g>
+
+<g><ellipse class="c-surface" cx="60" cy="59" rx="24" ry="28" /></g>
+
+<g>
+    <path class="c-hair" d="M35.5 59 Q32.5 41 40.5 34 Q46.5 27.5 54.5 29 Q61 24.5 68.5 28 Q79.5 29.5 84 40 Q87.5 47 85 53 Q88 57 84 61 Q81.5 53 76.5 49 Q72.5 44.5 67 47 Q61.5 41.5 54.5 44.5 Q48.5 43 45 47.5 Q39.5 52 35.5 59 Z" />
+    <path class="c-hair-line" d="M47 32 Q44.5 37.5 46 44" />
+    <path class="c-hair-line" d="M58 33.5 Q64 31 70 34" />
+    <path class="c-hair-line" d="M74 37 Q78.5 39.5 80 44.5" />
+  </g>
+
+<g id="brows" transform="translate(60 55) rotate(0) scale(1 1) translate(-60 -54)" class="part"><g>
+    <path class="c-brow" d="M44 55 Q49 52.5 54 54.5" />
+    <path class="c-brow" d="M66 54 Q71 51 76 53.5" />
+  </g>
+  </g>
+<g id="eyes" transform="translate(59 65) rotate(0) scale(1 1) translate(-60 -63)" class="part"><g>
+    <ellipse class="c-fill" cx="49" cy="63" rx="2.5" ry="3.1" />
+    <ellipse class="c-fill" cx="71" cy="63" rx="2.5" ry="3.1" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M55 75 Q60 78 65 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M55 74 Q60 81 65 74 Z" />
+  </g>
+
+</g>
+<g id="book" class="part">
+<g><rect class="c-accent" x="74" y="118" width="7" height="13" rx="1.2" /></g>
+
+<g>
+    <path class="c-paper" d="M36 128 Q49 122 62 128 L62 150 Q49 144 36 150 Z" />
+    <path class="c-thin" d="M41 134 Q48.5 131 56 134" />
+    <path class="c-thin" d="M41 140 Q48.5 137 56 140" />
+  </g>
+
+<g>
+    <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+    <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+  </g>
+
+<g>
+    <g id="turning-page" transform="translate(62 135) rotate(0) scale(-0.8 1) translate(-62 -139)" style="opacity: 1" class="prop">
+      <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+      <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+      <path class="c-thin" d="M68 140 Q75.5 137 83 140" />
+    </g>
+  </g>
+
+<g>
+    <circle class="c-surface" cx="36" cy="147" r="6" />
+    <circle class="c-surface" cx="88" cy="147" r="6" />
+  </g>
+
+<g>
+    <g id="quote-note" class="prop">
+      <rect class="c-paper" x="80" y="88" width="30" height="18" rx="2" />
+      <circle class="c-fill" cx="86" cy="98" r="1.7" />
+      <path class="c-thin" d="M84.5 98 Q84.5 94.8 87.2 93.8" />
+      <circle class="c-fill" cx="90.5" cy="98" r="1.7" />
+      <path class="c-thin" d="M89.0 98 Q89.0 94.8 91.7 93.8" />
+      <circle class="c-fill" cx="100" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M101.5 93.5 Q101.5 96.7 98.8 97.7" />
+      <circle class="c-fill" cx="104.5" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M106.0 93.5 Q106.0 96.7 103.3 97.7" />
+      <path class="c-thin" d="M86 102 L104 102" />
+    </g>
+    <circle id="free-hand" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+</g>
+  </svg>
+  <text class="legend" x="24" y="621.0">Result available</text>
+  <text class="legend-note" x="24" y="639.0">1200 ms</text>
+  <rect class="panel" x="150" y="526" width="190" height="190" rx="6"/>
+  <svg x="150" y="526" width="190" height="190" viewBox="-16 0 152 152">
+<g><path class="c-surface" d="M29 152 L33 114 Q60 101 87 114 L91 152 Z" /></g>
+
+<g>
+    <path class="c-accent" d="M39 152 L40 117 Q49 112 53 105 L60 130 L67 105 Q71 112 80 117 L81 152 Z" />
+    <path class="c-line" d="M53 105 L57 112 L60 106 L63 112 L67 105" />
+  </g>
+
+<g id="head" class="part">
+<g><rect class="c-surface" x="54" y="84" width="12" height="20" /></g>
+
+<g><ellipse class="c-surface" cx="60" cy="59" rx="24" ry="28" /></g>
+
+<g>
+    <path class="c-hair" d="M35.5 59 Q32.5 41 40.5 34 Q46.5 27.5 54.5 29 Q61 24.5 68.5 28 Q79.5 29.5 84 40 Q87.5 47 85 53 Q88 57 84 61 Q81.5 53 76.5 49 Q72.5 44.5 67 47 Q61.5 41.5 54.5 44.5 Q48.5 43 45 47.5 Q39.5 52 35.5 59 Z" />
+    <path class="c-hair-line" d="M47 32 Q44.5 37.5 46 44" />
+    <path class="c-hair-line" d="M58 33.5 Q64 31 70 34" />
+    <path class="c-hair-line" d="M74 37 Q78.5 39.5 80 44.5" />
+  </g>
+
+<g id="brows" class="part"><g>
+    <path class="c-brow" d="M44 55 Q49 52.5 54 54.5" />
+    <path class="c-brow" d="M66 54 Q71 51 76 53.5" />
+  </g>
+  </g>
+<g id="eyes" class="part"><g>
+    <ellipse class="c-fill" cx="49" cy="63" rx="2.5" ry="3.1" />
+    <ellipse class="c-fill" cx="71" cy="63" rx="2.5" ry="3.1" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M55 75 Q60 78 65 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M55 74 Q60 81 65 74 Z" />
+  </g>
+
+</g>
+<g id="book" class="part">
+<g><rect class="c-accent" x="74" y="118" width="7" height="13" rx="1.2" /></g>
+
+<g>
+    <path class="c-paper" d="M36 128 Q49 122 62 128 L62 150 Q49 144 36 150 Z" />
+    <path class="c-thin" d="M41 134 Q48.5 131 56 134" />
+    <path class="c-thin" d="M41 140 Q48.5 137 56 140" />
+  </g>
+
+<g>
+    <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+    <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+  </g>
+
+<g>
+    <g id="turning-page" class="prop">
+      <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+      <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+      <path class="c-thin" d="M68 140 Q75.5 137 83 140" />
+    </g>
+  </g>
+
+<g>
+    <circle class="c-surface" cx="36" cy="147" r="6" />
+    <circle class="c-surface" cx="88" cy="147" r="6" />
+  </g>
+
+<g>
+    <g id="quote-note" class="prop">
+      <rect class="c-paper" x="80" y="88" width="30" height="18" rx="2" />
+      <circle class="c-fill" cx="86" cy="98" r="1.7" />
+      <path class="c-thin" d="M84.5 98 Q84.5 94.8 87.2 93.8" />
+      <circle class="c-fill" cx="90.5" cy="98" r="1.7" />
+      <path class="c-thin" d="M89.0 98 Q89.0 94.8 91.7 93.8" />
+      <circle class="c-fill" cx="100" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M101.5 93.5 Q101.5 96.7 98.8 97.7" />
+      <circle class="c-fill" cx="104.5" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M106.0 93.5 Q106.0 96.7 103.3 97.7" />
+      <path class="c-thin" d="M86 102 L104 102" />
+    </g>
+    <circle id="free-hand" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+</g>
+  </svg>
+  <rect class="panel" x="356" y="526" width="190" height="190" rx="6"/>
+  <svg x="356" y="526" width="190" height="190" viewBox="-16 0 152 152">
+<g><path class="c-surface" d="M29 152 L33 114 Q60 101 87 114 L91 152 Z" /></g>
+
+<g>
+    <path class="c-accent" d="M39 152 L40 117 Q49 112 53 105 L60 130 L67 105 Q71 112 80 117 L81 152 Z" />
+    <path class="c-line" d="M53 105 L57 112 L60 106 L63 112 L67 105" />
+  </g>
+
+<g id="head" class="part">
+<g><rect class="c-surface" x="54" y="84" width="12" height="20" /></g>
+
+<g><ellipse class="c-surface" cx="60" cy="59" rx="24" ry="28" /></g>
+
+<g>
+    <path class="c-hair" d="M35.5 59 Q32.5 41 40.5 34 Q46.5 27.5 54.5 29 Q61 24.5 68.5 28 Q79.5 29.5 84 40 Q87.5 47 85 53 Q88 57 84 61 Q81.5 53 76.5 49 Q72.5 44.5 67 47 Q61.5 41.5 54.5 44.5 Q48.5 43 45 47.5 Q39.5 52 35.5 59 Z" />
+    <path class="c-hair-line" d="M47 32 Q44.5 37.5 46 44" />
+    <path class="c-hair-line" d="M58 33.5 Q64 31 70 34" />
+    <path class="c-hair-line" d="M74 37 Q78.5 39.5 80 44.5" />
+  </g>
+
+<g id="brows" transform="translate(60 52.5) rotate(0) scale(1 1) translate(-60 -54)" class="part"><g>
+    <path class="c-brow" d="M44 55 Q49 52.5 54 54.5" />
+    <path class="c-brow" d="M66 54 Q71 51 76 53.5" />
+  </g>
+  </g>
+<g id="eyes" transform="translate(61 62.5) rotate(0) scale(1 1) translate(-60 -63)" class="part"><g>
+    <ellipse class="c-fill" cx="49" cy="63" rx="2.5" ry="3.1" />
+    <ellipse class="c-fill" cx="71" cy="63" rx="2.5" ry="3.1" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M55 75 Q60 78 65 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M55 74 Q60 81 65 74 Z" />
+  </g>
+
+</g>
+<g id="book" transform="translate(62 138) rotate(-2) scale(1.02 1.02) translate(-62 -140)" class="part">
+<g><rect class="c-accent" x="74" y="118" width="7" height="13" rx="1.2" /></g>
+
+<g>
+    <path class="c-paper" d="M36 128 Q49 122 62 128 L62 150 Q49 144 36 150 Z" />
+    <path class="c-thin" d="M41 134 Q48.5 131 56 134" />
+    <path class="c-thin" d="M41 140 Q48.5 137 56 140" />
+  </g>
+
+<g>
+    <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+    <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+  </g>
+
+<g>
+    <g id="turning-page" class="prop">
+      <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+      <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+      <path class="c-thin" d="M68 140 Q75.5 137 83 140" />
+    </g>
+  </g>
+
+<g>
+    <circle class="c-surface" cx="36" cy="147" r="6" />
+    <circle class="c-surface" cx="88" cy="147" r="6" />
+  </g>
+
+<g>
+    <g id="quote-note" transform="translate(86 110) rotate(0) scale(0.65 0.65) translate(-95 -97)" style="opacity: 1" class="prop">
+      <rect class="c-paper" x="80" y="88" width="30" height="18" rx="2" />
+      <circle class="c-fill" cx="86" cy="98" r="1.7" />
+      <path class="c-thin" d="M84.5 98 Q84.5 94.8 87.2 93.8" />
+      <circle class="c-fill" cx="90.5" cy="98" r="1.7" />
+      <path class="c-thin" d="M89.0 98 Q89.0 94.8 91.7 93.8" />
+      <circle class="c-fill" cx="100" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M101.5 93.5 Q101.5 96.7 98.8 97.7" />
+      <circle class="c-fill" cx="104.5" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M106.0 93.5 Q106.0 96.7 103.3 97.7" />
+      <path class="c-thin" d="M86 102 L104 102" />
+    </g>
+    <circle id="free-hand" transform="translate(80 116) rotate(0) scale(1 1) translate(0 0)" style="opacity: 1" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+</g>
+  </svg>
+  <rect class="panel" x="562" y="526" width="190" height="190" rx="6"/>
+  <svg x="562" y="526" width="190" height="190" viewBox="-16 0 152 152">
+<g><path class="c-surface" d="M29 152 L33 114 Q60 101 87 114 L91 152 Z" /></g>
+
+<g>
+    <path class="c-accent" d="M39 152 L40 117 Q49 112 53 105 L60 130 L67 105 Q71 112 80 117 L81 152 Z" />
+    <path class="c-line" d="M53 105 L57 112 L60 106 L63 112 L67 105" />
+  </g>
+
+<g id="head" class="part">
+<g><rect class="c-surface" x="54" y="84" width="12" height="20" /></g>
+
+<g><ellipse class="c-surface" cx="60" cy="59" rx="24" ry="28" /></g>
+
+<g>
+    <path class="c-hair" d="M35.5 59 Q32.5 41 40.5 34 Q46.5 27.5 54.5 29 Q61 24.5 68.5 28 Q79.5 29.5 84 40 Q87.5 47 85 53 Q88 57 84 61 Q81.5 53 76.5 49 Q72.5 44.5 67 47 Q61.5 41.5 54.5 44.5 Q48.5 43 45 47.5 Q39.5 52 35.5 59 Z" />
+    <path class="c-hair-line" d="M47 32 Q44.5 37.5 46 44" />
+    <path class="c-hair-line" d="M58 33.5 Q64 31 70 34" />
+    <path class="c-hair-line" d="M74 37 Q78.5 39.5 80 44.5" />
+  </g>
+
+<g id="brows" transform="translate(60 51.5) rotate(0) scale(1 1) translate(-60 -54)" class="part"><g>
+    <path class="c-brow" d="M44 55 Q49 52.5 54 54.5" />
+    <path class="c-brow" d="M66 54 Q71 51 76 53.5" />
+  </g>
+  </g>
+<g id="eyes" transform="translate(62 62) rotate(0) scale(1 1) translate(-60 -63)" class="part"><g>
+    <ellipse class="c-fill" cx="49" cy="63" rx="2.5" ry="3.1" />
+    <ellipse class="c-fill" cx="71" cy="63" rx="2.5" ry="3.1" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M55 75 Q60 78 65 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M55 74 Q60 81 65 74 Z" />
+  </g>
+
+</g>
+<g id="book" transform="translate(62 136) rotate(-4) scale(1.04 1.04) translate(-62 -140)" class="part">
+<g><rect class="c-accent" x="74" y="118" width="7" height="13" rx="1.2" /></g>
+
+<g>
+    <path class="c-paper" d="M36 128 Q49 122 62 128 L62 150 Q49 144 36 150 Z" />
+    <path class="c-thin" d="M41 134 Q48.5 131 56 134" />
+    <path class="c-thin" d="M41 140 Q48.5 137 56 140" />
+  </g>
+
+<g>
+    <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+    <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+  </g>
+
+<g>
+    <g id="turning-page" class="prop">
+      <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+      <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+      <path class="c-thin" d="M68 140 Q75.5 137 83 140" />
+    </g>
+  </g>
+
+<g>
+    <circle class="c-surface" cx="36" cy="147" r="6" />
+    <circle class="c-surface" cx="88" cy="147" r="6" />
+  </g>
+
+<g>
+    <g id="quote-note" transform="translate(95 97) rotate(-3) scale(1.1 1.1) translate(-95 -97)" style="opacity: 1" class="prop">
+      <rect class="c-paper" x="80" y="88" width="30" height="18" rx="2" />
+      <circle class="c-fill" cx="86" cy="98" r="1.7" />
+      <path class="c-thin" d="M84.5 98 Q84.5 94.8 87.2 93.8" />
+      <circle class="c-fill" cx="90.5" cy="98" r="1.7" />
+      <path class="c-thin" d="M89.0 98 Q89.0 94.8 91.7 93.8" />
+      <circle class="c-fill" cx="100" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M101.5 93.5 Q101.5 96.7 98.8 97.7" />
+      <circle class="c-fill" cx="104.5" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M106.0 93.5 Q106.0 96.7 103.3 97.7" />
+      <path class="c-thin" d="M86 102 L104 102" />
+    </g>
+    <circle id="free-hand" transform="translate(80 106) rotate(0) scale(1 1) translate(0 0)" style="opacity: 1" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+</g>
+  </svg>
+  <rect class="panel" x="768" y="526" width="190" height="190" rx="6"/>
+  <svg x="768" y="526" width="190" height="190" viewBox="-16 0 152 152">
+<g><path class="c-surface" d="M29 152 L33 114 Q60 101 87 114 L91 152 Z" /></g>
+
+<g>
+    <path class="c-accent" d="M39 152 L40 117 Q49 112 53 105 L60 130 L67 105 Q71 112 80 117 L81 152 Z" />
+    <path class="c-line" d="M53 105 L57 112 L60 106 L63 112 L67 105" />
+  </g>
+
+<g id="head" class="part">
+<g><rect class="c-surface" x="54" y="84" width="12" height="20" /></g>
+
+<g><ellipse class="c-surface" cx="60" cy="59" rx="24" ry="28" /></g>
+
+<g>
+    <path class="c-hair" d="M35.5 59 Q32.5 41 40.5 34 Q46.5 27.5 54.5 29 Q61 24.5 68.5 28 Q79.5 29.5 84 40 Q87.5 47 85 53 Q88 57 84 61 Q81.5 53 76.5 49 Q72.5 44.5 67 47 Q61.5 41.5 54.5 44.5 Q48.5 43 45 47.5 Q39.5 52 35.5 59 Z" />
+    <path class="c-hair-line" d="M47 32 Q44.5 37.5 46 44" />
+    <path class="c-hair-line" d="M58 33.5 Q64 31 70 34" />
+    <path class="c-hair-line" d="M74 37 Q78.5 39.5 80 44.5" />
+  </g>
+
+<g id="brows" transform="translate(60 52.5) rotate(0) scale(1 1) translate(-60 -54)" class="part"><g>
+    <path class="c-brow" d="M44 55 Q49 52.5 54 54.5" />
+    <path class="c-brow" d="M66 54 Q71 51 76 53.5" />
+  </g>
+  </g>
+<g id="eyes" transform="translate(61 62.5) rotate(0) scale(1 1) translate(-60 -63)" class="part"><g>
+    <ellipse class="c-fill" cx="49" cy="63" rx="2.5" ry="3.1" />
+    <ellipse class="c-fill" cx="71" cy="63" rx="2.5" ry="3.1" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M55 75 Q60 78 65 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M55 74 Q60 81 65 74 Z" />
+  </g>
+
+</g>
+<g id="book" transform="translate(62 138) rotate(-2) scale(1.02 1.02) translate(-62 -140)" class="part">
+<g><rect class="c-accent" x="74" y="118" width="7" height="13" rx="1.2" /></g>
+
+<g>
+    <path class="c-paper" d="M36 128 Q49 122 62 128 L62 150 Q49 144 36 150 Z" />
+    <path class="c-thin" d="M41 134 Q48.5 131 56 134" />
+    <path class="c-thin" d="M41 140 Q48.5 137 56 140" />
+  </g>
+
+<g>
+    <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+    <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+  </g>
+
+<g>
+    <g id="turning-page" class="prop">
+      <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+      <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+      <path class="c-thin" d="M68 140 Q75.5 137 83 140" />
+    </g>
+  </g>
+
+<g>
+    <circle class="c-surface" cx="36" cy="147" r="6" />
+    <circle class="c-surface" cx="88" cy="147" r="6" />
+  </g>
+
+<g>
+    <g id="quote-note" transform="translate(86 110) rotate(0) scale(0.65 0.65) translate(-95 -97)" style="opacity: 1" class="prop">
+      <rect class="c-paper" x="80" y="88" width="30" height="18" rx="2" />
+      <circle class="c-fill" cx="86" cy="98" r="1.7" />
+      <path class="c-thin" d="M84.5 98 Q84.5 94.8 87.2 93.8" />
+      <circle class="c-fill" cx="90.5" cy="98" r="1.7" />
+      <path class="c-thin" d="M89.0 98 Q89.0 94.8 91.7 93.8" />
+      <circle class="c-fill" cx="100" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M101.5 93.5 Q101.5 96.7 98.8 97.7" />
+      <circle class="c-fill" cx="104.5" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M106.0 93.5 Q106.0 96.7 103.3 97.7" />
+      <path class="c-thin" d="M86 102 L104 102" />
+    </g>
+    <circle id="free-hand" transform="translate(80 116) rotate(0) scale(1 1) translate(0 0)" style="opacity: 1" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+</g>
+  </svg>
+</svg>

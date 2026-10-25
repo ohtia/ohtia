@@ -1,9 +1,11 @@
 ---
-generated:
-  by: claude-code/claude-opus-5-5
 type: Specification
 title: Ohtia design system
 description: Visual identity, tokens, symbol and character, typography, composition, accessibility, localization, components and patterns of Ohtia's interface.
+generated:
+  by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 tags:
   - design
   - accessibility
@@ -51,7 +53,7 @@ This document defines the visual identity and design system of Ohtia's interface
 ## Scope and relationship to other documents
 
 - The [product definition](product-definition.md) retains authority over entity meanings, trust policy, comparison outcomes, levels of criticism and the pace indicator. This document defines their presentation without redefining them.
-- [Ohtia and agent identity](agent-identity.md) owns the distinction between the product character, named AI contributors and human supervisors, along with labels, event-batch behavior and character-presentation preferences. [Agent collaboration](agent-collaboration.md) owns the specialists' research responsibilities and authority.
+- [Ohtia and agent identity](agents/agent-identity.md) owns the distinction between the product character, named AI contributors and human supervisors, along with labels, event-batch behavior and character-presentation preferences. [Agent collaboration](agents/agent-collaboration.md) owns the specialists' research responsibilities and authority.
 - [ADR-0025](adr/adr-0025-bundled-plex-and-noto-fonts.md) establishes the IBM Plex roles and justifies distribution, loading, coverage, fallback and use in exports. This document specifies stacks by script, evaluated files, scales and weights.
 - [ADR-0024](adr/adr-0024-typed-localization-catalogs.md) defines message catalogs and locale resolution. This document establishes visual localization rules.
 - [ADR-0023](adr/adr-0023-desktop-accessibility-verification.md) sets the accessibility target: WCAG 2.2 AA and the adopted AAA criteria. This document defines their application, blockers and verification.
@@ -91,49 +93,91 @@ Implemented tokens are generated from their canonical definitions here and in Wo
 
 Each ramp retains a single hue. Its step number is OKLCH lightness multiplied by 100 and rounded, so distance between steps anticipates contrast. The canonical value is hexadecimal sRGB; the OKLCH column records the parameters from which it was derived, all within sRGB gamut.[^css-color-4]
 
-| Token                  | Value     | OKLCH derivation         |
-| ---------------------- | --------- | ------------------------ |
-| `ref.color.neutral.98` | `#faf8f5` | `oklch(0.980 0.004 80)`  |
-| `ref.color.neutral.96` | `#f4f1ed` | `oklch(0.960 0.006 80)`  |
-| `ref.color.neutral.93` | `#ebe7e2` | `oklch(0.930 0.008 80)`  |
-| `ref.color.neutral.88` | `#dad7d2` | `oklch(0.880 0.008 80)`  |
-| `ref.color.neutral.80` | `#c1bdb7` | `oklch(0.800 0.010 80)`  |
-| `ref.color.neutral.61` | `#87827b` | `oklch(0.610 0.012 80)`  |
-| `ref.color.neutral.41` | `#4e4a43` | `oklch(0.410 0.012 80)`  |
-| `ref.color.neutral.32` | `#35322e` | `oklch(0.320 0.008 80)`  |
-| `ref.color.neutral.26` | `#262420` | `oklch(0.260 0.008 80)`  |
-| `ref.color.neutral.23` | `#1f1d19` | `oklch(0.230 0.008 80)`  |
-| `ref.color.neutral.21` | `#1a1815` | `oklch(0.210 0.007 80)`  |
-| `ref.color.neutral.19` | `#151411` | `oklch(0.190 0.006 80)`  |
-| `ref.color.plum.95`    | `#fae9f2` | `oklch(0.950 0.022 345)` |
-| `ref.color.plum.82`    | `#edaed1` | `oklch(0.820 0.085 345)` |
-| `ref.color.plum.66`    | `#be79a0` | `oklch(0.660 0.100 345)` |
-| `ref.color.plum.60`    | `#ae648f` | `oklch(0.600 0.110 345)` |
-| `ref.color.plum.40`    | `#6f2b55` | `oklch(0.400 0.110 345)` |
-| `ref.color.plum.27`    | `#341e2b` | `oklch(0.270 0.040 345)` |
-| `ref.color.blue.95`    | `#e4f0fc` | `oklch(0.950 0.020 248)` |
-| `ref.color.blue.88`    | `#c1dbf4` | `oklch(0.880 0.045 248)` |
-| `ref.color.blue.82`    | `#a1c9f0` | `oklch(0.820 0.070 248)` |
-| `ref.color.blue.66`    | `#6a97c1` | `oklch(0.660 0.080 248)` |
-| `ref.color.blue.60`    | `#5385b4` | `oklch(0.600 0.090 248)` |
-| `ref.color.blue.40`    | `#184a75` | `oklch(0.400 0.090 248)` |
-| `ref.color.blue.27`    | `#182837` | `oklch(0.270 0.035 248)` |
-| `ref.color.yellow.92`  | `#f6e5a4` | `oklch(0.920 0.085 95)`  |
-| `ref.color.yellow.72`  | `#bca341` | `oklch(0.720 0.120 95)`  |
-| `ref.color.yellow.60`  | `#977e0d` | `oklch(0.600 0.120 95)`  |
-| `ref.color.yellow.36`  | `#483c0d` | `oklch(0.360 0.065 95)`  |
-| `ref.color.amber.95`   | `#fcecd9` | `oklch(0.950 0.030 70)`  |
-| `ref.color.amber.84`   | `#f5bf81` | `oklch(0.840 0.100 70)`  |
-| `ref.color.amber.68`   | `#c78a3b` | `oklch(0.680 0.120 70)`  |
-| `ref.color.amber.62`   | `#b77610` | `oklch(0.620 0.130 70)`  |
-| `ref.color.amber.42`   | `#6b4306` | `oklch(0.420 0.088 70)`  |
-| `ref.color.amber.28`   | `#37250e` | `oklch(0.280 0.045 70)`  |
-| `ref.color.red.95`     | `#fceae7` | `oklch(0.950 0.020 27)`  |
-| `ref.color.red.80`     | `#f8a59b` | `oklch(0.800 0.100 27)`  |
-| `ref.color.red.66`     | `#db6c62` | `oklch(0.660 0.140 27)`  |
-| `ref.color.red.57`     | `#c8433c` | `oklch(0.570 0.170 27)`  |
-| `ref.color.red.42`     | `#8b1e1c` | `oklch(0.420 0.145 27)`  |
-| `ref.color.red.28`     | `#3e1f1b` | `oklch(0.280 0.050 27)`  |
+| Token                     | Value     | OKLCH derivation         |
+| ------------------------- | --------- | ------------------------ |
+| `ref.color.neutral.98`    | `#faf8f5` | `oklch(0.980 0.004 80)`  |
+| `ref.color.neutral.96`    | `#f4f1ed` | `oklch(0.960 0.006 80)`  |
+| `ref.color.neutral.93`    | `#ebe7e2` | `oklch(0.930 0.008 80)`  |
+| `ref.color.neutral.88`    | `#dad7d2` | `oklch(0.880 0.008 80)`  |
+| `ref.color.neutral.80`    | `#c1bdb7` | `oklch(0.800 0.010 80)`  |
+| `ref.color.neutral.61`    | `#87827b` | `oklch(0.610 0.012 80)`  |
+| `ref.color.neutral.41`    | `#4e4a43` | `oklch(0.410 0.012 80)`  |
+| `ref.color.neutral.32`    | `#35322e` | `oklch(0.320 0.008 80)`  |
+| `ref.color.neutral.26`    | `#262420` | `oklch(0.260 0.008 80)`  |
+| `ref.color.neutral.23`    | `#1f1d19` | `oklch(0.230 0.008 80)`  |
+| `ref.color.neutral.21`    | `#1a1815` | `oklch(0.210 0.007 80)`  |
+| `ref.color.neutral.19`    | `#151411` | `oklch(0.190 0.006 80)`  |
+| `ref.color.plum.95`       | `#fae9f2` | `oklch(0.950 0.022 345)` |
+| `ref.color.plum.82`       | `#edaed1` | `oklch(0.820 0.085 345)` |
+| `ref.color.plum.66`       | `#be79a0` | `oklch(0.660 0.100 345)` |
+| `ref.color.plum.60`       | `#ae648f` | `oklch(0.600 0.110 345)` |
+| `ref.color.plum.40`       | `#6f2b55` | `oklch(0.400 0.110 345)` |
+| `ref.color.plum.27`       | `#341e2b` | `oklch(0.270 0.040 345)` |
+| `ref.color.blue.95`       | `#e4f0fc` | `oklch(0.950 0.020 248)` |
+| `ref.color.blue.88`       | `#c1dbf4` | `oklch(0.880 0.045 248)` |
+| `ref.color.blue.82`       | `#a1c9f0` | `oklch(0.820 0.070 248)` |
+| `ref.color.blue.66`       | `#6a97c1` | `oklch(0.660 0.080 248)` |
+| `ref.color.blue.60`       | `#5385b4` | `oklch(0.600 0.090 248)` |
+| `ref.color.blue.40`       | `#184a75` | `oklch(0.400 0.090 248)` |
+| `ref.color.blue.27`       | `#182837` | `oklch(0.270 0.035 248)` |
+| `ref.color.yellow.92`     | `#f6e5a4` | `oklch(0.920 0.085 95)`  |
+| `ref.color.yellow.72`     | `#bca341` | `oklch(0.720 0.120 95)`  |
+| `ref.color.yellow.60`     | `#977e0d` | `oklch(0.600 0.120 95)`  |
+| `ref.color.yellow.36`     | `#483c0d` | `oklch(0.360 0.065 95)`  |
+| `ref.color.amber.95`      | `#fcecd9` | `oklch(0.950 0.030 70)`  |
+| `ref.color.amber.84`      | `#f5bf81` | `oklch(0.840 0.100 70)`  |
+| `ref.color.amber.68`      | `#c78a3b` | `oklch(0.680 0.120 70)`  |
+| `ref.color.amber.62`      | `#b77610` | `oklch(0.620 0.130 70)`  |
+| `ref.color.amber.42`      | `#6b4306` | `oklch(0.420 0.088 70)`  |
+| `ref.color.amber.28`      | `#37250e` | `oklch(0.280 0.045 70)`  |
+| `ref.color.red.95`        | `#fceae7` | `oklch(0.950 0.020 27)`  |
+| `ref.color.red.80`        | `#f8a59b` | `oklch(0.800 0.100 27)`  |
+| `ref.color.red.66`        | `#db6c62` | `oklch(0.660 0.140 27)`  |
+| `ref.color.red.57`        | `#c8433c` | `oklch(0.570 0.170 27)`  |
+| `ref.color.red.42`        | `#8b1e1c` | `oklch(0.420 0.145 27)`  |
+| `ref.color.red.28`        | `#3e1f1b` | `oklch(0.280 0.050 27)`  |
+| `ref.color.jade.95`       | `#e0f4eb` | `oklch(0.950 0.025 166)` |
+| `ref.color.jade.84`       | `#98dcbf` | `oklch(0.840 0.080 166)` |
+| `ref.color.jade.80`       | `#85d0b1` | `oklch(0.800 0.088 166)` |
+| `ref.color.jade.48`       | `#286c53` | `oklch(0.480 0.080 166)` |
+| `ref.color.jade.40`       | `#07553e` | `oklch(0.400 0.080 166)` |
+| `ref.color.jade.27`       | `#142c22` | `oklch(0.270 0.035 166)` |
+| `ref.color.terracotta.95` | `#feeae1` | `oklch(0.950 0.025 45)`  |
+| `ref.color.terracotta.84` | `#faba9d` | `oklch(0.840 0.085 45)`  |
+| `ref.color.terracotta.80` | `#f1ab8b` | `oklch(0.800 0.094 45)`  |
+| `ref.color.terracotta.48` | `#854d33` | `oklch(0.480 0.085 45)`  |
+| `ref.color.terracotta.40` | `#6c371d` | `oklch(0.400 0.085 45)`  |
+| `ref.color.terracotta.27` | `#352118` | `oklch(0.270 0.035 45)`  |
+| `ref.color.indigo.95`     | `#eaeefe` | `oklch(0.950 0.022 275)` |
+| `ref.color.indigo.84`     | `#bbc7fe` | `oklch(0.840 0.078 275)` |
+| `ref.color.indigo.80`     | `#adbaf7` | `oklch(0.800 0.088 275)` |
+| `ref.color.indigo.48`     | `#505a8b` | `oklch(0.480 0.080 275)` |
+| `ref.color.indigo.40`     | `#3b4372` | `oklch(0.400 0.080 275)` |
+| `ref.color.indigo.27`     | `#212538` | `oklch(0.270 0.035 275)` |
+| `ref.color.olive.95`      | `#edf1df` | `oklch(0.950 0.025 118)` |
+| `ref.color.olive.84`      | `#c5d38f` | `oklch(0.840 0.090 118)` |
+| `ref.color.olive.80`      | `#b8c77c` | `oklch(0.800 0.099 118)` |
+| `ref.color.olive.48`      | `#596423` | `oklch(0.480 0.090 118)` |
+| `ref.color.olive.40`      | `#444e05` | `oklch(0.400 0.090 118)` |
+| `ref.color.olive.27`      | `#252915` | `oklch(0.270 0.035 118)` |
+| `ref.color.petrol.95`     | `#def3fb` | `oklch(0.950 0.025 225)` |
+| `ref.color.petrol.84`     | `#95d6f0` | `oklch(0.840 0.075 225)` |
+| `ref.color.petrol.80`     | `#81cae6` | `oklch(0.800 0.083 225)` |
+| `ref.color.petrol.48`     | `#24667d` | `oklch(0.480 0.075 225)` |
+| `ref.color.petrol.40`     | `#025066` | `oklch(0.400 0.075 225)` |
+| `ref.color.petrol.27`     | `#112a33` | `oklch(0.270 0.035 225)` |
+| `ref.color.graphite.95`   | `#f1eee9` | `oklch(0.950 0.008 80)`  |
+| `ref.color.graphite.84`   | `#cfcac2` | `oklch(0.840 0.012 80)`  |
+| `ref.color.graphite.80`   | `#c2bdb5` | `oklch(0.800 0.012 80)`  |
+| `ref.color.graphite.48`   | `#615d56` | `oklch(0.480 0.012 80)`  |
+| `ref.color.graphite.40`   | `#4b4741` | `oklch(0.400 0.012 80)`  |
+| `ref.color.graphite.27`   | `#292622` | `oklch(0.270 0.009 80)`  |
+| `ref.color.violet.95`     | `#f6eafa` | `oklch(0.950 0.025 318)` |
+| `ref.color.violet.84`     | `#e1bbed` | `oklch(0.840 0.080 318)` |
+| `ref.color.violet.80`     | `#d6ace3` | `oklch(0.800 0.088 318)` |
+| `ref.color.violet.48`     | `#704f7b` | `oklch(0.480 0.080 318)` |
+| `ref.color.violet.40`     | `#593963` | `oklch(0.400 0.080 318)` |
+| `ref.color.violet.27`     | `#2e2132` | `oklch(0.270 0.035 318)` |
 
 #### Semantic color tokens
 
@@ -175,82 +219,146 @@ Two additional tokens complete overlay layers:
 - `overlay.scrim`: `neutral.23` at 40% opacity in light mode and `neutral.19` at 72% in dark mode. It sits behind modal dialogs and drawers.
 - `shadow.overlay`: vertical offset 8 px and blur 24 px in `neutral.23` at 16% opacity. In dark mode the shadow does not separate layers; therefore menus, popovers and dialogs use `surface.panel` and a `border.subtle` border in both modes.
 
+#### Contributor identity colors
+
+Each named AI contributor has three identity tokens for its full illustration and avatar: `line` for strokes, hair, eyes and drawn outlines; `accent` for clothing and small prop details such as tabs, flags, paragraph blocks and a pencil body; and `surface` for skin, paper and props. Their hues avoid the plum, blue, yellow, amber and red ramps that carry provenance, supervisor, evidence, attention and danger meanings. [Contributor characters and avatars](#contributor-characters-and-avatars) defines where they apply.
+
+| Token                          | Light           | Dark            | Use                                  |
+| ------------------------------ | --------------- | --------------- | ------------------------------------ |
+| `character.virgilio.line`      | `jade.40`       | `jade.84`       | Virgilio drawing lines               |
+| `character.virgilio.accent`    | `jade.80`       | `jade.48`       | Virgilio clothing and prop details   |
+| `character.virgilio.surface`   | `jade.95`       | `jade.27`       | Virgilio skin, paper and props       |
+| `character.josefa.line`        | `terracotta.40` | `terracotta.84` | Josefa drawing lines                 |
+| `character.josefa.accent`      | `terracotta.80` | `terracotta.48` | Josefa clothing and prop details     |
+| `character.josefa.surface`     | `terracotta.95` | `terracotta.27` | Josefa skin, paper and props         |
+| `character.jorge-luis.line`    | `indigo.40`     | `indigo.84`     | Jorge Luis drawing lines             |
+| `character.jorge-luis.accent`  | `indigo.80`     | `indigo.48`     | Jorge Luis clothing and prop details |
+| `character.jorge-luis.surface` | `indigo.95`     | `indigo.27`     | Jorge Luis skin, paper and props     |
+| `character.erasmus.line`       | `olive.40`      | `olive.84`      | Erasmus drawing lines                |
+| `character.erasmus.accent`     | `olive.80`      | `olive.48`      | Erasmus clothing and prop details    |
+| `character.erasmus.surface`    | `olive.95`      | `olive.27`      | Erasmus skin, paper and props        |
+| `character.thomas.line`        | `petrol.40`     | `petrol.84`     | Thomas drawing lines                 |
+| `character.thomas.accent`      | `petrol.80`     | `petrol.48`     | Thomas clothing and prop details     |
+| `character.thomas.surface`     | `petrol.95`     | `petrol.27`     | Thomas skin, paper and props         |
+| `character.boris.line`         | `graphite.40`   | `graphite.84`   | Boris drawing lines                  |
+| `character.boris.accent`       | `graphite.80`   | `graphite.48`   | Boris clothing and prop details      |
+| `character.boris.surface`      | `graphite.95`   | `graphite.27`   | Boris skin, paper and props          |
+| `character.maria.line`         | `violet.40`     | `violet.84`     | María drawing lines                  |
+| `character.maria.accent`       | `violet.80`     | `violet.48`     | María clothing and prop details      |
+| `character.maria.surface`      | `violet.95`     | `violet.27`     | María skin, paper and props          |
+
 #### Color usage rules
 
 - Researcher text, notes and decisions use `content.primary` without another color.
 - `voice.ohtia.*` is reserved for system/AI-origin contributions, the product symbol and its character. Named AI contributors share this provenance family while retaining their own author labels; using it does not attribute their text to the Ohtia character. It is not used for links, actions, states or unrelated decoration.
+- `character.<contributor>.*` colors only that contributor's full illustration and avatar. It identifies the character, not provenance, state, quality or authority. It never colors text, voice labels, symbols, interface borders, links, actions or states; the contributor symbol and its label use `voice.ohtia.*`.
 - `voice.tutor.*` identifies the original human supervisor comment from a returned document. Agent extraction and interpretation of that comment use `voice.ohtia.*` with the actual AI contributor's label, without inheriting human authorship.
 - Primary actions use `action.primary.*`, in ink. Links use `content.primary` and are always underlined.
 - `attention.*` indicates something awaiting a researcher decision: content needing review, a comparison result worth examining, a save conflict, invalid form input or a pace behind the plan.
 - `danger.*` is reserved for risk of data loss, operation failure and destructive actions. It is not used for comparison outcomes, criticism or counts.
-- There is no success token or semantic green. A completed operation is communicated in neutral colors with an icon and text.
+- There is no success token or semantic green. A completed operation is communicated in neutral colors with an icon and text. The jade and olive contributor identity ramps are drawing colors and never indicate success.
 - `evidence.*` marks anchored source passages. The fill alone carries no information: `evidence.line` supplies non-text contrast and the accessible label identifies the anchor.
 - Voice and notice `*.surface` backgrounds are never the only indicator. Their border or line meets 3:1 and the element has text.
 - No state is communicated by color alone: it has text and an icon or shape, following criterion 1.4.1.
 
 #### Verified contrast pairs
 
-The inventory is closed: every foreground/background combination used by a component must appear in it. Values were calculated using WCAG 2.x relative luminance and contrast ratio on the reference palette's hexadecimal colors.[^wcag22] The 7:1 minimum for text applies the adopted criterion 1.4.6; 3:1 applies criterion 1.4.11 to borders, lines, icons and focus indicators. WCAG exempts inactive controls, but this system requires them to meet 3:1 so they remain legible.
+The inventory is closed: every foreground/background combination used by a component must appear in it. Values were calculated using WCAG 2.x relative luminance and contrast ratio on the reference palette's hexadecimal colors.[^wcag22] The 7:1 minimum for text applies the adopted criterion 1.4.6; 3:1 applies criterion 1.4.11 to borders, lines, icons and focus indicators. WCAG exempts inactive controls, but this system requires them to meet 3:1 so they remain legible. Contributor identity drawings contain no text; their lines meet 3:1 against the drawing's own fills and the surfaces where avatars appear.
 
-| Foreground               | Background                     | Minimum | Light   | Dark    |
-| ------------------------ | ------------------------------ | ------- | ------- | ------- |
-| `content.primary`        | `surface.page`                 | 7:1     | 15.87:1 | 14.97:1 |
-| `content.primary`        | `surface.panel`                | 7:1     | 14.94:1 | 14.39:1 |
-| `content.primary`        | `surface.emphasis`             | 7:1     | 13.67:1 | 12.59:1 |
-| `content.secondary`      | `surface.page`                 | 7:1     | 8.31:1  | 9.85:1  |
-| `content.secondary`      | `surface.panel`                | 7:1     | 7.82:1  | 9.47:1  |
-| `content.secondary`      | `surface.emphasis`             | 7:1     | 7.15:1  | 8.28:1  |
-| `voice.ohtia.content`    | `surface.page`                 | 7:1     | 9.20:1  | 10.15:1 |
-| `voice.ohtia.content`    | `surface.panel`                | 7:1     | 8.66:1  | 9.77:1  |
-| `voice.ohtia.content`    | `surface.emphasis`             | 7:1     | 7.93:1  | 8.54:1  |
-| `voice.tutor.content`    | `surface.page`                 | 7:1     | 8.71:1  | 10.64:1 |
-| `voice.tutor.content`    | `surface.panel`                | 7:1     | 8.20:1  | 10.23:1 |
-| `voice.tutor.content`    | `surface.emphasis`             | 7:1     | 7.50:1  | 8.95:1  |
-| `attention.content`      | `surface.page`                 | 7:1     | 8.15:1  | 11.10:1 |
-| `attention.content`      | `surface.panel`                | 7:1     | 7.67:1  | 10.67:1 |
-| `attention.content`      | `surface.emphasis`             | 7:1     | 7.02:1  | 9.33:1  |
-| `danger.content`         | `surface.page`                 | 7:1     | 8.61:1  | 9.51:1  |
-| `danger.content`         | `surface.panel`                | 7:1     | 8.11:1  | 9.15:1  |
-| `danger.content`         | `surface.emphasis`             | 7:1     | 7.42:1  | 8.00:1  |
-| `content.primary`        | `selection.surface`            | 7:1     | 11.78:1 | 7.50:1  |
-| `content.primary`        | `evidence.surface`             | 7:1     | 13.35:1 | 8.85:1  |
-| `content.primary`        | `voice.ohtia.surface`          | 7:1     | 14.42:1 | 12.48:1 |
-| `content.primary`        | `voice.tutor.surface`          | 7:1     | 14.56:1 | 12.21:1 |
-| `content.primary`        | `attention.surface`            | 7:1     | 14.53:1 | 11.90:1 |
-| `content.primary`        | `danger.surface`               | 7:1     | 14.47:1 | 12.04:1 |
-| `voice.ohtia.content`    | `voice.ohtia.surface`          | 7:1     | 8.36:1  | 8.47:1  |
-| `voice.tutor.content`    | `voice.tutor.surface`          | 7:1     | 7.99:1  | 8.68:1  |
-| `attention.content`      | `attention.surface`            | 7:1     | 7.46:1  | 8.83:1  |
-| `danger.content`         | `danger.surface`               | 7:1     | 7.85:1  | 7.66:1  |
-| `action.primary.content` | `action.primary.surface`       | 7:1     | 15.87:1 | 14.97:1 |
-| `action.primary.content` | `action.primary.surface-hover` | 7:1     | 12.03:1 | 9.85:1  |
-| `border.control`         | `surface.page`                 | 3:1     | 3.60:1  | 4.83:1  |
-| `border.control`         | `surface.panel`                | 3:1     | 3.39:1  | 4.65:1  |
-| `border.control`         | `surface.emphasis`             | 3:1     | 3.10:1  | 4.06:1  |
-| `border.strong`          | `surface.page`                 | 3:1     | 15.87:1 | 14.97:1 |
-| `border.strong`          | `surface.panel`                | 3:1     | 14.94:1 | 14.39:1 |
-| `border.strong`          | `surface.emphasis`             | 3:1     | 13.67:1 | 12.59:1 |
-| `focus.ring`             | `surface.page`                 | 3:1     | 15.87:1 | 14.97:1 |
-| `focus.ring`             | `surface.panel`                | 3:1     | 14.94:1 | 14.39:1 |
-| `focus.ring`             | `surface.emphasis`             | 3:1     | 13.67:1 | 12.59:1 |
-| `voice.ohtia.border`     | `surface.page`                 | 3:1     | 3.95:1  | 5.64:1  |
-| `voice.ohtia.border`     | `surface.panel`                | 3:1     | 3.72:1  | 5.43:1  |
-| `voice.ohtia.border`     | `surface.emphasis`             | 3:1     | 3.40:1  | 4.74:1  |
-| `voice.tutor.border`     | `surface.page`                 | 3:1     | 3.68:1  | 5.97:1  |
-| `voice.tutor.border`     | `surface.panel`                | 3:1     | 3.47:1  | 5.74:1  |
-| `voice.tutor.border`     | `surface.emphasis`             | 3:1     | 3.17:1  | 5.02:1  |
-| `evidence.line`          | `surface.page`                 | 3:1     | 3.73:1  | 7.42:1  |
-| `evidence.line`          | `surface.panel`                | 3:1     | 3.52:1  | 7.13:1  |
-| `evidence.line`          | `surface.emphasis`             | 3:1     | 3.22:1  | 6.24:1  |
-| `attention.border`       | `surface.page`                 | 3:1     | 3.53:1  | 6.25:1  |
-| `attention.border`       | `surface.panel`                | 3:1     | 3.32:1  | 6.01:1  |
-| `attention.border`       | `surface.emphasis`             | 3:1     | 3.04:1  | 5.26:1  |
-| `danger.border`          | `surface.page`                 | 3:1     | 4.58:1  | 5.56:1  |
-| `danger.border`          | `surface.panel`                | 3:1     | 4.31:1  | 5.34:1  |
-| `danger.border`          | `surface.emphasis`             | 3:1     | 3.95:1  | 4.67:1  |
-| `content.disabled`       | `surface.page`                 | 3:1     | 3.60:1  | 4.83:1  |
-| `content.disabled`       | `surface.panel`                | 3:1     | 3.39:1  | 4.65:1  |
-| `content.disabled`       | `surface.emphasis`             | 3:1     | 3.10:1  | 4.06:1  |
+| Foreground                  | Background                     | Minimum | Light   | Dark    |
+| --------------------------- | ------------------------------ | ------- | ------- | ------- |
+| `content.primary`           | `surface.page`                 | 7:1     | 15.87:1 | 14.97:1 |
+| `content.primary`           | `surface.panel`                | 7:1     | 14.94:1 | 14.39:1 |
+| `content.primary`           | `surface.emphasis`             | 7:1     | 13.67:1 | 12.59:1 |
+| `content.secondary`         | `surface.page`                 | 7:1     | 8.31:1  | 9.85:1  |
+| `content.secondary`         | `surface.panel`                | 7:1     | 7.82:1  | 9.47:1  |
+| `content.secondary`         | `surface.emphasis`             | 7:1     | 7.15:1  | 8.28:1  |
+| `voice.ohtia.content`       | `surface.page`                 | 7:1     | 9.20:1  | 10.15:1 |
+| `voice.ohtia.content`       | `surface.panel`                | 7:1     | 8.66:1  | 9.77:1  |
+| `voice.ohtia.content`       | `surface.emphasis`             | 7:1     | 7.93:1  | 8.54:1  |
+| `voice.tutor.content`       | `surface.page`                 | 7:1     | 8.71:1  | 10.64:1 |
+| `voice.tutor.content`       | `surface.panel`                | 7:1     | 8.20:1  | 10.23:1 |
+| `voice.tutor.content`       | `surface.emphasis`             | 7:1     | 7.50:1  | 8.95:1  |
+| `attention.content`         | `surface.page`                 | 7:1     | 8.15:1  | 11.10:1 |
+| `attention.content`         | `surface.panel`                | 7:1     | 7.67:1  | 10.67:1 |
+| `attention.content`         | `surface.emphasis`             | 7:1     | 7.02:1  | 9.33:1  |
+| `danger.content`            | `surface.page`                 | 7:1     | 8.61:1  | 9.51:1  |
+| `danger.content`            | `surface.panel`                | 7:1     | 8.11:1  | 9.15:1  |
+| `danger.content`            | `surface.emphasis`             | 7:1     | 7.42:1  | 8.00:1  |
+| `content.primary`           | `selection.surface`            | 7:1     | 11.78:1 | 7.50:1  |
+| `content.primary`           | `evidence.surface`             | 7:1     | 13.35:1 | 8.85:1  |
+| `content.primary`           | `voice.ohtia.surface`          | 7:1     | 14.42:1 | 12.48:1 |
+| `content.primary`           | `voice.tutor.surface`          | 7:1     | 14.56:1 | 12.21:1 |
+| `content.primary`           | `attention.surface`            | 7:1     | 14.53:1 | 11.90:1 |
+| `content.primary`           | `danger.surface`               | 7:1     | 14.47:1 | 12.04:1 |
+| `voice.ohtia.content`       | `voice.ohtia.surface`          | 7:1     | 8.36:1  | 8.47:1  |
+| `voice.tutor.content`       | `voice.tutor.surface`          | 7:1     | 7.99:1  | 8.68:1  |
+| `attention.content`         | `attention.surface`            | 7:1     | 7.46:1  | 8.83:1  |
+| `danger.content`            | `danger.surface`               | 7:1     | 7.85:1  | 7.66:1  |
+| `action.primary.content`    | `action.primary.surface`       | 7:1     | 15.87:1 | 14.97:1 |
+| `action.primary.content`    | `action.primary.surface-hover` | 7:1     | 12.03:1 | 9.85:1  |
+| `border.control`            | `surface.page`                 | 3:1     | 3.60:1  | 4.83:1  |
+| `border.control`            | `surface.panel`                | 3:1     | 3.39:1  | 4.65:1  |
+| `border.control`            | `surface.emphasis`             | 3:1     | 3.10:1  | 4.06:1  |
+| `border.strong`             | `surface.page`                 | 3:1     | 15.87:1 | 14.97:1 |
+| `border.strong`             | `surface.panel`                | 3:1     | 14.94:1 | 14.39:1 |
+| `border.strong`             | `surface.emphasis`             | 3:1     | 13.67:1 | 12.59:1 |
+| `focus.ring`                | `surface.page`                 | 3:1     | 15.87:1 | 14.97:1 |
+| `focus.ring`                | `surface.panel`                | 3:1     | 14.94:1 | 14.39:1 |
+| `focus.ring`                | `surface.emphasis`             | 3:1     | 13.67:1 | 12.59:1 |
+| `voice.ohtia.border`        | `surface.page`                 | 3:1     | 3.95:1  | 5.64:1  |
+| `voice.ohtia.border`        | `surface.panel`                | 3:1     | 3.72:1  | 5.43:1  |
+| `voice.ohtia.border`        | `surface.emphasis`             | 3:1     | 3.40:1  | 4.74:1  |
+| `voice.tutor.border`        | `surface.page`                 | 3:1     | 3.68:1  | 5.97:1  |
+| `voice.tutor.border`        | `surface.panel`                | 3:1     | 3.47:1  | 5.74:1  |
+| `voice.tutor.border`        | `surface.emphasis`             | 3:1     | 3.17:1  | 5.02:1  |
+| `evidence.line`             | `surface.page`                 | 3:1     | 3.73:1  | 7.42:1  |
+| `evidence.line`             | `surface.panel`                | 3:1     | 3.52:1  | 7.13:1  |
+| `evidence.line`             | `surface.emphasis`             | 3:1     | 3.22:1  | 6.24:1  |
+| `attention.border`          | `surface.page`                 | 3:1     | 3.53:1  | 6.25:1  |
+| `attention.border`          | `surface.panel`                | 3:1     | 3.32:1  | 6.01:1  |
+| `attention.border`          | `surface.emphasis`             | 3:1     | 3.04:1  | 5.26:1  |
+| `danger.border`             | `surface.page`                 | 3:1     | 4.58:1  | 5.56:1  |
+| `danger.border`             | `surface.panel`                | 3:1     | 4.31:1  | 5.34:1  |
+| `danger.border`             | `surface.emphasis`             | 3:1     | 3.95:1  | 4.67:1  |
+| `content.disabled`          | `surface.page`                 | 3:1     | 3.60:1  | 4.83:1  |
+| `content.disabled`          | `surface.panel`                | 3:1     | 3.39:1  | 4.65:1  |
+| `content.disabled`          | `surface.emphasis`             | 3:1     | 3.10:1  | 4.06:1  |
+| `character.virgilio.line`   | `character.virgilio.surface`   | 3:1     | 7.70:1  | 9.43:1  |
+| `character.virgilio.line`   | `character.virgilio.accent`    | 3:1     | 4.90:1  | 3.97:1  |
+| `character.virgilio.line`   | `surface.page`                 | 3:1     | 8.33:1  | 11.69:1 |
+| `character.virgilio.line`   | `surface.panel`                | 3:1     | 7.84:1  | 11.24:1 |
+| `character.virgilio.line`   | `surface.emphasis`             | 3:1     | 7.17:1  | 9.83:1  |
+| `character.josefa.line`     | `character.josefa.surface`     | 3:1     | 8.21:1  | 9.10:1  |
+| `character.josefa.line`     | `character.josefa.accent`      | 3:1     | 4.97:1  | 4.05:1  |
+| `character.josefa.line`     | `surface.page`                 | 3:1     | 9.00:1  | 11.03:1 |
+| `character.josefa.line`     | `surface.panel`                | 3:1     | 8.47:1  | 10.61:1 |
+| `character.josefa.line`     | `surface.emphasis`             | 3:1     | 7.75:1  | 9.28:1  |
+| `character.jorge-luis.line` | `character.jorge-luis.surface` | 3:1     | 8.14:1  | 9.17:1  |
+| `character.jorge-luis.line` | `character.jorge-luis.accent`  | 3:1     | 4.99:1  | 4.00:1  |
+| `character.jorge-luis.line` | `surface.page`                 | 3:1     | 8.88:1  | 11.15:1 |
+| `character.jorge-luis.line` | `surface.panel`                | 3:1     | 8.36:1  | 10.73:1 |
+| `character.jorge-luis.line` | `surface.emphasis`             | 3:1     | 7.64:1  | 9.38:1  |
+| `character.erasmus.line`    | `character.erasmus.surface`    | 3:1     | 7.81:1  | 9.30:1  |
+| `character.erasmus.line`    | `character.erasmus.accent`     | 3:1     | 4.92:1  | 4.00:1  |
+| `character.erasmus.line`    | `surface.page`                 | 3:1     | 8.47:1  | 11.48:1 |
+| `character.erasmus.line`    | `surface.panel`                | 3:1     | 7.98:1  | 11.04:1 |
+| `character.erasmus.line`    | `surface.emphasis`             | 3:1     | 7.30:1  | 9.65:1  |
+| `character.thomas.line`     | `character.thomas.surface`     | 3:1     | 7.82:1  | 9.38:1  |
+| `character.thomas.line`     | `character.thomas.accent`      | 3:1     | 4.92:1  | 4.02:1  |
+| `character.thomas.line`     | `surface.page`                 | 3:1     | 8.46:1  | 11.54:1 |
+| `character.thomas.line`     | `surface.panel`                | 3:1     | 7.96:1  | 11.10:1 |
+| `character.thomas.line`     | `surface.emphasis`             | 3:1     | 7.29:1  | 9.70:1  |
+| `character.boris.line`      | `character.boris.surface`      | 3:1     | 7.97:1  | 9.24:1  |
+| `character.boris.line`      | `character.boris.accent`       | 3:1     | 4.94:1  | 4.01:1  |
+| `character.boris.line`      | `surface.page`                 | 3:1     | 8.70:1  | 11.30:1 |
+| `character.boris.line`      | `surface.panel`                | 3:1     | 8.19:1  | 10.87:1 |
+| `character.boris.line`      | `surface.emphasis`             | 3:1     | 7.49:1  | 9.50:1  |
+| `character.maria.line`      | `character.maria.surface`      | 3:1     | 8.25:1  | 9.08:1  |
+| `character.maria.line`      | `character.maria.accent`       | 3:1     | 4.96:1  | 4.05:1  |
+| `character.maria.line`      | `surface.page`                 | 3:1     | 9.04:1  | 10.99:1 |
+| `character.maria.line`      | `surface.panel`                | 3:1     | 8.52:1  | 10.57:1 |
+| `character.maria.line`      | `surface.emphasis`             | 3:1     | 7.79:1  | 9.24:1  |
 
 A new pair is calculated in both modes and added to this list before use.
 
@@ -422,7 +530,7 @@ The following component tokens prevent scattered visual values in primitives:
 - `motion.duration.quick` is 120 ms for control-state changes; `motion.duration.standard`, 200 ms, for opening panels and drawers; `motion.duration.slow`, 320 ms, for transitions between views.
 - `motion.easing.standard` is `cubic-bezier(0.2, 0, 0, 1)`.
 - With `prefers-reduced-motion: reduce`, all durations are 0 ms: motion is removed, not shortened.
-- There is no decorative motion, parallax or flashing. The only exception is the [character's animations](#animations), with their own rules.
+- There is no decorative motion, parallax or flashing. The only exceptions are [Ohtia's animations](#animations) and [contributor character animations](#contributor-characters-and-avatars), with their own bounded presentation rules.
 - No animation repeats indefinitely. A process longer than five seconds shows determinate progress or phase text without continuous animation, according to criterion 2.2.2.
 
 ### Iconography
@@ -472,15 +580,15 @@ Icons for comparison outcomes are defined in [domain components](#comparison-out
 
 ## Ohtia's symbol and character
 
-Ohtia is represented by round glasses. In large spaces, the full character appears: a female researcher wearing those same glasses. She represents the product and research environment, separately from Virgilio and the specialist contributors. Brand and character use only `voice.ohtia.*`, according to the [color usage rules](#color-usage-rules), and always accompany text identifying the actual voice. The [identity contract](agent-identity.md) preserves that distinction when she accompanies another contributor's finding.
+Ohtia is represented by round glasses. In large spaces, the full character appears: a female researcher wearing those same glasses. She represents the product and research environment, separately from Virgilio and the specialist contributors. Brand and character use only `voice.ohtia.*`, according to the [color usage rules](#color-usage-rules), and always accompany text identifying the actual voice. The [identity contract](agents/agent-identity.md) preserves that distinction when she accompanies another contributor's finding.
 
 This section is the reference for the final illustration. It specifies geometry, sizes, personality and animations so they can be redrawn without interpretation, but does not replace that illustration. The [character specimen](#character-specimen) reproduces the drawings and all 31 animations.
 
 ### Glasses
 
-![Ohtia's glasses: two round lenses with a light fill joined by a curved bridge, with short upward temples and a pupil in each lens.](assets/ohtia-anteojos.svg)
+![Ohtia's glasses: two round lenses with a light fill joined by a curved bridge, with short upward temples and a pupil in each lens.](assets/ohtia/symbol.svg)
 
-They are drawn on a 64 × 64 unit grid, with round-ended strokes. The [dimensioned drawing](assets/ohtia-anteojos-cotas.svg) shows every measurement on the grid.
+They are drawn on a 64 × 64 unit grid, with round-ended strokes. The [dimensioned drawing](assets/ohtia/symbol-dimensions.svg) shows every measurement on the grid.
 
 - **Lenses:** centers (19; 34) and (45; 34), radius 11 and stroke 4.5. Fill `voice.ohtia.surface` and stroke `voice.ohtia.content`.
 - **Bridge:** quadratic curve from (28.5; 31.5) to (35.5; 31.5) with control at (32; 27.5), stroke 4.
@@ -502,9 +610,9 @@ Strokes use `icon.stroke` and the accompanying text's color, as other icons do.
 
 ### Character
 
-![Ohtia's character at rest: a female researcher with curly hair gathered in a bun pierced by a pencil, two loose strands, the brand's glasses, eyebrows, a smile and a lab coat with a pocket.](assets/ohtia-personaje.svg)
+![Ohtia's character at rest: a female researcher with curly hair gathered in a bun pierced by a pencil, two loose strands, the brand's glasses, eyebrows, a smile and a lab coat with a pocket.](assets/ohtia/illustration.svg)
 
-She is drawn within the frame from (−16; 0) to (136; 152). The [dimensioned drawing](assets/ohtia-personaje-cotas.svg) numbers each piece on the grid. Left and right refer to the viewer facing the screen. Angles follow SVG's system: 0° points right, the y axis increases downward and angles increase clockwise. The pieces, from back to front:
+She is drawn within the frame from (−16; 0) to (136; 152). The [dimensioned drawing](assets/ohtia/illustration-dimensions.svg) numbers each piece on the grid. Left and right refer to the viewer facing the screen. Angles follow SVG's system: 0° points right, the y axis increases downward and angles increase clockwise. The pieces, from back to front:
 
 - **Neck:** rectangle at (53; 88), 14 × 18, stroke 3.
 - **Lab coat:** outline `M24 152 L30 116 Q60 100 90 116 L96 152 Z`, stroke 3; lapels `M48 107 L60 128 L72 107` and opening `M60 128 L60 152`, stroke 2.5.
@@ -523,7 +631,7 @@ Fills use `voice.ohtia.surface`; strokes, curls, bun and pencil use `voice.ohtia
 - **Threshold:** the character is used from 96 px upward; below that, only the glasses appear. To move between the two, the framing travels from the full frame to the glasses' rectangle over 700 ms, with a cubic ease-in-out curve, while the remaining pieces fade with opacity 1 − 1.6 × p, where p is the framing's progress from 0 to 1. If the transition reverses halfway, it starts from its current point and lasts the proportional remaining duration. With reduced motion, the change is instantaneous. This transition is used only when available space changes, never to enter or exit because of an event.
 - **Tone:** she is a curious colleague, not the AI research guide or a human supervisor. She neither approves nor orders: she expresses the product's curiosity, doubts and willingness to examine what is missing. A finding retains its actual agent/source attribution, and a human supervisor retains a separate voice. Eccentricity stays in her appearance, not in what she says.
 - **When she appears:** only for specific events. The rest of the time, Ohtia is identified by its small glasses.
-- **Where she appears:** only in a large space: the central area when it does not show the draft, such as the Navigator, welcome view or an empty screen, and a contextual notice or empty state in nearly full-screen chat. She never replaces Virgilio's or a specialist's conversational avatar; location does not confer authorship. The character-presentation preference and event-batch rules in [Ohtia and agent identity](agent-identity.md) further constrain these appearances.
+- **Where she appears:** only in a large space: the central area when it does not show the draft, such as the Navigator, welcome view or an empty screen, and a contextual notice or empty state in nearly full-screen chat. She never replaces Virgilio's or a specialist's conversational avatar; location does not confer authorship. The character-presentation preference and event-batch rules in [Ohtia and agent identity](agents/agent-identity.md) further constrain these appearances.
 - **Where she does not appear:** never over or beside the draft, according to PRIN-002 and the first [identity principle](#identity-principles). When the draft is visible, Ohtia appears only as small glasses in voice labels, always still, without pupil movement.
 - **Decided events:**
   - a contradiction between sources, with [Hair standing on end](#hair-standing-on-end);
@@ -532,7 +640,7 @@ Fills use `voice.ohtia.surface`; strokes, curls, bun and pencil use `voice.ohtia
   - welcome and first use, with [Peeking in](#peeking-in);
   - returning to a project after 168 hours or more without accessing it, with [Waking up](#waking-up), once per return.
 - **Waking up greeting:** the bubble shows a short greeting from the message catalog, translated into each locale. It is warm and does not reproach the absence, because research advances with pauses. “Long time no see!” is the specimen's example greeting, translated from “¡Cuánto tiempo!”. The bubble is an interface element beside the character, not part of the drawing: its text uses the interface scale, never less than 12 px, and the bubble grows with each locale's text. The same greeting forms part of the character's accompanying text so it reaches assistive technologies.
-- **Contradiction while the draft is visible:** notify with text and the small static glasses. The first explicit opening of the Navigator may present Hair standing on end beside the qualified notice only under the [single deferred-presentation rule](agent-identity.md#events-attention-and-scientific-uncertainty). It consumes the original event batch's animation allowance and checks current relevance, presentation mode and whether that batch already animated. Passive restoration or restart shows the notice statically; resolved findings produce no reaction, and several pending findings do not create an animation queue.
+- **Contradiction while the draft is visible:** notify with text and the small static glasses. The first explicit opening of the Navigator may present Hair standing on end beside the qualified notice only under the [single deferred-presentation rule](agents/agent-identity.md#events-attention-and-scientific-uncertainty). It consumes the original event batch's animation allowance and checks current relevance, presentation mode and whether that batch already animated. Passive restoration or restart shows the notice statically; resolved findings produce no reaction, and several pending findings do not create an animation queue.
 - **Entry and exit:** the character appears without a transition when the event occurs, except as specified for a contradiction while the draft is visible, performs her animation once and disappears without a transition; the small glasses remain. With reduced motion, follow each animation's declaration: generally, she remains still in the main pose for the animation's duration; in Milestone, still at rest, and in Blinking, unchanged.
 - **Accessibility:** she is decorative and hidden from assistive technologies; her accompanying text communicates the state.
 
@@ -547,12 +655,12 @@ Fills use `voice.ohtia.surface`; strokes, curls, bun and pencil use `voice.ohtia
 
 Character and glasses animations are the only exception to the [motion](#motion) rule excluding decorative movement:
 
-- They occur only because of a committed, relevant event, play once and never loop. They last at most 4.6 s, and because the character's entry and exit have no transition, no sequence exceeds criterion 2.2.2's five seconds. Use [event-batch coalescing and character-presentation controls](agent-identity.md#events-attention-and-scientific-uncertainty) to prevent consecutive events from creating a continuous animation queue; an expression never certifies scientific validity.
+- They occur only because of a committed, relevant event, play once and never loop. They last at most 4.6 s, and because the character's entry and exit have no transition, no sequence exceeds criterion 2.2.2's five seconds. Use [event-batch coalescing and character-presentation controls](agents/agent-identity.md#events-attention-and-scientific-uncertainty) to prevent consecutive events from creating a continuous animation queue; an expression never certifies scientific validity.
 - None is the only notification: accompanying text communicates the same information, as with icons.
 - With `prefers-reduced-motion: reduce`, there is no movement. Each animation declares its behavior; generally, the main pose appears without a transition and disappears when the duration ends.
 - The glasses alone repeat pupil movements and the Milestone jump; the rest belongs to the character. They move only where no draft is visible and the full character does not fit.
 - Props appear only during the animation. Hands are floating circles, without arms. Everything uses `voice.ohtia.*` except the Highlighting highlight, which uses `evidence.*`.
-- Key poses are expressed as a fraction of the duration. The [pose sheet](assets/ohtia-poses.svg) draws them frozen at those instants, and the [specimen](#character-specimen) defines intermediate frames and each movement's curves.
+- Key poses are expressed as a fraction of the duration. The [pose sheet](assets/ohtia/poses.svg) draws them frozen at those instants, and the [specimen](#character-specimen) defines intermediate frames and each movement's curves.
 - Except for the [decided events](#character), no animation has yet been assigned the product event that triggers it. Each is implemented with the screen using it, and its event is decided then.
 - Falling apart needs a frequency rule before use so it does not lose its effect. Waking up occurs once per return and Graduation cap only once, at final submission.
 
@@ -894,6 +1002,57 @@ The final illustration preserves:
 
 It may refine stroke style and ends, each curl's shape, the lab coat's folds, eyebrow and mouth expression within each pose and the drawing of props.
 
+## Contributor characters and avatars
+
+Virgilio, Josefa, Jorge Luis, Erasmus, Thomas, Boris and María have original characters within Ohtia's visual family. Preserve rounded line endings, simple geometric shapes, restrained detail and consistent visual weight. Give each character a distinguishable silhouette and role motif; changing a hat or prop on an identical face is insufficient. Historical inspirations remain naming homages rather than likenesses, impersonation or inherited qualifications. The operational profiles under [Agents](agents/index.md) own each character's motif, reference drawings and three gesture animations; this section owns their shared rendering, drawing and timing contract.
+
+### Representations and color
+
+Each contributor has a full illustration, a compact static avatar and a simplified static symbol. Use the full illustration at 96 px or larger in an explicit contributor profile, dedicated introduction or contextual notice with sufficient space. Use the avatar or symbol in conversations, selectors, lists, previous messages and result cards; these compact representations remain still. Ohtia retains the glasses as her product symbol. Contributor assets do not reuse Ohtia's portrait or reserve the human-supervisor identity.
+
+Draw the full illustration and avatar with the contributor's [identity colors](#contributor-identity-colors): `line` for strokes, hair, eyes and outlines; `accent` for clothing and small prop details; and `surface` for skin, paper and props. The avatar's circular frame uses `line` over `surface`. The simplified symbol and the contributor's voice label remain in `voice.ohtia.*`, so AI provenance stays one shared signal beside every contributor. Identity colors distinguish characters; they do not indicate provenance, state, quality or authority, and they are not semantic tokens for interface elements. Do not borrow evidence, warning, error, confirmation or human-supervisor colors to distinguish characters.
+
+Names, role labels, silhouette and motif remain the primary distinction, and identity remains recognizable in grayscale, under simulated color-vision deficiencies and with decoration hidden. Under deuteranopia simulation, the identity colors of Jorge Luis, Thomas and María converge, and María's violet stays close to Ohtia's plum; their silhouettes and motifs must distinguish them without color.
+
+Always provide the actual name, localized role and AI attribution through the shared identity treatment. Role motifs are decorative: drawn cards, text blocks or diagrams do not contain actual findings, citations or interface messages. Put meaningful text in localized interface elements outside the drawing. Gender and historical references do not determine competence, status or visual seniority.
+
+### Drawing conventions
+
+Each contributor profile lists its illustration and symbol pieces from back to front, with their geometry. Its reference files are in `docs/assets/agents/<contributor>/`: `illustration.svg`, `avatar.svg` and `symbol.svg`, with `illustration-dimensions.svg` and `symbol-dimensions.svg` numbering every piece on the grid. Its `specimen.html` plays the profile's three gestures with motion and reduced motion, and its `poses.svg` draws them at 25%, 50% and 75%. These reference drawings and prototypes fix each character's silhouette, motif, proportions, colors and key poses for implementation, as [Ohtia's character](#character) and [specimen](#character-specimen) do for hers; Ohtia's files are in `docs/assets/ohtia/`. Final artwork may refine them only as [Drawing and recognition requirements](#drawing-and-recognition-requirements) allow.
+
+- **Frame:** the illustration uses Ohtia's frame, from (−16; 0) to (136; 152). Left and right refer to the viewer facing the screen. Angles follow SVG's system: 0° points right, the y axis increases downward and angles increase clockwise.
+- **Avatar:** the same drawing, unchanged, clipped to a circle at (60; 72) with radius 44 over `surface`, with a `line` ring of stroke 3. Its frame runs from (14; 26) to (106; 118).
+- **Symbol:** drawn on [iconography's](#iconography) 24 px grid in `voice.ohtia.content` and `voice.ohtia.surface`, with round ends and joins. Unlike icons drawn with `icon.stroke`, a symbol's outer shapes use stroke 1.8 to 2 and its inner details 1.2 to 2, as each profile lists.
+- **Strokes:** skin, hands and clothing outlines 3; small prop details in `accent` 3; paper and other props 2.5; detail lines 2.5; text lines on props 2; mouth 3; eyebrows 3.5. Hair is filled in `line` with stroke 2, and its highlights use `surface` with stroke 2. Eyes are filled ellipses in `line`; small rings on props use stroke 1.8. Open lines have round ends, and outlines have round joins.
+- **Hands and props:** hands are floating circles of radius 6 without arms, as in [Ohtia's animations](#animations). Props, including a free hand, are hidden at rest and appear only during a gesture.
+- **Gesture prototypes:** a gesture moves pieces with translation, rotation and scale about stated origins, and props with opacity or a stroke drawn along a path. The specimen and pose sheet use the same key poses, so a frozen pose matches the animation at that instant.
+
+### Initial animation repertoire
+
+Each contributor has three single-play gestures: introduction, active contribution and result available. The [identity event bindings](agents/agent-identity.md#contributor-presentation-events) determine whether a gesture is eligible; these are alternatives, not a three-step sequence. They share Ohtia's workspace-wide animation allowance. Ohtia accompanies product events; a contributor gesture represents that contributor's own introduction or contribution without reassigning authorship.
+
+Use these duration tokens for the initial contributor repertoire:
+
+- `motion.duration.contributor.introduction`: 1200 ms.
+- `motion.duration.contributor.active`: 1000 ms.
+- `motion.duration.contributor.result`: 1200 ms.
+
+Use `motion.easing.standard`. Enter and exit the presentation without additional transitions, and keep framing and the avatar's surrounding layout fixed. For each gesture, 0% is the neutral pose, 25% begins the gesture, 50% is its main pose, 75% begins returning and 100% is neutral again. Position and rotation use the shared easing between key poses; do not add idle blinking, repeated page turns or motion during the subsequent wait. The textual work state supplies continuing progress.
+
+At most one character animates in a workspace at a time, and at most one animation plays for one originating presentation batch, including its coincident notices and Ohtia reactions. A currently playing animation is not interrupted by another gesture: subsequent notices remain static and no animation queue is created. An intervention's start and result share their original batch allowance, so animating the start leaves the result static. An already consumed batch cannot be reset by a new phase, contributor, provider attempt or handoff. If several eligible events are considered together, select the most relevant current notice under the identity contract.
+
+### Static, hidden and interrupted presentation
+
+With Static selected or system reduced motion effective, show the appropriate main pose without movement or transition. In an event presentation, the still pose may occupy the same bounded presentation interval as the normal gesture; the accompanying text and result remain available afterwards. A persistent profile uses a neutral still illustration outside that interval. Hidden omits full decorative character presentation while preserving compact static contributor symbols, labels and research controls. [Character presentation preference](agents/agent-identity.md#character-presentation-preference) owns persistence, effective preference resolution and cancellation.
+
+Never animate while a manuscript is visible. Use compact static attribution and textual notices, without inserting, covering or shifting manuscript content. Contributor gestures suppressed for lack of space, hidden decoration, a background view or an ineligible phase are not queued for later playback. The existing single deferred Navigator presentation for an eligible finding does not authorize replaying contributor introductions, start gestures or result gestures.
+
+Changing project, hiding/closing the presentation surface, losing the relevant contributor selection, cancellation, invalidated event relevance, switching to Static/Hidden or enabling reduced motion cancels current movement and discards pending contributor gestures. Keep the appropriate current text and static state; do not return with an obsolete success pose. Restoring the surface or switching animation back on does not replay the event. Motion does not take focus, follow the pointer, play sound or trigger inference.
+
+### Drawing and recognition requirements
+
+Like [Ohtia's final illustration](#final-illustration), a contributor's final artwork preserves the reference silhouette, motif, proportions, identity colors and key poses. It may refine stroke ends, curve shapes, clothing folds and expression within each pose. The reference drawings and specimens do not imply an implemented runtime binding. Before adopting final assets, inspect their neutral and 50% poses, light/dark rendering, full/avatar/symbol variants and actual target sizes. Keep meaningful text and author labels legible independently of the drawing. [Agent collaboration evaluation](agents/agent-collaboration-evaluation.md#contributor-animation-recognition) owns recognition and distraction trials in the conversation context; those trials are required before enabling the full animated family.
+
 ## Composition
 
 ### Width classes
@@ -1078,7 +1237,7 @@ Component names are identifiers and remain in English.
 
 #### Voice
 
-The `voice.ohtia.*` tokens identify system/AI-origin contributions and the product character. Named AI contributors share this provenance family while retaining their distinct avatar/symbol, name and role under [Ohtia and agent identity](agent-identity.md#visual-family-and-attribution). These tokens do not define specialist capabilities, grant research authority or imply human authorship. `voice.tutor.*` remains reserved for original human supervisor feedback; Virgilio never inherits that treatment.
+The `voice.ohtia.*` tokens identify system/AI-origin contributions and the product character. Named AI contributors share this provenance family while retaining their distinct avatar/symbol, name and role under [Ohtia and agent identity](agents/agent-identity.md#visual-family-and-attribution). These tokens do not define specialist capabilities, grant research authority or imply human authorship. `voice.tutor.*` remains reserved for original human supervisor feedback; Virgilio never inherits that treatment.
 
 - **`VoiceLabel`.** Identifies the actual speaker: Ohtia for product notices, with its glasses; a named AI contributor, with its own static symbol/avatar, name, localized role and AI label; or the human supervisor, with `user-round` and `voice.tutor.*`. Product and AI-origin labels use `voice.ohtia.*` without merging their authorship. Researcher text retains the ordinary unlabelled treatment. A composed response preserves attribution to its linked specialist findings.
 - **`EvidenceHighlight`.** Marks an anchored source passage with `evidence.surface` and the `evidence.line` rule. A confirmed claim has a fill and solid rule; a proposed claim has only a 2 px dashed underline in `evidence.line`. The accessible name states source, page or location, and state.
@@ -1286,11 +1445,11 @@ Font files come from URLs `https://raw.githubusercontent.com/IBM/plex/71f5589923
 
 ### Character specimen
 
-[`assets/ohtia-personaje-muestra.html`](assets/ohtia-personaje-muestra.html) reproduces [Ohtia's symbol and character](#ohtias-symbol-and-character): the character with all 31 animations, the glasses alone in the same state, the transition from character to brand, the size strip and key poses. It shows the light theme by default and dark when `#dark` is added to the address. It loads external resources only for fonts, from the pinned IBM Plex commit.
+[`assets/ohtia/specimen.html`](assets/ohtia/specimen.html) reproduces [Ohtia's symbol and character](#ohtias-symbol-and-character): the character with all 31 animations, the glasses alone in the same state, the transition from character to brand, the size strip and key poses. It shows the light theme by default and dark when `#dark` is added to the address. It loads external resources only for fonts, from the pinned IBM Plex commit.
 
 The specimen and pose sheet draw the Waking up bubble within the stage as a reference for its position; in the specimen, its text appears at 12 px or larger. In the product, the bubble is an interface element, as [Character](#character) specifies.
 
-Each key pose is obtained by stopping its animation at the indicated instant, without playing it, and copying each shape with its matrix, opacity and color. [`assets/ohtia-poses.svg`](assets/ohtia-poses.svg) gathers these 57 poses and the rest pose.
+Each key pose is obtained by stopping its animation at the indicated instant, without playing it, and copying each shape with its matrix, opacity and color. [`assets/ohtia/poses.svg`](assets/ohtia/poses.svg) gathers these 57 poses and the rest pose.
 
 On October 20, 2026, using Playwright 1.64.0's Chromium 156.0.8078.4, the reference specimen loaded without console errors, with motion and reduced motion. All 31 buttons were pressed, and each animation's measured duration matched the catalog. When the system switched to reduced motion midway through an animation, the specimen stopped without pending animations. Without the Web Animations API, it disables its buttons and explains why. The dimensioned drawings and pose sheet use, in addition to `voice.ohtia.*` and Highlighting's `evidence.*`, interface neutrals for backgrounds, grids and labels.
 
@@ -1303,7 +1462,7 @@ On October 20, 2026, using Playwright 1.64.0's Chromium 156.0.8078.4, the refere
 - **Brand.** Show the Ohtia name in `type.ui.subheading` beside glasses in `voice.ohtia.content`. A wordmark has its own visual contract and must preserve this identity and legibility.
 - **Character illustration.** The delivered illustration must preserve every requirement in [Final illustration](#final-illustration); validate its geometry, layers, scaling and key poses against that contract.
 - **Animation events.** Each enabled animation declares its event binding; Falling apart also declares its frequency rule. Verify those bindings before connecting animations to product events.
-- **Coincident events.** Navigator integration applies [the identity contract's event-batch rules](agent-identity.md#events-attention-and-scientific-uncertainty), including Waking up or Peeking in coinciding with a pending Hair standing on end. Present at most one animation per batch, keep other notices static and verify current relevance rather than creating an implicit animation queue.
+- **Coincident events.** Navigator integration applies [the identity contract's event-batch rules](agents/agent-identity.md#events-attention-and-scientific-uncertainty), including Waking up or Peeking in coinciding with a pending Hair standing on end. Present at most one animation per batch, keep other notices static and verify current relevance rather than creating an implicit animation queue.
 - **Named contributors.** Verify recognition of Ohtia, Virgilio, specialists and a human supervisor across layouts, reduced-motion and hidden-character modes. New role artwork must preserve the shared design family without reusing the human supervisor's identity or implying a capability not established by its operation contract.
 - **Optional review of the name.** Fluent or native speakers may review the connotations of “Ohtia”; record the actual reviewed language and scope. This is not a prerequisite for delivery.
 - **Optional Korean linguistic review.** Native Korean readers may assess naturalness and typographic quality in the implemented journeys. Record that review only when performed; it is not a prerequisite for delivery. Required glyph, wrapping, emphasis, native input and assistive checks remain separate.

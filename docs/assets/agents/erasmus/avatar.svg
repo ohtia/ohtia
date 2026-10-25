@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" role="img" aria-label="Erasmus: avatar" viewBox="14 26 92 92">
+  <title>Erasmus: avatar</title>
+  <style>
+    .c-surface { fill: #edf1df; stroke: #444e05; stroke-width: 3; stroke-linejoin: round; }
+    .c-accent { fill: #b8c77c; stroke: #444e05; stroke-width: 3; stroke-linejoin: round; }
+    .c-paper { fill: #edf1df; stroke: #444e05; stroke-width: 2.5; stroke-linejoin: round; }
+    .c-line { fill: none; stroke: #444e05; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .c-thin { fill: none; stroke: #444e05; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .c-hair { fill: #444e05; stroke: #444e05; stroke-width: 2; stroke-linejoin: round; }
+    .c-hair-line { fill: none; stroke: #edf1df; stroke-width: 2; stroke-linecap: round; }
+    .c-brow { fill: none; stroke: #444e05; stroke-width: 3.5; stroke-linecap: round; }
+    .c-mouth { fill: none; stroke: #444e05; stroke-width: 3; stroke-linecap: round; }
+    .c-fill { fill: #444e05; }
+    .c-hole { fill: #edf1df; stroke: #444e05; stroke-width: 1.8; }
+    .c-dash { fill: none; stroke: #444e05; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+    @media (prefers-color-scheme: dark) {
+      .c-surface { fill: #252915; stroke: #c5d38f; stroke-width: 3; stroke-linejoin: round; }
+      .c-accent { fill: #596423; stroke: #c5d38f; stroke-width: 3; stroke-linejoin: round; }
+      .c-paper { fill: #252915; stroke: #c5d38f; stroke-width: 2.5; stroke-linejoin: round; }
+      .c-line { fill: none; stroke: #c5d38f; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+      .c-thin { fill: none; stroke: #c5d38f; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .c-hair { fill: #c5d38f; stroke: #c5d38f; stroke-width: 2; stroke-linejoin: round; }
+      .c-hair-line { fill: none; stroke: #252915; stroke-width: 2; stroke-linecap: round; }
+      .c-brow { fill: none; stroke: #c5d38f; stroke-width: 3.5; stroke-linecap: round; }
+      .c-mouth { fill: none; stroke: #c5d38f; stroke-width: 3; stroke-linecap: round; }
+      .c-fill { fill: #c5d38f; }
+      .c-hole { fill: #252915; stroke: #c5d38f; stroke-width: 1.8; }
+      .c-dash { fill: none; stroke: #c5d38f; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+    }
+    .avatar-ground { fill: #edf1df; }
+    .avatar-ring { fill: none; stroke: #444e05; stroke-width: 3; }
+    @media (prefers-color-scheme: dark) {
+      .avatar-ground { fill: #252915; }
+      .avatar-ring { fill: none; stroke: #c5d38f; stroke-width: 3; }
+    }
+  </style>
+  <defs><clipPath id="avatar-crop"><circle cx="60" cy="72" r="44"/></clipPath></defs>
+  <circle class="avatar-ground" cx="60" cy="72" r="44"/>
+  <g clip-path="url(#avatar-crop)">
+    <g>
+        <path class="c-accent" d="M24 152 L29 113 L48 104 L60 112 L72 104 L91 113 L96 152 Z" />
+        <path class="c-line" d="M60 112 L60 152" />
+        <circle class="c-fill" cx="60" cy="126" r="1.8" />
+        <circle class="c-fill" cx="60" cy="140" r="1.8" />
+      </g>
+      <g><rect class="c-surface" x="54" y="84" width="12" height="22" /></g>
+      <g><path class="c-accent" d="M48 106 L45 89 L57 96 L60 110 L63 96 L75 89 L72 106 L60 112 Z" /></g>
+      <g><path class="c-surface" d="M36 52 Q36 34 60 33 Q84 34 84 52 L82 71 Q79 85 60 88 Q41 85 38 71 Z" /></g>
+      <g>
+        <path class="c-hair" d="M35 54 L35.5 42 Q35.5 34 42 33.5 Q43.5 27.5 50 29.5 Q53.5 24.5 60 27.5 Q66.5 24.5 70 29.5 Q76.5 27.5 78 33.5 Q84.5 34 84.5 42 L85 54 Q80 45 60 44 Q40 45 35 54 Z" />
+        <path class="c-hair-line" d="M45 37 Q47 34.5 50 35" />
+        <path class="c-hair-line" d="M57 34 Q60 32 63 34" />
+        <path class="c-hair-line" d="M70 35 Q73 34.5 75 37" />
+      </g>
+      <g>
+        <path class="c-brow" d="M43 55 L54 54" />
+        <path class="c-brow" d="M66 54 L77 55" />
+      </g>
+      <g>
+        <ellipse class="c-fill" cx="49" cy="62" rx="2.5" ry="3.1" />
+        <ellipse class="c-fill" cx="71" cy="62" rx="2.5" ry="3.1" />
+      </g>
+      <g><path class="c-mouth" d="M55 75 Q60 77 65 75" /></g>
+      <g transform="rotate(-6 24 146)">
+        <rect class="c-paper" x="12" y="116" width="24" height="31" rx="2.5" />
+        <path class="c-thin" d="M17 123 L31 123" />
+        <path class="c-thin" d="M17 129 L31 129" />
+        <path class="c-thin" d="M17 135 L26 135" />
+      </g>
+      <g><circle class="c-surface" cx="24" cy="146" r="6" /></g>
+      <g transform="rotate(6 96 146)">
+        <rect class="c-paper" x="84" y="116" width="24" height="31" rx="2.5" />
+        <path class="c-thin" d="M89 123 L103 123" />
+        <path class="c-thin" d="M89 129 L98 129" />
+        <path class="c-thin" d="M89 135 L103 135" />
+      </g>
+      <g><circle class="c-surface" cx="96" cy="146" r="6" /></g>
+  </g>
+  <circle class="avatar-ring" cx="60" cy="72" r="44"/>
+</svg>

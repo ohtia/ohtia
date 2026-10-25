@@ -10,10 +10,7 @@ okf_version: "0.2"
 - [Product definition](product-definition.md) — Purpose, academic workflows, trust, and scope of the local Ohtia desktop workspace.
 - [Thesis workflow](thesis-workflow.md) — Research stages, artifacts, review milestones, and reentry paths for theses and scientific papers.
 - [Exploration–Action Framework](exploration-action-framework.md) — Diamonds, activity flows, exploration avenues and evidence-based transitions for modeling exploration and execution.
-- [Agent collaboration](agent-collaboration.md) — Virgilio, research specialists, bounded collaboration, inspectable memory, and human-approved editorial proposals.
-- [Ohtia and agent identity](agent-identity.md) — Product character, named AI contributors, human attribution, and accessible event-driven presentation.
-- [Agent collaboration evaluation](agent-collaboration-evaluation.md) — Evaluate research usefulness, evidence fidelity, human review, and bounded execution against a single-agent baseline.
-- [Agent coordination implementation references](agent-coordination-references.md) — Source-backed lessons from provider documentation, Paperclip, and Multica for Ohtia's agent collaboration boundary.
+- [Agents](agents/index.md) — Agent identities, specialist contracts, collaboration, evaluation and implementation references.
 
 ## System and data
 

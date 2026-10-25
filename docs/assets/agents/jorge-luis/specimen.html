@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jorge Luis specimen</title>
+<style>
+  :root { --page: #faf8f5; --panel: #f4f1ed; --line: #dad7d2; --fg: #1f1d19; --fg2: #4e4a43; color-scheme: light; }
+  :root.dark { --page: #151411; --panel: #1a1815; --line: #35322e; --fg: #ebe7e2; --fg2: #c1bdb7; color-scheme: dark; }
+  body { margin: 0; background: var(--page); color: var(--fg); font: 15px/1.5 'IBM Plex Sans', system-ui, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 32px 16px 64px; display: grid; gap: 28px; }
+  h1 { font-size: 24px; font-weight: 600; margin: 0; }
+  h2 { font-size: 17px; font-weight: 600; margin: 0 0 12px; }
+  p { margin: 0; color: var(--fg2); max-width: 70ch; }
+  .stage { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: 24px; align-items: start; }
+  .frame { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+  .frame svg { display: block; width: 100%; height: auto; }
+  .controls { display: grid; gap: 10px; align-content: start; }
+  button { font: inherit; text-align: left; padding: 10px 14px; border-radius: 4px; border: 1px solid var(--fg2); background: var(--page); color: var(--fg); cursor: pointer; }
+  button span { color: var(--fg2); font-size: 13px; margin-left: 6px; }
+  button[aria-disabled="true"] { cursor: default; opacity: .6; }
+  button:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+  #status { min-height: 1.5em; }
+  .strip { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+  .strip img { display: block; }
+  .part, .prop { transform-box: view-box; }
+  .c-surface { fill: #eaeefe; stroke: #3b4372; stroke-width: 3; stroke-linejoin: round; }
+  .c-accent { fill: #adbaf7; stroke: #3b4372; stroke-width: 3; stroke-linejoin: round; }
+  .c-paper { fill: #eaeefe; stroke: #3b4372; stroke-width: 2.5; stroke-linejoin: round; }
+  .c-line { fill: none; stroke: #3b4372; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+  .c-thin { fill: none; stroke: #3b4372; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .c-hair { fill: #3b4372; stroke: #3b4372; stroke-width: 2; stroke-linejoin: round; }
+  .c-hair-line { fill: none; stroke: #eaeefe; stroke-width: 2; stroke-linecap: round; }
+  .c-brow { fill: none; stroke: #3b4372; stroke-width: 3.5; stroke-linecap: round; }
+  .c-mouth { fill: none; stroke: #3b4372; stroke-width: 3; stroke-linecap: round; }
+  .c-fill { fill: #3b4372; }
+  .c-hole { fill: #eaeefe; stroke: #3b4372; stroke-width: 1.8; }
+  .c-dash { fill: none; stroke: #3b4372; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+  .c-trail { fill: none; stroke: #3b4372; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 100 110; stroke-dashoffset: 105; }
+  .prop { opacity: 0; }
+  :root.dark .c-surface { fill: #212538; stroke: #bbc7fe; stroke-width: 3; stroke-linejoin: round; }
+  :root.dark .c-accent { fill: #505a8b; stroke: #bbc7fe; stroke-width: 3; stroke-linejoin: round; }
+  :root.dark .c-paper { fill: #212538; stroke: #bbc7fe; stroke-width: 2.5; stroke-linejoin: round; }
+  :root.dark .c-line { fill: none; stroke: #bbc7fe; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+  :root.dark .c-thin { fill: none; stroke: #bbc7fe; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  :root.dark .c-hair { fill: #bbc7fe; stroke: #bbc7fe; stroke-width: 2; stroke-linejoin: round; }
+  :root.dark .c-hair-line { fill: none; stroke: #212538; stroke-width: 2; stroke-linecap: round; }
+  :root.dark .c-brow { fill: none; stroke: #bbc7fe; stroke-width: 3.5; stroke-linecap: round; }
+  :root.dark .c-mouth { fill: none; stroke: #bbc7fe; stroke-width: 3; stroke-linecap: round; }
+  :root.dark .c-fill { fill: #bbc7fe; }
+  :root.dark .c-hole { fill: #212538; stroke: #bbc7fe; stroke-width: 1.8; }
+  :root.dark .c-dash { fill: none; stroke: #bbc7fe; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+  :root.dark .c-trail { fill: none; stroke: #bbc7fe; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 100 110; stroke-dashoffset: 105; }
+  :root.dark .prop { opacity: 0; }
+  @media (max-width: 640px) { .stage { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Jorge Luis specimen</h1>
+    <p>Reference prototype for Jorge Luis's three gestures. Each plays once, from neutral to its main pose at 50% and back, with the shared standard easing. With reduced motion, the main pose appears without movement for the gesture's duration. Add <code>#dark</code> to the address for the dark theme.</p>
+  </header>
+  <section class="stage">
+    <div class="frame">
+      <svg viewBox="-16 0 152 152" role="img" aria-label="Jorge Luis">
+<g><path class="c-surface" d="M29 152 L33 114 Q60 101 87 114 L91 152 Z" /></g>
+
+<g>
+    <path class="c-accent" d="M39 152 L40 117 Q49 112 53 105 L60 130 L67 105 Q71 112 80 117 L81 152 Z" />
+    <path class="c-line" d="M53 105 L57 112 L60 106 L63 112 L67 105" />
+  </g>
+
+<g id="head" class="part">
+<g><rect class="c-surface" x="54" y="84" width="12" height="20" /></g>
+
+<g><ellipse class="c-surface" cx="60" cy="59" rx="24" ry="28" /></g>
+
+<g>
+    <path class="c-hair" d="M35.5 59 Q32.5 41 40.5 34 Q46.5 27.5 54.5 29 Q61 24.5 68.5 28 Q79.5 29.5 84 40 Q87.5 47 85 53 Q88 57 84 61 Q81.5 53 76.5 49 Q72.5 44.5 67 47 Q61.5 41.5 54.5 44.5 Q48.5 43 45 47.5 Q39.5 52 35.5 59 Z" />
+    <path class="c-hair-line" d="M47 32 Q44.5 37.5 46 44" />
+    <path class="c-hair-line" d="M58 33.5 Q64 31 70 34" />
+    <path class="c-hair-line" d="M74 37 Q78.5 39.5 80 44.5" />
+  </g>
+
+<g id="brows" class="part"><g>
+    <path class="c-brow" d="M44 55 Q49 52.5 54 54.5" />
+    <path class="c-brow" d="M66 54 Q71 51 76 53.5" />
+  </g>
+  </g>
+<g id="eyes" class="part"><g>
+    <ellipse class="c-fill" cx="49" cy="63" rx="2.5" ry="3.1" />
+    <ellipse class="c-fill" cx="71" cy="63" rx="2.5" ry="3.1" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M55 75 Q60 78 65 75" /></g>
+  </g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M55 74 Q60 81 65 74 Z" />
+  </g>
+
+</g>
+<g id="book" class="part">
+<g><rect class="c-accent" x="74" y="118" width="7" height="13" rx="1.2" /></g>
+
+<g>
+    <path class="c-paper" d="M36 128 Q49 122 62 128 L62 150 Q49 144 36 150 Z" />
+    <path class="c-thin" d="M41 134 Q48.5 131 56 134" />
+    <path class="c-thin" d="M41 140 Q48.5 137 56 140" />
+  </g>
+
+<g>
+    <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+    <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+  </g>
+
+<g>
+    <g id="turning-page" class="prop">
+      <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+      <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+      <path class="c-thin" d="M68 140 Q75.5 137 83 140" />
+    </g>
+  </g>
+
+<g>
+    <circle class="c-surface" cx="36" cy="147" r="6" />
+    <circle class="c-surface" cx="88" cy="147" r="6" />
+  </g>
+
+<g>
+    <g id="quote-note" class="prop">
+      <rect class="c-paper" x="80" y="88" width="30" height="18" rx="2" />
+      <circle class="c-fill" cx="86" cy="98" r="1.7" />
+      <path class="c-thin" d="M84.5 98 Q84.5 94.8 87.2 93.8" />
+      <circle class="c-fill" cx="90.5" cy="98" r="1.7" />
+      <path class="c-thin" d="M89.0 98 Q89.0 94.8 91.7 93.8" />
+      <circle class="c-fill" cx="100" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M101.5 93.5 Q101.5 96.7 98.8 97.7" />
+      <circle class="c-fill" cx="104.5" cy="93.5" r="1.7" />
+      <path class="c-thin" d="M106.0 93.5 Q106.0 96.7 103.3 97.7" />
+      <path class="c-thin" d="M86 102 L104 102" />
+    </g>
+    <circle id="free-hand" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+</g>
+      </svg>
+    </div>
+    <div class="controls">
+        <button type="button" data-gesture="introduction">Introduction <span>1200 ms</span></button>
+        <button type="button" data-gesture="active">Active contribution <span>1000 ms</span></button>
+        <button type="button" data-gesture="result">Result available <span>1200 ms</span></button>
+      <p id="status" role="status"></p>
+    </div>
+  </section>
+  <section>
+    <h2>Representations</h2>
+    <div class="strip">
+      <img src="avatar.svg" width="48" height="48" alt="Jorge Luis avatar, 48 px">
+      <img src="avatar.svg" width="32" height="32" alt="Jorge Luis avatar, 32 px">
+      <img src="avatar.svg" width="24" height="24" alt="Jorge Luis avatar, 24 px">
+      <img src="symbol.svg" width="24" height="24" alt="Jorge Luis symbol, 24 px">
+      <img src="symbol.svg" width="16" height="16" alt="Jorge Luis symbol, 16 px">
+    </div>
+  </section>
+  <section>
+    <h2>Key poses</h2>
+    <img src="poses.svg" alt="Jorge Luis gestures frozen at 25%, 50% and 75%" style="max-width: 100%; height: auto;">
+  </section>
+</main>
+<script id="gesture-data" type="application/json">{"gestures": [{"key": "introduction", "name": "Introduction", "ms": 1200, "tracks": {"book": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, -54, 0, 1, 1]}, {"t": [0, -6, 0, 1, 1]}, {"t": [0, -2, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "eyes": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, -1.5, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "brows": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, -1, 0, 1, 1]}, {"t": [0, -3, 0, 1, 1]}, {"t": [0, -2, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "head": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}, {"t": [0, 0, -3, 1, 1]}, {"t": [0, 0, -1.5, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "mouth-rest": [{"o": 1}, {"o": 1}, {"o": 0}, {"o": 0}, {"o": 1}], "mouth-open": [{"o": 0}, {"o": 0}, {"o": 1}, {"o": 1}, {"o": 0}]}}, {"key": "active", "name": "Active contribution", "ms": 1000, "tracks": {"turning-page": [{"t": [0, 0, 0, 1, 1], "o": 0}, {"t": [0, -6, 0, 0.6, 1], "o": 1}, {"t": [0, -10, 0, -0.4, 1], "o": 1}, {"t": [0, -4, 0, -0.8, 1], "o": 1}, {"t": [0, 0, 0, -1, 1], "o": 0}], "eyes": [{"t": [0, 0, 0, 1, 1]}, {"t": [-2, 2, 0, 1, 1]}, {"t": [2, 2, 0, 1, 1]}, {"t": [-1, 2, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "brows": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, 1, 0, 1, 1]}, {"t": [0, 1.2, 0, 1, 1]}, {"t": [0, 1, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "head": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, 0, 1, 1, 1]}, {"t": [0, 0, 2, 1, 1]}, {"t": [0, 0, 1, 1, 1]}, {"t": [0, 0, 0, 1, 1]}]}}, {"key": "result", "name": "Result available", "ms": 1200, "tracks": {"book": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, -2, -2, 1.02, 1.02]}, {"t": [0, -4, -4, 1.04, 1.04]}, {"t": [0, -2, -2, 1.02, 1.02]}, {"t": [0, 0, 0, 1, 1]}], "quote-note": [{"t": [-18, 27, 0, 0.3, 0.3], "o": 0}, {"t": [-9, 13, 0, 0.65, 0.65], "o": 1}, {"t": [0, 0, -3, 1.1, 1.1], "o": 1}, {"t": [-9, 13, 0, 0.65, 0.65], "o": 1}, {"t": [-18, 27, 0, 0.3, 0.3], "o": 0}], "free-hand": [{"t": [80, 128, 0, 1, 1], "o": 0}, {"t": [80, 116, 0, 1, 1], "o": 1}, {"t": [80, 106, 0, 1, 1], "o": 1}, {"t": [80, 116, 0, 1, 1], "o": 1}, {"t": [80, 128, 0, 1, 1], "o": 0}], "eyes": [{"t": [0, 0, 0, 1, 1]}, {"t": [1, -0.5, 0, 1, 1]}, {"t": [2, -1, 0, 1, 1]}, {"t": [1, -0.5, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "brows": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, -1.5, 0, 1, 1]}, {"t": [0, -2.5, 0, 1, 1]}, {"t": [0, -1.5, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}]}}], "origins": {"head": [60, 104], "book": [62, 140], "eyes": [60, 63], "brows": [60, 54], "mouth-rest": [60, 76], "turning-page": [62.0, 139.0], "quote-note": [95.0, 97.0], "free-hand": [0.0, 0.0]}, "keys": [0, 0.25, 0.5, 0.75, 1]}</script>
+<script>
+(function () {
+  var DATA = JSON.parse(document.getElementById("gesture-data").textContent);
+  var EASE = "cubic-bezier(0.2, 0, 0, 1)";
+  var root = document.documentElement;
+  function theme() { root.classList.toggle("dark", location.hash === "#dark"); }
+  theme();
+  window.addEventListener("hashchange", theme);
+  var buttons = Array.prototype.slice.call(document.querySelectorAll("button[data-gesture]"));
+  var status = document.getElementById("status");
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+  var running = [], touched = [], timer = 0, busy = false;
+  Object.keys(DATA.origins).forEach(function (id) {
+    var o = DATA.origins[id];
+    document.getElementById(id).style.transformOrigin = o[0] + "px " + o[1] + "px";
+  });
+  function frame(f, offset) {
+    var k = { offset: offset, easing: EASE };
+    if (f.t) k.transform = "translate(" + f.t[0] + "px, " + f.t[1] + "px) rotate(" + f.t[2] + "deg) scale(" + f.t[3] + ", " + f.t[4] + ")";
+    if (f.o !== undefined) k.opacity = f.o;
+    if (f.d !== undefined) k.strokeDashoffset = f.d;
+    return k;
+  }
+  function reset() {
+    running.forEach(function (a) { a.cancel(); });
+    running = [];
+    clearTimeout(timer);
+    touched.forEach(function (e) { e.style.transform = ""; e.style.opacity = ""; e.style.strokeDashoffset = ""; });
+    touched = [];
+    busy = false;
+    buttons.forEach(function (b) { b.removeAttribute("aria-disabled"); });
+  }
+  function play(g) {
+    reset();
+    busy = true;
+    buttons.forEach(function (b) { b.setAttribute("aria-disabled", "true"); });
+    Object.keys(g.tracks).forEach(function (id) {
+      var e = document.getElementById(id), frames = g.tracks[id];
+      touched.push(e);
+      if (reduced.matches) {
+        var k = frame(frames[2], 0);
+        if (k.transform) e.style.transform = k.transform;
+        if (k.opacity !== undefined) e.style.opacity = k.opacity;
+        if (k.strokeDashoffset !== undefined) e.style.strokeDashoffset = k.strokeDashoffset;
+      } else {
+        running.push(e.animate(frames.map(function (f, i) { return frame(f, DATA.keys[i]); }), { duration: g.ms }));
+      }
+    });
+    status.textContent = reduced.matches ? g.name + ": main pose shown without movement for " + g.ms + " ms." : g.name + ": playing once, " + g.ms + " ms.";
+    timer = setTimeout(function () { reset(); status.textContent = g.name + ": back at rest."; }, g.ms);
+  }
+  if (typeof Element.prototype.animate !== "function") {
+    buttons.forEach(function (b) { b.disabled = true; });
+    status.textContent = "This browser lacks the Web Animations API, so the gestures cannot play here.";
+    return;
+  }
+  buttons.forEach(function (b) {
+    b.addEventListener("click", function () {
+      if (busy) return;
+      play(DATA.gestures.filter(function (g) { return g.key === b.dataset.gesture; })[0]);
+    });
+  });
+  reduced.addEventListener("change", function () { reset(); status.textContent = "Motion preference changed: stopped without replay."; });
+})();
+</script>
+</body>
+</html>

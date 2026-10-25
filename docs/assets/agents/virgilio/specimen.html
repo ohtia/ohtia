@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Virgilio specimen</title>
+<style>
+  :root { --page: #faf8f5; --panel: #f4f1ed; --line: #dad7d2; --fg: #1f1d19; --fg2: #4e4a43; color-scheme: light; }
+  :root.dark { --page: #151411; --panel: #1a1815; --line: #35322e; --fg: #ebe7e2; --fg2: #c1bdb7; color-scheme: dark; }
+  body { margin: 0; background: var(--page); color: var(--fg); font: 15px/1.5 'IBM Plex Sans', system-ui, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 32px 16px 64px; display: grid; gap: 28px; }
+  h1 { font-size: 24px; font-weight: 600; margin: 0; }
+  h2 { font-size: 17px; font-weight: 600; margin: 0 0 12px; }
+  p { margin: 0; color: var(--fg2); max-width: 70ch; }
+  .stage { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: 24px; align-items: start; }
+  .frame { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+  .frame svg { display: block; width: 100%; height: auto; }
+  .controls { display: grid; gap: 10px; align-content: start; }
+  button { font: inherit; text-align: left; padding: 10px 14px; border-radius: 4px; border: 1px solid var(--fg2); background: var(--page); color: var(--fg); cursor: pointer; }
+  button span { color: var(--fg2); font-size: 13px; margin-left: 6px; }
+  button[aria-disabled="true"] { cursor: default; opacity: .6; }
+  button:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+  #status { min-height: 1.5em; }
+  .strip { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+  .strip img { display: block; }
+  .part, .prop { transform-box: view-box; }
+  .c-surface { fill: #e0f4eb; stroke: #07553e; stroke-width: 3; stroke-linejoin: round; }
+  .c-accent { fill: #85d0b1; stroke: #07553e; stroke-width: 3; stroke-linejoin: round; }
+  .c-paper { fill: #e0f4eb; stroke: #07553e; stroke-width: 2.5; stroke-linejoin: round; }
+  .c-line { fill: none; stroke: #07553e; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+  .c-thin { fill: none; stroke: #07553e; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .c-hair { fill: #07553e; stroke: #07553e; stroke-width: 2; stroke-linejoin: round; }
+  .c-hair-line { fill: none; stroke: #e0f4eb; stroke-width: 2; stroke-linecap: round; }
+  .c-brow { fill: none; stroke: #07553e; stroke-width: 3.5; stroke-linecap: round; }
+  .c-mouth { fill: none; stroke: #07553e; stroke-width: 3; stroke-linecap: round; }
+  .c-fill { fill: #07553e; }
+  .c-hole { fill: #e0f4eb; stroke: #07553e; stroke-width: 1.8; }
+  .c-dash { fill: none; stroke: #07553e; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+  .c-trail { fill: none; stroke: #07553e; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 100 110; stroke-dashoffset: 105; }
+  .prop { opacity: 0; }
+  :root.dark .c-surface { fill: #142c22; stroke: #98dcbf; stroke-width: 3; stroke-linejoin: round; }
+  :root.dark .c-accent { fill: #286c53; stroke: #98dcbf; stroke-width: 3; stroke-linejoin: round; }
+  :root.dark .c-paper { fill: #142c22; stroke: #98dcbf; stroke-width: 2.5; stroke-linejoin: round; }
+  :root.dark .c-line { fill: none; stroke: #98dcbf; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+  :root.dark .c-thin { fill: none; stroke: #98dcbf; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  :root.dark .c-hair { fill: #98dcbf; stroke: #98dcbf; stroke-width: 2; stroke-linejoin: round; }
+  :root.dark .c-hair-line { fill: none; stroke: #142c22; stroke-width: 2; stroke-linecap: round; }
+  :root.dark .c-brow { fill: none; stroke: #98dcbf; stroke-width: 3.5; stroke-linecap: round; }
+  :root.dark .c-mouth { fill: none; stroke: #98dcbf; stroke-width: 3; stroke-linecap: round; }
+  :root.dark .c-fill { fill: #98dcbf; }
+  :root.dark .c-hole { fill: #142c22; stroke: #98dcbf; stroke-width: 1.8; }
+  :root.dark .c-dash { fill: none; stroke: #98dcbf; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+  :root.dark .c-trail { fill: none; stroke: #98dcbf; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 100 110; stroke-dashoffset: 105; }
+  :root.dark .prop { opacity: 0; }
+  @media (max-width: 640px) { .stage { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Virgilio specimen</h1>
+    <p>Reference prototype for Virgilio's three gestures. Each plays once, from neutral to its main pose at 50% and back, with the shared standard easing. With reduced motion, the main pose appears without movement for the gesture's duration. Add <code>#dark</code> to the address for the dark theme.</p>
+  </header>
+  <section class="stage">
+    <div class="frame">
+      <svg viewBox="-16 0 152 152" role="img" aria-label="Virgilio">
+<g><rect class="c-surface" x="53" y="86" width="14" height="18" /></g>
+
+<g>
+    <path class="c-accent" d="M26 152 L31 116 Q60 100 89 116 L94 152 Z" />
+    <path class="c-line" d="M46 108 L58 124 L74 106" />
+    <path class="c-line" d="M58 124 Q66 138 70 152" />
+    <path class="c-line" d="M31 140 L50 146" />
+  </g>
+
+<g id="card" class="part">
+<g transform="rotate(-8 87 129)">
+    <rect class="c-paper" x="70" y="114" width="36" height="30" rx="3" />
+    <path class="c-dash" d="M81 137 Q80 125 89 128 Q98 131 99 121" />
+    <circle class="c-fill" cx="81" cy="137" r="2.6" />
+    <circle class="c-hole" cx="99" cy="121" r="3" />
+  </g>
+
+<g transform="rotate(-8 87 129)">
+    <g id="map-panel-2" class="prop">
+      <rect class="c-paper" x="10" y="114" width="30" height="30" rx="1" />
+      <path class="c-dash" d="M15 122 Q27 119 38 126" />
+      <circle class="c-hole" cx="15" cy="122" r="2.2" />
+    </g>
+    <g id="map-panel-1" class="prop">
+      <rect class="c-paper" x="40" y="114" width="30" height="30" rx="1" />
+      <path class="c-dash" d="M43 127 Q57 128 69 135" />
+    </g>
+    <path id="trail" class="c-trail prop" d="M81 137 Q80 125 89 128 Q98 131 99 121" pathLength="100" />
+    <g id="fork" class="prop">
+      <path class="c-dash" d="M89 128 Q98 133 100 139" />
+      <circle class="c-hole" cx="100.5" cy="139.5" r="3" />
+    </g>
+  </g>
+
+<g transform="rotate(-8 87 129)"><circle class="c-surface" cx="70" cy="136" r="6" /></g>
+
+<g transform="rotate(-8 87 129)">
+    <circle id="free-hand" class="c-surface prop" cx="0" cy="0" r="6" />
+  </g>
+
+</g>
+<g id="head" class="part">
+<g><circle class="c-surface" cx="60" cy="62" r="28" /></g>
+
+<g>
+    <path class="c-hair" d="M32.5 60 Q30 34 54 31 Q76 28 85 41 Q90 48 87.5 58 Q80 46 68 45 Q56 44 46 48 Q37 51 32.5 60 Z" />
+    <path class="c-hair-line" d="M62 37 Q72 34 80 40" />
+  </g>
+
+<g><path class="c-hair" d="M38 76 Q41 92 60 92 Q79 92 82 76 Q75 84 67 82 Q60 80 53 82 Q45 84 38 76 Z" /></g>
+
+<g id="brows" class="part"><g>
+    <path class="c-brow" d="M42 56 Q48 53 54 56" />
+    <path class="c-brow" d="M66 56 Q72 53 78 56" />
+  </g>
+  </g>
+<g id="eyes" class="part"><g>
+    <ellipse class="c-fill" cx="48" cy="64" rx="2.6" ry="3.2" />
+    <ellipse class="c-fill" cx="72" cy="64" rx="2.6" ry="3.2" />
+  </g>
+  </g>
+<g id="mouth-rest" class="part"><g><path class="c-mouth" d="M55 73 Q60 76.5 65 73" /></g>
+</g>
+<g>
+    <path id="mouth-open" class="c-hair prop" d="M54 72 Q60 80 66 72 Z" />
+  </g>
+
+</g>
+      </svg>
+    </div>
+    <div class="controls">
+        <button type="button" data-gesture="introduction">Introduction <span>1200 ms</span></button>
+        <button type="button" data-gesture="active">Active contribution <span>1000 ms</span></button>
+        <button type="button" data-gesture="result">Result available <span>1200 ms</span></button>
+      <p id="status" role="status"></p>
+    </div>
+  </section>
+  <section>
+    <h2>Representations</h2>
+    <div class="strip">
+      <img src="avatar.svg" width="48" height="48" alt="Virgilio avatar, 48 px">
+      <img src="avatar.svg" width="32" height="32" alt="Virgilio avatar, 32 px">
+      <img src="avatar.svg" width="24" height="24" alt="Virgilio avatar, 24 px">
+      <img src="symbol.svg" width="24" height="24" alt="Virgilio symbol, 24 px">
+      <img src="symbol.svg" width="16" height="16" alt="Virgilio symbol, 16 px">
+    </div>
+  </section>
+  <section>
+    <h2>Key poses</h2>
+    <img src="poses.svg" alt="Virgilio gestures frozen at 25%, 50% and 75%" style="max-width: 100%; height: auto;">
+  </section>
+</main>
+<script id="gesture-data" type="application/json">{"gestures": [{"key": "introduction", "name": "Introduction", "ms": 1200, "tracks": {"card": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, -4, 8, 1, 1]}, {"t": [0, -6, 8, 1, 1]}, {"t": [0, -4, 8, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "map-panel-1": [{"t": [0, 0, 0, 0.01, 0.01], "o": 0}, {"t": [0, 0, 0, 1, 1], "o": 1}, {"t": [0, 0, 0, 1, 1], "o": 1}, {"t": [0, 0, 0, 1, 1], "o": 1}, {"t": [0, 0, 0, 0.01, 0.01], "o": 0}], "map-panel-2": [{"t": [0, 0, 0, 0.01, 0.01], "o": 0}, {"t": [0, 0, 0, 0.01, 0.01], "o": 0}, {"t": [0, 0, 0, 1, 1], "o": 1}, {"t": [0, 0, 0, 0.01, 0.01], "o": 0}, {"t": [0, 0, 0, 0.01, 0.01], "o": 0}], "free-hand": [{"t": [66, 150, 0, 1, 1], "o": 0}, {"t": [40, 136, 0, 1, 1], "o": 1}, {"t": [10, 136, 0, 1, 1], "o": 1}, {"t": [40, 136, 0, 1, 1], "o": 1}, {"t": [66, 150, 0, 1, 1], "o": 0}], "head": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, 0, -2, 1, 1]}, {"t": [0, 0, -4, 1, 1]}, {"t": [0, 0, -2, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "brows": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, -2, 0, 1, 1]}, {"t": [0, -3, 0, 1, 1]}, {"t": [0, -2, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "mouth-rest": [{"o": 1}, {"o": 0}, {"o": 0}, {"o": 0}, {"o": 1}], "mouth-open": [{"o": 0}, {"o": 1}, {"o": 1}, {"o": 1}, {"o": 0}]}}, {"key": "active", "name": "Active contribution", "ms": 1000, "tracks": {"trail": [{"d": 105, "o": 0}, {"d": 62, "o": 1}, {"d": 22, "o": 1}, {"d": 62, "o": 1}, {"d": 105, "o": 0}], "free-hand": [{"t": [85, 150, 0, 1, 1], "o": 0}, {"t": [89, 134, 0, 1, 1], "o": 1}, {"t": [101, 134, 0, 1, 1], "o": 1}, {"t": [89, 134, 0, 1, 1], "o": 1}, {"t": [85, 150, 0, 1, 1], "o": 0}], "head": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, 0, 2, 1, 1]}, {"t": [0, 0, 3, 1, 1]}, {"t": [0, 0, 2, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "eyes": [{"t": [0, 0, 0, 1, 1]}, {"t": [1, 1, 0, 1, 1]}, {"t": [2, 1.5, 0, 1, 1]}, {"t": [1, 1, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}], "brows": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, 1, 0, 1, 1]}, {"t": [0, 1.2, 0, 1, 1]}, {"t": [0, 1, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}]}}, {"key": "result", "name": "Result available", "ms": 1200, "tracks": {"card": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, -3, 5, 1.05, 1.05]}, {"t": [0, -6, 8, 1.1, 1.1]}, {"t": [0, -3, 5, 1.05, 1.05]}, {"t": [0, 0, 0, 1, 1]}], "fork": [{"o": 0}, {"o": 0.6}, {"o": 1}, {"o": 0.6}, {"o": 0}], "free-hand": [{"t": [114, 150, 0, 1, 1], "o": 0}, {"t": [116, 136, 0, 1, 1], "o": 1}, {"t": [114, 124, 0, 1, 1], "o": 1}, {"t": [116, 136, 0, 1, 1], "o": 1}, {"t": [114, 150, 0, 1, 1], "o": 0}], "brows": [{"t": [0, 0, 0, 1, 1]}, {"t": [0, -1.5, 0, 1, 1]}, {"t": [0, -2.5, 0, 1, 1]}, {"t": [0, -1.5, 0, 1, 1]}, {"t": [0, 0, 0, 1, 1]}]}}], "origins": {"card": [87, 129], "head": [60, 90], "eyes": [60, 64], "brows": [60, 55], "mouth-rest": [60, 74], "map-panel-2": [40.0, 129.0], "map-panel-1": [70.0, 129.0], "free-hand": [0.0, 0.0]}, "keys": [0, 0.25, 0.5, 0.75, 1]}</script>
+<script>
+(function () {
+  var DATA = JSON.parse(document.getElementById("gesture-data").textContent);
+  var EASE = "cubic-bezier(0.2, 0, 0, 1)";
+  var root = document.documentElement;
+  function theme() { root.classList.toggle("dark", location.hash === "#dark"); }
+  theme();
+  window.addEventListener("hashchange", theme);
+  var buttons = Array.prototype.slice.call(document.querySelectorAll("button[data-gesture]"));
+  var status = document.getElementById("status");
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+  var running = [], touched = [], timer = 0, busy = false;
+  Object.keys(DATA.origins).forEach(function (id) {
+    var o = DATA.origins[id];
+    document.getElementById(id).style.transformOrigin = o[0] + "px " + o[1] + "px";
+  });
+  function frame(f, offset) {
+    var k = { offset: offset, easing: EASE };
+    if (f.t) k.transform = "translate(" + f.t[0] + "px, " + f.t[1] + "px) rotate(" + f.t[2] + "deg) scale(" + f.t[3] + ", " + f.t[4] + ")";
+    if (f.o !== undefined) k.opacity = f.o;
+    if (f.d !== undefined) k.strokeDashoffset = f.d;
+    return k;
+  }
+  function reset() {
+    running.forEach(function (a) { a.cancel(); });
+    running = [];
+    clearTimeout(timer);
+    touched.forEach(function (e) { e.style.transform = ""; e.style.opacity = ""; e.style.strokeDashoffset = ""; });
+    touched = [];
+    busy = false;
+    buttons.forEach(function (b) { b.removeAttribute("aria-disabled"); });
+  }
+  function play(g) {
+    reset();
+    busy = true;
+    buttons.forEach(function (b) { b.setAttribute("aria-disabled", "true"); });
+    Object.keys(g.tracks).forEach(function (id) {
+      var e = document.getElementById(id), frames = g.tracks[id];
+      touched.push(e);
+      if (reduced.matches) {
+        var k = frame(frames[2], 0);
+        if (k.transform) e.style.transform = k.transform;
+        if (k.opacity !== undefined) e.style.opacity = k.opacity;
+        if (k.strokeDashoffset !== undefined) e.style.strokeDashoffset = k.strokeDashoffset;
+      } else {
+        running.push(e.animate(frames.map(function (f, i) { return frame(f, DATA.keys[i]); }), { duration: g.ms }));
+      }
+    });
+    status.textContent = reduced.matches ? g.name + ": main pose shown without movement for " + g.ms + " ms." : g.name + ": playing once, " + g.ms + " ms.";
+    timer = setTimeout(function () { reset(); status.textContent = g.name + ": back at rest."; }, g.ms);
+  }
+  if (typeof Element.prototype.animate !== "function") {
+    buttons.forEach(function (b) { b.disabled = true; });
+    status.textContent = "This browser lacks the Web Animations API, so the gestures cannot play here.";
+    return;
+  }
+  buttons.forEach(function (b) {
+    b.addEventListener("click", function () {
+      if (busy) return;
+      play(DATA.gestures.filter(function (g) { return g.key === b.dataset.gesture; })[0]);
+    });
+  });
+  reduced.addEventListener("change", function () { reset(); status.textContent = "Motion preference changed: stopped without replay."; });
+})();
+</script>
+</body>
+</html>

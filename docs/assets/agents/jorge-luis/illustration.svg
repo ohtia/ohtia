@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" role="img" aria-label="Jorge Luis: illustration at rest" viewBox="-16 0 152 152">
+  <title>Jorge Luis: illustration at rest</title>
+  <style>
+    .c-surface { fill: #eaeefe; stroke: #3b4372; stroke-width: 3; stroke-linejoin: round; }
+    .c-accent { fill: #adbaf7; stroke: #3b4372; stroke-width: 3; stroke-linejoin: round; }
+    .c-paper { fill: #eaeefe; stroke: #3b4372; stroke-width: 2.5; stroke-linejoin: round; }
+    .c-line { fill: none; stroke: #3b4372; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .c-thin { fill: none; stroke: #3b4372; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .c-hair { fill: #3b4372; stroke: #3b4372; stroke-width: 2; stroke-linejoin: round; }
+    .c-hair-line { fill: none; stroke: #eaeefe; stroke-width: 2; stroke-linecap: round; }
+    .c-brow { fill: none; stroke: #3b4372; stroke-width: 3.5; stroke-linecap: round; }
+    .c-mouth { fill: none; stroke: #3b4372; stroke-width: 3; stroke-linecap: round; }
+    .c-fill { fill: #3b4372; }
+    .c-hole { fill: #eaeefe; stroke: #3b4372; stroke-width: 1.8; }
+    .c-dash { fill: none; stroke: #3b4372; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+    @media (prefers-color-scheme: dark) {
+      .c-surface { fill: #212538; stroke: #bbc7fe; stroke-width: 3; stroke-linejoin: round; }
+      .c-accent { fill: #505a8b; stroke: #bbc7fe; stroke-width: 3; stroke-linejoin: round; }
+      .c-paper { fill: #212538; stroke: #bbc7fe; stroke-width: 2.5; stroke-linejoin: round; }
+      .c-line { fill: none; stroke: #bbc7fe; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+      .c-thin { fill: none; stroke: #bbc7fe; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .c-hair { fill: #bbc7fe; stroke: #bbc7fe; stroke-width: 2; stroke-linejoin: round; }
+      .c-hair-line { fill: none; stroke: #212538; stroke-width: 2; stroke-linecap: round; }
+      .c-brow { fill: none; stroke: #bbc7fe; stroke-width: 3.5; stroke-linecap: round; }
+      .c-mouth { fill: none; stroke: #bbc7fe; stroke-width: 3; stroke-linecap: round; }
+      .c-fill { fill: #bbc7fe; }
+      .c-hole { fill: #212538; stroke: #bbc7fe; stroke-width: 1.8; }
+      .c-dash { fill: none; stroke: #bbc7fe; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+    }
+  </style>
+  <g><path class="c-surface" d="M29 152 L33 114 Q60 101 87 114 L91 152 Z" /></g>
+    <g>
+      <path class="c-accent" d="M39 152 L40 117 Q49 112 53 105 L60 130 L67 105 Q71 112 80 117 L81 152 Z" />
+      <path class="c-line" d="M53 105 L57 112 L60 106 L63 112 L67 105" />
+    </g>
+    <g><rect class="c-surface" x="54" y="84" width="12" height="20" /></g>
+    <g><ellipse class="c-surface" cx="60" cy="59" rx="24" ry="28" /></g>
+    <g>
+      <path class="c-hair" d="M35.5 59 Q32.5 41 40.5 34 Q46.5 27.5 54.5 29 Q61 24.5 68.5 28 Q79.5 29.5 84 40 Q87.5 47 85 53 Q88 57 84 61 Q81.5 53 76.5 49 Q72.5 44.5 67 47 Q61.5 41.5 54.5 44.5 Q48.5 43 45 47.5 Q39.5 52 35.5 59 Z" />
+      <path class="c-hair-line" d="M47 32 Q44.5 37.5 46 44" />
+      <path class="c-hair-line" d="M58 33.5 Q64 31 70 34" />
+      <path class="c-hair-line" d="M74 37 Q78.5 39.5 80 44.5" />
+    </g>
+    <g>
+      <path class="c-brow" d="M44 55 Q49 52.5 54 54.5" />
+      <path class="c-brow" d="M66 54 Q71 51 76 53.5" />
+    </g>
+    <g>
+      <ellipse class="c-fill" cx="49" cy="63" rx="2.5" ry="3.1" />
+      <ellipse class="c-fill" cx="71" cy="63" rx="2.5" ry="3.1" />
+    </g>
+    <g><path class="c-mouth" d="M55 75 Q60 78 65 75" /></g>
+    <g><rect class="c-accent" x="74" y="118" width="7" height="13" rx="1.2" /></g>
+    <g>
+      <path class="c-paper" d="M36 128 Q49 122 62 128 L62 150 Q49 144 36 150 Z" />
+      <path class="c-thin" d="M41 134 Q48.5 131 56 134" />
+      <path class="c-thin" d="M41 140 Q48.5 137 56 140" />
+    </g>
+    <g>
+      <path class="c-paper" d="M62 128 Q75 122 88 128 L88 150 Q75 144 62 150 Z" />
+      <path class="c-thin" d="M68 134 Q75.5 131 83 134" />
+    </g>
+    <g>
+      <circle class="c-surface" cx="36" cy="147" r="6" />
+      <circle class="c-surface" cx="88" cy="147" r="6" />
+    </g>
+</svg>

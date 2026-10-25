@@ -1,0 +1,241 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1202" height="890" viewBox="0 0 1202 890" role="img" aria-label="Boris: illustration dimensions">
+  <title>Boris: illustration dimensions</title>
+  <style>
+    :root { --page: #faf8f5; --panel: #f4f1ed; --line: #dad7d2; --grid: #ebe7e2; --fg: #1f1d19; --fg2: #4e4a43; }
+    @media (prefers-color-scheme: dark) {
+      :root { --page: #151411; --panel: #1a1815; --line: #35322e; --grid: #262420; --fg: #ebe7e2; --fg2: #c1bdb7; }
+    }
+    .sheet { fill: var(--page); }
+    .grid { stroke: var(--grid); stroke-width: 1; }
+    .grid-major { stroke: var(--line); stroke-width: 1; }
+    .axis { font: 400 11px 'IBM Plex Sans', sans-serif; fill: var(--fg2); }
+    .title { font: 600 16px 'IBM Plex Sans', sans-serif; fill: var(--fg); }
+    .legend { font: 400 13px 'IBM Plex Sans', sans-serif; fill: var(--fg); }
+    .legend-note { font: 400 12px 'IBM Plex Sans', sans-serif; fill: var(--fg2); }
+    .mark { fill: none; stroke: var(--fg); stroke-width: 1.25; vector-effect: non-scaling-stroke; }
+    .lead { fill: none; stroke: var(--fg2); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+    .badge { fill: var(--page); stroke: var(--fg); stroke-width: 1.25; }
+    .badge-text { font: 600 11px 'IBM Plex Sans', sans-serif; fill: var(--fg); text-anchor: middle; }
+    .c-surface { fill: #f1eee9; stroke: #4b4741; stroke-width: 3; stroke-linejoin: round; }
+    .c-accent { fill: #c2bdb5; stroke: #4b4741; stroke-width: 3; stroke-linejoin: round; }
+    .c-paper { fill: #f1eee9; stroke: #4b4741; stroke-width: 2.5; stroke-linejoin: round; }
+    .c-line { fill: none; stroke: #4b4741; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .c-thin { fill: none; stroke: #4b4741; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .c-hair { fill: #4b4741; stroke: #4b4741; stroke-width: 2; stroke-linejoin: round; }
+    .c-hair-line { fill: none; stroke: #f1eee9; stroke-width: 2; stroke-linecap: round; }
+    .c-brow { fill: none; stroke: #4b4741; stroke-width: 3.5; stroke-linecap: round; }
+    .c-mouth { fill: none; stroke: #4b4741; stroke-width: 3; stroke-linecap: round; }
+    .c-fill { fill: #4b4741; }
+    .c-hole { fill: #f1eee9; stroke: #4b4741; stroke-width: 1.8; }
+    .c-dash { fill: none; stroke: #4b4741; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+    @media (prefers-color-scheme: dark) {
+      .c-surface { fill: #292622; stroke: #cfcac2; stroke-width: 3; stroke-linejoin: round; }
+      .c-accent { fill: #615d56; stroke: #cfcac2; stroke-width: 3; stroke-linejoin: round; }
+      .c-paper { fill: #292622; stroke: #cfcac2; stroke-width: 2.5; stroke-linejoin: round; }
+      .c-line { fill: none; stroke: #cfcac2; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+      .c-thin { fill: none; stroke: #cfcac2; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .c-hair { fill: #cfcac2; stroke: #cfcac2; stroke-width: 2; stroke-linejoin: round; }
+      .c-hair-line { fill: none; stroke: #292622; stroke-width: 2; stroke-linecap: round; }
+      .c-brow { fill: none; stroke: #cfcac2; stroke-width: 3.5; stroke-linecap: round; }
+      .c-mouth { fill: none; stroke: #cfcac2; stroke-width: 3; stroke-linecap: round; }
+      .c-fill { fill: #cfcac2; }
+      .c-hole { fill: #292622; stroke: #cfcac2; stroke-width: 1.8; }
+      .c-dash { fill: none; stroke: #cfcac2; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.1 5; }
+    }
+  </style>
+  <rect class="sheet" width="1202" height="890"/>
+  <line class="grid-major" x1="56" y1="40" x2="56" y2="648"/>
+  <text class="axis" x="56" y="32" text-anchor="middle">−16</text>
+  <line class="grid" x1="88" y1="40" x2="88" y2="648"/>
+  <line class="grid-major" x1="120" y1="40" x2="120" y2="648"/>
+  <text class="axis" x="120" y="32" text-anchor="middle">0</text>
+  <line class="grid" x1="152" y1="40" x2="152" y2="648"/>
+  <line class="grid-major" x1="184" y1="40" x2="184" y2="648"/>
+  <text class="axis" x="184" y="32" text-anchor="middle">16</text>
+  <line class="grid" x1="216" y1="40" x2="216" y2="648"/>
+  <line class="grid-major" x1="248" y1="40" x2="248" y2="648"/>
+  <text class="axis" x="248" y="32" text-anchor="middle">32</text>
+  <line class="grid" x1="280" y1="40" x2="280" y2="648"/>
+  <line class="grid-major" x1="312" y1="40" x2="312" y2="648"/>
+  <text class="axis" x="312" y="32" text-anchor="middle">48</text>
+  <line class="grid" x1="344" y1="40" x2="344" y2="648"/>
+  <line class="grid-major" x1="376" y1="40" x2="376" y2="648"/>
+  <text class="axis" x="376" y="32" text-anchor="middle">64</text>
+  <line class="grid" x1="408" y1="40" x2="408" y2="648"/>
+  <line class="grid-major" x1="440" y1="40" x2="440" y2="648"/>
+  <text class="axis" x="440" y="32" text-anchor="middle">80</text>
+  <line class="grid" x1="472" y1="40" x2="472" y2="648"/>
+  <line class="grid-major" x1="504" y1="40" x2="504" y2="648"/>
+  <text class="axis" x="504" y="32" text-anchor="middle">96</text>
+  <line class="grid" x1="536" y1="40" x2="536" y2="648"/>
+  <line class="grid-major" x1="568" y1="40" x2="568" y2="648"/>
+  <text class="axis" x="568" y="32" text-anchor="middle">112</text>
+  <line class="grid" x1="600" y1="40" x2="600" y2="648"/>
+  <line class="grid-major" x1="632" y1="40" x2="632" y2="648"/>
+  <text class="axis" x="632" y="32" text-anchor="middle">128</text>
+  <line class="grid" x1="664" y1="40" x2="664" y2="648"/>
+  <line class="grid-major" x1="56" y1="40" x2="664" y2="40"/>
+  <text class="axis" x="48" y="44" text-anchor="end">0</text>
+  <line class="grid" x1="56" y1="72" x2="664" y2="72"/>
+  <line class="grid-major" x1="56" y1="104" x2="664" y2="104"/>
+  <text class="axis" x="48" y="108" text-anchor="end">16</text>
+  <line class="grid" x1="56" y1="136" x2="664" y2="136"/>
+  <line class="grid-major" x1="56" y1="168" x2="664" y2="168"/>
+  <text class="axis" x="48" y="172" text-anchor="end">32</text>
+  <line class="grid" x1="56" y1="200" x2="664" y2="200"/>
+  <line class="grid-major" x1="56" y1="232" x2="664" y2="232"/>
+  <text class="axis" x="48" y="236" text-anchor="end">48</text>
+  <line class="grid" x1="56" y1="264" x2="664" y2="264"/>
+  <line class="grid-major" x1="56" y1="296" x2="664" y2="296"/>
+  <text class="axis" x="48" y="300" text-anchor="end">64</text>
+  <line class="grid" x1="56" y1="328" x2="664" y2="328"/>
+  <line class="grid-major" x1="56" y1="360" x2="664" y2="360"/>
+  <text class="axis" x="48" y="364" text-anchor="end">80</text>
+  <line class="grid" x1="56" y1="392" x2="664" y2="392"/>
+  <line class="grid-major" x1="56" y1="424" x2="664" y2="424"/>
+  <text class="axis" x="48" y="428" text-anchor="end">96</text>
+  <line class="grid" x1="56" y1="456" x2="664" y2="456"/>
+  <line class="grid-major" x1="56" y1="488" x2="664" y2="488"/>
+  <text class="axis" x="48" y="492" text-anchor="end">112</text>
+  <line class="grid" x1="56" y1="520" x2="664" y2="520"/>
+  <line class="grid-major" x1="56" y1="552" x2="664" y2="552"/>
+  <text class="axis" x="48" y="556" text-anchor="end">128</text>
+  <line class="grid" x1="56" y1="584" x2="664" y2="584"/>
+  <line class="grid-major" x1="56" y1="616" x2="664" y2="616"/>
+  <text class="axis" x="48" y="620" text-anchor="end">144</text>
+  <line class="grid" x1="56" y1="648" x2="664" y2="648"/>
+  <g transform="translate(120 40) scale(4)">
+    <g>
+        <path class="c-accent" d="M21 152 L23 113 Q25 105 34 104 L86 104 Q95 105 97 113 L99 152 Z" />
+        <path class="c-surface" d="M48 104 L72 104 L65 121 L69 152 L51 152 L55 121 Z" />
+        <path class="c-line" d="M48 104 L55 121 L51 152" />
+        <path class="c-line" d="M72 104 L65 121 L69 152" />
+      </g>
+      <g><rect class="c-surface" x="53" y="84" width="14" height="20" /></g>
+      <g><rect class="c-surface" x="33" y="36" width="54" height="52" rx="19" /></g>
+      <g>
+        <path class="c-hair" d="M33 52 Q33 34 60 33 Q87 34 87 52 Q78 44 60 44 Q42 44 33 52 Z" />
+        <circle class="c-hair" cx="31.5" cy="56" r="5.5" />
+        <circle class="c-hair" cx="33.5" cy="46" r="6" />
+        <circle class="c-hair" cx="39" cy="37" r="6.5" />
+        <circle class="c-hair" cx="49" cy="32" r="6.5" />
+        <circle class="c-hair" cx="60" cy="30" r="6.5" />
+        <circle class="c-hair" cx="71" cy="32" r="6.5" />
+        <circle class="c-hair" cx="81" cy="37" r="6.5" />
+        <circle class="c-hair" cx="88.5" cy="56" r="5.5" />
+        <circle class="c-hair" cx="86.5" cy="46" r="6" />
+        <path class="c-hair-line" d="M45 31 Q47 28 51 28.5" />
+        <path class="c-hair-line" d="M57 28 Q60 26 63 27" />
+        <path class="c-hair-line" d="M69 29 Q72 28 74 30" />
+      </g>
+      <g>
+        <path class="c-brow" d="M43 56 Q48 53.5 53 55.5" />
+        <path class="c-brow" d="M67 55.5 Q72 53.5 77 56" />
+      </g>
+      <g>
+        <ellipse class="c-fill" cx="48" cy="63" rx="2.6" ry="3.2" />
+        <ellipse class="c-fill" cx="72" cy="63" rx="2.6" ry="3.2" />
+      </g>
+      <g><path class="c-mouth" d="M53 75 Q60 80 67 75" /></g>
+      <g transform="rotate(5 92 130)">
+        <rect class="c-paper" x="78" y="110" width="28" height="38" rx="2.5" />
+        <rect class="c-accent" x="83" y="116" width="18" height="7" rx="1.5" />
+        <rect class="c-accent" x="83" y="127" width="18" height="7" rx="1.5" />
+        <rect class="c-accent" x="83" y="138" width="11" height="5" rx="1.5" />
+      </g>
+      <g><circle class="c-surface" cx="78" cy="138" r="6" /></g>
+  </g>
+  <line class="lead" x1="252.0" y1="248.0" x2="88" y2="248.0"/>
+  <circle class="mark" cx="252.0" cy="248.0" r="3"/>
+  <circle class="badge" cx="88" cy="248.0" r="10"/>
+  <text class="badge-text" x="88" y="252.0">4</text>
+  <line class="lead" x1="292.0" y1="264.0" x2="88" y2="274.0"/>
+  <circle class="mark" cx="292.0" cy="264.0" r="3"/>
+  <circle class="badge" cx="88" cy="274.0" r="10"/>
+  <text class="badge-text" x="88" y="278.0">5</text>
+  <line class="lead" x1="312.0" y1="292.0" x2="88" y2="300.0"/>
+  <circle class="mark" cx="312.0" cy="292.0" r="3"/>
+  <circle class="badge" cx="88" cy="300.0" r="10"/>
+  <text class="badge-text" x="88" y="304.0">6</text>
+  <line class="lead" x1="332.0" y1="340.0" x2="88" y2="340.0"/>
+  <circle class="mark" cx="332.0" cy="340.0" r="3"/>
+  <circle class="badge" cx="88" cy="340.0" r="10"/>
+  <text class="badge-text" x="88" y="344.0">7</text>
+  <line class="lead" x1="204.0" y1="648.0" x2="88" y2="648.0"/>
+  <circle class="mark" cx="204.0" cy="648.0" r="3"/>
+  <circle class="badge" cx="88" cy="648.0" r="10"/>
+  <text class="badge-text" x="88" y="652.0">1</text>
+  <line class="lead" x1="360.0" y1="288.0" x2="632" y2="288.0"/>
+  <circle class="mark" cx="360.0" cy="288.0" r="3"/>
+  <circle class="badge" cx="632" cy="288.0" r="10"/>
+  <text class="badge-text" x="632" y="292.0">3</text>
+  <line class="lead" x1="360.0" y1="416.0" x2="632" y2="416.0"/>
+  <circle class="mark" cx="360.0" cy="416.0" r="3"/>
+  <circle class="badge" cx="632" cy="416.0" r="10"/>
+  <text class="badge-text" x="632" y="420.0">2</text>
+  <line class="lead" x1="488.3" y1="556.0" x2="632" y2="556.0"/>
+  <circle class="mark" cx="488.3" cy="556.0" r="3"/>
+  <circle class="badge" cx="632" cy="556.0" r="10"/>
+  <text class="badge-text" x="632" y="560.0">8</text>
+  <line class="lead" x1="432.0" y1="592.0" x2="632" y2="592.0"/>
+  <circle class="mark" cx="432.0" cy="592.0" r="3"/>
+  <circle class="badge" cx="632" cy="592.0" r="10"/>
+  <text class="badge-text" x="632" y="596.0">9</text>
+  <text class="title" x="704" y="30">Boris illustration: dimensions</text>
+  <circle class="badge" cx="714" cy="56" r="10"/>
+  <text class="badge-text" x="714" y="60">1</text>
+  <text class="legend" x="734" y="60">Jacket: M21 152 L23 113 Q25 105 34 104 L86 104 Q95 105 97 113</text>
+  <text class="legend" x="734" y="78">L99 152 Z, accent fill, line stroke 3; M48 104 L72 104 L65 121</text>
+  <text class="legend" x="734" y="96">L69 152 L51 152 L55 121 Z, surface fill, line stroke 3; M48 104</text>
+  <text class="legend" x="734" y="114">L55 121 L51 152, line stroke 2.5; M72 104 L65 121 L69 152, line</text>
+  <text class="legend" x="734" y="132">stroke 2.5.</text>
+  <circle class="badge" cx="714" cy="158" r="10"/>
+  <text class="badge-text" x="714" y="162">2</text>
+  <text class="legend" x="734" y="162">Neck: rectangle at (53; 84), 14 × 20, surface fill, line stroke</text>
+  <text class="legend" x="734" y="180">3.</text>
+  <circle class="badge" cx="714" cy="206" r="10"/>
+  <text class="badge-text" x="714" y="210">3</text>
+  <text class="legend" x="734" y="210">Face: rectangle at (33; 36), 54 × 52, corner radius 19, surface</text>
+  <text class="legend" x="734" y="228">fill, line stroke 3.</text>
+  <circle class="badge" cx="714" cy="254" r="10"/>
+  <text class="badge-text" x="714" y="258">4</text>
+  <text class="legend" x="734" y="258">Hair: M33 52 Q33 34 60 33 Q87 34 87 52 Q78 44 60 44 Q42 44 33 52</text>
+  <text class="legend" x="734" y="276">Z, line fill and stroke 2; circle at (31.5; 56), radius 5.5,</text>
+  <text class="legend" x="734" y="294">line fill and stroke 2; circle at (33.5; 46), radius 6, line</text>
+  <text class="legend" x="734" y="312">fill and stroke 2; circle at (39; 37), radius 6.5, line fill and</text>
+  <text class="legend" x="734" y="330">stroke 2; circle at (49; 32), radius 6.5, line fill and stroke</text>
+  <text class="legend" x="734" y="348">2; circle at (60; 30), radius 6.5, line fill and stroke 2;</text>
+  <text class="legend" x="734" y="366">circle at (71; 32), radius 6.5, line fill and stroke 2; circle</text>
+  <text class="legend" x="734" y="384">at (81; 37), radius 6.5, line fill and stroke 2; circle at</text>
+  <text class="legend" x="734" y="402">(88.5; 56), radius 5.5, line fill and stroke 2; circle at (86.5;</text>
+  <text class="legend" x="734" y="420">46), radius 6, line fill and stroke 2; M45 31 Q47 28 51 28.5,</text>
+  <text class="legend" x="734" y="438">surface stroke 2; M57 28 Q60 26 63 27, surface stroke 2; M69 29</text>
+  <text class="legend" x="734" y="456">Q72 28 74 30, surface stroke 2.</text>
+  <circle class="badge" cx="714" cy="482" r="10"/>
+  <text class="badge-text" x="714" y="486">5</text>
+  <text class="legend" x="734" y="486">Eyebrows: M43 56 Q48 53.5 53 55.5, line stroke 3.5; M67 55.5 Q72</text>
+  <text class="legend" x="734" y="504">53.5 77 56, line stroke 3.5.</text>
+  <circle class="badge" cx="714" cy="530" r="10"/>
+  <text class="badge-text" x="714" y="534">6</text>
+  <text class="legend" x="734" y="534">Eyes: ellipse at (48; 63), radii 2.6 and 3.2, line fill; ellipse</text>
+  <text class="legend" x="734" y="552">at (72; 63), radii 2.6 and 3.2, line fill.</text>
+  <circle class="badge" cx="714" cy="578" r="10"/>
+  <text class="badge-text" x="714" y="582">7</text>
+  <text class="legend" x="734" y="582">Mouth: M53 75 Q60 80 67 75, line stroke 3.</text>
+  <circle class="badge" cx="714" cy="608" r="10"/>
+  <text class="badge-text" x="714" y="612">8</text>
+  <text class="legend" x="734" y="612">Sheet: rectangle at (78; 110), 28 × 38, corner radius 2.5,</text>
+  <text class="legend" x="734" y="630">surface fill, line stroke 2.5; rectangle at (83; 116), 18 × 7,</text>
+  <text class="legend" x="734" y="648">corner radius 1.5, accent fill, line stroke 3; rectangle at (83;</text>
+  <text class="legend" x="734" y="666">127), 18 × 7, corner radius 1.5, accent fill, line stroke 3;</text>
+  <text class="legend" x="734" y="684">rectangle at (83; 138), 11 × 5, corner radius 1.5, accent fill,</text>
+  <text class="legend" x="734" y="702">line stroke 3; rotated 5° about (92; 130).</text>
+  <circle class="badge" cx="714" cy="728" r="10"/>
+  <text class="badge-text" x="714" y="732">9</text>
+  <text class="legend" x="734" y="732">Hand: circle at (78; 138), radius 6, surface fill, line stroke</text>
+  <text class="legend" x="734" y="750">3.</text>
+  <text class="legend-note" x="704" y="788">Frame: viewBox from (−16; 0) to (136; 152). Grid every 8, dimensions</text>
+  <text class="legend-note" x="704" y="806">every 16. Line, accent and surface roles use character.boris.line,</text>
+  <text class="legend-note" x="704" y="824">.accent and .surface. Illustration used from 96 px; the avatar crops the</text>
+  <text class="legend-note" x="704" y="842">same drawing to a circle at (60; 72) with radius 44.</text>
+</svg>

@@ -2,6 +2,8 @@
 type: Specification
 title: "Agent collaboration"
 description: "Virgilio, research specialists, bounded collaboration, inspectable memory, and human-approved editorial proposals."
+generated:
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 sources:
@@ -26,11 +28,11 @@ sources:
 
 ## Purpose and authority
 
-Virgilio is Ohtia's AI research guide, with a tutoring function distinct from a human supervisor. It helps the researcher understand the current investigation, examine alternatives and request bounded contributions from specialists. The researcher chooses direction, reviews proposals and decides what enters the manuscript. [Product principles](product-definition.md#product-principles) govern the collaboration: guidance under PRIN-001 and PRIN-003, authorship under PRIN-002, provenance and uncertainty under PRIN-004 through PRIN-010, and bounded useful work under PRIN-015 and PRIN-016.
+Virgilio is Ohtia's AI research guide, with a tutoring function distinct from a human supervisor. It helps the researcher understand the current investigation, examine alternatives and request bounded contributions from specialists. The researcher chooses direction, reviews proposals and decides what enters the manuscript. [Product principles](../product-definition.md#product-principles) govern the collaboration: guidance under PRIN-001 and PRIN-003, authorship under PRIN-002, provenance and uncertainty under PRIN-004 through PRIN-010, and bounded useful work under PRIN-015 and PRIN-016.
 
 Use coordinator-mediated collaboration among loosely coupled specialist agents as the architectural description. A specialist has a defined research responsibility, receives selected context and returns examinable artifacts through application-owned contracts. Virgilio can coordinate a particular intervention without becoming a permanent manager of the specialists. A specialist can question an assignment and disagree with another contribution. Neither role nor agreement grants authority to confirm knowledge, approve transfers or impersonate the researcher.
 
-This document owns collaboration behavior, logical records and editorial proposals. [System architecture](architecture.md) owns execution and storage boundaries; [ADR-0011](adr/adr-0011-bounded-durable-local-tasks.md) owns task/attempt states, concurrency and recovery; [ADR-0012](adr/adr-0012-attempt-bound-process-capabilities.md) owns attempt authority; [ADR-0013](adr/adr-0013-private-content-free-structured-logging.md) owns diagnostics. [ADR-0037](adr/adr-0037-application-mediated-agent-collaboration.md) records the coordination choice. The [evaluation playbook](agent-collaboration-evaluation.md) defines the evidence required before enabling a collaboration policy.
+This document owns collaboration behavior, logical records and editorial proposals. [System architecture](../architecture.md) owns execution and storage boundaries; [ADR-0011](../adr/adr-0011-bounded-durable-local-tasks.md) owns task/attempt states, concurrency and recovery; [ADR-0012](../adr/adr-0012-attempt-bound-process-capabilities.md) owns attempt authority; [ADR-0013](../adr/adr-0013-private-content-free-structured-logging.md) owns diagnostics. [ADR-0037](../adr/adr-0037-application-mediated-agent-collaboration.md) records the coordination choice. The [evaluation playbook](agent-collaboration-evaluation.md) defines the evidence required before enabling a collaboration policy.
 
 ## Entry points and research experience
 
@@ -52,41 +54,51 @@ Changing a definition or binding does not rewrite earlier contributions. Preserv
 
 Every specialist receives the research question, requested contribution, relevant profile facts with attribution, approved immutable material and explicit limits. It returns findings with evidence anchors, examined scope, omissions, uncertainty, assumptions and suggested next questions. Additional material, another specialist or broader authority is a structured request to the application, never an instruction that grants itself permission.
 
+### Contribution result contract
+
+Each operation defines and validates its application-owned result schema before enablement. The readable and structured result preserve the same meaning. Every accepted result retains project/contribution identity, the operation and bounded question, definition/instruction/policy/output-contract versions, exact examined input versions and anchors, requested/resolved/observed configuration, actual coverage, omissions, assumptions, uncertainty and useful next questions. Unobserved values remain unknown. Schema validity and task completion do not establish factual correctness, adequate coverage or human review.
+
+Role-specific profiles own the domain findings and artifact requirements. The [contribution records](#intervention-and-contribution-records) and [coverage rules](#completion-cancellation-and-recovery) govern acceptance and partial results; [editorial proposals and approval](#editorial-proposals-and-approval) govern manuscript effects. Findings cannot confirm evidence, change researcher decisions or apply manuscript edits through agent authority.
+
+### Inference preferences and reproducibility
+
+Keep a contributor's identity independent of its provider binding. The researcher can set a preferred enabled connection, model and provider-native effort for each contributor within each operation's evaluated policy. Resolve an authorized invocation-specific choice first, then the contributor's saved preference, then the operation's declared default; runtime inheritance is allowed only when the operation policy explicitly permits it. Policy constraints apply at every step. Preserve an explicit inherit choice separately from a specific value.
+
+Model and effort options come from the selected connection/runtime's capability metadata, with origin and freshness visible in configuration. Distinguish supported, unsupported and unknown controls; effort labels are not a universal scale across providers. Discovery failure does not erase a saved preference or establish that it is invalid. An unresolved control required by the operation prevents admission rather than authorizing a guessed value.
+
+Freeze the resolved configuration with accepted work. Preference changes affect subsequently accepted work, not queued contributions or a resumed session's immutable inputs. Preserve requested, resolved/sent and effectively observed settings separately; unexposed model identity or effort remains unknown. A missing model, unsupported option or account change does not silently switch provider, account or model. Any fallback follows the explicitly authorized compatibility and destination rules in ADR-0029.
+
+A contributor has no separate orchestration loop or retry allowance. Consultations, planning, specialist work and synthesis share the intervention limits and canonical task lifecycle. No inference starts from viewing the profile, inspecting its stored decisions or changing a preference.
+
+### Research guide
+
+[Virgilio's profile](agent-virgilio.md) owns bounded guidance, research clarification, collaboration planning and attributed synthesis. Shared coordination remains application-mediated; specialists can respond directly without a mandatory guide turn.
+
 ### Reference librarian
 
-Inputs include the question, current vocabulary, selected references and an agreed search purpose. Tools can query enabled search adapters and inspect permitted metadata/content. Outputs include proposed search strategies, actual queries and filters, candidate references, duplicate/version ambiguities, reasoned inclusion/exclusion suggestions and access limitations.
-
-Separate a planned search from an executed search and metadata from examined text. Preserve per-provider provenance and coverage. The librarian cannot infer full-text access from a citation, merge records solely by title/DOI, silently change provider or describe an exploratory search as exhaustive. Readiness requires attributable discovery records and useful selection reasoning under the evaluation policy.
+[Josefa's profile](agent-josefa.md) owns search planning, executed discovery, candidate-selection suggestions and coverage review. Discovery, access and examination remain distinguishable.
 
 ### Analytical reader
 
-Inputs identify exact source contents and the question motivating the reading. Tools inspect permitted representations and locations. Outputs include attributed reading records covering the source's question, concepts, methods, results, limitations and relevant claims, with a concise summary when useful.
-
-Distinguish the author's statements from extraction and agent interpretation. Report abstract-only work, unreadable passages and unsupported figures, tables or mathematics. A summary cannot stand in for examination of the underlying evidence. Readiness requires locatable attributions, faithful qualification and honest coverage.
+[Jorge Luis's profile](agent-jorge-luis.md) owns source reading, locatable attribution, passage comparison and reading revision. Source statements, extraction and interpretation remain distinguishable.
 
 ### Critical evidence reviewer
 
-Inputs identify the proposition, citation function or argument to examine and the original supporting material. Tools inspect approved evidence and compare versioned contributions. Outputs identify support, partial support, ambiguity, incompatibility under stated comparison conditions, unsupported inference and useful alternative explanations.
-
-Missing access is not evidence of absence. Check populations, definitions, methods, dependencies and shared underlying data before treating results as comparable or independent. When independent criticism is requested, first examine the evidence without the earlier agent's verdict; any later exposure to that verdict is recorded. A different persona or model does not establish independence. Readiness requires justified objections and accurate recognition of adequate support, without a quota of criticisms.
+[Erasmus's profile](agent-erasmus.md) owns attribution checks, inferential review, evidence comparison and declared independent criticism. Findings preserve grounds, limitations and review exposure.
 
 ### Academic editor
 
-Inputs include an exact manuscript revision, selected passages, intended audience, research purpose and supplied institutional requirements. Tools inspect permitted text, structure and linked findings. Outputs are anchored observations, structural alternatives and concrete wording proposals when requested. Proposed text retains its producer and any evidence dependencies.
-
-Explain how a proposal affects clarity, coherence or argument. Do not add unsupported evidence, strengthen conclusions beyond their grounds or invent institutional rules. Apply the [editorial review contract](#editorial-proposals-and-approval) for every proposed manuscript change. Readiness requires useful editorial reasoning, preservation of meaning where requested and explicit disclosure of substantive changes.
+[Boris's profile](agent-boris.md) owns structure, argument presentation and academic editorial proposals. The shared [editorial proposal and human approval contract](#editorial-proposals-and-approval) governs every manuscript application.
 
 ### Proofreader
 
-Inputs identify an exact revision, passage, manuscript language and applicable supplied style requirements. Tools inspect that text and permitted terminology references. Outputs identify spelling, grammar, punctuation, terminology and formal-consistency problems with proposed corrections and reasons where needed.
-
-Distinguish an error from a permissible language variant or stylistic preference. Preserve quotations, formulae, citations and disciplinary meaning. A correction that changes a claim is escalated as a substantive editorial proposal. Academic editing and proofreading may share a writing-review entry point while retaining distinct role definitions, output labels and evaluation criteria.
+[María's profile](agent-maria.md) owns language correction, terminology, formal consistency and meaning-impact review. Writing review retains academic editing and proofreading as distinct definitions, output labels and evaluation scopes.
 
 ### Methodological guidance and analysis extension
 
 Virgilio and the reader/reviewer provide bounded methodological guidance from the first useful experience. Distinguish established project requirements, researcher choices and suggestions. Examine whether the question, material, design and claimed conclusion fit, across quantitative, qualitative, documentary and theoretical work where capabilities permit.
 
-Route a request needing sustained methodological specialization to a separately evaluated methodologist definition, or explain that the required capability is unavailable. Do not relabel a general agent as a qualified specialist without its operation contract and quality evidence. Guidance cannot certify ethics approval, institutional compliance or the validity of unexamined data.
+Route a request needing sustained methodological specialization to the separately evaluated [Thomas, the methodologist](agent-thomas.md), or explain that the required capability is unavailable. Thomas's profile owns its role-specific operations and evaluation cases; the shared collaboration and execution contracts remain here. Do not relabel a general agent as a qualified specialist without its operation contract and quality evidence. Guidance cannot certify ethics approval, institutional compliance or the validity of unexamined data.
 
 A statistical/data-analysis specialist extends these contracts only after reproducible execution is separately defined: immutable data inputs, restrictions, transformations, analysis code and environment, parameters/seeds where relevant, output identities and actual execution coverage. The present collaboration boundary grants no arbitrary shell, SQL or code-execution tool. A proposed method is distinguishable from an executed analysis and from a validated interpretation.
 
