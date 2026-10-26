@@ -146,6 +146,10 @@ def check_targets(record: dict[str, Any]) -> None:
             "Delivery package set differs from the selected contract",
         )
     for row in rows:
+        require(
+            row.get("runtime_arguments", []) == [],
+            "Native runtime arguments must preserve the reviewed automatic selection",
+        )
         facilities = row.get("testing_facilities", {})
         require(
             facilities.get("hosted_candidates") == FACILITIES[row["id"]]
@@ -154,7 +158,7 @@ def check_targets(record: dict[str, Any]) -> None:
         )
         if row["os"] == "linux":
             require(
-                row.get("runtime_arguments") == ["--ozone-platform=auto"],
+                "runtime_arguments" in row,
                 "Linux runtime must use the reviewed native display selection",
             )
             profiles = row.get("distribution_profiles", [])
@@ -428,6 +432,37 @@ def check_toolchain(record: dict[str, Any], root: Path) -> None:
                         artifact.get("path") == f"package/prebuilds/{target}.node",
                         "Native addon path mismatch",
                     )
+    helpers = tools["electron-builder"].get("linux_packaging_helpers", {})
+    require(set(helpers) == {"fpm", "7zip"}, "Frozen Linux packaging helpers are required")
+    for name, helper in helpers.items():
+        release = helper.get("release", "")
+        require(
+            re.fullmatch(re.escape(name) + r"@\d+\.\d+\.\d+", release) is not None,
+            "Packaging helper release must be exact",
+        )
+        require(
+            set(helper.get("artifacts", {})) == {"linux-x64", "linux-arm64"},
+            "Packaging helper native coverage differs",
+        )
+        for target, artifact in helper["artifacts"].items():
+            check_artifact(artifact)
+            arch = target.split("-")[1]
+            if name == "fpm":
+                native_arch = "amd64" if arch == "x64" else "arm64v8"
+                filename = (
+                    f"fpm-{helper.get('fpm_version')}-ruby-{helper.get('ruby_version')}"
+                    f"-linux-{native_arch}.7z"
+                )
+            else:
+                filename = f"7zip-linux-{arch}.tar.gz"
+            require(
+                unquote(artifact["url"])
+                == "https://github.com/electron-userland/electron-builder-binaries/releases/download/"
+                + release
+                + "/"
+                + filename,
+                "Packaging helper source or native filename differs",
+            )
     require(tools["react"]["version"] == tools["react-dom"]["version"], "React pair must match")
     require(
         tools["python"].get("variant") == "conventional-gil", "Free-threaded Python is not selected"
@@ -447,8 +482,11 @@ def check_toolchain(record: dict[str, Any], root: Path) -> None:
 
     for component in ("node", "chrome", "v8"):
         identity = runtime[component]
+        pattern = r"\d+(?:\.\d+){2,3}"
+        if component == "v8":
+            pattern += r"(?:-electron\.\d+)?"
         require(
-            isinstance(identity, str) and re.fullmatch(r"\d+(?:\.\d+){2,3}", identity) is not None,
+            isinstance(identity, str) and re.fullmatch(pattern, identity) is not None,
             f"Invalid embedded {component} identity",
         )
     require(

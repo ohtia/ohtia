@@ -1,5 +1,6 @@
 packages:
   - packages/*
+  - tools/desktop-probes
 
 supportedArchitectures:
   os: [linux, win32, darwin]
@@ -8,7 +9,9 @@ supportedArchitectures:
 
 strictPeerDependencies: true
 minimumReleaseAge: 1440
-onlyBuiltDependencies: []
+strictDepBuilds: true
+allowBuilds:
+  electron-winstaller: false
 
 storeDir: .cache/pnpm/store
 cacheDir: .cache/pnpm/cache

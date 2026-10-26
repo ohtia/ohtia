@@ -37,7 +37,7 @@
       "embedded_runtime_metadata": {
         "node": "24.22.0",
         "chrome": "156.0.8078.48",
-        "v8": "15.6.75.19",
+        "v8": "15.6.75.19-electron.0",
         "modules": "150"
       },
       "artifacts": {
@@ -416,6 +416,47 @@
         "integrity": "sha512-ASgIuQnOq4RuD8jMhS9hI0LS3EMRT1I/M5R6utqifB/BHN80IcCjBdt+DED+NmNPvmBgEtrlExXZitNdA7kXOg==",
         "bytes": 22342,
         "inspection": "downloaded-integrity-checked"
+      },
+      "linux_packaging_helpers": {
+        "fpm": {
+          "release": "fpm@2.1.4",
+          "fpm_version": "1.17.0",
+          "ruby_version": "3.4.3",
+          "artifacts": {
+            "linux-x64": {
+              "url": "https://github.com/electron-userland/electron-builder-binaries/releases/download/fpm%402.1.4/fpm-1.17.0-ruby-3.4.3-linux-amd64.7z",
+              "sha256": "44b0ec6025c14ec137f56180e62675c0eae36233cdce53d0953d9c73ced8989f",
+              "inspection": "published-metadata-only"
+            },
+            "linux-arm64": {
+              "url": "https://github.com/electron-userland/electron-builder-binaries/releases/download/fpm%402.1.4/fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z",
+              "sha256": "338b50cfa7f12d745a997d1a3d000bcd0410008050fa7d8c4476a78a61c0564e",
+              "inspection": "published-metadata-only"
+            }
+          },
+          "native_prerequisites": {
+            "fedora-44": {
+              "sonames": ["libcrypt.so.1"],
+              "packages": ["libxcrypt-compat"],
+              "reason": "The pinned FPM Ruby helper requires the legacy libcrypt ABI; verify the signed vendor provider on the native host."
+            }
+          }
+        },
+        "7zip": {
+          "release": "7zip@1.0.0",
+          "artifacts": {
+            "linux-x64": {
+              "url": "https://github.com/electron-userland/electron-builder-binaries/releases/download/7zip%401.0.0/7zip-linux-x64.tar.gz",
+              "sha256": "d151bb44b2a9d9bfc52813ce4cac042916394a0ab8a56bd5d221a5dc9ef8d5d7",
+              "inspection": "published-metadata-only"
+            },
+            "linux-arm64": {
+              "url": "https://github.com/electron-userland/electron-builder-binaries/releases/download/7zip%401.0.0/7zip-linux-arm64.tar.gz",
+              "sha256": "5aff5034206b78f8261249ceb922b5c7e04c9bdb733784d8f5b6df9732cf1f79",
+              "inspection": "published-metadata-only"
+            }
+          }
+        }
       }
     },
     "electron-updater": {

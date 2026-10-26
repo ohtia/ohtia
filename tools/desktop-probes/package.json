@@ -1,0 +1,21 @@
+{
+  "name": "@ohtia/desktop-probes",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "electron": "45.0.0",
+    "better-sqlite3": "13.0.3"
+  },
+  "devDependencies": {
+    "electron-builder": "26.18.0",
+    "electron-updater": "6.8.11",
+    "typescript": "6.0.3",
+    "@types/node": "24.19.2",
+    "@types/better-sqlite3": "7.6.13"
+  }
+}

@@ -57,6 +57,8 @@ function compile(noEmit = false) {
       ...(noEmit ? ["--emitDeclarationOnly"] : []),
     ]);
   }
+  fs.rmSync(path.join(root, "tools/desktop-probes/dist"), { recursive: true, force: true });
+  node("typescript/bin/tsc", ["-p", "tools/desktop-probes/tsconfig.json"]);
 }
 const commands = {
   doctor() {
@@ -86,11 +88,16 @@ const commands = {
     for (const item of boundaries())
       node("typescript/bin/tsc", ["-p", path.join(item.directory, "tsconfig.json"), "--noEmit"]);
     node("typescript/bin/tsc", ["-p", "tools/renderer-preview/tsconfig.json"]);
+    node("typescript/bin/tsc", ["-p", "tools/desktop-probes/tsconfig.json", "--noEmit"]);
     run(python, ["-m", "pyrefly", "check"]);
   },
   lint() {
     compile(true);
-    node("eslint/bin/eslint.js", ["packages"]);
+    node("eslint/bin/eslint.js", [
+      "packages",
+      "tools/desktop-probes/src",
+      "tools/desktop-probes/*.mjs",
+    ]);
     run(python, ["-m", "ruff", "check", "scripts"]);
   },
   "format:check"() {
@@ -116,6 +123,23 @@ const commands = {
   "package:local"() {
     commands.build();
     run(python, ["scripts/package_workspace.py"]);
+  },
+  "probes:prepare"() {
+    commands.build();
+    run(python, ["scripts/desktop_probes.py", "prepare", ...process.argv.slice(3)]);
+  },
+  "probes:bundle"() {
+    commands.build();
+    run(python, ["scripts/desktop_probes.py", "bundle", ...process.argv.slice(3)]);
+  },
+  "probes:run"() {
+    run(python, ["scripts/desktop_probes.py", "run", ...process.argv.slice(3)]);
+  },
+  "probes:report"() {
+    run(python, ["scripts/desktop_probes.py", "report", ...process.argv.slice(3)]);
+  },
+  "probes:package"() {
+    run(python, ["scripts/desktop_delivery.py", ...process.argv.slice(3)]);
   },
 };
 const command = commands[process.argv[2]];

@@ -9,6 +9,11 @@
     "pnpm": "12.14.0"
   },
   "scripts": {
+    "probes:bundle": "node tooling/workspace.mjs probes:bundle",
+    "probes:prepare": "node tooling/workspace.mjs probes:prepare",
+    "probes:run": "node tooling/workspace.mjs probes:run",
+    "probes:report": "node tooling/workspace.mjs probes:report",
+    "probes:package": "node tooling/workspace.mjs probes:package",
     "build": "node tooling/workspace.mjs build",
     "typecheck": "node tooling/workspace.mjs typecheck",
     "lint": "node tooling/workspace.mjs lint",

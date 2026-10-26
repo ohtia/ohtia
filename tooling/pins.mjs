@@ -6,6 +6,7 @@ export function assertPackagePins(root) {
   const tools = JSON.parse(fs.readFileSync(path.join(root, "config/desktop/toolchain.json"))).tools;
   const manifests = [
     path.join(root, "package.json"),
+    path.join(root, "tools/desktop-probes/package.json"),
     ...packageDirectories(root).map((directory) => path.join(directory, "package.json")),
   ];
   for (const file of manifests) {
