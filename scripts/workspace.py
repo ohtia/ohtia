@@ -104,7 +104,9 @@ def uv_path() -> Path:
     return TOOLS / "uv" / ("uv.exe" if os.name == "nt" else "uv")
 
 
-def invoke(command: list[str | Path], *, capture: bool = False) -> str:
+def invoke(
+    command: list[str | Path], *, capture: bool = False, noninteractive: bool = False
+) -> str:
     try:
         result = subprocess.run(
             [str(part) for part in command],
@@ -113,6 +115,7 @@ def invoke(command: list[str | Path], *, capture: bool = False) -> str:
             check=True,
             text=True,
             stdout=subprocess.PIPE if capture else None,
+            stdin=subprocess.DEVNULL if noninteractive else None,
         )
     except OSError as exc:
         raise WorkspaceError(
@@ -246,7 +249,8 @@ def pnpm(*args: str) -> str:
                 ROOT / ".cache/pnpm/store",
                 "--config.verifyDepsBeforeRun=error",
                 *args,
-            ]
+            ],
+            noninteractive=bool(args) and args[0] == "install",
         )
     finally:
         if any(digest(ROOT / name) != expected for name, expected in locks.items()):

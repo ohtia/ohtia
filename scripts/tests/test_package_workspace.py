@@ -34,6 +34,9 @@ class PackageArchiveTests(unittest.TestCase):
             )
             for file in ("index.js", "index.d.ts"):
                 (package / "dist" / file).write_text("export {};\n", encoding="utf-8")
+        probes = self.root / "tools/desktop-probes/dist"
+        probes.mkdir(parents=True)
+        (probes / "main.js").write_text("throw new Error('non-shipping probe');\n")
         for name in (
             "pnpm-lock.yaml",
             "config/desktop/targets.json",
@@ -52,6 +55,7 @@ class PackageArchiveTests(unittest.TestCase):
         self.assertIn("packages/contracts/dist/index.js", names)
         self.assertIn("packages/contracts/dist/index.d.ts", names)
         self.assertFalse(any(name.startswith("packages/unchecked/") for name in names))
+        self.assertFalse(any(name.startswith("tools/") for name in names))
 
     def test_validation_failure_preserves_the_previous_archive(self):
         package_workspace.main()

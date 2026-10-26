@@ -23,6 +23,25 @@ def record(name):
 
 
 class QualificationAdmissionTests(unittest.TestCase):
+    def test_packaging_helpers_require_complete_native_identity(self):
+        for mutation in ("missing", "coverage", "source", "architecture", "digest"):
+            data = record("toolchain")
+            helpers = data["tools"]["electron-builder"]["linux_packaging_helpers"]
+            if mutation == "missing":
+                del helpers["fpm"]
+            elif mutation == "coverage":
+                del helpers["7zip"]["artifacts"]["linux-arm64"]
+            else:
+                artifact = helpers["fpm"]["artifacts"]["linux-x64"]
+                if mutation == "source":
+                    artifact["url"] = artifact["url"].replace("github.com", "untrusted.invalid")
+                elif mutation == "architecture":
+                    artifact["url"] = artifact["url"].replace("linux-amd64", "linux-arm64v8")
+                else:
+                    artifact["sha256"] = "partial"
+            with self.subTest(mutation=mutation), self.assertRaises(contract.ContractError):
+                contract.check_toolchain(data, ROOT)
+
     def test_repository_contract_is_usable_without_native_execution(self):
         contract.check_repository(ROOT)
 
@@ -87,6 +106,25 @@ class QualificationAdmissionTests(unittest.TestCase):
             artifacts[a], artifacts[b] = artifacts[b], artifacts[a]
             with self.subTest(name=name), self.assertRaises(contract.ContractError):
                 contract.check_toolchain(data, ROOT)
+
+    def test_embedded_identity_preserves_only_the_v8_electron_build_tag(self):
+        data = record("toolchain")
+        self.assertEqual(
+            data["tools"]["electron"]["embedded_runtime_metadata"]["v8"],
+            "15.6.75.19-electron.0",
+        )
+        contract.check_toolchain(data, ROOT)
+        for component, identity in (
+            ("v8", "15.6.75.19-electron.unknown"),
+            ("v8", "15.6.75.19-other.0"),
+            ("chrome", "156.0.8078.48-electron.0"),
+            ("node", "24.22.0-electron.0"),
+        ):
+            changed = record("toolchain")
+            changed["tools"]["electron"]["embedded_runtime_metadata"][component] = identity
+            with self.subTest(component=component, identity=identity):
+                with self.assertRaises(contract.ContractError):
+                    contract.check_toolchain(changed, ROOT)
 
     def test_native_shell_alias_and_package_contract_cannot_drift(self):
         for mutation in ("aliases", "exclusion", "package", "shell"):
@@ -224,17 +262,28 @@ class QualificationAdmissionTests(unittest.TestCase):
                     contract.check_targets(data)
 
     def test_linux_display_and_fedora_checksum_identity_cannot_drift(self):
-        for mutation in ("ozone", "backend", "checksum"):
+        for mutation in ("ozone", "ozone-auto", "backend", "checksum"):
             data = record("targets")
             row = data["targets"][0]
             if mutation == "ozone":
                 row["runtime_arguments"] = ["--ozone-platform=x11"]
+            elif mutation == "ozone-auto":
+                row["runtime_arguments"] = ["--ozone-platform=auto"]
             elif mutation == "backend":
                 row["distribution_profiles"][1]["display_backends"] = ["x11"]
             else:
                 image = row["distribution_profiles"][1]["qualification_image"]
                 image["checksum_source"] = image["checksum_source"].replace("x86_64", "aarch64")
             with self.subTest(mutation=mutation), self.assertRaises(contract.ContractError):
+                contract.check_targets(data)
+
+    def test_non_linux_rows_cannot_enable_unreviewed_runtime_switches(self):
+        for index, row in enumerate(record("targets")["targets"]):
+            if row["os"] == "linux":
+                continue
+            data = record("targets")
+            data["targets"][index]["runtime_arguments"] = ["--no-sandbox"]
+            with self.subTest(target=row["id"]), self.assertRaises(contract.ContractError):
                 contract.check_targets(data)
 
     def test_native_artifact_identity_and_coverage_are_required(self):

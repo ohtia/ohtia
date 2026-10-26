@@ -28,7 +28,7 @@
           "kernel": "6.8 or later vendor-maintained Ubuntu kernel",
           "filesystems": ["ext4"],
           "security_policy": "AppArmor enabled with reviewed executable-path user-namespace allowance; active Chromium sandbox",
-          "display": "Native Wayland and X11 sessions, each qualified with Ozone auto",
+          "display": "Native Wayland and X11 sessions, each qualified with automatic native Ozone selection",
           "hosted_candidates": ["ubuntu-24.04"],
           "display_backends": ["wayland", "x11"]
         },
@@ -39,7 +39,7 @@
           "kernel": "Vendor-maintained Fedora 44 kernel; exact native build recorded by 018",
           "filesystems": ["btrfs"],
           "security_policy": "SELinux enforcing with targeted policy and active Chromium sandbox; no permissive or global policy fallback",
-          "display": "Native GNOME Wayland; Ozone auto must actually select Wayland",
+          "display": "Native GNOME Wayland; automatic native Ozone selection must actually select Wayland",
           "hosted_candidates": [],
           "required_facility": "Maintainer-provisioned matching native Fedora Workstation 44 desktop or VM; Ubuntu containers do not qualify the kernel, SELinux, display or filesystem",
           "qualification_image": {
@@ -52,7 +52,7 @@
           "display_backends": ["wayland"]
         }
       ],
-      "runtime_arguments": ["--ozone-platform=auto"]
+      "runtime_arguments": []
     },
     {
       "id": "linux-arm64",
@@ -81,7 +81,7 @@
           "kernel": "6.8 or later vendor-maintained Ubuntu kernel",
           "filesystems": ["ext4"],
           "security_policy": "AppArmor enabled with reviewed executable-path user-namespace allowance; active Chromium sandbox",
-          "display": "Native Wayland and X11 sessions, each qualified with Ozone auto",
+          "display": "Native Wayland and X11 sessions, each qualified with automatic native Ozone selection",
           "hosted_candidates": ["ubuntu-24.04-arm"],
           "display_backends": ["wayland", "x11"]
         },
@@ -92,7 +92,7 @@
           "kernel": "Vendor-maintained Fedora 44 kernel; exact native build recorded by 018",
           "filesystems": ["btrfs"],
           "security_policy": "SELinux enforcing with targeted policy and active Chromium sandbox; no permissive or global policy fallback",
-          "display": "Native GNOME Wayland; Ozone auto must actually select Wayland",
+          "display": "Native GNOME Wayland; automatic native Ozone selection must actually select Wayland",
           "hosted_candidates": [],
           "required_facility": "Maintainer-provisioned matching native Fedora Workstation 44 desktop or VM; Ubuntu containers do not qualify the kernel, SELinux, display or filesystem",
           "qualification_image": {
@@ -105,7 +105,7 @@
           "display_backends": ["wayland"]
         }
       ],
-      "runtime_arguments": ["--ozone-platform=auto"]
+      "runtime_arguments": []
     },
     {
       "id": "win32-x64",

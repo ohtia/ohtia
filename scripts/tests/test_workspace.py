@@ -56,6 +56,7 @@ class WorkspaceTests(unittest.TestCase):
         with patch.object(workspace, "invoke", return_value="") as invoke:
             workspace.pnpm("install", "--frozen-lockfile")
         command = invoke.call_args.args[0]
+        self.assertIs(invoke.call_args.kwargs["noninteractive"], True)
         self.assertIn("--config.verifyDepsBeforeRun=error", command)
         for flag, suffix in (
             ("--store-dir", ".cache/pnpm/store"),
@@ -97,7 +98,7 @@ class WorkspaceTests(unittest.TestCase):
             for name in ("pnpm-lock.yaml", "uv.lock"):
                 (root / name).write_text("original", encoding="utf-8")
 
-            def mutate(command):
+            def mutate(command, *, noninteractive=False):
                 (root / "pnpm-lock.yaml").write_text("changed", encoding="utf-8")
                 return ""
 
