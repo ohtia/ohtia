@@ -5,7 +5,6 @@ description: "Run the same meaningful types, lint, format, test, coverage and bu
 tags: ["story", "comp:tooling"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/21
-verified: { by: human:AdrianMastronardi }
 generated:
   by: codex/gpt-6.1-sol
 epic: "EPIC-001"
@@ -34,7 +33,7 @@ Run the same meaningful types, lint, format, test, coverage and build checks loc
 - [ ] Implement independent line/branch/diff gates with own unimported-code accounting and strict report validation.
 - [ ] Add complete-catalog/parameter/plural/locale-inventory failure gates and deterministic fixtures without waiting for production UI.
 - [ ] Introduce Vitest/Playwright inventories and deterministic shard union/mandatory-result accounting.
-- [ ] Declare six native OS/CPU result partitions and add negative accounting fixtures for missing ARM64, emulated-only or one-slice universal evidence.
+- [ ] Declare result partitions for every required native OS/CPU/profile and any optional target actually included and add negative accounting fixtures for missing ARM64, emulated-only or one-slice universal evidence.
 - [ ] Preserve existing ci/policy/history-scan contracts and document exact local/CI execution and diff-base semantics.
 
 ## Acceptance criteria

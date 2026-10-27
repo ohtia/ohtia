@@ -36,7 +36,7 @@ Reserve versions and assemble retained, fully verified final candidates through 
 - [ ] Prepare the reviewed external-control/credential-binding design and verify immutable protected-main workflow-ref/policy admission with the maintainer.
 - [ ] Implement separate manual candidate selection, integrated-source provenance checks and atomic permanent version reservation.
 - [ ] Assemble all targets with frozen inputs and qualified final signing; retain manifests/final digests and approved note annotations.
-- [ ] Require complete native evidence and immutable target/package identities for all six baseline cells before admitting a candidate as ready.
+- [ ] Require complete native evidence and immutable target/package identities for every required target/profile and any optional target actually included before admitting a candidate as ready.
 - [ ] Gate public readiness on complete final native, mandatory assistive and catalog/provenance evidence; test denial with missing required evidence and same-candidate continuation without replacing identified packages. Model-generated translations without human linguistic review do not fail this gate.
 - [ ] Qualify controlled internal candidates without claiming public readiness before 017 supplies its manual evidence; avoid a returning dependency on integrated acceptance.
 - [ ] Produce independent workflow/source/policy/signing/reservation security evidence under SPEC-001-026 and verify current external signing facilities.

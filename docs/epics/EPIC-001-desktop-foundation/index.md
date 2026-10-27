@@ -4,7 +4,7 @@
 
 ## Stories
 
-- [STORY-001-001 — Qualify the desktop target and delivery contracts](STORY-001-001-qualify-the-desktop-target-and-delivery-contracts.md) - Define reviewed six-target tooling, provisional delivery mechanisms and one numeric resource contract without waiting for native probe execution.
+- [STORY-001-001 — Qualify the desktop target and delivery contracts](STORY-001-001-qualify-the-desktop-target-and-delivery-contracts.md) - Define reviewed required/optional target tooling, provisional delivery mechanisms and one numeric resource contract without waiting for native probe execution.
 - [STORY-001-002 — Establish the locked workspace and developer toolchain](STORY-001-002-establish-the-locked-workspace-and-developer-toolchain.md) - Provide working package boundaries and isolated, frozen JavaScript and Python tooling.
 - [STORY-001-003 — Define and verify the bounded application port](STORY-001-003-define-and-verify-the-bounded-application-port.md) - Provide versioned runtime-validated IPC operations and error contracts for the foundation.
 - [STORY-001-004 — Run the isolated desktop and supervised data service](STORY-001-004-run-the-isolated-desktop-and-supervised-data-service.md) - Launch a minimal graphical Electron application with a single broker, safe bootstrap and a supervised utility process.

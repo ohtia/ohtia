@@ -5,7 +5,6 @@ description: "Verify final signed installers and authentic compatible updates on
 tags: ["story", "comp:desktop", "comp:tooling"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/27
-verified: { by: human:AdrianMastronardi }
 generated:
   by: codex/gpt-6.1-sol
 epic: "EPIC-001"
@@ -39,7 +38,7 @@ Verify final signed installers and authentic compatible updates on the complete 
 - [ ] Obtain separately authorized platform/signing facilities and verify all transformations before recording final digests.
 - [ ] Qualify isolated native profiles/VMs, external channel eligibility and version ordering without altering bootstrap or stable data.
 - [ ] Use controlled qualification artifacts/endpoints to exercise actual installation, upgrade, interruption, refusal and compatible rollback on every native target.
-- [ ] Qualify signed installation/authentic updates on all six native x86-64/ARM64 targets and reject cross-architecture packages; verify each macOS slice independently when universal packaging is chosen.
+- [ ] Qualify signed installation/authentic updates on all required native targets/profiles and any optional target actually included and reject cross-architecture packages; verify each macOS slice independently when universal packaging is chosen.
 - [ ] Produce installer/signature/notarization/updater ADR-0000 applicability and actual native evidence under SPEC-001-026.
 
 ## Acceptance criteria
@@ -47,7 +46,7 @@ Verify final signed installers and authentic compatible updates on the complete 
 - [ ] Completion gate: verify Native facilities output NF and its full release condition in the Dependencies output registry and SPEC-001-016.
 - [ ] Completion gate: verify Native hosts output NH and its full release condition in the Dependencies output registry and SPEC-001-016.
 - [ ] The installer/update owner delivers its security inventory with final native qualification rather than leaving it to integrated acceptance.
-- [ ] Required native signed-install/update evidence covers all six core desktop targets independently of optional provider-runtime availability.
+- [ ] Required native signed-install/update evidence covers every required core desktop target/profile and any optional target actually included independently of optional provider-runtime availability.
 - [ ] I13 contains actual signed/notarized native installation/update evidence and final transformed digests for every declared target.
 - [ ] Bad signatures/digests/targets/schema and interrupted operations refuse or recover safely with previous stable data preserved.
 - [ ] Development packages use no public feeds; preview opt-in and stable/prerelease ordering are verified without assuming an Ohtia account.

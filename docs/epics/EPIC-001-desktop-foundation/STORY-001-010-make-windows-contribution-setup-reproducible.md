@@ -5,7 +5,6 @@ description: "Enable a new Windows contributor to install, diagnose, run and ver
 tags: ["story", "comp:tooling", "comp:docs", "comp:desktop"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/24
-verified: { by: human:AdrianMastronardi }
 generated:
   by: codex/gpt-6.1-sol
 epic: "EPIC-001"
@@ -34,7 +33,7 @@ Enable a new Windows contributor to install, diagnose, run and verify Ohtia thro
 - [ ] Implement the selected native Windows shell/prerequisite/toolchain/setup/doctor route without requiring WSL.
 - [ ] Use the isolated native launch procedure from the first setup/dev run, and prove stable-configuration/store sentinels remain untouched.
 - [ ] Write copyable Windows commands and actual troubleshooting for quoting, path lengths, locks, line endings and architecture/addon mismatch.
-- [ ] Walk through setup → launch → representative source change → checks → package natively on Windows x86-64 and ARM64, and test the documented separate POSIX maintainer-verifier route.
+- [ ] Walk through setup → launch → representative source change → checks → package natively on required Windows x86-64, and on Windows ARM64 if included, and test the documented separate POSIX maintainer-verifier route.
 - [ ] Follow only the guide on clean supported Windows targets to run the durable desktop, shared checks and local unsigned package.
 
 ## Acceptance criteria
@@ -45,7 +44,7 @@ Enable a new Windows contributor to install, diagnose, run and verify Ohtia thro
 - [ ] Completion gate: verify STORY-001-012 output B12 and its full release condition in the Dependencies output registry and SPEC-001-013.
 - [ ] Completion gate: verify Native hosts output NH and its full release condition in the Dependencies output registry and SPEC-001-013.
 - [ ] The native Windows contribution route cannot launch the development app against a stable or unverified profile.
-- [ ] Both Windows architectures have native evidence; x86 emulation or WSL does not establish Windows ARM64 support and ordinary contribution requires no maintainer credentials.
+- [ ] Windows x86-64 has complete native evidence, and optional Windows ARM64 requires its own evidence before inclusion; x86 emulation or WSL does not establish Windows ARM64 support and ordinary contribution requires no maintainer credentials.
 - [ ] U10 demonstrates native supported Windows contribution without maintainer credentials, global security weakening or routine administrator execution.
 - [ ] Setup/diagnosis/retry, space/non-ASCII paths, durable restart and locked-file/process cleanup have observed results.
 - [ ] WSL remains optional narrower evidence and is not presented as native Windows verification.

@@ -4,8 +4,6 @@ title: "STORY-001-005 — Persist a minimal command with verified migration reco
 description: "Demonstrate file-backed durability, exclusive migrations and verified checkpoint recovery through the real desktop path."
 generated:
   by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 tags: ["story", "comp:storage", "comp:desktop"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/19
@@ -62,7 +60,7 @@ Demonstrate file-backed durability, exclusive migrations and verified checkpoint
 - [ ] Both concurrency defaults initialize to 1 in the initialization transaction; nondefault valid values survive reopening and migration.
 - [ ] Invalid/unsupported/unreadable or unexpectedly absent initialized policy never reports admission readiness; write/interruption/recovery tests preserve consistent confirmed values.
 - [ ] Localized real recovery, open and create journeys preserve input, keyboard and focus behavior under automated packaged checks, without a second resolver or stable-store access; 017 owns manual assistive acceptance.
-- [ ] All six native storage records identify loaded addon/runtime ABI/SQLite bytes and verify real file-backed persistence/recovery; identifier constraints preserve valid identities and reject malformed fixtures.
+- [ ] All required native storage records identify loaded addon/runtime ABI/SQLite bytes and verify real file-backed persistence/recovery; identifier constraints preserve valid identities and reject malformed fixtures.
 - [ ] A saved declared preference survives restart; stale/conflicting replay and failed saves preserve the previous confirmed state.
 - [ ] Fresh/current/populated databases enforce compatible user_version/history/artifact identities and reject mismatches before migration.
 - [ ] Every schema transition has a verified pre-migration checkpoint and one exclusive complete transaction; returned migrator success alone is not treated as a commit.

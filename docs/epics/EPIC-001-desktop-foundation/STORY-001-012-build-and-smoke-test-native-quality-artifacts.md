@@ -4,8 +4,6 @@ title: "STORY-001-012 — Build and smoke-test native quality artifacts"
 description: "Produce isolated, identifiable quality packages and complete native smoke evidence for PRs and integrated source."
 generated:
   by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 tags: ["story", "comp:tooling", "comp:desktop"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/26
@@ -53,7 +51,7 @@ Produce isolated, identifiable quality packages and complete native smoke eviden
 - [ ] Own compatibility of expanded native jobs with the actual PR verifier, policy tooling and tests; preserve strict pull_request admission and separate main-source evidence.
 - [ ] Build identifiable unsigned development packages for the declared native target matrix on PR and actual integrated-main events.
 - [ ] Run required packaged boundary/durability/privacy/shutdown smoke suites in isolated native data profiles/VMs.
-- [ ] Produce and natively smoke-test required packages for Linux, Windows and macOS on x86-64 and ARM64, retaining actual architecture and per-cell result accounting.
+- [ ] Produce and natively smoke-test packages for every required target/profile and any optional target actually included, retaining actual architecture and per-cell result accounting.
 - [ ] Produce applicable delivery security requirement-ID/applicability/evidence records under SPEC-001-026.
 
 ## Acceptance criteria

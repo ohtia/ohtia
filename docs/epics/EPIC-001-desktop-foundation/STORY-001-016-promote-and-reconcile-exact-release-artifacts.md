@@ -5,7 +5,6 @@ description: "Publish authorized candidate bytes with serialized promotion, fail
 tags: ["story", "comp:tooling", "comp:desktop"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/30
-verified: { by: human:AdrianMastronardi }
 generated:
   by: codex/gpt-6.1-sol
 epic: "EPIC-001"
@@ -38,7 +37,7 @@ Publish authorized candidate bytes with serialized promotion, failure reconcilia
 - [ ] Implement durable application-wide serialization and upload-before-exposure across tags/releases/downloads/update metadata.
 - [ ] Implement idempotent reconciliation, visible-surface failure records, explicit uncertain-activation handling and maintainer recovery.
 - [ ] Implement retention/retirement/withdrawal and cadence/urgent-fix procedures; exercise them only on approved controlled surfaces.
-- [ ] Verify complete six-target candidate/native evidence before promotion, retaining per-target digests even when one universal package covers two verified slices.
+- [ ] Verify complete candidate/native evidence for every required target/profile and any optional target actually included before promotion, retaining per-target digests even when one universal package covers two verified slices.
 - [ ] Produce publication authorization/serialization/reconciliation/retention security evidence under SPEC-001-026.
 
 ## Acceptance criteria
