@@ -68,6 +68,24 @@ class QualificationAdmissionTests(unittest.TestCase):
                 with self.assertRaises(contract.ContractError):
                     contract.check_targets(data)
 
+    def test_optional_targets_remain_admitted_and_required_scope_cannot_drift(self):
+        data = record("targets")
+        required = {row["id"] for row in data["targets"] if row["native_required"]}
+        self.assertEqual(required, {"linux-x64", "linux-arm64", "win32-x64", "darwin-arm64"})
+        contract.check_targets(data)
+        for target in ("win32-arm64", "darwin-x64", "darwin-arm64"):
+            changed = copy.deepcopy(data)
+            row = next(row for row in changed["targets"] if row["id"] == target)
+            row["native_required"] = not row["native_required"]
+            with self.subTest(target=target), self.assertRaises(contract.ContractError):
+                contract.check_targets(changed)
+        for majors in ([], [26], [15, 26, 27]):
+            changed = copy.deepcopy(data)
+            row = next(row for row in changed["targets"] if row["id"] == "darwin-arm64")
+            row["required_os_majors"] = majors
+            with self.subTest(majors=majors), self.assertRaises(contract.ContractError):
+                contract.check_targets(changed)
+
     def test_tools_cannot_borrow_another_line_in_the_same_adr(self):
         data = record("toolchain")
         data["tools"]["node"]["version"] = data["tools"]["pnpm"]["version"]
@@ -260,6 +278,46 @@ class QualificationAdmissionTests(unittest.TestCase):
                     self.assertRaises(contract.ContractError),
                 ):
                     contract.check_targets(data)
+
+    def test_added_distribution_profiles_require_their_selected_cpu_and_wayland(self):
+        data = record("targets")
+        contract.check_targets(data)
+        for target_index, profile_id in (
+            (0, "ubuntu-26.04"),
+            (0, "debian-13"),
+            (1, "ubuntu-26.04"),
+            (1, "debian-13"),
+        ):
+            for field, value in (
+                ("display_backends", ["x11"]),
+                ("libc_minimum", "2.39"),
+                ("package", "rpm"),
+            ):
+                mutated = copy.deepcopy(data)
+                profile = next(
+                    p
+                    for p in mutated["targets"][target_index]["distribution_profiles"]
+                    if p["id"] == profile_id
+                )
+                profile[field] = value
+                with (
+                    self.subTest(target=target_index, profile=profile_id, field=field),
+                    self.assertRaises(contract.ContractError),
+                ):
+                    contract.check_targets(mutated)
+        for target_index in (0, 1):
+            for profile_id in ("ubuntu-26.04", "debian-13"):
+                missing = copy.deepcopy(data)
+                missing["targets"][target_index]["distribution_profiles"] = [
+                    p
+                    for p in missing["targets"][target_index]["distribution_profiles"]
+                    if p["id"] != profile_id
+                ]
+                with (
+                    self.subTest(target=target_index, missing=profile_id),
+                    self.assertRaises(contract.ContractError),
+                ):
+                    contract.check_targets(missing)
 
     def test_linux_display_and_fedora_checksum_identity_cannot_drift(self):
         for mutation in ("ozone", "ozone-auto", "backend", "checksum"):

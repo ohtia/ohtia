@@ -441,7 +441,7 @@ class VerificationTests(unittest.TestCase):
 class TrustAndTransportTests(unittest.TestCase):
     def test_trusted_files_are_bound_to_exact_revision(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
+            root = Path(folder).resolve()
             env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 
             def command(*args):

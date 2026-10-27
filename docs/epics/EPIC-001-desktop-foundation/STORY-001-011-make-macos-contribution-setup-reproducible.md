@@ -1,13 +1,14 @@
 ---
 type: Story
 title: "STORY-001-011 — Make macOS contribution setup reproducible"
-description: "Enable a new macOS contributor to install, diagnose, run and verify Ohtia on both required x86-64 and ARM64 architectures."
+description: "Enable a new macOS contributor to install, diagnose, run and verify Ohtia on required Apple Silicon, with independently qualified optional Intel support."
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 tags: ["story", "comp:tooling", "comp:docs", "comp:desktop"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/25
-verified: { by: human:AdrianMastronardi }
-generated:
-  by: codex/gpt-6.1-sol
 epic: "EPIC-001"
 epic_concept: ./epic.md
 components: ["comp:tooling", "comp:docs", "comp:desktop"]
@@ -18,7 +19,7 @@ applicable_blocks: ["SPEC-001-006", "SPEC-001-011", "SPEC-001-014", "SPEC-001-02
 
 ## Description
 
-Enable a new macOS contributor to install, diagnose, run and verify Ohtia on both required x86-64 and ARM64 architectures. This unit owns its complete result and verifies its delivered inputs; it does not wait for a returning output from its consumers. Detailed implementation decisions and their rationale are held once in the applicable specification below.
+Enable a new macOS contributor to install, diagnose, run and verify Ohtia on required Apple Silicon, with independently qualified optional Intel support. This unit owns its complete result and verifies its delivered inputs; it does not wait for a returning output from its consumers. Detailed implementation decisions and their rationale are held once in the applicable specification below.
 
 ## Applicable specification
 

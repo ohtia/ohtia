@@ -2,11 +2,13 @@
 type: Story
 title: "STORY-001-004 — Run the isolated desktop and supervised data service"
 description: "Launch a minimal graphical Electron application with a single broker, safe bootstrap and a supervised utility process."
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 tags: ["story", "comp:desktop", "comp:app"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/18
-generated:
-  by: codex/gpt-6.1-sol
 epic: "EPIC-001"
 epic_concept: ./epic.md
 components: ["comp:desktop", "comp:app"]
@@ -48,13 +50,13 @@ Launch a minimal graphical Electron application with a single broker, safe boots
 - [ ] Deliver the minimum common locale service, complete first-surface catalogs and keyboard and assistive bootstrap/status/error controls under SPEC-001-024.
 - [ ] Implement a single broker, bounded utility handshake/status port, window lifecycle and controlled service-death handling.
 - [ ] Implement fixed locator parsing, graphical selection and validated-path/atomic-publication primitives; leave storage activation gated until the data service validates it.
-- [ ] Verify startup, second-instance behavior, one broker and utility supervision, stale generations, locator publication and failure, responsive errors and bounded shutdown against real native artifacts on all six targets.
+- [ ] Verify startup, second-instance behavior, one broker and utility supervision, stale generations, locator publication and failure, responsive errors and bounded shutdown against real native artifacts on all required targets.
 
 ## Acceptance criteria
 
 - [ ] Completion gate: verify STORY-001-018 output D1b and its full release condition in the Dependencies output registry and SPEC-001-006.
 - [ ] Completion gate: verify Native hosts output NH and its full release condition in the Dependencies output registry and SPEC-001-006.
-- [ ] Stable or unverified profile launch is refused without reading/migrating stable sentinels on all six required native targets.
+- [ ] Stable or unverified profile launch is refused without reading/migrating stable sentinels on all required native targets.
 - [ ] All delivered status/bootstrap/error messages and accessible labels use complete product-locale catalogs and the one resolver; automated packaged keyboard, focus and accessibility-tree checks pass. Manual assistive acceptance belongs to 017.
 - [ ] All six required native runtime/bootstrap records identify the actual host, executable and utility architecture.
 - [ ] The built graphical window exchanges real status messages through all process boundaries without provider access.

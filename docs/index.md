@@ -28,7 +28,7 @@ okf_version: "0.2"
 
 ## Desktop foundation
 
-- [Desktop foundation contract](desktop-foundation-contract.md) — Six-target qualification inputs, pinned candidate metadata, numeric resource policy and native evidence ownership for the desktop foundation.
+- [Desktop foundation contract](desktop-foundation-contract.md) — Native target and distribution qualification inputs, pinned candidate metadata, numeric resource policy and evidence ownership for the desktop foundation.
 - [Bounded foundation application port](application-port.md) — Versioned status and appearance messages, controlled outcomes, transaction receipts and deterministic conformance for the desktop application boundary.
 - [Foundation security applicability](foundation-security.md) — Versioned security applicability, enforcing boundaries and reproducible evidence obligations for the desktop foundation.
 
@@ -36,6 +36,7 @@ okf_version: "0.2"
 
 - [Locked developer workspace](developer-workspace.md) — Bootstrap isolated contributor tools, build the six package boundaries and verify the frozen workspace without changing research data.
 - [Native foundation qualification](native-qualification.md) — Assemble non-shipping native probes, admit independent profiles and retain complete target evidence without claiming partial native qualification.
+- [Native foundation qualification report](native-foundation-report.md) — Observed native desktop feasibility, source compatibility, packaging consequences and evidence limits for the required foundation platforms.
 - [Repository policy](repository-policy.md) — GitHub repository configuration, dependency updates, quality checks, and verification procedures.
 - [Desktop builds, releases and change notes](release-policy.md) — Quality-build triggers, immutable release promotion, public versioning and user-facing change communication.
 - [EPICs](epics/index.md) — Published delivery specifications and their native GitHub story sub-issues.

@@ -2,12 +2,13 @@
 type: Story
 title: "STORY-001-001 — Qualify the desktop target and delivery contracts"
 description: "Define reviewed six-target tooling, provisional delivery mechanisms and one numeric resource contract without waiting for native probe execution."
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 tags: ["story", "comp:tooling", "comp:desktop"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/15
-verified: { by: human:AdrianMastronardi }
-generated:
-  by: codex/gpt-6.1-sol
 epic: "EPIC-001"
 epic_concept: ./epic.md
 components: ["comp:tooling", "comp:desktop"]
@@ -37,7 +38,7 @@ Define reviewed six-target tooling, provisional delivery mechanisms and one nume
 
 ## Acceptance criteria
 
-- [ ] D1a enumerates all six required native targets and explicitly excludes 32-bit, emulation and cross-build-only substitutes for native acceptance.
+- [ ] D1a enumerates all required native targets and explicitly excludes 32-bit, emulation and cross-build-only substitutes for native acceptance.
 - [ ] Reviewed exact candidate patches respect the adopting ADR version lines and their primary compatibility metadata.
 - [ ] The single approved numeric record has owners, units, permitted ranges and controlled failure outcomes.
 - [ ] Delivery, retention and initial setup-budget decisions identify their rationale and the empirical validation owned by 018 or 013.

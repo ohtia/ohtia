@@ -50,6 +50,19 @@ def group_has_members(group: int) -> bool:
     return remaining
 
 
+def _signal_anchored_group(group: int, sig: int) -> None:
+    """Signal before reaping the leader; verify Darwin's zombie-only EPERM case."""
+    try:
+        os.killpg(group, sig)
+    except ProcessLookupError:
+        pass
+    except PermissionError:
+        # Darwin rejects signals when only the retained zombie leader remains.
+        # Observation must prove no other members; post-reap cessation is still checked.
+        if sys.platform != "darwin" or group_has_members(group):
+            raise
+
+
 def run_owned(
     command: list[str], cwd: Path, env: dict[str, str], timeout: float, grace: float
 ) -> dict:
@@ -104,10 +117,7 @@ def run_owned(
             # Reaping it earlier would permit its PID to become an unrelated process group.
             try:
                 if timed_out:
-                    try:
-                        os.killpg(child.pid, signal.SIGTERM)
-                    except ProcessLookupError:
-                        pass
+                    _signal_anchored_group(child.pid, signal.SIGTERM)
                 deadline = time.monotonic() + grace
                 while True:
                     remaining_before_cleanup = group_has_members(child.pid)
@@ -117,9 +127,7 @@ def run_owned(
             finally:
                 # Observation failure must not skip bounded cleanup of the anchored group.
                 try:
-                    os.killpg(child.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
+                    _signal_anchored_group(child.pid, signal.SIGKILL)
                 finally:
                     cleanup_deadline = time.monotonic() + grace
                     child.wait(timeout=grace)

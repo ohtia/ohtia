@@ -2,11 +2,13 @@
 type: Story
 title: "STORY-001-017 — Verify the integrated foundation and contributor journeys"
 description: "Demonstrate the full foundation, three native contributor paths and release infrastructure with traceable acceptance evidence."
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 tags: ["story", "comp:desktop", "comp:tooling", "comp:storage", "comp:docs"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/31
-generated:
-  by: codex/gpt-6.1-sol
 epic: "EPIC-001"
 epic_concept: ./epic.md
 components: ["comp:desktop", "comp:tooling", "comp:storage", "comp:docs"]
@@ -56,9 +58,9 @@ Demonstrate the full foundation, three native contributor paths and release infr
 - [ ] Reconcile core, diagnostics and delivery owner security inventories and reject missing producer evidence.
 - [ ] Run full packaged foundation and migration/failure/privacy journeys, correcting accepted defects through their owning story contracts.
 - [ ] Verify first-launch stable-profile exclusion, complete initial locale resolution and catalogs, atomic default-limit initialization and real keyboard and focus behavior during bootstrap and recovery.
-- [ ] Perform the required native manual screen-reader and assistive journeys on all six targets; record operators, tools, criteria and exact artifacts.
+- [ ] Perform the required native manual screen-reader and assistive journeys on all required targets; record operators, tools, criteria and exact artifacts.
 - [ ] Verify delivered locale messages through catalog structure, contextual rendering and actual model-generation provenance. Record that human linguistic review has not occurred; a future voluntary review covers only its evidenced version and scope and is not a prerequisite for closure.
-- [ ] Observe consented unfamiliar contributors on all six native targets through clean setup, environment-doctor failure and remediation, launch, a representative source change, checks and unsigned packaging; retain actual host, executable and addon identities and measured conditions.
+- [ ] Observe consented unfamiliar contributors on all required native targets through clean setup, environment-doctor failure and remediation, launch, a representative source change, checks and unsigned packaging; retain actual host, executable and addon identities and measured conditions.
 - [ ] Rehearse candidate/publication lifecycle on authorized controlled surfaces, verify exact bytes/isolation/authority and retain complete evidence and limitations.
 
 ## Acceptance criteria
@@ -78,7 +80,7 @@ Demonstrate the full foundation, three native contributor paths and release infr
 - [ ] Completion gate: verify Release authority output RA and its full release condition in the Dependencies output registry and SPEC-001-021.
 - [ ] Completion gate: verify UI review facilities output UR and its full release condition in the Dependencies output registry and SPEC-001-021.
 - [ ] Every accepted review correction has concrete specification, owner, gate and meaningful verification evidence; no safeguard is deferred to a later consumer.
-- [ ] All six required native targets satisfy integrated foundation and contributor acceptance; no emulation/cross-build-only evidence releases a gate.
+- [ ] All required native targets satisfy integrated foundation and contributor acceptance; no emulation/cross-build-only evidence releases a gate.
 - [ ] The full actual renderer-to-SQLite save/reopen and boundary/failure/recovery scenarios pass on every declared native target.
 - [ ] Clean native newcomer journeys satisfy the agreed measured conditions with no undocumented fixes and actual independent participation.
 - [ ] Candidate/promotion/retry/withdrawal preserves exact final artifact identities and stable-store safety without exposing a public scaffold release.

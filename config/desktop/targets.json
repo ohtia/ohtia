@@ -6,9 +6,9 @@
       "os": "linux",
       "arch": "x64",
       "aliases": ["x64", "amd64", "x86_64"],
-      "baseline": "Ubuntu 24.04 LTS and Fedora Workstation 44; required distribution profiles are enumerated",
+      "baseline": "Ubuntu 24.04 LTS, Fedora Workstation 44, Ubuntu 26.04 LTS and Debian 13; required x86-64 profiles are enumerated",
       "filesystems": ["ext4", "btrfs"],
-      "display": "Ubuntu: native Wayland and X11; Fedora: native GNOME Wayland; actual Ozone backend must be observed",
+      "display": "Ubuntu 24.04: native Wayland and X11; Fedora, Ubuntu 26.04 and Debian 13: native GNOME Wayland; actual Ozone backend must be observed",
       "quality_packages": ["deb", "rpm"],
       "distribution_packages": ["deb", "rpm"],
       "native_required": true,
@@ -41,7 +41,7 @@
           "security_policy": "SELinux enforcing with targeted policy and active Chromium sandbox; no permissive or global policy fallback",
           "display": "Native GNOME Wayland; automatic native Ozone selection must actually select Wayland",
           "hosted_candidates": [],
-          "required_facility": "Maintainer-provisioned matching native Fedora Workstation 44 desktop or VM; Ubuntu containers do not qualify the kernel, SELinux, display or filesystem",
+          "required_facility": "Native Fedora 44 Workstation environment with GNOME Wayland, enforcing SELinux and local Btrfs. Use authenticated Workstation ISO installation or independently verified official signed Workstation package provisioning on a native provider image; retain the actual provenance and do not claim an ISO boot for the latter route.",
           "qualification_image": {
             "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Workstation/x86_64/iso/Fedora-Workstation-Live-44-1.7.x86_64.iso",
             "sha256": "1620295f6a00c27c3208f0c00b8ece4eab1ec69b9002152d97488bf26a426ddf",
@@ -49,6 +49,30 @@
             "checksum_source": "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Workstation/x86_64/iso/Fedora-Workstation-44-1.7-x86_64-CHECKSUM",
             "admission": "018 verifies the Fedora OpenPGP checksum signature and actual ISO bytes before provisioning; D1a does not claim that verification or native execution"
           },
+          "display_backends": ["wayland"]
+        },
+        {
+          "id": "ubuntu-26.04",
+          "package": "deb",
+          "libc_minimum": "2.43",
+          "kernel": "Vendor-maintained Ubuntu 26.04 kernel; exact native build recorded by 018",
+          "filesystems": ["ext4"],
+          "security_policy": "AppArmor enabled with reviewed executable-path user-namespace allowance; active Chromium sandbox",
+          "display": "Native GNOME Wayland; XWayland does not qualify a native X11 session",
+          "hosted_candidates": [],
+          "required_facility": "Maintainer-provisioned native x86-64 Ubuntu 26.04 desktop or VM with independent account and native Wayland session",
+          "display_backends": ["wayland"]
+        },
+        {
+          "id": "debian-13",
+          "package": "deb",
+          "libc_minimum": "2.41",
+          "kernel": "Vendor-maintained Debian 13 kernel; exact native build recorded by 018",
+          "filesystems": ["ext4"],
+          "security_policy": "AppArmor enabled, native unprivileged user namespaces enabled, and active Chromium sandbox; no Ubuntu-specific namespace allowance or global policy change",
+          "display": "Native GNOME Wayland; other desktop and X11 sessions require separate qualification",
+          "hosted_candidates": [],
+          "required_facility": "Maintainer-provisioned native x86-64 Debian 13 desktop or VM with independent account and native Wayland session",
           "display_backends": ["wayland"]
         }
       ],
@@ -59,9 +83,9 @@
       "os": "linux",
       "arch": "arm64",
       "aliases": ["arm64", "aarch64"],
-      "baseline": "Ubuntu 24.04 LTS and Fedora Workstation 44; required distribution profiles are enumerated",
+      "baseline": "Ubuntu 24.04 LTS, Fedora Workstation 44, Ubuntu 26.04 LTS and Debian 13; required ARM64 profiles are enumerated",
       "filesystems": ["ext4", "btrfs"],
-      "display": "Ubuntu: native Wayland and X11; Fedora: native GNOME Wayland; actual Ozone backend must be observed",
+      "display": "Ubuntu 24.04: native Wayland and X11; Fedora, Ubuntu 26.04 and Debian 13: native GNOME Wayland; actual Ozone backend must be observed",
       "quality_packages": ["deb", "rpm"],
       "distribution_packages": ["deb", "rpm"],
       "native_required": true,
@@ -94,7 +118,7 @@
           "security_policy": "SELinux enforcing with targeted policy and active Chromium sandbox; no permissive or global policy fallback",
           "display": "Native GNOME Wayland; automatic native Ozone selection must actually select Wayland",
           "hosted_candidates": [],
-          "required_facility": "Maintainer-provisioned matching native Fedora Workstation 44 desktop or VM; Ubuntu containers do not qualify the kernel, SELinux, display or filesystem",
+          "required_facility": "Native Fedora 44 Workstation environment with GNOME Wayland, enforcing SELinux and local Btrfs. Use authenticated Workstation ISO installation or independently verified official signed Workstation package provisioning on a native provider image; retain the actual provenance and do not claim an ISO boot for the latter route.",
           "qualification_image": {
             "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Workstation/aarch64/iso/Fedora-Workstation-Live-44-1.7.aarch64.iso",
             "sha256": "162ba3c552a2d241c7c63ec26777af0255ee1b5a135adc0be986ceed999933ef",
@@ -102,6 +126,30 @@
             "checksum_source": "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Workstation/aarch64/iso/Fedora-Workstation-44-1.7-aarch64-CHECKSUM",
             "admission": "018 verifies the Fedora OpenPGP checksum signature and actual ISO bytes before provisioning; D1a does not claim that verification or native execution"
           },
+          "display_backends": ["wayland"]
+        },
+        {
+          "id": "ubuntu-26.04",
+          "package": "deb",
+          "libc_minimum": "2.43",
+          "kernel": "Vendor-maintained Ubuntu 26.04 kernel; exact native build recorded by 018",
+          "filesystems": ["ext4"],
+          "security_policy": "AppArmor enabled with reviewed executable-path user-namespace allowance; active Chromium sandbox",
+          "display": "Native GNOME Wayland; XWayland does not qualify a native X11 session",
+          "hosted_candidates": [],
+          "required_facility": "Maintainer-provisioned native ARM64 Ubuntu 26.04 desktop or VM with independent account and native Wayland session",
+          "display_backends": ["wayland"]
+        },
+        {
+          "id": "debian-13",
+          "package": "deb",
+          "libc_minimum": "2.41",
+          "kernel": "Vendor-maintained Debian 13 kernel; exact native build recorded by 018",
+          "filesystems": ["ext4"],
+          "security_policy": "AppArmor enabled, native unprivileged user namespaces enabled, and active Chromium sandbox; no Ubuntu-specific namespace allowance or global policy change",
+          "display": "Native GNOME Wayland; other desktop and X11 sessions require separate qualification",
+          "hosted_candidates": [],
+          "required_facility": "Maintainer-provisioned native ARM64 Debian 13 desktop or VM with independent account and native Wayland session",
           "display_backends": ["wayland"]
         }
       ],
@@ -139,7 +187,7 @@
       "display": "Native desktop session",
       "quality_packages": ["nsis"],
       "distribution_packages": ["nsis"],
-      "native_required": true,
+      "native_required": false,
       "testing_facilities": {
         "hosted_candidates": ["windows-11-arm"],
         "admission": "Published runner catalog only; native isolation, exact OS floor, graphical session and actual access require 018 verification. Maintainer-provisioned matching native desktop/VM supplies unavailable combinations."
@@ -161,12 +209,13 @@
       "display": "Native WindowServer session",
       "quality_packages": ["dmg", "zip"],
       "distribution_packages": ["dmg", "zip"],
-      "native_required": true,
+      "native_required": false,
       "testing_facilities": {
         "hosted_candidates": ["macos-15-intel", "macos-26-intel"],
         "admission": "Published runner catalog only; native isolation, exact OS floor, graphical session and actual access require 018 verification. Maintainer-provisioned matching native desktop/VM supplies unavailable combinations."
       },
-      "admitted_os_majors": [15, 26]
+      "admitted_os_majors": [15, 26],
+      "required_os_majors": []
     },
     {
       "id": "darwin-arm64",
@@ -183,7 +232,8 @@
         "hosted_candidates": ["macos-15", "macos-26", "xcode-27"],
         "admission": "Published runner catalog only; native isolation, exact OS floor, graphical session and actual access require 018 verification. Maintainer-provisioned matching native desktop/VM supplies unavailable combinations."
       },
-      "admitted_os_majors": [15, 26, 27]
+      "admitted_os_majors": [15, 26, 27],
+      "required_os_majors": [26, 27]
     }
   ],
   "excluded_architectures": ["ia32", "x86", "arm", "armv7l"],

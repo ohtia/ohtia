@@ -3,6 +3,11 @@ set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 test "$(id -u)" = 0
+if test "$OHTIA_NATIVE_PACKAGE_FORMAT:$OHTIA_NATIVE_DISTRIBUTION_PROFILE" = deb:debian-13; then
+  verify_debian_profile
+  refuse_ubuntu_namespace_allowance
+  exit 0
+fi
 test "$OHTIA_NATIVE_PACKAGE_FORMAT" = deb || exit 0
 case "${1:-}" in
   upgrade|failed-upgrade|abort-install|abort-upgrade|disappear) exit 0 ;;

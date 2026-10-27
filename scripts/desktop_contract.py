@@ -129,7 +129,11 @@ def check_targets(record: dict[str, Any]) -> None:
     )
     for row in rows:
         require(row["id"] == f"{row.get('os')}-{row.get('arch')}", "Target identity mismatch")
-        require(row.get("native_required") is True, "Native acceptance cannot be optional")
+        require(
+            type(row.get("native_required")) is bool
+            and row["native_required"] == (row["id"] not in {"win32-arm64", "darwin-x64"}),
+            "Native qualification scope differs from the required and optional target contract",
+        )
         aliases = {"x64", "amd64", "x86_64"} if row["arch"] == "x64" else {"arm64", "aarch64"}
         require(set(row.get("aliases", [])) == aliases, "Architecture aliases are incomplete")
         for field in (
@@ -162,11 +166,12 @@ def check_targets(record: dict[str, Any]) -> None:
                 "Linux runtime must use the reviewed native display selection",
             )
             profiles = row.get("distribution_profiles", [])
+            expected_profiles = {"ubuntu-24.04", "fedora-44", "ubuntu-26.04", "debian-13"}
             require(
                 isinstance(profiles, list)
-                and len(profiles) == 2
-                and {p.get("id") for p in profiles} == {"ubuntu-24.04", "fedora-44"},
-                "Both Linux distribution profiles are required",
+                and len(profiles) == len(expected_profiles)
+                and {p.get("id") for p in profiles} == expected_profiles,
+                "Declared Linux distribution profiles are required on their selected CPU",
             )
             expected_arch = (
                 {"deb": "amd64", "rpm": "x86_64"}
@@ -179,10 +184,17 @@ def check_targets(record: dict[str, Any]) -> None:
             )
             for profile in profiles:
                 ubuntu = profile["id"] == "ubuntu-24.04"
+                fedora = profile["id"] == "fedora-44"
+                libc = {
+                    "ubuntu-24.04": "2.39",
+                    "fedora-44": "2.43",
+                    "ubuntu-26.04": "2.43",
+                    "debian-13": "2.41",
+                }[profile["id"]]
                 require(
-                    profile.get("package") == ("deb" if ubuntu else "rpm")
-                    and profile.get("filesystems") == (["ext4"] if ubuntu else ["btrfs"])
-                    and profile.get("libc_minimum") == ("2.39" if ubuntu else "2.43"),
+                    profile.get("package") == ("rpm" if fedora else "deb")
+                    and profile.get("filesystems") == (["btrfs"] if fedora else ["ext4"])
+                    and profile.get("libc_minimum") == libc,
                     "Linux distribution/package/filesystem baseline differs",
                 )
                 require(
@@ -200,7 +212,7 @@ def check_targets(record: dict[str, Any]) -> None:
                     == (["wayland", "x11"] if ubuntu else ["wayland"]),
                     "Declared native display backend coverage differs",
                 )
-                if not ubuntu:
+                if fedora:
                     image = profile.get("qualification_image", {})
                     check_artifact(image)
                     arch = expected_arch["rpm"]
@@ -226,6 +238,10 @@ def check_targets(record: dict[str, Any]) -> None:
         if row["os"] == "darwin":
             expected = [15, 26] if row["arch"] == "x64" else [15, 26, 27]
             require(row.get("admitted_os_majors") == expected, "Declared macOS families differ")
+            require(
+                row.get("required_os_majors") == ([26, 27] if row["arch"] == "arm64" else []),
+                "Required macOS qualification families differ",
+            )
     require(
         set(record.get("excluded_architectures", [])) == {"ia32", "x86", "arm", "armv7l"},
         "32-bit exclusions must remain explicit",
