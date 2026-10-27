@@ -1,7 +1,7 @@
 ---
 type: "Story"
 title: "STORY-002-010 — Qualify integrated pages and native assistive journeys"
-description: "Verify the frozen integrated candidate through native, keyboard and assistive journeys on all six required targets."
+description: "Verify the frozen integrated candidate through native, keyboard and assistive journeys on all required targets/profiles."
 tags: ["story", "comp:app", "comp:desktop", "comp:tooling", "accessibility"]
 status: "stable"
 resource: https://github.com/ohtia/ohtia/issues/52
@@ -22,15 +22,13 @@ applicable_blocks:
     "SPEC-002-025",
     "SPEC-002-027",
   ]
-generated: { by: claude-code/claude-opus-5-5 }
-verified: { by: human:AdrianMastronardi }
 ---
 
 # STORY-002-010 — Qualify integrated pages and native assistive journeys
 
 ## Description
 
-Verify the frozen integrated candidate through native, keyboard and assistive journeys on all six required targets.
+Verify the frozen integrated candidate through native, keyboard and assistive journeys on all required targets/profiles.
 
 ## Applicable specification
 
@@ -51,7 +49,7 @@ Verify the frozen integrated candidate through native, keyboard and assistive jo
 
 - [ ] Verify the composed application and freeze identifier supplied by STORY-002-012; do not create a second root or silently change the candidate.
 - [ ] Define and execute the complete criterion, journey and native target inventory against real SQLite, IPC, CSP and packaged assets.
-- [ ] Run all six required native targets with actual assistive/input tools, including integrated Settings, menus, About, zoom and restart.
+- [ ] Run all required native targets/profiles with actual assistive/input tools, including integrated Settings, menus, About, zoom and restart.
 - [ ] Record findings for the shared integrating owner, then rerun affected checks on any new frozen candidate.
 - [ ] Bind the final native report to the candidate ID and exact target artifact digests.
 - [ ] Qualify the applicable integrated ordering cases against real native boundaries on the frozen candidate, distinguishing portable corpus evidence from durable writes and renderer application.
@@ -60,7 +58,7 @@ Verify the frozen integrated candidate through native, keyboard and assistive jo
 
 ## Acceptance criteria
 
-- [ ] Required integrated automated and actual native/assistive/input journeys pass on all six OS/CPU targets with complete evidence.
+- [ ] Required integrated automated and actual native/assistive/input journeys pass on all required OS/CPU targets and profiles with complete evidence.
 - [ ] Every applicable mandatory criterion is accounted for; failed/unexecuted cells cannot be marked passing.
 - [ ] Full-page findings are corrected/rechecked; browser/catalog results remain distinct from native assistive evidence and optional human linguistic review.
 - [ ] Completion gate: E2-O4 from STORY-002-004; verify the output and release condition in [Dependencies](./epic.md#dependencies).

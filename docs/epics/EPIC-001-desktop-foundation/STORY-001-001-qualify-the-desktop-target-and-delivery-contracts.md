@@ -1,11 +1,9 @@
 ---
 type: Story
 title: "STORY-001-001 — Qualify the desktop target and delivery contracts"
-description: "Define reviewed six-target tooling, provisional delivery mechanisms and one numeric resource contract without waiting for native probe execution."
+description: "Define reviewed required/optional target tooling, provisional delivery mechanisms and one numeric resource contract without waiting for native probe execution."
 generated:
   by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 tags: ["story", "comp:tooling", "comp:desktop"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/15
@@ -19,7 +17,7 @@ applicable_blocks: ["SPEC-001-003", "SPEC-001-022"]
 
 ## Description
 
-Define reviewed six-target tooling, provisional delivery mechanisms and one numeric resource contract without waiting for native probe execution. This unit owns its complete result and verifies its delivered inputs; it does not wait for a returning output from its consumers. Detailed implementation decisions and their rationale are held once in the applicable specification below.
+Define reviewed required/optional target tooling, provisional delivery mechanisms and one numeric resource contract without waiting for native probe execution. This unit owns its complete result and verifies its delivered inputs; it does not wait for a returning output from its consumers. Detailed implementation decisions and their rationale are held once in the applicable specification below.
 
 ## Applicable specification
 
@@ -29,7 +27,7 @@ Define reviewed six-target tooling, provisional delivery mechanisms and one nume
 ## Tasks
 
 - [ ] Read the adopting ADRs and actual repository configuration before reviewing tool patches or target assumptions.
-- [ ] Fix the six native target contracts, including supported OS versions, filesystems, packages, hardware assumptions and native dependency constraints; exclude 32-bit targets.
+- [ ] Fix the declared native target contracts with explicit required/optional scope, including supported OS versions, filesystems, packages, hardware assumptions and native dependency constraints; exclude 32-bit targets.
 - [ ] Inspect primary upstream metadata and published native artifacts for exact candidate patches within adopting version lines; record assumptions and rejected choices.
 - [ ] Review provisional installer, signing, notarization and updater choices, bounded retention and retirement rules, preserving empirical proof in story 018 and final signed qualification in 013.
 - [ ] Publish one reviewed numeric policy record with units, ranges, encoded-byte measurement and failure outcomes for IPC and runtime resource budgets.
@@ -42,7 +40,7 @@ Define reviewed six-target tooling, provisional delivery mechanisms and one nume
 - [ ] Reviewed exact candidate patches respect the adopting ADR version lines and their primary compatibility metadata.
 - [ ] The single approved numeric record has owners, units, permitted ranges and controlled failure outcomes.
 - [ ] Delivery, retention and initial setup-budget decisions identify their rationale and the empirical validation owned by 018 or 013.
-- [ ] Workspace 002 and portable contract 003 can integrate D1a without six native hosts or a finished probe harness.
+- [ ] Workspace 002 and portable contract 003 can integrate D1a without the complete native host matrix or a finished probe harness.
 - [ ] D1a makes no empirical compatibility, final signature, update or public-readiness claim.
 
 ## Quality checklist

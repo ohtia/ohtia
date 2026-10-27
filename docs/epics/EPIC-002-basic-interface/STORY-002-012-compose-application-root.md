@@ -21,8 +21,6 @@ applicable_blocks:
     "SPEC-002-023",
     "SPEC-002-024",
   ]
-generated: { by: claude-code/claude-opus-5-5 }
-verified: { by: human:AdrianMastronardi }
 ---
 
 # STORY-002-012 — Compose the application root
@@ -56,7 +54,7 @@ Connect the delivered interface components into a real application and freeze on
 - [ ] Integrate gate: E2-K14 from STORY-002-014; verify the output and release condition in [Dependencies](./epic.md#dependencies).
 - [ ] Connect the real workspace, menu registry, Settings triggers and preference/character/zoom handlers through the existing application port.
 - [ ] Run an isolated packaged smoke journey with the actual file-backed preference boundary and active CSP.
-- [ ] Use the delivered E1-B12 native quality pipeline to build/smoke the integrated source, then freeze source, lock, locale/asset and all six target digests plus the separate development-catalog digest for the two verifier stories. A local library ZIP cannot satisfy this artifact gate.
+- [ ] Use the delivered E1-B12 native quality pipeline to build/smoke the integrated source, then freeze source, lock, locale/asset and all required target/profile digests and any included optional target digests plus the separate development-catalog digest for the two verifier stories. A local library ZIP cannot satisfy this artifact gate.
 - [ ] Own serialized candidate changes and invalidate affected verification evidence when a correction produces a new candidate.
 - [ ] Compose the actual port corpus and feature ordering checks through the real root; verify bounded recovery and disposal, and reconcile original receipts without repeating mutations before freezing the candidate.
 - [ ] Connect the New window, open-application-menu, command palette and keyboard-shortcuts handlers, the zoom-indicator input and the Navigator-welcome decoration input, and extend the packaged smoke journey as SPEC-002-020 specifies.

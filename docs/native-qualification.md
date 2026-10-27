@@ -4,8 +4,6 @@ title: Native foundation qualification
 description: Assemble non-shipping native probes, admit independent profiles and retain complete target evidence without claiming partial native qualification.
 generated:
   by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: electron-esm-entry
     resource: https://github.com/electron/electron/blob/v45.0.0/lib/browser/init.ts
@@ -163,7 +161,7 @@ Run the report with exactly one canonical `journey` directory per cell from the 
 python3 scripts/workspace.py run probes:report /absolute/scratch/attempt-id
 ```
 
-The report verifies record and attachment identities, the native producer's artifact-inventory receipt, runtime observations and complete case coverage. It does not reinspect foreign runtime bytes or native file modes on the reporting host. It lists qualified target IDs and missing profiles, and exits unsuccessfully until the full matrix passes without invalid records. A target-specific consumer may use only its complete passing target record. The full story requires all required targets and their declared profiles; missing Intel macOS, ARM64 Linux or another profile remains missing even when the available machines pass. Preserve the native evidence outside disposable package retention before publishing any passing D1b record. No command here closes issues or authorizes release publication.
+The report verifies record and attachment identities, the native producer's artifact-inventory receipt, runtime observations and complete case coverage. It does not reinspect foreign runtime bytes or native file modes on the reporting host. It lists qualified target IDs and missing profiles, and exits unsuccessfully until the full matrix passes without invalid records. A target-specific consumer may use only its complete passing target record. The full story requires all required targets and their declared profiles; a missing required Linux ARM64 or other mandatory profile remains missing even when available machines pass; optional Intel macOS remains unqualified without blocking required-scope completion. Preserve the native evidence outside disposable package retention before publishing any passing D1b record. No command here closes issues or authorizes release publication.
 
 ## Security evidence mapping
 
