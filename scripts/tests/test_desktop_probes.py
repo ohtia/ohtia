@@ -174,10 +174,31 @@ class AdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(probes.ProbeError, "outside"):
             self.admit()
 
-    @unittest.skipUnless(hasattr(os, "symlink"), "Symlink fixture needs platform support")
-    def test_symlinked_scratch_root_is_rejected(self):
+    @unittest.skipUnless(
+        os.name == "nt" or hasattr(os, "symlink"),
+        "Directory alias fixture needs native link support",
+    )
+    def test_linked_scratch_root_is_rejected(self):
         alias = self.home / "alias"
-        alias.symlink_to(self.data["scratch_root"], target_is_directory=True)
+        if os.name == "nt":
+            # Directory junctions exercise reparse refusal without symlink-creation privilege.
+            subprocess.run(
+                [
+                    str(Path(os.environ["SYSTEMROOT"]) / "System32/cmd.exe"),
+                    "/d",
+                    "/c",
+                    "mklink",
+                    "/J",
+                    str(alias),
+                    self.data["scratch_root"],
+                ],
+                check=True,
+                capture_output=True,
+                timeout=5,
+            )
+            self.addCleanup(alias.rmdir)
+        else:
+            alias.symlink_to(self.data["scratch_root"], target_is_directory=True)
         self.data["scratch_root"] = str(alias)
         with self.assertRaisesRegex(probes.ProbeError, "aliases"):
             self.admit()
@@ -735,6 +756,70 @@ print(json.dumps(result))
         self.assertEqual(signals, [signal.SIGTERM, signal.SIGKILL])
         self.assertTrue(result["timed_out"])
 
+    @unittest.skipIf(not NONREAPING_POSIX, "POSIX process-group identity contract")
+    def test_darwin_zombie_only_signal_denial_preserves_exit_and_verifies_cessation(self):
+        import signal
+        from unittest.mock import MagicMock
+
+        import probe_process
+
+        for timed_out in (False, True):
+            with self.subTest(timed_out=timed_out):
+                child = MagicMock()
+                child.pid = 12345
+                child.returncode = -15 if timed_out else 7
+                signals = []
+
+                def signal_group(_group, sig):
+                    if sig == 0:
+                        child.wait.assert_called_once_with(timeout=0)
+                        raise ProcessLookupError
+                    self.assertEqual(child.wait.call_count, 0)
+                    signals.append(sig)
+                    raise PermissionError
+
+                status = None if timed_out else SimpleNamespace(si_code=os.CLD_EXITED)
+                with (
+                    patch.object(probe_process.sys, "platform", "darwin"),
+                    patch.object(probe_process.subprocess, "Popen", return_value=child),
+                    patch.object(probe_process.os, "waitid", return_value=status),
+                    patch.object(probe_process, "group_has_members", return_value=False),
+                    patch.object(probe_process.os, "killpg", side_effect=signal_group),
+                ):
+                    result = probe_process.run_owned(["synthetic"], Path.cwd(), {}, 0, 0)
+                self.assertEqual(result["exit_code"], child.returncode)
+                self.assertEqual(result["timed_out"], timed_out)
+                self.assertFalse(result["contained_processes_remaining_after_cleanup"])
+                self.assertEqual(
+                    signals,
+                    [signal.SIGTERM, signal.SIGKILL] if timed_out else [signal.SIGKILL],
+                )
+
+    @unittest.skipIf(not NONREAPING_POSIX, "POSIX process-group identity contract")
+    def test_signal_permission_denial_requires_observed_darwin_zombie_only_group(self):
+        from unittest.mock import MagicMock
+
+        import probe_process
+
+        for platform, members in (("darwin", True), ("linux", False)):
+            with self.subTest(platform=platform, members=members):
+                child = MagicMock()
+                child.pid = 12345
+                with (
+                    patch.object(probe_process.sys, "platform", platform),
+                    patch.object(probe_process.subprocess, "Popen", return_value=child),
+                    patch.object(
+                        probe_process.os,
+                        "waitid",
+                        return_value=SimpleNamespace(si_code=os.CLD_EXITED),
+                    ),
+                    patch.object(probe_process, "group_has_members", return_value=members),
+                    patch.object(probe_process.os, "killpg", side_effect=PermissionError),
+                ):
+                    with self.assertRaises(PermissionError):
+                        probe_process.run_owned(["synthetic"], Path.cwd(), {}, 1, 0)
+                child.wait.assert_called_once_with(timeout=0)
+
     @unittest.skipIf(not NONREAPING_POSIX, "POSIX process-group observation contract")
     def test_group_observation_failure_still_cleans_before_reaping(self):
         import signal
@@ -905,6 +990,25 @@ print(json.dumps(result))
         self.assertEqual(result["qualified_targets"], [])
         self.assertEqual(len(result["missing_profiles"]), 13)
 
+    def test_malformed_required_scope_cannot_report_success_without_native_records(self):
+        original = probes.read_json(probes.ROOT / "config/desktop/targets.json")
+        for mutation in ("all-optional", "missing-target", "missing-macos-family"):
+            data = copy.deepcopy(original)
+            if mutation == "all-optional":
+                for row in data["targets"]:
+                    row["native_required"] = False
+            elif mutation == "missing-target":
+                data["targets"].pop(0)
+            else:
+                row = next(row for row in data["targets"] if row["id"] == "darwin-arm64")
+                row["required_os_majors"] = []
+            with (
+                self.subTest(mutation=mutation),
+                patch.object(probes, "read_json", return_value=data),
+            ):
+                with self.assertRaisesRegex(probes.ProbeError, "Invalid native qualification"):
+                    probes.report([])
+
     def test_duplicate_json_keys_are_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             file = Path(temporary) / "record.json"
@@ -922,7 +1026,7 @@ class ControllerTests(unittest.TestCase):
     def test_controller_refusals_retain_tool_identity_without_launching_a_runtime(self):
         for case in ("scenario", "arguments", "executable-path"):
             with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
-                attempt = Path(temporary)
+                attempt = Path(temporary).resolve()
                 output = attempt / "observations"
                 output.mkdir()
                 prepared = {
@@ -941,7 +1045,10 @@ class ControllerTests(unittest.TestCase):
                         json.dumps(args),
                     ],
                     cwd=probes.ROOT,
-                    env={"PATH": os.defpath},
+                    env={
+                        **({"SYSTEMROOT": os.environ["SYSTEMROOT"]} if os.name == "nt" else {}),
+                        "PATH": os.defpath,
+                    },
                     capture_output=True,
                     text=True,
                     timeout=20,
@@ -1432,6 +1539,37 @@ class ReportTests(unittest.TestCase):
         result = probes.report(self.records)
         self.assertTrue(result["complete"], result["failures"])
         self.assertEqual(len(result["qualified_targets"]), 6)
+
+    def test_optional_cells_do_not_block_required_qualification_or_qualify_by_absence(self):
+        required = set(probes.profile_cells(required_only=True))
+        records = [
+            directory
+            for directory in self.records
+            if tuple(
+                probes.read_json(directory / "admitted.json")[key]
+                for key in ("target", "profile", "backend")
+            )
+            in required
+        ]
+        self.assertEqual(len(records), 13)
+        result = probes.report(records)
+        self.assertTrue(result["complete"], result["failures"])
+        self.assertEqual(result["missing_profiles"], [])
+        self.assertEqual(
+            result["qualified_targets"], ["darwin-arm64", "linux-arm64", "linux-x64", "win32-x64"]
+        )
+        self.assertFalse(probes.report(records[1:])["complete"])
+
+    def test_submitted_invalid_optional_record_is_still_a_reported_failure(self):
+        directory = next(
+            directory
+            for directory in self.records
+            if probes.read_json(directory / "admitted.json")["target"] == "win32-arm64"
+        )
+        (directory / "native-cases.json").unlink()
+        result = probes.report(self.records)
+        self.assertFalse(result["complete"])
+        self.assertTrue(result["failures"])
 
     def test_agent_case_review_accepts_only_complete_evidence(self):
         for directory in self.records:

@@ -17,6 +17,7 @@ import uuid
 import zipfile
 from pathlib import Path
 
+import desktop_contract
 import workspace
 from probe_process import run_owned
 
@@ -159,15 +160,25 @@ def is_elevated() -> bool:
         kernel.CloseHandle(token)
 
 
-def profile_cells() -> list[tuple[str, str, str]]:
+def profile_cells(*, required_only: bool = False) -> list[tuple[str, str, str]]:
+    """Enumerate admitted native cells, or only the explicitly required qualification set."""
+    record = read_json(ROOT / "config/desktop/targets.json")
+    try:
+        desktop_contract.check_targets(record)
+    except desktop_contract.ContractError as exc:
+        raise ProbeError("Invalid native qualification target contract.") from exc
     cells = []
-    for target in read_json(ROOT / "config/desktop/targets.json")["targets"]:
+    for target in record["targets"]:
+        if required_only and not target["native_required"]:
+            continue
         if target["os"] == "linux":
             for profile in target["distribution_profiles"]:
                 for backend in profile["display_backends"]:
                     cells.append((target["id"], profile["id"], backend))
         elif target["os"] == "darwin":
-            for major in target["admitted_os_majors"]:
+            for major in (
+                target["required_os_majors"] if required_only else target["admitted_os_majors"]
+            ):
                 cells.append((target["id"], f"macos-{major}", "windowserver"))
         else:
             cells.append((target["id"], "windows-11", "desktop"))
@@ -935,14 +946,15 @@ def checked_native_record(directory: Path, scenario: str) -> tuple[dict, dict, d
 
 def report(records: list[Path]) -> dict:
     """Require every native cell and case; missing evidence can never become a pass."""
-    required = set(profile_cells())
+    required = set(profile_cells(required_only=True))
+    admitted_cells = set(profile_cells())
     passing = set()
     failures = []
     for directory in records:
         try:
             prepared, admitted, execution, observed = checked_native_record(directory, "journey")
             cell = tuple(admitted[key] for key in ("target", "profile", "backend"))
-            if cell not in required or cell in passing:
+            if cell not in admitted_cells or cell in passing:
                 raise ProbeError("Unexpected or duplicate native profile record.")
             cases = read_json(directory / "native-cases.json")
             # Native modes and framework links were checked on the producing OS and bound
@@ -1025,13 +1037,19 @@ def report(records: list[Path]) -> dict:
                 if isinstance(exc, ProbeError)
                 else "Malformed or unavailable native evidence."
             )
-    targets = {cell[0] for cell in required}
+    targets = {cell[0] for cell in admitted_cells}
     qualified = sorted(
-        target for target in targets if {cell for cell in required if cell[0] == target} <= passing
+        target
+        for target in targets
+        if (
+            {cell for cell in required if cell[0] == target}
+            or {cell for cell in admitted_cells if cell[0] == target}
+        )
+        <= passing
     )
     return {
         "qualified_targets": qualified,
-        "complete": passing == required and not failures,
+        "complete": required <= passing and not failures,
         "missing_profiles": [list(cell) for cell in sorted(required - passing)],
         "failures": failures,
     }

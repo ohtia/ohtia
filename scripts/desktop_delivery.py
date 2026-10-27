@@ -68,13 +68,36 @@ def check_helpers(tools: dict, installed: Path) -> dict:
     return helpers
 
 
-def generated_script(name: str, package_format: str) -> str:
+def linux_profile(package_format: str, profile: str | None = None) -> str:
+    """Bind trusted maintainer scripts to an explicitly admitted distribution policy."""
+    if profile is None:
+        profile = "fedora-44" if package_format == "rpm" else "ubuntu-24.04"
+    expected = {
+        "ubuntu-24.04": "deb",
+        "ubuntu-26.04": "deb",
+        "debian-13": "deb",
+        "fedora-44": "rpm",
+    }
+    if expected.get(profile) != package_format:
+        raise probes.ProbeError("Unsupported distribution/package policy for maintainer scripts.")
+    return profile
+
+
+def generated_script(name: str, package_format: str, profile: str | None = None) -> str:
+    profile = linux_profile(package_format, profile)
     script = (ASSETS / name).read_text()
     prefix = (
         "OHTIA_NATIVE_PACKAGE_FORMAT=" + package_format + "\n"
+        "OHTIA_NATIVE_DISTRIBUTION_PROFILE=" + profile + "\n"
         "OHTIA_NATIVE_PROFILE_SHA256=" + hashlib.sha256(PROFILE.encode()).hexdigest() + "\n"
     )
-    return "#!/bin/sh\n" + prefix + script.removeprefix("#!/bin/sh\n")
+    return (
+        "#!/bin/sh\n"
+        + prefix
+        + (ASSETS / "linux-profile-policy.sh").read_text()
+        + "\n"
+        + script.removeprefix("#!/bin/sh\n")
+    )
 
 
 def normalize_payload_permissions(payload: Path) -> None:
@@ -110,15 +133,18 @@ def extract_7zip_archive(archive: Path, destination: Path) -> None:
         stream.extractall(destination, members=members, filter="data")
 
 
-def builder_configuration(output: Path, payload: Path, package_format: str, tools: dict) -> dict:
+def builder_configuration(
+    output: Path, payload: Path, package_format: str, tools: dict, profile_id: str | None = None
+) -> dict:
     """Generate per-format options for the selected builder schema and fixed fixture identity."""
+    profile_id = linux_profile(package_format, profile_id)
     profile = output / "apparmor-profile"
     profile.write_text(PROFILE)
     profile.chmod(0o644)
     scripts = {}
     for name in ("linux-before-install.sh", "linux-after-install.sh", "linux-after-remove.sh"):
         file = output / name
-        file.write_text(generated_script(name, package_format))
+        file.write_text(generated_script(name, package_format, profile_id))
         scripts[name] = str(file)
     options = {
         "packageName": "ohtia-native-probe",
@@ -292,7 +318,7 @@ def package(admission_file: Path, attempt: Path, package_format: str, version: s
         shutil.copytree(installed / "templates/icons/electron-linux", icons, symlinks=True)
         normalize_payload_permissions(icons)
         receipt["builder_asset_inventory"] = probes.inventory(icons)
-        config = builder_configuration(output, payload, package_format, tools)
+        config = builder_configuration(output, payload, package_format, tools, data["profile"])
         configuration = output / "builder.json"
         configuration.write_text(json.dumps(config, indent=2) + "\n")
         env.update(

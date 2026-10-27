@@ -34,6 +34,7 @@ class DeliveryTests(unittest.TestCase):
                 # The fixed PATH cannot bypass these functions; no privileged action is run.
                 harness = """
                     id() { printf '0\\n'; }
+                    verify_distribution_profile() { :; }
                     stat() { printf '0\\n'; }
                     find() {
                         case " $* " in
@@ -54,6 +55,7 @@ class DeliveryTests(unittest.TestCase):
                         "FAILURE": failure,
                         "MARKER": str(marker),
                         "OHTIA_NATIVE_PACKAGE_FORMAT": "rpm",
+                        "OHTIA_NATIVE_DISTRIBUTION_PROFILE": "fedora-44",
                     },
                     stdin=subprocess.DEVNULL,
                     capture_output=True,
@@ -127,7 +129,11 @@ class DeliveryTests(unittest.TestCase):
                     "--validate",
                     str(file),
                 ]
-                env = {"HOME": str(root), "PATH": str(delivery.probes.workspace.node_path().parent)}
+                env = {
+                    **({"SYSTEMROOT": os.environ["SYSTEMROOT"]} if os.name == "nt" else {}),
+                    "HOME": str(root),
+                    "PATH": str(delivery.probes.workspace.node_path().parent),
+                }
                 result = subprocess.run(
                     command,
                     cwd=delivery.ROOT,
@@ -153,6 +159,7 @@ class DeliveryTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("Invalid configuration", result.stderr)
 
+    @unittest.skipUnless(os.name == "posix", "POSIX helper symlink materialization")
     def test_helper_archive_root_and_relative_executable_link(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -235,6 +242,21 @@ class DeliveryTests(unittest.TestCase):
                 self.assertNotEqual(
                     result.returncode, 0, (format_, name, result.stdout, result.stderr)
                 )
+
+    def test_unsupported_distribution_policy_is_refused_before_writes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for format_, profile in (
+                ("rpm", "debian-13"),
+                ("deb", "fedora-44"),
+                ("deb", "debian-13\nid"),
+            ):
+                with (
+                    self.subTest(format=format_, profile=profile),
+                    self.assertRaises(delivery.probes.ProbeError),
+                ):
+                    delivery.builder_configuration(root, root / "payload", format_, {}, profile)
+                self.assertEqual(list(root.iterdir()), [])
 
     def test_invalid_version_or_distribution_never_reaches_builder(self):
         with patch.object(delivery.subprocess, "check_output") as invocation:

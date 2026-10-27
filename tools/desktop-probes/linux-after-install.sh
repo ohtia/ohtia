@@ -3,6 +3,10 @@ set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 test "$(id -u)" = 0
+if test "$OHTIA_NATIVE_PACKAGE_FORMAT:$OHTIA_NATIVE_DISTRIBUTION_PROFILE" = deb:debian-13; then
+  verify_debian_profile
+  refuse_ubuntu_namespace_allowance
+fi
 root=/opt/ohtia-native-probe
 for item in /opt "$root" "$root/ohtia-native-probe" "$root/resources" "$root/resources/app" "$root/resources/app/native/binding.node"; do
   test ! -L "$item"
@@ -14,6 +18,9 @@ setid=$(find "$root" -perm /6000 -print)
 test -z "$setid"
 case "$OHTIA_NATIVE_PACKAGE_FORMAT" in
   deb)
+    if test "$OHTIA_NATIVE_DISTRIBUTION_PROFILE" = debian-13; then
+      exit 0
+    fi
     test "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" = 1
     resource="$root/resources/apparmor-profile"
     profile=/etc/apparmor.d/ohtia-native-probe
