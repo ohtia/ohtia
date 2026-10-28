@@ -15,6 +15,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import {
+  suppressDiagnosticCapture,
+  diagnosticLimits,
   desktopChannels,
   desktopDocument,
   encodeEnvelope,
@@ -22,13 +24,20 @@ import {
   message,
   portLimits,
   resolveInterfaceLocale,
+  type DiagnosticEvent,
   type BootstrapSnapshot,
   type BootstrapState,
   type RuntimeProfile,
 } from "@ohtia/contracts";
 import { rendererWebPreferences } from "./index.js";
 import { admitRuntimeSwitches, loadRuntimeProfile, verifyStableSentinels } from "./profile.js";
-import { canonicalProspective, readLocator, LocatorPublisher, posixLocatorIO } from "./locator.js";
+import {
+  canonicalProspective,
+  readLocator,
+  validateDataDirectory,
+  LocatorPublisher,
+  posixLocatorIO,
+} from "./locator.js";
 import { PortAdmission } from "./port-admission.js";
 import { ServiceSupervisor, recoverService } from "./service-supervisor.js";
 import {
@@ -38,6 +47,14 @@ import {
   restoreStoppedBootstrap,
 } from "./storage-activation.js";
 import { RuntimeNotices, type RuntimeError } from "./error-notices.js";
+
+import { DiagnosticWriter } from "./diagnostic-writer.js";
+import { stopBrokerServices, recoverDiagnosticsAfterShutdown } from "./shutdown.js";
+
+suppressDiagnosticCapture((discard) => {
+  process.stdout.write = discard;
+  process.stderr.write = discard;
+});
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 app.setName("Ohtia");
@@ -82,6 +99,35 @@ const windows = new Map<
   { generation: string; detach?: () => void; frame?: object }
 >();
 let service: ServiceSupervisor | undefined;
+let diagnostics: DiagnosticWriter | undefined;
+function openDiagnostics(): DiagnosticWriter {
+  return new DiagnosticWriter({
+    root: profile.research_root,
+    version: app.getVersion(),
+    canStartPermissionHelper: () =>
+      app.getAppMetrics().length +
+        (diagnostics?.reservedPermissionProcesses ?? 0) +
+        (service && !service.ceased ? 0 : 1) +
+        diagnosticLimits.permissionProcesses <=
+      portLimits.process_tree_count,
+    assertAdmission: () => {
+      verifyStableSentinels(profile);
+      validateDataDirectory(profile.research_root, settings, profile);
+    },
+  });
+}
+function resumeDiagnostics(event?: DiagnosticEvent): void {
+  const previous = diagnostics;
+  if (!previous) return;
+  void recoverDiagnosticsAfterShutdown(
+    previous,
+    () => diagnostics === previous && !quitting,
+    () => {
+      diagnostics = openDiagnostics();
+      if (event) void diagnostics.append(event);
+    },
+  );
+}
 let storageRequested = false;
 let storageActionPending = false;
 let admissionFallback: BootstrapState = "storage_failed";
@@ -175,7 +221,8 @@ function createWindow(): boolean {
   if (quitting) return false;
   if (
     windows.size >= portLimits.windows ||
-    app.getAppMetrics().length >= portLimits.process_tree_count
+    app.getAppMetrics().length + (diagnostics?.reservedPermissionProcesses ?? 0) >=
+      portLimits.process_tree_count
   ) {
     BrowserWindow.getAllWindows()[0]?.focus();
     return false;
@@ -281,6 +328,7 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
       },
     },
   );
+  let failureReported = false;
   service = new ServiceSupervisor(
     {
       send: (text) => {
@@ -297,7 +345,15 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
       },
     },
     generation,
-    (state) => {
+    (state, requestedStop = false) => {
+      if (state === "ready") void diagnostics?.append({ event_name: "ohtia.service.ready" });
+      else if (!requestedStop && !failureReported) {
+        failureReported = true;
+        void diagnostics?.append({
+          event_name: "ohtia.service.unavailable",
+          error_code: "service_unavailable",
+        });
+      }
       if (state === "unavailable") {
         if (storageRequested && !storageActionPending)
           bootstrapState = storageInterruptionState(
@@ -343,6 +399,9 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
       });
     },
     mode !== "blocked" && ["missing", "located"].includes(locator.state),
+    (event, correlation) => {
+      void diagnostics?.append(event, correlation);
+    },
   );
 }
 let desktopSession: Electron.Session;
@@ -367,6 +426,14 @@ async function start(): Promise<void> {
   Menu.setApplicationMenu(null);
   const locator = readLocator(settings, profile);
   bootstrapState = locator.state;
+  // Diagnostic failure never participates in storage readiness or save admission.
+  if (["missing", "located"].includes(locator.state)) {
+    diagnostics = openDiagnostics();
+    void diagnostics.append({
+      event_name: "ohtia.application.started",
+      timestamp: new Date().toISOString(),
+    });
+  }
   desktopSession = session.fromPartition(`ohtia-${randomUUID()}`, { cache: false });
   desktopSession.setPermissionRequestHandler((_contents, _permission, callback) => {
     callback(false);
@@ -432,12 +499,17 @@ async function start(): Promise<void> {
     if (acceptance) acceptance.received++;
     const window = trusted(event);
     if (!window || !attach(window) || !event.senderFrame) {
+      void diagnostics?.append({ event_name: "ohtia.port.rejected", error_code: "frame_rejected" });
       if (acceptance) acceptance.rejectedFrame++;
       return;
     }
     const sender = { frame: event.senderFrame, url: event.senderFrame.url };
     const authority = admission.authorize(sender, text);
     if (!authority.ok) {
+      void diagnostics?.append({
+        event_name: "ohtia.port.rejected",
+        error_code: "invalid_message",
+      });
       if (acceptance) acceptance.rejectedEnvelope++;
       return;
     }
@@ -574,7 +646,8 @@ async function start(): Promise<void> {
     if (
       !quitting &&
       !resourceFailureReported &&
-      app.getAppMetrics().length > portLimits.process_tree_count
+      app.getAppMetrics().length + (diagnostics?.reservedPermissionProcesses ?? 0) >
+        portLimits.process_tree_count
     ) {
       resourceFailureReported = true;
       quitAfterError("resource_failure");
@@ -589,9 +662,13 @@ app.on("before-quit", (event) => {
   clearTimeout(startup);
   for (const window of windows.keys()) detach(window);
   void (async () => {
-    const ceased = service ? await service.stop() : true;
+    const ceased = await stopBrokerServices(service, diagnostics);
     if (!ceased) {
       quitting = false;
+      resumeDiagnostics({
+        event_name: "ohtia.application.stop_uncertain",
+        error_code: "shutdown_uncertain",
+      });
       void reportError("shutdown_uncertain");
       return;
     }
@@ -599,6 +676,7 @@ app.on("before-quit", (event) => {
       verifyStableSentinels(profile);
     } catch {
       quitting = false;
+      resumeDiagnostics();
       void reportError("startup_failed");
       return;
     }
@@ -610,6 +688,20 @@ app.on("before-quit", (event) => {
 });
 app.on("window-all-closed", () => {
   app.quit();
+});
+process.on("uncaughtException", () => {
+  void diagnostics?.append({
+    event_name: "ohtia.application.failed",
+    error_code: "runtime_failed",
+  });
+  quitAfterError("startup_failed");
+});
+process.on("unhandledRejection", () => {
+  void diagnostics?.append({
+    event_name: "ohtia.application.failed",
+    error_code: "runtime_failed",
+  });
+  quitAfterError("startup_failed");
 });
 // Do not await native readiness at ESM top level: Electron finishes loading the module before ready.
 void start().catch(() => {

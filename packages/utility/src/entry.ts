@@ -4,9 +4,27 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { admitRuntimeProfile, isIdentifier, isInterfaceLocale, portLimits } from "@ohtia/contracts";
+import {
+  suppressDiagnosticCapture,
+  admitRuntimeProfile,
+  decodeStorageNotice,
+  isIdentifier,
+  isInterfaceLocale,
+  portLimits,
+} from "@ohtia/contracts";
 import { DurableStore, type StorageOptions } from "./storage.js";
 import { createStatusService } from "./status-service.js";
+
+suppressDiagnosticCapture((discard) => {
+  process.stdout.write = discard;
+  process.stderr.write = discard;
+});
+process.on("uncaughtException", () => {
+  process.exit(1);
+});
+process.on("unhandledRejection", () => {
+  process.exit(1);
+});
 
 /** Recheck the native context independently before even a future locator/store could be opened. */
 async function start(): Promise<void> {
@@ -187,6 +205,29 @@ async function start(): Promise<void> {
     generation,
     (text) => {
       parent.postMessage(text);
+      const notice = decodeStorageNotice(JSON.parse(text) as unknown);
+      if (!notice) return;
+      const event =
+        notice.state === "storage_ready"
+          ? { event_name: "ohtia.storage.opened" }
+          : notice.state === "checkpoint_restored"
+            ? { event_name: "ohtia.storage.checkpoint_restored" }
+            : {
+                event_name: "ohtia.storage.open_failed",
+                error_code:
+                  notice.state === "recovery_required"
+                    ? "recovery_required"
+                    : notice.state === "retry_required"
+                      ? "retry_required"
+                      : "storage_unavailable",
+              };
+      parent.postMessage(
+        JSON.stringify({
+          kind: "diagnostic",
+          generation,
+          event: { ...event, timestamp: new Date().toISOString() },
+        }),
+      );
     },
     isStopping,
   );

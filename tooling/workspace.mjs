@@ -147,6 +147,9 @@ const commands = {
   "desktop:test"() {
     run(process.execPath, ["tooling/desktop-acceptance.mjs", ...process.argv.slice(3)]);
   },
+  "diagnostics:test"() {
+    run(process.execPath, ["tooling/diagnostic-acceptance.mjs", ...process.argv.slice(3)]);
+  },
   "storage:test"() {
     run(process.execPath, ["tooling/storage-acceptance.mjs", ...process.argv.slice(3)]);
   },

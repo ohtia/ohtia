@@ -47,3 +47,13 @@ export {
   storageInterruptionState,
   restoreStoppedBootstrap,
 } from "./storage-activation.js";
+
+export { DiagnosticWriter } from "./diagnostic-writer.js";
+export type {
+  DiagnosticStatus,
+  DiagnosticResult,
+  DiagnosticPage,
+  DiagnosticWriterOptions,
+} from "./diagnostic-writer.js";
+
+export { stopBrokerServices, recoverDiagnosticsAfterShutdown } from "./shutdown.js";

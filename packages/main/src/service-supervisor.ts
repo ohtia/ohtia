@@ -1,5 +1,8 @@
+import { randomUUID } from "node:crypto";
 import {
   decodeText,
+  decodeChildDiagnostic,
+  type DiagnosticEvent,
   decodeStorageNotice,
   isInterfaceLocale,
   type InterfaceLocale,
@@ -39,12 +42,14 @@ function sameRequest(a: Request, b: Extract<Envelope, { kind: "result" }>): bool
 /** One child, one generation. A signal never releases accepted capacity; an exit receipt does. */
 export class ServiceSupervisor {
   private readonly pending = new Map<string, Work>();
+  private readonly correlations = new WeakMap<Work, string>();
   private readonly streams = new Map<string, Work>();
   private readonly deadlines = new Map<string, ReturnType<typeof setTimeout>>();
   private storageReported = false;
   private ready = false;
   private stopped = false;
   private faulted = false;
+  private requestedStop = false;
   private readonly startup: ReturnType<typeof setTimeout>;
   private readonly terminationTimers = new Set<ReturnType<typeof setTimeout>>();
   private stopping: Promise<boolean> | undefined;
@@ -52,9 +57,13 @@ export class ServiceSupervisor {
   constructor(
     private readonly child: SupervisedChild,
     readonly generation: string,
-    private readonly changed: (state: "ready" | "unavailable") => void,
+    private readonly changed: (state: "ready" | "unavailable", requestedStop?: boolean) => void,
     private readonly storageChanged?: (notice: StorageNotice) => void,
     private storageAdmitting = false,
+    private readonly diagnostic?: (
+      event: DiagnosticEvent | undefined,
+      correlation?: string,
+    ) => void,
   ) {
     if (!isIdentifier(generation)) throw new Error("Invalid service generation.");
     child.messages((message) => {
@@ -95,6 +104,7 @@ export class ServiceSupervisor {
     }
     const id = key(work.request.windowGeneration, work.request.requestId);
     this.pending.set(id, work);
+    this.correlations.set(work, randomUUID());
     this.deadlines.set(
       id,
       setTimeout(() => {
@@ -196,6 +206,10 @@ export class ServiceSupervisor {
     if (typeof input === "string" && input.length < portLimits.message_bytes) {
       try {
         const ack: unknown = JSON.parse(input);
+        if (ack && typeof ack === "object" && "kind" in ack && ack.kind === "diagnostic") {
+          this.diagnostic?.(decodeChildDiagnostic(input, this.generation));
+          return;
+        }
         const storage = decodeStorageNotice(ack);
         if (storage) {
           if (
@@ -250,6 +264,32 @@ export class ServiceSupervisor {
       if (!sameRequest(work.request, value)) {
         this.fault();
         return;
+      }
+      if (value.operation === "appearance.replace") {
+        const outcome = value.payload;
+        if (outcome.ok)
+          this.diagnostic?.({ event_name: "ohtia.appearance.saved" }, this.correlations.get(work));
+        else if (outcome.error.code === "uncertain")
+          this.diagnostic?.(
+            { event_name: "ohtia.appearance.uncertain", error_code: "uncertain" },
+            this.correlations.get(work),
+          );
+        else if (
+          [
+            "storage_failed",
+            "stale_revision",
+            "operation_conflict",
+            "service_unavailable",
+          ].includes(outcome.error.code)
+        )
+          this.diagnostic?.(
+            {
+              event_name: "ohtia.appearance.failed",
+              error_code: outcome.error.code as
+                "storage_failed" | "stale_revision" | "operation_conflict" | "service_unavailable",
+            },
+            this.correlations.get(work),
+          );
       }
       this.pending.delete(id);
       const deadline = this.deadlines.get(id);
@@ -321,7 +361,7 @@ export class ServiceSupervisor {
     for (const timer of this.deadlines.values()) clearTimeout(timer);
     this.deadlines.clear();
     this.streams.clear();
-    this.changed("unavailable");
+    this.changed("unavailable", this.requestedStop);
     for (const waiter of this.exitWaiters) waiter(true);
     this.exitWaiters.clear();
   }
@@ -331,8 +371,9 @@ export class ServiceSupervisor {
     if (this.stopping) return this.stopping;
     this.ready = false;
     this.faulted = true;
+    this.requestedStop = true;
     clearTimeout(this.startup);
-    this.changed("unavailable");
+    this.changed("unavailable", true);
     const attempt = new Promise<boolean>((resolve) => {
       const finish = (ceased: boolean) => {
         clearTimeout(grace);

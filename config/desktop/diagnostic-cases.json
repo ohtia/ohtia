@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "component_cases": [
+    "native-account-access",
+    "catalog-private-markers",
+    "actual-artifact-version",
+    "exact-boundary-rotation",
+    "five-file-retention",
+    "multibyte-rejected-bound",
+    "serialized-delete-save",
+    "bounded-queue",
+    "interrupted-append-process",
+    "interrupted-rotation-process",
+    "version-aware-reader",
+    "native-denied-io",
+    "automatic-capture-stderr-errors"
+  ],
+  "graphical_cases": [
+    "broker-startup-and-worker-events",
+    "logging-failure-preserves-save",
+    "automatic-capture-private-markers",
+    "stable-profile-preserved",
+    "owned-process-exit"
+  ],
+  "windows_cases": ["delayed-permissions-preserve-status"]
+}
