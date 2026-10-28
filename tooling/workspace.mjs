@@ -70,7 +70,7 @@ const commands = {
     console.log("Installed package pins match their manifests and the adopting toolchain.");
   },
   hooks() {
-    run(python, ["-m", "pre_commit", "run", "--all-files"]);
+    run(python, ["-m", "pre_commit", "run", "--all-files", "--show-diff-on-failure"]);
   },
   "hooks:history"() {
     run(python, [
@@ -104,6 +104,7 @@ const commands = {
       "packages",
       "tools/desktop-probes/src",
       "tools/desktop-probes/*.mjs",
+      "tooling/quality*.mjs",
     ]);
     run(python, ["-m", "ruff", "check", "scripts"]);
   },
@@ -117,8 +118,17 @@ const commands = {
   },
   test() {
     compile();
-    node("vitest/vitest.mjs", ["run"]);
-    run(python, ["-m", "unittest", "discover", "-s", "scripts/tests", "-v"]);
+    run(process.execPath, ["tooling/quality.mjs", "test", ...process.argv.slice(3)]);
+  },
+  "quality:cases"() {
+    compile();
+    run(process.execPath, ["tooling/quality.mjs", "cases"]);
+  },
+  "quality:inventory"() {
+    run(process.execPath, ["tooling/quality.mjs", "inventory"]);
+  },
+  "quality:native"() {
+    run(process.execPath, ["tooling/quality.mjs", "native", ...process.argv.slice(3)]);
   },
   async check() {
     for (const name of ["typecheck", "lint", "format:check", "test", "build"])

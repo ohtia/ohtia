@@ -24,6 +24,10 @@ Local and CI use the same denominator, configuration and declared diff base. No 
 
 Affected-scope optimization must include consumers and fall back to complete relevant checks when uncertain. The final aggregate fails if preparation or any required partition did not complete successfully; a log containing a failed phase with exit zero is not valid success.
 
+Use @vitest/coverage-istanbul `5.0.*` to instrument the authored product sources and emit statement and branch maps, including unimported modules. The shared gate owns the denominator and independent per-package thresholds. Use @formatjs/icu-messageformat-parser `3.5.*` for structural ICU message validation against the versioned message contract; it adds no product message runtime. Exact patches and artifact identities belong in the toolchain manifest and workspace lock.
+
+Use @babel/core `8.0.*`, @babel/plugin-transform-optional-chaining `8.0.*` and @babel/plugin-transform-logical-assignment-operators `8.0.*` only in coverage instrumentation to expose conditional execution that the instrumenter otherwise leaves uncounted. Compose their source maps before instrumentation and use the same transform for executed and zero-hit canonical maps. Production builds retain their own compiler and runtime targets.
+
 ## Consequences
 
 The contract makes omissions visible and requires report validation, instrumentation and meaningful assertions. Test the gates with independently failing line/branch/diff metrics, unimported code, missing tests and incomplete shards. Do not add tests that merely mirror reversible prose edits or implementation internals to inflate coverage.

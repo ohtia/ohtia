@@ -40,6 +40,12 @@ TOOL_ADRS = {
     "better-sqlite3": "0007",
     "kysely": "0007",
     "vitest": "0018",
+    "jsdom": "0018",
+    "@vitest/coverage-istanbul": "0016",
+    "@babel/core": "0016",
+    "@babel/plugin-transform-optional-chaining": "0016",
+    "@babel/plugin-transform-logical-assignment-operators": "0016",
+    "@formatjs/icu-messageformat-parser": "0016",
     "@playwright/test": "0018",
     "react": "0022",
     "react-dom": "0022",
@@ -398,7 +404,7 @@ def check_toolchain(record: dict[str, Any], root: Path) -> None:
             "@playwright/test": "Playwright",
         }.get(name, name)
         selected = re.search(
-            r"\b" + re.escape(label) + r"\s+`(\d+\.\d+\.\*)`",
+            r"(?<![\w@/-])" + re.escape(label) + r"\s+`(\d+\.\d+\.\*)`",
             documents[0].read_text(encoding="utf-8"),
             re.IGNORECASE,
         )

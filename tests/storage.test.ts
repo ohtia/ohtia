@@ -395,15 +395,17 @@ describe("durable preference and migration recovery", () => {
     await store.retry();
     expect(store.ready).toBe(true);
   });
-  it("does not follow a recovery alias or a broken database alias into another root", async () => {
-    if (process.platform === "win32") return; // Native alias policy is verified in the platform harness.
-    const { store, root } = fixture();
-    const other = path.join(root, "outside");
-    fs.mkdirSync(other);
-    fs.symlinkSync(other, path.join(root, "recovery"), "dir");
-    await expect(store.open()).rejects.toThrow();
-    expect(fs.readdirSync(other)).toEqual([]);
-  });
+  it.skipIf(process.platform === "win32")(
+    "does not follow a recovery alias or a broken database alias into another root",
+    async () => {
+      const { store, root } = fixture();
+      const other = path.join(root, "outside");
+      fs.mkdirSync(other);
+      fs.symlinkSync(other, path.join(root, "recovery"), "dir");
+      await expect(store.open()).rejects.toThrow();
+      expect(fs.readdirSync(other)).toEqual([]);
+    },
+  );
 
   it("initializes execution limits atomically, persists commands and receipts, and creates no checkpoint for current reopening", async () => {
     const { store, root, raw } = fixture();

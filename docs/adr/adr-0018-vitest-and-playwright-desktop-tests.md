@@ -25,6 +25,8 @@ Pure logic, browser layout and Electron privileges need different evidence. Runn
 
 Use Vitest `5.0.*` for unit/component contracts and Playwright `1.64.*` for browser/desktop journeys, with exact patches paired to their runtime dependencies. Playwright's Electron automation is documented as experimental; verify its support against the packaged Electron version rather than assuming it behaves like an ordinary browser.[^vitest][^electron]
 
+Use jsdom `30.1.*` for deterministic React component/error-state tests in Vitest. These tests complement the separately inventoried real browser engines and packaged Electron journeys; a simulated DOM provides no native input, layout or assistive evidence.
+
 Run the actual Electron artifact for preload, IPC, permissions, process lifecycle, installation-sensitive assets and native-boundary journeys. Use Chromium/Firefox/WebKit for separately declared portable DOM/editor/content suites when they test cross-engine behavior; those runs do not establish Safari, Windows, macOS or the installed Electron runtime. Scope every inventory explicitly. Report browser-engine coverage separately from packaged desktop OS coverage.
 
 Pure data/HTTP assertions can run once when no helper/assertion depends on layout, focus, input, CSP enforcement, accessibility or another engine behavior. Visual locale/theme sampling requires an explicit inventory-specific decision and acknowledged omissions. Baseline locale/theme suites cover their declared combinations until evidence justifies a narrower policy.
