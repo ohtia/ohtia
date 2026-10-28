@@ -12,6 +12,7 @@ export async function buildDesktop(root) {
     ["preload", "cjs", "preload.cjs"],
     ["utility", "es", "utility.mjs"],
     ["storage", "es", "storage.js"],
+    ["diagnostic-writer", "es", "diagnostic-writer.js"],
   ]) {
     await build({
       configFile: false,
@@ -25,9 +26,11 @@ export async function buildDesktop(root) {
         sourcemap: false,
         lib: {
           entry:
-            boundary === "storage"
-              ? "packages/utility/src/storage.ts"
-              : `packages/${boundary}/src/entry.ts`,
+            boundary === "diagnostic-writer"
+              ? "packages/main/src/diagnostic-writer.ts"
+              : boundary === "storage"
+                ? "packages/utility/src/storage.ts"
+                : `packages/${boundary}/src/entry.ts`,
           formats: [format],
           fileName: () => file,
         },
@@ -38,6 +41,7 @@ export async function buildDesktop(root) {
             "kysely",
             "kysely/migration",
             "./storage.js",
+            ...(boundary === "main" ? ["./diagnostic-writer.js"] : []),
             /^node:/,
             /\.\/migrations\/.*\.mjs$/,
           ],
