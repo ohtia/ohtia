@@ -8,10 +8,10 @@
         "Check out repository and history",
         "Record tested revision",
         "Set up Python",
-        "Install pre-commit",
+        "Set up frozen workspace",
         "Run repository hooks",
         "Scan committed history for secrets",
-        "Test repository policy",
+        "Run shared checks",
         "Complete job"
       ],
       "optional_steps": ["Post Set up Python", "Post Check out repository and history"]

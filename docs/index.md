@@ -37,6 +37,8 @@ okf_version: "0.2"
 
 ## Repository
 
+- [Shared verification and coverage gates](shared-verification.md) — Run the same local and CI checks with independent product coverage, complete test inventories and separate native evidence.
+
 - [Locked developer workspace](developer-workspace.md) — Bootstrap isolated contributor tools, build the six package boundaries and verify the frozen workspace without changing research data.
 - [Native foundation qualification](native-qualification.md) — Assemble non-shipping native probes, admit independent profiles and retain complete target evidence without claiming partial native qualification.
 - [Native foundation qualification report](native-foundation-report.md) — Observed native desktop feasibility, source compatibility, packaging consequences and evidence limits for the required foundation platforms.

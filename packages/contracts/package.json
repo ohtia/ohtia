@@ -14,7 +14,10 @@
   ],
   "scripts": {
     "build": "node ../../tooling/generate-port-policy.mjs && tsc -p tsconfig.json",
-    "typecheck": "node ../../tooling/generate-port-policy.mjs && tsc -p tsconfig.json --noEmit"
+    "typecheck": "node ../../tooling/generate-port-policy.mjs && tsc -p tsconfig.json --noEmit",
+    "lint": "node ../../tooling/workspace.mjs lint",
+    "format:check": "node ../../tooling/workspace.mjs format:check",
+    "test": "node ../../tooling/workspace.mjs test"
   },
   "dependencies": {},
   "devDependencies": {

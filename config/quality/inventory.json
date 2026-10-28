@@ -1,0 +1,205 @@
+{
+  "version": 1,
+  "vitest": [
+    "tests/desktop-probes.test.ts",
+    "tests/desktop-runtime.test.ts",
+    "tests/diagnostics.test.ts",
+    "tests/main-entry.test.ts",
+    "tests/port.test.ts",
+    "tests/preload-entry.test.ts",
+    "tests/quality-gates.test.ts",
+    "tests/renderer.test.ts",
+    "tests/service-boundaries.test.ts",
+    "tests/storage.test.ts",
+    "tests/utility-entry.test.ts",
+    "tests/workspace.test.ts"
+  ],
+  "playwright": ["tests/quality/runner.spec.ts"],
+  "portable_browser_engines": ["chromium", "firefox", "webkit"],
+  "separate_evidence": [
+    "electron-packaged",
+    "native-smoke",
+    "native-storage",
+    "native-runtime",
+    "native-assistive",
+    "linux-image"
+  ],
+  "included_optional_targets": [],
+  "locales": [
+    "ca-AD",
+    "ca-ES",
+    "da-DK",
+    "de-AT",
+    "de-CH",
+    "de-DE",
+    "en-AU",
+    "en-CA",
+    "en-GB",
+    "en-US",
+    "es-AR",
+    "es-ES",
+    "es-MX",
+    "fi-FI",
+    "fr-BE",
+    "fr-CA",
+    "fr-FR",
+    "it-IT",
+    "ko-KR",
+    "nb-NO",
+    "nl-BE",
+    "nl-NL",
+    "pt-BR",
+    "pt-PT",
+    "sv-SE"
+  ],
+  "python": [
+    "scripts/tests/test_desktop_contract.py",
+    "scripts/tests/test_desktop_delivery.py",
+    "scripts/tests/test_desktop_probes.py",
+    "scripts/tests/test_desktop_runtime.py",
+    "scripts/tests/test_github_policy.py",
+    "scripts/tests/test_github_pr.py",
+    "scripts/tests/test_package_workspace.py",
+    "scripts/tests/test_quality_tests.py",
+    "scripts/tests/test_workspace.py"
+  ],
+  "python_inapplicable": [
+    {
+      "id": "test_desktop_delivery.DeliveryTests.test_security_hooks_refuse_failed_empty_find_observations_before_policy_changes",
+      "platforms": ["win32"],
+      "reason": "POSIX process/shell contract"
+    },
+    {
+      "id": "test_desktop_delivery.DeliveryTests.test_payload_modes_are_independent_of_original_user_private_group_umask",
+      "platforms": ["win32"],
+      "reason": "POSIX process/shell contract"
+    },
+    {
+      "id": "test_desktop_delivery.DeliveryTests.test_payload_rejects_setid_and_escaping_symlinks_before_permission_changes",
+      "platforms": ["win32"],
+      "reason": "POSIX process/shell contract"
+    },
+    {
+      "id": "test_desktop_delivery.DeliveryTests.test_helper_archive_root_and_relative_executable_link",
+      "platforms": ["win32"],
+      "reason": "POSIX process/shell contract"
+    },
+    {
+      "id": "test_desktop_delivery.DeliveryTests.test_install_scripts_refuse_ordinary_user_and_inherited_command_override",
+      "platforms": ["win32"],
+      "reason": "POSIX process/shell contract"
+    },
+    {
+      "id": "test_desktop_delivery.PackageOrchestrationTests.test_zero_exit_cannot_hide_timeout_or_remaining_helper_processes",
+      "platforms": ["win32"],
+      "reason": "POSIX process/shell contract"
+    },
+    {
+      "id": "test_desktop_delivery.PackageOrchestrationTests.test_success_retains_extraction_and_builder_supervision",
+      "platforms": ["win32"],
+      "reason": "POSIX process/shell contract"
+    },
+    {
+      "id": "test_desktop_delivery.PackageOrchestrationTests.test_failed_final_observations_retain_both_supervisors_and_recheck_admission",
+      "platforms": ["win32"],
+      "reason": "POSIX process/shell contract"
+    },
+    {
+      "id": "test_desktop_delivery.PackageOrchestrationTests.test_replacing_sentinel_and_its_declaration_cannot_certify_preservation",
+      "platforms": ["win32"],
+      "reason": "POSIX process/shell contract"
+    },
+    {
+      "id": "test_desktop_probes.ArtifactTests.test_unreapable_child_never_falls_back_to_an_unbounded_context_wait",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux non-reaping process contract"
+    },
+    {
+      "id": "test_desktop_probes.ArtifactTests.test_lost_leader_identity_never_signals_a_numeric_group",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux non-reaping process contract"
+    },
+    {
+      "id": "test_desktop_probes.ArtifactTests.test_group_signals_never_follow_reaping_the_identity_anchor",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux non-reaping process contract"
+    },
+    {
+      "id": "test_desktop_probes.ArtifactTests.test_lingering_descendant_remains_a_failure_after_it_is_cleaned",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux non-reaping process contract"
+    },
+    {
+      "id": "test_desktop_probes.ArtifactTests.test_descendant_that_exits_within_grace_does_not_report_a_leak",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux non-reaping process contract"
+    },
+    {
+      "id": "test_desktop_probes.ArtifactTests.test_timeout_signals_term_then_kill_before_reaping",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux non-reaping process contract"
+    },
+    {
+      "id": "test_desktop_probes.ArtifactTests.test_darwin_zombie_only_signal_denial_preserves_exit_and_verifies_cessation",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux non-reaping process contract"
+    },
+    {
+      "id": "test_desktop_probes.ArtifactTests.test_signal_permission_denial_requires_observed_darwin_zombie_only_group",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux non-reaping process contract"
+    },
+    {
+      "id": "test_desktop_probes.ArtifactTests.test_group_observation_failure_still_cleans_before_reaping",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux non-reaping process contract"
+    },
+    {
+      "id": "test_desktop_probes.ArtifactTests.test_nonexit_wait_notification_does_not_authorize_cleanup",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux non-reaping process contract"
+    },
+    {
+      "id": "test_desktop_probes.ArtifactTests.test_owned_process_timeout_is_failed_and_waited",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux non-reaping process contract"
+    },
+    {
+      "id": "test_desktop_probes.ArtifactTests.test_owned_process_success_is_observed",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux non-reaping process contract"
+    },
+    {
+      "id": "test_desktop_probes.ArtifactTests.test_native_startup_diagnostics_reach_the_launcher_output",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux non-reaping process contract"
+    },
+    {
+      "id": "test_desktop_runtime.RuntimeArchiveTests.test_internal_framework_link_is_preserved_and_setuid_is_stripped",
+      "platforms": ["win32"],
+      "reason": "POSIX process/shell contract"
+    },
+    {
+      "id": "test_github_pr.TrustAndTransportTests.test_colored_job_logs_are_captured_without_cli_escape_refusal",
+      "platforms": ["win32"],
+      "reason": "POSIX process/shell contract"
+    },
+    {
+      "id": "test_github_pr.TrustAndTransportTests.test_log_download_bounds_and_failures_use_real_child_processes",
+      "platforms": ["win32"],
+      "reason": "POSIX process/shell contract"
+    }
+  ],
+  "vitest_inapplicable": [
+    {
+      "id": "tests/desktop-probes.test.ts::exclusive synthetic probe files > preserves a symlink target without following it::case-0",
+      "platforms": ["win32"],
+      "reason": "POSIX symlink-creation fixture; required native Windows reparse cases remain separate."
+    },
+    {
+      "id": "tests/storage.test.ts::durable preference and migration recovery > does not follow a recovery alias or a broken database alias into another root::case-0",
+      "platforms": ["win32"],
+      "reason": "POSIX symbolic-link fixture; native Windows reparse admission is verified separately."
+    }
+  ]
+}
