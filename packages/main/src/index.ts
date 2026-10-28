@@ -19,3 +19,24 @@ export function rendererWebPreferences(preloadPath: string): WebPreferences {
 
 export { PortAdmission } from "./port-admission.js";
 export type { FrameSender, WindowAuthority } from "./port-admission.js";
+export {
+  readBoundedFile,
+  admitRuntimeSwitches,
+  loadRuntimeProfile,
+  nativeProfileHost,
+  verifyStableSentinels,
+  containsPath,
+} from "./profile.js";
+export {
+  parseLocator,
+  readLocator,
+  validateDataDirectory,
+  LocatorPublisher,
+  posixLocatorIO,
+} from "./locator.js";
+export type { LocatorPublicationIO, Publication, DataLocator } from "./locator.js";
+export { ServiceSupervisor, recoverService } from "./service-supervisor.js";
+export type { SupervisedChild } from "./service-supervisor.js";
+
+export { RuntimeNotices } from "./error-notices.js";
+export type { RuntimeError } from "./error-notices.js";

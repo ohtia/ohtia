@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import { Kysely, SqliteDialect, sql } from "kysely";
+export { createStatusService } from "./status-service.js";
 
 /** Inspect a disposable in-memory engine without opening research or preference data. */
 export async function inspectSqliteEngine(): Promise<string> {

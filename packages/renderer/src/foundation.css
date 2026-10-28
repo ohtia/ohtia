@@ -1,0 +1,159 @@
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("../fonts/IBMPlexSans-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("../fonts/IBMPlexSans-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans KR";
+  src: url("../fonts/IBMPlexSansKR-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans KR";
+  src: url("../fonts/IBMPlexSansKR-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Noto Sans KR";
+  src: url("../fonts/NotoSansKR-Regular.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Noto Sans KR";
+  src: url("../fonts/NotoSansKR-Bold.otf") format("opentype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+:root {
+  color-scheme: light dark;
+  --surface-page: #faf8f5;
+  --content-primary: #1f1d19;
+  --border-control: #87827b;
+  --focus-ring: #1f1d19;
+  --font-family-ui: "IBM Plex Sans", "IBM Plex Sans KR", "Noto Sans KR", sans-serif;
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --radius-small: 4px;
+  --border-width-default: 1px;
+  --focus-width: 3px;
+  --focus-offset: 2px;
+  --type-ui-body-size: 16px;
+  --type-ui-body-line: 1.5;
+  --type-ui-body-weight: 400;
+  --type-ui-title-size: 24px;
+  --type-ui-title-line: 1.3333333333;
+  --type-ui-heading-size: 20px;
+  --type-ui-heading-line: 1.4;
+  --type-ui-heading-weight: 600;
+  --component-target-minimum: 24px;
+  --component-target-coarse: 44px;
+  --measure-reading: 34em;
+  font-family: var(--font-family-ui);
+  font-size: var(--type-ui-body-size);
+  line-height: var(--type-ui-body-line);
+  font-weight: var(--type-ui-body-weight);
+  font-synthesis: none;
+  background: var(--surface-page);
+  color: var(--content-primary);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-page: #151411;
+    --content-primary: #ebe7e2;
+    --focus-ring: #ebe7e2;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: var(--space-0);
+}
+main {
+  padding: var(--space-4);
+  overflow-wrap: anywhere;
+}
+h1 {
+  font-size: var(--type-ui-title-size);
+  line-height: var(--type-ui-title-line);
+}
+h2 {
+  font-size: var(--type-ui-heading-size);
+  line-height: var(--type-ui-heading-line);
+}
+h1,
+h2 {
+  font-weight: var(--type-ui-heading-weight);
+  margin-block: var(--space-0) var(--space-4);
+}
+section {
+  margin-block: var(--space-8);
+}
+p {
+  margin-block: var(--space-4);
+  max-inline-size: var(--measure-reading);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+button {
+  font: inherit;
+  color: var(--content-primary);
+  background: var(--surface-page);
+  border: var(--border-width-default) solid var(--border-control);
+  border-radius: var(--radius-small);
+  padding: var(--space-2) var(--space-3);
+  min-height: var(--component-target-minimum);
+  max-width: 100%;
+  white-space: normal;
+}
+button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.6;
+  border-style: dashed;
+}
+:focus-visible,
+[role="alert"]:focus {
+  outline: var(--focus-width) solid var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+:lang(ko) {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+@media (pointer: coarse) {
+  button {
+    min-height: var(--component-target-coarse);
+  }
+}
+@media (forced-colors: active) {
+  :root {
+    --surface-page: Canvas;
+    --content-primary: CanvasText;
+    --border-control: ButtonText;
+    --focus-ring: Highlight;
+  }
+}

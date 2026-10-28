@@ -22,11 +22,11 @@
   "main": {
     "packages": ["@ohtia/contracts"],
     "external": ["electron"],
-    "builtins": ["node:path"]
+    "builtins": ["node:path", "node:fs", "node:os", "node:crypto", "node:url"]
   },
   "utility": {
     "packages": ["@ohtia/contracts", "@ohtia/domain"],
     "external": ["better-sqlite3", "kysely"],
-    "builtins": []
+    "builtins": ["node:fs", "node:os", "node:path"]
   }
 }

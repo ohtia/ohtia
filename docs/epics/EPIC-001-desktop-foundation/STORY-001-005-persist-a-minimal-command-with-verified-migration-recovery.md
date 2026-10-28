@@ -4,6 +4,8 @@ title: "STORY-001-005 — Persist a minimal command with verified migration reco
 description: "Demonstrate file-backed durability, exclusive migrations and verified checkpoint recovery through the real desktop path."
 generated:
   by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 tags: ["story", "comp:storage", "comp:desktop"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/19
@@ -48,7 +50,7 @@ Demonstrate file-backed durability, exclusive migrations and verified checkpoint
 - [ ] Implement the packaged ordered immutable migration registry, compatibility metadata and exclusive checkpoint/migration/recovery lifecycle before creating the first schema.
 - [ ] Initialize execution_limits atomically for fresh/applicable migration cases using ADR-0011 defaults, preserve valid saved limits and reject invalid or unexpected missing initialized state.
 - [ ] Extend the shared catalogs/accessible controls for real storage, open, create and recovery outcomes and decode saved locale only after store admission.
-- [ ] Complete graphically confirmed store creation/open and locator publication with the validated service.
+- [ ] Complete validated default-root store creation/open and locator publication without a startup location question.
 - [ ] Implement minimal appearance preference read/change with atomic receipts/expected revisions and durable restart through real IPC.
 - [ ] Verify UUIDv7 conformance/physical BLOB constraints for applicable entity identities without changing preference-key or idempotency contracts, and run packaged binding/storage recovery on all required targets.
 - [ ] Exercise recovery before/after/uncertain commit and preserve prior state, failed journals and controlled graphical actions.

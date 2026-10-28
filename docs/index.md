@@ -28,6 +28,7 @@ okf_version: "0.2"
 
 ## Desktop foundation
 
+- [Isolated desktop runtime](desktop-runtime.md) — Admit an independent native profile, assemble the local desktop and verify its supervised status and fixed-home bootstrap boundaries.
 - [Desktop foundation contract](desktop-foundation-contract.md) — Native target and distribution qualification inputs, pinned candidate metadata, numeric resource policy and evidence ownership for the desktop foundation.
 - [Bounded foundation application port](application-port.md) — Versioned status and appearance messages, controlled outcomes, transaction receipts and deterministic conformance for the desktop application boundary.
 - [Foundation security applicability](foundation-security.md) — Versioned security applicability, enforcing boundaries and reproducible evidence obligations for the desktop foundation.

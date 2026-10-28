@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "fonts": [
+    {
+      "file": "IBMPlexSans-Regular.woff2",
+      "distribution": "@ibm/plex-sans@1.1.0",
+      "source": "https://registry.npmjs.org/@ibm/plex-sans/-/plex-sans-1.1.0.tgz",
+      "integrity": "sha512-WPgvO6Yfj2w5YbhyAr1tv95RUz4LRJlqN+CmYvBglabXteufP1D1E9BABMde+ZIKdRbFJDoKF5eQzfhpnbgZcQ==",
+      "sha256": "ba711a3085ff9f27440b6b9c4550cfc47c97bf36591d5da958b975bb3add8c1a",
+      "license": "OFL-1.1",
+      "native_version": "3.005",
+      "license_file": "IBMPlexSans-LICENSE.txt"
+    },
+    {
+      "file": "IBMPlexSans-SemiBold.woff2",
+      "distribution": "@ibm/plex-sans@1.1.0",
+      "source": "https://registry.npmjs.org/@ibm/plex-sans/-/plex-sans-1.1.0.tgz",
+      "integrity": "sha512-WPgvO6Yfj2w5YbhyAr1tv95RUz4LRJlqN+CmYvBglabXteufP1D1E9BABMde+ZIKdRbFJDoKF5eQzfhpnbgZcQ==",
+      "sha256": "f78048030eab62e860efa39a0df79e2e5581bf122eb95b9bc42c0b8a4988d205",
+      "license": "OFL-1.1",
+      "native_version": "3.005",
+      "license_file": "IBMPlexSans-LICENSE.txt"
+    },
+    {
+      "file": "IBMPlexSansKR-Regular.woff2",
+      "distribution": "@ibm/plex-sans-kr@1.1.0",
+      "source": "https://registry.npmjs.org/@ibm/plex-sans-kr/-/plex-sans-kr-1.1.0.tgz",
+      "integrity": "sha512-oGwlBC7BYvcvOvs7d8SoumXJwNO3rjbplteyeYI7zgQmEWI+4qLdRhI/zBUO4Ioo55YymSMiMtRPqAAPZBrJqA==",
+      "sha256": "055a35664c3c3965161c92292504c5633ba9604ec904edc1ed799bf2a436276d",
+      "license": "OFL-1.1",
+      "native_version": "1.003",
+      "license_file": "IBMPlexSansKR-LICENSE.txt"
+    },
+    {
+      "file": "IBMPlexSansKR-SemiBold.woff2",
+      "distribution": "@ibm/plex-sans-kr@1.1.0",
+      "source": "https://registry.npmjs.org/@ibm/plex-sans-kr/-/plex-sans-kr-1.1.0.tgz",
+      "integrity": "sha512-oGwlBC7BYvcvOvs7d8SoumXJwNO3rjbplteyeYI7zgQmEWI+4qLdRhI/zBUO4Ioo55YymSMiMtRPqAAPZBrJqA==",
+      "sha256": "5ad7db28ba74d59fe14c260205c62ddb701320f4f098d8a45ef2757bebc29666",
+      "license": "OFL-1.1",
+      "native_version": "1.003",
+      "license_file": "IBMPlexSansKR-LICENSE.txt"
+    },
+    {
+      "file": "NotoSansKR-Regular.otf",
+      "upstream_commit": "523d033d6cb47f4a80c58a35753646f5c3608a78",
+      "source": "https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/Sans/SubsetOTF/KR/NotoSansKR-Regular.otf",
+      "sha256": "69975a0ac8472717870aefeab0a4d52739308d90856b9955313b2ad5e0148d68",
+      "license": "OFL-1.1",
+      "native_version": "2.004",
+      "license_file": "NotoSansKR-LICENSE.txt"
+    },
+    {
+      "file": "NotoSansKR-Bold.otf",
+      "upstream_commit": "523d033d6cb47f4a80c58a35753646f5c3608a78",
+      "source": "https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/Sans/SubsetOTF/KR/NotoSansKR-Bold.otf",
+      "sha256": "5a6ceb287ed2fc6cfc6213144ebea68cbd94b20fc9eb873d8486493bf02d9bda",
+      "license": "OFL-1.1",
+      "native_version": "2.004",
+      "license_file": "NotoSansKR-LICENSE.txt"
+    }
+  ]
+}
