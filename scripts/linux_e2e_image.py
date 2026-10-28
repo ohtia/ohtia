@@ -140,8 +140,32 @@ def checked_source_record(config):
     return source
 
 
+def build_jobs(config):
+    """Bound compiler parallelism by available CPUs and memory inside this build step."""
+    cpus = len(os.sched_getaffinity(0))
+    quota = Path("/sys/fs/cgroup/cpu.max")
+    if quota.is_file():
+        maximum, period = quota.read_text().split()
+        if maximum != "max":
+            cpus = min(cpus, max(1, int(maximum) // int(period)))
+    available = next(
+        int(line.split()[1]) * 1024
+        for line in Path("/proc/meminfo").read_text().splitlines()
+        if line.startswith("MemAvailable:")
+    )
+    limit = Path("/sys/fs/cgroup/memory.max")
+    if limit.is_file() and limit.read_text().strip() != "max":
+        available = min(available, int(limit.read_text()))
+    per_job = config["memory_per_job_bytes"]
+    if not isinstance(per_job, int) or per_job < 1:
+        raise ValueError("Invalid compiler memory budget.")
+    return max(1, min(cpus, available // per_job))
+
+
 def compile_webkit(config):
     checked_source_record(config)
+    jobs = build_jobs(config)
+    print(f"Compiling WebKit with {jobs} parallel jobs.", flush=True)
     environment = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
     headers = Path(config["cmake"]["LIBBACKTRACE_INCLUDE_DIR"])
     headers.mkdir(exist_ok=True)
@@ -170,11 +194,11 @@ def compile_webkit(config):
             str(BUILD),
             "--target",
             "WebKitGTK/DerivedSources/WebKitDirectoryInputStreamData.h",
-            f"-j{config['jobs']}",
+            f"-j{jobs}",
         ],
         env=environment,
     )
-    execute(["cmake", "--build", str(BUILD), f"-j{config['jobs']}"], env=environment)
+    execute(["cmake", "--build", str(BUILD), f"-j{jobs}"], env=environment)
     execute(["cmake", "--install", str(BUILD)], env=environment)
     COMPILE_RECEIPT.write_text(
         json.dumps(
@@ -183,6 +207,7 @@ def compile_webkit(config):
                 "manifest_sha256": sha256(MANIFEST),
                 "source_inputs_sha256": sha256(SOURCE_INPUTS),
                 "cmake_cache_sha256": sha256(BUILD / "CMakeCache.txt"),
+                "jobs": jobs,
                 "artifacts": source_files(PREFIX),
             },
             sort_keys=True,
@@ -232,11 +257,15 @@ def finalize(config):
     if source["files"] != source_files(SOURCE):
         raise ValueError("Source/patch bytes changed during the image build.")
     compiled = json.loads(COMPILE_RECEIPT.read_text())
+    jobs = compiled.get("jobs")
+    if not isinstance(jobs, int) or jobs < 1:
+        raise ValueError("Canonical image compilation receipt mismatch.")
     expected = {
         "recipe_sha256": sha256(Path(__file__)),
         "manifest_sha256": sha256(MANIFEST),
         "source_inputs_sha256": sha256(SOURCE_INPUTS),
         "cmake_cache_sha256": sha256(BUILD / "CMakeCache.txt"),
+        "jobs": jobs,
         "artifacts": source_files(PREFIX),
     }
     if compiled != expected:
@@ -308,6 +337,7 @@ def finalize(config):
         "manifest_sha256": sha256(MANIFEST),
         "source_inputs_sha256": sha256(SOURCE_INPUTS),
         "cmake_cache_sha256": sha256(BUILD / "CMakeCache.txt"),
+        "jobs": jobs,
         "source_validation": "canonical-stage-receipts-and-before-after-source-snapshot",
         "source_tree": source["source_tree"],
         "launcher_sha256": sha256(launch),

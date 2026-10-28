@@ -48,12 +48,9 @@ function parity() {
     "ELECTRON_DISABLE_SANDBOX",
   ])
     assert.ok(!process.env[key], `Sandbox override: ${key}`);
+  // The receipt must describe this checkout's recipe; its hash is recorded as run evidence.
   const recordFile = "/opt/ohtia-image/webkit.json";
-  assert.equal(
-    createHash("sha256").update(fs.readFileSync(recordFile)).digest("hex"),
-    config.webkit_record_sha256,
-    "WebKit build receipt differs",
-  );
+  const recordHash = createHash("sha256").update(fs.readFileSync(recordFile)).digest("hex");
   const record = read(recordFile);
   assert.equal(record.version, 2);
   assert.equal(record.build_method, "canonical-recipe");
@@ -85,9 +82,12 @@ function parity() {
     createHash("sha256").update(fs.readFileSync(webkit.executablePath())).digest("hex"),
     record.launcher_sha256,
   );
+  const identity = read(path.join(root, "linux-e2e-input.json"));
   write("parity.json", {
-    image: config.image,
-    webkitBuildRecord: config.webkit_record_sha256,
+    image: identity.image,
+    imageId: identity.image_id,
+    inputFingerprint: identity.input_fingerprint,
+    webkitBuildRecord: recordHash,
     playwright: config.playwright,
     browsers: config.browsers,
     developerNode: process.versions,

@@ -23,4 +23,8 @@ cleanup_linux_e2e_policy() {
 python3 scripts/linux_e2e.py policy-check
 sudo apparmor_parser --add --skip-cache "$e2e_profile"
 trap cleanup_linux_e2e_policy EXIT
-python3 scripts/linux_e2e.py run --engine docker "$@"
+if [ "${1:-}" = "--preflight" ]; then
+  python3 scripts/linux_e2e.py policy-unused
+else
+  python3 scripts/linux_e2e.py run --engine docker "$@"
+fi

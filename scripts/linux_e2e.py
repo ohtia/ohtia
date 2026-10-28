@@ -19,8 +19,13 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
+from linux_e2e_image_inputs import fingerprint, inputs
+
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG = ROOT / "config/desktop/linux-e2e.json"
+IMAGE_NAME = "ghcr.io/ohtia/linux-e2e"
+# The image workflow matches this exact text to re-run checks that waited for an image.
+MISSING_IMAGE = "No published Linux E2E image matches image inputs {}."
 SECCOMP = ROOT / "config/desktop/linux-e2e-seccomp.json"
 APPARMOR = ROOT / "config/desktop/linux-e2e.apparmor"
 
@@ -50,10 +55,6 @@ def configuration():
     config = read_json(CONFIG)
     require(config["version"] == 1 and config["target"] == "linux-x64", "Invalid Linux E2E scope.")
     require(
-        "@sha256:" in config["image"] and len(config["image"].split("@sha256:")[1]) == 64,
-        "An immutable image digest is required.",
-    )
-    require(
         isinstance(config["uid"], int) and config["uid"] > 0 and config["user"] != "root",
         "Root image account refused.",
     )
@@ -73,7 +74,12 @@ def command(args, **kwargs):
     return subprocess.run(args, check=True, **kwargs)
 
 
-def container_args(config, name, image_reference=None):
+def image_tag(identity):
+    """Name the publication built from exactly these declared image inputs."""
+    return f"{IMAGE_NAME}:inputs-{identity}"
+
+
+def container_args(config, name, image_id):
     resources = config["resources"]
     return [
         "create",
@@ -101,7 +107,7 @@ def container_args(config, name, image_reference=None):
         f"--pids-limit={resources['pids']}",
         "--env=HOME=/home/pwuser",
         "--env=PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1",
-        image_reference or config["image"],
+        image_id,
         "sh",
         "-eu",
         "-c",
@@ -109,24 +115,26 @@ def container_args(config, name, image_reference=None):
     ]
 
 
-def matching_image(config, value):
-    # Docker containerd stores identify an image by manifest; Podman uses its config.
-    return value.removeprefix("sha256:") in {
-        config["image_id"].removeprefix("sha256:"),
-        config["image"].split("@sha256:")[1],
-    }
+def inspect_image(config, image, identity):
+    require(
+        image["Architecture"] == "amd64" and image["Os"] == "linux",
+        "Image identity/platform mismatch.",
+    )
+    require(image.get("Config", {}).get("User") == config["user"], "Image account mismatch.")
+    require(
+        re.fullmatch(r"[0-9a-f]{64}", identity)
+        and (image["Config"].get("Labels") or {}).get("io.ohtia.image-inputs") == identity,
+        "Image/input fingerprint mismatch.",
+    )
 
 
-def inspect_container(config, inspected):
+def inspect_container(config, inspected, image_id):
     """Check effective engine settings, not merely the intended command line."""
     host = inspected["HostConfig"]
     actual = inspected["Config"]
     resources = config["resources"]
     require(not inspected.get("Mounts"), "Host mounts are forbidden.")
-    require(
-        matching_image(config, inspected["Image"]),
-        "Wrong container image identity.",
-    )
+    require(inspected["Image"] == image_id, "Wrong container image identity.")
     require(actual["User"] == config["user"], "The container must use its dedicated account.")
     require(not host.get("Privileged"), "Privileged containers are forbidden.")
     require(host.get("NetworkMode") == "bridge", "Private networking required.")
@@ -258,6 +266,12 @@ def checkout_identity(explicit_base=None, env=None):
         elif env.get("GITHUB_EVENT_NAME") == "push":
             head = event["after"]
             event_base = event["before"]
+            # A branch-creating push has no previous revision; use its default-branch ancestry.
+            if event_base == "0" * 40:
+                event_base = base or git_text("merge-base", "HEAD", "origin/main")
+        elif env.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
+            head = checkout
+            event_base = base or git_text("merge-base", "HEAD", "origin/main")
         else:
             raise ValueError("CI event has no declared head/base identity.")
         require(base is None or base == event_base, "Explicit base disagrees with CI event.")
@@ -355,31 +369,60 @@ def source_archive(destination, identity):
     return hashes
 
 
-def pinned_image(engine, config):
-    references = dict.fromkeys(
-        [config["image_id"], config["image"].rsplit("@", 1)[1], config["image"]]
-    )
-    for reference in references:
-        result = subprocess.run(
-            [engine, "image", "inspect", reference],
+def resolved_image(engine, config, identity):
+    """Use the image built from the declared inputs: local cache first, else its publication."""
+    tag = image_tag(identity)
+
+    def inspect():
+        return subprocess.run(
+            [engine, "image", "inspect", tag],
             capture_output=True,
             text=True,
             timeout=60,
             check=False,
         )
-        if result.returncode == 0:
-            return json.loads(result.stdout)[0], "cached"
-        if not any(
-            marker in result.stderr.lower()
-            for marker in ("no such image", "image not known", "no images found")
-        ):
-            raise ValueError(
-                "Cannot inspect the pinned image; restore engine access without changing its pin."
+
+    result = inspect()
+    cache = "cached"
+    if result.returncode:
+        require(
+            any(
+                marker in result.stderr.lower()
+                for marker in ("no such image", "image not known", "no images found")
+            ),
+            "Cannot inspect the Linux E2E image; restore engine access without changing inputs.",
+        )
+        pulled = subprocess.run(
+            [engine, "pull", "--platform", "linux/amd64", tag],
+            capture_output=True,
+            text=True,
+            timeout=600,
+            check=False,
+        )
+        if pulled.returncode:
+            missing = any(
+                marker in pulled.stderr.lower() for marker in ("not found", "manifest unknown")
             )
-    command([engine, "pull", "--platform", "linux/amd64", config["image"]])
-    return json.loads(
-        subprocess.check_output([engine, "image", "inspect", config["image"]], timeout=60)
-    )[0], "downloaded"
+            raise ValueError(
+                MISSING_IMAGE.format(identity)
+                + " The 'Build Linux E2E image' workflow builds it after a push that changes "
+                "those inputs and then re-runs this check."
+                if missing
+                else f"Cannot pull the Linux E2E image: {pulled.stderr.strip()[-500:]}"
+            )
+        result = inspect()
+        require(result.returncode == 0, "The pulled Linux E2E image cannot be inspected.")
+        cache = "downloaded"
+    image = json.loads(result.stdout)[0]
+    inspect_image(config, image, identity)
+    digests = sorted(
+        {
+            value.split("@", 1)[1]
+            for value in image.get("RepoDigests") or []
+            if value.startswith(IMAGE_NAME + "@sha256:")
+        }
+    )
+    return image, digests, cache
 
 
 def copy_reports(engine, name, output):
@@ -425,7 +468,6 @@ def run(engine, output, base=None):
     identity = {
         "run": str(uuid.uuid4()),
         **checkout_identity(base),
-        "image": config["image"],
         "host_architecture": platform.machine(),
     }
     output.mkdir(parents=True)
@@ -445,15 +487,18 @@ def run(engine, output, base=None):
         )
         require("name=apparmor" in json.loads(security), "An enforcing AppArmor host is required.")
         result["engine_architecture"] = engine_arch
+        identity["input_fingerprint"] = fingerprint(inputs())
         with measured(result["timings_seconds"], "image_preparation", output / "host-timings.json"):
-            image, cache_state = pinned_image(engine, config)
+            image, digests, cache_state = resolved_image(
+                engine, config, identity["input_fingerprint"]
+            )
             result["image_cache"] = cache_state
-        require(
-            image["Architecture"] == "amd64"
-            and image["Os"] == "linux"
-            and matching_image(config, image["Id"]),
-            "Image identity/platform mismatch.",
+        # The registry digest is recorded per run; Git fixes the inputs the image was built from.
+        identity["image"] = image_tag(identity["input_fingerprint"]) + (
+            "@" + digests[0] if len(digests) == 1 else ""
         )
+        identity["image_id"] = image["Id"]
+        identity["image_repo_digests"] = digests
         with tempfile.TemporaryDirectory(prefix="ohtia-linux-source-") as temporary:
             archive = Path(temporary) / "source.tar"
             source_archive(archive, identity)
@@ -462,7 +507,7 @@ def run(engine, output, base=None):
             inspected = json.loads(subprocess.check_output([engine, "inspect", name], timeout=60))[
                 0
             ]
-            inspect_container(config, inspected)
+            inspect_container(config, inspected, image["Id"])
             (output / "container-policy.json").write_text(json.dumps(inspected, indent=2) + "\n")
             with (
                 measured(

@@ -22,6 +22,8 @@ import linux_e2e as runner
 class LinuxE2ETests(unittest.TestCase):
     def setUp(self):
         self.config = runner.configuration()
+        self.inputs = "a" * 64
+        self.image_id = "sha256:" + "b" * 64
         self.identity = {"run": "synthetic-accounting-run"}
         self.reports = [
             {
@@ -61,7 +63,7 @@ class LinuxE2ETests(unittest.TestCase):
     def policy(self):
         resources = self.config["resources"]
         return {
-            "Image": self.config["image_id"],
+            "Image": self.image_id,
             "Mounts": [],
             "AppArmorProfile": self.config["apparmor_profile"],
             "Config": {"User": "pwuser"},
@@ -85,8 +87,33 @@ class LinuxE2ETests(unittest.TestCase):
             },
         }
 
+    def image(self, **changes):
+        return {
+            "Id": self.image_id,
+            "Architecture": "amd64",
+            "Os": "linux",
+            "Config": {"User": "pwuser", "Labels": {"io.ohtia.image-inputs": self.inputs}},
+            **changes,
+        }
+
+    def test_image_label_binds_the_declared_inputs_to_the_image(self):
+        value = self.image()
+        runner.inspect_image(self.config, value, self.inputs)
+        for change in (
+            lambda image: image["Config"]["Labels"].update({"io.ohtia.image-inputs": "b" * 64}),
+            lambda image: image["Config"].update(Labels=None),
+            lambda image: image["Config"].update(User="root"),
+            lambda image: image.update(Architecture="arm64"),
+        ):
+            changed = copy.deepcopy(value)
+            change(changed)
+            with self.assertRaises(ValueError):
+                runner.inspect_image(self.config, changed, self.inputs)
+        with self.assertRaises(ValueError):
+            runner.inspect_image(self.config, value, "not-a-fingerprint")
+
     def test_effective_policy_rejects_host_mounts_root_privileges_and_unbounded_resources(self):
-        runner.inspect_container(self.config, self.policy())
+        runner.inspect_container(self.config, self.policy(), self.image_id)
         mutations = [
             lambda value: value.update(
                 Mounts=[{"Source": "/home/stable", "Destination": "/home/pwuser/.config"}]
@@ -125,7 +152,7 @@ class LinuxE2ETests(unittest.TestCase):
             policy = self.policy()
             mutate(policy)
             with self.assertRaises(ValueError):
-                runner.inspect_container(self.config, policy)
+                runner.inspect_container(self.config, policy, self.image_id)
 
     def test_apparmor_requires_enforcement_and_real_sensitive_path_denials(self):
         with (
@@ -245,7 +272,7 @@ class LinuxE2ETests(unittest.TestCase):
                 self.assertEqual("sudo:--remove" in events, check == 0 and add == 0 and unused == 0)
 
     def test_no_mount_or_host_environment_option_is_in_the_launch_contract(self):
-        args = runner.container_args(self.config, "synthetic-container")
+        args = runner.container_args(self.config, "synthetic-container", self.image_id)
         self.assertNotIn("--volume", args)
         self.assertNotIn("--mount", args)
         self.assertNotIn("--privileged", args)
@@ -253,7 +280,7 @@ class LinuxE2ETests(unittest.TestCase):
         self.assertIn("--cap-drop=ALL", args)
         self.assertIn("--security-opt=systempaths=unconfined", args)
         self.assertIn(f"--security-opt=apparmor={self.config['apparmor_profile']}", args)
-        self.assertIn(self.config["image"], args)
+        self.assertIn(self.image_id, args)
         self.assertNotIn("--env-host", args)
 
     def test_package_drift_is_rejected_before_container_preparation(self):
@@ -309,42 +336,46 @@ class LinuxE2ETests(unittest.TestCase):
         ):
             runner.inside()
 
-    def test_digest_cache_is_exact_and_engine_errors_never_trigger_an_image_fallback(self):
-        image = {"Id": self.config["image_id"], "Architecture": "amd64", "Os": "linux"}
-        with (
-            patch.object(
-                runner.subprocess,
-                "run",
-                return_value=SimpleNamespace(returncode=0, stdout=json.dumps([image]), stderr=""),
-            ),
-            patch.object(runner, "command") as pull,
-        ):
-            self.assertEqual(runner.pinned_image("docker", self.config), (image, "cached"))
-            pull.assert_not_called()
-        with (
-            patch.object(
-                runner.subprocess,
-                "run",
-                return_value=SimpleNamespace(
-                    returncode=1, stdout="", stderr="Cannot connect to engine"
-                ),
-            ),
-            patch.object(runner, "command") as pull,
-            self.assertRaisesRegex(ValueError, "restore engine access"),
-        ):
-            runner.pinned_image("docker", self.config)
-        pull.assert_not_called()
-        with (
-            patch.object(
-                runner.subprocess,
-                "run",
-                return_value=SimpleNamespace(returncode=1, stdout="", stderr="No such image"),
-            ),
-            patch.object(runner, "command") as pull,
-            patch.object(runner.subprocess, "check_output", return_value=json.dumps([image])),
-        ):
-            self.assertEqual(runner.pinned_image("docker", self.config), (image, "downloaded"))
-        self.assertEqual(pull.call_args.args[0][-1], self.config["image"])
+    def test_input_addressed_image_is_cached_or_pulled_and_engine_errors_never_fall_back(self):
+        tag = runner.image_tag(self.inputs)
+        published = self.image(RepoDigests=[runner.IMAGE_NAME + "@sha256:" + "c" * 64])
+
+        def engine(results):
+            calls = []
+
+            def run(args, **kwargs):
+                calls.append(args)
+                return results.pop(0)
+
+            return calls, patch.object(runner.subprocess, "run", side_effect=run)
+
+        found = SimpleNamespace(returncode=0, stdout=json.dumps([published]), stderr="")
+        absent = SimpleNamespace(returncode=1, stdout="", stderr="Error: No such image")
+        calls, patched = engine([found])
+        with patched:
+            self.assertEqual(
+                runner.resolved_image("docker", self.config, self.inputs),
+                (published, ["sha256:" + "c" * 64], "cached"),
+            )
+        self.assertEqual(calls, [["docker", "image", "inspect", tag]])
+        calls, patched = engine([absent, SimpleNamespace(returncode=0, stderr=""), found])
+        with patched:
+            self.assertEqual(
+                runner.resolved_image("docker", self.config, self.inputs)[2], "downloaded"
+            )
+        self.assertEqual(calls[1], ["docker", "pull", "--platform", "linux/amd64", tag])
+        refused = SimpleNamespace(returncode=1, stderr="manifest unknown")
+        calls, patched = engine([absent, refused])
+        with patched, self.assertRaisesRegex(ValueError, "No published Linux E2E image"):
+            runner.resolved_image("docker", self.config, self.inputs)
+        calls, patched = engine([SimpleNamespace(returncode=1, stderr="Cannot connect")])
+        with patched, self.assertRaisesRegex(ValueError, "restore engine access"):
+            runner.resolved_image("docker", self.config, self.inputs)
+        self.assertEqual(len(calls), 1)
+        foreign = self.image(Config={"User": "pwuser", "Labels": {}})
+        calls, patched = engine([SimpleNamespace(returncode=0, stdout=json.dumps([foreign]))])
+        with patched, self.assertRaisesRegex(ValueError, "fingerprint mismatch"):
+            runner.resolved_image("docker", self.config, self.inputs)
 
     def test_wrong_host_architecture_is_denied_before_creating_evidence(self):
         with (
@@ -389,6 +420,8 @@ class LinuxE2ETests(unittest.TestCase):
                     return "d" * 40
                 if args == ("merge-base", base, merge):
                     return base
+                if args == ("merge-base", "HEAD", "origin/main"):
+                    return base
                 raise AssertionError(f"Unexpected Git query: {args}")
 
             with patch.object(runner, "git_text", side_effect=git):
@@ -400,6 +433,22 @@ class LinuxE2ETests(unittest.TestCase):
                     runner.checkout_identity("e" * 40, env=env)
                 with self.assertRaisesRegex(ValueError, "checkout differs"):
                     runner.checkout_identity(env={**env, "GITHUB_SHA": head})
+                file.write_text("{}")
+                dispatched = runner.checkout_identity(
+                    env={
+                        **env,
+                        "GITHUB_EVENT_NAME": "workflow_dispatch",
+                        "GITHUB_RUN_ID": "synthetic-recovery-run",
+                    }
+                )
+                self.assertEqual(dispatched["head"], merge)
+                self.assertEqual(dispatched["base"], base)
+                self.assertEqual(dispatched["github_run"], "synthetic-recovery-run")
+                # A branch-creating push reports no previous revision.
+                file.write_text(json.dumps({"after": merge, "before": "0" * 40}))
+                created = runner.checkout_identity(env={**env, "GITHUB_EVENT_NAME": "push"})
+                self.assertEqual(created["head"], merge)
+                self.assertEqual(created["base"], base)
 
     def test_runner_never_certifies_failed_incomplete_or_foreign_execution(self):
         for fault in (
@@ -454,37 +503,23 @@ class LinuxE2ETests(unittest.TestCase):
                         raise subprocess.CalledProcessError(1, args)
                     return SimpleNamespace(returncode=0)
 
+                def resolved(engine, config, identity):
+                    image = self.image(Architecture="arm64" if fault == "image" else "amd64")
+                    runner.inspect_image(config, image, identity)
+                    return image, ["sha256:" + "c" * 64], "cached"
+
                 def inspect(args, **kwargs):
                     if args[1] == "info":
                         if args[-1] == "{{json .SecurityOptions}}":
                             return json.dumps([] if fault == "host-policy" else ["name=apparmor"])
                         return json.dumps("x86_64")
-                    if args[1] == "image":
-                        return json.dumps(
-                            [
-                                {
-                                    "Architecture": "arm64" if fault == "image" else "amd64",
-                                    "Os": "linux",
-                                    "Id": self.config["image_id"],
-                                }
-                            ]
-                        )
                     return json.dumps([self.policy()])
 
                 with (
                     patch.object(runner, "configuration", return_value=self.config),
-                    patch.object(
-                        runner,
-                        "pinned_image",
-                        side_effect=lambda *args: (
-                            {
-                                "Architecture": "arm64" if fault == "image" else "amd64",
-                                "Os": "linux",
-                                "Id": self.config["image_id"],
-                            },
-                            "cached",
-                        ),
-                    ),
+                    patch.object(runner, "fingerprint", return_value=self.inputs),
+                    patch.object(runner, "inputs", return_value={}),
+                    patch.object(runner, "resolved_image", side_effect=resolved),
                     patch.object(
                         runner,
                         "checkout_identity",
@@ -530,6 +565,13 @@ class LinuxE2ETests(unittest.TestCase):
                             )
                 result = runner.read_json(output / "result.json")
                 self.assertEqual(result["status"], "passed" if fault is None else "failed")
+                if fault is None:
+                    # The run records the registry digest actually used for these inputs.
+                    self.assertEqual(
+                        result["identity"]["image"],
+                        runner.image_tag(self.inputs) + "@sha256:" + "c" * 64,
+                    )
+                    self.assertEqual(result["identity"]["image_id"], self.image_id)
                 if fault and fault.startswith("timeout"):
                     self.assertIsInstance(raised.exception, subprocess.TimeoutExpired)
                     operations = [args[1] for args in commands]

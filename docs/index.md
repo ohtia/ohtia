@@ -37,7 +37,7 @@ okf_version: "0.2"
 
 ## Repository
 
-- [Immutable Linux E2E environment](linux-e2e.md) — Run the pinned Linux x86-64 image with private sessions, active sandboxes and complete packaged Electron result accounting.
+- [Immutable Linux E2E environment](linux-e2e.md) — Produce the pinned Linux x86-64 image only when its inputs change and run it with private sessions, active sandboxes and complete packaged Electron result accounting.
 
 - [Shared verification and coverage gates](shared-verification.md) — Run the same local and CI checks with independent product coverage, complete test inventories and separate native evidence.
 

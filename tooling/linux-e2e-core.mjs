@@ -61,7 +61,7 @@ export function assertBrowserParity({
   executables,
 }) {
   assert.equal(metadata.driverVersion, config.playwright);
-  assert.equal(metadata.dockerImageName, config.playwrightImage ?? config.image.split("@")[0]);
+  assert.equal(metadata.dockerImageName, config.playwrightImage);
   assert.equal(coreVersion, config.playwright);
   assert.equal(packageVersion, config.playwright);
   assert.deepEqual(

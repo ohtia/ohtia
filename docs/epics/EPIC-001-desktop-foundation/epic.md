@@ -356,7 +356,7 @@ STORY-001-007 phase prerequisites: integrate requires W2 from STORY-001-002; int
 
 ### SPEC-001-010: Immutable Linux E2E execution
 
-Provide the ADR-0019 Linux x86-64 E2E image pinned by version and digest and paired to the selected Playwright package/browser versions. Prepare reviewed OS/Electron dependencies in the image rather than resolving arbitrary APT state in each shard. Add a parity check and a local reproduction entry. Developer/build Node and Electron's runtime remain separate identified environments.[^linux-e2e]
+Provide the ADR-0019 Linux x86-64 E2E image built from its pinned recipe, identified by the fingerprint of its declared recipe inputs as defined by ADR-0040, and paired to the selected Playwright package/browser versions. Prepare reviewed OS/Electron dependencies in the image rather than resolving arbitrary APT state in each shard. Add a parity check and a local reproduction entry. Developer/build Node and Electron's runtime remain separate identified environments.[^linux-e2e]
 
 Run as a non-root user with real Chromium/WebKit sandboxes, a private display/session and bounded shared memory/resources. Do not use no-sandbox flags, a host desktop/DBus/credential mount or a mismatch fallback download. Qualify the actual CI container policy; a sandbox-start failure is a failing environment. Container infrastructure is trusted ephemeral build machinery, not proof of hostile parser/agent confinement or Windows/macOS behavior.
 
@@ -613,7 +613,7 @@ Local design and controlled fixtures may proceed before integration or completio
 - **S5 — STORY-001-005:** Packaged binding identity, durable round trip, migration and checkpoint-recovery implementation; real file-backed success/failure tests pass on the consumer base. The shared catalogs and automated storage UI checks pass; manual assistive acceptance and catalog/provenance checks belong to 017.
 - **G6 — STORY-001-006:** Typed diagnostic catalog and bounded writer; privacy-marker, rotation and I/O failure tests pass on the consumer base.
 - **Q7 — STORY-001-007:** Shared command entry points, inventory accounting and independent coverage-failure checks pass on the consumer base.
-- **L8 — STORY-001-008:** Digest-pinned Linux image and local launcher; package/image parity, non-root Electron sandbox startup and required inventory checks pass on the consumer base.
+- **L8 — STORY-001-008:** Input-addressed Linux image built from its pinned recipe, and local launcher; package/image parity, non-root Electron sandbox startup and required inventory checks pass on the consumer base.
 - **U9 — STORY-001-009:** Linux clean-install contribution procedure and observed setup/diagnostic/desktop/check results integrated and repeatable.
 - **U10 — STORY-001-010:** Windows native clean-install contribution procedure and observed setup/diagnostic/desktop/check results integrated and repeatable.
 - **U11 — STORY-001-011:** macOS clean-install contribution procedure on every declared CPU and observed setup/diagnostic/desktop/check results integrated and repeatable.

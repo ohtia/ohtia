@@ -139,6 +139,7 @@ class ImageRecipeTests(unittest.TestCase):
 
             with (
                 patch.object(image, "checked_source_record", return_value={}),
+                patch.object(image, "build_jobs", return_value=2),
                 patch.object(image.Path, "glob", return_value=[header]),
                 patch.object(image, "execute", side_effect=execute),
                 self.assertRaises(subprocess.CalledProcessError),
@@ -149,6 +150,65 @@ class ImageRecipeTests(unittest.TestCase):
             self.assertTrue(
                 all(options["env"]["PYTHONDONTWRITEBYTECODE"] == "1" for _, options in calls)
             )
+
+    def test_compiler_parallelism_is_bounded_by_cpu_quota_and_available_memory(self):
+        gib = 1024**3
+        config = {"memory_per_job_bytes": 4 * gib}
+        cases = (
+            ((64, 256 * gib, None, None), 64),
+            ((64, 100 * gib, None, None), 25),
+            ((4, 15 * gib, None, None), 3),
+            ((64, 256 * gib, "800000 100000", None), 8),
+            ((64, 256 * gib, "max 100000", str(20 * gib)), 5),
+            ((8, gib, None, None), 1),
+        )
+        for (cpus, available, cpu_max, memory_max), expected in cases:
+            files = {"/proc/meminfo": f"MemTotal: 1 kB\nMemAvailable: {available // 1024} kB\n"}
+            if cpu_max:
+                files["/sys/fs/cgroup/cpu.max"] = cpu_max
+            if memory_max:
+                files["/sys/fs/cgroup/memory.max"] = memory_max
+            with (
+                self.subTest(cpus=cpus, available=available, cpu_max=cpu_max),
+                patch.object(
+                    image.os, "sched_getaffinity", return_value=set(range(cpus)), create=True
+                ),
+                patch.object(
+                    image.Path,
+                    "is_file",
+                    autospec=True,
+                    side_effect=lambda path: path.as_posix() in files,
+                ),
+                patch.object(
+                    image.Path,
+                    "read_text",
+                    autospec=True,
+                    side_effect=lambda path, *args, **kwargs: files[path.as_posix()],
+                ),
+            ):
+                self.assertEqual(image.build_jobs(config), expected)
+        with self.assertRaisesRegex(ValueError, "memory budget"):
+            with (
+                patch.object(image.os, "sched_getaffinity", return_value={0}, create=True),
+                patch.object(image.Path, "is_file", return_value=False),
+                patch.object(image.Path, "read_text", return_value="MemAvailable: 1 kB\n"),
+            ):
+                image.build_jobs({"memory_per_job_bytes": 0})
+
+    def test_finalization_accepts_only_the_parallelism_recorded_by_compilation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt = Path(directory) / "compile-receipt.json"
+            for jobs in (None, 0, "8"):
+                receipt.write_text(json.dumps({"jobs": jobs}))
+                with (
+                    self.subTest(jobs=jobs),
+                    patch.object(image, "COMPILE_RECEIPT", receipt),
+                    patch.object(image, "checked_cache"),
+                    patch.object(image, "checked_source_record", return_value={"files": {}}),
+                    patch.object(image, "source_files", return_value={}),
+                    self.assertRaisesRegex(ValueError, "compilation receipt"),
+                ):
+                    image.finalize({})
 
     def test_docker_recipe_keeps_both_base_layers_pinned_and_finishes_as_the_test_account(self):
         config = json.loads(image.MANIFEST.read_text())

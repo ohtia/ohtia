@@ -14,7 +14,7 @@
     "sha256": "2b2991efb60cf2339dff0b7538b9bcf99ce8442b6f77e659e9b29e6fc91d24e1"
   },
   "ubuntu_snapshot": "20261027T000000Z",
-  "jobs": 3,
+  "memory_per_job_bytes": 4294967296,
   "build_packages": [
     "bison",
     "bubblewrap",
@@ -93,5 +93,12 @@
     "USE_SYSPROF_CAPTURE": "OFF",
     "LIBBACKTRACE_INCLUDE_DIR": "/opt/libbacktrace-include",
     "LIBBACKTRACE_LIBRARY": "/usr/lib/gcc/x86_64-linux-gnu/13/libbacktrace.a"
-  }
+  },
+  "image_inputs": [
+    ".dockerignore",
+    "config/desktop/linux-e2e-build.json",
+    "scripts/linux_e2e_image.py",
+    "scripts/linux_e2e_image_inputs.py",
+    "tools/linux-e2e/Dockerfile"
+  ]
 }

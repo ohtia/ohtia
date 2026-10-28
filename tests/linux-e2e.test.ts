@@ -137,7 +137,7 @@ describe("immutable browser parity", () => {
       fs.writeFileSync(executable, "synthetic fixture");
       const input = {
         config: {
-          image: "example/image:v1@sha256:synthetic",
+          playwrightImage: "example/image:v1",
           playwright: "paired-version",
           browsers: { chromium: "123" },
         },

@@ -1,8 +1,6 @@
 {
   "version": 1,
   "target": "linux-x64",
-  "image": "ghcr.io/ohtia/linux-e2e:pw1.64.1-webkit2370-sandbox2@sha256:be7afba3f86e44f5cc4b1794dd319ad6374b9e615034cf1a8e369b6fac086266",
-  "image_id": "sha256:ca4aa61265f8dc86549f61e03ea8ec5f7ba8e9244e180b1a449bc567f14b261d",
   "playwright": "1.64.1",
   "browsers": {
     "chromium": "1248",
@@ -33,7 +31,6 @@
     ]
   },
   "playwrightImage": "mcr.microsoft.com/playwright:v1.64.1-noble",
-  "webkit_record_sha256": "1e3f72522f700d9c2903d204f3ef803fca0d6fb038ab690b8b6993e187529087",
   "apparmor_profile": "ohtia-linux-e2e-v1",
   "apparmor_sha256": "d6058f8ce845a8f5c61f18a99eb47e5baf2786a9ba539e765b1057a836ed0229"
 }
