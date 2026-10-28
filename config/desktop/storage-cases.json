@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "component_cases": [
+    "roundtrip-replay-current",
+    "populated-upgrade-limits",
+    "reject-missing",
+    "reject-invalid",
+    "reject-unsupported",
+    "reject-newer",
+    "reject-artifacts",
+    "reject-unknown-column",
+    "reject-history-column",
+    "changed-module",
+    "binding-and-engine-mismatch",
+    "returned-error",
+    "foreign-key",
+    "lost-commit-ack",
+    "sqlite-full-atomic-command",
+    "denied-io",
+    "competing-initializers-and-sqlite-lock",
+    "corrupt-and-interrupted-restore",
+    "checkpoint-denied",
+    "uuid-reference-constraints",
+    "retry-intent-preserved"
+  ],
+  "graphical_cases": [
+    "graphical-persisted-appearance",
+    "lost-response-reconciled-without-replay",
+    "ipc-replay-preserves-subscription",
+    "utility-retry-preserves-input-and-document",
+    "keyboard-reflow-accessibility",
+    "packaged-native-storage-cases",
+    "application-restart-and-current-no-checkpoint",
+    "graphical-recovery-retry",
+    "graphical-checkpoint-restoration",
+    "bounded-clean-shutdown",
+    "missing-located-database-blocked",
+    "locator-repair-without-application-restart",
+    "opening-remains-gated-and-focused",
+    "admission-crash-preserves-recovery-phase"
+  ],
+  "interruption_points": ["checkpoint", "before", "after", "intent-before", "intent-after"]
+}

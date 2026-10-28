@@ -19,3 +19,7 @@ export async function inspectSqliteEngine(): Promise<string> {
     await database.destroy();
   }
 }
+
+export { DurableStore, type StorageOptions, type EngineIdentity } from "./storage.js";
+
+export { initializeStorage, type AdmissionStore } from "./storage-lifecycle.js";

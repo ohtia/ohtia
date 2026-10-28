@@ -5,13 +5,21 @@ export interface AppearanceControlProps {
   label: string;
   labels: Readonly<Record<Appearance, string>>;
   onChange: (appearance: Appearance) => void;
+  disabled?: boolean;
 }
 
-export function AppearanceControl({ value, label, labels, onChange }: AppearanceControlProps) {
+export function AppearanceControl({
+  value,
+  label,
+  labels,
+  onChange,
+  disabled,
+}: AppearanceControlProps) {
   return (
     <label>
       {label}
       <select
+        disabled={disabled}
         value={value}
         onChange={(event) => {
           const next = event.currentTarget.value;

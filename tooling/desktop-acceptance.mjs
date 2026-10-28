@@ -376,7 +376,9 @@ try {
   expect(await page.evaluate(() => Object.keys(window.ohtia.bootstrap).sort())).toEqual([
     "exit",
     "newWindow",
+    "openStorage",
     "read",
+    "restoreCheckpoint",
     "retryService",
   ]);
   expect(fs.existsSync(path.join(launch.profile.research_root, "ohtia.db3"))).toBe(false);
@@ -384,10 +386,12 @@ try {
   else expect(fs.existsSync(locatorFile)).toBe(false);
   passed("fixed-native-home-data-root-without-selector");
   if (fixtureMode) {
-    const retry = page.getByRole("button", {
-      name: message(initial.snapshot.locale, "retry"),
-      exact: true,
-    });
+    const retry = page
+      .getByRole("button", {
+        name: message(initial.snapshot.locale, "retry"),
+        exact: true,
+      })
+      .last();
     for (let repeat = 0; repeat < 2; repeat++) {
       await retry.click();
       await expect(page.locator("#location-state")).toBeFocused();

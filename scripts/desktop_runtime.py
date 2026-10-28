@@ -114,6 +114,42 @@ def assemble(target: str, destination: Path) -> None:
         executable = "runtime/electron.exe" if target.startswith("win32") else "runtime/electron"
         app = "runtime/resources/app"
     shutil.copytree(product, destination / app)
+    app_directory = destination / app
+    addon_record = manifest["tools"]["better-sqlite3"]["artifacts"][target]
+    addon = (
+        app_directory
+        / "node_modules/better-sqlite3"
+        / addon_record["path"].removeprefix("package/")
+    )
+    if sha256(addon) != addon_record["sha256"] or architecture(addon) != target.split("-")[1]:
+        raise ValueError("The packaged native binding does not match its reviewed target.")
+    native = app_directory / "native"
+    native.mkdir()
+    shutil.copyfile(addon, native / "binding.node")
+    shutil.rmtree(app_directory / "node_modules/better-sqlite3/prebuilds")
+    (app_directory / "storage.json").write_text(
+        json.dumps(
+            {
+                "target": target,
+                "bindingSha256": addon_record["sha256"],
+                "engine": {
+                    "version": manifest["tools"]["sqlite"]["version"],
+                    "sourceId": manifest["tools"]["sqlite"]["source_id"],
+                    "requiredOptions": [
+                        "ENABLE_FTS5",
+                        "ENABLE_RTREE",
+                        "ENABLE_COLUMN_METADATA",
+                        "THREADSAFE=2",
+                    ],
+                },
+                "runtime": {
+                    "electron": manifest["tools"]["electron"]["version"],
+                    **manifest["tools"]["electron"]["embedded_runtime_metadata"],
+                },
+            }
+        )
+        + "\n"
+    )
     if architecture(destination / executable) != target.split("-")[1]:
         raise ValueError("The executable architecture does not match its target.")
     files: dict[str, str] = {}

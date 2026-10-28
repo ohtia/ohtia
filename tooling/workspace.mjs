@@ -57,6 +57,11 @@ function compile(noEmit = false) {
       ...(noEmit ? ["--emitDeclarationOnly"] : []),
     ]);
   }
+  fs.cpSync(
+    path.join(root, "packages/utility/src/migrations"),
+    path.join(root, "packages/utility/dist/migrations"),
+    { recursive: true },
+  );
   fs.rmSync(path.join(root, "tools/desktop-probes/dist"), { recursive: true, force: true });
   node("typescript/bin/tsc", ["-p", "tools/desktop-probes/tsconfig.json"]);
 }
@@ -141,6 +146,9 @@ const commands = {
   },
   "desktop:test"() {
     run(process.execPath, ["tooling/desktop-acceptance.mjs", ...process.argv.slice(3)]);
+  },
+  "storage:test"() {
+    run(process.execPath, ["tooling/storage-acceptance.mjs", ...process.argv.slice(3)]);
   },
   async "package:local"() {
     await commands.build();

@@ -7,17 +7,39 @@ import {
   portLimits,
   type FoundationStatus,
   type InterfaceLocale,
+  type Request,
+  type Outcome,
+  type AppearanceRecord,
 } from "@ohtia/contracts";
 
-/** No database, provider, research files or saved preferences are accessed by this foundation peer. */
+import type { DurableStore } from "./storage.js";
+
+/** Bounded service peer. Storage remains unavailable until the broker confirms locator activation. */
 export function createStatusService(
   generation: string,
   locale: InterfaceLocale,
   send: (text: string) => void,
+  storage?: DurableStore,
+  admissionLost?: () => void,
 ) {
   if (!isInterfaceLocale(locale)) throw new Error("Unsupported trusted service locale.");
-  const streams = new Map<string, { window: string; subscription: string }>();
-  const status: FoundationStatus = {
+  const streams = new Map<
+    string,
+    {
+      window: string;
+      subscription: string;
+      topic: "status" | "appearance";
+      sequence: number;
+      revision: number;
+    }
+  >();
+  const queuedSubscriptions = new Map<string, { cancelled: boolean }>();
+  let enabled = false;
+  let disposed = false;
+  const isDisposed = () => disposed;
+  let pending = 0;
+  let queue = Promise.resolve();
+  let status: FoundationStatus = {
     artifact: "development",
     service: "ready",
     engine: "unavailable",
@@ -26,17 +48,125 @@ export function createStatusService(
   const emit = (value: unknown) => {
     const encoded = encodeEnvelope(value);
     if (!encoded.ok) throw new Error("Invalid service output.");
-    send(encoded.value);
+    if (!disposed) send(encoded.value);
   };
+  const appearanceEvent = (record: Outcome<AppearanceRecord>) => {
+    if (!record.ok) return;
+    for (const stream of streams.values()) {
+      if (stream.topic !== "appearance" || record.value.revision <= stream.revision) continue;
+      stream.revision = record.value.revision;
+      emit({
+        protocol: 1,
+        policy: policyId,
+        kind: "event",
+        windowGeneration: stream.window,
+        serviceGeneration: generation,
+        subscriptionId: stream.subscription,
+        sequence: ++stream.sequence,
+        topic: "appearance",
+        payload: record.value,
+      });
+    }
+  };
+  async function dispatch(value: Request, subscription?: { cancelled: boolean }): Promise<void> {
+    if (disposed) return;
+    if (subscription?.cancelled) {
+      emit({ ...value, kind: "result", payload: failure("cancelled") });
+      return;
+    }
+    if (!enabled || !storage?.ready) {
+      emit({ ...value, kind: "result", payload: failure("service_unavailable") });
+      return;
+    }
+    if (value.operation === "appearance.read")
+      emit({ ...value, kind: "result", payload: await storage.readAppearance() });
+    else if (value.operation === "appearance.receipt")
+      emit({
+        ...value,
+        kind: "result",
+        payload: await storage.readReceipt(value.payload.targetOperationId),
+      });
+    else if (value.operation === "appearance.replace") {
+      const result = await storage.replaceAppearance({
+        operationId: value.operationId,
+        ...value.payload,
+      });
+      emit({ ...value, kind: "result", payload: result });
+      if (result.ok) appearanceEvent(await storage.readAppearance());
+    } else if (value.operation === "appearance.subscribe") {
+      const id = `${value.windowGeneration}/${value.payload.subscriptionId}`;
+      if (
+        streams.has(id) ||
+        streams.size >= portLimits.windows * portLimits.subscriptions_per_window ||
+        [...streams.values()].filter((s) => s.window === value.windowGeneration).length >=
+          portLimits.subscriptions_per_window
+      ) {
+        emit({ ...value, kind: "result", payload: failure("busy") });
+        return;
+      }
+      const record = await storage.readAppearance();
+      if (!record.ok) {
+        emit({ ...value, kind: "result", payload: record });
+        return;
+      }
+      if (isDisposed()) return;
+      if ((() => subscription?.cancelled)()) {
+        emit({ ...value, kind: "result", payload: failure("cancelled") });
+        return;
+      }
+      streams.set(id, {
+        window: value.windowGeneration,
+        subscription: value.payload.subscriptionId,
+        topic: "appearance",
+        sequence: 1,
+        revision: record.value.revision,
+      });
+      emit({ ...value, kind: "result", payload: { ok: true, value: value.payload } });
+      emit({
+        protocol: 1,
+        policy: policyId,
+        kind: "event",
+        windowGeneration: value.windowGeneration,
+        serviceGeneration: generation,
+        subscriptionId: value.payload.subscriptionId,
+        sequence: 1,
+        topic: "appearance",
+        payload: record.value,
+      });
+    }
+  }
   return {
+    activate(resolvedLocale: InterfaceLocale): void {
+      if (!isInterfaceLocale(resolvedLocale) || !storage?.ready || disposed)
+        throw new Error("Invalid storage activation.");
+      enabled = true;
+      status = { ...status, engine: "verified", interfaceLocale: resolvedLocale };
+      for (const stream of streams.values())
+        if (stream.topic === "status")
+          emit({
+            protocol: 1,
+            policy: policyId,
+            kind: "event",
+            windowGeneration: stream.window,
+            serviceGeneration: generation,
+            subscriptionId: stream.subscription,
+            sequence: ++stream.sequence,
+            topic: "status",
+            payload: status,
+          });
+    },
     receive(text: unknown): void {
+      if (disposed) return;
       const decoded = decodeText(text);
       if (!decoded.ok) throw new Error("Invalid broker message.");
       const value = decoded.value;
       if (value.serviceGeneration !== generation) return;
       if (value.kind === "cancel") return; // Status work is synchronous and may already be terminal.
       if (value.kind === "unsubscribe") {
-        streams.delete(`${value.windowGeneration}/${value.subscriptionId}`);
+        const id = `${value.windowGeneration}/${value.subscriptionId}`;
+        const queued = queuedSubscriptions.get(id);
+        if (queued) queued.cancelled = true;
+        streams.delete(id);
         send(
           JSON.stringify({
             kind: "stream_disposed",
@@ -48,6 +178,10 @@ export function createStatusService(
         return;
       }
       if (value.kind !== "request") throw new Error("Unauthorized broker message direction.");
+      if (enabled) {
+        status = { ...status, engine: storage?.admissionReady ? "verified" : "unavailable" };
+        if (!storage?.admissionReady) admissionLost?.();
+      }
       if (value.operation === "status.read") {
         emit({ ...value, kind: "result", payload: { ok: true, value: status } });
         return;
@@ -68,6 +202,9 @@ export function createStatusService(
         streams.set(id, {
           window: value.windowGeneration,
           subscription: value.payload.subscriptionId,
+          topic: "status",
+          sequence: 1,
+          revision: -1,
         });
         emit({ ...value, kind: "result", payload: { ok: true, value: value.payload } });
         emit({
@@ -83,10 +220,52 @@ export function createStatusService(
         });
         return;
       }
-      // Storage activation is a separate owner; never invent a saved/default database result.
-      emit({ ...value, kind: "result", payload: failure("service_unavailable") });
+      if (!storage || !enabled) {
+        emit({ ...value, kind: "result", payload: failure("service_unavailable") });
+        return;
+      }
+      if (pending >= portLimits.pending_global) {
+        emit({ ...value, kind: "result", payload: failure("busy") });
+        return;
+      }
+      pending++;
+      const subscription =
+        value.operation === "appearance.subscribe" ? { cancelled: false } : undefined;
+      const subscriptionKey =
+        value.operation === "appearance.subscribe"
+          ? `${value.windowGeneration}/${value.payload.subscriptionId}`
+          : undefined;
+      if (subscriptionKey && subscription) {
+        if (queuedSubscriptions.has(subscriptionKey)) {
+          pending--;
+          emit({ ...value, kind: "result", payload: failure("busy") });
+          return;
+        }
+        queuedSubscriptions.set(subscriptionKey, subscription);
+      }
+      queue = queue
+        .then(() => dispatch(value, subscription))
+        .catch(() => {
+          emit({
+            ...value,
+            kind: "result",
+            payload: failure(
+              value.operation === "appearance.replace" ? "uncertain" : "storage_failed",
+            ),
+          });
+        })
+        .finally(() => {
+          if (!storage.admissionReady && !disposed) admissionLost?.();
+          pending--;
+          if (subscriptionKey) queuedSubscriptions.delete(subscriptionKey);
+        });
+    },
+    drain(): Promise<void> {
+      return queue;
     },
     dispose(): void {
+      disposed = true;
+      enabled = false;
       streams.clear();
     },
   };

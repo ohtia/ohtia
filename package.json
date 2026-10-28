@@ -29,7 +29,8 @@
     "boundaries": "node tooling/workspace.mjs boundaries",
     "doctor": "node tooling/workspace.mjs doctor",
     "hooks": "node tooling/workspace.mjs hooks",
-    "hooks:history": "node tooling/workspace.mjs hooks:history"
+    "hooks:history": "node tooling/workspace.mjs hooks:history",
+    "storage:test": "node tooling/workspace.mjs storage:test"
   },
   "devDependencies": {
     "typescript": "6.0.3",

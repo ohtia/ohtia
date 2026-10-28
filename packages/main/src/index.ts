@@ -40,3 +40,10 @@ export type { SupervisedChild } from "./service-supervisor.js";
 
 export { RuntimeNotices } from "./error-notices.js";
 export type { RuntimeError } from "./error-notices.js";
+
+export {
+  completeStorageActivation,
+  refreshLocatorState,
+  storageInterruptionState,
+  restoreStoppedBootstrap,
+} from "./storage-activation.js";

@@ -16,6 +16,10 @@ import {
   type RuntimeProfile,
 } from "../packages/contracts/dist/index.js";
 import {
+  completeStorageActivation,
+  refreshLocatorState,
+  storageInterruptionState,
+  restoreStoppedBootstrap,
   containsPath,
   readBoundedFile,
   admitRuntimeSwitches,
@@ -29,7 +33,7 @@ import {
   validateDataDirectory,
   type SupervisedChild,
 } from "../packages/main/dist/index.js";
-import { createStatusService } from "../packages/utility/dist/index.js";
+import { createStatusService, initializeStorage } from "../packages/utility/dist/index.js";
 import { request } from "./fixtures/port-corpus.js";
 
 const temporary: string[] = [];
@@ -560,6 +564,161 @@ describe("bounded supervised service generation", () => {
       ok: true,
       value: { payload: { ok: false, error: { code: "service_unavailable" } } },
     });
+    child.exit();
+  });
+});
+
+describe("storage publication and generation availability", () => {
+  it("cannot announce ready after the service ends during asynchronous publication", async () => {
+    let available = true;
+    let finish!: (value: "confirmed") => void;
+    const publication = new Promise<"confirmed">((resolve) => {
+      finish = resolve;
+    });
+    const activateStorage = vi.fn(() => available);
+    const result = publication.then((value) =>
+      completeStorageActivation(value, { activateStorage }, "en-US"),
+    );
+    available = false;
+    finish("confirmed");
+    expect(await result).toBe("storage_failed");
+    expect(activateStorage).toHaveBeenCalledOnce();
+  });
+  it("does not activate storage on rejected or uncertain locator publication", () => {
+    const activateStorage = vi.fn(() => true);
+    expect(completeStorageActivation("uncertain", { activateStorage }, "en-US")).toBe(
+      "publication_uncertain",
+    );
+    expect(completeStorageActivation("rejected", { activateStorage }, "en-US")).toBe(
+      "storage_failed",
+    );
+    expect(activateStorage).not.toHaveBeenCalled();
+  });
+});
+
+describe("storage admission lifecycle", () => {
+  it.each(["locator_invalid", "locator_newer", "locator_unreadable", "path_rejected"] as const)(
+    "releases corrected %s while preserving storage recovery",
+    (previous) => {
+      expect(refreshLocatorState(previous, "located")).toBe("located");
+      expect(refreshLocatorState(previous, "missing")).toBe("missing");
+      expect(refreshLocatorState("recovery_required", "located")).toBe("recovery_required");
+      expect(refreshLocatorState("checkpoint_restored", "missing")).toBe("checkpoint_restored");
+      expect(refreshLocatorState("storage_opening", "located")).toBe("storage_opening");
+      expect(refreshLocatorState("storage_ready", previous)).toBe(previous);
+    },
+  );
+  it("authenticates before slow admission and keeps normal storage gated beyond the handshake deadline", async () => {
+    vi.useFakeTimers();
+    const child = new Child();
+    const supervisor = new ServiceSupervisor(
+      child,
+      "service-1",
+      () => {},
+      () => {},
+      true,
+    );
+    let finish!: () => void;
+    const opened = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const publish = vi.fn((text: string) => {
+      child.receive(text);
+    });
+    const store = {
+      open: () => opened,
+      retry: vi.fn(),
+      restorePending: vi.fn(),
+      savedLocale: async () => ({ invalid: false }),
+      recoveryState: () => "storage_failed" as const,
+    };
+    const admission = initializeStorage(store, "open", "service-1", publish, () => false);
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(supervisor.available).toBe(true);
+    expect(supervisor.activateStorage("en-US")).toBe(false);
+    const deliver = vi.fn();
+    const release = vi.fn();
+    supervisor.dispatch({ request: request(), deliver, release, releaseSubscription: vi.fn() });
+    expect(JSON.parse(deliver.mock.calls[0]![0])).toMatchObject({
+      payload: { error: { code: "service_unavailable" } },
+    });
+    expect(release).toHaveBeenCalledOnce();
+    expect(child.sent).toEqual([]);
+    await vi.advanceTimersByTimeAsync(portLimits.service_start_ms * 2);
+    expect(child.killed).toBe(0);
+    expect(publish).toHaveBeenCalledTimes(1);
+    finish();
+    await admission;
+    expect(publish).toHaveBeenCalledTimes(2);
+    expect(supervisor.activateStorage("en-US")).toBe(true);
+    child.exit();
+  });
+  it("restores without automatically retrying or advertising normal storage", async () => {
+    const publish = vi.fn();
+    const retry = vi.fn();
+    const open = vi.fn();
+    const savedLocale = vi.fn();
+    await initializeStorage(
+      {
+        open,
+        retry,
+        restorePending: async () => {},
+        savedLocale,
+        recoveryState: () => "storage_failed",
+      },
+      "restore",
+      "service-1",
+      publish,
+      () => false,
+    );
+    expect(retry).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+    expect(savedLocale).not.toHaveBeenCalled();
+    expect(JSON.parse(publish.mock.calls[1]![0])).toMatchObject({ state: "checkpoint_restored" });
+  });
+});
+
+describe("interrupted graphical admission", () => {
+  it.each([
+    "recovery_required",
+    "retry_required",
+    "checkpoint_restored",
+    "publication_uncertain",
+  ] as const)("preserves %s when a child ends during its next admission", (state) => {
+    expect(storageInterruptionState(state)).toBe(state);
+  });
+  it.each(["missing", "located", "storage_ready", "storage_failed", "storage_opening"] as const)(
+    "does not advertise %s as admitted after a child ends",
+    (state) => {
+      expect(storageInterruptionState(state)).toBe("storage_failed");
+    },
+  );
+});
+
+describe("uncertain stop and cancelled replacement", () => {
+  it.each([
+    "storage_ready",
+    "recovery_required",
+    "checkpoint_restored",
+    "locator_invalid",
+  ] as const)("restores %s without reviving stopped readiness", async (previous) => {
+    vi.useFakeTimers();
+    const child = new Child();
+    const storageChanged = vi.fn();
+    const service = new ServiceSupervisor(child, "service-1", () => {}, storageChanged);
+    child.receive(JSON.stringify({ kind: "ready", generation: "service-1" }));
+    const stopping = service.stop();
+    await vi.advanceTimersByTimeAsync(portLimits.shutdown_total_ms);
+    expect(await stopping).toBe(false);
+    expect(service.available).toBe(false);
+    child.receive(
+      JSON.stringify({ kind: "storage", generation: "service-1", state: "storage_ready" }),
+    );
+    expect(storageChanged).not.toHaveBeenCalled();
+    expect(service.activateStorage("en-US")).toBe(false);
+    expect(restoreStoppedBootstrap(previous)).toBe(
+      previous === "storage_ready" ? "storage_failed" : previous,
+    );
     child.exit();
   });
 });
