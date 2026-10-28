@@ -90,7 +90,17 @@ export function inspectWorkspace(root) {
         errors.push(`${boundary}: source escapes its package`);
         continue;
       }
-      if (!/\.tsx?$/.test(file))
+      // ADR-0007 requires published executable migration bytes to survive compiler changes.
+      // Admit only the fixed utility migration modules; checkJs checks them alongside TypeScript.
+      if (
+        !/\.tsx?$/.test(file) &&
+        !(
+          boundary === "utility" &&
+          ["migrations/0001_initial.mjs", "migrations/0002_receipts.mjs"].includes(
+            file.replaceAll(path.sep, "/"),
+          )
+        )
+      )
         errors.push(`${boundary}: product sources must be checked TypeScript`);
       const source = ts.createSourceFile(
         full,

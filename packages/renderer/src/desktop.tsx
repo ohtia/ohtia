@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { flushSync } from "react-dom";
 import {
   message,
   type BootstrapSnapshot,
@@ -8,11 +9,25 @@ import {
   type PortCall,
 } from "@ohtia/contracts";
 import "./foundation.css";
+import { AppearancePanel } from "./appearance-panel.js";
 
 declare global {
   interface Window {
     readonly ohtia: DesktopBridge;
   }
+}
+function bootstrapFailure(state: string | undefined): boolean {
+  return (
+    !!state &&
+    (state.startsWith("locator_") ||
+      [
+        "path_rejected",
+        "storage_failed",
+        "recovery_required",
+        "retry_required",
+        "publication_uncertain",
+      ].includes(state))
+  );
 }
 function FoundationWindow() {
   const [bootstrap, setBootstrap] = useState<BootstrapSnapshot>();
@@ -23,19 +38,31 @@ function FoundationWindow() {
   const notice = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
     let disposed = false;
+    const isDisposed = () => disposed;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let call: PortCall<FoundationStatus> | undefined;
     async function poll() {
       call = window.ohtia.foundation.readStatus();
       const result = await call.result;
-      if (disposed) return;
-      setStatus(result.ok ? result.value.service : "unavailable");
+      if (isDisposed()) return;
+      const next = await window.ohtia.bootstrap.read();
+      setStatus(
+        next.state === "storage_opening"
+          ? "starting"
+          : result.ok
+            ? result.value.service
+            : "unavailable",
+      );
+      if (isDisposed()) return;
+      document.documentElement.lang = next.locale;
+      document.title = message(next.locale, "title");
+      setBootstrap(next);
       timer = setTimeout(() => {
         void poll();
       }, 1000);
     }
     void window.ohtia.bootstrap.read().then((value) => {
-      if (disposed) return;
+      if (isDisposed()) return;
       document.documentElement.lang = value.locale;
       document.title = message(value.locale, "title");
       setBootstrap(value);
@@ -48,8 +75,7 @@ function FoundationWindow() {
     };
   }, []);
   useEffect(() => {
-    if (failed || bootstrap?.state === "path_rejected" || bootstrap?.notice)
-      notice.current?.focus();
+    if (failed || bootstrapFailure(bootstrap?.state) || bootstrap?.notice) notice.current?.focus();
   }, [failed, bootstrap?.state, bootstrap?.notice, announcement]);
   if (!bootstrap) return null;
   const text = (key: Parameters<typeof message>[1]) => message(bootstrap.locale, key);
@@ -57,10 +83,15 @@ function FoundationWindow() {
     if (busy) return;
     setBusy(true);
     setFailed(false);
+    const focusOutcome =
+      method === "openStorage" || method === "restoreCheckpoint" || method === "retryService";
     try {
       const value = await window.ohtia.bootstrap[method]();
-      setBootstrap(value);
-      if (value.state === "path_rejected" || value.notice) setAnnouncement((value) => value + 1);
+      flushSync(() => {
+        setBootstrap(value);
+      });
+      if (bootstrapFailure(value.state) || value.notice) setAnnouncement((value) => value + 1);
+      else if (focusOutcome) notice.current?.focus();
       else trigger.focus();
     } catch {
       setFailed(true);
@@ -89,22 +120,46 @@ function FoundationWindow() {
           ref={notice}
           tabIndex={-1}
           role={
-            failed ||
-            bootstrap.notice ||
-            bootstrap.state.startsWith("locator_") ||
-            bootstrap.state === "path_rejected"
-              ? "alert"
-              : "status"
+            failed || bootstrap.notice || bootstrapFailure(bootstrap.state) ? "alert" : "status"
           }
         >
           {text(failed ? "startup_failed" : (bootstrap.notice ?? bootstrap.state))}
         </p>
+        {bootstrap.state !== "storage_ready" && <p>{text("storage_disclosure")}</p>}
+        {["pending_create", "located"].includes(bootstrap.state) && (
+          <button
+            type="button"
+            aria-disabled={busy}
+            onClick={(event) => {
+              void action("openStorage", event.currentTarget);
+            }}
+          >
+            {text("open_storage")}
+          </button>
+        )}
+        {bootstrap.state === "recovery_required" && (
+          <button
+            type="button"
+            aria-disabled={busy}
+            onClick={(event) => {
+              void action("restoreCheckpoint", event.currentTarget);
+            }}
+          >
+            {text("restore_checkpoint")}
+          </button>
+        )}
       </section>
+      <AppearancePanel
+        port={window.ohtia.foundation}
+        locale={bootstrap.locale}
+        available={bootstrap.state === "storage_ready"}
+      />
       <div className="actions">
         <button
           type="button"
-          aria-disabled={busy}
+          aria-disabled={busy || bootstrap.state === "storage_opening"}
           onClick={(event) => {
+            if (bootstrap.state === "storage_opening") return;
             void action("retryService", event.currentTarget);
           }}
         >

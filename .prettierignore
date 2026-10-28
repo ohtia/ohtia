@@ -34,3 +34,6 @@ docs/assets/agents/*/specimen.html
 
 # Build-time projection of the canonical desktop resource policy
 packages/contracts/src/generated/
+
+# ADR-0007: never rewrite published executable migration bytes.
+packages/utility/src/migrations/*.mjs

@@ -28,9 +28,15 @@ import {
 } from "@ohtia/contracts";
 import { rendererWebPreferences } from "./index.js";
 import { admitRuntimeSwitches, loadRuntimeProfile, verifyStableSentinels } from "./profile.js";
-import { canonicalProspective, readLocator } from "./locator.js";
+import { canonicalProspective, readLocator, LocatorPublisher, posixLocatorIO } from "./locator.js";
 import { PortAdmission } from "./port-admission.js";
 import { ServiceSupervisor, recoverService } from "./service-supervisor.js";
+import {
+  completeStorageActivation,
+  refreshLocatorState,
+  storageInterruptionState,
+  restoreStoppedBootstrap,
+} from "./storage-activation.js";
 import { RuntimeNotices, type RuntimeError } from "./error-notices.js";
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
@@ -70,11 +76,16 @@ try {
 
 const settings = path.join(profile.configuration_root, "Ohtia", "settings");
 const admission = new PortAdmission();
+const publisher = new LocatorPublisher();
 const windows = new Map<
   BrowserWindow,
   { generation: string; detach?: () => void; frame?: object }
 >();
 let service: ServiceSupervisor | undefined;
+let storageRequested = false;
+let storageActionPending = false;
+let admissionFallback: BootstrapState = "storage_failed";
+let localeFallback = false;
 let generation = randomUUID();
 let bootstrapState: BootstrapState = "missing";
 let quitting = false;
@@ -120,6 +131,7 @@ const snapshot = (): BootstrapSnapshot => ({
   version: 1,
   locale,
   state: bootstrapState === "missing" ? "pending_create" : bootstrapState,
+  ...(localeFallback && bootstrapState === "storage_ready" ? { notice: "locale_fallback" } : {}),
 });
 function trusted(event: IpcMainEvent | IpcMainInvokeEvent): BrowserWindow | undefined {
   const window = BrowserWindow.fromWebContents(event.sender);
@@ -226,12 +238,33 @@ function createWindow(): boolean {
     });
   return true;
 }
-function startService(): void {
+function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"): void {
   if (quitting || (service && !service.ceased)) return;
+  const locator = readLocator(settings, profile);
+  bootstrapState = refreshLocatorState(bootstrapState, locator.state);
+  const storageMode = mode === "open" && locator.state === "missing" ? "create" : mode;
   generation = randomUUID();
   const child = utilityProcess.fork(
     path.join(directory, "utility.mjs"),
-    [profileFile, generation, locale],
+    [
+      profileFile,
+      generation,
+      locale,
+      [
+        "missing",
+        "located",
+        "pending_create",
+        "storage_ready",
+        "storage_opening",
+        "storage_failed",
+        "recovery_required",
+        "retry_required",
+        "checkpoint_restored",
+        "publication_uncertain",
+      ].includes(bootstrapState)
+        ? storageMode
+        : "blocked",
+    ],
     {
       serviceName: "Ohtia data service",
       stdio: "ignore",
@@ -265,10 +298,51 @@ function startService(): void {
     },
     generation,
     (state) => {
-      if (state === "unavailable")
+      if (state === "unavailable") {
+        if (storageRequested && !storageActionPending)
+          bootstrapState = storageInterruptionState(
+            bootstrapState === "storage_opening" ? admissionFallback : bootstrapState,
+          );
         for (const window of windows.keys())
           if (!window.isDestroyed()) window.webContents.send(desktopChannels.ended, generation);
+      }
     },
+    (notice) => {
+      const active = service;
+      if (!active || notice.generation !== generation) return;
+      admissionFallback = "storage_failed";
+      bootstrapState = notice.state;
+      if (notice.state !== "storage_ready") return;
+      bootstrapState = "storage_opening";
+      const locator = readLocator(settings, profile);
+      if (locator.state !== "missing" && locator.state !== "located") {
+        bootstrapState = locator.state;
+        return;
+      }
+      const publication =
+        locator.state === "located"
+          ? Promise.resolve("confirmed" as const)
+          : publisher.publish(
+              settings,
+              profile.research_root,
+              profile,
+              () => Promise.resolve(!quitting && service === active && active.available),
+              posixLocatorIO,
+            );
+      void publication.then((result) => {
+        if (quitting || service !== active || generation !== notice.generation) return;
+        const resolvedLocale = resolveInterfaceLocale(
+          app.getPreferredSystemLanguages(),
+          notice.savedLocale,
+        );
+        bootstrapState = completeStorageActivation(result, active, resolvedLocale);
+        if (bootstrapState === "storage_ready") {
+          locale = resolvedLocale;
+          localeFallback = notice.localeFallback === true;
+        }
+      });
+    },
+    mode !== "blocked" && ["missing", "located"].includes(locator.state),
   );
 }
 let desktopSession: Electron.Session;
@@ -409,27 +483,86 @@ async function start(): Promise<void> {
       if (action === "new_window") {
         return createWindow() ? snapshot() : { ...snapshot(), notice: "resource_failure" };
       }
-      if (action === "retry_service") {
-        const current = service;
-        if (current) {
-          const outcome = await recoverService(
-            current,
-            () => !quitting && service === current,
-            () => {
-              for (const existing of windows.keys()) detach(existing);
-              startService();
-              for (const [existing, state] of windows) {
-                state.generation = randomUUID();
-                existing.webContents.reload();
-              }
-            },
-          );
-          if (outcome === "uncertain") return { ...snapshot(), notice: "shutdown_uncertain" };
-          if (outcome === "cancelled") return snapshot();
+      if (
+        action === "retry_service" ||
+        action === "restore_checkpoint" ||
+        action === "open_storage"
+      ) {
+        if (storageActionPending || bootstrapState === "storage_opening") return snapshot();
+        if (
+          action === "open_storage" &&
+          ![
+            "pending_create",
+            "missing",
+            "located",
+            "storage_failed",
+            "publication_uncertain",
+          ].includes(bootstrapState)
+        )
+          return snapshot();
+        if (action === "restore_checkpoint" && bootstrapState !== "recovery_required")
+          return snapshot();
+        if (action === "open_storage" || action === "restore_checkpoint") storageRequested = true;
+        const mode =
+          action === "restore_checkpoint"
+            ? "restore"
+            : ["recovery_required", "retry_required", "checkpoint_restored"].includes(
+                  bootstrapState,
+                )
+              ? "retry"
+              : storageRequested
+                ? "open"
+                : "blocked";
+        const previousState = bootstrapState;
+        storageActionPending = true;
+        try {
+          if (mode !== "blocked") {
+            admissionFallback = storageInterruptionState(previousState);
+            bootstrapState = "storage_opening";
+          }
+          const current = service;
+          if (current) {
+            if (!current.ceased && !(await current.stop())) {
+              bootstrapState = restoreStoppedBootstrap(previousState);
+              return { ...snapshot(), notice: "shutdown_uncertain" };
+            }
+            const outcome = await recoverService(
+              current,
+              () => !quitting && service === current,
+              () => {
+                for (const existing of windows.keys()) detach(existing);
+                startService(mode);
+                for (const [existing, state] of windows) {
+                  if (existing.isDestroyed() || existing.webContents.isDestroyed()) continue;
+                  state.generation = randomUUID();
+                  try {
+                    existing.webContents.send(desktopChannels.reconnect);
+                  } catch {
+                    detach(existing);
+                  }
+                }
+              },
+            );
+            if (outcome === "uncertain") {
+              bootstrapState = restoreStoppedBootstrap(previousState);
+              return { ...snapshot(), notice: "shutdown_uncertain" };
+            }
+            if (outcome === "cancelled") {
+              bootstrapState = restoreStoppedBootstrap(previousState);
+              return snapshot();
+            }
+          }
+          if (quitting) return snapshot();
+          return snapshot();
+        } catch {
+          bootstrapState =
+            mode === "blocked"
+              ? restoreStoppedBootstrap(previousState)
+              : storageInterruptionState(previousState);
+          return snapshot();
+        } finally {
+          storageActionPending = false;
         }
-        if (quitting) return snapshot();
-        bootstrapState = readLocator(settings, profile).state;
-        return snapshot();
       }
       clearTimeout(startup);
       return snapshot();

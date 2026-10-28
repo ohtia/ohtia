@@ -27,6 +27,6 @@
   "utility": {
     "packages": ["@ohtia/contracts", "@ohtia/domain"],
     "external": ["better-sqlite3", "kysely"],
-    "builtins": ["node:fs", "node:os", "node:path"]
+    "builtins": ["node:fs", "node:os", "node:path", "node:crypto", "node:url"]
   }
 }

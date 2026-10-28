@@ -1,5 +1,9 @@
 import {
   decodeText,
+  decodeStorageNotice,
+  isInterfaceLocale,
+  type InterfaceLocale,
+  type StorageNotice,
   encodeEnvelope,
   failure,
   isIdentifier,
@@ -37,6 +41,7 @@ export class ServiceSupervisor {
   private readonly pending = new Map<string, Work>();
   private readonly streams = new Map<string, Work>();
   private readonly deadlines = new Map<string, ReturnType<typeof setTimeout>>();
+  private storageReported = false;
   private ready = false;
   private stopped = false;
   private faulted = false;
@@ -48,6 +53,8 @@ export class ServiceSupervisor {
     private readonly child: SupervisedChild,
     readonly generation: string,
     private readonly changed: (state: "ready" | "unavailable") => void,
+    private readonly storageChanged?: (notice: StorageNotice) => void,
+    private storageAdmitting = false,
   ) {
     if (!isIdentifier(generation)) throw new Error("Invalid service generation.");
     child.messages((message) => {
@@ -60,6 +67,18 @@ export class ServiceSupervisor {
       this.fault();
     }, portLimits.service_start_ms);
   }
+  activateStorage(locale: InterfaceLocale): boolean {
+    if (!this.available || !this.storageReported || !isInterfaceLocale(locale)) return false;
+    try {
+      this.child.send(
+        JSON.stringify({ kind: "activate_storage", generation: this.generation, locale }),
+      );
+      return true;
+    } catch {
+      this.fault();
+      return false;
+    }
+  }
   get available(): boolean {
     return this.ready && !this.stopped && !this.faulted;
   }
@@ -70,7 +89,7 @@ export class ServiceSupervisor {
     return this.stopped;
   }
   dispatch(work: Work): void {
-    if (!this.available) {
+    if (!this.available || this.storageAdmitting) {
       this.reject(work);
       return;
     }
@@ -177,6 +196,22 @@ export class ServiceSupervisor {
     if (typeof input === "string" && input.length < portLimits.message_bytes) {
       try {
         const ack: unknown = JSON.parse(input);
+        const storage = decodeStorageNotice(ack);
+        if (storage) {
+          if (
+            !this.ready ||
+            this.storageReported ||
+            storage.generation !== this.generation ||
+            !this.storageChanged
+          ) {
+            this.fault();
+            return;
+          }
+          this.storageReported = true;
+          this.storageAdmitting = false;
+          this.storageChanged(storage);
+          return;
+        }
         if (ack && typeof ack === "object") {
           const value = ack as Record<string, unknown>;
           if (

@@ -78,7 +78,7 @@
   color: var(--content-primary);
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-appearance="light"]) {
     --surface-page: #151411;
     --content-primary: #ebe7e2;
     --focus-ring: #ebe7e2;
@@ -150,10 +150,25 @@ button[aria-disabled="true"] {
   }
 }
 @media (forced-colors: active) {
-  :root {
+  :root:not([data-appearance="light"]) {
     --surface-page: Canvas;
     --content-primary: CanvasText;
     --border-control: ButtonText;
     --focus-ring: Highlight;
   }
+}
+
+:root[data-appearance="dark"] {
+  color-scheme: dark;
+  --surface-page: #151411;
+  --content-primary: #ebe7e2;
+  --focus-ring: #ebe7e2;
+}
+:root[data-appearance="light"] {
+  color-scheme: light;
+}
+select {
+  font: inherit;
+  max-width: 100%;
+  min-height: var(--component-target-minimum);
 }

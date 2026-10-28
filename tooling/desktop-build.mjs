@@ -11,6 +11,7 @@ export async function buildDesktop(root) {
     ["main", "es", "main.mjs"],
     ["preload", "cjs", "preload.cjs"],
     ["utility", "es", "utility.mjs"],
+    ["storage", "es", "storage.js"],
   ]) {
     await build({
       configFile: false,
@@ -23,11 +24,24 @@ export async function buildDesktop(root) {
         minify: false,
         sourcemap: false,
         lib: {
-          entry: `packages/${boundary}/src/entry.ts`,
+          entry:
+            boundary === "storage"
+              ? "packages/utility/src/storage.ts"
+              : `packages/${boundary}/src/entry.ts`,
           formats: [format],
           fileName: () => file,
         },
-        rolldownOptions: { external: ["electron", /^node:/] },
+        rolldownOptions: {
+          external: [
+            "electron",
+            "better-sqlite3",
+            "kysely",
+            "kysely/migration",
+            "./storage.js",
+            /^node:/,
+            /\.\/migrations\/.*\.mjs$/,
+          ],
+        },
       },
     });
   }
@@ -81,6 +95,25 @@ export async function buildDesktop(root) {
       main: "main.mjs",
     }),
   );
+  // Copy the exact immutable modules and external runtime packages; never rebundle migration bytes.
+  fs.cpSync(path.join(root, "packages/utility/src/migrations"), path.join(output, "migrations"), {
+    recursive: true,
+  });
+  for (const name of ["better-sqlite3", "kysely"]) {
+    const source = fs.realpathSync(path.join(root, "packages/utility/node_modules", name));
+    fs.cpSync(source, path.join(output, "node_modules", name), {
+      recursive: true,
+      filter: (entry) => {
+        const relative = path.relative(source, entry);
+        return (
+          !relative.split(path.sep).includes("node_modules") &&
+          (name !== "better-sqlite3" ||
+            !relative ||
+            ["lib", "prebuilds", "LICENSE", "package.json"].includes(relative.split(path.sep)[0]))
+        );
+      },
+    });
+  }
   const licenses = path.join(output, "licenses");
   fs.mkdirSync(licenses);
   for (const name of fs.readdirSync(path.join(root, "packages/renderer/fonts")))
