@@ -12,7 +12,7 @@ export default tseslint.config(
     ],
   },
   {
-    files: ["tools/desktop-probes/*.mjs", "tooling/quality*.mjs"],
+    files: ["tools/desktop-probes/*.mjs", "tooling/quality*.mjs", "tooling/linux-e2e*.mjs"],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",

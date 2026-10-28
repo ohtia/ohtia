@@ -1,0 +1,54 @@
+name: Build Linux E2E image
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - .github/workflows/linux-e2e-image.yml
+      - tools/linux-e2e/Dockerfile
+      - scripts/linux_e2e_image.py
+      - scripts/linux_e2e_image_ci.py
+      - config/desktop/linux-e2e-build.json
+      - .dockerignore
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-e2e-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    if: github.repository == 'ohtia/ohtia'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out image source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+
+      - name: Make space on the disposable image builder
+        run: sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet /opt/ghc
+
+      - name: Build and qualify image
+        env:
+          IMAGE_NAME: ghcr.io/ohtia/linux-e2e
+        run: python3 scripts/linux_e2e_image_ci.py build
+
+      - name: Publish qualified image
+        env:
+          IMAGE_NAME: ghcr.io/ohtia/linux-e2e
+          GH_TOKEN: ${{ github.token }}
+          GH_ACTOR: ${{ github.actor }}
+        run: python3 scripts/linux_e2e_image_ci.py publish

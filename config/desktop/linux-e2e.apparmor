@@ -1,0 +1,28 @@
+abi <abi/4.0>,
+#include <tunables/global>
+
+# Dedicated synthetic E2E containers require non-root execution, no host mounts,
+# no-new-privileges and zero outer capabilities, enforced by linux_e2e.py.
+# Mounts remain subject to kernel checks in private child user namespaces.
+profile ohtia-linux-e2e-v1 flags=(attach_disconnected,mediate_deleted) {
+  file,
+  network,
+  capability,
+  userns,
+  mount,
+  remount,
+  umount,
+  pivot_root,
+  signal (send, receive) peer=ohtia-linux-e2e-v1,
+  signal (receive) peer=unconfined,
+  signal (receive) peer=runc,
+  signal (receive) peer=crun,
+  ptrace (trace, read, tracedby, readby) peer=ohtia-linux-e2e-v1,
+  deny /proc/* w,
+  deny /proc/{acpi,asound,bus,driver,fs,irq,scsi,sys}/** wklx,
+  deny /proc/sysrq-trigger wklx,
+  deny /proc/{kcore,keys,timer_list,interrupts,latency_stats,sched_debug,timer_stats} rwklx,
+  deny /proc/{acpi,asound,scsi}{,/**} rwklx,
+  deny /sys/** wklx,
+  deny /sys/{firmware,kernel/security,devices/virtual/powercap}{,/**} rwklx,
+}

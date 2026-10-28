@@ -37,6 +37,8 @@ okf_version: "0.2"
 
 ## Repository
 
+- [Immutable Linux E2E environment](linux-e2e.md) — Run the pinned Linux x86-64 image with private sessions, active sandboxes and complete packaged Electron result accounting.
+
 - [Shared verification and coverage gates](shared-verification.md) — Run the same local and CI checks with independent product coverage, complete test inventories and separate native evidence.
 
 - [Locked developer workspace](developer-workspace.md) — Bootstrap isolated contributor tools, build the six package boundaries and verify the frozen workspace without changing research data.
