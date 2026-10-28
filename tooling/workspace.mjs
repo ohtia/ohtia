@@ -79,9 +79,11 @@ const commands = {
     ]);
   },
   boundaries,
-  build() {
+  async build() {
     compile();
     node("vite/bin/vite.js", ["build", "--config", "tooling/vite.renderer.mjs"]);
+    const { buildDesktop } = await import("./desktop-build.mjs");
+    await buildDesktop(root);
   },
   typecheck() {
     compile(true);
@@ -113,23 +115,43 @@ const commands = {
     node("vitest/vitest.mjs", ["run"]);
     run(python, ["-m", "unittest", "discover", "-s", "scripts/tests", "-v"]);
   },
-  check() {
-    for (const name of ["typecheck", "lint", "format:check", "test", "build"]) commands[name]();
+  async check() {
+    for (const name of ["typecheck", "lint", "format:check", "test", "build"])
+      await commands[name]();
   },
-  dev() {
+  async preview() {
     compile();
+    const { loadRuntimeProfile, verifyStableSentinels } =
+      await import("../packages/main/dist/index.js");
+    const profile = loadRuntimeProfile(process.argv[3] ?? "");
+    verifyStableSentinels(profile);
     node("vite/bin/vite.js", ["tools/renderer-preview", "--host", "127.0.0.1", "--strictPort"]);
   },
-  "package:local"() {
-    commands.build();
+  async dev() {
+    const [profile, prepared] = process.argv.slice(3);
+    if (!profile || !prepared)
+      throw new Error(
+        "Use dev <absolute-runtime-profile.json> <absolute-prepared-runtime>. See docs/desktop-runtime.md.",
+      );
+    const { launchDesktop } = await import("./desktop-launch.mjs");
+    await launchDesktop(profile, prepared);
+  },
+  "desktop:prepare"() {
+    run(python, ["scripts/desktop_runtime.py", ...process.argv.slice(3)]);
+  },
+  "desktop:test"() {
+    run(process.execPath, ["tooling/desktop-acceptance.mjs", ...process.argv.slice(3)]);
+  },
+  async "package:local"() {
+    await commands.build();
     run(python, ["scripts/package_workspace.py"]);
   },
-  "probes:prepare"() {
-    commands.build();
+  async "probes:prepare"() {
+    await commands.build();
     run(python, ["scripts/desktop_probes.py", "prepare", ...process.argv.slice(3)]);
   },
-  "probes:bundle"() {
-    commands.build();
+  async "probes:bundle"() {
+    await commands.build();
     run(python, ["scripts/desktop_probes.py", "bundle", ...process.argv.slice(3)]);
   },
   "probes:run"() {
@@ -147,4 +169,4 @@ if (!Object.hasOwn(commands, process.argv[2]) || typeof command !== "function") 
   console.error("Unknown workspace command. Select a declared package.json script.");
   process.exit(1);
 }
-command();
+await command();

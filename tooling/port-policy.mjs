@@ -26,6 +26,14 @@ export function generatePortPolicy(root) {
     "initial_input_bytes",
     "initial_input_items",
     "initial_output_bytes",
+    "service_start_ms",
+    "application_start_ms",
+    "shutdown_grace_ms",
+    "shutdown_termination_ms",
+    "shutdown_total_ms",
+    "process_tree_count",
+    "automatic_service_restarts",
+    "locator_bytes",
   ];
   const limits = {};
   for (const name of names) {

@@ -1,9 +1,11 @@
 ---
 type: Story
 title: "STORY-001-004 — Run the isolated desktop and supervised data service"
-description: "Launch a minimal graphical Electron application with a single broker, safe bootstrap and a supervised utility process."
+description: "Launch a minimal graphical Electron application with a single broker, fixed-home bootstrap and a supervised utility process."
 generated:
   by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 tags: ["story", "comp:desktop", "comp:app"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/18
@@ -26,7 +28,7 @@ applicable_blocks:
 
 ## Description
 
-Launch a minimal graphical Electron application with a single broker, safe bootstrap and a supervised utility process. This unit owns its complete result and verifies its delivered inputs; it does not wait for a returning output from its consumers. Detailed implementation decisions and their rationale are held once in the applicable specification below.
+Launch a minimal graphical Electron application with a single broker, fixed-home bootstrap and a supervised utility process. This unit owns its complete result and verifies its delivered inputs; it does not wait for a returning output from its consumers. Detailed implementation decisions and their rationale are held once in the applicable specification below.
 
 ## Applicable specification
 
@@ -47,7 +49,7 @@ Launch a minimal graphical Electron application with a single broker, safe boots
 - [ ] Build separate main/preload/utility and local React/Vite renderer outputs with active sandbox/CSP and forbidden-import checks.
 - [ ] Deliver the minimum common locale service, complete first-surface catalogs and keyboard and assistive bootstrap/status/error controls under SPEC-001-024.
 - [ ] Implement a single broker, bounded utility handshake/status port, window lifecycle and controlled service-death handling.
-- [ ] Implement fixed locator parsing, graphical selection and validated-path/atomic-publication primitives; leave storage activation gated until the data service validates it.
+- [ ] Implement fixed locator parsing, OS-derived default-root admission and validated-path/atomic-publication primitives; leave storage activation gated until the data service validates it.
 - [ ] Verify startup, second-instance behavior, one broker and utility supervision, stale generations, locator publication and failure, responsive errors and bounded shutdown against real native artifacts on all required targets.
 
 ## Acceptance criteria
@@ -59,7 +61,7 @@ Launch a minimal graphical Electron application with a single broker, safe boots
 - [ ] All required native runtime/bootstrap records identify the actual host, executable and utility architecture.
 - [ ] The built graphical window exchanges real status messages through all process boundaries without provider access.
 - [ ] Active CSP/sandbox and a narrow bridge reject privileged imports, invalid senders/resources and development fixture inclusion.
-- [ ] Missing/corrupt/unsupported locators preserve existing data and show graphical guidance; no silent data default or fallback logging is introduced.
+- [ ] The account-native research root is fixed without a location question or changing control; invalid or mismatching locators preserve existing data and show guidance without fallback stores or logging.
 - [ ] Service death remains bounded/responsive and one OS user cannot accidentally run independent broker writers.
 
 ## Quality checklist
