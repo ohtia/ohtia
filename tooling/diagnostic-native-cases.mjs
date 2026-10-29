@@ -375,13 +375,13 @@ await test("version-aware-reader", async () => {
 });
 await w.close();
 await test("native-denied-io", async () => {
-  // icacls /deny removes matching explicit grants; removing its deny ACE alone
-  // does not restore write access. Keep this fixture separate from retained logs.
-  receipt.deniedIo = { phase: "create-fixture" };
-  const denied = path.join(store, "denied-io");
   const windows = process.platform === "win32";
-  const user = os.userInfo().username;
-  const icacls = windows ? path.join(process.env.SystemRoot, "System32", "icacls.exe") : "";
+  receipt.deniedIo = {
+    phase: "create-fixture",
+    fixture: windows ? "read-only-active-file" : "non-writable-root",
+  };
+  const denied = path.join(store, "denied-io");
+  const deniedActive = path.join(denied, "logs", "ohtia.jsonl");
   const controlledError = (error) => ({
     code:
       typeof error.code === "string" && /^[A-Z0-9_]{1,64}$/.test(error.code) ? error.code : null,
@@ -391,50 +391,58 @@ await test("native-denied-io", async () => {
         ? error.syscall
         : null,
   });
-  let fixtureCreated = false;
+  let blocked = false;
+  let before;
   try {
     fs.mkdirSync(denied);
-    fixtureCreated = true;
-    receipt.deniedIo.phase = "apply-deny";
-    if (windows)
-      execFileSync(icacls, [denied, "/deny", `${user}:(OI)(CI)(W)`], {
-        stdio: "ignore",
-        timeout: 5000,
-      });
-    else fs.chmodSync(denied, 0o500);
     if (windows) {
-      try {
-        receipt.deniedIo.acl = execFileSync(icacls, [denied], {
-          encoding: "utf8",
-          stdio: ["ignore", "pipe", "ignore"],
-          windowsHide: true,
-          timeout: 5000,
-          maxBuffer: 32768,
-        });
-      } catch (error) {
-        receipt.deniedIo.acl = { error: controlledError(error) };
-      }
+      // Keep the initialized writer so the native read-only file rejects the
+      // append itself, after the same writer has demonstrated a healthy write.
+      receipt.deniedIo.phase = "seed-log";
+      w = writer(denied);
+      receipt.deniedIo.seed = await w.append(started);
+      assert.equal(receipt.deniedIo.seed.ok, true);
+      before = fs.readFileSync(deniedActive);
+      receipt.deniedIo.phase = "set-read-only";
+      fs.chmodSync(deniedActive, 0o400);
+    } else {
+      fs.chmodSync(denied, 0o500);
     }
+    blocked = true;
     receipt.deniedIo.phase = "probe-denial";
     assert.throws(
       () => {
         try {
-          fs.mkdirSync(path.join(denied, "write-probe"));
-          receipt.deniedIo.probe = { created: true };
+          if (windows) {
+            const descriptor = fs.openSync(deniedActive, fs.constants.O_WRONLY);
+            fs.closeSync(descriptor);
+          } else {
+            fs.mkdirSync(path.join(denied, "write-probe"));
+          }
+          receipt.deniedIo.probe = { allowed: true };
         } catch (error) {
-          receipt.deniedIo.probe = { created: false, ...controlledError(error) };
+          receipt.deniedIo.probe = { allowed: false, ...controlledError(error) };
           throw error;
         }
       },
       { code: /^(EACCES|EPERM)$/ },
     );
-    receipt.deniedIo.phase = "append";
-    w = writer(denied);
-    const result = await w.append(started);
-    receipt.deniedIo.append = result;
-    receipt.deniedIo.logsCreated = fs.existsSync(path.join(denied, "logs"));
-    assert.equal(result.ok, false);
-    assert.equal(receipt.deniedIo.logsCreated, false);
+    receipt.deniedIo.phase = windows ? "append-after-initialization" : "initialize-writer";
+    if (!windows) w = writer(denied);
+    receipt.deniedIo.initialWriterStatus = w.status;
+    assert.equal(w.status.status, "ready");
+    receipt.deniedIo.append = await w.append(started);
+    assert.equal(receipt.deniedIo.append.ok, false);
+    assert.equal(receipt.deniedIo.append.status, "unavailable");
+    if (windows) {
+      receipt.deniedIo.fileUnchanged = before.equals(fs.readFileSync(deniedActive));
+      receipt.deniedIo.readOnlyPreserved = (fs.statSync(deniedActive).mode & 0o222) === 0;
+      assert.equal(receipt.deniedIo.fileUnchanged, true);
+      assert.equal(receipt.deniedIo.readOnlyPreserved, true);
+    } else {
+      receipt.deniedIo.logsCreated = fs.existsSync(path.join(denied, "logs"));
+      assert.equal(receipt.deniedIo.logsCreated, false);
+    }
     receipt.deniedIo.phase = "verified";
   } catch (error) {
     receipt.deniedIo.error = controlledError(error);
@@ -442,11 +450,7 @@ await test("native-denied-io", async () => {
   } finally {
     await w.close();
     try {
-      if (fixtureCreated) {
-        if (windows)
-          execFileSync(icacls, [denied, "/remove:d", user], { stdio: "ignore", timeout: 5000 });
-        else fs.chmodSync(denied, 0o700);
-      }
+      if (blocked) fs.chmodSync(windows ? deniedActive : denied, windows ? 0o600 : 0o700);
     } catch (error) {
       receipt.deniedIo.cleanupError = controlledError(error);
       throw error;
