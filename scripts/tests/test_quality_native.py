@@ -429,6 +429,60 @@ assert.equal(selectStableTemporaryParent(posix,['/tmp','/home/runner/work/_temp'
             timeout=60,
         )
 
+    def test_failed_suites_retain_inner_diagnostics_without_fixture_aliases(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            diagnostics = source / "diagnostics"
+            diagnostics.mkdir(parents=True)
+            report = {
+                "code": 1,
+                "privateMarkerAbsent": True,
+                "stdoutStderr": "synthetic controlled case failure",
+            }
+            (diagnostics / "component-process.json").write_text(json.dumps(report))
+            (source / "diagnostics-supervision.json").write_text(json.dumps({"exit_code": 1}))
+            fixture = diagnostics / "diagnostic-fixture"
+            fixture.mkdir()
+            (fixture / "state.db3").write_text("synthetic store")
+            secret = root / "key.json"
+            secret.write_text(json.dumps({"do_not_copy": "synthetic"}))
+            (diagnostics / "alias.json").symlink_to(secret)
+            (diagnostics / "partial.json").write_text("{not complete")
+            destination = root / "retained"
+            os.link(secret, diagnostics / "hardlink.json")
+            (diagnostics / "deep.json").write_text('{"nested":' * 100000 + "0" + "}" * 100000)
+            fifo = hasattr(os, "mkfifo")
+            if fifo:
+                os.mkfifo(diagnostics / "blocked.json")
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.path.insert(0,'scripts'); "
+                    "from pathlib import Path; import quality_native; "
+                    "quality_native.retain_failed_reports(Path(sys.argv[1]), Path(sys.argv[2]))",
+                    str(source),
+                    str(destination),
+                ],
+                cwd=delivery.ROOT,
+                check=True,
+                timeout=10,
+            )
+            self.assertEqual(
+                json.loads((destination / "diagnostics/component-process.json").read_text()), report
+            )
+            self.assertEqual(
+                json.loads((destination / "diagnostics-supervision.json").read_text()),
+                {"exit_code": 1},
+            )
+            self.assertFalse((destination / "diagnostics/alias.json").exists())
+            self.assertFalse((destination / "diagnostics/diagnostic-fixture").exists())
+            self.assertEqual(
+                len(json.loads((destination / "retention-issues.json").read_text())["issues"]),
+                4 + int(fifo),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

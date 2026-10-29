@@ -103,7 +103,7 @@ def cloud_config(profile: str, public_key: str) -> str:
     commands = []
     if profile == "fedora-44":
         commands += [
-            ["dnf", "-y", "--allowerasing", "install", "fedora-release-workstation"],
+            ["dnf", "-y", "install", "--allowerasing", "fedora-release-identity-workstation"],
             [
                 "bash",
                 "-ceu",

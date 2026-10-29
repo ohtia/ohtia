@@ -10,6 +10,7 @@ import platform
 import plistlib
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -692,6 +693,29 @@ def smoke(profile: Path, prepared: Path, destination: Path, cell: dict) -> tuple
     }
 
 
+def retain_failed_reports(source: Path, destination: Path) -> None:
+    """Retain normalized bounded JSON reports without adopting fixture links or stores."""
+    destination.mkdir()
+    issues = []
+    for folder in (source, *(source / suite for suite in delivery.SUITES)):
+        if not folder.is_dir() or folder.is_symlink() or folder.is_junction():
+            continue
+        for file in folder.glob("*.json"):
+            relative = file.relative_to(source)
+            try:
+                info = file.lstat()
+                delivery.require(
+                    stat.S_ISREG(info.st_mode) and info.st_nlink == 1,
+                    "Nonregular or aliased failure report.",
+                )
+                report = delivery.read(file)
+                delivery.write(destination / relative, report)
+            except (OSError, ValueError, RecursionError) as error:
+                issues.append({"report": relative.as_posix(), "error_type": type(error).__name__})
+    if issues:
+        delivery.write(destination / "retention-issues.json", {"issues": issues})
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("cell")
@@ -753,7 +777,14 @@ def main() -> int:
                 delivery.write(payload / "prepared.json", prepared)
             evidence = Path(delivery.read(profile)["scratch_root"]) / f"evidence-{kind}"
             evidence.mkdir()
-            suites, native = smoke(profile, payload, evidence, cell)
+            try:
+                suites, native = smoke(profile, payload, evidence, cell)
+            except Exception:
+                try:
+                    retain_failed_reports(evidence, output / f"{kind}-evidence")
+                except Exception as error:
+                    print(f"Failed suite reports could not be retained: {error}", file=sys.stderr)
+                raise
             shutil.copytree(evidence, output / f"{kind}-evidence")
             native.update(
                 {

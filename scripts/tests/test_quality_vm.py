@@ -33,7 +33,7 @@ class VirtualMachineTests(unittest.TestCase):
             if profile == "fedora-44":
                 self.assertIn("mkfs.btrfs", commands)
                 self.assertIn("Enforcing", commands)
-                self.assertIn("fedora-release-workstation", commands)
+                self.assertIn("fedora-release-identity-workstation", commands)
         with self.assertRaises(delivery.DeliveryError):
             vm.cloud_config("unreviewed-distribution", "public-key")
 
@@ -201,6 +201,14 @@ class VirtualMachineTests(unittest.TestCase):
             ):
                 self.assertEqual(vm.main(), 1)
             self.assertEqual(list(output.iterdir()), [])
+
+    def test_fedora_identity_uses_install_scoped_dnf5_options(self):
+        config = json.loads(vm.cloud_config("fedora-44", "ssh-ed25519 synthetic").split("\n", 1)[1])
+        command = next(c for c in config["runcmd"] if c[0] == "dnf")
+        self.assertLess(command.index("install"), command.index("--allowerasing"))
+        self.assertIn("fedora-release-identity-workstation", command)
+        self.assertNotIn("--skip-broken", command)
+        self.assertNotIn("--nogpgcheck", command)
 
 
 if __name__ == "__main__":
