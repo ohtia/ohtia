@@ -34,7 +34,8 @@
     "diagnostics:test": "node tooling/workspace.mjs diagnostics:test",
     "quality:inventory": "node tooling/workspace.mjs quality:inventory",
     "quality:native": "node tooling/workspace.mjs quality:native",
-    "quality:cases": "node tooling/workspace.mjs quality:cases"
+    "quality:cases": "node tooling/workspace.mjs quality:cases",
+    "linux:e2e": "node tooling/workspace.mjs linux:e2e"
   },
   "devDependencies": {
     "typescript": "6.0.3",

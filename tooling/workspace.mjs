@@ -105,6 +105,7 @@ const commands = {
       "tools/desktop-probes/src",
       "tools/desktop-probes/*.mjs",
       "tooling/quality*.mjs",
+      "tooling/linux-e2e*.mjs",
     ]);
     run(python, ["-m", "ruff", "check", "scripts"]);
   },
@@ -153,6 +154,11 @@ const commands = {
   },
   "desktop:prepare"() {
     run(python, ["scripts/desktop_runtime.py", ...process.argv.slice(3)]);
+  },
+  "linux:e2e"() {
+    if (process.platform !== "linux" || process.arch !== "x64")
+      throw new Error("Use a native Linux x86-64 host for the Docker/AppArmor E2E route.");
+    run("bash", ["tools/linux-e2e/run.sh", ...process.argv.slice(3)]);
   },
   "desktop:test"() {
     run(process.execPath, ["tooling/desktop-acceptance.mjs", ...process.argv.slice(3)]);

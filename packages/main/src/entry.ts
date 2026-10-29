@@ -171,7 +171,10 @@ const acceptance =
     ? { received: 0, rejectedFrame: 0, rejectedEnvelope: 0, dispatched: 0 }
     : undefined;
 if (acceptance)
-  Object.defineProperty(globalThis, "__ohtiaAcceptance", { value: () => ({ ...acceptance }) });
+  Object.defineProperty(globalThis, "__ohtiaAcceptance", {
+    value: () => ({ ...acceptance }),
+    configurable: true,
+  });
 let metricTimer: ReturnType<typeof setInterval> | undefined;
 const snapshot = (): BootstrapSnapshot => ({
   version: 1,
@@ -274,15 +277,44 @@ function createWindow(): boolean {
   window.once("ready-to-show", () => {
     window.show();
   });
-  void window
-    .loadURL(desktopDocument)
-    .then(() => {
-      // A compositor may defer first paint until mapping; completed content can be shown directly.
-      if (!window.isDestroyed()) window.show();
-    })
-    .catch(() => {
+  const loadDocument = () => {
+    void window
+      .loadURL(desktopDocument)
+      .then(() => {
+        // A compositor may defer first paint until mapping; completed content can be shown directly.
+        if (!window.isDestroyed()) window.show();
+      })
+      .catch(() => {
+        quitAfterError("startup_failed");
+      });
+  };
+  if (acceptance && process.env.OHTIA_RUNTIME_DEFER_DOCUMENT === "1" && windows.size === 1) {
+    // An inert navigation lets automation attach before the first application document.
+    void window.loadURL("about:blank").catch(() => {
       quitAfterError("startup_failed");
     });
+    // Only the admitted main-process inspector may release this bounded acceptance barrier.
+    let released = false;
+    const clear = () => {
+      released = true;
+      clearTimeout(deadline);
+      Reflect.deleteProperty(globalThis, "__ohtiaLoadInitialDocument");
+    };
+    const deadline = setTimeout(() => {
+      clear();
+      quitAfterError("startup_failed");
+    }, portLimits.application_start_ms);
+    Object.defineProperty(globalThis, "__ohtiaLoadInitialDocument", {
+      configurable: true,
+      value: () => {
+        if (released) return;
+        released = true;
+        clear();
+        loadDocument();
+      },
+    });
+    window.once("closed", clear);
+  } else loadDocument();
   return true;
 }
 function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"): void {

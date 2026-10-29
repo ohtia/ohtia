@@ -5,9 +5,10 @@ description: "Reproduce real Electron tests in an immutable Linux environment wi
 tags: ["story", "comp:tooling", "comp:desktop"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/22
-verified: { by: human:AdrianMastronardi }
 generated:
   by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 epic: "EPIC-001"
 epic_concept: ./epic.md
 components: ["comp:tooling", "comp:desktop"]
@@ -32,7 +33,7 @@ Reproduce real Electron tests in an immutable Linux environment with active sand
 - [ ] Integrate gate: verify STORY-001-007 output Q7 and its full release condition in the Dependencies output registry and SPEC-001-010.
 - [ ] Integrate gate: verify STORY-001-018 output D1b and its full release condition in the Dependencies output registry and SPEC-001-010.
 - [ ] Integrate gate: verify Policy authority output PA and its full release condition in the Dependencies output registry and SPEC-001-010.
-- [ ] Build the reviewed digest-pinned Linux image and frozen package/browser/runtime parity checks.
+- [ ] Build the reviewed input-addressed Linux image from its pinned recipe and frozen package/browser/runtime parity checks.
 - [ ] Provide local and CI launchers for non-root Electron with active sandbox, private display and bounded resources.
 - [ ] Add real packaged startup/CSP/IPC smoke inventory and fail-closed environment preparation.
 - [ ] Document and verify that this image covers Linux x86-64 only; the quality-build story supplements it with native ARM64 evidence.

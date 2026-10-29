@@ -12,6 +12,8 @@
         "Run repository hooks",
         "Scan committed history for secrets",
         "Run shared checks",
+        "Authenticate Linux E2E image",
+        "Run immutable sandboxed Linux E2E",
         "Complete job"
       ],
       "optional_steps": ["Post Set up Python", "Post Check out repository and history"]

@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "target": "linux-x64",
+  "playwright": "1.64.1",
+  "browsers": {
+    "chromium": "1248",
+    "chromium-headless-shell": "1248",
+    "firefox": "1555",
+    "webkit": "2370",
+    "ffmpeg": "1013"
+  },
+  "user": "pwuser",
+  "uid": 1001,
+  "home": "/home/pwuser",
+  "resources": {
+    "cpus": 4,
+    "memory_bytes": 8589934592,
+    "shm_bytes": 1073741824,
+    "pids": 512
+  },
+  "seccomp_sha256": "5d984e3bdf5e75fb87219a52ce744e94c9f6bee7faeecc6e1d9e3771062c195f",
+  "shards": {
+    "browsers": ["chromium-sandbox", "firefox-sandbox", "webkit-sandbox"],
+    "electron": [
+      "packaged-startup",
+      "renderer-os-sandbox",
+      "status-ipc",
+      "ipc-denials",
+      "packaged-csp",
+      "bounded-shutdown"
+    ]
+  },
+  "playwrightImage": "mcr.microsoft.com/playwright:v1.64.1-noble",
+  "apparmor_profile": "ohtia-linux-e2e-v1",
+  "apparmor_sha256": "d6058f8ce845a8f5c61f18a99eb47e5baf2786a9ba539e765b1057a836ed0229"
+}

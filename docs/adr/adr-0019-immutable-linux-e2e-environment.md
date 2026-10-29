@@ -20,7 +20,7 @@ Installing arbitrary browser dependencies in every CI shard is variable and diff
 
 ## Decision
 
-Use an immutable, version-and-digest-pinned Linux x86-64 E2E image when introducing the frontend CI environment. Match the [selected Playwright](adr-0018-vitest-and-playwright-desktop-tests.md) package and browser/image versions with an automated parity check. Layer only verified requirements for the actual Electron run; a browser-only image is not proof that native app dependencies exist.
+Use an immutable, version-and-digest-pinned Linux x86-64 E2E image when introducing the frontend CI environment. [ADR-0040](adr-0040-hosted-linux-e2e-image-producer.md) replaces the committed distribution-digest pin with an identity derived from the declared recipe inputs; the other requirements in this record are unchanged. Match the [selected Playwright](adr-0018-vitest-and-playwright-desktop-tests.md) package and browser/image versions with an automated parity check. Layer only verified requirements for the actual Electron run; a browser-only image is not proof that native app dependencies exist.
 
 Pin [Node](adr-0004-javascript-development-toolchain.md) and other tooling from repository configuration and install dependencies from frozen lockfiles. Prepare required OS packages in the reviewed image rather than running unconstrained APT resolution in each test shard. Local reproduction uses the same image as an additional path, not a fictional existing command.
 
