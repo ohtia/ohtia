@@ -54,6 +54,7 @@
     "sv-SE"
   ],
   "python": [
+    "scripts/tests/test_change_notes.py",
     "scripts/tests/test_desktop_contract.py",
     "scripts/tests/test_desktop_delivery.py",
     "scripts/tests/test_desktop_probes.py",

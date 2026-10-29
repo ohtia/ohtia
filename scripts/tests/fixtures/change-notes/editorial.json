@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "source": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "channel": "stable",
+  "application_version": "1.0.0",
+  "summary": "Resume reading and open local sources.",
+  "claims": [],
+  "assessments": [
+    {
+      "pr": 101,
+      "impact": "user",
+      "reason": "Synthetic source assessment for this fixture.",
+      "disclosures": {
+        "migration": null,
+        "reinstall": "Reinstall this synthetic quality build before continuing.",
+        "removed_support": null,
+        "format_adapter": null,
+        "privacy_transfers": null,
+        "security_urgency": null,
+        "limitations": null
+      }
+    },
+    {
+      "pr": 102,
+      "impact": "user",
+      "reason": "Synthetic source assessment for this fixture.",
+      "disclosures": {
+        "migration": null,
+        "reinstall": null,
+        "removed_support": null,
+        "format_adapter": null,
+        "privacy_transfers": null,
+        "security_urgency": null,
+        "limitations": null
+      }
+    },
+    {
+      "pr": 103,
+      "impact": "none",
+      "reason": "Synthetic source assessment for this fixture.",
+      "disclosures": {
+        "migration": null,
+        "reinstall": null,
+        "removed_support": null,
+        "format_adapter": null,
+        "privacy_transfers": null,
+        "security_urgency": null,
+        "limitations": null
+      }
+    },
+    {
+      "pr": 104,
+      "impact": "user",
+      "reason": "Synthetic source assessment for this fixture.",
+      "disclosures": {
+        "migration": null,
+        "reinstall": null,
+        "removed_support": null,
+        "format_adapter": null,
+        "privacy_transfers": null,
+        "security_urgency": null,
+        "limitations": null
+      }
+    },
+    {
+      "pr": 105,
+      "impact": "user",
+      "reason": "Synthetic source assessment for this fixture.",
+      "disclosures": {
+        "migration": null,
+        "reinstall": null,
+        "removed_support": null,
+        "format_adapter": null,
+        "privacy_transfers": null,
+        "security_urgency": null,
+        "limitations": null
+      }
+    }
+  ],
+  "changes": [
+    {
+      "id": "resume-reading",
+      "available": true,
+      "kind": "capability",
+      "task": "Resume your reading",
+      "result": "Reopening a source returns you to the page you were reading.",
+      "platforms": ["Linux", "Windows", "macOS"],
+      "prs": [101, 102],
+      "issues": [1101, 1102],
+      "disclosures": {
+        "migration": [],
+        "reinstall": ["Reinstall this synthetic quality build before continuing."],
+        "removed_support": [],
+        "format_adapter": [],
+        "privacy_transfers": [],
+        "security_urgency": [],
+        "limitations": []
+      },
+      "claims": []
+    },
+    {
+      "id": "export-notes",
+      "available": false,
+      "kind": "capability",
+      "task": "Export your notes",
+      "result": "Write your selected notes to a local file.",
+      "platforms": ["Linux", "Windows", "macOS"],
+      "prs": [104],
+      "issues": [1104],
+      "disclosures": {
+        "migration": [],
+        "reinstall": [],
+        "removed_support": [],
+        "format_adapter": [],
+        "privacy_transfers": [],
+        "security_urgency": [],
+        "limitations": []
+      },
+      "claims": []
+    },
+    {
+      "id": "open-sources",
+      "available": true,
+      "kind": "correction",
+      "task": "Open local sources",
+      "result": "Opening the synthetic source leaves the application responsive.",
+      "platforms": ["Linux", "Windows", "macOS"],
+      "prs": [105],
+      "issues": [1105],
+      "disclosures": {
+        "migration": [],
+        "reinstall": [],
+        "removed_support": [],
+        "format_adapter": [],
+        "privacy_transfers": [],
+        "security_urgency": [],
+        "limitations": []
+      },
+      "claims": []
+    }
+  ]
+}

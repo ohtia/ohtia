@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "owner": "STORY-001-014",
+  "baseline": {
+    "name": "OWASP ASVS",
+    "version": "5.0.0",
+    "levels": [1, 2],
+    "resource": "https://github.com/OWASP/ASVS/blob/v5.0.0/5.0/docs_en/OWASP_Application_Security_Verification_Standard_5.0.0_en.csv"
+  },
+  "controls": [
+    {
+      "id": "NOTE-INPUT",
+      "requirements": ["v5.0.0-2.2.1", "v5.0.0-2.2.2"],
+      "reason": "All PR inputs are parsed as closed versioned JSON at the trusted local tool boundary; duplicate keys, inconsistent identities, control characters and bounded-size violations fail.",
+      "deterministic_tests": [
+        "test_change_notes.ChangeNotesTests.test_json_duplicate_unknown_version_controls_and_nonfinite_values_fail",
+        "test_change_notes.ChangeNotesTests.test_capture_supports_native_newlines_and_requires_unique_exact_identity",
+        "test_change_notes.ChangeNotesTests.test_missing_duplicate_unrelated_and_misclassified_inputs_fail"
+      ],
+      "applicability": "applicable",
+      "enforcing_files": ["scripts/change_notes.py"],
+      "evidence_limit": "Local deterministic positive/negative fixtures. Hashes and supplied human/evidence strings do not authenticate a person, verify an evidence URL, grant release authority or establish external enforcement."
+    },
+    {
+      "id": "NOTE-INERT",
+      "requirements": ["v5.0.0-1.2.5", "v5.0.0-1.2.1"],
+      "reason": "No shell, process, import helper or network API accepts PR data. Punctuation is entity-encoded and standard automatic-link/reference/mention tokens receive encoder-owned code elements; the output-encoding requirement is adapted to GitHub Markdown.",
+      "deterministic_tests": [
+        "test_change_notes.ChangeNotesTests.test_shell_markup_and_helper_payloads_remain_inert_and_cannot_select_authority",
+        "test_change_notes.ChangeNotesTests.test_free_text_cannot_form_bare_links_mentions_or_issue_references"
+      ],
+      "applicability": "applicable",
+      "enforcing_files": ["scripts/change_notes.py"],
+      "evidence_limit": "Local deterministic positive/negative fixtures. Hashes and supplied human/evidence strings do not authenticate a person, verify an evidence URL, grant release authority or establish external enforcement."
+    },
+    {
+      "id": "NOTE-ORDER",
+      "requirements": ["v5.0.0-2.3.1", "v5.0.0-2.3.2"],
+      "reason": "Source ancestry determines channel baselines; all PRs require independent editorial assessment; missing consequences and unsupported claims block assembly. Availability and English/source-evidence correctness still require actual editorial review.",
+      "deterministic_tests": [
+        "test_change_notes.ChangeNotesTests.test_first_stable_covers_all_prs_and_retains_unfinished_scope",
+        "test_change_notes.ChangeNotesTests.test_stable_includes_scope_previously_available_only_in_preview",
+        "test_change_notes.ChangeNotesTests.test_preview_delta_uses_last_preview_for_same_intended_stable",
+        "test_change_notes.ChangeNotesTests.test_all_critical_consequences_require_independent_assessment_and_disclosure",
+        "test_change_notes.ChangeNotesTests.test_overclaims_require_evidence_in_final_copy_including_summary_and_disclosures",
+        "test_change_notes.ChangeNotesTests.test_disclosures_on_baseline_capabilities_survive_delta_prose_omission",
+        "test_change_notes.ChangeNotesTests.test_deprecation_removal_requires_disclosure_and_uses_its_own_section",
+        "test_change_notes.ChangeNotesTests.test_first_preview_without_same_version_baseline_uses_full_scope_even_after_stable"
+      ],
+      "applicability": "applicable",
+      "enforcing_files": ["scripts/change_notes.py"],
+      "evidence_limit": "Local deterministic positive/negative fixtures. Hashes and supplied human/evidence strings do not authenticate a person, verify an evidence URL, grant release authority or establish external enforcement."
+    },
+    {
+      "id": "NOTE-INTEGRITY",
+      "requirements": ["v5.0.0-2.3.1", "v5.0.0-11.2.1"],
+      "reason": "Standard-library SHA-256 binds replayable inputs, note bytes/context, independent package identity and explicit review receipt. Edits require new receipts; transitions preserve both complete annotated records and unchanged candidate bytes.",
+      "deterministic_tests": [
+        "test_change_notes.ChangeNotesTests.test_approval_identifies_exact_candidate_note_channel_baseline_and_bytes",
+        "test_change_notes.ChangeNotesTests.test_self_consistent_forged_bundle_cannot_bypass_assembly",
+        "test_change_notes.ChangeNotesTests.test_preview_to_stable_preserves_exact_packages_and_retains_both_notes",
+        "test_change_notes.ChangeNotesTests.test_correction_retains_before_after_bytes_digests_reason_and_explicit_approval",
+        "test_change_notes.ChangeNotesTests.test_cli_full_pipeline_uses_new_paths_and_never_overwrites_evidence",
+        "test_change_notes.ChangeNotesTests.test_prose_correction_can_repair_omitted_announcement_with_identical_packages"
+      ],
+      "applicability": "applicable",
+      "enforcing_files": ["scripts/change_notes.py"],
+      "evidence_limit": "Local deterministic positive/negative fixtures. Hashes and supplied human/evidence strings do not authenticate a person, verify an evidence URL, grant release authority or establish external enforcement."
+    }
+  ],
+  "exclusions": [
+    {
+      "scope": "HTTP/session/cookie/password, database, renderer/native, secret-bearing CI, transport and signing controls",
+      "reason": "This tool processes local public/synthetic JSON and emits files; it introduces no HTTP service, credentials, database, renderer, native package, dependency or workflow authority. These controls remain with the owners of those surfaces."
+    },
+    {
+      "scope": "Authenticated maintainer approval, GitHub source-history provenance, candidate and publication authority, retention storage and external deny/allow enforcement",
+      "reason": "Receipts are data, not authenticated credentials. STORY-001-015 and STORY-001-016 must independently verify trusted history, actual maintainer approval, immutable candidate/package identity and retained evidence before using annotations or replacing the public body. No remote release operation is implemented or enabled here."
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "notes": [
+    {
+      "schema_version": 1,
+      "pr": 101,
+      "issues": [1101],
+      "impact": "user",
+      "change_id": "resume-reading",
+      "kind": "capability",
+      "task": "Resume your reading",
+      "result": "Reopening a source returns you to the page you were reading.",
+      "platforms": ["Linux", "Windows", "macOS"],
+      "availability": "available",
+      "disclosures": {
+        "migration": null,
+        "reinstall": "Reinstall this synthetic quality build before continuing.",
+        "removed_support": null,
+        "format_adapter": null,
+        "privacy_transfers": null,
+        "security_urgency": null,
+        "limitations": null
+      },
+      "claims": []
+    },
+    {
+      "schema_version": 1,
+      "pr": 102,
+      "issues": [1102],
+      "impact": "user",
+      "change_id": "resume-reading",
+      "kind": "capability",
+      "task": "Resume your reading",
+      "result": "Keep the current page across restarts.",
+      "platforms": ["Linux", "Windows", "macOS"],
+      "availability": "available",
+      "disclosures": {
+        "migration": null,
+        "reinstall": null,
+        "removed_support": null,
+        "format_adapter": null,
+        "privacy_transfers": null,
+        "security_urgency": null,
+        "limitations": null
+      },
+      "claims": []
+    },
+    {
+      "schema_version": 1,
+      "pr": 103,
+      "issues": [1103],
+      "impact": "none",
+      "reason": "Repository test maintenance has no installed-user effect."
+    },
+    {
+      "schema_version": 1,
+      "pr": 104,
+      "issues": [1104],
+      "impact": "user",
+      "change_id": "export-notes",
+      "kind": "capability",
+      "task": "Export your notes",
+      "result": "Write your selected notes to a local file.",
+      "platforms": ["Linux", "Windows", "macOS"],
+      "availability": "unfinished",
+      "disclosures": {
+        "migration": null,
+        "reinstall": null,
+        "removed_support": null,
+        "format_adapter": null,
+        "privacy_transfers": null,
+        "security_urgency": null,
+        "limitations": null
+      },
+      "claims": []
+    },
+    {
+      "schema_version": 1,
+      "pr": 105,
+      "issues": [1105],
+      "impact": "user",
+      "change_id": "open-sources",
+      "kind": "correction",
+      "task": "Open local sources",
+      "result": "Opening the synthetic source leaves the application responsive.",
+      "platforms": ["Linux", "Windows", "macOS"],
+      "availability": "available",
+      "disclosures": {
+        "migration": null,
+        "reinstall": null,
+        "removed_support": null,
+        "format_adapter": null,
+        "privacy_transfers": null,
+        "security_urgency": null,
+        "limitations": null
+      },
+      "claims": []
+    }
+  ]
+}
