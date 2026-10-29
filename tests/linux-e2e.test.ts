@@ -173,7 +173,9 @@ describe("immutable browser parity", () => {
 
 describe("rebuilt browser artifacts", () => {
   it("rejects changed, missing and extra native files independently of browser revision labels", () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "ohtia-artifacts-"));
+    const root = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), "ohtia artifacts ñ-")),
+    );
     try {
       const file = path.join(root, "binary");
       fs.writeFileSync(file, "synthetic native artifact");
