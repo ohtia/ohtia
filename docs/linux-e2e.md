@@ -115,7 +115,7 @@ Construction requires Docker Engine 25 or later, whose image export is an OCI im
 
 Inside the container, the harness requires the WebKit receipt to name this checkout's recipe and build-manifest hashes, the pinned patched source tree, the compilation receipt, the installed artifact inventory and the launcher hash. The receipt hash is recorded as run evidence.
 
-The package is created by its first publication. Its repository Actions access, package-write and re-run permissions, public visibility for anonymous downloads and the optional runner variable are administrative settings governed by [repository policy](repository-policy.md).[^github-package-access]
+The package is created by its first publication and is private. This repository's workflows pull it with their workflow token; anonymous downloads are refused, and a local run that pulls it needs a registry login with read access to the package. Its private visibility, repository Actions access, package-write and re-run permissions and the optional runner variable are administrative settings governed by [repository policy](repository-policy.md).[^github-package-access]
 
 ### Recipe
 
