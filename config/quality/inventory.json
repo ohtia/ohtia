@@ -4,6 +4,7 @@
     "tests/desktop-probes.test.ts",
     "tests/desktop-runtime.test.ts",
     "tests/diagnostics.test.ts",
+    "tests/linux-e2e.test.ts",
     "tests/main-entry.test.ts",
     "tests/port.test.ts",
     "tests/preload-entry.test.ts",
@@ -59,6 +60,9 @@
     "scripts/tests/test_desktop_runtime.py",
     "scripts/tests/test_github_policy.py",
     "scripts/tests/test_github_pr.py",
+    "scripts/tests/test_linux_e2e.py",
+    "scripts/tests/test_linux_e2e_image.py",
+    "scripts/tests/test_linux_e2e_image_ci.py",
     "scripts/tests/test_package_workspace.py",
     "scripts/tests/test_quality_delivery.py",
     "scripts/tests/test_quality_native.py",
@@ -191,6 +195,26 @@
       "id": "test_github_pr.TrustAndTransportTests.test_log_download_bounds_and_failures_use_real_child_processes",
       "platforms": ["win32"],
       "reason": "POSIX process/shell contract"
+    },
+    {
+      "id": "test_linux_e2e.LinuxE2ETests.test_root_is_denied_before_preparation",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux native account and container admission contract"
+    },
+    {
+      "id": "test_linux_e2e.LinuxE2ETests.test_source_archive_cannot_transfer_credentials_or_links",
+      "platforms": ["win32"],
+      "reason": "POSIX symbolic-link fixture; the Linux container route is explicitly Linux-only"
+    },
+    {
+      "id": "test_linux_e2e_image.ImageRecipeTests.test_vendor_fixture_links_are_recorded_without_reading_their_targets",
+      "platforms": ["win32"],
+      "reason": "POSIX source-link fixture; the image builder is explicitly Linux-only"
+    },
+    {
+      "id": "test_linux_e2e.LinuxE2ETests.test_profile_lifecycle_preserves_primary_exit_and_retains_used_or_unreadable_policy",
+      "platforms": ["win32"],
+      "reason": "POSIX shell profile lifecycle contract"
     }
   ],
   "vitest_inapplicable": [

@@ -35,6 +35,7 @@ The conventions for this register are defined in [Architecture decisions](../arc
 - [ADR-0019 — Pinned Linux environment for frontend verification](adr-0019-immutable-linux-e2e-environment.md) — Pin the Linux E2E image and browser dependencies while preserving actual desktop sandbox and coverage requirements.
 - [ADR-0020 — Declared GitHub policy and restricted CI authority](adr-0020-github-policy-and-trusted-ci.md) — Verify CI provenance before merge, require approval for external fork workflows and separate PR execution from publication authority.
 - [ADR-0021 — Versioned immutable desktop artifacts](adr-0021-versioned-desktop-artifacts.md) — Trace each desktop release to its source, locked components and final signed package without rebuilding during promotion.
+- [ADR-0040 — Input-addressed hosted producer for the Linux E2E image](adr-0040-hosted-linux-e2e-image-producer.md) — Identify the Linux E2E image by its declared recipe inputs, build it only on GitHub-hosted runners when no publication exists, and re-run waiting checks automatically.
 
 ## Interface foundations
 

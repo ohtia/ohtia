@@ -1,0 +1,117 @@
+name: Build Linux E2E image
+
+# Construction runs only when the image inputs have no input-addressed publication. After a
+# publication, pull-request checks that failed for lack of that image are re-run.
+on:
+  push:
+    branches: ["**"]
+    # Keep identical to image_inputs in config/desktop/linux-e2e-build.json.
+    paths:
+      - .dockerignore
+      - config/desktop/linux-e2e-build.json
+      - scripts/linux_e2e_image.py
+      - scripts/linux_e2e_image_inputs.py
+      - tools/linux-e2e/Dockerfile
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-e2e-image-${{ github.ref }}
+  # A newer push of the same branch supersedes an unfinished build of older inputs.
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    if: github.repository == 'ohtia/ohtia'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      inputs: ${{ steps.plan.outputs.inputs }}
+    steps:
+      - name: Check out image inputs
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Decide whether construction is required
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_ACTOR: ${{ github.actor }}
+        run: python3 scripts/linux_e2e_image_ci.py plan
+
+  image:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    # The standard runner builds at no cost; an optional repository variable names a larger runner.
+    runs-on: ${{ vars.LINUX_E2E_IMAGE_RUNNER || 'ubuntu-26.04' }}
+    timeout-minutes: ${{ vars.LINUX_E2E_IMAGE_RUNNER && 60 || 330 }}
+    # Branches with identical inputs build one at a time; a successor reuses the publication.
+    concurrency:
+      group: linux-e2e-image-inputs-${{ needs.plan.outputs.inputs }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out image source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+
+      - name: Make space on the standard runner
+        if: vars.LINUX_E2E_IMAGE_RUNNER == ''
+        run: sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet /opt/ghc
+
+      - name: Build and qualify image
+        id: build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_ACTOR: ${{ github.actor }}
+        run: python3 scripts/linux_e2e_image_ci.py build
+
+      - name: Publish qualified image
+        if: steps.build.outputs.published != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_ACTOR: ${{ github.actor }}
+        run: python3 scripts/linux_e2e_image_ci.py publish
+
+  recover:
+    needs: [plan, image]
+    # Runs once the publication exists, whether this run built it or found it.
+    if: >-
+      !cancelled() && needs.plan.result == 'success' &&
+      (needs.plan.outputs.build == 'false' || needs.image.result == 'success')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    # Recovery for one fingerprint is serialized so two runs never re-run the same check.
+    concurrency:
+      group: linux-e2e-image-recovery-${{ needs.plan.outputs.inputs }}
+      cancel-in-progress: false
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Check out image inputs
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Re-run pull-request checks waiting for this image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/linux_e2e_image_ci.py rerun

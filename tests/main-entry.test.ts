@@ -24,12 +24,19 @@ async function launch(
     asset?: string;
     ready?: boolean;
     loadFailure?: boolean;
+    instrumented?: boolean;
+    deferDocument?: boolean;
   } = {},
 ) {
   vi.resetModules();
   vi.useFakeTimers();
   vi.stubEnv("NODE_OPTIONS", "");
-  vi.stubEnv("OHTIA_RUNTIME_ACCEPTANCE", "0");
+  vi.stubEnv("OHTIA_RUNTIME_ACCEPTANCE", options.instrumented ? "1" : "0");
+  vi.stubEnv("OHTIA_RUNTIME_DEFER_DOCUMENT", options.deferDocument ? "1" : "0");
+  cleanups.push(() => {
+    Reflect.deleteProperty(globalThis, "__ohtiaLoadInitialDocument");
+    Reflect.deleteProperty(globalThis, "__ohtiaAcceptance");
+  });
   const constants = await import("../packages/contracts/src/index.js");
   const nativeFs = await import("node:fs");
   const profile = {
@@ -295,6 +302,39 @@ async function launch(
 }
 
 describe("broker composition with synthetic Electron adapters", () => {
+  it("records startup before loading the initial document only under explicit acceptance instrumentation", async () => {
+    const h = await launch({ instrumented: true, deferDocument: true });
+    expect(h.window.loadURL).toHaveBeenCalledExactlyOnceWith("about:blank");
+    const release = Reflect.get(globalThis, "__ohtiaLoadInitialDocument") as () => void;
+    expect(typeof release).toBe("function");
+    release();
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.window.loadURL).toHaveBeenNthCalledWith(2, h.constants.desktopDocument);
+    expect(h.window.loadURL).toHaveBeenCalledTimes(2);
+    expect(Reflect.get(globalThis, "__ohtiaLoadInitialDocument")).toBeUndefined();
+    const ordinary = await launch({ deferDocument: true });
+    expect(ordinary.window.loadURL).toHaveBeenCalledExactlyOnceWith(
+      ordinary.constants.desktopDocument,
+    );
+  });
+
+  it("bounds and disposes an unreleased initial-document acceptance barrier", async () => {
+    const h = await launch({ instrumented: true, deferDocument: true });
+    const expiredRelease = Reflect.get(globalThis, "__ohtiaLoadInitialDocument") as () => void;
+    await vi.advanceTimersByTimeAsync(h.constants.portLimits.application_start_ms);
+    expiredRelease();
+    expect(h.window.loadURL).toHaveBeenCalledExactlyOnceWith("about:blank");
+    expect(Reflect.get(globalThis, "__ohtiaLoadInitialDocument")).toBeUndefined();
+    expect(h.app.quit).toHaveBeenCalled();
+    const closed = await launch({ instrumented: true, deferDocument: true });
+    const closedRelease = Reflect.get(globalThis, "__ohtiaLoadInitialDocument") as () => void;
+    closed.window.emit("closed");
+    closedRelease();
+    expect(closed.window.loadURL).toHaveBeenCalledExactlyOnceWith("about:blank");
+    expect(Reflect.get(globalThis, "__ohtiaLoadInitialDocument")).toBeUndefined();
+  });
+
   it("refuses isolation admission and a second broker before starting a child", async () => {
     const refused = await launch({ admission: false });
     expect(refused.failure).toBeInstanceOf(Error);

@@ -1,0 +1,10 @@
+# Only the immutable image recipe enters the build context.
+**
+!scripts/
+!scripts/linux_e2e_image.py
+!config/
+!config/desktop/
+!config/desktop/linux-e2e-build.json
+!tools/
+!tools/linux-e2e/
+!tools/linux-e2e/Dockerfile

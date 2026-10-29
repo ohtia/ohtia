@@ -18,6 +18,9 @@ jobs:
     name: full-suite (ubuntu-26.04-x64)
     runs-on: ubuntu-26.04
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Check out source with full Git history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -73,6 +76,15 @@ jobs:
 
       - name: Run full test suite and quality checks
         run: python3 scripts/workspace.py run check
+
+      - name: Authenticate Linux E2E image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_ACTOR: ${{ github.actor }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GH_ACTOR" --password-stdin
+
+      - name: Run immutable sandboxed Linux E2E
+        run: bash tools/linux-e2e/run.sh --output .reports/linux-e2e-ci
 
   native:
     name: native (${{ matrix.id }})
