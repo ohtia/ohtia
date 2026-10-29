@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "pull_requests": [
+    {
+      "number": 101,
+      "body": "Synthetic fixture; no delivery claim.\n\n```ohtia-note\n{\n  \"schema_version\": 1,\n  \"pr\": 101,\n  \"issues\": [\n    1101\n  ],\n  \"impact\": \"user\",\n  \"change_id\": \"resume-reading\",\n  \"kind\": \"capability\",\n  \"task\": \"Resume your reading\",\n  \"result\": \"Reopening a source returns you to the page you were reading.\",\n  \"platforms\": [\n    \"Linux\",\n    \"Windows\",\n    \"macOS\"\n  ],\n  \"availability\": \"available\",\n  \"disclosures\": {\n    \"migration\": null,\n    \"reinstall\": \"Reinstall this synthetic quality build before continuing.\",\n    \"removed_support\": null,\n    \"format_adapter\": null,\n    \"privacy_transfers\": null,\n    \"security_urgency\": null,\n    \"limitations\": null\n  },\n  \"claims\": []\n}\n```\n"
+    },
+    {
+      "number": 102,
+      "body": "Synthetic fixture; no delivery claim.\n\n```ohtia-note\n{\n  \"schema_version\": 1,\n  \"pr\": 102,\n  \"issues\": [\n    1102\n  ],\n  \"impact\": \"user\",\n  \"change_id\": \"resume-reading\",\n  \"kind\": \"capability\",\n  \"task\": \"Resume your reading\",\n  \"result\": \"Keep the current page across restarts.\",\n  \"platforms\": [\n    \"Linux\",\n    \"Windows\",\n    \"macOS\"\n  ],\n  \"availability\": \"available\",\n  \"disclosures\": {\n    \"migration\": null,\n    \"reinstall\": null,\n    \"removed_support\": null,\n    \"format_adapter\": null,\n    \"privacy_transfers\": null,\n    \"security_urgency\": null,\n    \"limitations\": null\n  },\n  \"claims\": []\n}\n```\n"
+    },
+    {
+      "number": 103,
+      "body": "Synthetic fixture; no delivery claim.\n\n```ohtia-note\n{\n  \"schema_version\": 1,\n  \"pr\": 103,\n  \"issues\": [\n    1103\n  ],\n  \"impact\": \"none\",\n  \"reason\": \"Repository test maintenance has no installed-user effect.\"\n}\n```\n"
+    },
+    {
+      "number": 104,
+      "body": "Synthetic fixture; no delivery claim.\n\n```ohtia-note\n{\n  \"schema_version\": 1,\n  \"pr\": 104,\n  \"issues\": [\n    1104\n  ],\n  \"impact\": \"user\",\n  \"change_id\": \"export-notes\",\n  \"kind\": \"capability\",\n  \"task\": \"Export your notes\",\n  \"result\": \"Write your selected notes to a local file.\",\n  \"platforms\": [\n    \"Linux\",\n    \"Windows\",\n    \"macOS\"\n  ],\n  \"availability\": \"unfinished\",\n  \"disclosures\": {\n    \"migration\": null,\n    \"reinstall\": null,\n    \"removed_support\": null,\n    \"format_adapter\": null,\n    \"privacy_transfers\": null,\n    \"security_urgency\": null,\n    \"limitations\": null\n  },\n  \"claims\": []\n}\n```\n"
+    },
+    {
+      "number": 105,
+      "body": "Synthetic fixture; no delivery claim.\n\n```ohtia-note\n{\n  \"schema_version\": 1,\n  \"pr\": 105,\n  \"issues\": [\n    1105\n  ],\n  \"impact\": \"user\",\n  \"change_id\": \"open-sources\",\n  \"kind\": \"correction\",\n  \"task\": \"Open local sources\",\n  \"result\": \"Opening the synthetic source leaves the application responsive.\",\n  \"platforms\": [\n    \"Linux\",\n    \"Windows\",\n    \"macOS\"\n  ],\n  \"availability\": \"available\",\n  \"disclosures\": {\n    \"migration\": null,\n    \"reinstall\": null,\n    \"removed_support\": null,\n    \"format_adapter\": null,\n    \"privacy_transfers\": null,\n    \"security_urgency\": null,\n    \"limitations\": null\n  },\n  \"claims\": []\n}\n```\n"
+    }
+  ]
+}

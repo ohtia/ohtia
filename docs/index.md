@@ -48,5 +48,6 @@ okf_version: "0.2"
 - [Native foundation qualification](native-qualification.md) — Assemble non-shipping native probes, admit independent profiles and retain complete target evidence without claiming partial native qualification.
 - [Native foundation qualification report](native-foundation-report.md) — Observed native desktop feasibility, source compatibility, packaging consequences and evidence limits for the required foundation platforms.
 - [Repository policy](repository-policy.md) — GitHub repository configuration, dependency updates, quality checks, and verification procedures.
+- [Change-note tooling](change-notes.md) — Capture inert PR impact records, reconcile source scope and prepare immutable editorial note and correction evidence.
 - [Desktop builds, releases and change notes](release-policy.md) — Quality-build triggers, immutable release promotion, public versioning and user-facing change communication.
 - [EPICs](epics/index.md) — Published delivery specifications and their native GitHub story sub-issues.
