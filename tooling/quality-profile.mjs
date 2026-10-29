@@ -4,6 +4,7 @@ import { Buffer } from "node:buffer";
 import os from "node:os";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
+import { selectStableTemporaryParent } from "./quality-fixture-paths.mjs";
 import {
   nativeProfileHost,
   loadRuntimeProfile,
@@ -21,7 +22,8 @@ if (operation === "prepare") {
   fs.mkdirSync(host.configurationRoot, { recursive: true, mode: 0o700 });
   fs.mkdirSync(host.researchRoot, { mode: 0o700 });
   const scratch = fs.mkdtempSync(path.join(host.home, ".ohtia-quality-"));
-  const stable = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "ohtia-stable-")));
+  const stableParent = selectStableTemporaryParent(host, [os.tmpdir(), process.env.RUNNER_TEMP]);
+  const stable = fs.realpathSync.native(fs.mkdtempSync(path.join(stableParent, "ohtia-stable-")));
   const stable_roots = {};
   for (const name of ["configuration", "store", "recovery"]) {
     const root = path.join(stable, name);

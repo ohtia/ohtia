@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import quality_delivery as delivery
@@ -107,6 +108,99 @@ class VirtualMachineTests(unittest.TestCase):
                 download.assert_called_once()
             self.assertEqual(json.loads((output / "result.json").read_text())["status"], "failed")
             self.assertTrue((root / "artifacts" / cell["id"]).is_dir())
+
+    def test_guest_packaging_dependencies_and_modern_disk_device_options(self):
+        for profile in ("fedora-44", "debian-13"):
+            config = json.loads(
+                vm.cloud_config(profile, "ssh-ed25519 synthetic-key").split("\n", 1)[1]
+            )
+            self.assertIn("binutils", config["packages"])
+        args = vm.home_disk_arguments(Path("/fixture/home.qcow2"))
+        self.assertIn("file=/fixture/home.qcow2,format=qcow2,if=none,id=quality-home", args)
+        self.assertIn("virtio-blk-pci,drive=quality-home,serial=ohtia-quality-home", args)
+        self.assertNotIn("serial=", args[1])
+        root_args = vm.root_disk_arguments(Path("/fixture/root.qcow2"))
+        self.assertIn("file=/fixture/root.qcow2,format=qcow2,if=none,id=quality-os", root_args)
+        self.assertIn("virtio-blk-pci,drive=quality-os,bootindex=1", root_args)
+
+    def test_guest_diagnostics_exclude_keys_and_reject_aliases(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            attempt = root / "attempt"
+            attempt.mkdir()
+            output = root / "output"
+            output.mkdir()
+            for name in ("qemu.log", "serial.log", "ssh-key"):
+                (attempt / name).write_text("synthetic " + name)
+            vm.retain_diagnostics(attempt, output)
+            self.assertEqual({p.name for p in output.iterdir()}, {"qemu.log", "serial.log"})
+            self.assertEqual((output / "serial.log").read_text(), "synthetic serial.log")
+            (attempt / "qemu.log").unlink()
+            (attempt / "qemu.log").symlink_to(attempt / "ssh-key")
+            with self.assertRaises(delivery.DeliveryError):
+                vm.retain_diagnostics(attempt, output)
+
+    def test_cleanup_failure_still_retains_logs_and_never_overwrites_aliases(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            attempt = root / "attempt"
+            attempt.mkdir()
+            output = root / "output"
+            output.mkdir()
+            (attempt / "qemu.log").write_text("synthetic boot failure")
+            child = SimpleNamespace(
+                poll=Mock(return_value=None),
+                kill=Mock(),
+                wait=Mock(side_effect=subprocess.TimeoutExpired("qemu", 10)),
+            )
+            self.assertFalse(vm.finish_guest(child, attempt, output))
+            self.assertEqual((output / "qemu.log").read_text(), "synthetic boot failure")
+            (output / "qemu.log").unlink()
+            secret = root / "key"
+            secret.write_text("synthetic untouched")
+            (output / "qemu.log").symlink_to(secret)
+            self.assertFalse(vm.finish_guest(None, attempt, output))
+            self.assertEqual(secret.read_text(), "synthetic untouched")
+            (output / "qemu.log").unlink()
+            (attempt / "qemu.log").unlink()
+            (attempt / "qemu.log").hardlink_to(secret)
+            with self.assertRaises(delivery.DeliveryError):
+                vm.retain_diagnostics(attempt, output)
+
+    def test_existing_attempt_never_authorizes_diagnostic_copy(self):
+        cell = next(
+            c
+            for c in delivery.cells(delivery.read(delivery.ROOT / "config/desktop/targets.json"))
+            if c["id"] == "fedora-44-x64-vm"
+        )
+        policy = delivery.read(delivery.ROOT / "config/quality/virtual-machines.json")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            attempt = root / "artifacts" / cell["id"]
+            attempt.mkdir(parents=True)
+            output = root / "output"
+            output.mkdir()
+            (attempt / "qemu.log").write_text("old evidence")
+            with (
+                patch.object(vm, "ROOT", root),
+                patch.dict(
+                    os.environ, {"GITHUB_ACTIONS": "true", "RUNNER_ENVIRONMENT": "github-hosted"}
+                ),
+                patch.object(vm.platform, "machine", return_value="x86_64"),
+                patch.object(
+                    vm.platform,
+                    "freedesktop_os_release",
+                    return_value={"ID": "ubuntu", "VERSION_ID": "26.04"},
+                ),
+                patch.object(vm.Path, "is_char_device", return_value=True),
+                patch.object(vm.os, "access", return_value=True),
+                patch.object(delivery, "identity", return_value={}),
+                patch.object(delivery, "plan", return_value={"cells": [cell]}),
+                patch.object(delivery, "read", return_value=policy),
+                patch.object(sys, "argv", ["quality_vm.py", cell["id"], str(output)]),
+            ):
+                self.assertEqual(vm.main(), 1)
+            self.assertEqual(list(output.iterdir()), [])
 
 
 if __name__ == "__main__":

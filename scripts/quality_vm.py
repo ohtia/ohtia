@@ -9,6 +9,7 @@ import os
 import platform
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -47,6 +48,7 @@ def cloud_config(profile: str, public_key: str) -> str:
     packages = (
         [
             "python3",
+            "binutils",
             "git",
             "sudo",
             "curl",
@@ -74,6 +76,7 @@ def cloud_config(profile: str, public_key: str) -> str:
         if profile == "fedora-44"
         else [
             "python3",
+            "binutils",
             "git",
             "sudo",
             "curl",
@@ -169,12 +172,79 @@ def ssh_arguments(key: Path, known: Path, port: int) -> list:
     ]
 
 
+def home_disk_arguments(home: Path) -> list[str]:
+    """Attach the identified home disk through supported block/backend device options."""
+    return [
+        "-drive",
+        f"file={home},format=qcow2,if=none,id=quality-home",
+        "-device",
+        "virtio-blk-pci,drive=quality-home,serial=ohtia-quality-home",
+    ]
+
+
+def retain_diagnostics(attempt: Path, output: Path) -> None:
+    """Retain fresh single-link QEMU/serial logs without following aliases or overwriting evidence."""
+    for name in ("qemu.log", "serial.log"):
+        source = attempt / name
+        try:
+            initial = source.lstat()
+        except FileNotFoundError:
+            continue
+        delivery.require(
+            stat.S_ISREG(initial.st_mode) and initial.st_nlink == 1, "Unsafe guest diagnostic path."
+        )
+        descriptor = os.open(
+            source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        )
+        with os.fdopen(descriptor, "rb") as incoming:
+            actual = os.fstat(incoming.fileno())
+            delivery.require(
+                stat.S_ISREG(actual.st_mode)
+                and actual.st_nlink == 1
+                and (actual.st_dev, actual.st_ino) == (initial.st_dev, initial.st_ino),
+                "Guest diagnostic identity changed.",
+            )
+            with (output / name).open("xb") as target:
+                shutil.copyfileobj(incoming, target)
+
+
+def finish_guest(child, attempt: Path | None, output: Path | None) -> bool:
+    """Attempt bounded shutdown and diagnostic retention independently; failures stay nonzero."""
+    successful = True
+    try:
+        if child is not None and child.poll() is None:
+            child.kill()
+            child.wait(timeout=10)
+    except (OSError, subprocess.SubprocessError) as error:
+        print(f"Native VM delivery failed during cleanup: {error}", file=sys.stderr)
+        successful = False
+    try:
+        if attempt is not None and output is not None:
+            retain_diagnostics(attempt, output)
+    except (OSError, delivery.DeliveryError) as error:
+        print(f"Native VM delivery failed retaining diagnostics: {error}", file=sys.stderr)
+        successful = False
+    return successful
+
+
+def root_disk_arguments(disk: Path) -> list[str]:
+    return [
+        "-drive",
+        f"file={disk},format=qcow2,if=none,id=quality-os",
+        "-device",
+        "virtio-blk-pci,drive=quality-os,bootindex=1",
+    ]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("cell")
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
     child = None
+    attempt = None
+    evidence_output = None
+    cleanup_ok = True
     try:
         delivery.require(
             os.environ.get("GITHUB_ACTIONS") == "true"
@@ -197,9 +267,11 @@ def main() -> int:
             cell["target"] == "linux-x64" and args.cell.endswith("-vm"),
             "Only the declared x64 VM cells are admitted.",
         )
-        attempt = ROOT / "artifacts" / args.cell
-        attempt.mkdir(parents=True)
+        candidate_attempt = ROOT / "artifacts" / args.cell
+        candidate_attempt.mkdir(parents=True)
+        attempt = candidate_attempt
         args.output.mkdir(parents=True)
+        evidence_output = args.output
         # Keep boot/provision failures attributable even when no guest report can be produced.
         delivery.write(
             args.output / "result.json",
@@ -278,8 +350,7 @@ def main() -> int:
                 str(policy["vcpus"]),
                 "-m",
                 str(policy["memory_mib"]),
-                "-drive",
-                f"file={disk},format=qcow2,if=virtio",
+                *root_disk_arguments(disk),
                 "-drive",
                 f"file={seed},media=cdrom,format=raw",
                 "-device",
@@ -299,7 +370,7 @@ def main() -> int:
                 "-no-reboot",
             ]
             if home.exists():
-                argv += ["-drive", f"file={home},format=qcow2,if=virtio,serial=ohtia-quality-home"]
+                argv += home_disk_arguments(home)
             with (attempt / "qemu.log").open("wb") as log:
                 child = subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT)
                 deadline = time.monotonic() + policy["deadline_seconds"]
@@ -397,10 +468,8 @@ def main() -> int:
         print(f"Native VM delivery failed: {error}", file=sys.stderr)
         return 1
     finally:
-        if child is not None and child.poll() is None:
-            child.kill()
-            child.wait(timeout=10)
-    return 0
+        cleanup_ok = finish_guest(child, attempt, evidence_output)
+    return 0 if cleanup_ok else 1
 
 
 if __name__ == "__main__":

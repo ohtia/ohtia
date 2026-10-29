@@ -62,6 +62,7 @@ def build_environment() -> dict:
         "LC_ALL",
         "GITHUB_ACTIONS",
         "RUNNER_ENVIRONMENT",
+        "RUNNER_TEMP",
         "GITHUB_RUN_ID",
         "GITHUB_RUN_ATTEMPT",
         "OHTIA_QUALITY_VM",
@@ -82,6 +83,28 @@ def build_environment() -> dict:
         }
     )
     return env
+
+
+def macos_filesystem(directory: Path) -> str:
+    """Resolve the directory's containing device before querying its filesystem type."""
+    rows = command(["/bin/df", "-P", directory], capture=True).splitlines()
+    delivery.require(len(rows) == 2, "Cannot identify the native data volume.")
+    columns = rows[1].split()
+    delivery.require(
+        len(columns) >= 6 and columns[0].startswith("/dev/"),
+        "A native local data volume is required.",
+    )
+    device = columns[0]
+    record = plistlib.loads(
+        command(["/usr/sbin/diskutil", "info", "-plist", device], capture=True).encode("utf-8")
+    )
+    delivery.require(
+        isinstance(record, dict)
+        and record.get("DeviceNode") == device
+        and isinstance(record.get("FilesystemType"), str),
+        "Native volume identity or filesystem type is unavailable.",
+    )
+    return record["FilesystemType"]
 
 
 def host_matches(cell: dict) -> dict:
@@ -151,9 +174,7 @@ def host_matches(cell: dict) -> dict:
             check=False,
         )
         delivery.require(translated.stdout.strip() != "1", "Rosetta is not native execution.")
-        filesystem = plistlib.loads(
-            subprocess.check_output(["/usr/sbin/diskutil", "info", "-plist", str(Path.home())])
-        )["FilesystemType"]
+        filesystem = macos_filesystem(Path.home())
         delivery.require(filesystem.lower() == "apfs", "Unqualified macOS filesystem.")
     else:
         release = command(

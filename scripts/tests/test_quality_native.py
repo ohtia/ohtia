@@ -5,6 +5,7 @@ from __future__ import annotations
 import ctypes
 import json
 import os
+import plistlib
 import subprocess
 import sys
 import tempfile
@@ -356,6 +357,77 @@ await recordReadyNativeProcesses({evaluate: async callback => callback({app: {
         ):
             self.assertEqual(native.processes(Path("/synthetic/package"), known), [])
             self.assertEqual(json.loads(command.call_args.args[0][-1]), [known[-1]])
+
+    def test_macos_filesystem_queries_the_containing_device_and_binds_the_result(self):
+        home = Path("/Users/runner")
+        listing = "Filesystem 512-blocks Used Available Capacity Mounted on\n/dev/disk3s5 100 40 60 40% /System/Volumes/Data\n"
+        info = plistlib.dumps({"DeviceNode": "/dev/disk3s5", "FilesystemType": "apfs"}).decode()
+        with patch.object(native, "command", side_effect=[listing, info]) as command:
+            self.assertEqual(native.macos_filesystem(home), "apfs")
+            self.assertEqual(command.call_args_list[0].args[0], ["/bin/df", "-P", home])
+            self.assertEqual(
+                command.call_args_list[1].args[0],
+                ["/usr/sbin/diskutil", "info", "-plist", "/dev/disk3s5"],
+            )
+        wrong = plistlib.dumps({"DeviceNode": "/dev/disk9s1", "FilesystemType": "apfs"}).decode()
+        with patch.object(native, "command", side_effect=[listing, wrong]):
+            with self.assertRaises(delivery.DeliveryError):
+                native.macos_filesystem(home)
+        with patch.object(
+            native,
+            "command",
+            return_value="Filesystem Blocks Used Free Capacity Mounted on\nremote:/share 100 40 60 40% /Users\n",
+        ):
+            with self.assertRaises(delivery.DeliveryError):
+                native.macos_filesystem(home)
+
+        for record in (
+            [],
+            {"DeviceNode": "/dev/disk3s5"},
+            {"DeviceNode": "/dev/disk3s5", "FilesystemType": 42},
+        ):
+            with patch.object(
+                native, "command", side_effect=[listing, plistlib.dumps(record).decode()]
+            ):
+                with self.assertRaises(delivery.DeliveryError):
+                    native.macos_filesystem(home)
+        with patch.object(native, "command", return_value="Filesystem\n"):
+            with self.assertRaises(delivery.DeliveryError):
+                native.macos_filesystem(home)
+
+    def test_stable_fixtures_use_external_temp_without_weakening_native_admission(self):
+        script = r"""
+import assert from 'node:assert/strict';
+import path from 'node:path';
+import {selectStableTemporaryParent} from './tooling/quality-fixture-paths.mjs';
+import {admitRuntimeProfile} from './packages/contracts/dist/index.js';
+const home='C:\\Users\\runneradmin';
+const contains=(a,b)=>{const r=path.win32.relative(a,b);return r===''||(!path.win32.isAbsolute(r)&&r!=='..'&&!r.startsWith('..\\'));};
+const host={username:'runneradmin',target:'win32-x64',home,
+configurationRoot:path.win32.join(home,'AppData','Roaming'), researchRoot:path.win32.join(home,'ohtia'),
+canonical:p=>p,contains,owned:()=>true};
+const inside=path.win32.join(home,'AppData','Local','Temp');
+const outside='D:\\a\\_temp';
+const profile={schema_version:1,kind:'independent-native-profile',inspected_by:'agent:github-actions',
+username:host.username,target:host.target,home,configuration_root:host.configurationRoot,
+research_root:host.researchRoot,scratch_root:path.win32.join(home,'.quality-scratch'),
+stable_roots:Object.fromEntries(['configuration','store','recovery'].map(role=>[role,{root:path.win32.join(inside,role),sentinel_sha256:'a'.repeat(64)}])),
+manual_checks:Object.fromEntries(['independent_account_or_vm','no_emulation','local_owned_unsynchronized_volumes','no_credentials','stable_roots_complete','native_security_and_display'].map(key=>[key,true]))};
+assert.throws(()=>admitRuntimeProfile(profile,host));
+const selected=selectStableTemporaryParent(host,[inside,outside]);assert.equal(selected,outside);
+for(const [role,entry] of Object.entries(profile.stable_roots))entry.root=path.win32.join(selected,role);
+assert.equal(admitRuntimeProfile(profile,host),profile);
+assert.throws(()=>selectStableTemporaryParent(host,[inside]));
+const posix={home:'/home/runner',canonical:p=>p,contains:(a,b)=>b===a||b.startsWith(a+'/')};
+assert.equal(selectStableTemporaryParent(posix,['/tmp','/home/runner/work/_temp']),'/tmp');
+"""
+        subprocess.run(
+            [str(native.workspace.node_path()), "--input-type=module", "-e", script],
+            cwd=delivery.ROOT,
+            check=True,
+            capture_output=True,
+            timeout=60,
+        )
 
 
 if __name__ == "__main__":

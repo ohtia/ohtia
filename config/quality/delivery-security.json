@@ -66,14 +66,18 @@
         "scripts/quality_native.py",
         "tooling/quality-packaging/after-install.sh",
         "scripts/quality_processes.py",
-        "tooling/desktop-native-observation.mjs"
+        "tooling/desktop-native-observation.mjs",
+        "tooling/quality-fixture-paths.mjs",
+        "scripts/quality_vm.py"
       ],
       "deterministic_tests": [
         "test_quality_native.NativeTests.test_local_accounts_never_become_automatic_hosted_fixtures",
         "test_quality_native.NativeTests.test_host_target_mismatch_fails_before_native_launch",
         "test_quality_native.NativeTests.test_failed_renderer_query_is_ignored_only_after_confirmed_exit",
         "test_quality_native.NativeTests.test_linux_identity_is_bound_to_process_start_time",
-        "test_quality_native.NativeTests.test_ready_process_producer_publishes_complete_atomic_linux_identity"
+        "test_quality_native.NativeTests.test_ready_process_producer_publishes_complete_atomic_linux_identity",
+        "test_quality_native.NativeTests.test_stable_fixtures_use_external_temp_without_weakening_native_admission",
+        "test_quality_vm.VirtualMachineTests.test_guest_diagnostics_exclude_keys_and_reject_aliases"
       ],
       "native_evidence": "Identified native Actions job result.json, package/report digests and native observation attachments; local fixtures do not establish hosted execution.",
       "external_evidence": "Maintainer-approved policy plan and successful live apply/readback before expanded action use; independent reviewed verifier before human integration."
