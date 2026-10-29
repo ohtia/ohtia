@@ -8,6 +8,20 @@
         "Check out repository and history",
         "Record tested revision",
         "Set up Python",
+        "Require every quality job",
+        "Download native quality artifacts",
+        "Verify complete native quality delivery",
+        "Retain coordinated quality evidence",
+        "Complete job"
+      ],
+      "optional_steps": ["Post Set up Python", "Post Check out repository and history"]
+    },
+    "repository-checks": {
+      "steps": [
+        "Set up job",
+        "Check out repository and history",
+        "Record tested revision",
+        "Set up Python",
         "Set up frozen workspace",
         "Run repository hooks",
         "Scan committed history for secrets",
@@ -15,6 +29,258 @@
         "Complete job"
       ],
       "optional_steps": ["Post Set up Python", "Post Check out repository and history"]
+    },
+    "native (ubuntu-24-04-x64-x11)": {
+      "steps": [
+        "Set up job",
+        "Check out repository and history",
+        "Set up Python",
+        "Record tested revision",
+        "Prepare native Linux dependencies",
+        "Set up frozen workspace",
+        "Build and smoke-test native packages",
+        "Retain native quality artifacts",
+        "Complete job"
+      ],
+      "optional_steps": [
+        "Post Set up Python",
+        "Post Check out repository and history",
+        "Prepare native VM acceleration"
+      ]
+    },
+    "native (ubuntu-24-04-x64-wayland)": {
+      "steps": [
+        "Set up job",
+        "Check out repository and history",
+        "Set up Python",
+        "Record tested revision",
+        "Prepare native Linux dependencies",
+        "Set up frozen workspace",
+        "Build and smoke-test native packages",
+        "Retain native quality artifacts",
+        "Complete job"
+      ],
+      "optional_steps": [
+        "Post Set up Python",
+        "Post Check out repository and history",
+        "Prepare native VM acceleration"
+      ]
+    },
+    "native (ubuntu-24-04-arm64-x11)": {
+      "steps": [
+        "Set up job",
+        "Check out repository and history",
+        "Set up Python",
+        "Record tested revision",
+        "Prepare native Linux dependencies",
+        "Set up frozen workspace",
+        "Build and smoke-test native packages",
+        "Retain native quality artifacts",
+        "Complete job"
+      ],
+      "optional_steps": [
+        "Post Set up Python",
+        "Post Check out repository and history",
+        "Prepare native VM acceleration"
+      ]
+    },
+    "native (ubuntu-24-04-arm64-wayland)": {
+      "steps": [
+        "Set up job",
+        "Check out repository and history",
+        "Set up Python",
+        "Record tested revision",
+        "Prepare native Linux dependencies",
+        "Set up frozen workspace",
+        "Build and smoke-test native packages",
+        "Retain native quality artifacts",
+        "Complete job"
+      ],
+      "optional_steps": [
+        "Post Set up Python",
+        "Post Check out repository and history",
+        "Prepare native VM acceleration"
+      ]
+    },
+    "native (ubuntu-26-04-x64-x11)": {
+      "steps": [
+        "Set up job",
+        "Check out repository and history",
+        "Set up Python",
+        "Record tested revision",
+        "Prepare native Linux dependencies",
+        "Set up frozen workspace",
+        "Build and smoke-test native packages",
+        "Retain native quality artifacts",
+        "Complete job"
+      ],
+      "optional_steps": [
+        "Post Set up Python",
+        "Post Check out repository and history",
+        "Prepare native VM acceleration"
+      ]
+    },
+    "native (ubuntu-26-04-x64-wayland)": {
+      "steps": [
+        "Set up job",
+        "Check out repository and history",
+        "Set up Python",
+        "Record tested revision",
+        "Prepare native Linux dependencies",
+        "Set up frozen workspace",
+        "Build and smoke-test native packages",
+        "Retain native quality artifacts",
+        "Complete job"
+      ],
+      "optional_steps": [
+        "Post Set up Python",
+        "Post Check out repository and history",
+        "Prepare native VM acceleration"
+      ]
+    },
+    "native (ubuntu-26-04-arm64-x11)": {
+      "steps": [
+        "Set up job",
+        "Check out repository and history",
+        "Set up Python",
+        "Record tested revision",
+        "Prepare native Linux dependencies",
+        "Set up frozen workspace",
+        "Build and smoke-test native packages",
+        "Retain native quality artifacts",
+        "Complete job"
+      ],
+      "optional_steps": [
+        "Post Set up Python",
+        "Post Check out repository and history",
+        "Prepare native VM acceleration"
+      ]
+    },
+    "native (ubuntu-26-04-arm64-wayland)": {
+      "steps": [
+        "Set up job",
+        "Check out repository and history",
+        "Set up Python",
+        "Record tested revision",
+        "Prepare native Linux dependencies",
+        "Set up frozen workspace",
+        "Build and smoke-test native packages",
+        "Retain native quality artifacts",
+        "Complete job"
+      ],
+      "optional_steps": [
+        "Post Set up Python",
+        "Post Check out repository and history",
+        "Prepare native VM acceleration"
+      ]
+    },
+    "native (windows-x64)": {
+      "steps": [
+        "Set up job",
+        "Check out repository and history",
+        "Set up Python",
+        "Record tested revision",
+        "Set up frozen workspace",
+        "Build and smoke-test native packages",
+        "Retain native quality artifacts",
+        "Complete job"
+      ],
+      "optional_steps": [
+        "Post Set up Python",
+        "Post Check out repository and history",
+        "Prepare native Linux dependencies",
+        "Prepare native VM acceleration"
+      ]
+    },
+    "native (windows-arm64)": {
+      "steps": [
+        "Set up job",
+        "Check out repository and history",
+        "Set up Python",
+        "Record tested revision",
+        "Set up frozen workspace",
+        "Build and smoke-test native packages",
+        "Retain native quality artifacts",
+        "Complete job"
+      ],
+      "optional_steps": [
+        "Post Set up Python",
+        "Post Check out repository and history",
+        "Prepare native Linux dependencies",
+        "Prepare native VM acceleration"
+      ]
+    },
+    "native (macos-26-arm64)": {
+      "steps": [
+        "Set up job",
+        "Check out repository and history",
+        "Set up Python",
+        "Record tested revision",
+        "Set up frozen workspace",
+        "Build and smoke-test native packages",
+        "Retain native quality artifacts",
+        "Complete job"
+      ],
+      "optional_steps": [
+        "Post Set up Python",
+        "Post Check out repository and history",
+        "Prepare native Linux dependencies",
+        "Prepare native VM acceleration"
+      ]
+    },
+    "native (macos-27-arm64)": {
+      "steps": [
+        "Set up job",
+        "Check out repository and history",
+        "Set up Python",
+        "Record tested revision",
+        "Set up frozen workspace",
+        "Build and smoke-test native packages",
+        "Retain native quality artifacts",
+        "Complete job"
+      ],
+      "optional_steps": [
+        "Post Set up Python",
+        "Post Check out repository and history",
+        "Prepare native Linux dependencies",
+        "Prepare native VM acceleration"
+      ]
+    },
+    "native (fedora-44-x64-vm)": {
+      "steps": [
+        "Set up job",
+        "Check out repository and history",
+        "Set up Python",
+        "Record tested revision",
+        "Prepare native Linux dependencies",
+        "Prepare native VM acceleration",
+        "Build and smoke-test native packages",
+        "Retain native quality artifacts",
+        "Complete job"
+      ],
+      "optional_steps": [
+        "Post Set up Python",
+        "Post Check out repository and history",
+        "Set up frozen workspace"
+      ]
+    },
+    "native (debian-13-x64-vm)": {
+      "steps": [
+        "Set up job",
+        "Check out repository and history",
+        "Set up Python",
+        "Record tested revision",
+        "Prepare native Linux dependencies",
+        "Prepare native VM acceleration",
+        "Build and smoke-test native packages",
+        "Retain native quality artifacts",
+        "Complete job"
+      ],
+      "optional_steps": [
+        "Post Set up Python",
+        "Post Check out repository and history",
+        "Set up frozen workspace"
+      ]
     }
   }
 }

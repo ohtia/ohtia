@@ -25,6 +25,8 @@ TRUSTED_FILES = (
     "scripts/github_policy.py",
     "config/github/ci-verification.json",
     ".github/workflows/ci.yml",
+    "scripts/quality_delivery.py",
+    "config/quality/build-targets.json",
 )
 MARKER = "OHTIA_CI_PROVENANCE="
 
@@ -105,8 +107,8 @@ def load_policy(path: Path, unique_object) -> dict:
             "Overlapping or empty step inventory",
         )
     require(
-        sum("Record tested revision" in j["steps"] for j in policy["jobs"].values()) == 1,
-        "Exactly one job must record the tested revision",
+        all("Record tested revision" in j["steps"] for j in policy["jobs"].values()),
+        "Every required job must record its actual tested revision",
     )
     return policy
 
@@ -374,7 +376,7 @@ def verify(
     require(app["slug"] == "github-actions", "Unexpected GitHub Actions app")
     positive(app["id"])
     result_jobs = []
-    receipt = None
+    receipts = {}
     for job in jobs:
         require(
             job["run_id"] == run_id and job["run_attempt"] == attempt and job["head_sha"] == head,
@@ -409,7 +411,7 @@ def verify(
             if step["name"] in declared["steps"] or step.get("conclusion") != "skipped":
                 successful(step, "step")
         if "Record tested revision" in declared["steps"]:
-            receipt = receipt_from_log(log_reader(job["id"]), unique_object)
+            receipts[job["name"]] = receipt_from_log(log_reader(job["id"]), unique_object)
         result_jobs.append({"id": job["id"], "name": job["name"], "steps": names})
     expected = {
         "schema_version": 1,
@@ -426,10 +428,14 @@ def verify(
         "tree_sha": tree,
     }
     require(
-        receipt == expected
+        set(receipts) == set(policy["jobs"])
         and all(
-            type(receipt[k]) is int
-            for k in ("schema_version", "run_id", "run_attempt", "pull_request")
+            receipt == expected
+            and all(
+                type(receipt[k]) is int
+                for k in ("schema_version", "run_id", "run_attempt", "pull_request")
+            )
+            for receipt in receipts.values()
         ),
         "Checkout provenance does not match the reviewed PR and run",
     )
@@ -464,6 +470,7 @@ def verify(
         "run_attempt": attempt,
         "github_app_id": app["id"],
         "jobs": result_jobs,
+        "checkouts": receipts,
         "limitation": "Maintainer-selected reviewed verifier; not a GitHub-enforced merge gate",
     }
 

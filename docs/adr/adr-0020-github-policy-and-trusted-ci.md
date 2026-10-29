@@ -2,10 +2,6 @@
 type: DecisionRecord
 title: "ADR-0020 — Declared GitHub policy and restricted CI authority"
 description: "Verify CI provenance before merge, require approval for external fork workflows and separate PR execution from publication authority."
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: github
     resource: "https://docs.github.com/en/actions/reference/security/secure-use"
@@ -22,6 +18,16 @@ sources:
   - id: organization-rulesets
     resource: "https://docs.github.com/en/organizations/managing-organization-settings/creating-rulesets-for-repositories-in-your-organization"
     title: "GitHub — Creating rulesets for repositories in your organization"
+  - id: public-runners
+    resource: https://docs.github.com/en/actions/reference/runners/github-hosted-runners#standard-github-hosted-runners-for-public-repositories
+    title: GitHub standard runners for public repositories
+  - id: macos-27-image
+    resource: https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md
+    title: GitHub macOS 27 Apple Silicon image
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # ADR-0020 — Declared GitHub policy and restricted CI authority
@@ -35,6 +41,24 @@ A workflow file alone does not prove live branch protection or correct check pro
 Keep repository/Actions/label/ruleset configuration versioned and use plan/apply/readback verification for authorized administrative changes. [Repository policy](../repository-policy.md) is canonical for exact settings and commands; [AGENTS.md](../../AGENTS.md) owns issue, review, signature and PR conventions. Do not duplicate those operational definitions here.
 
 Use GitHub Actions for common quality entries with a read-only default token, full-SHA action pins, nonpersisted checkout credentials and isolated synthetic checks. GitHub recommends minimizing token authority and treating untrusted checkout carefully.[^github] Identify required results by their actual workflow, event and tested SHA, not a green display name alone.
+
+### Recurring hosted quality matrix
+
+Recurring PR and integrated-source verification needs available native machines. Requiring every distribution qualification profile in every CI run would require infrastructure beyond the standard GitHub-hosted service. The repository uses GitHub Free and is public. The maintainer selected GitHub's supplied Windows runners on both CPUs, Ubuntu 24.04 and 26.04 on both CPUs, and the available macOS families for recurring CI. This changes the quality-build inventory; it does not certify a different distribution baseline.
+
+Consider a complete custom native runner fleet, standard hosted machines with explicitly bounded coverage, and cross-compilation alone. A custom fleet adds provisioning and persistent operational authority. Cross-compilation cannot establish native execution. Standard hosted VMs provide recurring native execution with disposable environments and no separately maintained runner fleet. GitHub lists the selected labels as standard runners available without runner-minute charges for public repositories; larger runners are a separate offering.[^public-runners]
+
+Use the fourteen mandatory cells in the [quality-build matrix](../../config/quality/build-targets.json): Ubuntu 24.04 and 26.04 on x64 and ARM64, Windows Server 2025 on x64, Windows 11 on ARM64, and macOS 26 and 27 on Apple Silicon. Use explicit labels rather than `latest`, `large`, `xlarge` or self-hosted runners. macOS 27 uses `xcode-27`, an available preview image.[^macos-27-image] Record each actual image, OS and CPU at execution; a catalog listing does not establish a successful run or perpetual service availability.
+
+Ubuntu has independent X11 and GNOME/Wayland jobs on both CPUs and versions. Add native x64 Fedora 44 and Debian 13 guests with GNOME/Wayland on separate standard Ubuntu 26.04 KVM jobs; Fedora keeps Btrfs and enforcing SELinux, and Debian keeps ext4. Record actual KVM acceleration and guest kernels; never fall back to TCG. [TD-001](../technical-debt.md#td-001--fedora-and-debian-arm64-guests-in-recurring-ci) owns the deferred ARM64 guest extension. Every selected cell is mandatory for the coordinated quality result, including Windows ARM64. Build DEB on Ubuntu and Debian, RPM on Fedora, offline per-user NSIS on Windows, and DMG plus ZIP on macOS, following [ADR-0038](adr-0038-desktop-delivery-mechanisms.md). Run the common packaged runtime, storage and privacy suites on actual package payloads in the disposable VM. Linux uses its declared private X11 or GNOME/Wayland session with Chromium sandboxing. Keep the independent pinned Linux E2E environment's scope and completion obligation; these hosted Ubuntu runs do not establish its image parity.
+
+The [distribution target manifest](../../config/desktop/targets.json) retains its OS floors, distributions, filesystems and display profiles for native feasibility and final signed distribution. Windows Server x64 is the recurring Windows x64 CI environment; it is not Windows 11 x64 acceptance. Hosted Ubuntu does not qualify Fedora or Debian; each guest supplies its own kernel, filesystem, security policy and GNOME/Wayland observations. Neither the hosted nor guest virtual software displays qualify physical graphics. Neither macOS family qualifies Intel. Full final-candidate distribution qualification remains with its owning delivery, using its actual final bytes and required profiles. PRIN-004, PRIN-006, PRIN-007 and PRIN-016 require these coverage distinctions to remain visible.
+
+Run the full selected matrix for PRs to `main` and pushes to `main`, including documentation changes. This conservative rule avoids an affected-scope exclusion becoming an untested build-input change. Identify development versions by run and attempt; preserve strict per-job checkout provenance, complete aggregation, explicit disposable retention and separate PR/main evidence. The [quality-build playbook](../quality-builds.md) owns commands and evidence handling. No quality run signs an official release, notarizes, publishes or reads a public updater feed.
+
+The recurring matrix is usable with GitHub Free on this public repository and requires no owned runners. Native builds still depend on the observed hosted image and service capacity; all native jobs may start independently within the account limits, and only the aggregate waits for them. A missing or failed cell fails the aggregate. Preview image failure is visible rather than replaced with another macOS family. Artifact storage has separate service limits, so bounded retention and an explicit evidence window remain necessary.
+
+Hosted quality evidence and distribution qualification have distinct inventories and guarantees. Release preparation cannot promote a quality-only Windows Server result into Windows 11 compatibility or treat omitted Fedora/Debian ARM64 CI jobs as native release evidence. Changing these inventories requires reviewed contracts, workflow/check inventory updates and applicable tests.
 
 ### CI provenance before merge
 
@@ -81,3 +105,7 @@ Policy drift and workflow authority become reviewable, with maintenance and live
 [^permissions-api]: GitHub exposes repository fork-contributor approval through a dedicated read/write Actions permissions endpoint.
 
 [^organization-rulesets]: GitHub documents organization rulesets as a Team/Enterprise feature; Ohtia's selected verification procedure uses the GitHub Free repository baseline.
+
+[^public-runners]: GitHub enumerates standard runner labels and public-repository usage terms separately from private-repository billing and larger runners.
+
+[^macos-27-image]: The selected image identifies macOS 27 on ARM64 and its preview scope; every run retains its actual image identity.

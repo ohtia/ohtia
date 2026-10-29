@@ -7,7 +7,12 @@
   "selected_actions": {
     "github_owned_allowed": false,
     "verified_allowed": false,
-    "patterns_allowed": ["actions/checkout@*", "actions/setup-python@*"]
+    "patterns_allowed": [
+      "actions/checkout@*",
+      "actions/setup-python@*",
+      "actions/upload-artifact@*",
+      "actions/download-artifact@*"
+    ]
   },
   "workflow": {
     "default_workflow_permissions": "read",

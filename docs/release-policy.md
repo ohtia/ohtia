@@ -2,14 +2,14 @@
 type: Specification
 title: "Desktop builds, releases and change notes"
 description: "Quality-build triggers, immutable release promotion, public versioning and user-facing change communication."
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: keep-a-changelog
     resource: "https://keepachangelog.com/en/1.1.0/"
     title: "Keep a Changelog — Human-readable release histories"
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # Desktop builds, releases and change notes
@@ -42,7 +42,7 @@ For exact-byte final candidates, use a separate OS user profile or VM whose nati
 
 ### Pull requests
 
-Creating or updating a PR targeting `main` triggers the shared checks applicable to its changes and consumers. Changes affecting application code, assets, native dependencies, lockfiles, runtime configuration, packaging or build tooling require quality builds and the applicable packaged smoke tests across the declared Windows, macOS and Linux OS/CPU matrix. Verify actual native execution on the targets it claims to cover; cross-compilation alone is not that evidence.
+Creating or updating a PR targeting `main` triggers the shared checks applicable to its changes and consumers. Changes affecting application code, assets, native dependencies, lockfiles, runtime configuration, packaging or build tooling require quality builds and the applicable packaged smoke tests across the recurring hosted Windows, macOS and Linux OS/CPU matrix selected by [ADR-0020](adr/adr-0020-github-policy-and-trusted-ci.md#recurring-hosted-quality-matrix). Distribution qualification retains its separate target/profile inventory. Verify actual native execution on the targets it claims to cover; cross-compilation alone is not that evidence.
 
 Apply [ADR-0016](adr/adr-0016-shared-quality-and-coverage-gates.md) and [ADR-0018](adr/adr-0018-vitest-and-playwright-desktop-tests.md) to affected-scope selection, complete result accounting and runtime coverage. Documentation-only changes may omit desktop builds when they cannot affect the delivered application or its build inputs, while retaining documentation and repository checks. An uncertain impact requires the complete relevant checks. Keep the stable aggregate `ci` result and reviewed check inventory consistent with the selected partitions.
 

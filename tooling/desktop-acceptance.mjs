@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { _electron, expect } from "@playwright/test";
 import { admittedLaunch } from "./desktop-launch.mjs";
+import { recordReadyNativeProcesses } from "./desktop-native-observation.mjs";
 import { verifyStableSentinels, readBoundedFile } from "../packages/main/dist/index.js";
 import { message, portLimits, policyId } from "../packages/contracts/dist/index.js";
 
@@ -74,6 +75,7 @@ try {
   await expect
     .poll(async () => (await page.evaluate(() => window.ohtia.foundation.readStatus().result)).ok)
     .toBe(true);
+  await recordReadyNativeProcesses(application, output);
   const initial = await page.evaluate(async () => ({
     snapshot: await window.ohtia.bootstrap.read(),
     status: await window.ohtia.foundation.readStatus().result,

@@ -60,7 +60,10 @@
     "scripts/tests/test_github_policy.py",
     "scripts/tests/test_github_pr.py",
     "scripts/tests/test_package_workspace.py",
+    "scripts/tests/test_quality_delivery.py",
+    "scripts/tests/test_quality_native.py",
     "scripts/tests/test_quality_tests.py",
+    "scripts/tests/test_quality_vm.py",
     "scripts/tests/test_workspace.py"
   ],
   "python_inapplicable": [

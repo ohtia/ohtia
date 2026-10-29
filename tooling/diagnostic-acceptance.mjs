@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { _electron, expect } from "@playwright/test";
 import { admittedLaunch } from "./desktop-launch.mjs";
+import { recordReadyNativeProcesses } from "./desktop-native-observation.mjs";
 import { decodeDiagnosticLine, message } from "../packages/contracts/dist/index.js";
 import { verifyStableSentinels } from "../packages/main/dist/index.js";
 const [profileFile, prepared, output] = process.argv.slice(2);
@@ -151,6 +152,7 @@ try {
   });
   const page = await application.firstWindow();
   await expect(page.getByRole("heading", { name: "Ohtia", exact: true })).toBeVisible();
+  await recordReadyNativeProcesses(application, output);
   const state = await page.evaluate(() => window.ohtia.bootstrap.read());
   if (state.state !== "storage_ready") {
     assert.ok(["pending_create", "located"].includes(state.state));

@@ -90,6 +90,20 @@ class FakeGitHub:
             "status": "completed",
             "conclusion": "success",
         }
+        self.jobs = [
+            {
+                **copy.deepcopy(self.jobs[0]),
+                "id": 300 + index,
+                "name": name,
+                "check_run_url": f"https://api.github.com/repos/ohtia/ohtia/check-runs/{400 + index}",
+                "steps": [
+                    {"name": step, "status": "completed", "conclusion": "success"}
+                    for step in inventory["steps"]
+                ],
+            }
+            for index, (name, inventory) in enumerate(POLICY["jobs"].items())
+        ]
+        self.job_receipts = {}
         self.recent = [{"id": 100}]
         self.receipt = {
             "schema_version": 1,
@@ -139,6 +153,13 @@ class FakeGitHub:
             f"{repo}/check-runs/400": self.check,
         }
 
+        for index, job in enumerate(self.jobs):
+            self.responses[f"{repo}/check-runs/{400 + index}"] = (
+                self.check
+                if index == 0
+                else {**copy.deepcopy(self.check), "id": 400 + index, "name": job["name"]}
+            )
+
     def get(self, endpoint):
         self.calls.append(endpoint)
         if self.on_read:
@@ -150,8 +171,13 @@ class FakeGitHub:
         return copy.deepcopy(self.responses[endpoint])
 
     def log(self, job_id):
-        assert job_id == 300
-        return "2000-01-01T00:00:00.000Z " + pr_check.MARKER + json.dumps(self.receipt) + "\n"
+        assert job_id in {job["id"] for job in self.jobs}
+        return (
+            "2000-01-01T00:00:00.000Z "
+            + pr_check.MARKER
+            + json.dumps(self.job_receipts.get(job_id, self.receipt))
+            + "\n"
+        )
 
 
 class VerificationTests(unittest.TestCase):
@@ -380,6 +406,18 @@ class VerificationTests(unittest.TestCase):
                 with self.assertRaises(pr_check.VerificationError):
                     self.verify()
                 self.github.receipt[field] = old
+
+    def test_each_native_job_must_prove_its_own_checkout(self):
+        for job in self.github.jobs[1:]:
+            for field in ("head_sha", "base_sha", "tree_sha", "checkout_sha"):
+                self.github.job_receipts = {job["id"]: {**self.github.receipt, field: "f" * 40}}
+                with (
+                    self.subTest(job=job["name"], field=field),
+                    self.assertRaises(pr_check.VerificationError),
+                ):
+                    self.verify()
+        self.github.job_receipts = {}
+        self.assertEqual(len(self.verify()["checkouts"]), len(POLICY["jobs"]))
 
     def test_missing_and_duplicate_receipts_cannot_pass(self):
         with self.assertRaises(pr_check.VerificationError):

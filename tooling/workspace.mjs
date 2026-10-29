@@ -127,6 +127,16 @@ const commands = {
   "quality:inventory"() {
     run(process.execPath, ["tooling/quality.mjs", "inventory"]);
   },
+  "quality:plan"() {
+    run(python, ["scripts/quality_delivery.py", "plan", ...process.argv.slice(3)]);
+  },
+  "quality:aggregate"() {
+    run(python, ["scripts/quality_delivery.py", "aggregate", ...process.argv.slice(3)]);
+  },
+  async "quality:build"() {
+    await commands.build();
+    run(python, ["scripts/quality_native.py", ...process.argv.slice(3)]);
+  },
   "quality:native"() {
     run(process.execPath, ["tooling/quality.mjs", "native", ...process.argv.slice(3)]);
   },

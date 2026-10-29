@@ -37,6 +37,8 @@ okf_version: "0.2"
 
 ## Repository
 
+- [Technical debt](technical-debt.md) — Deliberate technical compromises, their evidence, compensating controls and verifiable removal conditions.
+- [Native quality builds](quality-builds.md) — Build unsigned development packages on standard hosted native VMs and verify complete artifact and checkout provenance.
 - [Shared verification and coverage gates](shared-verification.md) — Run the same local and CI checks with independent product coverage, complete test inventories and separate native evidence.
 
 - [Locked developer workspace](developer-workspace.md) — Bootstrap isolated contributor tools, build the six package boundaries and verify the frozen workspace without changing research data.
