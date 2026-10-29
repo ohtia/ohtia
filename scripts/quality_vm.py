@@ -55,6 +55,7 @@ def cloud_config(profile: str, public_key: str) -> str:
             "gnome-shell",
             "gnome-session",
             "dbus-daemon",
+            "dbus-tools",
             "dbus-x11",
             "btrfs-progs",
             "iproute",
@@ -70,6 +71,7 @@ def cloud_config(profile: str, public_key: str) -> str:
             "at-spi2-atk",
             "policycoreutils",
             "selinux-policy-targeted",
+            "audit",
             "7zip",
             "unzip",
         ]
@@ -83,6 +85,7 @@ def cloud_config(profile: str, public_key: str) -> str:
             "gnome-shell",
             "gnome-session",
             "dbus-user-session",
+            "dbus-bin",
             "libgtk-3-0t64",
             "libnss3",
             "libasound2t64",
@@ -104,6 +107,7 @@ def cloud_config(profile: str, public_key: str) -> str:
     if profile == "fedora-44":
         commands += [
             ["dnf", "-y", "install", "--allowerasing", "fedora-release-identity-workstation"],
+            ["systemctl", "start", "auditd"],
             [
                 "bash",
                 "-ceu",

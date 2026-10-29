@@ -205,61 +205,136 @@ class VirtualMachineTests(unittest.TestCase):
             self.assertEqual(list(output.iterdir()), [])
 
     def test_guest_compositor_and_failed_suite_share_bus_and_retain_bounded_log(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            home = Path(temporary)
-            source = home / "source"
-            source.mkdir()
-            runtime = home / "runtime"
-            runtime.mkdir()
-            (home / "environment.json").write_text(
-                json.dumps({"GITHUB_SHA": "synthetic", "OHTIA_QUALITY_VM": "fedora-44-x64-vm"})
-            )
-            real_path = Path
-
-            def guest_path(value):
-                if value == "/home/ohtia-quality":
-                    return home
-                if value == f"/run/user/{os.getuid()}":
-                    return runtime
-                return real_path(value)
-
-            child = Mock()
-
-            def compositor(arguments, **options):
-                self.assertEqual(arguments[0], "gnome-shell")
-                options["stdout"].write(b"x" * (2 * 1024 * 1024 + 100))
-                return child
-
-            def command(arguments, **options):
-                if "quality:build" in arguments:
-                    self.assertEqual(
-                        options["env"]["DBUS_SESSION_BUS_ADDRESS"], "unix:path=synthetic"
+        for audit_outcome in (0, 1, "watchdog"):
+            with self.subTest(audit_outcome=audit_outcome):
+                with tempfile.TemporaryDirectory() as temporary:
+                    home = Path(temporary)
+                    source = home / "source"
+                    source.mkdir()
+                    runtime = home / "runtime"
+                    runtime.mkdir()
+                    (home / "environment.json").write_text(
+                        json.dumps(
+                            {
+                                "GITHUB_SHA": "synthetic",
+                                "OHTIA_QUALITY_VM": "fedora-44-x64-vm",
+                                "XDG_SESSION_TYPE": "wayland",
+                                "XDG_CURRENT_DESKTOP": "GNOME",
+                            }
+                        )
                     )
-                    raise subprocess.CalledProcessError(1, arguments)
-                return subprocess.CompletedProcess(arguments, 0)
+                    real_path = Path
 
-            with socket.socket(socket.AF_UNIX) as wayland:
-                wayland.bind(str(runtime / "wayland-0"))
-                with (
-                    patch.dict(os.environ, {"DBUS_SESSION_BUS_ADDRESS": "unix:path=synthetic"}),
-                    patch("pathlib.Path", side_effect=guest_path),
-                    patch("subprocess.Popen", side_effect=compositor) as launched,
-                    patch("subprocess.run", side_effect=command),
-                    self.assertRaises(subprocess.CalledProcessError),
-                ):
-                    runpy.run_path(str(delivery.ROOT / "tooling/quality-packaging/guest-run.py"))
-                self.assertEqual(
-                    launched.call_args.kwargs["env"]["DBUS_SESSION_BUS_ADDRESS"],
-                    "unix:path=synthetic",
-                )
-            child.terminate.assert_called_once()
-            child.wait.assert_called_once_with(timeout=10)
-            self.assertEqual(
-                (source / "artifacts/quality-result/gnome.log").stat().st_size, 2 * 1024 * 1024
-            )
+                    def guest_path(value):
+                        if value == "/home/ohtia-quality":
+                            return home
+                        if value == f"/run/user/{os.getuid()}":
+                            return runtime
+                        return real_path(value)
+
+                    child = Mock()
+
+                    def compositor(arguments, **options):
+                        self.assertEqual(arguments[0], "gnome-shell")
+                        options["stdout"].write(b"x" * (2 * 1024 * 1024 + 100))
+                        return child
+
+                    activated = []
+
+                    def command(arguments, **options):
+                        if arguments[0] == "dbus-update-activation-environment":
+                            self.assertEqual(
+                                arguments[1:],
+                                [
+                                    "XDG_RUNTIME_DIR",
+                                    "XDG_SESSION_TYPE",
+                                    "XDG_CURRENT_DESKTOP",
+                                    "WAYLAND_DISPLAY",
+                                ],
+                            )
+                            self.assertEqual(
+                                options["env"]["DBUS_SESSION_BUS_ADDRESS"], "unix:path=synthetic"
+                            )
+                            self.assertEqual(options["env"]["WAYLAND_DISPLAY"], "wayland-0")
+                            self.assertEqual(options["env"]["XDG_SESSION_TYPE"], "wayland")
+                            self.assertEqual(options["env"]["XDG_CURRENT_DESKTOP"], "GNOME")
+                            self.assertEqual(options["timeout"], 10)
+                            activated.append(True)
+                        if arguments[0] == "/usr/bin/sudo":
+                            self.assertEqual(
+                                arguments[:7],
+                                [
+                                    "/usr/bin/sudo",
+                                    "-n",
+                                    "/usr/bin/timeout",
+                                    "--signal=TERM",
+                                    "--kill-after=1s",
+                                    "8s",
+                                    "/usr/sbin/ausearch",
+                                ],
+                            )
+                            self.assertEqual(
+                                arguments[7:],
+                                ["--input-logs", "-m", "AVC,USER_AVC", "-ts", "boot", "--raw"],
+                            )
+                            self.assertEqual(options["timeout"], 12)
+                            self.assertEqual(options["stdin"], subprocess.DEVNULL)
+                            options["stdout"].write(b"a" * (256 * 1024 + 100))
+                            if audit_outcome == "watchdog":
+                                raise subprocess.TimeoutExpired(arguments, 12)
+                            return subprocess.CompletedProcess(arguments, audit_outcome)
+                        if arguments[0] == "/usr/bin/systemctl":
+                            return subprocess.CompletedProcess(arguments, 0, stdout="active\n")
+                        if "quality:build" in arguments:
+                            self.assertEqual(activated, [True])
+                            self.assertEqual(
+                                options["env"]["DBUS_SESSION_BUS_ADDRESS"], "unix:path=synthetic"
+                            )
+                            raise subprocess.CalledProcessError(1, arguments)
+                        return subprocess.CompletedProcess(arguments, 0)
+
+                    with socket.socket(socket.AF_UNIX) as wayland:
+                        wayland.bind(str(runtime / "wayland-0"))
+                        with (
+                            patch.dict(
+                                os.environ, {"DBUS_SESSION_BUS_ADDRESS": "unix:path=synthetic"}
+                            ),
+                            patch("pathlib.Path", side_effect=guest_path),
+                            patch("subprocess.Popen", side_effect=compositor) as launched,
+                            patch("subprocess.run", side_effect=command),
+                            self.assertRaises(subprocess.CalledProcessError),
+                        ):
+                            runpy.run_path(
+                                str(delivery.ROOT / "tooling/quality-packaging/guest-run.py")
+                            )
+                        self.assertEqual(
+                            launched.call_args.kwargs["env"]["DBUS_SESSION_BUS_ADDRESS"],
+                            "unix:path=synthetic",
+                        )
+                    child.terminate.assert_called_once()
+                    child.wait.assert_called_once_with(timeout=10)
+                    self.assertEqual(
+                        (source / "artifacts/quality-result/gnome.log").stat().st_size,
+                        2 * 1024 * 1024,
+                    )
+                    self.assertEqual(
+                        (source / "artifacts/quality-result/selinux-audit.log").stat().st_size,
+                        256 * 1024,
+                    )
+                    receipt = json.loads(
+                        (source / "artifacts/quality-result/selinux-audit.json").read_text()
+                    )
+                    self.assertEqual(
+                        receipt["exit_code"], None if audit_outcome == "watchdog" else audit_outcome
+                    )
+                    self.assertEqual(receipt["watchdog"], audit_outcome == "watchdog")
+                    self.assertEqual(receipt["auditd"]["state"], "active")
+                    self.assertTrue(receipt["truncated"])
+                    self.assertEqual(receipt["query"], "boot AVC,USER_AVC")
 
     def test_fedora_identity_uses_install_scoped_dnf5_options(self):
         config = json.loads(vm.cloud_config("fedora-44", "ssh-ed25519 synthetic").split("\n", 1)[1])
+        self.assertIn(["systemctl", "start", "auditd"], config["runcmd"])
         command = next(c for c in config["runcmd"] if c[0] == "dnf")
         self.assertLess(command.index("install"), command.index("--allowerasing"))
         self.assertIn("fedora-release-identity-workstation", command)

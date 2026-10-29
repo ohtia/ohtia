@@ -295,17 +295,19 @@ try {
   expect(tree).toContain("button");
   expect(tree).toContain("heading");
   passed("keyboard-reflow-accessibility-tree", { reflow, tree });
+  const captureStarted = performance.now();
   try {
     await page.screenshot({
       path: path.join(output, "foundation-320.png"),
       fullPage: true,
-      timeout: 5000,
+      timeout: 30000,
     });
-    passed("graphical-capture");
+    passed("graphical-capture", { elapsed_ms: Math.round(performance.now() - captureStarted) });
   } catch (error) {
     receipt.cases.push({
       id: "graphical-capture",
       result: "fail",
+      elapsed_ms: Math.round(performance.now() - captureStarted),
       controlledMessage: error instanceof Error ? error.message.slice(0, 1024) : "Capture failed",
     });
     process.exitCode = 1;

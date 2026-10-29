@@ -49,6 +49,18 @@ with (home / "gnome.log").open("x+b") as log:
         env.pop("DISPLAY", None)
         subprocess.run(
             [
+                "dbus-update-activation-environment",
+                "XDG_RUNTIME_DIR",
+                "XDG_SESSION_TYPE",
+                "XDG_CURRENT_DESKTOP",
+                "WAYLAND_DISPLAY",
+            ],
+            env=env,
+            check=True,
+            timeout=10,
+        )
+        subprocess.run(
+            [
                 "python3",
                 "scripts/workspace.py",
                 "run",
@@ -69,10 +81,10 @@ with (home / "gnome.log").open("x+b") as log:
                 compositor.kill()
                 compositor.wait(timeout=5)
         finally:
+            output = source / "artifacts" / "quality-result"
             try:
                 log.flush()
                 diagnostic = os.pread(log.fileno(), 2 * 1024 * 1024, 0)
-                output = source / "artifacts" / "quality-result"
                 output.mkdir(parents=True, exist_ok=True)
                 with (output / "gnome.log").open("xb") as retained:
                     retained.write(diagnostic)
@@ -81,3 +93,74 @@ with (home / "gnome.log").open("x+b") as log:
                     f"Guest compositor diagnostics could not be retained: {type(error).__name__}",
                     file=sys.stderr,
                 )
+            if env["OHTIA_QUALITY_VM"] == "fedora-44-x64-vm":
+                try:
+                    service = subprocess.run(
+                        ["/usr/bin/systemctl", "is-active", "auditd"],
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL,
+                        text=True,
+                        timeout=5,
+                        check=False,
+                    )
+                    auditd = {
+                        "exit_code": service.returncode,
+                        "state": (service.stdout or "").strip()[:32],
+                    }
+                except (OSError, subprocess.SubprocessError) as error:
+                    auditd = {"exit_code": None, "error_type": type(error).__name__}
+                try:
+                    descriptor = os.open(
+                        home / "selinux-audit.log", os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600
+                    )
+                    with os.fdopen(descriptor, "r+b") as audit:
+                        status = {
+                            "exit_code": None,
+                            "watchdog": False,
+                            "query": "boot AVC,USER_AVC",
+                            "auditd": auditd,
+                            "retained_byte_limit": 256 * 1024,
+                        }
+                        try:
+                            query = subprocess.run(
+                                [
+                                    "/usr/bin/sudo",
+                                    "-n",
+                                    "/usr/bin/timeout",
+                                    "--signal=TERM",
+                                    "--kill-after=1s",
+                                    "8s",
+                                    "/usr/sbin/ausearch",
+                                    "--input-logs",
+                                    "-m",
+                                    "AVC,USER_AVC",
+                                    "-ts",
+                                    "boot",
+                                    "--raw",
+                                ],
+                                stdin=subprocess.DEVNULL,
+                                stdout=audit,
+                                stderr=subprocess.STDOUT,
+                                timeout=12,
+                                check=False,
+                            )
+                            status["exit_code"] = query.returncode
+                        except subprocess.TimeoutExpired:
+                            status["watchdog"] = True
+                        except (OSError, subprocess.SubprocessError) as error:
+                            status["error_type"] = type(error).__name__
+                        finally:
+                            audit.flush()
+                            status["truncated"] = os.fstat(audit.fileno()).st_size > 256 * 1024
+                            with (output / "selinux-audit.log").open("xb") as retained:
+                                retained.write(os.pread(audit.fileno(), 256 * 1024, 0))
+                            with (output / "selinux-audit.json").open(
+                                "x", encoding="utf-8"
+                            ) as receipt:
+                                json.dump(status, receipt)
+                except OSError as error:
+                    print(
+                        f"Guest SELinux diagnostics could not be retained: {type(error).__name__}",
+                        file=sys.stderr,
+                    )

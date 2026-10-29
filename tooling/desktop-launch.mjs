@@ -63,6 +63,7 @@ export function admittedLaunch(profileFile, preparedDirectory) {
     "WAYLAND_DISPLAY",
     "XDG_RUNTIME_DIR",
     "XDG_SESSION_TYPE",
+    "XDG_CURRENT_DESKTOP",
     "DBUS_SESSION_BUS_ADDRESS",
     "LANG",
     "LC_ALL",

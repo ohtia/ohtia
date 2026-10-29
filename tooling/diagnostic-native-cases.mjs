@@ -196,18 +196,68 @@ await test("native-account-access", async () => {
     childProcess.spawn = originalSpawn;
   }
   if (process.platform === "win32") {
+    if (!receipt.initialAppend.ok) {
+      const probeStarted = performance.now();
+      const boundedText = (value) =>
+        (typeof value === "string"
+          ? value
+          : Buffer.isBuffer(value)
+            ? value.toString("utf8")
+            : ""
+        ).slice(0, 32768);
+      const probe = [
+        '$ErrorActionPreference="Stop";',
+        '[System.Console]::WriteLine("shell-ready");',
+        '$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User; [System.Console]::WriteLine("identity-ready");',
+        '$acl=[System.IO.Directory]::GetAccessControl($env:OHTIA_DIAGNOSTIC_ACL_PATH); [System.Console]::WriteLine("acl-ready");',
+        '$null=$acl.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier]); [System.Console]::WriteLine("rules-ready");',
+      ].join(" ");
+      try {
+        const stdout = execFileSync(
+          path.join(
+            process.env.SystemRoot,
+            "System32",
+            "WindowsPowerShell",
+            "v1.0",
+            "powershell.exe",
+          ),
+          ["-NoProfile", "-NonInteractive", "-Command", probe],
+          {
+            env: { ...process.env, OHTIA_DIAGNOSTIC_ACL_PATH: path.dirname(active) },
+            windowsHide: true,
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "pipe"],
+            timeout: 15000,
+            maxBuffer: 32768,
+          },
+        );
+        receipt.permissionShellProbe = { status: 0, stdout: boundedText(stdout) };
+      } catch (error) {
+        receipt.permissionShellProbe = {
+          status: error.status ?? null,
+          signal: error.signal ?? null,
+          errorCode: typeof error.code === "string" ? error.code : null,
+          stdout: boundedText(error.stdout),
+          stderr: boundedText(error.stderr),
+        };
+      }
+      receipt.permissionShellProbe.elapsed_ms = Math.round(performance.now() - probeStarted);
+    }
     receipt.initialAcls = {};
+    receipt.initialAclTruncated = {};
     for (const [name, file] of Object.entries({
       root: store,
       directory: path.dirname(active),
       file: active,
     })) {
       try {
-        receipt.initialAcls[name] = execFileSync(
+        const acl = execFileSync(
           path.join(process.env.SystemRoot, "System32", "icacls.exe"),
           [file],
           { encoding: "utf8", timeout: 10000 },
-        ).slice(0, 32768);
+        );
+        receipt.initialAcls[name] = acl.slice(0, 32768);
+        receipt.initialAclTruncated[name] = acl.length > 32768;
       } catch (error) {
         receipt.initialAcls[name] = {
           errorCode: typeof error.code === "string" ? error.code : null,
@@ -221,11 +271,9 @@ await test("native-account-access", async () => {
     assert.equal(fs.statSync(path.dirname(active)).mode & 0o777, 0o700);
     assert.equal(fs.statSync(active).mode & 0o777, 0o600);
   } else {
-    const acl = execFileSync(
-      path.join(process.env.SystemRoot, "System32", "icacls.exe"),
-      [active],
-      { encoding: "utf8" },
-    );
+    const acl = receipt.initialAcls.file;
+    assert.equal(typeof acl, "string");
+    assert.equal(receipt.initialAclTruncated.file, false);
     receipt.fileAcl = acl;
     assert.ok(!/Everyone|BUILTIN\\Users|Authenticated Users/i.test(acl));
   }

@@ -146,8 +146,25 @@ export class DiagnosticWriter {
     // Fixed native executable and script; the path travels as data, never executable text.
     const system = process.env.SystemRoot;
     if (!system || !path.isAbsolute(system)) throw new Error("Native ACL tool unavailable.");
-    const script =
-      '$ErrorActionPreference="Stop"; $p=$env:OHTIA_DIAGNOSTIC_ACL_PATH; $sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User; $inherit=if(Test-Path -LiteralPath $p -PathType Container){[System.Security.AccessControl.InheritanceFlags]"ContainerInherit,ObjectInherit"}else{[System.Security.AccessControl.InheritanceFlags]::None}; function Test-OhtiaAcl($value){return ($value.AreAccessRulesProtected -and $value.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -eq $sid.Value -and $value.Access.Count -eq 1 -and $value.Access[0].IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -eq $sid.Value -and $value.Access[0].AccessControlType -eq "Allow" -and $value.Access[0].FileSystemRights -eq "FullControl" -and $value.Access[0].InheritanceFlags -eq $inherit -and $value.Access[0].PropagationFlags -eq [System.Security.AccessControl.PropagationFlags]::None)}; $acl=Get-Acl -LiteralPath $p; if(Test-OhtiaAcl $acl){exit 0}; $acl.SetAccessRuleProtection($true,$false); foreach($r in @($acl.Access)){$acl.RemoveAccessRuleSpecific($r)}; $acl.SetOwner($sid); $rule=New-Object System.Security.AccessControl.FileSystemAccessRule($sid,"FullControl",$inherit,"None","Allow"); $acl.AddAccessRule($rule); Set-Acl -LiteralPath $p -AclObject $acl; $check=Get-Acl -LiteralPath $p; if(!(Test-OhtiaAcl $check)){exit 1}';
+    // Framework ACL APIs and SID-typed rules avoid module discovery and account-name lookup.
+    const script = [
+      '$ErrorActionPreference="Stop";',
+      "$p=$env:OHTIA_DIAGNOSTIC_ACL_PATH;",
+      "$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User;",
+      "$directory=[System.IO.Directory]::Exists($p);",
+      '$inherit=if($directory){[System.Security.AccessControl.InheritanceFlags]"ContainerInherit,ObjectInherit"}else{[System.Security.AccessControl.InheritanceFlags]::None};',
+      "function Read-OhtiaAcl(){if($directory){return [System.IO.Directory]::GetAccessControl($p)}else{return [System.IO.File]::GetAccessControl($p)}};",
+      "function Test-OhtiaAcl($value){$rules=@($value.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier]));",
+      'return ($value.AreAccessRulesProtected -and $value.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -eq $sid.Value -and $rules.Count -eq 1 -and $rules[0].IdentityReference.Value -eq $sid.Value -and $rules[0].AccessControlType -eq "Allow" -and $rules[0].FileSystemRights -eq "FullControl" -and $rules[0].InheritanceFlags -eq $inherit -and $rules[0].PropagationFlags -eq [System.Security.AccessControl.PropagationFlags]::None)};',
+      "$acl=Read-OhtiaAcl; if(Test-OhtiaAcl $acl){exit 0};",
+      "$acl.SetAccessRuleProtection($true,$false);",
+      "foreach($r in @($acl.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier]))){$acl.RemoveAccessRuleSpecific($r)};",
+      "$acl.SetOwner($sid);",
+      '$rule=[System.Security.AccessControl.FileSystemAccessRule]::new($sid,"FullControl",$inherit,"None","Allow");',
+      "$acl.AddAccessRule($rule);",
+      "if($directory){[System.IO.Directory]::SetAccessControl($p,$acl)}else{[System.IO.File]::SetAccessControl($p,$acl)};",
+      "$check=Read-OhtiaAcl; if(!(Test-OhtiaAcl $check)){exit 1}",
+    ].join(" ");
     try {
       if (this.options.canStartPermissionHelper && !this.options.canStartPermissionHelper())
         throw new Error("Diagnostic helper capacity unavailable.");
