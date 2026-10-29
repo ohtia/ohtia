@@ -518,7 +518,10 @@ def waiting_for(run, missing):
         if job.get("conclusion") != "failure":
             continue
         try:
-            log = gh_api(f"repos/{REPOSITORY}/actions/jobs/{job['id']}/logs")
+            # Job logs contain terminal colour codes; they are only searched, never printed.
+            log = gh_api(
+                "--allow-escape-sequences", f"repos/{REPOSITORY}/actions/jobs/{job['id']}/logs"
+            )
         except GitHubError as error:
             # An expired or deleted log cannot show that the check waited for this image.
             if "HTTP 404" in str(error) or "HTTP 410" in str(error):

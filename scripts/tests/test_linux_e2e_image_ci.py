@@ -668,10 +668,14 @@ class RerunTests(unittest.TestCase):
             },
         )
         self.assertEqual(result, [5])
-        logs = [args[0] for args in self.calls if str(args[0]).endswith("/logs")]
+        logs = [args for args in self.calls if str(args[-1]).endswith("/logs")]
+        # gh api refuses log bodies with terminal escape sequences unless allowed.
         self.assertEqual(
             logs,
-            ["repos/ohtia/ohtia/actions/jobs/50/logs", "repos/ohtia/ohtia/actions/jobs/51/logs"],
+            [
+                ("--allow-escape-sequences", "repos/ohtia/ohtia/actions/jobs/50/logs"),
+                ("--allow-escape-sequences", "repos/ohtia/ohtia/actions/jobs/51/logs"),
+            ],
         )
 
     def test_one_failing_check_never_blocks_the_others_and_is_reported(self):
