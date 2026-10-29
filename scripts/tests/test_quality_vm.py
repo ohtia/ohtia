@@ -205,8 +205,43 @@ class VirtualMachineTests(unittest.TestCase):
             self.assertEqual(list(output.iterdir()), [])
 
     def test_guest_compositor_and_failed_suite_share_bus_and_retain_bounded_log(self):
-        for audit_outcome in (0, 1, "watchdog"):
-            with self.subTest(audit_outcome=audit_outcome):
+        for invalid_bus in ("missing", "foreign-owner"):
+            with self.subTest(invalid_bus=invalid_bus), tempfile.TemporaryDirectory() as temporary:
+                home = Path(temporary)
+                (home / "environment.json").write_text(json.dumps({"GITHUB_SHA": "synthetic"}))
+                real_path = Path
+                candidate = Mock()
+                candidate.is_socket.return_value = invalid_bus != "missing"
+                candidate.stat.return_value.st_uid = os.getuid() + 1
+                runtime = Mock()
+                runtime.__truediv__ = Mock(return_value=candidate)
+
+                def paths(value):
+                    if value == "/home/ohtia-quality":
+                        return home
+                    if value == f"/run/user/{os.getuid()}":
+                        return runtime
+                    return real_path(value)
+
+                with (
+                    patch("pathlib.Path", side_effect=paths),
+                    patch("subprocess.run") as commands,
+                    patch("subprocess.Popen") as launched,
+                    self.assertRaisesRegex(SystemExit, "native D-Bus socket is unavailable"),
+                ):
+                    runpy.run_path(str(delivery.ROOT / "tooling/quality-packaging/guest-run.py"))
+                launched.assert_not_called()
+                self.assertEqual(len(commands.call_args_list), 2)  # Clone and checkout only.
+        for audit_outcome, stop_failure, suite_failure in (
+            (0, False, True),
+            (1, False, True),
+            ("watchdog", False, True),
+            (0, True, True),
+            (0, True, False),
+        ):
+            with self.subTest(
+                audit_outcome=audit_outcome, stop_failure=stop_failure, suite_failure=suite_failure
+            ):
                 with tempfile.TemporaryDirectory() as temporary:
                     home = Path(temporary)
                     source = home / "source"
@@ -236,30 +271,75 @@ class VirtualMachineTests(unittest.TestCase):
 
                     def compositor(arguments, **options):
                         self.assertEqual(arguments[0], "gnome-shell")
+                        self.assertEqual(bus_checked, [True])
+                        self.assertEqual(activated, [False])
                         options["stdout"].write(b"x" * (2 * 1024 * 1024 + 100))
                         return child
 
                     activated = []
+                    bus_checked = []
+                    session_calls = []
 
                     def command(arguments, **options):
+                        if arguments[0] == "gdbus":
+                            self.assertEqual(arguments[-1], "org.freedesktop.DBus.GetId")
+                            self.assertEqual(options["timeout"], 10)
+                            self.assertEqual(options["stdout"], subprocess.DEVNULL)
+                            self.assertEqual(
+                                options["env"]["DBUS_SESSION_BUS_ADDRESS"],
+                                f"unix:path={runtime / 'bus'}",
+                            )
+                            bus_checked.append(True)
                         if arguments[0] == "dbus-update-activation-environment":
+                            has_wayland = "WAYLAND_DISPLAY" in arguments
+                            expected = [
+                                "--systemd",
+                                "DBUS_SESSION_BUS_ADDRESS",
+                                "XDG_RUNTIME_DIR",
+                                "XDG_SESSION_TYPE",
+                                "XDG_CURRENT_DESKTOP",
+                            ]
+                            if has_wayland:
+                                expected.append("WAYLAND_DISPLAY")
+                                self.assertEqual(options["env"]["WAYLAND_DISPLAY"], "wayland-0")
+                            self.assertEqual(arguments[1:], expected)
                             self.assertEqual(
-                                arguments[1:],
-                                [
-                                    "XDG_RUNTIME_DIR",
-                                    "XDG_SESSION_TYPE",
-                                    "XDG_CURRENT_DESKTOP",
-                                    "WAYLAND_DISPLAY",
-                                ],
+                                options["env"]["DBUS_SESSION_BUS_ADDRESS"],
+                                f"unix:path={runtime / 'bus'}",
                             )
-                            self.assertEqual(
-                                options["env"]["DBUS_SESSION_BUS_ADDRESS"], "unix:path=synthetic"
-                            )
-                            self.assertEqual(options["env"]["WAYLAND_DISPLAY"], "wayland-0")
                             self.assertEqual(options["env"]["XDG_SESSION_TYPE"], "wayland")
                             self.assertEqual(options["env"]["XDG_CURRENT_DESKTOP"], "GNOME")
                             self.assertEqual(options["timeout"], 10)
-                            activated.append(True)
+                            activated.append(has_wayland)
+                        if arguments[0] == "/usr/bin/systemd-run":
+                            self.assertEqual(activated, [False, True])
+                            self.assertEqual(
+                                arguments[1:],
+                                [
+                                    "--user",
+                                    "--unit=ohtia-quality-session",
+                                    "--property=Type=oneshot",
+                                    "--property=RemainAfterExit=yes",
+                                    "--property=BindsTo=graphical-session.target",
+                                    "--property=After=graphical-session.target",
+                                    "--",
+                                    "/usr/bin/true",
+                                ],
+                            )
+                            self.assertTrue(options["check"])
+                            self.assertEqual(options["timeout"], 10)
+                            session_calls.append("start")
+                        if arguments[0] == "/usr/bin/journalctl":
+                            self.assertEqual(
+                                arguments[1:], ["--user", "--boot", "--lines=100", "--no-pager"]
+                            )
+                            self.assertEqual(options["timeout"], 5)
+                            self.assertEqual(options["stdin"], subprocess.DEVNULL)
+                            self.assertEqual(
+                                options["env"]["DBUS_SESSION_BUS_ADDRESS"],
+                                f"unix:path={runtime / 'bus'}",
+                            )
+                            options["stdout"].write(b"j" * (64 * 1024 + 100))
                         if arguments[0] == "/usr/bin/sudo":
                             self.assertEqual(
                                 arguments[:7],
@@ -284,38 +364,69 @@ class VirtualMachineTests(unittest.TestCase):
                                 raise subprocess.TimeoutExpired(arguments, 12)
                             return subprocess.CompletedProcess(arguments, audit_outcome)
                         if arguments[0] == "/usr/bin/systemctl":
+                            if arguments[1] == "--user":
+                                self.assertEqual(
+                                    arguments[1:],
+                                    ["--user", "stop", "ohtia-quality-session.service"],
+                                )
+                                self.assertTrue(options["check"])
+                                self.assertEqual(options["timeout"], 10)
+                                session_calls.append("stop")
+                                if stop_failure:
+                                    raise subprocess.TimeoutExpired(arguments, 10)
                             return subprocess.CompletedProcess(arguments, 0, stdout="active\n")
                         if "quality:build" in arguments:
-                            self.assertEqual(activated, [True])
+                            self.assertEqual(activated, [False, True])
+                            self.assertEqual(session_calls, ["start"])
                             self.assertEqual(
-                                options["env"]["DBUS_SESSION_BUS_ADDRESS"], "unix:path=synthetic"
+                                options["env"]["DBUS_SESSION_BUS_ADDRESS"],
+                                f"unix:path={runtime / 'bus'}",
                             )
-                            raise subprocess.CalledProcessError(1, arguments)
+                            if suite_failure:
+                                raise subprocess.CalledProcessError(1, arguments)
                         return subprocess.CompletedProcess(arguments, 0)
 
-                    with socket.socket(socket.AF_UNIX) as wayland:
+                    with (
+                        socket.socket(socket.AF_UNIX) as wayland,
+                        socket.socket(socket.AF_UNIX) as user_bus,
+                    ):
                         wayland.bind(str(runtime / "wayland-0"))
+                        user_bus.bind(str(runtime / "bus"))
                         with (
                             patch.dict(
-                                os.environ, {"DBUS_SESSION_BUS_ADDRESS": "unix:path=synthetic"}
+                                os.environ,
+                                {"DBUS_SESSION_BUS_ADDRESS": "unix:path=wrong-private-bus"},
                             ),
                             patch("pathlib.Path", side_effect=guest_path),
                             patch("subprocess.Popen", side_effect=compositor) as launched,
                             patch("subprocess.run", side_effect=command),
-                            self.assertRaises(subprocess.CalledProcessError),
+                            self.assertRaises(
+                                subprocess.CalledProcessError
+                                if suite_failure
+                                else subprocess.TimeoutExpired
+                            ) as failure,
                         ):
                             runpy.run_path(
                                 str(delivery.ROOT / "tooling/quality-packaging/guest-run.py")
                             )
                         self.assertEqual(
                             launched.call_args.kwargs["env"]["DBUS_SESSION_BUS_ADDRESS"],
-                            "unix:path=synthetic",
+                            f"unix:path={runtime / 'bus'}",
                         )
+                    self.assertIn(
+                        "quality:build" if suite_failure else "ohtia-quality-session.service",
+                        failure.exception.cmd,
+                    )
+                    self.assertEqual(session_calls, ["start", "stop"])
                     child.terminate.assert_called_once()
                     child.wait.assert_called_once_with(timeout=10)
                     self.assertEqual(
                         (source / "artifacts/quality-result/gnome.log").stat().st_size,
                         2 * 1024 * 1024,
+                    )
+                    self.assertEqual(
+                        (source / "artifacts/quality-result/user-session.log").stat().st_size,
+                        64 * 1024,
                     )
                     self.assertEqual(
                         (source / "artifacts/quality-result/selinux-audit.log").stat().st_size,

@@ -32,9 +32,9 @@ const record = (duration_ms = 0) =>
     JSON.stringify(makeDiagnosticRecord({ ...started, duration_ms }, version, now)) + "\n",
   );
 const active = path.join(store, "logs/ohtia.jsonl");
-const writer = () =>
+const writer = (root = store) =>
   new DiagnosticWriter({
-    root: store,
+    root,
     version,
     assertAdmission: () => {
       loadRuntimeProfile(profileFile);
@@ -375,21 +375,33 @@ await test("version-aware-reader", async () => {
 });
 await w.close();
 await test("native-denied-io", async () => {
-  const logs = path.dirname(active);
+  // icacls /deny removes matching explicit grants; removing its deny ACE alone
+  // does not restore write access. Keep this fixture separate from retained logs.
+  const denied = path.join(store, "denied-io");
+  fs.mkdirSync(denied);
   const windows = process.platform === "win32";
   const user = os.userInfo().username;
   const icacls = windows ? path.join(process.env.SystemRoot, "System32", "icacls.exe") : "";
-  fs.renameSync(logs, logs + "-retained");
   try {
-    if (windows) execFileSync(icacls, [store, "/deny", `${user}:(OI)(CI)(W)`], { stdio: "ignore" });
-    else fs.chmodSync(store, 0o500);
-    w = writer();
-    assert.equal((await w.append(started)).ok, false);
-    await w.close();
+    if (windows)
+      execFileSync(icacls, [denied, "/deny", `${user}:(OI)(CI)(W)`], {
+        stdio: "ignore",
+        timeout: 5000,
+      });
+    else fs.chmodSync(denied, 0o500);
+    assert.throws(() => fs.mkdirSync(path.join(denied, "write-probe")), {
+      code: /^(EACCES|EPERM)$/,
+    });
+    w = writer(denied);
+    const result = await w.append(started);
+    receipt.deniedIo = { append: result, logsCreated: fs.existsSync(path.join(denied, "logs")) };
+    assert.equal(result.ok, false);
+    assert.equal(receipt.deniedIo.logsCreated, false);
   } finally {
-    if (windows) execFileSync(icacls, [store, "/remove:d", user], { stdio: "ignore" });
-    else fs.chmodSync(store, 0o700);
-    fs.renameSync(logs + "-retained", logs);
+    await w.close();
+    if (windows)
+      execFileSync(icacls, [denied, "/remove:d", user], { stdio: "ignore", timeout: 5000 });
+    else fs.chmodSync(denied, 0o700);
   }
 });
 await test("automatic-capture-stderr-errors", async () => {
