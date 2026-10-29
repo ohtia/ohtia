@@ -35,6 +35,9 @@
     "quality:inventory": "node tooling/workspace.mjs quality:inventory",
     "quality:native": "node tooling/workspace.mjs quality:native",
     "quality:cases": "node tooling/workspace.mjs quality:cases",
+    "quality:plan": "node tooling/workspace.mjs quality:plan",
+    "quality:build": "node tooling/workspace.mjs quality:build",
+    "quality:aggregate": "node tooling/workspace.mjs quality:aggregate",
     "linux:e2e": "node tooling/workspace.mjs linux:e2e"
   },
   "devDependencies": {
@@ -55,7 +58,8 @@
     "jsdom": "30.1.3",
     "@babel/core": "8.0.9",
     "@babel/plugin-transform-optional-chaining": "8.0.5",
-    "@babel/plugin-transform-logical-assignment-operators": "8.0.1"
+    "@babel/plugin-transform-logical-assignment-operators": "8.0.1",
+    "electron-builder": "26.18.0"
   },
   "dependencies": {
     "@ohtia/renderer": "workspace:*"

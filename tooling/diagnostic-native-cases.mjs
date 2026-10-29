@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { pathToFileURL, fileURLToPath } from "node:url";
-import { spawn, execFileSync } from "node:child_process";
+import childProcess, { spawn, execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { loadRuntimeProfile, verifyStableSentinels } from "../packages/main/dist/index.js";
@@ -32,9 +32,9 @@ const record = (duration_ms = 0) =>
     JSON.stringify(makeDiagnosticRecord({ ...started, duration_ms }, version, now)) + "\n",
   );
 const active = path.join(store, "logs/ohtia.jsonl");
-const writer = () =>
+const writer = (root = store) =>
   new DiagnosticWriter({
-    root: store,
+    root,
     version,
     assertAdmission: () => {
       loadRuntimeProfile(profileFile);
@@ -146,18 +146,136 @@ async function interrupt(kind) {
 }
 let w = writer();
 await test("native-account-access", async () => {
-  assert.equal((await w.append(started)).ok, true);
+  const originalSpawn = childProcess.spawn;
+  receipt.permissionHelpers = [];
+  receipt.initialWriterStatus = w.status;
+  receipt.fixtureRoot = {
+    canonicalMatches: fs.realpathSync.native(store) === store,
+    directory: fs.lstatSync(store).isDirectory(),
+  };
+  childProcess.spawn = function (command, args, options) {
+    if (!command.endsWith("powershell.exe")) return originalSpawn(command, args, options);
+    const helperStarted = performance.now();
+    const observation = {
+      exitCode: null,
+      signal: null,
+      errorCode: null,
+      killed: false,
+      elapsed_ms: null,
+      stdout: "",
+      stderr: "",
+      truncated: false,
+    };
+    receipt.permissionHelpers.push(observation);
+    const child = originalSpawn(command, args, {
+      ...options,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    for (const name of ["stdout", "stderr"]) {
+      child[name].on("data", (bytes) => {
+        const text = bytes.toString();
+        const available = 32768 - observation[name].length;
+        observation[name] += text.slice(0, available);
+        if (text.length > available) observation.truncated = true;
+      });
+    }
+    child.once("error", (error) => {
+      observation.errorCode = typeof error.code === "string" ? error.code : "unknown";
+    });
+    child.once("close", (code, signal) => {
+      observation.exitCode = code;
+      observation.signal = signal;
+      observation.killed = child.killed;
+      observation.elapsed_ms = Math.round(performance.now() - helperStarted);
+    });
+    return child;
+  };
+  try {
+    receipt.initialAppend = await w.append(started);
+  } finally {
+    childProcess.spawn = originalSpawn;
+  }
+  if (process.platform === "win32") {
+    if (!receipt.initialAppend.ok) {
+      const probeStarted = performance.now();
+      const boundedText = (value) =>
+        (typeof value === "string"
+          ? value
+          : Buffer.isBuffer(value)
+            ? value.toString("utf8")
+            : ""
+        ).slice(0, 32768);
+      const probe = [
+        '$ErrorActionPreference="Stop";',
+        '[System.Console]::WriteLine("shell-ready");',
+        '$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User; [System.Console]::WriteLine("identity-ready");',
+        '$acl=[System.IO.Directory]::GetAccessControl($env:OHTIA_DIAGNOSTIC_ACL_PATH); [System.Console]::WriteLine("acl-ready");',
+        '$null=$acl.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier]); [System.Console]::WriteLine("rules-ready");',
+      ].join(" ");
+      try {
+        const stdout = execFileSync(
+          path.join(
+            process.env.SystemRoot,
+            "System32",
+            "WindowsPowerShell",
+            "v1.0",
+            "powershell.exe",
+          ),
+          ["-NoProfile", "-NonInteractive", "-Command", probe],
+          {
+            env: { ...process.env, OHTIA_DIAGNOSTIC_ACL_PATH: path.dirname(active) },
+            windowsHide: true,
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "pipe"],
+            timeout: 15000,
+            maxBuffer: 32768,
+          },
+        );
+        receipt.permissionShellProbe = { status: 0, stdout: boundedText(stdout) };
+      } catch (error) {
+        receipt.permissionShellProbe = {
+          status: error.status ?? null,
+          signal: error.signal ?? null,
+          errorCode: typeof error.code === "string" ? error.code : null,
+          stdout: boundedText(error.stdout),
+          stderr: boundedText(error.stderr),
+        };
+      }
+      receipt.permissionShellProbe.elapsed_ms = Math.round(performance.now() - probeStarted);
+    }
+    receipt.initialAcls = {};
+    receipt.initialAclTruncated = {};
+    for (const [name, file] of Object.entries({
+      root: store,
+      directory: path.dirname(active),
+      file: active,
+    })) {
+      try {
+        const acl = execFileSync(
+          path.join(process.env.SystemRoot, "System32", "icacls.exe"),
+          [file],
+          { encoding: "utf8", timeout: 10000 },
+        );
+        receipt.initialAcls[name] = acl.slice(0, 32768);
+        receipt.initialAclTruncated[name] = acl.length > 32768;
+      } catch (error) {
+        receipt.initialAcls[name] = {
+          errorCode: typeof error.code === "string" ? error.code : null,
+          status: error.status ?? null,
+        };
+      }
+    }
+  }
+  assert.equal(receipt.initialAppend.ok, true);
   if (process.platform !== "win32") {
     assert.equal(fs.statSync(path.dirname(active)).mode & 0o777, 0o700);
     assert.equal(fs.statSync(active).mode & 0o777, 0o600);
   } else {
-    const acl = execFileSync(
-      path.join(process.env.SystemRoot, "System32", "icacls.exe"),
-      [active],
-      { encoding: "utf8" },
-    );
-    assert.ok(!/Everyone|BUILTIN\\Users|Authenticated Users/i.test(acl));
+    const acl = receipt.initialAcls.file;
+    assert.equal(typeof acl, "string");
+    assert.equal(receipt.initialAclTruncated.file, false);
     receipt.fileAcl = acl;
+    assert.ok(!/Everyone|BUILTIN\\Users|Authenticated Users/i.test(acl));
   }
 });
 await test("catalog-private-markers", async () => {
@@ -257,21 +375,86 @@ await test("version-aware-reader", async () => {
 });
 await w.close();
 await test("native-denied-io", async () => {
-  const logs = path.dirname(active);
   const windows = process.platform === "win32";
-  const user = os.userInfo().username;
-  const icacls = windows ? path.join(process.env.SystemRoot, "System32", "icacls.exe") : "";
-  fs.renameSync(logs, logs + "-retained");
+  receipt.deniedIo = {
+    phase: "create-fixture",
+    fixture: windows ? "read-only-active-file" : "non-writable-root",
+  };
+  const denied = path.join(store, "denied-io");
+  const deniedActive = path.join(denied, "logs", "ohtia.jsonl");
+  const controlledError = (error) => ({
+    code:
+      typeof error.code === "string" && /^[A-Z0-9_]{1,64}$/.test(error.code) ? error.code : null,
+    status: Number.isInteger(error.status) ? error.status : null,
+    syscall:
+      typeof error.syscall === "string" && /^[a-z]{1,32}$/.test(error.syscall)
+        ? error.syscall
+        : null,
+  });
+  let blocked = false;
+  let before;
   try {
-    if (windows) execFileSync(icacls, [store, "/deny", `${user}:(OI)(CI)(W)`], { stdio: "ignore" });
-    else fs.chmodSync(store, 0o500);
-    w = writer();
-    assert.equal((await w.append(started)).ok, false);
-    await w.close();
+    fs.mkdirSync(denied);
+    if (windows) {
+      // Keep the initialized writer so the native read-only file rejects the
+      // append itself, after the same writer has demonstrated a healthy write.
+      receipt.deniedIo.phase = "seed-log";
+      w = writer(denied);
+      receipt.deniedIo.seed = await w.append(started);
+      assert.equal(receipt.deniedIo.seed.ok, true);
+      before = fs.readFileSync(deniedActive);
+      receipt.deniedIo.phase = "set-read-only";
+      fs.chmodSync(deniedActive, 0o400);
+    } else {
+      fs.chmodSync(denied, 0o500);
+    }
+    blocked = true;
+    receipt.deniedIo.phase = "probe-denial";
+    assert.throws(
+      () => {
+        try {
+          if (windows) {
+            const descriptor = fs.openSync(deniedActive, fs.constants.O_WRONLY);
+            fs.closeSync(descriptor);
+          } else {
+            fs.mkdirSync(path.join(denied, "write-probe"));
+          }
+          receipt.deniedIo.probe = { allowed: true };
+        } catch (error) {
+          receipt.deniedIo.probe = { allowed: false, ...controlledError(error) };
+          throw error;
+        }
+      },
+      { code: /^(EACCES|EPERM)$/ },
+    );
+    receipt.deniedIo.phase = windows ? "append-after-initialization" : "initialize-writer";
+    if (!windows) w = writer(denied);
+    receipt.deniedIo.initialWriterStatus = w.status;
+    assert.equal(w.status.status, "ready");
+    receipt.deniedIo.append = await w.append(started);
+    assert.equal(receipt.deniedIo.append.ok, false);
+    assert.equal(receipt.deniedIo.append.status, "unavailable");
+    if (windows) {
+      receipt.deniedIo.fileUnchanged = before.equals(fs.readFileSync(deniedActive));
+      receipt.deniedIo.readOnlyPreserved = (fs.statSync(deniedActive).mode & 0o222) === 0;
+      assert.equal(receipt.deniedIo.fileUnchanged, true);
+      assert.equal(receipt.deniedIo.readOnlyPreserved, true);
+    } else {
+      receipt.deniedIo.logsCreated = fs.existsSync(path.join(denied, "logs"));
+      assert.equal(receipt.deniedIo.logsCreated, false);
+    }
+    receipt.deniedIo.phase = "verified";
+  } catch (error) {
+    receipt.deniedIo.error = controlledError(error);
+    throw error;
   } finally {
-    if (windows) execFileSync(icacls, [store, "/remove:d", user], { stdio: "ignore" });
-    else fs.chmodSync(store, 0o700);
-    fs.renameSync(logs + "-retained", logs);
+    await w.close();
+    try {
+      if (blocked) fs.chmodSync(windows ? deniedActive : denied, windows ? 0o600 : 0o700);
+    } catch (error) {
+      receipt.deniedIo.cleanupError = controlledError(error);
+      throw error;
+    }
   }
 });
 await test("automatic-capture-stderr-errors", async () => {

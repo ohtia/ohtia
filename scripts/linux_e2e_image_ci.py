@@ -534,7 +534,7 @@ def waiting_for(run, missing):
 
 
 def rerun():
-    """Re-run pull-request checks whose latest run failed for lack of this publication."""
+    """Re-run complete checks so native artifacts and receipts share one new attempt."""
     missing = linux_e2e.MISSING_IMAGE.format(fingerprint(inputs()))
     rerun_runs = []
     failures = []
@@ -543,13 +543,11 @@ def rerun():
         try:
             if not waiting_for(run, missing):
                 continue
-            gh_api(
-                "--method", "POST", f"repos/{REPOSITORY}/actions/runs/{run['id']}/rerun-failed-jobs"
-            )
+            gh_api("--method", "POST", f"repos/{REPOSITORY}/actions/runs/{run['id']}/rerun")
         except (GitHubError, ValueError, KeyError) as error:
             failures.append(f"{run.get('html_url', run.get('id'))}: {error}")
             continue
-        print(f"Re-ran the failed jobs of {run['html_url']}.")
+        print(f"Re-ran all jobs of {run['html_url']}.")
         rerun_runs.append(run["id"])
     if not rerun_runs and not failures:
         print("No pull-request check is waiting for this image.")

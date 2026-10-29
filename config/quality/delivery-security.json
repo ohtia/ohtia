@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "owner": "STORY-001-012",
+  "baseline": {
+    "resource": "config/desktop/security-applicability.json",
+    "name": "OWASP ASVS",
+    "version": "5.0.0",
+    "levels": [1, 2]
+  },
+  "controls": [
+    {
+      "id": "CI-PROVENANCE",
+      "requirements": ["v5.0.0-13.3.1", "v5.0.0-13.3.2", "v5.0.0-15.1.1"],
+      "applicability": "applicable",
+      "reason": "Exact reviewed workflow, event, app, attempt, head/base/tree and every required checkout; push evidence is never PR evidence.",
+      "enforcing_files": [
+        "scripts/github_pr.py",
+        "config/github/ci-verification.json",
+        ".github/workflows/ci.yml"
+      ],
+      "deterministic_tests": [
+        "test_github_pr.VerificationTests.test_each_native_job_must_prove_its_own_checkout",
+        "test_github_pr.VerificationTests.test_wrong_workflow_event_head_and_run_identity_fail"
+      ],
+      "native_evidence": "Identified native Actions job result.json, package/report digests and native observation attachments; local fixtures do not establish hosted execution.",
+      "external_evidence": "Maintainer-approved policy plan and successful live apply/readback before expanded action use; independent reviewed verifier before human integration."
+    },
+    {
+      "id": "CI-ARTIFACT",
+      "requirements": ["v5.0.0-5.2.1", "v5.0.0-5.2.2", "v5.0.0-5.2.3", "v5.0.0-15.2.3"],
+      "applicability": "applicable",
+      "reason": "Complete native matrix and exact package/report bytes, encoded identity, required cases and retained source policy.",
+      "enforcing_files": ["scripts/quality_delivery.py", "scripts/quality_native.py"],
+      "deterministic_tests": [
+        "test_quality_delivery.DeliveryTests.test_tampered_package_and_missing_smoke_case_fail",
+        "test_quality_delivery.DeliveryTests.test_missing_extra_failed_skipped_cancelled_and_stale_partitions_fail"
+      ],
+      "native_evidence": "Identified native Actions job result.json, package/report digests and native observation attachments; local fixtures do not establish hosted execution.",
+      "external_evidence": "Maintainer-approved policy plan and successful live apply/readback before expanded action use; independent reviewed verifier before human integration."
+    },
+    {
+      "id": "CI-AUTHORITY",
+      "requirements": ["v5.0.0-11.1.1", "v5.0.0-11.1.2", "v5.0.0-15.1.2"],
+      "applicability": "applicable",
+      "reason": "Read-only token, pinned allowlisted actions, nonpersisted checkout, no signing/notarization/publication inputs, scrubbed subprocess environment and no updater feed.",
+      "enforcing_files": [
+        "config/github/actions-permissions.json",
+        "scripts/github_policy.py",
+        ".github/workflows/ci.yml",
+        "scripts/quality_native.py"
+      ],
+      "deterministic_tests": [
+        "test_quality_native.NativeTests.test_build_and_product_children_inherit_no_authority_credentials",
+        "test_quality_native.NativeTests.test_declared_formats_use_unsigned_offline_configuration"
+      ],
+      "native_evidence": "Identified native Actions job result.json, package/report digests and native observation attachments; local fixtures do not establish hosted execution.",
+      "external_evidence": "Maintainer-approved policy plan and successful live apply/readback before expanded action use; independent reviewed verifier before human integration."
+    },
+    {
+      "id": "CI-ISOLATION",
+      "requirements": ["v5.0.0-1.4.1", "v5.0.0-1.4.2", "v5.0.0-1.4.3", "v5.0.0-13.2.2"],
+      "applicability": "applicable",
+      "reason": "Fresh hosted VM and absent Ohtia state; admitted native roots, synthetic sentinels, real packaged sandbox and shutdown observations.",
+      "enforcing_files": [
+        "tooling/quality-profile.mjs",
+        "scripts/quality_native.py",
+        "tooling/quality-packaging/after-install.sh",
+        "scripts/quality_processes.py",
+        "tooling/desktop-native-observation.mjs",
+        "tooling/quality-fixture-paths.mjs",
+        "scripts/quality_vm.py"
+      ],
+      "deterministic_tests": [
+        "test_quality_native.NativeTests.test_local_accounts_never_become_automatic_hosted_fixtures",
+        "test_quality_native.NativeTests.test_host_target_mismatch_fails_before_native_launch",
+        "test_quality_native.NativeTests.test_failed_renderer_query_is_ignored_only_after_confirmed_exit",
+        "test_quality_native.NativeTests.test_linux_identity_is_bound_to_process_start_time",
+        "test_quality_native.NativeTests.test_ready_process_producer_publishes_complete_atomic_linux_identity",
+        "test_quality_native.NativeTests.test_stable_fixtures_use_external_temp_without_weakening_native_admission",
+        "test_quality_vm.VirtualMachineTests.test_guest_diagnostics_exclude_keys_and_reject_aliases"
+      ],
+      "native_evidence": "Identified native Actions job result.json, package/report digests and native observation attachments; local fixtures do not establish hosted execution.",
+      "external_evidence": "Maintainer-approved policy plan and successful live apply/readback before expanded action use; independent reviewed verifier before human integration."
+    }
+  ],
+  "exclusions": [
+    {
+      "scope": "Official signing, notarization, authenticated updater, version reservation, release notes and public publication",
+      "reason": "No corresponding capability or authority is enabled by unsigned quality builds; SPEC-001-026 assigns those controls to their own delivery owners."
+    },
+    {
+      "scope": "Fedora/Debian ARM64 recurring guests, Windows 11 x64, Intel macOS and physical display/device qualification",
+      "reason": "The CI matrix and TD-001 distinguish actual hosted/KVM execution from untested distribution/hardware profiles; complete final-artifact qualification retains its own inventory."
+    }
+  ]
+}

@@ -2,8 +2,6 @@
 type: Playbook
 title: Repository policy
 description: GitHub repository configuration, dependency updates, quality checks, and verification procedures.
-generated:
-  by: claude-code/claude-opus-5-5
 sources:
   - id: github-pull-request-api
     resource: https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request
@@ -20,6 +18,10 @@ sources:
   - id: dependabot-runners
     resource: https://docs.github.com/en/code-security/concepts/supply-chain-security/dependabot-on-actions
     title: Dependabot on GitHub Actions runners
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # Repository policy
@@ -29,7 +31,7 @@ GitHub repository settings are declared in `config/github/`. The policy tool use
 ## Declared configuration
 
 - `repository.json` permits merge commits, disables squash, rebase, and auto-merge, permits updating a pull request branch, enables Discussions, and disables the wiki. Branch deletion remains part of the post-merge workflow.
-- `actions-permissions.json` permits only `actions/checkout` and `actions/setup-python`, requires full commit SHAs, and gives workflow tokens read-only access without pull request approval privileges. The action patterns apply to this public repository.[^github-actions-permissions] It also requires `all_external_contributors` approval for fork workflows, including contributors with previously accepted changes. Approval authorizes workflow execution, not fork creation or PR integration.
+- `actions-permissions.json` permits only `actions/checkout`, `actions/setup-python`, `actions/upload-artifact` and `actions/download-artifact`, requires full commit SHAs, and gives workflow tokens read-only access without pull request approval privileges. The action patterns apply to this public repository.[^github-actions-permissions] It also requires `all_external_contributors` approval for fork workflows, including contributors with previously accepted changes. Approval authorizes workflow execution, not fork creation or PR integration.
 - `ci-verification.json` declares the expected workflow/event, mandatory jobs/steps and explicitly optional cleanup steps used by the read-only pre-merge verifier. Review this inventory with workflow changes.
 - `security.json` enables dependency vulnerability alerts and automated security fixes.
 - `labels.json` defines managed label names, colors, and descriptions. Unmanaged labels are preserved.
@@ -69,7 +71,7 @@ Exit codes are `0` for conformity, `1` for declared differences, and `2` when a 
 
 ## Repository checks
 
-The `ci` workflow runs on pull requests targeting `main` and pushes to `main`, using the configured formatting and lint hooks, a committed-history secret scan, and the policy-tool unit tests. The local branch guard is skipped in CI, where GitHub enforces branch protection, and the staged-file secret scan is replaced by the history scan. Its only job is named `ci`, matching the required check; it records the tested revision before repository-controlled tooling runs. Superseded pull request runs may be cancelled; each push to `main` retains its own execution.
+The `ci` workflow runs on pull requests targeting `main` and pushes to `main`, using the configured formatting and lint hooks, a committed-history secret scan, and the policy-tool unit tests. The local branch guard is skipped in CI, where GitHub enforces branch protection, and the staged-file secret scan is replaced by the history scan. The `full-suite (ubuntu-26.04-x64)` job preserves those shared checks, fourteen native jobs build the hosted quality matrix, and the stable `ci` job requires their successful complete aggregate. Every job records the tested revision before repository-controlled tooling runs. [Native quality builds](quality-builds.md) owns the selected matrix, package evidence and retention procedure. Superseded pull request runs may be cancelled; each push to `main` retains its own execution.
 
 The workflow uses a read-only token, does not persist checkout credentials, and has no administrative credentials. It tests the policy tool with synthetic GitHub responses; it does not claim to verify live administrative settings. Maintainers run live verification separately.
 
@@ -103,7 +105,7 @@ The command performs GitHub reads only. Exit `0` emits a JSON evidence report; e
 
 The verifier checks the open PR's current head/base, an up-to-date candidate tree, the synthetic merge's parents/tree, exact reviewed workflow bytes, registered workflow ID/path, `pull_request` event, repository identities, latest run/attempt, originating GitHub Actions app and complete mandatory job/step results. It does not rely on the run `pull_requests` array because the trusted workflow's checkout receipt separately binds the actual PR merge ref and its head/base. Candidate-authored arbitrary success messages are not evidence.
 
-CI records `OHTIA_CI_PROVENANCE` before installing/running repository-controlled tooling. The record contains the actual checked-out commit/tree and GitHub-provided run/attempt/event/ref identities. The verifier reads bounded job logs and requires exactly one valid matching receipt, together with exact workflow bytes and successful required steps; the receipt alone cannot establish trust. Missing logs, extra jobs, undeclared steps, skipped mandatory work or a missing/mismatched receipt fail verification. Explicit optional cleanup steps may be absent/skipped; their executed failures still fail verification.
+CI records `OHTIA_CI_PROVENANCE` before installing/running repository-controlled tooling. The record contains the actual checked-out commit/tree and GitHub-provided run/attempt/event/ref identities. The verifier reads bounded job logs and requires exactly one valid matching receipt per job, together with exact workflow bytes and successful required steps; the receipt alone cannot establish trust. Missing logs, extra jobs, undeclared steps, skipped mandatory work or a missing/mismatched receipt fail verification. Explicit optional cleanup steps may be absent/skipped; their executed failures still fail verification.
 
 GitHub can return `mergeable: null` while computing a synthetic merge; the verifier reports that evidence as pending, and the maintainer retries the complete verification after GitHub finishes.[^github-pull-request-api] It never interprets unknown mergeability as success. Logs that are not valid UTF-8 remain unavailable evidence rather than being decoded by guesswork. The verifier requires a GitHub CLI supporting `api --allow-escape-sequences`: it captures raw log bytes in the bounded pipe for receipt parsing and never prints their escape sequences to a terminal.
 

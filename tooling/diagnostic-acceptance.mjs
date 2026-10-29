@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { _electron, expect } from "@playwright/test";
 import { admittedLaunch } from "./desktop-launch.mjs";
+import { recordReadyNativeProcesses } from "./desktop-native-observation.mjs";
 import { decodeDiagnosticLine, message } from "../packages/contracts/dist/index.js";
 import { verifyStableSentinels } from "../packages/main/dist/index.js";
 const [profileFile, prepared, output] = process.argv.slice(2);
@@ -33,12 +34,14 @@ const receipt = {
     "Manual assistive and human linguistic acceptance remain separate.",
   ],
 };
-const record = (id, detail = {}) => {
-  receipt.cases.push({ id, result: "pass", ...detail });
+const saveReceipt = () =>
   fs.writeFileSync(
     path.join(output, "diagnostic-receipt.json"),
     JSON.stringify(receipt, null, 2) + "\n",
   );
+const record = (id, detail = {}) => {
+  receipt.cases.push({ id, result: "pass", ...detail });
+  saveReceipt();
 };
 function snapshot() {
   const result = {};
@@ -151,6 +154,7 @@ try {
   });
   const page = await application.firstWindow();
   await expect(page.getByRole("heading", { name: "Ohtia", exact: true })).toBeVisible();
+  await recordReadyNativeProcesses(application, output);
   const state = await page.evaluate(() => window.ohtia.bootstrap.read());
   if (state.state !== "storage_ready") {
     assert.ok(["pending_create", "located"].includes(state.state));
@@ -172,77 +176,158 @@ try {
   assert.ok(logs().every((r) => r.resource["service.version"] === identity.version));
   record("broker-startup-and-worker-events", identity);
   if (os.platform() === "win32") {
-    // Seed complete valid records at the exact rotation boundary in this synthetic store.
-    const first = logs()[0];
-    const a =
-      JSON.stringify({ ...first, attributes: { ...first.attributes, "ohtia.duration_ms": 0 } }) +
-      "\n";
-    const b =
-      JSON.stringify({ ...first, attributes: { ...first.attributes, "ohtia.duration_ms": 10 } }) +
-      "\n";
-    let seeded = false;
-    for (let count = 0; count <= (5 * 1024 * 1024) / Buffer.byteLength(a); count++) {
-      const remaining = 5 * 1024 * 1024 - count * Buffer.byteLength(a);
-      if (remaining % Buffer.byteLength(b) === 0) {
-        fs.writeFileSync(
-          path.join(logDirectory, "ohtia.jsonl"),
-          a.repeat(count) + b.repeat(remaining / Buffer.byteLength(b)),
-        );
-        seeded = true;
-        break;
-      }
-    }
-    assert.ok(seeded);
-    await application.evaluate(() => {
-      const child = process.getBuiltinModule("node:child_process");
-      globalThis.__diagnosticOriginalSpawn = child.spawn;
-      globalThis.__diagnosticDelayedAcl = 0;
-      globalThis.__diagnosticAclDelayFinished = 0;
-      child.spawn = function (command, args, options) {
-        if (command.endsWith("powershell.exe") && !globalThis.__diagnosticDelayedAcl) {
-          globalThis.__diagnosticDelayedAcl++;
-          const changed = [...args];
-          changed[changed.length - 1] =
-            "Start-Sleep -Milliseconds 6000; " + changed[changed.length - 1];
-          const helper = globalThis.__diagnosticOriginalSpawn(command, changed, options);
-          helper.once("close", () => {
-            globalThis.__diagnosticAclDelayFinished++;
-          });
-          return helper;
+    try {
+      // Seed complete valid records at the exact rotation boundary in this synthetic store.
+      const first = logs()[0];
+      const a =
+        JSON.stringify({ ...first, attributes: { ...first.attributes, "ohtia.duration_ms": 0 } }) +
+        "\n";
+      const b =
+        JSON.stringify({ ...first, attributes: { ...first.attributes, "ohtia.duration_ms": 10 } }) +
+        "\n";
+      let seeded = false;
+      for (let count = 0; count <= (5 * 1024 * 1024) / Buffer.byteLength(a); count++) {
+        const remaining = 5 * 1024 * 1024 - count * Buffer.byteLength(a);
+        if (remaining % Buffer.byteLength(b) === 0) {
+          fs.writeFileSync(
+            path.join(logDirectory, "ohtia.jsonl"),
+            a.repeat(count) + b.repeat(remaining / Buffer.byteLength(b)),
+          );
+          seeded = true;
+          break;
         }
-        return globalThis.__diagnosticOriginalSpawn(command, args, options);
-      };
-    });
-    const delayedSave = await page.evaluate(async () => {
-      const read = await window.ohtia.foundation.readAppearance().result;
-      if (!read.ok) return read;
-      return window.ohtia.foundation.replaceAppearance({
-        operationId: crypto.randomUUID(),
-        expectedRevision: read.value.revision,
-        value: read.value.value === "dark" ? "light" : "dark",
-      }).result;
-    });
-    assert.equal(delayedSave.ok, true);
-    await expect.poll(() => application.evaluate(() => globalThis.__diagnosticDelayedAcl)).toBe(1);
-    const elapsed = [];
-    for (let i = 0; i < 3; i++) {
-      const start = performance.now();
-      const status = await page.evaluate(() => window.ohtia.foundation.readStatus().result);
-      assert.equal(status.ok, true);
-      elapsed.push(performance.now() - start);
+      }
+      assert.ok(seeded);
+      await application.evaluate(() => {
+        const child = process.getBuiltinModule("node:child_process");
+        globalThis.__diagnosticOriginalSpawn = child.spawn;
+        globalThis.__diagnosticDelayedAcl = 0;
+        globalThis.__diagnosticAclDelayFinished = 0;
+        child.spawn = function (command, args, options) {
+          if (command.endsWith("powershell.exe") && !globalThis.__diagnosticDelayedAcl) {
+            globalThis.__diagnosticDelayedAcl++;
+            const changed = [...args];
+            changed[changed.length - 1] =
+              "[System.Threading.Thread]::Sleep(6000); " + changed[changed.length - 1];
+            const observed = {
+              started_ms: performance.now(),
+              timeout_ms: options.timeout,
+              pid: null,
+              exit: null,
+              close: null,
+              error_code: null,
+            };
+            globalThis.__diagnosticHelperObservation = observed;
+            const observeError = (error) => {
+              observed.error_code =
+                typeof error.code === "string" && /^[A-Z0-9_]{1,64}$/.test(error.code)
+                  ? error.code
+                  : "unknown";
+            };
+            let helper;
+            try {
+              helper = globalThis.__diagnosticOriginalSpawn(command, changed, options);
+            } catch (error) {
+              observeError(error);
+              throw error;
+            }
+            globalThis.__diagnosticDelayedHelper = helper;
+            observed.pid = Number.isSafeInteger(helper.pid) ? helper.pid : null;
+            helper.once("error", observeError);
+            for (const event of ["exit", "close"]) {
+              helper.once(event, (code, signal) => {
+                observed[event] = {
+                  code,
+                  signal,
+                  elapsed_ms: Math.round(performance.now() - observed.started_ms),
+                };
+                if (event === "close") globalThis.__diagnosticAclDelayFinished++;
+              });
+            }
+            return helper;
+          }
+          return globalThis.__diagnosticOriginalSpawn(command, args, options);
+        };
+      });
+      const delayedSave = await page.evaluate(async () => {
+        const read = await window.ohtia.foundation.readAppearance().result;
+        if (!read.ok) return read;
+        return window.ohtia.foundation.replaceAppearance({
+          operationId: crypto.randomUUID(),
+          expectedRevision: read.value.revision,
+          value: read.value.value === "dark" ? "light" : "dark",
+        }).result;
+      });
+      assert.equal(delayedSave.ok, true);
+      await expect
+        .poll(() => application.evaluate(() => globalThis.__diagnosticDelayedAcl))
+        .toBe(1);
+      const elapsed = [];
+      for (let i = 0; i < 3; i++) {
+        const start = performance.now();
+        const status = await page.evaluate(() => window.ohtia.foundation.readStatus().result);
+        assert.equal(status.ok, true);
+        elapsed.push(performance.now() - start);
+      }
+      assert.ok(elapsed.every((ms) => ms < 5000));
+      assert.equal(await application.evaluate(() => globalThis.__diagnosticAclDelayFinished), 0);
+      await expect
+        .poll(() => application.evaluate(() => globalThis.__diagnosticAclDelayFinished), {
+          timeout: 15000,
+        })
+        .toBe(1);
+      const completion = await application.evaluate(() => ({
+        timeout_ms: globalThis.__diagnosticHelperObservation?.timeout_ms,
+        exit: globalThis.__diagnosticHelperObservation?.exit,
+        close: globalThis.__diagnosticHelperObservation?.close,
+        error_code: globalThis.__diagnosticHelperObservation?.error_code,
+        killed: globalThis.__diagnosticDelayedHelper?.killed,
+      }));
+      assert.equal(completion.timeout_ms, 15000);
+      assert.equal(completion.exit?.code, 0);
+      assert.equal(completion.close?.code, 0);
+      assert.equal(completion.close?.signal, null);
+      assert.equal(completion.error_code, null);
+      assert.equal(completion.killed, false);
+      assert.ok(completion.close.elapsed_ms > 5000);
+      record("delayed-permissions-preserve-status", {
+        statusElapsedMs: elapsed,
+        helper: completion,
+      });
+    } finally {
+      receipt.windowsHelperDelay = await application
+        .evaluate(() => {
+          const observed = globalThis.__diagnosticHelperObservation;
+          const helper = globalThis.__diagnosticDelayedHelper;
+          const snapshot = {
+            launched: globalThis.__diagnosticDelayedAcl ?? 0,
+            closed: globalThis.__diagnosticAclDelayFinished ?? 0,
+            timeout_ms: observed?.timeout_ms ?? null,
+            pid: observed?.pid ?? null,
+            exit: observed?.exit ?? null,
+            close: observed?.close ?? null,
+            error_code: observed?.error_code ?? null,
+            elapsed_ms: observed ? Math.round(performance.now() - observed.started_ms) : null,
+            current: helper
+              ? {
+                  exit_code: helper.exitCode,
+                  signal: helper.signalCode,
+                  killed: helper.killed,
+                }
+              : null,
+          };
+          if (globalThis.__diagnosticOriginalSpawn) {
+            process.getBuiltinModule("node:child_process").spawn =
+              globalThis.__diagnosticOriginalSpawn;
+            delete globalThis.__diagnosticOriginalSpawn;
+          }
+          delete globalThis.__diagnosticDelayedHelper;
+          delete globalThis.__diagnosticHelperObservation;
+          return snapshot;
+        })
+        .catch(() => ({ unavailable: true }));
+      saveReceipt();
     }
-    assert.ok(elapsed.every((ms) => ms < 5000));
-    assert.equal(await application.evaluate(() => globalThis.__diagnosticAclDelayFinished), 0);
-    await application.evaluate(() => {
-      process.getBuiltinModule("node:child_process").spawn = globalThis.__diagnosticOriginalSpawn;
-      delete globalThis.__diagnosticOriginalSpawn;
-    });
-    await expect
-      .poll(() => application.evaluate(() => globalThis.__diagnosticAclDelayFinished), {
-        timeout: 15000,
-      })
-      .toBe(1);
-    record("delayed-permissions-preserve-status", { statusElapsedMs: elapsed });
   }
   await application.evaluate(async (_electron, marker) => {
     const fs = process.getBuiltinModule("node:fs");

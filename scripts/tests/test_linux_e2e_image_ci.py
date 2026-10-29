@@ -632,13 +632,34 @@ class RerunTests(unittest.TestCase):
                 ]
             ],
             {10: "x " + self.MISSING + " y", 20: "Linux E2E refused: " + self.MISSING, 30: "other"},
+            # Successful native jobs must also repeat: the aggregate refuses artifacts
+            # and provenance receipts from a different run attempt.
+            jobs={
+                run: [
+                    {
+                        "id": run * 10,
+                        "name": "full-suite (ubuntu-26.04-x64)",
+                        "conclusion": "failure",
+                    },
+                    {"id": run * 100, "name": "ci", "conclusion": "failure"},
+                    *[
+                        {
+                            "id": run * 1000 + cell,
+                            "name": f"native ({cell})",
+                            "conclusion": "success",
+                        }
+                        for cell in range(14)
+                    ],
+                ]
+                for run in (1, 2)
+            },
         )
         self.assertEqual(result, [2, 1])
         self.assertEqual(
             reruns,
             [
-                "repos/ohtia/ohtia/actions/runs/2/rerun-failed-jobs",
-                "repos/ohtia/ohtia/actions/runs/1/rerun-failed-jobs",
+                "repos/ohtia/ohtia/actions/runs/2/rerun",
+                "repos/ohtia/ohtia/actions/runs/1/rerun",
             ],
         )
         listing = self.calls[0]
@@ -691,9 +712,7 @@ class RerunTests(unittest.TestCase):
                 {10: self.MISSING},
                 failures=(("/jobs/20/logs", "gh: Server Error (HTTP 502)"),),
             )
-        self.assertIn(
-            "repos/ohtia/ohtia/actions/runs/1/rerun-failed-jobs", [args[-1] for args in self.calls]
-        )
+        self.assertIn("repos/ohtia/ohtia/actions/runs/1/rerun", [args[-1] for args in self.calls])
         self.assertIn("HTTP 502", self.stderr)
         # An expired log is only a warning, so a stale branch cannot keep the job red.
         result, reruns = self.rerun(

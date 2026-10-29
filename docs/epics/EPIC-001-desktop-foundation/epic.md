@@ -2,10 +2,6 @@
 type: EPIC
 title: "EPIC-001 — Desktop foundation"
 description: "Deliver a safe runnable desktop, reproducible native contribution environments and verified immutable build/release infrastructure."
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 tags: [epic, "comp:desktop", "comp:tooling", "comp:storage", "comp:docs"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/14
@@ -186,6 +182,10 @@ stories:
     title: "Qualify the native foundation targets"
     concept: ./STORY-001-018-qualify-the-native-foundation-targets.md
     resource: https://github.com/ohtia/ohtia/issues/32
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # EPIC-001 — Desktop foundation
@@ -238,7 +238,7 @@ D1a is usable when these reviewed selections and numeric contracts are available
 | Windows          | Required        | Optional                |
 | macOS            | Optional, Intel | Required, Apple Silicon |
 
-Every coordinated runnable delivery enumerates every required cell and any optional cell actually included; a missing mandatory native result fails that delivery. Cross-compilation, emulation or x86-64 execution on ARM does not qualify a native cell.[^roadmap]
+Every coordinated native qualification or distribution delivery enumerates every required cell and any optional cell actually included; a missing mandatory native result fails that delivery. Recurring quality CI uses the separately selected matrix in [ADR-0020](../../adr/adr-0020-github-policy-and-trusted-ci.md#recurring-hosted-quality-matrix), with explicit coverage and technical-debt boundaries rather than claiming untested distribution profiles. Cross-compilation, emulation or x86-64 execution on ARM does not qualify a native cell.[^roadmap]
 
 ### SPEC-001-004: Workspace and isolated tooling
 
@@ -428,7 +428,7 @@ PR jobs receive no signing and notarization/publication credentials and cannot p
 
 A main push validates the actual integrated source and records its distinct identity; synthetic PR merge evidence cannot substitute. Fail on missing, unreadable, cancelled or failing required targets/partitions and keep all results attributable. Optional later nightly suites supplement required gates; no clock/issue/merge event publishes automatically. Record bounded CI artifact retention, cleanup and retrieval limitations without deleting sole supported-release copies.
 
-The required quality-build matrix follows the target manifest: Linux x86-64 and ARM64, Windows x86-64, and Apple Silicon on macOS 26 and 27. Windows ARM64 and Apple Intel are optional; an included optional target requires its own complete native evidence and cannot be qualified by emulation or another CPU slice. Account for every required distribution, backend and macOS family record rather than hard-coding a six-cell count. The job/step inventory must account for each target's native executable/addon architecture and packaged evidence, independently of package-format fan-out. Missing ARM64/native-host evidence or an emulation-only result fails the coordinated required gate. Native ARM64 runs supplement, rather than replace or overclaim, the pinned Linux x86-64 E2E image.[^roadmap]
+The required recurring quality-build matrix follows [ADR-0020](../../adr/adr-0020-github-policy-and-trusted-ci.md#recurring-hosted-quality-matrix) and [the quality-build inventory](../../../config/quality/build-targets.json): hosted Ubuntu 24.04 and 26.04 on x64 and ARM64, hosted Windows Server x64 and Windows 11 ARM64, and hosted macOS 26 and 27 on Apple Silicon. Every selected cell and package format is mandatory. Windows Server does not qualify Windows 11 x64 distribution; Ubuntu jobs separately exercise X11 and GNOME/Wayland on both versions and CPUs. Native Fedora 44 and Debian 13 x64 guests exercise GNOME/Wayland on KVM with their own vendor kernels and declared filesystems/policies; their ARM64 guest CI extension is retained in technical debt. The distribution target manifest and complete final-candidate qualification remain separate. Record the actual host/image, executable/addon architecture and packaged evidence in each result; missing or emulated-only required evidence fails the coordinated quality gate. Native ARM64 runs supplement the pinned Linux x86-64 E2E environment without claiming its parity.
 
 STORY-001-012 owns compatibility of the expanded CI inventory with scripts/github_pr.py, scripts/github_policy.py and their existing tests. Exercise multiple required native jobs, absent/extra/skipped jobs, wrong head/base/tested tree and stale workflow/policy identities against the trusted verifier. Keep its pull_request admission strict; a push-to-main run cannot pass the pre-merge PR check. Main quality builds retain their separate integrated-source provenance. Extend the reviewed verifier/tests only where the chosen inventory/provenance design requires it; one primary provenance step does not justify missing per-target checkout evidence.
 

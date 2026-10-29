@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { _electron, expect } from "@playwright/test";
 import { admittedLaunch } from "./desktop-launch.mjs";
+import { recordReadyNativeProcesses } from "./desktop-native-observation.mjs";
 import { verifyStableSentinels, readBoundedFile } from "../packages/main/dist/index.js";
 import { message, portLimits, policyId } from "../packages/contracts/dist/index.js";
 
@@ -74,6 +75,7 @@ try {
   await expect
     .poll(async () => (await page.evaluate(() => window.ohtia.foundation.readStatus().result)).ok)
     .toBe(true);
+  await recordReadyNativeProcesses(application, output);
   const initial = await page.evaluate(async () => ({
     snapshot: await window.ohtia.bootstrap.read(),
     status: await window.ohtia.foundation.readStatus().result,
@@ -293,17 +295,19 @@ try {
   expect(tree).toContain("button");
   expect(tree).toContain("heading");
   passed("keyboard-reflow-accessibility-tree", { reflow, tree });
+  const captureStarted = performance.now();
   try {
     await page.screenshot({
       path: path.join(output, "foundation-320.png"),
       fullPage: true,
-      timeout: 5000,
+      timeout: 30000,
     });
-    passed("graphical-capture");
+    passed("graphical-capture", { elapsed_ms: Math.round(performance.now() - captureStarted) });
   } catch (error) {
     receipt.cases.push({
       id: "graphical-capture",
       result: "fail",
+      elapsed_ms: Math.round(performance.now() - captureStarted),
       controlledMessage: error instanceof Error ? error.message.slice(0, 1024) : "Capture failed",
     });
     process.exitCode = 1;

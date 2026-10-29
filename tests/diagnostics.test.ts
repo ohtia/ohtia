@@ -240,7 +240,7 @@ describe("broker-owned bounded diagnostic files", () => {
   it("keeps broker timers responsive during delayed Windows ACL failure, latches failure and cancels on close", async () => {
     const descriptor = Object.getOwnPropertyDescriptor(process, "platform")!;
     const previousSystem = process.env.SystemRoot;
-    const { writer } = fixture();
+    const { writer, root } = fixture();
     vi.useFakeTimers();
     const children: EventEmitter[] = [];
     const spawn = vi.spyOn(childProcess, "spawn").mockImplementation(() => {
@@ -263,6 +263,18 @@ describe("broker-owned bounded diagnostic files", () => {
       const append = writer.append(started);
       await vi.advanceTimersByTimeAsync(0);
       expect(spawn).toHaveBeenCalledOnce();
+      const [executable, args, options] = spawn.mock.calls[0];
+      expect(executable).toBe(
+        path.join("/synthetic-system", "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+      );
+      expect(args).toEqual(["-NoProfile", "-NonInteractive", "-Command", expect.any(String)]);
+      expect(args?.join(" ")).not.toContain(root);
+      expect(options).toMatchObject({
+        env: { OHTIA_DIAGNOSTIC_ACL_PATH: path.join(root, "logs") },
+        timeout: 15000,
+        windowsHide: true,
+        stdio: "ignore",
+      });
       expect(writer.reservedPermissionProcesses).toBe(2);
       children[0].emit("error", new Error(marker));
       children[0].emit("error", new Error(marker));

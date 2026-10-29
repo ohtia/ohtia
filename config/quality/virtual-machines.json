@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "accelerator": "kvm",
+  "host_runner": "ubuntu-26.04",
+  "architecture": "x64",
+  "pending_architectures": ["arm64"],
+  "memory_mib": 6144,
+  "vcpus": 2,
+  "deadline_seconds": 3600,
+  "guests": {
+    "fedora-44": {
+      "image": {
+        "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2",
+        "sha256": "28680fe5b371a5a82ebf43a31926e086a168e59949d03969c5093e7071f90b7f",
+        "checksum_source": "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-44-1.7-x86_64-CHECKSUM",
+        "inspection": "published-checksum-metadata"
+      },
+      "filesystem": "btrfs",
+      "format": "rpm"
+    },
+    "debian-13": {
+      "image": {
+        "url": "https://cloud.debian.org/images/cloud/trixie/20261026-2643/debian-13-generic-amd64-20261026-2643.qcow2",
+        "sha512": "5bd891c6e62d01639f52a5587b72a4607421e445732214be787dba6043cf9797a6ff90bed982aada6a6c7e619f1f956d961c4fad76757171abd607920aac098a",
+        "checksum_source": "https://cloud.debian.org/images/cloud/trixie/20261026-2643/SHA512SUMS",
+        "inspection": "published-checksum-metadata"
+      },
+      "filesystem": "ext4",
+      "format": "deb"
+    }
+  }
+}

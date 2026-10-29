@@ -583,11 +583,15 @@ def check_configuration(root: Path, tools: dict[str, Any]) -> None:
     """Check the repository's literal CI and hook pins; expressions require reviewed adaptation."""
     workflow = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     runners = re.findall(r"^[ \t]+runs-on:[ \t]+([^\s#]+)[ \t]*$", workflow, re.MULTILINE)
-    require(runners == [tools["python"]["ci_artifact"]["os"]], "CI runner and manifest differ")
+    require(
+        runners == [tools["python"]["ci_artifact"]["os"]] * 2
+        and workflow.count("runs-on: ${{ matrix.runner }}") == 1,
+        "CI runner and manifest differ",
+    )
     interpreters = re.findall(
         r"^[ \t]+python-version:[ \t]+[\"']?(\d+\.\d+\.\d+)[\"']?[ \t]*$", workflow, re.MULTILINE
     )
-    require(interpreters == [tools["python"]["version"]], "CI Python and manifest differ")
+    require(interpreters == [tools["python"]["version"]] * 3, "CI Python and manifest differ")
     hooks = (root / ".pre-commit-config.yaml").read_text(encoding="utf-8")
     for name, repository in (
         ("prettier", "https://github.com/rbubley/mirrors-prettier"),
@@ -600,6 +604,13 @@ def check_configuration(root: Path, tools: dict[str, Any]) -> None:
         )
         pins = re.findall(pattern, hooks, re.MULTILINE)
         require(pins == [tools[name]["version"]], f"{name} hook and manifest differ")
+
+    quality = json.loads((root / "config/quality/build-targets.json").read_text())
+    declared = [(cell["id"], cell["runner"]) for cell in quality["cells"]]
+    actual = re.findall(
+        r"^          - id: ([a-z0-9-]+)\n            runner: ([a-z0-9.-]+)$", workflow, re.MULTILINE
+    )
+    require(actual == declared, "Native workflow matrix differs from its declared inventory")
 
 
 def check_policy(record: dict[str, Any]) -> None:

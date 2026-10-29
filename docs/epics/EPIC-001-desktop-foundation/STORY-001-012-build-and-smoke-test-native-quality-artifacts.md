@@ -2,8 +2,6 @@
 type: Story
 title: "STORY-001-012 — Build and smoke-test native quality artifacts"
 description: "Produce isolated, identifiable quality packages and complete native smoke evidence for PRs and integrated source."
-generated:
-  by: codex/gpt-6.1-sol
 tags: ["story", "comp:tooling", "comp:desktop"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/26
@@ -21,6 +19,10 @@ applicable_blocks:
     "SPEC-001-026",
     "SPEC-001-027",
   ]
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # STORY-001-012 — Build and smoke-test native quality artifacts
@@ -49,9 +51,9 @@ Produce isolated, identifiable quality packages and complete native smoke eviden
 - [ ] Extend reviewed workflows, dependency pins and mandatory job/step inventories through repository policy.
 - [ ] Implement strict aggregate accounting, artifact digests/run/tree identity, bounded retention and conservative affected-scope rules.
 - [ ] Own compatibility of expanded native jobs with the actual PR verifier, policy tooling and tests; preserve strict pull_request admission and separate main-source evidence.
-- [ ] Build identifiable unsigned development packages for the declared native target matrix on PR and actual integrated-main events.
+- [ ] Build identifiable unsigned development packages for the recurring hosted matrix selected by ADR-0020 on PR and actual integrated-main events.
 - [ ] Run required packaged boundary/durability/privacy/shutdown smoke suites in isolated native data profiles/VMs.
-- [ ] Produce and natively smoke-test packages for every required target/profile and any optional target actually included, retaining actual architecture and per-cell result accounting.
+- [ ] Produce and natively smoke-test packages for every cell in the hosted quality inventory, retaining actual architecture and per-cell result accounting separately from distribution qualification.
 - [ ] Produce applicable delivery security requirement-ID/applicability/evidence records under SPEC-001-026.
 
 ## Acceptance criteria
@@ -63,7 +65,7 @@ Produce isolated, identifiable quality packages and complete native smoke eviden
 - [ ] Completion gate: verify Native hosts output NH and its full release condition in the Dependencies output registry and SPEC-001-015.
 - [ ] Native job/result/provenance changes pass current-verifier compatibility and negative tests; no push run is accepted as pre-merge PR evidence.
 - [ ] Applicable CI security evidence and required live policy authorization/readback are complete before the changed authority is used.
-- [ ] All required native targets pass; missing ARM64 or emulated-only evidence fails ci rather than silently narrowing scope.
+- [ ] All fourteen native quality cells pass; missing ARM64 or emulated-only evidence fails ci. Hosted Windows Server and Apple Silicon evidence does not qualify other distribution profiles; Fedora/Debian ARM64 guests remain an explicit technical-debt entry.
 - [ ] PR and actual integrated source have distinct complete native quality evidence; a synthetic merge result cannot replace a different main revision.
 - [ ] Documentation-only exclusions are justified; uncertain/shared/native/build-input changes get the full relevant matrix.
 - [ ] Incomplete or unreadable required targets fail ci; PR artifacts receive no signing/publication credentials or public update feeds.

@@ -2,10 +2,6 @@
 type: DecisionRecord
 title: ADR-0038 — Native desktop packages with authenticated update admission
 description: Select provisional six-target packages, native signing and updater admission while preserving immutable candidate bytes and recovery boundaries.
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: builder
     resource: https://www.electron.build/v26/docs/features/auto-update/
@@ -40,6 +36,10 @@ sources:
   - id: crypto
     resource: https://nodejs.org/api/crypto.html#cryptoverifyalgorithm-data-key-signature
     title: Node signature verification
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # ADR-0038 — Native desktop packages with authenticated update admission
@@ -56,7 +56,7 @@ Consider electron-builder with electron-updater, Electron Forge with the built-i
 
 Use electron-builder `26.18.*` for packaging and electron-updater `6.8.*` for updater transport/staging, with exact candidate patches and integrity in the [toolchain manifest](../../config/desktop/toolchain.json). This is a provisional mechanism selection with rejection tests, not evidence that the selected tools already satisfy Ohtia's admission rules. Their mutable latest tags and newer documentation are not configuration authority. 002 locks transitive helpers before any build; 013 verifies exact updater behavior rather than borrowing defaults from a different major.
 
-Select separate DEB packages for the Ubuntu and Debian profiles and RPM packages for the Fedora profiles explicitly assigned to each CPU in the [target manifest](../../config/desktop/targets.json), a per-user offline NSIS installer for each Windows architecture, and separate DMG plus ZIP artifacts for each macOS architecture. Unsigned quality packages use these same formats and development identities under isolated profiles. NSIS web installers, Windows per-machine elevation and cross-architecture installer bundles are excluded. Linux package installation uses explicit native administrator authorization; the running application and its research service remain unprivileged. macOS ZIP is an update payload, not a substitute for native DMG installation testing. Do not select universal macOS output unless both slices receive independent qualification.[^builder]
+Select separate DEB packages for the Ubuntu and Debian profiles and RPM packages for the Fedora profiles explicitly assigned to each CPU in the [target manifest](../../config/desktop/targets.json), a per-user offline NSIS installer for each Windows architecture, and separate DMG plus ZIP artifacts for each macOS architecture. Unsigned quality packages use the applicable same formats and development identities under isolated profiles; [ADR-0020](adr-0020-github-policy-and-trusted-ci.md#recurring-hosted-quality-matrix) selects their recurring hosted CI scope independently of final distribution qualification. NSIS web installers, Windows per-machine elevation and cross-architecture installer bundles are excluded. Linux package installation uses explicit native administrator authorization; the running application and its research service remain unprivileged. macOS ZIP is an update payload, not a substitute for native DMG installation testing. Do not select universal macOS output unless both slices receive independent qualification.[^builder]
 
 Select DEB for the declared Ubuntu floor because a fixed, root-owned executable path permits a narrowly scoped installed AppArmor user-namespace allowance while preserving Chromium sandboxing. Portable AppImage is rejected initially: arbitrary user-writable paths, FUSE/extraction and stock Ubuntu's user-namespace restrictions add unresolved sandbox provisioning. The installer must explain and authorize its system-package/profile changes, bind the allowance to the trusted installation executable rather than a wildcard writable path, and verify load/removal/upgrade behavior. Never disable AppArmor globally, use no-sandbox flags, run the product as root or treat the allowance as general parser confinement. 018 tests minimal native feasibility for Ubuntu/DEB and Fedora/RPM on both Linux CPUs; 013 owns final signed package/profile installation and recovery.[^ubuntu-sandbox]
 

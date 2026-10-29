@@ -3,7 +3,7 @@ type: DecisionRecord
 title: ADR-0040 — Input-addressed hosted producer for the Linux E2E image
 description: Identify the Linux E2E image by its declared recipe inputs, build it only on GitHub-hosted runners when no publication exists, and re-run waiting checks automatically.
 generated:
-  by: claude-code/claude-opus-5-5
+  by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
 sources:
@@ -39,7 +39,7 @@ The E2E launcher computes the checkout's fingerprint and uses only the matching 
 
 The [image workflow](../../.github/workflows/linux-e2e-image.yml) is the only producer. It starts only for pushes to this repository that change a declared input, using a path filter identical to the declaration, and for explicit dispatch.[^path-filters] A planning job on the standard runner requests construction only when the registry reports the publication as absent; any other registry response stops without building. A newer run for the same branch cancels an unfinished one, and constructions for the same fingerprint run one at a time so a waiting successor reuses its predecessor's publication; GitHub keeps one waiting job per queue and cancels an earlier waiting one. Before construction, the build job verifies the event identity, Docker/AppArmor prerequisites, the continued absence of a publication and package-write permission. Qualification of every declared case precedes publication, receives no registry credential, and an existing input-addressed tag is never replaced.
 
-After a publication, or when planning finds one, a recovery job serialized per fingerprint re-runs the failed jobs of each pull-request check of this repository from the last 30 days whose latest run failed with the missing-image message for that fingerprint, whichever branch produced the image. Construction uses the standard hosted runner; the optional repository variable `LINUX_E2E_IMAGE_RUNNER` can select a larger runner without changing the workflow. The recipe derives compiler parallelism from available CPUs and a per-job memory budget and records it in the WebKit receipts.
+After a publication, or when planning finds one, a recovery job serialized per fingerprint re-runs all jobs of each qualifying pull-request check of this repository from the last 30 days whose latest run failed with the missing-image message for that fingerprint, whichever branch produced the image. A complete re-run keeps native artifacts and provenance receipts in the same run attempt, as required by the strict CI aggregate. Construction uses the standard hosted runner; the optional repository variable `LINUX_E2E_IMAGE_RUNNER` can select a larger runner without changing the workflow. The recipe derives compiler parallelism from available CPUs and a per-job memory budget and records it in the WebKit receipts.
 
 ## Consequences
 

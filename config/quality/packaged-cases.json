@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "runtime": [
+    "real-status-ipc",
+    "native-executable-identities",
+    "real-broker-rejects-invalid-and-spoofed-ipc",
+    "renderer-preferences",
+    "packaged-csp",
+    "resources-denied",
+    "navigation-observation",
+    "navigation-denied",
+    "keyboard-reflow-accessibility-tree",
+    "graphical-capture",
+    "packaged-korean-glyphs",
+    "pseudolocalization-spacing-zoom-reflow",
+    "forced-colors-reduced-motion",
+    "fixed-native-home-data-root-without-selector",
+    "native-process-metrics",
+    "two-windows-one-utility",
+    "second-launch-one-service",
+    "utility-crash-responsive",
+    "explicit-retry-preserves-fixed-root-state",
+    "bounded-shutdown"
+  ],
+  "runtime_observations": ["navigation-observation", "native-process-metrics"]
+}

@@ -1,0 +1,132 @@
+{
+  "version": 1,
+  "scope": "github-hosted-standard-public-repository",
+  "cells": [
+    {
+      "id": "ubuntu-24-04-x64-x11",
+      "runner": "ubuntu-24.04",
+      "target": "linux-x64",
+      "profile": "ubuntu-24.04",
+      "backend": "x11",
+      "filesystem": "ext4",
+      "formats": ["deb"]
+    },
+    {
+      "id": "ubuntu-24-04-x64-wayland",
+      "runner": "ubuntu-24.04",
+      "target": "linux-x64",
+      "profile": "ubuntu-24.04",
+      "backend": "wayland",
+      "filesystem": "ext4",
+      "formats": ["deb"]
+    },
+    {
+      "id": "ubuntu-24-04-arm64-x11",
+      "runner": "ubuntu-24.04-arm",
+      "target": "linux-arm64",
+      "profile": "ubuntu-24.04",
+      "backend": "x11",
+      "filesystem": "ext4",
+      "formats": ["deb"]
+    },
+    {
+      "id": "ubuntu-24-04-arm64-wayland",
+      "runner": "ubuntu-24.04-arm",
+      "target": "linux-arm64",
+      "profile": "ubuntu-24.04",
+      "backend": "wayland",
+      "filesystem": "ext4",
+      "formats": ["deb"]
+    },
+    {
+      "id": "ubuntu-26-04-x64-x11",
+      "runner": "ubuntu-26.04",
+      "target": "linux-x64",
+      "profile": "ubuntu-26.04",
+      "backend": "x11",
+      "filesystem": "ext4",
+      "formats": ["deb"]
+    },
+    {
+      "id": "ubuntu-26-04-x64-wayland",
+      "runner": "ubuntu-26.04",
+      "target": "linux-x64",
+      "profile": "ubuntu-26.04",
+      "backend": "wayland",
+      "filesystem": "ext4",
+      "formats": ["deb"]
+    },
+    {
+      "id": "ubuntu-26-04-arm64-x11",
+      "runner": "ubuntu-26.04-arm",
+      "target": "linux-arm64",
+      "profile": "ubuntu-26.04",
+      "backend": "x11",
+      "filesystem": "ext4",
+      "formats": ["deb"]
+    },
+    {
+      "id": "ubuntu-26-04-arm64-wayland",
+      "runner": "ubuntu-26.04-arm",
+      "target": "linux-arm64",
+      "profile": "ubuntu-26.04",
+      "backend": "wayland",
+      "filesystem": "ext4",
+      "formats": ["deb"]
+    },
+    {
+      "id": "windows-x64",
+      "runner": "windows-2025",
+      "target": "win32-x64",
+      "profile": "windows-server-2025",
+      "backend": "desktop",
+      "filesystem": "NTFS",
+      "formats": ["nsis"]
+    },
+    {
+      "id": "windows-arm64",
+      "runner": "windows-11-arm",
+      "target": "win32-arm64",
+      "profile": "windows-11",
+      "backend": "desktop",
+      "filesystem": "NTFS",
+      "formats": ["nsis"]
+    },
+    {
+      "id": "macos-26-arm64",
+      "runner": "macos-26",
+      "target": "darwin-arm64",
+      "profile": "macos-26",
+      "backend": "windowserver",
+      "filesystem": "APFS",
+      "formats": ["dmg", "zip"]
+    },
+    {
+      "id": "macos-27-arm64",
+      "runner": "xcode-27",
+      "target": "darwin-arm64",
+      "profile": "macos-27",
+      "backend": "windowserver",
+      "filesystem": "APFS",
+      "formats": ["dmg", "zip"]
+    },
+    {
+      "id": "fedora-44-x64-vm",
+      "runner": "ubuntu-26.04",
+      "target": "linux-x64",
+      "profile": "fedora-44",
+      "backend": "wayland",
+      "filesystem": "btrfs",
+      "formats": ["rpm"]
+    },
+    {
+      "id": "debian-13-x64-vm",
+      "runner": "ubuntu-26.04",
+      "target": "linux-x64",
+      "profile": "debian-13",
+      "backend": "wayland",
+      "filesystem": "ext4",
+      "formats": ["deb"]
+    }
+  ]
+}

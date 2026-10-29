@@ -64,7 +64,10 @@
     "scripts/tests/test_linux_e2e_image.py",
     "scripts/tests/test_linux_e2e_image_ci.py",
     "scripts/tests/test_package_workspace.py",
+    "scripts/tests/test_quality_delivery.py",
+    "scripts/tests/test_quality_native.py",
     "scripts/tests/test_quality_tests.py",
+    "scripts/tests/test_quality_vm.py",
     "scripts/tests/test_workspace.py"
   ],
   "python_inapplicable": [

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import { _electron, expect } from "@playwright/test";
 import { admittedLaunch } from "./desktop-launch.mjs";
+import { recordReadyNativeProcesses } from "./desktop-native-observation.mjs";
 import { verifyStableSentinels } from "../packages/main/dist/index.js";
 import { message } from "../packages/contracts/dist/index.js";
 
@@ -64,6 +65,7 @@ async function start() {
   await expect
     .poll(async () => (await page.evaluate(() => window.ohtia.foundation.readStatus().result)).ok)
     .toBe(true);
+  await recordReadyNativeProcesses(application, output);
   return page;
 }
 async function holdNextStorageNotice() {
