@@ -37,6 +37,8 @@ export function admittedLaunch(profileFile, preparedDirectory) {
     )
       throw new Error("Native framework links changed.");
   }
+  if (process.platform === "win32" && !/^[A-Za-z]:$/.test(process.env.SystemDrive ?? ""))
+    throw new Error("Native Windows system-drive identity is unavailable.");
   const home = profile.home;
   const env = {
     HOME: home,
@@ -52,6 +54,7 @@ export function admittedLaunch(profileFile, preparedDirectory) {
           APPDATA: profile.configuration_root,
           LOCALAPPDATA: path.join(home, "AppData", "Local"),
           SystemRoot: process.env.SystemRoot,
+          SystemDrive: process.env.SystemDrive,
           WINDIR: process.env.WINDIR,
         }
       : {}),

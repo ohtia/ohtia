@@ -51,6 +51,8 @@ def build_environment() -> dict:
         "LOCALAPPDATA",
         "SystemRoot",
         "SYSTEMROOT",
+        "SystemDrive",
+        "SYSTEMDRIVE",
         "WINDIR",
         "TEMP",
         "TMP",

@@ -61,6 +61,75 @@ class NativeTests(unittest.TestCase):
             ):
                 self.assertNotIn(key, env)
             self.assertEqual(env["CSC_IDENTITY_AUTO_DISCOVERY"], "false")
+            for spelling in ("SystemDrive", "SYSTEMDRIVE"):
+                with (
+                    self.subTest(system_drive_key=spelling),
+                    patch.dict(os.environ, {spelling: "Z:"}, clear=True),
+                ):
+                    forwarded = native.build_environment()
+                    self.assertEqual(
+                        forwarded.get("SystemDrive", forwarded.get("SYSTEMDRIVE")), "Z:"
+                    )
+
+        # Exercise the real launcher environment boundary, not native Windows execution.
+        script = """
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {admittedLaunch} from './tooling/desktop-launch.mjs';
+const root = fs.realpathSync.native(process.argv[1]);
+const home = path.join(root,'home');
+const configuration = path.join(home,'AppData','Roaming');
+const research = path.join(home,'ohtia');
+const scratch = path.join(home,'scratch');
+for(const directory of [configuration,research,scratch]) fs.mkdirSync(directory,{recursive:true,mode:0o700});
+const stable_roots = {};
+for(const name of ['configuration','store','recovery']) {
+  const directory = path.join(root,'stable-'+name);
+  fs.mkdirSync(directory,{mode:0o700});
+  const bytes = Buffer.from('Synthetic unchanged sentinel');
+  fs.writeFileSync(path.join(directory,'.ohtia-runtime-sentinel'),bytes);
+  stable_roots[name] = {root:directory,sentinel_sha256:createHash('sha256').update(bytes).digest('hex')};
+}
+Object.defineProperty(process,'platform',{value:'win32'});
+os.userInfo = () => ({username:'synthetic',homedir:home});
+const target = 'win32-'+process.arch;
+const profile = {
+  schema_version:1,kind:'independent-native-profile',inspected_by:'agent:synthetic-fixture',
+  username:'synthetic',target,home,configuration_root:configuration,research_root:research,
+  scratch_root:scratch,stable_roots,
+  manual_checks:Object.fromEntries(['independent_account_or_vm','no_emulation',
+    'local_owned_unsynchronized_volumes','no_credentials','stable_roots_complete',
+    'native_security_and_display'].map(key=>[key,true]))
+};
+const file = path.join(scratch,'runtime-profile.json');
+fs.writeFileSync(file,JSON.stringify(profile));
+const prepared = path.join(root,'prepared');fs.mkdirSync(prepared);
+fs.writeFileSync(path.join(prepared,'prepared.json'),JSON.stringify({
+  version:1,target,executable:'runtime.exe',app:'app',files:{},links:{}
+}));
+process.env.SystemDrive = 'Z:';
+process.env.AWS_SECRET_ACCESS_KEY = 'synthetic-unforwarded';
+const launch = admittedLaunch(file,prepared);
+assert.equal(launch.env.SystemDrive,'Z:');
+assert.equal(launch.env.AWS_SECRET_ACCESS_KEY,undefined);
+for(const invalid of [undefined,'','%SystemDrive%',
+  'Z:'+path.win32.sep, path.win32.join('Z:'+path.win32.sep,'Windows')]) {
+  if(invalid === undefined) delete process.env.SystemDrive;
+  else process.env.SystemDrive = invalid;
+  assert.throws(()=>admittedLaunch(file,prepared),/system-drive identity/);
+}
+"""
+        with tempfile.TemporaryDirectory() as temporary:
+            subprocess.run(
+                [str(native.workspace.node_path()), "--input-type=module", "-e", script, temporary],
+                cwd=delivery.ROOT,
+                check=True,
+                capture_output=True,
+                timeout=60,
+            )
 
     def test_declared_formats_use_unsigned_offline_configuration(self):
         with tempfile.TemporaryDirectory() as directory:
