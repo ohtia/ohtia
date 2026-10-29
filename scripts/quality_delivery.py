@@ -161,9 +161,10 @@ def identity(env: dict | None = None) -> dict:
     run_id, attempt = int(env["GITHUB_RUN_ID"]), int(env["GITHUB_RUN_ATTEMPT"])
     require(run_id > 0 and attempt > 0, "Invalid run/attempt.")
     checkout, tree = git("rev-parse", "HEAD"), git("rev-parse", "HEAD^{tree}")
+    dirty = git("status", "--porcelain", "--untracked-files=all")
     require(
-        not git("status", "--porcelain", "--untracked-files=all"),
-        "Quality checkout has uncommitted inputs.",
+        not dirty,
+        "Quality checkout has uncommitted inputs: " + json.dumps(dirty[:4096]),
     )
     require(checkout == env["GITHUB_SHA"], "Actual checkout differs from the event revision.")
     pull = event.get("pull_request") or {}

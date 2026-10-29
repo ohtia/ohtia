@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import copy
+import json
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import quality_delivery as delivery
@@ -232,6 +234,33 @@ class DeliveryTests(unittest.TestCase):
         ):
             with self.subTest(field=field), self.assertRaises(delivery.DeliveryError):
                 delivery.validate_identity({**self.identity, field: value})
+
+        # The same initial/final identity guard must report bounded paths, never file contents.
+        event = self.output / "event.json"
+        delivery.write(event, {})
+        env = {
+            "GITHUB_EVENT_PATH": str(event),
+            "GITHUB_EVENT_NAME": "pull_request",
+            "GITHUB_REPOSITORY": "ohtia/ohtia",
+            "GITHUB_RUN_ID": "100",
+            "GITHUB_RUN_ATTEMPT": "1",
+        }
+        for dirty in [
+            "?? generated.txt\n",
+            ' M config/example.json\n?? "line\\nname"',
+            "?? " + "x" * 8192,
+        ]:
+            with (
+                self.subTest(dirty_length=len(dirty)),
+                patch.object(delivery, "git", side_effect=["c" * 40, "d" * 40, dirty]),
+            ):
+                with self.assertRaises(delivery.DeliveryError) as refused:
+                    delivery.identity(env)
+                message = str(refused.exception)
+                prefix = "Quality checkout has uncommitted inputs: "
+                self.assertTrue(message.startswith(prefix))
+                self.assertEqual(json.loads(message[len(prefix) :]), dirty[:4096])
+                self.assertNotIn("\n", message)
 
     def test_missing_or_nonstandard_hosted_runner_fails(self):
         manifest = delivery.read(delivery.ROOT / "config/desktop/targets.json")
