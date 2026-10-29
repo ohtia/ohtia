@@ -29,7 +29,7 @@ When reporting a wording problem, include the locale, where the text appears, th
 
 ## Prepare repository changes
 
-Use the [locked developer workspace](docs/developer-workspace.md) for checkout-local tool bootstrap, frozen installation and the common build/check/development commands. On Apple Silicon, start with [Native macOS contribution](docs/macos-contribution.md).
+Use the [locked developer workspace](docs/developer-workspace.md) for checkout-local tool bootstrap, frozen installation and the common build/check/development commands. The [native Linux contribution guide](docs/linux-contribution.md) adds distribution-specific prerequisites, read-only diagnosis and isolated native execution. On Apple Silicon, start with [Native macOS contribution](docs/macos-contribution.md).
 
 - Create a branch and task worktree for the associated issue before changing files, following [Branches and worktrees](AGENTS.md#branches-and-worktrees).
 - Use English for documentation, code comments, issues, pull requests, and commit messages.

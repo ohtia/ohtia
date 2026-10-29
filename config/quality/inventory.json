@@ -60,6 +60,7 @@
     "scripts/tests/test_desktop_runtime.py",
     "scripts/tests/test_github_policy.py",
     "scripts/tests/test_github_pr.py",
+    "scripts/tests/test_linux_contributor.py",
     "scripts/tests/test_linux_e2e.py",
     "scripts/tests/test_linux_e2e_image.py",
     "scripts/tests/test_linux_e2e_image_ci.py",
@@ -241,6 +242,71 @@
       "id": "test_macos_contributor.MacosContributorTests.test_terminal_signals_stop_supervisor_grandchild",
       "platforms": ["win32"],
       "reason": "POSIX SIGHUP/SIGQUIT process-group supervision fixture"
+    },
+    {
+      "id": "test_linux_contributor.LinuxContributorTests.test_setup_refuses_foreign_environment_before_mutating_it",
+      "platforms": ["win32"],
+      "reason": "POSIX directory symlink fixture for the Linux-only contributor entry"
+    },
+    {
+      "id": "test_linux_contributor.LinuxContributorTests.test_sandbox_policy_is_exact_path_and_rejects_patterns",
+      "platforms": ["win32"],
+      "reason": "Linux AppArmor pathname fixture; native Windows path syntax is outside this entry"
+    },
+    {
+      "id": "test_linux_contributor.LinuxContributorTests.test_policy_uses_admitted_snapshot_without_rereading_profile",
+      "platforms": ["win32"],
+      "reason": "Linux AppArmor pathname fixture; native Windows path syntax is outside this entry"
+    },
+    {
+      "id": "test_linux_contributor.LinuxContributorTests.test_identical_runtime_bytes_in_another_directory_have_distinct_policy_names",
+      "platforms": ["win32"],
+      "reason": "Linux AppArmor pathname fixture; native Windows path syntax is outside this entry"
+    },
+    {
+      "id": "test_linux_contributor.LinuxContributorTests.test_dead_or_wrong_display_cannot_pass",
+      "platforms": ["win32"],
+      "reason": "Native Linux Unix-socket, account-runtime permissions or symlink fixture; Windows does not establish this Linux contract."
+    },
+    {
+      "id": "test_linux_contributor.LinuxContributorTests.test_wayland_socket_alone_does_not_release_gnome_ui_readiness",
+      "platforms": ["win32"],
+      "reason": "Native Linux Unix-socket, account-runtime permissions or symlink fixture; Windows does not establish this Linux contract."
+    },
+    {
+      "id": "test_linux_contributor.LinuxContributorTests.test_private_bus_replaces_inherited_address_and_reaps_its_daemon",
+      "platforms": ["win32"],
+      "reason": "Native Linux Unix-socket, account-runtime permissions or symlink fixture; Windows does not establish this Linux contract."
+    },
+    {
+      "id": "test_linux_contributor.LinuxContributorTests.test_long_multibyte_scratch_roots_do_not_extend_native_ipc_paths",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux account-runtime permissions and Unix-socket pathname fixture; other OS runtime locations have distinct native contracts."
+    },
+    {
+      "id": "test_linux_contributor.LinuxContributorTests.test_private_runtime_refuses_unsafe_permissions_and_stable_overlap",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux account-runtime permissions and Unix-socket pathname fixture; other OS runtime locations have distinct native contracts."
+    },
+    {
+      "id": "test_linux_contributor.LinuxContributorTests.test_package_parent_alias_is_refused_before_attempt_or_build",
+      "platforms": ["win32"],
+      "reason": "Native Linux Unix-socket, account-runtime permissions or symlink fixture; Windows does not establish this Linux contract."
+    },
+    {
+      "id": "test_linux_contributor.LinuxContributorTests.test_bus_group_is_signalled_before_reaping_the_owned_anchor",
+      "platforms": ["win32"],
+      "reason": "POSIX owned process-group signal/anchor contract; Windows uses a different native process observer."
+    },
+    {
+      "id": "test_linux_contributor.LinuxContributorTests.test_real_terminal_signals_stop_the_supervisors_owned_group",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux pidfd and retained process-group signal fixture for the native Linux session supervisor."
+    },
+    {
+      "id": "test_linux_contributor.LinuxContributorTests.test_foreground_group_interruption_during_admission_has_the_right_remedy",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux foreground process-group interruption and pidfd-owned admission-child fixture."
     }
   ],
   "vitest_inapplicable": [

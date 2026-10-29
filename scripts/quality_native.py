@@ -673,7 +673,9 @@ def display_connection(known: list[dict], backend: str) -> dict | None:
     return None
 
 
-def smoke(profile: Path, prepared: Path, destination: Path, cell: dict) -> tuple[dict, dict]:
+def smoke(
+    profile: Path, prepared: Path, destination: Path, cell: dict, *, cancelled=None
+) -> tuple[dict, dict]:
     import concurrent.futures
 
     suites, observations = {}, []
@@ -701,6 +703,7 @@ def smoke(profile: Path, prepared: Path, destination: Path, cell: dict) -> tuple
                 build_environment(),
                 900,
                 5,
+                **({"cancelled": cancelled} if cancelled is not None else {}),
             )
             while not future.done():
                 known_file = output / "native-processes.json"
