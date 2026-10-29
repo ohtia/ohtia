@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import ctypes
 import json
+import math
 import os
 import platform
 import plistlib
@@ -440,25 +441,46 @@ def processes(
                 }
             )
     else:
-        # Only structured OS process identities; never retain arbitrary command lines.
-        output = command(
-            [
-                "powershell.exe",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                "Get-CimInstance Win32_Process | Select-Object ProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress",
-            ],
-            capture=True,
-        )
-        for item in json.loads(output):
-            executable = item.get("ExecutablePath")
-            if not executable or not Path(executable).is_relative_to(directory):
-                continue
-            renderer = "--type=renderer" in (item.get("CommandLine") or "")
-            if ready_only and renderer and item["ProcessId"] not in ready:
-                continue
-            token = windows_token(item["ProcessId"]) if renderer else {}
+        if ready_only:
+            # Query the already published ready PIDs directly. A fresh CIM/PowerShell query
+            # can outlive a short smoke window and miss the renderer entirely.
+            items = [
+                {"ProcessId": row["pid"], "CreationTime": row.get("creation_time_ms")}
+                for row in known or []
+                if row["renderer"]
+            ]
+        else:
+            # Final package-process enumeration remains independent of the ready inventory.
+            output = command(
+                [
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "Get-CimInstance Win32_Process | Select-Object ProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress",
+                ],
+                capture=True,
+            )
+            items = json.loads(output)
+        for item in items:
+            if ready_only:
+                renderer = True
+            else:
+                executable = item.get("ExecutablePath")
+                if not executable or not Path(executable).is_relative_to(directory):
+                    continue
+                renderer = "--type=renderer" in (item.get("CommandLine") or "")
+            token = (
+                windows_token(
+                    item["ProcessId"],
+                    directory if ready_only else None,
+                    item.get("CreationTime") if ready_only else None,
+                )
+                if renderer
+                else {}
+            )
+            if ready_only and token["query_status"] == "identity_mismatch":
+                continue  # GetProcessTimes proves this is a different generation of the PID.
             if (
                 renderer
                 and token["query_status"] != "observed"
@@ -516,7 +538,9 @@ def process_exited(pid: int) -> bool:
     return bool(states) and all(state.startswith(("Z", "X")) for state in states)
 
 
-def windows_token(pid: int) -> dict:
+def windows_token(
+    pid: int, directory: Path | None = None, creation_time_ms: float | None = None
+) -> dict:
     """Observe the restricted token and integrity label used by Chromium's renderer sandbox."""
     from ctypes import wintypes as w
 
@@ -546,6 +570,43 @@ def windows_token(pid: int) -> dict:
         return observed
     token = w.HANDLE()
     try:
+        if directory is not None:
+            if (
+                type(creation_time_ms) not in (int, float)
+                or not math.isfinite(creation_time_ms)
+                or creation_time_ms <= 0
+            ):
+                return {**observed, "query_status": "creation_identity_missing"}
+            kernel.GetProcessTimes.argtypes = [w.HANDLE, *([ctypes.POINTER(w.FILETIME)] * 4)]
+            kernel.GetProcessTimes.restype = w.BOOL
+            created, exited, kernel_time, user_time = (w.FILETIME() for _ in range(4))
+            if not kernel.GetProcessTimes(
+                handle,
+                ctypes.byref(created),
+                ctypes.byref(exited),
+                ctypes.byref(kernel_time),
+                ctypes.byref(user_time),
+            ):
+                return {**observed, "query_status": "creation_query_failed"}
+            ticks = (created.dwHighDateTime << 32) | created.dwLowDateTime
+            # Match Chromium Time::FromFileTime -> InMillisecondsFSinceUnixEpoch:
+            # truncate 100 ns ticks to microseconds before converting the epoch and unit.
+            observed["creation_time_ms"] = (ticks // 10 - 11644473600000000) / 1000.0
+            if observed["creation_time_ms"] != creation_time_ms:
+                return {**observed, "query_status": "identity_mismatch"}
+            kernel.QueryFullProcessImageNameW.argtypes = [
+                w.HANDLE,
+                w.DWORD,
+                w.LPWSTR,
+                ctypes.POINTER(w.DWORD),
+            ]
+            kernel.QueryFullProcessImageNameW.restype = w.BOOL
+            image = ctypes.create_unicode_buffer(32768)
+            length = w.DWORD(len(image))
+            if not kernel.QueryFullProcessImageNameW(handle, 0, image, ctypes.byref(length)):
+                return {**observed, "query_status": "image_query_failed"}
+            if not Path(image.value).is_relative_to(directory):
+                return {**observed, "query_status": "image_mismatch"}
         if not advapi.OpenProcessToken(handle, 8, ctypes.byref(token)):
             return {**observed, "query_status": "open_token_failed"}
         observed["restricted"] = bool(advapi.IsTokenRestricted(token))
@@ -642,7 +703,7 @@ def smoke(profile: Path, prepared: Path, destination: Path, cell: dict) -> tuple
             while not future.done():
                 known_file = output / "native-processes.json"
                 if known_file.exists():
-                    known = json.loads(known_file.read_text())
+                    known = delivery.read(known_file)["processes"]
                     for row in known:
                         if row not in identity_history:
                             identity_history.append(row)
@@ -653,6 +714,14 @@ def smoke(profile: Path, prepared: Path, destination: Path, cell: dict) -> tuple
                 time.sleep(0.2)
             supervision = future.result()
         delivery.write(destination / f"{suite}-supervision.json", supervision)
+        delivery.write(
+            destination / "native-observations.json",
+            {
+                "samples": observations,
+                "ready_processes": identity_history,
+                "display_observations": displays,
+            },
+        )
         delivery.require(
             supervision["exit_code"] == 0
             and not supervision["timed_out"]

@@ -148,7 +148,12 @@ async function validate(config, format) {
             (False, 0, False),
         ]:
             with self.subTest(restricted=restricted, integrity=rid):
-                kernel = SimpleNamespace(OpenProcess=Mock(return_value=1), CloseHandle=Mock())
+                kernel = SimpleNamespace(
+                    OpenProcess=Mock(return_value=1),
+                    CloseHandle=Mock(),
+                    QueryFullProcessImageNameW=Mock(),
+                    GetProcessTimes=Mock(),
+                )
                 security = SimpleNamespace(
                     OpenProcessToken=Mock(),
                     IsTokenRestricted=Mock(return_value=restricted),
@@ -169,6 +174,19 @@ async function validate(config, format) {
                     ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p)).contents.value = 123
                     return True
 
+                def image(handle, flags, buffer, length):
+                    buffer.value = "/synthetic/package/ohtia.exe"
+                    return True
+
+                def times(handle, created, *_unused):
+                    ticks = (11644473600000000 + 1793273211225933) * 10 + 9
+                    value = ctypes.cast(created, ctypes.POINTER(w.FILETIME)).contents
+                    value.dwLowDateTime = ticks & 0xFFFFFFFF
+                    value.dwHighDateTime = ticks >> 32
+                    return True
+
+                kernel.GetProcessTimes.side_effect = times
+                kernel.QueryFullProcessImageNameW.side_effect = image
                 security.OpenProcessToken.side_effect = open_token
                 security.GetTokenInformation.side_effect = information
                 with (
@@ -193,11 +211,166 @@ async function validate(config, format) {
                         ),
                     ),
                 ):
-                    observed = native.processes(Path("/synthetic/package"))[0]
+                    observed = native.processes(
+                        Path("/synthetic/package"),
+                        [{"pid": 100, "renderer": True, "creation_time_ms": 1793273211225.933}],
+                        ready_only=True,
+                    )[0]
                 self.assertEqual(observed["sandbox"], accepted)
                 self.assertEqual(observed["token"]["integrity_rid"], rid)
                 self.assertEqual(observed["token"]["restricted"], restricted)
                 self.assertEqual(kernel.CloseHandle.call_count, 2)
+
+    def test_ready_windows_renderers_do_not_wait_for_cim_enumeration(self):
+        observed = {"query_status": "observed", "restricted": True, "integrity_rid": 0}
+        directory = Path("/synthetic/package")
+        with (
+            patch.object(native.sys, "platform", "win32"),
+            patch.object(native, "command", side_effect=AssertionError("Unexpected CIM query")),
+            patch.object(native, "windows_token", return_value=observed) as query,
+        ):
+            rows = native.processes(
+                directory,
+                [
+                    {"pid": 100, "renderer": False},
+                    {"pid": 101, "renderer": True, "creation_time_ms": 123.5},
+                ],
+                ready_only=True,
+            )
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["pid"], 101)
+            self.assertTrue(rows[0]["sandbox"])
+            query.assert_called_once_with(101, directory, 123.5)
+            self.assertEqual(native.processes(directory, [], ready_only=True), [])
+
+    def test_ready_windows_token_query_rejects_unverified_package_images(self):
+        from ctypes import wintypes as w
+
+        for image_ok, path, expected in [
+            (False, "", "image_query_failed"),
+            (True, "/synthetic/foreign/exe", "image_mismatch"),
+            (True, "/synthetic/package/exe", "open_token_failed"),
+            (True, "/synthetic/package/exe", "identity_mismatch"),
+            (True, "/synthetic/package/exe", "creation_query_failed"),
+            (True, "/synthetic/package/exe", "creation_identity_missing"),
+        ]:
+            with self.subTest(image_ok=image_ok, image=path):
+                kernel = SimpleNamespace(
+                    OpenProcess=Mock(return_value=1),
+                    CloseHandle=Mock(),
+                    QueryFullProcessImageNameW=Mock(),
+                    GetProcessTimes=Mock(),
+                )
+                security = SimpleNamespace(
+                    OpenProcessToken=Mock(return_value=False),
+                    IsTokenRestricted=Mock(),
+                    GetTokenInformation=Mock(),
+                    GetSidSubAuthorityCount=Mock(),
+                    GetSidSubAuthority=Mock(),
+                )
+
+                def image(handle, flags, buffer, size):
+                    self.assertEqual((handle, flags), (1, 0))
+                    self.assertEqual(
+                        ctypes.cast(size, ctypes.POINTER(w.DWORD)).contents.value, 32768
+                    )
+                    buffer.value = path
+                    return image_ok
+
+                def times(handle, created, *_unused):
+                    ticks = (11644473600000000 + 1793273211225933) * 10 + 9
+                    value = ctypes.cast(created, ctypes.POINTER(w.FILETIME)).contents
+                    value.dwLowDateTime = ticks & 0xFFFFFFFF
+                    value.dwHighDateTime = ticks >> 32
+                    return expected != "creation_query_failed"
+
+                kernel.GetProcessTimes.side_effect = times
+                kernel.QueryFullProcessImageNameW.side_effect = image
+                with patch.object(
+                    native.ctypes,
+                    "WinDLL",
+                    create=True,
+                    side_effect=lambda name, **kw: kernel if name == "kernel32" else security,
+                ):
+                    expected_time = (
+                        None
+                        if expected == "creation_identity_missing"
+                        else 1793273212225.933
+                        if expected == "identity_mismatch"
+                        else 1793273211225.933
+                    )
+                    result = native.windows_token(101, Path("/synthetic/package"), expected_time)
+                self.assertEqual(result["query_status"], expected)
+                self.assertFalse(result["restricted"])
+                self.assertIsNone(result["integrity_rid"])
+                kernel.OpenProcess.assert_called_once_with(0x1000, False, 101)
+                kernel.CloseHandle.assert_called_once_with(1)
+                self.assertEqual(
+                    security.OpenProcessToken.call_count, int(expected == "open_token_failed")
+                )
+
+    def test_windows_reused_pid_is_excluded_but_unknown_live_queries_fail(self):
+        for status, expected in [
+            ("identity_mismatch", []),
+            ("image_mismatch", [False]),
+            ("creation_query_failed", [False]),
+            ("creation_identity_missing", [False]),
+            ("open_token_failed", [False]),
+        ]:
+            with (
+                self.subTest(status=status),
+                patch.object(native.sys, "platform", "win32"),
+                patch.object(native, "windows_token", return_value={"query_status": status}),
+                patch.object(native, "process_exited", return_value=False) as exited,
+            ):
+                rows = native.processes(
+                    Path("/synthetic/package"),
+                    [{"pid": 101, "renderer": True, "creation_time_ms": 123.5}],
+                    ready_only=True,
+                )
+                self.assertEqual([row["sandbox"] for row in rows], expected)
+                self.assertEqual(exited.call_count, 0 if status == "identity_mismatch" else 1)
+
+    def test_atomic_ready_report_replacement_has_a_finite_retry_budget(self):
+        script = """
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import {recordReadyNativeProcesses} from './tooling/desktop-native-observation.mjs';
+Object.defineProperty(process, 'platform', {value:'win32'});
+const app = {evaluate: async callback => callback({app: {
+  getAppMetrics: () => [{pid:process.pid, type:'Tab', creationTime:123.5}]
+}})};
+const original = fs.renameSync;
+let calls = 0;
+fs.renameSync = (...args) => {
+  calls++;
+  if(calls < 3) throw Object.assign(new Error('Synthetic sharing violation'), {code:'EPERM'});
+  return original(...args);
+};
+await recordReadyNativeProcesses(app, process.argv[1]);
+assert.equal(calls,3);
+const file = process.argv[1] + '/native-processes.json';
+const before = fs.readFileSync(file,'utf8');
+assert.equal(JSON.parse(before).processes[0].creation_time_ms,123.5);
+calls = 0;
+fs.renameSync = () => { calls++; throw Object.assign(new Error('Synthetic busy file'), {code:'EBUSY'}); };
+await assert.rejects(recordReadyNativeProcesses(app, process.argv[1]), {code:'EBUSY'});
+assert.equal(calls,5);
+assert.equal(fs.readFileSync(file,'utf8'),before);
+calls = 0;
+fs.renameSync = () => { calls++; throw Object.assign(new Error('Synthetic disk error'), {code:'EIO'}); };
+await assert.rejects(recordReadyNativeProcesses(app, process.argv[1]), {code:'EIO'});
+assert.equal(calls,1);
+fs.renameSync = original;
+"""
+        with tempfile.TemporaryDirectory() as temporary:
+            subprocess.run(
+                [str(native.workspace.node_path()), "--input-type=module", "-e", script, temporary],
+                cwd=delivery.ROOT,
+                check=True,
+                capture_output=True,
+                timeout=60,
+            )
 
     def test_linux_identity_is_bound_to_process_start_time(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -340,11 +513,19 @@ await recordReadyNativeProcesses({evaluate: async callback => callback({app: {
                 capture_output=True,
                 timeout=60,
             )
-            records = json.loads((Path(temporary) / "native-processes.json").read_text())
+            records = json.loads((Path(temporary) / "native-processes.json").read_text())[
+                "processes"
+            ]
             self.assertEqual(len(records), 1)
             self.assertTrue(records[0]["renderer"])
             self.assertTrue(records[0]["start_time"].isdecimal())
             self.assertEqual({p.name for p in Path(temporary).iterdir()}, {"native-processes.json"})
+            retained = Path(temporary) / "retained"
+            native.retain_failed_reports(Path(temporary), retained)
+            self.assertEqual(
+                delivery.read(retained / "native-processes.json")["processes"], records
+            )
+            self.assertFalse((retained / "retention-issues.json").exists())
 
     def test_final_process_history_retains_only_live_start_bound_identities(self):
         known = [{"pid": pid, "renderer": True, "start_time": str(pid)} for pid in range(1, 301)]
