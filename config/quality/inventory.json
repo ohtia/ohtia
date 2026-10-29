@@ -63,6 +63,7 @@
     "scripts/tests/test_linux_e2e.py",
     "scripts/tests/test_linux_e2e_image.py",
     "scripts/tests/test_linux_e2e_image_ci.py",
+    "scripts/tests/test_macos_contributor.py",
     "scripts/tests/test_package_workspace.py",
     "scripts/tests/test_quality_delivery.py",
     "scripts/tests/test_quality_native.py",
@@ -215,6 +216,31 @@
       "id": "test_linux_e2e.LinuxE2ETests.test_profile_lifecycle_preserves_primary_exit_and_retains_used_or_unreadable_policy",
       "platforms": ["win32"],
       "reason": "POSIX shell profile lifecycle contract"
+    },
+    {
+      "id": "test_macos_contributor.MacosContributorTests.test_safe_archive_preserves_internal_interpreter_symlink",
+      "platforms": ["win32"],
+      "reason": "POSIX interpreter symlink/mode fixture; macOS-only bootstrap route"
+    },
+    {
+      "id": "test_quality_native.NativeTests.test_ready_process_producer_publishes_complete_atomic_linux_identity",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux procfs identity producer fixture; Darwin and Windows have distinct native process observers"
+    },
+    {
+      "id": "test_macos_contributor.MacosContributorTests.test_timeout_stops_setup_grandchild_before_retry_guidance",
+      "platforms": ["win32"],
+      "reason": "POSIX process-group supervision fixture for the macOS-only contributor entry"
+    },
+    {
+      "id": "test_macos_contributor.MacosContributorTests.test_linked_parent_rejection_never_writes_outside_extraction",
+      "platforms": ["win32"],
+      "reason": "POSIX symbolic-link parent fixture for the macOS-only bootstrap"
+    },
+    {
+      "id": "test_macos_contributor.MacosContributorTests.test_terminal_signals_stop_supervisor_grandchild",
+      "platforms": ["win32"],
+      "reason": "POSIX SIGHUP/SIGQUIT process-group supervision fixture"
     }
   ],
   "vitest_inapplicable": [

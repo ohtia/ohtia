@@ -18,7 +18,7 @@ class DeliveryTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
-        self.output = Path(temp.name)
+        self.output = Path(temp.name).resolve()
         self.identity = {
             "schema_version": 1,
             "repository": "ohtia/ohtia",

@@ -7,6 +7,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 
@@ -64,10 +65,18 @@ def _signal_anchored_group(group: int, sig: int) -> None:
 
 
 def run_owned(
-    command: list[str], cwd: Path, env: dict[str, str], timeout: float, grace: float
+    command: list[str],
+    cwd: Path,
+    env: dict[str, str],
+    timeout: float,
+    grace: float,
+    *,
+    cancelled: Callable[[], bool] | None = None,
 ) -> dict:
     """Use a POSIX process group or a Windows kill-on-close job before probe execution."""
     if os.name == "nt":
+        if cancelled is not None:
+            raise OSError("Cooperative cancellation is supported only by the POSIX supervisor.")
         return _windows_job(command, cwd, env, timeout, grace)
     if not all(
         hasattr(os, name)
@@ -91,10 +100,14 @@ def run_owned(
         start_new_session=True,
     )
     timed_out = False
+    interrupted = False
     identity_retained = True
     try:
         deadline = time.monotonic() + timeout
         while True:
+            if cancelled is not None and cancelled():
+                interrupted = True
+                break
             status = os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOWAIT | os.WNOHANG)
             if status is not None and status.si_code in {
                 os.CLD_EXITED,
@@ -116,7 +129,7 @@ def run_owned(
             # Retain the unreaped session leader until every numeric group signal is sent.
             # Reaping it earlier would permit its PID to become an unrelated process group.
             try:
-                if timed_out:
+                if timed_out or interrupted:
                     _signal_anchored_group(child.pid, signal.SIGTERM)
                 deadline = time.monotonic() + grace
                 while True:
@@ -146,13 +159,15 @@ def run_owned(
         "exit_code": child.returncode,
         "timed_out": timed_out,
         "contained_processes_remaining_at_exit": (remaining_before_cleanup or remaining)
-        and not timed_out,
+        and not timed_out
+        and not interrupted,
         "contained_processes_remaining_before_cleanup": remaining_before_cleanup,
         "contained_processes_remaining_after_cleanup": remaining,
         "full_tree_cessation": None,
         "containment": "posix-process-group",
         "leader_retained_until_group_signals": True,
         "group_sigkill_requested": True,
+        **({"interrupted": interrupted} if cancelled is not None else {}),
     }
 
 
