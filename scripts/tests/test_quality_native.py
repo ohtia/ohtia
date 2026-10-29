@@ -445,13 +445,14 @@ assert.equal(selectStableTemporaryParent(posix,['/tmp','/home/runner/work/_temp'
             fixture = diagnostics / "diagnostic-fixture"
             fixture.mkdir()
             (fixture / "state.db3").write_text("synthetic store")
+            (fixture / "inner.json").write_text(json.dumps({"do_not_copy": "synthetic fixture"}))
             secret = root / "key.json"
             secret.write_text(json.dumps({"do_not_copy": "synthetic"}))
             (diagnostics / "alias.json").symlink_to(secret)
             (diagnostics / "partial.json").write_text("{not complete")
             destination = root / "retained"
             os.link(secret, diagnostics / "hardlink.json")
-            (diagnostics / "deep.json").write_text('{"nested":' * 100000 + "0" + "}" * 100000)
+            (diagnostics / "deep.json").write_text(json.dumps({"synthetic_parser_failure": True}))
             fifo = hasattr(os, "mkfifo")
             if fifo:
                 os.mkfifo(diagnostics / "blocked.json")
@@ -459,9 +460,19 @@ assert.equal(selectStableTemporaryParent(posix,['/tmp','/home/runner/work/_temp'
                 [
                     sys.executable,
                     "-c",
-                    "import sys; sys.path.insert(0,'scripts'); "
-                    "from pathlib import Path; import quality_native; "
-                    "quality_native.retain_failed_reports(Path(sys.argv[1]), Path(sys.argv[2]))",
+                    """import sys
+sys.path.insert(0, 'scripts')
+from pathlib import Path
+from unittest.mock import patch
+import quality_native
+read = quality_native.delivery.read
+def parser_failure(file):
+    if file.name == 'deep.json':
+        raise RecursionError('Synthetic parser failure')
+    return read(file)
+with patch.object(quality_native.delivery, 'read', side_effect=parser_failure):
+    quality_native.retain_failed_reports(Path(sys.argv[1]), Path(sys.argv[2]))
+""",
                     str(source),
                     str(destination),
                 ],
@@ -478,10 +489,22 @@ assert.equal(selectStableTemporaryParent(posix,['/tmp','/home/runner/work/_temp'
             )
             self.assertFalse((destination / "diagnostics/alias.json").exists())
             self.assertFalse((destination / "diagnostics/diagnostic-fixture").exists())
+            expected_rejections = {"alias.json", "partial.json", "hardlink.json", "deep.json"}
+            if fifo:
+                expected_rejections.add("blocked.json")
+            issues = json.loads((destination / "retention-issues.json").read_text())["issues"]
             self.assertEqual(
-                len(json.loads((destination / "retention-issues.json").read_text())["issues"]),
-                4 + int(fifo),
+                {row["report"] for row in issues},
+                {"diagnostics/" + name for name in expected_rejections},
             )
+            self.assertEqual(
+                next(
+                    row["error_type"] for row in issues if row["report"] == "diagnostics/deep.json"
+                ),
+                "RecursionError",
+            )
+            for name in expected_rejections:
+                self.assertFalse((destination / "diagnostics" / name).exists())
 
 
 if __name__ == "__main__":

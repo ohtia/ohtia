@@ -687,6 +687,7 @@
     "test_quality_vm.VirtualMachineTests.test_empty_checkout_retains_failure_evidence_before_guest_download",
     "test_quality_vm.VirtualMachineTests.test_existing_attempt_never_authorizes_diagnostic_copy",
     "test_quality_vm.VirtualMachineTests.test_fedora_identity_uses_install_scoped_dnf5_options",
+    "test_quality_vm.VirtualMachineTests.test_guest_compositor_and_failed_suite_share_bus_and_retain_bounded_log",
     "test_quality_vm.VirtualMachineTests.test_guest_diagnostics_exclude_keys_and_reject_aliases",
     "test_quality_vm.VirtualMachineTests.test_guest_packaging_dependencies_and_modern_disk_device_options",
     "test_quality_vm.VirtualMachineTests.test_guest_policy_has_no_emulated_or_arm_fallback",

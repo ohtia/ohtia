@@ -3,11 +3,14 @@
 import json
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
 home = Path("/home/ohtia-quality")
 env = {**os.environ, **json.loads((home / "environment.json").read_text())}
+if not env.get("DBUS_SESSION_BUS_ADDRESS"):
+    raise SystemExit("The guest compositor and suites require one shared D-Bus session.")
 source = home / "source"
 subprocess.run(
     ["git", "clone", "--no-checkout", str(home / "source.bundle"), str(source)], check=True
@@ -17,11 +20,9 @@ env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
 os.environ.update(env)
 subprocess.run(["python3", "scripts/workspace.py", "setup"], cwd=source, env=env, check=True)
 # The guest owns its kernel, home filesystem, GNOME compositor and policy; no host desktop is mounted.
-with (home / "gnome.log").open("wb") as log:
+with (home / "gnome.log").open("x+b") as log:
     compositor = subprocess.Popen(
         [
-            "dbus-run-session",
-            "--",
             "gnome-shell",
             "--headless",
             "--wayland",
@@ -60,9 +61,23 @@ with (home / "gnome.log").open("wb") as log:
             check=True,
         )
     finally:
-        compositor.terminate()
         try:
-            compositor.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            compositor.kill()
-            compositor.wait(timeout=5)
+            compositor.terminate()
+            try:
+                compositor.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                compositor.kill()
+                compositor.wait(timeout=5)
+        finally:
+            try:
+                log.flush()
+                diagnostic = os.pread(log.fileno(), 2 * 1024 * 1024, 0)
+                output = source / "artifacts" / "quality-result"
+                output.mkdir(parents=True, exist_ok=True)
+                with (output / "gnome.log").open("xb") as retained:
+                    retained.write(diagnostic)
+            except OSError as error:
+                print(
+                    f"Guest compositor diagnostics could not be retained: {type(error).__name__}",
+                    file=sys.stderr,
+                )

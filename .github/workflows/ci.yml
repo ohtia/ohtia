@@ -15,11 +15,11 @@ concurrency:
 
 jobs:
   checks:
-    name: repository-checks
+    name: full-suite (ubuntu-26.04-x64)
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
-      - name: Check out repository and history
+      - name: Check out source with full Git history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -71,7 +71,7 @@ jobs:
       - name: Scan committed history for secrets
         run: python3 scripts/workspace.py run hooks:history
 
-      - name: Run shared checks
+      - name: Run full test suite and quality checks
         run: python3 scripts/workspace.py run check
 
   native:
@@ -114,7 +114,7 @@ jobs:
           - id: debian-13-x64-vm
             runner: ubuntu-26.04
     steps:
-      - name: Check out repository and history
+      - name: Check out source with full Git history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -203,7 +203,7 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
-      - name: Check out repository and history
+      - name: Check out source with full Git history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0

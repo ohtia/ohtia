@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { pathToFileURL, fileURLToPath } from "node:url";
-import { spawn, execFileSync } from "node:child_process";
+import childProcess, { spawn, execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { loadRuntimeProfile, verifyStableSentinels } from "../packages/main/dist/index.js";
@@ -146,7 +146,77 @@ async function interrupt(kind) {
 }
 let w = writer();
 await test("native-account-access", async () => {
-  assert.equal((await w.append(started)).ok, true);
+  const originalSpawn = childProcess.spawn;
+  receipt.permissionHelpers = [];
+  receipt.initialWriterStatus = w.status;
+  receipt.fixtureRoot = {
+    canonicalMatches: fs.realpathSync.native(store) === store,
+    directory: fs.lstatSync(store).isDirectory(),
+  };
+  childProcess.spawn = function (command, args, options) {
+    if (!command.endsWith("powershell.exe")) return originalSpawn(command, args, options);
+    const helperStarted = performance.now();
+    const observation = {
+      exitCode: null,
+      signal: null,
+      errorCode: null,
+      killed: false,
+      elapsed_ms: null,
+      stdout: "",
+      stderr: "",
+      truncated: false,
+    };
+    receipt.permissionHelpers.push(observation);
+    const child = originalSpawn(command, args, {
+      ...options,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    for (const name of ["stdout", "stderr"]) {
+      child[name].on("data", (bytes) => {
+        const text = bytes.toString();
+        const available = 32768 - observation[name].length;
+        observation[name] += text.slice(0, available);
+        if (text.length > available) observation.truncated = true;
+      });
+    }
+    child.once("error", (error) => {
+      observation.errorCode = typeof error.code === "string" ? error.code : "unknown";
+    });
+    child.once("close", (code, signal) => {
+      observation.exitCode = code;
+      observation.signal = signal;
+      observation.killed = child.killed;
+      observation.elapsed_ms = Math.round(performance.now() - helperStarted);
+    });
+    return child;
+  };
+  try {
+    receipt.initialAppend = await w.append(started);
+  } finally {
+    childProcess.spawn = originalSpawn;
+  }
+  if (process.platform === "win32") {
+    receipt.initialAcls = {};
+    for (const [name, file] of Object.entries({
+      root: store,
+      directory: path.dirname(active),
+      file: active,
+    })) {
+      try {
+        receipt.initialAcls[name] = execFileSync(
+          path.join(process.env.SystemRoot, "System32", "icacls.exe"),
+          [file],
+          { encoding: "utf8", timeout: 10000 },
+        ).slice(0, 32768);
+      } catch (error) {
+        receipt.initialAcls[name] = {
+          errorCode: typeof error.code === "string" ? error.code : null,
+          status: error.status ?? null,
+        };
+      }
+    }
+  }
+  assert.equal(receipt.initialAppend.ok, true);
   if (process.platform !== "win32") {
     assert.equal(fs.statSync(path.dirname(active)).mode & 0o777, 0o700);
     assert.equal(fs.statSync(active).mode & 0o777, 0o600);
@@ -156,8 +226,8 @@ await test("native-account-access", async () => {
       [active],
       { encoding: "utf8" },
     );
-    assert.ok(!/Everyone|BUILTIN\\Users|Authenticated Users/i.test(acl));
     receipt.fileAcl = acl;
+    assert.ok(!/Everyone|BUILTIN\\Users|Authenticated Users/i.test(acl));
   }
 });
 await test("catalog-private-markers", async () => {

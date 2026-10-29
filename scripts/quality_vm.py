@@ -418,7 +418,7 @@ def main() -> int:
                     timeout=180,
                 )
                 result = subprocess.run(
-                    ssh + ["python3 /home/ohtia-quality/guest-run.py"],
+                    ssh + ["dbus-run-session -- python3 /home/ohtia-quality/guest-run.py"],
                     timeout=max(1, deadline - time.monotonic()),
                     check=False,
                 )

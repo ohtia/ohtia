@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import runpy
+import socket
 import subprocess
 import sys
 import tempfile
@@ -201,6 +203,60 @@ class VirtualMachineTests(unittest.TestCase):
             ):
                 self.assertEqual(vm.main(), 1)
             self.assertEqual(list(output.iterdir()), [])
+
+    def test_guest_compositor_and_failed_suite_share_bus_and_retain_bounded_log(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            source = home / "source"
+            source.mkdir()
+            runtime = home / "runtime"
+            runtime.mkdir()
+            (home / "environment.json").write_text(
+                json.dumps({"GITHUB_SHA": "synthetic", "OHTIA_QUALITY_VM": "fedora-44-x64-vm"})
+            )
+            real_path = Path
+
+            def guest_path(value):
+                if value == "/home/ohtia-quality":
+                    return home
+                if value == f"/run/user/{os.getuid()}":
+                    return runtime
+                return real_path(value)
+
+            child = Mock()
+
+            def compositor(arguments, **options):
+                self.assertEqual(arguments[0], "gnome-shell")
+                options["stdout"].write(b"x" * (2 * 1024 * 1024 + 100))
+                return child
+
+            def command(arguments, **options):
+                if "quality:build" in arguments:
+                    self.assertEqual(
+                        options["env"]["DBUS_SESSION_BUS_ADDRESS"], "unix:path=synthetic"
+                    )
+                    raise subprocess.CalledProcessError(1, arguments)
+                return subprocess.CompletedProcess(arguments, 0)
+
+            with socket.socket(socket.AF_UNIX) as wayland:
+                wayland.bind(str(runtime / "wayland-0"))
+                with (
+                    patch.dict(os.environ, {"DBUS_SESSION_BUS_ADDRESS": "unix:path=synthetic"}),
+                    patch("pathlib.Path", side_effect=guest_path),
+                    patch("subprocess.Popen", side_effect=compositor) as launched,
+                    patch("subprocess.run", side_effect=command),
+                    self.assertRaises(subprocess.CalledProcessError),
+                ):
+                    runpy.run_path(str(delivery.ROOT / "tooling/quality-packaging/guest-run.py"))
+                self.assertEqual(
+                    launched.call_args.kwargs["env"]["DBUS_SESSION_BUS_ADDRESS"],
+                    "unix:path=synthetic",
+                )
+            child.terminate.assert_called_once()
+            child.wait.assert_called_once_with(timeout=10)
+            self.assertEqual(
+                (source / "artifacts/quality-result/gnome.log").stat().st_size, 2 * 1024 * 1024
+            )
 
     def test_fedora_identity_uses_install_scoped_dnf5_options(self):
         config = json.loads(vm.cloud_config("fedora-44", "ssh-ed25519 synthetic").split("\n", 1)[1])
