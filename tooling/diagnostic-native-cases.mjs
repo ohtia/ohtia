@@ -377,31 +377,80 @@ await w.close();
 await test("native-denied-io", async () => {
   // icacls /deny removes matching explicit grants; removing its deny ACE alone
   // does not restore write access. Keep this fixture separate from retained logs.
+  receipt.deniedIo = { phase: "create-fixture" };
   const denied = path.join(store, "denied-io");
-  fs.mkdirSync(denied);
   const windows = process.platform === "win32";
   const user = os.userInfo().username;
   const icacls = windows ? path.join(process.env.SystemRoot, "System32", "icacls.exe") : "";
+  const controlledError = (error) => ({
+    code:
+      typeof error.code === "string" && /^[A-Z0-9_]{1,64}$/.test(error.code) ? error.code : null,
+    status: Number.isInteger(error.status) ? error.status : null,
+    syscall:
+      typeof error.syscall === "string" && /^[a-z]{1,32}$/.test(error.syscall)
+        ? error.syscall
+        : null,
+  });
+  let fixtureCreated = false;
   try {
+    fs.mkdirSync(denied);
+    fixtureCreated = true;
+    receipt.deniedIo.phase = "apply-deny";
     if (windows)
       execFileSync(icacls, [denied, "/deny", `${user}:(OI)(CI)(W)`], {
         stdio: "ignore",
         timeout: 5000,
       });
     else fs.chmodSync(denied, 0o500);
-    assert.throws(() => fs.mkdirSync(path.join(denied, "write-probe")), {
-      code: /^(EACCES|EPERM)$/,
-    });
+    if (windows) {
+      try {
+        receipt.deniedIo.acl = execFileSync(icacls, [denied], {
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+          windowsHide: true,
+          timeout: 5000,
+          maxBuffer: 32768,
+        });
+      } catch (error) {
+        receipt.deniedIo.acl = { error: controlledError(error) };
+      }
+    }
+    receipt.deniedIo.phase = "probe-denial";
+    assert.throws(
+      () => {
+        try {
+          fs.mkdirSync(path.join(denied, "write-probe"));
+          receipt.deniedIo.probe = { created: true };
+        } catch (error) {
+          receipt.deniedIo.probe = { created: false, ...controlledError(error) };
+          throw error;
+        }
+      },
+      { code: /^(EACCES|EPERM)$/ },
+    );
+    receipt.deniedIo.phase = "append";
     w = writer(denied);
     const result = await w.append(started);
-    receipt.deniedIo = { append: result, logsCreated: fs.existsSync(path.join(denied, "logs")) };
+    receipt.deniedIo.append = result;
+    receipt.deniedIo.logsCreated = fs.existsSync(path.join(denied, "logs"));
     assert.equal(result.ok, false);
     assert.equal(receipt.deniedIo.logsCreated, false);
+    receipt.deniedIo.phase = "verified";
+  } catch (error) {
+    receipt.deniedIo.error = controlledError(error);
+    throw error;
   } finally {
     await w.close();
-    if (windows)
-      execFileSync(icacls, [denied, "/remove:d", user], { stdio: "ignore", timeout: 5000 });
-    else fs.chmodSync(denied, 0o700);
+    try {
+      if (fixtureCreated) {
+        if (windows)
+          execFileSync(icacls, [denied, "/remove:d", user], { stdio: "ignore", timeout: 5000 });
+        else fs.chmodSync(denied, 0o700);
+      }
+    } catch (error) {
+      receipt.deniedIo.cleanupError = controlledError(error);
+      throw error;
+    }
   }
 });
 await test("automatic-capture-stderr-errors", async () => {

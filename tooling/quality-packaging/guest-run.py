@@ -18,9 +18,18 @@ env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
 # This account belongs only to this fresh guest. Use its standard user bus so
 # D-Bus and systemd activation address the same GNOME session and services.
 bus = Path(env["XDG_RUNTIME_DIR"]) / "bus"
+env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={bus}"
+# Cloud images can start this manager before desktop packages install user units.
+# systemctl reaches the user's private manager socket, even before dbus.socket exists.
+for operation in (["daemon-reload"], ["start", "dbus.socket"]):
+    subprocess.run(
+        ["/usr/bin/systemctl", "--user", *operation],
+        env=env,
+        check=True,
+        timeout=10,
+    )
 if not bus.is_socket() or bus.stat().st_uid != os.getuid():
     raise SystemExit("The guest account's native D-Bus socket is unavailable.")
-env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={bus}"
 subprocess.run(
     [
         "gdbus",
@@ -33,6 +42,15 @@ subprocess.run(
         "--method",
         "org.freedesktop.DBus.GetId",
     ],
+    env=env,
+    stdout=subprocess.DEVNULL,
+    check=True,
+    timeout=10,
+)
+# Socket activation starts the daemon; wait for the manager's bus name before
+# relying on systemd-backed desktop activation. This is a readiness wait, not a retry.
+subprocess.run(
+    ["gdbus", "wait", "--session", "--timeout=8", "org.freedesktop.systemd1"],
     env=env,
     stdout=subprocess.DEVNULL,
     check=True,

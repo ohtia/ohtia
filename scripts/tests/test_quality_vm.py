@@ -205,14 +205,21 @@ class VirtualMachineTests(unittest.TestCase):
             self.assertEqual(list(output.iterdir()), [])
 
     def test_guest_compositor_and_failed_suite_share_bus_and_retain_bounded_log(self):
-        for invalid_bus in ("missing", "foreign-owner"):
+        for invalid_bus in (
+            "missing",
+            "foreign-owner",
+            "reload-failure",
+            "socket-start-failure",
+            "handshake-failure",
+            "manager-readiness-failure",
+        ):
             with self.subTest(invalid_bus=invalid_bus), tempfile.TemporaryDirectory() as temporary:
                 home = Path(temporary)
                 (home / "environment.json").write_text(json.dumps({"GITHUB_SHA": "synthetic"}))
                 real_path = Path
                 candidate = Mock()
                 candidate.is_socket.return_value = invalid_bus != "missing"
-                candidate.stat.return_value.st_uid = os.getuid() + 1
+                candidate.stat.return_value.st_uid = os.getuid() + (invalid_bus == "foreign-owner")
                 runtime = Mock()
                 runtime.__truediv__ = Mock(return_value=candidate)
 
@@ -223,15 +230,59 @@ class VirtualMachineTests(unittest.TestCase):
                         return runtime
                     return real_path(value)
 
+                seen = []
+
+                def bootstrap(arguments, **options):
+                    seen.append(arguments)
+                    if arguments[0] == "/usr/bin/systemctl":
+                        self.assertEqual(options["timeout"], 10)
+                        self.assertTrue(options["check"])
+                        expected = ["daemon-reload"] if len(seen) == 3 else ["start", "dbus.socket"]
+                        self.assertEqual(arguments[1:], ["--user", *expected])
+                        if (invalid_bus == "reload-failure" and len(seen) == 3) or (
+                            invalid_bus == "socket-start-failure" and len(seen) == 4
+                        ):
+                            raise subprocess.CalledProcessError(1, arguments)
+                    if arguments[0] == "gdbus":
+                        if arguments[1] == "call" and invalid_bus == "handshake-failure":
+                            raise subprocess.CalledProcessError(1, arguments)
+                        if arguments[1] == "wait" and invalid_bus == "manager-readiness-failure":
+                            self.assertEqual(
+                                arguments[2:],
+                                ["--session", "--timeout=8", "org.freedesktop.systemd1"],
+                            )
+                            raise subprocess.TimeoutExpired(arguments, 10)
+                    return subprocess.CompletedProcess(arguments, 0)
+
+                expected_error = (
+                    SystemExit
+                    if invalid_bus in ("missing", "foreign-owner")
+                    else subprocess.TimeoutExpired
+                    if invalid_bus == "manager-readiness-failure"
+                    else subprocess.CalledProcessError
+                )
                 with (
                     patch("pathlib.Path", side_effect=paths),
-                    patch("subprocess.run") as commands,
+                    patch("subprocess.run", side_effect=bootstrap),
                     patch("subprocess.Popen") as launched,
-                    self.assertRaisesRegex(SystemExit, "native D-Bus socket is unavailable"),
+                    self.assertRaises(expected_error) as bootstrap_error,
                 ):
                     runpy.run_path(str(delivery.ROOT / "tooling/quality-packaging/guest-run.py"))
                 launched.assert_not_called()
-                self.assertEqual(len(commands.call_args_list), 2)  # Clone and checkout only.
+                if invalid_bus in ("missing", "foreign-owner"):
+                    self.assertEqual(
+                        str(bootstrap_error.exception),
+                        "The guest account's native D-Bus socket is unavailable.",
+                    )
+                counts = {
+                    "missing": 4,
+                    "foreign-owner": 4,
+                    "reload-failure": 3,
+                    "socket-start-failure": 4,
+                    "handshake-failure": 5,
+                    "manager-readiness-failure": 6,
+                }
+                self.assertEqual(len(seen), counts[invalid_bus])
         for audit_outcome, stop_failure, suite_failure in (
             (0, False, True),
             (1, False, True),
@@ -272,16 +323,36 @@ class VirtualMachineTests(unittest.TestCase):
                     def compositor(arguments, **options):
                         self.assertEqual(arguments[0], "gnome-shell")
                         self.assertEqual(bus_checked, [True])
+                        self.assertEqual(manager_ready, [True])
                         self.assertEqual(activated, [False])
                         options["stdout"].write(b"x" * (2 * 1024 * 1024 + 100))
                         return child
 
                     activated = []
                     bus_checked = []
+                    manager_ready = []
+                    bootstrap_calls = []
                     session_calls = []
 
                     def command(arguments, **options):
-                        if arguments[0] == "gdbus":
+                        if arguments[0] == "gdbus" and arguments[1] == "wait":
+                            self.assertEqual(bus_checked, [True])
+                            self.assertEqual(
+                                arguments[2:],
+                                ["--session", "--timeout=8", "org.freedesktop.systemd1"],
+                            )
+                            self.assertEqual(options["timeout"], 10)
+                            self.assertTrue(options["check"])
+                            self.assertEqual(options["stdout"], subprocess.DEVNULL)
+                            self.assertEqual(
+                                options["env"]["DBUS_SESSION_BUS_ADDRESS"],
+                                f"unix:path={runtime / 'bus'}",
+                            )
+                            manager_ready.append(True)
+                        if arguments[0] == "gdbus" and arguments[1] == "call":
+                            self.assertEqual(
+                                bootstrap_calls, [["daemon-reload"], ["start", "dbus.socket"]]
+                            )
                             self.assertEqual(arguments[-1], "org.freedesktop.DBus.GetId")
                             self.assertEqual(options["timeout"], 10)
                             self.assertEqual(options["stdout"], subprocess.DEVNULL)
@@ -364,7 +435,21 @@ class VirtualMachineTests(unittest.TestCase):
                                 raise subprocess.TimeoutExpired(arguments, 12)
                             return subprocess.CompletedProcess(arguments, audit_outcome)
                         if arguments[0] == "/usr/bin/systemctl":
-                            if arguments[1] == "--user":
+                            if arguments[1] == "--user" and arguments[2] in (
+                                "daemon-reload",
+                                "start",
+                            ):
+                                bootstrap_calls.append(arguments[2:])
+                                self.assertEqual(
+                                    options["env"]["XDG_RUNTIME_DIR"], f"/run/user/{os.getuid()}"
+                                )
+                                self.assertEqual(
+                                    options["env"]["DBUS_SESSION_BUS_ADDRESS"],
+                                    f"unix:path={runtime / 'bus'}",
+                                )
+                                self.assertTrue(options["check"])
+                                self.assertEqual(options["timeout"], 10)
+                            elif arguments[1] == "--user":
                                 self.assertEqual(
                                     arguments[1:],
                                     ["--user", "stop", "ohtia-quality-session.service"],
