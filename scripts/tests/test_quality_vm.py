@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -262,6 +263,7 @@ class VirtualMachineTests(unittest.TestCase):
                     else subprocess.CalledProcessError
                 )
                 with (
+                    patch.dict(os.environ, {}, clear=True),
                     patch("pathlib.Path", side_effect=paths),
                     patch("subprocess.run", side_effect=bootstrap),
                     patch("subprocess.Popen") as launched,
@@ -283,15 +285,25 @@ class VirtualMachineTests(unittest.TestCase):
                     "manager-readiness-failure": 6,
                 }
                 self.assertEqual(len(seen), counts[invalid_bus])
-        for audit_outcome, stop_failure, suite_failure in (
-            (0, False, True),
-            (1, False, True),
-            ("watchdog", False, True),
-            (0, True, True),
-            (0, True, False),
+        for audit_outcome, stop_failure, suite_failure, startup_failure in (
+            (0, False, True, None),
+            (1, False, True, None),
+            ("watchdog", False, True, None),
+            (0, True, True, None),
+            (0, True, False, None),
+            (0, False, False, None),
+            (0, False, False, "compositor-readiness"),
+            (0, False, False, "missing-wayland"),
+            (0, False, False, "portal-readiness"),
+            (0, False, False, "compositor-ceased"),
+            (0, False, False, "compositor-stop"),
+            (0, True, True, "compositor-stop"),
         ):
             with self.subTest(
-                audit_outcome=audit_outcome, stop_failure=stop_failure, suite_failure=suite_failure
+                audit_outcome=audit_outcome,
+                stop_failure=stop_failure,
+                suite_failure=suite_failure,
+                startup_failure=startup_failure,
             ):
                 with tempfile.TemporaryDirectory() as temporary:
                     home = Path(temporary)
@@ -318,16 +330,10 @@ class VirtualMachineTests(unittest.TestCase):
                             return runtime
                         return real_path(value)
 
-                    child = Mock()
-
-                    def compositor(arguments, **options):
-                        self.assertEqual(arguments[0], "gnome-shell")
-                        self.assertEqual(bus_checked, [True])
-                        self.assertEqual(manager_ready, [True])
-                        self.assertEqual(activated, [False])
-                        options["stdout"].write(b"x" * (2 * 1024 * 1024 + 100))
-                        return child
-
+                    compositor_calls = []
+                    compositor_ready = []
+                    portal_ready = []
+                    quality_calls = []
                     activated = []
                     bus_checked = []
                     manager_ready = []
@@ -350,17 +356,38 @@ class VirtualMachineTests(unittest.TestCase):
                             )
                             manager_ready.append(True)
                         if arguments[0] == "gdbus" and arguments[1] == "call":
-                            self.assertEqual(
-                                bootstrap_calls, [["daemon-reload"], ["start", "dbus.socket"]]
-                            )
-                            self.assertEqual(arguments[-1], "org.freedesktop.DBus.GetId")
                             self.assertEqual(options["timeout"], 10)
+                            self.assertTrue(options["check"])
                             self.assertEqual(options["stdout"], subprocess.DEVNULL)
                             self.assertEqual(
                                 options["env"]["DBUS_SESSION_BUS_ADDRESS"],
                                 f"unix:path={runtime / 'bus'}",
                             )
-                            bus_checked.append(True)
+                            if arguments[-1] == "org.freedesktop.DBus.GetId":
+                                self.assertEqual(
+                                    bootstrap_calls, [["daemon-reload"], ["start", "dbus.socket"]]
+                                )
+                                bus_checked.append(True)
+                            else:
+                                self.assertEqual(
+                                    arguments[2:],
+                                    [
+                                        "--session",
+                                        "--dest",
+                                        "org.freedesktop.portal.Desktop",
+                                        "--object-path",
+                                        "/org/freedesktop/portal/desktop",
+                                        "--method",
+                                        "org.freedesktop.portal.Settings.ReadAll",
+                                        "['org.freedesktop.appearance']",
+                                    ],
+                                )
+                                self.assertEqual(compositor_ready, [True])
+                                self.assertEqual(activated, [False, True])
+                                self.assertEqual(session_calls, ["start"])
+                                if startup_failure == "portal-readiness":
+                                    raise subprocess.TimeoutExpired(arguments, 10)
+                                portal_ready.append(True)
                         if arguments[0] == "dbus-update-activation-environment":
                             has_wayland = "WAYLAND_DISPLAY" in arguments
                             expected = [
@@ -383,23 +410,57 @@ class VirtualMachineTests(unittest.TestCase):
                             self.assertEqual(options["timeout"], 10)
                             activated.append(has_wayland)
                         if arguments[0] == "/usr/bin/systemd-run":
-                            self.assertEqual(activated, [False, True])
-                            self.assertEqual(
-                                arguments[1:],
-                                [
-                                    "--user",
-                                    "--unit=ohtia-quality-session",
-                                    "--property=Type=oneshot",
-                                    "--property=RemainAfterExit=yes",
-                                    "--property=BindsTo=graphical-session.target",
-                                    "--property=After=graphical-session.target",
-                                    "--",
-                                    "/usr/bin/true",
-                                ],
-                            )
                             self.assertTrue(options["check"])
-                            self.assertEqual(options["timeout"], 10)
-                            session_calls.append("start")
+                            if "--unit=ohtia-quality-gnome" in arguments:
+                                self.assertEqual(bus_checked, [True])
+                                self.assertEqual(manager_ready, [True])
+                                self.assertEqual(activated, [False])
+                                self.assertEqual(session_calls, [])
+                                self.assertEqual(options["timeout"], 60)
+                                self.assertIn("--property=Type=notify", arguments)
+                                self.assertIn("--property=TimeoutStartSec=60s", arguments)
+                                self.assertIn("--property=TimeoutStopSec=10s", arguments)
+                                self.assertIn("--property=StandardError=inherit", arguments)
+                                self.assertIn(
+                                    f"--property=StandardOutput=append:{home / 'gnome.log'}",
+                                    arguments,
+                                )
+                                self.assertEqual(
+                                    arguments[arguments.index("--") + 1 :],
+                                    [
+                                        "/usr/bin/gnome-shell",
+                                        "--headless",
+                                        "--wayland",
+                                        "--virtual-monitor",
+                                        "1280x720",
+                                    ],
+                                )
+                                self.assertNotIn("--no-block", arguments)
+                                self.assertNotIn("--wait", arguments)
+                                with (home / "gnome.log").open("ab") as log:
+                                    log.write(b"x" * (2 * 1024 * 1024 + 100))
+                                compositor_calls.append("start")
+                                if startup_failure == "compositor-readiness":
+                                    raise subprocess.TimeoutExpired(arguments, 60)
+                                compositor_ready.append(True)
+                            else:
+                                self.assertEqual(compositor_ready, [True])
+                                self.assertEqual(activated, [False, True])
+                                self.assertEqual(
+                                    arguments[1:],
+                                    [
+                                        "--user",
+                                        "--unit=ohtia-quality-session",
+                                        "--property=Type=oneshot",
+                                        "--property=RemainAfterExit=yes",
+                                        "--property=BindsTo=graphical-session.target",
+                                        "--property=After=graphical-session.target",
+                                        "--",
+                                        "/usr/bin/true",
+                                    ],
+                                )
+                                self.assertEqual(options["timeout"], 10)
+                                session_calls.append("start")
                         if arguments[0] == "/usr/bin/journalctl":
                             self.assertEqual(
                                 arguments[1:], ["--user", "--boot", "--lines=100", "--no-pager"]
@@ -450,17 +511,36 @@ class VirtualMachineTests(unittest.TestCase):
                                 self.assertTrue(options["check"])
                                 self.assertEqual(options["timeout"], 10)
                             elif arguments[1] == "--user":
-                                self.assertEqual(
-                                    arguments[1:],
-                                    ["--user", "stop", "ohtia-quality-session.service"],
-                                )
                                 self.assertTrue(options["check"])
-                                self.assertEqual(options["timeout"], 10)
-                                session_calls.append("stop")
-                                if stop_failure:
-                                    raise subprocess.TimeoutExpired(arguments, 10)
+                                if arguments[2] == "is-active":
+                                    self.assertEqual(
+                                        arguments[2:],
+                                        ["is-active", "--quiet", "ohtia-quality-gnome.service"],
+                                    )
+                                    self.assertEqual(portal_ready, [True])
+                                    self.assertEqual(options["timeout"], 10)
+                                    if startup_failure == "compositor-ceased":
+                                        raise subprocess.CalledProcessError(1, arguments)
+                                elif arguments[-1] == "ohtia-quality-gnome.service":
+                                    self.assertEqual(arguments[2], "stop")
+                                    self.assertEqual(options["timeout"], 15)
+                                    compositor_calls.append("stop")
+                                    if startup_failure == "compositor-stop":
+                                        raise subprocess.TimeoutExpired(arguments, 15)
+                                else:
+                                    self.assertEqual(
+                                        arguments[1:],
+                                        ["--user", "stop", "ohtia-quality-session.service"],
+                                    )
+                                    self.assertEqual(options["timeout"], 10)
+                                    session_calls.append("stop")
+                                    if stop_failure:
+                                        raise subprocess.TimeoutExpired(arguments, 10)
                             return subprocess.CompletedProcess(arguments, 0, stdout="active\n")
                         if "quality:build" in arguments:
+                            self.assertEqual(compositor_ready, [True])
+                            self.assertEqual(portal_ready, [True])
+                            quality_calls.append(True)
                             self.assertEqual(activated, [False, True])
                             self.assertEqual(session_calls, ["start"])
                             self.assertEqual(
@@ -475,36 +555,57 @@ class VirtualMachineTests(unittest.TestCase):
                         socket.socket(socket.AF_UNIX) as wayland,
                         socket.socket(socket.AF_UNIX) as user_bus,
                     ):
-                        wayland.bind(str(runtime / "wayland-0"))
+                        if startup_failure != "missing-wayland":
+                            wayland.bind(str(runtime / "wayland-0"))
                         user_bus.bind(str(runtime / "bus"))
+                        expected_error = (
+                            SystemExit
+                            if startup_failure == "missing-wayland"
+                            else subprocess.TimeoutExpired
+                            if startup_failure in ("compositor-readiness", "portal-readiness")
+                            else subprocess.CalledProcessError
+                            if suite_failure or startup_failure == "compositor-ceased"
+                            else subprocess.TimeoutExpired
+                            if stop_failure or startup_failure == "compositor-stop"
+                            else None
+                        )
+                        error_context = (
+                            self.assertRaises(expected_error) if expected_error else nullcontext()
+                        )
                         with (
                             patch.dict(
                                 os.environ,
                                 {"DBUS_SESSION_BUS_ADDRESS": "unix:path=wrong-private-bus"},
+                                clear=True,
                             ),
                             patch("pathlib.Path", side_effect=guest_path),
-                            patch("subprocess.Popen", side_effect=compositor) as launched,
+                            patch("subprocess.Popen") as launched,
                             patch("subprocess.run", side_effect=command),
-                            self.assertRaises(
-                                subprocess.CalledProcessError
-                                if suite_failure
-                                else subprocess.TimeoutExpired
-                            ) as failure,
+                            error_context as failure,
                         ):
                             runpy.run_path(
                                 str(delivery.ROOT / "tooling/quality-packaging/guest-run.py")
                             )
-                        self.assertEqual(
-                            launched.call_args.kwargs["env"]["DBUS_SESSION_BUS_ADDRESS"],
-                            f"unix:path={runtime / 'bus'}",
+                        launched.assert_not_called()
+                    if suite_failure:
+                        self.assertIn("quality:build", failure.exception.cmd)
+                    elif startup_failure == "missing-wayland":
+                        self.assertIn("exactly one native Wayland socket", str(failure.exception))
+                    self.assertEqual(compositor_calls, ["start", "stop"])
+                    before_session = startup_failure in ("compositor-readiness", "missing-wayland")
+                    self.assertEqual(session_calls, [] if before_session else ["start", "stop"])
+                    self.assertEqual(
+                        quality_calls,
+                        []
+                        if startup_failure
+                        in (
+                            "compositor-readiness",
+                            "missing-wayland",
+                            "portal-readiness",
+                            "compositor-ceased",
                         )
-                    self.assertIn(
-                        "quality:build" if suite_failure else "ohtia-quality-session.service",
-                        failure.exception.cmd,
+                        else [True],
                     )
-                    self.assertEqual(session_calls, ["start", "stop"])
-                    child.terminate.assert_called_once()
-                    child.wait.assert_called_once_with(timeout=10)
                     self.assertEqual(
                         (source / "artifacts/quality-result/gnome.log").stat().st_size,
                         2 * 1024 * 1024,

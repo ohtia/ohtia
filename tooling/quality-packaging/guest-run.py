@@ -4,7 +4,6 @@ import json
 import os
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 home = Path("/home/ohtia-quality")
@@ -75,32 +74,41 @@ subprocess.run(
 )
 # The guest owns its kernel, home filesystem, GNOME compositor and policy; no host desktop is mounted.
 with (home / "gnome.log").open("x+b") as log:
-    compositor = subprocess.Popen(
-        [
-            "gnome-shell",
-            "--headless",
-            "--wayland",
-            "--virtual-monitor",
-            "1280x720",
-        ],
-        env=env,
-        stdout=log,
-        stderr=subprocess.STDOUT,
-    )
+    compositor_attempted = False
     session_attempted = False
     try:
-        deadline = time.monotonic() + 60
-        while time.monotonic() < deadline:
-            sockets = list(Path(env["XDG_RUNTIME_DIR"]).glob("wayland-*"))
-            sockets = [file for file in sockets if file.is_socket()]
-            if sockets:
-                env["WAYLAND_DISPLAY"] = sockets[0].name
-                break
-            if compositor.poll() is not None:
-                raise SystemExit("Native GNOME Wayland compositor failed.")
-            time.sleep(0.2)
-        else:
-            raise SystemExit("Native GNOME Wayland compositor did not become ready.")
+        # GNOME sends READY=1 after UI initialization. Its socket exists earlier.
+        # Let the native manager wait for that notification before portals can start.
+        compositor_attempted = True
+        subprocess.run(
+            [
+                "/usr/bin/systemd-run",
+                "--user",
+                "--unit=ohtia-quality-gnome",
+                "--property=Type=notify",
+                "--property=TimeoutStartSec=60s",
+                "--property=TimeoutStopSec=10s",
+                f"--property=StandardOutput=append:{home / 'gnome.log'}",
+                "--property=StandardError=inherit",
+                "--",
+                "/usr/bin/gnome-shell",
+                "--headless",
+                "--wayland",
+                "--virtual-monitor",
+                "1280x720",
+            ],
+            env=env,
+            check=True,
+            timeout=60,
+        )
+        sockets = [
+            file
+            for file in Path(env["XDG_RUNTIME_DIR"]).glob("wayland-*")
+            if file.is_socket() and file.stat().st_uid == os.getuid()
+        ]
+        if len(sockets) != 1:
+            raise SystemExit("Ready GNOME must own exactly one native Wayland socket.")
+        env["WAYLAND_DISPLAY"] = sockets[0].name
         subprocess.run(
             [
                 "dbus-update-activation-environment",
@@ -134,6 +142,37 @@ with (home / "gnome.log").open("x+b") as log:
             check=True,
             timeout=10,
         )
+        # Verify that portal settings answer on this real session before launching GTK clients.
+        subprocess.run(
+            [
+                "gdbus",
+                "call",
+                "--session",
+                "--dest",
+                "org.freedesktop.portal.Desktop",
+                "--object-path",
+                "/org/freedesktop/portal/desktop",
+                "--method",
+                "org.freedesktop.portal.Settings.ReadAll",
+                "['org.freedesktop.appearance']",
+            ],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            check=True,
+            timeout=10,
+        )
+        subprocess.run(
+            [
+                "/usr/bin/systemctl",
+                "--user",
+                "is-active",
+                "--quiet",
+                "ohtia-quality-gnome.service",
+            ],
+            env=env,
+            check=True,
+            timeout=10,
+        )
         subprocess.run(
             [
                 "python3",
@@ -162,13 +201,24 @@ with (home / "gnome.log").open("x+b") as log:
                 raise
             print(f"Guest session cleanup failed: {type(error).__name__}", file=sys.stderr)
         finally:
+            primary_failed = sys.exception() is not None
             try:
-                compositor.terminate()
-                try:
-                    compositor.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    compositor.kill()
-                    compositor.wait(timeout=5)
+                if compositor_attempted:
+                    subprocess.run(
+                        [
+                            "/usr/bin/systemctl",
+                            "--user",
+                            "stop",
+                            "ohtia-quality-gnome.service",
+                        ],
+                        env=env,
+                        check=True,
+                        timeout=15,
+                    )
+            except (OSError, subprocess.SubprocessError) as error:
+                if not primary_failed:
+                    raise
+                print(f"Guest compositor cleanup failed: {type(error).__name__}", file=sys.stderr)
             finally:
                 output = source / "artifacts" / "quality-result"
                 try:
