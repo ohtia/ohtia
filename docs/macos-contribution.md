@@ -17,19 +17,31 @@ sources:
 
 # Native macOS contribution
 
-## Native prerequisites
+Follow this procedure to build, run, change, test and package Ohtia on Apple Silicon with macOS 26 or 27. Use a separate native VM or dedicated account with synthetic data and a logged-in graphical session. Keep it independent of your ordinary Ohtia installation and research materials, as required by PRIN-004–007 and PRIN-016.
 
-This procedure implements [STORY-001-011](epics/EPIC-001-desktop-foundation/STORY-001-011-make-macos-contribution-setup-reproducible.md) using the [locked workspace](developer-workspace.md), [isolated runtime](desktop-runtime.md) and existing [quality packager](quality-builds.md). Use Apple Silicon running macOS 26 or 27, local APFS, an ordinary account and its logged-in graphical session. Intel, Rosetta, macOS 15 and universal packages are outside this contributor route. PRIN-004–007, PRIN-011 and PRIN-016 require preserving actual inputs, private data and limits of native observations.
+## Prepare the Mac
 
-Use a separate native VM or dedicated macOS account with no stable installation, research materials or provider credentials. Inspect native architecture, account home, local unsynchronized volumes, graphical session and stable roots before any application launch, following [native profile inspection](native-qualification.md#provision-an-independent-native-profile). A separate checkout, research directory or application name alone does not establish isolation. Never run Ohtia as root or redirect its native configuration root. Do not copy tool environments, credentials or stable stores from another account.
+Use a native ARM64 Terminal, an ordinary account and an account-owned directory on local, unsynchronized APFS storage. Check the Apple developer tools:
 
-Install Apple developer tools only if absent. The Apple-supplied `/usr/bin/python3`, Git, `xcrun`, Clang, SDK, `codesign`, `diskutil` and `launchctl` are prerequisites. In Terminal, `xcode-select --install` opens Apple's installation/consent flow; complete it yourself and retry diagnosis.[^apple-tools] A full selected Xcode installation also works. Accept Apple's license in its own interface if required. Setup never installs OS packages, selects an Xcode globally, uses sudo or requests a paid developer identity. The selected [toolchain manifest](../config/desktop/toolchain.json) owns Python, Node, pnpm, uv, Electron and native-addon patches and download digests; [ADR-0004](adr/adr-0004-javascript-development-toolchain.md), [ADR-0005](adr/adr-0005-python-repository-tooling.md) and [ADR-0007](adr/adr-0007-sqlite-repositories-and-migrations.md) own their version lines.
+```bash
+xcode-select -p
+xcrun --find clang
+/usr/bin/python3 --version
+```
 
-Clone this public repository into an account-owned local directory, including spaces or non-ASCII characters if desired. Keep sufficient free space for a second runtime and DMG/ZIP outputs. Run the following commands from that checkout, in a native Terminal, without a pre-existing virtual environment. No global package manager is required.
+If developer tools are absent, run `xcode-select --install`, complete Apple's installation dialog and retry these checks.[^apple-tools] A selected full Xcode installation also works. Complete any Apple license prompt before continuing. The bootstrap requires Apple's Python 3.9 or later; it installs the project's pinned tools locally.
 
-## Diagnose and install
+Clone the public repository:
 
-The [native evaluation](macos-contribution-report.md) records observed inputs, results and limits. The initial entry supports Apple's Python 3.9 or later; the shared maintenance entry subsequently uses the pinned conventional Python. `doctor` only inspects: it does not create a tool directory, download, repair permissions, read application settings or launch Electron. Its output omits account/home paths, environment values and arbitrary subprocess errors. It checks OS family, native interpreter/hardware agreement, Rosetta refusal, ordinary-account access, local APFS, Git, developer tools/SDK and a GUI session. Availability of that session is not independent-profile admission or an OS sandbox observation.
+```bash
+mkdir -p "$HOME/src"
+git clone https://github.com/ohtia/ohtia.git "$HOME/src/ohtia"
+cd "$HOME/src/ohtia"
+```
+
+Prepare the issue branch and task worktree through the [contribution workflow](../CONTRIBUTING.md#prepare-repository-changes). Run the remaining commands from that worktree. The repository hooks refuse `main` and `master`.
+
+## Install the project tools
 
 ```bash
 /usr/bin/python3 scripts/macos_contributor.py doctor
@@ -37,20 +49,34 @@ The [native evaluation](macos-contribution-report.md) records observed inputs, r
 .tooling/python/bin/python3 scripts/macos_contributor.py doctor --workspace
 ```
 
-`--install-tools` explicitly consents to downloads into this checkout: the manifest's authenticated Python archive first, then the shared bootstrap's Node, pnpm, uv and frozen dependency installation. Python comes from the manifest's pinned Astral Python Build Standalone release; JavaScript and Python packages use the workspace's pinned registries and lockfiles. The initial download is SHA-256 checked before extraction or interpreter execution. Extraction rejects escaping paths/links and special entries. The shared installer verifies effective tools and both lockfiles. No unpinned global Python installation is necessary.
+All three commands must exit successfully. The first doctor checks the native OS/CPU, filesystem, permissions, Apple tools and graphical session without installing anything. Setup downloads the versions pinned in the [toolchain manifest](../config/desktop/toolchain.json), verifies their hashes and installs frozen dependencies into this worktree. The final doctor checks the installed tools. No global package manager or paid developer identity is required.
 
-Repeat the same setup command deliberately; it reconciles existing pins without changing locks. Concurrent setup is refused by the shared owner lock. Interrupted downloads leave no executable partial interpreter; keep failed evidence, confirm that the previous process has stopped and retry. Setup's elapsed time includes downloads and installation; it is not a separately measured active-work result. The [workspace guide](developer-workspace.md#bootstrap-and-frozen-setup) explains checkout-local caches and lock integrity. Avoid running commands that regenerate `dist` concurrently.
+Repeat setup to check that the existing installation can be reused without changing the lockfiles:
 
-## Admit and launch
+```bash
+/usr/bin/python3 scripts/macos_contributor.py setup --install-tools
+git diff --exit-code -- pnpm-lock.yaml uv.lock
+```
 
-Create the independent profile's research directory at its native `~/ohtia` and a separate scratch directory inside its home. Inspect them and prepare `runtime-profile.json` exactly as specified by [Isolated desktop runtime](desktop-runtime.md#prepare-an-independent-native-profile), with `target: darwin-arm64`, the actual account home, its fixed `Library/Application Support` configuration root and the three inspected stable sentinel roots. Record the actual inspecting actor; a sample record is not approval. When a fresh test VM has no stable installation, use explicitly synthetic stable configuration/store/recovery fixtures and document that limitation. Do not touch an ordinary account's private roots to create such fixtures.
+## Prepare the launch profile
 
-Set these shell variables to the inspected absolute paths. The example assumes the scratch directory has been created in this independent account; create the profile there before continuing. The prepared attempt directory must not exist yet.
+Create the research and scratch directories in the independent account:
 
 ```bash
 mkdir -p "$HOME/ohtia" "$HOME/ohtia-contributor-scratch"
 ohtia_scratch="$HOME/ohtia-contributor-scratch"
 ohtia_profile="$ohtia_scratch/runtime-profile.json"
+```
+
+Follow [native profile inspection](native-qualification.md#provision-an-independent-native-profile), then create `runtime-profile.json` using the [runtime profile contract](desktop-runtime.md#prepare-an-independent-native-profile). Set `target` to `darwin-arm64`, use the actual account home and its fixed `Library/Application Support` configuration root, and record the inspected research, scratch and stable-sentinel roots. On a fresh VM without a stable installation, use synthetic stable configuration/store/recovery fixtures as described there. Record only checks you actually performed; copying the example does not inspect the account.
+
+Save the completed profile at the path in `ohtia_profile` before continuing. Configuration, research, scratch and stable roots must satisfy the linked inspection procedure; do not redirect the native configuration root or run Ohtia as root.
+
+## Build and run
+
+Choose a prepared directory that does not exist yet:
+
+```bash
 ohtia_prepared="$ohtia_scratch/runtime-1"
 .tooling/python/bin/python3 scripts/workspace.py run build
 .tooling/python/bin/python3 scripts/workspace.py run desktop:prepare darwin-arm64 "$ohtia_prepared"
@@ -58,13 +84,11 @@ ohtia_prepared="$ohtia_scratch/runtime-1"
 .tooling/python/bin/python3 scripts/workspace.py run dev "$ohtia_profile" "$ohtia_prepared"
 ```
 
-Profile diagnosis uses the actual common launch admission and verifies prepared file/link hashes without spawning Electron. Unverified/stable profiles fail before broker startup. The dev entry rechecks admission and sentinels; broker and utility also recheck their native context. Research remains at the fixed account-native root; configuration remains under `~/Library/Application Support/Ohtia`.
+The window should show that the local service is responding. Open/create the synthetic local store, change an appearance preference and save it. Quit using the window's exit control, run the same `dev` command again, open the store and confirm that the saved preference remains. Quit before continuing.
 
-In the window, observe responsive service status, explicitly open/create the synthetic store, select an appearance preference and quit. Relaunch with the same dev command, open the same store and verify that preference. Use the window's exit control; Ctrl+C is an interruption, not proof of full shutdown. The automated suites below additionally cover failure/retry, persistence, migrations and storage-access failures. Retain process observations and check that no attempt executable remains alive after exit.
+## Make and check a visible change
 
-## Edit, rebuild and verify
-
-Use a disposable visible edit in `packages/renderer/src/desktop.tsx`: replace `<h1 id="title">{text("title")}</h1>` with `<h1 id="title">Ohtia contributor</h1>`. Preserve all bridge, catalog and storage contracts. Run the common tests and rebuild, then prepare a **new** runtime directory and launch it to inspect the changed heading. This exercises source editing, actual local assets and meaningful checks without a research feature or provider account.
+In `packages/renderer/src/desktop.tsx`, replace `<h1 id="title">{text("title")}</h1>` with `<h1 id="title">Ohtia contributor</h1>`. Then run:
 
 ```bash
 .tooling/python/bin/python3 scripts/workspace.py run typecheck
@@ -74,11 +98,43 @@ Use a disposable visible edit in `packages/renderer/src/desktop.tsx`: replace `<
 .tooling/python/bin/python3 scripts/workspace.py run dev "$ohtia_profile" "$ohtia_scratch/runtime-2"
 ```
 
-Quit the previous window before launching a new runtime. Restore the disposable edit, rebuild and assemble another fresh runtime before native acceptance: those suites intentionally expect the canonical heading. Do not change a test merely to accept an unexplained failure. Prepared runtime bytes are immutable; editing source or rebuilding does not update an existing attempt. Do not submit this illustrative edit with unrelated work.
-
-The common required commands remain identical to CI:
+The checks must pass and the window must display `Ohtia contributor`. Quit, restore the original heading in the source file and rebuild a fresh canonical runtime for the remaining steps:
 
 ```bash
+.tooling/python/bin/python3 scripts/workspace.py run build
+ohtia_prepared="$ohtia_scratch/runtime-3"
+.tooling/python/bin/python3 scripts/workspace.py run desktop:prepare darwin-arm64 "$ohtia_prepared"
+```
+
+Prepared runtimes are immutable: rebuilding source does not update an existing runtime directory. Run build/test commands sequentially because they can regenerate the same outputs.
+
+## Run the native tests
+
+The desktop suite needs an absent locator. With Ohtia stopped, preserve the synthetic configuration and store created in this walkthrough together under a new scratch directory:
+
+```bash
+ohtia_saved="$ohtia_scratch/before-native-tests-1"
+mkdir "$ohtia_saved" &&
+  mv "$HOME/Library/Application Support/Ohtia" "$ohtia_saved/configuration" &&
+  mv "$HOME/ohtia" "$ohtia_saved/store" &&
+  mkdir "$HOME/ohtia"
+```
+
+Continue only if the preservation commands succeed. If either location contains data you cannot identify as this walkthrough's synthetic state, use a fresh independent account instead.
+
+Run desktop acceptance before storage acceptance, using new evidence directories:
+
+```bash
+.tooling/python/bin/python3 scripts/workspace.py run desktop:test "$ohtia_profile" "$ohtia_prepared" "$ohtia_scratch/desktop-evidence-1"
+.tooling/python/bin/python3 scripts/workspace.py run storage:test "$ohtia_profile" "$ohtia_prepared" "$ohtia_scratch/storage-evidence-1"
+```
+
+Both commands must exit successfully. Results are written to `desktop-evidence-1/receipt.json` and `storage-evidence-1/storage-receipt.json` under scratch. These suites exercise the local service, failure/retry, persistence/restart and shutdown using the built runtime.
+
+## Run the shared checks
+
+```bash
+.venv/bin/pre-commit install
 .tooling/python/bin/python3 scripts/workspace.py run check
 .tooling/python/bin/python3 scripts/workspace.py run hooks
 .tooling/python/bin/python3 scripts/workspace.py run hooks:history
@@ -87,41 +143,31 @@ The common required commands remain identical to CI:
 git diff --check
 ```
 
-Install hooks with `.venv/bin/pre-commit install`. Explicitly include new files in a focused `.venv/bin/pre-commit run --files <paths>` before review. Hooks need a real Git checkout, not a source archive. The POSIX-only maintainer provenance verifier `scripts/github_pr.py` runs natively on macOS; it is separate from credential-free setup and never authorizes publication. Optional editors and debugger integrations are not prerequisites and no editor-specific setup is supplied here.
+Every command must exit successfully. Review any formatter changes and rerun affected checks. For new files, also run `.venv/bin/pre-commit run --files <paths>` because `--all-files` includes only files known to Git. The [workspace guide](developer-workspace.md) describes the shared commands.
 
-Run native suites only against synthetic state in the admitted profile and use new evidence directories. The desktop suite requires an absent locator; preserve any prior owned synthetic configuration/store together under scratch before a fresh suite generation, then run desktop before storage. Never remove or adopt an unknown store. Use a fresh independent profile if ownership is uncertain.
+## Build a local package
 
-```bash
-.tooling/python/bin/python3 scripts/workspace.py run desktop:test "$ohtia_profile" "$ohtia_prepared" "$ohtia_scratch/desktop-evidence-1"
-.tooling/python/bin/python3 scripts/workspace.py run storage:test "$ohtia_profile" "$ohtia_prepared" "$ohtia_scratch/storage-evidence-1"
-```
-
-Retain actual native process/addon identities and before/after stable sentinel observations alongside the suites. Their exact case inventories and limitations remain in the [runtime](desktop-runtime.md#native-verification) and [storage](storage.md) contracts. A successful doctor cannot replace loaded-addon, enforced sandbox, complete cessation or durable restart evidence.
-
-## Build a local quality package
-
-Use the pinned interpreter, an admitted profile and an unchanged prepared runtime. This entry uses the existing native quality builder with ad-hoc signing and no identity discovery, notarization or publication credentials. It produces separate ARM64 DMG and ZIP packages, hashes and a `packages.json` receipt inside a new scratch directory. The fixed development version is disposable and must not be published or treated as a reserved release.
+Use the restored source and canonical runtime:
 
 ```bash
 .tooling/python/bin/python3 scripts/macos_contributor.py package --profile "$ohtia_profile" --prepared "$ohtia_prepared" --output "$ohtia_scratch/package-1"
 ```
 
-The builder binds the post-signature native addon bytes and reseals the bundle. Archive construction alone is not packaged runtime evidence: extract the ZIP with `/usr/bin/ditto -x -k`, or mount the DMG read-only with `/usr/bin/hdiutil attach -readonly -nobrowse`, inspect the native bundle and run the common admitted acceptance path against its actual payload. Preserve the original package and its digest. [Native quality builds](quality-builds.md) defines CI's installed-payload smoke and provenance; local packages do not satisfy hosted CI or human integration. `package:local` separately produces only the workspace library archive and is not a desktop installer.
+Expect an ARM64 DMG and ZIP under `package-1/packages` and a `package-1/packages.json` receipt with their hashes. Use a new output directory for another attempt. These are local development packages with ad-hoc signatures; the command requires no signing/notarization credentials and does not publish a release. The separate `package:local` command creates a library archive, not a desktop installer. [Native quality builds](quality-builds.md) describes CI's additional tests against installed package payloads.
 
-macOS may label local packages as unidentified or block quarantined downloads. Verify the repository source and exact package identity first. For an intentionally trusted local build, use Apple's per-application **Open Anyway** action in System Settings → Privacy & Security if offered, then retry within the independent profile. Do not globally disable Gatekeeper, SIP or quarantine checks, strip quarantine recursively, or use `--no-sandbox`. Ad-hoc signatures do not establish Developer ID, notarization or distribution trust.[^apple-gatekeeper]
+If macOS blocks an intentionally trusted local build, verify its source and package identity, then use Apple's per-application **Open Anyway** action in System Settings → Privacy & Security if offered.[^apple-gatekeeper] Keep Gatekeeper, SIP and the application sandbox enabled.
 
-## Recovery
+## Resolve common failures
 
-- **Missing developer tools or license:** run `xcode-select --install`, finish Apple's consent/license interface, then rerun `doctor`. If multiple Xcodes are installed, have the machine owner select the intended installation; do not silently modify global selection.
-- **Wrong OS, Intel Python or Rosetta:** use the required Apple Silicon OS and native Terminal. Check `/usr/bin/uname -m` and `/usr/sbin/sysctl -in sysctl.proc_translated`; ARM64 with no translation is required. Recreate this checkout's tool environment using the same setup entry; another slice's success is not native evidence.
-- **Network/cache/hash failure:** verify HTTPS access to the manifest's exact artifact endpoints, npm and PyPI. Retry setup; it authenticates cached Python before reuse. Preserve failed attempts. Remove only the named damaged checkout-local tool/cache after confirming no command is active. Never regenerate locks, disable TLS checks or upgrade global tools to repair setup.
-- **Interrupted or concurrent setup:** inspect `.tooling/setup.lock` locally and confirm its recorded PID has stopped. Remove that lock only when stale, then retry the same setup command. Do not kill unrelated processes or erase a running setup's environment.
-- **Denied checkout or research root:** use account-owned local APFS and restore only the intended account permissions. Do not launch with sudo or grant broad disk access as a workaround. Retain the controlled graphical failure; the storage suite exercises permission failure/recovery with synthetic directories.
-- **Native addon or ABI mismatch:** run workspace doctor, rebuild and assemble a new `darwin-arm64` attempt from the unchanged locks. Retain the previous attempt's identities. Do not substitute a developer-Node binding for Electron's ABI or edit a prepared manifest to accept replaced bytes.
-- **No GUI session:** log into the independent account in the native graphical console and rerun doctor. SSH access alone does not qualify a graphical session. A controlled startup failure must remain visible; do not weaken the sandbox to bypass it.
-- **Rejected profile or changed prepared bytes:** follow the runtime inspection procedure and correct the actual isolation/path problem. Use the native account home and fixed configuration root. Rebuild a fresh attempt for changed bytes; never modify stable data or claim an uninspected record is approved.
-
-Record exact OS/build, hardware/RAM, APFS, tool/SDK identities, both lock hashes, cache state, actual download timings/throughput, active work, interventions and command exits. Adopt the existing [numeric onboarding budgets](../config/desktop/resource-policy.json) before trials: cold downloads and active work are separate measurements. A reused VM with empty checkout caches proves that setup condition, not a pristine OS or an unfamiliar person's unaided trial. [Integrated contributor verification](epics/EPIC-001-desktop-foundation/STORY-001-017-verify-the-integrated-foundation-and-contributor-journeys.md) owns that independent newcomer assessment.
+- **Missing Apple tools or license:** run `xcode-select --install`, complete Apple's dialogs and retry `doctor`. If the wrong Xcode is selected, have the machine owner select the intended installation.
+- **Unsupported OS/CPU or Rosetta:** use Apple Silicon with macOS 26 or 27 and a native ARM64 Terminal. Recreate the worktree's tool environment through the same setup command.
+- **No graphical session:** log into the independent account in the Mac's graphical console and retry `doctor`. SSH alone is insufficient.
+- **Download or hash failure:** check HTTPS access to the manifest's artifact endpoints, npm and PyPI, then retry setup. Keep the lockfiles unchanged; do not disable TLS verification.
+- **Setup already in progress:** wait for that process to finish. If it stopped, inspect the PID in `.tooling/setup.lock` and remove the lock only after confirming it is stale.
+- **Hooks refuse the branch:** resume the issue branch/worktree from the contribution workflow; do not run the walkthrough's edits on `main` or `master`.
+- **Profile or prepared-runtime refusal:** correct the profile using the inspection procedure, or build a new runtime directory if its bytes changed.
+- **Native addon mismatch:** rerun workspace diagnosis, rebuild and assemble a new runtime from the unchanged locks. Do not substitute a developer-Node binding for the Electron binding.
+- **Denied checkout or research access:** use an account-owned local APFS directory and correct its permissions. Run as the ordinary inspected account.
 
 [^apple-tools]: Apple documents the consented Terminal installation and the full-Xcode alternative.
 

@@ -43,7 +43,6 @@ okf_version: "0.2"
 - [Shared verification and coverage gates](shared-verification.md) — Run the same local and CI checks with independent product coverage, complete test inventories and separate native evidence.
 
 - [Native Linux contribution](linux-contribution.md) — Prepare a declared Linux contributor environment with consented vendor packages, pinned checkout-local tools, read-only diagnosis and isolated native execution.
-- [Native macOS contributor verification](macos-contribution-report.md) — Observed Apple Silicon setup, desktop, storage, source-edit and local-package evidence for macOS 26 and 27.
 - [Native macOS contribution](macos-contribution.md) — Set up, diagnose, edit, verify and package Ohtia in an independent Apple Silicon macOS contributor profile.
 - [Locked developer workspace](developer-workspace.md) — Bootstrap isolated contributor tools, build the six package boundaries and verify the frozen workspace without changing research data.
 - [Native foundation qualification](native-qualification.md) — Assemble non-shipping native probes, admit independent profiles and retain complete target evidence without claiming partial native qualification.
