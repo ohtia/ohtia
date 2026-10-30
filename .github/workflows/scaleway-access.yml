@@ -1,0 +1,50 @@
+name: Scaleway access preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scaleway-access-preflight
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    name: Check Scaleway read access and ARM profile
+    if: github.repository == 'ohtia/ohtia' && github.ref == 'refs/heads/main'
+    environment: scaleway-qualification
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out preflight source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+
+      - name: Read Scaleway access and image metadata
+        env:
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+          SCW_PROJECT_ID: ${{ vars.SCW_PROJECT_ID }}
+          SCW_ARM_ZONE: ${{ vars.SCW_ARM_ZONE }}
+          SCW_ARM_INSTANCE_TYPE: ${{ vars.SCW_ARM_INSTANCE_TYPE }}
+          SCW_ARM_DISK_GIB: ${{ vars.SCW_ARM_DISK_GIB }}
+          SCW_ARM_FEDORA44_IMAGE_ID: ${{ vars.SCW_ARM_FEDORA44_IMAGE_ID }}
+          SCW_ARM_DEBIAN13_IMAGE_ID: ${{ vars.SCW_ARM_DEBIAN13_IMAGE_ID }}
+        run: |
+          mkdir -m 700 -p artifacts/scaleway-access
+          python -I scripts/installation_scaleway.py > artifacts/scaleway-access/report.json
+
+      - name: Retain completed access observation
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scaleway-access-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/scaleway-access/report.json
+          if-no-files-found: error
+          retention-days: 14

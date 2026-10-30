@@ -28,6 +28,7 @@ okf_version: "0.2"
 
 ## Desktop foundation
 
+- [Scaleway qualification access preflight](scaleway-access.md) — Check protected GitHub Actions read access and ARM image compatibility without creating cloud resources or claiming native qualification.
 - [Installation facility observations](installation-facilities.md) — Observe hosted Linux VM and non-elevated-account capabilities without granting native installation or distribution qualification.
 - [Isolated desktop runtime](desktop-runtime.md) — Admit an independent native profile, assemble the local desktop and verify its supervised status and fixed-home bootstrap boundaries.
 - [Durable foundation storage](storage.md) — Open the isolated local store, persist appearance choices and verify exclusive migrations and whole-database recovery through the packaged desktop.
