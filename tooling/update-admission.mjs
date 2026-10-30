@@ -1,3 +1,4 @@
+import { synchronizeDirectory } from "./installation-filesystem.mjs";
 // Manual internal qualification only. This module enables no product updater or public feed.
 import fs from "node:fs";
 import path from "node:path";
@@ -148,7 +149,7 @@ function validatePackage(entry, version) {
     typeof entry.filename === "string" &&
       entry.filename.length <= 160 &&
       /^[a-zA-Z0-9][a-zA-Z0-9._~-]*$/.test(entry.filename) &&
-      entry.filename.endsWith(`.${entry.format}`),
+      entry.filename.endsWith(`.${entry.format === "nsis" ? "exe" : entry.format}`),
     "filename",
   );
   requireUpdate(
@@ -370,12 +371,7 @@ export async function stagePackage(admitted, endpoint, parent, signal) {
     fs.fsyncSync(descriptor);
     fs.closeSync(descriptor);
     fs.renameSync(partial, final);
-    const folder = fs.openSync(directory, "r");
-    try {
-      fs.fsyncSync(folder);
-    } finally {
-      fs.closeSync(folder);
-    }
+    synchronizeDirectory(directory);
     return { file: final, sha256: entry.sha256, bytes: count };
   } catch (error) {
     // No activation or accepted-sequence mutation occurs. Retain partial bytes for explicit inspection.
@@ -422,7 +418,7 @@ export async function withAcceptanceState(directory, fresh, operation, leaseDeta
   );
   const lock = path.join(directory, "operation.lock"),
     stateFile = path.join(directory, "accepted.json");
-  const descriptor = fs.openSync(lock, "wx", 0o600);
+  let descriptor = fs.openSync(lock, "wx", 0o600);
   let retainLease = false;
   try {
     const lease = Object.freeze({
@@ -432,7 +428,11 @@ export async function withAcceptanceState(directory, fresh, operation, leaseDeta
       started_ms: Date.now(),
     });
     fs.writeFileSync(descriptor, JSON.stringify(lease) + "\n");
+    // File existence and the exact owner birth identity hold the lease. Close
+    // its writer before native readers deny concurrent Windows write handles.
     fs.fsyncSync(descriptor);
+    fs.closeSync(descriptor);
+    descriptor = undefined;
     const exists = fs.existsSync(stateFile);
     requireUpdate(fresh === !exists, "state_initialization");
     let previous = null;
@@ -471,12 +471,7 @@ export async function withAcceptanceState(directory, fresh, operation, leaseDeta
           fs.closeSync(file);
         }
         fs.renameSync(pending, stateFile);
-        const folder = fs.openSync(directory, "r");
-        try {
-          fs.fsyncSync(folder);
-        } finally {
-          fs.closeSync(folder);
-        }
+        synchronizeDirectory(directory);
       } catch (error) {
         retainLease = true;
         throw error;
@@ -491,7 +486,7 @@ export async function withAcceptanceState(directory, fresh, operation, leaseDeta
       throw error;
     }
   } finally {
-    fs.closeSync(descriptor);
+    if (descriptor !== undefined) fs.closeSync(descriptor);
     // Keep the already-synchronized birth identity when persistence or an external transaction is uncertain.
     if (!retainLease) fs.unlinkSync(lock);
   }

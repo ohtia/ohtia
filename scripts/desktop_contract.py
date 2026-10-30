@@ -97,6 +97,9 @@ BUDGET_UNITS = {
     "update_package_bytes": "byte",
     "update_download_ms": "millisecond",
     "update_operator_ms": "millisecond",
+    "update_archive_entries": "entry",
+    "update_archive_listing_bytes": "byte",
+    "update_expanded_bytes": "byte",
     "update_catalog_lifetime_ms": "millisecond",
 }
 REQUIRED_BUDGETS = set(BUDGET_UNITS)
