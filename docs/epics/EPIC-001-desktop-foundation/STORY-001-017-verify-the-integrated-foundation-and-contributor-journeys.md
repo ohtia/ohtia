@@ -1,11 +1,7 @@
 ---
 type: Story
 title: "STORY-001-017 — Verify the integrated foundation and contributor journeys"
-description: "Demonstrate the full foundation, three native contributor paths and release infrastructure with traceable acceptance evidence."
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
+description: "Demonstrate common foundation and native contributor paths on every required platform plus complete Linux delivery infrastructure, with explicit deferred macOS/Windows signed routes."
 tags: ["story", "comp:desktop", "comp:tooling", "comp:storage", "comp:docs"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/31
@@ -27,14 +23,19 @@ applicable_blocks:
     "SPEC-001-024",
     "SPEC-001-025",
     "SPEC-001-026",
+    "SPEC-001-028",
   ]
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # STORY-001-017 — Verify the integrated foundation and contributor journeys
 
 ## Description
 
-Demonstrate the full foundation, three native contributor paths and release infrastructure with traceable acceptance evidence. This unit owns its complete result and verifies its delivered inputs; it does not wait for a returning output from its consumers. Detailed implementation decisions and their rationale are held once in the applicable specification below.
+Demonstrate common foundation and native contributor paths on every required platform plus complete Linux delivery infrastructure, with explicit deferred macOS/Windows signed routes. This unit owns its complete result and verifies its delivered inputs; it does not wait for a returning output from its consumers. Detailed implementation decisions and their rationale are held once in the applicable specification below.
 
 ## Applicable specification
 
@@ -52,16 +53,21 @@ Demonstrate the full foundation, three native contributor paths and release infr
 - [SPEC-001-025: Diagnostics security applicability and evidence](./epic.md#spec-001-025-diagnostics-security-applicability-and-evidence)
 - [SPEC-001-026: Delivery security applicability and evidence](./epic.md#spec-001-026-delivery-security-applicability-and-evidence)
 
+- [SPEC-001-028: Linux-first delivery and platform capability admission](./epic.md#spec-001-028-linux-first-delivery-and-platform-capability-admission)
+
 ## Tasks
 
 - [ ] Freeze the current integrated source/input/artifact evidence and reconcile all earlier contracts with the required native inventory.
 - [ ] Reconcile core, diagnostics and delivery owner security inventories and reject missing producer evidence.
-- [ ] Run full packaged foundation and migration/failure/privacy journeys, correcting accepted defects through their owning story contracts.
+- [ ] Run full packaged foundation and migration/failure/privacy journeys on all native targets plus final signed Linux delivery journeys, correcting accepted defects through their owning story contracts.
 - [ ] Verify first-launch stable-profile exclusion, complete initial locale resolution and catalogs, atomic default-limit initialization and real keyboard and focus behavior during bootstrap and recovery.
 - [ ] Perform the required native manual screen-reader and assistive journeys on all required targets; record operators, tools, criteria and exact artifacts.
 - [ ] Verify delivered locale messages through catalog structure, contextual rendering and actual model-generation provenance. Record that human linguistic review has not occurred; a future voluntary review covers only its evidenced version and scope and is not a prerequisite for closure.
 - [ ] Observe consented unfamiliar contributors on all required native targets through clean setup, environment-doctor failure and remediation, launch, a representative source change, checks and unsigned packaging; retain actual host, executable and addon identities and measured conditions.
-- [ ] Rehearse candidate/publication lifecycle on authorized controlled surfaces, verify exact bytes/isolation/authority and retain complete evidence and limitations.
+- [ ] Rehearse the common candidate/publication lifecycle using signed Linux artifacts on authorized private surfaces, verify exact bytes/isolation/authority, deny unqualified macOS/Windows distribution and retain complete evidence and limitations.
+
+- [ ] Produce V17 with complete common native/runtime/storage/locale/privacy/assistive/contributor evidence, phase-scoped I13/C15/F16 and honest per-target eligibility; neither M19 nor W20 is a completion prerequisite.
+- [ ] Record real signed macOS/Windows installation/update observations as 019/020 obligations while preserving all unrelated native human foundation/newcomer requirements here.
 
 ## Acceptance criteria
 
@@ -79,7 +85,7 @@ Demonstrate the full foundation, three native contributor paths and release infr
 - [ ] Completion gate: verify New contributors output NC and its full release condition in the Dependencies output registry and SPEC-001-021.
 - [ ] Completion gate: verify Release authority output RA and its full release condition in the Dependencies output registry and SPEC-001-021.
 - [ ] Completion gate: verify UI review facilities output UR and its full release condition in the Dependencies output registry and SPEC-001-021.
-- [ ] Every accepted review correction has concrete specification, owner, gate and meaningful verification evidence; no safeguard is deferred to a later consumer.
+- [ ] Every accepted review correction has concrete specification, owner, gate and meaningful verification evidence; common/Linux safeguards remain here, while only actual macOS/Windows publisher-signed user-route obligations move explicitly to 019/020.
 - [ ] All required native targets satisfy integrated foundation and contributor acceptance; no emulation/cross-build-only evidence releases a gate.
 - [ ] The full actual renderer-to-SQLite save/reopen and boundary/failure/recovery scenarios pass on every declared native target.
 - [ ] Clean native newcomer journeys satisfy the agreed measured conditions with no undocumented fixes and actual independent participation.
@@ -90,7 +96,7 @@ Demonstrate the full foundation, three native contributor paths and release infr
 ## Quality checklist
 
 - [ ] Check actual source/tested tree/workflow/run/attempt/target/digest identities and distinct local/CI/native/manual/signature evidence.
-- [ ] Compare every EPIC acceptance criterion with concrete evidence and preserve platform/authority/performance verification limits.
+- [ ] Reconcile the common/Linux EPIC criteria with concrete evidence, retaining 019/020 as separate full-EPIC obligations; preserve platform/authority/performance verification limits without waiting for those follow-ups to close this story.
 - [ ] Run applicable shared checks and configured repository hooks, committed-history secret scan, existing policy tests where affected and git diff --check; include new files explicitly.
 - [ ] Preserve issue-first scope, isolated worktree and unrelated changes; complete the mandated independent read-only code-review gate before any code commit, then verify signed content identity. Documentation-only work keeps its documentation checks.
 - [ ] Record real inputs, results, omissions and failures; a later commit, hosted CI result and human integration are separate evidence. State installed-user impact and the proposed change note or the reason none is required.

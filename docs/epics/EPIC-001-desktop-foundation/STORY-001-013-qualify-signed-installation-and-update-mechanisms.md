@@ -1,24 +1,34 @@
 ---
 type: Story
 title: "STORY-001-013 — Qualify signed installation and update mechanisms"
-description: "Verify final signed installers and authentic compatible updates on the complete declared desktop matrix."
+description: "Deliver common Actions signing/update foundations and complete Linux signed qualification, retaining native macOS/Windows builds and verified provenance."
 tags: ["story", "comp:desktop", "comp:tooling"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/27
-generated:
-  by: codex/gpt-6.1-sol
 epic: "EPIC-001"
 epic_concept: ./epic.md
 components: ["comp:desktop", "comp:tooling"]
 applicable_blocks:
-  ["SPEC-001-003", "SPEC-001-007", "SPEC-001-015", "SPEC-001-016", "SPEC-001-026", "SPEC-001-027"]
+  [
+    "SPEC-001-003",
+    "SPEC-001-007",
+    "SPEC-001-015",
+    "SPEC-001-016",
+    "SPEC-001-026",
+    "SPEC-001-027",
+    "SPEC-001-028",
+  ]
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # STORY-001-013 — Qualify signed installation and update mechanisms
 
 ## Description
 
-Verify final signed installers and authentic compatible updates on the complete declared desktop matrix. This unit owns its complete result and verifies its delivered inputs; it does not wait for a returning output from its consumers. Detailed implementation decisions and their rationale are held once in the applicable specification below.
+Deliver common Actions signing/update foundations and complete Linux signed qualification, retaining native macOS/Windows builds and verified provenance. This unit owns its complete result and verifies its delivered inputs; it does not wait for a returning output from its consumers. Detailed implementation decisions and their rationale are held once in the applicable specification below.
 
 ## Applicable specification
 
@@ -29,28 +39,33 @@ Verify final signed installers and authentic compatible updates on the complete 
 - [SPEC-001-026: Delivery security applicability and evidence](./epic.md#spec-001-026-delivery-security-applicability-and-evidence)
 - [SPEC-001-027: Native feasibility and frozen workspace qualification](./epic.md#spec-001-027-native-feasibility-and-frozen-workspace-qualification)
 
+- [SPEC-001-028: Linux-first delivery and platform capability admission](./epic.md#spec-001-028-linux-first-delivery-and-platform-capability-admission)
+
 ## Tasks
 
 - [ ] Integrate gate: verify STORY-001-012 output B12 and its full release condition in the Dependencies output registry and SPEC-001-016.
 - [ ] Integrate gate: verify STORY-001-018 output D1b and its full release condition in the Dependencies output registry and SPEC-001-016.
 - [ ] Integrate gate: verify Policy authority output PA and its full release condition in the Dependencies output registry and SPEC-001-016.
-- [ ] Implement the approved per-target installer/signature/notarization/updater selections and license/notice packaging.
-- [ ] Obtain separately authorized platform/signing facilities and verify all transformations before recording final digests.
+- [ ] Implement the common capability contract, independently qualified Linux signing authority, Linux installer/updater selections and license/notice packaging without depending on candidate/publication consumers.
+- [ ] Obtain separately authorized Linux signing/testing facilities and verify every applicable transformation before final digests; define testable macOS/Windows callback interfaces without requiring their publisher credentials.
 - [ ] Qualify isolated native profiles/VMs, external channel eligibility and version ordering without altering bootstrap or stable data.
-- [ ] Use controlled qualification artifacts/endpoints to exercise actual installation, upgrade, interruption, refusal and compatible rollback on every native target.
-- [ ] Qualify signed installation/authentic updates on all required native targets/profiles and any optional target actually included and reject cross-architecture packages; verify each macOS slice independently when universal packaging is chosen.
-- [ ] Produce installer/signature/notarization/updater ADR-0000 applicability and actual native evidence under SPEC-001-026.
+- [ ] Use controlled qualification artifacts/endpoints to exercise actual installation, upgrade, interruption, refusal and compatible rollback on all ten Linux native cells; preserve native foundation build/smoke coverage on Windows and macOS.
+- [ ] Qualify signed installation/authentic updates on every required Linux target/profile and included optional distribution target, reject cross-architecture packages, and retain native macOS/Windows builds/smoke plus verified GitHub attestations with explicit distribution-ineligible capabilities.
+- [ ] Produce common authority and Linux installer/signature/updater ADR-0000 applicability and actual native/external evidence; transfer real macOS/Windows signed user-route qualification to 019/020 under SPEC-001-028.
+
+- [ ] Implement the real user-invoked installed updater and independently authenticated graphical Linux first-install route; verify catalog/key lifecycle, automatic refresh/expiry monitoring, true A/B run identities and isolated migration-fixture limits.
+- [ ] Exercise one Linux cell end-to-end before expanding and use the shared reusable core, private real-signed artifacts and separate qualification trust root.
 
 ## Acceptance criteria
 
 - [ ] Completion gate: verify Native facilities output NF and its full release condition in the Dependencies output registry and SPEC-001-016.
 - [ ] Completion gate: verify Native hosts output NH and its full release condition in the Dependencies output registry and SPEC-001-016.
 - [ ] The installer/update owner delivers its security inventory with final native qualification rather than leaving it to integrated acceptance.
-- [ ] Required native signed-install/update evidence covers every required core desktop target/profile and any optional target actually included independently of optional provider-runtime availability.
-- [ ] I13 contains actual signed/notarized native installation/update evidence and final transformed digests for every declared target.
+- [ ] Required Linux signed-install/update evidence covers all ten native cells and any admitted optional distribution target; native macOS/Windows build/smoke/provenance remains complete without falsely claiming their deferred publisher guarantees.
+- [ ] I13 binds common capability/authority contracts, real Linux signed native installation/update evidence and final transformed digests, and all-platform native build/attestation records; 019/020 own real macOS/Windows publisher signing and signed-route evidence.
 - [ ] Bad signatures/digests/targets/schema and interrupted operations refuse or recover safely with previous stable data preserved.
 - [ ] Development packages use no public feeds; preview opt-in and stable/prerelease ordering are verified without assuming an Ohtia account.
-- [ ] Native facilities NF provides real required certificate/platform evidence; missing facilities cannot be replaced by mocks.
+- [ ] Native facilities NF supplies actual Linux RPM/catalog authority and native verification. Absent macOS/Windows publisher facilities remain explicit ineligible capabilities owned by 019/020, never mock successes or blockers for this Linux/common scope.
 
 ## Quality checklist
 
