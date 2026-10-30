@@ -4,6 +4,7 @@
     "tests/desktop-probes.test.ts",
     "tests/desktop-runtime.test.ts",
     "tests/diagnostics.test.ts",
+    "tests/installation-signing.test.ts",
     "tests/linux-e2e.test.ts",
     "tests/main-entry.test.ts",
     "tests/port.test.ts",
