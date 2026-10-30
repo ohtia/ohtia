@@ -476,6 +476,255 @@ class VerificationTests(unittest.TestCase):
                 pr_check.object_list(github, "jobs", "jobs")
 
 
+def tree(sha: str, **entries) -> dict:
+    return {
+        "sha": sha,
+        "truncated": False,
+        "tree": [
+            {"path": path, "mode": mode, "type": kind, "sha": value}
+            for path, (mode, kind, value) in entries.items()
+        ],
+    }
+
+
+class DocumentationOnlyTests(unittest.TestCase):
+    """Accept omitted native jobs only for a change GitHub's own trees limit to docs."""
+
+    BASE_TREE = "e" * 40
+    FILE = ("100644", "blob", "1" * 40)
+    OLD_DOCS = ("040000", "tree", "2" * 40)
+    NEW_DOCS = ("040000", "tree", "3" * 40)
+
+    def setUp(self):
+        self.github = FakeGitHub()
+        repo = pr_check.REPO
+        self.github.responses[f"{repo}/git/commits/{BASE}"] = {
+            "sha": BASE,
+            "tree": {"sha": self.BASE_TREE},
+        }
+        self.set_trees(
+            {"README.md": self.FILE, "docs": self.OLD_DOCS},
+            {"README.md": self.FILE, "docs": self.NEW_DOCS},
+        )
+        self.full_jobs = copy.deepcopy(self.github.jobs)
+        self.prefix = POLICY["documentation_only"]["skipped_job_prefix"]
+        self.github.jobs = [
+            job for job in self.github.jobs if not job["name"].startswith(self.prefix)
+        ]
+        self.github.jobs.append(
+            {
+                **copy.deepcopy(self.github.jobs[0]),
+                "id": 900,
+                "name": "native (${{ matrix.id }})",
+                "conclusion": "skipped",
+                "steps": [],
+            }
+        )
+        for step in self.job("ci")["steps"]:
+            if step["name"] in POLICY["documentation_only"]["skipped_steps"]["ci"]:
+                step["conclusion"] = "skipped"
+
+    def set_trees(self, before: dict, after: dict) -> None:
+        self.github.responses[f"{pr_check.REPO}/git/trees/{self.BASE_TREE}"] = tree(
+            self.BASE_TREE, **before
+        )
+        self.github.responses[f"{pr_check.REPO}/git/trees/{TREE}"] = tree(TREE, **after)
+
+    def job(self, name: str) -> dict:
+        return next(job for job in self.github.jobs if job["name"] == name)
+
+    def verify(self) -> dict:
+        return pr_check.verify(
+            self.github,
+            POLICY,
+            number=5,
+            run_id=100,
+            head=HEAD,
+            base=BASE,
+            tree=TREE,
+            workflow_bytes=WORKFLOW,
+            log_reader=self.github.log,
+            unique_object=policy_module.unique_object,
+        )
+
+    def test_change_limited_to_docs_with_skipped_native_jobs_verifies(self):
+        result = self.verify()
+        self.assertEqual(result["selection"], "documentation-only")
+        required = {name for name in POLICY["jobs"] if not name.startswith(self.prefix)}
+        self.assertEqual(required, {"ci", "scope", "full-suite (ubuntu-26.04-x64)"})
+        self.assertEqual(set(result["checkouts"]), required)
+        self.assertEqual({job["name"] for job in result["jobs"]}, required)
+
+    def test_native_jobs_may_be_absent_or_reported_with_their_own_names(self):
+        skipped = [job for job in self.github.jobs if job["name"].startswith(self.prefix)]
+        self.github.jobs = [job for job in self.github.jobs if job not in skipped]
+        self.assertEqual(self.verify()["selection"], "documentation-only")
+        self.github.jobs += [
+            {**skipped[0], "id": 901 + index, "name": name}
+            for index, name in enumerate(n for n in POLICY["jobs"] if n.startswith(self.prefix))
+        ]
+        self.assertEqual(self.verify()["selection"], "documentation-only")
+
+    def test_complete_native_evidence_on_the_same_trees_reports_the_full_matrix(self):
+        self.github.jobs = self.full_jobs
+        result = self.verify()
+        self.assertEqual(result["selection"], "full-required-matrix")
+        self.assertEqual(set(result["checkouts"]), set(POLICY["jobs"]))
+
+    def test_skipped_native_jobs_require_a_change_limited_to_docs(self):
+        file = {"README.md": self.FILE}
+        changed = ("100644", "blob", "4" * 40)
+        script = ("100755", "blob", self.FILE[2])
+        for name, before, after in (
+            (
+                "other file",
+                {**file, "docs": self.OLD_DOCS},
+                {"README.md": changed, "docs": self.NEW_DOCS},
+            ),
+            ("mode", {**file, "docs": self.OLD_DOCS}, {"README.md": script, "docs": self.NEW_DOCS}),
+            (
+                "added file",
+                {**file, "docs": self.OLD_DOCS},
+                {**file, "x": changed, "docs": self.NEW_DOCS},
+            ),
+            ("removed file", {**file, "docs": self.OLD_DOCS}, {"docs": self.NEW_DOCS}),
+            ("no difference", {**file, "docs": self.OLD_DOCS}, {**file, "docs": self.OLD_DOCS}),
+            ("docs removed", {**file, "docs": self.OLD_DOCS}, file),
+            ("docs added", file, {**file, "docs": self.NEW_DOCS}),
+            ("docs not a tree", {**file, "docs": self.OLD_DOCS}, {**file, "docs": changed}),
+        ):
+            with self.subTest(change=name):
+                self.set_trees(before, after)
+                with self.assertRaisesRegex(
+                    pr_check.VerificationError, "limited to the documentation"
+                ):
+                    self.verify()
+
+    def test_mixed_native_results_fail(self):
+        native = [job for job in self.full_jobs if job["name"].startswith(self.prefix)]
+        native[0] = {**native[0], "conclusion": "skipped", "steps": []}
+        self.github.jobs = [
+            job for job in self.full_jobs if not job["name"].startswith(self.prefix)
+        ]
+        self.github.jobs += native
+        with self.assertRaises(pr_check.VerificationError):
+            self.verify()
+
+    def test_incomplete_or_foreign_tree_evidence_fails(self):
+        repo = pr_check.REPO
+        for endpoint, field, value in (
+            (f"{repo}/git/trees/{TREE}", "truncated", True),
+            (f"{repo}/git/trees/{self.BASE_TREE}", "truncated", True),
+            (f"{repo}/git/trees/{TREE}", "truncated", None),
+            (f"{repo}/git/trees/{TREE}", "sha", self.BASE_TREE),
+            (f"{repo}/git/commits/{BASE}", "sha", HEAD),
+        ):
+            with self.subTest(endpoint=endpoint, field=field):
+                old = self.github.responses[endpoint][field]
+                self.github.responses[endpoint][field] = value
+                with self.assertRaises(pr_check.VerificationError):
+                    self.verify()
+                self.github.responses[endpoint][field] = old
+        response = self.github.responses[f"{repo}/git/trees/{TREE}"]
+        response["tree"].append(copy.deepcopy(response["tree"][0]))
+        with self.assertRaisesRegex(pr_check.VerificationError, "Duplicate"):
+            self.verify()
+
+    def test_reduced_steps_must_be_present_and_skipped(self):
+        for name in POLICY["documentation_only"]["skipped_steps"]["ci"]:
+            original = copy.deepcopy(self.job("ci")["steps"])
+            step = next(s for s in self.job("ci")["steps"] if s["name"] == name)
+            for conclusion in ("success", "failure", "cancelled", None):
+                with self.subTest(step=name, conclusion=conclusion):
+                    step["conclusion"] = conclusion
+                    with self.assertRaises(pr_check.VerificationError):
+                        self.verify()
+            with self.subTest(step=name, missing=True):
+                self.job("ci")["steps"] = [s for s in original if s["name"] != name]
+                with self.assertRaises(pr_check.VerificationError):
+                    self.verify()
+            self.job("ci")["steps"] = original
+
+    def test_reduced_steps_cannot_be_skipped_with_complete_native_evidence(self):
+        ci = next(job for job in self.full_jobs if job["name"] == "ci")
+        for step in ci["steps"]:
+            if step["name"] in POLICY["documentation_only"]["skipped_steps"]["ci"]:
+                step["conclusion"] = "skipped"
+        self.github.jobs = self.full_jobs
+        with self.assertRaises(pr_check.VerificationError):
+            self.verify()
+
+    def test_retained_jobs_cannot_be_skipped_or_missing(self):
+        original = copy.deepcopy(self.github.jobs)
+        for name in ("scope", "full-suite (ubuntu-26.04-x64)", "ci"):
+            with self.subTest(job=name, missing=True):
+                self.github.jobs = [job for job in original if job["name"] != name]
+                with self.assertRaises(pr_check.VerificationError):
+                    self.verify()
+            with self.subTest(job=name, skipped=True):
+                self.github.jobs = copy.deepcopy(original)
+                self.job(name)["conclusion"] = "skipped"
+                with self.assertRaises(pr_check.VerificationError):
+                    self.verify()
+
+    def test_skipped_native_jobs_belong_to_the_verified_run(self):
+        for field, value in (("run_id", 99), ("run_attempt", 2), ("head_sha", BASE)):
+            with self.subTest(field=field):
+                skipped = next(j for j in self.github.jobs if j["name"].startswith(self.prefix))
+                old = skipped[field]
+                skipped[field] = value
+                with self.assertRaises(pr_check.VerificationError):
+                    self.verify()
+                skipped[field] = old
+
+    def test_retained_jobs_must_prove_their_checkout(self):
+        self.github.job_receipts = {
+            self.job("scope")["id"]: {**self.github.receipt, "tree_sha": "f" * 40}
+        }
+        with self.assertRaises(pr_check.VerificationError):
+            self.verify()
+
+    def test_invalid_documentation_only_inventory_is_refused(self):
+        document = json.loads((ROOT / "config/github/ci-verification.json").read_text())
+        block = document["documentation_only"]
+        ci = block["skipped_steps"]["ci"]
+        for name, value in (
+            ("absent", None),
+            ("not an object", []),
+            ("extra field", {**block, "other": True}),
+            ("missing field", {k: v for k, v in block.items() if k != "path"}),
+            ("wrong path", {**block, "path": "."}),
+            ("empty prefix", {**block, "skipped_job_prefix": ""}),
+            ("prefix without jobs", {**block, "skipped_job_prefix": "other ("}),
+            ("undeclared job", {**block, "skipped_steps": {"other": ci}}),
+            ("native job", {**block, "skipped_steps": {"native (windows-x64)": []}}),
+            ("undeclared step", {**block, "skipped_steps": {"ci": ["Other"]}}),
+            ("duplicate step", {**block, "skipped_steps": {"ci": [ci[0], ci[0]]}}),
+            ("receipt step", {**block, "skipped_steps": {"ci": ["Record tested revision"]}}),
+            ("steps not a list", {**block, "skipped_steps": {"ci": ci[0]}}),
+        ):
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as folder:
+                changed = {k: v for k, v in document.items() if k != "documentation_only"}
+                if value is not None:
+                    changed["documentation_only"] = value
+                file = Path(folder) / "policy.json"
+                file.write_text(json.dumps(changed))
+                with self.assertRaises(pr_check.VerificationError):
+                    pr_check.load_policy(file, policy_module.unique_object)
+
+    def test_workflow_selects_native_jobs_only_through_the_scope_output(self):
+        source = WORKFLOW.decode()
+        gate = "if: needs.scope.outputs.selection == 'full-required-matrix'\n"
+        self.assertNotIn("paths", source.split("\npermissions:", 1)[0])
+        native = source.split("\n  native:\n", 1)[1].split("\n    strategy:", 1)[0]
+        self.assertIn("    needs: scope\n", native)
+        self.assertIn("    " + gate, native)
+        self.assertIn("    needs: [scope, checks, native]\n", source)
+        for step in POLICY["documentation_only"]["skipped_steps"]["ci"]:
+            self.assertIn(f"      - name: {step}\n        {gate}", source)
+        self.assertEqual(source.count(gate), 4)
+
+
 class TrustAndTransportTests(unittest.TestCase):
     def test_trusted_files_are_bound_to_exact_revision(self):
         with tempfile.TemporaryDirectory() as folder:

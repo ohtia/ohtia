@@ -1,6 +1,17 @@
 {
   "workflow_path": ".github/workflows/ci.yml",
   "event": "pull_request",
+  "documentation_only": {
+    "path": "docs",
+    "skipped_job_prefix": "native (",
+    "skipped_steps": {
+      "ci": [
+        "Download native quality artifacts",
+        "Verify complete native quality delivery",
+        "Retain coordinated quality evidence"
+      ]
+    }
+  },
   "jobs": {
     "ci": {
       "steps": [
@@ -28,6 +39,17 @@
         "Run full test suite and quality checks",
         "Authenticate Linux E2E image",
         "Run immutable sandboxed Linux E2E",
+        "Complete job"
+      ],
+      "optional_steps": ["Post Set up Python", "Post Check out source with full Git history"]
+    },
+    "scope": {
+      "steps": [
+        "Set up job",
+        "Check out source with full Git history",
+        "Record tested revision",
+        "Set up Python",
+        "Select quality scope",
         "Complete job"
       ],
       "optional_steps": ["Post Set up Python", "Post Check out source with full Git history"]

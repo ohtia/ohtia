@@ -16,6 +16,8 @@ MARKER = "OHTIA_CI_PROVENANCE="
 SHA = re.compile(r"[a-f0-9]{40}")
 DIGEST = re.compile(r"[a-f0-9]{64}")
 SUITES = ("runtime", "storage", "diagnostics")
+FULL_MATRIX = "full-required-matrix"
+DOCUMENTATION_ONLY = "documentation-only"
 
 
 class DeliveryError(ValueError):
@@ -252,6 +254,58 @@ def validate_identity(record: dict) -> None:
         )
 
 
+def tree_entries(revision: str) -> dict[str, tuple[str, ...]]:
+    entries = {}
+    for line in git("ls-tree", "-z", revision).split("\0"):
+        if line:
+            metadata, path = line.split("\t", 1)
+            entries[path] = tuple(metadata.split())
+    return entries
+
+
+def quality_scope(env: dict | None = None) -> str:
+    """Select native jobs from the actual merge trees; uncertainty keeps the full matrix."""
+    env = os.environ if env is None else env
+    try:
+        if env["GITHUB_EVENT_NAME"] != "pull_request":
+            return FULL_MATRIX
+        pull = read(Path(env["GITHUB_EVENT_PATH"]))["pull_request"]
+        parents = [pull["base"]["sha"], pull["head"]["sha"]]
+        if git("show", "-s", "--format=%P", "HEAD").split() != parents:
+            return FULL_MATRIX
+        before, after = tree_entries("HEAD^1"), tree_entries("HEAD")
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        return FULL_MATRIX
+    old, new = before.pop("docs", None), after.pop("docs", None)
+    limited = (
+        before == after
+        and old is not None
+        and new is not None
+        and old[:2] == new[:2] == ("040000", "tree")
+        and old != new
+    )
+    return DOCUMENTATION_ONLY if limited else FULL_MATRIX
+
+
+def require_needs(env: dict | None = None) -> None:
+    """Admit only the complete upstream result that the reported selection requires."""
+    env = os.environ if env is None else env
+    message = "Every mandatory repository and native job must succeed."
+    needs = json.loads(env["OHTIA_QUALITY_NEEDS"], object_pairs_hook=unique_object)
+    require(
+        isinstance(needs, dict)
+        and set(needs) == {"scope", "checks", "native"}
+        and needs["scope"]["result"] == "success"
+        and needs["checks"]["result"] == "success",
+        message,
+    )
+    admitted = {FULL_MATRIX: "success"}
+    if env["GITHUB_EVENT_NAME"] == "pull_request":
+        admitted[DOCUMENTATION_ONLY] = "skipped"
+    selection = needs["scope"]["outputs"]["selection"]
+    require(selection in admitted and needs["native"]["result"] == admitted[selection], message)
+
+
 def input_seal() -> dict:
     paths = [
         "pnpm-lock.yaml",
@@ -283,8 +337,8 @@ def plan(record: dict) -> dict:
         "identity": record,
         "inputs": input_seal(),
         "application_version": version(record),
-        "selection": "full-required-matrix",
-        "reason": "Conservative full checks for every PR and integrated-main change, including documentation.",
+        "selection": FULL_MATRIX,
+        "reason": "Full checks for every integrated-main change and every pull request that is not documentation-only.",
         "retention_days": read(ROOT / "config/desktop/resource-policy.json")["budgets"][
             "ci_retention_days"
         ]["value"],
@@ -495,6 +549,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("record")
+    commands.add_parser("scope")
+    commands.add_parser("needs")
     planned = commands.add_parser("plan")
     planned.add_argument("output", type=Path)
     aggregate = commands.add_parser("aggregate")
@@ -505,6 +561,13 @@ def main() -> int:
     try:
         if args.command == "record":
             print(MARKER + json.dumps(identity(), separators=(",", ":")))
+        elif args.command == "scope":
+            selected = quality_scope()
+            with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+                output.write(f"selection={selected}\n")
+            print(f"OHTIA_QUALITY_SELECTION={selected}")
+        elif args.command == "needs":
+            require_needs()
         elif args.command == "plan":
             write(args.output, plan(identity()))
         else:

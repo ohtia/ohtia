@@ -2,6 +2,10 @@
 type: DecisionRecord
 title: "ADR-0020 — Declared GitHub policy and restricted CI authority"
 description: "Verify CI provenance before merge, require approval for external fork workflows and separate PR execution from publication authority."
+generated:
+  by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: github
     resource: "https://docs.github.com/en/actions/reference/security/secure-use"
@@ -24,10 +28,9 @@ sources:
   - id: macos-27-image
     resource: https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md
     title: GitHub macOS 27 Apple Silicon image
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
+  - id: workflow-skips
+    resource: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onpushpull_requestpull_request_targetpathspaths-ignore
+    title: GitHub Actions workflow path filters
 ---
 
 # ADR-0020 — Declared GitHub policy and restricted CI authority
@@ -54,7 +57,7 @@ Ubuntu has independent X11 and GNOME/Wayland jobs on both CPUs and versions. Add
 
 The [distribution target manifest](../../config/desktop/targets.json) retains its OS floors, distributions, filesystems and display profiles for native feasibility and final signed distribution. Windows Server x64 is the recurring Windows x64 CI environment; it is not Windows 11 x64 acceptance. Hosted Ubuntu does not qualify Fedora or Debian; each guest supplies its own kernel, filesystem, security policy and GNOME/Wayland observations. Neither the hosted nor guest virtual software displays qualify physical graphics. Neither macOS family qualifies Intel. Full final-candidate distribution qualification remains with its owning delivery, using its actual final bytes and required profiles. PRIN-004, PRIN-006, PRIN-007 and PRIN-016 require these coverage distinctions to remain visible.
 
-Run the full selected matrix for PRs to `main` and pushes to `main`, including documentation changes. This conservative rule avoids an affected-scope exclusion becoming an untested build-input change. Identify development versions by run and attempt; preserve strict per-job checkout provenance, complete aggregation, explicit disposable retention and separate PR/main evidence. The [quality-build playbook](../quality-builds.md) owns commands and evidence handling. No quality run signs an official release, notarizes, publishes or reads a public updater feed.
+Run the full selected matrix for every push to `main` and for every PR to `main` except a documentation-only PR. A PR is documentation-only when its synthetic merge commit differs from its first parent only in the top-level `docs` tree. That PR runs the `scope`, `full-suite (ubuntu-26.04-x64)` and `ci` jobs and omits the native jobs. Any other difference, an unreadable comparison or a mismatched merge parent selects the full matrix. No delivered or build input reads `docs/`; a change that makes one read it removes or narrows this exclusion in the same change. Do not use workflow path filters for this exclusion, because GitHub leaves the checks of a skipped workflow pending and blocks a PR that requires them.[^workflow-skips] Identify development versions by run and attempt; preserve strict per-job checkout provenance, complete aggregation, explicit disposable retention and separate PR/main evidence. The [quality-build playbook](../quality-builds.md) owns commands and evidence handling. No quality run signs an official release, notarizes, publishes or reads a public updater feed.
 
 The recurring matrix is usable with GitHub Free on this public repository and requires no owned runners. Native builds still depend on the observed hosted image and service capacity; all native jobs may start independently within the account limits, and only the aggregate waits for them. A missing or failed cell fails the aggregate. Preview image failure is visible rather than replaced with another macOS family. Artifact storage has separate service limits, so bounded retention and an explicit evidence window remain necessary.
 
@@ -71,7 +74,7 @@ For the open PR, verify all of the following against GitHub's actual records:
 - Resolve the repository, PR number, current head SHA and base SHA afresh; identify the reviewed candidate and verifier/policy revision.
 - Identify the registered workflow by its ID and `.github/workflows/ci.yml` path, the `pull_request` event, its association with this PR and source head, and the expected GitHub Actions app. Another job named `ci`, an unrelated run or a successful `push` run on an older `main` does not satisfy the procedure.
 - Establish the SHA/tree actually checked out and tested, including the synthetic PR merge commit when that is the checkout target. Record its relationship to the current head/base. A run's `head_sha` alone is not evidence of its checkout target. Cross-check checkout evidence and reviewed workflow configuration; do not accept a candidate-authored success message or receipt as sufficient proof.
-- Require completion and success of the intended run attempt and every mandatory job/step/partition from the reviewed workflow and check inventory. Skipped, cancelled, failed, missing, incomplete or unreadable mandatory evidence prevents a passing verdict, even if a display name is green. Conditional nonmandatory steps must be distinguished by that reviewed inventory.
+- Require completion and success of the intended run attempt and every mandatory job/step/partition from the reviewed workflow and check inventory. Skipped, cancelled, failed, missing, incomplete or unreadable mandatory evidence prevents a passing verdict, even if a display name is green. Conditional nonmandatory steps must be distinguished by that reviewed inventory. A documentation-only PR omits the native jobs and their aggregate steps only when the verifier confirms from the base and merge trees that the difference is limited to `docs`; the reviewed inventory declares that reduced set.
 - Record the run ID/attempt, tested SHA, head/base, workflow/app identity, required results and limitations in the task's ignored review evidence. Recheck head/base immediately before the human merge; any change invalidates the earlier verdict and requires verification of the updated candidate.
 
 The verifier reports a bounded failure or unavailable result when evidence cannot be established; it neither merges, approves workflows nor grants publication authority. The maintainer reviews workflow, policy and verification-tool changes together with the candidate before merging. Automated provenance checks supplement that review and cannot make an altered PR workflow trustworthy solely because GitHub executed it.
@@ -94,7 +97,7 @@ Maintain Dependabot and other pinned tools through reviewed changes and the actu
 
 ## Consequences
 
-Policy drift and workflow authority become reviewable, with maintenance and live-verification obligations. Test synthetic planning/failure/readback, external-contributor approval drift and the pre-merge verifier, plus separately authorized live policy and real workflow provenance. Verification cases include a same-name check from a different workflow, wrong event/app, stale head/base, a mismatched checkout SHA, incomplete required jobs, unreadable evidence and attempted replacement of the trusted verifier. External workflow approvals add a manual execution checkpoint for maintainers. Formatter tests are not administrative verification; a signed artifact is not permission to publish it. Keep diagnostic/review scratch private to the task and publication bodies self-contained.
+Policy drift and workflow authority become reviewable, with maintenance and live-verification obligations. Test synthetic planning/failure/readback, external-contributor approval drift and the pre-merge verifier, plus separately authorized live policy and real workflow provenance. Verification cases include a same-name check from a different workflow, wrong event/app, stale head/base, a mismatched checkout SHA, incomplete required jobs, a skipped native job with a change outside `docs`, unreadable evidence and attempted replacement of the trusted verifier. Documentation-only PRs no longer wait for native jobs, and a native failure caused by hosted-image drift then appears on the push to `main` rather than on that PR. External workflow approvals add a manual execution checkpoint for maintainers. Formatter tests are not administrative verification; a signed artifact is not permission to publish it. Keep diagnostic/review scratch private to the task and publication bodies self-contained.
 
 [^github]: GitHub documents least-privilege tokens, untrusted checkout and action pinning; exact Ohtia settings remain in repository policy.
 
@@ -109,3 +112,5 @@ Policy drift and workflow authority become reviewable, with maintenance and live
 [^public-runners]: GitHub enumerates standard runner labels and public-repository usage terms separately from private-repository billing and larger runners.
 
 [^macos-27-image]: The selected image identifies macOS 27 on ARM64 and its preview scope; every run retains its actual image identity.
+
+[^workflow-skips]: GitHub documents that checks from a workflow skipped by path filtering remain pending and block a pull request that requires them.

@@ -85,7 +85,10 @@ def trusted_state(revision: str, root: Path = ROOT) -> dict:
 
 def load_policy(path: Path, unique_object) -> dict:
     policy = json.loads(path.read_text(), object_pairs_hook=unique_object)
-    require(set(policy) == {"workflow_path", "event", "jobs"}, "Invalid CI verification policy")
+    require(
+        set(policy) == {"workflow_path", "event", "documentation_only", "jobs"},
+        "Invalid CI verification policy",
+    )
     require(
         policy["workflow_path"] == ".github/workflows/ci.yml" and policy["event"] == "pull_request",
         "Unsupported workflow contract",
@@ -110,6 +113,27 @@ def load_policy(path: Path, unique_object) -> dict:
         all("Record tested revision" in j["steps"] for j in policy["jobs"].values()),
         "Every required job must record its actual tested revision",
     )
+    reduction = policy["documentation_only"]
+    require(
+        isinstance(reduction, dict)
+        and set(reduction) == {"path", "skipped_job_prefix", "skipped_steps"}
+        and reduction["path"] == "docs"
+        and isinstance(reduction["skipped_job_prefix"], str)
+        and bool(reduction["skipped_job_prefix"])
+        and any(name.startswith(reduction["skipped_job_prefix"]) for name in policy["jobs"])
+        and isinstance(reduction["skipped_steps"], dict),
+        "Invalid documentation-only inventory",
+    )
+    for name, steps in reduction["skipped_steps"].items():
+        require(
+            name in policy["jobs"]
+            and not name.startswith(reduction["skipped_job_prefix"])
+            and isinstance(steps, list)
+            and len(steps) == len(set(steps))
+            and set(steps) <= set(policy["jobs"][name]["steps"])
+            and "Record tested revision" not in steps,
+            "Invalid documentation-only step inventory",
+        )
     return policy
 
 
@@ -280,6 +304,34 @@ def merge_ref_sha(github, number: int) -> str:
     return sha(target.get("sha"))
 
 
+def tree_entries(github, tree: str) -> dict:
+    response = github.get(f"{REPO}/git/trees/{tree}")
+    require(
+        response.get("sha") == tree and response.get("truncated") is False,
+        "Cannot read the complete top-level tree",
+    )
+    entries = {}
+    for item in response["tree"]:
+        require(item["path"] not in entries, "Duplicate top-level tree entry")
+        entries[item["path"]] = (item["mode"], item["type"], item["sha"])
+    return entries
+
+
+def documentation_only_change(github, path: str, base: str, tree: str) -> bool:
+    """Apply the CI scope rule to GitHub's records; the run's own selection is not evidence."""
+    commit = github.get(f"{REPO}/git/commits/{base}")
+    require(commit["sha"] == base, "The base commit differs from the reviewed candidate")
+    before, after = tree_entries(github, commit["tree"]["sha"]), tree_entries(github, tree)
+    old, new = before.pop(path, None), after.pop(path, None)
+    return (
+        before == after
+        and old is not None
+        and new is not None
+        and old[:2] == new[:2] == ("040000", "tree")
+        and old != new
+    )
+
+
 def verify(
     github,
     policy: dict,
@@ -368,16 +420,37 @@ def verify(
         "A newer workflow run supersedes the selected result",
     )
     jobs = object_list(github, f"{REPO}/actions/runs/{run_id}/attempts/{attempt}/jobs", "jobs")
+    reduction = policy["documentation_only"]
+    prefix = reduction["skipped_job_prefix"]
+    native = [j for j in jobs if j["name"].startswith(prefix)]
+    reduced = all(j["status"] == "completed" and j["conclusion"] == "skipped" for j in native)
+    required = policy["jobs"]
+    executed = jobs
+    if reduced:
+        required = {name: job for name, job in required.items() if not name.startswith(prefix)}
+        executed = [j for j in jobs if not j["name"].startswith(prefix)]
     require(
-        len(jobs) == len(policy["jobs"]) and {j["name"] for j in jobs} == set(policy["jobs"]),
+        len(executed) == len(required) and {j["name"] for j in executed} == set(required),
         "Actual jobs differ from the reviewed mandatory inventory",
     )
+    if reduced:
+        require(
+            documentation_only_change(github, reduction["path"], base, tree),
+            "Skipped native jobs require a change limited to the documentation tree",
+        )
+        for job in native:
+            require(
+                job["run_id"] == run_id
+                and job["run_attempt"] == attempt
+                and job["head_sha"] == head,
+                "Job belongs to a different run or candidate",
+            )
     app = github.get("apps/github-actions")
     require(app["slug"] == "github-actions", "Unexpected GitHub Actions app")
     positive(app["id"])
     result_jobs = []
     receipts = {}
-    for job in jobs:
+    for job in executed:
         require(
             job["run_id"] == run_id and job["run_attempt"] == attempt and job["head_sha"] == head,
             "Job belongs to a different run or candidate",
@@ -398,7 +471,8 @@ def verify(
             "Check result has an unexpected source or suite",
         )
         successful(check, "check")
-        declared = policy["jobs"][job["name"]]
+        declared = required[job["name"]]
+        omitted = reduction["skipped_steps"].get(job["name"], []) if reduced else []
         steps = job["steps"]
         names = [step["name"] for step in steps]
         require(
@@ -408,7 +482,12 @@ def verify(
             "Job steps differ from the reviewed inventory",
         )
         for step in steps:
-            if step["name"] in declared["steps"] or step.get("conclusion") != "skipped":
+            if step["name"] in omitted:
+                require(
+                    step.get("status") == "completed" and step.get("conclusion") == "skipped",
+                    "A documentation-only run executed native delivery accounting",
+                )
+            elif step["name"] in declared["steps"] or step.get("conclusion") != "skipped":
                 successful(step, "step")
         if "Record tested revision" in declared["steps"]:
             receipts[job["name"]] = receipt_from_log(log_reader(job["id"]), unique_object)
@@ -428,7 +507,7 @@ def verify(
         "tree_sha": tree,
     }
     require(
-        set(receipts) == set(policy["jobs"])
+        set(receipts) == set(required)
         and all(
             receipt == expected
             and all(
@@ -468,6 +547,7 @@ def verify(
         "event": run["event"],
         "run_id": run_id,
         "run_attempt": attempt,
+        "selection": "documentation-only" if reduced else "full-required-matrix",
         "github_app_id": app["id"],
         "jobs": result_jobs,
         "checkouts": receipts,
