@@ -65,6 +65,7 @@
     "scripts/tests/test_github_pr.py",
     "scripts/tests/test_installation_facilities.py",
     "scripts/tests/test_installation_native.py",
+    "scripts/tests/test_installation_scaleway.py",
     "scripts/tests/test_installation_windows.py",
     "scripts/tests/test_linux_contributor.py",
     "scripts/tests/test_linux_e2e.py",
