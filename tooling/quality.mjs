@@ -92,6 +92,42 @@ export function assertCheckoutIdentity(root, identity) {
   for (const key of Object.keys(current))
     requireGate(identity[key] === current[key], `native ${key} does not match the tested checkout`);
 }
+export function collectedVitestInventory(collected, applicability, platform) {
+  requireGate(collected.length > 0, "empty Vitest inventory");
+  sameSet(
+    applicability.map((item) => item.id),
+    [...new Set(applicability.map((item) => item.id))],
+    "Vitest applicability identifiers",
+  );
+  requireGate(
+    applicability.every(
+      (item) =>
+        typeof item.id === "string" &&
+        item.id.length > 0 &&
+        typeof item.reason === "string" &&
+        item.reason.length > 0 &&
+        Array.isArray(item.platforms) &&
+        item.platforms.length > 0 &&
+        item.platforms.every((platform) => ["linux", "win32", "darwin"].includes(platform)),
+    ),
+    "invalid Vitest applicability declaration",
+  );
+  const omittedVitest = applicability.filter((item) => item.platforms.includes(platform));
+  // Vitest list excludes skipped cases; the run reporter must still account for them.
+  const expected = [...collected, ...omittedVitest.map((item) => item.id)];
+  sameSet(expected, [...new Set(expected)], "Vitest enumeration identifiers");
+  const requiredVitest = collected;
+  return { expected, required: requiredVitest, inapplicable: omittedVitest };
+}
+export function vitestCollection(registry, collected, applicability, platform) {
+  const result = collectedVitestInventory(collected, applicability, platform);
+  requireGate(
+    applicability.every((item) => registry.vitest.includes(item.id)),
+    "unknown Vitest applicability identifier",
+  );
+  assertDeclaredCases(registry, "vitest", result.expected);
+  return result;
+}
 export async function runTests(base) {
   fs.rmSync(output, { recursive: true, force: true });
   fs.mkdirSync(output, { recursive: true });
@@ -125,7 +161,7 @@ export async function runTests(base) {
     env,
   );
   const listed = readJson(path.join(output, "vitest-inventory.json"));
-  const expected = occurrenceIds(
+  const collected = occurrenceIds(
     listed.map((c) => `${path.relative(root, c.file).replaceAll("\\", "/")}::${c.name}`),
   );
   sameSet(
@@ -133,32 +169,11 @@ export async function runTests(base) {
     inventory.vitest,
     "Vitest discovered files",
   );
-  requireGate(expected.length > 0, "empty Vitest inventory");
-  assertDeclaredCases(registry, "vitest", expected);
-  const applicability = inventory.vitest_inapplicable ?? [];
-  sameSet(
-    applicability.map((item) => item.id),
-    [...new Set(applicability.map((item) => item.id))],
-    "Vitest applicability identifiers",
-  );
-  requireGate(
-    applicability.every(
-      (item) =>
-        expected.includes(item.id) &&
-        typeof item.reason === "string" &&
-        item.reason.length > 0 &&
-        Array.isArray(item.platforms) &&
-        item.platforms.length > 0 &&
-        item.platforms.every((platform) => ["linux", "win32", "darwin"].includes(platform)),
-    ),
-    "invalid Vitest applicability declaration",
-  );
-  const omittedVitest = applicability.filter((item) => item.platforms.includes(process.platform));
-  requireGate(
-    omittedVitest.every((item) => expected.includes(item.id)),
-    "unknown Vitest applicability identifier",
-  );
-  const requiredVitest = expected.filter((id) => !omittedVitest.some((item) => item.id === id));
+  const {
+    expected,
+    required: requiredVitest,
+    inapplicable: omittedVitest,
+  } = vitestCollection(registry, collected, inventory.vitest_inapplicable ?? [], process.platform);
   execute([vitest, "run", "--config", "vitest.denominator.config.ts"], env);
   const denominatorRun = readJson(path.join(output, "denominator-run.json"));
   requireGate(
@@ -307,11 +322,15 @@ export async function updateCases() {
     [vitest, "list", "--no-static-parse", `--json=${path.join(scratch, "vitest.json")}`],
     process.env,
   );
-  const vitestCases = occurrenceIds(
-    readJson(path.join(scratch, "vitest.json")).map(
-      (item) => `${path.relative(root, item.file).replaceAll("\\", "/")}::${item.name}`,
+  const vitestCases = collectedVitestInventory(
+    occurrenceIds(
+      readJson(path.join(scratch, "vitest.json")).map(
+        (item) => `${path.relative(root, item.file).replaceAll("\\", "/")}::${item.name}`,
+      ),
     ),
-  );
+    inventory.vitest_inapplicable ?? [],
+    process.platform,
+  ).expected;
   execute([path.join(root, "node_modules/@playwright/test/cli.js"), "test", "--list"], {
     ...process.env,
     PLAYWRIGHT_JSON_OUTPUT_NAME: path.join(scratch, "playwright.json"),

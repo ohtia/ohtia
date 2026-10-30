@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Migrator } from "../packages/utility/node_modules/kysely/dist/migration/index.js";
+import { Kysely } from "../packages/utility/node_modules/kysely/dist/index.js";
 import { request } from "./fixtures/port-corpus.js";
 import {
   createStatusService,
@@ -31,8 +32,42 @@ function fixture() {
       `prebuilds/${process.platform}-${process.arch}.node`,
     ),
   );
-  const binding = path.join(root, "binding.node");
-  fs.copyFileSync(sourceBinding, binding);
+  // Windows maps the addon until worker exit. Keep one verified, single-link copy
+  // in the checkout cache instead of pinning every disposable database directory.
+  const sourceHash = createHash("sha256").update(fs.readFileSync(sourceBinding)).digest("hex");
+  const cache = path.resolve(".cache", "storage-test-bindings");
+  fs.mkdirSync(cache, { recursive: true });
+  if (fs.realpathSync.native(cache) !== cache) throw new Error("Aliased native fixture cache.");
+  const binding = path.join(cache, `${sourceHash}.node`);
+  if (!fs.existsSync(binding)) {
+    const temporary = fs.mkdtempSync(path.join(cache, "pending-"));
+    try {
+      const copied = path.join(temporary, "binding.node");
+      fs.copyFileSync(sourceBinding, copied, fs.constants.COPYFILE_EXCL);
+      if (createHash("sha256").update(fs.readFileSync(copied)).digest("hex") !== sourceHash)
+        throw new Error("Native fixture copy changed before publication.");
+      try {
+        fs.renameSync(copied, binding);
+      } catch (error) {
+        // Another worker may already have published and loaded the same bytes.
+        if (!fs.existsSync(binding)) throw error;
+      }
+    } finally {
+      fs.rmSync(temporary, { recursive: true, force: true });
+    }
+  }
+  const stat = fs.lstatSync(binding);
+  if (
+    !stat.isFile() ||
+    stat.nlink !== 1 ||
+    fs.realpathSync.native(binding) !== binding ||
+    createHash("sha256").update(fs.readFileSync(binding)).digest("hex") !== sourceHash
+  )
+    throw new Error(
+      "Unsafe native fixture binding; stop Vitest workers, remove only .cache/storage-test-bindings/" +
+        sourceHash +
+        ".node and retry.",
+    );
   const db = new Database(":memory:", { nativeBinding: binding });
   const engine = {
     version: db.prepare("SELECT sqlite_version()").pluck().get() as string,
@@ -63,6 +98,37 @@ function checkpoints(root: string) {
   return fs.readdirSync(path.join(root, "recovery/migrations")).filter((s) => !s.includes("."));
 }
 describe("durable preference and migration recovery", () => {
+  it("closes native connections before Kysely initializes and when its destroy rejects", async () => {
+    const { store, raw } = fixture();
+    await store.open();
+    await store.close();
+    const close = vi.spyOn(Database.prototype, "close");
+    const expectClosed = () => {
+      expect(close).toHaveBeenCalledOnce();
+      expect((close.mock.contexts[0] as InstanceType<typeof Database>).open).toBe(false);
+      close.mockClear();
+    };
+    await store.open();
+    await store.close();
+    expectClosed();
+    const newer = raw();
+    newer.pragma("user_version=3");
+    newer.close();
+    close.mockClear();
+    await expect(store.open()).rejects.toThrow(/Unsupported/);
+    expectClosed();
+    const current = raw();
+    current.pragma("user_version=2");
+    current.close();
+    close.mockClear();
+    await store.open();
+    vi.spyOn(Kysely.prototype, "destroy").mockRejectedValueOnce(
+      new Error("Synthetic driver teardown failure"),
+    );
+    await expect(store.close()).rejects.toThrow(/Synthetic driver teardown failure/);
+    expectClosed();
+  });
+
   it("requires explicit retry for a retained empty source even without a locator", async () => {
     const { root, options } = fixture();
     fs.writeFileSync(path.join(root, "ohtia.db3"), "");
@@ -246,7 +312,31 @@ describe("durable preference and migration recovery", () => {
     await store.open();
     const moved = root + "-retained";
     roots.push(moved);
-    fs.renameSync(root, moved);
+    const identity = fs.statSync(root, { bigint: true });
+    const prior = await store.readAppearance();
+    try {
+      fs.renameSync(root, moved);
+    } catch (error) {
+      if (
+        process.platform !== "win32" ||
+        !["EPERM", "EACCES", "EBUSY"].includes((error as NodeJS.ErrnoException).code ?? "")
+      )
+        throw error;
+      // Windows can prevent moving a directory containing the open SQLite file.
+      expect(fs.existsSync(moved)).toBe(false);
+      expect(fs.statSync(root, { bigint: true }).ino).toBe(identity.ino);
+      expect(await store.readAppearance()).toEqual(prior);
+      // Exercise the application identity guard without claiming an OS replacement.
+      const changedRoot = vi.spyOn(fs, "statSync").mockReturnValueOnce(
+        Object.assign(Object.create(Object.getPrototypeOf(identity)), identity, {
+          ino: identity.ino + 1n,
+        }) as fs.BigIntStats,
+      );
+      expect(await store.readAppearance()).toMatchObject({ error: { code: "storage_failed" } });
+      expect(changedRoot).toHaveBeenCalledExactlyOnceWith(root, { bigint: true });
+      expect(store.admissionReady).toBe(false);
+      return;
+    }
     fs.mkdirSync(root);
     expect(await store.readAppearance()).toMatchObject({ error: { code: "storage_failed" } });
     expect(store.admissionReady).toBe(false);

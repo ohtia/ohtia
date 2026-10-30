@@ -73,7 +73,9 @@ try {
   const page = await application.firstWindow();
   await expect(page.getByRole("heading", { name: "Ohtia", exact: true })).toBeVisible();
   await expect
-    .poll(async () => (await page.evaluate(() => window.ohtia.foundation.readStatus().result)).ok)
+    .poll(async () => (await page.evaluate(() => window.ohtia.foundation.readStatus().result)).ok, {
+      timeout: portLimits.service_start_ms,
+    })
     .toBe(true);
   await recordReadyNativeProcesses(application, output);
   const initial = await page.evaluate(async () => ({
@@ -535,8 +537,29 @@ try {
           .catch(() => {});
         await closed;
       } else {
-        const extras = application.windows().slice(1);
-        for (const page of extras) await page.close();
+        // Page.close can leave a native window alive. Await each extra native closure
+        // so the final close reaches the product's last-window shutdown handler.
+        const remaining = await application.evaluate(async ({ BrowserWindow }, budget) => {
+          const deadline = Date.now() + budget;
+          for (const window of BrowserWindow.getAllWindows().slice(1)) {
+            await new Promise((resolve, reject) => {
+              const timer = setTimeout(
+                () =>
+                  reject(
+                    new Error("Extra native window did not close within the shutdown budget."),
+                  ),
+                Math.max(1, deadline - Date.now()),
+              );
+              window.once("closed", () => {
+                clearTimeout(timer);
+                resolve();
+              });
+              window.close();
+            });
+          }
+          return BrowserWindow.getAllWindows().length;
+        }, portLimits.shutdown_total_ms);
+        expect(remaining).toBe(1);
         const closed = application.waitForEvent("close", {
           timeout: portLimits.shutdown_total_ms + 1000,
         });

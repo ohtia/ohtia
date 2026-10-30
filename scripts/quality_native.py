@@ -26,7 +26,7 @@ from probe_process import run_owned
 ROOT = delivery.ROOT
 
 
-def command(args: list, *, capture: bool = False) -> str:
+def command(args: list, *, capture: bool = False, encoding: str | None = None) -> str:
     result = subprocess.run(
         [str(arg) for arg in args],
         cwd=ROOT,
@@ -34,9 +34,25 @@ def command(args: list, *, capture: bool = False) -> str:
         check=True,
         capture_output=capture,
         text=True,
+        encoding=encoding,
         timeout=900,
     )
     return result.stdout if capture else ""
+
+
+def powershell(script: str) -> str:
+    """Bind Windows PowerShell's redirected JSON/text producer and consumer to UTF-8."""
+    return command(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); " + script,
+        ],
+        capture=True,
+        encoding="utf-8",
+    )
 
 
 def build_environment() -> dict:
@@ -181,16 +197,7 @@ def host_matches(cell: dict) -> dict:
         filesystem = macos_filesystem(Path.home())
         delivery.require(filesystem.lower() == "apfs", "Unqualified macOS filesystem.")
     else:
-        release = command(
-            [
-                "powershell.exe",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                "(Get-CimInstance Win32_OperatingSystem).Caption",
-            ],
-            capture=True,
-        ).strip()
+        release = powershell("(Get-CimInstance Win32_OperatingSystem).Caption").strip()
         delivery.require(
             (
                 "Server 2025" in release
@@ -199,15 +206,8 @@ def host_matches(cell: dict) -> dict:
             ),
             "Wrong Windows host family.",
         )
-        filesystem = command(
-            [
-                "powershell.exe",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                "(Get-Volume -DriveLetter $env:USERPROFILE.Substring(0,1)).FileSystem",
-            ],
-            capture=True,
+        filesystem = powershell(
+            "(Get-Volume -DriveLetter $env:USERPROFILE.Substring(0,1)).FileSystem"
         ).strip()
         delivery.require(filesystem == "NTFS", "Unqualified Windows filesystem.")
     return {
@@ -453,15 +453,8 @@ def processes(
             ]
         else:
             # Final package-process enumeration remains independent of the ready inventory.
-            output = command(
-                [
-                    "powershell.exe",
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-Command",
-                    "Get-CimInstance Win32_Process | Select-Object ProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress",
-                ],
-                capture=True,
+            output = powershell(
+                "Get-CimInstance Win32_Process | Select-Object ProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress"
             )
             items = json.loads(output)
         for item in items:

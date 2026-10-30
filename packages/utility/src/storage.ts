@@ -427,10 +427,16 @@ export class DurableStore {
   async close(): Promise<void> {
     this.admitted = false;
     const db = this.database;
+    const native = this.native;
     this.database = undefined;
     this.native = undefined;
     this.openedFile = undefined;
-    if (db) await db.destroy();
+    try {
+      if (db) await db.destroy();
+    } finally {
+      // Kysely does not destroy a driver that never initialized through a query.
+      if (native?.open) native.close();
+    }
   }
   async open(): Promise<void> {
     return this.openDatabase(false);

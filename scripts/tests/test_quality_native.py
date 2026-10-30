@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -21,6 +21,24 @@ import quality_processes as observer
 
 
 class NativeTests(unittest.TestCase):
+    def test_windows_powershell_round_trips_non_ascii_json(self):
+        expected = {"path": "C:/ohtia é/研究/ohtia.exe"}
+        script = (
+            "[PSCustomObject]@{path=('C:/ohtia '+[char]233+'/'"
+            "+[char]0x7814+[char]0x7a76+'/ohtia.exe')} | ConvertTo-Json -Compress"
+        )
+        with patch.object(
+            native.subprocess,
+            "run",
+            return_value=SimpleNamespace(stdout=json.dumps(expected, ensure_ascii=False)),
+        ) as run:
+            self.assertEqual(json.loads(native.powershell(script)), expected)
+        self.assertEqual(run.call_args.kwargs["encoding"], "utf-8")
+        self.assertTrue(run.call_args.kwargs["capture_output"])
+        self.assertIn("[Console]::OutputEncoding", run.call_args.args[0][-1])
+        if os.name == "nt":
+            self.assertEqual(json.loads(native.powershell(script)), expected)
+
     def test_local_accounts_never_become_automatic_hosted_fixtures(self):
         cell = delivery.cells(delivery.read(delivery.ROOT / "config/desktop/targets.json"))[0]
         with patch.dict(os.environ, {}, clear=True):
@@ -471,7 +489,7 @@ fs.renameSync = original;
                         native, "command", return_value="100 /synthetic/app/helper --type=renderer"
                     ),
                 ):
-                    rows = native.processes(Path("/synthetic/app"))
+                    rows = native.processes(PurePosixPath("/synthetic/app"))
                 if decision < 0 and exited:
                     self.assertEqual(rows, [])
                 else:
@@ -507,14 +525,16 @@ fs.renameSync = original;
                     patch.object(native, "process_exited", return_value=exited),
                 ):
                     rows = native.processes(
-                        Path("/synthetic/app"), [{"pid": 100, "renderer": True}], ready_only=True
+                        PurePosixPath("/synthetic/app"),
+                        [{"pid": 100, "renderer": True}],
+                        ready_only=True,
                     )
                     self.assertEqual(len(rows), 0 if exited else 1)
                     if rows:
                         self.assertFalse(rows[0]["sandbox"])
                     # Unknown startup renderers are excluded from sampling, not from final ownership checks.
                     self.assertEqual(
-                        native.processes(Path("/synthetic/app"), [], ready_only=True), []
+                        native.processes(PurePosixPath("/synthetic/app"), [], ready_only=True), []
                     )
 
     def test_process_exit_probe_retains_access_failures_and_live_processes(self):
@@ -698,7 +718,11 @@ assert.equal(selectStableTemporaryParent(posix,['/tmp','/home/runner/work/_temp'
             (fixture / "inner.json").write_text(json.dumps({"do_not_copy": "synthetic fixture"}))
             secret = root / "key.json"
             secret.write_text(json.dumps({"do_not_copy": "synthetic"}))
-            (diagnostics / "alias.json").symlink_to(secret)
+            alias = diagnostics / "alias.json"
+            if os.name == "nt":
+                alias.hardlink_to(secret)
+            else:
+                alias.symlink_to(secret)
             (diagnostics / "partial.json").write_text("{not complete")
             destination = root / "retained"
             os.link(secret, diagnostics / "hardlink.json")

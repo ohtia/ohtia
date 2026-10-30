@@ -22,7 +22,12 @@ import {
 } from "../tooling/quality-coverage.mjs";
 import { catalogGate } from "../tooling/quality-catalogs.mjs";
 import { accountNative, nativeInventory } from "../tooling/quality-inventory.mjs";
-import { assertCheckoutIdentity, checkoutIdentity } from "../tooling/quality.mjs";
+import {
+  assertCheckoutIdentity,
+  checkoutIdentity,
+  vitestCollection,
+  collectedVitestInventory,
+} from "../tooling/quality.mjs";
 import { fixturePath, differentTarget } from "./fixtures/platform.js";
 import { playwrightCases } from "../tooling/quality-playwright.mjs";
 
@@ -510,6 +515,53 @@ describe("complete mandatory result accounting", () => {
     expect(() => assertDeclaredCases(registry, "playwright", [])).toThrow();
     expect(() => assertDeclaredCases(registry, "python", ["policy", "unexpected"])).toThrow();
     expect(() => assertDeclaredCases(registry, "vitest", ["first", "required"])).not.toThrow();
+    const nativeRegistry = { ...registry, vitest: [...registry.vitest, "posix-alias"] };
+    const applicability = [{ id: "posix-alias", platforms: ["win32"], reason: "POSIX fixture" }];
+    // Deliberate registry regeneration retains native omissions while admitting new tests.
+    expect(
+      collectedVitestInventory(["first", "required", "new"], applicability, "win32").expected,
+    ).toEqual(["first", "required", "new", "posix-alias"]);
+
+    expect(vitestCollection(nativeRegistry, ["first", "required"], applicability, "win32")).toEqual(
+      {
+        expected: ["first", "required", "posix-alias"],
+        required: ["first", "required"],
+        inapplicable: applicability,
+      },
+    );
+    expect(
+      vitestCollection(nativeRegistry, nativeRegistry.vitest, applicability, "linux").required,
+    ).toEqual(nativeRegistry.vitest);
+    for (const collected of [
+      ["first"],
+      ["first", "required", "unexpected"],
+      ["first", "required", "required"],
+    ])
+      expect(() => vitestCollection(nativeRegistry, collected, applicability, "win32")).toThrow();
+    expect(() =>
+      vitestCollection(
+        nativeRegistry,
+        ["first", "required"],
+        [{ ...applicability[0], id: "unknown" }],
+        "win32",
+      ),
+    ).toThrow();
+    expect(() =>
+      vitestCollection(
+        nativeRegistry,
+        ["first", "required"],
+        [applicability[0], applicability[0]],
+        "win32",
+      ),
+    ).toThrow();
+    expect(() =>
+      vitestCollection(
+        nativeRegistry,
+        ["first", "required"],
+        [{ ...applicability[0], reason: "" }],
+        "win32",
+      ),
+    ).toThrow();
   });
   const identity = { tree: "synthetic" };
   function corpus() {

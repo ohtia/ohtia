@@ -69,7 +69,7 @@ class VirtualMachineTests(unittest.TestCase):
     def test_ssh_identity_is_scoped_to_the_new_local_guest(self):
         args = vm.ssh_arguments(Path("/key"), Path("/known-hosts"), 2222)
         self.assertIn("ohtia-quality@127.0.0.1", args)
-        self.assertIn("UserKnownHostsFile=/known-hosts", args)
+        self.assertIn(f"UserKnownHostsFile={Path('/known-hosts')}", args)
         self.assertIn("BatchMode=yes", args)
         self.assertNotIn("StrictHostKeyChecking=no", args)
 
@@ -119,11 +119,15 @@ class VirtualMachineTests(unittest.TestCase):
             )
             self.assertIn("binutils", config["packages"])
         args = vm.home_disk_arguments(Path("/fixture/home.qcow2"))
-        self.assertIn("file=/fixture/home.qcow2,format=qcow2,if=none,id=quality-home", args)
+        self.assertIn(
+            f"file={Path('/fixture/home.qcow2')},format=qcow2,if=none,id=quality-home", args
+        )
         self.assertIn("virtio-blk-pci,drive=quality-home,serial=ohtia-quality-home", args)
         self.assertNotIn("serial=", args[1])
         root_args = vm.root_disk_arguments(Path("/fixture/root.qcow2"))
-        self.assertIn("file=/fixture/root.qcow2,format=qcow2,if=none,id=quality-os", root_args)
+        self.assertIn(
+            f"file={Path('/fixture/root.qcow2')},format=qcow2,if=none,id=quality-os", root_args
+        )
         self.assertIn("virtio-blk-pci,drive=quality-os,bootindex=1", root_args)
 
     def test_guest_diagnostics_exclude_keys_and_reject_aliases(self):
@@ -139,7 +143,11 @@ class VirtualMachineTests(unittest.TestCase):
             self.assertEqual({p.name for p in output.iterdir()}, {"qemu.log", "serial.log"})
             self.assertEqual((output / "serial.log").read_text(), "synthetic serial.log")
             (attempt / "qemu.log").unlink()
-            (attempt / "qemu.log").symlink_to(attempt / "ssh-key")
+            alias = attempt / "qemu.log"
+            if os.name == "nt":
+                alias.hardlink_to(attempt / "ssh-key")
+            else:
+                alias.symlink_to(attempt / "ssh-key")
             with self.assertRaises(delivery.DeliveryError):
                 vm.retain_diagnostics(attempt, output)
 
@@ -161,7 +169,11 @@ class VirtualMachineTests(unittest.TestCase):
             (output / "qemu.log").unlink()
             secret = root / "key"
             secret.write_text("synthetic untouched")
-            (output / "qemu.log").symlink_to(secret)
+            alias = output / "qemu.log"
+            if os.name == "nt":
+                alias.hardlink_to(secret)
+            else:
+                alias.symlink_to(secret)
             self.assertFalse(vm.finish_guest(None, attempt, output))
             self.assertEqual(secret.read_text(), "synthetic untouched")
             (output / "qemu.log").unlink()

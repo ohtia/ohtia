@@ -7,7 +7,7 @@ import { _electron, expect } from "@playwright/test";
 import { admittedLaunch } from "./desktop-launch.mjs";
 import { recordReadyNativeProcesses } from "./desktop-native-observation.mjs";
 import { verifyStableSentinels } from "../packages/main/dist/index.js";
-import { message } from "../packages/contracts/dist/index.js";
+import { message, portLimits } from "../packages/contracts/dist/index.js";
 
 const [profileFile, prepared, output] = process.argv.slice(2);
 if (!profileFile || !prepared || !output)
@@ -63,7 +63,9 @@ async function start() {
   const page = await application.firstWindow();
   await expect(page.getByRole("heading", { name: "Ohtia", exact: true })).toBeVisible();
   await expect
-    .poll(async () => (await page.evaluate(() => window.ohtia.foundation.readStatus().result)).ok)
+    .poll(async () => (await page.evaluate(() => window.ohtia.foundation.readStatus().result)).ok, {
+      timeout: portLimits.service_start_ms,
+    })
     .toBe(true);
   await recordReadyNativeProcesses(application, output);
   return page;
