@@ -458,6 +458,78 @@
       "scope": "Minimum public notice before retiring a supported release baseline",
       "failure": "retirement_refused",
       "rationale": "Provides an explicit upgrade/recovery transition window"
+    },
+    "update_catalog_bytes": {
+      "value": 65536,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 65536,
+        "maximum": 65536
+      },
+      "owner": "013",
+      "scope": "Complete signed UTF-8 update catalog",
+      "failure": "update_refused",
+      "rationale": "Bound parsing and retained update metadata"
+    },
+    "update_catalog_packages": {
+      "value": 32,
+      "unit": "package",
+      "permitted": {
+        "minimum": 32,
+        "maximum": 32
+      },
+      "owner": "013",
+      "scope": "Package entries in one signed catalog",
+      "failure": "update_refused",
+      "rationale": "Cover required profiles and retain bounded admission work"
+    },
+    "update_package_bytes": {
+      "value": 1073741824,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 1073741824,
+        "maximum": 1073741824
+      },
+      "owner": "013",
+      "scope": "One complete final installation or update artifact",
+      "failure": "update_refused",
+      "rationale": "Bound staging space before download"
+    },
+    "update_download_ms": {
+      "value": 600000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 600000,
+        "maximum": 600000
+      },
+      "owner": "013",
+      "scope": "Complete controlled artifact download",
+      "failure": "update_refused",
+      "rationale": "Bound interrupted or stalled download duration"
+    },
+    "update_catalog_lifetime_ms": {
+      "value": 604800000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 604800000,
+        "maximum": 604800000
+      },
+      "owner": "013",
+      "scope": "Maximum signed catalog validity interval",
+      "failure": "update_refused",
+      "rationale": "Bound offline replay exposure to seven days"
+    },
+    "update_operator_ms": {
+      "value": 600000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 600000,
+        "maximum": 600000
+      },
+      "owner": "013",
+      "scope": "One explicitly authorized external native operator handoff",
+      "failure": "update_refused",
+      "rationale": "Bound an unattended internal qualification handoff independently of network transfer time"
     }
   }
 }

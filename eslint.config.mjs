@@ -12,11 +12,26 @@ export default tseslint.config(
     ],
   },
   {
-    files: ["tools/desktop-probes/*.mjs", "tooling/quality*.mjs", "tooling/linux-e2e*.mjs"],
+    files: [
+      "tools/desktop-probes/*.mjs",
+      "tooling/quality*.mjs",
+      "tooling/linux-e2e*.mjs",
+      "tooling/update-*.mjs",
+      "tooling/installation-*.mjs",
+    ],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",
-      globals: { process: "readonly", console: "readonly" },
+      globals: {
+        process: "readonly",
+        console: "readonly",
+        Buffer: "readonly",
+        TextDecoder: "readonly",
+        AbortSignal: "readonly",
+        fetch: "readonly",
+        setTimeout: "readonly",
+        structuredClone: "readonly",
+      },
     },
     rules: {
       "no-undef": "error",
@@ -24,6 +39,15 @@ export default tseslint.config(
       "no-constant-condition": "error",
       "no-unused-vars": "error",
     },
+  },
+  {
+    files: ["tooling/installation-*.cjs"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "commonjs",
+      globals: { process: "readonly", require: "readonly" },
+    },
+    rules: { "no-undef": "error", "no-unreachable": "error", "no-unused-vars": "error" },
   },
   ...tseslint.configs.strictTypeChecked.map((config) => ({
     ...config,

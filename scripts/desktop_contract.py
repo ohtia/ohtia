@@ -92,6 +92,12 @@ BUDGET_UNITS = {
     "setup_cold_download_ms": "millisecond",
     "ci_retention_days": "day",
     "release_retirement_notice_days": "day",
+    "update_catalog_bytes": "byte",
+    "update_catalog_packages": "package",
+    "update_package_bytes": "byte",
+    "update_download_ms": "millisecond",
+    "update_operator_ms": "millisecond",
+    "update_catalog_lifetime_ms": "millisecond",
 }
 REQUIRED_BUDGETS = set(BUDGET_UNITS)
 
@@ -633,7 +639,7 @@ def check_policy(record: dict[str, Any]) -> None:
             f"Invalid permitted range: {name}",
         )
         require(
-            budget.get("owner") in {"003", "004", "005", "006", "012", "016", "018"},
+            budget.get("owner") in {"003", "004", "005", "006", "012", "013", "016", "018"},
             f"Unknown resource owner: {name}",
         )
         for field in ("scope", "failure", "rationale"):

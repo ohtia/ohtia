@@ -106,6 +106,9 @@ const commands = {
       "tools/desktop-probes/*.mjs",
       "tooling/quality*.mjs",
       "tooling/linux-e2e*.mjs",
+      "tooling/update-*.mjs",
+      "tooling/installation-*.mjs",
+      "tooling/installation-*.cjs",
     ]);
     run(python, ["-m", "ruff", "check", "scripts"]);
   },
