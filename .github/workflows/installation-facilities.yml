@@ -1,0 +1,91 @@
+name: Installation facilities
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/installation-facilities.yml
+      - scripts/installation_facilities.py
+      - scripts/tests/test_installation_facilities.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installation-facilities-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  observe:
+    name: Observe Linux facilities (${{ matrix.architecture }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-26.04
+            architecture: x64
+          - runner: ubuntu-26.04-arm
+            architecture: arm64
+    steps:
+      - name: Check out observation source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+
+      - name: Observe host VM capability
+        env:
+          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          mkdir -m 700 -p artifacts/installation-facilities
+          if test -c /dev/kvm; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y acl
+            sudo setfacl -m "u:$(id -u):rw" /dev/kvm
+          fi
+          python -I scripts/installation_facilities.py host \
+            --expected-architecture "$EXPECTED_ARCHITECTURE" \
+            --checkout-sha "$(git rev-parse HEAD)" \
+            --tree-sha "$(git rev-parse 'HEAD^{tree}')" \
+            > artifacts/installation-facilities/host.json
+
+      - name: Observe an isolated non-elevated account
+        env:
+          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          sudo useradd --create-home --user-group --shell /bin/bash ohtia27-probe
+          echo 'OHTIA_PROBE_ACCOUNT_CREATED=true' >> "$GITHUB_ENV"
+          sudo install -m 0444 scripts/installation_facilities.py /home/ohtia27-probe/probe.py
+          python_executable="$(command -v python)"
+          python_prefix="$(python -I -c 'import sys; print(sys.base_prefix)')"
+          sudo -n -u ohtia27-probe -- env -i \
+            PATH=/usr/bin:/bin LC_ALL=C HOME=/home/ohtia27-probe LD_LIBRARY_PATH="$python_prefix/lib" \
+            GITHUB_ACTIONS="$GITHUB_ACTIONS" RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
+            RUNNER_OS="$RUNNER_OS" RUNNER_ARCH="$RUNNER_ARCH" \
+            GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            GITHUB_RUN_ID="$GITHUB_RUN_ID" GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            "$python_executable" -I /home/ohtia27-probe/probe.py account \
+            --expected-architecture "$EXPECTED_ARCHITECTURE" \
+            --checkout-sha "$(git rev-parse HEAD)" \
+            --tree-sha "$(git rev-parse 'HEAD^{tree}')" \
+            > artifacts/installation-facilities/account.json
+
+      - name: Remove the probe account
+        if: ${{ always() && env.OHTIA_PROBE_ACCOUNT_CREATED == 'true' }}
+        run: sudo userdel --remove ohtia27-probe
+
+      - name: Retain facility observations
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installation-facilities-${{ matrix.architecture }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/installation-facilities/
+          if-no-files-found: error
+          retention-days: 14

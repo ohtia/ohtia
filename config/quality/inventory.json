@@ -63,6 +63,7 @@
     "scripts/tests/test_desktop_runtime.py",
     "scripts/tests/test_github_policy.py",
     "scripts/tests/test_github_pr.py",
+    "scripts/tests/test_installation_facilities.py",
     "scripts/tests/test_installation_native.py",
     "scripts/tests/test_installation_windows.py",
     "scripts/tests/test_linux_contributor.py",
