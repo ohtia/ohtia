@@ -1,4 +1,5 @@
 import { synchronizeDirectory } from "./installation-filesystem.mjs";
+import { loadSignedCatalogs } from "./installation-signing.mjs";
 // Controlled internal campaign. No public feed, product updater or publication authority.
 import fs from "node:fs";
 import path from "node:path";
@@ -8,6 +9,9 @@ import { createHash, generateKeyPairSync, sign, randomUUID } from "node:crypto";
 import { fileURLToPath, URL } from "node:url";
 import {
   parseCampaignOptions,
+  withCampaignAcceptance,
+  readCampaignSnapshot,
+  admitPendingCatalog,
   resumePolicy,
   renewalCatalog,
   renewalTrust,
@@ -25,19 +29,19 @@ import {
   nativeVersion,
   verifyCatalog,
   stagePackage,
-  withAcceptanceState,
   updateLimits,
 } from "./update-admission.mjs";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const args = process.argv.slice(2);
 if (args.length === 1 && args[0] === "--help") {
   console.log(
-    "Use installation-journey.mjs <runtime-profile.json> <build> <evidence> [--operator-installation] [--continue-from <completed-evidence> | --baseline <inspected-proof.json>] [--resume [--renew-catalogs]]. Linux requires an external root operator using a separately verified administrator-owned helper and the platform Python: scripts/installation_operator.py <profile> <cell.json> <staged.json> <receipt.json> [--rpm-keyring <expected-key-db> --rpm-key-id <fingerprint>]. Before any request, independently register both artifacts with the root-owned helper using --admit-artifact, --expected-sha256, --build and --expected-candidate; request files grant no administrative authority. --resume uses identical retained catalogs and refuses to replay an uncertain UI mutation. After a ceased-owner interruption, explicitly run installation_native.py reconcile-state <profile> <retained-evidence>; it preserves replay floors and partial evidence. For manual freshness or uncertain-effect recovery, run inspect-baseline on an independently selected intact archive and start a new higher-version campaign with --baseline. --renew-catalogs explicitly renews only retained unobserved package metadata, preserves old signed files and never lowers version/sequence floors. All paths and data belong to an inspected synthetic fixture.",
+    "Use installation-journey.mjs <runtime-profile.json> <build> <evidence> [--operator-installation] [--continue-from <completed-evidence> | --baseline <inspected-proof.json>] [--resume [--renew-catalogs]] [--signed-catalogs <request-directory> --catalog-public-key <SPKI-public.pem> --catalog-key-id <independent-SPKI-DER-SHA256>]. Prepare external requests with tooling/installation-signing.mjs after all package signing; supply both detached signatures before this journey. External resumes require the original request and public-key pin; automatic ephemeral renewal is unavailable in that mode. Linux requires an external root operator using a separately verified administrator-owned helper and the platform Python: scripts/installation_operator.py <profile> <cell.json> <staged.json> <receipt.json> [--rpm-keyring <expected-key-db> --rpm-key-id <fingerprint>]. Before any request, independently register both artifacts with the root-owned helper using --admit-artifact, --expected-sha256, --build and --expected-candidate; request files grant no administrative authority. --resume uses identical retained catalogs and refuses to replay an uncertain UI mutation. After a ceased-owner interruption, explicitly run installation_native.py reconcile-state <profile> <retained-evidence>; it preserves replay floors and partial evidence. For manual freshness or uncertain-effect recovery, run inspect-baseline on an independently selected intact archive and start a new higher-version campaign with --baseline. --renew-catalogs explicitly renews only retained unobserved package metadata, preserves old signed files and never lowers version/sequence floors. All paths and data belong to an inspected synthetic fixture.",
   );
   process.exit(0);
 }
 const [profileFile, buildDirectory, evidenceDirectory, ...options] = args;
-const { resume, operator, continueFrom, baseline, renew } = parseCampaignOptions(options);
+const { resume, operator, continueFrom, baseline, renew, externalSigning } =
+  parseCampaignOptions(options);
 const profile = loadRuntimeProfile(profileFile);
 verifyStableSentinels(profile);
 function json(file, maximum = 8 * 1024 * 1024) {
@@ -59,8 +63,7 @@ if (
   fs.realpathSync.native(path.dirname(evidenceDirectory)) !== path.dirname(evidenceDirectory)
 )
   throw new Error("Use canonical build and inspected scratch evidence paths.");
-if (!resume) fs.mkdirSync(evidenceDirectory, { mode: 0o700 });
-else if (fs.realpathSync.native(evidenceDirectory) !== evidenceDirectory)
+if (resume && fs.realpathSync.native(evidenceDirectory) !== evidenceDirectory)
   throw new Error("Invalid retained campaign.");
 const cell = json(path.join(buildDirectory, "cell.json"));
 if (cell.target !== profile.target)
@@ -77,6 +80,40 @@ if (
 )
   throw new Error("Missing sealed build contract.");
 const candidate = digest(catalogBytes({ inputs, contracts }));
+const external = externalSigning
+  ? await loadSignedCatalogs(
+      buildDirectory,
+      externalSigning.directory,
+      externalSigning.publicKey,
+      externalSigning.keyId,
+      { allowExpired: resume },
+    )
+  : null;
+if (
+  external &&
+  (external.candidate !== candidate || !catalogBytes(external.cell).equals(catalogBytes(cell)))
+)
+  throw new Error("External signatures differ from the selected sealed build.");
+const trustFile = path.join(evidenceDirectory, "qualification-trust.json"),
+  campaignFile = path.join(evidenceDirectory, "campaign.json");
+if (!resume) fs.mkdirSync(evidenceDirectory, { mode: 0o700 });
+function campaignBytes(planned, kind) {
+  return readCampaignSnapshot(
+    (name, maximum) => readBoundedFile(path.join(evidenceDirectory, name), maximum),
+    planned,
+    external,
+    kind,
+  );
+}
+function campaignCatalogBytes(planned) {
+  return campaignBytes(planned, "catalog");
+}
+function campaignCatalog(planned) {
+  return JSON.parse(campaignCatalogBytes(planned));
+}
+function campaignSignature(planned) {
+  return campaignBytes(planned, "signature");
+}
 const python = path.join(
   root,
   process.platform === "win32" ? ".venv/Scripts/python.exe" : ".venv/bin/python",
@@ -124,6 +161,7 @@ async function run(arguments_, label, env = process.env) {
   } finally {
     fs.closeSync(descriptor);
   }
+  return log;
 }
 async function hashFile(file) {
   const hash = createHash("sha256");
@@ -189,8 +227,6 @@ if (createdAcceptance) {
 const fresh = !fs.existsSync(path.join(acceptance, "accepted.json"));
 if (fresh && !createdAcceptance)
   throw new Error("Existing acceptance state is missing or incomplete; reconcile it explicitly.");
-const trustFile = path.join(evidenceDirectory, "qualification-trust.json"),
-  campaignFile = path.join(evidenceDirectory, "campaign.json");
 function rootJson(file) {
   const descriptor = fs.openSync(
     file,
@@ -320,7 +356,7 @@ async function operatorReceipt(record, staged, attempt, repair) {
   )
     throw new Error("Wrong operator receipt or expired operation lease.");
 }
-await run(
+const ownerLog = await run(
   [
     python,
     path.join(root, "scripts/installation_native.py"),
@@ -329,29 +365,32 @@ await run(
   ],
   "lease-owner",
 );
-const ownerLogs = fs
-  .readdirSync(evidenceDirectory)
-  .filter((name) => name.startsWith("lease-owner-") && name.endsWith(".log"))
-  .sort();
-const owner = json(path.join(evidenceDirectory, ownerLogs.at(-1)));
+const owner = json(ownerLog);
 try {
-  await withAcceptanceState(
+  await withCampaignAcceptance(
     acceptance,
     fresh,
-    async (previous, persist, lease) => {
+    {
+      resume,
+      inputs,
+      contracts,
+      external,
+      readRetained: () => ({ campaign: json(campaignFile), trust: json(trustFile) }),
+    },
+    async (previous, persist, lease, retained) => {
       let campaign;
       if (resume) {
-        campaign = json(campaignFile);
-        if (
-          !catalogBytes(campaign.inputs).equals(catalogBytes(inputs)) ||
-          !catalogBytes(campaign.contracts).equals(catalogBytes(contracts))
-        )
-          throw new Error("Retained campaign inputs changed.");
+        campaign = retained.campaign;
       } else {
-        const keys = generateKeyPairSync("ed25519"),
-          public_key = keys.publicKey.export({ type: "spki", format: "pem" }).toString(),
-          key_id = keyIdentity(public_key);
-        publish(trustFile, { keys: [{ id: key_id, public_key, revoked: false }] });
+        const keys = external ? null : generateKeyPairSync("ed25519"),
+          public_key = external
+            ? external.trust.keys[0].public_key
+            : keys.publicKey.export({ type: "spki", format: "pem" }).toString(),
+          key_id = external ? external.key_id : keyIdentity(public_key);
+        publish(
+          trustFile,
+          external ? external.trust : { keys: [{ id: key_id, public_key, revoked: false }] },
+        );
         let initialDirectory = null,
           initialPrevious = null;
         if (baseline) {
@@ -388,6 +427,15 @@ try {
           cell,
           initialDirectory,
           initialPrevious,
+          ...(external
+            ? {
+                signing: {
+                  kind: "external",
+                  key_id: external.key_id,
+                  request_sha256: external.request_sha256,
+                },
+              }
+            : {}),
           attempts: [],
         };
         for (let index = 0; index < 2; index++) {
@@ -421,24 +469,29 @@ try {
             });
           }
           const issued = Date.now(),
-            catalog = {
-              schema_version: 1,
-              key_id,
-              sequence: (previous?.sequence ?? 0) + attempt,
-              issued_ms: issued - 1000,
-              expires_ms: issued + updateLimits.catalog_lifetime_ms - 1000,
-              candidate,
-              source_sha: inputs.source_sha,
-              version,
-              channels: ["preview"],
-              notes_sha256: digest(Buffer.from("Internal qualification; no public release.\n")),
-              packages: entries,
-            };
+            catalog = external
+              ? JSON.parse(external.catalogs[index].bytes)
+              : {
+                  schema_version: 1,
+                  key_id,
+                  sequence: (previous?.sequence ?? 0) + attempt,
+                  issued_ms: issued - 1000,
+                  expires_ms: issued + updateLimits.catalog_lifetime_ms - 1000,
+                  candidate,
+                  source_sha: inputs.source_sha,
+                  version,
+                  channels: ["preview"],
+                  notes_sha256: digest(Buffer.from("Internal qualification; no public release.\n")),
+                  packages: entries,
+                };
           const catalogName = `catalog-${attempt}.json`,
             signatureName = `catalog-${attempt}.sig`,
-            bytes = catalogBytes(catalog);
+            bytes = external ? external.catalogs[index].bytes : catalogBytes(catalog);
           retain(path.join(evidenceDirectory, catalogName), bytes);
-          retain(path.join(evidenceDirectory, signatureName), sign(null, bytes, keys.privateKey));
+          retain(
+            path.join(evidenceDirectory, signatureName),
+            external ? external.catalogs[index].signature : sign(null, bytes, keys.privateKey),
+          );
           campaign.attempts.push({
             attempt,
             version,
@@ -454,10 +507,10 @@ try {
         }
         publish(campaignFile, campaign);
       }
-      const trust = json(trustFile),
+      const trust = retained ? retained.trust : json(trustFile),
         results = [];
       for (const planned of campaign.attempts) {
-        const catalog = json(path.join(evidenceDirectory, planned.catalogName));
+        const catalog = campaignCatalog(planned);
         if (catalog.candidate !== candidate)
           throw new Error("Signed catalog differs from the sealed source/build identity.");
         for (const entry of catalog.packages) {
@@ -479,7 +532,7 @@ try {
         );
         if (fs.existsSync(file)) confirmations.set(planned.attempt, json(file));
       }
-      const lastCatalog = json(path.join(evidenceDirectory, campaign.attempts.at(-1).catalogName));
+      const lastCatalog = campaignCatalog(campaign.attempts.at(-1));
       const policy = resumePolicy(
         campaign.attempts,
         confirmations,
@@ -503,21 +556,16 @@ try {
           key_id = keyIdentity(public_key);
         let sequence = Math.max(
           previous?.sequence ?? 0,
-          ...campaign.attempts.map(
-            (item) => json(path.join(evidenceDirectory, item.catalogName)).sequence,
-          ),
+          ...campaign.attempts.map((item) => campaignCatalog(item).sequence),
         );
         const usedKeys = new Set(
           campaign.attempts
             .filter((item) => confirmations.has(item.attempt))
-            .map((item) => json(path.join(evidenceDirectory, item.catalogName)).key_id),
+            .map((item) => campaignCatalog(item).key_id),
         );
         const renewed = [];
         for (const planned of pending) {
-          const oldBytes = readBoundedFile(
-              path.join(evidenceDirectory, planned.catalogName),
-              updateLimits.catalog_bytes,
-            ),
+          const oldBytes = campaignCatalogBytes(planned),
             old = JSON.parse(oldBytes);
           const entry = old.packages.find(
             (item) =>
@@ -525,24 +573,19 @@ try {
               item.profile === cell.profile &&
               item.format === planned.format,
           );
-          verifyCatalog(
-            oldBytes,
-            readBoundedFile(path.join(evidenceDirectory, planned.signatureName), 64),
-            trust,
-            {
-              now_ms: old.issued_ms,
-              execution: "internal",
-              channel: "preview",
-              preview_opt_in: true,
-              previous: null,
-              installed_version: null,
-              target: cell.target,
-              profile: cell.profile,
-              format: planned.format,
-              schema: entry?.schema.source_min,
-              queued_work_version: null,
-            },
-          );
+          verifyCatalog(oldBytes, campaignSignature(planned), trust, {
+            now_ms: old.issued_ms,
+            execution: "internal",
+            channel: "preview",
+            preview_opt_in: true,
+            previous: null,
+            installed_version: null,
+            target: cell.target,
+            profile: cell.profile,
+            format: planned.format,
+            schema: entry?.schema.source_min,
+            queued_work_version: null,
+          });
           const catalog = renewalCatalog(old, key_id, ++sequence, now),
             bytes = catalogBytes(catalog);
           const catalogName = `catalog-${planned.attempt}-renewed-${nonce}.json`,
@@ -592,14 +635,11 @@ try {
             );
           {
             const checked = verifyCatalog(
-              readBoundedFile(
-                path.join(evidenceDirectory, planned.catalogName),
-                updateLimits.catalog_bytes,
-              ),
-              readBoundedFile(path.join(evidenceDirectory, planned.signatureName), 64),
+              campaignCatalogBytes(planned),
+              campaignSignature(planned),
               trust,
               {
-                now_ms: json(path.join(evidenceDirectory, planned.catalogName)).issued_ms,
+                now_ms: campaignCatalog(planned).issued_ms,
                 execution: "internal",
                 channel: "preview",
                 preview_opt_in: true,
@@ -650,7 +690,7 @@ try {
           repair = false;
         try {
           if ((operator || process.platform === "win32") && planned.phase === "install_requested") {
-            const retainedCatalog = json(path.join(evidenceDirectory, planned.catalogName));
+            const retainedCatalog = campaignCatalog(planned);
             const retainedEntry = retainedCatalog.packages.find(
               (item) =>
                 item.target === cell.target &&
@@ -689,7 +729,7 @@ try {
         } catch (error) {
           if ((!operator && process.platform !== "win32") || planned.phase !== "install_requested")
             throw error;
-          const catalog = json(path.join(evidenceDirectory, planned.catalogName));
+          const catalog = campaignCatalog(planned);
           const entry = catalog.packages.find(
             (item) =>
               item.target === cell.target &&
@@ -721,13 +761,9 @@ try {
           };
           repair = true;
         }
-        const bytes = readBoundedFile(
-            path.join(evidenceDirectory, planned.catalogName),
-            updateLimits.catalog_bytes,
-          ),
-          signature = readBoundedFile(path.join(evidenceDirectory, planned.signatureName), 64);
-        const admitted = verifyCatalog(bytes, signature, trust, {
-          now_ms: Date.now(),
+        const bytes = campaignCatalogBytes(planned),
+          signature = campaignSignature(planned);
+        const admitted = admitPendingCatalog(bytes, signature, trust, {
           execution: "internal",
           channel: "preview",
           preview_opt_in: true,
@@ -752,7 +788,7 @@ try {
             lease,
             state: admitted.state,
             catalog_sha256: admitted.state.catalog_sha256,
-            expires_ms: json(path.join(evidenceDirectory, planned.catalogName)).expires_ms,
+            expires_ms: campaignCatalog(planned).expires_ms,
             source_schema: current.schema,
             ...(process.platform === "win32" ? { source_store: current.source_store } : {}),
             installed_version: current.installed_version,
@@ -826,8 +862,14 @@ try {
         inputs,
         contracts,
         results,
+        catalog_identity: {
+          kind: external ? "maintainer-supplied" : "ephemeral",
+          key_ids: trust.keys.map((key) => key.id),
+        },
         limitations: [
-          "Internal ephemeral catalog identity; no official publisher identity.",
+          external
+            ? "External catalog identity verified against the independently selected public key; platform signing remains a separate native check."
+            : "Internal ephemeral catalog identity; no official publisher identity.",
           "macOS ad-hoc execution excludes Developer ID, notarization and Gatekeeper distribution acceptance.",
           "No public feed, publication or product automatic updater is enabled.",
           "No schema transition, physical power loss or compatible executable rollback is certified by this same-schema experiment.",
