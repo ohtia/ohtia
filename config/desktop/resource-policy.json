@@ -530,6 +530,42 @@
       "scope": "One explicitly authorized external native operator handoff",
       "failure": "update_refused",
       "rationale": "Bound an unattended internal qualification handoff independently of network transfer time"
+    },
+    "update_archive_entries": {
+      "value": 8192,
+      "unit": "entry",
+      "permitted": {
+        "minimum": 8192,
+        "maximum": 8192
+      },
+      "owner": "013",
+      "scope": "Maximum Windows package archive member count",
+      "failure": "update_refused",
+      "rationale": "Bound native Windows payload inventory cardinality"
+    },
+    "update_archive_listing_bytes": {
+      "value": 2097152,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 2097152,
+        "maximum": 2097152
+      },
+      "owner": "013",
+      "scope": "Maximum UTF-8 archive listing output",
+      "failure": "update_refused",
+      "rationale": "Bound archive inspection memory before extraction"
+    },
+    "update_expanded_bytes": {
+      "value": 2147483648,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 2147483648,
+        "maximum": 2147483648
+      },
+      "owner": "013",
+      "scope": "Maximum expanded Windows application payload",
+      "failure": "update_refused",
+      "rationale": "Bound temporary extraction before native activation"
     }
   }
 }

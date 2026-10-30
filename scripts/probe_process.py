@@ -65,7 +65,7 @@ def _signal_anchored_group(group: int, sig: int) -> None:
 
 
 def run_owned(
-    command: list[str],
+    command: list[str] | str,
     cwd: Path,
     env: dict[str, str],
     timeout: float,

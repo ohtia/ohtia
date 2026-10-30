@@ -1,3 +1,4 @@
+import { synchronizeDirectory } from "./installation-filesystem.mjs";
 // Controlled internal campaign. No public feed, product updater or publication authority.
 import fs from "node:fs";
 import path from "node:path";
@@ -76,7 +77,10 @@ if (
 )
   throw new Error("Missing sealed build contract.");
 const candidate = digest(catalogBytes({ inputs, contracts }));
-const python = path.join(root, ".venv/bin/python");
+const python = path.join(
+  root,
+  process.platform === "win32" ? ".venv/Scripts/python.exe" : ".venv/bin/python",
+);
 function publish(file, value) {
   const temporary = file + "." + randomUUID() + ".partial";
   const descriptor = fs.openSync(temporary, "wx", 0o600);
@@ -87,12 +91,7 @@ function publish(file, value) {
     fs.closeSync(descriptor);
   }
   fs.renameSync(temporary, file);
-  const folder = fs.openSync(path.dirname(file), "r");
-  try {
-    fs.fsyncSync(folder);
-  } finally {
-    fs.closeSync(folder);
-  }
+  synchronizeDirectory(path.dirname(file));
 }
 function retain(file, bytes) {
   const descriptor = fs.openSync(file, "wx", 0o600);
@@ -102,12 +101,7 @@ function retain(file, bytes) {
   } finally {
     fs.closeSync(descriptor);
   }
-  const folder = fs.openSync(path.dirname(file), "r");
-  try {
-    fs.fsyncSync(folder);
-  } finally {
-    fs.closeSync(folder);
-  }
+  synchronizeDirectory(path.dirname(file));
 }
 let logIndex = 0;
 async function run(arguments_, label, env = process.env) {
@@ -137,6 +131,7 @@ async function hashFile(file) {
   return hash.digest("hex");
 }
 async function inspect(directory, label) {
+  const sourceStore = process.platform === "win32" ? await snapshotStore() : null;
   const descriptorFile = path.join(evidenceDirectory, `${label}-descriptor-${randomUUID()}.json`);
   await run(
     [
@@ -163,7 +158,9 @@ async function inspect(directory, label) {
     label,
     { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
   );
-  return json(output);
+  if (sourceStore && !(await matchesStore(sourceStore)))
+    throw new Error("Store changed during semantic Windows inspection.");
+  return { ...json(output), ...(sourceStore ? { source_store: sourceStore } : {}) };
 }
 const files = new Map();
 const server = http.createServer((request, response) => {
@@ -207,6 +204,21 @@ function rootJson(file) {
   } finally {
     fs.closeSync(descriptor);
   }
+}
+async function snapshotStore() {
+  const snapshot = {};
+  for (const name of ["ohtia.db3", "ohtia.db3-wal", "ohtia.db3-shm", "ohtia.db3-journal"]) {
+    const file = path.join(profile.research_root, name);
+    if (!fs.existsSync(file)) {
+      snapshot[name] = null;
+      continue;
+    }
+    const info = fs.lstatSync(file);
+    if (!info.isFile() || info.nlink !== 1 || fs.realpathSync.native(file) !== file)
+      throw new Error("Unsafe Windows store snapshot input.");
+    snapshot[name] = { sha256: await hashFile(file), bytes: info.size };
+  }
+  return snapshot;
 }
 async function matchesStore(snapshot) {
   const names = ["ohtia.db3", "ohtia.db3-wal", "ohtia.db3-shm", "ohtia.db3-journal"];
@@ -384,7 +396,9 @@ try {
             directory = path.join(buildDirectory, `build-${attempt}/packages`),
             entries = [];
           for (const format of cell.formats) {
-            const names = fs.readdirSync(directory).filter((name) => name.endsWith(`.${format}`));
+            const names = fs
+              .readdirSync(directory)
+              .filter((name) => name.endsWith(`.${format === "nsis" ? "exe" : format}`));
             if (names.length !== 1) throw new Error("Missing or ambiguous package.");
             const file = path.join(directory, names[0]),
               bytes = fs.statSync(file).size;
@@ -434,7 +448,7 @@ try {
             phase: "prepared",
             destination: path.join(
               profile.scratch_root,
-              `installed-${contracts.versions[0]}-${attempt}`,
+              `${process.platform === "win32" ? "installed Windows-" : "installed-"}${contracts.versions[0]}-${attempt}`,
             ),
           });
         }
@@ -635,7 +649,7 @@ try {
         let current,
           repair = false;
         try {
-          if (operator && planned.phase === "install_requested") {
+          if ((operator || process.platform === "win32") && planned.phase === "install_requested") {
             const retainedCatalog = json(path.join(evidenceDirectory, planned.catalogName));
             const retainedEntry = retainedCatalog.packages.find(
               (item) =>
@@ -645,7 +659,10 @@ try {
             );
             if (
               fs.existsSync(
-                path.join(evidenceDirectory, `operator-pending-${retainedEntry.sha256}.json`),
+                path.join(
+                  evidenceDirectory,
+                  `${operator ? "operator" : "windows"}-pending-${retainedEntry.sha256}.json`,
+                ),
               )
             )
               throw new Error(
@@ -656,14 +673,22 @@ try {
             ? await inspect(installedDirectory, "store-preflight")
             : {
                 schema: 0,
+                ...(process.platform === "win32" ? { source_store: await snapshotStore() } : {}),
                 installed_version:
                   cell.target.startsWith("linux-") &&
                   fs.existsSync("/opt/ohtia-quality/resources/app/package.json")
                     ? json("/opt/ohtia-quality/resources/app/package.json").version
                     : null,
               };
+          if (
+            process.platform === "win32" &&
+            !installedDirectory &&
+            Object.values(current.source_store).some((value) => value !== null)
+          )
+            throw new Error("An existing Windows store requires an inspected native baseline.");
         } catch (error) {
-          if (!operator || planned.phase !== "install_requested") throw error;
+          if ((!operator && process.platform !== "win32") || planned.phase !== "install_requested")
+            throw error;
           const catalog = json(path.join(evidenceDirectory, planned.catalogName));
           const entry = catalog.packages.find(
             (item) =>
@@ -673,13 +698,15 @@ try {
           );
           const checkpointFile = path.join(
             evidenceDirectory,
-            `operator-pending-${entry.sha256}.json`,
+            `${operator ? "operator" : "windows"}-pending-${entry.sha256}.json`,
           );
           if (!fs.existsSync(checkpointFile))
             throw new Error(
-              "The installation is damaged. Have the root-owned operator publish --inspect-pending to the pending checkpoint path, then explicitly resume; do not guess schema or delete replay state.",
+              operator
+                ? "The installation is damaged. Have the root-owned operator publish --inspect-pending to the pending checkpoint path, then explicitly resume; do not guess schema or delete replay state."
+                : "The Windows installation is damaged and has no verified unchanged-store checkpoint. Preserve the installation, data and replay state for explicit recovery.",
             );
-          const checkpoint = rootJson(checkpointFile);
+          const checkpoint = operator ? rootJson(checkpointFile) : json(checkpointFile);
           if (
             checkpoint.kind !== "unchanged-verified-store" ||
             checkpoint.sha256 !== entry.sha256 ||
@@ -688,7 +715,10 @@ try {
             throw new Error(
               "Damaged-installation store differs from its verified pre-transition checkpoint.",
             );
-          current = checkpoint.current;
+          current = {
+            ...checkpoint.current,
+            ...(process.platform === "win32" ? { source_store: checkpoint.store } : {}),
+          };
           repair = true;
         }
         const bytes = readBoundedFile(
@@ -724,6 +754,7 @@ try {
             catalog_sha256: admitted.state.catalog_sha256,
             expires_ms: json(path.join(evidenceDirectory, planned.catalogName)).expires_ms,
             source_schema: current.schema,
+            ...(process.platform === "win32" ? { source_store: current.source_store } : {}),
             installed_version: current.installed_version,
             installed_directory: installedDirectory,
           },
@@ -743,7 +774,7 @@ try {
             [
               python,
               path.join(root, "scripts/installation_native.py"),
-              "prepare-mac",
+              process.platform === "win32" ? "prepare-windows" : "prepare-mac",
               profileFile,
               path.join(buildDirectory, "cell.json"),
               stagedFile,

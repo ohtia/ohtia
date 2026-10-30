@@ -140,6 +140,23 @@ describe("authenticated internal update admission", () => {
       "signature",
     );
   });
+  it("admits the actual NSIS exe suffix and rejects a fictitious nsis extension", () => {
+    const catalog = example();
+    catalog.packages = [
+      {
+        ...catalog.packages[0],
+        target: "win32-x64",
+        profile: "windows-11-25h2",
+        format: "nsis",
+        filename: "qualified.exe",
+        native_version: catalog.version,
+      },
+    ];
+    const overrides = { target: "win32-x64", profile: "windows-11-25h2", format: "nsis" };
+    expect(admission(catalog, overrides).entry.filename).toBe("qualified.exe");
+    catalog.packages[0].filename = "qualified.nsis";
+    expect(() => admission(catalog, overrides)).toThrow("filename");
+  });
   it("rejects duplicate fields malformed UTF-8 unknown fields and overlong catalogs before trust", () => {
     for (const encoded of [
       Buffer.from('{"schema_version":1,"schema_version":1}\n'),
@@ -295,24 +312,19 @@ describe("authenticated internal update admission", () => {
     });
     await expect(stagePackage(admission(), url, temporary())).rejects.toThrow("staging_failed");
   });
-  it.skipIf(process.platform === "win32")(
-    "streams exact bytes to a private new file and refuses an unverified capability",
-    async () => {
-      const url = await endpoint((_request, response) => {
-        response.writeHead(200, { "Content-Length": bytes.length });
-        response.end(bytes);
-      });
-      const parent = temporary(),
-        admitted = admission();
-      admitted.entry.sha256 = "d".repeat(64);
-      const result = await stagePackage(admitted, url, parent);
-      expect(fs.readFileSync(result.file)).toEqual(bytes);
-      expect(result.sha256).toBe(digest(bytes));
-      await expect(stagePackage({ ...admitted }, url, parent)).rejects.toThrow(
-        "unverified_catalog",
-      );
-    },
-  );
+  it("streams exact bytes to a private new file and refuses an unverified capability", async () => {
+    const url = await endpoint((_request, response) => {
+      response.writeHead(200, { "Content-Length": bytes.length });
+      response.end(bytes);
+    });
+    const parent = temporary(),
+      admitted = admission();
+    admitted.entry.sha256 = "d".repeat(64);
+    const result = await stagePackage(admitted, url, parent);
+    expect(fs.readFileSync(result.file)).toEqual(bytes);
+    expect(result.sha256).toBe(digest(bytes));
+    await expect(stagePackage({ ...admitted }, url, parent)).rejects.toThrow("unverified_catalog");
+  });
   it("never publishes partial truncated corrupt compressed or oversized downloads", async () => {
     for (const payload of [
       Buffer.from("corrupt"),
@@ -347,79 +359,73 @@ describe("authenticated internal update admission", () => {
     expect(fs.readFileSync(sentinel, "utf8")).toBe("previous");
     expect(admitted.state).toEqual(state);
   });
-  it.skipIf(process.platform === "win32")(
-    "durably retains replay state before staging and refuses concurrent or missing-state resumption",
-    async () => {
-      const parent = temporary(),
-        directory = path.join(parent, "state");
+  it("durably retains replay state before staging and refuses concurrent or missing-state resumption", async () => {
+    const parent = temporary(),
+      directory = path.join(parent, "state");
+    fs.mkdirSync(directory, { mode: 0o700 });
+    const admitted = admission();
+    await expect(
+      withAcceptanceState(
+        directory,
+        true,
+        async (previous, persist, lease) => {
+          expect(previous).toBe(null);
+          expect(
+            JSON.parse(fs.readFileSync(path.join(directory, "operation.lock"), "utf8")),
+          ).toEqual(lease);
+          expect(lease.pid).toBe(process.pid);
+          persist(admitted);
+          await expect(withAcceptanceState(directory, false, async () => {})).rejects.toThrow();
+          throw new Error("interruption after catalog acceptance");
+        },
+        { pid: -1 },
+      ),
+    ).rejects.toThrow("interruption after catalog acceptance");
+    await withAcceptanceState(directory, false, async (previous) =>
+      expect(previous.catalog_sha256).toBe(admitted.state.catalog_sha256),
+    );
+    await expect(withAcceptanceState(directory, true, async () => {})).rejects.toThrow(
+      "state_initialization",
+    );
+    fs.unlinkSync(path.join(directory, "accepted.json"));
+    await expect(withAcceptanceState(directory, false, async () => {})).rejects.toThrow(
+      "state_initialization",
+    );
+  });
+  it("retains the synchronized owner after ordinary persistence failure or operator timeout", async () => {
+    for (const failure of ["persistence", "operator"] as const) {
+      const directory = path.join(temporary(), "acceptance");
       fs.mkdirSync(directory, { mode: 0o700 });
-      const admitted = admission();
+      if (failure === "persistence")
+        vi.spyOn(fs, "renameSync").mockImplementationOnce(() => {
+          throw Object.assign(new Error("no space"), { code: "ENOSPC" });
+        });
       await expect(
         withAcceptanceState(
           directory,
           true,
-          async (previous, persist, lease) => {
-            expect(previous).toBe(null);
-            expect(
-              JSON.parse(fs.readFileSync(path.join(directory, "operation.lock"), "utf8")),
-            ).toEqual(lease);
-            expect(lease.pid).toBe(process.pid);
-            persist(admitted);
-            await expect(withAcceptanceState(directory, false, async () => {})).rejects.toThrow();
-            throw new Error("interruption after catalog acceptance");
+          async (_previous, persist) => {
+            persist(admission());
+            throw Object.assign(new Error("native command may still run"), {
+              code: "operator_in_progress",
+            });
           },
-          { pid: -1 },
+          { owner: { synthetic: "birth identity" } },
         ),
-      ).rejects.toThrow("interruption after catalog acceptance");
-      await withAcceptanceState(directory, false, async (previous) =>
-        expect(previous.catalog_sha256).toBe(admitted.state.catalog_sha256),
-      );
-      await expect(withAcceptanceState(directory, true, async () => {})).rejects.toThrow(
-        "state_initialization",
-      );
-      fs.unlinkSync(path.join(directory, "accepted.json"));
-      await expect(withAcceptanceState(directory, false, async () => {})).rejects.toThrow(
-        "state_initialization",
-      );
-    },
-  );
-  it.skipIf(process.platform === "win32")(
-    "retains the synchronized owner after ordinary persistence failure or operator timeout",
-    async () => {
-      for (const failure of ["persistence", "operator"] as const) {
-        const directory = path.join(temporary(), "acceptance");
-        fs.mkdirSync(directory, { mode: 0o700 });
-        if (failure === "persistence")
-          vi.spyOn(fs, "renameSync").mockImplementationOnce(() => {
-            throw Object.assign(new Error("no space"), { code: "ENOSPC" });
-          });
-        await expect(
-          withAcceptanceState(
-            directory,
-            true,
-            async (_previous, persist) => {
-              persist(admission());
-              throw Object.assign(new Error("native command may still run"), {
-                code: "operator_in_progress",
-              });
-            },
-            { owner: { synthetic: "birth identity" } },
-          ),
-        ).rejects.toMatchObject({
-          code: failure === "persistence" ? "ENOSPC" : "operator_in_progress",
-        });
-        const lease = JSON.parse(fs.readFileSync(path.join(directory, "operation.lock"), "utf8"));
-        expect(lease.pid).toBe(process.pid);
-        expect(lease.owner).toEqual({ synthetic: "birth identity" });
-        expect(
-          fs.existsSync(
-            path.join(directory, failure === "persistence" ? "accepted.partial" : "accepted.json"),
-          ),
-        ).toBe(true);
-        await expect(withAcceptanceState(directory, false, async () => {})).rejects.toThrow();
-      }
-    },
-  );
+      ).rejects.toMatchObject({
+        code: failure === "persistence" ? "ENOSPC" : "operator_in_progress",
+      });
+      const lease = JSON.parse(fs.readFileSync(path.join(directory, "operation.lock"), "utf8"));
+      expect(lease.pid).toBe(process.pid);
+      expect(lease.owner).toEqual({ synthetic: "birth identity" });
+      expect(
+        fs.existsSync(
+          path.join(directory, failure === "persistence" ? "accepted.partial" : "accepted.json"),
+        ),
+      ).toBe(true);
+      await expect(withAcceptanceState(directory, false, async () => {})).rejects.toThrow();
+    }
+  });
   it("admits a development first installation with no prior executable while preserving the final-version downgrade guard", () => {
     const catalog = {
       ...example(),

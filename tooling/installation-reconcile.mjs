@@ -1,3 +1,4 @@
+import { synchronizeDirectory } from "./installation-filesystem.mjs";
 // Metadata-only reconciliation runs under the native parent's advisory lock; no package is staged or activated.
 import fs from "node:fs";
 import path from "node:path";
@@ -18,7 +19,12 @@ function read(file, maximum = updateLimits.catalog_bytes) {
   );
   try {
     const info = fs.fstatSync(descriptor);
-    if (!info.isFile() || info.uid !== process.getuid() || info.nlink !== 1 || info.size > maximum)
+    if (
+      !info.isFile() ||
+      (process.platform !== "win32" && info.uid !== process.getuid()) ||
+      info.nlink !== 1 ||
+      info.size > maximum
+    )
       throw new Error("Unsafe retained reconciliation input.");
     const bytes = fs.readFileSync(descriptor);
     if (bytes.length > maximum) throw new Error("Retained input grew beyond its bound.");
@@ -133,12 +139,7 @@ if (partialExists || !previous) {
     );
 }
 if (digest(read(lock)) !== leaseDigest) throw new Error("Retained lease changed.");
-const folder = fs.openSync(directory, "r");
-try {
-  fs.fsyncSync(folder);
-} finally {
-  fs.closeSync(folder);
-}
+synchronizeDirectory(directory);
 console.log(
   JSON.stringify({
     status: "reconciled",

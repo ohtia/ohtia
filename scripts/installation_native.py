@@ -1,4 +1,4 @@
-"""Manually qualify internal Linux/macOS packages; no publication or platform identity claim."""
+"""Manually qualify internal native desktop packages; no publication or platform identity claim."""
 
 from __future__ import annotations
 
@@ -50,6 +50,7 @@ def command(arguments, *, capture=False, timeout=900):
         env=tool_environment(),
         capture_output=capture,
         text=True,
+        encoding="utf-8",
         check=True,
         timeout=timeout,
     )
@@ -62,6 +63,10 @@ def digest(file):
 
 
 def read_bounded_json(file, maximum=65536, uid=None):
+    if os.name == "nt":
+        import installation_windows
+
+        return installation_windows.read_json(file, maximum)
     require(file.is_absolute() and file.resolve() == file, "Aliased JSON input.")
     descriptor = os.open(file, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
@@ -82,6 +87,10 @@ def read_bounded_json(file, maximum=65536, uid=None):
 
 
 def observe_file(file, uid=None, destination=None):
+    if os.name == "nt":
+        import installation_windows
+
+        return installation_windows.observe(file, destination)
     require(file.resolve() == file, "Aliased file observation.")
     descriptor = os.open(file, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     output = None
@@ -129,6 +138,21 @@ def store_snapshot(profile):
 
 
 def native_profile(target, profile, backend):
+    if sys.platform == "win32":
+        import windows_contributor
+
+        windows_contributor.preflight()
+        require(
+            target == "win32-x64" and profile == "windows-11-25h2" and backend == "win32",
+            "Wrong native Windows qualification profile.",
+        )
+        return {
+            "target": target,
+            "profile": profile,
+            "backend": backend,
+            "filesystem": "NTFS",
+            "formats": ["nsis"],
+        }
     require(os.getuid() != 0, "Run qualification in an independent ordinary native account.")
     require(workspace.target_id() == target, "Native target mismatch.")
     require(
@@ -206,7 +230,7 @@ def verify_staged(record):
         and file.is_file()
         and not file.is_symlink()
         and info.st_nlink == 1
-        and info.st_uid == os.getuid(),
+        and (os.name == "nt" or info.st_uid == os.getuid()),
         "Unsafe staged file.",
     )
     require(
@@ -234,6 +258,10 @@ class PayloadInventory(dict):
 
 
 def tree_inventory(directory):
+    if os.name == "nt":
+        import installation_windows
+
+        return installation_windows.file_tree(directory)
     result = {}
     for parent, directories, names in os.walk(directory, followlinks=False):
         for name in directories + names:
@@ -255,6 +283,15 @@ def tree_inventory(directory):
 
 def package_inventory(file, cell):
     """Derive expected application bytes from the authenticated archive, never its installed inventory."""
+    if file.suffix == ".exe":
+        import installation_windows
+
+        values, manifest, _metadata = installation_windows.expected(
+            file, cell, sys.modules[__name__]
+        )
+        result = PayloadInventory(values)
+        result.set_contract(manifest)
+        return result
     prefix = PurePosixPath("opt/ohtia-quality")
     result = PayloadInventory()
     if file.suffix in {".deb", ".rpm"}:
@@ -351,6 +388,10 @@ def verify_installed_payload(file, cell, payload, evidence=None, contract=None):
 
 def process_identity(pid):
     require(type(pid) is int and pid > 0, "Invalid lease process identifier.")
+    if sys.platform == "win32":
+        import installation_windows
+
+        return installation_windows.identity(pid)
     if sys.platform == "linux":
         directory = Path("/proc") / str(pid)
         fields = (directory / "stat").read_text().rsplit(") ", 1)[1].split()
@@ -400,6 +441,10 @@ def process_identity(pid):
 
 
 def lease_status(file):
+    if sys.platform == "win32":
+        import installation_windows
+
+        return installation_windows.lease_status(file)
     lease = read_bounded_json(file)
     require(isinstance(lease.get("owner"), dict), "A retained native birth identity is required.")
     pid = lease["pid"]
@@ -425,6 +470,10 @@ def lease_status(file):
 
 def reconcile_state(directory, evidence):
     """Reclaim only a proven ceased lease; an OS lock survives in the metadata child until it exits."""
+    if sys.platform == "win32":
+        import installation_windows
+
+        return installation_windows.reconcile(directory, evidence, sys.modules[__name__])
     import fcntl
 
     require(
@@ -488,6 +537,10 @@ def check_installation_admission(record, profile):
         isinstance(profile, dict) and isinstance(record.get("admission"), dict),
         "Active installation admission required.",
     )
+    if sys.platform == "win32":
+        import installation_windows
+
+        return installation_windows.check_admission(record, profile, sys.modules[__name__])
     admission = record["admission"]
     directory = Path(profile["scratch_root"]) / "update-acceptance"
     lock = directory / "operation.lock"
@@ -525,6 +578,17 @@ def assert_quiescent(payload):
 
 def package_identity(file, cell, version):
     arch = cell["target"].split("-")[1]
+    if file.suffix == ".exe":
+        import installation_windows
+
+        _inventory, _manifest, metadata = installation_windows.expected(
+            file, cell, sys.modules[__name__]
+        )
+        require(
+            metadata["name"] == "ohtia-quality" and metadata["version"] == version,
+            "Wrong Windows package name/version.",
+        )
+        return
     if file.suffix == ".deb":
         output = command(
             ["dpkg-deb", "--field", file, "Package", "Version", "Architecture"], capture=True
@@ -875,12 +939,12 @@ def observe_installed(profile_file, payload, output, cell, previous=None):
         renderers and all(item["sandbox"] for item in renderers),
         "Native renderer sandbox was not observed.",
     )
-    if sys.platform == "darwin":
+    if sys.platform in {"darwin", "win32"}:
         capture = output / "installed-window.png"
         require(capture.is_file(), "Missing native window capture.")
         displays.append(
             {
-                "backend": "windowserver",
+                "backend": "windowserver" if sys.platform == "darwin" else "win32",
                 "source": "packaged-window-capture",
                 "sha256": digest(capture),
             }
@@ -943,7 +1007,7 @@ def exercise(
         verify_staged(record)
         package_identity(Path(record["file"]), cell, record["version"])
         payload = Path("/opt/ohtia-quality") if sys.platform == "linux" else destination
-        if sys.platform == "darwin":
+        if sys.platform in {"darwin", "win32"}:
             require(
                 payload.resolve() == payload
                 and payload.is_relative_to(Path(profile["scratch_root"])),
@@ -952,12 +1016,15 @@ def exercise(
         require(
             payload.is_dir()
             and not payload.is_symlink()
-            and payload.stat().st_uid == (0 if sys.platform == "linux" else os.getuid()),
+            and (
+                os.name == "nt"
+                or payload.stat().st_uid == (0 if sys.platform == "linux" else os.getuid())
+            ),
             "Root-owned installation required.",
         )
         metadata_file = (
             payload / "resources/app/package.json"
-            if sys.platform == "linux"
+            if sys.platform != "darwin"
             else next(payload.glob("*.app")) / "Contents/Resources/app/package.json"
         )
         require(
@@ -1033,6 +1100,8 @@ def inspect_baseline(profile_file, cell_file, archive, payload, output, expected
     actual_profile = (
         f"{platform.freedesktop_os_release()['ID']}-{platform.freedesktop_os_release()['VERSION_ID']}"
         if sys.platform == "linux"
+        else "windows-11-25h2"
+        if sys.platform == "win32"
         else "macos-" + command(["/usr/bin/sw_vers", "-productVersion"], capture=True).split(".")[0]
     )
     require(
@@ -1064,7 +1133,9 @@ def inspect_baseline(profile_file, cell_file, archive, payload, output, expected
         "The independently selected baseline archive changed.",
     )
     lock = scratch / "update-acceptance/operation.lock"
-    descriptor = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    descriptor = os.open(
+        lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600
+    )
     try:
         lease = {
             "pid": os.getpid(),
@@ -1136,7 +1207,7 @@ def native_ordering():
         ("0.1.0~dev.10.1-1", "0.1.0-1"),
     ]
     if sys.platform != "linux":
-        return {"status": "inapplicable", "reason": "No native DEB/RPM ordering on macOS."}
+        return {"status": "inapplicable", "reason": "No native DEB/RPM ordering on this platform."}
     if platform.freedesktop_os_release()["ID"] == "fedora":
         for left, right in pairs:
             output = command(
@@ -1242,6 +1313,12 @@ def main():
     )
     for name in ("runtime_profile", "cell", "staged", "destination", "output"):
         prepare.add_argument(name, type=Path)
+    windows = sub.add_parser(
+        "prepare-windows",
+        help="Install an admitted internal per-user NSIS package in the visible ordinary desktop.",
+    )
+    for name in ("runtime_profile", "cell", "staged", "destination", "output"):
+        windows.add_argument(name, type=Path)
     baseline = sub.add_parser(
         "inspect-baseline",
         help="Inspect exact installed bytes, store integrity and current preference without replaying old actions; use the proof with a new campaign --baseline.",
@@ -1263,6 +1340,11 @@ def main():
         describe.add_argument(name, type=Path)
     args = parser.parse_args()
     try:
+        if args.operation == "prepare-windows":
+            import installation_windows
+
+            installation_windows.prepare(args, sys.modules[__name__])
+            return 0
         if args.operation == "describe-payload":
             require(
                 args.payload.resolve() == args.payload
@@ -1274,8 +1356,8 @@ def main():
                 stream.write(json.dumps(descriptor) + "\n")
             return 0
         require(
-            sys.platform in {"linux", "darwin"},
-            "These internal native helpers support Linux and macOS only.",
+            sys.platform in {"linux", "darwin", "win32"},
+            "Use a supported native desktop qualification host.",
         )
         if args.operation == "reconcile-state":
             profile = json.loads(
@@ -1297,6 +1379,11 @@ def main():
             print(json.dumps(reconcile_state(scratch / "update-acceptance", args.evidence)))
             return 0
         if args.operation == "inspect-baseline":
+            if sys.platform == "win32":
+                import installation_windows
+
+                installation_windows.inspect_baseline(args, sys.modules[__name__])
+                return 0
             inspect_baseline(
                 args.runtime_profile,
                 args.cell,
@@ -1374,6 +1461,8 @@ def main():
             config = quality_native.configuration(
                 cell, work / "assembled", work / "packages", versions[attempt - 1]
             )
+            if sys.platform == "win32":
+                config["nsis"]["runAfterFinish"] = False
             (work / "builder.json").write_text(json.dumps(config, indent=2) + "\n")
             command([workspace.node_path(), "tooling/quality-package.mjs", work / "builder.json"])
             require(source_identity() == inputs, "Build changed sealed source inputs.")
