@@ -12,6 +12,7 @@
     "tests/renderer.test.ts",
     "tests/service-boundaries.test.ts",
     "tests/storage.test.ts",
+    "tests/update-admission.test.ts",
     "tests/utility-entry.test.ts",
     "tests/workspace.test.ts"
   ],
@@ -61,6 +62,7 @@
     "scripts/tests/test_desktop_runtime.py",
     "scripts/tests/test_github_policy.py",
     "scripts/tests/test_github_pr.py",
+    "scripts/tests/test_installation_native.py",
     "scripts/tests/test_linux_contributor.py",
     "scripts/tests/test_linux_e2e.py",
     "scripts/tests/test_linux_e2e_image.py",
@@ -308,6 +310,156 @@
       "id": "test_linux_contributor.LinuxContributorTests.test_foreground_group_interruption_during_admission_has_the_right_remedy",
       "platforms": ["win32", "darwin"],
       "reason": "Linux foreground process-group interruption and pidfd-owned admission-child fixture."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_activation_requires_live_same_birth_identity_matching_floor_and_unexpired_catalog",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_archive_binding_rejects_same_version_different_payload_even_with_forged_inventory",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_catalog_schema_must_match_authenticated_package_before_native_transaction",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_changed_missing_or_aliased_bytes_refuse_before_native_commands",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_deb_dependency_plan_refuses_unrelated_install_removal_or_configuration",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_deb_rechecks_lease_after_all_simulations_before_transition",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_deb_refuses_native_downgrade_even_when_directly_invoked",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_deb_simulation_failure_never_activates_or_repairs_dependencies",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_macos_observer_arguments_do_not_become_live_package_processes",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_native_smoke_cannot_install_before_native_profile_readmission",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_operator_rejects_linked_receipt_directory_and_preserves_unrelated_target",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_package_metadata_rejects_wrong_cpu_name_epoch_and_version",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_rpm_native_signature_and_dependency_verification_precede_upgrade",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_rpm_rejects_unsigned_nokey_and_invalid_signatures",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_rpm_requires_exact_independently_pinned_keyring",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_sealed_source_archive_rejects_modified_missing_and_undeclared_inputs",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_native_json_and_store_observation_refuse_aliases_hardlinks_devices_and_oversize",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_native_reconciliation_refuses_live_owner_and_recovers_sigkill_without_floor_reset",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_native_reconciliation_retains_signed_or_torn_partial_without_lowering_floor",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_operator_main_refuses_changed_store_instead_of_reusing_old_schema_inspection",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_operator_main_rejects_unregistered_or_mutated_user_requests_before_installation",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_operator_main_repairs_damaged_payload_from_unchanged_verified_store_without_executing_it",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_operator_main_reuses_exact_already_active_payload_without_rerunning_managers",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_rpm_repair_refuses_downgrade_and_reinstalls_only_same_registered_version",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_operator_reconfigures_fully_unpacked_pending_bytes_and_never_acknowledges_them_early",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_operator_refuses_unconfigured_dpkg_even_when_all_payload_bytes_match",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_operator_store_inspection_uses_derived_descriptor_and_coupled_snapshot_outside_user_scratch",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_operator_resumes_settled_first_install_or_upgrade_from_journey_pretransition_record",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_operator_rejects_old_settled_checkpoint_after_store_changed",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_installation_native.InstallationTests.test_operator_refuses_store_write_between_preflight_and_settled_quiescence",
+      "platforms": ["win32"],
+      "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
     }
   ],
   "vitest_inapplicable": [
