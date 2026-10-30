@@ -3,7 +3,7 @@ type: Playbook
 title: Native quality builds
 description: Build unsigned development packages on standard hosted native VMs and verify complete artifact and checkout provenance.
 generated:
-  by: codex/gpt-6.1-sol
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 ---
@@ -14,7 +14,7 @@ verified:
 
 [ADR-0020](adr/adr-0020-github-policy-and-trusted-ci.md#recurring-hosted-quality-matrix) owns the recurring hosted matrix and its distinction from distribution qualification. [The matrix](../config/quality/build-targets.json) enumerates fourteen required native cells and sixteen package results. The [CI workflow](../.github/workflows/ci.yml) uses the matching explicit standard labels without an additional matrix concurrency cap. No owned runners or larger-runner subscription is part of this procedure. The [release policy](release-policy.md) separates quality artifacts from signed candidates and public publication.
 
-PRs to `main` and actual pushes to `main` run the full matrix, including documentation changes. The `full-suite (ubuntu-26.04-x64)` job preserves frozen shared checks, repository hooks and committed-history secret scanning. Each native job constructs the selected development packages and runs the actual packaged runtime, storage and diagnostic suites. The stable `ci` job requires every upstream job and accounts for every cell, format, native observation and smoke case. Skipped, cancelled, failed, missing, altered or stale evidence fails the result.
+Actual pushes to `main` and every PR to `main` that is not documentation-only run the full matrix. [ADR-0020](adr/adr-0020-github-policy-and-trusted-ci.md#recurring-hosted-quality-matrix) defines the documentation-only rule; the `scope` job applies it to the synthetic merge trees and selects the full matrix on any uncertainty. The `full-suite (ubuntu-26.04-x64)` job runs for every PR and push, and preserves frozen shared checks, repository hooks and committed-history secret scanning. Each native job constructs the selected development packages and runs the actual packaged runtime, storage and diagnostic suites. When the full matrix is selected, the stable `ci` job requires every upstream job and accounts for every cell, format, native observation and smoke case. For a documentation-only PR, `ci` requires `scope` and `full-suite (ubuntu-26.04-x64)` to succeed and the native jobs to be skipped, and the run produces no native or `summary-*` artifacts. Skipped, cancelled, failed, missing, altered or stale evidence for a selected job fails the result.
 
 The read-only token, nonpersisted checkout credentials, explicit action pins and [reviewed action catalog](../config/github/actions-permissions.json) restrict CI authority. [Repository policy](repository-policy.md) owns separate maintainer authorization and plan/apply/readback before using an expanded action catalog. The workflow does not receive signing, notarization, publication or administrative credentials. The canonical Linux E2E job from [STORY-001-008](epics/EPIC-001-desktop-foundation/STORY-001-008-provide-the-reproducible-sandboxed-linux-e2e-environment.md) remains a separate mandatory parallel check when its producer is integrated; native package jobs do not replace its immutable image or parity checks. Canonical frontend E2E dependencies belong inside that image. Native distribution jobs separately record the actual hosted/guest OS and package dependencies they test.
 

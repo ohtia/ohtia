@@ -3,7 +3,7 @@ type: Playbook
 title: Shared verification and coverage gates
 description: Run the same local and CI checks with independent product coverage, complete test inventories and separate native evidence.
 generated:
-  by: codex/gpt-6.1-sol
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 ---
@@ -14,7 +14,7 @@ verified:
 
 The [shared verification story](epics/EPIC-001-desktop-foundation/STORY-001-007-enforce-shared-verification-and-coverage-gates.md) implements the [quality decision](adr/adr-0016-shared-quality-and-coverage-gates.md) and [runtime test decision](adr/adr-0018-vitest-and-playwright-desktop-tests.md). Provenance and honest coverage follow PRIN-004–007 and PRIN-016 in the [product definition](product-definition.md#product-principles). A synthetic gate fixture proves rejection behavior; it does not certify a native platform, linguistic quality or assistive usability.
 
-Start in an isolated task worktree with the [frozen developer workspace](developer-workspace.md#bootstrap-and-frozen-setup). No global JavaScript tools or user credentials are required. The [CI workflow](../.github/workflows/ci.yml) uses the same managed setup and commands as local execution, without affected-path optimization or documentation-only build omissions.
+Start in an isolated task worktree with the [frozen developer workspace](developer-workspace.md#bootstrap-and-frozen-setup). No global JavaScript tools or user credentials are required. The [CI workflow](../.github/workflows/ci.yml) uses the same managed setup and commands as local execution, without affected-path optimization. The only omission is the native jobs of a documentation-only PR, under the [ADR-0020 rule](adr/adr-0020-github-policy-and-trusted-ci.md#recurring-hosted-quality-matrix).
 
 ```bash
 python3 scripts/workspace.py setup

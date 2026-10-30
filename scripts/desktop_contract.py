@@ -593,14 +593,14 @@ def check_configuration(root: Path, tools: dict[str, Any]) -> None:
     workflow = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     runners = re.findall(r"^[ \t]+runs-on:[ \t]+([^\s#]+)[ \t]*$", workflow, re.MULTILINE)
     require(
-        runners == [tools["python"]["ci_artifact"]["os"]] * 2
+        runners == [tools["python"]["ci_artifact"]["os"]] * 3
         and workflow.count("runs-on: ${{ matrix.runner }}") == 1,
         "CI runner and manifest differ",
     )
     interpreters = re.findall(
         r"^[ \t]+python-version:[ \t]+[\"']?(\d+\.\d+\.\d+)[\"']?[ \t]*$", workflow, re.MULTILINE
     )
-    require(interpreters == [tools["python"]["version"]] * 3, "CI Python and manifest differ")
+    require(interpreters == [tools["python"]["version"]] * 4, "CI Python and manifest differ")
     hooks = (root / ".pre-commit-config.yaml").read_text(encoding="utf-8")
     for name, repository in (
         ("prettier", "https://github.com/rbubley/mirrors-prettier"),

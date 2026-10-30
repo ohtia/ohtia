@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import copy
+import io
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -300,6 +304,260 @@ class DeliveryTests(unittest.TestCase):
             delivery.check_attachment(
                 {"file": "../escape", "sha256": "a" * 64, "bytes": 1}, self.output
             )
+
+
+def execute(*args: str, env: dict | None = None) -> tuple[int, str]:
+    stdout = io.StringIO()
+    with (
+        patch.object(sys, "argv", ["quality_delivery.py", *args]),
+        patch.dict(os.environ, env or {}),
+        contextlib.redirect_stdout(stdout),
+        contextlib.redirect_stderr(io.StringIO()),
+    ):
+        return delivery.main(), stdout.getvalue()
+
+
+class ScopeTests(unittest.TestCase):
+    """Select native jobs from real synthetic merges rather than from reported file lists."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name).resolve() / "repository"
+        self.root.mkdir()
+        self.event = Path(temp.name).resolve() / "event.json"
+        self.output = Path(temp.name).resolve() / "github-output"
+        patcher = patch.object(delivery, "ROOT", self.root)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.command("init", "--quiet")
+        for name in (
+            "README.md",
+            "docs/guide.md",
+            "packages/app.ts",
+            "pnpm-lock.yaml",
+            "scripts/tool.py",
+            "tooling/run.mjs",
+        ):
+            self.write(name)
+        self.base = self.commit()
+
+    def command(self, *args: str) -> str:
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+        return (
+            subprocess.check_output(
+                [
+                    "git",
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@example.invalid",
+                    "-c",
+                    "commit.gpgsign=false",
+                    *args,
+                ],
+                cwd=self.root,
+                env=env,
+            )
+            .decode()
+            .strip()
+        )
+
+    def write(self, name: str, content: str = "synthetic\n") -> None:
+        file = self.root / name
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text(content)
+
+    def commit(self) -> str:
+        self.command("add", "--all")
+        self.command("commit", "--quiet", "--allow-empty", "-m", "Synthetic fixture")
+        return self.command("rev-parse", "HEAD")
+
+    def merge(self, change) -> str:
+        """Check out the synthetic merge GitHub would test and describe it in the event."""
+        self.command("checkout", "--quiet", "--detach", self.base)
+        change()
+        head = self.commit()
+        self.command("checkout", "--quiet", "--detach", self.base)
+        self.command("merge", "--quiet", "--no-ff", "--no-edit", head)
+        delivery.write(
+            self.event, {"pull_request": {"base": {"sha": self.base}, "head": {"sha": head}}}
+        )
+        return head
+
+    def env(self, event_name: str = "pull_request") -> dict:
+        return {"GITHUB_EVENT_NAME": event_name, "GITHUB_EVENT_PATH": str(self.event)}
+
+    def test_change_only_under_docs_skips_native_jobs(self):
+        def change():
+            self.write("docs/guide.md", "changed\n")
+            self.write("docs/adr/new.md")
+
+        self.merge(change)
+        self.assertEqual(delivery.quality_scope(self.env()), delivery.DOCUMENTATION_ONLY)
+
+    def test_push_keeps_the_full_matrix_for_a_documentation_change(self):
+        self.merge(lambda: self.write("docs/guide.md", "changed\n"))
+        self.assertEqual(delivery.quality_scope(self.env("push")), delivery.FULL_MATRIX)
+
+    def test_every_other_difference_keeps_the_full_matrix(self):
+        def docs_and_other():
+            self.write("docs/guide.md", "changed\n")
+            self.write("packages/app.ts", "changed\n")
+
+        def rename_into_docs():
+            self.command("mv", "scripts/tool.py", "docs/tool.py")
+
+        def mode_only():
+            (self.root / "scripts/tool.py").chmod(0o755)
+
+        def replace_docs_with_a_file():
+            self.command("rm", "-r", "--quiet", "docs")
+            self.write("docs", "not a tree\n")
+
+        def remove_docs():
+            self.command("rm", "-r", "--quiet", "docs")
+
+        changes = {
+            "root markdown": lambda: self.write("README.md", "changed\n"),
+            "docs and another path": docs_and_other,
+            "packages": lambda: self.write("packages/app.ts", "changed\n"),
+            "lockfile": lambda: self.write("pnpm-lock.yaml", "changed\n"),
+            "tooling": lambda: self.write("tooling/run.mjs", "changed\n"),
+            "rename into docs": rename_into_docs,
+            "mode outside docs": mode_only,
+            "empty difference": lambda: None,
+            "docs replaced by a file": replace_docs_with_a_file,
+            "docs removed": remove_docs,
+        }
+        for name, change in changes.items():
+            with self.subTest(change=name):
+                self.merge(change)
+                self.assertEqual(delivery.quality_scope(self.env()), delivery.FULL_MATRIX)
+
+    def test_merge_parents_must_match_the_event(self):
+        head = self.merge(lambda: self.write("docs/guide.md", "changed\n"))
+        for pull in (
+            {"base": {"sha": "f" * 40}, "head": {"sha": head}},
+            {"base": {"sha": self.base}, "head": {"sha": "f" * 40}},
+            {"base": {"sha": head}, "head": {"sha": self.base}},
+        ):
+            with self.subTest(pull=pull):
+                delivery.write(self.event, {"pull_request": pull})
+                self.assertEqual(delivery.quality_scope(self.env()), delivery.FULL_MATRIX)
+
+    def test_a_commit_without_two_parents_keeps_the_full_matrix(self):
+        self.merge(lambda: self.write("docs/guide.md", "changed\n"))
+        self.command("checkout", "--quiet", "--detach", self.base)
+        self.write("docs/guide.md", "changed\n")
+        head = self.commit()
+        delivery.write(
+            self.event, {"pull_request": {"base": {"sha": self.base}, "head": {"sha": head}}}
+        )
+        self.assertEqual(delivery.quality_scope(self.env()), delivery.FULL_MATRIX)
+
+    def test_unreadable_evidence_and_git_failure_keep_the_full_matrix(self):
+        self.merge(lambda: self.write("docs/guide.md", "changed\n"))
+        self.assertEqual(delivery.quality_scope(self.env()), delivery.DOCUMENTATION_ONLY)
+        for content in ("not json", "[]", "{}", '{"pull_request":null}', '{"pull_request":{}}'):
+            with self.subTest(event=content):
+                self.event.write_text(content)
+                self.assertEqual(delivery.quality_scope(self.env()), delivery.FULL_MATRIX)
+        self.event.unlink()
+        self.assertEqual(delivery.quality_scope(self.env()), delivery.FULL_MATRIX)
+        self.assertEqual(delivery.quality_scope({}), delivery.FULL_MATRIX)
+        self.merge(lambda: self.write("docs/guide.md", "changed\n"))
+        for failure in (subprocess.CalledProcessError(1, "git"), FileNotFoundError("git")):
+            with (
+                self.subTest(failure=failure),
+                patch.object(delivery, "git", side_effect=failure),
+            ):
+                self.assertEqual(delivery.quality_scope(self.env()), delivery.FULL_MATRIX)
+
+    def test_command_writes_one_selection_and_prints_it(self):
+        self.merge(lambda: self.write("docs/guide.md", "changed\n"))
+        env = {**self.env(), "GITHUB_OUTPUT": str(self.output)}
+        status, printed = execute("scope", env=env)
+        self.assertEqual(status, 0)
+        self.assertEqual(self.output.read_text(), "selection=documentation-only\n")
+        self.assertEqual(printed, "OHTIA_QUALITY_SELECTION=documentation-only\n")
+        self.event.unlink()
+        status, printed = execute("scope", env=env)
+        self.assertEqual(status, 0)
+        self.assertEqual(
+            self.output.read_text(),
+            "selection=documentation-only\nselection=full-required-matrix\n",
+        )
+        self.assertEqual(printed, "OHTIA_QUALITY_SELECTION=full-required-matrix\n")
+
+    def test_command_fails_only_when_its_output_cannot_be_written(self):
+        self.merge(lambda: self.write("docs/guide.md", "changed\n"))
+        unwritable = {**self.env(), "GITHUB_OUTPUT": str(self.root)}
+        self.assertEqual(execute("scope", env=unwritable)[0], 1)
+        with patch.dict(os.environ):
+            os.environ.pop("GITHUB_OUTPUT", None)
+            self.assertEqual(execute("scope", env=self.env())[0], 1)
+
+
+class NeedsTests(unittest.TestCase):
+    @staticmethod
+    def needs(selection="full-required-matrix", native="success", **changes) -> dict:
+        value = {
+            "scope": {"result": "success", "outputs": {"selection": selection}},
+            "checks": {"result": "success", "outputs": {}},
+            "native": {"result": native, "outputs": {}},
+        }
+        value.update(changes)
+        return value
+
+    @staticmethod
+    def status(needs, event="pull_request") -> int:
+        env = {"OHTIA_QUALITY_NEEDS": json.dumps(needs), "GITHUB_EVENT_NAME": event}
+        return execute("needs", env=env)[0]
+
+    def test_only_complete_results_for_the_selection_are_accepted(self):
+        for event, needs in (
+            ("pull_request", self.needs()),
+            ("push", self.needs()),
+            ("pull_request", self.needs("documentation-only", "skipped")),
+        ):
+            with self.subTest(event=event, needs=needs):
+                self.assertEqual(self.status(needs, event), 0)
+
+    def test_inconsistent_or_incomplete_results_are_refused(self):
+        failed = {"result": "failure", "outputs": {}}
+        cancelled = {"result": "cancelled", "outputs": {}}
+        extra = {**self.needs(), "other": {"result": "success", "outputs": {}}}
+        missing = {key: value for key, value in self.needs().items() if key != "checks"}
+        cases = {
+            "documentation-only on push": (self.needs("documentation-only", "skipped"), "push"),
+            "documentation-only with native": (self.needs("documentation-only"), "pull_request"),
+            "documentation-only with failed native": (
+                self.needs("documentation-only", "failure"),
+                "pull_request",
+            ),
+            "full matrix with skipped native": (self.needs(native="skipped"), "pull_request"),
+            "full matrix with failed native": (self.needs(native="failure"), "pull_request"),
+            "full matrix with cancelled native": (self.needs(native="cancelled"), "push"),
+            "missing key": (missing, "pull_request"),
+            "extra key": (extra, "pull_request"),
+            "failed scope": (self.needs(scope=failed), "pull_request"),
+            "cancelled scope": (self.needs(scope=cancelled), "pull_request"),
+            "failed checks": (self.needs(checks=failed), "pull_request"),
+            "cancelled checks": (self.needs(checks=cancelled), "pull_request"),
+            "empty selection": (self.needs(""), "pull_request"),
+            "unknown selection": (self.needs("partial", "skipped"), "pull_request"),
+            "null native for unknown selection": (self.needs("partial", None), "pull_request"),
+            "not an object": ([], "pull_request"),
+        }
+        for name, (needs, event) in cases.items():
+            with self.subTest(case=name):
+                self.assertEqual(self.status(needs, event), 1)
+        with patch.dict(os.environ):
+            os.environ.pop("OHTIA_QUALITY_NEEDS", None)
+            self.assertEqual(execute("needs", env={"GITHUB_EVENT_NAME": "push"})[0], 1)
 
 
 if __name__ == "__main__":
