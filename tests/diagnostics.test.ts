@@ -27,6 +27,8 @@ const time = "2000-01-01T00:00:00.001Z";
 const started = { event_name: "ohtia.application.started" };
 const roots: string[] = [];
 const writers: DiagnosticWriter[] = [];
+// These cases run several real ACL helpers, each with its unchanged 15-second bound.
+const nativeAclCaseTimeout = process.platform === "win32" ? 60_000 : 15_000;
 afterEach(async () => {
   vi.restoreAllMocks();
   for (const writer of writers.splice(0)) await writer.close();
@@ -51,6 +53,54 @@ function fixture(options: Partial<ConstructorParameters<typeof DiagnosticWriter>
     logs: path.join(root, "logs"),
     active: path.join(root, "logs/ohtia.jsonl"),
   };
+}
+// Model POSIX ownership and mode metadata on every host; native qualification stays separate.
+async function withPosixPermissionMetadata(
+  action: (metadata: {
+    modes: Map<string, number>;
+    owners: Map<string, number>;
+    unrepairable: Set<string>;
+  }) => Promise<void>,
+) {
+  const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+  const uid = Object.getOwnPropertyDescriptor(process, "getuid");
+  const lstat = fs.lstatSync;
+  const stat = fs.statSync;
+  const chmod = fs.chmodSync;
+  const modes = new Map<string, number>();
+  const owners = new Map<string, number>();
+  const unrepairable = new Set<string>();
+  const owned = (file: fs.PathLike): file is string =>
+    typeof file === "string" &&
+    roots.some((root) => file === root || file.startsWith(root + path.sep));
+  function metadata<T extends fs.Stats | fs.BigIntStats | undefined>(
+    file: fs.PathLike,
+    found: T,
+  ): T {
+    if (!owned(file) || !found || typeof found.mode !== "number") return found;
+    return Object.assign(Object.create(Object.getPrototypeOf(found)), found, {
+      uid: owners.get(file) ?? 1000,
+      mode: (found.mode & ~0o777) | (modes.get(file) ?? 0o777),
+    }) as T;
+  }
+  try {
+    Object.defineProperty(process, "platform", { ...platform, value: "linux" });
+    Object.defineProperty(process, "getuid", { configurable: true, value: () => 1000 });
+    vi.spyOn(fs, "lstatSync").mockImplementation(((...args: Parameters<typeof fs.lstatSync>) =>
+      metadata(args[0], lstat(...args))) as typeof fs.lstatSync);
+    vi.spyOn(fs, "statSync").mockImplementation(((...args: Parameters<typeof fs.statSync>) =>
+      metadata(args[0], stat(...args))) as typeof fs.statSync);
+    vi.spyOn(fs, "chmodSync").mockImplementation((file, mode) => {
+      if (!owned(file)) return chmod(file, mode);
+      if (!unrepairable.has(file)) modes.set(file, Number(mode));
+    });
+    await action({ modes, owners, unrepairable });
+  } finally {
+    vi.restoreAllMocks();
+    Object.defineProperty(process, "platform", platform);
+    if (uid) Object.defineProperty(process, "getuid", uid);
+    else Reflect.deleteProperty(process, "getuid");
+  }
 }
 function line(event = started) {
   return JSON.stringify(makeDiagnosticRecord(event, "0.0.0-test", time)) + "\n";
@@ -236,7 +286,55 @@ describe("ohtia-log-v1 closed catalog and mapping", () => {
     expect(trap).not.toHaveBeenCalled();
   });
 });
-describe("broker-owned bounded diagnostic files", () => {
+describe("broker-owned bounded diagnostic files", { timeout: nativeAclCaseTimeout }, () => {
+  it("enforces POSIX private modes and preserves records on foreign managed-file ownership", async () => {
+    await withPosixPermissionMetadata(async ({ modes, owners }) => {
+      const { writer, logs, active } = fixture();
+      expect(await writer.initializeLogs()).toMatchObject({ ok: true });
+      expect(modes.get(logs)).toBe(0o700);
+      expect(modes.get(active)).toBe(0o600);
+      expect(await writer.append(started)).toMatchObject({ ok: true });
+      const before = fs.readFileSync(active);
+      owners.set(active, 1001);
+      expect(await writer.append(started)).toMatchObject({ ok: false, status: "unavailable" });
+      expect(fs.readFileSync(active)).toEqual(before);
+      owners.set(active, 1000);
+      expect(await writer.initializeLogs()).toMatchObject({ ok: true });
+      expect(await writer.append(started)).toMatchObject({ ok: true });
+      expect(fs.readFileSync(active, "utf8")).toBe(line() + line());
+    });
+  });
+  it("refuses foreign POSIX roots and unrepairable log modes without a fallback", async () => {
+    await withPosixPermissionMetadata(async ({ modes, owners, unrepairable }) => {
+      const foreignRoot = fixture();
+      const durable = path.join(foreignRoot.root, "ohtia.db3");
+      fs.writeFileSync(durable, marker);
+      owners.set(foreignRoot.root, 1001);
+      expect(await foreignRoot.writer.initializeLogs()).toMatchObject({ ok: false });
+      expect(fs.existsSync(foreignRoot.logs)).toBe(false);
+      expect(fs.readFileSync(durable, "utf8")).toBe(marker);
+      const foreignLogs = fixture();
+      fs.mkdirSync(foreignLogs.logs);
+      owners.set(foreignLogs.logs, 1001);
+      expect(await foreignLogs.writer.initializeLogs()).toMatchObject({ ok: false });
+      expect(modes.has(foreignLogs.logs)).toBe(false);
+      expect(fs.existsSync(foreignLogs.active)).toBe(false);
+      const denied = fixture();
+      unrepairable.add(denied.logs);
+      expect(await denied.writer.append(started)).toMatchObject({
+        ok: false,
+        status: "unavailable",
+      });
+      expect(fs.existsSync(denied.active)).toBe(false);
+      unrepairable.delete(denied.logs);
+      expect(await denied.writer.initializeLogs()).toMatchObject({ ok: true });
+      expect(await denied.writer.append(started)).toMatchObject({ ok: true });
+      const unidentified = fixture();
+      Object.defineProperty(process, "getuid", { configurable: true, value: undefined });
+      expect(await unidentified.writer.initializeLogs()).toMatchObject({ ok: false });
+      expect(fs.existsSync(unidentified.logs)).toBe(false);
+    });
+  });
   it("keeps broker timers responsive during delayed Windows ACL failure, latches failure and cancels on close", async () => {
     const descriptor = Object.getOwnPropertyDescriptor(process, "platform")!;
     const previousSystem = process.env.SystemRoot;
@@ -337,34 +435,41 @@ describe("broker-owned bounded diagnostic files", () => {
       "synthetic durable research",
     );
   });
-  it("rotates at the exact byte limit, retains no sixth file, and bounds UTF-8 rejected input", async () => {
-    const { writer, active, logs } = fixture();
-    await writer.initializeLogs();
-    const recordBytes = Buffer.byteLength(line());
-    fillExact(active, diagnosticLimits.fileBytes - recordBytes);
-    expect(await writer.append(started)).toMatchObject({ ok: true });
-    expect(fs.statSync(active).size).toBe(diagnosticLimits.fileBytes);
-    for (let round = 0; round < 6; round++) {
+  // Six full rotations include several independently bounded native ACL helpers.
+  it(
+    "rotates at the exact byte limit, retains no sixth file, and bounds UTF-8 rejected input",
+    { timeout: process.platform === "win32" ? 180_000 : 15_000 },
+    async () => {
+      const { writer, active, logs } = fixture();
+      await writer.initializeLogs();
+      const recordBytes = Buffer.byteLength(line());
+      fillExact(active, diagnosticLimits.fileBytes - recordBytes);
       expect(await writer.append(started)).toMatchObject({ ok: true });
-      expect(fs.statSync(path.join(logs, "ohtia.1.jsonl")).size).toBe(diagnosticLimits.fileBytes);
-      fillExact(active, diagnosticLimits.fileBytes);
-    }
-    expect(fs.readdirSync(logs).sort()).toEqual([
-      "ohtia.1.jsonl",
-      "ohtia.2.jsonl",
-      "ohtia.3.jsonl",
-      "ohtia.4.jsonl",
-      "ohtia.jsonl",
-    ]);
-    expect(
-      fs.readdirSync(logs).reduce((sum, name) => sum + fs.statSync(path.join(logs, name)).size, 0),
-    ).toBe(25 * 1024 * 1024);
-    expect(await writer.append({ ...started, message: marker.repeat(10000) })).toMatchObject({
-      ok: false,
-    });
-    for (const name of fs.readdirSync(logs))
-      expect(fs.readFileSync(path.join(logs, name), "utf8")).not.toContain(marker);
-  });
+      expect(fs.statSync(active).size).toBe(diagnosticLimits.fileBytes);
+      for (let round = 0; round < 6; round++) {
+        expect(await writer.append(started)).toMatchObject({ ok: true });
+        expect(fs.statSync(path.join(logs, "ohtia.1.jsonl")).size).toBe(diagnosticLimits.fileBytes);
+        fillExact(active, diagnosticLimits.fileBytes);
+      }
+      expect(fs.readdirSync(logs).sort()).toEqual([
+        "ohtia.1.jsonl",
+        "ohtia.2.jsonl",
+        "ohtia.3.jsonl",
+        "ohtia.4.jsonl",
+        "ohtia.jsonl",
+      ]);
+      expect(
+        fs
+          .readdirSync(logs)
+          .reduce((sum, name) => sum + fs.statSync(path.join(logs, name)).size, 0),
+      ).toBe(25 * 1024 * 1024);
+      expect(await writer.append({ ...started, message: marker.repeat(10000) })).toMatchObject({
+        ok: false,
+      });
+      for (const name of fs.readdirSync(logs))
+        expect(fs.readFileSync(path.join(logs, name), "utf8")).not.toContain(marker);
+    },
+  );
   it("repairs interrupted UTF-8/final lines, removes extra managed archives and bounds startup files", async () => {
     const { writer, active, logs } = fixture();
     fs.mkdirSync(logs);
@@ -552,7 +657,7 @@ describe("one broker shutdown deadline", () => {
   });
 });
 
-describe("diagnostics after uncertain shutdown", () => {
+describe("diagnostics after uncertain shutdown", { timeout: nativeAclCaseTimeout }, () => {
   it("restores append after a failed service drain once the old writer is closed", async () => {
     const { writer, root } = fixture();
     await writer.append(started);

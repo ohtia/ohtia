@@ -72,12 +72,13 @@ def run_owned(
     grace: float,
     *,
     cancelled: Callable[[], bool] | None = None,
+    output=None,
 ) -> dict:
     """Use a POSIX process group or a Windows kill-on-close job before probe execution."""
     if os.name == "nt":
         if cancelled is not None:
             raise OSError("Cooperative cancellation is supported only by the POSIX supervisor.")
-        return _windows_job(command, cwd, env, timeout, grace)
+        return _windows_job(command, cwd, env, timeout, grace, output=output)
     if not all(
         hasattr(os, name)
         for name in (
@@ -97,6 +98,8 @@ def run_owned(
         cwd=cwd,
         env=env,
         stdin=subprocess.DEVNULL,
+        stdout=output,
+        stderr=output,
         start_new_session=True,
     )
     timed_out = False
@@ -171,7 +174,7 @@ def run_owned(
     }
 
 
-def _windows_job(command, cwd, env, timeout, grace):
+def _windows_job(command, cwd, env, timeout, grace, *, output=None):
     import ctypes as c
     from ctypes import wintypes as w
 
@@ -262,6 +265,8 @@ def _windows_job(command, cwd, env, timeout, grace):
             cwd=cwd,
             env=env,
             stdin=subprocess.DEVNULL,
+            stdout=output,
+            stderr=output,
             creationflags=0x4,  # CREATE_SUSPENDED: assign containment before any Electron code.
         )
         process = check(kernel.OpenProcess(0x101, False, child.pid))

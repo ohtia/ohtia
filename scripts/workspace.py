@@ -76,6 +76,10 @@ def environment() -> dict[str, str]:
         {
             "UV_CACHE_DIR": str(ROOT / ".cache/uv"),
             "PRE_COMMIT_HOME": str(ROOT / ".cache/pre-commit"),
+            "GOCACHE": str(ROOT / ".cache/go-build"),
+            "GOMODCACHE": str(ROOT / ".cache/go-mod"),
+            "GOENV": "off",
+            "GOAUTH": "off",
             "UV_PROJECT_ENVIRONMENT": str(ROOT / ".venv"),
             "UV_PYTHON_DOWNLOADS": "never",
             "UV_PYTHON": str(python_path()),
@@ -133,6 +137,96 @@ def digest(path: Path) -> str:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def windows_https_client() -> tuple[Path, str]:
+    """Use the OS Schannel client rather than a snapshot of Windows CA stores."""
+    import ctypes
+    from ctypes import wintypes
+
+    remedy = "Windows system HTTPS client unavailable; repair the Windows curl component through Windows Update and retry without changing PATH or execution policy."
+    try:
+        loader = getattr(ctypes, "WinDLL", None)
+        if loader is None:
+            raise WorkspaceError(remedy)
+        kernel = loader("kernel32", use_last_error=True)
+        kernel.GetSystemDirectoryW.argtypes = [wintypes.LPWSTR, wintypes.UINT]
+        kernel.GetSystemDirectoryW.restype = wintypes.UINT
+        directory = ctypes.create_unicode_buffer(32768)
+        length = kernel.GetSystemDirectoryW(directory, len(directory))
+        if not 0 < length < len(directory):
+            raise WorkspaceError(remedy)
+        executable = Path(directory.value) / "curl.exe"
+        if not executable.is_file():
+            raise WorkspaceError(remedy)
+        observed = subprocess.run(
+            [str(executable), "--disable", "--version"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+            check=False,
+            env={**os.environ, "CURL_SSL_BACKEND": "schannel"},
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise WorkspaceError(remedy) from error
+    first = observed.stdout.splitlines()[0] if observed.stdout else ""
+    if observed.returncode or not first.startswith("curl ") or "Schannel" not in first:
+        raise WorkspaceError(
+            "Windows HTTPS transport requires the OS Schannel build; repair the Windows curl component and retry without disabling certificate verification."
+        )
+    return executable, first.split()[1]
+
+
+def windows_download(url: str, partial: Path) -> None:
+    """Retain native certificate/CRL validation and forbid curl configuration injection."""
+    if not url.startswith("https://"):
+        raise WorkspaceError("Windows tool downloads require the manifest's HTTPS URLs.")
+    executable, _version = windows_https_client()
+    try:
+        result = subprocess.run(
+            [
+                str(executable),
+                "--disable",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--location",
+                "--globoff",
+                "--proto",
+                "=https",
+                "--proto-redir",
+                "=https",
+                "--tlsv1.2",
+                "--no-ssl-auto-client-cert",
+                "--connect-timeout",
+                "30",
+                "--speed-limit",
+                "1",
+                "--speed-time",
+                "120",
+                "--output",
+                str(partial),
+                "--url",
+                url,
+            ],
+            capture_output=True,
+            check=False,
+            env={**os.environ, "CURL_SSL_BACKEND": "schannel"},
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise WorkspaceError(
+            "Windows HTTPS download failed; restore access to the manifest's HTTPS endpoint and retry without disabling certificate verification."
+        ) from error
+    if result.returncode in {60, 77}:
+        raise WorkspaceError(
+            "Windows HTTPS certificate validation failed; restore Windows trusted roots through Windows Update or approved organization policy and retry without disabling TLS checks."
+        )
+    if result.returncode:
+        raise WorkspaceError(
+            "Windows HTTPS download failed; restore access to the manifest's HTTPS endpoint and retry without disabling certificate verification."
+        )
+
+
 def download(artifact: dict[str, object], destination: Path) -> None:
     url, expected = str(artifact["url"]), str(artifact["sha256"])
     if destination.exists() and digest(destination) == expected:
@@ -140,11 +234,14 @@ def download(artifact: dict[str, object], destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     partial = destination.with_suffix(".partial")
     try:
-        with urllib.request.urlopen(url, timeout=120) as response, partial.open("wb") as stream:
-            shutil.copyfileobj(response, stream)
+        if sys.platform == "win32":
+            windows_download(url, partial)
+        else:
+            with urllib.request.urlopen(url, timeout=120) as response, partial.open("wb") as stream:
+                shutil.copyfileobj(response, stream)
         if digest(partial) != expected:
             raise WorkspaceError(
-                "Downloaded tool digest mismatch; remove the damaged cache entry and verify the reviewed manifest. No tool was installed."
+                "Downloaded tool digest mismatch; the partial download was discarded. Verify the reviewed manifest and HTTPS access before retrying. No tool was installed."
             )
         partial.replace(destination)
     finally:

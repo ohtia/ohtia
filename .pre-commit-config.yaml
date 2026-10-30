@@ -2,6 +2,7 @@ minimum_pre_commit_version: "4.0.0"
 default_stages: [pre-commit]
 default_language_version:
   node: 26.12.1
+  golang: 1.27.3
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks

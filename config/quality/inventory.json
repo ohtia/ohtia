@@ -73,6 +73,7 @@
     "scripts/tests/test_quality_native.py",
     "scripts/tests/test_quality_tests.py",
     "scripts/tests/test_quality_vm.py",
+    "scripts/tests/test_windows_contributor.py",
     "scripts/tests/test_workspace.py"
   ],
   "python_inapplicable": [
@@ -460,6 +461,16 @@
       "id": "test_installation_native.InstallationTests.test_operator_refuses_store_write_between_preflight_and_settled_quiescence",
       "platforms": ["win32"],
       "reason": "POSIX internal Linux/macOS qualification helper; native Windows installation is deferred."
+    },
+    {
+      "id": "test_quality_native.NativeTests.test_linux_identity_is_bound_to_process_start_time",
+      "platforms": ["win32"],
+      "reason": "Linux procfs executable symlink and Unix account-identity fixture; native Windows uses its separate process-token observer."
+    },
+    {
+      "id": "test_quality_vm.VirtualMachineTests.test_guest_compositor_and_failed_suite_share_bus_and_retain_bounded_log",
+      "platforms": ["win32"],
+      "reason": "Linux guest compositor, Unix-domain socket and user-service ownership fixture; Windows is not a Linux VM host."
     }
   ],
   "vitest_inapplicable": [
@@ -472,6 +483,21 @@
       "id": "tests/storage.test.ts::durable preference and migration recovery > does not follow a recovery alias or a broken database alias into another root::case-0",
       "platforms": ["win32"],
       "reason": "POSIX symbolic-link fixture; native Windows reparse admission is verified separately."
+    },
+    {
+      "id": "tests/update-admission.test.ts::authenticated internal update admission > streams exact bytes to a private new file and refuses an unverified capability::case-0",
+      "platforms": ["win32"],
+      "reason": "POSIX internal installer publication and ownership fixture requires directory fsync; native Windows installation is deferred."
+    },
+    {
+      "id": "tests/update-admission.test.ts::authenticated internal update admission > durably retains replay state before staging and refuses concurrent or missing-state resumption::case-0",
+      "platforms": ["win32"],
+      "reason": "POSIX internal installer publication and ownership fixture requires directory fsync; native Windows installation is deferred."
+    },
+    {
+      "id": "tests/update-admission.test.ts::authenticated internal update admission > retains the synchronized owner after ordinary persistence failure or operator timeout::case-0",
+      "platforms": ["win32"],
+      "reason": "POSIX internal installer publication and ownership fixture requires directory fsync; native Windows installation is deferred."
     }
   ]
 }

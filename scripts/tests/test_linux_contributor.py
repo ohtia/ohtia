@@ -13,7 +13,7 @@ import sys
 import tempfile
 import time
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -31,6 +31,16 @@ class LinuxContributorTests(unittest.TestCase):
         )
         patcher.start()
         self.addCleanup(patcher.stop)
+        native_target = linux.workspace.target_id
+        target = patch.object(
+            linux.workspace,
+            "target_id",
+            side_effect=lambda: native_target(
+                system="Linux", machine=linux.platform.machine() or "x86_64"
+            ),
+        )
+        target.start()
+        self.addCleanup(target.stop)
 
     def profile(self, name="ubuntu-26.04", arch="x86_64"):
         distro, version = name.split("-", 1)
@@ -188,8 +198,8 @@ class LinuxContributorTests(unittest.TestCase):
             result = linux.doctor(
                 profile,
                 packages,
-                Path("/synthetic/runtime-profile.json"),
-                Path("/synthetic/runtime"),
+                PurePosixPath("/synthetic/runtime-profile.json"),
+                PurePosixPath("/synthetic/runtime"),
             )
         self.assertNotIn("TOKEN", json.dumps(result))
         self.assertNotIn("/synthetic", json.dumps(result))
@@ -374,9 +384,9 @@ class LinuxContributorTests(unittest.TestCase):
         for switch in ("0", "1"):
 
             def contents(path, *args, **kwargs):
-                if str(path) == "/proc/sys/kernel/unprivileged_userns_clone":
+                if path.as_posix() == "/proc/sys/kernel/unprivileged_userns_clone":
                     return switch
-                if str(path) == "/proc/sys/user/max_user_namespaces":
+                if path.as_posix() == "/proc/sys/user/max_user_namespaces":
                     return "128132"
                 return original(path, *args, **kwargs)
 
@@ -455,7 +465,7 @@ class LinuxContributorTests(unittest.TestCase):
     def test_real_terminal_signals_stop_the_supervisors_owned_group(self):
         program = """
 import sys, subprocess, time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 sys.path.insert(0, str(Path(sys.argv[1]) / 'scripts'))
 import linux_contributor as linux
 with linux.terminal_signals() as cancelled:
@@ -535,7 +545,7 @@ with linux.terminal_signals() as cancelled:
     def test_foreground_group_interruption_during_admission_has_the_right_remedy(self):
         program = """
 import sys, subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 sys.path.insert(0, str(Path(sys.argv[1]) / 'scripts'))
 import linux_contributor as linux
 probe = 'from pathlib import Path;import sys,os,time,signal;signal.signal(signal.SIGINT,signal.SIG_DFL);signal.signal(signal.SIGHUP,signal.SIG_DFL);p=Path(sys.argv[1]);t=p.with_suffix(".tmp");t.write_text(str(os.getpid()));t.replace(p);time.sleep(60)'

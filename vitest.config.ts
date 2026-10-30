@@ -28,7 +28,8 @@ export default defineConfig({
     alias: { electron: path.resolve("tests/fixtures/electron.ts") },
     allowOnly: false,
     passWithNoTests: false,
-    maxWorkers: 2,
+    // Serialize Windows files so native ACL helpers do not compete with another test worker.
+    maxWorkers: process.platform === "win32" ? 1 : 2,
     testTimeout: 15000,
     reporters: [
       "default",

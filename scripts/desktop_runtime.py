@@ -51,11 +51,12 @@ def unpack(archive: Path, destination: Path) -> None:
     links: list[tuple[Path, str]] = []
     with zipfile.ZipFile(archive) as zipped:
         for entry in zipped.infolist():
-            relative = PurePosixPath(entry.filename)
+            original = entry.orig_filename
+            relative = PurePosixPath(original)
             if (
                 relative.is_absolute()
                 or ".." in relative.parts
-                or "\\" in entry.filename
+                or "\\" in original
                 or any(":" in part for part in relative.parts)
             ):
                 raise ValueError("Unsafe Electron archive path.")

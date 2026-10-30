@@ -27,6 +27,8 @@ class RuntimeArchiveTests(unittest.TestCase):
     def archive_with(self, name, data=b"synthetic", mode=stat.S_IFREG | 0o755):
         with zipfile.ZipFile(self.archive, "w") as zipped:
             info = zipfile.ZipInfo(name)
+            # Model an external archive without ZipInfo normalizing Windows separators.
+            info.filename = name
             info.external_attr = mode << 16
             zipped.writestr(info, data)
 
