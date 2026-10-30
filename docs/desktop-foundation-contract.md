@@ -2,10 +2,6 @@
 type: Specification
 title: Desktop foundation contract
 description: Native target and distribution qualification inputs, pinned candidate metadata, numeric resource policy and evidence ownership for the desktop foundation.
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: ubuntu-26-profile
     resource: https://documentation.ubuntu.com/release-notes/26.04/summary-for-lts-users/
@@ -85,6 +81,10 @@ sources:
   - id: pypi
     resource: https://docs.pypi.org/api/json/
     title: Primary Python package metadata and file digests
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # Desktop foundation contract
@@ -110,6 +110,8 @@ The manifest retains six OS/CPU identities. Required qualification covers `linux
 The Windows floor excludes 24H2 Home/Pro after its vendor update window. The macOS floor uses the oldest family in Apple's current security-release set, rather than inferring maintained support from Electron's lower binary minimum. Ubuntu's selected LTS has a published standard maintenance window.[^windows-lifecycle][^apple-lifecycle][^ubuntu-lifecycle]
 
 Intel admits macOS 15 and 26; Apple Silicon admits 15, 26 and 27. Apple's current macOS 27 eligibility lists Apple Silicon, so that release is not an Intel target. Do not promise a future Intel OS release or invent a vendor retirement date. Apple Intel remains optional. Apple Silicon qualification requires macOS 26 and 27; macOS 15 remains an admitted baseline candidate without a mandatory qualification run. `required_os_majors` selects the required native family evidence independently of the admitted family inventory. A tested later release does not prove an untested floor.[^apple-lifecycle]
+
+The [phased delivery contract](epics/EPIC-001-desktop-foundation/epic.md#spec-001-028-linux-first-delivery-and-platform-capability-admission) keeps every required platform in native foundation/contributor/build coverage and verified retained-artifact provenance. Story 013 completes Linux signing and authenticated installation/update qualification; stories 019 and 020 separately enable real macOS and Windows signed distribution. Their credentials do not block common/Linux infrastructure acceptance, and absent platform guarantees remain distribution ineligible. No target is reclassified optional and full-platform public readiness still requires their actual final evidence.
 
 Each Linux CPU cell requires both DEB and RPM results; neither format is optional. The target manifest assigns four distribution profiles to each Linux CPU. The required scope expands to thirteen OS/CPU/distribution/backend records: ten Linux cells, Windows x86-64, and Apple Silicon on macOS 26 and 27. Other admitted records are optional. Use native package architecture names `amd64`/`arm64` for DEB and `x86_64`/`aarch64` for RPM. Both signed/unsigned artifact inventories enumerate each declared package format and distinct distribution-policy variant separately. A DEB result cannot stand in for RPM, and an Ubuntu container cannot establish Fedora's native kernel, SELinux, GNOME or Btrfs behavior.
 
@@ -199,7 +201,7 @@ git diff --check
 
 The metadata command checks target completeness, exact patches against their adopting ADRs, six-cell artifact identities, policy completeness/ranges, cross-budget consistency and synchronization with the actual literal CI/hook pins. Ambiguous or expression-based pins require an explicit checker/contract update rather than a guessed match. Regression tests deliberately remove targets, change runtime identities and break bounds. These checks do not fetch mutable latest metadata, install packages, launch Electron, implement the future port or claim native compatibility. 002 carries these inputs into locks and commands; 003 verifies that its decoders consume the approved policy identity rather than selecting another limit set.
 
-[Foundation security applicability](foundation-security.md) supplies the versioned baseline and enforcing-boundary evidence obligations. 018 supplies isolated native feasibility; 013 supplies final signed install/update evidence; 017 reconciles the full matrix, actual assistive/linguistic journeys and final-artifact coverage. Their evidence is not a return dependency for this contract.
+[Foundation security applicability](foundation-security.md) supplies the versioned baseline and enforcing-boundary evidence obligations. 018 supplies isolated native feasibility; 013 supplies common authority/build-provenance interfaces and final Linux signed install/update evidence; 017 reconciles all-platform common runtime/contributor/assistive evidence and Linux delivery. Stories 019/020 add real macOS/Windows publisher-signed user-route evidence and affected human observations before their distribution capability can be enabled. Human linguistic review remains voluntary; no unperformed review is claimed. Their evidence is not a return dependency for this contract.
 
 [^electron-platforms]: Upstream declares native OS/CPU support; the narrower Ohtia OS/filesystem/display floor is a local selection requiring native qualification.
 

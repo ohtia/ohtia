@@ -1,23 +1,26 @@
 ---
 type: Story
 title: "STORY-001-016 — Promote and reconcile exact release artifacts"
-description: "Publish authorized candidate bytes with serialized promotion, failure reconciliation, retention and withdrawal."
+description: "Qualify exact-byte Linux publication and common lifecycle controls while denying unqualified macOS/Windows distribution."
 tags: ["story", "comp:tooling", "comp:desktop"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/30
-generated:
-  by: codex/gpt-6.1-sol
 epic: "EPIC-001"
 epic_concept: ./epic.md
 components: ["comp:tooling", "comp:desktop"]
-applicable_blocks: ["SPEC-001-016", "SPEC-001-017", "SPEC-001-018", "SPEC-001-019", "SPEC-001-026"]
+applicable_blocks:
+  ["SPEC-001-016", "SPEC-001-017", "SPEC-001-018", "SPEC-001-019", "SPEC-001-026", "SPEC-001-028"]
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # STORY-001-016 — Promote and reconcile exact release artifacts
 
 ## Description
 
-Publish authorized candidate bytes with serialized promotion, failure reconciliation, retention and withdrawal. This unit owns its complete result and verifies its delivered inputs; it does not wait for a returning output from its consumers. Detailed implementation decisions and their rationale are held once in the applicable specification below.
+Qualify exact-byte Linux publication and common lifecycle controls while denying unqualified macOS/Windows distribution. This unit owns its complete result and verifies its delivered inputs; it does not wait for a returning output from its consumers. Detailed implementation decisions and their rationale are held once in the applicable specification below.
 
 ## Applicable specification
 
@@ -26,6 +29,8 @@ Publish authorized candidate bytes with serialized promotion, failure reconcilia
 - [SPEC-001-018: Trusted candidate preparation and permanent version identity](./epic.md#spec-001-018-trusted-candidate-preparation-and-permanent-version-identity)
 - [SPEC-001-019: Authorized publication, reconciliation and lifecycle](./epic.md#spec-001-019-authorized-publication-reconciliation-and-lifecycle)
 - [SPEC-001-026: Delivery security applicability and evidence](./epic.md#spec-001-026-delivery-security-applicability-and-evidence)
+
+- [SPEC-001-028: Linux-first delivery and platform capability admission](./epic.md#spec-001-028-linux-first-delivery-and-platform-capability-admission)
 
 ## Tasks
 
@@ -37,14 +42,14 @@ Publish authorized candidate bytes with serialized promotion, failure reconcilia
 - [ ] Implement durable application-wide serialization and upload-before-exposure across tags/releases/downloads/update metadata.
 - [ ] Implement idempotent reconciliation, visible-surface failure records, explicit uncertain-activation handling and maintainer recovery.
 - [ ] Implement retention/retirement/withdrawal and cadence/urgent-fix procedures; exercise them only on approved controlled surfaces.
-- [ ] Verify complete candidate/native evidence for every required target/profile and any optional target actually included before promotion, retaining per-target digests even when one universal package covers two verified slices.
+- [ ] Verify complete declared build/provenance inventory and every admitted Linux signed native profile before controlled promotion; reject requested macOS/Windows distribution without M19/W20 and retain per-target/package digests.
 - [ ] Produce publication authorization/serialization/reconciliation/retention security evidence under SPEC-001-026.
 
 ## Acceptance criteria
 
 - [ ] Completion gate: verify Release authority output RA and its full release condition in the Dependencies output registry and SPEC-001-019.
 - [ ] The publication owner supplies its applicable security inventory and actual control evidence before reporting promotion success.
-- [ ] Promotion never hides a missing required CPU target or treats optional provider support as permission to narrow core desktop scope.
+- [ ] Promotion enumerates the complete product target inventory, distinguishes the approved Linux rehearsal scope from deferred required-platform capabilities and rejects unqualified distribution requests; no silent target omission, optional reclassification or inferred Linux-only public-release authorization.
 - [ ] F16 promotes exact retained final bytes without rebuilding/resigning/renaming an embedded prerelease.
 - [ ] Concurrent preview/stable operations cannot race shared state; preview cannot advance stable latest.
 - [ ] Partial upload/feed/activation never reports success; retry preserves candidate/version/digests and conflicts fail closed.
