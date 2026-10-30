@@ -1,23 +1,26 @@
 ---
 type: Story
 title: "STORY-001-015 — Prepare immutable candidates through trusted authority"
-description: "Reserve versions and assemble retained, fully verified final candidates through an explicitly invoked trusted workflow."
+description: "Reserve versions and assemble retained Linux-qualified candidates with complete platform build/provenance records and explicit distribution capabilities."
 tags: ["story", "comp:tooling", "comp:desktop"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/29
-generated:
-  by: codex/gpt-6.1-sol
 epic: "EPIC-001"
 epic_concept: ./epic.md
 components: ["comp:tooling", "comp:desktop"]
-applicable_blocks: ["SPEC-001-015", "SPEC-001-016", "SPEC-001-017", "SPEC-001-018", "SPEC-001-026"]
+applicable_blocks:
+  ["SPEC-001-015", "SPEC-001-016", "SPEC-001-017", "SPEC-001-018", "SPEC-001-026", "SPEC-001-028"]
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # STORY-001-015 — Prepare immutable candidates through trusted authority
 
 ## Description
 
-Reserve versions and assemble retained, fully verified final candidates through an explicitly invoked trusted workflow. This unit owns its complete result and verifies its delivered inputs; it does not wait for a returning output from its consumers. Detailed implementation decisions and their rationale are held once in the applicable specification below.
+Reserve versions and assemble retained Linux-qualified candidates with complete platform build/provenance records and explicit distribution capabilities. This unit owns its complete result and verifies its delivered inputs; it does not wait for a returning output from its consumers. Detailed implementation decisions and their rationale are held once in the applicable specification below.
 
 ## Applicable specification
 
@@ -27,29 +30,33 @@ Reserve versions and assemble retained, fully verified final candidates through 
 - [SPEC-001-018: Trusted candidate preparation and permanent version identity](./epic.md#spec-001-018-trusted-candidate-preparation-and-permanent-version-identity)
 - [SPEC-001-026: Delivery security applicability and evidence](./epic.md#spec-001-026-delivery-security-applicability-and-evidence)
 
+- [SPEC-001-028: Linux-first delivery and platform capability admission](./epic.md#spec-001-028-linux-first-delivery-and-platform-capability-admission)
+
 ## Tasks
 
 - [ ] Integrate gate: verify STORY-001-012 output B12 and its full release condition in the Dependencies output registry and SPEC-001-018.
 - [ ] Integrate gate: verify STORY-001-013 output I13 and its full release condition in the Dependencies output registry and SPEC-001-018.
 - [ ] Integrate gate: verify STORY-001-014 output N14 and its full release condition in the Dependencies output registry and SPEC-001-018.
 - [ ] Integrate gate: verify Policy authority output PA and its full release condition in the Dependencies output registry and SPEC-001-018.
-- [ ] Prepare the reviewed external-control/credential-binding design and verify immutable protected-main workflow-ref/policy admission with the maintainer.
+- [ ] Consume I13's common external signing boundary and qualify candidate-specific protected-main workflow/source/policy/credential binding with the maintainer; do not make 013 depend on this consumer.
 - [ ] Implement separate manual candidate selection, integrated-source provenance checks and atomic permanent version reservation.
-- [ ] Assemble all targets with frozen inputs and qualified final signing; retain manifests/final digests and approved note annotations.
-- [ ] Require complete native evidence and immutable target/package identities for every required target/profile and any optional target actually included before admitting a candidate as ready.
+- [ ] Build every declared target with frozen inputs and verified provenance; apply qualified final Linux signing, retain final manifests/digests/approved notes and identify unsigned/ad-hoc macOS/Windows outputs as internal and distribution ineligible.
+- [ ] Require every Linux signed native profile and all declared platform build/provenance records before Linux infrastructure readiness; reject any distribution request including macOS/Windows until the corresponding M19/W20 final native evidence exists.
 - [ ] Gate public readiness on complete final native, mandatory assistive and catalog/provenance evidence; test denial with missing required evidence and same-candidate continuation without replacing identified packages. Model-generated translations without human linguistic review do not fail this gate.
 - [ ] Qualify controlled internal candidates without claiming public readiness before 017 supplies its manual evidence; avoid a returning dependency on integrated acceptance.
 - [ ] Produce independent workflow/source/policy/signing/reservation security evidence under SPEC-001-026 and verify current external signing facilities.
+
+- [ ] Verify the shared qualification/candidate core and per-target capability schema; test missing M19/W20 denial without making those outputs prerequisites for closing this Linux/common mechanism.
 
 ## Acceptance criteria
 
 - [ ] Completion gate: verify Native facilities output NF and its full release condition in the Dependencies output registry and SPEC-001-018.
 - [ ] Completion gate: verify Native hosts output NH and its full release condition in the Dependencies output registry and SPEC-001-018.
 - [ ] Completion gate: verify Release authority output RA and its full release condition in the Dependencies output registry and SPEC-001-018.
-- [ ] The candidate owner supplies applicable security and actual external-authority evidence before readiness, with all required native/signing facilities available.
-- [ ] A five-cell matrix, emulated ARM64 execution or a universal artifact verified on one CPU fails candidate readiness.
+- [ ] The candidate owner supplies applicable security and actual external-authority evidence before readiness, with the actual Linux/common native/signing facilities available; unavailable macOS/Windows distribution stays explicitly denied until M19/W20.
+- [ ] A missing required Linux cell or declared platform build/provenance record, emulated native evidence or a universal artifact verified on one CPU fails the corresponding readiness claim; phase-scoped Linux readiness cannot imply full-platform public readiness.
 - [ ] C15 ties exact source/workflow/policy/run/attempt/targets/final bytes/compatibility/notes to one permanently reserved version.
-- [ ] Wrong ref/source, candidate-controlled verifier, reused version, altered bytes/notes or missing target fails readiness.
+- [ ] Wrong ref/source, candidate-controlled verifier, reused version, altered bytes/notes or missing required evidence/target fails readiness; unqualified requested platforms are rejected rather than silently omitted.
 - [ ] A rejected/cancelled candidate consumes its version; same-input continuation cannot replace final artifacts or infer publication authority.
 - [ ] Release authority RA is externally enforced and observed through real deny/allow/readback evidence; a self-authored workflow guard is insufficient.
 

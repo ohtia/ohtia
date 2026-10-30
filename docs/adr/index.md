@@ -71,4 +71,4 @@ The conventions for this register are defined in [Architecture decisions](../arc
 
 ## Native delivery mechanisms
 
-- [ADR-0038 — Native desktop packages with authenticated update admission](adr-0038-desktop-delivery-mechanisms.md) — Select provisional six-target packages, native signing and updater admission while preserving immutable candidate bytes and recovery boundaries.
+- [ADR-0038 — Native desktop packages with authenticated update admission](adr-0038-desktop-delivery-mechanisms.md) — Select native desktop packages and authenticated updates with Linux-first qualification and independently gated macOS and Windows distribution.
