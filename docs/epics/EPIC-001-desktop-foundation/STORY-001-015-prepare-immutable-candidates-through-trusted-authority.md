@@ -1,7 +1,7 @@
 ---
 type: Story
 title: "STORY-001-015 — Prepare immutable candidates through trusted authority"
-description: "Reserve versions and assemble retained Linux-qualified candidates with complete platform build/provenance records and explicit distribution capabilities."
+description: "Reserve versions and assemble retained candidates with exact package identities, complete native-cell assignments and explicit platform capabilities."
 tags: ["story", "comp:tooling", "comp:desktop"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/29
@@ -48,6 +48,8 @@ Reserve versions and assemble retained Linux-qualified candidates with complete 
 
 - [ ] Verify the shared qualification/candidate core and per-target capability schema; test missing M19/W20 denial without making those outputs prerequisites for closing this Linux/common mechanism.
 
+- [ ] Instantiate SPEC-001-028's final artifact inventory and required cell assignments before test fan-out; consume the shared I13 build/sign/test core and reconcile every assigned digest before candidate readiness.
+
 ## Acceptance criteria
 
 - [ ] Completion gate: verify Native facilities output NF and its full release condition in the Dependencies output registry and SPEC-001-018.
@@ -60,10 +62,13 @@ Reserve versions and assemble retained Linux-qualified candidates with complete 
 - [ ] A rejected/cancelled candidate consumes its version; same-input continuation cannot replace final artifacts or infer publication authority.
 - [ ] Release authority RA is externally enforced and observed through real deny/allow/readback evidence; a self-authored workflow guard is insufficient.
 
+- [ ] C15 rejects X11 evidence for package P combined with Wayland evidence for different-digest package Q, even with identical versions/source/filenames, and admits a shared artifact only after all assigned native cells and scenarios pass against its final digest.
+
 ## Quality checklist
 
 - [ ] Test simultaneous reservations, rejected reuse, interrupted continuation and moving-main source stability.
 - [ ] Read back actual external workflow/policy/credential controls and qualify final native candidate manifests against the exact retained bytes.
 - [ ] Run applicable shared checks and configured repository hooks, committed-history secret scan, existing policy tests where affected and git diff --check; include new files explicitly.
 - [ ] Preserve issue-first scope, isolated worktree and unrelated changes; complete the mandated independent read-only code-review gate before any code commit, then verify signed content identity. Documentation-only work keeps its documentation checks.
+- [ ] Exercise candidate admission with a complete same-digest assignment and with mixed digests, missing/duplicate cells, stale/failed evidence and wrong candidate/artifact/run/environment identities under SPEC-001-028.
 - [ ] Record real inputs, results, omissions and failures; a later commit, hosted CI result and human integration are separate evidence. State installed-user impact and the proposed change note or the reason none is required.
