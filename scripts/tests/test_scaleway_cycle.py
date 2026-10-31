@@ -42,12 +42,12 @@ SNAPSHOT = "00000000-0000-4000-8000-000000000003"
 TOKEN = "synthetic-credential-for-tests"
 
 
-def fixtures():
+def fixtures(profile="fedora-44"):
     settings = {
         "project": PROJECT,
         "project_binding": hashlib.sha256(PROJECT.encode()).hexdigest(),
         "zone": "nl-ams-1",
-        "profile": "fedora-44",
+        "profile": profile,
         "instance_type": "BASIC2-A8C-32G",
         "image_id": IMAGE,
     }
@@ -59,13 +59,14 @@ def fixtures():
         "attempt": "1",
         "event": "workflow_dispatch",
     }
-    package = {"file": "ohtia-quality.rpm", "bytes": 10, "sha256": "b" * 64}
+    extension = cycle.policy()["profiles"][profile]["format"]
+    package = {"file": f"ohtia-quality.{extension}", "bytes": 10, "sha256": "b" * 64}
     harness = {"file": "harness.tar.gz", "bytes": 10, "sha256": "c" * 64}
     manifest = {
         "version": 1,
         "identity": identity,
-        "profile": "fedora-44",
-        "cell": cycle.cell("fedora-44"),
+        "profile": profile,
+        "cell": cycle.cell(profile),
         "application_version": "0.0.0-dev.101.1",
         "source_tree": "d" * 40,
         "policy_sha256": cycle.digest(cycle.POLICY_PATH),
@@ -489,6 +490,32 @@ class CycleTests(unittest.TestCase):
         self.assertEqual(guard["resources"], resources)
         self.assertEqual(guard["home_bytes"], 10_000_000_000)
         self.assertNotIn("SCW_SECRET_KEY", json.dumps(value))
+
+    def test_cloud_config_supplies_native_key_before_scaleway_refresh(self):
+        public_key = self.key + " ohtia-qualification\n"
+        resources = {kind: str(uuid.uuid4()) for kind in cycle.KINDS}
+        for profile in cycle.policy()["profiles"]:
+            with self.subTest(profile=profile):
+                _, intent = fixtures(profile)
+                value = json.loads(
+                    qualification.cloud_config(intent, resources, public_key)
+                    .decode()
+                    .split("\n", 1)[1]
+                )
+                keys = [
+                    entry
+                    for entry in value["write_files"]
+                    if entry["path"] == "/root/.ssh/instance_keys"
+                ]
+                self.assertEqual(len(keys), 1)
+                key = keys[0]
+                self.assertEqual(key["owner"], "root:root")
+                self.assertEqual(key["permissions"], "0600")
+                self.assertEqual(key["content"], public_key.strip() + "\n")
+                self.assertFalse(key.get("defer", False))
+                self.assertFalse(key.get("append", False))
+                account = next(user for user in value["users"] if user["name"] == "root")
+                self.assertEqual(account["ssh_authorized_keys"], [public_key.strip()])
 
     def test_ssh_never_accepts_unknown_keys_or_forwards_agents(self):
         values = qualification.ssh_options(Path("/tmp/key"), Path("/tmp/known"))

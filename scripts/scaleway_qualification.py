@@ -192,6 +192,13 @@ def cloud_config(intent: dict, resources: dict, public_key: str) -> bytes:
             ]
         ],
         "write_files": [
+            # Preserve the ephemeral key when Scaleway regenerates authorized_keys.
+            {
+                "path": "/root/.ssh/instance_keys",
+                "owner": "root:root",
+                "permissions": "0600",
+                "content": public_key.strip() + "\n",
+            },
             {
                 "path": str(cycle.GUARD),
                 "owner": "root:root",
