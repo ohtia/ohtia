@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import errno
 import json
 import math
 import os
@@ -689,6 +690,24 @@ def display_connection(known: list[dict], backend: str) -> dict | None:
     return None
 
 
+def read_process_snapshot(file: Path) -> dict:
+    """Retry only bounded Windows access contention during atomic publication."""
+    for attempt in range(5):
+        try:
+            return delivery.read(file)
+        except OSError as error:
+            # Windows metadata calls expose WinError; CRT file opens expose errno.
+            # Access/sharing/lock denial may be transient, but must fail if persistent.
+            windows_error = getattr(error, "winerror", None)
+            retryable = windows_error in {5, 32, 33} or (
+                windows_error is None and error.errno == errno.EACCES
+            )
+            if sys.platform != "win32" or not retryable or attempt == 4:
+                raise
+            time.sleep(0.02)
+    raise AssertionError("Unreachable snapshot retry state.")
+
+
 def smoke(
     profile: Path, prepared: Path, destination: Path, cell: dict, *, cancelled=None
 ) -> tuple[dict, dict]:
@@ -723,11 +742,14 @@ def smoke(
             )
             while not future.done():
                 known_file = output / "native-processes.json"
-                if known_file.exists():
-                    known = delivery.read(known_file)["processes"]
-                    for row in known:
-                        if row not in identity_history:
-                            identity_history.append(row)
+                try:
+                    known = read_process_snapshot(known_file)["processes"]
+                except FileNotFoundError:
+                    # No identities are ready before the first atomic publication.
+                    known = []
+                for row in known:
+                    if row not in identity_history:
+                        identity_history.append(row)
                 observations.extend(processes(prepared, known, ready_only=True))
                 connected = display_connection(known, cell["backend"])
                 if connected is not None and connected not in displays:

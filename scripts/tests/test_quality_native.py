@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import errno
 import json
 import os
 import plistlib
@@ -417,6 +418,187 @@ async function validate(config, format) {
                 )
                 self.assertEqual([row["sandbox"] for row in rows], expected)
                 self.assertEqual(exited.call_count, 0 if status == "identity_mismatch" else 1)
+
+    def test_snapshot_recovers_windows_denials_at_metadata_and_content_reads(self):
+        expected = {"processes": [{"pid": 101, "creation_time_ms": 123.5}]}
+        for winerror in (None, 5, 32, 33):
+            for stage in ("stat", "read_text"):
+                with (
+                    self.subTest(winerror=winerror, stage=stage),
+                    tempfile.TemporaryDirectory() as temporary,
+                ):
+                    file = Path(temporary) / "native-processes.json"
+                    delivery.write(file, expected)
+                    real = getattr(Path, stage)
+                    denial = PermissionError(errno.EACCES, "Synthetic denial", str(file))
+                    if winerror is not None:
+                        denial.winerror = winerror
+                    calls = 0
+
+                    def read(path, *args, **kwargs):
+                        nonlocal calls
+                        calls += 1
+                        if calls < 3:
+                            raise denial
+                        return real(path, *args, **kwargs)
+
+                    with (
+                        patch.object(native.sys, "platform", "win32"),
+                        patch.object(Path, stage, read),
+                        patch.object(native.time, "sleep") as sleep,
+                    ):
+                        self.assertEqual(native.read_process_snapshot(file), expected)
+                    self.assertEqual(calls, 3)
+                    self.assertEqual(sleep.call_args_list, [unittest.mock.call(0.02)] * 2)
+
+    def test_snapshot_persistent_windows_denial_exhausts_finite_budget(self):
+        for winerror in (None, 5, 32, 33):
+            with self.subTest(winerror=winerror), tempfile.TemporaryDirectory() as temporary:
+                file = Path(temporary) / "native-processes.json"
+                delivery.write(file, {"processes": []})
+                denial = PermissionError(errno.EACCES, "Synthetic persistent denial", str(file))
+                if winerror is not None:
+                    denial.winerror = winerror
+                with (
+                    patch.object(native.sys, "platform", "win32"),
+                    patch.object(Path, "read_text", side_effect=denial) as read,
+                    patch.object(native.time, "sleep") as sleep,
+                ):
+                    with self.assertRaises(PermissionError) as raised:
+                        native.read_process_snapshot(file)
+                self.assertIs(raised.exception, denial)
+                self.assertEqual(read.call_count, 5)
+                self.assertEqual(sleep.call_args_list, [unittest.mock.call(0.02)] * 4)
+
+    def test_snapshot_unrelated_and_non_windows_errors_fail_without_retry(self):
+        for platform, winerror in (("linux", 5), ("darwin", 32), ("win32", 2), ("win32", None)):
+            with self.subTest(platform=platform, winerror=winerror):
+                error = OSError(errno.EIO, "Synthetic nonrecoverable read")
+                if winerror is not None:
+                    error.winerror = winerror
+                with (
+                    patch.object(native.sys, "platform", platform),
+                    patch.object(delivery, "read", side_effect=error) as read,
+                    patch.object(native.time, "sleep") as sleep,
+                ):
+                    with self.assertRaises(OSError) as raised:
+                        native.read_process_snapshot(Path("native-processes.json"))
+                self.assertIs(raised.exception, error)
+                self.assertEqual(read.call_count, 1)
+                sleep.assert_not_called()
+
+    def test_snapshot_retries_do_not_admit_invalid_or_unsafe_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            file = Path(temporary) / "native-processes.json"
+            for payload in ("{", "[]", '{"processes":[],"processes":[]}'):
+                file.write_text(payload)
+                with (
+                    self.subTest(payload=payload),
+                    patch.object(native.sys, "platform", "win32"),
+                    patch.object(native.time, "sleep") as sleep,
+                ):
+                    with self.assertRaises(ValueError):
+                        native.read_process_snapshot(file)
+                    sleep.assert_not_called()
+            file.write_text(" " * (8 * 1024 * 1024 + 1))
+            with self.assertRaisesRegex(delivery.DeliveryError, "Unsafe"):
+                native.read_process_snapshot(file)
+            file.write_text('{"processes":[]}')
+            # Synthetic link admission also runs on Windows accounts without symlink privilege.
+            with patch.object(Path, "is_symlink", return_value=True):
+                with self.assertRaisesRegex(delivery.DeliveryError, "Unsafe"):
+                    native.read_process_snapshot(file)
+
+    def test_smoke_does_not_observe_processes_from_an_unreadable_snapshot(self):
+        for stage in ("stat", "read_text"):
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                output = root / "runtime"
+                output.mkdir()
+                delivery.write(output / "native-processes.json", {"processes": [{"pid": 101}]})
+                denial = PermissionError(errno.EACCES, "Synthetic persistent denial")
+                with (
+                    patch.object(native.sys, "platform", "win32"),
+                    patch("concurrent.futures.ThreadPoolExecutor") as executor,
+                    patch.object(native.workspace, "node_path", return_value=Path("node")),
+                    patch.object(native, "build_environment", return_value={}),
+                    patch.object(Path, stage, side_effect=denial) as read,
+                    patch.object(native, "processes") as processes,
+                    patch.object(native.time, "sleep"),
+                ):
+                    future = executor.return_value.__enter__.return_value.submit.return_value
+                    future.done.return_value = False
+                    with self.assertRaises(PermissionError):
+                        native.smoke(
+                            root / "profile.json", root / "package", root, {"backend": "desktop"}
+                        )
+                    self.assertEqual(read.call_count, 5)
+                    processes.assert_not_called()
+
+    def test_smoke_does_not_reuse_identities_when_snapshot_is_missing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for suite, receipt in (
+                ("runtime", "receipt.json"),
+                ("storage", "storage-receipt.json"),
+                ("diagnostics", "diagnostic-receipt.json"),
+            ):
+                delivery.write(root / suite / receipt, {})
+            (root / "runtime" / "foundation-320.png").write_bytes(b"synthetic capture")
+            identities = [
+                {"pid": 101, "creation_time_ms": 123.5},
+                {"pid": 102, "creation_time_ms": 456.5},
+            ]
+            samples = iter(
+                [
+                    {"processes": [identities[0]]},
+                    FileNotFoundError("Synthetic unpublished snapshot"),
+                    {"processes": [identities[1]]},
+                ]
+            )
+            original = delivery.read
+
+            def read(file):
+                if file.name != "native-processes.json":
+                    return original(file)
+                value = next(samples)
+                if isinstance(value, Exception):
+                    raise value
+                return value
+
+            def observe(prepared, known, *, ready_only=False):
+                return [{"renderer": True, "sandbox": True}] if ready_only and known else []
+
+            with (
+                patch.object(native.sys, "platform", "win32"),
+                patch("concurrent.futures.ThreadPoolExecutor") as executor,
+                patch.object(native.workspace, "node_path", return_value=Path("node")),
+                patch.object(native, "build_environment", return_value={}),
+                patch.object(delivery, "read", side_effect=read),
+                patch.object(delivery, "validate_suite"),
+                patch.object(native, "processes", side_effect=observe) as processes,
+                patch.object(native.time, "sleep"),
+            ):
+                future = executor.return_value.__enter__.return_value.submit.return_value
+                future.done.side_effect = [False, False, False, True, True, True]
+                future.result.return_value = {
+                    "exit_code": 0,
+                    "timed_out": False,
+                    "contained_processes_remaining_at_exit": False,
+                }
+                native.smoke(
+                    root / "profile.json",
+                    root / "package",
+                    root,
+                    {"backend": "desktop", "target": "win32-x64"},
+                )
+                observed = [
+                    call.args[1]
+                    for call in processes.call_args_list
+                    if call.kwargs.get("ready_only")
+                ]
+                self.assertEqual(observed, [[identities[0]], [], [identities[1]]])
+                self.assertEqual(processes.call_args_list[-1].args[1], identities)
 
     def test_atomic_ready_report_replacement_has_a_finite_retry_budget(self):
         script = """
