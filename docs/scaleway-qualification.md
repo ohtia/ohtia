@@ -1,7 +1,7 @@
 ---
 type: Reference
 title: Ephemeral ARM installation qualification
-description: Build unsigned native probe packages in GitHub Actions and test them on bounded, independently recovered Scaleway ARM leases.
+description: Define shared configuration and protected credentials for unsigned native ARM probes on bounded, independently recovered Scaleway leases.
 sources:
   - id: devices
     resource: https://www.scaleway.com/en/docs/instances/reference-content/identify-devices/
@@ -11,6 +11,8 @@ sources:
     title: GitHub scheduled execution limitations
 generated:
   by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # Ephemeral ARM installation qualification
@@ -22,6 +24,30 @@ The [qualification workflow](../.github/workflows/installation-qualification.yml
 Build execution receives no provider or publisher credentials. Creator and recovery authority are separate. Resource UUIDs and the current IPv4 come from authenticated provider responses; callers cannot supply an address, endpoint, source revision or arbitrary remote command. Ephemeral SSH identities remain on the controller. Host-key admission compares Ed25519 fingerprints through the authenticated provider API before strict SSH is enabled.
 
 The normal fourteen-cell hosted CI does not allocate paid guests. Native package/runtime/storage/diagnostics results establish their observed unsigned quality scope. They do not establish publisher signing, authenticated first installation, installed updates, cryptographic artifact attestations, assistive acceptance or permission to distribute.
+
+## Configuration placement
+
+Store all nonsecret Scaleway configuration in GitHub repository variables. Project, zone, machine type, disk capacity and images form one resource configuration and use the same scope. The workflow controls and key-expiration assertions use that scope as well. Keep no duplicate `SCW_*` configuration variables in either GitHub environment; workflow `env` mappings pass selected repository values to processes without creating another configuration store.
+
+The complete repository-variable map is:
+
+- `SCW_PROJECT_ID`: dedicated project.
+- `SCW_ARM_ZONE`: availability zone.
+- `SCW_ARM_INSTANCE_TYPE`: ARM machine type.
+- `SCW_ARM_DISK_GB`: total decimal disk capacity.
+- `SCW_ARM_FEDORA44_IMAGE_ID`: Fedora local image.
+- `SCW_ARM_DEBIAN13_IMAGE_ID`: Debian local image.
+- `SCW_CYCLE_ENABLED`: creation control.
+- `SCW_RECOVERY_ENABLED`: independent recovery control.
+- `SCW_APPROVED_POLICY_SHA256`: approved resource-policy digest.
+- `SCW_CREATOR_KEY_EXPIRES_AT`: asserted creator-key expiration.
+- `SCW_CLEANUP_KEY_EXPIRES_AT`: asserted cleanup-key expiration.
+
+The [preflight configuration contract](scaleway-access.md#configuration-contract) defines the resource-field formats and image requirements. The expiration assertions must match the provider's actual UTC expiration dates; they neither contain keys nor discover or renew them. Keep both enable flags `false` during initial preparation. Enable recovery only after its credential, provider permissions and deployment guards are configured and checked; paid creation requires its separate approval.
+
+Store credentials as environment secrets. `scaleway-qualification` holds the creator application's `SCW_SECRET_KEY` behind maintainer approval. `scaleway-cleanup` holds a different application's `SCW_SECRET_KEY` and requires no manual approval, so recovery can proceed independently. Keep any retained access-key identifier with its corresponding environment credentials. [ADR-0020](adr/adr-0020-github-policy-and-trusted-ci.md#ephemeral-native-qualification) owns the authority boundary; the environments separate credential release and approval, not nonsecret machine settings.
+
+When migrating an existing environment variable, copy its unchanged value to repository scope, verify the copy, then remove the environment override. Read back the complete map before execution. GitHub configuration changes are performed manually when the maintainer selects that mode; read-only verification does not require variable-write permission.
 
 ## Admission and lifecycle
 
