@@ -1,7 +1,7 @@
 ---
 type: Story
 title: "STORY-001-013 — Qualify signed installation and update mechanisms"
-description: "Deliver common Actions signing/update foundations and complete Linux signed qualification, retaining native macOS/Windows builds and verified provenance."
+description: "Deliver common signing/update foundations and Linux qualification with every native cell bound to its exact final package."
 tags: ["story", "comp:desktop", "comp:tooling"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/27
@@ -56,6 +56,8 @@ Deliver common Actions signing/update foundations and complete Linux signed qual
 - [ ] Implement the real user-invoked installed updater and independently authenticated graphical Linux first-install route; verify catalog/key lifecycle, automatic refresh/expiry monitoring, true A/B run identities and isolated migration-fixture limits.
 - [ ] Exercise one Linux cell end-to-end before expanding and use the shared reusable core, private real-signed artifacts and separate qualification trust root.
 
+- [ ] Implement and qualify SPEC-001-028's separate artifact/cell inventories and build-to-test handoff; exercise one sealed package on every assigned X11/Wayland cell before handing the shared mechanism to candidate preparation.
+
 ## Acceptance criteria
 
 - [ ] Completion gate: verify Native facilities output NF and its full release condition in the Dependencies output registry and SPEC-001-016.
@@ -67,10 +69,13 @@ Deliver common Actions signing/update foundations and complete Linux signed qual
 - [ ] Development packages use no public feeds; preview opt-in and stable/prerelease ordering are verified without assuming an Ohtia account.
 - [ ] Native facilities NF supplies actual Linux RPM/catalog authority and native verification. Absent macOS/Windows publisher facilities remain explicit ineligible capabilities owned by 019/020, never mock successes or blockers for this Linux/common scope.
 
+- [ ] I13 proves that each assigned native cell consumes its sealed artifact digest; same-version/source packages with different digests cannot combine their X11/Wayland results to qualify either package.
+
 ## Quality checklist
 
 - [ ] Run native first install, supported upgrade and interrupted download/install/activation with synthetic file-backed stores.
 - [ ] Verify license/source obligations, wrong-target/authenticity rejection and schema recovery without data-downgrade claims.
 - [ ] Run applicable shared checks and configured repository hooks, committed-history secret scan, existing policy tests where affected and git diff --check; include new files explicitly.
 - [ ] Preserve issue-first scope, isolated worktree and unrelated changes; complete the mandated independent read-only code-review gate before any code commit, then verify signed content identity. Documentation-only work keeps its documentation checks.
+- [ ] Exercise the same-package native path and the positive/negative artifact-to-cell admission fixtures in SPEC-001-028, including wrong transferred bytes and missing or duplicate cell evidence.
 - [ ] Record real inputs, results, omissions and failures; a later commit, hosted CI result and human integration are separate evidence. State installed-user impact and the proposed change note or the reason none is required.

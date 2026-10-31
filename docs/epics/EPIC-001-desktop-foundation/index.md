@@ -1,6 +1,6 @@
 # EPIC-001 — Desktop foundation
 
-- [EPIC-001 — Desktop foundation](epic.md) - Deliver a safe runnable desktop, reproducible native contribution environments and verified immutable build/release infrastructure.
+- [EPIC-001 — Desktop foundation](epic.md) - Deliver a safe runnable desktop, reproducible native contribution environments and immutable build/release infrastructure with artifact-bound native coverage.
 
 ## Stories
 
@@ -16,11 +16,11 @@
 - [STORY-001-010 — Make Windows contribution setup reproducible](STORY-001-010-make-windows-contribution-setup-reproducible.md) - Enable a new Windows contributor to install, diagnose, run and verify Ohtia through a native supported path.
 - [STORY-001-011 — Make macOS contribution setup reproducible](STORY-001-011-make-macos-contribution-setup-reproducible.md) - Enable a new macOS contributor to install, diagnose, run and verify Ohtia on required Apple Silicon, with independently qualified optional Intel support.
 - [STORY-001-012 — Build and smoke-test native quality artifacts](STORY-001-012-build-and-smoke-test-native-quality-artifacts.md) - Produce isolated, identifiable quality packages and complete native smoke evidence for PRs and integrated source.
-- [STORY-001-013 — Qualify signed installation and update mechanisms](STORY-001-013-qualify-signed-installation-and-update-mechanisms.md) - Deliver common Actions signing/update foundations and complete Linux signed qualification, retaining native macOS/Windows builds and verified provenance.
+- [STORY-001-013 — Qualify signed installation and update mechanisms](STORY-001-013-qualify-signed-installation-and-update-mechanisms.md) - Deliver common signing/update foundations and Linux qualification with every native cell bound to its exact final package.
 - [STORY-001-014 — Capture and assemble reviewed user change notes](STORY-001-014-capture-and-assemble-reviewed-user-change-notes.md) - Collect PR impact statements and assemble traceable channel-specific editorial release notes.
-- [STORY-001-015 — Prepare immutable candidates through trusted authority](STORY-001-015-prepare-immutable-candidates-through-trusted-authority.md) - Reserve versions and assemble retained Linux-qualified candidates with complete platform build/provenance records and explicit distribution capabilities.
-- [STORY-001-016 — Promote and reconcile exact release artifacts](STORY-001-016-promote-and-reconcile-exact-release-artifacts.md) - Qualify exact-byte Linux publication and common lifecycle controls while denying unqualified macOS/Windows distribution.
-- [STORY-001-017 — Verify the integrated foundation and contributor journeys](STORY-001-017-verify-the-integrated-foundation-and-contributor-journeys.md) - Demonstrate common foundation and native contributor paths on every required platform plus complete Linux delivery infrastructure, with explicit deferred macOS/Windows signed routes.
+- [STORY-001-015 — Prepare immutable candidates through trusted authority](STORY-001-015-prepare-immutable-candidates-through-trusted-authority.md) - Reserve versions and assemble retained candidates with exact package identities, complete native-cell assignments and explicit platform capabilities.
+- [STORY-001-016 — Promote and reconcile exact release artifacts](STORY-001-016-promote-and-reconcile-exact-release-artifacts.md) - Qualify exact-byte Linux publication from admitted package and native-cell evidence while denying unqualified platform distribution.
+- [STORY-001-017 — Verify the integrated foundation and contributor journeys](STORY-001-017-verify-the-integrated-foundation-and-contributor-journeys.md) - Verify integrated foundation and contributor journeys, Linux delivery and exact package identity across assigned native cells and promotion.
 - [STORY-001-018 — Qualify the native foundation targets](STORY-001-018-qualify-the-native-foundation-targets.md) - Prove frozen workspace installation and native runtime, addon, filesystem and delivery-mechanism feasibility on all required targets.
 - [STORY-001-019 — Qualify signed macOS distribution](STORY-001-019-qualify-signed-macos-distribution.md) - Qualify Developer ID, notarized DMG/ZIP delivery and authenticated native updates on macOS 26/27 Apple Silicon.
 - [STORY-001-020 — Qualify signed Windows distribution](STORY-001-020-qualify-signed-windows-distribution.md) - Qualify an eligible Authenticode publisher facility and signed native Windows 11 x86-64 installation and updates.

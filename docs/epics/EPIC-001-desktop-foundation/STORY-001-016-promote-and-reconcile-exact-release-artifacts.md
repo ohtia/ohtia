@@ -1,7 +1,7 @@
 ---
 type: Story
 title: "STORY-001-016 — Promote and reconcile exact release artifacts"
-description: "Qualify exact-byte Linux publication and common lifecycle controls while denying unqualified macOS/Windows distribution."
+description: "Qualify exact-byte Linux publication from admitted package and native-cell evidence while denying unqualified platform distribution."
 tags: ["story", "comp:tooling", "comp:desktop"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/30
@@ -45,6 +45,8 @@ Qualify exact-byte Linux publication and common lifecycle controls while denying
 - [ ] Verify complete declared build/provenance inventory and every admitted Linux signed native profile before controlled promotion; reject requested macOS/Windows distribution without M19/W20 and retain per-target/package digests.
 - [ ] Produce publication authorization/serialization/reconciliation/retention security evidence under SPEC-001-026.
 
+- [ ] Consume the candidate's admitted artifact/cell inventory under SPEC-001-028; recheck native evidence for every authorized package and verify uploaded/downloadable digests before activation without selecting a display-job output.
+
 ## Acceptance criteria
 
 - [ ] Completion gate: verify Release authority output RA and its full release condition in the Dependencies output registry and SPEC-001-019.
@@ -56,10 +58,13 @@ Qualify exact-byte Linux publication and common lifecycle controls while denying
 - [ ] Withdrawn versions retain identity and safe guidance; supported evidence remains recoverable and rollback never implies database downgrade.
 - [ ] Release authority RA and approved controlled surfaces have actual effective admission/readback evidence; public readiness/authorization remains separately mandatory.
 
+- [ ] F16 publishes the exact admitted package digest covered by every assigned native cell; missing or mixed-digest evidence and changed uploaded bytes block activation.
+
 ## Quality checklist
 
 - [ ] Inject failure/cancellation at each publication surface; retry and inspect actual assets/digests/tags/feed/latest and previous stable.
 - [ ] Rehearse notes corrections, preview/stable same-byte promotion, withdrawal after schema migration and supported-baseline retention without a public scaffold release.
 - [ ] Run applicable shared checks and configured repository hooks, committed-history secret scan, existing policy tests where affected and git diff --check; include new files explicitly.
 - [ ] Preserve issue-first scope, isolated worktree and unrelated changes; complete the mandated independent read-only code-review gate before any code commit, then verify signed content identity. Documentation-only work keeps its documentation checks.
+- [ ] Attempt promotion with mixed X11/Wayland package evidence, a missing assigned cell and altered uploaded bytes; require refusal, then verify same-digest promotion and idempotent retry on controlled surfaces.
 - [ ] Record real inputs, results, omissions and failures; a later commit, hosted CI result and human integration are separate evidence. State installed-user impact and the proposed change note or the reason none is required.

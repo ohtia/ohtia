@@ -1,7 +1,7 @@
 ---
 type: Story
 title: "STORY-001-017 — Verify the integrated foundation and contributor journeys"
-description: "Demonstrate common foundation and native contributor paths on every required platform plus complete Linux delivery infrastructure, with explicit deferred macOS/Windows signed routes."
+description: "Verify integrated foundation and contributor journeys, Linux delivery and exact package identity across assigned native cells and promotion."
 tags: ["story", "comp:desktop", "comp:tooling", "comp:storage", "comp:docs"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/31
@@ -69,6 +69,8 @@ Demonstrate common foundation and native contributor paths on every required pla
 - [ ] Produce V17 with complete common native/runtime/storage/locale/privacy/assistive/contributor evidence, phase-scoped I13/C15/F16 and honest per-target eligibility; neither M19 nor W20 is a completion prerequisite.
 - [ ] Record real signed macOS/Windows installation/update observations as 019/020 obligations while preserving all unrelated native human foundation/newcomer requirements here.
 
+- [ ] Reconcile the integrated candidate's artifact-to-cell assignments with actual native results and retained/published package digests; verify the same-package X11/Wayland path and mixed-package refusal under SPEC-001-028.
+
 ## Acceptance criteria
 
 - [ ] Completion gate: verify STORY-001-009 output U9 and its full release condition in the Dependencies output registry and SPEC-001-021.
@@ -93,10 +95,13 @@ Demonstrate common foundation and native contributor paths on every required pla
 - [ ] No accepted defect or missing mandatory check/facility is closed by a summary, green name, mock or undocumented waiver.
 - [ ] New contributors NC supplies the actual consented unfamiliar-person observations per required OS/CPU target; self-review is not substituted.
 
+- [ ] Integrated rehearsal proves that one final package digest is preserved across every assigned X11/Wayland cell and promotion; mixed-digest evidence never qualifies a package and no required cell is hidden by grouping.
+
 ## Quality checklist
 
 - [ ] Check actual source/tested tree/workflow/run/attempt/target/digest identities and distinct local/CI/native/manual/signature evidence.
 - [ ] Reconcile the common/Linux EPIC criteria with concrete evidence, retaining 019/020 as separate full-EPIC obligations; preserve platform/authority/performance verification limits without waiting for those follow-ups to close this story.
 - [ ] Run applicable shared checks and configured repository hooks, committed-history secret scan, existing policy tests where affected and git diff --check; include new files explicitly.
 - [ ] Preserve issue-first scope, isolated worktree and unrelated changes; complete the mandated independent read-only code-review gate before any code commit, then verify signed content identity. Documentation-only work keeps its documentation checks.
+- [ ] Trace each assigned cell/scenario to its final package digest and actual test run, and compare controlled published bytes with the admitted candidate inventory.
 - [ ] Record real inputs, results, omissions and failures; a later commit, hosted CI result and human integration are separate evidence. State installed-user impact and the proposed change note or the reason none is required.

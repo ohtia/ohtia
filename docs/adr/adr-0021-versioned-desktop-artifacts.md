@@ -1,15 +1,15 @@
 ---
 type: DecisionRecord
 title: "ADR-0021 — Versioned immutable desktop artifacts"
-description: "Trace each desktop release to its source, locked components and final signed package without rebuilding during promotion."
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
+description: "Trace each desktop release to final package bytes and their native qualification evidence without rebuilding during promotion."
 sources:
   - id: semver
     resource: "https://semver.org/"
     title: "Semantic Versioning 2.0.0"
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # ADR-0021 — Versioned immutable desktop artifacts
@@ -25,6 +25,8 @@ Atomic issues and frequent integration create verification opportunities without
 Use SemVer `2.0.0` for independently published units with defined public compatibility contracts. The installed app has a coordinated release containing identified compatible component versions. Internal modules bundled only with that app do not require independent public versioning; independently distributed adapters/libraries can have it when their contracts justify it.[^semver]
 
 Record app/component version, source commit, lockfiles, build tools, target OS/CPU, schema compatibility and final artifact digest. Complete required signing/notarization/package transformations before identifying the final release bytes; verify the signed artifact as delivered. Promote those exact bytes between release channels without rebuilding or resolving dependencies. Never reuse a published version for different bytes.
+
+Distinguish a final package from a native qualification cell. A cell identifies an execution environment and required scenarios; it does not require its own package build. One final package may cover several cells only when each cell verifies and exercises that package's exact final digest. Matching application versions, source commits, filenames or build inputs do not make different package bytes interchangeable. Evidence from different digests cannot be combined to qualify one package. [ADR-0038](adr-0038-desktop-delivery-mechanisms.md#packages-and-tools) owns the package grouping; the foundation's [artifact-to-cell contract](../epics/EPIC-001-desktop-foundation/epic.md#spec-001-028-linux-first-delivery-and-platform-capability-admission) defines its manifest, evidence and admission requirements.
 
 [Desktop builds, releases and change notes](../release-policy.md) owns the trigger, channel, readiness, application version semantics, compatibility and communication policy, including the implementation handoff to the scaffolding epic. Candidate preparation and public publication require separate explicit maintainer actions; issue closure and feature integration do not publish. Final candidates carry their intended stable version before verification, and changing an embedded prerelease version creates a new candidate rather than an exact-byte promotion.
 
