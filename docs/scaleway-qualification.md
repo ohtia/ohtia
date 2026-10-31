@@ -1,7 +1,11 @@
 ---
 type: Reference
 title: Ephemeral ARM installation qualification
-description: Define shared configuration and protected credentials for unsigned native ARM probes on bounded, independently recovered Scaleway leases.
+description: Define protected authority, bounded diagnostics and recovery for unsigned native ARM qualification on ephemeral Scaleway leases.
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: devices
     resource: https://www.scaleway.com/en/docs/instances/reference-content/identify-devices/
@@ -9,10 +13,12 @@ sources:
   - id: schedules
     resource: https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule
     title: GitHub scheduled execution limitations
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
+  - id: cloud-init-units
+    resource: https://docs.cloud-init.io/en/latest/reference/breaking_changes.html#single-process-optimization
+    title: Cloud-init service naming changes
+  - id: systemd-unit-state
+    resource: https://www.freedesktop.org/software/systemd/man/latest/org.freedesktop.systemd1.html
+    title: Systemd unit load and active states
 ---
 
 # Ephemeral ARM installation qualification
@@ -59,6 +65,20 @@ The guest shutdown timer is armed before application work. An ordinary locked ac
 
 Normal cleanup and independent recovery verify owned server, volume, address and network-policy removal through exact-ID and project-filtered reads. Successful stop or DELETE responses alone do not establish absence. Foreign ownership, duplicate resources, unexpected attachments and incomplete reads fail closed. Disabling new allocations leaves recovery available. Active unexpired producers are deferred; completed or expired leases may be reclaimed.
 
+## Progress and failure diagnostics
+
+The qualification run title identifies the selected profile and fault mode. Keep the workflow name, controller job name and provider-step name stable: the recovery trigger and historical allocation-attempt reader use those identities. A display title does not establish native profile, source or authority.
+
+The controller publishes `OHTIA_ARM_PROGRESS` JSON records on phase and observation changes and every thirty seconds during silent work. Heartbeats establish controller liveness only. Guest state changes require validated observations; a provider resource response or matching SSH host key does not establish successful account authentication, guest readiness or native smoke. Records identify source/run/attempt, profile/fault, phase, monotonic elapsed/remaining budget, attempt counts and normalized failures, without resource IDs, addresses, project identifiers, paths, credentials or raw guest text.
+
+After host-key admission, a fixed shell probe checks authenticated remote execution and interpreter/helper presence without depending on Python or the helper it diagnoses. Status polling retains process exit/timeout distinctions and normalized reported SSH markers. Marker categories are hints, not proof of a cause or authority to change trust. Strict SSH key checks remain enabled. Raw stderr is bounded transient data, classified privately and discarded; neither it nor raw cloud-init/journal output enters public diagnostic artifacts.
+
+`controller-progress.json` retains the latest snapshot; `controller-events.json` retains bounded event history; `bootstrap-transport.json` preserves attempt counts and the last bootstrap transport failure independently of later collection failures. `guest-bootstrap-diagnostics.json` records a validated summary of readiness, helper failure and selected cloud-init unit states, or an explicit unavailable or invalid result. Failed and timed-out diagnostic commands identify their fixed collection stage without attributing the cause to SSH transport or to the helper. The fixed unit set includes the legacy `cloud-init.service` and its upstream replacement `cloud-init-network.service`; distribution packaging may differ.[^cloud-init-units] A unit without `LoadState=loaded` is unavailable, independently of its reported active state.[^systemd-unit-state] Invalid or missing diagnostics cannot authorize allocation or qualify a native result. Diagnostic collection preserves the primary failure and uses the existing evidence/cleanup windows; it does not extend the test, cleanup, shutdown or lease deadline.
+
+The [policy](../config/installation/scaleway.json) limits each progress record to 2 KiB, retains at most 256 events, caps the guest diagnostic summary at 16 KiB and retains at most an 8 KiB transient diagnostic stderr prefix while draining and discarding further stderr. Console output reserves space for lease-duration heartbeats and the final record; repeated observations refresh counters and timestamps without emitting duplicate events. The heartbeat thread performs no provider or guest action. Failure to persist a diagnostic cannot bypass or prevent normal cleanup. `controller-completion.json` and the nonfatal always-step summary distinguish an observed final controller record from unavailable final evidence, including abrupt process loss or a failed final write; the earlier progress snapshot remains historical. Completion persistence/summary I/O errors preserve the producer outcome, with bounded safe console metadata attempted independently. If the runner itself is lost, the always-step and artifact upload may not execute: missing completion metadata means unknown completion, and no historical heartbeat proves current liveness. Independent recovery remains responsible for owned-resource reconciliation.
+
+Changes to these policy limits alter the approved policy digest. Prepare the exact configuration plan and authorized readback before using the changed authority; a merged implementation or a passing synthetic test does not update `SCW_APPROVED_POLICY_SHA256` or authorize another paid trial.
+
 ## Evidence and limits
 
 Retained artifacts identify the exact build, allocation intent, controller journal, bounded synthetic native results and recovery ledger. Successful recovery carries complete intents and verified absence receipts forward across the original artifacts' retention period. Missing evidence, exhausted history bounds or unresolved writes suspend allocation rather than silently discarding obligations. A missing controller journal cannot establish a successful native test. Verified workflow attempts that never reached provider execution are carried separately from allocated leases.
@@ -72,3 +92,7 @@ Headless GNOME/Wayland and software rendering establish their observed native se
 [^devices]: Scaleway identifies SBS devices through vendor/model and a serial containing the allocated volume UUID; device letters are not stable identities.
 
 [^schedules]: GitHub documents scheduled-workflow delays, dropped jobs and inactivity disabling.
+
+[^cloud-init-units]: Cloud-init documents the upstream network-stage unit rename and warns that distributions may patch breaking changes.
+
+[^systemd-unit-state]: Systemd documents load state separately from active state; an active-state value alone does not establish loaded configuration.

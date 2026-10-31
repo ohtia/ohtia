@@ -1,4 +1,5 @@
 name: Installation ARM qualification
+run-name: ARM qualification · ${{ inputs.profile }} · fault=${{ inputs.fault }}
 
 on:
   workflow_dispatch:
@@ -112,6 +113,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Create, test and remove the lease
+        id: controller
         env:
           GITHUB_TOKEN: ${{ github.token }}
           SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
@@ -120,6 +122,15 @@ jobs:
           python3 scripts/scaleway_qualification.py run --cli "$RUNNER_TEMP/scw-gh/gh"
           --directory artifacts/scw-intent --build artifacts/scw-build
           --output artifacts/scw-cycle --fault "$QUALIFICATION_FAULT"
+      - name: Summarize controller completion
+        if: ${{ always() }}
+        continue-on-error: true
+        timeout-minutes: 1
+        env:
+          QUALIFICATION_PROFILE: ${{ inputs.profile }}
+          QUALIFICATION_FAULT: ${{ inputs.fault }}
+          ARM_CONTROLLER_OUTCOME: ${{ steps.controller.outcome }}
+        run: python3 scripts/scaleway_progress.py summarize artifacts/scw-cycle
       - name: Retain the controller journal even after the deliberate fault
         if: ${{ always() }}
         timeout-minutes: 2
@@ -146,6 +157,11 @@ jobs:
             artifacts/scw-cycle/diagnostics-supervision.json
             artifacts/scw-cycle/compositor.log
             artifacts/scw-cycle/bootstrap.json
+            artifacts/scw-cycle/controller-progress.json
+            artifacts/scw-cycle/controller-completion.json
+            artifacts/scw-cycle/controller-events.json
+            artifacts/scw-cycle/bootstrap-transport.json
+            artifacts/scw-cycle/guest-bootstrap-diagnostics.json
             artifacts/scw-cycle/guest-failure.json
             artifacts/scw-cycle/guest-display-failure.json
             artifacts/scw-cycle/guest-smoke-failure.json

@@ -17,6 +17,7 @@ from pathlib import Path
 
 import scaleway_cycle as cycle
 import scaleway_evidence as evidence_archive
+import scaleway_progress as reporting
 from scaleway_ledger import GitHub, install_cli
 
 INCOMING = "/var/lib/ohtia-qualification/incoming"
@@ -307,22 +308,39 @@ def guest(
     build_directory: Path,
     output: Path,
     deadline: float,
+    progress: reporting.Progress | None = None,
 ) -> dict:
+    if progress is not None:
+        progress.phase("host-key", deadline=deadline)
     address, known = host_key(api, intent, resources, key, deadline)
+    if progress is not None:
+        progress.observe("host-key-admitted")
+        progress.phase("bootstrap", deadline=deadline)
     options = ssh_options(key, known)
     test_deadline = deadline
     phase = "bootstrap"
 
-    def remote(text: str, *, timeout: int = 30):
+    def remote(text: str, *, timeout: int = 30, operation: str = "evidence"):
         cycle.require(time.monotonic() < deadline, "guest_test_deadline")
-        return cycle.command(
-            ["ssh", "-T", *options, f"root@{address}", text],
-            timeout=min(timeout, max(1, int(deadline - time.monotonic()))),
-        ).stdout
+        diagnostic = {}
+        if progress is not None:
+            progress.attempted(operation)
+        try:
+            return cycle.command(
+                ["ssh", "-T", *options, f"root@{address}", text],
+                timeout=min(timeout, max(1, int(deadline - time.monotonic()))),
+                diagnostics=diagnostic,
+            ).stdout
+        finally:
+            if progress is not None:
+                progress.transport(operation, diagnostic)
 
-    def bootstrap_status():
+    def bootstrap_status(operation="bootstrap-status"):
         raw = cycle.decode(
-            remote("/usr/bin/python3 /usr/local/lib/ohtia-qualification/bootstrap.py status")
+            remote(
+                "/usr/bin/python3 /usr/local/lib/ohtia-qualification/bootstrap.py status",
+                operation=operation,
+            )
         )
         cycle.require(
             type(raw.get("ready")) is bool and type(raw.get("failed")) is bool,
@@ -361,37 +379,92 @@ def guest(
         return safe
 
     primary = None
+    readiness_confirmed = False
     try:
         while time.monotonic() < test_deadline:
             try:
+                if not readiness_confirmed:
+                    present = reporting.readiness(
+                        remote(reporting.READINESS_COMMAND, operation="ssh-readiness")
+                    )
+                    if progress is not None:
+                        progress.readiness(present)
+                    readiness_confirmed = all(present.values())
+                    if not readiness_confirmed:
+                        time.sleep(
+                            min(
+                                cycle.policy()["limits"]["poll_seconds"],
+                                max(0, test_deadline - time.monotonic()),
+                            )
+                        )
+                        continue
                 observed = bootstrap_status()
             except subprocess.SubprocessError:
-                time.sleep(cycle.policy()["limits"]["poll_seconds"])
+                readiness_confirmed = False
+                time.sleep(
+                    min(
+                        cycle.policy()["limits"]["poll_seconds"],
+                        max(0, test_deadline - time.monotonic()),
+                    )
+                )
                 continue
+            if progress is not None:
+                progress.observe(
+                    "bootstrap-failed"
+                    if observed["failed"]
+                    else "bootstrap-ready"
+                    if observed["ready"]
+                    else "bootstrap-not-ready"
+                )
             cycle.require(not observed["failed"], "guest_bootstrap_failed")
             if observed["ready"]:
                 break
-            time.sleep(cycle.policy()["limits"]["poll_seconds"])
+            time.sleep(
+                min(
+                    cycle.policy()["limits"]["poll_seconds"],
+                    max(0, test_deadline - time.monotonic()),
+                )
+            )
         cycle.require(time.monotonic() < test_deadline, "guest_bootstrap_deadline")
         phase = "transfer"
+        if progress is not None:
+            progress.phase(phase, deadline=deadline)
         for kind in ("harness", "package"):
             file = cycle.verify_artifact(build_directory, intent["build"][kind])
-            cycle.command(
-                ["scp", "-q", *options, str(file), f"root@{address}:{INCOMING}/{file.name}"],
-                timeout=max(1, int(test_deadline - time.monotonic())),
-            )
+            diagnostic = {}
+            if progress is not None:
+                progress.attempted("transfer")
+            try:
+                cycle.command(
+                    ["scp", "-q", *options, str(file), f"root@{address}:{INCOMING}/{file.name}"],
+                    timeout=max(1, int(test_deadline - time.monotonic())),
+                    diagnostics=diagnostic,
+                )
+            finally:
+                if progress is not None:
+                    progress.transport("transfer", diagnostic)
         phase = "install"
+        if progress is not None:
+            progress.observe("transfer-complete")
+            progress.phase(phase, deadline=deadline)
         remote(
             f"chmod 0644 {INCOMING}/* && /usr/bin/python3 /usr/local/lib/ohtia-qualification/bootstrap.py install",
             timeout=300,
+            operation="install",
         )
         phase = "smoke"
+        if progress is not None:
+            progress.observe("installation-complete")
+            progress.phase(phase, deadline=deadline)
         remote(
             f"cd {GUEST_SOURCE} && runuser -u ohtia-quality -- .tooling/python/bin/python3 scripts/scaleway_guest.py display {GUEST_OUTPUT}",
             timeout=cycle.policy()["limits"]["test_seconds"],
+            operation="smoke",
         )
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         primary = error
+        if progress is not None:
+            progress.failure(error)
         cycle.write(
             output / "guest-failure.json",
             cycle.failure_record(error, phase),
@@ -400,6 +473,49 @@ def guest(
         test_deadline + cycle.policy()["limits"]["cleanup_seconds"],
         time.monotonic() + cycle.policy()["limits"]["evidence_seconds"],
     )
+    if progress is not None:
+        progress.phase("evidence", deadline=deadline)
+    diagnostic = {
+        "version": 1,
+        "status": "unavailable",
+        "reason": "diagnostic-command-unavailable",
+        "stage": "ssh-readiness",
+        "readiness": None,
+        "guest": None,
+    }
+    try:
+        present = reporting.readiness(
+            remote(reporting.READINESS_COMMAND, operation="guest-diagnostics", timeout=10)
+        )
+        diagnostic["readiness"] = present
+        if all(present.values()):
+            diagnostic["stage"] = "guest-summary"
+            data = remote(
+                "/usr/bin/python3 /usr/local/lib/ohtia-qualification/bootstrap.py diagnostics",
+                operation="guest-diagnostics",
+                timeout=10,
+            )
+            diagnostic.update(
+                status="observed", reason=None, guest=reporting.guest_diagnostic(data)
+            )
+        else:
+            diagnostic["reason"] = "interpreter-or-helper-unavailable"
+    except subprocess.CalledProcessError:
+        diagnostic["reason"] = "diagnostic-command-failed"
+    except subprocess.TimeoutExpired:
+        diagnostic["reason"] = "diagnostic-command-timeout"
+    except subprocess.SubprocessError:
+        diagnostic["reason"] = "diagnostic-command-unavailable"
+    except OSError:
+        diagnostic["reason"] = "local-io-unavailable"
+    except (ValueError, KeyError, TypeError):
+        diagnostic.update(status="invalid", reason="diagnostic-invalid")
+    try:
+        cycle.write(
+            output / "guest-bootstrap-diagnostics.json", diagnostic, discard_incomplete=True
+        )
+    except (OSError, ValueError):
+        pass
     value = None
     for operation in ("display", "smoke"):
         try:
@@ -423,7 +539,8 @@ def guest(
         except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
             pass
     try:
-        bootstrap_status()
+        if diagnostic["readiness"] is None or all(diagnostic["readiness"].values()):
+            bootstrap_status(operation="guest-diagnostics")
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
         pass
     try:
@@ -513,6 +630,19 @@ def execute(gh: GitHub, directory: Path, build_directory: Path, output: Path, fa
     cycle.require(intent["identity"] == identity, "controller_intent_identity")
     cycle.require(not output.exists(), "fresh_cycle_output")
     output.mkdir(parents=True, mode=0o700)
+    with reporting.Progress(output, identity, intent["profile"], fault) as progress:
+        _execute(gh, intent, identity, build_directory, output, fault, progress)
+
+
+def _execute(
+    gh: GitHub,
+    intent: dict,
+    identity: dict,
+    build_directory: Path,
+    output: Path,
+    fault: str,
+    progress: reporting.Progress,
+) -> None:
     state = {
         "version": 1,
         "identity": identity,
@@ -570,11 +700,13 @@ def execute(gh: GitHub, directory: Path, build_directory: Path, output: Path, fa
             }
         )
         cycle.write(journal, state)
+        progress.allocation(event["kind"], event["stage"])
 
     api = cycle.API(os.environ.get("SCW_SECRET_KEY", ""), settings, "creator")
     cycle.write(journal, state)
     deadline = time.monotonic() + cycle.policy()["limits"]["test_seconds"]
     api.deadline = deadline
+    progress.phase("allocation", deadline=deadline)
     try:
         resources = api.create(
             intent,
@@ -582,7 +714,7 @@ def execute(gh: GitHub, directory: Path, build_directory: Path, output: Path, fa
             lambda allocated: cloud_config(intent, allocated, public_key),
             record,
         )
-        result = guest(api, intent, resources, key, build_directory, output, deadline)
+        result = guest(api, intent, resources, key, build_directory, output, deadline, progress)
         state.update(
             {
                 "native_smoke_passed": True,
@@ -591,12 +723,15 @@ def execute(gh: GitHub, directory: Path, build_directory: Path, output: Path, fa
             }
         )
         cycle.write(journal, state)
+        progress.observe("native-smoke-passed")
         if fault == "after-native-smoke":
+            progress.phase("controller-loss")
             # This intentionally bypasses finally on the same tested VM; Actions still retains the journal.
             shutil.rmtree(private)
             os._exit(137)
         cycle.require(result["status"] == "passed", "native_smoke_failed")
     except BaseException as error:
+        progress.failure(error)
         state["failure_code"] = cycle.failure_code(error)
         cycle.write(journal, state)
         raise
@@ -606,6 +741,7 @@ def execute(gh: GitHub, directory: Path, build_directory: Path, output: Path, fa
                 time.monotonic() + cycle.policy()["limits"]["cleanup_seconds"],
                 deadline + cycle.policy()["limits"]["cleanup_seconds"],
             )
+            progress.phase("cleanup", deadline=api.deadline)
             seen = api.discover(intent)
             state["allocation_resolved"] = (
                 state["allocation_resolved"] or state["in_flight"] in seen
@@ -617,6 +753,7 @@ def execute(gh: GitHub, directory: Path, build_directory: Path, output: Path, fa
             state.update({"status": "cleaned", "normal_cleanup": receipt})
             cycle.write(journal, state)
             cycle.require(state["allocation_resolved"], "uncertain_allocation_quarantined")
+            progress.observe("resources-absent")
         finally:
             shutil.rmtree(private, ignore_errors=True)
 

@@ -2053,6 +2053,8 @@ class EvidenceTests(unittest.TestCase):
 
         def command(args, **kwargs):
             text = args[-1]
+            if args[0] == "ssh" and text == qualification.reporting.READINESS_COMMAND:
+                return subprocess.CompletedProcess(args, 0, b'{"python":true,"helper":true}')
             if args[0] == "ssh" and text.endswith("bootstrap.py status"):
                 return subprocess.CompletedProcess(
                     args,

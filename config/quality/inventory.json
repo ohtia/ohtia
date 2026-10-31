@@ -78,6 +78,7 @@
     "scripts/tests/test_quality_tests.py",
     "scripts/tests/test_quality_vm.py",
     "scripts/tests/test_scaleway_cycle.py",
+    "scripts/tests/test_scaleway_progress.py",
     "scripts/tests/test_windows_contributor.py",
     "scripts/tests/test_workspace.py"
   ],
@@ -571,6 +572,46 @@
       "id": "test_scaleway_cycle.MetadataTransportTests.test_untrusted_artifacts_do_not_consume_the_admitted_plan_bound",
       "platforms": ["win32"],
       "reason": "POSIX pipe transport fixture for the Linux-only Scaleway controller."
+    },
+    {
+      "id": "test_scaleway_progress.CommandDiagnosticTests.test_failed_transport_returns_only_normalized_marker_and_status",
+      "platforms": ["win32"],
+      "reason": "The Scaleway SSH subprocess helper uses POSIX selector pipes; this regression executes a synthetic child through that Linux controller boundary."
+    },
+    {
+      "id": "test_scaleway_progress.CommandDiagnosticTests.test_simultaneous_stdout_and_stderr_do_not_deadlock",
+      "platforms": ["win32"],
+      "reason": "The Scaleway SSH subprocess helper uses POSIX selector pipes; this regression executes a synthetic child through that Linux controller boundary."
+    },
+    {
+      "id": "test_scaleway_progress.CommandDiagnosticTests.test_stdout_bound_still_applies_when_stderr_is_captured",
+      "platforms": ["win32"],
+      "reason": "The Scaleway SSH subprocess helper uses POSIX selector pipes; this regression executes a synthetic child through that Linux controller boundary."
+    },
+    {
+      "id": "test_scaleway_progress.CommandDiagnosticTests.test_timeout_terminates_synthetic_child_and_retains_no_stderr",
+      "platforms": ["win32"],
+      "reason": "The Scaleway SSH subprocess helper uses POSIX selector pipes; this regression executes a synthetic child through that Linux controller boundary."
+    },
+    {
+      "id": "test_scaleway_progress.ProgressTests.test_heartbeat_during_silent_work_never_claims_guest_progress",
+      "platforms": ["win32"],
+      "reason": "The Scaleway SSH subprocess helper uses POSIX selector pipes; this regression executes a synthetic child through that Linux controller boundary."
+    },
+    {
+      "id": "test_scaleway_progress.CommandDiagnosticTests.test_cancelled_command_terminates_child_and_preserves_cancellation",
+      "platforms": ["win32"],
+      "reason": "The Linux Scaleway controller uses POSIX selector pipes; this regression executes a synthetic child through that boundary."
+    },
+    {
+      "id": "test_scaleway_progress.CommandDiagnosticTests.test_oversized_private_output_is_drained_without_changing_the_exit_result",
+      "platforms": ["win32"],
+      "reason": "The Linux Scaleway controller uses POSIX selector pipes; this regression executes a synthetic child through that boundary."
+    },
+    {
+      "id": "test_scaleway_progress.CommandDiagnosticTests.test_cancellation_survives_reap_timeout_without_unbounded_context_wait",
+      "platforms": ["win32"],
+      "reason": "The Linux Scaleway controller uses POSIX selector pipes; this regression executes a synthetic child through that boundary."
     }
   ],
   "vitest_inapplicable": [
