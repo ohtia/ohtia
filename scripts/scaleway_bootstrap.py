@@ -268,6 +268,56 @@ def status() -> dict:
     return result
 
 
+def diagnostics() -> dict:
+    """Read only selected unit states; never return raw service or cloud-init output."""
+    value = status()
+    states = {
+        "active",
+        "reloading",
+        "inactive",
+        "failed",
+        "activating",
+        "deactivating",
+        "maintenance",
+        "refreshing",
+    }
+    value["units"] = {}
+    for unit in (
+        "cloud-init.service",
+        "cloud-init-network.service",
+        "cloud-config.service",
+        "cloud-final.service",
+    ):
+        state = "unavailable"
+        try:
+            result = subprocess.run(
+                [
+                    "/usr/bin/systemctl",
+                    "show",
+                    unit,
+                    "--property=LoadState",
+                    "--property=ActiveState",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=False,
+                env={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"},
+            )
+            fields = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+            observed = fields.get("ActiveState")
+            if (
+                result.returncode == 0
+                and fields.get("LoadState") == "loaded"
+                and observed in states
+            ):
+                state = observed
+        except (OSError, subprocess.SubprocessError):
+            pass
+        value["units"][unit] = state
+    return value
+
+
 def failure(error: BaseException, operation: str) -> dict:
     code = (
         str(error)
@@ -292,7 +342,7 @@ def failure(error: BaseException, operation: str) -> dict:
     }
 
 
-if __name__ == "__main__":
+def main():
     operation = sys.argv[1] if len(sys.argv) == 2 else "prepare"
     try:
         if operation == "prepare":
@@ -303,11 +353,13 @@ if __name__ == "__main__":
             install()
         elif operation == "status":
             print(json.dumps(status(), sort_keys=True))
+        elif operation == "diagnostics":
+            print(json.dumps(diagnostics(), sort_keys=True))
         else:
             raise ValueError("guest_bootstrap_operation")
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         report = failure(error, operation)
-        if os.getuid() == 0:
+        if operation in {"prepare", "extract", "install"} and os.getuid() == 0:
             try:
                 with FAILURE.open("w") as stream:
                     json.dump(report, stream, sort_keys=True)
@@ -316,3 +368,7 @@ if __name__ == "__main__":
                 pass
         print("Disposable guest operation failed (" + report["code"] + ").", file=sys.stderr)
         raise SystemExit(1) from None
+
+
+if __name__ == "__main__":
+    main()

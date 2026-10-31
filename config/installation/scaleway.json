@@ -37,7 +37,12 @@
     "evidence_seconds": 60,
     "maximum_observation_bytes": 67108864,
     "maximum_observation_archive_bytes": 2097152,
-    "maximum_restore_characters": 60000
+    "maximum_restore_characters": 60000,
+    "progress_interval_seconds": 30,
+    "progress_record_bytes": 2048,
+    "progress_maximum_records": 256,
+    "diagnostic_stderr_bytes": 8192,
+    "guest_diagnostic_bytes": 16384
   },
   "profiles": {
     "fedora-44": {

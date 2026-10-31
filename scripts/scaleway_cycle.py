@@ -265,6 +265,13 @@ SAFE_FAILURE_CODES = frozenset(
         "privileged_guest_account",
         "process_failed",
         "process_output_bound",
+        "process_stderr_bound",
+        "progress_identity",
+        "progress_phase",
+        "progress_observation",
+        "progress_operation",
+        "ssh_readiness_shape",
+        "guest_diagnostic_shape",
         "process_timeout",
         "profile_configuration",
         "project_not_empty",
@@ -518,17 +525,28 @@ def read(path: Path, maximum: int = 2 * 1024 * 1024) -> dict:
     return decode(path.read_bytes(), maximum)
 
 
-def write(path: Path, value: dict) -> None:
+def write(path: Path, value: dict, *, discard_incomplete: bool = False) -> None:
     require(
         path.parent.resolve() == path.parent.absolute() and not path.is_symlink(), "unsafe_output"
     )
     temporary = path.with_name(path.name + ".partial")
     data = (json.dumps(value, sort_keys=True, indent=2) + "\n").encode()
-    with temporary.open("xb") as stream:
-        stream.write(data)
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.replace(temporary, path)
+    owned = None
+    try:
+        with temporary.open("xb") as stream:
+            owned = os.fstat(stream.fileno())
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if discard_incomplete and owned is not None:
+            try:
+                current = temporary.lstat()
+                if (current.st_dev, current.st_ino) == (owned.st_dev, owned.st_ino):
+                    temporary.unlink()
+            except OSError:
+                pass
 
 
 def digest(path: Path) -> str:
@@ -595,40 +613,100 @@ def process_environment(*, github: bool = False) -> dict:
     return result
 
 
-def command(args: list, *, timeout: int = 30) -> subprocess.CompletedProcess:
-    """Capture only bounded child output; no provider or GitHub credentials enter subprocesses."""
+def command(
+    args: list, *, timeout: int = 30, diagnostics: dict | None = None
+) -> subprocess.CompletedProcess:
+    """Bound both streams and classify cancellation across launch, waiting and cleanup."""
+    try:
+        return _command(args, timeout=timeout, diagnostics=diagnostics)
+    except KeyboardInterrupt:
+        if diagnostics is not None:
+            diagnostics.update({"category": "controller-cancelled", "exit_code": None})
+        raise
+
+
+def _command(args: list, *, timeout: int, diagnostics: dict | None) -> subprocess.CompletedProcess:
     arguments = [str(arg) for arg in args]
-    maximum = policy()["limits"]["maximum_json_bytes"]
-    data = bytearray()
+    limits = policy()["limits"]
+    maximum = limits["maximum_json_bytes"]
+    data, private_stderr = bytearray(), bytearray()
+    if diagnostics is not None:
+        diagnostics.update({"category": "local-io-failed", "exit_code": None})
     with subprocess.Popen(
         arguments,
         cwd=ROOT,
         env=process_environment(),
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.PIPE if diagnostics is not None else subprocess.DEVNULL,
     ) as child:
+        cancellation = None
         try:
             deadline = time.monotonic() + timeout
             with selectors.DefaultSelector() as selector:
-                selector.register(child.stdout, selectors.EVENT_READ)
-                while True:
+                selector.register(child.stdout, selectors.EVENT_READ, "stdout")
+                if diagnostics is not None:
+                    selector.register(child.stderr, selectors.EVENT_READ, "stderr")
+                while selector.get_map():
                     remaining = deadline - time.monotonic()
-                    if remaining <= 0 or not selector.select(remaining):
+                    events = selector.select(max(0, remaining)) if remaining > 0 else []
+                    if not events:
                         raise subprocess.TimeoutExpired(arguments, timeout)
-                    block = os.read(child.stdout.fileno(), min(65536, maximum + 1 - len(data)))
-                    if not block:
-                        break
-                    data.extend(block)
-                    require(len(data) <= maximum, "process_output_bound")
+                    for key, _ in events:
+                        target = data if key.data == "stdout" else private_stderr
+                        bound = (
+                            maximum if key.data == "stdout" else limits["diagnostic_stderr_bytes"]
+                        )
+                        # Drain stderr beyond the retained prefix without changing process semantics.
+                        amount = (
+                            min(65536, bound + 1 - len(target)) if key.data == "stdout" else 65536
+                        )
+                        block = os.read(key.fileobj.fileno(), amount)
+                        if not block:
+                            selector.unregister(key.fileobj)
+                            continue
+                        if key.data == "stdout":
+                            require(len(target) + len(block) <= bound, "process_output_bound")
+                            target.extend(block)
+                        else:
+                            target.extend(block[: max(0, bound - len(target))])
             status = child.wait(timeout=max(0.001, deadline - time.monotonic()))
             if status:
                 raise subprocess.CalledProcessError(status, arguments)
+            if diagnostics is not None:
+                diagnostics.update({"category": "success", "exit_code": 0})
             return subprocess.CompletedProcess(arguments, status, bytes(data))
+        except BaseException as error:
+            if isinstance(error, KeyboardInterrupt):
+                cancellation = error
+            if diagnostics is not None:
+                from scaleway_progress import stderr_category
+
+                if isinstance(error, subprocess.CalledProcessError):
+                    diagnostics.update(
+                        {
+                            "category": stderr_category(bytes(private_stderr)),
+                            "exit_code": error.returncode,
+                        }
+                    )
+                elif isinstance(error, subprocess.TimeoutExpired):
+                    diagnostics.update({"category": "process-timeout", "exit_code": None})
+                elif isinstance(error, CycleError):
+                    diagnostics.update({"category": "output-limit", "exit_code": None})
+                elif isinstance(error, KeyboardInterrupt):
+                    diagnostics.update({"category": "controller-cancelled", "exit_code": None})
+            raise
         finally:
+            private_stderr.clear()
             if child.poll() is None:
-                child.kill()
-                child.wait(timeout=5)
+                try:
+                    child.kill()
+                    child.wait(timeout=5)
+                except (OSError, subprocess.TimeoutExpired):
+                    if cancellation is not None:
+                        # Keep the interrupt exit path bounded and preserve the primary cancellation.
+                        raise cancellation from None
+                    raise
 
 
 def source_context(role: str) -> dict:
