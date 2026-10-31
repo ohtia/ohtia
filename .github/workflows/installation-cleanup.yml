@@ -1,0 +1,151 @@
+name: Installation ARM recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Reconcile leases or restore a privately retained checkpoint
+        type: choice
+        options: [recover, restore]
+        default: recover
+      backup_base64:
+        description: Compressed checkpoint prepared by the private backup-input command
+        type: string
+        required: false
+      backup_sha256:
+        description: SHA-256 to compare with the private copy before approving restoration
+        type: string
+        required: false
+      confirm_project_reconciled:
+        description: Confirm that creation is suspended and the checkpoint covers all allocations
+        type: boolean
+        default: false
+  # Fixed current-main checkout; triggering run origin/ID is reread and artifacts remain bounded data.
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: [Installation ARM qualification]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    name: Reconcile owned expired or completed ARM leases
+    if: >-
+      github.repository == 'ohtia/ohtia' && github.ref == 'refs/heads/main' &&
+      vars.SCW_RECOVERY_ENABLED == 'true' && inputs.mode != 'restore' &&
+      (github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.event == 'workflow_dispatch'))
+    concurrency:
+      group: installation-scaleway-recovery
+      cancel-in-progress: false
+    environment: scaleway-cleanup
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    env:
+      SCW_CYCLE_ENABLED: ${{ vars.SCW_CYCLE_ENABLED }}
+      SCW_RECOVERY_ENABLED: ${{ vars.SCW_RECOVERY_ENABLED }}
+      SCW_APPROVED_POLICY_SHA256: ${{ vars.SCW_APPROVED_POLICY_SHA256 }}
+      SCW_PROJECT_ID: ${{ vars.SCW_PROJECT_ID }}
+      SCW_ARM_ZONE: ${{ vars.SCW_ARM_ZONE }}
+    steps:
+      - name: Check out current trusted main, never the completed run's source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+      - name: Install the checksum-pinned metadata client
+        run: python3 scripts/scaleway_qualification.py install-cli --output "$RUNNER_TEMP/scw-gh"
+      - name: Preserve recovery observations before deleting anything
+        id: plan
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+        run: >-
+          python3 scripts/scaleway_qualification.py prepare-recovery --cli "$RUNNER_TEMP/scw-gh/gh"
+          --output artifacts/scw-recovery-plan
+      - name: Publish the immutable recovery plan before provider writes
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.plan.outputs.artifact_name }}
+          path: artifacts/scw-recovery-plan/plan.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Reconcile through the separate cleanup authority
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+        run: >-
+          python3 scripts/scaleway_qualification.py recover --cli "$RUNNER_TEMP/scw-gh/gh"
+          --plan artifacts/scw-recovery-plan/plan.json --output artifacts/scw-recovery
+      - name: Retain the bounded recovery ledger
+        if: ${{ always() }}
+        timeout-minutes: 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scw-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/scw-recovery/recovery.json
+          if-no-files-found: error
+          retention-days: 14
+
+  restore:
+    name: Restore approved checkpoint ${{ inputs.backup_sha256 }}
+    if: >-
+      github.repository == 'ohtia/ohtia' && github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' && inputs.mode == 'restore' &&
+      inputs.confirm_project_reconciled && vars.SCW_RECOVERY_ENABLED == 'true' &&
+      vars.SCW_CYCLE_ENABLED != 'true'
+    concurrency:
+      group: installation-scaleway-creator
+      cancel-in-progress: false
+    environment: scaleway-qualification
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    env:
+      SCW_CYCLE_ENABLED: ${{ vars.SCW_CYCLE_ENABLED }}
+      SCW_RECOVERY_ENABLED: ${{ vars.SCW_RECOVERY_ENABLED }}
+      SCW_APPROVED_POLICY_SHA256: ${{ vars.SCW_APPROVED_POLICY_SHA256 }}
+      SCW_PROJECT_ID: ${{ vars.SCW_PROJECT_ID }}
+      SCW_ARM_ZONE: ${{ vars.SCW_ARM_ZONE }}
+    steps:
+      - name: Check out reviewed main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+      - name: Install the checksum-pinned metadata client
+        run: python3 scripts/scaleway_qualification.py install-cli --output "$RUNNER_TEMP/scw-gh"
+      - name: Restore only after protected approval and empty-project verification
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+          SCW_RESTORE_SHA256: ${{ inputs.backup_sha256 }}
+        run: >-
+          python3 scripts/scaleway_qualification.py restore --cli "$RUNNER_TEMP/scw-gh/gh"
+          --output artifacts/scw-recovery
+      - name: Retain the restored checkpoint without claiming cleanup-key health
+        if: ${{ always() }}
+        timeout-minutes: 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scw-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/scw-recovery/recovery.json
+          if-no-files-found: error
+          retention-days: 14

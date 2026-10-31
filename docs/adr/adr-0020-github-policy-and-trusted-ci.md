@@ -2,10 +2,6 @@
 type: DecisionRecord
 title: "ADR-0020 — Declared GitHub policy and restricted CI authority"
 description: "Verify CI provenance before merge, require approval for external fork workflows and separate PR execution from publication authority."
-generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: github
     resource: "https://docs.github.com/en/actions/reference/security/secure-use"
@@ -31,6 +27,10 @@ sources:
   - id: workflow-skips
     resource: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onpushpull_requestpull_request_targetpathspaths-ignore
     title: GitHub Actions workflow path filters
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # ADR-0020 — Declared GitHub policy and restricted CI authority
@@ -62,6 +62,14 @@ Run the full selected matrix for every push to `main` and for every PR to `main`
 The recurring matrix is usable with GitHub Free on this public repository and requires no owned runners. Native builds still depend on the observed hosted image and service capacity; all native jobs may start independently within the account limits, and only the aggregate waits for them. A missing or failed cell fails the aggregate. Preview image failure is visible rather than replaced with another macOS family. Artifact storage has separate service limits, so bounded retention and an explicit evidence window remain necessary.
 
 Hosted quality evidence and distribution qualification have distinct inventories and guarantees. Release preparation cannot promote a quality-only Windows Server result into Windows 11 compatibility or treat omitted Fedora/Debian ARM64 CI jobs as native release evidence. Changing these inventories requires reviewed contracts, workflow/check inventory updates and applicable tests.
+
+### Ephemeral native qualification
+
+Use Actions-operated, ephemeral native Scaleway ARM guests for the Fedora and Debian distribution profiles that lack an admitted hosted KVM facility. Keep this manual protected qualification separate from the recurring fourteen-cell matrix. Consider hosted nested virtualization, a permanent custom runner fleet and API-created temporary guests. Missing ARM KVM prevents the hosted guest path; a permanent fleet adds recurring maintenance and cost. Temporary guests preserve the all-Actions operating model while adding explicit cloud authority, billing and recovery obligations. No existing personal VM or fixed IP becomes a CI dependency.
+
+Separate unsigned package construction from cloud credentials and separate creator approval from automatic recovery. The cleanup application excludes CPU creation/start and IAM administration; its required Block Storage full-access grant still permits allocation, so it is not provider-enforced delete-only. Main restrictions and source route checks supplement effective provider permissions. Store exact resource and lease limits in the [qualification policy](../../config/installation/scaleway.json), and use the [qualification contract](../scaleway-qualification.md) for native admission, uncertain-write quarantine, recovery and evidence. A separately approved paid trial follows reviewed code and actual setup readback.
+
+Use GitHub CLI `2.103.*` for fixed-repository read-only Actions metadata, with an exact version, official archive URL and SHA-256 in that policy. Python's standard library controls fixed-origin cloud requests. Keep resource inputs and intents bounded; artifact contents are data, never privileged executable recovery code. Use independent workflow concurrency, completion reconciliation, periodic recovery and an early guest shutdown timer. GitHub-only recovery cannot guarantee a hard cost ceiling during a shared service outage, and stopping compute leaves disk/IP charges. Do not expand to another cleanup provider or permanent infrastructure without a separately reviewed decision.
 
 ### CI provenance before merge
 

@@ -40,7 +40,7 @@ ENVIRONMENT = {
     "SCW_PROJECT_ID": PROJECT,
     "SCW_ARM_ZONE": "nl-ams-1",
     "SCW_ARM_INSTANCE_TYPE": "BASIC2-A8C-32G",
-    "SCW_ARM_DISK_GIB": "32",
+    "SCW_ARM_DISK_GB": "32",
     "SCW_ARM_FEDORA44_IMAGE_ID": FEDORA,
     "SCW_ARM_DEBIAN13_IMAGE_ID": DEBIAN,
     "SCW_SECRET_KEY": TOKEN,
@@ -149,7 +149,7 @@ class ScalewayTests(unittest.TestCase):
             "SCW_PROJECT_ID": "../other-project",
             "SCW_ARM_ZONE": "nl-ams-1/../../evil",
             "SCW_ARM_INSTANCE_TYPE": "ARM\nInjected: value",
-            "SCW_ARM_DISK_GIB": "0",
+            "SCW_ARM_DISK_GB": "0",
             "SCW_ARM_FEDORA44_IMAGE_ID": "https://attacker.example",
             "SCW_ARM_DEBIAN13_IMAGE_ID": FEDORA,
         }
@@ -364,7 +364,8 @@ class ScalewayTests(unittest.TestCase):
             result = scaleway.profile(self.settings)
         self.assertTrue(all(not call.kwargs for call in get.call_args_list))
         self.assertEqual([image["id"] for image in result["images"]], [FEDORA, DEBIAN])
-        self.assertEqual(result["disk_gib"], 32)
+        self.assertEqual(result["disk_gb"], 32)
+        self.assertEqual(result["disk_bytes"], 32_000_000_000)
         self.assertNotIn("price", json.dumps(result))
         self.assertNotIn("stock", json.dumps(result))
 

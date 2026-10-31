@@ -15,53 +15,53 @@ sources:
   - id: marketplace-api
     resource: https://www.scaleway.com/en/developers/api/marketplace/
     title: Scaleway Marketplace local image identities
+  - id: storage-units
+    resource: https://www.scaleway.com/en/docs/block-storage/how-to/mount-a-volume/
+    title: Scaleway decimal storage capacity
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # Scaleway qualification access preflight
 
 ## Purpose and authority
 
-The [Scaleway access preflight workflow](../.github/workflows/scaleway-access.yml) checks authenticated, project-filtered reads and the configured ARM64 image/SKU combinations for the [installation qualification owner](epics/EPIC-001-desktop-foundation/STORY-001-013-qualify-signed-installation-and-update-mechanisms.md). It runs on a GitHub-hosted Linux x64 machine and reads Scaleway metadata; it does not execute on a Scaleway VM. The separate [hosted facility observations](installation-facilities.md) establish different, explicitly limited evidence.
+The [access preflight workflow](../.github/workflows/scaleway-access.yml) checks authenticated project-filtered reads and configured ARM64 image/SKU combinations for the [installation qualification owner](epics/EPIC-001-desktop-foundation/STORY-001-013-qualify-signed-installation-and-update-mechanisms.md). It runs on a GitHub-hosted Linux x64 machine and reads provider metadata. The separate [hosted facility observations](installation-facilities.md) and [ephemeral qualification contract](scaleway-qualification.md) describe different evidence.
 
-This workflow contains only GET requests to `https://api.scaleway.com`. It has no resource creation, start, resize, SSH, package execution or deletion operation. A successful run does not authorize a paid execution. Any later provisioning workflow needs an approved execution and cost plan, resource identity tracking and cleanup for failure and interruption before creating resources. Existing manually provisioned machines are not inputs to this preflight.
+The checker contains only GET requests to the fixed Scaleway TLS origin. It does not create, start, resize, contact or delete a VM, and success does not authorize a paid execution. Use a protected main-only deployment with maintainer approval; inspect the actual guards and provider permission scope separately. This checker does not inspect IAM policy or prove denied access to other projects.
 
-## Protected configuration
+## Configuration contract
 
-Use the `scaleway-qualification` GitHub environment. Restrict deployment branches to the exact `main` branch, require approval by `AdrianMastronardi` and disable administrator bypass. Self-review remains permitted for the sole maintainer. Inspect the actual environment protections and deployment branch rules when setting up access; the workflow name or environment reference does not prove those settings are enforced.
+The workflow consumes deployment configuration through Actions variables and its credential through an environment secret. Neither source files nor reports contain credential values. The HTTP adapter injects only the secret required by its authenticated reads; it does not expose that value to a subprocess or accept a caller-supplied endpoint.
 
-The Scaleway API key belongs to the dedicated `ohtia-github-actions` IAM application. Its policy grants `InstancesFullAccess` under CPU & GPU Instances and `BlockStorageFullAccess` under Block Storage, scoped to the dedicated `ohtia-ci` project. These permission sets permit paid writes; they do not impose a resource shape or spending cap. The preflight exercises only reads and does not inspect that IAM policy or prove denied access to other projects. Review the policy separately in Scaleway.
+- `SCW_PROJECT_ID`: canonical UUID of the dedicated project.
+- `SCW_ARM_ZONE`: selected provider availability zone.
+- `SCW_ARM_INSTANCE_TYPE`: selected ARM64 SKU.
+- `SCW_ARM_DISK_GB`: planned total decimal GB, recorded together with its exact byte count. This setting does not allocate or validate storage.[^storage-units]
+- `SCW_ARM_FEDORA44_IMAGE_ID` and `SCW_ARM_DEBIAN13_IMAGE_ID`: zone-specific ARM64 bootable SBS local-image UUIDs with the expected OS labels.
 
-Keep `SCW_SECRET_KEY` and `SCW_ACCESS_KEY` in environment secrets, with their recovery copies in the maintainer's password manager. The HTTP API authenticates with `SCW_SECRET_KEY` in `X-Auth-Token`; this workflow does not inject the unused access-key identifier into its process. Never put either value in repository files, workflow inputs, command-line arguments, reports or comments. The maintainer must track the API key's actual expiration and rotate it before expiry; this workflow neither reads its expiration nor renews it.
+Use Marketplace local-image identities rather than global-image or snapshot identities. A replacement image requires review and a fresh observation; the checker does not resolve a moving label silently.[^marketplace-api] The version-2 report consumes decimal GB and never reinterprets the legacy GiB variable. Deploy its matching configuration before running the new reader.
 
-Configure these environment variables; none contains a credential:
+## Execute and interpret
 
-- `SCW_PROJECT_ID`: the dedicated project's canonical UUID.
-- `SCW_ARM_ZONE`: the approved availability zone, currently `nl-ams-1` (AMS1).
-- `SCW_ARM_INSTANCE_TYPE`: the approved ARM SKU, currently `BASIC2-A8C-32G`.
-- `SCW_ARM_DISK_GIB`: the planned disk size in GiB, currently `32`. Recording this value does not allocate or validate disk capacity.
-- `SCW_ARM_FEDORA44_IMAGE_ID`: the zone-specific, ARM64, `instance_sbs` local image UUID with label `fedora_44`.
-- `SCW_ARM_DEBIAN13_IMAGE_ID`: the zone-specific, ARM64, `instance_sbs` local image UUID with label `debian_trixie`.
+Dispatch the workflow from reviewed `main` and approve its protected deployment. PR events do not receive the credential. The checker binds its actual checkout, workflow/source SHAs, run and attempt to the expected hosted execution context. Independently compare these observations with the actual GitHub run; strings inside a report do not prove external enforcement.
 
-Use Marketplace local image IDs for the selected zone, CPU and storage type, not global image IDs or `instance_sbs_snapshot` IDs. These IDs are configuration, not workflow source constants. A replacement image requires review and a fresh preflight; the checker does not silently resolve a moving label.[^marketplace-api]
+Authenticated Instance and Block Storage requests are project-filtered and bounded to one item. An empty response establishes only that the list request was accepted, not existing-resource authority, project membership or write permission. A returned foreign-project item fails. Resource names, addresses, IDs and counts are excluded from the report.[^instance-api][^block-api]
 
-## Execute and inspect
+Separate public catalog requests verify the configured SKU's native architecture, support state and Block Storage capability, and each local image's exact identity, OS label, CPU, zone, storage type and SKU compatibility. SKU lookup uses bounded pagination rather than assuming the first page is complete. These reads do not establish authentication, reserve stock, quote prices or prove boot/disk feasibility.[^instance-types-api]
 
-After the workflow is integrated into `main`, open Actions, choose **Scaleway access preflight**, select **Run workflow** on `main` and approve its protected environment deployment. There are no caller-supplied inputs. PR events do not run this workflow or receive its secrets. The job has a five-minute timeout, uses pinned checkout/setup/artifact actions with read-only repository contents access and does not persist checkout credentials.
+Requests have finite socket/body deadlines and response-size bounds, with no redirects or retries. Non-success status, premature message termination, malformed or duplicate-key JSON and incompatible profiles fail. Only static diagnostic codes reach logs; provider bodies, arbitrary exception text and credentials are excluded. The workflow retains a report only after complete success.
 
-The checker requires a matching main-only dispatch identity, GitHub-hosted Linux x64 context and matching workflow, source and actual checkout SHAs. These checks bind its report to the execution context; independently compare them with the actual GitHub run and reviewed workflow rather than trusting report strings alone.
+Retrieve the run/attempt-specific artifact from the completed workflow. Its report records filtered-read outcomes and configured profile metadata. Resource creation, write-authority testing, policy-isolation testing, disk-capacity testing, stock reservation and distribution qualification remain explicitly false. Failed, missing or expired evidence does not establish working access.
 
-The checker sends two authenticated, project-filtered, one-item-page requests: Instance listing with `project`, and Block Storage volume listing with `project_id` and `include_deleted=false`. An empty list records only that the authenticated, project-filtered list request was accepted; it does not prove authority over an existing resource, project membership or denial on another project. A returned resource from another project fails the observation. Resource names, addresses, IDs, counts and response bodies are not retained.[^instance-api][^block-api]
+[^instance-api]: Instance listing supports project filtering and bounded pagination.
 
-The public catalog requests check that the configured SKU is ARM64, not at end of service and supports Block Storage, and that both exact local images match their OS labels, ARM64, zone, bootable SBS type and compatible SKU. SKU lookup searches at most five pages of one hundred entries each, stopping when the configured SKU is found or a shorter terminal page establishes absence. The two exact local image reads are separate requests. Public catalog success alone does not test authentication. The checker does not reserve stock, estimate prices or test disk requirements.[^instance-types-api]
+[^block-api]: Block Storage listing uses project filtering and explicitly excludes deleted volumes.
 
-Requests use a fixed TLS origin without ambient HTTP proxy settings, redirect following or retries. Each connection has a twenty-second socket timeout, with a twenty-second deadline checked between body reads and a two-MiB response limit. Non-success responses, premature HTTP message termination, malformed or duplicate-key JSON and incompatible profiles fail closed. Diagnostics expose only a closed allowlist of fixed failure codes, distinguishing authorization, rate limiting and configuration failures while omitting provider bodies, arbitrary exception text and credentials. The workflow retains a report only after complete success.
+[^marketplace-api]: Local images distinguish zone, architecture, storage type and compatible Instance types.
 
-Download `scaleway-access-<run-id>-<attempt>` from the completed run's artifacts. Its `report.json`, retained for fourteen days, records schema version, source/workflow/run/attempt, filtered-read outcomes and the configured ARM profile. `resources_created`, `write_authority_tested`, `project_policy_isolation_tested`, `disk_capacity_tested`, `stock_reserved` and `distribution_qualified` remain false. Failed or missing reports do not establish working access. Copy any evidence needed beyond artifact retention into controlled task records without adding credentials.
+[^instance-types-api]: The Instance type catalog is paginated; one default page is not the complete inventory.
 
-[^instance-api]: Instance listing supports project filtering and bounded `page`/`per_page` pagination.
-
-[^block-api]: Block Storage listing uses `project_id`, `include_deleted`, `page` and `page_size`.
-
-[^marketplace-api]: Marketplace local images distinguish zone, architecture, storage type and compatible commercial Instance types.
-
-[^instance-types-api]: The Instance type catalog accepts `page` and `per_page`; a single default page is not the complete catalog.
+[^storage-units]: Scaleway uses decimal GB; a mounted volume displayed with binary units can appear smaller.
