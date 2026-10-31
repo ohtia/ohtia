@@ -34,7 +34,7 @@ The checker contains only GET requests to the fixed Scaleway TLS origin. It does
 
 ## Configuration contract
 
-The workflow consumes deployment configuration through Actions variables and its credential through an environment secret. Neither source files nor reports contain credential values. The HTTP adapter injects only the secret required by its authenticated reads; it does not expose that value to a subprocess or accept a caller-supplied endpoint.
+The [qualification configuration map](scaleway-qualification.md#configuration-placement) owns the placement of all Scaleway settings. This preflight consumes the following resource subset from repository variables and its credential from the protected creator environment secret. Neither source files nor reports contain credential values. The HTTP adapter injects only the secret required by its authenticated reads; it does not expose that value to a subprocess or accept a caller-supplied endpoint.
 
 - `SCW_PROJECT_ID`: canonical UUID of the dedicated project.
 - `SCW_ARM_ZONE`: selected provider availability zone.
