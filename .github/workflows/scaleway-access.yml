@@ -34,7 +34,7 @@ jobs:
           SCW_PROJECT_ID: ${{ vars.SCW_PROJECT_ID }}
           SCW_ARM_ZONE: ${{ vars.SCW_ARM_ZONE }}
           SCW_ARM_INSTANCE_TYPE: ${{ vars.SCW_ARM_INSTANCE_TYPE }}
-          SCW_ARM_DISK_GIB: ${{ vars.SCW_ARM_DISK_GIB }}
+          SCW_ARM_DISK_GB: ${{ vars.SCW_ARM_DISK_GB }}
           SCW_ARM_FEDORA44_IMAGE_ID: ${{ vars.SCW_ARM_FEDORA44_IMAGE_ID }}
           SCW_ARM_DEBIAN13_IMAGE_ID: ${{ vars.SCW_ARM_DEBIAN13_IMAGE_ID }}
         run: |

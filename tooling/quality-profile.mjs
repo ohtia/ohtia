@@ -11,9 +11,39 @@ import {
   verifyStableSentinels,
 } from "../packages/main/dist/index.js";
 const [operation, file] = process.argv.slice(2);
-if (process.env.GITHUB_ACTIONS !== "true" || process.env.RUNNER_ENVIRONMENT !== "github-hosted")
+const cloud = operation === "prepare-cloud" || operation === "retain-cloud";
+if (cloud) {
+  const guardFile = "/run/ohtia-qualification.json";
+  const info = fs.lstatSync(guardFile);
+  if (
+    !info.isFile() ||
+    info.isSymbolicLink() ||
+    info.uid !== 0 ||
+    info.nlink !== 1 ||
+    (info.mode & 0o022) !== 0 ||
+    info.size > 65536 ||
+    fs.realpathSync(guardFile) !== guardFile
+  )
+    throw new Error("A root-owned disposable guest guard is required.");
+  const guard = JSON.parse(fs.readFileSync(guardFile, "utf8"));
+  if (
+    process.platform !== "linux" ||
+    process.arch !== "arm64" ||
+    process.getuid?.() === 0 ||
+    os.userInfo().username !== "ohtia-quality" ||
+    !guard.ready_at_epoch ||
+    Date.parse(guard.intent.expires_at) <= Date.now() ||
+    guard.intent.identity.run_id !== process.env.GITHUB_RUN_ID ||
+    guard.intent.identity.attempt !== process.env.GITHUB_RUN_ATTEMPT ||
+    guard.intent.distribution_qualified !== false
+  )
+    throw new Error("The disposable guest is not admitted for this run.");
+} else if (
+  process.env.GITHUB_ACTIONS !== "true" ||
+  process.env.RUNNER_ENVIRONMENT !== "github-hosted"
+)
   throw new Error("Automatic fixture provisioning requires a fresh GitHub-hosted VM.");
-if (operation === "prepare") {
+if (operation === "prepare" || operation === "prepare-cloud") {
   const host = nativeProfileHost();
   if (process.getuid?.() === 0) throw new Error("Electron fixtures must run as an ordinary user.");
   const configuration = path.join(host.configurationRoot, "Ohtia");
@@ -73,7 +103,7 @@ if (operation === "prepare") {
     }),
     { flag: "wx", mode: 0o600 },
   );
-} else if (operation === "retain") {
+} else if (operation === "retain" || operation === "retain-cloud") {
   const context = JSON.parse(fs.readFileSync(file, "utf8"));
   if (
     context.owner !== process.env.GITHUB_RUN_ID ||

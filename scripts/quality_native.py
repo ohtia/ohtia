@@ -127,12 +127,19 @@ def macos_filesystem(directory: Path) -> str:
     return record["FilesystemType"]
 
 
-def host_matches(cell: dict) -> dict:
-    delivery.require(
-        os.environ.get("GITHUB_ACTIONS") == "true"
-        and os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted",
-        "Use a fresh standard GitHub-hosted VM.",
-    )
+def host_matches(cell: dict, *, external_guard: dict | None = None) -> dict:
+    if external_guard is not None:
+        from scaleway_guest import admit_guest
+
+        delivery.require(
+            external_guard == admit_guest(cell), "The external guest guard is not admitted."
+        )
+    else:
+        delivery.require(
+            os.environ.get("GITHUB_ACTIONS") == "true"
+            and os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted",
+            "Use a fresh standard GitHub-hosted VM.",
+        )
     delivery.require(
         workspace.target_id() == cell["target"], "Hosted OS/CPU differs from the required cell."
     )
@@ -140,8 +147,8 @@ def host_matches(cell: dict) -> dict:
         release = platform.freedesktop_os_release()
         if cell["profile"] in {"fedora-44", "debian-13"}:
             delivery.require(
-                os.environ.get("OHTIA_QUALITY_VM") == cell["id"],
-                "Use this distribution's actual KVM guest.",
+                os.environ.get("OHTIA_QUALITY_VM") == cell["id"] or external_guard is not None,
+                "Use this distribution's admitted native guest.",
             )
             expected_id, version_id = (
                 ("fedora", "44") if cell["profile"] == "fedora-44" else ("debian", "13")
@@ -161,6 +168,11 @@ def host_matches(cell: dict) -> dict:
                 delivery.require(
                     "deb13" in platform.release(), "Debian requires its own vendor kernel."
                 )
+                if external_guard is not None:
+                    delivery.require(
+                        Path("/sys/module/apparmor/parameters/enabled").read_text().strip() == "Y",
+                        "AppArmor must remain enabled.",
+                    )
         else:
             delivery.require(
                 release.get("ID") == "ubuntu"
@@ -329,6 +341,17 @@ def configuration(cell: dict, prepared: Path, output: Path, version: str) -> dic
         ],
     }
     return config
+
+
+def construct_package(cell: dict, work: Path, version: str) -> Path:
+    """Use the same unsigned package construction for hosted and external native probes."""
+    work.mkdir()
+    assembled = work / "assembled"
+    desktop_runtime.assemble(cell["target"], assembled)
+    config = configuration(cell, assembled, work / "packages", version)
+    delivery.write(work / "builder.json", config)
+    command([workspace.node_path(), "tooling/quality-package.mjs", work / "builder.json"])
+    return work / "packages"
 
 
 def prepared_record(directory: Path, cell: dict) -> dict:
@@ -812,12 +835,7 @@ def main() -> int:
             (output / "native-os-packages.txt").write_text(command(package_command, capture=True))
         delivery.write(output / "result.json", result)
         work = ROOT / "artifacts" / f"quality-{args.cell}"
-        work.mkdir()
-        assembled = work / "assembled"
-        desktop_runtime.assemble(cell["target"], assembled)
-        config = configuration(cell, assembled, work / "packages", planned["application_version"])
-        delivery.write(work / "builder.json", config)
-        command([workspace.node_path(), "tooling/quality-package.mjs", work / "builder.json"])
+        construct_package(cell, work, planned["application_version"])
         context = work / "context.json"
         command([workspace.node_path(), "tooling/quality-profile.mjs", "prepare", context])
         profile = Path(delivery.read(context)["profile"])

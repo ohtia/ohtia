@@ -1,0 +1,153 @@
+name: Installation ARM qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Native Linux profile (Fedora recovery must pass before Debian)
+        required: true
+        type: choice
+        options: [fedora-44, debian-13]
+      fault:
+        description: Intentionally lose the controller after native smoke on this same VM
+        required: true
+        type: choice
+        default: none
+        options: [none, after-native-smoke]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installation-scaleway-creator
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build unsigned ARM qualification inputs
+    if: github.repository == 'ohtia/ohtia' && github.ref == 'refs/heads/main' && vars.SCW_CYCLE_ENABLED == 'true' && vars.SCW_RECOVERY_ENABLED == 'true'
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 30
+    steps:
+      - name: Check out admitted main source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+      - name: Install native package construction tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y rpm
+      - name: Set up and build the frozen workspace without cloud credentials
+        run: |
+          python3 scripts/workspace.py setup
+          python3 scripts/workspace.py run build
+      - name: Construct the selected package and probe harness
+        env:
+          QUALIFICATION_PROFILE: ${{ inputs.profile }}
+        run: python3 scripts/scaleway_build.py "$QUALIFICATION_PROFILE" artifacts/scw-build
+      - name: Retain exact unsigned build inputs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scw-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/scw-build/
+          if-no-files-found: error
+          retention-days: 14
+
+  qualify:
+    name: Create and qualify one ARM lease
+    needs: build
+    if: github.repository == 'ohtia/ohtia' && github.ref == 'refs/heads/main' && vars.SCW_CYCLE_ENABLED == 'true' && vars.SCW_RECOVERY_ENABLED == 'true'
+    environment: scaleway-qualification
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    env:
+      SCW_CYCLE_ENABLED: ${{ vars.SCW_CYCLE_ENABLED }}
+      SCW_RECOVERY_ENABLED: ${{ vars.SCW_RECOVERY_ENABLED }}
+      SCW_APPROVED_POLICY_SHA256: ${{ vars.SCW_APPROVED_POLICY_SHA256 }}
+      SCW_PROJECT_ID: ${{ vars.SCW_PROJECT_ID }}
+      SCW_ARM_ZONE: ${{ vars.SCW_ARM_ZONE }}
+      SCW_ARM_INSTANCE_TYPE: ${{ vars.SCW_ARM_INSTANCE_TYPE }}
+      SCW_ARM_DISK_GB: ${{ vars.SCW_ARM_DISK_GB }}
+      SCW_ARM_FEDORA44_IMAGE_ID: ${{ vars.SCW_ARM_FEDORA44_IMAGE_ID }}
+      SCW_ARM_DEBIAN13_IMAGE_ID: ${{ vars.SCW_ARM_DEBIAN13_IMAGE_ID }}
+      SCW_CREATOR_KEY_EXPIRES_AT: ${{ vars.SCW_CREATOR_KEY_EXPIRES_AT }}
+      SCW_CLEANUP_KEY_EXPIRES_AT: ${{ vars.SCW_CLEANUP_KEY_EXPIRES_AT }}
+    steps:
+      - name: Check out controller source without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+      - name: Install the checksum-pinned metadata client
+        run: python3 scripts/scaleway_qualification.py install-cli --output "$RUNNER_TEMP/scw-gh"
+      - name: Download this run's exact build inputs
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: scw-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/scw-build
+          digest-mismatch: error
+      - name: Admit configuration and prepare the nonsecret allocation intent
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          QUALIFICATION_PROFILE: ${{ inputs.profile }}
+        run: >-
+          python3 scripts/scaleway_qualification.py prepare
+          --cli "$RUNNER_TEMP/scw-gh/gh" --profile "$QUALIFICATION_PROFILE"
+          --build artifacts/scw-build --output artifacts/scw-intent
+      - name: Publish the allocation intent before any provider write
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scw-intent-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/scw-intent/intent.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Create, test and remove the lease
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+          QUALIFICATION_FAULT: ${{ inputs.fault }}
+        run: >-
+          python3 scripts/scaleway_qualification.py run --cli "$RUNNER_TEMP/scw-gh/gh"
+          --directory artifacts/scw-intent --build artifacts/scw-build
+          --output artifacts/scw-cycle --fault "$QUALIFICATION_FAULT"
+      - name: Retain the controller journal even after the deliberate fault
+        if: ${{ always() }}
+        timeout-minutes: 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scw-journal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/scw-cycle/journal.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Retain native evidence separately from private SSH material
+        if: ${{ always() }}
+        timeout-minutes: 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scw-native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/scw-cycle/native.json
+            artifacts/scw-cycle/native-observations.json.gz
+            artifacts/scw-cycle/runtime.json
+            artifacts/scw-cycle/storage.json
+            artifacts/scw-cycle/diagnostics.json
+            artifacts/scw-cycle/runtime-supervision.json
+            artifacts/scw-cycle/storage-supervision.json
+            artifacts/scw-cycle/diagnostics-supervision.json
+            artifacts/scw-cycle/compositor.log
+            artifacts/scw-cycle/bootstrap.json
+            artifacts/scw-cycle/guest-failure.json
+            artifacts/scw-cycle/guest-display-failure.json
+            artifacts/scw-cycle/guest-smoke-failure.json
+          if-no-files-found: warn
+          retention-days: 14

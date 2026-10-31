@@ -139,7 +139,7 @@ def configuration() -> dict:
     require(
         re.fullmatch(r"[A-Z0-9][A-Z0-9-]{1,63}", instance_type) is not None, "invalid_instance_type"
     )
-    disk = os.environ.get("SCW_ARM_DISK_GIB", "")
+    disk = os.environ.get("SCW_ARM_DISK_GB", "")
     require(re.fullmatch(r"[1-9][0-9]{0,4}", disk) is not None, "invalid_disk_size")
     images = {
         "fedora_44": canonical_uuid(os.environ.get("SCW_ARM_FEDORA44_IMAGE_ID", "")),
@@ -150,7 +150,8 @@ def configuration() -> dict:
         "project_id": project,
         "zone": zone,
         "instance_type": instance_type,
-        "disk_gib": int(disk),
+        "disk_gb": int(disk),
+        "disk_bytes": int(disk) * 10**9,
         "images": images,
     }
 
@@ -303,7 +304,8 @@ def profile(settings: dict) -> dict:
         "zone": zone,
         "instance_type": instance_type,
         "architecture": "arm64",
-        "disk_gib": settings["disk_gib"],
+        "disk_gb": settings["disk_gb"],
+        "disk_bytes": settings["disk_bytes"],
         "images": images,
     }
 
@@ -316,7 +318,7 @@ def observe() -> dict:
     access = read_access(settings, token)
     selected = profile(settings)
     return {
-        "version": 1,
+        "version": 2,
         "identity": identity,
         "status": "passed",
         "access": access,

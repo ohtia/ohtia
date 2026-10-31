@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "repository": "ohtia/ohtia",
+  "qualification_workflow": ".github/workflows/installation-qualification.yml",
+  "cleanup_workflow": ".github/workflows/installation-cleanup.yml",
+  "creator_environment": "scaleway-qualification",
+  "cleanup_environment": "scaleway-cleanup",
+  "name_prefix": "ohtia-ci",
+  "architecture": "arm64",
+  "storage": {
+    "unit": "decimal-GB",
+    "root_bytes": 22000000000,
+    "home_bytes": 10000000000,
+    "total_bytes": 32000000000,
+    "perf_iops": 5000
+  },
+  "limits": {
+    "managed_instances": 1,
+    "test_seconds": 2400,
+    "cleanup_seconds": 600,
+    "lease_seconds": 3600,
+    "guest_shutdown_seconds": 3000,
+    "request_seconds": 20,
+    "poll_seconds": 5,
+    "maximum_pages": 20,
+    "page_size": 100,
+    "maximum_json_bytes": 2097152,
+    "maximum_package_bytes": 536870912,
+    "maximum_harness_bytes": 2147483648,
+    "maximum_harness_expanded_bytes": 4294967296,
+    "maximum_harness_files": 100000,
+    "recovery_observation_seconds": 1800,
+    "key_validity_margin_seconds": 86400,
+    "artifact_retention_days": 14,
+    "maximum_leases": 128,
+    "maximum_run_attempts": 20,
+    "evidence_seconds": 60,
+    "maximum_observation_bytes": 67108864,
+    "maximum_observation_archive_bytes": 2097152,
+    "maximum_restore_characters": 60000
+  },
+  "profiles": {
+    "fedora-44": {
+      "image_variable": "SCW_ARM_FEDORA44_IMAGE_ID",
+      "image_label": "fedora_44",
+      "filesystem": "btrfs",
+      "format": "rpm"
+    },
+    "debian-13": {
+      "image_variable": "SCW_ARM_DEBIAN13_IMAGE_ID",
+      "image_label": "debian_trixie",
+      "filesystem": "ext4",
+      "format": "deb"
+    }
+  },
+  "approved_zones": ["nl-ams-1"],
+  "approved_instance_types": ["BASIC2-A8C-32G"],
+  "github_cli": {
+    "version": "2.103.3",
+    "url": "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz",
+    "sha256": "4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d"
+  }
+}
