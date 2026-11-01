@@ -101,6 +101,13 @@ BUDGET_UNITS = {
     "update_archive_listing_bytes": "byte",
     "update_expanded_bytes": "byte",
     "update_catalog_lifetime_ms": "millisecond",
+    "delivery_document_bytes": "byte",
+    "delivery_evidence_record_bytes": "byte",
+    "delivery_evidence_records": "record",
+    "delivery_total_metadata_bytes": "byte",
+    "delivery_version_inventories": "inventory",
+    "delivery_artifacts_per_inventory": "artifact",
+    "delivery_cells": "cell",
 }
 REQUIRED_BUDGETS = set(BUDGET_UNITS)
 
