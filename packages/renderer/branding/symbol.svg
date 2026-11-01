@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" role="img" aria-label="Ohtia: anteojos" viewBox="0 0 64 64">
+  <title>Ohtia: anteojos</title>
+  <style>
+    .gl-line { fill: none; stroke: #6f2b55; stroke-width: 4; stroke-linecap: round; }
+    .gl-lens { fill: #fae9f2; stroke: #6f2b55; stroke-width: 4.5; }
+    .gl-pupil { fill: #6f2b55; }
+    @media (prefers-color-scheme: dark) {
+      .gl-line { fill: none; stroke: #edaed1; stroke-width: 4; stroke-linecap: round; }
+      .gl-lens { fill: #341e2b; stroke: #edaed1; stroke-width: 4.5; }
+      .gl-pupil { fill: #edaed1; }
+    }
+  </style>
+  <g class="gl">
+    <path class="gl-line" d="M8.6 29.5 L4.5 22.5"/>
+    <path class="gl-line" d="M55.4 29.5 L59.5 22.5"/>
+    <path class="gl-line" d="M28.5 31.5 Q32 27.5 35.5 31.5"/>
+    <circle class="gl-lens" cx="19" cy="34" r="11"/>
+    <circle class="gl-lens" cx="45" cy="34" r="11"/>
+    <circle class="gl-pupil gl-l" cx="19" cy="34" r="4.2"/>
+    <circle class="gl-pupil gl-r" cx="45" cy="34" r="4.2"/>
+  </g>
+</svg>

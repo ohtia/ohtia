@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "selector": ":root",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
+      "selector": "button",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
+      "selector": "button[aria-disabled=\"true\"]",
+      "foreground": "content.disabled",
+      "backgrounds": ["surface.page"],
+      "minimum": 3
+    },
+    {
+      "selector": ":focus-visible, [role=\"alert\"]:focus",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".ohtia-brand",
+      "foreground": "voice.ohtia.content",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7
+    }
+  ]
+}

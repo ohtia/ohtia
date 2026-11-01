@@ -68,12 +68,25 @@ export async function buildDesktop(root) {
       },
     },
   });
+  for (const directory of ["icons", "branding"]) {
+    const destination = path.join(output, "renderer", directory);
+    fs.mkdirSync(destination, { recursive: true });
+    for (const name of fs.readdirSync(path.join(root, "packages/renderer", directory))) {
+      if (/\.(svg|png)$/.test(name))
+        fs.copyFileSync(
+          path.join(root, "packages/renderer", directory, name),
+          path.join(destination, name),
+        );
+    }
+  }
   const types = {
     ".html": "text/html; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
     ".css": "text/css; charset=utf-8",
     ".woff2": "font/woff2",
     ".otf": "font/otf",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
   };
   const assets = {};
   for (const name of fs.readdirSync(path.join(output, "renderer"), { recursive: true })) {
@@ -123,6 +136,13 @@ export async function buildDesktop(root) {
   for (const name of fs.readdirSync(path.join(root, "packages/renderer/fonts")))
     if (name.endsWith("LICENSE.txt") || name === "manifest.json")
       fs.copyFileSync(path.join(root, "packages/renderer/fonts", name), path.join(licenses, name));
+  for (const directory of ["icons", "branding"]) {
+    for (const name of ["LICENSE.txt", "manifest.json"]) {
+      const source = path.join(root, "packages/renderer", directory, name);
+      if (fs.existsSync(source))
+        fs.copyFileSync(source, path.join(licenses, `${directory}-${name}`));
+    }
+  }
   const inventory = {};
   for (const name of fs.readdirSync(output, { recursive: true })) {
     const file = path.join(output, name);

@@ -16,6 +16,7 @@ okf_version: "0.2"
 
 - [System architecture](architecture.md) — Application data authority, execution boundaries, provider adapters, and schema-migration recovery.
 - [Frontend architecture](frontend-architecture.md) — Graphical research workflows, Electron interface boundaries, state ownership, editing, localization, and verification.
+- [Renderer design foundations](design-foundations.md) — Generate canonical design tokens and verify bundled typography, icons and static branding before building the renderer.
 - [Ohtia design system](design-system.md) — Visual identity, tokens, symbol and character, typography, composition, accessibility, localization, components and patterns of Ohtia's interface.
 - [Workspace layout](workspace-layout.md) — Deterministic workspace geometry, accessible panel controls, desktop layout preferences and interaction acceptance scenarios.
 - [Data model](data-model.md) — Source entities, research-project relationships, and versioned Markdown manuscripts in SQLite.

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "files": [
+    {
+      "file": "illustration.png",
+      "source": "docs/assets/ohtia/illustration.png",
+      "sha256": "060657782a833c77461a0d099765a09b7dd397c60cc57d04d9765dc04c6fd4cb"
+    },
+    {
+      "file": "illustration.svg",
+      "source": "docs/assets/ohtia/illustration.svg",
+      "sha256": "6ee8f6190aea48243213e18661fcb7ce5d5a7cf84f51b72850d0445d2b35b3aa"
+    },
+    {
+      "file": "symbol.svg",
+      "source": "docs/assets/ohtia/symbol.svg",
+      "sha256": "95bf64eff9c28fcb206269db38d61630a18cd95491f7a109f96ccacc95ab6868"
+    }
+  ]
+}

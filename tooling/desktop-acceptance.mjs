@@ -4,6 +4,7 @@ import os from "node:os";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { _electron, expect } from "@playwright/test";
+import { verifyPackagedDesign } from "./design-acceptance.mjs";
 import { admittedLaunch } from "./desktop-launch.mjs";
 import { recordReadyNativeProcesses } from "./desktop-native-observation.mjs";
 import { verifyStableSentinels, readBoundedFile } from "../packages/main/dist/index.js";
@@ -339,6 +340,7 @@ try {
     ),
   ).toBe(true);
   passed("packaged-korean-glyphs", fonts);
+  passed("packaged-design-foundations", await verifyPackagedDesign(page, cdp));
   await page.evaluate(() => {
     const walker = document.createTreeWalker(document.querySelector("main"), NodeFilter.SHOW_TEXT);
     const nodes = [];

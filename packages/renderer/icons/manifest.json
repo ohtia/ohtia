@@ -1,0 +1,291 @@
+{
+  "distribution": "lucide-static@1.66.0",
+  "source": "https://registry.npmjs.org/lucide-static/-/lucide-static-1.66.0.tgz",
+  "integrity": "sha512-j8Bjf/f21PtlD8p0wx1lRxyOrs98WZ1QEImkWmfskuJ8mOCwTN7Dwc6EHUzJDSzh79aB+Bo7SWcoTCM2zEjnJg==",
+  "license_file": "LICENSE.txt",
+  "license_sha256": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57",
+  "icons": [
+    {
+      "name": "app-window",
+      "file": "app-window.svg",
+      "archive_member": "package/icons/app-window.svg",
+      "sha256": "ffd0096cfceb0c89d13dce67f0bfd6823bbc3e4120648f1192228845addb1a1f"
+    },
+    {
+      "name": "archive",
+      "file": "archive.svg",
+      "archive_member": "package/icons/archive.svg",
+      "sha256": "fa4d29ffc1a860725ccfac32af5af5b965c8a5432f61e19dad21877c2e62df48"
+    },
+    {
+      "name": "arrow-left",
+      "file": "arrow-left.svg",
+      "archive_member": "package/icons/arrow-left.svg",
+      "sha256": "5cf41452e1e00b2a34b315dd0fc03aa80060e5dec693c461ec2446909f3bd4f4"
+    },
+    {
+      "name": "arrow-left-right",
+      "file": "arrow-left-right.svg",
+      "archive_member": "package/icons/arrow-left-right.svg",
+      "sha256": "fc7e1f6fe3359cd1f12764127355901dd4ae68d182328a8fcf3b1ef924fd1d24"
+    },
+    {
+      "name": "ban",
+      "file": "ban.svg",
+      "archive_member": "package/icons/ban.svg",
+      "sha256": "2fba7d9c7bbb98538f22c480dd4432601b847f00374128630361965d62edbbb2"
+    },
+    {
+      "name": "calendar-clock",
+      "file": "calendar-clock.svg",
+      "archive_member": "package/icons/calendar-clock.svg",
+      "sha256": "81d83fceac2ffc749f66fa1a35aaa12a23080eeda9bb88effdcd4637205047fc"
+    },
+    {
+      "name": "check",
+      "file": "check.svg",
+      "archive_member": "package/icons/check.svg",
+      "sha256": "7bb664a727396418e1ddc4f7126dad52a7e686e3293251080787296a0d8aa278"
+    },
+    {
+      "name": "circle-check",
+      "file": "circle-check.svg",
+      "archive_member": "package/icons/circle-check.svg",
+      "sha256": "8060d78fab415a2a84470a845ee29d59f02b8f5361e2a238f8d1cdbf99d2955c"
+    },
+    {
+      "name": "circle-dashed",
+      "file": "circle-dashed.svg",
+      "archive_member": "package/icons/circle-dashed.svg",
+      "sha256": "da59dd12bafb46def3b649be17d7fd11dfcc8862403d9ca32706cafbc9162caa"
+    },
+    {
+      "name": "circle-dot",
+      "file": "circle-dot.svg",
+      "archive_member": "package/icons/circle-dot.svg",
+      "sha256": "05da2c5d8955aeffb94e735288dd13c0b93f97e22931b72067c9aec2d13aaa20"
+    },
+    {
+      "name": "circle-question-mark",
+      "file": "circle-question-mark.svg",
+      "archive_member": "package/icons/circle-question-mark.svg",
+      "sha256": "11450e7cfe83416546a62a8179c36c37817140114d0b911d8f054c13fccd219c"
+    },
+    {
+      "name": "circle-x",
+      "file": "circle-x.svg",
+      "archive_member": "package/icons/circle-x.svg",
+      "sha256": "1653a72163e592e3ca93f583dfccbd81745811c0f0df3edf2419c67abd190f0d"
+    },
+    {
+      "name": "clipboard-check",
+      "file": "clipboard-check.svg",
+      "archive_member": "package/icons/clipboard-check.svg",
+      "sha256": "084298ded916ebf3bd765b24447bfd4d8c7967bdce1571035b30ef9ec755c247"
+    },
+    {
+      "name": "cloud-off",
+      "file": "cloud-off.svg",
+      "archive_member": "package/icons/cloud-off.svg",
+      "sha256": "b426789ea901762782452f3171e17081f1f9ca694b2a3f3e2de97b77bdeacc8a"
+    },
+    {
+      "name": "code",
+      "file": "code.svg",
+      "archive_member": "package/icons/code.svg",
+      "sha256": "3ac4fe86aeab15c7bbdeab3db5f9a7d50f680838051a9f5f6e2913edf1e5fca9"
+    },
+    {
+      "name": "contrast",
+      "file": "contrast.svg",
+      "archive_member": "package/icons/contrast.svg",
+      "sha256": "e5cf98b0916fc323ef832ca28e8cd2f6366d8e09efe41d001b2391f2dc5baf28"
+    },
+    {
+      "name": "database",
+      "file": "database.svg",
+      "archive_member": "package/icons/database.svg",
+      "sha256": "bc4edbaaea7f39131cfcd05dda9f34725c7c3b61eea0f2cd8c4ef2912df6db65"
+    },
+    {
+      "name": "file-text",
+      "file": "file-text.svg",
+      "archive_member": "package/icons/file-text.svg",
+      "sha256": "26b2c26f298745d0215b105d1599d3ff3e4f13e29a5f5bbcf48718ed4d45861b"
+    },
+    {
+      "name": "folder-archive",
+      "file": "folder-archive.svg",
+      "archive_member": "package/icons/folder-archive.svg",
+      "sha256": "2766116747890a91214524cffc8daf9eaf46dd944f1874fc407ecf736cd4a0fe"
+    },
+    {
+      "name": "git-compare",
+      "file": "git-compare.svg",
+      "archive_member": "package/icons/git-compare.svg",
+      "sha256": "6124c1c3ed1b585ca3421c83dbfa5c44ed7cceb664ba09ca2ac03351bf454a62"
+    },
+    {
+      "name": "grip-vertical",
+      "file": "grip-vertical.svg",
+      "archive_member": "package/icons/grip-vertical.svg",
+      "sha256": "7cab2717fb8f49f950267195a938fae18adb712dcb51043810c4e1bcb19f7f06"
+    },
+    {
+      "name": "image",
+      "file": "image.svg",
+      "archive_member": "package/icons/image.svg",
+      "sha256": "c4078fd954a98256124c9749b6f9a6a48621e8dcec07ec78236b3ecc26b819c3"
+    },
+    {
+      "name": "info",
+      "file": "info.svg",
+      "archive_member": "package/icons/info.svg",
+      "sha256": "3374d0b5169cf1a6b2454907cbd51448e7e5fde4db68ecf03461fc908bb3b008"
+    },
+    {
+      "name": "keyboard",
+      "file": "keyboard.svg",
+      "archive_member": "package/icons/keyboard.svg",
+      "sha256": "2ccb0930f3ecfe25b57a6f5e2c3acbef32655f460e2969a266f8f1ddf96beaba"
+    },
+    {
+      "name": "list",
+      "file": "list.svg",
+      "archive_member": "package/icons/list.svg",
+      "sha256": "e597bbc28747b1d4a25b0d8123cc7ddf8fb659b854a57fce0a8871e1b954ccdc"
+    },
+    {
+      "name": "lock",
+      "file": "lock.svg",
+      "archive_member": "package/icons/lock.svg",
+      "sha256": "f29aeb84a1e646ac427ac89e0357d02da736158a10ed33ed42030960b36009fc"
+    },
+    {
+      "name": "maximize-2",
+      "file": "maximize-2.svg",
+      "archive_member": "package/icons/maximize-2.svg",
+      "sha256": "224c6155a21ce1a70799e3540ddbc1a269a81e70a76bb993f5e904942c1dc0b9"
+    },
+    {
+      "name": "menu",
+      "file": "menu.svg",
+      "archive_member": "package/icons/menu.svg",
+      "sha256": "f55fca8fa291099545ccca9e2a0a96292ac5448471dcdada31c441726f80be44"
+    },
+    {
+      "name": "message-square-plus",
+      "file": "message-square-plus.svg",
+      "archive_member": "package/icons/message-square-plus.svg",
+      "sha256": "9915fdad1b27b88b3b31cba16905ac57e7b59953fb4977d17b85fb11c0cf9b49"
+    },
+    {
+      "name": "minimize-2",
+      "file": "minimize-2.svg",
+      "archive_member": "package/icons/minimize-2.svg",
+      "sha256": "0dbfeea2fe219c066e5a6d8c9fa259c4b6e500e7a91000a3b474d65a0f56730a"
+    },
+    {
+      "name": "monitor",
+      "file": "monitor.svg",
+      "archive_member": "package/icons/monitor.svg",
+      "sha256": "e268f29d5d23e55cf3631abdb91b363178c91bddc1a6ba73d65f0a4d9182979e"
+    },
+    {
+      "name": "moon",
+      "file": "moon.svg",
+      "archive_member": "package/icons/moon.svg",
+      "sha256": "fb3881ebc561007e8eaded60827f2c9365f70d5910794105b8efb1b2cafb0d35"
+    },
+    {
+      "name": "octagon-alert",
+      "file": "octagon-alert.svg",
+      "archive_member": "package/icons/octagon-alert.svg",
+      "sha256": "e83011f4680671415dfb0bc95a28e26b721f48ad8c49e62b7ee39c554c169d62"
+    },
+    {
+      "name": "panel-left",
+      "file": "panel-left.svg",
+      "archive_member": "package/icons/panel-left.svg",
+      "sha256": "ec601775c0d35c77492f24eeb47352c9821bb89d936502e0f8e1bda1044fb9c4"
+    },
+    {
+      "name": "panel-right",
+      "file": "panel-right.svg",
+      "archive_member": "package/icons/panel-right.svg",
+      "sha256": "0b81e6983e7e08d5b02eb194ca66a304fc910b23c72a2d02baf761bcd09e994e"
+    },
+    {
+      "name": "plus",
+      "file": "plus.svg",
+      "archive_member": "package/icons/plus.svg",
+      "sha256": "8c4a1c1daadd43cabe41603041a608e5c4c082228cb03c2d537caed0e2477ff0"
+    },
+    {
+      "name": "refresh-cw",
+      "file": "refresh-cw.svg",
+      "archive_member": "package/icons/refresh-cw.svg",
+      "sha256": "aca5b435761bf7556421dbf5f1950f1b8486184290501e05480af6395f36dcd1"
+    },
+    {
+      "name": "rotate-ccw",
+      "file": "rotate-ccw.svg",
+      "archive_member": "package/icons/rotate-ccw.svg",
+      "sha256": "723421bc0dfda968c0991089c47ec0f7abdddaa5e8a90749a2974cb2dda9868f"
+    },
+    {
+      "name": "save",
+      "file": "save.svg",
+      "archive_member": "package/icons/save.svg",
+      "sha256": "2f5bce714cb7add3eff7bc19df7e107f0729b3c2b14b4e6d1a40cc6f6eae8be6"
+    },
+    {
+      "name": "search",
+      "file": "search.svg",
+      "archive_member": "package/icons/search.svg",
+      "sha256": "aad1fb44a964c5841a107239b45bfbe6ab08ac62bf3a13377b5412002e8068db"
+    },
+    {
+      "name": "search-x",
+      "file": "search-x.svg",
+      "archive_member": "package/icons/search-x.svg",
+      "sha256": "97f902fed869e8118aeacc552c1b56bc6bf9b849a88cab4bc4cceaa612c35a20"
+    },
+    {
+      "name": "settings",
+      "file": "settings.svg",
+      "archive_member": "package/icons/settings.svg",
+      "sha256": "971da964e73b3cb0652b7ab640c5b376b5159b262ff43ca019933bf24bb2e296"
+    },
+    {
+      "name": "signpost",
+      "file": "signpost.svg",
+      "archive_member": "package/icons/signpost.svg",
+      "sha256": "e92c4a4ca2cbdc7ae6d20a45cc4a4537e273ec447d041f66f61c602841fcc563"
+    },
+    {
+      "name": "sun",
+      "file": "sun.svg",
+      "archive_member": "package/icons/sun.svg",
+      "sha256": "456f85acc731d51ed1b2b550f76dca068dea504131ead46a4dbce90e79520c33"
+    },
+    {
+      "name": "triangle-alert",
+      "file": "triangle-alert.svg",
+      "archive_member": "package/icons/triangle-alert.svg",
+      "sha256": "456054288ade09e5d0b77d80b75cfb5733bbf32e3eb09a78522e6a6a09def275"
+    },
+    {
+      "name": "user-round",
+      "file": "user-round.svg",
+      "archive_member": "package/icons/user-round.svg",
+      "sha256": "011b29453d6392abbb8b175201d667c4f15df84812b694ef4e15e6491cda32fc"
+    },
+    {
+      "name": "zoom-in",
+      "file": "zoom-in.svg",
+      "archive_member": "package/icons/zoom-in.svg",
+      "sha256": "2bfe71c4c81a045f1c2a0824cd03fa896b80c1ee3daeb51052124dc5454a20d0"
+    }
+  ]
+}

@@ -30,6 +30,10 @@ Use matching React and React DOM `19.3.*` packages for the renderer, with Vite `
 
 Package the built renderer assets locally with the actual CSP and narrow preload. Do not ship a dev server, development catalog, test fixture entry points or a hosted-login flow. Treat main, preload and utility processes as separate runtime/build targets with their own permitted imports. Vite is not the installer/signing/update mechanism.
 
+Use geometry from `lucide-static` `1.66.*` for local interface icons. Exact patches, archive integrity, selected exports and file hashes live in the renderer icon manifest. The controlled `LucideGlyph` renderer applies the canonical stroke and current text color to those paths without injecting SVG markup or loading the React distribution of the icon library.
+
+Use PostCSS `8.5.*` as a development-only raw CSS parser for the design-usage gate. Inspect original declarations, including priorities and duplicates, before browser normalization. Admit an explicit property vocabulary and controlled media/import forms; adding a CSS feature requires extending its validation contract and regression tests.
+
 Keep styles/assets compatible with the packaged CSP. Load application styles and fonts from packaged resources under the declared policy. The editor lives behind its own module boundary rather than exposing ProseMirror internals across React features. Mobile delivery is outside this desktop decision.
 
 ## Consequences

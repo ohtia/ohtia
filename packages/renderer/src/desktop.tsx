@@ -9,6 +9,7 @@ import {
   type PortCall,
 } from "@ohtia/contracts";
 import "./foundation.css";
+import { OhtiaBrand } from "./branding.js";
 import { AppearancePanel } from "./appearance-panel.js";
 
 declare global {
@@ -101,7 +102,9 @@ function FoundationWindow() {
   }
   return (
     <main aria-labelledby="title">
-      <h1 id="title">{text("title")}</h1>
+      <h1 id="title">
+        <OhtiaBrand />
+      </h1>
       <p>{text("intro")}</p>
       <p role="status" aria-live="polite" aria-atomic="true">
         {text(

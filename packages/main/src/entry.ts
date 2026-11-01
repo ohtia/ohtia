@@ -1,3 +1,4 @@
+import { isRendererAssetPath } from "./asset-policy.js";
 import {
   app,
   BrowserWindow,
@@ -476,11 +477,7 @@ async function start(): Promise<void> {
     throw new Error("Invalid local asset inventory.");
   const allowed = new Map<string, { bytes: Buffer; type: string }>();
   for (const [name, input] of Object.entries(assets)) {
-    if (
-      !input ||
-      typeof input !== "object" ||
-      !/^(?:assets\/)?[A-Za-z0-9_.-]+\.(?:html|js|css|woff2?|ttf|otf)$/.test(name)
-    )
+    if (!input || typeof input !== "object" || !isRendererAssetPath(name))
       throw new Error("Invalid local asset.");
     const record = input as Record<string, unknown>;
     const assetPath = path.join(directory, "renderer", name);
