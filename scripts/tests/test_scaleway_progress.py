@@ -419,6 +419,9 @@ class ProgressTests(unittest.TestCase):
                         observer.transport(
                             "bootstrap-status", {"category": "process-failed", "exit_code": code}
                         )
+                        observer.observe(
+                            "host-keyscan-failed" if code == 1 else "host-keygen-failed"
+                        )
                     observer.emit("heartbeat")
         events = [json.loads(line.split("=", 1)[1]) for line in console.getvalue().splitlines()]
         self.assertEqual(sum(e["event"] == "heartbeat" for e in events), 120)
@@ -448,6 +451,471 @@ class ProgressTests(unittest.TestCase):
         result = cycle.read(self.root / "controller-progress.json")
         self.assertEqual(result["primary_failure"], "controller_cancelled")
         self.assertNotIn(PRIVATE, json.dumps(result))
+
+
+class HostKeyDiagnosticTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.now = [0.0]
+        self.enterContext(patch.object(cycle.time, "monotonic", side_effect=lambda: self.now[0]))
+        self.enterContext(patch.object(cycle.time, "sleep", side_effect=self.sleep))
+        self.enterContext(contextlib.redirect_stdout(io.StringIO()))
+        self.enterContext(patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": ""}))
+        self.intent = {"nonce": "00000000-0000-4000-8000-000000000001", "profile": "debian-13"}
+        self.resources = {
+            "server": "00000000-0000-4000-8000-000000000002",
+            "ip": "00000000-0000-4000-8000-000000000003",
+        }
+        self.observer = progress.Progress(self.root, IDENTITY, "debian-13", "none")
+        self.observer.phase("host-key", deadline=10)
+        self.api = Mock()
+        self.api.get.side_effect = self.get
+        self.api.request.return_value = b"SHA256:" + b"B" * 43
+        self.api.path.return_value = (
+            "/instance/v1/zones/nl-ams-1/servers/" + self.resources["server"]
+        )
+        self.address = {"address": "8.8.8.8", "server": {"id": self.resources["server"]}}
+        self.mode = "passed"
+        self.command = self.enterContext(
+            patch.object(cycle, "command", side_effect=self.command_result)
+        )
+
+    def sleep(self, seconds):
+        self.now[0] += seconds
+
+    def get(self, kind, resource):
+        return (
+            {"state": "running", "boot_type": "local", "private": PRIVATE}
+            if kind == "server"
+            else self.address
+        )
+
+    def command_result(self, args, *, diagnostics, **kwargs):
+        if args[0] == "ssh-keyscan":
+            if self.mode != "passed":
+                category = {"cancelled": "controller-cancelled", "timeout": "process-timeout"}.get(
+                    self.mode, "process-failed"
+                )
+                diagnostics.update(
+                    category=category, exit_code=1 if category == "process-failed" else None
+                )
+                if self.mode == "cancelled":
+                    raise KeyboardInterrupt(PRIVATE)
+                if self.mode == "timeout":
+                    raise subprocess.TimeoutExpired(args, 10)
+                raise subprocess.CalledProcessError(1, args)
+            data = b"8.8.8.8 ssh-ed25519 " + b"A" * 64 + b"\n"
+        else:
+            if self.mode == "keygen-failed":
+                diagnostics.update(category="process-failed", exit_code=7)
+                raise subprocess.CalledProcessError(7, args)
+            data = b"256 SHA256:" + b"B" * 43 + b" fixture ED25519"
+        diagnostics.update(category="success", exit_code=0)
+        return subprocess.CompletedProcess(args, 0, data)
+
+    def admit(self):
+        return qualification.host_key(
+            self.api, self.intent, self.resources, self.root / "identity", 10, self.observer
+        )
+
+    def diagnostic(self):
+        return cycle.read(self.root / "host-key-diagnostics.json")
+
+    def test_each_wait_condition_has_distinct_observations_without_authenticated_ssh(self):
+        for mode, expected in [
+            ("ip", "host-ip-unattached"),
+            ("fingerprint", "host-fingerprint-missing"),
+            ("scan", "host-keyscan-failed"),
+            ("timeout", "host-keyscan-failed"),
+        ]:
+            with self.subTest(mode=mode):
+                self.now[0] = 0
+                (self.root / "host-key-diagnostics.json").unlink(missing_ok=True)
+                self.mode = mode
+                self.address["server"] = None if mode == "ip" else {"id": self.resources["server"]}
+                self.api.request.return_value = (
+                    None if mode == "fingerprint" else b"SHA256:" + b"B" * 43
+                )
+                self.command.reset_mock()
+                self.observer = progress.Progress(self.root, IDENTITY, "debian-13", "none")
+                with self.assertRaisesRegex(cycle.CycleError, "host_key_deadline"):
+                    self.admit()
+                value = self.diagnostic()
+                self.assertEqual(self.observer.state["last_observation"], expected)
+                self.assertEqual(self.observer.state["guest_state"], "unknown")
+                self.assertNotIn("ssh-readiness", self.observer.state["attempts"])
+                self.assertEqual(value["server_state"], "running")
+                self.assertEqual(value["boot_type"], "local")
+                self.assertEqual(
+                    value["ip_attachment"], "unattached" if mode == "ip" else "matched"
+                )
+                self.assertEqual(
+                    value["fingerprint_status"],
+                    "unobserved"
+                    if mode == "ip"
+                    else "missing"
+                    if mode == "fingerprint"
+                    else "present",
+                )
+                self.assertEqual(
+                    value["operation"],
+                    "ip" if mode == "ip" else "fingerprint" if mode == "fingerprint" else "keyscan",
+                )
+                if mode in {"ip", "fingerprint"}:
+                    self.command.assert_not_called()
+                    self.assertEqual(
+                        value["scan"], {"attempts": 0, "category": None, "exit_code": None}
+                    )
+                else:
+                    self.assertEqual(value["scan"]["attempts"], 2)
+                    self.assertEqual(
+                        value["scan"]["category"],
+                        "process-timeout" if mode == "timeout" else "process-failed",
+                    )
+                self.assertFalse((self.root / "known_hosts").exists())
+                observations = [
+                    e
+                    for e in self.observer.history
+                    if e["event"] == "observation" and e["last_observation"] == expected
+                ]
+                self.assertEqual(len(observations), 1)
+
+    def test_matching_key_is_admitted_only_after_owned_metadata_and_fingerprint(self):
+        address, known = self.admit()
+        self.assertEqual(address, "8.8.8.8")
+        self.assertEqual(known.read_bytes(), b"8.8.8.8 ssh-ed25519 " + b"A" * 64 + b"\n")
+        self.assertEqual(known.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.api.owned.call_count, 2)
+        self.assertEqual(self.diagnostic()["operation"], "admitted")
+        self.assertEqual(self.diagnostic()["scan"]["category"], "success")
+        self.assertEqual(self.observer.state["attempts"], {"host-keyscan": 1, "host-keygen": 1})
+        observed = {
+            e["last_observation"] for e in self.observer.history if e["event"] == "observation"
+        }
+        self.assertTrue({"host-server-observed", "host-fingerprint-present"} <= observed)
+
+    def test_invalid_attachment_fingerprint_and_mismatched_key_still_fail_closed(self):
+        for mode, expected in [
+            ("attachment", "guest_address_identity"),
+            ("fingerprint", "host_fingerprint_unavailable"),
+            ("key", "host_key_mismatch"),
+        ]:
+            with self.subTest(mode=mode):
+                (self.root / "host-key-diagnostics.json").unlink(missing_ok=True)
+                self.address["server"] = {
+                    "id": "00000000-0000-4000-8000-000000000004"
+                    if mode == "attachment"
+                    else self.resources["server"]
+                }
+                self.api.request.return_value = (
+                    b"private-invalid"
+                    if mode == "fingerprint"
+                    else b"SHA256:" + (b"C" if mode == "key" else b"B") * 43
+                )
+                with self.assertRaisesRegex(cycle.CycleError, expected):
+                    self.admit()
+                self.assertFalse((self.root / "known_hosts").exists())
+                value = self.diagnostic()
+                self.assertEqual(
+                    value["ip_attachment"], "invalid" if mode == "attachment" else "matched"
+                )
+                self.assertEqual(
+                    value["fingerprint_status"],
+                    "unobserved"
+                    if mode == "attachment"
+                    else "invalid"
+                    if mode == "fingerprint"
+                    else "present",
+                )
+                self.assertNotIn(PRIVATE, (self.root / "host-key-diagnostics.json").read_text())
+
+    def test_deadline_cutoff_retains_api_error_but_earlier_and_identity_errors_keep_their_code(
+        self,
+    ):
+        for remaining, code, expected in [
+            (0, "provider_transport", "host_key_deadline"),
+            (0, "provider_deadline", "host_key_deadline"),
+            (0, "provider_operation_deadline", "host_key_deadline"),
+            (9, "provider_transport", "provider_transport"),
+            (0, "foreign_project", "foreign_project"),
+        ]:
+            with self.subTest(code=code, remaining=remaining):
+                self.now[0] = 0
+
+                def failed(kind, resource):
+                    self.now[0] = 10 - remaining
+                    raise cycle.CycleError(code)
+
+                self.api.get.side_effect = failed
+                with self.assertRaisesRegex(cycle.CycleError, expected):
+                    self.admit()
+                retained = self.diagnostic()["provider_failure"]
+                self.assertEqual(retained["operation"], "server")
+                self.assertEqual(retained["code"], code)
+                self.assertFalse((self.root / "known_hosts").exists())
+
+        self.now[0] = 0
+
+        def early_failure(kind, resource):
+            self.now[0] = 9.9
+            raise cycle.CycleError("provider_transport")
+
+        self.api.get.side_effect = early_failure
+        record = self.observer.host_key
+
+        def delayed_record(nonce, operation, **observations):
+            if observations.get("provider_failure"):
+                self.now[0] = 11
+            return record(nonce, operation, **observations)
+
+        with (
+            patch.object(self.observer, "host_key", side_effect=delayed_record),
+            self.assertRaisesRegex(cycle.CycleError, "provider_transport"),
+        ):
+            self.admit()
+
+    def test_cancellation_keeps_scan_category_and_never_accepts_a_key(self):
+        self.mode = "cancelled"
+        with self.assertRaises(KeyboardInterrupt):
+            self.admit()
+        self.assertEqual(self.diagnostic()["scan"]["category"], "controller-cancelled")
+        self.assertFalse((self.root / "known_hosts").exists())
+
+    def test_keygen_abnormal_exits_retain_transport_and_preserve_the_original_exception(self):
+        for category, error in [
+            ("controller-cancelled", KeyboardInterrupt(PRIVATE)),
+            ("local-io-failed", OSError(PRIVATE)),
+            ("output-limit", cycle.CycleError("process_output_bound")),
+        ]:
+            with self.subTest(category=category):
+                self.now[0] = 0
+                (self.root / "host-key-diagnostics.json").unlink(missing_ok=True)
+                self.observer = progress.Progress(self.root, IDENTITY, "debian-13", "none")
+
+                def command(args, **kwargs):
+                    if args[0] == "ssh-keygen":
+                        kwargs["diagnostics"].update(category=category, exit_code=None)
+                        raise error
+                    return self.command_result(args, **kwargs)
+
+                self.command.side_effect = command
+                with self.assertRaises(type(error)) as raised:
+                    self.admit()
+                self.assertIs(raised.exception, error)
+                self.assertEqual(
+                    self.observer.state["last_transport"],
+                    {"operation": "host-keygen", "category": category, "exit_code": None},
+                )
+                self.assertEqual(self.diagnostic()["operation"], "keygen")
+                self.assertEqual(self.diagnostic()["scan"]["category"], "success")
+                self.assertFalse((self.root / "known_hosts").exists())
+                retained = (self.root / "controller-events.json").read_text()
+                self.assertNotIn(PRIVATE, retained)
+                self.assertEqual(
+                    json.loads(retained)["events"][-1]["last_transport"]["category"], category
+                )
+
+    def test_keygen_failure_has_its_own_live_operation_and_preserves_scan_observation(self):
+        original = self.command_result
+
+        def result(args, **kwargs):
+            if args[0] == "ssh-keygen":
+                kwargs["diagnostics"].update(category="process-failed", exit_code=7)
+                raise subprocess.CalledProcessError(7, args)
+            return original(args, **kwargs)
+
+        self.command.side_effect = result
+        with self.assertRaisesRegex(cycle.CycleError, "host_key_deadline"):
+            self.admit()
+        self.assertEqual(self.diagnostic()["operation"], "keygen")
+        self.assertEqual(self.diagnostic()["scan"]["category"], "success")
+        self.assertEqual(self.observer.state["last_observation"], "host-keygen-failed")
+        self.assertEqual(self.observer.state["last_transport"]["exit_code"], 7)
+
+    def test_maximum_snapshot_and_progress_fit_bounds_and_discard_unselected_private_values(self):
+        self.observer.state["identity"] = {
+            "source_sha": "a" * 40,
+            "run_id": "9" * 20,
+            "attempt": "9" * 20,
+        }
+        for operation in progress.OPERATIONS:
+            self.observer.state["attempts"][operation] = 999999
+        self.observer.host_key(
+            self.intent["nonce"],
+            "fingerprint",
+            server={"state": [PRIVATE], "boot_type": {"private": PRIVATE}},
+            ip_attachment="invalid",
+            fingerprint_status="invalid",
+            provider_failure=max(cycle.SAFE_FAILURE_CODES, key=len),
+            scan={
+                "category": max(progress.TRANSPORT_CATEGORIES, key=len),
+                "exit_code": -255,
+                "raw": PRIVATE,
+            },
+        )
+        value = self.diagnostic()
+        self.assertEqual(value["server_state"], "other")
+        self.assertEqual(value["boot_type"], "other")
+        self.assertEqual(value["scan"]["attempts"], 999999)
+        self.assertNotIn(PRIVATE, json.dumps(value))
+        self.assertEqual(
+            set(value),
+            {
+                "version",
+                "identity",
+                "profile",
+                "nonce",
+                "observed_at",
+                "operation",
+                "server_state",
+                "boot_type",
+                "ip_attachment",
+                "fingerprint_status",
+                "scan",
+                "provider_failure",
+            },
+        )
+        self.observer.host_key(
+            self.intent["nonce"],
+            "fingerprint",
+            server={"state": "stopped in place", "boot_type": "bootscript"},
+        )
+        self.assertLessEqual(
+            len((self.root / "host-key-diagnostics.json").read_bytes()),
+            cycle.policy()["limits"]["progress_record_bytes"],
+        )
+        largest = self.diagnostic()
+        self.assertEqual(largest["server_state"], "stopped-in-place")
+        self.assertEqual(largest["boot_type"], "bootscript")
+        self.assertEqual(self.observer.state["diagnostic_write_failures"], 0)
+        self.observer.transport(
+            "bootstrap-status", {"category": "authentication-rejected-marker", "exit_code": 255}
+        )
+        self.observer.transport(
+            "host-keyscan", {"category": "connection-timeout-marker", "exit_code": 1}
+        )
+        self.observer.state.update(
+            fault="after-native-smoke",
+            identity={"source_sha": "a" * 40, "run_id": "9" * 20, "attempt": "9" * 20},
+            guest_state="interpreter-or-helper-unavailable",
+            ssh_readiness={"python": False, "helper": False},
+            primary_failure=max(cycle.SAFE_FAILURE_CODES, key=len),
+            diagnostic_write_failures=999999,
+        )
+        self.observer.emit("heartbeat")
+        retained = cycle.read(self.root / "controller-progress.json")
+        self.assertEqual(retained["event"], "heartbeat")
+        self.assertEqual(retained["identity"]["attempt"], "9" * 20)
+        self.assertEqual(retained["attempts"], self.observer.state["attempts"])
+        self.assertLessEqual(
+            len((self.root / "controller-progress.json").read_bytes()),
+            cycle.policy()["limits"]["progress_record_bytes"],
+        )
+
+    def test_recorder_io_failure_does_not_replace_admission_failure(self):
+        write = cycle.write
+
+        def fail(path, value, **kwargs):
+            if path.name == "host-key-diagnostics.json":
+                raise OSError(PRIVATE)
+            return write(path, value, **kwargs)
+
+        self.api.request.return_value = None
+        with (
+            patch.object(cycle, "write", side_effect=fail),
+            self.assertRaisesRegex(cycle.CycleError, "host_key_deadline"),
+        ):
+            self.admit()
+        self.assertGreater(self.observer.state["diagnostic_write_failures"], 0)
+        self.assertFalse((self.root / "known_hosts").exists())
+
+    def test_real_controller_finally_cleans_after_host_key_recorder_failure_and_cancellation(self):
+        for cancelled in (False, True):
+            with self.subTest(cancelled=cancelled):
+                self.now[0] = 0
+                self.mode = "cancelled" if cancelled else "passed"
+                self.api.request.return_value = b"SHA256:" + b"B" * 43 if cancelled else None
+                identity = dict(IDENTITY)
+                intent = {**self.intent, "identity": identity, "created_at": cycle.utc()}
+                source = self.root / ("source-" + str(cancelled))
+                source.mkdir()
+                cycle.write(source / "intent.json", intent)
+                output = self.root / ("output-" + str(cancelled))
+                gh = Mock()
+                gh.artifacts.return_value = [{"name": "scw-intent-101-1"}]
+                gh.artifact.return_value = intent
+                self.api.discover.return_value = dict(self.resources)
+                self.api.cleanup.return_value = {
+                    "status": "absent",
+                    "resources": dict(self.resources),
+                }
+                self.api.cleanup.reset_mock()
+
+                def create(intent, public, config, record):
+                    record(
+                        {"kind": "server", "stage": "allocated", "resources": dict(self.resources)}
+                    )
+                    return dict(self.resources)
+
+                self.api.create.side_effect = create
+                command = self.command_result
+
+                def invoke(args, **kwargs):
+                    if "-q" in args:
+                        key = Path(args[args.index("-f") + 1])
+                        key.write_bytes(b"synthetic identity")
+                        key.with_suffix(".pub").write_text("ssh-ed25519 synthetic")
+                        return subprocess.CompletedProcess(args, 0, b"")
+                    return command(args, **kwargs)
+
+                self.command.side_effect = invoke
+                selected = copy.deepcopy(cycle.policy())
+                selected["limits"]["test_seconds"] = 10
+                original_write = cycle.write
+
+                def write(path, value, **kwargs):
+                    if path.name == "host-key-diagnostics.json" and not cancelled:
+                        raise OSError(PRIVATE)
+                    return original_write(path, value, **kwargs)
+
+                expected = KeyboardInterrupt if cancelled else cycle.CycleError
+                with (
+                    patch.object(cycle, "source_context", return_value=identity),
+                    patch.object(cycle, "configuration", return_value={}),
+                    patch.object(cycle, "validate_intent"),
+                    patch.object(cycle, "policy", return_value=selected),
+                    patch.object(cycle, "API", return_value=self.api),
+                    patch.object(cycle, "write", side_effect=write),
+                    patch.object(qualification, "enabled"),
+                    patch.object(qualification, "key_lifetimes"),
+                    patch.object(qualification, "previous"),
+                    patch.dict(os.environ, {"RUNNER_TEMP": str(self.root)}),
+                    self.assertRaises(expected),
+                ):
+                    qualification.execute(gh, source, self.root, output, "none")
+                self.api.cleanup.assert_called_once()
+                journal = cycle.read(output / "journal.json")
+                self.assertEqual(journal["status"], "cleaned")
+                self.assertEqual(journal["normal_cleanup"]["status"], "absent")
+                self.assertFalse(journal["native_smoke_passed"])
+                self.assertEqual(
+                    journal["failure_code"],
+                    "controller_cancelled" if cancelled else "host_key_deadline",
+                )
+                self.assertEqual(list(self.root.glob("ohtia-lease-*")), [])
+
+    def test_pending_scan_does_not_relabel_a_previous_failed_result_as_current(self):
+        self.observer.attempted("host-keyscan")
+        self.observer.host_key(
+            self.intent["nonce"], "keyscan", scan={"category": "process-failed", "exit_code": 1}
+        )
+        self.observer.attempted("host-keyscan")
+        self.observer.host_key(self.intent["nonce"], "keyscan")
+        self.assertEqual(
+            self.diagnostic()["scan"], {"attempts": 2, "category": None, "exit_code": None}
+        )
 
 
 class GuestDiagnosticTests(unittest.TestCase):
@@ -734,6 +1202,7 @@ class GuestDiagnosticTests(unittest.TestCase):
         source = (cycle.ROOT / ".github/workflows/installation-qualification.yml").read_text(
             encoding="utf-8"
         )
+        self.assertIn("artifacts/scw-cycle/host-key-diagnostics.json", source)
         self.assertIn(
             "run-name: ARM qualification · ${{ inputs.profile }} · fault=${{ inputs.fault }}",
             source,
