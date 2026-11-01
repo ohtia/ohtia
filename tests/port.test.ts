@@ -249,6 +249,10 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
     const c = client();
     expect(Object.keys(c.port).sort()).toEqual(
       [
+        "claimLayoutFailureNotice",
+        "readLayout",
+        "replaceLayout",
+        "readLayoutReceipt",
         "readLocale",
         "replaceLocale",
         "readLocaleReceipt",
@@ -869,5 +873,64 @@ describe("locale producer/consumer bridge", () => {
     c.dispose();
     expect(await command.result).toMatchObject({ error: { code: "uncertain" } });
     stream.dispose();
+  });
+});
+
+describe("named layout transport", () => {
+  const layout = {
+    version: 1 as const,
+    visible: { explorer: true, documents: true, chat: true },
+    preferredWidths: { explorer: 256.5, documents: 656, chat: 360 },
+  };
+  it("matches exact saved payload and queries its original receipt", async () => {
+    const c = client();
+    const change = c.port.replaceLayout({
+      operationId: "layout",
+      expectedRevision: 0,
+      value: layout,
+    });
+    const record = { schemaVersion: 1, revision: 1, source: "saved", value: layout };
+    c.respond(record);
+    expect(await change.result).toEqual({ ok: true, value: record });
+    const receipt = c.port.readLayoutReceipt("layout");
+    c.respond({ state: "recorded", outcome: { ok: true, value: record } });
+    expect(await receipt.result).toMatchObject({ ok: true, value: { state: "recorded" } });
+    const read = c.port.readLayout();
+    c.respond(record);
+    expect(await read.result).toEqual({ ok: true, value: record });
+    const notice = c.port.claimLayoutFailureNotice();
+    c.respond({ announce: false });
+    expect(await notice.result).toEqual({ ok: true, value: { announce: false } });
+    c.dispose();
+  });
+  it("rejects private fields and preserves uncertainty on mismatched values and cancellation", async () => {
+    const c = client();
+    expect(
+      await c.port.replaceLayout({
+        operationId: "layout",
+        expectedRevision: 0,
+        value: { ...layout, path: "private" },
+      } as never).result,
+    ).toEqual(failure("invalid_message"));
+    const changed = c.port.replaceLayout({
+      operationId: "layout",
+      expectedRevision: 0,
+      value: layout,
+    });
+    c.respond({
+      schemaVersion: 1,
+      revision: 1,
+      source: "saved",
+      value: { ...layout, preferredWidths: { ...layout.preferredWidths, chat: 500 } },
+    });
+    expect(await changed.result).toEqual(failure("uncertain"));
+    const cancelled = c.port.replaceLayout({
+      operationId: "layout-2",
+      expectedRevision: 0,
+      value: layout,
+    });
+    cancelled.cancel();
+    expect(await cancelled.result).toEqual(failure("uncertain"));
+    c.dispose();
   });
 });

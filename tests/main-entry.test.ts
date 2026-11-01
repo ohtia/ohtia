@@ -321,6 +321,32 @@ async function launch(
 }
 
 describe("broker composition with synthetic Electron adapters", () => {
+  it("claims the layout failure announcement once across windows in the same application", async () => {
+    const h = await launch();
+    const claim = (window: any, id: string) => {
+      const event = { ...h.event(window), returnValue: undefined as any };
+      h.ipcMain.emit(h.constants.desktopChannels.session, event);
+      const encoded = h.constants.encodeEnvelope({
+        protocol: 1,
+        policy: h.constants.policyId,
+        kind: "request",
+        operation: "layout.failureNotice",
+        operationId: id,
+        requestId: id,
+        ...event.returnValue,
+        payload: {},
+      });
+      if (!encoded.ok) throw new Error("Invalid fixture");
+      h.ipcMain.emit(h.constants.desktopChannels.port, event, encoded.value);
+      return JSON.parse(window.webContents.mainFrame.send.mock.calls.at(-1)[1]).payload;
+    };
+    expect(claim(h.window, "notice-1")).toEqual({ ok: true, value: { announce: true } });
+    expect(claim(h.window, "notice-2")).toEqual({ ok: true, value: { announce: false } });
+    await h.action("new_window");
+    const second = h.Window.all.at(-1)!;
+    expect(claim(second, "notice-3")).toEqual({ ok: true, value: { announce: false } });
+    expect(h.supervisors[0].dispatch).not.toHaveBeenCalled();
+  });
   it("keeps larger-than-screen resizing disabled for ordinary windows", async () => {
     const h = await launch();
     expect(h.failure).toBeUndefined();

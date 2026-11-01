@@ -101,6 +101,7 @@ function preferredSystemLanguages(): readonly string[] {
 }
 const settings = path.join(profile.configuration_root, "Ohtia", "settings");
 const admission = new PortAdmission();
+let layoutFailureAnnounced = false;
 const publisher = new LocatorPublisher();
 const windows = new Map<
   BrowserWindow,
@@ -578,6 +579,17 @@ async function start(): Promise<void> {
         const reply = encodeEnvelope({ ...authority.value, kind: "result", payload: accepted });
         if (reply.ok) deliver(reply.value);
       }
+      return;
+    }
+    if (accepted.value.request.operation === "layout.failureNotice") {
+      const reply = encodeEnvelope({
+        ...accepted.value.request,
+        kind: "result",
+        payload: { ok: true, value: { announce: !layoutFailureAnnounced } },
+      });
+      layoutFailureAnnounced = true;
+      accepted.value.release();
+      if (reply.ok) deliver(reply.value);
       return;
     }
     if (!service) {

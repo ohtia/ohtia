@@ -38,6 +38,12 @@ export function request(overrides: Partial<Request> = {}): Request {
     ...overrides,
   } as Request;
 }
+export const layout = {
+  version: 1 as const,
+  visible: { explorer: true, documents: true, chat: true },
+  preferredWidths: { explorer: 256.5, documents: 656, chat: 360 },
+};
+const savedLayout = { schemaVersion: 1, revision: 1, source: "saved", value: layout };
 export const acceptedEnvelopes: readonly unknown[] = [
   request({ operation: "locale.read" }),
   request({ operation: "locale.replace", payload: { expectedRevision: 1, value: "ko-KR" } }),
@@ -80,6 +86,25 @@ export const acceptedEnvelopes: readonly unknown[] = [
     topic: "locale",
     payload: localeSnapshot,
   },
+  request({ operation: "layout.read" }),
+  request({ operation: "layout.failureNotice" }),
+  request({ operation: "layout.replace", payload: { expectedRevision: 0, value: layout } }),
+  request({ operation: "layout.receipt", payload: { targetOperationId: "layout-1" } }),
+  ...[
+    ["layout.read", savedLayout],
+    ["layout.read", { schemaVersion: 1, revision: 0, source: "default", value: null }],
+    ["layout.read", { schemaVersion: 1, revision: 3, source: "invalid_fallback", value: null }],
+    ["layout.replace", savedLayout],
+    ["layout.failureNotice", { announce: true }],
+    ["layout.receipt", { state: "recorded", outcome: { ok: true, value: savedLayout } }],
+    ["layout.receipt", { state: "pending" }],
+    ["layout.receipt", { state: "not_found" }],
+  ].map(([operation, value]) => ({
+    ...request(),
+    operation,
+    kind: "result",
+    payload: { ok: true, value },
+  })),
   request(),
   request({ operation: "appearance.read" }),
   request({ operation: "appearance.replace", payload: { expectedRevision: 1, value: "dark" } }),

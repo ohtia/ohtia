@@ -1,3 +1,4 @@
+import { isWorkspaceLayout, type WorkspaceLayout } from "./layout.js";
 import { isAppearance, type Appearance } from "./appearance.js";
 import { policyId, portLimits } from "./generated/resource-policy.js";
 export { policyId, portLimits } from "./generated/resource-policy.js";
@@ -74,6 +75,27 @@ export type RecordedLocaleOutcome =
 export type LocaleReceipt =
   | { readonly state: "not_found" | "pending" }
   | { readonly state: "recorded"; readonly outcome: RecordedLocaleOutcome };
+export interface LayoutRecord {
+  readonly schemaVersion: 1;
+  readonly revision: number;
+  readonly value: WorkspaceLayout | null;
+  readonly source: "saved" | "default" | "invalid_fallback";
+}
+export type SavedLayoutRecord = LayoutRecord & {
+  readonly source: "saved";
+  readonly value: WorkspaceLayout;
+};
+export interface LayoutChange {
+  readonly operationId: string;
+  readonly expectedRevision: number;
+  readonly value: WorkspaceLayout;
+}
+export type RecordedLayoutOutcome =
+  | { readonly ok: true; readonly value: SavedLayoutRecord }
+  | { readonly ok: false; readonly error: Extract<PortError, { readonly code: "stale_revision" }> };
+export type LayoutReceipt =
+  | { readonly state: "not_found" | "pending" }
+  | { readonly state: "recorded"; readonly outcome: RecordedLayoutOutcome };
 export const errorActions = {
   invalid_message: "check_request",
   unsupported_version: "upgrade_application",
@@ -140,6 +162,10 @@ export interface OperationInputs {
   "locale.replace": { readonly expectedRevision: number; readonly value: LocaleChoice };
   "locale.receipt": { readonly targetOperationId: string };
   "locale.subscribe": { readonly subscriptionId: string };
+  "layout.failureNotice": Record<string, never>;
+  "layout.read": Record<string, never>;
+  "layout.replace": { readonly expectedRevision: number; readonly value: WorkspaceLayout };
+  "layout.receipt": { readonly targetOperationId: string };
   "status.read": Record<string, never>;
   "appearance.read": Record<string, never>;
   "appearance.replace": { readonly expectedRevision: number; readonly value: Appearance };
@@ -152,6 +178,10 @@ export interface OperationOutputs {
   "locale.replace": SavedLocaleRecord;
   "locale.receipt": LocaleReceipt;
   "locale.subscribe": { readonly subscriptionId: string };
+  "layout.failureNotice": { readonly announce: boolean };
+  "layout.read": LayoutRecord;
+  "layout.replace": SavedLayoutRecord;
+  "layout.receipt": LayoutReceipt;
   "status.read": FoundationStatus;
   "appearance.read": AppearanceRecord;
   "appearance.replace": SavedAppearanceRecord;
@@ -233,6 +263,10 @@ export interface FoundationPort {
   ): PortCall<SavedLocaleRecord>;
   readLocaleReceipt(operationId: string): PortCall<LocaleReceipt>;
   subscribeLocale(listener: (notice: Outcome<LocaleSnapshot>) => void): Subscription;
+  claimLayoutFailureNotice(): PortCall<{ readonly announce: boolean }>;
+  readLayout(): PortCall<LayoutRecord>;
+  replaceLayout(change: LayoutChange): PortCall<SavedLayoutRecord>;
+  readLayoutReceipt(operationId: string): PortCall<LayoutReceipt>;
   readStatus(): PortCall<FoundationStatus>;
   readAppearance(): PortCall<AppearanceRecord>;
   replaceAppearance(change: AppearanceChange): PortCall<SavedAppearanceRecord>;
@@ -317,6 +351,21 @@ function savedAppearance(value: Json | undefined): boolean {
   return appearance(value) && object(value) && value.source === "saved";
 }
 
+function layoutRecord(value: Json | undefined): boolean {
+  return (
+    exact(value, ["schemaVersion", "revision", "value", "source"]) &&
+    value.schemaVersion === 1 &&
+    revision(value.revision) &&
+    (value.source === "saved"
+      ? value.revision > 0 && isWorkspaceLayout(value.value)
+      : value.value === null &&
+        (value.source === "invalid_fallback" ||
+          (value.source === "default" && value.revision === 0)))
+  );
+}
+function savedLayout(value: Json | undefined): boolean {
+  return layoutRecord(value) && object(value) && value.source === "saved";
+}
 function error(value: Json | undefined): boolean {
   if (
     !exact(value, ["code", "nextAction", "parameters"]) ||
@@ -389,6 +438,10 @@ export const operationErrorCodes = Object.freeze({
   "status.read": readErrors,
   "appearance.read": [...readErrors, "preference_invalid"],
   "appearance.replace": replaceErrors,
+  "layout.failureNotice": readErrors,
+  "layout.read": readErrors,
+  "layout.replace": replaceErrors,
+  "layout.receipt": readErrors,
   "appearance.receipt": readErrors,
   "status.subscribe": [...readErrors, "sequence_gap"],
   "appearance.subscribe": [...readErrors, "sequence_gap", "preference_invalid"],
@@ -407,7 +460,16 @@ function input(operation: Operation, value: Json | undefined): boolean {
     case "status.read":
     case "appearance.read":
     case "locale.read":
+    case "layout.read":
+    case "layout.failureNotice":
       return exact(value, []);
+    case "layout.replace":
+      return (
+        exact(value, ["expectedRevision", "value"]) &&
+        revision(value.expectedRevision) &&
+        value.expectedRevision < Number.MAX_SAFE_INTEGER &&
+        isWorkspaceLayout(value.value)
+      );
     case "appearance.replace":
       return (
         exact(value, ["expectedRevision", "value"]) &&
@@ -423,6 +485,7 @@ function input(operation: Operation, value: Json | undefined): boolean {
         (value.value === "system" || oneOf(value.value, supportedLocales))
       );
     case "locale.receipt":
+    case "layout.receipt":
     case "appearance.receipt":
       return exact(value, ["targetOperationId"]) && isIdentifier(value.targetOperationId);
     case "status.subscribe":
@@ -439,6 +502,14 @@ function output(operation: Operation, value: Json | undefined): boolean {
       return savedLocale(value);
     case "locale.receipt":
       return receipt(value, savedLocale);
+    case "layout.failureNotice":
+      return exact(value, ["announce"]) && typeof value.announce === "boolean";
+    case "layout.read":
+      return layoutRecord(value);
+    case "layout.replace":
+      return savedLayout(value);
+    case "layout.receipt":
+      return receipt(value, savedLayout);
     case "status.read":
       return status(value);
     case "appearance.read":
@@ -465,13 +536,20 @@ export function utf8Size(text: string): number {
   return size;
 }
 /** Copy only finite JSON data; never evaluate getters or toJSON. Root depth is one. */
-function boundedJson(value: unknown): Json {
+function boundedJson(value: unknown, fractionalWidths = false): Json {
   let nodes = 0;
   function copy(item: unknown, depth: number): Json {
     if (++nodes > portLimits.message_nodes || depth > portLimits.message_depth)
       throw new Error("Message complexity exceeded.");
     if (item === null || typeof item === "boolean") return item;
-    if (typeof item === "number" && Number.isSafeInteger(item) && !Object.is(item, -0)) return item;
+    if (
+      typeof item === "number" &&
+      Number.isFinite(item) &&
+      (fractionalWidths || Number.isSafeInteger(item)) &&
+      Math.abs(item) <= Number.MAX_SAFE_INTEGER &&
+      !Object.is(item, -0)
+    )
+      return item;
     if (
       typeof item === "string" &&
       item.length <= portLimits.string_bytes &&
@@ -534,6 +612,10 @@ const operations: readonly Operation[] = [
   "locale.replace",
   "locale.receipt",
   "locale.subscribe",
+  "layout.failureNotice",
+  "layout.read",
+  "layout.replace",
+  "layout.receipt",
   "status.read",
   "appearance.read",
   "appearance.replace",
@@ -545,7 +627,7 @@ const operations: readonly Operation[] = [
 export function decodeEnvelope(raw: unknown): Outcome<Envelope> {
   let value: Json;
   try {
-    value = boundedJson(raw);
+    value = boundedJson(raw, true);
   } catch {
     return failure("invalid_message");
   }
@@ -694,7 +776,7 @@ export function decodeUtf8(bytes: Uint8Array): Outcome<Envelope> {
 
 export function decodeAppearanceChange(raw: unknown): Outcome<AppearanceChange> {
   try {
-    const value = boundedJson(raw);
+    const value = boundedJson(raw, true);
     if (
       exact(value, ["operationId", "expectedRevision", "value"]) &&
       isIdentifier(value.operationId) &&
@@ -739,4 +821,20 @@ export function decodeLocaleSnapshot(raw: unknown): LocaleSnapshot | undefined {
     /* Reject without diagnostic data. */
   }
   return undefined;
+}
+export function decodeLayoutChange(raw: unknown): Outcome<LayoutChange> {
+  try {
+    const value = boundedJson(raw, true);
+    if (
+      exact(value, ["operationId", "expectedRevision", "value"]) &&
+      isIdentifier(value.operationId) &&
+      revision(value.expectedRevision) &&
+      value.expectedRevision < Number.MAX_SAFE_INTEGER &&
+      isWorkspaceLayout(value.value)
+    )
+      return { ok: true, value: value as unknown as LayoutChange };
+  } catch {
+    /* Reject without exposing caller data. */
+  }
+  return failure("invalid_message");
 }

@@ -147,7 +147,21 @@ export function createStatusService(
       // A lost COMMIT acknowledgement cannot suppress publication of a known current effect.
       // Reading the authoritative snapshot neither settles the original receipt nor repeats a write.
       if (result.ok || result.error.code === "uncertain") await localeEvent();
-    } else if (value.operation === "appearance.read")
+    } else if (value.operation === "layout.read")
+      emit({ ...value, kind: "result", payload: await storage.readLayout() });
+    else if (value.operation === "layout.receipt")
+      emit({
+        ...value,
+        kind: "result",
+        payload: await storage.readLayoutReceipt(value.payload.targetOperationId),
+      });
+    else if (value.operation === "layout.replace")
+      emit({
+        ...value,
+        kind: "result",
+        payload: await storage.replaceLayout({ operationId: value.operationId, ...value.payload }),
+      });
+    else if (value.operation === "appearance.read")
       emit({ ...value, kind: "result", payload: await storage.readAppearance() });
     else if (value.operation === "appearance.receipt")
       emit({
@@ -331,7 +345,9 @@ export function createStatusService(
             ...value,
             kind: "result",
             payload: failure(
-              value.operation === "appearance.replace" || value.operation === "locale.replace"
+              value.operation === "appearance.replace" ||
+                value.operation === "locale.replace" ||
+                value.operation === "layout.replace"
                 ? "uncertain"
                 : "storage_failed",
             ),

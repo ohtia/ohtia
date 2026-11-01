@@ -10,5 +10,9 @@
   {
     "name": "0003_locale_receipts",
     "sha256": "a95a2ff80e00c0f2792ce0738249628c334d6f5ef2fb8f31de77fbff7850b3e8"
+  },
+  {
+    "name": "0004_layout_receipts",
+    "sha256": "b09e196f450d8ea2565a23aeba28ca3d120b6ad38b9000df3a7a0048423618a0"
   }
 ]

@@ -16,3 +16,8 @@ export type {
 } from "./appearance-command.js";
 
 export * from "./locale-command.js";
+export {
+  applyLayoutCommand,
+  type LayoutTransaction,
+  type RecordedLayoutCommand,
+} from "./layout-command.js";

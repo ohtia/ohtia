@@ -2,6 +2,8 @@ import {
   decodeAppearanceChange,
   decodeLocaleChange,
   type LocaleSnapshot,
+  decodeLayoutChange,
+  sameWorkspaceLayout,
   decodeText,
   encodeEnvelope,
   failure,
@@ -151,7 +153,8 @@ export function createFoundationPort(
         entry,
         failure(
           entry.request.operation === "appearance.replace" ||
-            entry.request.operation === "locale.replace"
+            entry.request.operation === "locale.replace" ||
+            entry.request.operation === "layout.replace"
             ? "uncertain"
             : code,
         ),
@@ -227,7 +230,8 @@ export function createFoundationPort(
         entry,
         failure(
           entry.request.operation === "appearance.replace" ||
-            entry.request.operation === "locale.replace"
+            entry.request.operation === "locale.replace" ||
+            entry.request.operation === "layout.replace"
             ? "uncertain"
             : "invalid_service_result",
         ),
@@ -241,6 +245,15 @@ export function createFoundationPort(
         (message.operation !== entry.request.operation ||
           message.payload.value.revision !== entry.request.payload.expectedRevision + 1 ||
           message.payload.value.value !== entry.request.payload.value)
+      ) {
+        settle(entry, failure("uncertain"));
+        return;
+      }
+      if (
+        entry.request.operation === "layout.replace" &&
+        (message.operation !== "layout.replace" ||
+          message.payload.value.revision !== entry.request.payload.expectedRevision + 1 ||
+          !sameWorkspaceLayout(message.payload.value.value, entry.request.payload.value))
       ) {
         settle(entry, failure("uncertain"));
         return;
@@ -308,7 +321,9 @@ export function createFoundationPort(
         settle(
           entry,
           failure(
-            operation === "appearance.replace" || operation === "locale.replace"
+            operation === "appearance.replace" ||
+              operation === "locale.replace" ||
+              operation === "layout.replace"
               ? "uncertain"
               : "timeout",
           ),
@@ -329,7 +344,9 @@ export function createFoundationPort(
         settle(
           entry,
           failure(
-            operation === "appearance.replace" || operation === "locale.replace"
+            operation === "appearance.replace" ||
+              operation === "locale.replace" ||
+              operation === "layout.replace"
               ? "uncertain"
               : "service_unavailable",
           ),
@@ -343,7 +360,9 @@ export function createFoundationPort(
         settle(
           entry,
           failure(
-            operation === "appearance.replace" || operation === "locale.replace"
+            operation === "appearance.replace" ||
+              operation === "locale.replace" ||
+              operation === "layout.replace"
               ? "uncertain"
               : "cancelled",
           ),
@@ -395,6 +414,18 @@ export function createFoundationPort(
     };
   }
   const port: FoundationPort = Object.freeze<FoundationPort>({
+    claimLayoutFailureNotice: () => call("layout.failureNotice", {}),
+    readLayout: () => call("layout.read", {}),
+    replaceLayout: (change) => {
+      const decoded = decodeLayoutChange(change);
+      if (!decoded.ok) return { result: Promise.resolve(decoded), cancel() {} };
+      return call(
+        "layout.replace",
+        { expectedRevision: decoded.value.expectedRevision, value: decoded.value.value },
+        decoded.value.operationId,
+      );
+    },
+    readLayoutReceipt: (operationId) => call("layout.receipt", { targetOperationId: operationId }),
     readStatus: () => call("status.read", {}),
     readLocale: () => call("locale.read", {}),
     replaceLocale: (change, expectedServiceGeneration) => {
@@ -442,7 +473,8 @@ export function createFoundationPort(
           entry,
           failure(
             entry.request.operation === "appearance.replace" ||
-              entry.request.operation === "locale.replace"
+              entry.request.operation === "locale.replace" ||
+              entry.request.operation === "layout.replace"
               ? "uncertain"
               : "disposed",
           ),

@@ -106,6 +106,21 @@ describe("sandbox preload composition", () => {
       }),
     ];
     const language = h.bridge.foundation.subscribeLocale(() => {});
+    const layout = {
+      version: 1 as const,
+      visible: { explorer: true, documents: true, chat: true },
+      preferredWidths: { explorer: 256, documents: 656, chat: 360 },
+    };
+    calls.push(
+      h.bridge.foundation.readLayout() as never,
+      h.bridge.foundation.replaceLayout({
+        operationId: "layout",
+        expectedRevision: 0,
+        value: layout,
+      }) as never,
+      h.bridge.foundation.readLayoutReceipt("layout") as never,
+      h.bridge.foundation.claimLayoutFailureNotice() as never,
+    );
     const subscription = h.bridge.foundation.subscribeStatus(() => {});
     const appearance = h.bridge.foundation.subscribeAppearance(() => {});
     calls[0].cancel();
