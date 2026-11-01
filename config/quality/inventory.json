@@ -86,6 +86,7 @@
     "scripts/tests/test_quality_tests.py",
     "scripts/tests/test_quality_vm.py",
     "scripts/tests/test_scaleway_cycle.py",
+    "scripts/tests/test_scaleway_preflight.py",
     "scripts/tests/test_scaleway_progress.py",
     "scripts/tests/test_windows_contributor.py",
     "scripts/tests/test_workspace.py"

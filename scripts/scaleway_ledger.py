@@ -19,6 +19,9 @@ from urllib.parse import unquote
 import scaleway_cycle as cycle
 
 REPO = "repos/{owner}/{repo}"
+# GitHub reports a not-yet-started step as pending while its job runs.
+NOT_STARTED_STEPS = frozenset({"queued", "pending"})
+PUBLISH_STEP = "Publish the allocation intent before any provider write"
 
 
 def install_cli(directory: Path) -> Path:
@@ -96,8 +99,16 @@ def validate_unallocated(rows: list) -> dict:
     return result
 
 
+def attempt_ended(intent: dict, producer: dict) -> bool:
+    """A rerun starts only after the whole run finished, so an earlier attempt cannot be active."""
+    return (
+        producer["status"] == "completed"
+        or int(intent["identity"]["attempt"]) < producer["run_attempt"]
+    )
+
+
 class GitHub:
-    """Only GET endpoints in this repository; no implicit caller or machine credentials."""
+    """GET endpoints and one fixed recovery dispatch; no implicit caller or machine credentials."""
 
     def __init__(self, executable: Path):
         cycle.require(executable.is_file() and not executable.is_symlink(), "cli_missing")
@@ -131,6 +142,9 @@ class GitHub:
                 "--jq",
                 "{behind_by: .behind_by, merge_base_commit: {sha: .merge_base_commit.sha}}",
             ]
+        return self._capture(args, maximum)
+
+    def _capture(self, args: list[str], maximum: int) -> bytes:
         data = bytearray()
         with subprocess.Popen(
             args,
@@ -166,6 +180,49 @@ class GitHub:
 
     def get(self, endpoint: str) -> dict:
         return cycle.decode(self.bytes(endpoint))
+
+    def dispatch_recovery(self) -> None:
+        """Request reconciliation of main; only the run that follows can provide evidence."""
+        self._capture(
+            [
+                str(self.executable),
+                "api",
+                "--hostname",
+                "github.com",
+                "-H",
+                "X-GitHub-Api-Version: 2022-11-28",
+                "--method",
+                "POST",
+                f"{REPO}/actions/workflows/{Path(cycle.policy()['cleanup_workflow']).name}/dispatches",
+                "-f",
+                "ref=main",
+                "-f",
+                "inputs[mode]=recover",
+            ],
+            64 * 1024,
+        )
+
+    def recovery_runs(self) -> list:
+        """Read the newest recovery runs of main in this repository, including unfinished ones."""
+        size = cycle.policy()["limits"]["page_size"]
+        workflow = self.workflow(cycle.policy()["cleanup_workflow"])
+        rows = self.get(
+            f"{REPO}/actions/workflows/{workflow['id']}/runs?branch=main&per_page={size}"
+        )["workflow_runs"]
+        cycle.require(isinstance(rows, list) and len(rows) <= size, "github_list")
+        return [row for row in rows if row["head_repository"]["full_name"] == cycle.REPOSITORY]
+
+    def main_revision(self) -> str:
+        return cycle.sha(self.get(f"{REPO}/branches/main")["commit"]["sha"], 40)
+
+    def current_job(self, identity: dict, name: str) -> dict | None:
+        """Read one job of this workflow attempt by its stable name."""
+        jobs = self.pages(
+            f"{REPO}/actions/runs/{identity['run_id']}/attempts/{identity['attempt']}/jobs", "jobs"
+        )
+        matching = [job for job in jobs if job["name"] == name]
+        cycle.require(len(matching) <= 1, "controller_job_count")
+        return matching[0] if matching else None
 
     def rows(self, endpoint: str, key: str, *, complete: bool = False):
         p = cycle.policy()["limits"]
@@ -338,9 +395,12 @@ class GitHub:
             )
             cycle.require(
                 value["project_binding"] == settings["project_binding"]
-                and value["zone"] == settings["zone"]
-                and (not fresh or value["policy_sha256"] == cycle.digest(cycle.POLICY_PATH)),
+                and value["zone"] == settings["zone"],
                 "recovery_configuration",
+            )
+            cycle.require(
+                not fresh or value["policy_sha256"] == cycle.digest(cycle.POLICY_PATH),
+                "recovery_policy_changed",
             )
             age = (
                 cycle.timestamp(cycle.utc()) - cycle.timestamp(value["checked_at"])
@@ -380,18 +440,27 @@ class GitHub:
         cycle.require(not fresh, "fresh_recovery_required")
         return {"leases": []}
 
-    def provider_attempted(self, run: dict, attempt: int) -> bool:
+    def provider_attempted(self, run: dict, attempt: int, *, intent_missing: bool = False) -> bool:
         jobs = self.pages(f"{REPO}/actions/runs/{run['id']}/attempts/{attempt}/jobs", "jobs")
         controllers = [j for j in jobs if j["name"] == "Create and qualify one ARM lease"]
         cycle.require(len(controllers) <= 1, "controller_job_count")
         if not controllers:
             return False
+        if intent_missing:
+            # The provider step needs this success, whatever GitHub reports for a step left unrun.
+            # A published intent keeps the cautious reading below, since a lost runner's report lags.
+            published = [s for s in controllers[0]["steps"] if s["name"] == PUBLISH_STEP]
+            cycle.require(len(published) <= 1, "provider_step_count")
+            if published and published[0]["conclusion"] != "success":
+                return False
         steps = [
             s for s in controllers[0]["steps"] if s["name"] == "Create, test and remove the lease"
         ]
         cycle.require(len(steps) <= 1, "provider_step_count")
         return bool(
-            steps and steps[0]["status"] != "queued" and steps[0]["conclusion"] != "skipped"
+            steps
+            and steps[0]["status"] not in NOT_STARTED_STEPS
+            and steps[0]["conclusion"] != "skipped"
         )
 
     def intents(
@@ -460,7 +529,8 @@ class GitHub:
                 cycle.require(len(matching) <= 1, "intent_artifact_count")
                 if not matching:
                     cycle.require(
-                        not self.provider_attempted(run, attempt), "missing_allocation_intent"
+                        not self.provider_attempted(run, attempt, intent_missing=True),
+                        "missing_allocation_intent",
                     )
                     if run["status"] == "completed":
                         self._unallocated[key] = {"run_id": run_id, "attempt": str(attempt)}

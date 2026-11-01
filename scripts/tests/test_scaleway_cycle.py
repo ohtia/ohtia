@@ -1167,6 +1167,7 @@ class LedgerTests(unittest.TestCase):
         for status, conclusion, attempted in (
             ("completed", "skipped", False),
             ("queued", None, False),
+            ("pending", None, False),
             ("completed", "cancelled", True),
             ("in_progress", None, True),
         ):
@@ -1332,7 +1333,7 @@ class LedgerTests(unittest.TestCase):
             patch.object(self.gh, "run", return_value=run),
             patch.object(self.gh, "artifacts", return_value=[{"name": "scw-recovery-999-1"}]),
             patch.object(self.gh, "artifact", return_value=value),
-            self.assertRaisesRegex(cycle.CycleError, "recovery_configuration"),
+            self.assertRaisesRegex(cycle.CycleError, "recovery_policy_changed"),
         ):
             self.gh.completed_ledger(self.settings, fresh=True)
         with self.assertRaisesRegex(cycle.CycleError, "intent_policy"):

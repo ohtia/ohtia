@@ -17,8 +17,9 @@ from pathlib import Path
 
 import scaleway_cycle as cycle
 import scaleway_evidence as evidence_archive
+import scaleway_preflight as preflight
 import scaleway_progress as reporting
-from scaleway_ledger import GitHub, install_cli
+from scaleway_ledger import GitHub, attempt_ended, install_cli
 
 INCOMING = "/var/lib/ohtia-qualification/incoming"
 GUEST_SOURCE = "/home/ohtia-quality/source"
@@ -58,6 +59,15 @@ def previous(gh: GitHub, settings: dict, *, current: tuple[str, str], fresh: boo
         len(value["leases"]) < cycle.policy()["limits"]["maximum_leases"], "ledger_capacity"
     )
     return value["leases"]
+
+
+def ensure_recovery(gh: GitHub, *, dispatch: bool) -> None:
+    enabled()
+    identity = cycle.source_context("creator")
+    gh.run(identity["run_id"], "creator", require_active=True)
+    gh.guards()
+    key_lifetimes()
+    preflight.ensure(gh, cycle.configuration(), identity, dispatch=dispatch)
 
 
 def prepare(gh: GitHub, profile: str, directory: Path, build_directory: Path) -> None:
@@ -765,7 +775,10 @@ def _execute(
         len(stored) == 1 and gh.artifact(stored[0], "intent.json") == intent,
         "published_intent_required",
     )
-    cycle.require(fault in {"none", "after-native-smoke"}, "fault_mode")
+    cycle.require(fault in cycle.FAULTS, "fault_mode")
+    if fault == "before-allocation":
+        # This rehearsal stops after every admission and publication step, before any provider call.
+        return
     private = Path(os.environ["RUNNER_TEMP"]) / ("ohtia-lease-" + intent["nonce"])
     private.mkdir(mode=0o700)
     key = private / "id_ed25519"
@@ -876,9 +889,10 @@ def prepare_recovery(gh: GitHub, output: Path) -> None:
     items = []
     for intent, producer in pending:
         cycle.validate_intent(intent, settings, historical=True)
-        deferred = producer["status"] != "completed" and cycle.timestamp(
-            cycle.utc()
-        ) < cycle.timestamp(intent["expires_at"])
+        ended = attempt_ended(intent, producer)
+        deferred = not ended and cycle.timestamp(cycle.utc()) < cycle.timestamp(
+            intent["expires_at"]
+        )
         if deferred:
             items.append({"intent": intent, "deferred": True})
             continue
@@ -893,7 +907,7 @@ def prepare_recovery(gh: GitHub, output: Path) -> None:
                     "conflicting_resource_receipt",
                 )
                 known[kind] = cycle.identifier(resource)
-        unattempted = producer["status"] == "completed" and not gh.provider_attempted(
+        unattempted = ended and not gh.provider_attempted(
             producer, int(intent["identity"]["attempt"])
         )
         cycle.require(not unattempted or not seen, "unexpected_unattempted_resources")
@@ -1029,6 +1043,7 @@ def main() -> int:
         "operation",
         choices=(
             "install-cli",
+            "ensure-recovery",
             "prepare",
             "run",
             "prepare-recovery",
@@ -1043,9 +1058,12 @@ def main() -> int:
     parser.add_argument("--build", type=Path)
     parser.add_argument("--plan", type=Path)
     parser.add_argument("--archive", type=Path)
-    parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--fault", choices=("none", "after-native-smoke"), default="none")
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--fault", choices=cycle.FAULTS, default="none")
+    parser.add_argument("--dispatch", action="store_true")
     args = parser.parse_args()
+    if args.output is None and args.operation != "ensure-recovery":
+        parser.error("--output is required for this operation")
     try:
         if args.operation == "backup-input":
             from scaleway_restore import prepare_input
@@ -1068,7 +1086,9 @@ def main() -> int:
         else:
             cycle.require(args.cli is not None, "cli_argument")
             gh = GitHub(args.cli.absolute())
-            if args.operation == "prepare":
+            if args.operation == "ensure-recovery":
+                ensure_recovery(gh, dispatch=args.dispatch)
+            elif args.operation == "prepare":
                 cycle.require(
                     args.profile is not None and args.build is not None, "prepare_arguments"
                 )
