@@ -312,6 +312,17 @@ async function launch(
 }
 
 describe("broker composition with synthetic Electron adapters", () => {
+  it("keeps larger-than-screen resizing disabled for ordinary windows", async () => {
+    const h = await launch();
+    expect(h.failure).toBeUndefined();
+    expect(h.window.settings).toMatchObject({ enableLargerThanScreen: false });
+  });
+  it("permits larger-than-screen geometry under explicit acceptance instrumentation", async () => {
+    const h = await launch({ instrumented: true });
+    expect(h.failure).toBeUndefined();
+    expect(h.window.settings).toMatchObject({ enableLargerThanScreen: true });
+  });
+
   it("records startup before loading the initial document only under explicit acceptance instrumentation", async () => {
     const h = await launch({ instrumented: true, deferDocument: true });
     expect(h.window.loadURL).toHaveBeenCalledExactlyOnceWith("about:blank");

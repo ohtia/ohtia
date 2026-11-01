@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { URL } from "node:url";
 import { expect } from "@playwright/test";
+import { verifyDesignViewports } from "./design-viewport.mjs";
 
 const faces = JSON.parse(
   fs.readFileSync(new URL("../packages/renderer/fonts/manifest.json", import.meta.url), "utf8"),
@@ -21,7 +22,7 @@ export function assertZeroDuration(value) {
 }
 
 /** Scoped checks in the real packaged renderer; these fixtures never ship. */
-export async function verifyPackagedDesign(page, cdp) {
+export async function verifyPackagedDesign(page, cdp, nativeWindow) {
   const previous = await page.evaluate(() =>
     document.documentElement.getAttribute("data-appearance"),
   );
@@ -30,6 +31,7 @@ export async function verifyPackagedDesign(page, cdp) {
   page.on("request", observe);
   const result = {
     fonts: {},
+    viewports: {},
     themes: [],
     limitations: [
       "Synthetic typography specimens; no formula parsing, IME, fluent-language or screen-reader certification.",
@@ -52,6 +54,12 @@ export async function verifyPackagedDesign(page, cdp) {
         item.textContent = text;
         container.append(item);
       }
+      const wrapping = document.createElement("p");
+      wrapping.id = "design-wrap";
+      wrapping.dataset.fontRole = "document";
+      wrapping.lang = "ko-KR";
+      wrapping.textContent = "Evidence연구자료의출처와근거를확인하세요".repeat(8);
+      container.append(wrapping);
       const emphasis = document.createElement("em");
       emphasis.textContent = "연구자의 강조";
       container.querySelector("#design-document").append(emphasis);
@@ -145,7 +153,10 @@ export async function verifyPackagedDesign(page, cdp) {
         () => getComputedStyle(document.documentElement).backgroundColor,
       );
       expect(color).toBe(expected);
-      if (!result.fonts[mode]) result.fonts[mode] = await readFonts();
+      if (!result.fonts[mode]) {
+        result.fonts[mode] = await readFonts();
+        result.viewports[mode] = await verifyDesignViewports(page, nativeWindow);
+      }
       result.themes.push({ system, explicit, observed: color });
     }
     const scales = await page.evaluate(() =>
