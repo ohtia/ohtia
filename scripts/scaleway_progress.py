@@ -32,6 +32,12 @@ OBSERVATIONS = frozenset(
         "not-observed",
         "allocation-response",
         "host-key-admitted",
+        "host-server-observed",
+        "host-ip-unattached",
+        "host-fingerprint-missing",
+        "host-fingerprint-present",
+        "host-keyscan-failed",
+        "host-keygen-failed",
         "ssh-execution-confirmed",
         "interpreter-or-helper-unavailable",
         "bootstrap-not-ready",
@@ -59,6 +65,8 @@ TRANSPORT_CATEGORIES = frozenset(
 )
 OPERATIONS = frozenset(
     {
+        "host-keyscan",
+        "host-keygen",
         "ssh-readiness",
         "bootstrap-status",
         "transfer",
@@ -108,6 +116,12 @@ def stderr_category(data: bytes) -> str:
     return "process-failed"
 
 
+def _provider_enum(value: object, allowed: set[str]) -> str:
+    if value is None:
+        return "unavailable"
+    return value if isinstance(value, str) and value in allowed else "other"
+
+
 class Progress:
     """Observe synchronously changing phases with a controller-only heartbeat."""
 
@@ -135,6 +149,7 @@ class Progress:
         self.emitted = 0
         self.change_emitted = 0
         self.transport_states = {}
+        self.host_key_state = None
         interval = self.limits["progress_interval_seconds"]
         self.heartbeat_reserve = min(
             self.limits["progress_maximum_records"] // 2,
@@ -320,6 +335,86 @@ class Progress:
                 )
             if previous != self.state["last_transport"]:
                 self._emit("transport")
+
+    def host_key(self, nonce: str, operation: str, **observations):
+        """Retain selected admission observations, never raw metadata or key material."""
+        cycle.require(
+            operation in {"server", "ip", "fingerprint", "keyscan", "keygen", "admitted"},
+            "progress_operation",
+        )
+        cycle.identifier(nonce)
+        with self.lock:
+            now = dt.datetime.now(dt.timezone.utc).isoformat()
+            if self.host_key_state is None:
+                self.host_key_state = {
+                    "version": 1,
+                    "identity": dict(self.state["identity"]),
+                    "profile": self.state["profile"],
+                    "nonce": nonce,
+                    "server_state": "unavailable",
+                    "boot_type": "unavailable",
+                    "ip_attachment": "unobserved",
+                    "fingerprint_status": "unobserved",
+                    "scan": {"attempts": 0, "category": None, "exit_code": None},
+                    "provider_failure": None,
+                }
+            value = self.host_key_state
+            value.update(operation=operation, observed_at=now)
+            server = observations.get("server")
+            if isinstance(server, dict):
+                state = server.get("state")
+                if state == "stopped in place":
+                    value["server_state"] = "stopped-in-place"
+                else:
+                    value["server_state"] = _provider_enum(
+                        state, {"running", "starting", "stopped", "stopping"}
+                    )
+                value["boot_type"] = _provider_enum(
+                    server.get("boot_type"), {"local", "bootscript", "rescue"}
+                )
+            for field, allowed in (
+                ("ip_attachment", {"unobserved", "unattached", "matched", "invalid"}),
+                ("fingerprint_status", {"unobserved", "missing", "present", "invalid"}),
+            ):
+                candidate = observations.get(field)
+                if isinstance(candidate, str) and candidate in allowed:
+                    value[field] = candidate
+            scan = observations.get("scan")
+            attempts = self.state["attempts"].get("host-keyscan", 0)
+            if attempts > value["scan"]["attempts"]:
+                value["scan"].update(category=None, exit_code=None)
+            value["scan"]["attempts"] = attempts
+            if isinstance(scan, dict):
+                category, status = scan.get("category"), scan.get("exit_code")
+                value["scan"].update(
+                    category=category
+                    if isinstance(category, str) and category in TRANSPORT_CATEGORIES
+                    else None,
+                    exit_code=status if type(status) is int and -255 <= status <= 255 else None,
+                )
+            error = observations.get("provider_failure")
+            if (
+                isinstance(error, str)
+                and error in cycle.SAFE_FAILURE_CODES
+                and operation in {"server", "ip", "fingerprint"}
+            ):
+                value["provider_failure"] = {
+                    "operation": operation,
+                    "code": error,
+                    "observed_at": now,
+                }
+            try:
+                encoded = (json.dumps(value, sort_keys=True, indent=2) + "\n").encode()
+                cycle.require(
+                    len(encoded) <= self.limits["progress_record_bytes"], "progress_record_bound"
+                )
+                cycle.write(
+                    self.directory / "host-key-diagnostics.json", value, discard_incomplete=True
+                )
+            except (OSError, ValueError):
+                self.state["diagnostic_write_failures"] = min(
+                    999999, self.state["diagnostic_write_failures"] + 1
+                )
 
     def failure(self, error: BaseException):
         with self.lock:

@@ -249,40 +249,96 @@ def ssh_options(key: Path, known: Path) -> list[str]:
 
 
 def host_key(
-    api: cycle.API, intent: dict, resources: dict, key: Path, deadline: float
+    api: cycle.API,
+    intent: dict,
+    resources: dict,
+    key: Path,
+    deadline: float,
+    progress: reporting.Progress | None = None,
 ) -> tuple[str, Path]:
     known = key.parent / "known_hosts"
+
+    def diagnose(operation: str, **observations):
+        if progress is not None:
+            progress.host_key(intent["nonce"], operation, **observations)
+
+    def request(operation: str, action):
+        diagnose(operation)
+        try:
+            return action()
+        except cycle.CycleError as error:
+            code = cycle.failure_code(error)
+            expired = time.monotonic() >= deadline
+            diagnose(operation, provider_failure=code)
+            if (
+                code in {"provider_transport", "provider_deadline", "provider_operation_deadline"}
+                and expired
+            ):
+                raise cycle.CycleError("host_key_deadline") from None
+            raise
+
+    def observe(name: str):
+        if progress is not None:
+            progress.observe(name)
+
     while time.monotonic() < deadline:
-        server = api.get("server", resources["server"])
+        server = request("server", lambda: api.get("server", resources["server"]))
         cycle.require(server is not None, "server_disappeared")
         api.owned("server", server, intent)
-        address = api.get("ip", resources["ip"])
+        diagnose("server", server=server)
+        if progress is not None and progress.state["last_observation"] in {
+            "not-observed",
+            "allocation-response",
+        }:
+            observe("host-server-observed")
+        address = request("ip", lambda: api.get("ip", resources["ip"]))
         cycle.require(address is not None, "ip_disappeared")
         api.owned("ip", address, intent)
         parsed = ipaddress.ip_address(address["address"])
         cycle.require(parsed.version == 4 and parsed.is_global, "guest_address_identity")
         if address.get("server") is None:
+            diagnose("ip", ip_attachment="unattached")
+            observe("host-ip-unattached")
             time.sleep(cycle.policy()["limits"]["poll_seconds"])
             continue
-        cycle.require(
+        attached = (
             isinstance(address["server"], dict)
-            and address["server"].get("id") == resources["server"],
-            "guest_address_identity",
+            and address["server"].get("id") == resources["server"]
         )
-        fingerprints = api.request(
-            "GET",
-            api.path("server", resources["server"]) + "/user_data/ssh-host-fingerprints",
-            raw=True,
-            missing=True,
+        diagnose("ip", ip_attachment="matched" if attached else "invalid")
+        cycle.require(attached, "guest_address_identity")
+        fingerprints = request(
+            "fingerprint",
+            lambda: api.request(
+                "GET",
+                api.path("server", resources["server"]) + "/user_data/ssh-host-fingerprints",
+                raw=True,
+                missing=True,
+            ),
         )
         if fingerprints:
+            diagnose("fingerprint", fingerprint_status="invalid")
             cycle.require(len(fingerprints) <= 65536, "host_fingerprint_bound")
             trusted = set(re.findall(rb"SHA256:[A-Za-z0-9+/]{43}(?![A-Za-z0-9+/])", fingerprints))
             cycle.require(bool(trusted), "host_fingerprint_unavailable")
+            diagnose("fingerprint", fingerprint_status="present")
+            if progress is not None and progress.state["last_observation"] in {
+                "host-server-observed",
+                "host-ip-unattached",
+                "host-fingerprint-missing",
+            }:
+                observe("host-fingerprint-present")
+            operation, diagnostic = "host-keyscan", {}
             try:
+                if progress is not None:
+                    progress.attempted(operation)
+                diagnose("keyscan")
                 scan = cycle.command(
-                    ["ssh-keyscan", "-T", "5", "-t", "ed25519", str(parsed)], timeout=10
+                    ["ssh-keyscan", "-T", "5", "-t", "ed25519", str(parsed)],
+                    timeout=10,
+                    diagnostics=diagnostic,
                 ).stdout
+                diagnose("keyscan", scan=diagnostic)
                 lines = [line for line in scan.splitlines() if not line.startswith(b"#")]
                 cycle.require(
                     len(lines) == 1
@@ -296,15 +352,33 @@ def host_key(
                 )
                 candidate = key.parent / "host-key.pub"
                 candidate.write_bytes(lines[0] + b"\n")
+                if progress is not None:
+                    progress.transport(operation, diagnostic)
+                operation, diagnostic = "host-keygen", {}
+                if progress is not None:
+                    progress.attempted(operation)
+                diagnose("keygen")
                 observed = cycle.command(
-                    ["ssh-keygen", "-l", "-E", "sha256", "-f", str(candidate)]
+                    ["ssh-keygen", "-l", "-E", "sha256", "-f", str(candidate)],
+                    diagnostics=diagnostic,
                 ).stdout.split()
                 cycle.require(len(observed) >= 2 and observed[1] in trusted, "host_key_mismatch")
                 known.write_bytes(lines[0] + b"\n")
                 known.chmod(0o600)
+                diagnose("admitted")
                 return str(parsed), known
             except subprocess.SubprocessError:
-                pass
+                observe(
+                    "host-keyscan-failed" if operation == "host-keyscan" else "host-keygen-failed"
+                )
+            finally:
+                if progress is not None:
+                    progress.transport(operation, diagnostic)
+                if operation == "host-keyscan":
+                    diagnose("keyscan", scan=diagnostic)
+        else:
+            diagnose("fingerprint", fingerprint_status="missing")
+            observe("host-fingerprint-missing")
         time.sleep(cycle.policy()["limits"]["poll_seconds"])
     raise cycle.CycleError("host_key_deadline")
 
@@ -321,7 +395,7 @@ def guest(
 ) -> dict:
     if progress is not None:
         progress.phase("host-key", deadline=deadline)
-    address, known = host_key(api, intent, resources, key, deadline)
+    address, known = host_key(api, intent, resources, key, deadline, progress)
     if progress is not None:
         progress.observe("host-key-admitted")
         progress.phase("bootstrap", deadline=deadline)

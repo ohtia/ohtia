@@ -158,6 +158,7 @@ jobs:
             artifacts/scw-cycle/compositor.log
             artifacts/scw-cycle/bootstrap.json
             artifacts/scw-cycle/controller-progress.json
+            artifacts/scw-cycle/host-key-diagnostics.json
             artifacts/scw-cycle/controller-completion.json
             artifacts/scw-cycle/controller-events.json
             artifacts/scw-cycle/bootstrap-transport.json
