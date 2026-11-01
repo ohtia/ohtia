@@ -80,7 +80,7 @@ Double-clicking a separator, or pressing Enter while it has focus, resets that p
 
 ## Visibility, focus mode and narrow layout
 
-PascalCase icon names below identify `lucide-react` exports; the design system uses Lucide's official kebab-case icon names. Both name the same assets. Panel controls are always available in the context bar. They have stable `aria-controls`, `aria-expanded` matching visibility, localized tooltips and these names/icons:
+PascalCase icon names below identify the corresponding Lucide exports; the design system and renderer's controlled `LucideGlyph` use Lucide's official kebab-case icon names. Both name the same geometry under [ADR-0022](adr/adr-0022-react-vite-renderer.md). Panel controls are always available in the context bar. They have stable `aria-controls`, `aria-expanded` matching visibility, localized tooltips and these names/icons:
 
 - `PanelLeft`: Fold project contents when open; Open project contents when hidden or on its rail.
 - `AppWindow`: Hide documents/Open documents.

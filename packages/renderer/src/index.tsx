@@ -35,3 +35,7 @@ export function AppearanceControl({
     </label>
   );
 }
+
+export { designMetrics, iconMappings } from "./design-tokens.js";
+export { OhtiaBrand, OhtiaGlasses } from "./branding.js";
+export { LucideGlyph, type LucideName } from "./iconography.js";

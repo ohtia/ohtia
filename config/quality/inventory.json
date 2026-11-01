@@ -1,6 +1,7 @@
 {
   "version": 1,
   "vitest": [
+    "tests/design-foundation.test.ts",
     "tests/desktop-probes.test.ts",
     "tests/desktop-runtime.test.ts",
     "tests/diagnostics.test.ts",
@@ -57,6 +58,7 @@
   ],
   "python": [
     "scripts/tests/test_change_notes.py",
+    "scripts/tests/test_design_assets.py",
     "scripts/tests/test_desktop_contract.py",
     "scripts/tests/test_desktop_delivery.py",
     "scripts/tests/test_desktop_probes.py",

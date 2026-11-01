@@ -1,0 +1,118 @@
+:where([data-font-role="document"]) {
+  font-family: var(--font-family-document);
+  font-size: var(--type-doc-body-size);
+  line-height: calc(var(--type-doc-body-height) / var(--type-doc-body-size));
+  font-weight: var(--type-doc-body-weight);
+  max-inline-size: var(--measure-reading);
+  text-align: start;
+  hyphens: auto;
+}
+[data-font-role="document"] p,
+p[data-font-role="document"] {
+  margin-block: 1em;
+}
+[data-font-role="document"] blockquote,
+blockquote[data-font-role="document"] {
+  margin-inline-start: var(--space-6);
+  font-style: normal;
+}
+code,
+pre,
+:where([data-font-role="code"]) {
+  font-family: var(--font-family-code);
+  font-size: var(--type-ui-code-size);
+  line-height: calc(var(--type-ui-code-height) / var(--type-ui-code-size));
+  font-weight: var(--type-ui-code-weight);
+}
+:where([data-font-role="math"]) {
+  font-family: var(--font-family-math);
+  font-size: var(--type-doc-math-size);
+  line-height: 1.5;
+  font-weight: var(--type-doc-math-weight);
+}
+[data-font-role],
+[data-type] {
+  font-synthesis: none;
+  letter-spacing: 0;
+  text-align: start;
+}
+em:lang(ko) {
+  font-style: normal;
+  text-emphasis: filled dot;
+  text-emphasis-position: over right;
+}
+.ohtia-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--voice-ohtia-content);
+}
+.ohtia-glasses {
+  flex-shrink: 0;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+@media (forced-colors: active) {
+  .ohtia-brand {
+    color: CanvasText;
+  }
+  .ohtia-glasses {
+    --voice-ohtia-content: CanvasText;
+    --voice-ohtia-surface: Canvas;
+  }
+}
+
+:where([data-font-role="document"]) h1:not([data-type]),
+h1[data-font-role="document"]:not([data-type]) {
+  font-family: var(--font-family-document);
+  font-size: var(--type-doc-title-size);
+  line-height: calc(var(--type-doc-title-height) / var(--type-doc-title-size));
+  font-weight: var(--type-doc-title-weight);
+}
+
+:where([data-font-role="document"]) h2:not([data-type]),
+h2[data-font-role="document"]:not([data-type]) {
+  font-family: var(--font-family-document);
+  font-size: var(--type-doc-h2-size);
+  line-height: calc(var(--type-doc-h2-height) / var(--type-doc-h2-size));
+  font-weight: var(--type-doc-h2-weight);
+}
+
+:where([data-font-role="document"]) h3:not([data-type]),
+h3[data-font-role="document"]:not([data-type]) {
+  font-family: var(--font-family-document);
+  font-size: var(--type-doc-h3-size);
+  line-height: calc(var(--type-doc-h3-height) / var(--type-doc-h3-size));
+  font-weight: var(--type-doc-h3-weight);
+}
+
+:where([data-font-role="document"]) h4:not([data-type]),
+h4[data-font-role="document"]:not([data-type]) {
+  font-family: var(--font-family-document);
+  font-size: var(--type-doc-h4-size);
+  line-height: calc(var(--type-doc-h4-height) / var(--type-doc-h4-size));
+  font-weight: var(--type-doc-h4-weight);
+}
+
+:where([data-font-role="document"]) h5:not([data-type]),
+h5[data-font-role="document"]:not([data-type]) {
+  font-family: var(--font-family-document);
+  font-size: var(--type-doc-h5-size);
+  line-height: calc(var(--type-doc-h5-height) / var(--type-doc-h5-size));
+  font-weight: var(--type-doc-h5-weight);
+}
+
+:where([data-font-role="document"]) h6:not([data-type]),
+h6[data-font-role="document"]:not([data-type]) {
+  font-family: var(--font-family-document);
+  font-size: var(--type-doc-h5-size);
+  line-height: calc(var(--type-doc-h5-height) / var(--type-doc-h5-size));
+  font-weight: var(--type-doc-h5-weight);
+}
+
+:where([data-font-role="document"]) :is(code, pre, [data-font-role="code"]):not([data-type]) {
+  font-family: var(--font-family-code);
+  font-size: var(--type-doc-code-size);
+  line-height: calc(var(--type-doc-code-height) / var(--type-doc-code-size));
+  font-weight: var(--type-doc-code-weight);
+}

@@ -26,6 +26,7 @@ async function launch(
     loadFailure?: boolean;
     instrumented?: boolean;
     deferDocument?: boolean;
+    assetNames?: string[];
   } = {},
 ) {
   vi.resetModules();
@@ -223,6 +224,15 @@ async function launch(
                     : createHash("sha256").update(bytes).digest("hex"),
               },
             };
+  if (options.assetNames && !Array.isArray(assets)) {
+    for (const name of options.assetNames)
+      Object.assign(assets, {
+        [name]: {
+          type: name.endsWith("png") ? "image/png" : "image/svg+xml",
+          sha256: createHash("sha256").update(bytes).digest("hex"),
+        },
+      });
+  }
   const readFileSync = (file: unknown, ...args: unknown[]) => {
     if (fixturePath(file).endsWith("/assets.json")) return JSON.stringify(assets);
     if (fixturePath(file).includes("/renderer/")) return bytes;
@@ -578,4 +588,32 @@ describe("broker composition with synthetic Electron adapters", () => {
     expect(h.dialog.showErrorBox).toHaveBeenCalledOnce();
     expect(h.app.quit).toHaveBeenCalled();
   });
+});
+
+it("starts the broker and serves admitted packaged branding and icon paths", async () => {
+  const result = await launch({
+    assetNames: [
+      "icons/menu.svg",
+      "branding/illustration.png",
+      "branding/illustration.svg",
+      "branding/symbol.svg",
+    ],
+  });
+  expect(result.failure).toBeUndefined();
+  expect(result.Window.all).toHaveLength(1);
+  expect(result.dialog.showErrorBox).not.toHaveBeenCalled();
+  const handler = result.nativeSession.protocol.handle.mock.calls[0][1];
+  for (const name of [
+    "icons/menu.svg",
+    "branding/illustration.png",
+    "branding/illustration.svg",
+    "branding/symbol.svg",
+  ]) {
+    const response = handler({ url: `ohtia://app/${name}`, method: "GET" });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe(
+      name.endsWith("png") ? "image/png" : "image/svg+xml",
+    );
+  }
+  expect(handler({ url: "ohtia://app/icons/menu.js", method: "GET" }).status).toBe(403);
 });

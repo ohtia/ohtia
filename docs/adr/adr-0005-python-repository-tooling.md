@@ -27,6 +27,8 @@ Use conventional CPython `3.14.*` with GIL for development/CI, keeping the exact
 
 Use uv `0.13.*` for managed developer environments/dependencies, Ruff `0.17.*` for lint/format and Pyrefly `1.4.*` as the Python type checker when the tooling environment is introduced. Keep one lockfile for managed third-party tooling, frozen CI installs and environments isolated per checkout. Do not create empty product Python packages or require third-party packages for scripts that deliberately use only the standard library.[^uv][^types]
 
+Use fontTools `4.62.*` with Brotli `1.2.*` for offline inspection of bundled OpenType/WOFF2 assets and their character repertoires. These are managed developer dependencies used by the [renderer design checks](../design-foundations.md), with exact patches in the Python manifest and lock. They do not add Python or a decoder to the installed application.
+
 Type own tooling explicitly, isolate untyped boundaries and keep suppressions local and justified. Align duplicate Ruff/formatter pins in hooks and package commands. Introduce actual commands and their required checks together in the tooling delivery, preserving local/CI parity.
 
 ## Consequences

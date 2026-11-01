@@ -37,3 +37,11 @@ packages/contracts/src/generated/
 
 # ADR-0007: never rewrite published executable migration bytes.
 packages/utility/src/migrations/*.mjs
+
+# Deterministic projections checked against canonical definitions and inspected assets.
+packages/renderer/src/design-tokens.css
+packages/renderer/src/design-tokens.ts
+packages/renderer/src/design-fonts.css
+packages/renderer/icons/*.svg
+packages/renderer/branding/*.svg
+packages/renderer/src/design-icons.ts

@@ -2,6 +2,8 @@
 type: Playbook
 title: Locked developer workspace
 description: Bootstrap isolated contributor tools, build the six package boundaries and verify the frozen workspace without changing research data.
+generated:
+  by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
 sources:
@@ -54,6 +56,7 @@ python3 scripts/workspace.py run format
 python3 scripts/workspace.py run test
 python3 scripts/workspace.py run build
 python3 scripts/workspace.py run check
+python3 scripts/workspace.py run design:check
 python3 scripts/workspace.py run boundaries
 python3 scripts/workspace.py run package:local
 ```

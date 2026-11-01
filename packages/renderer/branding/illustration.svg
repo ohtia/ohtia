@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" role="img" aria-label="Ohtia: personaje en reposo" viewBox="-16 0 152 152">
+  <title>Ohtia: personaje en reposo</title>
+  <style>
+    .gl-line { fill: none; stroke: #6f2b55; stroke-width: 4; stroke-linecap: round; }
+    .gl-lens { fill: #fae9f2; stroke: #6f2b55; stroke-width: 4.5; }
+    .gl-pupil { fill: #6f2b55; }
+    .bd-hair { fill: #6f2b55; stroke: #6f2b55; stroke-width: 2; stroke-linejoin: round; }
+    .bd-face, .bd-skin { fill: #fae9f2; stroke: #6f2b55; stroke-width: 3; }
+    .bd-coat { fill: #fae9f2; stroke: #6f2b55; stroke-width: 3; stroke-linejoin: round; }
+    .bd-line { fill: none; stroke: #6f2b55; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .bd-pocket { fill: none; stroke: #6f2b55; stroke-width: 2.5; }
+    .bd-pencil { fill: none; stroke: #6f2b55; stroke-width: 3.5; stroke-linecap: round; }
+    .bd-strand { fill: none; stroke: #6f2b55; stroke-width: 3.5; stroke-linecap: round; }
+    .bd-bun { fill: #6f2b55; stroke: #6f2b55; stroke-width: 1.5; }
+    .bd-curl { fill: none; stroke: #fae9f2; stroke-width: 2; stroke-linecap: round; }
+    .bd-pencil-band { stroke: #fae9f2; stroke-width: 1.5; }
+    .bd-brow { fill: none; stroke: #6f2b55; stroke-width: 3.5; stroke-linecap: round; }
+    .bd-mouth { fill: none; stroke: #6f2b55; stroke-width: 3; stroke-linecap: round; }
+    .m-flat, .m-o { opacity: 0; }
+    @media (prefers-color-scheme: dark) {
+      .gl-line { fill: none; stroke: #edaed1; stroke-width: 4; stroke-linecap: round; }
+      .gl-lens { fill: #341e2b; stroke: #edaed1; stroke-width: 4.5; }
+      .gl-pupil { fill: #edaed1; }
+      .bd-hair { fill: #edaed1; stroke: #edaed1; stroke-width: 2; stroke-linejoin: round; }
+      .bd-face, .bd-skin { fill: #341e2b; stroke: #edaed1; stroke-width: 3; }
+      .bd-coat { fill: #341e2b; stroke: #edaed1; stroke-width: 3; stroke-linejoin: round; }
+      .bd-line { fill: none; stroke: #edaed1; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+      .bd-pocket { fill: none; stroke: #edaed1; stroke-width: 2.5; }
+      .bd-pencil { fill: none; stroke: #edaed1; stroke-width: 3.5; stroke-linecap: round; }
+      .bd-strand { fill: none; stroke: #edaed1; stroke-width: 3.5; stroke-linecap: round; }
+      .bd-bun { fill: #edaed1; stroke: #edaed1; stroke-width: 1.5; }
+      .bd-curl { fill: none; stroke: #341e2b; stroke-width: 2; stroke-linecap: round; }
+      .bd-pencil-band { stroke: #341e2b; stroke-width: 1.5; }
+      .bd-brow { fill: none; stroke: #edaed1; stroke-width: 3.5; stroke-linecap: round; }
+      .bd-mouth { fill: none; stroke: #edaed1; stroke-width: 3; stroke-linecap: round; }
+      .m-flat, .m-o { opacity: 0; }
+    }
+  </style>
+  <g class="bd-all">
+    <g class="bd-rest bd-body">
+      <g class="bd-piece bd-coatset">
+        <rect class="bd-skin" x="53" y="88" width="14" height="18"/>
+        <path class="bd-coat" d="M24 152 L30 116 Q60 100 90 116 L96 152 Z"/>
+        <path class="bd-line" d="M48 107 L60 128 L72 107"/>
+        <path class="bd-line" d="M60 128 L60 152"/>
+        <rect class="bd-pocket" x="74" y="128" width="12" height="9" rx="1.5"/>
+      </g>
+    </g>
+    <g class="bd-head">
+      <g class="bd-rest bd-piece bd-hair">
+        <path d="M33.2 77.5 Q15.0 75.5 29.1 63.8 Q11.7 53.5 31.5 49.7 Q19.1 31.5 40.1 38.3 Q38.9 20.0 52.9 31.8 Q60.0 13.0 67.1 31.8 Q82.9 16.4 79.9 38.3 Q97.7 33.9 88.5 49.7 Q108.3 53.5 90.9 63.8 Q108.9 76.6 86.8 77.5 Z"/>
+        <path class="bd-strand" d="M31 50 Q22 66 28 80 Q33 90 27 98"/>
+        <path class="bd-strand" d="M89 50 Q98 66 92 80 Q87 90 93 98"/>
+      </g>
+      <g class="bd-rest bd-piece bd-bun-grp">
+        <circle class="bd-bun" cx="60" cy="17" r="12"/>
+        <path class="bd-curl" d="M52.5 14 Q55 8.5 61.5 8.5"/>
+      </g>
+      <g class="bd-rest bd-piece bd-pencil">
+        <path d="M46 24 L76 6"/>
+        <path class="bd-pencil-band" d="M69.5 7.6 L71.5 11"/>
+      </g>
+      <g class="bd-rest bd-piece bd-facegrp">
+        <circle class="bd-face" cx="60" cy="66" r="30"/>
+        <path class="bd-brow bd-brow-l" d="M38 45 Q47 40 56 44"/>
+        <path class="bd-brow bd-brow-r" d="M64 44 Q73 40 82 45"/>
+        <path class="bd-mouth m-smile" d="M51 84 Q60 91 69 84"/>
+        <path class="bd-mouth m-flat" d="M53 86 L67 86"/>
+        <ellipse class="bd-mouth m-o" cx="60" cy="86" rx="3.5" ry="4.5"/>
+      </g>
+      <g transform="translate(28 30)">
+        <g class="gl">
+          <path class="gl-line" d="M8.6 29.5 L4.5 22.5"/>
+          <path class="gl-line" d="M55.4 29.5 L59.5 22.5"/>
+          <path class="gl-line" d="M28.5 31.5 Q32 27.5 35.5 31.5"/>
+          <circle class="gl-lens" cx="19" cy="34" r="11"/>
+          <circle class="gl-lens" cx="45" cy="34" r="11"/>
+          <circle class="gl-pupil gl-l" cx="19" cy="34" r="4.2"/>
+          <circle class="gl-pupil gl-r" cx="45" cy="34" r="4.2"/>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>

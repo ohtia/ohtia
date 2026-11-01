@@ -15,6 +15,7 @@ export default tseslint.config(
     files: [
       "tools/desktop-probes/*.mjs",
       "tooling/quality*.mjs",
+      "tooling/design-*.mjs",
       "tooling/linux-e2e*.mjs",
       "tooling/update-*.mjs",
       "tooling/installation-*.mjs",
@@ -48,6 +49,10 @@ export default tseslint.config(
       globals: { process: "readonly", require: "readonly" },
     },
     rules: { "no-undef": "error", "no-unreachable": "error", "no-unused-vars": "error" },
+  },
+  {
+    files: ["tooling/design-acceptance.mjs"],
+    languageOptions: { globals: { document: "readonly", getComputedStyle: "readonly" } },
   },
   ...tseslint.configs.strictTypeChecked.map((config) => ({
     ...config,

@@ -27,6 +27,7 @@
     "dev": "node tooling/workspace.mjs dev",
     "package:local": "node tooling/workspace.mjs package:local",
     "boundaries": "node tooling/workspace.mjs boundaries",
+    "design:check": "node tooling/workspace.mjs design:check",
     "doctor": "node tooling/workspace.mjs doctor",
     "hooks": "node tooling/workspace.mjs hooks",
     "hooks:history": "node tooling/workspace.mjs hooks:history",
@@ -59,7 +60,8 @@
     "@babel/core": "8.0.9",
     "@babel/plugin-transform-optional-chaining": "8.0.5",
     "@babel/plugin-transform-logical-assignment-operators": "8.0.1",
-    "electron-builder": "26.18.0"
+    "electron-builder": "26.18.0",
+    "postcss": "8.5.31"
   },
   "dependencies": {
     "@ohtia/renderer": "workspace:*"

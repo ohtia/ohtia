@@ -24,7 +24,7 @@ repos:
       - id: check-added-large-files
         args: [--enforce-all]
         # Unmodified, licensed static Korean fallback faces; exact bytes are in their font manifest.
-        exclude: ^packages/renderer/fonts/NotoSansKR-(Regular|Bold)\.otf$
+        exclude: ^packages/renderer/fonts/(?:NotoSansKR-(?:Regular|Medium|Bold)|NotoSerifKR-(?:Regular|SemiBold))\.otf$
       - id: detect-private-key
       - id: no-commit-to-branch
         args: [--branch, main, --branch, master]

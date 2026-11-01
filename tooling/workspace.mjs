@@ -4,6 +4,8 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { inspectWorkspace } from "./boundaries.mjs";
 import { assertPackagePins } from "./pins.mjs";
+import { checkTokens } from "./design-tokens.mjs";
+import { validateDesignAssets } from "./design-assets.mjs";
 import { generatePortPolicy } from "./port-policy.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -46,6 +48,8 @@ function boundaries() {
   return result.ordered;
 }
 function compile(noEmit = false) {
+  checkTokens(root);
+  validateDesignAssets(root);
   generatePortPolicy(root);
   const packages = boundaries();
   for (const item of packages)
@@ -66,6 +70,10 @@ function compile(noEmit = false) {
   node("typescript/bin/tsc", ["-p", "tools/desktop-probes/tsconfig.json"]);
 }
 const commands = {
+  "design:check"() {
+    checkTokens(root);
+    validateDesignAssets(root);
+  },
   doctor() {
     console.log("Installed package pins match their manifests and the adopting toolchain.");
   },
@@ -105,6 +113,7 @@ const commands = {
       "tools/desktop-probes/src",
       "tools/desktop-probes/*.mjs",
       "tooling/quality*.mjs",
+      "tooling/design-*.mjs",
       "tooling/linux-e2e*.mjs",
       "tooling/update-*.mjs",
       "tooling/installation-*.mjs",
