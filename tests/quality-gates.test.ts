@@ -636,7 +636,10 @@ describe("catalog contracts without silent fallback", () => {
           locale,
           messages: {
             greeting: "Hello {name}",
-            count: "{count, plural, other {# sheep}}",
+            count:
+              locale === "ko-KR"
+                ? "{count, plural, other {# sheep}}"
+                : "{count, plural, one {# sheep} other {# sheep}}",
             choice: "{mode, select, ready {Ready} other {Wait}}",
           },
         },

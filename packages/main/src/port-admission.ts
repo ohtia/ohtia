@@ -74,7 +74,9 @@ export class PortAdmission {
     )
       return failure("busy");
     const subscriptionId =
-      request.operation === "status.subscribe" || request.operation === "appearance.subscribe"
+      request.operation === "status.subscribe" ||
+      request.operation === "appearance.subscribe" ||
+      request.operation === "locale.subscribe"
         ? request.payload.subscriptionId
         : undefined;
     if (subscriptionId !== undefined) {

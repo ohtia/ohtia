@@ -26,6 +26,7 @@ async function launch(
     loadFailure?: boolean;
     instrumented?: boolean;
     deferDocument?: boolean;
+    languagesUnavailable?: boolean;
     assetNames?: string[];
   } = {},
 ) {
@@ -62,7 +63,10 @@ async function launch(
     setName: vi.fn(),
     enableSandbox: vi.fn(),
     getVersion: () => "0.0.0-test",
-    getPreferredSystemLanguages: () => ["es-CL", "en-GB"],
+    getPreferredSystemLanguages: () => {
+      if (options.languagesUnavailable) throw new Error("Unavailable OS preferences");
+      return ["es-CL", "en-GB"];
+    },
     getPath: (key: string) =>
       key === "home"
         ? profile.home
@@ -97,6 +101,7 @@ async function launch(
       setWindowOpenHandler: vi.fn(),
     });
     removeMenu = vi.fn();
+    setTitle = vi.fn();
     show = vi.fn();
     focus = vi.fn();
     restore = vi.fn();
@@ -146,6 +151,7 @@ async function launch(
     control = vi.fn();
     disposeWindow = vi.fn();
     activateStorage = vi.fn(() => true);
+    setSystemLocale = vi.fn(() => true);
     stop = vi.fn(async () => {
       this.ceased = state.stop;
       return state.stop;
@@ -160,6 +166,9 @@ async function launch(
       readonly generation: string,
       readonly stateChanged: (state: string) => void,
       readonly storageChanged: (notice: object) => void,
+      _storageAdmitting?: boolean,
+      _diagnostic?: unknown,
+      readonly localeChanged?: (snapshot: import("@ohtia/contracts").LocaleSnapshot) => void,
     ) {
       supervisors.push(this);
       childPort.messages(() => {});
@@ -627,4 +636,34 @@ it("starts the broker and serves admitted packaged branding and icon paths", asy
     );
   }
   expect(handler({ url: "ohtia://app/icons/menu.js", method: "GET" }).status).toBe(403);
+});
+
+it("resolves an unavailable OS language list and propagates admitted locale changes through the broker", async () => {
+  const h = await launch({ languagesUnavailable: true });
+  expect((await h.action("read")).locale).toBe("en-US");
+  const supervisor = h.supervisors[0];
+  supervisor.localeChanged?.({
+    serviceGeneration: "service-1",
+    record: { schemaVersion: 1, revision: 1, value: "ko-KR", source: "saved" },
+    systemLocale: "en-US",
+    effectiveLocale: "ko-KR",
+  });
+  expect((await h.action("read")).locale).toBe("ko-KR");
+  expect(h.window.setTitle).toHaveBeenCalledWith("Ohtia");
+  const sessionEvent = h.event();
+  h.ipcMain.emit(h.constants.desktopChannels.session, sessionEvent);
+  const session = sessionEvent.returnValue;
+  const encoded = h.constants.encodeEnvelope({
+    ...session,
+    protocol: 1,
+    policy: h.constants.policyId,
+    kind: "request",
+    requestId: "locale-request",
+    operationId: "locale-intent",
+    operation: "locale.replace",
+    payload: { expectedRevision: 1, value: "system" },
+  });
+  expect(encoded.ok).toBe(true);
+  if (encoded.ok) h.ipcMain.emit(h.constants.desktopChannels.port, h.event(), encoded.value);
+  expect(supervisor.setSystemLocale).toHaveBeenCalledWith("en-US");
 });

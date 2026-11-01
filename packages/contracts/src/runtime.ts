@@ -7,6 +7,7 @@ export const desktopChannels = {
   session: "ohtia:session",
   ended: "ohtia:service-ended",
   reconnect: "ohtia:reconnect",
+  preferencesReady: "ohtia:preferences-ready",
   port: "ohtia:foundation",
   reply: "ohtia:foundation-result",
   bootstrap: "ohtia:bootstrap",

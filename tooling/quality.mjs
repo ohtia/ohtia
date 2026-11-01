@@ -276,14 +276,10 @@ export async function runTests(base) {
     [pythonReport],
     identity,
   );
-  const { catalogs, supportedLocales, messageKeys } =
+  const { catalogs, supportedLocales, messageContracts } =
     await import("../packages/contracts/dist/index.js");
   sameSet([...supportedLocales], inventory.locales, "product locale inventory");
-  const catalogsResult = catalogGate(
-    inventory.locales,
-    Object.fromEntries(messageKeys.map((key) => [key, { params: {} }])),
-    catalogs,
-  );
+  const catalogsResult = catalogGate(inventory.locales, messageContracts, catalogs);
   const coverage = coverageGate(
     root,
     readJson(path.join(output, "coverage/coverage-final.json")),

@@ -2,10 +2,6 @@
 type: Playbook
 title: Shared verification and coverage gates
 description: Run the same local and CI checks with independent product coverage, complete test inventories and separate native evidence.
-generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # Shared verification and coverage gates
@@ -66,9 +62,9 @@ The workflow also preserves its checkout provenance receipt with repository, eve
 
 ## Catalog failure gates
 
-The delivered catalog service has a stable message-key inventory and currently declares no interpolation parameters. Every required locale must contain its full catalog and match its own version/locale identity. Runtime locale resolution cannot fill missing keys. The gate compares the product locale inventory with the independently versioned quality inventory, then validates every message against its parameter/form contract.
+The delivered [catalog service](localization.md) declares stable message keys and typed interpolation parameters in one shared contract. Every required locale must contain its full catalog and match its own version/locale identity. Runtime locale resolution cannot fill missing keys. The gate compares the product locale inventory with the independently versioned quality inventory, then validates every message against its parameter/form contract.
 
-The reusable validator parses ICU syntax and checks named parameter types (`string`, `number` and `date`), required plural/select forms, select options, locale-valid plural categories and an `other` branch. It rejects missing/extra keys and parameters, conflicting types, invalid syntax, unsupported markup and undeclared forms. Synthetic English/Korean fixtures exercise parameter, plural and select failures without adding a second product message runtime. Locale-specific plural alternatives need not imitate English. Other-only forms are permitted for invariant wording; syntax checks do not judge singular/plural word choice. Structural acceptance does not certify the translation's meaning, naturalness or human review.
+The reusable validator parses ICU syntax and checks named parameter types (`string`, `number` and `date`), required plural/select forms, select options, locale-valid plural categories and an `other` branch. It rejects missing/extra keys and parameters, conflicting types, invalid syntax, unsupported markup and undeclared forms. Synthetic English/Korean fixtures exercise parameter, plural and select failures without adding a second product message runtime. Locale-specific plural alternatives need not imitate English. Plural forms include each locale’s required categories; Korean does not require an English `one` form. Syntax checks do not judge singular/plural word choice. Structural acceptance does not certify the translation's meaning, naturalness or human review.
 
 ## Native and browser evidence
 

@@ -2,10 +2,6 @@
 type: Playbook
 title: Durable foundation storage
 description: Open the isolated local store, persist appearance choices and verify exclusive migrations and whole-database recovery through the packaged desktop.
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # Durable foundation storage
@@ -21,6 +17,8 @@ The assembled application carries the exact target addon in `native/binding.node
 ## Preferences and receipts
 
 `application_preferences` contains declared keys, schema versions, safe integer revisions and text values. Fresh initialization inserts both execution limits with value 1 in the schema transaction. Compatible opening preserves valid saved policy; a missing initialized policy, unsupported version or invalid positive-integer value blocks admission. A presentation fallback does not repair its stored bytes. A saved supported interface-locale identifier is decoded after store admission and resolved by the existing broker locale service; a rejected encoding produces a controlled notice and preserves the saved value.
+
+The [interface language preference](localization.md#named-preference-operations) uses the same record owner, transactional guarantees and migration/checkpoint path, with its own named operations and durable receipt table. Its value is `system` or a supported explicit locale.
 
 Appearance uses the existing named port operations and `system`, `light` or `dark` values. Reading an absent record returns the declared system default at revision zero. A replacement checks its expected revision and commits the record and immutable command receipt together. A matching operation replay returns its original outcome; another payload cannot reuse that identity. Stale outcomes are also recorded. Failed transactions preserve the last confirmed value. A missing acknowledgement requires receipt inspection before another explicit save; it is not permission to allocate a new operation and repeat the effect.
 
@@ -63,3 +61,7 @@ Use actual declared arguments in place of the angle-bracket placeholders. The ru
 The [required case inventory](../config/desktop/storage-cases.json) defines complete component, graphical and interruption accounting. The [graphical harness](../tooling/storage-acceptance.mjs) checks actual IPC, saved/stale/uncertain outcomes, window/service replacement, keyboard/reflow, restart and recovery controls. The [utility cases](../tooling/storage-native-cases.mjs) load the packaged storage module and addon, exercise file-backed compatibility, native SQLITE_FULL induced by an engine page limit (not filesystem ENOSPC), actual permission failures, competing initializers in one process and independent SQLite connection locking, transactional rollback, corrupt snapshots and interrupted restoration, and terminate real processes at checkpoint/before-commit/after-commit boundaries. Injected return/acknowledgement failures are identified separately from real process termination and actual filesystem failures.
 
 Retain the complete source/candidate identity, prepared artifact inventory, native host/CPU/OS/filesystem/session, runtime/addon/SQLite identities, every required case result and actual exit receipts. Independently observe the active native sandbox and display backend, stable fixture contents/metadata before and after, and cessation of the owned process identities. An aggregate with omitted cases, another CPU's result, developer-Node execution or emulation cannot qualify a native profile. The [target manifest](../config/desktop/targets.json) defines the required profiles; [native qualification](native-qualification.md) owns their facility procedures. Physical power-loss behavior, human linguistic review and manual assistive acceptance require their own evidence rather than being inferred from this harness.
+
+## Changing builds during an interrupted migration
+
+A pending migration intent and its checkpoint identify a specific source and target transition. A build that does not admit that target preserves the records and refuses to open the store. Do not edit the intent, checkpoint manifest, migration history or database version to make admission pass. Use the build that created the pending transition to complete its explicit Retry or Recover checkpoint procedure, then open the compatible initialized store with the newer build. Ordinary initialized revision-2 stores use the verified 2-to-3 migration path; a pending transition is not an initialized compatible store. Keep the preserved failed attempt and checkpoint until recovery has been verified.

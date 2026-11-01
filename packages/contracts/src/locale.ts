@@ -1,4 +1,4 @@
-import { supportedLocales, type InterfaceLocale } from "./port.js";
+import { supportedLocales, type LocaleChoice, type InterfaceLocale } from "./port.js";
 
 const languageFallbacks: Readonly<Record<string, InterfaceLocale>> = {
   en: "en-US",
@@ -22,11 +22,11 @@ export function isInterfaceLocale(value: unknown): value is InterfaceLocale {
 
 /** Only the broker supplies OS preferences and an already admitted saved choice. */
 export function resolveInterfaceLocale(
-  preferences: readonly string[],
+  preferences: readonly string[] | undefined,
   explicit?: unknown,
 ): InterfaceLocale {
   if (isInterfaceLocale(explicit)) return explicit;
-  for (const preference of preferences) {
+  for (const preference of preferences ?? []) {
     try {
       const canonical = Intl.getCanonicalLocales(preference)[0];
       if (!canonical) continue;
@@ -41,4 +41,8 @@ export function resolveInterfaceLocale(
     }
   }
   return "en-US";
+}
+
+export function isLocaleChoice(value: unknown): value is LocaleChoice {
+  return value === "system" || isInterfaceLocale(value);
 }

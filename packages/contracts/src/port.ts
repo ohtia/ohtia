@@ -49,6 +49,31 @@ export interface AppearanceChange {
   readonly expectedRevision: number;
   readonly value: Appearance;
 }
+export type LocaleChoice = "system" | InterfaceLocale;
+export interface LocaleRecord {
+  readonly schemaVersion: 1;
+  readonly revision: number;
+  readonly value: LocaleChoice;
+  readonly source: "saved" | "default" | "invalid_fallback";
+}
+export type SavedLocaleRecord = LocaleRecord & { readonly source: "saved" };
+export interface LocaleSnapshot {
+  readonly serviceGeneration: string;
+  readonly record: LocaleRecord;
+  readonly effectiveLocale: InterfaceLocale;
+  readonly systemLocale: InterfaceLocale;
+}
+export interface LocaleChange {
+  readonly operationId: string;
+  readonly expectedRevision: number;
+  readonly value: LocaleChoice;
+}
+export type RecordedLocaleOutcome =
+  | { readonly ok: true; readonly value: SavedLocaleRecord }
+  | { readonly ok: false; readonly error: Extract<PortError, { readonly code: "stale_revision" }> };
+export type LocaleReceipt =
+  | { readonly state: "not_found" | "pending" }
+  | { readonly state: "recorded"; readonly outcome: RecordedLocaleOutcome };
 export const errorActions = {
   invalid_message: "check_request",
   unsupported_version: "upgrade_application",
@@ -111,6 +136,10 @@ export type AppearanceReceipt =
   | { readonly state: "not_found" | "pending" }
   | { readonly state: "recorded"; readonly outcome: RecordedAppearanceOutcome };
 export interface OperationInputs {
+  "locale.read": Record<string, never>;
+  "locale.replace": { readonly expectedRevision: number; readonly value: LocaleChoice };
+  "locale.receipt": { readonly targetOperationId: string };
+  "locale.subscribe": { readonly subscriptionId: string };
   "status.read": Record<string, never>;
   "appearance.read": Record<string, never>;
   "appearance.replace": { readonly expectedRevision: number; readonly value: Appearance };
@@ -119,6 +148,10 @@ export interface OperationInputs {
   "appearance.subscribe": { readonly subscriptionId: string };
 }
 export interface OperationOutputs {
+  "locale.read": LocaleSnapshot;
+  "locale.replace": SavedLocaleRecord;
+  "locale.receipt": LocaleReceipt;
+  "locale.subscribe": { readonly subscriptionId: string };
   "status.read": FoundationStatus;
   "appearance.read": AppearanceRecord;
   "appearance.replace": SavedAppearanceRecord;
@@ -181,6 +214,7 @@ export type PortEvent = {
 } & (
   | { readonly topic: "status"; readonly payload: FoundationStatus }
   | { readonly topic: "appearance"; readonly payload: AppearanceRecord }
+  | { readonly topic: "locale"; readonly payload: LocaleSnapshot }
 );
 export type Envelope = Request | Result | Cancel | Unsubscribe | PortEvent;
 export interface PortCall<T> {
@@ -192,6 +226,13 @@ export interface Subscription {
   dispose(): void;
 }
 export interface FoundationPort {
+  readLocale(): PortCall<LocaleSnapshot>;
+  replaceLocale(
+    change: LocaleChange,
+    expectedServiceGeneration?: string,
+  ): PortCall<SavedLocaleRecord>;
+  readLocaleReceipt(operationId: string): PortCall<LocaleReceipt>;
+  subscribeLocale(listener: (notice: Outcome<LocaleSnapshot>) => void): Subscription;
   readStatus(): PortCall<FoundationStatus>;
   readAppearance(): PortCall<AppearanceRecord>;
   replaceAppearance(change: AppearanceChange): PortCall<SavedAppearanceRecord>;
@@ -246,6 +287,32 @@ function appearance(value: Json | undefined): boolean {
     (value.source !== "default" || value.revision === 0)
   );
 }
+function localeRecord(value: Json | undefined): boolean {
+  return (
+    exact(value, ["schemaVersion", "revision", "value", "source"]) &&
+    value.schemaVersion === 1 &&
+    revision(value.revision) &&
+    (value.value === "system" || oneOf(value.value, supportedLocales)) &&
+    oneOf(value.source, ["saved", "default", "invalid_fallback"]) &&
+    (value.source === "saved" ? value.revision > 0 : value.value === "system") &&
+    (value.source !== "default" || value.revision === 0)
+  );
+}
+function savedLocale(value: Json | undefined): boolean {
+  return localeRecord(value) && object(value) && value.source === "saved";
+}
+function localeSnapshot(value: Json | undefined): boolean {
+  return (
+    exact(value, ["serviceGeneration", "record", "effectiveLocale", "systemLocale"]) &&
+    isIdentifier(value.serviceGeneration) &&
+    localeRecord(value.record) &&
+    oneOf(value.effectiveLocale, supportedLocales) &&
+    oneOf(value.systemLocale, supportedLocales) &&
+    object(value.record) &&
+    value.effectiveLocale ===
+      (value.record.value === "system" ? value.systemLocale : value.record.value)
+  );
+}
 function savedAppearance(value: Json | undefined): boolean {
   return appearance(value) && object(value) && value.source === "saved";
 }
@@ -271,12 +338,12 @@ function outcome(value: Json | undefined, valid: (value: Json | undefined) => bo
     ? exact(value, ["ok", "value"]) && valid(value.value)
     : value.ok === false && exact(value, ["ok", "error"]) && error(value.error);
 }
-function receipt(value: Json | undefined): boolean {
+function receipt(value: Json | undefined, saved = savedAppearance): boolean {
   return (
     object(value) &&
     (value.state === "recorded"
       ? exact(value, ["state", "outcome"]) &&
-        outcome(value.outcome, savedAppearance) &&
+        outcome(value.outcome, saved) &&
         object(value.outcome) &&
         (value.outcome.ok === true ||
           (object(value.outcome.error) && value.outcome.error.code === "stale_revision"))
@@ -299,24 +366,29 @@ const readErrors = [
   "storage_failed",
   "disposed",
 ] as const;
+const replaceErrors = [
+  "invalid_message",
+  "unsupported_version",
+  "policy_mismatch",
+  "unauthorized",
+  "stale_generation",
+  "duplicate_request",
+  "busy",
+  "service_unavailable",
+  "uncertain",
+  "stale_revision",
+  "operation_conflict",
+  "preference_invalid",
+  "storage_failed",
+] as const;
 export const operationErrorCodes = Object.freeze({
+  "locale.read": [...readErrors, "preference_invalid"],
+  "locale.replace": replaceErrors,
+  "locale.receipt": readErrors,
+  "locale.subscribe": [...readErrors, "sequence_gap", "preference_invalid"],
   "status.read": readErrors,
   "appearance.read": [...readErrors, "preference_invalid"],
-  "appearance.replace": [
-    "invalid_message",
-    "unsupported_version",
-    "policy_mismatch",
-    "unauthorized",
-    "stale_generation",
-    "duplicate_request",
-    "busy",
-    "service_unavailable",
-    "uncertain",
-    "stale_revision",
-    "operation_conflict",
-    "preference_invalid",
-    "storage_failed",
-  ],
+  "appearance.replace": replaceErrors,
   "appearance.receipt": readErrors,
   "status.subscribe": [...readErrors, "sequence_gap"],
   "appearance.subscribe": [...readErrors, "sequence_gap", "preference_invalid"],
@@ -334,6 +406,7 @@ function input(operation: Operation, value: Json | undefined): boolean {
   switch (operation) {
     case "status.read":
     case "appearance.read":
+    case "locale.read":
       return exact(value, []);
     case "appearance.replace":
       return (
@@ -342,15 +415,30 @@ function input(operation: Operation, value: Json | undefined): boolean {
         value.expectedRevision < Number.MAX_SAFE_INTEGER &&
         isAppearance(value.value)
       );
+    case "locale.replace":
+      return (
+        exact(value, ["expectedRevision", "value"]) &&
+        revision(value.expectedRevision) &&
+        value.expectedRevision < Number.MAX_SAFE_INTEGER &&
+        (value.value === "system" || oneOf(value.value, supportedLocales))
+      );
+    case "locale.receipt":
     case "appearance.receipt":
       return exact(value, ["targetOperationId"]) && isIdentifier(value.targetOperationId);
     case "status.subscribe":
     case "appearance.subscribe":
+    case "locale.subscribe":
       return exact(value, ["subscriptionId"]) && isIdentifier(value.subscriptionId);
   }
 }
 function output(operation: Operation, value: Json | undefined): boolean {
   switch (operation) {
+    case "locale.read":
+      return localeSnapshot(value);
+    case "locale.replace":
+      return savedLocale(value);
+    case "locale.receipt":
+      return receipt(value, savedLocale);
     case "status.read":
       return status(value);
     case "appearance.read":
@@ -361,6 +449,7 @@ function output(operation: Operation, value: Json | undefined): boolean {
       return receipt(value);
     case "status.subscribe":
     case "appearance.subscribe":
+    case "locale.subscribe":
       return exact(value, ["subscriptionId"]) && isIdentifier(value.subscriptionId);
   }
 }
@@ -441,6 +530,10 @@ const identityKeys = [
   "operation",
 ];
 const operations: readonly Operation[] = [
+  "locale.read",
+  "locale.replace",
+  "locale.receipt",
+  "locale.subscribe",
   "status.read",
   "appearance.read",
   "appearance.replace",
@@ -487,7 +580,9 @@ export function decodeEnvelope(raw: unknown): Outcome<Envelope> {
       value.sequence > 0 &&
       (value.topic === "status"
         ? status(value.payload)
-        : value.topic === "appearance" && appearance(value.payload));
+        : value.topic === "locale"
+          ? localeSnapshot(value.payload)
+          : value.topic === "appearance" && appearance(value.payload));
   } else if (value.kind === "unsubscribe") {
     valid =
       exact(value, [
@@ -519,6 +614,24 @@ export function decodeEnvelope(raw: unknown): Outcome<Envelope> {
     valid &&
     (value.kind === "result" || value.kind === "event") &&
     utf8Size(JSON.stringify(value.payload)) > portLimits.initial_output_bytes
+  )
+    valid = false;
+  if (
+    valid &&
+    value.kind === "event" &&
+    value.topic === "locale" &&
+    object(value.payload) &&
+    value.payload.serviceGeneration !== value.serviceGeneration
+  )
+    valid = false;
+  if (
+    valid &&
+    value.kind === "result" &&
+    value.operation === "locale.read" &&
+    object(value.payload) &&
+    value.payload.ok === true &&
+    object(value.payload.value) &&
+    value.payload.value.serviceGeneration !== value.serviceGeneration
   )
     valid = false;
   // Shape validation above is the runtime proof of this discriminated union.
@@ -601,4 +714,29 @@ export function decodeAppearanceChange(raw: unknown): Outcome<AppearanceChange> 
     /* Reject without exposing caller data. */
   }
   return failure("invalid_message");
+}
+
+export function decodeLocaleChange(raw: unknown): Outcome<LocaleChange> {
+  try {
+    const value = boundedJson(raw);
+    if (exact(value, ["operationId", "expectedRevision", "value"])) {
+      const { operationId, ...payload } = value;
+      if (isIdentifier(operationId) && input("locale.replace", payload))
+        return { ok: true, value: value as unknown as LocaleChange };
+    }
+  } catch {
+    /* Controlled rejection without caller data. */
+  }
+  return failure("invalid_message");
+}
+
+/** Trusted peers use the same detached runtime schema as port snapshots. */
+export function decodeLocaleSnapshot(raw: unknown): LocaleSnapshot | undefined {
+  try {
+    const value = boundedJson(raw);
+    if (localeSnapshot(value)) return value as unknown as LocaleSnapshot;
+  } catch {
+    /* Reject without diagnostic data. */
+  }
+  return undefined;
 }

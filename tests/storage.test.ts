@@ -10,6 +10,7 @@ import { request } from "./fixtures/port-corpus.js";
 import {
   createStatusService,
   DurableStore,
+  initializeStorage,
   type StorageOptions,
 } from "../packages/utility/dist/index.js";
 
@@ -112,13 +113,13 @@ describe("durable preference and migration recovery", () => {
     await store.close();
     expectClosed();
     const newer = raw();
-    newer.pragma("user_version=3");
+    newer.pragma("user_version=4");
     newer.close();
     close.mockClear();
     await expect(store.open()).rejects.toThrow(/Unsupported/);
     expectClosed();
     const current = raw();
-    current.pragma("user_version=2");
+    current.pragma("user_version=3");
     current.close();
     close.mockClear();
     await store.open();
@@ -448,7 +449,7 @@ describe("durable preference and migration recovery", () => {
     await store.close();
     const db = raw();
     db.exec(
-      "DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'; UPDATE application_preferences SET value='{\"max_concurrent_inference\":4,\"max_concurrent_local_processing\":2}' WHERE key='execution_limits'",
+      "DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'; UPDATE application_preferences SET value='{\"max_concurrent_inference\":4,\"max_concurrent_local_processing\":2}' WHERE key='execution_limits'",
     );
     db.pragma("user_version=1");
     db.close();
@@ -569,12 +570,12 @@ describe("durable preference and migration recovery", () => {
     await store.open();
     await store.close();
     const db = raw();
-    db.pragma("user_version=3");
+    db.pragma("user_version=4");
     db.close();
     await expect(store.open()).rejects.toThrow(/Unsupported/);
     expect(checkpoints(root)).toHaveLength(1);
     const again = raw();
-    again.pragma("user_version=2");
+    again.pragma("user_version=3");
     again.exec("UPDATE ohtia_migration_artifacts SET sha256='" + "a".repeat(64) + "'");
     again.close();
     await expect(store.open()).rejects.toThrow(/identity/);
@@ -643,4 +644,448 @@ describe("durable preference and migration recovery", () => {
     ).toThrow(/Unverified/);
     expect(fs.existsSync(path.join(root, "ohtia.db3"))).toBe(false);
   });
+});
+
+describe("file-backed locale preference receipts", () => {
+  it("commits once, rejects reused identity and stale windows, preserves unrelated preferences and survives restart", async () => {
+    const { store, raw } = fixture();
+    await store.open();
+    const before = raw();
+    const unrelated = before
+      .prepare("SELECT * FROM application_preferences WHERE key<>'interface_locale' ORDER BY key")
+      .all();
+    before.close();
+    const command = { operationId: "language-op", expectedRevision: 0, value: "es-AR" as const };
+    const saved = await store.replaceLocale(command);
+    expect(saved).toMatchObject({ ok: true, value: { value: "es-AR", revision: 1 } });
+    expect(await store.replaceLocale(command)).toEqual(saved);
+    expect(await store.replaceLocale({ ...command, value: "ko-KR" })).toMatchObject({
+      ok: false,
+      error: { code: "operation_conflict" },
+    });
+    expect(await store.replaceLocale({ ...command, operationId: "other-window" })).toMatchObject({
+      ok: false,
+      error: { code: "stale_revision" },
+    });
+    expect(await store.readLocaleReceipt("other-window")).toMatchObject({
+      ok: true,
+      value: { state: "recorded", outcome: { ok: false } },
+    });
+    expect(await store.readLocaleReceipt("missing")).toEqual({
+      ok: true,
+      value: { state: "not_found" },
+    });
+    expect(
+      await store.replaceLocale({
+        ...command,
+        operationId: "invalid",
+        value: "unsupported" as never,
+      }),
+    ).toMatchObject({ ok: false, error: { code: "invalid_message" } });
+    expect(await store.readLocaleReceipt("bad id")).toMatchObject({
+      ok: false,
+      error: { code: "invalid_message" },
+    });
+    await store.close();
+    await store.open();
+    expect(await store.readLocale()).toMatchObject({
+      ok: true,
+      value: { value: "es-AR", revision: 1 },
+    });
+    expect(await store.readLocaleReceipt("language-op")).toMatchObject({
+      ok: true,
+      value: { state: "recorded", outcome: saved },
+    });
+    const after = raw();
+    expect(
+      after
+        .prepare("SELECT * FROM application_preferences WHERE key<>'interface_locale' ORDER BY key")
+        .all(),
+    ).toEqual(unrelated);
+    after.close();
+    expect(
+      await store.replaceLocale({ operationId: "system-op", expectedRevision: 1, value: "system" }),
+    ).toMatchObject({ ok: true, value: { value: "system", revision: 2 } });
+    expect(await store.savedLocale()).toEqual({ invalid: false });
+  });
+  it("preserves invalid stored bytes and permits explicit revision-checked replacement", async () => {
+    const { store, raw } = fixture();
+    expect(await store.readLocale()).toMatchObject({ ok: false });
+    expect(await store.readLocaleReceipt("operation")).toMatchObject({ ok: false });
+    expect(
+      await store.replaceLocale({ operationId: "operation", expectedRevision: 0, value: "system" }),
+    ).toMatchObject({ ok: false });
+    await store.open();
+    const db = raw();
+    db.prepare("INSERT INTO application_preferences VALUES ('interface_locale',2,4,?)").run(
+      '"nn-NO"',
+    );
+    expect(await store.readLocale()).toMatchObject({
+      ok: true,
+      value: { source: "invalid_fallback", value: "system", revision: 4 },
+    });
+    expect(
+      db
+        .prepare("SELECT value FROM application_preferences WHERE key='interface_locale'")
+        .pluck()
+        .get(),
+    ).toBe('"nn-NO"');
+    expect(
+      await store.replaceLocale({
+        operationId: "replacement",
+        expectedRevision: 4,
+        value: "ko-KR",
+      }),
+    ).toMatchObject({ ok: true, value: { value: "ko-KR", revision: 5 } });
+    db.close();
+  });
+  it("publishes ordered locale snapshots to two windows without duplicate replay events", async () => {
+    const { store } = fixture();
+    await store.open();
+    const messages: any[] = [];
+    const peer = createStatusService(
+      "service-1",
+      "en-GB",
+      (text) => messages.push(JSON.parse(text)),
+      store,
+    );
+    peer.activate("en-GB");
+    for (const windowGeneration of ["window-1", "window-2"])
+      peer.receive(
+        JSON.stringify(
+          request({
+            operation: "locale.subscribe",
+            windowGeneration,
+            payload: { subscriptionId: "language" },
+          }),
+        ),
+      );
+    await peer.drain();
+    peer.receive(
+      JSON.stringify(
+        request({ operation: "locale.replace", payload: { value: "ko-KR", expectedRevision: 0 } }),
+      ),
+    );
+    await peer.drain();
+    peer.receive(
+      JSON.stringify(
+        request({ operation: "locale.replace", payload: { value: "ko-KR", expectedRevision: 0 } }),
+      ),
+    );
+    await peer.drain();
+    expect(
+      messages.filter((m) => m.kind === "event").map((m) => m.payload.record.revision),
+    ).toEqual([0, 0, 1, 1]);
+    peer.receive(
+      JSON.stringify(
+        request({
+          operation: "status.subscribe",
+          windowGeneration: "window-status",
+          payload: { subscriptionId: "status-language" },
+        }),
+      ),
+    );
+    await peer.drain();
+    peer.setSystemLocale("ca-ES");
+    peer.receive(
+      JSON.stringify(
+        request({
+          operation: "locale.replace",
+          operationId: "system",
+          payload: { value: "system", expectedRevision: 1 },
+        }),
+      ),
+    );
+    await peer.drain();
+    expect(
+      messages
+        .filter((m) => m.kind === "event" && m.topic === "locale")
+        .slice(-2)
+        .map((m) => m.payload.effectiveLocale),
+    ).toEqual(["ca-ES", "ca-ES"]);
+    peer.receive(JSON.stringify(request({ operation: "locale.read" })));
+    await peer.drain();
+    peer.receive(
+      JSON.stringify(
+        request({ operation: "locale.receipt", payload: { targetOperationId: "system" } }),
+      ),
+    );
+    await peer.drain();
+    expect(messages.some((m) => m.kind === "locale_changed")).toBe(true);
+    peer.dispose();
+  });
+});
+
+describe("locale storage failure boundaries", () => {
+  it.each(["malformed", "unsupported", "oversized", "revision"])(
+    "preserves a %s saved value without implicit repair",
+    async (mode) => {
+      const { store, raw } = fixture();
+      await store.open();
+      const db = raw();
+      db.pragma("ignore_check_constraints=ON");
+      db.prepare("INSERT INTO application_preferences VALUES ('interface_locale',1,?,?)").run(
+        mode === "revision" ? 0 : 1,
+        mode === "malformed" ? "{" : mode === "oversized" ? "x".repeat(129) : '"nn-NO"',
+      );
+      if (mode === "revision") {
+        expect(await store.readLocale()).toMatchObject({
+          ok: false,
+          error: { code: "preference_invalid" },
+        });
+        expect(
+          await store.replaceLocale({
+            operationId: "invalid-revision",
+            expectedRevision: 0,
+            value: "ko-KR",
+          }),
+        ).toMatchObject({ ok: false, error: { code: "preference_invalid" } });
+        expect(await store.savedLocale()).toEqual({ invalid: true });
+      } else
+        expect(await store.readLocale()).toMatchObject({
+          ok: true,
+          value: { source: "invalid_fallback" },
+        });
+      db.close();
+    },
+  );
+  it.each(["read", "receipt", "write"])(
+    "fails controlled %s admission without exposing diagnostics",
+    async (mode) => {
+      const { store, options } = fixture();
+      await store.open();
+      vi.spyOn(options, "assertAdmission").mockImplementation(() => {
+        throw new Error("Synthetic private path");
+      });
+      const result =
+        mode === "read"
+          ? await store.readLocale()
+          : mode === "receipt"
+            ? await store.readLocaleReceipt("operation")
+            : await store.replaceLocale({
+                operationId: "operation",
+                expectedRevision: 0,
+                value: "ko-KR",
+              });
+      expect(result).toMatchObject({ ok: false, error: { code: "storage_failed" } });
+      expect(JSON.stringify(result)).not.toContain("private");
+    },
+  );
+  it("rolls back both locale and receipt on an actual SQLite write rejection", async () => {
+    const { store, raw } = fixture();
+    await store.open();
+    const db = raw();
+    db.exec(
+      "CREATE TRIGGER deny_locale BEFORE INSERT ON locale_receipts BEGIN SELECT RAISE(ABORT, 'Synthetic write denial'); END",
+    );
+    expect(
+      await store.replaceLocale({
+        operationId: "rejected-by-sqlite",
+        expectedRevision: 0,
+        value: "ko-KR",
+      }),
+    ).toMatchObject({ ok: false, error: { code: "storage_failed" } });
+    expect(
+      db
+        .prepare("SELECT count(*) FROM application_preferences WHERE key='interface_locale'")
+        .pluck()
+        .get(),
+    ).toBe(0);
+    expect(db.prepare("SELECT count(*) FROM locale_receipts").pluck().get()).toBe(0);
+    db.close();
+  });
+  it("retains uncertainty after a committed write loses its acknowledgement, then reconciles the durable receipt", async () => {
+    const { store } = fixture();
+    await store.open();
+    const prepare = Database.prototype.prepare;
+    const intercepted = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+      query,
+      ...args
+    ) {
+      const statement = prepare.call(this, query, ...args);
+      if (query === "COMMIT") {
+        const run = statement.run.bind(statement);
+        statement.run = (...bindings: unknown[]) => {
+          run(...bindings);
+          throw new Error("Synthetic lost commit acknowledgement");
+        };
+      }
+      return statement;
+    });
+    expect(
+      await store.replaceLocale({ operationId: "lost-ack", expectedRevision: 0, value: "ko-KR" }),
+    ).toMatchObject({ ok: false, error: { code: "uncertain" } });
+    intercepted.mockRestore();
+    expect(await store.readLocaleReceipt("lost-ack")).toMatchObject({
+      ok: true,
+      value: { state: "recorded", outcome: { ok: true, value: { revision: 1, value: "ko-KR" } } },
+    });
+    expect(await store.readLocale()).toMatchObject({
+      ok: true,
+      value: { revision: 1, value: "ko-KR" },
+    });
+  });
+  it("rejects a corrupt recorded locale receipt without overwriting its evidence", async () => {
+    const { store, raw } = fixture();
+    await store.open();
+    const db = raw();
+    db.prepare("INSERT INTO locale_receipts VALUES ('corrupt',0,'nn-NO',1,1)").run();
+    expect(await store.readLocaleReceipt("corrupt")).toMatchObject({
+      ok: false,
+      error: { code: "storage_failed" },
+    });
+    expect(
+      db.prepare("SELECT value FROM locale_receipts WHERE operation_id='corrupt'").pluck().get(),
+    ).toBe("nn-NO");
+    db.close();
+  });
+});
+
+it("does not publish storage readiness after its startup locale read loses admission", async () => {
+  const { store, options } = fixture();
+  const open = store.open.bind(store);
+  vi.spyOn(store, "open").mockImplementation(async () => {
+    await open();
+    vi.spyOn(options, "assertAdmission").mockImplementation(() => {
+      throw new Error("Synthetic root replacement");
+    });
+  });
+  const sent: string[] = [];
+  await expect(
+    initializeStorage(
+      store,
+      "create",
+      "generation-1",
+      (message) => sent.push(message),
+      () => false,
+    ),
+  ).rejects.toThrow(/root replacement/);
+  expect(sent.some((message) => JSON.parse(message).state === "storage_ready")).toBe(false);
+  expect(store.admissionReady).toBe(false);
+});
+it("upgrades a populated revision-two store while preserving appearance receipts and locale bytes", async () => {
+  const { store, raw } = fixture();
+  await store.open();
+  const appearance = await store.replaceAppearance({
+    operationId: "before-upgrade",
+    expectedRevision: 0,
+    value: "dark",
+  });
+  await store.close();
+  const db = raw();
+  db.exec(
+    "DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; INSERT INTO application_preferences VALUES ('interface_locale',1,7,'\"ko-KR\"')",
+  );
+  db.pragma("user_version=2");
+  db.close();
+  await store.open();
+  expect(await store.readAppearance()).toEqual(appearance);
+  expect(await store.readReceipt("before-upgrade")).toEqual({
+    ok: true,
+    value: { state: "recorded", outcome: appearance },
+  });
+  expect(await store.readLocale()).toMatchObject({
+    ok: true,
+    value: { revision: 7, value: "ko-KR", source: "saved" },
+  });
+  expect(
+    await store.replaceLocale({
+      operationId: "after-upgrade",
+      expectedRevision: 7,
+      value: "es-AR",
+    }),
+  ).toMatchObject({ ok: true, value: { revision: 8 } });
+});
+
+describe("real commit uncertainty composed with global locale publication", () => {
+  it.each(["before-commit", "after-commit"])(
+    "publishes only authoritative effects after %s acknowledgement loss",
+    async (boundary) => {
+      const { store, raw } = fixture();
+      await store.open();
+      const messages: any[] = [];
+      const peer = createStatusService(
+        "service-1",
+        "en-GB",
+        (text) => messages.push(JSON.parse(text)),
+        store,
+      );
+      peer.activate("en-GB");
+      for (const windowGeneration of ["window-a", "window-b"])
+        peer.receive(
+          JSON.stringify(
+            request({
+              operation: "locale.subscribe",
+              windowGeneration,
+              payload: { subscriptionId: "language" },
+            }),
+          ),
+        );
+      await peer.drain();
+      const replace = vi.spyOn(store, "replaceLocale");
+      const prepare = Database.prototype.prepare;
+      const intercepted = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+        query,
+        ...args
+      ) {
+        if (query === "COMMIT" && boundary === "before-commit")
+          throw new Error("Synthetic pre-commit acknowledgement failure");
+        const statement = prepare.call(this, query, ...args);
+        if (query === "COMMIT" && boundary === "after-commit") {
+          const run = statement.run.bind(statement);
+          statement.run = (...bindings: unknown[]) => {
+            run(...bindings);
+            throw new Error("Synthetic lost committed acknowledgement");
+          };
+        }
+        return statement;
+      });
+      peer.receive(
+        JSON.stringify(
+          request({
+            operation: "locale.replace",
+            operationId: "uncertain-language",
+            payload: { expectedRevision: 0, value: "ko-KR" },
+          }),
+        ),
+      );
+      await peer.drain();
+      intercepted.mockRestore();
+      expect(
+        messages.find(
+          (message) => message.kind === "result" && message.operation === "locale.replace",
+        ),
+      ).toMatchObject({ payload: { ok: false, error: { code: "uncertain" } } });
+      peer.receive(
+        JSON.stringify(
+          request({
+            operation: "locale.receipt",
+            payload: { targetOperationId: "uncertain-language" },
+          }),
+        ),
+      );
+      await peer.drain();
+      peer.receive(JSON.stringify(request({ operation: "status.read" })));
+      await peer.drain();
+      expect(replace).toHaveBeenCalledOnce();
+      const events = messages.filter(
+        (message) => message.kind === "event" && message.topic === "locale",
+      );
+      expect(events.map((message) => message.payload.record.revision)).toEqual(
+        boundary === "after-commit" ? [0, 0, 1, 1] : [0, 0],
+      );
+      expect(messages.at(-1)).toMatchObject({
+        payload: {
+          ok: true,
+          value: { interfaceLocale: boundary === "after-commit" ? "ko-KR" : "en-GB" },
+        },
+      });
+      const db = raw();
+      expect(db.prepare("SELECT count(*) FROM locale_receipts").pluck().get()).toBe(
+        boundary === "after-commit" ? 1 : 0,
+      );
+      db.close();
+      peer.dispose();
+    },
+  );
 });

@@ -35,7 +35,7 @@ okf_version: "0.2"
 - [Isolated desktop runtime](desktop-runtime.md) — Admit an independent native profile, assemble the local desktop and verify its supervised status and fixed-home bootstrap boundaries.
 - [Durable foundation storage](storage.md) — Open the isolated local store, persist appearance choices and verify exclusive migrations and whole-database recovery through the packaged desktop.
 - [Desktop foundation contract](desktop-foundation-contract.md) — Native target and distribution qualification inputs, pinned candidate metadata, numeric resource policy and evidence ownership for the desktop foundation.
-- [Bounded foundation application port](application-port.md) — Versioned status and appearance messages, controlled outcomes, transaction receipts and deterministic conformance for the desktop application boundary.
+- [Bounded foundation application port](application-port.md) — Versioned status, appearance and locale messages, controlled outcomes, transaction receipts and deterministic conformance for the desktop application boundary.
 - [Foundation security applicability](foundation-security.md) — Versioned security applicability, enforcing boundaries and reproducible evidence obligations for the desktop foundation.
 - [Content-free broker diagnostics](diagnostics.md) — Closed diagnostic events, broker-owned bounded files, native account protection and reproducible privacy and failure evidence.
 
@@ -56,3 +56,4 @@ okf_version: "0.2"
 - [Change-note tooling](change-notes.md) — Capture inert PR impact records, reconcile source scope and prepare immutable editorial note and correction evidence.
 - [Desktop builds, releases and change notes](release-policy.md) — Quality-build triggers, artifact-bound candidate readiness, immutable promotion, public versioning and user-facing change communication.
 - [EPICs](epics/index.md) — Published delivery specifications and their native GitHub story sub-issues.
+- [Shared interface localization](localization.md) — Author complete typed catalogs and use the durable application-wide language preference without changing research content.

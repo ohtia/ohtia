@@ -6,6 +6,7 @@ import {
   policyId,
   portLimits,
   type Envelope,
+  type LocaleSnapshot,
 } from "../packages/contracts/src/index.js";
 import type { DurableStore } from "../packages/utility/src/storage.js";
 import { request, status, appearance } from "./fixtures/port-corpus.js";
@@ -19,7 +20,7 @@ function wire(value: unknown) {
   if (!encoded.ok) throw new Error(JSON.stringify(encoded));
   return encoded.value;
 }
-function supervisor() {
+function supervisor(localeChanged?: (snapshot: LocaleSnapshot) => void) {
   vi.useFakeTimers();
   let receive: (value: unknown) => void = () => {};
   let exited: () => void = () => {};
@@ -35,7 +36,15 @@ function supervisor() {
   };
   const state = vi.fn();
   const storage = vi.fn();
-  const service = new ServiceSupervisor(child, "service-1", state, storage);
+  const service = new ServiceSupervisor(
+    child,
+    "service-1",
+    state,
+    storage,
+    false,
+    undefined,
+    localeChanged,
+  );
   receive(JSON.stringify({ kind: "ready", generation: "service-1" }));
   return {
     child,
@@ -381,5 +390,69 @@ describe("service admission and queued subscription failures", () => {
     h.receive({ operation: "appearance.read" });
     await h.service.drain();
     expect(h.sent.at(-1)).toMatchObject({ payload: { error: { code: "service_unavailable" } } });
+  });
+});
+
+describe("trusted locale authority wiring", () => {
+  const snapshot: LocaleSnapshot = {
+    serviceGeneration: "service-1",
+    record: { schemaVersion: 1, revision: 1, value: "ko-KR", source: "saved" },
+    systemLocale: "en-US",
+    effectiveLocale: "ko-KR",
+  };
+  it("publishes locale state independently of a view subscription and rechecks system-locale controls", () => {
+    const changed = vi.fn();
+    const h = supervisor(changed);
+    expect(h.service.setSystemLocale("en-GB")).toBe(true);
+    expect(h.child.send).toHaveBeenLastCalledWith(
+      JSON.stringify({ kind: "system_locale", generation: "service-1", locale: "en-GB" }),
+    );
+    expect(h.service.setSystemLocale("nn-NO" as never)).toBe(false);
+    h.receive(JSON.stringify({ kind: "locale_changed", generation: "service-1", snapshot }));
+    expect(changed).toHaveBeenCalledWith(snapshot);
+    const read = work({ operation: "locale.read" });
+    h.service.dispatch(read);
+    h.receive(wire({ ...read.request, kind: "result", payload: { ok: true, value: snapshot } }));
+    const stream = work({ operation: "locale.subscribe", payload: { subscriptionId: "language" } });
+    h.service.dispatch(stream);
+    h.receive(
+      wire({
+        ...stream.request,
+        kind: "result",
+        payload: { ok: true, value: { subscriptionId: "language" } },
+      }),
+    );
+    h.receive(wire({ ...event(), topic: "locale", subscriptionId: "language", payload: snapshot }));
+    expect(stream.deliver).toHaveBeenCalledTimes(2);
+    h.service.disposeWindow("window-1");
+    h.exited();
+    expect(stream.releaseSubscription).toHaveBeenCalled();
+  });
+  it("quarantines malformed locale snapshots and retains uncertain locale commands until exit", () => {
+    const h = supervisor();
+    const pending = work({
+      operation: "locale.replace",
+      payload: { expectedRevision: 0, value: "system" },
+    });
+    h.service.dispatch(pending);
+    h.receive(
+      JSON.stringify({
+        kind: "locale_changed",
+        generation: "service-1",
+        snapshot: { ...snapshot, effectiveLocale: "nn-NO" },
+      }),
+    );
+    expect(h.child.kill).toHaveBeenCalled();
+    h.exited();
+    expect(JSON.parse(pending.deliver.mock.calls[0][0])).toMatchObject({
+      payload: { error: { code: "uncertain" } },
+    });
+    expect(h.service.setSystemLocale("en-US")).toBe(false);
+    const sendFailure = supervisor();
+    sendFailure.child.send.mockImplementation(() => {
+      throw new Error("Synthetic transport failure");
+    });
+    expect(sendFailure.service.setSystemLocale("en-US")).toBe(false);
+    sendFailure.exited();
   });
 });

@@ -4,10 +4,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import { _electron, expect } from "@playwright/test";
+import { pseudolocalize } from "../tests/fixtures/pseudolocalization.mjs";
 import { admittedLaunch } from "./desktop-launch.mjs";
 import { recordReadyNativeProcesses } from "./desktop-native-observation.mjs";
 import { verifyStableSentinels } from "../packages/main/dist/index.js";
-import { message, portLimits } from "../packages/contracts/dist/index.js";
+import {
+  message,
+  portLimits,
+  supportedLocales,
+  localeAutonyms,
+} from "../packages/contracts/dist/index.js";
 
 const [profileFile, prepared, output] = process.argv.slice(2);
 if (!profileFile || !prepared || !output)
@@ -302,6 +308,128 @@ try {
         (await second.evaluate(() => window.ohtia.foundation.readAppearance().result)).value?.value,
     )
     .toBe(changed);
+  // Exercise the language owner through the actual packaged bridge and existing isolated store.
+  const language = page.locator('select[aria-describedby="language-help"]');
+  const initialLanguage = await page.evaluate(() => window.ohtia.foundation.readLocale().result);
+  expect(initialLanguage.ok).toBe(true);
+  await expect(language.locator("option")).toHaveCount(26);
+  await page.evaluate(() => {
+    const draft = document.createElement("textarea");
+    draft.id = "locale-preservation-fixture";
+    draft.value = "Synthetic researcher draft 연구 초안";
+    document.querySelector("main").append(draft);
+    window.__localeInput = draft;
+  });
+  for (const choice of supportedLocales) {
+    await language.focus();
+    await language.selectOption(choice);
+    await expect(language).toBeFocused();
+    await expect
+      .poll(
+        async () =>
+          (await page.evaluate(() => window.ohtia.foundation.readLocale().result)).value
+            ?.effectiveLocale,
+      )
+      .toBe(choice);
+    await expect(page.locator("html")).toHaveAttribute("lang", choice);
+    await expect(second.locator("html")).toHaveAttribute("lang", choice);
+    await expect(language.locator(`option[value="${choice}"]`)).toHaveAttribute("lang", choice);
+    await expect(language.locator(`option[value="${choice}"]`)).toHaveText(
+      localeAutonyms[choice].label,
+    );
+    await expect(page.locator("#language-title")).toHaveText(
+      message(choice, "settings.language.title"),
+    );
+    for (const width of [320, 600, 1024, 1280]) {
+      await page.setViewportSize({ width, height: 700 });
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      ).toBe(true);
+    }
+  }
+  const renderedTexts = await page.locator("main").evaluate((element) => {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    const values = [];
+    while (walker.nextNode())
+      if (walker.currentNode.textContent.trim()) values.push(walker.currentNode.textContent);
+    return values;
+  });
+  await page.evaluate((expanded) => {
+    const clone = document.querySelector("main").cloneNode(true);
+    for (const element of clone.querySelectorAll("[id]")) element.removeAttribute("id");
+    clone.id = "locale-pseudo-fixture";
+    clone.setAttribute("aria-hidden", "true");
+    const walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT);
+    let index = 0;
+    while (walker.nextNode())
+      if (walker.currentNode.textContent.trim()) walker.currentNode.textContent = expanded[index++];
+    document.body.append(clone);
+  }, renderedTexts.map(pseudolocalize));
+  for (const width of [320, 600, 1024, 1280]) {
+    await page.setViewportSize({ width, height: 700 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+  }
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.screenshot({ path: path.join(output, "locale-pseudo-320.png"), fullPage: true });
+  await page.locator("#locale-pseudo-fixture").evaluate((element) => element.remove());
+  await page.locator("#locale-preservation-fixture").focus();
+  const currentLanguage = await page.evaluate(() => window.ohtia.foundation.readLocale().result);
+  const localeOperationId = randomUUID();
+  const languageCommand = {
+    operationId: localeOperationId,
+    expectedRevision: currentLanguage.value.record.revision,
+    value: initialLanguage.value.record.value,
+  };
+  const restoredLanguage = await page.evaluate(
+    (command) => window.ohtia.foundation.replaceLocale(command).result,
+    languageCommand,
+  );
+  expect(restoredLanguage.ok).toBe(true);
+  expect(
+    await page.evaluate(
+      (command) => window.ohtia.foundation.replaceLocale(command).result,
+      languageCommand,
+    ),
+  ).toEqual(restoredLanguage);
+  expect(
+    await page.evaluate(
+      (id) => window.ohtia.foundation.readLocaleReceipt(id).result,
+      localeOperationId,
+    ),
+  ).toEqual({ ok: true, value: { state: "recorded", outcome: restoredLanguage } });
+  const staleLanguage = await page.evaluate(
+    (command) => window.ohtia.foundation.replaceLocale(command).result,
+    { ...languageCommand, operationId: randomUUID() },
+  );
+  expect(staleLanguage).toMatchObject({ ok: false, error: { code: "stale_revision" } });
+  await expect(page.locator("html")).toHaveAttribute("lang", initialLanguage.value.effectiveLocale);
+  await expect(second.locator("html")).toHaveAttribute(
+    "lang",
+    initialLanguage.value.effectiveLocale,
+  );
+  expect(
+    await page.evaluate(() => ({
+      same: window.__localeInput === document.getElementById("locale-preservation-fixture"),
+      value: window.__localeInput.value,
+      focused: document.activeElement === window.__localeInput,
+    })),
+  ).toEqual({ same: true, value: "Synthetic researcher draft 연구 초안", focused: true });
+  const languageTree = await page.locator("body").ariaSnapshot();
+  expect(languageTree).toContain(
+    message(initialLanguage.value.effectiveLocale, "settings.language.title"),
+  );
+  await page.locator("#locale-preservation-fixture").evaluate((element) => element.remove());
+  record("graphical-persisted-locale", {
+    locales: [...supportedLocales],
+    widths: [320, 600, 1024, 1280],
+    restoredLanguage,
+    staleLanguage,
+    tree: languageTree,
+    inputFixture: "synthetic textarea, not project-switch qualification",
+    pseudolocalization: "separate synthetic layout clone with at least 40 percent text expansion",
+  });
   // Leave a draft in the first window, then replace the utility. The document and input must survive.
   await control.selectOption("system");
   await page.evaluate(() => {
@@ -326,7 +454,19 @@ try {
     .toBe("verified");
   expect(await page.evaluate(() => window.__storageDocumentMarker)).toBe("retained");
   await expect(control).toHaveValue("system");
-  record("utility-retry-preserves-input-and-document", { retainedValue: "system", processes });
+  await language.selectOption("es-AR");
+  await expect(second.locator("html")).toHaveAttribute("lang", "es-AR");
+  await language.selectOption(initialLanguage.value.record.value);
+  await expect(page.locator("html")).toHaveAttribute("lang", initialLanguage.value.effectiveLocale);
+  await expect(second.locator("html")).toHaveAttribute(
+    "lang",
+    initialLanguage.value.effectiveLocale,
+  );
+  record("utility-retry-preserves-input-and-document", {
+    retainedValue: "system",
+    processes,
+    localePropagationAfterReplacement: true,
+  });
   await expect(page.locator("#location-state")).toHaveText(text("storage_ready"));
   await page.setViewportSize({ width: 320, height: 700 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
@@ -357,6 +497,7 @@ try {
     expect(inspected.messages.some((value) => value.kind === "complete")).toBe(true);
     record(`process-interruption-${boundary}`, { interrupted, inspected });
   }
+  const finalLanguage = await page.evaluate(() => window.ohtia.foundation.readLocale().result);
   const final = await page.evaluate(() => window.ohtia.foundation.readAppearance().result);
   const checkpointRoot = path.join(launch.profile.research_root, "recovery/migrations");
   const priorCheckpoints = fs.readdirSync(checkpointRoot).sort();
@@ -371,7 +512,21 @@ try {
   expect(await page.evaluate(() => window.ohtia.foundation.readAppearance().result)).toEqual(final);
   expect(fs.readdirSync(checkpointRoot).sort()).toEqual(priorCheckpoints);
   expect(locatorFiles()).toEqual(priorLocatorFiles);
-  record("application-restart-and-current-no-checkpoint", { final, locatorRepublished: false });
+  const restartedLanguage = await page.evaluate(() => window.ohtia.foundation.readLocale().result);
+  expect(restartedLanguage).toMatchObject({
+    ok: true,
+    value: {
+      record: finalLanguage.value.record,
+      systemLocale: finalLanguage.value.systemLocale,
+      effectiveLocale: finalLanguage.value.effectiveLocale,
+    },
+  });
+  expect(restartedLanguage.value.serviceGeneration).not.toBe(finalLanguage.value.serviceGeneration);
+  record("application-restart-and-current-no-checkpoint", {
+    final,
+    finalLanguage,
+    locatorRepublished: false,
+  });
   await application.close();
   application = undefined;
   verifyStableSentinels(launch.profile);
@@ -522,6 +677,18 @@ try {
     value: { revision: 0, value: "system", source: "default" },
   });
   await expect(page.locator("#location-state")).toBeFocused();
+  const restoredLocaleControl = page.locator('select[aria-describedby="language-help"]');
+  await restoredLocaleControl.selectOption("ko-KR");
+  await expect(page.locator("html")).toHaveAttribute("lang", "ko-KR");
+  await expect
+    .poll(
+      async () =>
+        (await page.evaluate(() => window.ohtia.foundation.readLocale().result)).value?.record
+          .value,
+    )
+    .toBe("ko-KR");
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.screenshot({ path: path.join(output, "locale-ko-320.png"), fullPage: true });
   record("graphical-checkpoint-restoration", {
     restored,
     sourceRevision: checkpointManifest.sourceRevision,

@@ -66,7 +66,7 @@ protocol.registerSchemesAsPrivileged([
     privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
   },
 ]);
-let locale = resolveInterfaceLocale(app.getPreferredSystemLanguages());
+let locale = resolveInterfaceLocale(preferredSystemLanguages());
 let profile: RuntimeProfile;
 let profileFile: string;
 try {
@@ -92,6 +92,13 @@ try {
   throw new Error("Runtime isolation admission refused.");
 }
 
+function preferredSystemLanguages(): readonly string[] {
+  try {
+    return app.getPreferredSystemLanguages();
+  } catch {
+    return [];
+  }
+}
 const settings = path.join(profile.configuration_root, "Ohtia", "settings");
 const admission = new PortAdmission();
 const publisher = new LocatorPublisher();
@@ -330,7 +337,7 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
     [
       profileFile,
       generation,
-      locale,
+      resolveInterfaceLocale(preferredSystemLanguages()),
       [
         "missing",
         "located",
@@ -421,20 +428,28 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
             );
       void publication.then((result) => {
         if (quitting || service !== active || generation !== notice.generation) return;
-        const resolvedLocale = resolveInterfaceLocale(
-          app.getPreferredSystemLanguages(),
-          notice.savedLocale,
-        );
+        const systemLocale = resolveInterfaceLocale(preferredSystemLanguages());
+        const resolvedLocale = resolveInterfaceLocale([systemLocale], notice.savedLocale);
+        active.setSystemLocale(systemLocale);
         bootstrapState = completeStorageActivation(result, active, resolvedLocale);
         if (bootstrapState === "storage_ready") {
           locale = resolvedLocale;
           localeFallback = notice.localeFallback === true;
+          for (const existing of windows.keys())
+            if (!existing.isDestroyed())
+              existing.webContents.send(desktopChannels.preferencesReady, generation);
         }
       });
     },
     mode !== "blocked" && ["missing", "located"].includes(locator.state),
     (event, correlation) => {
       void diagnostics?.append(event, correlation);
+    },
+    (snapshot) => {
+      locale = snapshot.effectiveLocale;
+      localeFallback = snapshot.record.source === "invalid_fallback";
+      for (const window of windows.keys())
+        if (!window.isDestroyed()) window.setTitle(message(locale, "title"));
     },
   );
 }
@@ -456,7 +471,7 @@ const startup = setTimeout(() => {
 }, portLimits.application_start_ms);
 async function start(): Promise<void> {
   await app.whenReady();
-  locale = resolveInterfaceLocale(app.getPreferredSystemLanguages());
+  locale = resolveInterfaceLocale(preferredSystemLanguages());
   Menu.setApplicationMenu(null);
   const locator = readLocator(settings, profile);
   bootstrapState = locator.state;
@@ -571,6 +586,12 @@ async function start(): Promise<void> {
       return;
     }
     if (acceptance) acceptance.dispatched++;
+    if (
+      authority.value.kind === "request" &&
+      authority.value.operation === "locale.replace" &&
+      authority.value.payload.value === "system"
+    )
+      service.setSystemLocale(resolveInterfaceLocale(preferredSystemLanguages()));
     service.dispatch({ ...accepted.value, deliver });
   });
   ipcMain.handle(

@@ -1,5 +1,7 @@
 import {
   decodeAppearanceChange,
+  decodeLocaleChange,
+  type LocaleSnapshot,
   decodeText,
   encodeEnvelope,
   failure,
@@ -43,8 +45,10 @@ interface Pending {
 }
 interface Stream {
   readonly id: string;
-  readonly topic: "status" | "appearance";
-  readonly listener: (notice: Outcome<FoundationStatus | AppearanceRecord>) => void;
+  readonly topic: "status" | "appearance" | "locale";
+  readonly listener: (
+    notice: Outcome<FoundationStatus | AppearanceRecord | LocaleSnapshot>,
+  ) => void;
   readonly queue: { readonly event: PortEvent; readonly bytes: number }[];
   bytes: number;
   sequence: number;
@@ -118,7 +122,8 @@ export function createFoundationPort(
       for (const entry of [...pending.values()]) {
         if (
           (entry.request.operation === "status.subscribe" ||
-            entry.request.operation === "appearance.subscribe") &&
+            entry.request.operation === "appearance.subscribe" ||
+            entry.request.operation === "locale.subscribe") &&
           entry.request.payload.subscriptionId === stream.id
         )
           settle(entry, failure("sequence_gap"));
@@ -142,7 +147,15 @@ export function createFoundationPort(
       | "policy_mismatch" = "invalid_service_result",
   ): void {
     for (const entry of [...pending.values()])
-      settle(entry, failure(entry.request.operation === "appearance.replace" ? "uncertain" : code));
+      settle(
+        entry,
+        failure(
+          entry.request.operation === "appearance.replace" ||
+            entry.request.operation === "locale.replace"
+            ? "uncertain"
+            : code,
+        ),
+      );
     for (const stream of [...streams.values()]) close(stream, true);
   }
   function enqueue(event: PortEvent, bytes: number): void {
@@ -152,7 +165,9 @@ export function createFoundationPort(
       !stream.active ||
       stream.topic !== event.topic ||
       event.sequence !== stream.sequence + 1 ||
-      (event.topic === "appearance" && event.payload.revision <= stream.revision) ||
+      ((event.topic === "appearance" || event.topic === "locale") &&
+        (event.topic === "locale" ? event.payload.record.revision : event.payload.revision) <=
+          stream.revision) ||
       stream.queue.length >= portLimits.event_queue_items ||
       stream.bytes + bytes > portLimits.event_queue_bytes
     ) {
@@ -160,7 +175,9 @@ export function createFoundationPort(
       return;
     }
     stream.sequence = event.sequence;
-    if (event.topic === "appearance") stream.revision = event.payload.revision;
+    if (event.topic === "appearance" || event.topic === "locale")
+      stream.revision =
+        event.topic === "locale" ? event.payload.record.revision : event.payload.revision;
     stream.queue.push({ event, bytes });
     stream.bytes += bytes;
     stream.stopDrain ??= clock.after(0, () => {
@@ -209,15 +226,19 @@ export function createFoundationPort(
       settle(
         entry,
         failure(
-          entry.request.operation === "appearance.replace" ? "uncertain" : "invalid_service_result",
+          entry.request.operation === "appearance.replace" ||
+            entry.request.operation === "locale.replace"
+            ? "uncertain"
+            : "invalid_service_result",
         ),
       );
       return;
     }
     if (message.payload.ok) {
       if (
-        entry.request.operation === "appearance.replace" &&
-        (message.operation !== "appearance.replace" ||
+        (entry.request.operation === "appearance.replace" ||
+          entry.request.operation === "locale.replace") &&
+        (message.operation !== entry.request.operation ||
           message.payload.value.revision !== entry.request.payload.expectedRevision + 1 ||
           message.payload.value.value !== entry.request.payload.value)
       ) {
@@ -226,7 +247,8 @@ export function createFoundationPort(
       }
       if (
         entry.request.operation === "status.subscribe" ||
-        entry.request.operation === "appearance.subscribe"
+        entry.request.operation === "appearance.subscribe" ||
+        entry.request.operation === "locale.subscribe"
       ) {
         const id = entry.request.payload.subscriptionId;
         if ((message.payload.value as { subscriptionId: string }).subscriptionId !== id) {
@@ -240,7 +262,8 @@ export function createFoundationPort(
       }
     } else if (
       entry.request.operation === "status.subscribe" ||
-      entry.request.operation === "appearance.subscribe"
+      entry.request.operation === "appearance.subscribe" ||
+      entry.request.operation === "locale.subscribe"
     ) {
       const stream = streams.get(entry.request.payload.subscriptionId);
       if (stream) close(stream, false);
@@ -282,9 +305,20 @@ export function createFoundationPort(
       };
       pending.set(request.requestId, entry);
       entry.stopTimer = clock.after(portLimits.request_deadline_ms, () => {
-        settle(entry, failure(operation === "appearance.replace" ? "uncertain" : "timeout"));
+        settle(
+          entry,
+          failure(
+            operation === "appearance.replace" || operation === "locale.replace"
+              ? "uncertain"
+              : "timeout",
+          ),
+        );
         cancel(request);
-        if (operation === "status.subscribe" || operation === "appearance.subscribe") {
+        if (
+          operation === "status.subscribe" ||
+          operation === "appearance.subscribe" ||
+          operation === "locale.subscribe"
+        ) {
           const stream = streams.get((payload as { subscriptionId: string }).subscriptionId);
           if (stream) close(stream, false);
         }
@@ -294,7 +328,11 @@ export function createFoundationPort(
       } catch {
         settle(
           entry,
-          failure(operation === "appearance.replace" ? "uncertain" : "service_unavailable"),
+          failure(
+            operation === "appearance.replace" || operation === "locale.replace"
+              ? "uncertain"
+              : "service_unavailable",
+          ),
         );
       }
     });
@@ -302,12 +340,22 @@ export function createFoundationPort(
       result,
       cancel() {
         if (!pending.has(request.requestId)) return;
-        settle(entry, failure(operation === "appearance.replace" ? "uncertain" : "cancelled"));
+        settle(
+          entry,
+          failure(
+            operation === "appearance.replace" || operation === "locale.replace"
+              ? "uncertain"
+              : "cancelled",
+          ),
+        );
         cancel(request);
       },
     };
   }
-  function subscribe(topic: "status" | "appearance", listener: Stream["listener"]): Subscription {
+  function subscribe(
+    topic: "status" | "appearance" | "locale",
+    listener: Stream["listener"],
+  ): Subscription {
     if (disposed || streams.size >= portLimits.subscriptions_per_window)
       return { ready: Promise.resolve(failure(disposed ? "disposed" : "busy")), dispose() {} };
     const id = session.nextId();
@@ -325,9 +373,16 @@ export function createFoundationPort(
       stopDrain: undefined,
     };
     streams.set(id, stream);
-    const opening = call(topic === "status" ? "status.subscribe" : "appearance.subscribe", {
-      subscriptionId: id,
-    });
+    const opening = call(
+      topic === "status"
+        ? "status.subscribe"
+        : topic === "locale"
+          ? "locale.subscribe"
+          : "appearance.subscribe",
+      {
+        subscriptionId: id,
+      },
+    );
     void opening.result.then((outcome) => {
       if (!outcome.ok) close(stream, false);
     });
@@ -341,6 +396,24 @@ export function createFoundationPort(
   }
   const port: FoundationPort = Object.freeze<FoundationPort>({
     readStatus: () => call("status.read", {}),
+    readLocale: () => call("locale.read", {}),
+    replaceLocale: (change, expectedServiceGeneration) => {
+      const decoded = decodeLocaleChange(change);
+      if (!decoded.ok) return { result: Promise.resolve(decoded), cancel() {} };
+      // Reject before transport if the selector's snapshot belongs to a replaced service.
+      if (
+        expectedServiceGeneration !== undefined &&
+        expectedServiceGeneration !== generations.serviceGeneration
+      )
+        return { result: Promise.resolve(failure("service_unavailable")), cancel() {} };
+      return call(
+        "locale.replace",
+        { expectedRevision: decoded.value.expectedRevision, value: decoded.value.value },
+        decoded.value.operationId,
+      );
+    },
+    readLocaleReceipt: (operationId) => call("locale.receipt", { targetOperationId: operationId }),
+    subscribeLocale: (listener) => subscribe("locale", listener as Stream["listener"]),
     readAppearance: () => call("appearance.read", {}),
     replaceAppearance: (change) => {
       const decoded = decodeAppearanceChange(change);
@@ -367,7 +440,12 @@ export function createFoundationPort(
         cancel(entry.request);
         settle(
           entry,
-          failure(entry.request.operation === "appearance.replace" ? "uncertain" : "disposed"),
+          failure(
+            entry.request.operation === "appearance.replace" ||
+              entry.request.operation === "locale.replace"
+              ? "uncertain"
+              : "disposed",
+          ),
         );
       }
     },

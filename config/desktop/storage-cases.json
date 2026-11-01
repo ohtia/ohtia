@@ -2,6 +2,7 @@
   "schema_version": 1,
   "component_cases": [
     "roundtrip-replay-current",
+    "populated-revision-two-upgrade",
     "populated-upgrade-limits",
     "reject-missing",
     "reject-invalid",
@@ -25,6 +26,7 @@
   ],
   "graphical_cases": [
     "graphical-persisted-appearance",
+    "graphical-persisted-locale",
     "lost-response-reconciled-without-replay",
     "ipc-replay-preserves-subscription",
     "utility-retry-preserves-input-and-document",

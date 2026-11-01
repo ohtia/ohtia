@@ -7,6 +7,11 @@ import { Migrator } from "kysely/migration";
 import {
   failure,
   isAppearance,
+  isLocaleChoice,
+  type LocaleRecord,
+  type LocaleReceipt,
+  type LocaleChoice,
+  type SavedLocaleRecord,
   isIdentifier,
   isInterfaceLocale,
   staleRevision,
@@ -19,11 +24,18 @@ import {
 } from "@ohtia/contracts";
 import {
   applyAppearanceCommand,
+  applyLocaleCommand,
+  type LocaleCommand,
+  type RecordedLocaleCommand,
   type AppearanceCommand,
   type RecordedAppearanceCommand,
 } from "@ohtia/domain";
 import { up as initial, schema as preferencesSchema } from "./migrations/0001_initial.mjs";
 import { up as receipts, schema as receiptsSchema } from "./migrations/0002_receipts.mjs";
+import {
+  up as localeReceipts,
+  schema as localeReceiptsSchema,
+} from "./migrations/0003_locale_receipts.mjs";
 
 interface Preferences {
   key: string;
@@ -38,7 +50,11 @@ interface Receipt {
   accepted: number;
   result_revision: number;
 }
+interface LocaleReceiptRow extends Omit<Receipt, "value"> {
+  value: LocaleChoice;
+}
 interface Schema {
+  locale_receipts: LocaleReceiptRow;
   application_preferences: Preferences;
   appearance_receipts: Receipt;
   kysely_migration: { name: string; timestamp: string };
@@ -82,9 +98,9 @@ interface Checkpoint {
   readonly bytes: number;
   readonly retainedObjects: readonly string[];
 }
-const names = ["0001_initial", "0002_receipts"] as const;
+const names = ["0001_initial", "0002_receipts", "0003_locale_receipts"] as const;
 const target = names.length;
-const targetName = names[1];
+const targetName = names[2];
 function digest(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -283,7 +299,8 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     "kysely_migration",
     "kysely_migration_lock",
     "ohtia_migration_artifacts",
-    ...(revision === 2 ? ["appearance_receipts"] : []),
+    ...(revision >= 2 ? ["appearance_receipts"] : []),
+    ...(revision >= 3 ? ["locale_receipts"] : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -306,7 +323,18 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     kysely_migration: ["name", "timestamp"],
     kysely_migration_lock: ["id", "is_locked"],
     ohtia_migration_artifacts: ["name", "sha256"],
-    ...(revision === 2
+    ...(revision >= 3
+      ? {
+          locale_receipts: [
+            "operation_id",
+            "expected_revision",
+            "value",
+            "accepted",
+            "result_revision",
+          ],
+        }
+      : {}),
+    ...(revision >= 2
       ? {
           appearance_receipts: [
             "operation_id",
@@ -325,7 +353,8 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
   const normalize = (value: string) => value.trim().replace(/\s+/g, " ");
   for (const [table, expectedSql] of [
     ["application_preferences", preferencesSchema],
-    ...(revision === 2 ? [["appearance_receipts", receiptsSchema]] : []),
+    ...(revision >= 2 ? [["appearance_receipts", receiptsSchema]] : []),
+    ...(revision >= 3 ? [["locale_receipts", localeReceiptsSchema]] : []),
   ]) {
     const row = db
       .prepare("SELECT sql FROM sqlite_schema WHERE name=? AND type='table'")
@@ -606,6 +635,7 @@ export class DurableStore {
               Promise.resolve({
                 "0001_initial": { up: initial },
                 "0002_receipts": { up: receipts },
+                "0003_locale_receipts": { up: localeReceipts },
               }),
           },
         });
@@ -930,7 +960,8 @@ export class DurableStore {
       !isIdentifier(command.operationId) ||
       !isAppearance(command.value) ||
       !Number.isSafeInteger(command.expectedRevision) ||
-      command.expectedRevision < 0
+      command.expectedRevision < 0 ||
+      command.expectedRevision >= Number.MAX_SAFE_INTEGER
     )
       return failure("invalid_message");
     this.active = true;
@@ -1035,22 +1066,219 @@ export class DurableStore {
       this.active = false;
     }
   }
+  async readLocale(): Promise<Outcome<LocaleRecord>> {
+    if (!this.ready || !this.database) return failure("service_unavailable");
+    try {
+      this.assert();
+      return this.locale(
+        await this.database
+          .selectFrom("application_preferences")
+          .selectAll()
+          .where("key", "=", "interface_locale")
+          .executeTakeFirst(),
+      );
+    } catch {
+      this.admitted = false;
+      return failure("storage_failed");
+    }
+  }
+  private locale(row: Preferences | undefined): Outcome<LocaleRecord> {
+    if (!row)
+      return {
+        ok: true,
+        value: { schemaVersion: 1, revision: 0, value: "system", source: "default" },
+      };
+    if (!Number.isSafeInteger(row.revision) || row.revision < 1)
+      return failure("preference_invalid");
+    let value: unknown;
+    try {
+      if (typeof row.value === "string" && row.value.length <= 128) value = JSON.parse(row.value);
+    } catch {
+      /* controlled fallback without overwriting retained bytes */
+    }
+    return {
+      ok: true,
+      value: {
+        schemaVersion: 1,
+        revision: row.revision,
+        value: row.schema_version === 1 && isLocaleChoice(value) ? value : "system",
+        source: row.schema_version === 1 && isLocaleChoice(value) ? "saved" : "invalid_fallback",
+      },
+    };
+  }
+  private localeReceipt(row: LocaleReceiptRow | undefined): RecordedLocaleCommand | undefined {
+    if (!row) return;
+    if (
+      !isIdentifier(row.operation_id) ||
+      !isLocaleChoice(row.value) ||
+      ![0, 1].includes(row.accepted) ||
+      !Number.isSafeInteger(row.expected_revision) ||
+      row.expected_revision < 0 ||
+      !Number.isSafeInteger(row.result_revision) ||
+      row.result_revision < (row.accepted ? 1 : 0) ||
+      (row.accepted === 1
+        ? row.result_revision !== row.expected_revision + 1
+        : row.result_revision === row.expected_revision)
+    )
+      throw new Error("Invalid command receipt.");
+    return {
+      expectedRevision: row.expected_revision,
+      value: row.value,
+      outcome: row.accepted
+        ? {
+            ok: true,
+            value: {
+              schemaVersion: 1,
+              revision: row.result_revision,
+              value: row.value,
+              source: "saved",
+            },
+          }
+        : staleRevision(row.result_revision),
+    };
+  }
+  async readLocaleReceipt(operation: string): Promise<Outcome<LocaleReceipt>> {
+    if (!this.ready || !this.database) return failure("service_unavailable");
+    if (!isIdentifier(operation)) return failure("invalid_message");
+    try {
+      this.assert();
+      const result = this.localeReceipt(
+        await this.database
+          .selectFrom("locale_receipts")
+          .selectAll()
+          .where("operation_id", "=", operation)
+          .executeTakeFirst(),
+      );
+      return {
+        ok: true,
+        value: result ? { state: "recorded", outcome: result.outcome } : { state: "not_found" },
+      };
+    } catch {
+      this.admitted = false;
+      return failure("storage_failed");
+    }
+  }
+  async replaceLocale(command: LocaleCommand): Promise<Outcome<SavedLocaleRecord>> {
+    if (!this.ready || !this.database) return failure(this.active ? "busy" : "service_unavailable");
+    if (
+      !isIdentifier(command.operationId) ||
+      !isLocaleChoice(command.value) ||
+      !Number.isSafeInteger(command.expectedRevision) ||
+      command.expectedRevision < 0 ||
+      command.expectedRevision >= Number.MAX_SAFE_INTEGER
+    )
+      return failure("invalid_message");
+    this.active = true;
+    let commitAttempted = false;
+    const attempted = () => commitAttempted;
+    try {
+      this.assert();
+      return await this.database.connection().execute(async (transaction) => {
+        await sql`BEGIN IMMEDIATE`.execute(transaction);
+        try {
+          const receipt = this.localeReceipt(
+            await transaction
+              .selectFrom("locale_receipts")
+              .selectAll()
+              .where("operation_id", "=", command.operationId)
+              .executeTakeFirst(),
+          );
+          const locale = this.locale(
+            await transaction
+              .selectFrom("application_preferences")
+              .selectAll()
+              .where("key", "=", "interface_locale")
+              .executeTakeFirst(),
+          );
+          let replaced: SavedLocaleRecord | undefined;
+          let recorded: RecordedLocaleCommand | undefined;
+          const result = applyLocaleCommand(
+            {
+              readReceipt: () => receipt,
+              readLocale: () => locale,
+              replaceLocale: (value) => {
+                replaced = {
+                  schemaVersion: 1,
+                  revision: command.expectedRevision + 1,
+                  value,
+                  source: "saved",
+                };
+                return replaced;
+              },
+              recordReceipt: (_operation, value) => {
+                recorded = value;
+              },
+            },
+            command,
+          );
+          const saved = replaced;
+          if (saved)
+            await transaction
+              .insertInto("application_preferences")
+              .values({
+                key: "interface_locale",
+                schema_version: 1,
+                revision: saved.revision,
+                value: JSON.stringify(saved.value),
+              })
+              .onConflict((conflict) =>
+                conflict.column("key").doUpdateSet({
+                  schema_version: 1,
+                  revision: saved.revision,
+                  value: JSON.stringify(saved.value),
+                }),
+              )
+              .execute();
+          if (recorded)
+            await transaction
+              .insertInto("locale_receipts")
+              .values({
+                operation_id: command.operationId,
+                expected_revision: command.expectedRevision,
+                value: command.value,
+                accepted: recorded.outcome.ok ? 1 : 0,
+                result_revision: recorded.outcome.ok
+                  ? recorded.outcome.value.revision
+                  : recorded.outcome.error.parameters.currentRevision,
+              })
+              .execute();
+          this.assert();
+          commitAttempted = true;
+          await sql`COMMIT`.execute(transaction);
+          return result;
+        } catch (error) {
+          if (this.native?.inTransaction) {
+            try {
+              await sql`ROLLBACK`.execute(transaction);
+            } catch {
+              this.admitted = false;
+            }
+          }
+          throw error;
+        }
+      });
+    } catch {
+      try {
+        this.assert();
+      } catch {
+        this.admitted = false;
+      }
+      return failure(attempted() ? "uncertain" : "storage_failed");
+    } finally {
+      this.active = false;
+    }
+  }
   async savedLocale(): Promise<{ readonly choice?: InterfaceLocale; readonly invalid: boolean }> {
     if (!this.ready || !this.database) throw new Error("Locale read requires storage admission.");
-    this.assert();
-    const row = await this.database
-      .selectFrom("application_preferences")
-      .selectAll()
-      .where("key", "=", "interface_locale")
-      .executeTakeFirst();
-    if (!row) return { invalid: false };
-    if (row.schema_version !== 1 || typeof row.value !== "string" || row.value.length > 128)
-      return { invalid: true };
-    try {
-      const value: unknown = JSON.parse(row.value);
-      return isInterfaceLocale(value) ? { choice: value, invalid: false } : { invalid: true };
-    } catch {
-      return { invalid: true };
+    const current = await this.readLocale();
+    if (!current.ok) {
+      if (current.error.code === "preference_invalid") return { invalid: true };
+      throw new Error("Locale read lost storage admission.");
     }
+    const { value, source } = current.value;
+    return {
+      ...(isInterfaceLocale(value) ? { choice: value } : {}),
+      invalid: source === "invalid_fallback",
+    };
   }
 }

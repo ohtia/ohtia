@@ -14,3 +14,5 @@ export type {
   RecordedAppearanceCommand,
   AppearanceTransaction,
 } from "./appearance-command.js";
+
+export * from "./locale-command.js";

@@ -3,6 +3,7 @@ import {
   type Request,
   type AppearanceRecord,
   type FoundationStatus,
+  type LocaleSnapshot,
 } from "../../packages/contracts/dist/index.js";
 
 export const status: FoundationStatus = {
@@ -16,6 +17,12 @@ export const appearance: AppearanceRecord = {
   revision: 2,
   value: "dark",
   source: "saved",
+};
+export const localeSnapshot: LocaleSnapshot = {
+  serviceGeneration: "service-1",
+  record: { schemaVersion: 1, revision: 2, value: "ko-KR", source: "saved" },
+  effectiveLocale: "ko-KR",
+  systemLocale: "en-GB",
 };
 export function request(overrides: Partial<Request> = {}): Request {
   return {
@@ -32,6 +39,47 @@ export function request(overrides: Partial<Request> = {}): Request {
   } as Request;
 }
 export const acceptedEnvelopes: readonly unknown[] = [
+  request({ operation: "locale.read" }),
+  request({ operation: "locale.replace", payload: { expectedRevision: 1, value: "ko-KR" } }),
+  request({ operation: "locale.receipt", payload: { targetOperationId: "operation-1" } }),
+  request({ operation: "locale.subscribe", payload: { subscriptionId: "language" } }),
+  {
+    ...request({ operation: "locale.read" }),
+    kind: "result",
+    payload: { ok: true, value: localeSnapshot },
+  },
+  {
+    ...request({ operation: "locale.replace" }),
+    kind: "result",
+    payload: { ok: true, value: localeSnapshot.record },
+  },
+  ...["pending", "not_found", "recorded"].map((state) => ({
+    ...request({ operation: "locale.receipt" }),
+    kind: "result",
+    payload: {
+      ok: true,
+      value:
+        state === "recorded"
+          ? { state, outcome: { ok: true, value: localeSnapshot.record } }
+          : { state },
+    },
+  })),
+  {
+    ...request({ operation: "locale.subscribe" }),
+    kind: "result",
+    payload: { ok: true, value: { subscriptionId: "language" } },
+  },
+  {
+    protocol: 1,
+    policy: policyId,
+    kind: "event",
+    windowGeneration: "window-1",
+    serviceGeneration: "service-1",
+    subscriptionId: "language",
+    sequence: 1,
+    topic: "locale",
+    payload: localeSnapshot,
+  },
   request(),
   request({ operation: "appearance.read" }),
   request({ operation: "appearance.replace", payload: { expectedRevision: 1, value: "dark" } }),

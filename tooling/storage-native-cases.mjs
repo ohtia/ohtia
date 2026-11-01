@@ -21,6 +21,9 @@ const profile = loadRuntimeProfile(profileFile);
 verifyStableSentinels(profile);
 assert(containsPath(profile.scratch_root, output) && output !== profile.scratch_root);
 assert.equal(fs.realpathSync.native(path.dirname(output)), path.dirname(output));
+const schemaRevision = JSON.parse(
+  fs.readFileSync(path.join(app, "migrations/manifest.json")),
+).length;
 const metadata = JSON.parse(fs.readFileSync(path.join(app, "storage.json")));
 assert.equal(metadata.target, `${process.platform}-${process.arch}`);
 for (const [key, value] of Object.entries(metadata.runtime))
@@ -131,7 +134,7 @@ async function run() {
       await store.close();
       const db = raw(root);
       db.exec(
-        "DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'",
+        "DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'",
       );
       db.pragma("user_version=1");
       db.close();
@@ -179,7 +182,7 @@ async function run() {
         ? 0
         : mode === "inspect-checkpoint"
           ? 1
-          : 2,
+          : schemaRevision,
     );
     const tables = db
       .prepare("SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name")
@@ -217,6 +220,42 @@ async function run() {
   };
   engine.close();
   fs.writeFileSync(path.join(output, "engine.json"), JSON.stringify(identity, null, 2) + "\n");
+  await test("populated-revision-two-upgrade", async (root) => {
+    const store = new DurableStore(options(root));
+    try {
+      await store.open();
+      const saved = await store.replaceAppearance({
+        operationId: "schema-two-appearance",
+        expectedRevision: 0,
+        value: "dark",
+      });
+      await store.close();
+      const db = raw(root);
+      db.exec(
+        "DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'",
+      );
+      db.pragma("user_version=2");
+      db.close();
+      await store.open();
+      assert.deepEqual(await store.readAppearance(), saved);
+      assert.deepEqual((await store.readReceipt("schema-two-appearance")).value.outcome, saved);
+      const language = await store.replaceLocale({
+        operationId: "schema-three-locale",
+        expectedRevision: 0,
+        value: "ko-KR",
+      });
+      assert.equal(language.ok, true);
+      assert.equal(store.native.pragma("user_version", { simple: true }), schemaRevision);
+      return {
+        sourceRevision: 2,
+        targetRevision: schemaRevision,
+        appearanceReceiptPreserved: true,
+        language,
+      };
+    } finally {
+      await store.close();
+    }
+  });
   await test("roundtrip-replay-current", async (root) => {
     const store = new DurableStore(options(root));
     try {
@@ -264,7 +303,7 @@ async function run() {
       await store.close();
       const db = raw(root);
       db.exec(
-        "DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'; UPDATE application_preferences SET value='{\"max_concurrent_inference\":4,\"max_concurrent_local_processing\":2}' WHERE key='execution_limits'",
+        "DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'; UPDATE application_preferences SET value='{\"max_concurrent_inference\":4,\"max_concurrent_local_processing\":2}' WHERE key='execution_limits'",
       );
       db.pragma("user_version=1");
       db.close();
@@ -281,7 +320,7 @@ async function run() {
         4,
       );
       current.close();
-      return { sourceRevision: 1, targetRevision: 2, preservedLimit: 4 };
+      return { sourceRevision: 1, targetRevision: schemaRevision, preservedLimit: 4 };
     } finally {
       await store.close();
     }
@@ -309,7 +348,7 @@ async function run() {
           db.exec(
             "UPDATE application_preferences SET schema_version=2 WHERE key='execution_limits'",
           );
-        if (invalid === "newer") db.pragma("user_version=3");
+        if (invalid === "newer") db.pragma("user_version=4");
         if (invalid === "artifacts")
           db.exec("UPDATE ohtia_migration_artifacts SET sha256='" + "a".repeat(64) + "'");
         if (invalid === "history-column")
@@ -380,7 +419,7 @@ async function run() {
         assert.equal(store.ready, false);
         const db = raw(root);
         const revision = db.pragma("user_version", { simple: true });
-        assert.equal(revision, failure === "lost-commit-ack" ? 2 : 0);
+        assert.equal(revision, failure === "lost-commit-ack" ? schemaRevision : 0);
         db.close();
         Migrator.prototype.migrateTo = original;
         Database.prototype.prepare = prepare;
@@ -587,7 +626,7 @@ async function run() {
       const oldDigest = sha256(oldCheckpoint);
       const db = raw(root);
       db.exec(
-        "DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'",
+        "DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'",
       );
       db.pragma("user_version=1");
       db.close();
