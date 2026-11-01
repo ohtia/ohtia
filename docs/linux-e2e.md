@@ -2,10 +2,6 @@
 type: Playbook
 title: Immutable Linux E2E environment
 description: Produce the pinned Linux x86-64 image only when its inputs change and run it with private sessions, active sandboxes and complete packaged Electron result accounting.
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: playwright-image
     resource: https://playwright.dev/docs/docker
@@ -62,6 +58,8 @@ Frozen setup runs from empty checkout-local tool and dependency caches, then rep
 A private DBus session and Xvfb display supply graphical infrastructure. The [versioned seccomp profile](../config/desktop/linux-e2e-seccomp.json) starts from Playwright's published profile and admits the modern file/descriptor calls used by the pinned runtime.[^playwright-seccomp] `clone3` returns ENOSYS for the existing `clone` fallback. Child user namespaces require chroot and mount primitives for the browser sandboxes; kernel authority checks and zero outer capabilities still apply.
 
 The [dedicated AppArmor profile](../config/desktop/linux-e2e.apparmor) allows those nested mounts while explicitly denying sensitive proc/sys access and kernel-setting writes. The container uses `systempaths=unconfined` to replace Docker's locked masked/read-only path mounts with those AppArmor denials, allowing WebKit to mount a private proc filesystem. Admission requires the exact enforcing profile, empty engine path-mask lists and read-denial probes for `/proc/interrupts` and `/proc/keys`; ordinary file permissions allow those opens in the qualified host context. An arbitrary unconfined profile fails. Every selected browser content process must have an additional active seccomp filter. Chromium, WebKit and the packaged Electron renderer also require nested PID namespace evidence.
+
+The browser shard also builds and serves the separate [semantic component catalog](semantic-primitives.md#isolated-catalog-and-verification) over loopback with the restrictive desktop CSP. Its mandatory Chromium journey checks real modal focus, manual tabs, menus, input preservation, the accessibility tree, both themes, forced colors, expanded labels, Korean and 320/600/1024/1280 CSS-pixel widths. Catalog cases remain separate from sandbox cases and never add fixtures to the packaged application. Chromium matches the consuming Electron renderer; Firefox and WebKit retain their existing sandbox checks without a catalog-conformance claim.
 
 The Electron harness attaches CSP observation before releasing the first application document through a bounded acceptance-only startup barrier. It exercises real packaged startup, renderer sandboxing, status IPC through preload/main/utility, distinct rejected IPC envelopes, deliberate CSP violations and shutdown within the existing total deadline with an observed zero exit code and no termination signal. Negative envelope/frame fixtures enter the actual packaged broker through synthetic main-process events; the receipt identifies that scope, since the renderer has no raw IPC authority. The initial inert document and test barrier apply only under explicit runtime acceptance instrumentation.
 

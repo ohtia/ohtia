@@ -1,6 +1,7 @@
 @import "./design-fonts.css";
 @import "./design-tokens.css";
 @import "./design-roles.css";
+@import "./primitives.css";
 
 :root {
   color-scheme: light dark;
@@ -61,6 +62,7 @@ button {
 button[aria-disabled="true"] {
   cursor: not-allowed;
   color: var(--content-disabled);
+  background: var(--surface-page);
   border-style: dashed;
 }
 :focus-visible,

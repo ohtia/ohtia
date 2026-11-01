@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { build } from "vite";
+import { productGraph } from "./product-graph.mjs";
 
 export async function buildDesktop(root) {
   const output = path.join(root, "artifacts/desktop-app");
@@ -16,6 +17,7 @@ export async function buildDesktop(root) {
   ]) {
     await build({
       configFile: false,
+      plugins: [productGraph(root)],
       root,
       logLevel: "warn",
       build: {
@@ -51,6 +53,7 @@ export async function buildDesktop(root) {
   }
   await build({
     configFile: false,
+    plugins: [productGraph(root)],
     root: path.join(root, "packages/renderer/app"),
     base: "./",
     logLevel: "warn",
@@ -92,7 +95,10 @@ export async function buildDesktop(root) {
   for (const name of fs.readdirSync(path.join(output, "renderer"), { recursive: true })) {
     const file = path.join(output, "renderer", name);
     if (!fs.statSync(file).isFile()) continue;
-    if (!types[path.extname(name)] || /(?:fixture|preview|probe|\.map$)/i.test(name))
+    if (
+      !types[path.extname(name)] ||
+      /(?:fixture|preview|probe|catalog|specimen|test-transport|\.map$)/i.test(name)
+    )
       throw new Error("Unexpected desktop renderer asset.");
     const bytes = fs.readFileSync(file);
     assets[name.replaceAll(path.sep, "/")] = {

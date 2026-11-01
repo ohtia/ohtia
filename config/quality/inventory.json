@@ -1,6 +1,7 @@
 {
   "version": 1,
   "vitest": [
+    "tests/catalog-build.test.ts",
     "tests/design-foundation.test.ts",
     "tests/design-viewport.test.ts",
     "tests/desktop-probes.test.ts",
@@ -13,6 +14,7 @@
     "tests/main-entry.test.ts",
     "tests/port.test.ts",
     "tests/preload-entry.test.ts",
+    "tests/primitives.test.ts",
     "tests/quality-gates.test.ts",
     "tests/renderer.test.ts",
     "tests/service-boundaries.test.ts",

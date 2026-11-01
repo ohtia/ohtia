@@ -47,6 +47,70 @@
       "foreground": "attention.content",
       "backgrounds": ["attention.surface"],
       "minimum": 7
+    },
+    {
+      "selector": ".primitive-primary",
+      "backgrounds": ["action.primary.surface"],
+      "minimum": 7,
+      "foreground": "action.primary.content"
+    },
+    {
+      "selector": ".primitive-destructive, .primitive-danger",
+      "backgrounds": ["danger.surface"],
+      "minimum": 7,
+      "foreground": "danger.content"
+    },
+    {
+      "selector": ".primitive-error, .primitive-attention",
+      "backgrounds": ["attention.surface"],
+      "minimum": 7,
+      "foreground": "attention.content"
+    },
+    {
+      "selector": ".primitive-link",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".primitive-field input, .primitive-field select",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".primitive-dialog, .primitive-tooltip, .primitive-popover, .primitive-menu",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".primitive-separator[aria-orientation=\"horizontal\"]",
+      "backgrounds": ["surface.page"],
+      "minimum": 3
+    },
+    {
+      "selector": ".primitive-table-scroll thead th",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
+      "selector": ".primitive-separator[aria-orientation=\"vertical\"]",
+      "backgrounds": ["surface.page"],
+      "minimum": 3
+    },
+    {
+      "selector": ".primitive-primary:hover:not([aria-disabled=\"true\"])",
+      "foreground": "action.primary.content",
+      "backgrounds": ["action.primary.surface-hover"],
+      "minimum": 7
+    }
+  ],
+  "overlays": [
+    {
+      "selector": ".primitive-dialog::backdrop",
+      "token": "overlay.scrim"
     }
   ]
 }

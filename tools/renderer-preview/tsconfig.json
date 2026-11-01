@@ -6,5 +6,5 @@
     "types": ["react", "react-dom"],
     "noEmit": true
   },
-  "include": ["preview.tsx"]
+  "include": ["preview.tsx", "../../packages/renderer/src/assets.d.ts"]
 }

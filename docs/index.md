@@ -16,6 +16,7 @@ okf_version: "0.2"
 
 - [System architecture](architecture.md) — Application data authority, execution boundaries, provider adapters, and schema-migration recovery.
 - [Frontend architecture](frontend-architecture.md) — Graphical research workflows, Electron interface boundaries, state ownership, editing, localization, and verification.
+- [Semantic renderer primitives](semantic-primitives.md) — Controlled React component contracts, keyboard patterns and the isolated synthetic development catalog.
 - [Renderer design foundations](design-foundations.md) — Generate canonical design tokens and verify bundled typography, icons and static branding before building the renderer.
 - [Ohtia design system](design-system.md) — Visual identity, tokens, symbol and character, typography, composition, accessibility, localization, components and patterns of Ohtia's interface.
 - [Workspace controller API](workspace-controller.md) — Compose deterministic per-window workspace geometry with the named layout preference and receipt boundary.
