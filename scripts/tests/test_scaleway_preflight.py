@@ -422,6 +422,55 @@ class StopTests(PreflightCase):
         self.refused("recovery_dispatch_limit")
         self.assertEqual(self.actions.requests, self.limits["maximum_recovery_dispatches"])
 
+    def test_a_success_the_filtered_listing_shows_late_is_not_requested_again(self):
+        """Run 41353117705 requested twice because the first read came four seconds too early."""
+        original = self.actions.tick
+        polls_after_success = []
+
+        def tick():
+            original()
+            run = self.actions.history[0]
+            if self.actions.requests and run["status"] == "completed":
+                self.actions.evidence = cycle.CycleError("recovery_policy_changed")
+                polls_after_success.append(run["id"])
+                if len(polls_after_success) == 3:
+                    self.actions.evidence = receipt(run["id"])
+
+        self.actions.tick = tick
+        self.assertEqual(self.ensure()["recovery_run"], "101")
+        self.assertEqual(self.actions.requests, 1)
+
+    def test_each_successful_run_gets_its_own_listing_period_before_the_bound_stops(self):
+        def tick():
+            if self.actions.in_flight is not None:
+                self.actions.in_flight.update(status="completed", conclusion="success")
+                self.actions.in_flight = None
+
+        self.actions.tick = tick
+        self.refused("recovery_dispatch_limit")
+        self.assertGreaterEqual(
+            self.clock.now - 1000.0,
+            2 * self.limits["recovery_dispatch_visibility_seconds"],
+        )
+
+    def test_a_joined_success_also_gets_the_listing_period_before_a_request(self):
+        self.actions.in_flight = run_row(150, "in_progress", None)
+        self.actions.history.insert(0, self.actions.in_flight)
+        original = self.actions.tick
+        polls = []
+
+        def tick():
+            original()
+            if self.actions.in_flight is None and not self.actions.requests:
+                self.actions.evidence = cycle.CycleError("fresh_recovery_required")
+                polls.append(self.clock.now)
+                if len(polls) == 3:
+                    self.actions.evidence = receipt(150)
+
+        self.actions.tick = tick
+        self.assertEqual(self.ensure()["recovery_run"], "150")
+        self.assertEqual(self.actions.requests, 0)
+
     def test_successful_runs_without_usable_evidence_cannot_loop(self):
         def tick():
             if self.actions.in_flight is not None:
