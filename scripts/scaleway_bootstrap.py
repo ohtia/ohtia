@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import stat
 import subprocess
@@ -56,6 +58,173 @@ PROGRAMS = frozenset(
         "python3",
     }
 )
+
+
+CLOUD_STAGES = ("init-local", "init", "modules-config", "modules-final")
+CLOUD_MODULES = frozenset(
+    "ansible apk_configure apt_configure apt_pipelining bootcmd byobu ca_certs chef "
+    "disable_ec2_metadata disk_setup fan final_message growpart grub_dpkg install_hotplug "
+    "keyboard keys_to_console landscape locale lxd mcollective mounts ntp "
+    "package_update_upgrade_install phone_home power_state_change puppet reset_rmc resizefs "
+    "resolv_conf rh_subscription rsyslog runcmd salt_minion scripts_per_boot scripts_per_instance "
+    "scripts_per_once scripts_user scripts_vendor seed_random set_hostname set_passwords snap "
+    "spacewalk ssh ssh_authkey_fingerprints ssh_import_id timezone ubuntu_autoinstall "
+    "ubuntu_drivers ubuntu_pro update_etc_hosts update_hostname users_groups wireguard "
+    "write_files write_files_deferred yum_add_repo zypper_add_repo".split()
+)
+CLOUD_EXCEPTIONS = frozenset(
+    {
+        "ProcessExecutionError",
+        "PackageInstallerError",
+        "RuntimeError",
+        "ValueError",
+        "TypeError",
+        "KeyError",
+        "OSError",
+        "IOError",
+        "FileNotFoundError",
+        "PermissionError",
+        "NotImplementedError",
+        "ImportError",
+    }
+)
+CLOUD_PROGRAMS = frozenset(
+    {
+        "apt-get",
+        "apt",
+        "dpkg",
+        "dnf",
+        "yum",
+        "rpm",
+        "sh",
+        "bash",
+        "python3",
+        "systemctl",
+        "run-parts",
+        "runcmd",
+        "ssh-keygen",
+        "mount",
+        "growpart",
+        "resize2fs",
+    }
+)
+CLOUD_ERRORS = frozenset(
+    {"command-failed", "package-install-failed", "runparts-failed", "exception", "unclassified"}
+)
+CLOUD_SOURCE_STATES = frozenset({"observed", "unavailable", "invalid", "oversized"})
+CLOUD_ERROR_LIMIT = 8
+CLOUD_DATA = Path("/var/lib/cloud/data")
+
+
+def cloud_source(path: Path, *, validate_errors: bool = True) -> tuple[str, dict]:
+    """Read fixed cloud-init JSON, including its normal symlinks, with a hard byte bound."""
+    try:
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+        with os.fdopen(descriptor, "rb") as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                return "unavailable", {}
+            data = stream.read(65537)
+        if len(data) > 65536:
+            return "oversized", {}
+        value = json.loads(data)
+        value = value.get("v1") if isinstance(value, dict) else None
+        if not isinstance(value, dict):
+            return "invalid", {}
+        if not validate_errors:
+            return "observed", value
+        for part in (value, *(value.get(stage, {}) for stage in CLOUD_STAGES)):
+            if not isinstance(part, dict) or not isinstance(part.get("errors", []), list):
+                return "invalid", {}
+            if not all(isinstance(error, str) for error in part.get("errors", [])):
+                return "invalid", {}
+        return "observed", value
+    except OSError as error:
+        if not validate_errors and not isinstance(error, FileNotFoundError):
+            raise
+        return "unavailable", {}
+    except RecursionError:
+        if not validate_errors:
+            raise
+        return "invalid", {}
+    except ValueError:
+        return "invalid", {}
+
+
+def cloud_error(text: str, stage: str | None) -> dict:
+    """Recognize module exception metadata without evaluating syntax or exporting free text."""
+    result = dict(
+        stage=stage, module=None, exception=None, error="unclassified", program=None, exit_code=None
+    )
+    if len(text) > 8192:
+        return result
+    try:
+        node = ast.parse(text, mode="eval").body
+        if isinstance(node, ast.Tuple) and len(node.elts) == 2:
+            module, node = node.elts
+            if isinstance(module, ast.Constant) and isinstance(module.value, str):
+                name = module.value.replace("-", "_")
+                result["module"] = name if name in CLOUD_MODULES else None
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+            return result
+        name = node.func.id
+        if name not in CLOUD_EXCEPTIONS:
+            return result
+        result.update(
+            exception=name,
+            error="package-install-failed" if name == "PackageInstallerError" else "exception",
+        )
+        if len(node.args) != 1 or node.keywords or not isinstance(node.args[0], ast.Constant):
+            return result
+        message = node.args[0].value
+        if not isinstance(message, str):
+            return result
+        if name == "RuntimeError" and re.fullmatch(
+            r"Runparts: [0-9]+ failures \([^\n]*\) in [0-9]+ attempted commands", message
+        ):
+            result["error"] = "runparts-failed"
+        if name != "ProcessExecutionError":
+            return result
+        result["error"] = "command-failed"
+        header = re.match(
+            r"(?:Unexpected error while running command\.|Exec format error\. Missing #! in script\?)"
+            r"\nCommand: ([^\n]{1,2048})\nExit code: (-?[0-9]{1,3}|-)\nReason: ",
+            message,
+        )
+        if header:
+            if header[2] != "-" and -255 <= int(header[2]) <= 255:
+                result["exit_code"] = int(header[2])
+            command = ast.literal_eval(header[1])
+            if isinstance(command, list) and command and isinstance(command[0], str):
+                program = Path(command[0]).name
+                result["program"] = program if program in CLOUD_PROGRAMS else None
+    except (ValueError, SyntaxError, TypeError, RecursionError, MemoryError):
+        pass
+    return result
+
+
+def cloud_diagnostics() -> dict:
+    """Keep stage-bound observations, collapsing the result file's copies of stage errors."""
+    result = {"sources": {}, "errors": [], "truncated": False}
+    seen = set()
+    status_errors = set()
+    for source in ("status", "result"):
+        state, value = cloud_source(CLOUD_DATA / (source + ".json"))
+        result["sources"][source] = state
+        parts = [(stage, value.get(stage, {})) for stage in CLOUD_STAGES]
+        parts.append((None, value))
+        for stage, part in parts:
+            for text in part.get("errors", []):
+                if source == "result" and text in status_errors or (stage, text) in seen:
+                    continue
+                seen.add((stage, text))
+                if source == "status":
+                    status_errors.add(text)
+                if len(result["errors"]) >= CLOUD_ERROR_LIMIT:
+                    result["truncated"] = True
+                    continue
+                result["errors"].append(cloud_error(text, stage))
+                result["truncated"] |= len(text) > 8192
+    return result
 
 
 def run(*args):
@@ -226,7 +395,7 @@ def install() -> None:
     Path("/var/lib/ohtia-qualification-installed").touch(exist_ok=False)
 
 
-def status() -> dict:
+def status(*, diagnostic: bool = False) -> dict:
     result = {
         "version": 1,
         "ready": Path("/var/lib/ohtia-qualification-ready").is_file(),
@@ -252,16 +421,23 @@ def status() -> dict:
                 else None,
             }
         )
-    for file in (Path("/var/lib/cloud/data/status.json"), Path("/var/lib/cloud/data/result.json")):
-        if file.is_file() and file.stat().st_size <= 65536:
-            try:
-                value = json.loads(file.read_bytes()).get("v1", {})
-                errors = len(value.get("errors", []))
-                for stage in ("init", "init-local", "modules-config", "modules-final"):
-                    errors += len(value.get(stage, {}).get("errors", []))
-                result["cloud_init_error_count"] += errors
-            except (ValueError, TypeError, AttributeError):
-                pass
+    for source in ("status", "result"):
+        try:
+            _, value = cloud_source(CLOUD_DATA / (source + ".json"), validate_errors=False)
+            # Preserve polling refusal even for malformed nonempty error collections.
+            errors = len(value.get("errors", []))
+            for stage in CLOUD_STAGES:
+                errors += len(value.get(stage, {}).get("errors", []))
+            result["cloud_init_error_count"] += errors
+        except (OSError, RecursionError) as error:
+            if not diagnostic:
+                raise
+            result["failed"] = True
+            result["code"] = result["code"] or (
+                "bootstrap_io_failed" if isinstance(error, OSError) else "bootstrap_failed"
+            )
+        except (ValueError, TypeError, AttributeError):
+            pass
     if result["cloud_init_error_count"]:
         result["failed"] = True
         result["code"] = result["code"] or "cloud_init_failed"
@@ -269,8 +445,9 @@ def status() -> dict:
 
 
 def diagnostics() -> dict:
-    """Read only selected unit states; never return raw service or cloud-init output."""
-    value = status()
+    """Return bounded, allowlisted cloud-init metadata and selected unit states."""
+    value = status(diagnostic=True)
+    value["cloud_init"] = cloud_diagnostics()
     states = {
         "active",
         "reloading",

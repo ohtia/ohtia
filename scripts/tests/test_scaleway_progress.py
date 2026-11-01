@@ -918,6 +918,354 @@ class HostKeyDiagnosticTests(unittest.TestCase):
         )
 
 
+class CloudInitDiagnosticTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.enterContext(patch.object(bootstrap, "CLOUD_DATA", self.root))
+        self.enterContext(patch.object(bootstrap, "FAILURE", self.root / "missing-failure"))
+
+    def error(self, module="package-update-upgrade-install", exception="ProcessExecutionError"):
+        message = (
+            "Unexpected error while running command.\nCommand: ['/usr/bin/apt-get', 'install', '"
+            + PRIVATE
+            + "']\nExit code: 100\nReason: -\nStdout: "
+            + PRIVATE
+            + "\nStderr: "
+            + PRIVATE
+        )
+        return f"({module!r}, {exception}({message!r}))"
+
+    def sources(self, text=None):
+        text = text or self.error()
+        cycle.write(self.root / "status.json", {"v1": {"modules-final": {"errors": [text]}}})
+        cycle.write(self.root / "result.json", {"v1": {"errors": [text]}})
+
+    def diagnostic(self):
+        with patch.object(bootstrap.subprocess, "run", side_effect=OSError(PRIVATE)):
+            return bootstrap.diagnostics()
+
+    def test_module_command_metadata_survives_without_private_arguments_or_output(self):
+        self.sources()
+        record = self.diagnostic()
+        self.assertTrue(record["failed"])
+        self.assertEqual(record["code"], "cloud_init_failed")
+        self.assertEqual(record["cloud_init_error_count"], 2)
+        self.assertEqual(
+            record["cloud_init"]["errors"],
+            [
+                {
+                    "stage": "modules-final",
+                    "module": "package_update_upgrade_install",
+                    "exception": "ProcessExecutionError",
+                    "error": "command-failed",
+                    "program": "apt-get",
+                    "exit_code": 100,
+                }
+            ],
+        )
+        self.assertNotIn(PRIVATE, json.dumps(record))
+        self.assertEqual(progress.guest_diagnostic(json.dumps(record).encode()), record)
+
+    def test_duplicate_sources_preserve_separate_stages_and_result_only_errors(self):
+        text = self.error()
+        cycle.write(
+            self.root / "status.json",
+            {
+                "v1": {
+                    "init": {"errors": [text, text]},
+                    "modules-final": {"errors": [text]},
+                }
+            },
+        )
+        cycle.write(self.root / "result.json", {"v1": {"errors": [text, "unknown private error"]}})
+        value = bootstrap.cloud_diagnostics()
+        self.assertEqual([e["stage"] for e in value["errors"]], ["init", "modules-final", None])
+        self.assertEqual(value["errors"][-1]["error"], "unclassified")
+        self.assertFalse(value["truncated"])
+        self.assertEqual(bootstrap.status()["cloud_init_error_count"], 5)
+
+    def test_unrecognized_and_executable_syntax_is_not_evaluated_or_exported(self):
+        for text in (
+            self.error(PRIVATE, PRIVATE),
+            f"('scripts_user', RuntimeError(__import__('os').system({PRIVATE!r})))",
+            "(" * 1000,
+            "-" * 8192,
+            "~" * 8192,
+            "not " * 2000,
+            f"('package-update-upgrade-install', PackageInstallerError({PRIVATE!r}))",
+            "('scripts-user', RuntimeError('Runparts: 1 failures (runcmd) in 1 attempted commands'))",
+        ):
+            with self.subTest(text=text[:40]), patch.object(os, "system") as execute:
+                value = bootstrap.cloud_error(text, "modules-final")
+                execute.assert_not_called()
+                self.assertNotIn(PRIVATE, json.dumps(value))
+                if text.startswith(("-", "~", "not ")):
+                    self.assertEqual(value["error"], "unclassified")
+                if "PackageInstallerError" in text:
+                    self.assertEqual(value["error"], "package-install-failed")
+                if "Runparts:" in text:
+                    self.assertEqual(value["error"], "runparts-failed")
+                    self.assertIsNone(value["exit_code"])
+        # Header-like output in stderr must not fabricate a command or exit code.
+        value = bootstrap.cloud_error(
+            "('scripts_user', RuntimeError('Command: [\\'apt-get\\']\\nExit code: 100'))", None
+        )
+        self.assertIsNone(value["program"])
+        self.assertIsNone(value["exit_code"])
+
+    def test_missing_malformed_oversized_and_unreadable_sources_are_explicit(self):
+        self.assertEqual(bootstrap.cloud_source(self.root / "missing")[0], "unavailable")
+        for data, state in (
+            (b"{", "invalid"),
+            (b'{"v1":[]}', "invalid"),
+            (b'{"v1":{"modules-final":{"errors":"private"}}}', "invalid"),
+            (b'{"v1":{"errors":[{}]}}', "invalid"),
+            (b" " * 65537, "oversized"),
+            (b'{"v1":{}}' + b" " * (65536 - 9), "observed"),
+        ):
+            with self.subTest(state=state, length=len(data)):
+                (self.root / "status.json").write_bytes(data)
+                self.assertEqual(bootstrap.cloud_source(self.root / "status.json")[0], state)
+                value = self.diagnostic()
+                self.assertEqual(value["cloud_init"]["sources"]["status"], state)
+                if b'"errors":"private"' in data or b'"errors":[{}]' in data:
+                    self.assertTrue(value["failed"])
+                    self.assertEqual(value["code"], "cloud_init_failed")
+                progress.guest_diagnostic(json.dumps(value).encode())
+        with patch.object(bootstrap.os, "open", side_effect=PermissionError(PRIVATE)):
+            self.assertEqual(bootstrap.cloud_source(self.root / "status.json")[0], "unavailable")
+            with self.assertRaises(PermissionError):
+                bootstrap.status()
+        # Cloud-init publishes normal symlinks on Unix; never block on special files.
+        if os.name != "nt":
+            target = self.root / "target.json"
+            target.write_bytes(b'{"v1":{}}')
+            link = self.root / "link.json"
+            link.symlink_to(target)
+            self.assertEqual(bootstrap.cloud_source(link)[0], "observed")
+            fifo = self.root / "fifo"
+            os.mkfifo(fifo)
+            self.assertEqual(bootstrap.cloud_source(fifo)[0], "unavailable")
+
+    def test_diagnostic_read_failures_preserve_other_evidence_and_polling_refusal(self):
+        self.sources()
+        real_open, real_loads = bootstrap.os.open, bootstrap.json.loads
+        deep = b'{"v1":{"errors":["x"],"junk":' + b"[" * 15000 + b"0" + b"]" * 15000 + b"}}"
+
+        def unreadable(path, *args, **kwargs):
+            if Path(path).name == "status.json":
+                raise PermissionError(PRIVATE)
+            return real_open(path, *args, **kwargs)
+
+        def recursive(data, *args, **kwargs):
+            # Python 3.13's decoder raises on this nesting; 3.14 may parse it.
+            if data == deep:
+                raise RecursionError(PRIVATE)
+            return real_loads(data, *args, **kwargs)
+
+        for mode, exception, code, state in (
+            ("io", PermissionError, "bootstrap_io_failed", "unavailable"),
+            ("recursion", RecursionError, "bootstrap_failed", "invalid"),
+        ):
+            with self.subTest(mode=mode):
+                self.sources()
+                if mode == "recursion":
+                    (self.root / "status.json").write_bytes(deep)
+                target = bootstrap.os if mode == "io" else bootstrap.json
+                name = "open" if mode == "io" else "loads"
+                with patch.object(
+                    target, name, side_effect=unreadable if mode == "io" else recursive
+                ):
+                    with self.assertRaises(exception):
+                        bootstrap.status()
+                    record = self.diagnostic()
+                self.assertTrue(record["failed"])
+                self.assertEqual(record["code"], code)
+                self.assertEqual(record["cloud_init_error_count"], 1)
+                self.assertEqual(
+                    record["cloud_init"]["sources"], {"status": state, "result": "observed"}
+                )
+                self.assertEqual(
+                    record["cloud_init"]["errors"][0]["module"], "package_update_upgrade_install"
+                )
+                self.assertIsNone(record["cloud_init"]["errors"][0]["stage"])
+                self.assertEqual(set(record["units"]), set(progress.UNITS))
+                self.assertNotIn(PRIVATE, json.dumps(record))
+                progress.guest_diagnostic(json.dumps(record).encode())
+
+        self.sources()
+        cycle.write(self.root / "missing-failure", {"code": "guest_volume_serial"})
+        with patch.object(bootstrap.os, "open", side_effect=unreadable):
+            record = self.diagnostic()
+        self.assertEqual(record["code"], "guest_volume_serial")
+        self.assertEqual(record["cloud_init"]["sources"]["result"], "observed")
+
+    def test_error_count_and_representation_bounds_are_explicit_below_output_limit(self):
+        cycle.write(
+            self.root / "status.json",
+            {
+                "v1": {
+                    "modules-final": {
+                        "errors": ["x" * 8193, *(self.error() + " " * i for i in range(12))],
+                    }
+                }
+            },
+        )
+        value = self.diagnostic()
+        self.assertTrue(value["failed"])
+        self.assertEqual(len(value["cloud_init"]["errors"]), 8)
+        self.assertTrue(value["cloud_init"]["truncated"])
+        self.assertEqual(value["cloud_init"]["errors"][0]["error"], "unclassified")
+        data = json.dumps(value).encode()
+        self.assertLess(len(data), cycle.policy()["limits"]["guest_diagnostic_bytes"])
+        progress.guest_diagnostic(data)
+
+    def test_decoder_refuses_arbitrary_extensions_types_and_unbounded_details(self):
+        self.sources()
+        source = self.diagnostic()
+        for location, field, invalid in (
+            ("root", "private", PRIVATE),
+            ("root", "truncated", 1),
+            ("sources", "status", []),
+            ("sources", "private", "observed"),
+            ("error", "module", PRIVATE),
+            ("error", "exception", PRIVATE),
+            ("error", "program", PRIVATE),
+            ("error", "stage", PRIVATE),
+            ("error", "error", PRIVATE),
+            ("error", "exit_code", True),
+            ("error", "exit_code", 256),
+            ("error", "message", PRIVATE),
+        ):
+            with self.subTest(location=location, field=field):
+                value = copy.deepcopy(source)
+                target = value["cloud_init"]
+                if location == "sources":
+                    target = target["sources"]
+                elif location == "error":
+                    target = target["errors"][0]
+                target[field] = invalid
+                with self.assertRaisesRegex(cycle.CycleError, "guest_diagnostic_shape"):
+                    progress.guest_diagnostic(json.dumps(value).encode())
+        with self.assertRaisesRegex(cycle.CycleError, "json_too_large"):
+            progress.guest_diagnostic(
+                b" " * (cycle.policy()["limits"]["guest_diagnostic_bytes"] + 1)
+            )
+        source["cloud_init"]["errors"] *= 9
+        with self.assertRaisesRegex(cycle.CycleError, "guest_diagnostic_shape"):
+            progress.guest_diagnostic(json.dumps(source).encode())
+
+    def test_real_controller_retains_failure_before_finally_cleanup_for_both_profiles(self):
+        from test_scaleway_cycle import fixtures
+
+        self.sources()
+        diagnostic = self.diagnostic()
+        diagnostic["ready"] = True
+        resources = {
+            kind: f"00000000-0000-4000-8000-{i:012d}" for i, kind in enumerate(cycle.KINDS, 1)
+        }
+        for profile in ("debian-13", "fedora-44"):
+            for fail_write in (False, True):
+                with self.subTest(profile=profile, fail_write=fail_write):
+                    _, intent = fixtures(profile)
+                    intent["created_at"] = cycle.utc()
+                    identity = intent["identity"]
+                    source = self.root / (profile + str(fail_write))
+                    source.mkdir()
+                    cycle.write(source / "intent.json", intent)
+                    output = source / "output"
+                    api, gh = Mock(), Mock()
+                    gh.artifacts.return_value = [
+                        {"name": f"scw-intent-{identity['run_id']}-{identity['attempt']}"}
+                    ]
+                    gh.artifact.return_value = intent
+                    api.discover.return_value = resources
+                    api.cleanup.return_value = {"status": "absent", "resources": resources}
+
+                    def create(intent, public, config, record):
+                        record({"kind": "server", "stage": "allocated", "resources": resources})
+                        return resources
+
+                    api.create.side_effect = create
+
+                    def command(args, **kwargs):
+                        if args[0] == "ssh-keygen":
+                            key = Path(args[args.index("-f") + 1])
+                            key.write_bytes(b"synthetic identity")
+                            key.with_suffix(".pub").write_text("ssh-ed25519 synthetic")
+                            return subprocess.CompletedProcess(args, 0, b"")
+                        text = args[-1]
+                        if text == progress.READINESS_COMMAND:
+                            data = b'{"python":true,"helper":true}'
+                        elif text.endswith("bootstrap.py status"):
+                            data = json.dumps(
+                                {
+                                    k: v
+                                    for k, v in diagnostic.items()
+                                    if k not in {"units", "cloud_init"}
+                                }
+                            ).encode()
+                        elif text.endswith("bootstrap.py diagnostics"):
+                            data = json.dumps(diagnostic).encode()
+                        else:
+                            raise subprocess.CalledProcessError(1, args)
+                        return subprocess.CompletedProcess(args, 0, data)
+
+                    write = cycle.write
+
+                    def persist(path, value, **kwargs):
+                        if fail_write and path.name == "guest-bootstrap-diagnostics.json":
+                            raise OSError(PRIVATE)
+                        return write(path, value, **kwargs)
+
+                    def cleanup(*args, **kwargs):
+                        if not fail_write:
+                            retained = cycle.read(output / "guest-bootstrap-diagnostics.json")
+                            self.assertEqual(
+                                retained["guest"]["cloud_init"], diagnostic["cloud_init"]
+                            )
+                        return {"status": "absent", "resources": resources}
+
+                    api.cleanup.side_effect = cleanup
+                    with (
+                        patch.object(cycle, "source_context", return_value=identity),
+                        patch.object(cycle, "configuration", return_value={}),
+                        patch.object(cycle, "validate_intent"),
+                        patch.object(cycle, "API", return_value=api),
+                        patch.object(cycle, "command", side_effect=command) as transport,
+                        patch.object(cycle, "write", side_effect=persist),
+                        patch.object(qualification, "enabled"),
+                        patch.object(qualification, "key_lifetimes"),
+                        patch.object(qualification, "previous"),
+                        patch.object(
+                            qualification,
+                            "host_key",
+                            return_value=("203.0.113.1", source / "known"),
+                        ),
+                        patch.dict(
+                            os.environ, {"RUNNER_TEMP": str(source), "GITHUB_STEP_SUMMARY": ""}
+                        ),
+                        contextlib.redirect_stdout(io.StringIO()),
+                        self.assertRaisesRegex(cycle.CycleError, "guest_bootstrap_failed"),
+                    ):
+                        qualification.execute(gh, source, self.root, output, "after-native-smoke")
+                    api.cleanup.assert_called_once()
+                    journal = cycle.read(output / "journal.json")
+                    self.assertEqual(journal["status"], "cleaned")
+                    self.assertFalse(journal["native_smoke_passed"])
+                    self.assertEqual(journal["failure_code"], "guest_bootstrap_failed")
+                    self.assertFalse((output / "native.json").exists())
+                    self.assertFalse(list(source.glob("ohtia-lease-*")))
+                    self.assertFalse(
+                        any(call.args[0][0] == "scp" for call in transport.call_args_list)
+                    )
+                    if not fail_write:
+                        retained = cycle.read(output / "guest-bootstrap-diagnostics.json")
+                        self.assertNotIn(PRIVATE, json.dumps(retained))
+
+
 class GuestDiagnosticTests(unittest.TestCase):
     def test_cancellation_during_process_launch_has_its_own_transport_category(self):
         diagnostic = {}
@@ -954,6 +1302,15 @@ class GuestDiagnosticTests(unittest.TestCase):
         ]
         with (
             patch.object(bootstrap, "status", return_value=source),
+            patch.object(
+                bootstrap,
+                "cloud_diagnostics",
+                return_value={
+                    "sources": {"status": "unavailable", "result": "unavailable"},
+                    "errors": [],
+                    "truncated": False,
+                },
+            ),
             patch.object(bootstrap.subprocess, "run", side_effect=results),
         ):
             record = bootstrap.diagnostics()
@@ -1065,6 +1422,11 @@ class GuestDiagnosticTests(unittest.TestCase):
                             "exit_code": None,
                             "cloud_init_error_count": 0,
                             "units": {unit: "active" for unit in progress.UNITS},
+                            "cloud_init": {
+                                "sources": {"status": "unavailable", "result": "unavailable"},
+                                "errors": [],
+                                "truncated": False,
+                            },
                         }
                     ).encode(),
                 )
