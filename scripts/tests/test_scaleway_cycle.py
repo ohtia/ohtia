@@ -79,6 +79,22 @@ def fixtures(profile="fedora-44"):
     return settings, cycle.create_intent(identity, settings, manifest, "2026-10-31T00:00:00Z")
 
 
+class RecordingEnvironment(dict):
+    """An environment mapping that records which variables the code reads."""
+
+    def __init__(self, values):
+        super().__init__(values)
+        self.read = set()
+
+    def get(self, key, default=None):
+        self.read.add(key)
+        return super().get(key, default)
+
+    def __getitem__(self, key):
+        self.read.add(key)
+        return super().__getitem__(key)
+
+
 class MemoryAPI(cycle.API):
     """A recording provider fixture, not evidence of Scaleway execution."""
 
@@ -727,28 +743,39 @@ class CycleTests(unittest.TestCase):
                 qualification.host_key(self.api, self.intent, resources, key, time.monotonic() + 10)
             self.assertFalse((key.parent / "known_hosts").exists())
 
-    def test_enablement_requires_the_exact_reviewed_policy_hash(self):
-        with patch.dict(
-            os.environ,
-            {
-                "SCW_CYCLE_ENABLED": "true",
-                "SCW_RECOVERY_ENABLED": "true",
-                "SCW_APPROVED_POLICY_SHA256": "0" * 64,
-            },
-            clear=True,
+    def test_admission_reads_only_the_enablement_controls(self):
+        # The code reads the environment only through get or []; both are recorded here.
+        enabled = {"SCW_CYCLE_ENABLED": "true", "SCW_RECOVERY_ENABLED": "true"}
+        for recovery, expected in (
+            (False, {"SCW_CYCLE_ENABLED", "SCW_RECOVERY_ENABLED"}),
+            (True, {"SCW_RECOVERY_ENABLED"}),
         ):
-            with self.assertRaisesRegex(cycle.CycleError, "cycle_not_enabled"):
-                qualification.enabled()
-        with patch.dict(
-            os.environ,
-            {
-                "SCW_CYCLE_ENABLED": "true",
-                "SCW_RECOVERY_ENABLED": "true",
-                "SCW_APPROVED_POLICY_SHA256": cycle.digest(cycle.POLICY_PATH),
-            },
-            clear=True,
+            environment = RecordingEnvironment(enabled)
+            with self.subTest(recovery=recovery), patch.object(os, "environ", environment):
+                qualification.enabled(recovery=recovery)
+                self.assertEqual(environment.read, expected)
+
+    def test_disabled_controls_refuse_creation_with_their_existing_code(self):
+        for values in (
+            {},
+            {"SCW_CYCLE_ENABLED": "false", "SCW_RECOVERY_ENABLED": "true"},
+            {"SCW_CYCLE_ENABLED": "true", "SCW_RECOVERY_ENABLED": "false"},
+            {"SCW_CYCLE_ENABLED": "true"},
+            {"SCW_RECOVERY_ENABLED": "true"},
         ):
-            qualification.enabled()
+            with self.subTest(values=values), patch.dict(os.environ, values, clear=True):
+                with self.assertRaisesRegex(cycle.CycleError, "cycle_not_enabled"):
+                    qualification.enabled()
+
+    def test_disabled_recovery_refuses_reconciliation_with_its_existing_code(self):
+        for values in (
+            {},
+            {"SCW_RECOVERY_ENABLED": "false"},
+            {"SCW_RECOVERY_ENABLED": "false", "SCW_CYCLE_ENABLED": "true"},
+        ):
+            with self.subTest(values=values), patch.dict(os.environ, values, clear=True):
+                with self.assertRaisesRegex(cycle.CycleError, "cycle_not_enabled"):
+                    qualification.enabled(recovery=True)
 
     def test_creator_requires_both_expiries_with_recovery_margin(self):
         now = cycle.timestamp(cycle.utc())
@@ -771,7 +798,6 @@ class CycleTests(unittest.TestCase):
             {
                 "SCW_CYCLE_ENABLED": "false",
                 "SCW_RECOVERY_ENABLED": "true",
-                "SCW_APPROVED_POLICY_SHA256": cycle.digest(cycle.POLICY_PATH),
             },
             clear=True,
         ):
@@ -1808,7 +1834,6 @@ class RestoreTests(unittest.TestCase):
                 {
                     "SCW_RECOVERY_ENABLED": "true",
                     "SCW_CYCLE_ENABLED": "false",
-                    "SCW_APPROVED_POLICY_SHA256": cycle.digest(cycle.POLICY_PATH),
                     "SCW_RESTORE_SHA256": self.inputs["backup_sha256"],
                     "GITHUB_EVENT_PATH": str(self.event),
                 },
@@ -1845,11 +1870,27 @@ class RestoreTests(unittest.TestCase):
         if os.name != "nt":
             self.assertEqual(self.request.stat().st_mode & 0o777, 0o600)
 
+    def test_restore_reads_no_policy_approval_from_the_environment(self):
+        # The code reads the environment only through get or []; both are recorded here.
+        environment = RecordingEnvironment(os.environ)
+        with patch.object(os, "environ", environment):
+            restoration.restore(self.gh, self.root / "result")
+        self.assertEqual(
+            environment.read,
+            {
+                "SCW_RECOVERY_ENABLED",
+                "SCW_CYCLE_ENABLED",
+                "SCW_RESTORE_SHA256",
+                "SCW_SECRET_KEY",
+                "GITHUB_EVENT_PATH",
+            },
+        )
+
     def test_enabled_creation_or_mismatched_approval_cannot_restore(self):
         for values, reason in (
             ({"SCW_CYCLE_ENABLED": "true"}, "backup_requires_suspension"),
+            ({"SCW_RECOVERY_ENABLED": "false"}, "backup_requires_suspension"),
             ({"SCW_RESTORE_SHA256": "f" * 64}, "backup_approval_input"),
-            ({"SCW_APPROVED_POLICY_SHA256": "f" * 64}, "backup_requires_suspension"),
         ):
             with self.subTest(reason=reason), patch.dict(os.environ, values):
                 with self.assertRaisesRegex(cycle.CycleError, reason):

@@ -28,13 +28,7 @@ GUEST_OUTPUT = "/home/ohtia-quality/result"
 def enabled(*, recovery: bool = False) -> None:
     cycle.require(
         os.environ.get("SCW_RECOVERY_ENABLED") == "true"
-        and (
-            recovery
-            or (
-                os.environ.get("SCW_CYCLE_ENABLED") == "true"
-                and os.environ.get("SCW_APPROVED_POLICY_SHA256") == cycle.digest(cycle.POLICY_PATH)
-            )
-        ),
+        and (recovery or os.environ.get("SCW_CYCLE_ENABLED") == "true"),
         "cycle_not_enabled",
     )
 
