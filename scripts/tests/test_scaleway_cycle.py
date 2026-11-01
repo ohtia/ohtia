@@ -517,6 +517,18 @@ class CycleTests(unittest.TestCase):
                 account = next(user for user in value["users"] if user["name"] == "root")
                 self.assertEqual(account["ssh_authorized_keys"], [public_key.strip()])
 
+    def test_cloud_config_supplies_node_atomic_runtime(self):
+        resources = {kind: str(uuid.uuid4()) for kind in cycle.KINDS}
+        for profile, package in {"fedora-44": "libatomic", "debian-13": "libatomic1"}.items():
+            with self.subTest(profile=profile):
+                _, intent = fixtures(profile)
+                value = json.loads(
+                    qualification.cloud_config(intent, resources, self.key)
+                    .decode()
+                    .split("\n", 1)[1]
+                )
+                self.assertIn(package, value["packages"])
+
     def test_ssh_never_accepts_unknown_keys_or_forwards_agents(self):
         values = qualification.ssh_options(Path("/tmp/key"), Path("/tmp/known"))
         self.assertIn("StrictHostKeyChecking=yes", values)

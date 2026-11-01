@@ -107,6 +107,7 @@ def cloud_config(intent: dict, resources: dict, public_key: str) -> bytes:
     common = ["python3", "sudo", "binutils", "gnome-shell", "gnome-session", "unzip"]
     packages = common + (
         [
+            "libatomic",
             "dbus-daemon",
             "dbus-tools",
             "dbus-x11",
@@ -129,6 +130,7 @@ def cloud_config(intent: dict, resources: dict, public_key: str) -> bytes:
         ]
         if profile == "fedora-44"
         else [
+            "libatomic1",
             "dbus-user-session",
             "dbus-bin",
             "e2fsprogs",
