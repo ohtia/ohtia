@@ -236,6 +236,7 @@ function createWindow(): boolean {
     height: 650,
     minWidth: 320,
     minHeight: 320,
+    enableLargerThanScreen: process.env.OHTIA_RUNTIME_ACCEPTANCE === "1",
     show: false,
     title: message(locale, "title"),
     webPreferences: {
