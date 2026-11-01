@@ -51,8 +51,10 @@ export default tseslint.config(
     rules: { "no-undef": "error", "no-unreachable": "error", "no-unused-vars": "error" },
   },
   {
-    files: ["tooling/design-acceptance.mjs"],
-    languageOptions: { globals: { document: "readonly", getComputedStyle: "readonly" } },
+    files: ["tooling/design-acceptance.mjs", "tooling/design-viewport.mjs"],
+    languageOptions: {
+      globals: { document: "readonly", getComputedStyle: "readonly", window: "readonly" },
+    },
   },
   ...tseslint.configs.strictTypeChecked.map((config) => ({
     ...config,

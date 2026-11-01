@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { _electron, expect } from "@playwright/test";
 import { verifyPackagedDesign } from "./design-acceptance.mjs";
+import { setNativeViewport } from "./design-viewport.mjs";
 import { admittedLaunch } from "./desktop-launch.mjs";
 import { recordReadyNativeProcesses } from "./desktop-native-observation.mjs";
 import { verifyStableSentinels, readBoundedFile } from "../packages/main/dist/index.js";
@@ -98,12 +99,22 @@ try {
   passed("real-status-ipc", initial);
   passed(
     "native-executable-identities",
-    await application.evaluate(() => ({
-      platform: process.platform,
-      architecture: process.arch,
-      argv: process.argv,
-      execArgv: process.execArgv,
-    })),
+    await application.evaluate(({ BrowserWindow, screen }) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      const display = screen.getDisplayMatching(window.getBounds());
+      return {
+        platform: process.platform,
+        architecture: process.arch,
+        argv: process.argv,
+        execArgv: process.execArgv,
+        window: { bounds: window.getBounds(), contentSize: window.getContentSize() },
+        display: {
+          bounds: display.bounds,
+          workAreaSize: display.workAreaSize,
+          scaleFactor: display.scaleFactor,
+        },
+      };
+    }),
   );
   const brokerRefusals = await application.evaluate(
     ({ BrowserWindow, ipcMain }, { policy, bytes }) => {
@@ -277,7 +288,8 @@ try {
   await expect
     .poll(async () => (await page.evaluate(() => window.ohtia.foundation.readStatus().result)).ok)
     .toBe(true);
-  await page.setViewportSize({ width: 320, height: 700 });
+  const nativeWindow = await application.browserWindow(page);
+  await setNativeViewport(page, nativeWindow, { width: 320, height: 600, zoomFactor: 1 });
   const reflow = await page.evaluate(() => ({
     viewport: window.innerWidth,
     document: document.documentElement.scrollWidth,
@@ -340,7 +352,10 @@ try {
     ),
   ).toBe(true);
   passed("packaged-korean-glyphs", fonts);
-  passed("packaged-design-foundations", await verifyPackagedDesign(page, cdp));
+  const design = await verifyPackagedDesign(page, cdp, nativeWindow);
+  passed("packaged-design-foundations", design);
+  passed("packaged-design-viewport-zoom", design.viewports);
+  await nativeWindow.dispose();
   await page.evaluate(() => {
     const walker = document.createTreeWalker(document.querySelector("main"), NodeFilter.SHOW_TEXT);
     const nodes = [];
@@ -361,7 +376,7 @@ try {
     document: document.documentElement.scrollWidth,
   }));
   expect(expandedReflow.document).toBeLessThanOrEqual(expandedReflow.viewport);
-  passed("pseudolocalization-spacing-zoom-reflow", expandedReflow);
+  passed("pseudolocalization-text-enlargement-and-spacing-reflow", expandedReflow);
   await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
   expect(
     await page.evaluate(
