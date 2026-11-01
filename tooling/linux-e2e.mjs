@@ -14,6 +14,7 @@ import {
   shutdownEvidence,
 } from "./linux-e2e-core.mjs";
 import { chromium, firefox, webkit, _electron, expect } from "@playwright/test";
+import { serveCatalog, verifyCatalog } from "./catalog-acceptance.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const output = path.join(root, ".reports/linux-e2e");
@@ -144,43 +145,52 @@ async function shard(name, execute) {
 async function browserTests() {
   await shard("browsers", async (passed) => {
     const baseline = processes().find((item) => item.pid === process.pid);
-    for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
-      const server = await engine.launchServer({
-        headless: false,
-        ...(name === "chromium" ? { chromiumSandbox: true } : {}),
-        ...(name === "webkit" ? { env: { ...process.env, WEBKIT_FORCE_SANDBOX: "1" } } : {}),
-      });
-      let stderr = "";
-      server.process().stderr?.on("data", (data) => {
-        stderr = (stderr + data.toString()).slice(-16384);
-      });
-      let browser;
-      try {
-        browser = await engine.connect(server.wsEndpoint());
-        const page = await browser.newPage();
-        await page.setContent(
-          '<label for="input">Synthetic text</label><input id="input"><output aria-live="polite"></output>',
-        );
-        await page.getByLabel("Synthetic text").fill("Permitted synthetic fixture");
-        await expect(page.getByLabel("Synthetic text")).toHaveValue("Permitted synthetic fixture");
-        const records = descendants(processes(), server.process().pid);
-        write(`processes-${name}.json`, records);
-        const observed = sandboxEvidence(contentProcesses(name, records), baseline);
-        if (name !== "firefox")
-          assert.ok(
-            observed.sandboxed.every(
-              (item) => item.namespacePids.length > baseline.namespacePids.length,
-            ),
-            "Content PID namespace isolation is absent",
+    const catalog = await serveCatalog(root);
+    try {
+      for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
+        const server = await engine.launchServer({
+          headless: false,
+          ...(name === "chromium" ? { chromiumSandbox: true } : {}),
+          ...(name === "webkit" ? { env: { ...process.env, WEBKIT_FORCE_SANDBOX: "1" } } : {}),
+        });
+        let stderr = "";
+        server.process().stderr?.on("data", (data) => {
+          stderr = (stderr + data.toString()).slice(-16384);
+        });
+        let browser;
+        try {
+          browser = await engine.connect(server.wsEndpoint());
+          const page = await browser.newPage();
+          await page.setContent(
+            '<label for="input">Synthetic text</label><input id="input"><output aria-live="polite"></output>',
           );
-        passed(`${name}-sandbox`, { version: browser.version(), ...observed });
-      } catch (error) {
-        write(`diagnostics-${name}.json`, { stderr, error: String(error) });
-        throw error;
-      } finally {
-        if (browser) await browser.close();
-        await server.close();
+          await page.getByLabel("Synthetic text").fill("Permitted synthetic fixture");
+          await expect(page.getByLabel("Synthetic text")).toHaveValue(
+            "Permitted synthetic fixture",
+          );
+          const records = descendants(processes(), server.process().pid);
+          write(`processes-${name}.json`, records);
+          const observed = sandboxEvidence(contentProcesses(name, records), baseline);
+          if (name !== "firefox")
+            assert.ok(
+              observed.sandboxed.every(
+                (item) => item.namespacePids.length > baseline.namespacePids.length,
+              ),
+              "Content PID namespace isolation is absent",
+            );
+          passed(`${name}-sandbox`, { version: browser.version(), ...observed });
+          if (name === "chromium")
+            passed(`${name}-catalog`, await verifyCatalog(page, catalog.url, name, output));
+        } catch (error) {
+          write(`diagnostics-${name}.json`, { stderr, error: String(error) });
+          throw error;
+        } finally {
+          if (browser) await browser.close();
+          await server.close();
+        }
       }
+    } finally {
+      await catalog.close();
     }
   });
 }

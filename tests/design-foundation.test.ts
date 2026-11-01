@@ -145,7 +145,7 @@ describe("review regression contracts", () => {
   });
 
   it("preserves explicit scales and document heading and code defaults through the real cascade", () => {
-    const css = ["design-tokens.css", "design-roles.css", "foundation.css"]
+    const css = ["design-tokens.css", "design-roles.css", "primitives.css", "foundation.css"]
       .map((name) =>
         fs.readFileSync(`packages/renderer/src/${name}`, "utf8").replace(/^@import.*$/gm, ""),
       )
@@ -172,9 +172,13 @@ describe("review regression contracts", () => {
         "docs/design-system.md",
         "docs/workspace-layout.md",
         "packages/renderer/color-usage.json",
-        ...["design-tokens.css", "design-tokens.ts", "design-roles.css", "foundation.css"].map(
-          (name) => `packages/renderer/src/${name}`,
-        ),
+        ...[
+          "design-tokens.css",
+          "design-tokens.ts",
+          "design-roles.css",
+          "primitives.css",
+          "foundation.css",
+        ].map((name) => `packages/renderer/src/${name}`),
       ]) {
         fs.mkdirSync(path.dirname(path.join(temporary, file)), { recursive: true });
         fs.copyFileSync(file, path.join(temporary, file));
@@ -345,13 +349,41 @@ describe("review regression contracts", () => {
   it("rejects invalid color ownership, uninspected syntax and forced-color escapes", () => {
     const model = checkTokens();
     const sources = Object.fromEntries(
-      ["foundation.css", "design-roles.css"].map((name) => [
+      ["foundation.css", "design-roles.css", "primitives.css"].map((name) => [
         name,
         fs.readFileSync(`packages/renderer/src/${name}`, "utf8"),
       ]),
     );
     const usage = JSON.parse(fs.readFileSync("packages/renderer/color-usage.json", "utf8"));
     expect(() => checkColorUsage(model, sources, {})).toThrow(/Missing renderer color usage/);
+    expect(() =>
+      checkColorUsage(model, sources, {
+        ...usage,
+        overlays: [{ selector: ".other", token: "overlay.scrim" }],
+      }),
+    ).toThrow(/Invalid overlay usage/);
+    expect(() =>
+      checkColorUsage(model, sources, {
+        ...usage,
+        overlays: [...usage.overlays, ...usage.overlays],
+      }),
+    ).toThrow(/Invalid overlay usage/);
+    expect(() =>
+      checkColorUsage(
+        model,
+        {
+          ...sources,
+          "primitives.css": sources["primitives.css"].replace(
+            "background: var(--overlay-scrim)",
+            "background: var(--surface-page)",
+          ),
+        },
+        usage,
+      ),
+    ).toThrow(/Invalid overlay declaration/);
+    expect(() => checkColorUsage(model, sources, { ...usage, overlays: [] })).toThrow(
+      /Unregistered colored selector/,
+    );
     expect(() =>
       checkColorUsage(model, sources, {
         version: 1,
@@ -407,7 +439,7 @@ describe("review regression contracts", () => {
       );
   });
   it("applies paragraph and quotation spacing on a passage carrying its own document role", () => {
-    const css = ["design-tokens.css", "design-roles.css", "foundation.css"]
+    const css = ["design-tokens.css", "design-roles.css", "primitives.css", "foundation.css"]
       .map((name) =>
         fs.readFileSync(`packages/renderer/src/${name}`, "utf8").replace(/^@import.*$/gm, ""),
       )

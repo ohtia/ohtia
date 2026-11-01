@@ -1,6 +1,8 @@
 import { defineConfig } from "vite";
+import { productGraph } from "./product-graph.mjs";
 
 export default defineConfig({
+  plugins: [productGraph(process.cwd())],
   build: {
     outDir: "packages/renderer/dist",
     emptyOutDir: false,

@@ -2,10 +2,6 @@
 type: Playbook
 title: Locked developer workspace
 description: Bootstrap isolated contributor tools, build the six package boundaries and verify the frozen workspace without changing research data.
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: windows-tls
     resource: https://curl.se/docs/sslcerts.html
@@ -56,6 +52,7 @@ python3 scripts/workspace.py run format
 python3 scripts/workspace.py run test
 python3 scripts/workspace.py run build
 python3 scripts/workspace.py run check
+python3 scripts/workspace.py run catalog:build
 python3 scripts/workspace.py run design:check
 python3 scripts/workspace.py run boundaries
 python3 scripts/workspace.py run package:local
@@ -65,7 +62,7 @@ python3 scripts/workspace.py run package:local
 
 `lint` refreshes public declarations before running semantic typed ESLint, the package boundary checker and Ruff. `format:check` and `format` use the shared Prettier configuration and Ruff, with versions aligned to the repository hooks. Node-based hooks explicitly select the manifest's developer Node patch. `test` builds package inputs, runs the [shared verification aggregate](shared-verification.md) with exact Vitest/Playwright inventories, catalog validation and independent per-package line/branch/diff coverage, and retains the complete Python script/policy suite. Compiler commands clear generated package outputs before regenerating them so removed sources cannot survive in a library archive. `build` compiles the actual package graph and produces both the renderer library and the separate local desktop targets; Vite transpilation does not replace the type-check gate. Run commands that regenerate `dist` sequentially. `check` combines type, lint, format, test and build. Package manifests also expose their own compiler build/type commands.
 
-`dev <absolute-runtime-profile.json> <absolute-prepared-runtime>` launches an admitted native desktop attempt. `desktop:prepare` assembles its pinned runtime without execution, and `desktop:test` runs the native acceptance controls; their exact argument and isolation contracts live in [Isolated desktop runtime](desktop-runtime.md). `preview <absolute-runtime-profile.json>` builds dependencies and serves the separate appearance-control specimen on loopback with a fixed port and strict collision failure after native profile admission. The specimen changes transient component state and reports that it is unsaved. It makes no storage, IPC or research-readiness claim. Stop the preview with Ctrl+C; its directory is outside all package build outputs.
+`dev <absolute-runtime-profile.json> <absolute-prepared-runtime>` launches an admitted native desktop attempt. `desktop:prepare` assembles its pinned runtime without execution, and `desktop:test` runs the native acceptance controls; their exact argument and isolation contracts live in [Isolated desktop runtime](desktop-runtime.md). `preview <absolute-runtime-profile.json>` builds dependencies and builds and serves the separate [semantic component catalog](semantic-primitives.md#isolated-catalog-and-verification) on loopback with the restrictive desktop CSP, a fixed port and strict collision failure after native profile admission. The catalog changes transient component state and reports that it is unsaved. It makes no storage, IPC or research-readiness claim. Stop the preview with Ctrl+C; its directory is outside all package build outputs.
 
 `package:local` builds and archives only declared package outputs/manifests and lock/target inputs in `artifacts/workspace-libraries.zip`. The completed ZIP replaces the previous archive only after writing succeeds; validation or write failures preserve the previous file. This is a local library handoff archive, not a runnable Electron application or native installer. Native quality packaging remains with the [native quality packaging specification](epics/EPIC-001-desktop-foundation/STORY-001-012-build-and-smoke-test-native-quality-artifacts.md); final signing/install/update qualification remains with the [signed installation and update specification](epics/EPIC-001-desktop-foundation/STORY-001-013-qualify-signed-installation-and-update-mechanisms.md). No publication command or signing credential is involved.
 

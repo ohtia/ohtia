@@ -39,7 +39,8 @@
     "quality:plan": "node tooling/workspace.mjs quality:plan",
     "quality:build": "node tooling/workspace.mjs quality:build",
     "quality:aggregate": "node tooling/workspace.mjs quality:aggregate",
-    "linux:e2e": "node tooling/workspace.mjs linux:e2e"
+    "linux:e2e": "node tooling/workspace.mjs linux:e2e",
+    "catalog:build": "node tooling/workspace.mjs catalog:build"
   },
   "devDependencies": {
     "typescript": "6.0.3",

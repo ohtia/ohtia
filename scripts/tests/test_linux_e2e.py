@@ -39,7 +39,7 @@ class LinuxE2ETests(unittest.TestCase):
     def test_full_inventory_passes_and_missing_duplicate_or_failed_cases_fail(self):
         self.assertEqual(
             runner.account(self.config, self.reports, self.identity),
-            {"status": "passed", "shards": 2, "cases": 9},
+            {"status": "passed", "shards": 2, "cases": 10},
         )
         mutations = [
             lambda reports: reports.pop(),

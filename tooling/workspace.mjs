@@ -92,6 +92,10 @@ const commands = {
     ]);
   },
   boundaries,
+  "catalog:build"() {
+    compile();
+    node("vite/bin/vite.js", ["build", "--config", "tooling/vite.catalog.mjs"]);
+  },
   async build() {
     compile();
     node("vite/bin/vite.js", ["build", "--config", "tooling/vite.renderer.mjs"]);
@@ -114,6 +118,8 @@ const commands = {
       "tools/desktop-probes/*.mjs",
       "tooling/quality*.mjs",
       "tooling/design-*.mjs",
+      "tooling/catalog*.mjs",
+      "tooling/product-graph.mjs",
       "tooling/linux-e2e*.mjs",
       "tooling/update-*.mjs",
       "tooling/installation-*.mjs",
@@ -163,7 +169,8 @@ const commands = {
       await import("../packages/main/dist/index.js");
     const profile = loadRuntimeProfile(process.argv[3] ?? "");
     verifyStableSentinels(profile);
-    node("vite/bin/vite.js", ["tools/renderer-preview", "--host", "127.0.0.1", "--strictPort"]);
+    node("vite/bin/vite.js", ["build", "--config", "tooling/vite.catalog.mjs"]);
+    node("vite/bin/vite.js", ["preview", "--config", "tooling/vite.catalog.mjs"]);
   },
   async dev() {
     const [profile, prepared] = process.argv.slice(3);

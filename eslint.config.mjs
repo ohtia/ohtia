@@ -16,6 +16,8 @@ export default tseslint.config(
       "tools/desktop-probes/*.mjs",
       "tooling/quality*.mjs",
       "tooling/design-*.mjs",
+      "tooling/catalog*.mjs",
+      "tooling/product-graph.mjs",
       "tooling/linux-e2e*.mjs",
       "tooling/update-*.mjs",
       "tooling/installation-*.mjs",
@@ -51,7 +53,11 @@ export default tseslint.config(
     rules: { "no-undef": "error", "no-unreachable": "error", "no-unused-vars": "error" },
   },
   {
-    files: ["tooling/design-acceptance.mjs", "tooling/design-viewport.mjs"],
+    files: [
+      "tooling/design-acceptance.mjs",
+      "tooling/design-viewport.mjs",
+      "tooling/catalog-acceptance.mjs",
+    ],
     languageOptions: {
       globals: { document: "readonly", getComputedStyle: "readonly", window: "readonly" },
     },

@@ -20,7 +20,7 @@
   },
   "seccomp_sha256": "5d984e3bdf5e75fb87219a52ce744e94c9f6bee7faeecc6e1d9e3771062c195f",
   "shards": {
-    "browsers": ["chromium-sandbox", "firefox-sandbox", "webkit-sandbox"],
+    "browsers": ["chromium-sandbox", "firefox-sandbox", "webkit-sandbox", "chromium-catalog"],
     "electron": [
       "packaged-startup",
       "renderer-os-sandbox",

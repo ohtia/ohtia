@@ -17,6 +17,24 @@ const isLineShorthand = (property) =>
 // This vocabulary is intentionally explicit. New CSS features require a checked contract.
 const layout = new Set([
   "align-items",
+  "scroll-padding",
+  "scroll-margin",
+  "border-width",
+  "min-inline-size",
+  "flex-direction",
+  "overflow-x",
+  "overflow-y",
+  "overflow",
+  "position",
+  "inset-inline-start",
+  "inset-block-start",
+  "inline-size",
+  "block-size",
+  "max-block-size",
+  "min-block-size",
+  "z-index",
+  "font-variant-numeric",
+  "clip-path",
   "border-radius",
   "box-sizing",
   "color-scheme",
@@ -92,6 +110,20 @@ export function checkColorUsage(model, sources, usage) {
       if (item.foreground) assertPair(model, item.foreground, background, item.minimum);
     }
     declarations.set(key, item);
+  }
+  const overlays = new Map();
+  for (const overlay of usage.overlays ?? []) {
+    if (
+      overlay.selector !== ".primitive-dialog::backdrop" ||
+      overlay.token !== "overlay.scrim" ||
+      overlays.has(overlay.selector) ||
+      declarations.has(overlay.selector)
+    )
+      throw new Error("Invalid overlay usage declaration");
+    // The canonical translucent scrim has no foreground or text contrast pair.
+    if (!model.resolve(overlay.token, "light").startsWith("rgb("))
+      throw new Error("Invalid canonical overlay token");
+    overlays.set(overlay.selector, overlay.token);
   }
   const seen = new Set();
   const token = (value, context) => {
@@ -185,6 +217,18 @@ export function checkColorUsage(model, sources, usage) {
         if (forced) continue;
         const paint = properties.filter(isPaint);
         if (!paint.length) continue;
+        const overlayKey = selectorKey(rule.selector);
+        if (overlays.has(overlayKey)) {
+          if (
+            seen.has(overlayKey) ||
+            style.size !== 1 ||
+            style.get("background") !== `var(${cssName(overlays.get(overlayKey))})`
+          )
+            throw new Error(`Invalid overlay declaration: ${context}`);
+          seen.add(overlayKey);
+          checked++;
+          continue;
+        }
         const key = selectorKey(rule.selector),
           declared = declarations.get(key);
         if (!declared) throw new Error(`Unregistered colored selector: ${context}`);
@@ -238,7 +282,7 @@ export function checkColorUsage(model, sources, usage) {
     };
     visit(sheet.nodes);
   }
-  for (const key of declarations.keys())
+  for (const key of [...declarations.keys(), ...overlays.keys()])
     if (!seen.has(key)) throw new Error(`Unused renderer color declaration: ${key}`);
   return checked;
 }
