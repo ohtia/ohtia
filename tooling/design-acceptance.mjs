@@ -14,6 +14,12 @@ export function assertTypographyScale(observed, expected) {
   expect(Number.parseFloat(observed.height)).toBeCloseTo(height, 2);
 }
 
+/** CSS minification can express a zero duration in either seconds or milliseconds. */
+export function assertZeroDuration(value) {
+  expect(value).toMatch(/^(?:\d+(?:\.\d+)?|\.\d+)(?:ms|s)$/);
+  expect(Number.parseFloat(value)).toBe(0);
+}
+
 /** Scoped checks in the real packaged renderer; these fixtures never ship. */
 export async function verifyPackagedDesign(page, cdp) {
   const previous = await page.evaluate(() =>
@@ -165,9 +171,9 @@ export async function verifyPackagedDesign(page, cdp) {
         wrapping: text.overflowWrap,
       };
     });
+    assertZeroDuration(presentation.quick);
+    assertZeroDuration(presentation.contributor);
     expect(presentation).toMatchObject({
-      quick: "0ms",
-      contributor: "0ms",
       fontStyle: "normal",
       synthesis: "none",
       wordBreak: "keep-all",

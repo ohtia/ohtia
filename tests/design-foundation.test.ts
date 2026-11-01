@@ -15,7 +15,7 @@ import {
 import { OhtiaBrand, OhtiaGlasses } from "../packages/renderer/src/branding.js";
 import { LucideGlyph } from "../packages/renderer/src/iconography.js";
 import { isRendererAssetPath } from "../packages/main/src/asset-policy.js";
-import { assertTypographyScale } from "../tooling/design-acceptance.mjs";
+import { assertTypographyScale, assertZeroDuration } from "../tooling/design-acceptance.mjs";
 import { checkColorUsage } from "../tooling/design-usage.mjs";
 import { checkRendererStyles } from "../tooling/design-assets.mjs";
 import { designMetrics, iconMappings } from "../packages/renderer/src/design-tokens.js";
@@ -120,6 +120,14 @@ describe("static Ohtia identity", () => {
 });
 
 describe("review regression contracts", () => {
+  it("accepts minified zero durations while rejecting nonzero motion and malformed units", () => {
+    for (const value of ["0ms", "0s", "0.000s", ".0ms"])
+      expect(() => assertZeroDuration(value)).not.toThrow();
+    for (const value of ["120ms", ".12s", "0.001s", "1ms"])
+      expect(() => assertZeroDuration(value)).toThrow(/toBe/);
+    for (const value of ["0", "0px", "0s extra", "normal", ""])
+      expect(() => assertZeroDuration(value)).toThrow(/toMatch/);
+  });
   it("accepts Chromium subpixel line-height serialization while rejecting real scale drift", () => {
     const expected = { size: "26px", height: 34, weight: "600" };
     for (const height of ["33.9999px", "34px", "34.0001px"])
