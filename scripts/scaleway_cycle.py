@@ -26,7 +26,7 @@ REPOSITORY = "ohtia/ohtia"
 API_HOST = "api.scaleway.com"
 
 
-FAULTS = ("none", "before-allocation", "after-native-smoke")
+FAULTS = ("none", "after-native-smoke")
 
 
 class CycleError(ValueError):

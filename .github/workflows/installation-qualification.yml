@@ -10,11 +10,11 @@ on:
         type: choice
         options: [fedora-44, debian-13]
       fault:
-        description: Stop deliberately before any provider call, or lose the controller after native smoke on this same VM
+        description: Intentionally lose the controller after native smoke on this same VM
         required: true
         type: choice
         default: none
-        options: [none, before-allocation, after-native-smoke]
+        options: [none, after-native-smoke]
 
 permissions:
   contents: read

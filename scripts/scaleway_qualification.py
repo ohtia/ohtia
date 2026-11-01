@@ -776,9 +776,6 @@ def _execute(
         "published_intent_required",
     )
     cycle.require(fault in cycle.FAULTS, "fault_mode")
-    if fault == "before-allocation":
-        # This rehearsal stops after every admission and publication step, before any provider call.
-        return
     private = Path(os.environ["RUNNER_TEMP"]) / ("ohtia-lease-" + intent["nonce"])
     private.mkdir(mode=0o700)
     key = private / "id_ed25519"
