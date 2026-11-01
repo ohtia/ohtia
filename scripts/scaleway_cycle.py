@@ -26,6 +26,9 @@ REPOSITORY = "ohtia/ohtia"
 API_HOST = "api.scaleway.com"
 
 
+FAULTS = ("none", "before-allocation", "after-native-smoke")
+
+
 class CycleError(ValueError):
     """A controlled boundary failed; codes never contain remote response bodies."""
 
@@ -33,6 +36,7 @@ class CycleError(ValueError):
 SAFE_FAILURE_CODES = frozenset(
     [
         "absence_deadline",
+        "active_lease_present",
         "aliased_file",
         "allocation_configuration",
         "allocation_shape",
@@ -286,8 +290,12 @@ SAFE_FAILURE_CODES = frozenset(
         "public_key",
         "published_intent_required",
         "published_recovery_plan_required",
+        "qualification_source_outdated",
         "recovery_artifact_missing",
+        "recovery_budget",
         "recovery_configuration",
+        "recovery_dispatch_failed",
+        "recovery_dispatch_limit",
         "recovery_pending_bound",
         "recovery_plan_bound",
         "recovery_plan_coverage",
@@ -301,9 +309,13 @@ SAFE_FAILURE_CODES = frozenset(
         "recovery_plan_required",
         "recovery_plan_resources",
         "recovery_plan_source",
+        "recovery_policy_changed",
+        "recovery_preflight_failed",
+        "recovery_run_failed",
         "recovery_source",
         "recovery_status",
         "recovery_trigger",
+        "recovery_wait_deadline",
         "request_size",
         "resource_identity",
         "resource_kind",
@@ -493,6 +505,15 @@ def policy() -> dict:
     )
     require(limits["managed_instances"] == 1, "instance_budget")
     require(limits["evidence_seconds"] < limits["cleanup_seconds"], "evidence_budget")
+    require(
+        limits["recovery_reuse_seconds"]
+        < limits["recovery_admission_seconds"]
+        < limits["recovery_observation_seconds"]
+        and limits["recovery_poll_seconds"]
+        <= limits["recovery_dispatch_visibility_seconds"]
+        < limits["recovery_wait_seconds"],
+        "recovery_budget",
+    )
     return value
 
 

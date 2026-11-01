@@ -129,7 +129,7 @@ class Progress:
     def __init__(self, directory: Path, identity: dict, profile: str, fault: str):
         self.limits = cycle.policy()["limits"]
         cycle.require(
-            profile in cycle.policy()["profiles"] and fault in {"none", "after-native-smoke"},
+            profile in cycle.policy()["profiles"] and fault in cycle.FAULTS,
             "progress_identity",
         )
         cycle.sha(identity["source_sha"], 40)
