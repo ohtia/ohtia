@@ -34,6 +34,7 @@ import { generatePortPolicy } from "../tooling/port-policy.mjs";
 import {
   acceptedEnvelopes,
   appearance,
+  localeSnapshot,
   rejectedEnvelopes,
   rejectedResultPayloads,
   request,
@@ -248,6 +249,10 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
     const c = client();
     expect(Object.keys(c.port).sort()).toEqual(
       [
+        "readLocale",
+        "replaceLocale",
+        "readLocaleReceipt",
+        "subscribeLocale",
         "readStatus",
         "readAppearance",
         "replaceAppearance",
@@ -797,5 +802,72 @@ describe("P3 direct policy CLI and broker subscription reservations", () => {
         serviceGeneration: "service-1",
       }),
     ).toEqual(failure("window_limit"));
+  });
+});
+
+describe("locale producer/consumer bridge", () => {
+  it("dispatches only named locale calls and validates mutation receipts", async () => {
+    const c = client();
+    const read = c.port.readLocale();
+    c.respond(localeSnapshot);
+    expect(await read.result).toEqual({ ok: true, value: localeSnapshot });
+    const receipt = c.port.readLocaleReceipt("saved-op");
+    c.respond({ state: "not_found" });
+    expect(await receipt.result).toMatchObject({ ok: true });
+    const rejected = c.port.replaceLocale({
+      operationId: "invalid",
+      expectedRevision: 0,
+      value: "nn-NO" as never,
+    });
+    expect(await rejected.result).toMatchObject({ ok: false });
+    const save = c.port.replaceLocale({
+      operationId: "language-op",
+      expectedRevision: 1,
+      value: "ko-KR",
+    });
+    c.respond(localeSnapshot.record);
+    expect(await save.result).toMatchObject({ ok: true });
+    const wrong = c.port.replaceLocale({
+      operationId: "wrong-result",
+      expectedRevision: 1,
+      value: "fr-CA",
+    });
+    c.respond(localeSnapshot.record);
+    expect(await wrong.result).toMatchObject({ error: { code: "uncertain" } });
+    c.dispose();
+  });
+  it("bounds locale subscriptions, rejects obsolete revisions and disposes pending commands", async () => {
+    const c = client();
+    const notices = vi.fn();
+    const stream = c.port.subscribeLocale(notices);
+    const id = c.sent.at(-1).payload.subscriptionId;
+    c.respond({ subscriptionId: id });
+    await stream.ready;
+    const event = {
+      protocol: 1,
+      policy: policyId,
+      kind: "event",
+      windowGeneration: "window-1",
+      serviceGeneration: "service-1",
+      subscriptionId: id,
+      sequence: 1,
+      topic: "locale",
+      payload: localeSnapshot,
+    };
+    c.receive(JSON.stringify(event));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(notices).toHaveBeenCalledWith({ ok: true, value: localeSnapshot });
+    c.receive(JSON.stringify({ ...event, sequence: 2 }));
+    expect(notices).toHaveBeenLastCalledWith(
+      expect.objectContaining({ error: expect.objectContaining({ code: "sequence_gap" }) }),
+    );
+    const command = c.port.replaceLocale({
+      operationId: "unresolved",
+      expectedRevision: 2,
+      value: "system",
+    });
+    c.dispose();
+    expect(await command.result).toMatchObject({ error: { code: "uncertain" } });
+    stream.dispose();
   });
 });

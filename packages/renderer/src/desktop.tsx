@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import {
   message,
+  type SimpleMessageKey,
+  type LocaleSnapshot,
   type BootstrapSnapshot,
   type DesktopBridge,
   type FoundationStatus,
@@ -10,6 +12,7 @@ import {
 } from "@ohtia/contracts";
 import "./foundation.css";
 import { OhtiaBrand } from "./branding.js";
+import { LanguagePanel } from "./language-panel.js";
 import { AppearancePanel } from "./appearance-panel.js";
 
 declare global {
@@ -37,6 +40,20 @@ function FoundationWindow() {
   const [failed, setFailed] = useState(false);
   const [announcement, setAnnouncement] = useState(0);
   const notice = useRef<HTMLParagraphElement>(null);
+  const appliedLocale = useRef<LocaleSnapshot | undefined>(undefined);
+  const applyLocale = useRef((snapshot: LocaleSnapshot) => {
+    if (
+      appliedLocale.current?.serviceGeneration === snapshot.serviceGeneration &&
+      snapshot.record.revision < appliedLocale.current.record.revision
+    )
+      return;
+    appliedLocale.current = snapshot;
+    document.documentElement.lang = snapshot.effectiveLocale;
+    document.title = message(snapshot.effectiveLocale, "title");
+    setBootstrap((current) =>
+      current ? { ...current, locale: snapshot.effectiveLocale } : current,
+    );
+  });
   useEffect(() => {
     let disposed = false;
     const isDisposed = () => disposed;
@@ -55,9 +72,13 @@ function FoundationWindow() {
             : "unavailable",
       );
       if (isDisposed()) return;
-      document.documentElement.lang = next.locale;
-      document.title = message(next.locale, "title");
-      setBootstrap(next);
+      if (!appliedLocale.current) {
+        document.documentElement.lang = next.locale;
+        document.title = message(next.locale, "title");
+      }
+      setBootstrap((current) =>
+        !appliedLocale.current || !current ? next : { ...next, locale: current.locale },
+      );
       timer = setTimeout(() => {
         void poll();
       }, 1000);
@@ -75,11 +96,12 @@ function FoundationWindow() {
       call?.cancel();
     };
   }, []);
+  const locationNotice = bootstrap?.notice === "locale_fallback" ? undefined : bootstrap?.notice;
   useEffect(() => {
-    if (failed || bootstrapFailure(bootstrap?.state) || bootstrap?.notice) notice.current?.focus();
-  }, [failed, bootstrap?.state, bootstrap?.notice, announcement]);
+    if (failed || bootstrapFailure(bootstrap?.state) || locationNotice) notice.current?.focus();
+  }, [failed, bootstrap?.state, locationNotice, announcement]);
   if (!bootstrap) return null;
-  const text = (key: Parameters<typeof message>[1]) => message(bootstrap.locale, key);
+  const text = (key: SimpleMessageKey) => message(bootstrap.locale, key);
   async function action(method: keyof DesktopBridge["bootstrap"], trigger: HTMLButtonElement) {
     if (busy) return;
     setBusy(true);
@@ -89,7 +111,13 @@ function FoundationWindow() {
     try {
       const value = await window.ohtia.bootstrap[method]();
       flushSync(() => {
-        setBootstrap(value);
+        if (!appliedLocale.current) {
+          document.documentElement.lang = value.locale;
+          document.title = message(value.locale, "title");
+        }
+        setBootstrap((current) =>
+          appliedLocale.current && current ? { ...value, locale: current.locale } : value,
+        );
       });
       if (bootstrapFailure(value.state) || value.notice) setAnnouncement((value) => value + 1);
       else if (focusOutcome) notice.current?.focus();
@@ -122,11 +150,9 @@ function FoundationWindow() {
           id="location-state"
           ref={notice}
           tabIndex={-1}
-          role={
-            failed || bootstrap.notice || bootstrapFailure(bootstrap.state) ? "alert" : "status"
-          }
+          role={failed || locationNotice || bootstrapFailure(bootstrap.state) ? "alert" : "status"}
         >
-          {text(failed ? "startup_failed" : (bootstrap.notice ?? bootstrap.state))}
+          {text(failed ? "startup_failed" : (locationNotice ?? bootstrap.state))}
         </p>
         {bootstrap.state !== "storage_ready" && <p>{text("storage_disclosure")}</p>}
         {["pending_create", "located"].includes(bootstrap.state) && (
@@ -152,6 +178,12 @@ function FoundationWindow() {
           </button>
         )}
       </section>
+      <LanguagePanel
+        port={window.ohtia.foundation}
+        locale={bootstrap.locale}
+        available={bootstrap.state === "storage_ready"}
+        onLocale={applyLocale.current}
+      />
       <AppearancePanel
         port={window.ohtia.foundation}
         locale={bootstrap.locale}

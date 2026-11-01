@@ -10,6 +10,7 @@ import {
   type Request,
   type Outcome,
   type AppearanceRecord,
+  type LocaleSnapshot,
 } from "@ohtia/contracts";
 
 import type { DurableStore } from "./storage.js";
@@ -28,12 +29,13 @@ export function createStatusService(
     {
       window: string;
       subscription: string;
-      topic: "status" | "appearance";
+      topic: "status" | "appearance" | "locale";
       sequence: number;
       revision: number;
     }
   >();
   const queuedSubscriptions = new Map<string, { cancelled: boolean }>();
+  let systemLocale = locale;
   let enabled = false;
   let disposed = false;
   const isDisposed = () => disposed;
@@ -68,6 +70,56 @@ export function createStatusService(
       });
     }
   };
+  const localeSnapshot = async (): Promise<Outcome<LocaleSnapshot>> => {
+    if (!storage) return failure("service_unavailable");
+    const record = await storage.readLocale();
+    return record.ok
+      ? {
+          ok: true,
+          value: {
+            serviceGeneration: generation,
+            record: record.value,
+            systemLocale,
+            effectiveLocale: record.value.value === "system" ? systemLocale : record.value.value,
+          },
+        }
+      : record;
+  };
+  const localeEvent = async () => {
+    const snapshot = await localeSnapshot();
+    if (!snapshot.ok) return;
+    const localeChanged = status.interfaceLocale !== snapshot.value.effectiveLocale;
+    status = { ...status, interfaceLocale: snapshot.value.effectiveLocale };
+    if (!disposed)
+      send(JSON.stringify({ kind: "locale_changed", generation, snapshot: snapshot.value }));
+    for (const stream of streams.values()) {
+      if (stream.topic === "status" && localeChanged)
+        emit({
+          protocol: 1,
+          policy: policyId,
+          kind: "event",
+          windowGeneration: stream.window,
+          serviceGeneration: generation,
+          subscriptionId: stream.subscription,
+          sequence: ++stream.sequence,
+          topic: "status",
+          payload: status,
+        });
+      if (stream.topic !== "locale" || snapshot.value.record.revision <= stream.revision) continue;
+      stream.revision = snapshot.value.record.revision;
+      emit({
+        protocol: 1,
+        policy: policyId,
+        kind: "event",
+        windowGeneration: stream.window,
+        serviceGeneration: generation,
+        subscriptionId: stream.subscription,
+        sequence: ++stream.sequence,
+        topic: "locale",
+        payload: snapshot.value,
+      });
+    }
+  };
   async function dispatch(value: Request, subscription?: { cancelled: boolean }): Promise<void> {
     if (disposed) return;
     if (subscription?.cancelled) {
@@ -78,7 +130,24 @@ export function createStatusService(
       emit({ ...value, kind: "result", payload: failure("service_unavailable") });
       return;
     }
-    if (value.operation === "appearance.read")
+    if (value.operation === "locale.read")
+      emit({ ...value, kind: "result", payload: await localeSnapshot() });
+    else if (value.operation === "locale.receipt")
+      emit({
+        ...value,
+        kind: "result",
+        payload: await storage.readLocaleReceipt(value.payload.targetOperationId),
+      });
+    else if (value.operation === "locale.replace") {
+      const result = await storage.replaceLocale({
+        operationId: value.operationId,
+        ...value.payload,
+      });
+      emit({ ...value, kind: "result", payload: result });
+      // A lost COMMIT acknowledgement cannot suppress publication of a known current effect.
+      // Reading the authoritative snapshot neither settles the original receipt nor repeats a write.
+      if (result.ok || result.error.code === "uncertain") await localeEvent();
+    } else if (value.operation === "appearance.read")
       emit({ ...value, kind: "result", payload: await storage.readAppearance() });
     else if (value.operation === "appearance.receipt")
       emit({
@@ -93,7 +162,10 @@ export function createStatusService(
       });
       emit({ ...value, kind: "result", payload: result });
       if (result.ok) appearanceEvent(await storage.readAppearance());
-    } else if (value.operation === "appearance.subscribe") {
+    } else if (
+      value.operation === "appearance.subscribe" ||
+      value.operation === "locale.subscribe"
+    ) {
       const id = `${value.windowGeneration}/${value.payload.subscriptionId}`;
       if (
         streams.has(id) ||
@@ -104,7 +176,10 @@ export function createStatusService(
         emit({ ...value, kind: "result", payload: failure("busy") });
         return;
       }
-      const record = await storage.readAppearance();
+      const record =
+        value.operation === "locale.subscribe"
+          ? await localeSnapshot()
+          : await storage.readAppearance();
       if (!record.ok) {
         emit({ ...value, kind: "result", payload: record });
         return;
@@ -117,9 +192,9 @@ export function createStatusService(
       streams.set(id, {
         window: value.windowGeneration,
         subscription: value.payload.subscriptionId,
-        topic: "appearance",
+        topic: value.operation === "locale.subscribe" ? "locale" : "appearance",
         sequence: 1,
-        revision: record.value.revision,
+        revision: "record" in record.value ? record.value.record.revision : record.value.revision,
       });
       emit({ ...value, kind: "result", payload: { ok: true, value: value.payload } });
       emit({
@@ -130,12 +205,16 @@ export function createStatusService(
         serviceGeneration: generation,
         subscriptionId: value.payload.subscriptionId,
         sequence: 1,
-        topic: "appearance",
+        topic: value.operation === "locale.subscribe" ? "locale" : "appearance",
         payload: record.value,
       });
     }
   }
   return {
+    setSystemLocale(value: InterfaceLocale): void {
+      if (!isInterfaceLocale(value) || disposed) throw new Error("Invalid system locale.");
+      systemLocale = value;
+    },
     activate(resolvedLocale: InterfaceLocale): void {
       if (!isInterfaceLocale(resolvedLocale) || !storage?.ready || disposed)
         throw new Error("Invalid storage activation.");
@@ -230,9 +309,11 @@ export function createStatusService(
       }
       pending++;
       const subscription =
-        value.operation === "appearance.subscribe" ? { cancelled: false } : undefined;
+        value.operation === "appearance.subscribe" || value.operation === "locale.subscribe"
+          ? { cancelled: false }
+          : undefined;
       const subscriptionKey =
-        value.operation === "appearance.subscribe"
+        value.operation === "appearance.subscribe" || value.operation === "locale.subscribe"
           ? `${value.windowGeneration}/${value.payload.subscriptionId}`
           : undefined;
       if (subscriptionKey && subscription) {
@@ -250,7 +331,9 @@ export function createStatusService(
             ...value,
             kind: "result",
             payload: failure(
-              value.operation === "appearance.replace" ? "uncertain" : "storage_failed",
+              value.operation === "appearance.replace" || value.operation === "locale.replace"
+                ? "uncertain"
+                : "storage_failed",
             ),
           });
         })

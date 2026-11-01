@@ -6,5 +6,9 @@
   {
     "name": "0002_receipts",
     "sha256": "62b484a0bd836ef797a560dad527c12084c7faa60fccbe4e0159f12d420741bd"
+  },
+  {
+    "name": "0003_locale_receipts",
+    "sha256": "a95a2ff80e00c0f2792ce0738249628c334d6f5ef2fb8f31de77fbff7850b3e8"
   }
 ]

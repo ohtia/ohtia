@@ -134,6 +134,7 @@ async function launch(
   const service = {
     receive: vi.fn(),
     activate: vi.fn(),
+    setSystemLocale: vi.fn(),
     dispose: vi.fn(),
     drain: vi.fn(async () => {}),
   };
@@ -250,6 +251,10 @@ describe("utility process composition with isolated synthetic files", () => {
         }),
       });
       expect(h.service.activate).toHaveBeenCalledWith("ko-KR");
+      h.parent.emit("message", {
+        data: JSON.stringify({ kind: "system_locale", generation: h.generation, locale: "ca-ES" }),
+      });
+      expect(h.service.setSystemLocale).toHaveBeenCalledWith("ca-ES");
       h.parent.emit("message", {
         data: JSON.stringify({ kind: "activate_storage", generation: "other", locale: "ko-KR" }),
       });

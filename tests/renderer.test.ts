@@ -236,12 +236,27 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
   let snapshot: BootstrapSnapshot = { version: 1, locale: "en-US", state: "pending_create" };
   const foundation = {
     ...port(),
+    readLocale: vi.fn(() =>
+      call({
+        ok: true,
+        value: {
+          serviceGeneration: "service-1",
+          record: { schemaVersion: 1, revision: 0, value: "system", source: "default" },
+          effectiveLocale: "en-US",
+          systemLocale: "en-US",
+        },
+      }),
+    ),
+    subscribeLocale: () => ({
+      ready: Promise.resolve({ ok: true, value: { subscriptionId: "locale-test" } }),
+      dispose() {},
+    }),
     readStatus: vi.fn(() => call({ ok: true, value: { service: "ready" } })),
   };
   const bootstrap = {
     read: vi.fn(async () => snapshot),
     openStorage: vi.fn(async () => {
-      snapshot = { ...snapshot, state: "storage_ready" };
+      snapshot = { ...snapshot, state: "storage_ready", locale: "ko-KR" };
       return snapshot;
     }),
     retryService: vi.fn(async () => snapshot),
@@ -261,10 +276,29 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
   });
   expect(document.documentElement.lang).toBe("en-US");
   expect(container.textContent).toContain(message("en-US", "open_storage"));
+  foundation.readLocale.mockImplementationOnce(
+    () => call({ ok: false, error: { code: "storage_failed" } }) as never,
+  );
   await click(container, "open_storage");
   expect(bootstrap.openStorage).toHaveBeenCalledOnce();
+  expect(foundation.readLocale).toHaveBeenCalledOnce();
   expect(document.activeElement?.id).toBe("location-state");
+  expect(document.documentElement.lang).toBe("ko-KR");
+  expect(container.textContent).toContain(message("ko-KR", "intro"));
+  expect(container.textContent).toContain(message("ko-KR", "settings.language.readFailed"));
+  const refreshLanguage = container.querySelector<HTMLButtonElement>(
+    '[aria-labelledby="language-title"] button',
+  )!;
+  await act(async () => {
+    refreshLanguage.click();
+  });
+  expect(document.documentElement.lang).toBe("en-US");
+  expect(container.textContent).toContain(message("en-US", "intro"));
+  snapshot = { ...snapshot, locale: "ko-KR" };
   await click(container, "new_window");
+  expect(document.documentElement.lang).toBe("en-US");
+  expect(container.textContent).toContain(message("en-US", "intro"));
+  snapshot = { ...snapshot, locale: "en-US" };
   expect(bootstrap.newWindow).toHaveBeenCalledOnce();
   snapshot = { ...snapshot, state: "recovery_required" };
   await act(async () => {
@@ -277,6 +311,13 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
   await click(container, "retry");
   expect(container.textContent).toContain(message("en-US", "startup_failed"));
   await click(container, "retry");
+  const focusedControl = container.querySelector("select")!;
+  focusedControl.focus();
+  snapshot = { ...snapshot, state: "storage_ready", notice: "locale_fallback" };
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  expect(document.activeElement).toBe(focusedControl);
   await click(container, "exit");
   expect(bootstrap.exit).toHaveBeenCalledOnce();
   snapshot = { ...snapshot, state: "storage_opening" };

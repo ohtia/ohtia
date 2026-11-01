@@ -1,10 +1,21 @@
 {
   "schema_version": 1,
-  "scope": "All initial foundation catalog messages in src/catalogs.ts",
+  "scope": "Inherited foundation messages in src/localization/*.json",
   "producer": {
     "agent": "codex",
     "effective_model": null
   },
   "effective_model_evidence": "The implementation session does not expose a confirmed effective model identifier.",
-  "human_linguistic_review": null
+  "human_linguistic_review": null,
+  "extensions": [
+    {
+      "scope": "settings.language.* messages and controlled autonyms",
+      "producer": {
+        "agent": "codex",
+        "effective_model": null
+      },
+      "effective_model_evidence": "The implementation runtime identifies the GPT-6 family but does not expose a confirmed effective model identifier.",
+      "human_linguistic_review": null
+    }
+  ]
 }

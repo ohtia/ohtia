@@ -6,7 +6,7 @@ import {
   type AppearanceRecord,
   type FoundationPort,
   type InterfaceLocale,
-  type MessageKey,
+  type SimpleMessageKey,
 } from "@ohtia/contracts";
 import { AppearanceControl } from "./index.js";
 
@@ -24,12 +24,12 @@ export function AppearancePanel({
   const [draft, setDraft] = useState<Appearance>("system");
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<MessageKey>();
+  const [notice, setNotice] = useState<SimpleMessageKey>();
   const [unresolved, setUnresolved] = useState<string>();
   const dirtyRef = useRef(false);
   const alert = useRef<HTMLParagraphElement>(null);
   const mounted = useRef(true);
-  const text = (key: MessageKey) => message(locale, key);
+  const text = (key: SimpleMessageKey) => message(locale, key);
   useEffect(() => {
     mounted.current = true;
     let disposed = false;

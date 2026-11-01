@@ -183,12 +183,13 @@ async function start(): Promise<void> {
         if (value && typeof value === "object") {
           const record = value as Record<string, unknown>;
           if (
-            record.kind === "activate_storage" &&
+            (record.kind === "activate_storage" || record.kind === "system_locale") &&
             record.generation === generation &&
             Object.keys(record).sort().join(",") === "generation,kind,locale" &&
             isInterfaceLocale(record.locale)
           ) {
-            service.activate(record.locale);
+            if (record.kind === "activate_storage") service.activate(record.locale);
+            else service.setSystemLocale(record.locale);
             return;
           }
         }

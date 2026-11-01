@@ -98,3 +98,31 @@ select {
   max-width: 100%;
   min-height: var(--component-target-minimum);
 }
+
+.language-save-state {
+  color: var(--content-secondary);
+  font: inherit;
+}
+@media (pointer: coarse) {
+  select {
+    min-height: var(--component-target-coarse);
+  }
+}
+
+.language-danger {
+  color: var(--danger-content);
+  background: var(--danger-surface);
+  padding: var(--space-3);
+}
+.language-attention {
+  color: var(--attention-content);
+  background: var(--attention-surface);
+  padding: var(--space-3);
+}
+@media (forced-colors: active) {
+  .language-danger,
+  .language-attention {
+    color: CanvasText;
+    background: Canvas;
+  }
+}

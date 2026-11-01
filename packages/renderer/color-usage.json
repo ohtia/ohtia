@@ -29,6 +29,24 @@
       "foreground": "voice.ohtia.content",
       "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
       "minimum": 7
+    },
+    {
+      "selector": ".language-save-state",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
+      "selector": ".language-danger",
+      "foreground": "danger.content",
+      "backgrounds": ["danger.surface"],
+      "minimum": 7
+    },
+    {
+      "selector": ".language-attention",
+      "foreground": "attention.content",
+      "backgrounds": ["attention.surface"],
+      "minimum": 7
     }
   ]
 }

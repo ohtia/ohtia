@@ -75,6 +75,10 @@ export function catalogGate(locales, contracts, catalogs) {
                 `${locale}/${key}: invalid plural category`,
               );
               requireGate(
+                categories.every((category) => options.includes(category)),
+                `${locale}/${key}: missing required plural category`,
+              );
+              requireGate(
                 (node.offset ?? 0) === 0,
                 `${locale}/${key}: plural offsets are not admitted`,
               );

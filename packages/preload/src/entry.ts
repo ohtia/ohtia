@@ -3,6 +3,11 @@ import {
   decodeBootstrapSnapshot,
   desktopChannels,
   isIdentifier,
+  failure,
+  portLimits,
+  type LocaleSnapshot,
+  type Outcome,
+  type Subscription,
   type BootstrapAction,
   type DesktopBridge,
 } from "@ohtia/contracts";
@@ -53,6 +58,37 @@ function connect() {
   };
 }
 let connection = connect();
+// Retain only bounded logical locale owners across private connection replacement.
+const localeOwners = new Set<{
+  listener: (notice: Outcome<LocaleSnapshot>) => void;
+  stream: Subscription;
+}>();
+function subscribeLocale(listener: (notice: Outcome<LocaleSnapshot>) => void): Subscription {
+  if (localeOwners.size >= portLimits.subscriptions_per_window)
+    return { ready: Promise.resolve(failure("busy")), dispose() {} };
+  const stream = connection.client.port.subscribeLocale(listener);
+  const owner = { listener, stream };
+  localeOwners.add(owner);
+  return {
+    ready: stream.ready,
+    dispose() {
+      localeOwners.delete(owner);
+      stream.dispose();
+    },
+  };
+}
+const preferencesReady = (_event: unknown, generation: unknown) => {
+  if (generation !== connection.generation) return;
+  for (const owner of [...localeOwners]) {
+    try {
+      owner.listener(failure("sequence_gap"));
+    } catch {
+      localeOwners.delete(owner);
+      owner.stream.dispose();
+    }
+  }
+};
+ipcRenderer.on(desktopChannels.preferencesReady, preferencesReady);
 async function bootstrap(action: BootstrapAction) {
   const result: unknown = await ipcRenderer.invoke(desktopChannels.bootstrap, action);
   const snapshot = decodeBootstrapSnapshot(result);
@@ -61,6 +97,11 @@ async function bootstrap(action: BootstrapAction) {
 }
 const bridge: DesktopBridge = {
   foundation: {
+    readLocale: () => connection.client.port.readLocale(),
+    replaceLocale: (change, expectedServiceGeneration) =>
+      connection.client.port.replaceLocale(change, expectedServiceGeneration),
+    readLocaleReceipt: (operation) => connection.client.port.readLocaleReceipt(operation),
+    subscribeLocale,
     readStatus: () => connection.client.port.readStatus(),
     readAppearance: () => connection.client.port.readAppearance(),
     readAppearanceReceipt: (operation) => connection.client.port.readAppearanceReceipt(operation),
@@ -90,7 +131,10 @@ ipcRenderer.on(desktopChannels.reconnect, reconnect);
 window.addEventListener(
   "unload",
   () => {
+    for (const owner of localeOwners) owner.stream.dispose();
+    localeOwners.clear();
     connection.client.dispose();
+    ipcRenderer.removeListener(desktopChannels.preferencesReady, preferencesReady);
     ipcRenderer.removeListener(desktopChannels.ended, serviceEnded);
     ipcRenderer.removeListener(desktopChannels.reconnect, reconnect);
   },

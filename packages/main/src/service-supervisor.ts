@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 import {
   decodeText,
+  decodeLocaleSnapshot,
   decodeChildDiagnostic,
   type DiagnosticEvent,
   decodeStorageNotice,
   isInterfaceLocale,
   type InterfaceLocale,
+  type LocaleSnapshot,
   type StorageNotice,
   encodeEnvelope,
   failure,
@@ -64,6 +66,7 @@ export class ServiceSupervisor {
       event: DiagnosticEvent | undefined,
       correlation?: string,
     ) => void,
+    private readonly localeChanged?: (snapshot: LocaleSnapshot) => void,
   ) {
     if (!isIdentifier(generation)) throw new Error("Invalid service generation.");
     child.messages((message) => {
@@ -81,6 +84,18 @@ export class ServiceSupervisor {
     try {
       this.child.send(
         JSON.stringify({ kind: "activate_storage", generation: this.generation, locale }),
+      );
+      return true;
+    } catch {
+      this.fault();
+      return false;
+    }
+  }
+  setSystemLocale(locale: InterfaceLocale): boolean {
+    if (!this.available || !isInterfaceLocale(locale)) return false;
+    try {
+      this.child.send(
+        JSON.stringify({ kind: "system_locale", generation: this.generation, locale }),
       );
       return true;
     } catch {
@@ -113,7 +128,8 @@ export class ServiceSupervisor {
     );
     if (
       work.request.operation === "status.subscribe" ||
-      work.request.operation === "appearance.subscribe"
+      work.request.operation === "appearance.subscribe" ||
+      work.request.operation === "locale.subscribe"
     )
       this.streams.set(
         key(work.request.windowGeneration, work.request.payload.subscriptionId),
@@ -140,7 +156,8 @@ export class ServiceSupervisor {
       if (
         work.request.windowGeneration !== windowGeneration ||
         (work.request.operation !== "status.subscribe" &&
-          work.request.operation !== "appearance.subscribe")
+          work.request.operation !== "appearance.subscribe" &&
+          work.request.operation !== "locale.subscribe")
       )
         continue;
       this.control({
@@ -246,6 +263,31 @@ export class ServiceSupervisor {
         /* Application decoder below controls all other input. */
       }
     }
+    if (typeof input === "string" && input.length < portLimits.message_bytes) {
+      try {
+        const notice: unknown = JSON.parse(input);
+        if (
+          notice &&
+          typeof notice === "object" &&
+          "kind" in notice &&
+          notice.kind === "locale_changed" &&
+          "generation" in notice &&
+          "snapshot" in notice &&
+          notice.generation === this.generation &&
+          Object.keys(notice).sort().join(",") === "generation,kind,snapshot"
+        ) {
+          const snapshot = decodeLocaleSnapshot(notice.snapshot);
+          if (!snapshot || snapshot.serviceGeneration !== this.generation || !this.ready) {
+            this.fault();
+            return;
+          }
+          this.localeChanged?.(snapshot);
+          return;
+        }
+      } catch {
+        /* The ordinary peer decoder rejects other input. */
+      }
+    }
     const decoded = decodeText(input);
     if (!decoded.ok) {
       this.fault();
@@ -265,6 +307,8 @@ export class ServiceSupervisor {
         this.fault();
         return;
       }
+      if (value.operation === "locale.read" && value.payload.ok)
+        this.localeChanged?.(value.payload.value);
       if (value.operation === "appearance.replace") {
         const outcome = value.payload;
         if (outcome.ok)
@@ -299,7 +343,8 @@ export class ServiceSupervisor {
         work.releaseSubscription();
         if (
           work.request.operation === "status.subscribe" ||
-          work.request.operation === "appearance.subscribe"
+          work.request.operation === "appearance.subscribe" ||
+          work.request.operation === "locale.subscribe"
         )
           this.streams.delete(
             key(work.request.windowGeneration, work.request.payload.subscriptionId),
@@ -315,11 +360,14 @@ export class ServiceSupervisor {
         !work ||
         (value.topic === "status"
           ? work.request.operation !== "status.subscribe"
-          : work.request.operation !== "appearance.subscribe")
+          : value.topic === "locale"
+            ? work.request.operation !== "locale.subscribe"
+            : work.request.operation !== "appearance.subscribe")
       ) {
         this.fault();
         return;
       }
+      if (value.topic === "locale") this.localeChanged?.(value.payload);
       work.deliver(input as string);
       return;
     }
@@ -349,7 +397,10 @@ export class ServiceSupervisor {
         ...work.request,
         kind: "result",
         payload: failure(
-          work.request.operation === "appearance.replace" ? "uncertain" : "service_unavailable",
+          work.request.operation === "appearance.replace" ||
+            work.request.operation === "locale.replace"
+            ? "uncertain"
+            : "service_unavailable",
         ),
       });
       if (encoded.ok) work.deliver(encoded.value);

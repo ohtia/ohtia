@@ -5,3 +5,5 @@ export * from "./profile.js";
 export * from "./runtime.js";
 export * from "./catalogs.js";
 export * from "./diagnostics.js";
+
+export * from "./localization.js";

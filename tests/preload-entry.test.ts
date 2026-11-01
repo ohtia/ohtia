@@ -1,6 +1,12 @@
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { desktopChannels, type DesktopBridge } from "../packages/contracts/src/index.js";
+import { LanguageController } from "../packages/renderer/src/language-controller.js";
+import {
+  desktopChannels,
+  portLimits,
+  failure,
+  type DesktopBridge,
+} from "../packages/contracts/src/index.js";
 
 const descriptors = new Map<string, PropertyDescriptor | undefined>();
 function flag(key: string, value: boolean) {
@@ -90,17 +96,29 @@ describe("sandbox preload composition", () => {
     expect(
       h.ipcRenderer.send.mock.calls.slice(0, 4).map(([, text]) => JSON.parse(text).operation),
     ).toEqual(["status.read", "appearance.read", "appearance.receipt", "appearance.replace"]);
+    const localeCalls = [
+      h.bridge.foundation.readLocale(),
+      h.bridge.foundation.readLocaleReceipt("language-op"),
+      h.bridge.foundation.replaceLocale({
+        operationId: "language-op",
+        expectedRevision: 0,
+        value: "ko-KR",
+      }),
+    ];
+    const language = h.bridge.foundation.subscribeLocale(() => {});
     const subscription = h.bridge.foundation.subscribeStatus(() => {});
     const appearance = h.bridge.foundation.subscribeAppearance(() => {});
     calls[0].cancel();
     expect(await calls[0].result).toMatchObject({ ok: false, error: { code: "cancelled" } });
     subscription.dispose();
     appearance.dispose();
+    language.dispose();
     await subscription.ready;
     await appearance.ready;
     h.ipcRenderer.emit(desktopChannels.ended, {}, "other-generation");
     h.ipcRenderer.emit(desktopChannels.ended, {}, "service-1");
     expect(await calls[1].result).toMatchObject({ ok: false, error: { code: "disposed" } });
+    expect(await localeCalls[2].result).toMatchObject({ error: { code: "uncertain" } });
     expect(await calls[3].result).toMatchObject({ ok: false, error: { code: "uncertain" } });
     h.ipcRenderer.sendSync.mockReturnValue({
       serviceGeneration: "service-2",
@@ -125,4 +143,197 @@ describe("sandbox preload composition", () => {
     h.window.dispatchEvent(new Event("unload"));
     expect(h.ipcRenderer.listenerCount(desktopChannels.reply)).toBe(0);
   });
+});
+
+it("keeps locale owners observable after a seamless private service replacement", async () => {
+  const h = await load();
+  const notices = vi.fn();
+  let stream = h.bridge.foundation.subscribeLocale(notices);
+  h.ipcRenderer.emit(desktopChannels.ended, {}, "service-1");
+  h.ipcRenderer.sendSync.mockReturnValue({
+    serviceGeneration: "service-2",
+    windowGeneration: "window-2",
+  });
+  h.ipcRenderer.emit(desktopChannels.reconnect);
+  h.ipcRenderer.emit(desktopChannels.preferencesReady, {}, "service-1");
+  expect(notices).not.toHaveBeenCalled();
+  h.ipcRenderer.emit(desktopChannels.preferencesReady, {}, "service-2");
+  expect(notices).toHaveBeenCalledWith(
+    expect.objectContaining({ error: expect.objectContaining({ code: "sequence_gap" }) }),
+  );
+  stream.dispose();
+  stream = h.bridge.foundation.subscribeLocale(() => {
+    throw new Error("Consumer failed");
+  });
+  h.ipcRenderer.emit(desktopChannels.preferencesReady, {}, "service-2");
+  stream.dispose();
+  const count = notices.mock.calls.length;
+  h.window.dispatchEvent(new Event("unload"));
+  h.ipcRenderer.emit(desktopChannels.preferencesReady, {}, "service-2");
+  expect(notices).toHaveBeenCalledTimes(count);
+  expect(h.ipcRenderer.listenerCount(desktopChannels.preferencesReady)).toBe(0);
+});
+
+it("bounds logical locale owners across replacement and cleans every owner at unload", async () => {
+  const h = await load();
+  const streams = Array.from({ length: portLimits.subscriptions_per_window }, () =>
+    h.bridge.foundation.subscribeLocale(() => {}),
+  );
+  const refused = h.bridge.foundation.subscribeLocale(() => {});
+  expect(await refused.ready).toMatchObject({ error: { code: "busy" } });
+  refused.dispose();
+  h.window.dispatchEvent(new Event("unload"));
+  for (const stream of streams) stream.dispose();
+  expect(h.ipcRenderer.listenerCount(desktopChannels.preferencesReady)).toBe(0);
+});
+it("recovers the actual controller and named bridge without an availability sampling transition", async () => {
+  const h = await load();
+  let value = "ko-KR";
+  let revision = 9;
+  h.ipcRenderer.send.mockImplementation((_channel, text) => {
+    const request = JSON.parse(text);
+    if (request.kind !== "request") return;
+    const snapshot = {
+      serviceGeneration: request.serviceGeneration,
+      record: { schemaVersion: 1, revision, value, source: revision ? "saved" : "default" },
+      systemLocale: "en-US",
+      effectiveLocale: value === "system" ? "en-US" : value,
+    };
+    if (request.operation === "locale.read")
+      h.ipcRenderer.emit(
+        desktopChannels.reply,
+        {},
+        JSON.stringify({ ...request, kind: "result", payload: { ok: true, value: snapshot } }),
+      );
+    if (request.operation === "locale.subscribe") {
+      h.ipcRenderer.emit(
+        desktopChannels.reply,
+        {},
+        JSON.stringify({
+          ...request,
+          kind: "result",
+          payload: { ok: true, value: request.payload },
+        }),
+      );
+      h.ipcRenderer.emit(
+        desktopChannels.reply,
+        {},
+        JSON.stringify({
+          protocol: request.protocol,
+          policy: request.policy,
+          kind: "event",
+          windowGeneration: request.windowGeneration,
+          serviceGeneration: request.serviceGeneration,
+          subscriptionId: request.payload.subscriptionId,
+          sequence: 1,
+          topic: "locale",
+          payload: snapshot,
+        }),
+      );
+    }
+  });
+  const applied = vi.fn();
+  const controller = new LanguageController(h.bridge.foundation, applied, () => "operation");
+  await controller.refresh();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(controller.snapshot().current?.effectiveLocale).toBe("ko-KR");
+  h.ipcRenderer.emit(desktopChannels.ended, {}, "service-1");
+  h.ipcRenderer.sendSync.mockReturnValue({
+    serviceGeneration: "service-2",
+    windowGeneration: "window-2",
+  });
+  h.ipcRenderer.emit(desktopChannels.reconnect);
+  value = "system";
+  revision = 0;
+  h.ipcRenderer.emit(desktopChannels.preferencesReady, {}, "service-2");
+  await vi.advanceTimersByTimeAsync(0);
+  expect(
+    h.ipcRenderer.send.mock.calls.filter(([, text]) => {
+      const request = JSON.parse(text);
+      return request.kind === "request" && request.operation === "locale.subscribe";
+    }),
+  ).toHaveLength(2);
+  expect(controller.snapshot().current).toMatchObject({
+    serviceGeneration: "service-2",
+    effectiveLocale: "en-US",
+    record: { revision: 0 },
+  });
+  expect(controller.snapshot().readFailed).toBe(false);
+  controller.dispose();
+  h.window.dispatchEvent(new Event("unload"));
+});
+
+it("guards a choice made after reconnect but before its replacement snapshot and binds subsequent uncertainty to the actual generation", async () => {
+  const h = await load();
+  const writes: { operationId: string; serviceGeneration: string }[] = [];
+  h.ipcRenderer.send.mockImplementation((_channel, text) => {
+    const request = JSON.parse(text);
+    if (request.kind !== "request") return;
+    let payload: unknown;
+    if (request.operation === "locale.read")
+      payload = {
+        ok: true,
+        value: {
+          serviceGeneration: request.serviceGeneration,
+          record: { schemaVersion: 1, revision: 0, value: "system", source: "default" },
+          systemLocale: "en-US",
+          effectiveLocale: "en-US",
+        },
+      };
+    else if (request.operation === "locale.subscribe")
+      payload = { ok: true, value: request.payload };
+    else if (request.operation === "locale.replace") {
+      writes.push(request);
+      payload = failure("uncertain");
+    } else if (request.operation === "locale.receipt")
+      payload = { ok: true, value: { state: "not_found" } };
+    else return;
+    h.ipcRenderer.emit(
+      desktopChannels.reply,
+      {},
+      JSON.stringify({ ...request, kind: "result", payload }),
+    );
+  });
+  let identity = 0;
+  const controller = new LanguageController(
+    h.bridge.foundation,
+    vi.fn(),
+    () => "operation-" + ++identity,
+  );
+  await controller.refresh();
+  const replace = (prior: string, next: string) => {
+    h.ipcRenderer.emit(desktopChannels.ended, {}, prior);
+    h.ipcRenderer.sendSync.mockReturnValue({
+      serviceGeneration: next,
+      windowGeneration: "window-1",
+    });
+    h.ipcRenderer.emit(desktopChannels.reconnect);
+  };
+  replace("service-1", "service-2");
+  expect(controller.snapshot().current?.serviceGeneration).toBe("service-1");
+  await controller.choose("ko-KR");
+  expect(writes).toHaveLength(0);
+  expect(controller.snapshot().current?.serviceGeneration).toBe("service-2");
+  expect(controller.snapshot()).toMatchObject({ phase: "rejected", canChoose: false });
+  await controller.choose("ko-KR");
+  expect(writes).toMatchObject([{ operationId: "operation-2", serviceGeneration: "service-2" }]);
+  expect(controller.snapshot()).toMatchObject({ phase: "uncertain", canChoose: false });
+  await controller.refresh();
+  await controller.retry();
+  expect(writes).toHaveLength(1);
+  expect(controller.snapshot().canChoose).toBe(false);
+  replace("service-2", "service-3");
+  h.ipcRenderer.emit(desktopChannels.preferencesReady, {}, "service-3");
+  await vi.advanceTimersByTimeAsync(0);
+  expect(controller.snapshot().current?.serviceGeneration).toBe("service-3");
+  expect(controller.snapshot().canChoose).toBe(true);
+  expect(writes).toHaveLength(1);
+  await controller.retry();
+  expect(writes).toMatchObject([
+    { operationId: "operation-2", serviceGeneration: "service-2" },
+    { operationId: "operation-3", serviceGeneration: "service-3" },
+  ]);
+  expect(controller.snapshot()).toMatchObject({ phase: "uncertain", canChoose: false });
+  controller.dispose();
+  h.window.dispatchEvent(new Event("unload"));
 });

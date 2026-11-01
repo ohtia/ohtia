@@ -96,9 +96,11 @@ export function inspectWorkspace(root) {
         !/\.tsx?$/.test(file) &&
         !(
           boundary === "utility" &&
-          ["migrations/0001_initial.mjs", "migrations/0002_receipts.mjs"].includes(
-            file.replaceAll(path.sep, "/"),
-          )
+          [
+            "migrations/0001_initial.mjs",
+            "migrations/0002_receipts.mjs",
+            "migrations/0003_locale_receipts.mjs",
+          ].includes(file.replaceAll(path.sep, "/"))
         )
       )
         errors.push(`${boundary}: product sources must be checked TypeScript`);
