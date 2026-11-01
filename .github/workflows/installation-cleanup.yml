@@ -53,7 +53,6 @@ jobs:
     env:
       SCW_CYCLE_ENABLED: ${{ vars.SCW_CYCLE_ENABLED }}
       SCW_RECOVERY_ENABLED: ${{ vars.SCW_RECOVERY_ENABLED }}
-      SCW_APPROVED_POLICY_SHA256: ${{ vars.SCW_APPROVED_POLICY_SHA256 }}
       SCW_PROJECT_ID: ${{ vars.SCW_PROJECT_ID }}
       SCW_ARM_ZONE: ${{ vars.SCW_ARM_ZONE }}
     steps:
@@ -118,7 +117,6 @@ jobs:
     env:
       SCW_CYCLE_ENABLED: ${{ vars.SCW_CYCLE_ENABLED }}
       SCW_RECOVERY_ENABLED: ${{ vars.SCW_RECOVERY_ENABLED }}
-      SCW_APPROVED_POLICY_SHA256: ${{ vars.SCW_APPROVED_POLICY_SHA256 }}
       SCW_PROJECT_ID: ${{ vars.SCW_PROJECT_ID }}
       SCW_ARM_ZONE: ${{ vars.SCW_ARM_ZONE }}
     steps:

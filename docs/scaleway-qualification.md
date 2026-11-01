@@ -2,6 +2,8 @@
 type: Reference
 title: Ephemeral ARM installation qualification
 description: Define protected authority, bounded diagnostics and recovery for unsigned native ARM qualification on ephemeral Scaleway leases.
+generated:
+  by: claude-code/claude-opus-5-5
 sources:
   - id: cloud-init-errors
     resource: https://github.com/canonical/cloud-init/blob/25.1.4/cloudinit/cmd/main.py
@@ -44,7 +46,6 @@ The complete repository-variable map is:
 - `SCW_ARM_DEBIAN13_IMAGE_ID`: Debian local image.
 - `SCW_CYCLE_ENABLED`: creation control.
 - `SCW_RECOVERY_ENABLED`: independent recovery control.
-- `SCW_APPROVED_POLICY_SHA256`: approved resource-policy digest.
 - `SCW_CREATOR_KEY_EXPIRES_AT`: asserted creator-key expiration.
 - `SCW_CLEANUP_KEY_EXPIRES_AT`: asserted cleanup-key expiration.
 
@@ -56,7 +57,7 @@ When migrating an existing environment variable, copy its unchanged value to rep
 
 ## Admission and lifecycle
 
-The controller binds actual workflow/source/run/attempt, native target, package format and final byte identities. It requires the reviewed policy, configured guards, sufficient credential-validity assertions, recent recovery health and no unresolved prior allocation. Configuration and actual external permissions must be independently reviewed before enabling paid execution. Source configuration alone does not establish provider enforcement or authorization.
+The controller binds actual workflow/source/run/attempt, native target, package format and final byte identities. It uses the policy from its reviewed `main` checkout and requires configured guards, sufficient credential-validity assertions, recent recovery health and no unresolved prior allocation. Configuration and actual external permissions must be independently reviewed before enabling paid execution. Source configuration alone does not establish provider enforcement or authorization.
 
 A nonsecret immutable intent precedes every provider write. Allocation requests are journalled before transmission and returned UUIDs recorded before another operation. A lost create response is never blindly retried. Uncertain or unavailable evidence blocks another allocation while known owned resources can still be reconciled.
 
@@ -82,7 +83,7 @@ Cloud-init copies stage errors into its result file.[^cloud-init-errors] Identic
 
 The [policy](../config/installation/scaleway.json) limits each progress record to 2 KiB, retains at most 256 events, caps the guest diagnostic summary at 16 KiB and retains at most an 8 KiB transient diagnostic stderr prefix while draining and discarding further stderr. Console output reserves space for lease-duration heartbeats and the final record; repeated observations refresh counters and timestamps without emitting duplicate events. The heartbeat thread performs no provider or guest action. Failure to persist a diagnostic cannot bypass or prevent normal cleanup. `controller-completion.json` and the nonfatal always-step summary distinguish an observed final controller record from unavailable final evidence, including abrupt process loss or a failed final write; the earlier progress snapshot remains historical. Completion persistence/summary I/O errors preserve the producer outcome, with bounded safe console metadata attempted independently. If the runner itself is lost, the always-step and artifact upload may not execute: missing completion metadata means unknown completion, and no historical heartbeat proves current liveness. Independent recovery remains responsible for owned-resource reconciliation.
 
-Changes to these policy limits alter the approved policy digest. Prepare the exact configuration plan and authorized readback before using the changed authority; a merged implementation or a passing synthetic test does not update `SCW_APPROVED_POLICY_SHA256` or authorize another paid trial.
+Changes to these policy limits take effect through a reviewed merge into `main`, with no configuration step. That merge approves the policy, not a paid run: the protected `scaleway-qualification` environment approves each run. Its approval screen does not show whether the limits changed, so policy changes are reviewed in their pull request. After a policy change, creation is refused with `recovery_configuration` until a recovery run succeeds under the changed policy. The recovery schedule normally supplies that run, and a maintainer can also dispatch it. A run dispatched before the merge keeps the policy of its own checkout until that recovery run succeeds, and is refused afterward. A passing synthetic test does not authorize another paid trial.
 
 ## Evidence and limits
 

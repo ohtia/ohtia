@@ -2,6 +2,10 @@
 type: DecisionRecord
 title: "ADR-0020 — Declared GitHub policy and restricted CI authority"
 description: "Verify CI provenance before merge, require approval for external fork workflows and separate PR execution from publication authority."
+generated:
+  by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: github
     resource: "https://docs.github.com/en/actions/reference/security/secure-use"
@@ -27,10 +31,6 @@ sources:
   - id: workflow-skips
     resource: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onpushpull_requestpull_request_targetpathspaths-ignore
     title: GitHub Actions workflow path filters
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # ADR-0020 — Declared GitHub policy and restricted CI authority
@@ -70,6 +70,8 @@ Use Actions-operated, ephemeral native Scaleway ARM guests for the Fedora and De
 Separate unsigned package construction from cloud credentials and separate creator approval from automatic recovery. The cleanup application excludes CPU creation/start and IAM administration; its required Block Storage full-access grant still permits allocation, so it is not provider-enforced delete-only. Main restrictions and source route checks supplement effective provider permissions. Store exact resource and lease limits in the [qualification policy](../../config/installation/scaleway.json), and use the [qualification contract](../scaleway-qualification.md) for native admission, uncertain-write quarantine, recovery and evidence. A separately approved paid trial follows reviewed code and actual setup readback.
 
 Use GitHub CLI `2.103.*` for fixed-repository read-only Actions metadata, with an exact version, official archive URL and SHA-256 in that policy. Python's standard library controls fixed-origin cloud requests. Keep resource inputs and intents bounded; artifact contents are data, never privileged executable recovery code. Use independent workflow concurrency, completion reconciliation, periodic recovery and an early guest shutdown timer. GitHub-only recovery cannot guarantee a hard cost ceiling during a shared service outage, and stopping compute leaves disk/IP charges. Do not expand to another cleanup provider or permanent infrastructure without a separately reviewed decision.
+
+A reviewed merge into protected `main` approves the qualification policy, and the protected creator environment approves each paid run. Consider a maintainer-copied digest of the policy in a repository variable, automated synchronization of that digest through a dedicated GitHub App, and no separate digest. A manual copy adds a deployment step to an Actions-operated process. Automated synchronization would let one merge change both the policy and its approval, so the comparison would no longer represent a separate decision, while adding a private key and an identity able to write every repository variable. Use no separate digest. No separate pause follows a merge, and the per-run approval screen does not show whether the limits changed, so policy changes are reviewed in their pull request.
 
 ### CI provenance before merge
 
