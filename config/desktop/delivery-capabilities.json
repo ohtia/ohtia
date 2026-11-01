@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "owner": "STORY-001-013",
+  "capabilities": [
+    "build",
+    "provenance",
+    "native_runtime",
+    "catalog_authentication",
+    "native_package_signing",
+    "first_installation",
+    "installed_update"
+  ],
+  "profiles": {
+    "ubuntu-deb": {
+      "os": "linux",
+      "formats": ["deb"],
+      "install": "deb",
+      "update": "deb",
+      "native_signing": "not_required"
+    },
+    "debian-deb": {
+      "os": "linux",
+      "formats": ["deb"],
+      "install": "deb",
+      "update": "deb",
+      "native_signing": "not_required"
+    },
+    "fedora-rpm": {
+      "os": "linux",
+      "formats": ["rpm"],
+      "install": "rpm",
+      "update": "rpm",
+      "native_signing": "openpgp-rpm"
+    },
+    "windows-nsis": {
+      "os": "win32",
+      "formats": ["nsis"],
+      "install": "nsis",
+      "update": "nsis",
+      "native_signing": "authenticode"
+    },
+    "macos-dmg-zip": {
+      "os": "darwin",
+      "formats": ["dmg", "zip"],
+      "install": "dmg",
+      "update": "zip",
+      "native_signing": "developer-id"
+    }
+  },
+  "scenarios": {
+    "native_runtime": ["install", "update"],
+    "first_installation": ["install"],
+    "installed_update": ["baseline", "update"],
+    "installation_recovery": ["install"],
+    "update_recovery": ["baseline", "update"],
+    "authenticity_denial": ["install"],
+    "compatibility_denial": ["baseline", "update"],
+    "stable_isolation": ["install"]
+  },
+  "capability_scenarios": {
+    "native_runtime": ["native_runtime"],
+    "first_installation": [
+      "first_installation",
+      "installation_recovery",
+      "authenticity_denial",
+      "stable_isolation"
+    ],
+    "installed_update": ["installed_update", "update_recovery", "compatibility_denial"]
+  }
+}

@@ -31,6 +31,7 @@ okf_version: "0.2"
 
 ## Desktop foundation
 
+- [Shared desktop delivery admission](delivery-admission.md) — Reconcile immutable package assignments and independently verified evidence across required native desktop cells.
 - [Scaleway qualification access preflight](scaleway-access.md) — Check protected GitHub Actions read access and ARM image compatibility without creating cloud resources or claiming native qualification.
 - [Ephemeral ARM installation qualification](scaleway-qualification.md) — Define protected authority, bounded diagnostics and recovery for unsigned native ARM qualification on ephemeral Scaleway leases.
 - [Installation facility observations](installation-facilities.md) — Observe hosted Linux VM and non-elevated-account capabilities without granting native installation or distribution qualification.

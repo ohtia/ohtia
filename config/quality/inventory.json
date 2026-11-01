@@ -64,6 +64,7 @@
   ],
   "python": [
     "scripts/tests/test_change_notes.py",
+    "scripts/tests/test_delivery_admission.py",
     "scripts/tests/test_design_assets.py",
     "scripts/tests/test_desktop_contract.py",
     "scripts/tests/test_desktop_delivery.py",
