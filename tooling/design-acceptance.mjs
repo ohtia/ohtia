@@ -6,6 +6,14 @@ const faces = JSON.parse(
   fs.readFileSync(new URL("../packages/renderer/fonts/manifest.json", import.meta.url), "utf8"),
 ).fonts;
 
+/** Compare Chromium's rounded CSS-pixel serialization without hiding layout drift. */
+export function assertTypographyScale(observed, expected) {
+  const { height, ...exact } = expected;
+  expect(observed).toMatchObject(exact);
+  expect(observed.height).toMatch(/^\d+(?:\.\d+)?px$/);
+  expect(Number.parseFloat(observed.height)).toBeCloseTo(height, 2);
+}
+
 /** Scoped checks in the real packaged renderer; these fixtures never ship. */
 export async function verifyPackagedDesign(page, cdp) {
   const previous = await page.evaluate(() =>
@@ -140,8 +148,8 @@ export async function verifyPackagedDesign(page, cdp) {
         return { name, size: style.fontSize, height: style.lineHeight, weight: style.fontWeight };
       }),
     );
-    expect(scales[0]).toMatchObject({ size: "26px", height: "34px", weight: "600" });
-    expect(scales[1]).toMatchObject({ size: "15px", height: "24px", weight: "400" });
+    assertTypographyScale(scales[0], { size: "26px", height: 34, weight: "600" });
+    assertTypographyScale(scales[1], { size: "15px", height: 24, weight: "400" });
     result.scales = scales;
     await page.emulateMedia({ reducedMotion: "reduce" });
     const presentation = await page.evaluate(() => {

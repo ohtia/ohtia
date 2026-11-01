@@ -5,6 +5,7 @@
     "tests/design-foundation.test.ts::canonical design foundations > preserves explicit theme precedence and zeroes every motion duration for reduced motion::case-0",
     "tests/design-foundation.test.ts::canonical design foundations > rejects missing aliases, duplicate definitions and canonical changes absent from generated output::case-0",
     "tests/design-foundation.test.ts::canonical design foundations > resolves every workspace alias and exports numerical metrics from canonical values::case-0",
+    "tests/design-foundation.test.ts::review regression contracts > accepts Chromium subpixel line-height serialization while rejecting real scale drift::case-0",
     "tests/design-foundation.test.ts::review regression contracts > admits the actual bundled image names while refusing traversal and executable image-directory entries::case-0",
     "tests/design-foundation.test.ts::review regression contracts > applies paragraph and quotation spacing on a passage carrying its own document role::case-0",
     "tests/design-foundation.test.ts::review regression contracts > delivers every comparison icon as controlled token-stroked geometry::case-0",
