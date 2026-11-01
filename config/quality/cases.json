@@ -1042,6 +1042,7 @@
     "test_scaleway_cycle.CycleTests.test_cloud_config_supplies_native_key_before_scaleway_refresh",
     "test_scaleway_cycle.CycleTests.test_cloud_config_supplies_node_atomic_runtime",
     "test_scaleway_cycle.CycleTests.test_creator_requires_both_expiries_with_recovery_margin",
+    "test_scaleway_cycle.CycleTests.test_debian_cloud_config_uses_concrete_time64_packages",
     "test_scaleway_cycle.CycleTests.test_deleted_volume_tombstone_is_not_an_active_allocation",
     "test_scaleway_cycle.CycleTests.test_each_allocation_has_a_prior_journal_and_its_returned_uuid",
     "test_scaleway_cycle.CycleTests.test_enablement_requires_the_exact_reviewed_policy_hash",
