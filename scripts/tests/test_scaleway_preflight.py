@@ -1051,7 +1051,9 @@ class RecoveryInteractionTests(unittest.TestCase):
         self.assertFalse(any(method != "GET" for method, _, _ in self.api.calls))
 
 
-class RehearsalTests(unittest.TestCase):
+class ControllerAdmissionTests(unittest.TestCase):
+    """The controller refuses before any provider call or SSH identity exists."""
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -1066,10 +1068,7 @@ class RehearsalTests(unittest.TestCase):
         self.gh.artifacts.return_value = [{"name": "scw-intent-101-1"}]
         self.gh.artifact.return_value = self.intent
 
-    def rehearse(self, *, published=True):
-        if not published:
-            self.gh.artifacts.return_value = []
-        output = self.root / "cycle"
+    def refused(self, code, **previous):
         with (
             patch.object(cycle, "source_context", return_value=self.identity),
             patch.object(cycle, "configuration", return_value={}),
@@ -1078,48 +1077,39 @@ class RehearsalTests(unittest.TestCase):
             patch.object(cycle, "command") as command,
             patch.object(qualification, "enabled"),
             patch.object(qualification, "key_lifetimes"),
-            patch.object(qualification, "previous") as previous,
+            patch.object(qualification, "previous", **previous) as admission,
             patch.dict(os.environ, {"RUNNER_TEMP": str(self.root), "GITHUB_STEP_SUMMARY": ""}),
             contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaisesRegex(cycle.CycleError, code),
         ):
-            try:
-                qualification.execute(self.gh, self.source, self.root, output, "before-allocation")
-            finally:
-                provider.assert_not_called()
-                command.assert_not_called()
-                self.assertFalse(list(self.root.glob("ohtia-lease-*")))
-        previous.assert_called_once()
-        return output
+            qualification.execute(self.gh, self.source, self.root, self.root / "cycle", "none")
+        admission.assert_called_once_with(self.gh, {}, current=("101", "1"), fresh=True)
+        provider.assert_not_called()
+        command.assert_not_called()
+        self.assertFalse(list(self.root.glob("ohtia-lease-*")))
+        journal = cycle.read(self.root / "cycle/journal.json")
+        self.assertEqual((journal["status"], journal["resources"]), ("not-started", {}))
 
-    def test_rehearsal_passes_every_admission_and_calls_no_provider(self):
-        output = self.rehearse()
-        journal = cycle.read(output / "journal.json")
-        self.assertEqual(journal["status"], "not-started")
-        self.assertTrue(journal["allocation_resolved"])
-        self.assertEqual(journal["resources"], {})
-        self.assertFalse(journal["native_smoke_passed"])
-        final = cycle.read(output / "controller-progress.json")
-        self.assertEqual((final["fault"], final["status"]), ("before-allocation", "succeeded"))
+    def test_a_missing_published_intent_stops_before_the_provider(self):
+        self.gh.artifacts.return_value = []
+        self.refused("published_intent_required")
 
-    def test_rehearsal_still_requires_its_published_intent(self):
-        with self.assertRaisesRegex(cycle.CycleError, "published_intent_required"):
-            self.rehearse(published=False)
+    def test_another_attempts_published_intent_stops_before_the_provider(self):
+        self.gh.artifacts.return_value = [{"name": "scw-intent-101-2"}]
+        self.refused("published_intent_required")
 
-    def test_rehearsal_completion_is_recorded_with_its_fault(self):
-        output = self.rehearse()
-        with (
-            contextlib.redirect_stdout(io.StringIO()),
-            patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": ""}),
-        ):
-            result = progress.completion(
-                output, self.identity, self.intent["profile"], "before-allocation", "success"
-            )
-        self.assertEqual((result["status"], result["controller_result"]), ("observed", "succeeded"))
+    def test_a_duplicate_published_intent_stops_before_the_provider(self):
+        self.gh.artifacts.return_value = [{"name": "scw-intent-101-1"}] * 2
+        self.refused("published_intent_required")
 
-    def test_unknown_fault_is_refused(self):
-        self.assertNotIn("skip-admission", cycle.FAULTS)
-        with self.assertRaisesRegex(cycle.CycleError, "progress_identity"):
-            progress.Progress(self.root, self.identity, self.intent["profile"], "skip-admission")
+    def test_a_published_intent_that_differs_stops_before_the_provider(self):
+        self.gh.artifact.return_value = {**self.intent, "nonce": "different"}
+        self.refused("published_intent_required")
+
+    def test_refused_recovery_admission_stops_before_the_provider(self):
+        self.refused(
+            "fresh_recovery_required", side_effect=cycle.CycleError("fresh_recovery_required")
+        )
 
 
 class CommandTests(unittest.TestCase):
@@ -1146,6 +1136,14 @@ class CommandTests(unittest.TestCase):
                     self.invoke("ensure-recovery", "--cli", str(self.executable), *extra), 0
                 )
                 self.assertEqual(ensure.call_args.kwargs, {"dispatch": expected})
+
+    def test_a_fault_outside_the_list_is_refused(self):
+        _, intent = fixtures()
+        self.assertEqual(cycle.FAULTS, ("none", "after-native-smoke"))
+        with self.assertRaisesRegex(cycle.CycleError, "progress_identity"):
+            progress.Progress(
+                self.executable.parent, intent["identity"], intent["profile"], "before-allocation"
+            )
 
     def test_other_operations_still_require_their_output(self):
         with self.assertRaises(SystemExit) as caught:
@@ -1315,7 +1313,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("vars.SCW_RECOVERY_ENABLED == 'true'", recover)
         self.assertNotIn("vars.SCW_CYCLE_ENABLED ==", recover)
 
-    def test_rehearsal_input_and_fault_list_match(self):
+    def test_workflow_fault_options_match_the_controller(self):
         self.assertIn(f"options: [{', '.join(cycle.FAULTS)}]", self.qualification)
 
 
