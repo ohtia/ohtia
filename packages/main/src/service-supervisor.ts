@@ -398,7 +398,8 @@ export class ServiceSupervisor {
         kind: "result",
         payload: failure(
           work.request.operation === "appearance.replace" ||
-            work.request.operation === "locale.replace"
+            work.request.operation === "locale.replace" ||
+            work.request.operation === "layout.replace"
             ? "uncertain"
             : "service_unavailable",
         ),

@@ -134,7 +134,7 @@ async function run() {
       await store.close();
       const db = raw(root);
       db.exec(
-        "DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'",
+        "DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'",
       );
       db.pragma("user_version=1");
       db.close();
@@ -232,7 +232,7 @@ async function run() {
       await store.close();
       const db = raw(root);
       db.exec(
-        "DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'",
+        "DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'",
       );
       db.pragma("user_version=2");
       db.close();
@@ -303,7 +303,7 @@ async function run() {
       await store.close();
       const db = raw(root);
       db.exec(
-        "DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'; UPDATE application_preferences SET value='{\"max_concurrent_inference\":4,\"max_concurrent_local_processing\":2}' WHERE key='execution_limits'",
+        "DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'; UPDATE application_preferences SET value='{\"max_concurrent_inference\":4,\"max_concurrent_local_processing\":2}' WHERE key='execution_limits'",
       );
       db.pragma("user_version=1");
       db.close();
@@ -348,7 +348,7 @@ async function run() {
           db.exec(
             "UPDATE application_preferences SET schema_version=2 WHERE key='execution_limits'",
           );
-        if (invalid === "newer") db.pragma("user_version=4");
+        if (invalid === "newer") db.pragma(`user_version=${schemaRevision + 1}`);
         if (invalid === "artifacts")
           db.exec("UPDATE ohtia_migration_artifacts SET sha256='" + "a".repeat(64) + "'");
         if (invalid === "history-column")
@@ -626,7 +626,7 @@ async function run() {
       const oldDigest = sha256(oldCheckpoint);
       const db = raw(root);
       db.exec(
-        "DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'",
+        "DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'",
       );
       db.pragma("user_version=1");
       db.close();

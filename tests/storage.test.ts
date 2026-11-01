@@ -6,6 +6,8 @@ import { createRequire } from "node:module";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Migrator } from "../packages/utility/node_modules/kysely/dist/migration/index.js";
 import { Kysely } from "../packages/utility/node_modules/kysely/dist/index.js";
+import { failure } from "../packages/contracts/src/index.js";
+import { defaultWorkspaceLayout } from "../packages/renderer/src/workspace-geometry.js";
 import { request } from "./fixtures/port-corpus.js";
 import {
   createStatusService,
@@ -113,13 +115,13 @@ describe("durable preference and migration recovery", () => {
     await store.close();
     expectClosed();
     const newer = raw();
-    newer.pragma("user_version=4");
+    newer.pragma("user_version=5");
     newer.close();
     close.mockClear();
     await expect(store.open()).rejects.toThrow(/Unsupported/);
     expectClosed();
     const current = raw();
-    current.pragma("user_version=3");
+    current.pragma("user_version=4");
     current.close();
     close.mockClear();
     await store.open();
@@ -449,7 +451,7 @@ describe("durable preference and migration recovery", () => {
     await store.close();
     const db = raw();
     db.exec(
-      "DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'; UPDATE application_preferences SET value='{\"max_concurrent_inference\":4,\"max_concurrent_local_processing\":2}' WHERE key='execution_limits'",
+      "DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'; UPDATE application_preferences SET value='{\"max_concurrent_inference\":4,\"max_concurrent_local_processing\":2}' WHERE key='execution_limits'",
     );
     db.pragma("user_version=1");
     db.close();
@@ -570,12 +572,12 @@ describe("durable preference and migration recovery", () => {
     await store.open();
     await store.close();
     const db = raw();
-    db.pragma("user_version=4");
+    db.pragma("user_version=5");
     db.close();
     await expect(store.open()).rejects.toThrow(/Unsupported/);
     expect(checkpoints(root)).toHaveLength(1);
     const again = raw();
-    again.pragma("user_version=3");
+    again.pragma("user_version=4");
     again.exec("UPDATE ohtia_migration_artifacts SET sha256='" + "a".repeat(64) + "'");
     again.close();
     await expect(store.open()).rejects.toThrow(/identity/);
@@ -974,7 +976,7 @@ it("upgrades a populated revision-two store while preserving appearance receipts
   await store.close();
   const db = raw();
   db.exec(
-    "DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; INSERT INTO application_preferences VALUES ('interface_locale',1,7,'\"ko-KR\"')",
+    "DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; INSERT INTO application_preferences VALUES ('interface_locale',1,7,'\"ko-KR\"')",
   );
   db.pragma("user_version=2");
   db.close();
@@ -1088,4 +1090,277 @@ describe("real commit uncertainty composed with global locale publication", () =
       peer.dispose();
     },
   );
+});
+
+describe("file-backed workspace preferences", () => {
+  it("commits exact layout and receipt once, survives restart and preserves unrelated records", async () => {
+    const { store, raw } = fixture();
+    await store.open();
+    expect(await store.readLayout()).toEqual({
+      ok: true,
+      value: { schemaVersion: 1, revision: 0, source: "default", value: null },
+    });
+    await store.replaceAppearance({ operationId: "theme", expectedRevision: 0, value: "dark" });
+    const value = defaultWorkspaceLayout(1440);
+    const command = { operationId: "layout-1", expectedRevision: 0, value };
+    const first = await store.replaceLayout(command);
+    expect(first).toMatchObject({ ok: true, value: { revision: 1, value } });
+    expect(await store.replaceLayout(command)).toEqual(first);
+    expect(
+      await store.replaceLayout({
+        ...command,
+        value: { ...value, visible: { explorer: true, documents: false, chat: true } },
+      }),
+    ).toEqual(failure("operation_conflict"));
+    expect(await store.replaceLayout({ ...command, operationId: "stale" })).toMatchObject({
+      ok: false,
+      error: { code: "stale_revision", parameters: { currentRevision: 1 } },
+    });
+    await store.close();
+    await store.open();
+    expect(await store.readLayoutReceipt("layout-1")).toEqual({
+      ok: true,
+      value: { state: "recorded", outcome: first },
+    });
+    expect(await store.readLayoutReceipt("unknown")).toEqual({
+      ok: true,
+      value: { state: "not_found" },
+    });
+    expect(await store.readLayoutReceipt("!bad")).toEqual(failure("invalid_message"));
+    expect(await store.readAppearance()).toMatchObject({
+      ok: true,
+      value: { value: "dark", revision: 1 },
+    });
+    const db = raw();
+    expect(db.prepare("SELECT count(*) FROM application_preferences").pluck().get()).toBe(3);
+    db.close();
+  });
+  it("uses corrupt and unsupported layout fallbacks without rewriting evidence or disabling research storage", async () => {
+    const { store, raw } = fixture();
+    await store.open();
+    const db = raw();
+    for (const value of [
+      "{",
+      JSON.stringify({
+        ...defaultWorkspaceLayout(1280),
+        visible: { explorer: false, documents: false, chat: false },
+      }),
+      JSON.stringify({ private: "must stay local" }),
+    ]) {
+      db.prepare(
+        "INSERT OR REPLACE INTO application_preferences VALUES ('workspace_layout',1,7,?)",
+      ).run(value);
+      expect(await store.readLayout()).toMatchObject({
+        ok: true,
+        value: { revision: 7, source: "invalid_fallback", value: null },
+      });
+      expect(store.ready).toBe(true);
+      expect(
+        db
+          .prepare("SELECT value FROM application_preferences WHERE key='workspace_layout'")
+          .pluck()
+          .get(),
+      ).toBe(value);
+    }
+    db.prepare(
+      "UPDATE application_preferences SET schema_version=2,value=? WHERE key='workspace_layout'",
+    ).run(JSON.stringify(defaultWorkspaceLayout(1280)));
+    expect(await store.readLayout()).toMatchObject({
+      ok: true,
+      value: { source: "invalid_fallback" },
+    });
+    db.close();
+    expect(
+      await store.replaceLayout({
+        operationId: "repair",
+        expectedRevision: 7,
+        value: defaultWorkspaceLayout(1280),
+      }),
+    ).toMatchObject({ ok: true, value: { revision: 8 } });
+  });
+  it("rolls back denied writes and retains admission after a layout-only read failure", async () => {
+    const { store, raw } = fixture();
+    await store.open();
+    const db = raw();
+    db.exec("BEGIN EXCLUSIVE");
+    expect(await store.readLayout()).toEqual(failure("storage_failed"));
+    expect(store.ready).toBe(true);
+    expect(
+      await store.replaceLayout({
+        operationId: "blocked",
+        expectedRevision: 0,
+        value: defaultWorkspaceLayout(1280),
+      }),
+    ).toEqual(failure("storage_failed"));
+    db.exec("ROLLBACK");
+    db.close();
+    expect(await store.readLayoutReceipt("blocked")).toMatchObject({
+      ok: true,
+      value: { state: "not_found" },
+    });
+    expect(
+      await store.replaceLayout({
+        operationId: "explicit-new",
+        expectedRevision: 0,
+        value: defaultWorkspaceLayout(1280),
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      await store.replaceLayout({
+        operationId: "private",
+        expectedRevision: 1,
+        value: { ...defaultWorkspaceLayout(1280), path: "private" },
+      } as never),
+    ).toEqual(failure("invalid_message"));
+    await store.close();
+    expect(await store.readLayout()).toEqual(failure("service_unavailable"));
+    expect(await store.readLayoutReceipt("op")).toEqual(failure("service_unavailable"));
+    expect(
+      await store.replaceLayout({
+        operationId: "op",
+        expectedRevision: 1,
+        value: defaultWorkspaceLayout(1280),
+      }),
+    ).toEqual(failure("service_unavailable"));
+  });
+  it("serializes complete records through the real service and retains stale-window conflict receipts", async () => {
+    const { store } = fixture();
+    await store.open();
+    const output: any[] = [];
+    const service = createStatusService(
+      "service-1",
+      "en-US",
+      (text) => output.push(JSON.parse(text)),
+      store,
+    );
+    service.activate("en-US");
+    const send = (
+      operation: string,
+      payload: any,
+      operationId: string,
+      windowGeneration = "window-1",
+    ) =>
+      service.receive(
+        JSON.stringify(
+          request({
+            operation,
+            payload,
+            operationId,
+            requestId: operationId,
+            windowGeneration,
+          } as never),
+        ),
+      );
+    send("layout.replace", { expectedRevision: 0, value: defaultWorkspaceLayout(1440) }, "first");
+    send(
+      "layout.replace",
+      { expectedRevision: 0, value: defaultWorkspaceLayout(1280) },
+      "second",
+      "window-2",
+    );
+    await service.drain();
+    expect(output[0].payload).toMatchObject({ ok: true, value: { revision: 1 } });
+    expect(output[1].payload).toMatchObject({ ok: false, error: { code: "stale_revision" } });
+    send("layout.read", {}, "later", "window-3");
+    send("layout.receipt", { targetOperationId: "second" }, "receipt", "window-2");
+    await service.drain();
+    expect(output[2].payload).toMatchObject({
+      ok: true,
+      value: { value: defaultWorkspaceLayout(1440) },
+    });
+    expect(output[3].payload).toMatchObject({
+      ok: true,
+      value: { state: "recorded", outcome: { ok: false } },
+    });
+    service.dispose();
+  });
+});
+
+describe("layout migration and uncertain commit boundary", () => {
+  it("upgrades revision three with a verified checkpoint and preserves its existing layout, locale and appearance receipts", async () => {
+    const { store, raw, root } = fixture();
+    await store.open();
+    await store.replaceAppearance({
+      operationId: "before-layout-migration",
+      expectedRevision: 0,
+      value: "dark",
+    });
+    const locale = await store.replaceLocale({
+      operationId: "locale-before-layout",
+      expectedRevision: 0,
+      value: "ko-KR",
+    });
+    await store.close();
+    const db = raw();
+    db.exec(
+      "DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; PRAGMA user_version=3",
+    );
+    const value = defaultWorkspaceLayout(1440);
+    db.prepare("INSERT INTO application_preferences VALUES ('workspace_layout',1,8,?)").run(
+      JSON.stringify(value),
+    );
+    db.close();
+    await store.open();
+    expect(await store.readLayout()).toMatchObject({ ok: true, value: { revision: 8, value } });
+    expect(await store.readReceipt("before-layout-migration")).toMatchObject({
+      ok: true,
+      value: { state: "recorded" },
+    });
+    expect(await store.readLocale()).toEqual(locale);
+    expect(await store.readLocaleReceipt("locale-before-layout")).toEqual({
+      ok: true,
+      value: { state: "recorded", outcome: locale },
+    });
+    const entries = checkpoints(root).map((name) =>
+      JSON.parse(
+        fs.readFileSync(path.join(root, "recovery/migrations", name, "manifest.json"), "utf8"),
+      ),
+    );
+    expect(entries).toContainEqual(
+      expect.objectContaining({ sourceRevision: 3, targetRevision: 4 }),
+    );
+  });
+  it("rolls back both rows before commit and reconciles a lost acknowledgement after a real commit", async () => {
+    const { store } = fixture();
+    await store.open();
+    const original = Database.prototype.prepare;
+    let phase = "before";
+    const spy = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+      text,
+      ...args
+    ) {
+      if (phase === "before" && String(text).startsWith('insert into "layout_receipts"'))
+        throw new Error("Injected receipt failure");
+      const statement = original.call(this, text, ...args);
+      if (phase === "after" && String(text) === "COMMIT") {
+        const run = statement.run.bind(statement);
+        statement.run = (...parameters: any[]) => {
+          run(...parameters);
+          throw new Error("Lost commit acknowledgement");
+        };
+      }
+      return statement;
+    });
+    const command = {
+      operationId: "uncertain-layout",
+      expectedRevision: 0,
+      value: defaultWorkspaceLayout(1280),
+    };
+    expect(await store.replaceLayout({ ...command, operationId: "failed-before" })).toEqual(
+      failure("storage_failed"),
+    );
+    expect(await store.readLayout()).toMatchObject({ ok: true, value: { source: "default" } });
+    expect(await store.readLayoutReceipt("failed-before")).toMatchObject({
+      ok: true,
+      value: { state: "not_found" },
+    });
+    phase = "after";
+    expect(await store.replaceLayout(command)).toEqual(failure("uncertain"));
+    spy.mockRestore();
+    expect(await store.readLayoutReceipt(command.operationId)).toMatchObject({
+      ok: true,
+      value: { state: "recorded", outcome: { ok: true, value: { revision: 1 } } },
+    });
+    expect(await store.replaceLayout(command)).toMatchObject({ ok: true, value: { revision: 1 } });
+  });
 });

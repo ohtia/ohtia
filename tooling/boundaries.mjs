@@ -100,6 +100,7 @@ export function inspectWorkspace(root) {
             "migrations/0001_initial.mjs",
             "migrations/0002_receipts.mjs",
             "migrations/0003_locale_receipts.mjs",
+            "migrations/0004_layout_receipts.mjs",
           ].includes(file.replaceAll(path.sep, "/"))
         )
       )

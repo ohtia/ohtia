@@ -19,6 +19,7 @@
     "tests/storage.test.ts",
     "tests/update-admission.test.ts",
     "tests/utility-entry.test.ts",
+    "tests/workspace-layout.test.ts",
     "tests/workspace.test.ts"
   ],
   "playwright": ["tests/quality/runner.spec.ts"],
