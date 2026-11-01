@@ -655,6 +655,19 @@ class CycleTests(unittest.TestCase):
                 )
                 self.assertIn(package, value["packages"])
 
+    def test_debian_cloud_config_uses_concrete_time64_packages(self):
+        _, intent = fixtures("debian-13")
+        resources = {kind: str(uuid.uuid4()) for kind in cycle.KINDS}
+        value = json.loads(
+            qualification.cloud_config(intent, resources, self.key).decode().split("\n", 1)[1]
+        )
+        # Cloud-init checks real APT names before installation; aliases can fail
+        # even when GNOME installs the concrete dependency transitively.
+        for package in ("libgtk-3-0", "libasound2", "libatspi2.0-0"):
+            with self.subTest(package=package):
+                self.assertIn(package + "t64", value["packages"])
+                self.assertNotIn(package, value["packages"])
+
     def test_ssh_never_accepts_unknown_keys_or_forwards_agents(self):
         values = qualification.ssh_options(Path("/tmp/key"), Path("/tmp/known"))
         self.assertIn("StrictHostKeyChecking=yes", values)
