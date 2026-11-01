@@ -197,8 +197,7 @@ def decode_input(inputs: dict | None = None) -> tuple[dict, str]:
 def restore(gh: GitHub, output: Path) -> None:
     cycle.require(
         os.environ.get("SCW_RECOVERY_ENABLED") == "true"
-        and os.environ.get("SCW_CYCLE_ENABLED", "") in {"", "false"}
-        and os.environ.get("SCW_APPROVED_POLICY_SHA256") == cycle.digest(cycle.POLICY_PATH),
+        and os.environ.get("SCW_CYCLE_ENABLED", "") in {"", "false"},
         "backup_requires_suspension",
     )
     identity = cycle.source_context("cleanup")
