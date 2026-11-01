@@ -13,6 +13,7 @@ import io
 import json
 import lzma
 import os
+import stat
 import subprocess
 import sys
 import tarfile
@@ -22,7 +23,7 @@ import unittest
 import uuid
 import zipfile
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 from urllib.parse import parse_qs, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -490,6 +491,131 @@ class CycleTests(unittest.TestCase):
         self.assertEqual(guard["resources"], resources)
         self.assertEqual(guard["home_bytes"], 10_000_000_000)
         self.assertNotIn("SCW_SECRET_KEY", json.dumps(value))
+
+    def test_cloud_config_expiry_units_do_not_wait_for_system_initialization(self):
+        resources = {kind: str(uuid.uuid4()) for kind in cycle.KINDS}
+        for profile in cycle.policy()["profiles"]:
+            with self.subTest(profile=profile):
+                _, intent = fixtures(profile)
+                value = json.loads(
+                    qualification.cloud_config(intent, resources, self.key)
+                    .decode()
+                    .split("\n", 1)[1]
+                )
+                self.assertEqual(len(value["bootcmd"]), 1)
+                command = value["bootcmd"][0]
+                self.assertEqual(command[0], "systemd-run")
+                self.assertIn("--unit=ohtia-lease-expiry", command)
+                self.assertIn(
+                    f"--on-active={cycle.policy()['limits']['guest_shutdown_seconds']}s", command
+                )
+                self.assertEqual(command[-2:], ["/usr/bin/systemctl", "poweroff"])
+                for prefix in ("--timer-property=", "--property="):
+                    properties = {
+                        argument.removeprefix(prefix).split("=", 1)[0]: argument.removeprefix(
+                            prefix
+                        ).split("=", 1)[1]
+                        for argument in command
+                        if argument.startswith(prefix)
+                    }
+                    self.assertEqual(properties.get("DefaultDependencies"), "no")
+                    self.assertEqual(properties.get("Conflicts"), "shutdown.target")
+                    self.assertEqual(properties.get("Before"), "shutdown.target")
+                    self.assertNotIn("After", properties)
+                    self.assertNotIn("Requires", properties)
+                self.assertNotIn(command, value["runcmd"])
+
+    def test_bootstrap_requires_active_expiry_before_publishing_readiness(self):
+        resources = {kind: str(uuid.uuid4()) for kind in cycle.KINDS}
+        devices = [
+            {
+                "path": "/dev/synthetic-home",
+                "serial": "volume-" + resources["home"],
+                "type": "disk",
+                "size": cycle.policy()["storage"]["home_bytes"],
+            },
+            {"path": "/dev/synthetic-root", "serial": "volume-" + resources["root"]},
+        ]
+        for state in ("active", "reloading", "inactive", "failed", "command-failed"):
+            with self.subTest(state=state):
+                guard = MagicMock()
+                guard.lstat.return_value = Mock(
+                    st_mode=stat.S_IFREG | 0o644,
+                    st_uid=0,
+                    st_nlink=1,
+                    st_size=1024,
+                )
+                guard.read_bytes.return_value = json.dumps(
+                    {
+                        "intent": self.intent,
+                        "resources": resources,
+                        "home_bytes": cycle.policy()["storage"]["home_bytes"],
+                    }
+                ).encode()
+
+                def run(*args):
+                    if args[0] == "id":
+                        return "ohtia-quality"
+                    if args[0] == "lsblk":
+                        return json.dumps({"blockdevices": devices})
+                    if args[0] == "findmnt":
+                        return "/dev/synthetic-root-partition"
+                    if args[0] == "getenforce":
+                        return "Enforcing"
+                    if args[:2] == ("systemctl", "is-active"):
+                        if state in {"inactive", "failed", "command-failed"}:
+                            raise subprocess.CalledProcessError(
+                                1 if state == "command-failed" else 3, args
+                            )
+                        return state
+                    return ""
+
+                with (
+                    patch.object(bootstrap, "GUARD", guard),
+                    patch.object(bootstrap.os, "getuid", return_value=0, create=True),
+                    patch.object(bootstrap.platform, "machine", return_value="aarch64"),
+                    patch.dict(
+                        sys.modules,
+                        {
+                            "pwd": Mock(
+                                getpwnam=Mock(
+                                    return_value=Mock(
+                                        pw_uid=1001, pw_gid=1001, pw_dir="/home/ohtia-quality"
+                                    )
+                                )
+                            )
+                        },
+                    ),
+                    patch.object(bootstrap, "run", side_effect=run),
+                    patch.object(bootstrap.os, "chown", create=True),
+                    patch.object(bootstrap.Path, "chmod"),
+                    patch.object(bootstrap.Path, "is_symlink", return_value=False),
+                    patch.object(bootstrap.Path, "touch") as ready,
+                    patch.object(bootstrap.os, "replace") as publish,
+                    patch.object(bootstrap.shutil, "which", return_value="/synthetic/command"),
+                ):
+                    if state == "active":
+                        bootstrap.prepare()
+                        publish.assert_called_once_with(guard.with_suffix.return_value, guard)
+                        ready.assert_called_once_with(exist_ok=False)
+                    else:
+                        error = (
+                            subprocess.CalledProcessError
+                            if state in {"inactive", "failed", "command-failed"}
+                            else ValueError
+                        )
+                        with self.assertRaises(error) as failure:
+                            bootstrap.prepare()
+                        if state == "reloading":
+                            self.assertEqual(str(failure.exception), "guest_expiry_not_armed")
+                        else:
+                            self.assertEqual(
+                                failure.exception.returncode,
+                                1 if state == "command-failed" else 3,
+                            )
+                        guard.with_suffix.assert_not_called()
+                        publish.assert_not_called()
+                        ready.assert_not_called()
 
     def test_cloud_config_supplies_native_key_before_scaleway_refresh(self):
         public_key = self.key + " ohtia-qualification\n"

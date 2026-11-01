@@ -188,6 +188,13 @@ def cloud_config(intent: dict, resources: dict, public_key: str) -> bytes:
             [
                 "systemd-run",
                 "--unit=ohtia-lease-expiry",
+                # Both units must work while cloud-init still blocks sysinit.target.
+                "--timer-property=DefaultDependencies=no",
+                "--timer-property=Conflicts=shutdown.target",
+                "--timer-property=Before=shutdown.target",
+                "--property=DefaultDependencies=no",
+                "--property=Conflicts=shutdown.target",
+                "--property=Before=shutdown.target",
                 f"--on-active={policy['limits']['guest_shutdown_seconds']}s",
                 "/usr/bin/systemctl",
                 "poweroff",
