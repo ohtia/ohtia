@@ -142,7 +142,7 @@ def cloud_config(intent: dict, resources: dict, public_key: str) -> bytes:
             "libxtst6",
             "libsecret-1-0",
             "libnotify4",
-            "libatspi2.0-0",
+            "libatspi2.0-0t64",
             "apparmor",
             "apparmor-utils",
             "iproute2",
