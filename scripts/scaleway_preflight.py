@@ -144,6 +144,11 @@ def request_recovery(gh: GitHub, runs: list, sent: dict, report: Report, reason:
         latest = max(decided or answered, key=lambda row: row["id"])
         report.note("observed", reason, recovery_run=str(latest["id"]))
         cycle.require(latest["conclusion"] not in FAILED_CONCLUSIONS, "recovery_run_failed")
+        # GitHub's success-filtered listing shows a finished run seconds after the run reports it.
+        if latest["conclusion"] == "success":
+            seen = sent["settled"].setdefault(latest["id"], time.monotonic())
+            if time.monotonic() - seen < limits["recovery_dispatch_visibility_seconds"]:
+                return
     elif (
         sent["requests"]
         and time.monotonic() - sent["at"] < limits["recovery_dispatch_visibility_seconds"]
@@ -177,7 +182,7 @@ def noted(report: Report, state: dict) -> dict:
 def requester(gh: GitHub, settings: dict, current: tuple[str, str], report: Report):
     """Reuse recent evidence, await unfinished recovery or request a new run."""
     maximum_age = cycle.policy()["limits"]["recovery_reuse_seconds"]
-    sent = {"requests": 0, "baseline": 0, "at": 0.0, "awaited": set()}
+    sent = {"requests": 0, "baseline": 0, "at": 0.0, "awaited": set(), "settled": {}}
     state = None
 
     def step() -> dict | None:
