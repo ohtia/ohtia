@@ -2,11 +2,10 @@
 type: Reference
 title: Ephemeral ARM installation qualification
 description: Define protected authority, bounded diagnostics and recovery for unsigned native ARM qualification on ephemeral Scaleway leases.
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
+  - id: cloud-init-errors
+    resource: https://github.com/canonical/cloud-init/blob/25.1.4/cloudinit/cmd/main.py
+    title: Cloud-init stage and result error serialization
   - id: devices
     resource: https://www.scaleway.com/en/docs/instances/reference-content/identify-devices/
     title: Scaleway device identity
@@ -77,6 +76,10 @@ After host-key admission, a fixed shell probe checks authenticated remote execut
 
 `controller-progress.json` retains the latest snapshot; `controller-events.json` retains bounded event history; `bootstrap-transport.json` preserves attempt counts and the last bootstrap transport failure independently of later collection failures. `guest-bootstrap-diagnostics.json` records a validated summary of readiness, helper failure and selected cloud-init unit states, or an explicit unavailable or invalid result. Failed and timed-out diagnostic commands identify their fixed collection stage without attributing the cause to SSH transport or to the helper. The fixed unit set includes the legacy `cloud-init.service` and its upstream replacement `cloud-init-network.service`; distribution packaging may differ.[^cloud-init-units] A unit without `LoadState=loaded` is unavailable, independently of its reported active state.[^systemd-unit-state] Invalid or missing diagnostics cannot authorize allocation or qualify a native result. Diagnostic collection preserves the primary failure and uses the existing evidence/cleanup windows; it does not extend the test, cleanup, shutdown or lease deadline.
 
+The guest diagnostic summary also includes `cloud_init`, containing fixed `status` and `result` source states, at most eight error observations and a truncation flag. Each fixed source is read as a regular file with a 64 KiB bound, following symlinks when present; missing or unreadable data is `unavailable`, malformed data is `invalid` and excessive data is `oversized`. Observations retain the stage, recognized built-in module and exception, a normalized error category, and available recognized program and exit code. Module names with hyphens normalize to underscores. Unknown identifiers are null and unrecognized errors remain `unclassified`; exception representations longer than 8 KiB also set truncation. No exception text, command arguments, paths, user-data or logs are exported. These observations describe reported errors rather than proving their underlying cause. Polling preserves refusal on source I/O or decoder recursion failure. Diagnostic collection marks such a read failure as failed, preserves any existing helper failure, and continues collecting the other source and unit states; the aggregate counter includes only readable sources.
+
+Cloud-init copies stage errors into its result file.[^cloud-init-errors] Identical records copied between these sources appear once in the bounded observation list; identical errors in separate stage lists retain those list names. The `stage` field identifies the list containing the error, not its proven origin or a separate occurrence: cloud-init can copy an early error into stage lists that have not run.[^cloud-init-errors] Result-only errors have a null stage. The existing `cloud_init_error_count` remains an aggregate of both files and may count one failure twice; it is not a count of distinct failures. Source availability and truncation remain explicit, and neither diagnostic normalization nor an already-created readiness marker waives a reported cloud-init failure.
+
 The [policy](../config/installation/scaleway.json) limits each progress record to 2 KiB, retains at most 256 events, caps the guest diagnostic summary at 16 KiB and retains at most an 8 KiB transient diagnostic stderr prefix while draining and discarding further stderr. Console output reserves space for lease-duration heartbeats and the final record; repeated observations refresh counters and timestamps without emitting duplicate events. The heartbeat thread performs no provider or guest action. Failure to persist a diagnostic cannot bypass or prevent normal cleanup. `controller-completion.json` and the nonfatal always-step summary distinguish an observed final controller record from unavailable final evidence, including abrupt process loss or a failed final write; the earlier progress snapshot remains historical. Completion persistence/summary I/O errors preserve the producer outcome, with bounded safe console metadata attempted independently. If the runner itself is lost, the always-step and artifact upload may not execute: missing completion metadata means unknown completion, and no historical heartbeat proves current liveness. Independent recovery remains responsible for owned-resource reconciliation.
 
 Changes to these policy limits alter the approved policy digest. Prepare the exact configuration plan and authorized readback before using the changed authority; a merged implementation or a passing synthetic test does not update `SCW_APPROVED_POLICY_SHA256` or authorize another paid trial.
@@ -98,3 +101,5 @@ Headless GNOME/Wayland and software rendering establish their observed native se
 [^cloud-init-units]: Cloud-init documents the upstream network-stage unit rename and warns that distributions may patch breaking changes.
 
 [^systemd-unit-state]: Systemd documents load state separately from active state; an active-state value alone does not establish loaded configuration.
+
+[^cloud-init-errors]: Cloud-init serializes stage errors into `status.json` and aggregates them again into `result.json` at the final stage.

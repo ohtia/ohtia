@@ -10,6 +10,7 @@ import threading
 import time
 from pathlib import Path
 
+import scaleway_bootstrap as bootstrap
 import scaleway_cycle as cycle
 
 PHASES = frozenset(
@@ -457,6 +458,50 @@ def readiness(data: bytes) -> dict:
     return value
 
 
+def cloud_diagnostic(value: dict) -> None:
+    """Reject arbitrary text or extensions in public cloud-init evidence."""
+    valid = (
+        isinstance(value, dict)
+        and set(value) == {"sources", "errors", "truncated"}
+        and isinstance(value["sources"], dict)
+        and set(value["sources"]) == {"status", "result"}
+        and all(
+            isinstance(state, str) and state in bootstrap.CLOUD_SOURCE_STATES
+            for state in value["sources"].values()
+        )
+        and type(value["truncated"]) is bool
+        and isinstance(value["errors"], list)
+        and len(value["errors"]) <= bootstrap.CLOUD_ERROR_LIMIT
+    )
+    cycle.require(valid, "guest_diagnostic_shape")
+    for error in value["errors"]:
+        cycle.require(
+            isinstance(error, dict)
+            and set(error) == {"stage", "module", "exception", "error", "program", "exit_code"},
+            "guest_diagnostic_shape",
+        )
+        for field, allowed in (
+            ("stage", bootstrap.CLOUD_STAGES),
+            ("module", bootstrap.CLOUD_MODULES),
+            ("exception", bootstrap.CLOUD_EXCEPTIONS),
+            ("program", bootstrap.CLOUD_PROGRAMS),
+        ):
+            cycle.require(
+                error[field] is None or isinstance(error[field], str) and error[field] in allowed,
+                "guest_diagnostic_shape",
+            )
+        cycle.require(
+            isinstance(error["error"], str) and error["error"] in bootstrap.CLOUD_ERRORS,
+            "guest_diagnostic_shape",
+        )
+        cycle.require(
+            error["exit_code"] is None
+            or type(error["exit_code"]) is int
+            and -255 <= error["exit_code"] <= 255,
+            "guest_diagnostic_shape",
+        )
+
+
 def guest_diagnostic(data: bytes) -> dict:
     value = cycle.decode(data, cycle.policy()["limits"]["guest_diagnostic_bytes"])
     cycle.require(
@@ -469,6 +514,7 @@ def guest_diagnostic(data: bytes) -> dict:
             "program",
             "exit_code",
             "cloud_init_error_count",
+            "cloud_init",
             "units",
         },
         "guest_diagnostic_shape",
@@ -516,6 +562,7 @@ def guest_diagnostic(data: bytes) -> dict:
         and all(state in UNIT_STATES for state in value["units"].values()),
         "guest_diagnostic_shape",
     )
+    cloud_diagnostic(value["cloud_init"])
     return value
 
 
