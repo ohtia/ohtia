@@ -13,6 +13,7 @@ import io
 import json
 import lzma
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -2411,6 +2412,36 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(cycle.read(output / "guest-failure.json")["phase"], "bootstrap")
         self.assertFalse(any(call.args[0][0] == "scp" for call in called.call_args_list))
         sleeping.assert_not_called()
+
+
+class HarnessTests(unittest.TestCase):
+    def test_every_module_the_packaged_suites_import_reaches_the_guest(self):
+        root = Path(build.__file__).resolve().parents[1]
+        pattern = re.compile(
+            r"""(?:\bfrom\s+|\bimport\s*\(\s*|\bimport\s+)["'](\.{1,2}/[^"']+)["']"""
+        )
+        pending = [
+            root / "tooling" / name
+            for name in (
+                "desktop-acceptance.mjs",
+                "storage-acceptance.mjs",
+                "diagnostic-acceptance.mjs",
+            )
+        ]
+        visited: set[Path] = set()
+        while pending:
+            file = pending.pop()
+            if file in visited or not file.is_file():
+                continue
+            visited.add(file)
+            for specifier in pattern.findall(file.read_text(encoding="utf-8")):
+                target = (file.parent / specifier).resolve()
+                relative = target.relative_to(root)
+                with self.subTest(importer=file.name, module=relative.as_posix()):
+                    self.assertTrue(build.included(relative))
+                if target.suffix in {".mjs", ".js", ".cjs"}:
+                    pending.append(target)
+        self.assertGreater(len(visited), 3)
 
 
 class ArtifactTests(unittest.TestCase):

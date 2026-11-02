@@ -1530,6 +1530,7 @@
     "test_scaleway_cycle.EvidenceTests.test_observation_archive_cannot_expand_beyond_its_bound",
     "test_scaleway_cycle.EvidenceTests.test_real_display_environment_is_admitted_without_signing_credentials",
     "test_scaleway_cycle.EvidenceTests.test_unreadable_result_does_not_discard_live_reports_or_log",
+    "test_scaleway_cycle.HarnessTests.test_every_module_the_packaged_suites_import_reaches_the_guest",
     "test_scaleway_cycle.LedgerTests.test_cancelled_step_remains_uncertain_while_skipped_or_queued_does_not",
     "test_scaleway_cycle.LedgerTests.test_carried_absence_survives_original_intent_artifact_expiry",
     "test_scaleway_cycle.LedgerTests.test_disabled_creation_workflow_remains_readable_to_recovery",
