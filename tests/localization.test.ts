@@ -24,7 +24,7 @@ import {
   type PortCall,
   type LocaleChange,
 } from "@ohtia/contracts";
-import { pseudolocalize } from "./fixtures/pseudolocalization.mjs";
+import { pseudolocalize } from "../tooling/pseudolocalization.mjs";
 import { catalogGate } from "../tooling/quality-catalogs.mjs";
 import { LanguageController } from "../packages/renderer/src/language-controller.js";
 

@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import { _electron, expect } from "@playwright/test";
-import { pseudolocalize } from "../tests/fixtures/pseudolocalization.mjs";
+import { pseudolocalize } from "./pseudolocalization.mjs";
 import { admittedLaunch } from "./desktop-launch.mjs";
 import { recordReadyNativeProcesses } from "./desktop-native-observation.mjs";
 import { verifyStableSentinels } from "../packages/main/dist/index.js";
