@@ -358,7 +358,7 @@ class PackageOrchestrationTests(unittest.TestCase):
                     raise delivery.probes.ProbeError("Synthetic sentinel changed.")
                 return {
                     "target": "linux-x64",
-                    "profile": "ubuntu-24.04",
+                    "profile": "ubuntu-26.04",
                     "scratch_root": str(scratch),
                 }
 

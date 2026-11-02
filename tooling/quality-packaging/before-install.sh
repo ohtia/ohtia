@@ -5,7 +5,7 @@ export PATH
 [ "$(id -u)" -eq 0 ]
 . /etc/os-release
 [ "$ID" = ubuntu ]
-case "$VERSION_ID" in 24.04|26.04) ;; *) exit 1 ;; esac
+[ "$VERSION_ID" = 26.04 ]
 [ "$(cat /sys/module/apparmor/parameters/enabled)" = Y ]
 command -v apparmor_parser >/dev/null
 [ ! -L /opt/ohtia-quality ]

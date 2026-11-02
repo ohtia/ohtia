@@ -42,7 +42,7 @@ function example() {
     packages: [
       {
         target: "linux-x64",
-        profile: "ubuntu-24.04",
+        profile: "ubuntu-26.04",
         format: "deb",
         filename: "ohtia-0.1.0-linux-x64.deb",
         bytes: bytes.length,
@@ -63,7 +63,7 @@ function context() {
     previous: null,
     installed_version: "0.0.0",
     target: "linux-x64",
-    profile: "ubuntu-24.04",
+    profile: "ubuntu-26.04",
     format: "deb",
     schema: 0,
     queued_work_version: null,

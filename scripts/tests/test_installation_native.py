@@ -534,10 +534,10 @@ class InstallationTests(unittest.TestCase):
                 node = """import fs from 'node:fs'; import path from 'node:path'; import {generateKeyPairSync,sign} from 'node:crypto'; import {execFileSync} from 'node:child_process';
 const module=await import(process.argv[1]),directory=process.argv[2],evidence=process.argv[3],now=Date.now();
 const keys=generateKeyPairSync('ed25519'),public_key=keys.publicKey.export({type:'spki',format:'pem'}).toString(),id=module.keyIdentity(public_key);
-const catalog={schema_version:1,key_id:id,sequence:2,issued_ms:now-1000,expires_ms:now+60000,candidate:'b'.repeat(64),source_sha:'a'.repeat(40),version:'0.1.0',channels:['preview'],notes_sha256:'c'.repeat(64),packages:[{target:'linux-x64',profile:'ubuntu-24.04',format:'deb',filename:'qualified.deb',bytes:1,sha256:'d'.repeat(64),native_version:'0.1.0-1',schema:{source_min:0,source_max:1,target:1},queued_work_version:null}]};
+const catalog={schema_version:1,key_id:id,sequence:2,issued_ms:now-1000,expires_ms:now+60000,candidate:'b'.repeat(64),source_sha:'a'.repeat(40),version:'0.1.0',channels:['preview'],notes_sha256:'c'.repeat(64),packages:[{target:'linux-x64',profile:'ubuntu-26.04',format:'deb',filename:'qualified.deb',bytes:1,sha256:'d'.repeat(64),native_version:'0.1.0-1',schema:{source_min:0,source_max:1,target:1},queued_work_version:null}]};
 const bytes=module.catalogBytes(catalog),signature=sign(null,bytes,keys.privateKey),trust={keys:[{id,public_key,revoked:false}]};
-const admitted=module.verifyCatalog(bytes,signature,trust,{now_ms:now,execution:'internal',channel:'preview',preview_opt_in:true,previous:null,installed_version:null,target:'linux-x64',profile:'ubuntu-24.04',format:'deb',schema:0,queued_work_version:null});
-fs.writeFileSync(path.join(evidence,'catalog.json'),bytes);fs.writeFileSync(path.join(evidence,'catalog.sig'),signature);fs.writeFileSync(path.join(evidence,'qualification-trust.json'),JSON.stringify(trust));fs.writeFileSync(path.join(evidence,'campaign.json'),JSON.stringify({cell:{target:'linux-x64',profile:'ubuntu-24.04'},attempts:[{attempt:1,format:'deb',catalogName:'catalog.json',signatureName:'catalog.sig'}]}));const owner=JSON.parse(execFileSync(process.argv[4],[process.argv[5],'lease-identity',String(process.pid)],{encoding:'utf8'}));
+const admitted=module.verifyCatalog(bytes,signature,trust,{now_ms:now,execution:'internal',channel:'preview',preview_opt_in:true,previous:null,installed_version:null,target:'linux-x64',profile:'ubuntu-26.04',format:'deb',schema:0,queued_work_version:null});
+fs.writeFileSync(path.join(evidence,'catalog.json'),bytes);fs.writeFileSync(path.join(evidence,'catalog.sig'),signature);fs.writeFileSync(path.join(evidence,'qualification-trust.json'),JSON.stringify(trust));fs.writeFileSync(path.join(evidence,'campaign.json'),JSON.stringify({cell:{target:'linux-x64',profile:'ubuntu-26.04'},attempts:[{attempt:1,format:'deb',catalogName:'catalog.json',signatureName:'catalog.sig'}]}));const owner=JSON.parse(execFileSync(process.argv[4],[process.argv[5],'lease-identity',String(process.pid)],{encoding:'utf8'}));
 const rename=fs.renameSync; fs.renameSync=()=>{throw Object.assign(new Error('synthetic ENOSPC while committing accepted state'),{code:'ENOSPC'});};
 try { await module.withAcceptanceState(directory,true,async(_previous,persist)=>persist(admitted),{owner}); throw new Error('Expected persistence failure'); }
 catch(error) { if(error.code!=='ENOSPC') throw error; }
@@ -601,7 +601,7 @@ if(!fs.existsSync(path.join(directory,'operation.lock'))) throw new Error('Ordin
         profile_file = scratch / "runtime-profile.json"
         profile_file.write_text("{}")
         cell_file = scratch / "cell.json"
-        cell = {"target": "linux-x64", "profile": "ubuntu-24.04"}
+        cell = {"target": "linux-x64", "profile": "ubuntu-26.04"}
         cell_file.write_text(json.dumps(cell))
         profile = {
             "target": "linux-x64",
@@ -709,7 +709,7 @@ if(!fs.existsSync(path.join(directory,'operation.lock'))) throw new Error('Ordin
                 patch.object(
                     native.platform,
                     "freedesktop_os_release",
-                    return_value={"ID": "ubuntu", "VERSION_ID": "24.04"},
+                    return_value={"ID": "ubuntu", "VERSION_ID": "26.04"},
                 )
             )
             stack.enter_context(patch.object(Path, "stat", path_stat))
@@ -969,7 +969,7 @@ if(!fs.existsSync(path.join(directory,'operation.lock'))) throw new Error('Ordin
             ),
             self.assertRaisesRegex(ValueError, "unconfigured"),
         ):
-            operator.configured_package({"profile": "ubuntu-24.04"}, "0.0.0-dev.27.1")
+            operator.configured_package({"profile": "ubuntu-26.04"}, "0.0.0-dev.27.1")
 
     def test_operator_store_inspection_uses_derived_descriptor_and_coupled_snapshot_outside_user_scratch(
         self,

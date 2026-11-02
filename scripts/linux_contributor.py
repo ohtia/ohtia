@@ -11,7 +11,6 @@ import hashlib
 import json
 import os
 import platform
-import re
 import shlex
 import signal
 import socket
@@ -349,7 +348,7 @@ def doctor(
     check(
         "display-session",
         lambda: display_available(profile),
-        "Use this profile's native GNOME Wayland session (Ubuntu 24.04 also admits X11). Start the private session described in docs/linux-contribution.md for automated runs; SSH alone supplies no display.",
+        "Use this profile's native GNOME Wayland session; an X11 session is unqualified. Start the private session described in docs/linux-contribution.md for automated runs; SSH alone supplies no display.",
     )
     for name, executable, prefix in (
         ("node", workspace.node_path(), "v"),
@@ -442,19 +441,13 @@ def display_available(profile: dict) -> bool:
     backend = os.environ.get("XDG_SESSION_TYPE")
     if backend not in profile["display_backends"]:
         return False
-    if backend == "wayland":
-        if "GNOME" not in os.environ.get("XDG_CURRENT_DESKTOP", "").split(":"):
-            return False
-        directory = Path(os.environ.get("XDG_RUNTIME_DIR", "/nonexistent"))
-        name = os.environ.get("WAYLAND_DISPLAY", "")
-        if not name or Path(name).name != name or directory.stat().st_uid != os.getuid():
-            return False
-        endpoint = directory / name
-    else:
-        match = re.fullmatch(r":([0-9]+)(?:\.[0-9]+)?", os.environ.get("DISPLAY", ""))
-        if match is None:
-            return False
-        endpoint = Path("/tmp/.X11-unix") / f"X{match[1]}"
+    if "GNOME" not in os.environ.get("XDG_CURRENT_DESKTOP", "").split(":"):
+        return False
+    directory = Path(os.environ.get("XDG_RUNTIME_DIR", "/nonexistent"))
+    name = os.environ.get("WAYLAND_DISPLAY", "")
+    if not name or Path(name).name != name or directory.stat().st_uid != os.getuid():
+        return False
+    endpoint = directory / name
     if not stat.S_ISSOCK(endpoint.stat().st_mode):
         return False
     with socket.socket(socket.AF_UNIX) as connection:

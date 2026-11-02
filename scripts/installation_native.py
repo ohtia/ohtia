@@ -182,9 +182,7 @@ def native_profile(target, profile, backend):
                 "Enabled AppArmor required.",
             )
         require(
-            bool(os.environ.get("WAYLAND_DISPLAY"))
-            if backend == "wayland"
-            else bool(os.environ.get("DISPLAY")) and not os.environ.get("WAYLAND_DISPLAY"),
+            bool(os.environ.get("WAYLAND_DISPLAY")),
             "Native session unavailable.",
         )
         formats = [declared["package"]]

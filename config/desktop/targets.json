@@ -6,14 +6,14 @@
       "os": "linux",
       "arch": "x64",
       "aliases": ["x64", "amd64", "x86_64"],
-      "baseline": "Ubuntu 24.04 LTS, Fedora Workstation 44, Ubuntu 26.04 LTS and Debian 13; required x86-64 profiles are enumerated",
+      "baseline": "Ubuntu 26.04 LTS, Fedora Workstation 44 and Debian 13; required x86-64 profiles are enumerated",
       "filesystems": ["ext4", "btrfs"],
-      "display": "Ubuntu 24.04: native Wayland and X11; Fedora, Ubuntu 26.04 and Debian 13: native GNOME Wayland; actual Ozone backend must be observed",
+      "display": "Native GNOME Wayland on every profile; an X11 session is unqualified; actual Ozone backend must be observed",
       "quality_packages": ["deb", "rpm"],
       "distribution_packages": ["deb", "rpm"],
       "native_required": true,
       "testing_facilities": {
-        "hosted_candidates": ["ubuntu-24.04"],
+        "hosted_candidates": ["ubuntu-26.04"],
         "admission": "Published runner catalog only; native isolation, exact OS floor, graphical session and actual access require 018 verification. Maintainer-provisioned matching native desktop/VM supplies unavailable combinations."
       },
       "native_package_architectures": {
@@ -22,15 +22,15 @@
       },
       "distribution_profiles": [
         {
-          "id": "ubuntu-24.04",
+          "id": "ubuntu-26.04",
           "package": "deb",
-          "libc_minimum": "2.39",
-          "kernel": "6.8 or later vendor-maintained Ubuntu kernel",
+          "libc_minimum": "2.43",
+          "kernel": "Vendor-maintained Ubuntu 26.04 kernel; exact native build recorded by 018",
           "filesystems": ["ext4"],
           "security_policy": "AppArmor enabled with reviewed executable-path user-namespace allowance; active Chromium sandbox",
-          "display": "Native Wayland and X11 sessions, each qualified with automatic native Ozone selection",
-          "hosted_candidates": ["ubuntu-24.04"],
-          "display_backends": ["wayland", "x11"]
+          "display": "Native GNOME Wayland; automatic native Ozone selection must actually select Wayland",
+          "hosted_candidates": ["ubuntu-26.04"],
+          "display_backends": ["wayland"]
         },
         {
           "id": "fedora-44",
@@ -52,25 +52,13 @@
           "display_backends": ["wayland"]
         },
         {
-          "id": "ubuntu-26.04",
-          "package": "deb",
-          "libc_minimum": "2.43",
-          "kernel": "Vendor-maintained Ubuntu 26.04 kernel; exact native build recorded by 018",
-          "filesystems": ["ext4"],
-          "security_policy": "AppArmor enabled with reviewed executable-path user-namespace allowance; active Chromium sandbox",
-          "display": "Native GNOME Wayland; XWayland does not qualify a native X11 session",
-          "hosted_candidates": [],
-          "required_facility": "Maintainer-provisioned native x86-64 Ubuntu 26.04 desktop or VM with independent account and native Wayland session",
-          "display_backends": ["wayland"]
-        },
-        {
           "id": "debian-13",
           "package": "deb",
           "libc_minimum": "2.41",
           "kernel": "Vendor-maintained Debian 13 kernel; exact native build recorded by 018",
           "filesystems": ["ext4"],
           "security_policy": "AppArmor enabled, native unprivileged user namespaces enabled, and active Chromium sandbox; no Ubuntu-specific namespace allowance or global policy change",
-          "display": "Native GNOME Wayland; other desktop and X11 sessions require separate qualification",
+          "display": "Native GNOME Wayland; other desktop sessions require separate qualification",
           "hosted_candidates": [],
           "required_facility": "Maintainer-provisioned native x86-64 Debian 13 desktop or VM with independent account and native Wayland session",
           "display_backends": ["wayland"]
@@ -83,14 +71,14 @@
       "os": "linux",
       "arch": "arm64",
       "aliases": ["arm64", "aarch64"],
-      "baseline": "Ubuntu 24.04 LTS, Fedora Workstation 44, Ubuntu 26.04 LTS and Debian 13; required ARM64 profiles are enumerated",
+      "baseline": "Ubuntu 26.04 LTS, Fedora Workstation 44 and Debian 13; required ARM64 profiles are enumerated",
       "filesystems": ["ext4", "btrfs"],
-      "display": "Ubuntu 24.04: native Wayland and X11; Fedora, Ubuntu 26.04 and Debian 13: native GNOME Wayland; actual Ozone backend must be observed",
+      "display": "Native GNOME Wayland on every profile; an X11 session is unqualified; actual Ozone backend must be observed",
       "quality_packages": ["deb", "rpm"],
       "distribution_packages": ["deb", "rpm"],
       "native_required": true,
       "testing_facilities": {
-        "hosted_candidates": ["ubuntu-24.04-arm"],
+        "hosted_candidates": ["ubuntu-26.04-arm"],
         "admission": "Published runner catalog only; native isolation, exact OS floor, graphical session and actual access require 018 verification. Maintainer-provisioned matching native desktop/VM supplies unavailable combinations."
       },
       "native_package_architectures": {
@@ -99,15 +87,15 @@
       },
       "distribution_profiles": [
         {
-          "id": "ubuntu-24.04",
+          "id": "ubuntu-26.04",
           "package": "deb",
-          "libc_minimum": "2.39",
-          "kernel": "6.8 or later vendor-maintained Ubuntu kernel",
+          "libc_minimum": "2.43",
+          "kernel": "Vendor-maintained Ubuntu 26.04 kernel; exact native build recorded by 018",
           "filesystems": ["ext4"],
           "security_policy": "AppArmor enabled with reviewed executable-path user-namespace allowance; active Chromium sandbox",
-          "display": "Native Wayland and X11 sessions, each qualified with automatic native Ozone selection",
-          "hosted_candidates": ["ubuntu-24.04-arm"],
-          "display_backends": ["wayland", "x11"]
+          "display": "Native GNOME Wayland; automatic native Ozone selection must actually select Wayland",
+          "hosted_candidates": ["ubuntu-26.04-arm"],
+          "display_backends": ["wayland"]
         },
         {
           "id": "fedora-44",
@@ -129,25 +117,13 @@
           "display_backends": ["wayland"]
         },
         {
-          "id": "ubuntu-26.04",
-          "package": "deb",
-          "libc_minimum": "2.43",
-          "kernel": "Vendor-maintained Ubuntu 26.04 kernel; exact native build recorded by 018",
-          "filesystems": ["ext4"],
-          "security_policy": "AppArmor enabled with reviewed executable-path user-namespace allowance; active Chromium sandbox",
-          "display": "Native GNOME Wayland; XWayland does not qualify a native X11 session",
-          "hosted_candidates": [],
-          "required_facility": "Maintainer-provisioned native ARM64 Ubuntu 26.04 desktop or VM with independent account and native Wayland session",
-          "display_backends": ["wayland"]
-        },
-        {
           "id": "debian-13",
           "package": "deb",
           "libc_minimum": "2.41",
           "kernel": "Vendor-maintained Debian 13 kernel; exact native build recorded by 018",
           "filesystems": ["ext4"],
           "security_policy": "AppArmor enabled, native unprivileged user namespaces enabled, and active Chromium sandbox; no Ubuntu-specific namespace allowance or global policy change",
-          "display": "Native GNOME Wayland; other desktop and X11 sessions require separate qualification",
+          "display": "Native GNOME Wayland; other desktop sessions require separate qualification",
           "hosted_candidates": [],
           "required_facility": "Maintainer-provisioned native ARM64 Debian 13 desktop or VM with independent account and native Wayland session",
           "display_backends": ["wayland"]

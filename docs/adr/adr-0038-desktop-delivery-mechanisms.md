@@ -2,6 +2,10 @@
 type: DecisionRecord
 title: ADR-0038 — Native desktop packages with authenticated update admission
 description: "Select native package profiles, shared display-session qualification and authenticated updates with independently gated platform distribution."
+generated:
+  by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: builder
     resource: https://www.electron.build/v26/docs/features/auto-update/
@@ -36,10 +40,6 @@ sources:
   - id: crypto
     resource: https://nodejs.org/api/crypto.html#cryptoverifyalgorithm-data-key-signature
     title: Node signature verification
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # ADR-0038 — Native desktop packages with authenticated update admission
@@ -54,7 +54,7 @@ Consider electron-builder with electron-updater, Electron Forge with the built-i
 
 ### Qualification phases
 
-Keep the complete required desktop target inventory. The [foundation delivery contract](../epics/EPIC-001-desktop-foundation/epic.md#spec-001-028-linux-first-delivery-and-platform-capability-admission) assigns common Actions-operated build/sign/verify interfaces, real Linux signing and all ten Linux installation/update cells to story 013; candidate/publication mechanisms to 015/016; and all-platform common native/runtime/contributor acceptance plus Linux delivery integration to 017. Retain native macOS/Windows builds, packaged smoke and verified retained-artifact GitHub provenance immediately; these attestations do not require platform publisher certificates and do not replace them.
+Keep the complete required desktop target inventory. The [foundation delivery contract](../epics/EPIC-001-desktop-foundation/epic.md#spec-001-028-linux-first-delivery-and-platform-capability-admission) assigns common Actions-operated build/sign/verify interfaces, real Linux signing and all required Linux installation/update cells to story 013, currently six under [ADR-0042](adr-0042-wayland-only-linux-support.md); candidate/publication mechanisms to 015/016; and all-platform common native/runtime/contributor acceptance plus Linux delivery integration to 017. Retain native macOS/Windows builds, packaged smoke and verified retained-artifact GitHub provenance immediately; these attestations do not require platform publisher certificates and do not replace them.
 
 Real macOS Developer ID/notarization, final DMG/ZIP and signed user-route qualification belong to [story 019](../epics/EPIC-001-desktop-foundation/STORY-001-019-qualify-signed-macos-distribution.md). Real Windows Authenticode/publisher/timestamp and signed user-route qualification belong to [story 020](../epics/EPIC-001-desktop-foundation/STORY-001-020-qualify-signed-windows-distribution.md). Both consume the completed common foundation independently; neither blocks 013/015/016/017 or interface development against delivered common outputs. Native foundation, storage, privacy, assistive and contributor requirements on those platforms remain in scope now.
 
@@ -66,7 +66,7 @@ Use electron-builder `26.18.*` for packaging and electron-updater `6.8.*` for up
 
 Select separate DEB packages for the Ubuntu and Debian profiles and RPM packages for the Fedora profiles explicitly assigned to each CPU in the [target manifest](../../config/desktop/targets.json), a per-user offline NSIS installer for each Windows architecture, and separate DMG plus ZIP artifacts for each macOS architecture. Unsigned quality packages use the applicable same formats and development identities under isolated profiles; [ADR-0020](adr-0020-github-policy-and-trusted-ci.md#recurring-hosted-quality-matrix) selects their recurring hosted CI scope independently of final distribution qualification. NSIS web installers, Windows per-machine elevation and cross-architecture installer bundles are excluded. Linux package installation uses explicit native administrator authorization; the running application and its research service remain unprivileged. macOS ZIP is an update payload, not a substitute for native DMG installation testing. Do not select universal macOS output unless both slices receive independent qualification.[^builder]
 
-X11 and Wayland are native qualification environments, not separate Linux distribution packages. For each selected CPU and distribution package profile, build and seal one final package and exercise those same bytes in every display session assigned to it, following [ADR-0021](adr-0021-versioned-desktop-artifacts.md). In particular, Ubuntu 24.04 X11 and Wayland on one CPU share a DEB; Ubuntu and Debian keep their distinct installation-policy profiles. Reuse across other declared OS versions requires explicit assignment and complete native evidence for each version; format or filename equality does not establish compatibility. Keep the target manifest's session requirements: Debian 13 currently requires GNOME/Wayland, and this grouping does not add X11 support or remove any required cell.
+X11 and Wayland are native qualification environments, not separate Linux distribution packages. For each selected CPU and distribution package profile, build and seal one final package and exercise those same bytes in every display session assigned to it, following [ADR-0021](adr-0021-versioned-desktop-artifacts.md). In particular, Ubuntu 24.04 X11 and Wayland on one CPU share a DEB; Ubuntu and Debian keep their distinct installation-policy profiles. Reuse across other declared OS versions requires explicit assignment and complete native evidence for each version; format or filename equality does not establish compatibility. Keep the target manifest's session requirements: Debian 13 currently requires GNOME/Wayland, and this grouping does not add X11 support or remove any required cell. [ADR-0042](adr-0042-wayland-only-linux-support.md) retires Ubuntu 24.04 and X11; the rule that session cells of one OS/profile/CPU share one sealed package remains.
 
 Select DEB for the declared Ubuntu floor because a fixed, root-owned executable path permits a narrowly scoped installed AppArmor user-namespace allowance while preserving Chromium sandboxing. Portable AppImage is rejected initially: arbitrary user-writable paths, FUSE/extraction and stock Ubuntu's user-namespace restrictions add unresolved sandbox provisioning. The installer must explain and authorize its system-package/profile changes, bind the allowance to the trusted installation executable rather than a wildcard writable path, and verify load/removal/upgrade behavior. Never disable AppArmor globally, use no-sandbox flags, run the product as root or treat the allowance as general parser confinement. 018 tests minimal native feasibility for Ubuntu/DEB and Fedora/RPM on both Linux CPUs; 013 owns final signed package/profile installation and recovery.[^ubuntu-sandbox]
 

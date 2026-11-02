@@ -3,7 +3,7 @@ type: Analysis
 title: Native foundation qualification report
 description: Observed native desktop feasibility, source compatibility, packaging consequences and evidence limits for the required foundation platforms.
 generated:
-  by: codex/gpt-6.1-sol
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 sources:
@@ -25,9 +25,9 @@ sources:
 
 ## Purpose and acceptance scope
 
-Native execution established foundation-mechanism feasibility for thirteen required OS/CPU/distribution/session cells, with twenty-nine case assessments per cell: 377 assessments and fifty-two complete canonical/supporting scenario records. Each source cohort was replayed through its original unchanged evidence checker with zero reported failures. These are non-shipping qualification probes, not the final Ohtia application or final signed distribution.[^qualification-contract] The repeatable procedure defines the admission and evidence checks.[^qualification-procedure]
+Native execution established foundation-mechanism feasibility for nine required OS/CPU/distribution/session cells, with twenty-nine case assessments per cell: 261 assessments and thirty-six complete canonical/supporting scenario records. Each source cohort was replayed through its original unchanged evidence checker with zero reported failures. These are non-shipping qualification probes, not the final Ohtia application or final signed distribution.[^qualification-contract] The repeatable procedure defines the admission and evidence checks.[^qualification-procedure]
 
-The required targets are Linux x86-64 and ARM64, Windows x86-64 and Apple Silicon. Linux requires Ubuntu 24.04, Ubuntu 26.04, Fedora 44 and Debian 13 on each CPU; Ubuntu 24.04 additionally has separate Wayland and X11 cells. Apple Silicon requires macOS 26 and 27. Apple Intel and Windows ARM64 are optional and have no native result in this evaluation. macOS 15 remains an admitted candidate without a required or observed qualification run. Optional absence does not block this required scope; it never becomes a passing native result. A later artifact that includes an optional target needs that target's complete native evidence.
+The required targets are Linux x86-64 and ARM64, Windows x86-64 and Apple Silicon. Linux requires Ubuntu 26.04, Fedora 44 and Debian 13 on each CPU, each on GNOME Wayland. Apple Silicon requires macOS 26 and 27. Apple Intel and Windows ARM64 are optional and have no native result in this evaluation. macOS 15 remains an admitted candidate without a required or observed qualification run. Optional absence does not block this required scope; it never becomes a passing native result. A later artifact that includes an optional target needs that target's complete native evidence. [ADR-0042](adr/adr-0042-wayland-only-linux-support.md) retired the Ubuntu 24.04 and X11 cells; their evidence remains in Git history and in the closed [native qualification issue](https://github.com/ohtia/ohtia/issues/32).
 
 The [qualification playbook](native-qualification.md) owns preparation, admission, commands and evidence requirements. This analysis records observations, interpretation, transfer limits and engineering consequences. The [target manifest](../config/desktop/targets.json), [toolchain](../config/desktop/toolchain.json) and [numeric policy](../config/desktop/resource-policy.json) remain the canonical machine-readable contracts.
 
@@ -39,13 +39,9 @@ The [qualification playbook](native-qualification.md) owns preparation, admissio
 | Apple Silicon  | macos-27     | windowserver | 29/29 | `3ca0761`   |
 | Linux ARM64    | debian-13    | wayland      | 29/29 | `22b8321`   |
 | Linux ARM64    | fedora-44    | wayland      | 29/29 | `cf6ab37`   |
-| Linux ARM64    | ubuntu-24.04 | wayland      | 29/29 | `cf6ab37`   |
-| Linux ARM64    | ubuntu-24.04 | x11          | 29/29 | `cf6ab37`   |
 | Linux ARM64    | ubuntu-26.04 | wayland      | 29/29 | `22b8321`   |
 | Linux x86-64   | debian-13    | wayland      | 29/29 | `b108d05`   |
 | Linux x86-64   | fedora-44    | wayland      | 29/29 | `3fca5e2`   |
-| Linux x86-64   | ubuntu-24.04 | wayland      | 29/29 | `3fca5e2`   |
-| Linux x86-64   | ubuntu-24.04 | x11          | 29/29 | `3fca5e2`   |
 | Linux x86-64   | ubuntu-26.04 | wayland      | 29/29 | `58943a4`   |
 | Windows x86-64 | windows-11   | desktop      | 29/29 | `cf6ab37`   |
 
@@ -57,8 +53,8 @@ The Linux extension facilities were native KVM guests with eight Neoverse-N1 ARM
 
 The native records retain six original frozen source trees:
 
-- `3fca5e281245fdad4f2436c252eed41652dcd707`: original Linux x86-64 cells; 291 inputs. Input-map SHA-256: `5ee8c1837f9ebfb9c993a1f8ed19c3e2d08b581abe12f972368c1d5f02aa81bf`.
-- `cf6ab37ce7337fcdb6d685889414d4057b18b12c`: Windows x86-64, Ubuntu 24.04 ARM64 and Fedora 44 ARM64; 291 inputs. Input-map SHA-256: `c29f7512aea5c3266bcc34650104040091614e47d5158fe8612221dbaa7459e1`.
+- `3fca5e281245fdad4f2436c252eed41652dcd707`: Fedora 44 x86-64; 291 inputs. Input-map SHA-256: `5ee8c1837f9ebfb9c993a1f8ed19c3e2d08b581abe12f972368c1d5f02aa81bf`.
+- `cf6ab37ce7337fcdb6d685889414d4057b18b12c`: Windows x86-64 and Fedora 44 ARM64; 291 inputs. Input-map SHA-256: `c29f7512aea5c3266bcc34650104040091614e47d5158fe8612221dbaa7459e1`.
 - `3ca076146188f115fe53f55af8d22afc0cf029dc`: Apple Silicon macOS 26 and 27; 291 inputs. Input-map SHA-256: `d74e15b05c96334a31b6aaf8e5f93bfdf0399597bb7583eca0fd4beec68db641`.
 - `22b83213ab7bf8c045439476ba139d8192e41d97`: Ubuntu 26.04 ARM64 and Debian 13 ARM64; 292 inputs. Input-map SHA-256: `1daaa8eb2f31af4081a7e06731eb4dfeab8f9fbd417c5fcf8237a656fd949d5c`.
 - `58943a4457661d17f06083cfe7c1d4fddd6df8d7`: Ubuntu 26.04 x86-64; 292 inputs. Input-map SHA-256: `0a5fb87782f470f838fc0a36b654728992dcb0f5acef86483f1a8ad6523a11b0`.
@@ -78,13 +74,9 @@ The following record identities bind each observed cell to its complete case pac
 - **darwin-arm64 / macos-27 / windowserver**: case-manifest SHA-256 `6cace4767a8f2eca0d6462d2512b3283dc5b6c6b06c4f9090e9b3fb9c5c750c0`; runtime-inventory digest `c60371181cb1936201573bc944972707ba8968de15ddabed9ac00c98dd87a36c`.
 - **linux-arm64 / debian-13 / wayland**: case-manifest SHA-256 `bf85f7b3e81e1e698e2732b50bb0ac3d175489b658bed63123a11bc9c6e398bf`; runtime-inventory digest `ba962925c973aecafa91adf510e2e7c8fd808d37d4eeeb8c8291f6db6c752087`.
 - **linux-arm64 / fedora-44 / wayland**: case-manifest SHA-256 `64170fe029342589e8e1ede395d7236edc172d318fe760567fa9aa07cc3e4cd6`; runtime-inventory digest `ba962925c973aecafa91adf510e2e7c8fd808d37d4eeeb8c8291f6db6c752087`.
-- **linux-arm64 / ubuntu-24.04 / wayland**: case-manifest SHA-256 `7dea92335515fc431111970a2bc19589976286eebd8b647522915093fc871704`; runtime-inventory digest `8a07580185471d29f7580b6a75b605c491cab2ee5e9e0724baa2f2c05ff262ce`.
-- **linux-arm64 / ubuntu-24.04 / x11**: case-manifest SHA-256 `c6e59917f37e21ae3f94bfcb736ff6c386e37fd04657dad2d4d23df7d87b1c91`; runtime-inventory digest `ba962925c973aecafa91adf510e2e7c8fd808d37d4eeeb8c8291f6db6c752087`.
 - **linux-arm64 / ubuntu-26.04 / wayland**: case-manifest SHA-256 `b9327603d57fa808fbd9f1d167ed35bc1a89e9ad0fdf9226060eb8af5c82fe8c`; runtime-inventory digest `ba962925c973aecafa91adf510e2e7c8fd808d37d4eeeb8c8291f6db6c752087`.
 - **linux-x64 / debian-13 / wayland**: case-manifest SHA-256 `1cc1bc53a04c3e24502363ea2750f0bc54c7cb6777eb08fc1be745d3ace4e24a`; runtime-inventory digest `e9ca59d5fd50dac2bc40469661d337676fa5ea6fdd7116e9bb681e2f8db214a5`.
 - **linux-x64 / fedora-44 / wayland**: case-manifest SHA-256 `af1fe5a751e01daa4f4df25e57c574654a3fa2d32b98adaaf1dfabbd093b3172`; runtime-inventory digest `e9ca59d5fd50dac2bc40469661d337676fa5ea6fdd7116e9bb681e2f8db214a5`.
-- **linux-x64 / ubuntu-24.04 / wayland**: case-manifest SHA-256 `4433a9f8f9011cf2734a620462f8548302c797db34e4d889001113f0f277af91`; runtime-inventory digest `4301bd3e8d9955fbd2a72d5e71192c4217761053709fdcd54bdd0e3af4070550`.
-- **linux-x64 / ubuntu-24.04 / x11**: case-manifest SHA-256 `23824f1511bb81548d0ec741d0b3b8080f91d4cb94d4bc9930a54178363cd565`; runtime-inventory digest `4301bd3e8d9955fbd2a72d5e71192c4217761053709fdcd54bdd0e3af4070550`.
 - **linux-x64 / ubuntu-26.04 / wayland**: case-manifest SHA-256 `df8e0d282753f1eccaea53e760d497511c06eb856c8a9d49c9e4c502fe610297`; runtime-inventory digest `e9ca59d5fd50dac2bc40469661d337676fa5ea6fdd7116e9bb681e2f8db214a5`.
 - **win32-x64 / windows-11 / desktop**: case-manifest SHA-256 `36dc2c7a5141842111943b74ac4d89f2dee4282a5c1233f19f86e27c82ad81d6`; runtime-inventory digest `2e62615eb170d78dfaafc438c99356c84f5ab51733cbba83dd80377bb36a2450`.
 
@@ -163,7 +155,7 @@ Keep independent native macOS 26 and 27 records for the selected ARM64 executabl
 
 The repository retains this consolidated analysis, reusable contracts/procedures and deterministic checks. Large original packages, runtimes, traces, individual platform case packs and operational records remain in separate maintainer-controlled evidence archives. Each archive has a file/hash manifest and local verification receipt. Source credentials, private research and access screenshots are excluded from public repository content.
 
-The following identities locate the retained final profile or evidence archives. These hashes identify the exact retained byte sets; a profile archive and a raw-input archive have different coverage and are kept together. Ubuntu 24.04 ARM64 and macOS 26 use verified directory manifests rather than pretending their directory trees are one archive blob.
+The following identities locate the retained final profile or evidence archives. These hashes identify the exact retained byte sets; a profile archive and a raw-input archive have different coverage and are kept together. macOS 26 uses a verified directory manifest rather than pretending its directory tree is one archive blob.
 
 - **fedora-44-arm64-cf6ab37-profile-final-v1**: SHA-256 `e28b548acaff6d23f6d03c94de54afc0bbf6a71593c3308de29a5c57a5b36ac6`.
 - **ubuntu-26.04-arm64-22b8321-profile-final-v1**: SHA-256 `fe1d2873a18fd175b88ecfc87bc10f3ce6003ea48f50efac89604f37f9ef2a07`.
@@ -173,7 +165,6 @@ The following identities locate the retained final profile or evidence archives.
 - **macos-27-arm64-26B123-profile-final-v1**: SHA-256 `146b0e44ae6490b5e44106b58b89fbb4a470700dc9c67d323747cf5ec2f57a12`.
 - **linux-x64-3fca5e2-native-v1**: SHA-256 `c439fe2207564ff17afa80709a5be40af6af1324614928a6bb63e375baf566c1`.
 - **windows-11-x64-cf6ab37-native-v1**: SHA-256 `adb7ab12e17181ce9b7377f0721fda2c710b0921ccde6c10f8c834ff20877fcf`.
-- **ubuntu-24.04-arm64-cf6ab37-v1**: file-manifest SHA-256 `19a89a52c1a036d60fa36975c433347be9413abc52b05a5c88ddf233b1a94b3f`.
 - **macos-26-arm64-25G332-v1**: file-manifest SHA-256 `16b8fef5ba64a6038fae89f3b43d3baae7534811dfdce2382187ac826123bf9d`.
 
 Each final portable profile includes its original-source reconstruction, case references and an offline verifier. The cohort replay also reconstructs the original source and invokes the unchanged evidence checker. Replay validates retained evidence; it does not execute Electron or manufacture another native result. The source-compatibility assessment separately binds the observed cells to the reviewed qualification changes while retaining each original input digest.

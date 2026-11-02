@@ -729,7 +729,7 @@ describe("native OS/CPU/profile partitions", () => {
   it("retains all six declared targets, required Linux display/filesystem profiles and macOS majors", () => {
     const { cells, reports } = corpus();
     expect(new Set(cells.map((c) => c.target)).size).toBe(6);
-    expect(cells.some((c) => c.profile === "ubuntu-24.04/x11/ext4")).toBe(true);
+    expect(cells.some((c) => c.profile === "ubuntu-26.04/wayland/ext4")).toBe(true);
     expect(cells.some((c) => c.profile === "macos-27/APFS")).toBe(true);
     expect(accountNative(cells, reports, identity).status).toBe("passed");
   });

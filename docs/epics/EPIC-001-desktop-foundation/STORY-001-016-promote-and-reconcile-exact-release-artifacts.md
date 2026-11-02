@@ -2,6 +2,10 @@
 type: Story
 title: "STORY-001-016 — Promote and reconcile exact release artifacts"
 description: "Qualify exact-byte Linux publication from admitted package and native-cell evidence while denying unqualified platform distribution."
+generated:
+  by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 tags: ["story", "comp:tooling", "comp:desktop"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/30
@@ -10,10 +14,6 @@ epic_concept: ./epic.md
 components: ["comp:tooling", "comp:desktop"]
 applicable_blocks:
   ["SPEC-001-016", "SPEC-001-017", "SPEC-001-018", "SPEC-001-019", "SPEC-001-026", "SPEC-001-028"]
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # STORY-001-016 — Promote and reconcile exact release artifacts
@@ -66,5 +66,5 @@ Qualify exact-byte Linux publication and common lifecycle controls while denying
 - [ ] Rehearse notes corrections, preview/stable same-byte promotion, withdrawal after schema migration and supported-baseline retention without a public scaffold release.
 - [ ] Run applicable shared checks and configured repository hooks, committed-history secret scan, existing policy tests where affected and git diff --check; include new files explicitly.
 - [ ] Preserve issue-first scope, isolated worktree and unrelated changes; complete the mandated independent read-only code-review gate before any code commit, then verify signed content identity. Documentation-only work keeps its documentation checks.
-- [ ] Attempt promotion with mixed X11/Wayland package evidence, a missing assigned cell and altered uploaded bytes; require refusal, then verify same-digest promotion and idempotent retry on controlled surfaces.
+- [ ] Attempt promotion with synthetic mixed-package session evidence, a missing assigned cell and altered uploaded bytes; require refusal, then verify same-digest promotion and idempotent retry on controlled surfaces.
 - [ ] Record real inputs, results, omissions and failures; a later commit, hosted CI result and human integration are separate evidence. State installed-user impact and the proposed change note or the reason none is required.

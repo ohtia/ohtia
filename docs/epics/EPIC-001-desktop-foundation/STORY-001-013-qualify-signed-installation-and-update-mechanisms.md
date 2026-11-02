@@ -2,6 +2,10 @@
 type: Story
 title: "STORY-001-013 — Qualify signed installation and update mechanisms"
 description: "Deliver common signing/update foundations and Linux qualification with every native cell bound to its exact final package."
+generated:
+  by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 tags: ["story", "comp:desktop", "comp:tooling"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/27
@@ -18,10 +22,6 @@ applicable_blocks:
     "SPEC-001-027",
     "SPEC-001-028",
   ]
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # STORY-001-013 — Qualify signed installation and update mechanisms
@@ -49,27 +49,27 @@ Deliver common Actions signing/update foundations and complete Linux signed qual
 - [ ] Implement the common capability contract, independently qualified Linux signing authority, Linux installer/updater selections and license/notice packaging without depending on candidate/publication consumers.
 - [ ] Obtain separately authorized Linux signing/testing facilities and verify every applicable transformation before final digests; define testable macOS/Windows callback interfaces without requiring their publisher credentials.
 - [ ] Qualify isolated native profiles/VMs, external channel eligibility and version ordering without altering bootstrap or stable data.
-- [ ] Use controlled qualification artifacts/endpoints to exercise actual installation, upgrade, interruption, refusal and compatible rollback on all ten Linux native cells; preserve native foundation build/smoke coverage on Windows and macOS.
+- [ ] Use controlled qualification artifacts/endpoints to exercise actual installation, upgrade, interruption, refusal and compatible rollback on all six Linux native cells; preserve native foundation build/smoke coverage on Windows and macOS.
 - [ ] Qualify signed installation/authentic updates on every required Linux target/profile and included optional distribution target, reject cross-architecture packages, and retain native macOS/Windows builds/smoke plus verified GitHub attestations with explicit distribution-ineligible capabilities.
 - [ ] Produce common authority and Linux installer/signature/updater ADR-0000 applicability and actual native/external evidence; transfer real macOS/Windows signed user-route qualification to 019/020 under SPEC-001-028.
 
 - [ ] Implement the real user-invoked installed updater and independently authenticated graphical Linux first-install route; verify catalog/key lifecycle, automatic refresh/expiry monitoring, true A/B run identities and isolated migration-fixture limits.
 - [ ] Exercise one Linux cell end-to-end before expanding and use the shared reusable core, private real-signed artifacts and separate qualification trust root.
 
-- [ ] Implement and qualify SPEC-001-028's separate artifact/cell inventories and build-to-test handoff; exercise one sealed package on every assigned X11/Wayland cell before handing the shared mechanism to candidate preparation.
+- [ ] Implement and qualify SPEC-001-028's separate artifact/cell inventories and build-to-test handoff; exercise one sealed package on every assigned cell before handing the shared mechanism to candidate preparation.
 
 ## Acceptance criteria
 
 - [ ] Completion gate: verify Native facilities output NF and its full release condition in the Dependencies output registry and SPEC-001-016.
 - [ ] Completion gate: verify Native hosts output NH and its full release condition in the Dependencies output registry and SPEC-001-016.
 - [ ] The installer/update owner delivers its security inventory with final native qualification rather than leaving it to integrated acceptance.
-- [ ] Required Linux signed-install/update evidence covers all ten native cells and any admitted optional distribution target; native macOS/Windows build/smoke/provenance remains complete without falsely claiming their deferred publisher guarantees.
+- [ ] Required Linux signed-install/update evidence covers all six native cells and any admitted optional distribution target; native macOS/Windows build/smoke/provenance remains complete without falsely claiming their deferred publisher guarantees.
 - [ ] I13 binds common capability/authority contracts, real Linux signed native installation/update evidence and final transformed digests, and all-platform native build/attestation records; 019/020 own real macOS/Windows publisher signing and signed-route evidence.
 - [ ] Bad signatures/digests/targets/schema and interrupted operations refuse or recover safely with previous stable data preserved.
 - [ ] Development packages use no public feeds; preview opt-in and stable/prerelease ordering are verified without assuming an Ohtia account.
 - [ ] Native facilities NF supplies actual Linux RPM/catalog authority and native verification. Absent macOS/Windows publisher facilities remain explicit ineligible capabilities owned by 019/020, never mock successes or blockers for this Linux/common scope.
 
-- [ ] I13 proves that each assigned native cell consumes its sealed artifact digest; same-version/source packages with different digests cannot combine their X11/Wayland results to qualify either package.
+- [ ] I13 proves that each assigned native cell consumes its sealed artifact digest; same-version/source packages with different digests cannot combine their cell results to qualify either package.
 
 ## Quality checklist
 
@@ -77,5 +77,5 @@ Deliver common Actions signing/update foundations and complete Linux signed qual
 - [ ] Verify license/source obligations, wrong-target/authenticity rejection and schema recovery without data-downgrade claims.
 - [ ] Run applicable shared checks and configured repository hooks, committed-history secret scan, existing policy tests where affected and git diff --check; include new files explicitly.
 - [ ] Preserve issue-first scope, isolated worktree and unrelated changes; complete the mandated independent read-only code-review gate before any code commit, then verify signed content identity. Documentation-only work keeps its documentation checks.
-- [ ] Exercise the same-package native path and the positive/negative artifact-to-cell admission fixtures in SPEC-001-028, including wrong transferred bytes and missing or duplicate cell evidence.
+- [ ] Exercise the sealed-package native path and the positive/negative artifact-to-cell admission fixtures in SPEC-001-028, including wrong transferred bytes and missing or duplicate cell evidence.
 - [ ] Record real inputs, results, omissions and failures; a later commit, hosted CI result and human integration are separate evidence. State installed-user impact and the proposed change note or the reason none is required.

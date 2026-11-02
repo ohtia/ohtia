@@ -2,6 +2,10 @@
 type: Reference
 title: Shared desktop delivery admission
 description: Reconcile immutable package assignments and independently verified evidence across required native desktop cells.
+generated:
+  by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # Shared desktop delivery admission
@@ -57,9 +61,9 @@ An artifact reference contains exactly `inventory`, `artifact`, `sha256` and `by
 
 ### Native cell assignments
 
-`cells.json` adds `cells`. Every cell has exactly `id`, `target`, `profile`, `os_profile`, `os_version`, `filesystem`, `security`, `display`, `scenarios` and `assignments`. Required cells are derived from trusted target policy, never from the producer's list: ten Linux cells, Windows 11 x64 and macOS 26/27 ARM64, plus the full admitted scope of any selected optional target. Environment strings are normalized policy identities; the evidence adapter verifies their concrete native observations, including supported OS floor and security enforcement.
+`cells.json` adds `cells`. Every cell has exactly `id`, `target`, `profile`, `os_profile`, `os_version`, `filesystem`, `security`, `display`, `scenarios` and `assignments`. Required cells are derived from trusted target policy, never from the producer's list: six Linux cells, Windows 11 x64 and macOS 26/27 ARM64, plus the full admitted scope of any selected optional target. Environment strings are normalized policy identities; the evidence adapter verifies their concrete native observations, including supported OS floor and security enforcement.
 
-Assignments contain `install`, `update` and `baselines`. Current roles reference the current inventory and the profile's exact format. Every baseline references an independently admitted, strictly older version of the same target/profile. Its artifact is the package that actually established the prior installation: either the profile's installation or update format, including an old DMG before a new ZIP update. Required baseline inventory coverage must exactly match the trusted per-cell support scope. Linux and full public readiness require nonempty baselines; deferred Windows/macOS update qualification does not block common foundation readiness. Every current artifact must have an assignment. Single-format profiles use the same reference for current install and update roles. X11 and Wayland cells for the same OS/profile/CPU must agree on both current roles. Reuse on another supported OS version is explicit through its separate assignment and evidence.
+Assignments contain `install`, `update` and `baselines`. Current roles reference the current inventory and the profile's exact format. Every baseline references an independently admitted, strictly older version of the same target/profile. Its artifact is the package that actually established the prior installation: either the profile's installation or update format, including an old DMG before a new ZIP update. Required baseline inventory coverage must exactly match the trusted per-cell support scope. Linux and full public readiness require nonempty baselines; deferred Windows/macOS update qualification does not block common foundation readiness. Every current artifact must have an assignment. Single-format profiles use the same reference for current install and update roles. Session cells for the same OS/profile/CPU must agree on both current roles. Reuse on another supported OS version is explicit through its separate assignment and evidence.
 
 ### Evidence index and records
 
@@ -83,7 +87,7 @@ A retry may use the same sealed packages with a new explicit invocation or genui
 
 ## Reusable consumer fixtures
 
-[The fixture factory](../scripts/tests/delivery_fixture.py) creates complete, explicitly synthetic bundles and an out-of-band synthetic verification context. [The contract tests](../scripts/tests/test_delivery_admission.py) exercise common and public-shaped readiness, Ubuntu X11/Wayland package reuse, independent ARM64 execution, optional/universal cells, DMG/ZIP roles, baselines, authority failures, expiry/revocation, substitution, bounded readers and upload comparison. Consumers may reuse these local fixtures on their actual base without treating them as real qualification or real publisher verification.
+[The fixture factory](../scripts/tests/delivery_fixture.py) creates complete, explicitly synthetic bundles and an out-of-band synthetic verification context. [The contract tests](../scripts/tests/test_delivery_admission.py) exercise common and public-shaped readiness, shared-package session reuse with a synthetic second session, independent ARM64 execution, optional/universal cells, DMG/ZIP roles, baselines, authority failures, expiry/revocation, substitution, bounded readers and upload comparison. Consumers may reuse these local fixtures on their actual base without treating them as real qualification or real publisher verification.
 
 ```bash
 PYTHONPATH=scripts:scripts/tests .venv/bin/python -m unittest test_delivery_admission -v

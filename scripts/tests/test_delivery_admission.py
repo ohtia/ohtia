@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import delivery_admission as admission
-from delivery_fixture import NOW, Fixture
+from delivery_fixture import NOW, SECOND_SESSION, Fixture, second_session
 
 
 class AdmissionTests(unittest.TestCase):
@@ -22,23 +22,51 @@ class AdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(admission.AdmissionError, "^" + code + "$"):
             fixture.admit(context)
 
-    def test_same_sealed_deb_covers_independent_x11_wayland_and_arm_cells(self):
+    def test_required_scope_derives_six_linux_cells_on_wayland(self):
         f = Fixture()
         self.assertEqual(f.admit().report()["status"], "admitted")
-        self.assertEqual(len(f.cells["cells"]), 13)
-        for target in ("linux-x64", "linux-arm64"):
-            cells = [
-                c
-                for c in f.cells["cells"]
-                if c["target"] == target and c["os_profile"] == "ubuntu-24.04"
-            ]
-            self.assertEqual({c["display"] for c in cells}, {"x11", "wayland"})
-            self.assertEqual(cells[0]["assignments"]["install"], cells[1]["assignments"]["install"])
-        self.assertNotEqual(
-            f.cells["cells"][0]["assignments"]["install"]["sha256"],
-            f.cells["cells"][5]["assignments"]["install"]["sha256"],
+        self.assertEqual(len(f.cells["cells"]), 9)
+        linux = [c for c in f.cells["cells"] if c["target"].startswith("linux-")]
+        self.assertEqual(len(linux), 6)
+        self.assertEqual({c["display"] for c in linux}, {"wayland"})
+        self.assertEqual(
+            {c["os_profile"] for c in linux}, {"ubuntu-26.04", "fedora-44", "debian-13"}
         )
-        self.assertFalse(f.admit().report()["publication_authorized"])
+
+    def test_same_sealed_deb_covers_independent_sessions_and_arm_cells(self):
+        with second_session():
+            f = Fixture()
+            self.assertEqual(f.admit().report()["status"], "admitted")
+            self.assertEqual(len(f.cells["cells"]), 11)
+            installs = {}
+            for target in ("linux-x64", "linux-arm64"):
+                cells = [
+                    c
+                    for c in f.cells["cells"]
+                    if c["target"] == target and c["os_profile"] == "ubuntu-26.04"
+                ]
+                self.assertEqual({c["display"] for c in cells}, {SECOND_SESSION, "wayland"})
+                self.assertEqual(
+                    cells[0]["assignments"]["install"], cells[1]["assignments"]["install"]
+                )
+                installs[target] = cells[0]["assignments"]["install"]["sha256"]
+            self.assertNotEqual(installs["linux-x64"], installs["linux-arm64"])
+            self.assertFalse(f.admit().report()["publication_authorized"])
+
+    def test_macos_families_sharing_one_sealed_package_are_admitted(self):
+        f = Fixture()
+        self.assertEqual(f.admit().report()["status"], "admitted")
+        cells = [c for c in f.cells["cells"] if c["target"] == "darwin-arm64"]
+        self.assertEqual({c["os_profile"] for c in cells}, {"macos-26", "macos-27"})
+        self.assertEqual(cells[0]["assignments"]["install"], cells[1]["assignments"]["install"])
+
+    def test_ubuntu_package_is_never_assigned_to_a_debian_cell(self):
+        f = Fixture()
+        ubuntu = next(c for c in f.cells["cells"] if c["id"] == "linux-x64-ubuntu-26-04-wayland")
+        debian = next(c for c in f.cells["cells"] if c["id"] == "linux-x64-debian-13-wayland")
+        debian["assignments"]["install"] = copy.deepcopy(ubuntu["assignments"]["install"])
+        f.refresh()
+        self.denied(f, "artifact_assignment")
 
     def test_deferred_publisher_capabilities_do_not_block_common_linux(self):
         report = Fixture().admit().report()
@@ -140,7 +168,7 @@ class AdmissionTests(unittest.TestCase):
             False,
         )
         f = Fixture(optional=("darwin-x64", "win32-arm64"))
-        self.assertEqual(len(f.cells["cells"]), 16)
+        self.assertEqual(len(f.cells["cells"]), 12)
         f.admit()
         context = f.context()
         f.cells["cells"].pop()
@@ -191,20 +219,21 @@ class AdmissionTests(unittest.TestCase):
                     replace(context, expected_manifest_sha256=admission.sha(f.capabilities)),
                 )
 
-    def test_x11_p_wayland_q_is_refused_even_with_same_source_version_and_format(self):
-        f = Fixture()
-        original = f.artifacts["inventories"][0]["artifacts"][0]
-        replacement = copy.deepcopy(original)
-        replacement.update(id="same-version-rebuilt", sha256="1" * 64)
-        f.artifacts["inventories"][0]["artifacts"].append(replacement)
-        cell = next(
-            c
-            for c in f.cells["cells"]
-            if c["target"] == original["targets"][0] and c["display"] == "x11"
-        )
-        cell["assignments"].update(install=f.ref(replacement), update=f.ref(replacement))
-        f.refresh()
-        self.denied(f, "session_package_substitution")
+    def test_sessions_consuming_p_and_q_are_refused_with_same_source_version_and_format(self):
+        with second_session():
+            f = Fixture()
+            original = f.artifacts["inventories"][0]["artifacts"][0]
+            replacement = copy.deepcopy(original)
+            replacement.update(id="same-version-rebuilt", sha256="1" * 64)
+            f.artifacts["inventories"][0]["artifacts"].append(replacement)
+            cell = next(
+                c
+                for c in f.cells["cells"]
+                if c["target"] == original["targets"][0] and c["display"] == SECOND_SESSION
+            )
+            cell["assignments"].update(install=f.ref(replacement), update=f.ref(replacement))
+            f.refresh()
+            self.denied(f, "session_package_substitution")
 
     def test_wrong_transferred_digest_or_length_is_refused_in_assignment(self):
         for field, value in (("sha256", "1" * 64), ("bytes", 1), ("bytes", True)):
@@ -265,7 +294,7 @@ class AdmissionTests(unittest.TestCase):
             ("architecture", "x64"),
             ("process_architecture", "x64"),
             ("addon_architecture", "x64"),
-            ("display", "x11"),
+            ("display", "desktop"),
             ("security", "disabled"),
             ("filesystem", "nfs"),
             ("os_version", "12"),
@@ -622,16 +651,19 @@ class AdmissionTests(unittest.TestCase):
                 admission.load_bundle(root)
 
     def test_update_only_substitution_cannot_split_the_sealed_package(self):
-        f = Fixture()
-        original = f.artifacts["inventories"][0]["artifacts"][0]
-        other = {**copy.deepcopy(original), "id": "different-update-bytes", "sha256": "1" * 64}
-        f.artifacts["inventories"][0]["artifacts"].append(other)
-        cell = next(
-            c for c in f.cells["cells"] if c["target"] == "linux-x64" and c["display"] == "x11"
-        )
-        cell["assignments"]["update"] = f.ref(other)
-        f.refresh()
-        self.denied(f, "artifact_role_substitution")
+        with second_session():
+            f = Fixture()
+            original = f.artifacts["inventories"][0]["artifacts"][0]
+            other = {**copy.deepcopy(original), "id": "different-update-bytes", "sha256": "1" * 64}
+            f.artifacts["inventories"][0]["artifacts"].append(other)
+            cell = next(
+                c
+                for c in f.cells["cells"]
+                if c["target"] == "linux-x64" and c["display"] == SECOND_SESSION
+            )
+            cell["assignments"]["update"] = f.ref(other)
+            f.refresh()
+            self.denied(f, "artifact_role_substitution")
 
     def test_passed_deferred_update_requires_nonempty_baseline_coverage(self):
         f = Fixture()

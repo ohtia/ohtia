@@ -57,7 +57,6 @@ def cloud_config(profile: str, public_key: str) -> str:
             "python3-gobject",
             "dbus-daemon",
             "dbus-tools",
-            "dbus-x11",
             "btrfs-progs",
             "iproute",
             "rpm-build",

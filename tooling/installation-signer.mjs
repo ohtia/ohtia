@@ -1071,7 +1071,7 @@ export class SigningService {
         a.format === (r.operation === "rpm-sign" ? "rpm" : "deb") &&
         (a.format === "rpm"
           ? a.profile === "fedora-44"
-          : ["ubuntu-24.04", "ubuntu-26.04", "debian-13"].includes(a.profile)),
+          : ["ubuntu-26.04", "debian-13"].includes(a.profile)),
       "policy_refused",
     );
     demand(

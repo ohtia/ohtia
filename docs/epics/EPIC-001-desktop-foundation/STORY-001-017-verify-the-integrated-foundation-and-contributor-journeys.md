@@ -2,6 +2,10 @@
 type: Story
 title: "STORY-001-017 — Verify the integrated foundation and contributor journeys"
 description: "Verify integrated foundation and contributor journeys, Linux delivery and exact package identity across assigned native cells and promotion."
+generated:
+  by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 tags: ["story", "comp:desktop", "comp:tooling", "comp:storage", "comp:docs"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/31
@@ -25,10 +29,6 @@ applicable_blocks:
     "SPEC-001-026",
     "SPEC-001-028",
   ]
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # STORY-001-017 — Verify the integrated foundation and contributor journeys
@@ -69,7 +69,7 @@ Demonstrate common foundation and native contributor paths on every required pla
 - [ ] Produce V17 with complete common native/runtime/storage/locale/privacy/assistive/contributor evidence, phase-scoped I13/C15/F16 and honest per-target eligibility; neither M19 nor W20 is a completion prerequisite.
 - [ ] Record real signed macOS/Windows installation/update observations as 019/020 obligations while preserving all unrelated native human foundation/newcomer requirements here.
 
-- [ ] Reconcile the integrated candidate's artifact-to-cell assignments with actual native results and retained/published package digests; verify the same-package X11/Wayland path and mixed-package refusal under SPEC-001-028.
+- [ ] Reconcile the integrated candidate's artifact-to-cell assignments with actual native results and retained/published package digests; verify the sealed-package path and mixed-package refusal under SPEC-001-028.
 
 ## Acceptance criteria
 
@@ -95,7 +95,7 @@ Demonstrate common foundation and native contributor paths on every required pla
 - [ ] No accepted defect or missing mandatory check/facility is closed by a summary, green name, mock or undocumented waiver.
 - [ ] New contributors NC supplies the actual consented unfamiliar-person observations per required OS/CPU target; self-review is not substituted.
 
-- [ ] Integrated rehearsal proves that one final package digest is preserved across every assigned X11/Wayland cell and promotion; mixed-digest evidence never qualifies a package and no required cell is hidden by grouping.
+- [ ] Integrated rehearsal proves that one final package digest is preserved across every assigned cell and promotion; mixed-digest evidence never qualifies a package and no required cell is hidden by grouping.
 
 ## Quality checklist
 

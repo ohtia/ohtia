@@ -3,65 +3,11 @@
   "scope": "github-hosted-standard-public-repository",
   "cells": [
     {
-      "id": "ubuntu-24-04-x64-x11",
-      "runner": "ubuntu-24.04",
-      "target": "linux-x64",
-      "profile": "ubuntu-24.04",
-      "backend": "x11",
-      "filesystem": "ext4",
-      "formats": ["deb"]
-    },
-    {
-      "id": "ubuntu-24-04-x64-wayland",
-      "runner": "ubuntu-24.04",
-      "target": "linux-x64",
-      "profile": "ubuntu-24.04",
-      "backend": "wayland",
-      "filesystem": "ext4",
-      "formats": ["deb"]
-    },
-    {
-      "id": "ubuntu-24-04-arm64-x11",
-      "runner": "ubuntu-24.04-arm",
-      "target": "linux-arm64",
-      "profile": "ubuntu-24.04",
-      "backend": "x11",
-      "filesystem": "ext4",
-      "formats": ["deb"]
-    },
-    {
-      "id": "ubuntu-24-04-arm64-wayland",
-      "runner": "ubuntu-24.04-arm",
-      "target": "linux-arm64",
-      "profile": "ubuntu-24.04",
-      "backend": "wayland",
-      "filesystem": "ext4",
-      "formats": ["deb"]
-    },
-    {
-      "id": "ubuntu-26-04-x64-x11",
-      "runner": "ubuntu-26.04",
-      "target": "linux-x64",
-      "profile": "ubuntu-26.04",
-      "backend": "x11",
-      "filesystem": "ext4",
-      "formats": ["deb"]
-    },
-    {
       "id": "ubuntu-26-04-x64-wayland",
       "runner": "ubuntu-26.04",
       "target": "linux-x64",
       "profile": "ubuntu-26.04",
       "backend": "wayland",
-      "filesystem": "ext4",
-      "formats": ["deb"]
-    },
-    {
-      "id": "ubuntu-26-04-arm64-x11",
-      "runner": "ubuntu-26.04-arm",
-      "target": "linux-arm64",
-      "profile": "ubuntu-26.04",
-      "backend": "x11",
       "filesystem": "ext4",
       "formats": ["deb"]
     },

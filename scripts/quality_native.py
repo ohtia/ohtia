@@ -74,8 +74,6 @@ def build_environment() -> dict:
         "TEMP",
         "TMP",
         "TMPDIR",
-        "DISPLAY",
-        "XAUTHORITY",
         "XDG_RUNTIME_DIR",
         "DBUS_SESSION_BUS_ADDRESS",
         "XDG_SESSION_TYPE",
@@ -186,18 +184,12 @@ def host_matches(cell: dict, *, external_guard: dict | None = None) -> dict:
             ["findmnt", "-n", "-o", "FSTYPE", "-T", str(Path.home())], capture=True
         ).strip()
         delivery.require(filesystem == cell["filesystem"], "Unqualified Linux data filesystem.")
-        if cell["backend"] == "x11":
-            delivery.require(
-                bool(os.environ.get("DISPLAY")) and not os.environ.get("WAYLAND_DISPLAY"),
-                "A private X11 session is required.",
-            )
-        else:
-            delivery.require(
-                not os.environ.get("DISPLAY")
-                and os.environ.get("WAYLAND_DISPLAY")
-                and os.environ.get("XDG_CURRENT_DESKTOP") == "GNOME",
-                "Use the private GNOME Wayland session without an XWayland fallback.",
-            )
+        delivery.require(
+            not os.environ.get("DISPLAY")
+            and os.environ.get("WAYLAND_DISPLAY")
+            and os.environ.get("XDG_CURRENT_DESKTOP") == "GNOME",
+            "Use the private GNOME Wayland session without an XWayland fallback.",
+        )
     elif sys.platform == "darwin":
         release = command(["/usr/bin/sw_vers", "-productVersion"], capture=True).strip()
         delivery.require(f"macos-{release.split('.')[0]}" == cell["profile"], "Wrong macOS family.")
@@ -679,8 +671,7 @@ def display_connection(known: list[dict], backend: str) -> dict | None:
             continue
         peers = [peer for peer in rows if peer["inode"] == row["peer"]]
         for peer in peers:
-            marker = "wayland-" if backend == "wayland" else "/tmp/.X11-unix/X"
-            if marker in peer["address"]:
+            if "wayland-" in peer["address"]:
                 return {
                     "backend": backend,
                     "source": "unix-peer",

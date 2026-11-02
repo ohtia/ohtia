@@ -81,7 +81,7 @@ class AdmissionTests(unittest.TestCase):
             "native": True,
             "fixtures": "synthetic-or-permitted-public",
             "target": "linux-x64",
-            "profile": "ubuntu-24.04",
+            "profile": "ubuntu-26.04",
             "backend": "wayland",
             "home": str(self.home),
             "configuration_root": str(config),
@@ -262,10 +262,10 @@ class AdmissionTests(unittest.TestCase):
             launch.assert_not_called()
 
     def test_mismatched_linux_login_session_refuses_every_scenario_before_launch(self):
-        for session in ("wayland", "x11", "", "tty"):
+        for session in ("x11", "", "tty"):
             for scenario in probes.SCENARIOS:
                 with self.subTest(session=session, scenario=scenario):
-                    self.data["backend"] = "x11" if session == "wayland" else "wayland"
+                    self.data["backend"] = "wayland"
                     self.admit()
                     attempt = self.attempt_fixture("-" + (session or "empty") + "-" + scenario)
                     prepared = probes.read_json(attempt / "prepared.json")
@@ -988,7 +988,7 @@ print(json.dumps(result))
         result = probes.report([])
         self.assertFalse(result["complete"])
         self.assertEqual(result["qualified_targets"], [])
-        self.assertEqual(len(result["missing_profiles"]), 13)
+        self.assertEqual(len(result["missing_profiles"]), 9)
 
     def test_malformed_required_scope_cannot_report_success_without_native_records(self):
         original = probes.read_json(probes.ROOT / "config/desktop/targets.json")
@@ -1475,10 +1475,9 @@ class ReportTests(unittest.TestCase):
         support = directory / "scenarios/playwright"
         file = support / "observations/playwright-control.json"
         control = probes.read_json(file)
-        admitted = probes.read_json(support / "admitted.json")
         control["identity"]["switches"]["ozone-platform"] = {
             "present": True,
-            "value": "x11" if admitted["backend"] == "wayland" else "wayland",
+            "value": "x11",
         }
         self.save(file, control)
         execution = support / "execution.json"
@@ -1551,7 +1550,7 @@ class ReportTests(unittest.TestCase):
             )
             in required
         ]
-        self.assertEqual(len(records), 13)
+        self.assertEqual(len(records), 9)
         result = probes.report(records)
         self.assertTrue(result["complete"], result["failures"])
         self.assertEqual(result["missing_profiles"], [])
