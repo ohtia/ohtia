@@ -138,6 +138,9 @@ def cloud_config(profile: str, public_key: str) -> str:
         "packages": packages,
         "runcmd": commands,
     }
+    if profile == "debian-13":
+        # Retry failed archive transfers within the existing overall guest deadline.
+        value["apt"] = {"conf": 'Acquire::Retries "5";\n'}
     return "#cloud-config\n" + json.dumps(value, indent=2) + "\n"
 
 
@@ -176,6 +179,27 @@ def ssh_arguments(key: Path, known: Path, port: int) -> list:
         f"UserKnownHostsFile={known}",
         "ohtia-quality@127.0.0.1",
     ]
+
+
+def wait_guest_setup(ssh: list[str], child, deadline: float) -> None:
+    """Require successful completed provisioning before copying or running source."""
+    while time.monotonic() < deadline:
+        delivery.require(child.poll() is None, "Native guest stopped before readiness.")
+        ready = subprocess.run(
+            ssh + ["test -f /var/lib/ohtia-quality-ready"],
+            capture_output=True,
+            timeout=10,
+        )
+        if ready.returncode == 0:
+            # runcmd can create its marker even after the package module failed.
+            # Wait outside cloud-init itself and reject all nonzero setup outcomes.
+            run(
+                ssh + ["sudo cloud-init status --wait --long"],
+                timeout=max(1, deadline - time.monotonic()),
+            )
+            return
+        time.sleep(2)
+    raise delivery.DeliveryError("Guest setup exceeded its bounded deadline.")
 
 
 def home_disk_arguments(home: Path) -> list[str]:
@@ -381,18 +405,7 @@ def main() -> int:
                 child = subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT)
                 deadline = time.monotonic() + policy["deadline_seconds"]
                 ssh = ssh_arguments(key, attempt / "known_hosts", port)
-                while time.monotonic() < deadline:
-                    delivery.require(child.poll() is None, "Native guest stopped before readiness.")
-                    ready = subprocess.run(
-                        ssh + ["test -f /var/lib/ohtia-quality-ready"],
-                        capture_output=True,
-                        timeout=10,
-                    )
-                    if ready.returncode == 0:
-                        break
-                    time.sleep(2)
-                else:
-                    raise delivery.DeliveryError("Guest setup exceeded its bounded deadline.")
+                wait_guest_setup(ssh, child, deadline)
                 acceleration = qmp(monitor, "query-kvm")
                 delivery.require(
                     acceleration.get("enabled") is True and acceleration.get("present") is True,

@@ -40,6 +40,44 @@ class VirtualMachineTests(unittest.TestCase):
         with self.assertRaises(delivery.DeliveryError):
             vm.cloud_config("unreviewed-distribution", "public-key")
 
+    def test_readiness_marker_never_overrides_failed_cloud_initialization(self):
+        for status in (0, 1, 2):
+            with self.subTest(status=status):
+                calls = []
+
+                def command(arguments, **kwargs):
+                    calls.append(arguments[-1])
+                    if arguments[-1] == "sudo cloud-init status --wait --long":
+                        self.assertTrue(kwargs["check"])
+                        self.assertGreater(kwargs["timeout"], 0)
+                        self.assertLessEqual(kwargs["timeout"], 60)
+                        if status:
+                            raise subprocess.CalledProcessError(status, arguments)
+                    return subprocess.CompletedProcess(arguments, 0)
+
+                with (
+                    patch.object(vm.subprocess, "run", side_effect=command),
+                    patch.object(vm.time, "monotonic", return_value=100),
+                ):
+                    if status:
+                        with self.assertRaises(subprocess.CalledProcessError):
+                            vm.wait_guest_setup(
+                                ["ssh", "owned-guest"], Mock(poll=lambda: None), 160
+                            )
+                    else:
+                        vm.wait_guest_setup(["ssh", "owned-guest"], Mock(poll=lambda: None), 160)
+                self.assertEqual(
+                    calls,
+                    [
+                        "test -f /var/lib/ohtia-quality-ready",
+                        "sudo cloud-init status --wait --long",
+                    ],
+                )
+        debian = json.loads(vm.cloud_config("debian-13", "public-key").split("\n", 1)[1])
+        fedora = json.loads(vm.cloud_config("fedora-44", "public-key").split("\n", 1)[1])
+        self.assertEqual(debian["apt"], {"conf": 'Acquire::Retries "5";\n'})
+        self.assertNotIn("apt", fedora)
+
     def test_guest_policy_has_no_emulated_or_arm_fallback(self):
         policy = delivery.read(delivery.ROOT / "config/quality/virtual-machines.json")
         self.assertEqual(policy["accelerator"], "kvm")

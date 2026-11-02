@@ -1872,10 +1872,28 @@ describe("guarded native subprocess lifetime", () => {
       const row = fs.readFileSync(`/proc/${owned.pid}/stat`, "utf8").split(") ").at(-1)!.split(" ");
       return row[19] !== owned.birth || row[0] === "Z";
     } catch (e: any) {
-      if (e.code === "ENOENT") return true;
+      if (e.code === "ENOENT" || e.code === "ESRCH") return true;
       throw e;
     }
   }
+  it("accepts vanished proc entries while retaining observation failures", () => {
+    const read = vi.spyOn(fs, "readFileSync");
+    try {
+      for (const code of ["ENOENT", "ESRCH"]) {
+        read.mockImplementationOnce(() => {
+          throw Object.assign(new Error("Synthetic vanished process"), { code });
+        });
+        expect(ceased({ pid: 123, birth: "synthetic" })).toBe(true);
+      }
+      const denied = Object.assign(new Error("Synthetic observation refusal"), { code: "EACCES" });
+      read.mockImplementationOnce(() => {
+        throw denied;
+      });
+      expect(() => ceased({ pid: 123, birth: "synthetic" })).toThrow(denied);
+    } finally {
+      read.mockRestore();
+    }
+  });
   function signalOwned(owned: { pid: number; birth: string }) {
     // A pidfd pins the exact process; birth checks are observations, never signal targets.
     execFileSync(fileURLToPath(new URL("../.tooling/python/bin/python3", import.meta.url)), [
