@@ -70,6 +70,10 @@ class LinuxContributorTests(unittest.TestCase):
                     self.assertEqual(chosen, profile)
                     self.assertIn(route["manager"], ("apt-get", "dnf"))
                     self.assertIn("python3", route["packages"])
+                    self.assertIn(
+                        "python3-gobject" if route["manager"] == "dnf" else "python3-gi",
+                        route["packages"],
+                    )
                     self.assertEqual(len(route["packages"]), len(set(route["packages"])))
         self.assertEqual(
             set(linux.read(linux.ROOT / "config/desktop/linux-contributor.json")["profiles"]),

@@ -8,6 +8,7 @@ import {
   verifyPackagedCommands,
   verifyCommandsAfterDeniedNavigation,
 } from "./command-acceptance.mjs";
+import { nativeFocusFailure } from "./command-native-focus.mjs";
 import { verifyPackagedDesign } from "./design-acceptance.mjs";
 import { setNativeViewport } from "./design-viewport.mjs";
 import { admittedLaunch } from "./desktop-launch.mjs";
@@ -552,6 +553,7 @@ try {
     id: "acceptance-failure",
     result: "fail",
     controlledMessage: error instanceof Error ? error.message.slice(0, 1024) : "Acceptance failed",
+    nativeFocus: nativeFocusFailure(error),
   });
   process.exitCode = 1;
 } finally {

@@ -61,6 +61,7 @@ class NativeTests(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
+                "OHTIA_NATIVE_COMPOSITOR_PID": "4242",
                 "GH_TOKEN": "private",
                 "CSC_KEY_PASSWORD": "private",
                 "APPLE_ID": "private",
@@ -79,6 +80,7 @@ class NativeTests(unittest.TestCase):
                 "ELECTRON_RUN_AS_NODE",
             ):
                 self.assertNotIn(key, env)
+            self.assertEqual(env["OHTIA_NATIVE_COMPOSITOR_PID"], "4242")
             self.assertEqual(env["CSC_IDENTITY_AUTO_DISCOVERY"], "false")
             for spelling in ("SystemDrive", "SYSTEMDRIVE"):
                 with (

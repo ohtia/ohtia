@@ -35,6 +35,7 @@ def main() -> int:
                 stderr=subprocess.STDOUT,
             )
             try:
+                env["OHTIA_NATIVE_COMPOSITOR_PID"] = str(child.pid)
                 deadline = time.monotonic() + 60
                 while time.monotonic() < deadline:
                     sockets = [

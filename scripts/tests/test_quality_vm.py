@@ -507,6 +507,15 @@ class VirtualMachineTests(unittest.TestCase):
                             if audit_outcome == "watchdog":
                                 raise subprocess.TimeoutExpired(arguments, 12)
                             return subprocess.CompletedProcess(arguments, audit_outcome)
+                        if arguments[:5] == [
+                            "systemctl",
+                            "--user",
+                            "show",
+                            "--property=MainPID",
+                            "--value",
+                        ]:
+                            self.assertEqual(arguments[-1], "ohtia-quality-gnome.service")
+                            return subprocess.CompletedProcess(arguments, 0, stdout="4242\n")
                         if arguments[0] == "/usr/bin/systemctl":
                             if arguments[1] == "--user" and arguments[2] in (
                                 "daemon-reload",
@@ -550,6 +559,7 @@ class VirtualMachineTests(unittest.TestCase):
                                         raise subprocess.TimeoutExpired(arguments, 10)
                             return subprocess.CompletedProcess(arguments, 0, stdout="active\n")
                         if "quality:build" in arguments:
+                            self.assertEqual(options["env"]["OHTIA_NATIVE_COMPOSITOR_PID"], "4242")
                             self.assertEqual(compositor_ready, [True])
                             self.assertEqual(portal_ready, [True])
                             quality_calls.append(True)

@@ -190,6 +190,35 @@ export async function verifyCommandSpecimens(page, url, engine) {
           await page.keyboard.press("Escape");
           await expect(trigger).toBeFocused();
         }
+  // Reserve the classic scrollbar gutter even in headless browsers that hide scrollbars.
+  // This exercises the available containing width rather than assuming 100vw is usable.
+  try {
+    await page.evaluate(() => (document.documentElement.style.scrollbarGutter = "stable"));
+    for (const width of [320, 600, 1024, 1280]) {
+      await page.setViewportSize({ width, height: 600 });
+      for (const surface of ["about", "help"]) {
+        await specimen
+          .locator(".command-entry-actions button")
+          .nth(surface === "about" ? 1 : 0)
+          .click();
+        const geometry = await page.locator(`.${surface}-dialog[open]`).evaluate((dialog) => {
+          const bounds = dialog.getBoundingClientRect();
+          return {
+            left: bounds.left,
+            right: bounds.right,
+            width: bounds.width,
+            viewport: innerWidth,
+          };
+        });
+        expect(geometry.left).toBeGreaterThanOrEqual(15);
+        expect(geometry.right).toBeLessThanOrEqual(geometry.viewport - 15);
+        expect(geometry.width).toBeLessThanOrEqual(480);
+        await page.keyboard.press("Escape");
+      }
+    }
+  } finally {
+    await page.evaluate(() => document.documentElement.style.removeProperty("scrollbar-gutter"));
+  }
   if (engine === "chromium") {
     await page.setViewportSize({ width: 800, height: 600 });
     await specimen.locator(".command-entry-actions button").nth(1).click();

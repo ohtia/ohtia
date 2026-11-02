@@ -146,6 +146,12 @@ describe("commands after denied navigation", () => {
       hidden: { open: false, visible: false },
       document: f.expectedDocument,
       mainUrl: f.expectedDocument.url,
+      nativeFocus: {
+        target: "admitted document",
+        strategy: "native focus request",
+        compositorInputAttempts: 0,
+        focused: true,
+      },
     });
     expect(f.item.click).toHaveBeenCalledOnce();
     expect(f.dialog.open).toBe(false);

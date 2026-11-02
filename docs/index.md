@@ -53,7 +53,7 @@ okf_version: "0.2"
 - [Native Windows contribution](windows-contribution.md) — Prepare, diagnose, edit, verify and package Ohtia in an independent native Windows x64 contributor profile.
 - [Native macOS contribution](macos-contribution.md) — Set up, diagnose, edit, verify and package Ohtia in an independent Apple Silicon macOS contributor profile.
 - [Locked developer workspace](developer-workspace.md) — Bootstrap isolated contributor tools, build the six package boundaries and verify the frozen workspace without changing research data.
-- [Native foundation qualification](native-qualification.md) — Assemble non-shipping native probes, admit independent profiles and retain complete target evidence without claiming partial native qualification.
+- [Native foundation qualification](native-qualification.md) — Assemble non-shipping native probes, admit independent profiles and retain complete target evidence without claiming partial native qualification, including owned headless GNOME window activation.
 - [Native foundation qualification report](native-foundation-report.md) — Observed native desktop feasibility, source compatibility, packaging consequences and evidence limits for the required foundation platforms.
 - [Repository policy](repository-policy.md) — GitHub repository configuration, dependency updates, quality checks, and verification procedures.
 - [Change-note tooling](change-notes.md) — Capture inert PR impact records, reconcile source scope and prepare immutable editorial note and correction evidence.

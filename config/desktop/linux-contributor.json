@@ -27,7 +27,8 @@
         "xauth",
         "xvfb",
         "unzip",
-        "zip"
+        "zip",
+        "python3-gi"
       ],
       "sources": ["https://packages.ubuntu.com/noble/"]
     },
@@ -57,7 +58,8 @@
         "xauth",
         "xvfb",
         "unzip",
-        "zip"
+        "zip",
+        "python3-gi"
       ],
       "sources": ["https://packages.ubuntu.com/resolute/"]
     },
@@ -87,7 +89,8 @@
         "xauth",
         "xvfb",
         "unzip",
-        "zip"
+        "zip",
+        "python3-gi"
       ],
       "sources": ["https://packages.debian.org/trixie/"]
     },
@@ -121,7 +124,8 @@
         "rpm-build",
         "unzip",
         "zip",
-        "libxcrypt-compat"
+        "libxcrypt-compat",
+        "python3-gobject"
       ],
       "sources": ["https://packages.fedoraproject.org/"]
     }

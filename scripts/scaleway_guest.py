@@ -299,6 +299,28 @@ def display(output: Path) -> int:
             ],
             timeout=65,
         )
+        compositor_pid = subprocess.run(
+            [
+                "systemctl",
+                "--user",
+                "show",
+                "--property=MainPID",
+                "--value",
+                "ohtia-qualification-gnome.service",
+            ],
+            env=env,
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=10,
+        ).stdout.strip()
+        if (
+            not compositor_pid.isascii()
+            or not compositor_pid.isdecimal()
+            or int(compositor_pid) <= 0
+        ):
+            cycle.require(False, "guest_compositor_identity")
+        env["OHTIA_NATIVE_COMPOSITOR_PID"] = compositor_pid
         sockets = [
             file
             for file in runtime.glob("wayland-*")
