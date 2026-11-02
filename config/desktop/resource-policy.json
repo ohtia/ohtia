@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "policy_id": "foundation-1",
-  "measurement": "UTF-8 bytes of compact JSON with no BOM or insignificant whitespace; JSONL adds exactly one LF byte. Integers only; booleans are not numeric values. No coercion, truncation or silent clamping.",
+  "measurement": "UTF-8 bytes of compact JSON with no BOM or insignificant whitespace; JSONL and the canonical delivery JSON format add exactly one LF byte. Integers only; booleans are not numeric values. No coercion, truncation or silent clamping.",
   "budgets": {
     "message_bytes": {
       "value": 65536,
@@ -566,6 +566,90 @@
       "scope": "Maximum expanded Windows application payload",
       "failure": "update_refused",
       "rationale": "Bound temporary extraction before native activation"
+    },
+    "delivery_document_bytes": {
+      "value": 1048576,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 1048576,
+        "maximum": 1048576
+      },
+      "owner": "013",
+      "scope": "One canonical delivery inventory or index",
+      "failure": "delivery_admission_refused",
+      "rationale": "Bound shared metadata reconciliation; reject excess rather than truncate required evidence"
+    },
+    "delivery_evidence_record_bytes": {
+      "value": 2097152,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 2097152,
+        "maximum": 2097152
+      },
+      "owner": "013",
+      "scope": "One canonical structured delivery evidence record",
+      "failure": "delivery_admission_refused",
+      "rationale": "Bound shared metadata reconciliation; reject excess rather than truncate required evidence"
+    },
+    "delivery_evidence_records": {
+      "value": 1024,
+      "unit": "record",
+      "permitted": {
+        "minimum": 1024,
+        "maximum": 1024
+      },
+      "owner": "013",
+      "scope": "Evidence records per admission",
+      "failure": "delivery_admission_refused",
+      "rationale": "Bound shared metadata reconciliation; reject excess rather than truncate required evidence"
+    },
+    "delivery_total_metadata_bytes": {
+      "value": 67108864,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 67108864,
+        "maximum": 67108864
+      },
+      "owner": "013",
+      "scope": "Combined encoded metadata per admission",
+      "failure": "delivery_admission_refused",
+      "rationale": "Bound shared metadata reconciliation; reject excess rather than truncate required evidence"
+    },
+    "delivery_version_inventories": {
+      "value": 32,
+      "unit": "inventory",
+      "permitted": {
+        "minimum": 32,
+        "maximum": 32
+      },
+      "owner": "013",
+      "scope": "Current and explicit baseline version inventories",
+      "failure": "delivery_admission_refused",
+      "rationale": "Bound shared metadata reconciliation; reject excess rather than truncate required evidence"
+    },
+    "delivery_artifacts_per_inventory": {
+      "value": 32,
+      "unit": "artifact",
+      "permitted": {
+        "minimum": 32,
+        "maximum": 32
+      },
+      "owner": "013",
+      "scope": "Final artifacts per application version",
+      "failure": "delivery_admission_refused",
+      "rationale": "Bound shared metadata reconciliation; reject excess rather than truncate required evidence"
+    },
+    "delivery_cells": {
+      "value": 32,
+      "unit": "cell",
+      "permitted": {
+        "minimum": 32,
+        "maximum": 32
+      },
+      "owner": "013",
+      "scope": "Explicit native cells per admission",
+      "failure": "delivery_admission_refused",
+      "rationale": "Bound shared metadata reconciliation; reject excess rather than truncate required evidence"
     }
   }
 }

@@ -267,7 +267,19 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
       return snapshot;
     }),
   };
-  Object.defineProperty(window, "ohtia", { value: { foundation, bootstrap }, configurable: true });
+  const commands = {
+    context: vi.fn(async () => ({ windowGeneration: "renderer-window", platform: "linux" })),
+    publish: vi.fn(async () => true),
+    onIntent: vi.fn(() => () => {}),
+    perform: vi.fn(async () => true),
+    copyVersionInformation: vi.fn(async () => true),
+    about: vi.fn(),
+    openLink: vi.fn(async () => false),
+  };
+  Object.defineProperty(window, "ohtia", {
+    value: { foundation, bootstrap, commands },
+    configurable: true,
+  });
   const container = document.createElement("div");
   container.id = "root";
   document.body.append(container);
@@ -299,7 +311,8 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
   expect(document.documentElement.lang).toBe("en-US");
   expect(container.textContent).toContain(message("en-US", "intro"));
   snapshot = { ...snapshot, locale: "en-US" };
-  expect(bootstrap.newWindow).toHaveBeenCalledOnce();
+  expect(bootstrap.newWindow).not.toHaveBeenCalled();
+  expect(container.textContent).toContain(message("en-US", "command.reason.handler_missing"));
   snapshot = { ...snapshot, state: "recovery_required" };
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1000);
@@ -318,8 +331,9 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
     await vi.advanceTimersByTimeAsync(1000);
   });
   expect(document.activeElement).toBe(focusedControl);
-  await click(container, "exit");
-  expect(bootstrap.exit).toHaveBeenCalledOnce();
+  await click(container, "command.application.quit");
+  expect(commands.perform).toHaveBeenCalledWith("application.quit");
+  expect(bootstrap.exit).not.toHaveBeenCalled();
   snapshot = { ...snapshot, state: "storage_opening" };
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1000);

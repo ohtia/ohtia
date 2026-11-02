@@ -24,8 +24,41 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  recovery-preflight:
+    name: Obtain recovery evidence before requesting approval
+    if: github.repository == 'ohtia/ohtia' && github.ref == 'refs/heads/main' && vars.SCW_CYCLE_ENABLED == 'true' && vars.SCW_RECOVERY_ENABLED == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      actions: write
+    env:
+      SCW_CYCLE_ENABLED: ${{ vars.SCW_CYCLE_ENABLED }}
+      SCW_RECOVERY_ENABLED: ${{ vars.SCW_RECOVERY_ENABLED }}
+      SCW_PROJECT_ID: ${{ vars.SCW_PROJECT_ID }}
+      SCW_ARM_ZONE: ${{ vars.SCW_ARM_ZONE }}
+      SCW_CREATOR_KEY_EXPIRES_AT: ${{ vars.SCW_CREATOR_KEY_EXPIRES_AT }}
+      SCW_CLEANUP_KEY_EXPIRES_AT: ${{ vars.SCW_CLEANUP_KEY_EXPIRES_AT }}
+    steps:
+      - name: Check out controller source without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+      - name: Install the checksum-pinned metadata client
+        run: python3 scripts/scaleway_qualification.py install-cli --output "$RUNNER_TEMP/scw-gh"
+      - name: Reuse recent recovery evidence or request a recovery run
+        timeout-minutes: 30
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/scaleway_qualification.py ensure-recovery --dispatch --cli "$RUNNER_TEMP/scw-gh/gh"
+
   build:
     name: Build unsigned ARM qualification inputs
+    needs: recovery-preflight
     if: github.repository == 'ohtia/ohtia' && github.ref == 'refs/heads/main' && vars.SCW_CYCLE_ENABLED == 'true' && vars.SCW_RECOVERY_ENABLED == 'true'
     runs-on: ubuntu-26.04-arm
     timeout-minutes: 30
@@ -58,13 +91,49 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # One approval releases both jobs below. Only this one can request recovery; it reads no secret.
+  # The creator job waits for it, so the recovery run it requests cannot overlap allocation.
+  recovery-refresh:
+    name: Refresh recovery evidence after approval
+    needs: build
+    if: github.repository == 'ohtia/ohtia' && github.ref == 'refs/heads/main' && vars.SCW_CYCLE_ENABLED == 'true' && vars.SCW_RECOVERY_ENABLED == 'true'
+    environment: scaleway-qualification
+    runs-on: ubuntu-26.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      actions: write
+    env:
+      SCW_CYCLE_ENABLED: ${{ vars.SCW_CYCLE_ENABLED }}
+      SCW_RECOVERY_ENABLED: ${{ vars.SCW_RECOVERY_ENABLED }}
+      SCW_PROJECT_ID: ${{ vars.SCW_PROJECT_ID }}
+      SCW_ARM_ZONE: ${{ vars.SCW_ARM_ZONE }}
+      SCW_CREATOR_KEY_EXPIRES_AT: ${{ vars.SCW_CREATOR_KEY_EXPIRES_AT }}
+      SCW_CLEANUP_KEY_EXPIRES_AT: ${{ vars.SCW_CLEANUP_KEY_EXPIRES_AT }}
+    steps:
+      - name: Check out controller source without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+      - name: Install the checksum-pinned metadata client
+        run: python3 scripts/scaleway_qualification.py install-cli --output "$RUNNER_TEMP/scw-gh"
+      - name: Reuse recent recovery evidence or request a recovery run
+        timeout-minutes: 30
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/scaleway_qualification.py ensure-recovery --dispatch --cli "$RUNNER_TEMP/scw-gh/gh"
+
   qualify:
     name: Create and qualify one ARM lease
     needs: build
     if: github.repository == 'ohtia/ohtia' && github.ref == 'refs/heads/main' && vars.SCW_CYCLE_ENABLED == 'true' && vars.SCW_RECOVERY_ENABLED == 'true'
     environment: scaleway-qualification
     runs-on: ubuntu-26.04
-    timeout-minutes: 60
+    timeout-minutes: 95
     permissions:
       contents: read
       actions: read
@@ -96,6 +165,11 @@ jobs:
           name: scw-build-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/scw-build
           digest-mismatch: error
+      - name: Wait for admitted independent recovery evidence
+        timeout-minutes: 30
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/scaleway_qualification.py ensure-recovery --cli "$RUNNER_TEMP/scw-gh/gh"
       - name: Admit configuration and prepare the nonsecret allocation intent
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -113,6 +187,7 @@ jobs:
           retention-days: 14
       - name: Create, test and remove the lease
         id: controller
+        timeout-minutes: 58
         env:
           GITHUB_TOKEN: ${{ github.token }}
           SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}

@@ -7,6 +7,7 @@ export interface ButtonProps {
   variant?: "primary" | "secondary" | "quiet" | "destructive";
   disabledReason?: string;
   loadingLabel?: string;
+  ariaKeyShortcuts?: string;
 }
 export function Button({
   label,
@@ -14,6 +15,7 @@ export function Button({
   variant = "secondary",
   disabledReason,
   loadingLabel,
+  ariaKeyShortcuts,
 }: ButtonProps) {
   const id = useId();
   return (
@@ -23,6 +25,7 @@ export function Button({
         className={`primitive-button primitive-${variant}`}
         aria-disabled={!!disabledReason || !!loadingLabel}
         aria-busy={!!loadingLabel}
+        aria-keyshortcuts={ariaKeyShortcuts}
         aria-describedby={disabledReason || loadingLabel ? id : undefined}
         onClick={() => {
           if (!disabledReason && !loadingLabel) onPress();

@@ -8,3 +8,5 @@ export * from "./diagnostics.js";
 
 export * from "./localization.js";
 export * from "./layout.js";
+
+export * from "./commands.js";

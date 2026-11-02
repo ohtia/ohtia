@@ -178,6 +178,7 @@ describe("review regression contracts", () => {
           "design-roles.css",
           "primitives.css",
           "foundation.css",
+          "command-surfaces.css",
         ].map((name) => `packages/renderer/src/${name}`),
       ]) {
         fs.mkdirSync(path.dirname(path.join(temporary, file)), { recursive: true });
@@ -349,10 +350,9 @@ describe("review regression contracts", () => {
   it("rejects invalid color ownership, uninspected syntax and forced-color escapes", () => {
     const model = checkTokens();
     const sources = Object.fromEntries(
-      ["foundation.css", "design-roles.css", "primitives.css"].map((name) => [
-        name,
-        fs.readFileSync(`packages/renderer/src/${name}`, "utf8"),
-      ]),
+      ["foundation.css", "design-roles.css", "primitives.css", "command-surfaces.css"].map(
+        (name) => [name, fs.readFileSync(`packages/renderer/src/${name}`, "utf8")],
+      ),
     );
     const usage = JSON.parse(fs.readFileSync("packages/renderer/color-usage.json", "utf8"));
     expect(() => checkColorUsage(model, sources, {})).toThrow(/Missing renderer color usage/);

@@ -2,10 +2,6 @@
 type: Specification
 title: Ohtia design system
 description: Visual identity, tokens, symbol and character, typography, composition, accessibility, localization, components and patterns of Ohtia's interface.
-generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 tags:
   - design
   - accessibility
@@ -321,6 +317,7 @@ The inventory is closed: every foreground/background combination used by a compo
 | `danger.border`             | `surface.page`                 | 3:1     | 4.58:1  | 5.56:1  |
 | `danger.border`             | `surface.panel`                | 3:1     | 4.31:1  | 5.34:1  |
 | `danger.border`             | `surface.emphasis`             | 3:1     | 3.95:1  | 4.67:1  |
+| `danger.border`             | `danger.surface`               | 3:1     | 4.18:1  | 4.47:1  |
 | `content.disabled`          | `surface.page`                 | 3:1     | 3.60:1  | 4.83:1  |
 | `content.disabled`          | `surface.panel`                | 3:1     | 3.39:1  | 4.65:1  |
 | `content.disabled`          | `surface.emphasis`             | 3:1     | 3.10:1  | 4.06:1  |
@@ -561,6 +558,8 @@ Fixed mappings:
 | Restricted use                | `lock`                 |
 | Saved                         | `check`                |
 | Copied                        | `clipboard-check`      |
+| External link                 | `external-link`        |
+| Close dialog                  | `x`                    |
 | Saving operation in timeline  | `save`                 |
 | Archive conversation          | `folder-archive`       |
 | Offline                       | `cloud-off`            |

@@ -2,6 +2,8 @@
   "version": 1,
   "vitest": [
     "tests/catalog-build.test.ts",
+    "tests/command-surfaces.test.ts",
+    "tests/commands.test.ts",
     "tests/design-foundation.test.ts",
     "tests/design-viewport.test.ts",
     "tests/desktop-probes.test.ts",
@@ -64,6 +66,7 @@
   ],
   "python": [
     "scripts/tests/test_change_notes.py",
+    "scripts/tests/test_delivery_admission.py",
     "scripts/tests/test_design_assets.py",
     "scripts/tests/test_desktop_contract.py",
     "scripts/tests/test_desktop_delivery.py",
@@ -86,6 +89,7 @@
     "scripts/tests/test_quality_tests.py",
     "scripts/tests/test_quality_vm.py",
     "scripts/tests/test_scaleway_cycle.py",
+    "scripts/tests/test_scaleway_preflight.py",
     "scripts/tests/test_scaleway_progress.py",
     "scripts/tests/test_windows_contributor.py",
     "scripts/tests/test_workspace.py"

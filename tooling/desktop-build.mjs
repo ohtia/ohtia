@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { build } from "vite";
 import { productGraph } from "./product-graph.mjs";
@@ -112,7 +113,7 @@ export async function buildDesktop(root) {
     JSON.stringify({
       name: "Ohtia",
       productName: "Ohtia",
-      version: "0.0.0",
+      version: JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version,
       private: true,
       type: "module",
       main: "main.mjs",
@@ -149,6 +150,50 @@ export async function buildDesktop(root) {
         fs.copyFileSync(source, path.join(licenses, `${directory}-${name}`));
     }
   }
+  fs.copyFileSync(path.join(root, "LICENSE"), path.join(licenses, "Ohtia-LICENSE"));
+  const require = createRequire(path.join(root, "package.json"));
+  const notices = [];
+  for (const component of [
+    "react",
+    "react-dom",
+    "scheduler",
+    "better-sqlite3",
+    "node-addon-api",
+    "kysely",
+    "electron",
+  ]) {
+    const resolver =
+      component === "scheduler"
+        ? createRequire(require.resolve("react-dom/package.json"))
+        : component === "node-addon-api"
+          ? createRequire(
+              path.join(
+                fs.realpathSync(path.join(root, "packages/utility/node_modules/better-sqlite3")),
+                "package.json",
+              ),
+            )
+          : require;
+    const source =
+      component === "electron"
+        ? fs.realpathSync(path.join(root, "packages/main/node_modules/electron"))
+        : ["better-sqlite3", "kysely"].includes(component)
+          ? fs.realpathSync(path.join(root, "packages/utility/node_modules", component))
+          : path.dirname(resolver.resolve(`${component}/package.json`));
+    const metadata = JSON.parse(fs.readFileSync(path.join(source, "package.json"), "utf8"));
+    const name = ["LICENSE", "LICENSE.md"].find((name) => fs.existsSync(path.join(source, name)));
+    if (!name || typeof metadata.license !== "string")
+      throw new Error("Missing bundled dependency notice.");
+    fs.copyFileSync(path.join(source, name), path.join(licenses, `${component}-LICENSE`));
+    notices.push({ component, license: metadata.license });
+  }
+  const fonts = JSON.parse(
+    fs.readFileSync(path.join(root, "packages/renderer/fonts/manifest.json"), "utf8"),
+  );
+  for (const font of fonts.fonts)
+    if (!notices.some((notice) => notice.component === font.family))
+      notices.push({ component: font.family, license: font.license });
+  notices.push({ component: "Lucide", license: "ISC / MIT" });
+  fs.writeFileSync(path.join(output, "notices.json"), JSON.stringify(notices));
   const inventory = {};
   for (const name of fs.readdirSync(output, { recursive: true })) {
     const file = path.join(output, name);
