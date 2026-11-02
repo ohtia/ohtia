@@ -1,0 +1,136 @@
+---
+type: DecisionRecord
+title: ADR-0041 — Independently administered Linux signing service
+description: Separate Linux signing requests from key custody and policy administration using a bounded Scaleway container service.
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
+sources:
+  - id: scaleway-private
+    resource: https://www.scaleway.com/en/docs/serverless-containers/how-to/secure-a-container/
+    title: Private container invocation and IAM
+  - id: scaleway-limits
+    resource: https://www.scaleway.com/en/docs/serverless-containers/reference-content/containers-limitations/
+    title: Container architecture, capacity and execution limits
+  - id: github-oidc
+    resource: https://docs.github.com/en/actions/reference/security/oidc
+    title: Authenticated Actions execution claims
+  - id: gh-attestation
+    resource: https://cli.github.com/manual/gh_attestation_verify
+    title: Artifact verification and authenticated certificate fields
+  - id: sigstore
+    resource: https://docs.github.com/en/actions/concepts/security/artifact-attestations
+    title: Public repository attestation trust
+  - id: checksums
+    resource: https://www.scaleway.com/en/docs/object-storage/reference-content/supported-checksums/
+    title: Supported object checksums
+  - id: jose
+    resource: https://github.com/panva/jose/releases/tag/v6.2.12
+    title: JOSE implementation release
+  - id: secret-manager
+    resource: https://www.scaleway.com/en/developers/api/secret-manager/secret-versions
+    title: Explicit secret-version access
+  - id: scaleway-s3-concepts
+    resource: https://www.scaleway.com/en/docs/object-storage/concepts/
+    title: Object Storage concepts — Amazon S3 compatibility and Scaleway authentication
+  - id: scaleway-s3-faq
+    resource: https://www.scaleway.com/en/docs/object-storage/faq/
+    title: Object Storage FAQ — What is Object Storage?
+  - id: aws-sdk
+    resource: https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/s3/
+    title: S3 commands and presigning
+  - id: conditional-storage
+    resource: https://www.scaleway.com/en/docs/object-storage/api-cli/using-conditional-writes/
+    title: Conditional object creation and replacement
+---
+
+# ADR-0041 — Independently administered Linux signing service
+
+## Context
+
+[ADR-0038](adr-0038-desktop-delivery-mechanisms.md) requires authentic Linux packages and exact-byte catalogs; [ADR-0020](adr-0020-github-policy-and-trusted-ci.md) requires actual authority outside untrusted workflow execution. A workflow holding both private keys and permission to replace its verifier would control its own signing policy. [Shared delivery admission](../delivery-admission.md) consumes verified evidence and does not supply that missing authority.
+
+Consider a dedicated VM, a container invoked on demand and a dedicated key-management service. A VM permits the existing GnuPG/RPM toolchain but adds operating-system maintenance. A managed key service requires a qualified adapter between its signing primitives and the selected OpenPGP/catalog formats. A container permits those tools while separating invocation from administrative credentials, with provider and software-custody risks that must remain explicit.
+
+## Decision
+
+Use a private Scaleway Serverless Container in a dedicated signing Project, with a separate policy/deployment administrator and an invocation application limited to private-container access. Build the image for linux/amd64; signing an ARM64 RPM does not execute or qualify that package. Start with minimum scale zero, maximum scale one, one request per instance and separately reviewed capacity. Scaling settings do not establish global exclusion during deployment overlap.[^scaleway-private][^scaleway-limits]
+
+Keep the RPM certification primary key, revocation certificate and full recovery backups outside the service. Provision only the authorized signing subkey and the catalog key through separately approved protected custody. The service must verify their independently selected public identities before use. Neither the invocation credential nor the Actions execution receives private keys, passphrases, backend storage access or administrative permission. Software key custody does not provide HSM isolation from the service, cloud administrator or provider.
+
+The deployed image and external policy own repository identities, source trust, immutable reusable workflow revisions, allowed input/proof formats, public keys, storage origins, revocation and the kill switch. A request cannot select another verifier, policy, executable, destination or key. Changes to these controls require separate administrative authorization and actual readback; an ordinary source merge does not require copying a policy hash into a repository variable.
+
+### Caller, source and artifact authority
+
+Verify current GitHub Actions OIDC claims with jose `6.2.*`, using the fixed GitHub issuer and bounded public JWKS retrieval. Pin immutable owner/repository IDs, audience, main ref, dispatch event, environment, hosted runner and immutable reusable workflow identity. Resolve the actual job/check-run/run/attempt/source relationship independently. The provider IAM check and application OIDC check are distinct controls.[^github-oidc][^jose]
+
+Use Git `2.56.*` for source verification. An independently approved anchor and SSH public-key allowlist authorize descendant source history. New one-parent commits require a valid authorized personal SSH signature. A two-parent merge without such a signature is admissible only when both parents are admitted and the trusted Git computation reproduces its exact tree without conflicts. Personally signed resolutions can authorize their actual resolved tree. A GitHub web-flow signature or Verified badge alone cannot authorize a source mutation. Isolate Git configuration, hooks, attributes and replacement/graft mechanisms from the repository being examined. Scope verified-prefix cache entries to the full policy identity; requests cannot insert cache records.
+
+OIDC authenticates the requester, not the build output. Use the pinned GitHub CLI under [the qualification tool policy](../../config/installation/scaleway.json) to cryptographically verify GitHub artifact attestations and then check their authenticated certificate identity, builder revision, source and run/attempt. Require the declared input manifest in the authenticated pinned builder's predicate and verify its actual successful build job. Predicate data is workflow-controlled; a reusable builder whose caller can redefine privileged behavior is inadmissible. Check the actual package digest and length independently. Public repository provenance uses the Sigstore Public Good Instance; do not exclude that trust path while retaining exact repository, builder and source restrictions.[^gh-attestation][^sigstore]
+
+Use GnuPG `2.4.*` and RPM `6.0.*` for the selected RPM operation, with exact binaries and native helper inputs bound by the signer image manifest. OpenSSH retains its native upstream release identity in that manifest. [The developer Node decision](adr-0004-javascript-development-toolchain.md) owns the Node runtime line. The [toolchain manifest](../../config/desktop/toolchain.json) owns the exact JOSE patch and artifact integrity; the [numeric policy](../../config/desktop/resource-policy.json) owns signing, metadata, artifact and execution bounds.
+
+The immutable reusable builder is the build authority; another admitted-source top-level caller does not grant different builder code or permit caller-selected privileged helpers. Qualify that exact builder contract before accepting genuine attestations.
+
+### Operations and receipts
+
+[The authority module](../../tooling/installation-authority.mjs) defines strict canonical input and authority validation. [The signer](../../tooling/installation-signer.mjs) exposes three typed operations: `rpm-sign`, `deb-bind` and `catalog-sign`. All subjects in this qualification interface have kind `qualification`, internal development versions, immutable source commit/tree and separate build/signing executions. Public promotion and permanent version reservation remain with their respective owners.
+
+The canonical request has exactly `schema_version`, `operation`, `subject`, `execution`, `artifact_id`, `input`, `build_proof` and `catalog_bindings`. Schema version is 1. Subject and execution use the shared admission field sets; installer/proof references contain only SHA-256 and length. RPM and DEB operations require an artifact ID and no catalog bindings; catalog signing requires a null artifact ID and complete unique sealed package bindings. Unknown fields, duplicate keys, unsafe integers, noncanonical bytes, excess sizes and caller-selected trust are refused. Request identity hashes the complete canonical request; immutable subject/artifact/operation identity separately prevents a new request ID from replacing settled bytes.
+
+RPM signing verifies the expected native metadata and authorized subkey, signs an admitted copy, verifies the expected signature and seals the resulting bytes. DEB binding retains the exact authenticated build bytes and creates no native DEB signature. Catalog signing accepts the existing exact-byte catalog format and only previously sealed RPM/DEB results from the same qualification subject. Preserve the existing `candidate` as SHA-256 of canonical `{inputs, contracts}`; each authenticated build manifest binds that exact closure through `inputs_sha256`, and every catalog package must share it. Require unique native `(target, profile, format)` identities as well as unique filenames. Package profiles remain the native profiles in the target manifest; their distribution capability groups remain separate under shared admission. No operation installs a package, executes its scripts or exposes arbitrary-message signing.
+
+The independently approved pinned qualification caller owns the bounded internal campaign control metadata: schema declaration, sequence, notes and freshness times. Package provenance and catalog package bindings do not independently attest those control fields. Qualify the actual fixed caller recipe against its captured contracts and reject runtime overrides before enabling this internal route; it grants no public-feed metadata authority. The metadata workflow owns admission of refreshed revision identities over unchanged package bindings before an operational feed is enabled. A qualification event remains immutable.
+
+Every sealed receipt binds request, operation, subject, caller execution, actual service invocation/deployment, image/policy identities, source/build/verification proof hashes, input/output references, signer and seal time. Receipt bytes have their own schema and receive an Ed25519 signature over the UTF-8 prefix `ohtia-signing-receipt-v1`, one NUL byte and canonical receipt bytes. The prefix prevents interpreting a receipt signature as a catalog signature. Receipt authenticity never substitutes verification of final package/catalog signatures, source, build or deployment evidence.
+
+The Ed25519 key ID is SHA-256 of SPKI DER. The RPM signer ID hashes canonical JSON with `mechanism: openpgp-rpm`, `primary_fingerprint` and `signing_subkey_fingerprint`, both lowercase full fingerprints. DEB binding reports `mechanism: none` and null native signer ID while retaining authenticated receipt/catalog coverage. The authority identity is the independently admitted canonical policy hash.
+
+### Durable state, transport and recovery
+
+Persist a conditional journal before an irreversible signing step. States are `admitted`, `signing`, `sealed`, `failed` and `uncertain`. Return an identical retained sealed result for an identical retry. Refuse changed input under an existing immutable identity. A signing marker without a settled durable output is uncertain; lease expiry, redeployment or a cancelled caller does not authorize another signature. Conditional storage and fencing must survive multiple workers and ambiguous writes. Prepare keys and native metadata before entering the signing state, then fence immediately before the first private signature. A known pre-effect authority outage remains admitted and retryable; a deterministic preflight refusal can become failed. After possible signing, absence of a durable authenticated result remains uncertain.[^conditional-storage]
+
+Authenticate the current caller and actual job immediately before the first irreversible signing step. Settling those already-authorized bytes rechecks the independent policy and revocation gate, without requiring the original short-lived caller token to remain valid throughout storage and signing. Result retrieval still requires a fresh token for that same admitted execution. A new job/attempt or a changed policy cannot silently replace an old identity or release receipts under stale authority; independently authorized archival/recovery and policy migration must resolve those cases before operational enablement.
+
+Propagate one monotonic operation deadline through authority checks, storage requests and streams, binding reconciliation and subprocesses. [The Linux subprocess supervisor](../../tooling/installation-signing-runner.mjs) holds its own isolated session/group until completion or cancellation and signals only that still-live group, including ordinary descendants. A dedicated abort pipe also closes when its controller dies. RPM work reserves one subprocess-sized cleanup window inside the total operation deadline, rather than starting a new allowance after expiry. The intentionally detached GnuPG agent is separately stopped through its exact private home; deployable-image qualification must verify that complete helper/daemon lifecycle. Never signal a positive PID or PGID after its former leader may have been reaped.
+
+Scaleway documents an Amazon S3-compatible Object Storage API and explicitly limits its support to a subset of Amazon S3. This compatibility supports using S3 client libraries; it does not establish support for every AWS feature or replace verification of the required provider operations. Authenticate with Scaleway credentials and use the fixed Paris endpoint `https://s3.fr-par.scw.cloud`; the SDK dependency does not select Amazon as the storage provider.[^scaleway-s3-concepts][^scaleway-s3-faq]
+
+Use @aws-sdk/client-s3 `3.1161.*` and @aws-sdk/s3-request-presigner `3.1161.*` for that Scaleway endpoint, with all automatic SDK retries disabled (`maxAttempts: 1`), including reads and mutations. [The provider adapters](../../tooling/installation-signing-scaleway.mjs) isolate ingress from retained objects, append journal revisions with conditional creation, bind upload SHA-256, length and create-only headers in exact-object presigned URLs, and retrieve four explicitly selected opaque Secret Manager versions. Provider responses and object streams are bounded and the provider receives a signed checksum precondition and actual downloaded bytes are rehashed; metadata alone grants no content identity. These components do not provision resources, enable admission or establish deployed provider semantics.[^aws-sdk][^secret-manager][^checksums]
+
+The local Linux backend uses private directories, content-addressed immutable objects published by atomic nonempty-directory rename, and exclusive append-only journal revisions. Stored data always has one link; journal/token metadata uses bounded nonblocking descriptor reads with ordinary-file, ownership and link checks. It is a fixture backend, not evidence of provider conditional-write semantics. An operational backend requires independently qualified S3 operations, private bucket policies, exact-object transfer capabilities, retained evidence and actual allow/deny/readback. Do not delete an uncertain record or sole retained baseline as temporary-upload cleanup.
+
+[The local HTTP transport and client](../../tooling/installation-signing-http.mjs) exercise `POST /v1/requests`, `POST /v1/requests/{id}/execute` and `GET /v1/requests/{id}` on loopback only. Execution remains synchronous within its bounded provider request; 202 never creates an untracked background signer. Transfer capabilities authorize one exact object for a bounded lifetime and are not logged. A production endpoint additionally requires private IAM invocation, approved origins, credential custody and observed deployed policy/image identity.
+
+Errors expose only bounded machine codes. Authentication/policy refusal returns 403, identity conflict/uncertainty 409, size refusal 413, invalid contract 422 and unavailable authority 503; completed retained work returns 200 and admitted/pending work 202. Recheck authority before sealing and retrieval. Retry bounded transient reads/transfers under the same identity; never retry a denial or automatically re-sign an uncertain result.
+
+## Consequences
+
+The same owner can remain the human custodian, but the GitHub account cannot administer the signing service. Compromise of its independent administrative credentials, source-signing key, trusted signer dependencies or provider remains consequential. Owner absence and recovery therefore need an executable separate procedure rather than a second key held under the same exposed account.
+
+Local test keys, fixture issuers and mocked provider responses establish contracts only. Actual private-container IAM, credential release, source/workflow admission, storage races, revocation, recovery and signed native installation require evidence at the deployed enforcing boundaries before the corresponding capability is enabled. Real publisher-signed internal artifacts remain private; this mechanism grants no publication authority or macOS/Windows publisher capability.
+
+[^scaleway-private]: Scaleway documents private invocation and separate IAM permissions; Ohtia must verify their actual effective scope.
+
+[^scaleway-limits]: Scaleway specifies the container architecture and bounded resource/timeout configuration.
+
+[^github-oidc]: GitHub documents signed run, job, repository and reusable-workflow claims.
+
+[^gh-attestation]: The CLI verifies cryptographic provenance and distinguishes certificate identity from workflow-controlled predicate data.
+
+[^jose]: The pinned JOSE implementation verifies JWT signatures and claims; application authorization remains Ohtia's responsibility.
+
+[^conditional-storage]: Conditional object writes provide storage preconditions; complete signing uncertainty and fencing semantics require their own qualification.
+
+[^secret-manager]: Secret Manager exposes immutable numbered versions through an authenticated access endpoint; aliases are not accepted by this adapter.
+
+[^aws-sdk]: The established SDK supplies S3 commands and Signature Version 4 presigning; request content and endpoint policy remain the service responsibility.
+
+[^sigstore]: GitHub documents different public and private repository attestation instances.
+
+[^checksums]: Scaleway documents SHA-256 checksum support; the selected single-PUT behavior still requires actual allow/deny/readback before deployment.
+
+[^scaleway-s3-concepts]: The Amazon S3 section declares subset compatibility; Signature V2, Signature V4 describes authentication with Scaleway access keys.
+
+[^scaleway-s3-faq]: What is Object Storage? explicitly declares an Amazon S3-compatible API for compatible software.
