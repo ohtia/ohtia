@@ -48,7 +48,7 @@ repos:
         types_or: [javascript, jsx, ts, tsx, markdown, yaml, json, css, scss, html]
 
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.23.3
+    rev: v0.24.0
     hooks:
       - id: markdownlint-cli2
 
