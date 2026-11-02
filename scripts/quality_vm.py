@@ -96,7 +96,7 @@ def cloud_config(profile: str, public_key: str) -> str:
             "libxtst6",
             "libsecret-1-0",
             "libnotify4",
-            "libatspi2.0-0",
+            "libatspi2.0-0t64",
             "apparmor",
             "apparmor-utils",
             "iproute2",
@@ -134,6 +134,8 @@ def cloud_config(profile: str, public_key: str) -> str:
         ],
         "ssh_pwauth": False,
         "disable_root": True,
+        # The pinned guest hostname is sufficient; no hostname service is required.
+        "preserve_hostname": True,
         "package_update": True,
         "packages": packages,
         "runcmd": commands,

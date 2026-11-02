@@ -28,6 +28,7 @@ class VirtualMachineTests(unittest.TestCase):
             )
             self.assertFalse(config["ssh_pwauth"])
             self.assertTrue(config["disable_root"])
+            self.assertTrue(config["preserve_hostname"])
             self.assertEqual(config["users"][0]["name"], "ohtia-quality")
             self.assertTrue(config["users"][0]["lock_passwd"])
             commands = json.dumps(config["runcmd"])
@@ -76,6 +77,8 @@ class VirtualMachineTests(unittest.TestCase):
         debian = json.loads(vm.cloud_config("debian-13", "public-key").split("\n", 1)[1])
         fedora = json.loads(vm.cloud_config("fedora-44", "public-key").split("\n", 1)[1])
         self.assertEqual(debian["apt"], {"conf": 'Acquire::Retries "5";\n'})
+        self.assertIn("libatspi2.0-0t64", debian["packages"])
+        self.assertNotIn("libatspi2.0-0", debian["packages"])
         self.assertNotIn("apt", fedora)
 
     def test_guest_policy_has_no_emulated_or_arm_fallback(self):
