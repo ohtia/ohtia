@@ -6,6 +6,15 @@ sources:
   - id: electron-esm-entry
     resource: https://github.com/electron/electron/blob/v45.0.0/lib/browser/init.ts
     title: Selected Electron main-entry loader
+  - id: electron-native-input
+    resource: https://github.com/electron/electron/blob/v45.0.0/shell/browser/api/electron_api_web_contents.cc
+    title: Selected Electron browser keyboard dispatch
+  - id: chromium-devtools-input
+    resource: https://github.com/chromium/chromium/blob/156.0.8078.48/content/browser/devtools/protocol/input_handler.cc
+    title: Selected Chromium DevTools input routing
+  - id: chromium-keyboard-delegate
+    resource: https://github.com/chromium/chromium/blob/156.0.8078.48/content/browser/renderer_host/render_widget_host_impl.cc
+    title: Selected Chromium browser-side keyboard delegate
   - id: mutter-input-46
     resource: https://raw.githubusercontent.com/GNOME/mutter/gnome-46/data/dbus-interfaces/org.gnome.Mutter.RemoteDesktop.xml
     title: Mutter 46 remote desktop interface
@@ -215,3 +224,15 @@ The harness checks `BrowserWindow.isFocused()` after input and permits only a bo
 [^shell-welcome]: The welcome dialog binds Escape to its Skip action when GNOME Tour is available.
 
 [^shell-startup]: Shell's first-session condition opens the welcome dialog when its saved welcome version predates the tour change.
+
+## Qualify browser-side command shortcuts
+
+The packaged Help shortcut uses Electron's `webContents.sendInputEvent` in the actually focused window. A temporary observer requires the expected `before-input-event` key and modifiers and confirms that the application handler prevented default dispatch; the ordinary registry/broker must then open the actual Help dialog. The observer and its bounded timer are removed on success or failure. The receipt records the input facility, actual focus and observed key metadata. This is synthetic Electron input, separately from physical keyboard layouts and OS IMEs.[^electron-native-input]
+
+Playwright's Chromium keyboard facility sends DevTools `Input.dispatchKeyEvent` without a native key code. The selected Chromium route marks these events to skip browser handling, and its widget host consequently skips the browser delegate that emits Electron's command hook. Such input remains appropriate for renderer keyboard interactions, but cannot qualify the main-process command shortcut.[^chromium-devtools-input][^chromium-keyboard-delegate]
+
+[^electron-native-input]: Electron forwards `sendInputEvent` keyboard input through its widget host and emits `before-input-event` from its browser delegate.
+
+[^chromium-devtools-input]: The selected DevTools input handler sets `skip_if_unhandled` when no admitted native event is created.
+
+[^chromium-keyboard-delegate]: The selected widget host invokes its pre-handle keyboard delegate only when that flag is absent.

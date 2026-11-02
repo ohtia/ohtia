@@ -52,6 +52,9 @@ TOOL_ADRS = {
     "vite": "0022",
     "electron-builder": "0038",
     "electron-updater": "0038",
+    "jose": "0041",
+    "@aws-sdk/client-s3": "0041",
+    "@aws-sdk/s3-request-presigner": "0041",
 }
 BUDGET_UNITS = {
     "message_bytes": "byte",
@@ -108,6 +111,20 @@ BUDGET_UNITS = {
     "delivery_version_inventories": "inventory",
     "delivery_artifacts_per_inventory": "artifact",
     "delivery_cells": "cell",
+    "signing_request_bytes": "byte",
+    "signing_oidc_bytes": "byte",
+    "signing_jwks_bytes": "byte",
+    "signing_jwks_keys": "key",
+    "signing_source_commits": "commit",
+    "signing_source_objects": "object",
+    "signing_source_bytes": "byte",
+    "signing_subprocess_ms": "millisecond",
+    "signing_execution_ms": "millisecond",
+    "signing_transfer_seconds": "second",
+    "signing_oidc_lifetime_seconds": "second",
+    "signing_jwks_cache_ms": "millisecond",
+    "signing_transfer_tickets": "ticket",
+    "signing_journal_revisions": "revision",
 }
 REQUIRED_BUDGETS = set(BUDGET_UNITS)
 

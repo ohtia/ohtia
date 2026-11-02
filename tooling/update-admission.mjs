@@ -491,3 +491,6 @@ export async function withAcceptanceState(directory, fresh, operation, leaseDeta
     if (!retainLease) fs.unlinkSync(lock);
   }
 }
+
+// Signing admission validates package contracts before producing any signature.
+export { validatePackage as validateCatalogPackage };

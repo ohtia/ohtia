@@ -1,5 +1,6 @@
 /* global document, window, innerWidth, innerHeight */
 import path from "node:path";
+import { sendNativeHelpShortcut } from "./command-shortcut.mjs";
 import {
   focusNative,
   NativeFocusError,
@@ -388,7 +389,7 @@ export async function verifyPackagedCommands(application, page, nativeWindow, ou
     viewports: [],
     limitations: [
       "External-link checks control the browser sink; system browser launch is not exercised. Hidden/manuscript inputs are qualified through controlled component fixtures; persisted native Settings propagation belongs to its declared consumer. Interpreter layout and IME qualification remain separate.",
-      "Automation exercises the actual Electron menu objects, broker, clipboard and Chromium key input. Focus receipts identify any owned headless GNOME compositor input; it does not certify physical Spanish, US, AZERTY, QWERTZ or Korean keyboard layouts, OS IMEs or manual assistive journeys.",
+      "Automation exercises actual Electron menu objects, broker, clipboard, synthetic Electron input for browser-side shortcuts and Chromium input for renderer keys. Focus receipts identify any owned headless GNOME compositor input; it does not certify physical Spanish, US, AZERTY, QWERTZ or Korean keyboard layouts, OS IMEs or manual assistive journeys.",
     ],
   };
   const originalAppearance = await page.locator("html").getAttribute("data-appearance");
@@ -564,7 +565,6 @@ export async function verifyPackagedCommands(application, page, nativeWindow, ou
       await page.keyboard.press("Escape");
       await expect(about).toBeHidden();
       await expect(aboutTrigger).toBeFocused();
-      const shortcut = running.platform === "darwin" ? "Meta+Shift+/" : "F1";
       await expect
         .poll(() =>
           application.evaluate(
@@ -572,7 +572,7 @@ export async function verifyPackagedCommands(application, page, nativeWindow, ou
           ),
         )
         .toBe(true);
-      await page.keyboard.press(shortcut);
+      result.helpShortcut = await sendNativeHelpShortcut(nativeWindow, running.platform);
       const help = page.locator(".help-dialog");
       await expect(help).toBeVisible();
       await verifyCommandLandmarks(cdp);
@@ -614,6 +614,7 @@ export async function verifyPackagedCommands(application, page, nativeWindow, ou
       }
       await page.keyboard.press("Escape");
       await expect(help).toBeHidden();
+      await expect(aboutTrigger).toBeFocused();
       await setNativeViewport(page, nativeWindow, { width: 800, height: 600, zoomFactor: 1 });
       result.routingAndEditing = await verifyNativeRoutingAndEditing(
         application,

@@ -650,6 +650,174 @@
       "scope": "Explicit native cells per admission",
       "failure": "delivery_admission_refused",
       "rationale": "Bound shared metadata reconciliation; reject excess rather than truncate required evidence"
+    },
+    "signing_request_bytes": {
+      "value": 65536,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 65536,
+        "maximum": 65536
+      },
+      "owner": "013",
+      "scope": "One complete canonical signing API request or result",
+      "failure": "signing_refused",
+      "rationale": "Bound the independently administered signing service without truncation or authority fallback"
+    },
+    "signing_oidc_bytes": {
+      "value": 16384,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 16384,
+        "maximum": 16384
+      },
+      "owner": "013",
+      "scope": "One GitHub Actions OIDC token",
+      "failure": "signing_refused",
+      "rationale": "Bound the independently administered signing service without truncation or authority fallback"
+    },
+    "signing_jwks_bytes": {
+      "value": 262144,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 262144,
+        "maximum": 262144
+      },
+      "owner": "013",
+      "scope": "One complete trusted JWKS response",
+      "failure": "signing_refused",
+      "rationale": "Bound the independently administered signing service without truncation or authority fallback"
+    },
+    "signing_jwks_keys": {
+      "value": 32,
+      "unit": "key",
+      "permitted": {
+        "minimum": 32,
+        "maximum": 32
+      },
+      "owner": "013",
+      "scope": "Public verification keys in the trusted JWKS",
+      "failure": "signing_refused",
+      "rationale": "Bound the independently administered signing service without truncation or authority fallback"
+    },
+    "signing_source_commits": {
+      "value": 256,
+      "unit": "commit",
+      "permitted": {
+        "minimum": 256,
+        "maximum": 256
+      },
+      "owner": "013",
+      "scope": "Uncached source graph expansion",
+      "failure": "signing_refused",
+      "rationale": "Bound the independently administered signing service without truncation or authority fallback"
+    },
+    "signing_source_bytes": {
+      "value": 536870912,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 536870912,
+        "maximum": 536870912
+      },
+      "owner": "013",
+      "scope": "Downloaded Git objects in one source graph expansion",
+      "failure": "signing_refused",
+      "rationale": "Bound the independently administered signing service without truncation or authority fallback"
+    },
+    "signing_subprocess_ms": {
+      "value": 120000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 120000,
+        "maximum": 120000
+      },
+      "owner": "013",
+      "scope": "One bounded cryptographic or source-verification subprocess",
+      "failure": "signing_refused",
+      "rationale": "Bound the independently administered signing service without truncation or authority fallback"
+    },
+    "signing_execution_ms": {
+      "value": 1200000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 1200000,
+        "maximum": 1200000
+      },
+      "owner": "013",
+      "scope": "One complete signing operation",
+      "failure": "signing_refused",
+      "rationale": "Bound the independently administered signing service without truncation or authority fallback"
+    },
+    "signing_transfer_seconds": {
+      "value": 300,
+      "unit": "second",
+      "permitted": {
+        "minimum": 300,
+        "maximum": 300
+      },
+      "owner": "013",
+      "scope": "Maximum lifetime of an exact-object transfer capability",
+      "failure": "signing_refused",
+      "rationale": "Bound the independently administered signing service without truncation or authority fallback"
+    },
+    "signing_oidc_lifetime_seconds": {
+      "value": 600,
+      "unit": "second",
+      "permitted": {
+        "minimum": 600,
+        "maximum": 600
+      },
+      "owner": "013",
+      "scope": "Maximum authenticated OIDC token lifetime",
+      "failure": "signing_refused",
+      "rationale": "Bound authentication and transfer resources independently of producer metadata"
+    },
+    "signing_jwks_cache_ms": {
+      "value": 60000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 60000,
+        "maximum": 60000
+      },
+      "owner": "013",
+      "scope": "Maximum trusted JWKS cache interval",
+      "failure": "signing_refused",
+      "rationale": "Bound authentication and transfer resources independently of producer metadata"
+    },
+    "signing_transfer_tickets": {
+      "value": 128,
+      "unit": "ticket",
+      "permitted": {
+        "minimum": 128,
+        "maximum": 128
+      },
+      "owner": "013",
+      "scope": "Outstanding local exact-object transfer capabilities",
+      "failure": "signing_refused",
+      "rationale": "Accommodate 32 catalog package result/receipt/signature triples and bounded current uploads without unbounded issuance"
+    },
+    "signing_journal_revisions": {
+      "value": 16,
+      "unit": "revision",
+      "permitted": {
+        "minimum": 16,
+        "maximum": 16
+      },
+      "owner": "013",
+      "scope": "One append-only signing identity journal",
+      "failure": "signing_refused",
+      "rationale": "Bound authentication and transfer resources independently of producer metadata"
+    },
+    "signing_source_objects": {
+      "value": 65536,
+      "unit": "object",
+      "permitted": {
+        "minimum": 65536,
+        "maximum": 65536
+      },
+      "owner": "013",
+      "scope": "Distinct newly admitted Git objects per graph expansion",
+      "failure": "signing_refused",
+      "rationale": "Bound identifier and object-size metadata independently of commit count and total bytes"
     }
   }
 }
