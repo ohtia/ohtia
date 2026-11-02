@@ -664,26 +664,6 @@
       "reason": "The controlled compositor-input adapter is Linux-only; final actual OS focus remains required on every native target."
     },
     {
-      "id": "tests/command-native-focus.test.ts::actual focus gate with controlled native and input adapters > keeps the input record when focus evaluation fails during the wait::case-0",
-      "platforms": ["win32", "darwin"],
-      "reason": "The controlled compositor-input adapter is Linux-only; native focus on Windows and macOS uses the OS request and remains separately required."
-    },
-    {
-      "id": "tests/command-native-focus.test.ts::actual focus gate with controlled native and input adapters > reports failure instead of hanging when focus evaluation stops after the last input::case-0",
-      "platforms": ["win32", "darwin"],
-      "reason": "The controlled compositor-input adapter is Linux-only; native focus on Windows and macOS uses the OS request and remains separately required."
-    },
-    {
-      "id": "tests/command-native-focus.test.ts::actual focus gate with controlled native and input adapters > does not repeat compositor input while delayed focus can still arrive::case-0",
-      "platforms": ["win32", "darwin"],
-      "reason": "The controlled compositor-input adapter is Linux-only; native focus on Windows and macOS uses the OS request and remains separately required."
-    },
-    {
-      "id": "tests/command-native-focus.test.ts::actual focus gate with controlled native and input adapters > keeps waiting for focus that arrives just before the settling deadline::case-0",
-      "platforms": ["win32", "darwin"],
-      "reason": "The controlled compositor-input adapter is Linux-only; native focus on Windows and macOS uses the OS request and remains separately required."
-    },
-    {
       "id": "tests/installation-authority.test.ts::local durable signer backend > retains an exclusive journal across independent backend instances::case-0",
       "platforms": ["win32", "darwin"],
       "reason": "Linux signing-service fixture backend and native Git/SSH helper paths; portable contract and JWT tests run on every platform."

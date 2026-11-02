@@ -1,13 +1,9 @@
 import { execFile } from "node:child_process";
-import { performance } from "node:perf_hooks";
 import { fileURLToPath, URL } from "node:url";
-import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { expect } from "@playwright/test";
 
 const execute = promisify(execFile);
-// Mutter can report activation late; another input during this wait would undo the last one.
-const settleMs = 5000;
 
 class NativeFocusContextError extends Error {
   constructor(cause, observation, history = []) {
@@ -104,31 +100,12 @@ export async function focusNative(nativeWindow, target = "window") {
         observation.strategy = "headless GNOME compositor Alt+Escape input";
         observation.compositorInputAttempts++;
         await execute("/usr/bin/python3", [helper], { timeout: 10000, maxBuffer: 4096 });
-        const sent = performance.now();
-        let settled = false;
         try {
-          await expect.poll(focused, { timeout: settleMs }).toBe(true);
-          settled = true;
+          await expect.poll(focused, { timeout: 1000 }).toBe(true);
+          break;
         } catch {
-          // Polling stops before its deadline, so finish the wait before another input.
-          for (
-            let remaining = settleMs - (performance.now() - sent);
-            remaining > 0;
-            remaining = settleMs - (performance.now() - sent)
-          )
-            await delay(Math.ceil(remaining));
-          try {
-            await expect.poll(focused, { timeout: 250 }).toBe(true);
-            settled = true;
-          } catch {
-            // Another window can receive the first cycle; the final guard is mandatory.
-          }
+          // Another window can receive the first cycle; the final guard is mandatory.
         }
-        (observation.inputs ??= []).push({
-          elapsedMs: Math.round(performance.now() - sent),
-          focused: settled,
-        });
-        if (settled) break;
       }
     }
     await expect
