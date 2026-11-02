@@ -7,6 +7,8 @@
     "tests/desktop-probes.test.ts",
     "tests/desktop-runtime.test.ts",
     "tests/diagnostics.test.ts",
+    "tests/installation-authority.test.ts",
+    "tests/installation-scaleway-signing.test.ts",
     "tests/installation-signing.test.ts",
     "tests/language-panel.test.ts",
     "tests/linux-e2e.test.ts",
@@ -634,6 +636,146 @@
       "id": "tests/storage.test.ts::durable preference and migration recovery > does not follow a recovery alias or a broken database alias into another root::case-0",
       "platforms": ["win32"],
       "reason": "POSIX symbolic-link fixture; native Windows reparse admission is verified separately."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::local durable signer backend > retains an exclusive journal across independent backend instances::case-0",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux signing-service fixture backend and native Git/SSH helper paths; portable contract and JWT tests run on every platform."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::local durable signer backend > refuses torn journal data without reusing its revision::case-0",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux signing-service fixture backend and native Git/SSH helper paths; portable contract and JWT tests run on every platform."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::local durable signer backend > streams exact fixture objects without changing original files::case-0",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux signing-service fixture backend and native Git/SSH helper paths; portable contract and JWT tests run on every platform."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::local durable signer backend > exercises the loopback API client with exact upload and result tickets::case-0",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux signing-service fixture backend and native Git/SSH helper paths; portable contract and JWT tests run on every platform."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::independent source history admission > admits real personally signed commits and reproducible clean merges::case-0",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux signing-service fixture backend and native Git/SSH helper paths; portable contract and JWT tests run on every platform."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::independent source history admission > refuses an unsigned source mutation despite matching branch and tree fields::case-0",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux signing-service fixture backend and native Git/SSH helper paths; portable contract and JWT tests run on every platform."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::independent source history admission > refuses a forged merge tree and an unknown personal key::case-0",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux signing-service fixture backend and native Git/SSH helper paths; portable contract and JWT tests run on every platform."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::independent source history admission > reuses authenticated prefix records without trusting caller-supplied cache flags::case-0",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux signing-service fixture backend and native Git/SSH helper paths; portable contract and JWT tests run on every platform."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::signer retained-state integrity > authenticates source-prefix records against private-storage tampering::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Native Linux fixture backend and process/tool contract"
+    },
+    {
+      "id": "tests/installation-authority.test.ts::signer retained-state integrity > allows exactly one writer across separate Node processes::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Native Linux fixture backend and process/tool contract"
+    },
+    {
+      "id": "tests/installation-authority.test.ts::signer retained-state integrity > compares the exact RPM body while excluding only the signature header::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Native Linux fixture backend and process/tool contract"
+    },
+    {
+      "id": "tests/installation-authority.test.ts::signer review regressions > reuses retained result tickets across repeated status reads without exhausting capacity::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux signing-service native Git/SSH, process-session or fixture filesystem contract; portable authority tests remain applicable."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::independent source history admission > uses authenticated persistent prefixes through the real Git source authority::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux signing-service native helper, process-session or fixture filesystem contract; portable authority tests remain applicable."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::signer review regressions > contains ordinary descendants on timeout and output overflow without signaling a reused PID::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux signing-service native helper, process-session or fixture filesystem contract; portable authority tests remain applicable."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::signer review regressions > returns a stable conflict for uncertain HTTP state::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux signing-service native helper, process-session or fixture filesystem contract; portable authority tests remain applicable."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::independent source history admission > admits a bounded signed expansion beyond the former incidental object-output limit::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux signing-service native helper, process-session or fixture filesystem contract; portable authority tests remain applicable."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::local durable signer backend > bounds retained journal and token files before following or reading filesystem entries::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux signing-service native helper, process-session or fixture filesystem contract; portable authority tests remain applicable."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::local durable signer backend > publishes one-link immutable objects across independent concurrent writers::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux signing-service native helper, process-session or fixture filesystem contract; portable authority tests remain applicable."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::signer review regressions > keeps the server alive after a retained download stream fails::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux signing-service native helper, process-session or fixture filesystem contract; portable authority tests remain applicable."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::native RPM identity admission > refuses nonzero normalized RPM epochs before any signing effect::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux signing-service native worker, process-group and pidfd contract; portable authority contracts remain applicable."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::native RPM identity admission > accepts absent or zero RPM epochs without changing receipt identity fields::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux signing-service native worker, process-group and pidfd contract; portable authority contracts remain applicable."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::native RPM identity admission > rejects an epoch change after the private signing boundary::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux signing-service native worker, process-group and pidfd contract; portable authority contracts remain applicable."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::guarded native subprocess lifetime > terminates native children and grandchildren when either guard is killed::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux signing-service native worker, process-group and pidfd contract; portable authority contracts remain applicable."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::guarded native subprocess lifetime > contains the native process group after its controller dies::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux signing-service native worker, process-group and pidfd contract; portable authority contracts remain applicable."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::guarded native subprocess lifetime > starts no native operation if the watchdog cannot arm::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux signing-service native worker, process-group and pidfd contract; portable authority contracts remain applicable."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::guarded native subprocess lifetime > preserves binary standard input and output and refuses native spawn failure::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux signing-service native worker, process-group and pidfd contract; portable authority contracts remain applicable."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::native helper availability classification > classifies guard timeout independently of the controller timer ordering::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux signing-service native process, monotonic guard protocol and RLIMIT_NOFILE regression; portable authority contracts remain applicable."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::native helper availability classification > survives descriptor exhaustion without an unhandled spawn error or timer::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux signing-service native process, monotonic guard protocol and RLIMIT_NOFILE regression; portable authority contracts remain applicable."
     }
   ]
 }

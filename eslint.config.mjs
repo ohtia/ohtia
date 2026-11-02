@@ -34,6 +34,7 @@ export default tseslint.config(
         fetch: "readonly",
         setTimeout: "readonly",
         structuredClone: "readonly",
+        clearTimeout: "readonly",
       },
     },
     rules: {
