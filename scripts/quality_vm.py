@@ -133,7 +133,7 @@ def cloud_config(profile: str, public_key: str) -> str:
         ],
         "ssh_pwauth": False,
         "disable_root": True,
-        # The pinned guest hostname is sufficient; no hostname service is required.
+        # The guest keeps its image hostname; nothing reads it.
         "preserve_hostname": True,
         "package_update": True,
         "packages": packages,
@@ -201,6 +201,11 @@ def wait_guest_setup(ssh: list[str], child, deadline: float) -> None:
             return
         time.sleep(2)
     raise delivery.DeliveryError("Guest setup exceeded its bounded deadline.")
+
+
+def guest_metadata(cell_id: str, identity: dict) -> dict[str, str]:
+    """Identify the instance; a metadata hostname makes cloud-init try before D-Bus is running."""
+    return {"instance-id": f"ohtia-{cell_id}-{identity['run_id']}-{identity['run_attempt']}"}
 
 
 def home_disk_arguments(home: Path) -> list[str]:
@@ -325,12 +330,7 @@ def main() -> int:
             cloud_config(cell["profile"], (attempt / "ssh-key.pub").read_text())
         )
         (attempt / "meta-data").write_text(
-            json.dumps(
-                {
-                    "instance-id": f"ohtia-{args.cell}-{planned['identity']['run_id']}-{planned['identity']['run_attempt']}",
-                    "local-hostname": "ohtia-quality",
-                }
-            )
+            json.dumps(guest_metadata(args.cell, planned["identity"]))
         )
         seed = attempt / "seed.iso"
         run(["cloud-localds", seed, attempt / "user-data", attempt / "meta-data"])
