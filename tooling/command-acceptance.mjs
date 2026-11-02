@@ -310,7 +310,7 @@ async function verifyNativeRoutingAndEditing(application, page, nativeWindow) {
         )
         .toBe(false);
       await invokeNativeMenu(application, "version.copy");
-      await expect(page.locator(".about-copied")).toBeVisible();
+      await expect(page.locator(".about-dialog .about-copied")).toBeVisible();
       await expect(peer.locator(".about-copied")).toHaveCount(0);
       await page.keyboard.press("Escape");
       await activate(peerWindow, "peer");
