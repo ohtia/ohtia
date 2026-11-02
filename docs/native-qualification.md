@@ -4,8 +4,6 @@ title: Native foundation qualification
 description: Assemble non-shipping native probes, admit independent profiles and retain complete target evidence without claiming partial native qualification.
 generated:
   by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: electron-esm-entry
     resource: https://github.com/electron/electron/blob/v45.0.0/lib/browser/init.ts
@@ -206,7 +204,7 @@ When a native focus request has not activated the target, the harness can invoke
 
 One bounded DBus connection creates and starts a Mutter RemoteDesktop session. If Shell reports its overview active, the helper sends at most two Escape inputs, reobserving the overview after each, and requires it to dismiss; window cycling is restricted to the normal Shell mode. The first-session welcome modal can consume the first Escape when GNOME Tour is installed; a second observed-overview Escape dismisses the overview without pre-seeding desktop preferences.[^shell-welcome][^shell-startup] It then sends compositor Alt+Escape input, attempts every key release and stops the session even if a notification fails. Mutter's interface is private and promises no compatibility; interface, permission, identity and timeout failures remain failed qualification.[^mutter-input-48][^mutter-input-50][^shell-window-cycle]
 
-The harness checks `BrowserWindow.isFocused()` after input and permits only a bounded number of window cycles. A successful input request alone cannot pass the focus gate. Receipts retain the focus strategy and input-attempt count for the denied-navigation check, the command-surface entry and each original/peer routing activation, including cleanup. On failure, structured evidence retains the target, strategy, attempted inputs and routing history through phase wrappers. An initiating operation error and its D-Bus operation remain available if cleanup also fails; the CLI emits a bounded cause without a traceback. These observations qualify automated compositor input, separately from physical keyboard layouts, OS IMEs, assistive technology and monitor transfers (PRIN-004, PRIN-005 and PRIN-016).
+The harness checks `BrowserWindow.isFocused()` after input and permits only a bounded number of window cycles. A successful input request alone cannot pass the focus gate. Receipts retain the focus strategy and input-attempt count for the denied-navigation check, the command-surface entry and the Help shortcut. On failure, structured evidence retains the target, strategy and attempted inputs through phase wrappers. An initiating operation error and its D-Bus operation remain available if cleanup also fails; the CLI emits a bounded cause without a traceback. These observations qualify automated compositor input, separately from physical keyboard layouts, OS IMEs, assistive technology and monitor transfers (PRIN-004, PRIN-005 and PRIN-016).
 
 [^electron-esm-entry]: The selected main-entry loader calls the native app-code-loaded notification after its awaited ESM import completes.
 
