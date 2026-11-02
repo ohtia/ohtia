@@ -134,6 +134,8 @@ export const iconMappings = {
   "Restricted use": "lock",
   "Saved": "check",
   "Copied": "clipboard-check",
+  "External link": "external-link",
+  "Close dialog": "x",
   "Saving operation in timeline": "save",
   "Archive conversation": "folder-archive",
   "Offline": "cloud-off",

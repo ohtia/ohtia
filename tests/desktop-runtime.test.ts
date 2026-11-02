@@ -93,7 +93,7 @@ describe("minimum locale contract", () => {
     (locale) => {
       expect(resolveInterfaceLocale([locale])).toBe(locale);
       expect(catalogs[locale].version).toBe(1);
-      expect(Object.keys(catalogs[locale].messages)).toEqual([...messageKeys]);
+      expect(Object.keys(catalogs[locale].messages).sort()).toEqual([...messageKeys].sort());
       expect(
         Object.values(catalogs[locale].messages).every(
           (text) => text.length > 0 && !/[<>]/.test(text),

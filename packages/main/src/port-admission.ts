@@ -17,14 +17,39 @@ export interface WindowAuthority extends FrameSender {
   readonly serviceGeneration: string;
 }
 
+/** One aggregate request budget is shared by the service port and named broker requests. */
+export class RequestBudget {
+  private frames = new Map<object, { pending: number }>();
+  private count = 0;
+  reserve(frame: object): Outcome<() => void> {
+    const state = this.frames.get(frame) ?? { pending: 0 };
+    if (state.pending >= portLimits.pending_per_window || this.count >= portLimits.pending_global)
+      return failure("busy");
+    this.frames.set(frame, state);
+    state.pending++;
+    this.count++;
+    let released = false;
+    return {
+      ok: true,
+      value: () => {
+        if (released) return;
+        released = true;
+        state.pending--;
+        if (!state.pending) this.frames.delete(frame);
+        this.count--;
+      },
+    };
+  }
+}
+
 /** Shared by every window attached to the single broker. Cancellation does not release a service slot. */
 export class PortAdmission {
   private readonly windows = new Map<
     object,
     { authority: WindowAuthority; pending: Map<string, Request>; subscriptions: Set<string> }
   >();
-  private count = 0;
   private subscriptionCount = 0;
+  constructor(private readonly budget = new RequestBudget()) {}
   attach(authority: WindowAuthority): Outcome<() => void> {
     if (this.windows.has(authority.frame)) return failure("unauthorized");
     if (this.windows.size >= portLimits.windows) return failure("window_limit");
@@ -68,11 +93,6 @@ export class PortAdmission {
     const state = this.windows.get(sender.frame);
     if (!state) return failure("unauthorized");
     if (state.pending.has(request.requestId)) return failure("duplicate_request");
-    if (
-      state.pending.size >= portLimits.pending_per_window ||
-      this.count >= portLimits.pending_global
-    )
-      return failure("busy");
     const subscriptionId =
       request.operation === "status.subscribe" ||
       request.operation === "appearance.subscribe" ||
@@ -86,11 +106,14 @@ export class PortAdmission {
         this.subscriptionCount >= portLimits.windows * portLimits.subscriptions_per_window
       )
         return failure("busy");
+    }
+    const reservation = this.budget.reserve(sender.frame);
+    if (!reservation.ok) return reservation;
+    if (subscriptionId !== undefined) {
       state.subscriptions.add(subscriptionId);
       this.subscriptionCount++;
     }
     state.pending.set(request.requestId, request);
-    this.count++;
     let released = false;
     let subscriptionReleased = false;
     return {
@@ -107,7 +130,7 @@ export class PortAdmission {
           if (released) return;
           released = true;
           state.pending.delete(request.requestId);
-          this.count--;
+          reservation.value();
         },
       },
     };

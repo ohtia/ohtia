@@ -154,6 +154,7 @@ SAFE_FAILURE_CODES = frozenset(
         "guest_collection_profile",
         "guest_collection_record",
         "guest_credentials",
+        "guest_compositor_identity",
         "guest_display_cleanup",
         "guest_expiry_not_armed",
         "guest_guard_bound",

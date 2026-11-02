@@ -352,3 +352,71 @@ it("guards a choice made after reconnect but before its replacement snapshot and
   controller.dispose();
   h.window.dispatchEvent(new Event("unload"));
 });
+
+it("keeps named command bridge inputs/results bounded and strips native event authority", async () => {
+  const h = await load();
+  const context = { windowGeneration: "command-window", platform: "linux" };
+  h.ipcRenderer.invoke.mockResolvedValueOnce(context as never);
+  expect(await h.bridge.commands.context()).toEqual(context);
+  h.ipcRenderer.invoke.mockResolvedValueOnce({ injected: true } as never);
+  await expect(h.bridge.commands.context()).rejects.toThrow(/command context/);
+  const native = vi.fn();
+  const dispose = h.bridge.commands.onIntent(native);
+  const intent = {
+    windowGeneration: context.windowGeneration,
+    source: "native",
+    sequence: 1,
+    command: "help.open",
+  };
+  h.ipcRenderer.emit(desktopChannels.commandIntent, { secret: "not exposed" }, intent);
+  expect(native).toHaveBeenCalledWith(intent);
+  h.ipcRenderer.emit(desktopChannels.commandIntent, {}, { ...intent, source: "renderer" });
+  h.ipcRenderer.emit(desktopChannels.commandIntent, {}, { ...intent, windowGeneration: "old" });
+  h.ipcRenderer.emit(desktopChannels.commandIntent, {}, { ...intent, sequence: 0 });
+  expect(native).toHaveBeenCalledOnce();
+  dispose();
+  h.bridge.commands.onIntent(() => {
+    throw new Error("disposed consumer");
+  });
+  h.ipcRenderer.emit(desktopChannels.commandIntent, {}, intent);
+  h.ipcRenderer.emit(desktopChannels.commandIntent, {}, intent);
+  const count = h.ipcRenderer.invoke.mock.calls.length;
+  expect(await h.bridge.commands.perform("research.confirm" as never)).toBe(false);
+  expect(await h.bridge.commands.openLink("https://example.invalid" as never)).toBe(false);
+  expect(await h.bridge.commands.copyVersionInformation("xx-XX" as never)).toBe(false);
+  expect(await h.bridge.commands.publish({} as never)).toBe(false);
+  expect(h.ipcRenderer.invoke).toHaveBeenCalledTimes(count);
+  const { CommandController } = await import("../packages/renderer/src/command-controller.js");
+  const registry = new CommandController(context as never, "en-US");
+  h.ipcRenderer.invoke.mockResolvedValue(true as never);
+  expect(await h.bridge.commands.publish(registry.snapshot())).toBe(true);
+  expect(await h.bridge.commands.perform("edit.copy")).toBe(true);
+  expect(await h.bridge.commands.copyVersionInformation("ko-KR")).toBe(true);
+  expect(h.ipcRenderer.invoke).toHaveBeenLastCalledWith(
+    desktopChannels.commands,
+    "copy_version",
+    "ko-KR",
+  );
+  expect(await h.bridge.commands.openLink("repository")).toBe(true);
+  h.ipcRenderer.invoke.mockResolvedValueOnce({} as never);
+  await expect(h.bridge.commands.about()).rejects.toThrow(/About information/);
+  const about = {
+    product: "Ohtia",
+    version: "0.0.0",
+    build: "sha256:synthetic",
+    platform: "linux",
+    architecture: "x86-64",
+    copyright: "Synthetic copyright",
+    license: "MIT",
+    notices: [],
+  };
+  h.ipcRenderer.invoke.mockResolvedValueOnce(about as never);
+  expect(await h.bridge.commands.about()).toEqual(about);
+  const owners = Array.from({ length: portLimits.subscriptions_per_window }, () =>
+    h.bridge.commands.onIntent(() => {}),
+  );
+  expect(() => h.bridge.commands.onIntent(() => {})).toThrow(/listener limit/);
+  owners.forEach((dispose) => dispose());
+  h.window.dispatchEvent(new Event("unload"));
+  expect(h.ipcRenderer.listenerCount(desktopChannels.commandIntent)).toBe(0);
+});

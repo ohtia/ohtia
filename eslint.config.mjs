@@ -17,6 +17,7 @@ export default tseslint.config(
       "tooling/quality*.mjs",
       "tooling/design-*.mjs",
       "tooling/catalog*.mjs",
+      "tooling/command*.mjs",
       "tooling/product-graph.mjs",
       "tooling/linux-e2e*.mjs",
       "tooling/update-*.mjs",

@@ -87,6 +87,7 @@ def build_environment() -> dict:
         "GITHUB_RUN_ID",
         "GITHUB_RUN_ATTEMPT",
         "OHTIA_QUALITY_VM",
+        "OHTIA_NATIVE_COMPOSITOR_PID",
         "WAYLAND_DISPLAY",
         "XDG_CURRENT_DESKTOP",
     }

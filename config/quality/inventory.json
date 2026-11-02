@@ -2,6 +2,11 @@
   "version": 1,
   "vitest": [
     "tests/catalog-build.test.ts",
+    "tests/command-acceptance.test.ts",
+    "tests/command-native-focus.test.ts",
+    "tests/command-shortcut.test.ts",
+    "tests/command-surfaces.test.ts",
+    "tests/commands.test.ts",
     "tests/design-foundation.test.ts",
     "tests/design-viewport.test.ts",
     "tests/desktop-probes.test.ts",
@@ -88,6 +93,7 @@
     "scripts/tests/test_quality_native.py",
     "scripts/tests/test_quality_tests.py",
     "scripts/tests/test_quality_vm.py",
+    "scripts/tests/test_quality_wayland_input.py",
     "scripts/tests/test_scaleway_cycle.py",
     "scripts/tests/test_scaleway_preflight.py",
     "scripts/tests/test_scaleway_progress.py",
@@ -636,6 +642,26 @@
       "id": "tests/storage.test.ts::durable preference and migration recovery > does not follow a recovery alias or a broken database alias into another root::case-0",
       "platforms": ["win32"],
       "reason": "POSIX symbolic-link fixture; native Windows reparse admission is verified separately."
+    },
+    {
+      "id": "tests/command-native-focus.test.ts::actual focus gate with controlled native and input adapters > requires actual focus after compositor input::case-0",
+      "platforms": ["win32", "darwin"],
+      "reason": "The controlled compositor-input adapter is Linux-only; native focus on Windows and macOS uses the OS request and remains separately required."
+    },
+    {
+      "id": "tests/command-native-focus.test.ts::actual focus gate with controlled native and input adapters > does not equate a successful cycle of another window with target focus::case-0",
+      "platforms": ["win32", "darwin"],
+      "reason": "The controlled compositor-input adapter is Linux-only; native focus on Windows and macOS uses the OS request and remains separately required."
+    },
+    {
+      "id": "tests/command-native-focus.test.ts::actual focus gate with controlled native and input adapters > propagates helper refusal without weakening the focus requirement::case-0",
+      "platforms": ["win32", "darwin"],
+      "reason": "The controlled compositor-input adapter is Linux-only; native focus on Windows and macOS uses the OS request and remains separately required."
+    },
+    {
+      "id": "tests/command-native-focus.test.ts::actual focus gate with controlled native and input adapters > rejects after three completed inputs without actual focus and retains the attempts::case-0",
+      "platforms": ["win32", "darwin"],
+      "reason": "The controlled compositor-input adapter is Linux-only; final actual OS focus remains required on every native target."
     },
     {
       "id": "tests/installation-authority.test.ts::local durable signer backend > retains an exclusive journal across independent backend instances::case-0",

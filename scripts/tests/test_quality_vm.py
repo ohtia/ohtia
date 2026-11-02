@@ -28,6 +28,7 @@ class VirtualMachineTests(unittest.TestCase):
             )
             self.assertFalse(config["ssh_pwauth"])
             self.assertTrue(config["disable_root"])
+            self.assertTrue(config["preserve_hostname"])
             self.assertEqual(config["users"][0]["name"], "ohtia-quality")
             self.assertTrue(config["users"][0]["lock_passwd"])
             commands = json.dumps(config["runcmd"])
@@ -39,6 +40,46 @@ class VirtualMachineTests(unittest.TestCase):
                 self.assertIn("fedora-release-identity-workstation", commands)
         with self.assertRaises(delivery.DeliveryError):
             vm.cloud_config("unreviewed-distribution", "public-key")
+
+    def test_readiness_marker_never_overrides_failed_cloud_initialization(self):
+        for status in (0, 1, 2):
+            with self.subTest(status=status):
+                calls = []
+
+                def command(arguments, **kwargs):
+                    calls.append(arguments[-1])
+                    if arguments[-1] == "sudo cloud-init status --wait --long":
+                        self.assertTrue(kwargs["check"])
+                        self.assertGreater(kwargs["timeout"], 0)
+                        self.assertLessEqual(kwargs["timeout"], 60)
+                        if status:
+                            raise subprocess.CalledProcessError(status, arguments)
+                    return subprocess.CompletedProcess(arguments, 0)
+
+                with (
+                    patch.object(vm.subprocess, "run", side_effect=command),
+                    patch.object(vm.time, "monotonic", return_value=100),
+                ):
+                    if status:
+                        with self.assertRaises(subprocess.CalledProcessError):
+                            vm.wait_guest_setup(
+                                ["ssh", "owned-guest"], Mock(poll=lambda: None), 160
+                            )
+                    else:
+                        vm.wait_guest_setup(["ssh", "owned-guest"], Mock(poll=lambda: None), 160)
+                self.assertEqual(
+                    calls,
+                    [
+                        "test -f /var/lib/ohtia-quality-ready",
+                        "sudo cloud-init status --wait --long",
+                    ],
+                )
+        debian = json.loads(vm.cloud_config("debian-13", "public-key").split("\n", 1)[1])
+        fedora = json.loads(vm.cloud_config("fedora-44", "public-key").split("\n", 1)[1])
+        self.assertEqual(debian["apt"], {"conf": 'Acquire::Retries "5";\n'})
+        self.assertIn("libatspi2.0-0t64", debian["packages"])
+        self.assertNotIn("libatspi2.0-0", debian["packages"])
+        self.assertNotIn("apt", fedora)
 
     def test_guest_policy_has_no_emulated_or_arm_fallback(self):
         policy = delivery.read(delivery.ROOT / "config/quality/virtual-machines.json")
@@ -507,6 +548,15 @@ class VirtualMachineTests(unittest.TestCase):
                             if audit_outcome == "watchdog":
                                 raise subprocess.TimeoutExpired(arguments, 12)
                             return subprocess.CompletedProcess(arguments, audit_outcome)
+                        if arguments[:5] == [
+                            "systemctl",
+                            "--user",
+                            "show",
+                            "--property=MainPID",
+                            "--value",
+                        ]:
+                            self.assertEqual(arguments[-1], "ohtia-quality-gnome.service")
+                            return subprocess.CompletedProcess(arguments, 0, stdout="4242\n")
                         if arguments[0] == "/usr/bin/systemctl":
                             if arguments[1] == "--user" and arguments[2] in (
                                 "daemon-reload",
@@ -550,6 +600,7 @@ class VirtualMachineTests(unittest.TestCase):
                                         raise subprocess.TimeoutExpired(arguments, 10)
                             return subprocess.CompletedProcess(arguments, 0, stdout="active\n")
                         if "quality:build" in arguments:
+                            self.assertEqual(options["env"]["OHTIA_NATIVE_COMPOSITOR_PID"], "4242")
                             self.assertEqual(compositor_ready, [True])
                             self.assertEqual(portal_ready, [True])
                             quality_calls.append(True)

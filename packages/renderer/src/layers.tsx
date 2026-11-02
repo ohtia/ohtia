@@ -20,15 +20,30 @@ export function Dialog({
   onClose,
   initialFocus = "close",
   returnFocusRef,
+  titleContent,
+  headingLevel = 2,
+  className = "",
+  bodyClassName,
+  headingPrefix,
+  footer,
+  closeContent,
 }: {
   open: boolean;
   title: string;
+  titleContent?: ReactNode;
+  bodyClassName?: string;
+  headingPrefix?: ReactNode;
+  footer?: ReactNode;
+  closeContent?: ReactNode;
+  headingLevel?: 1 | 2;
+  className?: string;
   closeLabel: string;
   children: ReactNode;
   onClose: () => void;
   initialFocus?: "close" | "safe";
   returnFocusRef?: Readonly<RefObject<HTMLElement | null>>;
 }) {
+  const Heading = headingLevel === 1 ? "h1" : "h2";
   const ref = useRef<HTMLDialogElement>(null);
   const id = useId();
   const currentClose = useRef(onClose);
@@ -120,10 +135,22 @@ export function Dialog({
         restore(currentReturn.current?.current);
     };
   }, [open, initialFocus]);
+  const closeButton = (
+    <button
+      type="button"
+      data-close
+      aria-label={closeContent ? closeLabel : undefined}
+      onClick={() => {
+        onClose();
+      }}
+    >
+      {closeContent ?? closeLabel}
+    </button>
+  );
   return (
     <dialog
       ref={ref}
-      className="primitive-dialog"
+      className={`primitive-dialog ${className}`}
       aria-labelledby={id}
       onKeyDown={(event) => {
         if (event.defaultPrevented || event.nativeEvent.isComposing) return;
@@ -174,11 +201,21 @@ export function Dialog({
         onClose();
       }}
     >
-      <h2 id={id}>{title}</h2>
-      <button type="button" data-close onClick={onClose}>
-        {closeLabel}
-      </button>
-      {children}
+      {!bodyClassName && <Heading id={id}>{titleContent ?? title}</Heading>}
+      {!bodyClassName && closeButton}
+      {bodyClassName ? (
+        <div className={bodyClassName}>
+          <div className="primitive-dialog-header">
+            {closeButton}
+            {headingPrefix}
+            <Heading id={id}>{titleContent ?? title}</Heading>
+          </div>
+          {children}
+        </div>
+      ) : (
+        children
+      )}
+      {footer}
     </dialog>
   );
 }

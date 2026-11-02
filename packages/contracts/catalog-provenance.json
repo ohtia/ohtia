@@ -16,6 +16,15 @@
       },
       "effective_model_evidence": "The implementation runtime identifies the GPT-6 family but does not expose a confirmed effective model identifier.",
       "human_linguistic_review": null
+    },
+    {
+      "scope": "command.*, menu.*, about.*, help.* and dialog.close messages for STORY-002-004",
+      "producer": {
+        "agent": "codex",
+        "effective_model": null
+      },
+      "effective_model_evidence": "The implementation runtime identifies the GPT-6 family but does not expose a confirmed effective model identifier.",
+      "human_linguistic_review": null
     }
   ]
 }

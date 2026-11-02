@@ -101,6 +101,28 @@ with (home / "gnome.log").open("x+b") as log:
             check=True,
             timeout=60,
         )
+        compositor_pid = subprocess.run(
+            [
+                "systemctl",
+                "--user",
+                "show",
+                "--property=MainPID",
+                "--value",
+                "ohtia-quality-gnome.service",
+            ],
+            env=env,
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=10,
+        ).stdout.strip()
+        if (
+            not compositor_pid.isascii()
+            or not compositor_pid.isdecimal()
+            or int(compositor_pid) <= 0
+        ):
+            raise RuntimeError("Ready headless GNOME must expose its actual MainPID.")
+        env["OHTIA_NATIVE_COMPOSITOR_PID"] = compositor_pid
         sockets = [
             file
             for file in Path(env["XDG_RUNTIME_DIR"]).glob("wayland-*")

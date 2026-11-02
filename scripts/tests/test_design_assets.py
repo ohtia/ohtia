@@ -20,7 +20,7 @@ SPEC.loader.exec_module(assets)
 class DesignAssetsTests(unittest.TestCase):
     def test_actual_fonts_icons_and_brand_match_their_complete_contracts(self):
         self.assertEqual(assets.validate_fonts(ROOT), 19)
-        self.assertEqual(assets.validate_icons(ROOT), 47)
+        self.assertEqual(assets.validate_icons(ROOT), 49)
         self.assertEqual(assets.validate_brand(ROOT), 3)
 
     def test_changed_font_bytes_and_css_ranges_fail(self):

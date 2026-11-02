@@ -2,12 +2,40 @@
 type: Playbook
 title: Native foundation qualification
 description: Assemble non-shipping native probes, admit independent profiles and retain complete target evidence without claiming partial native qualification.
-generated:
-  by: codex/gpt-6.1-sol
 sources:
   - id: electron-esm-entry
     resource: https://github.com/electron/electron/blob/v45.0.0/lib/browser/init.ts
     title: Selected Electron main-entry loader
+  - id: electron-native-input
+    resource: https://github.com/electron/electron/blob/v45.0.0/shell/browser/api/electron_api_web_contents.cc
+    title: Selected Electron browser keyboard dispatch
+  - id: chromium-devtools-input
+    resource: https://github.com/chromium/chromium/blob/156.0.8078.48/content/browser/devtools/protocol/input_handler.cc
+    title: Selected Chromium DevTools input routing
+  - id: chromium-keyboard-delegate
+    resource: https://github.com/chromium/chromium/blob/156.0.8078.48/content/browser/renderer_host/render_widget_host_impl.cc
+    title: Selected Chromium browser-side keyboard delegate
+  - id: mutter-input-46
+    resource: https://raw.githubusercontent.com/GNOME/mutter/gnome-46/data/dbus-interfaces/org.gnome.Mutter.RemoteDesktop.xml
+    title: Mutter 46 remote desktop interface
+  - id: shell-welcome
+    resource: https://raw.githubusercontent.com/GNOME/gnome-shell/gnome-50/js/ui/welcomeDialog.js
+    title: GNOME Shell welcome dialog input
+  - id: shell-startup
+    resource: https://raw.githubusercontent.com/GNOME/gnome-shell/gnome-50/js/ui/main.js
+    title: GNOME Shell first-session welcome conditions
+  - id: mutter-input-48
+    resource: https://raw.githubusercontent.com/GNOME/mutter/gnome-48/data/dbus-interfaces/org.gnome.Mutter.RemoteDesktop.xml
+    title: Mutter 48 remote desktop interface
+  - id: mutter-input-50
+    resource: https://raw.githubusercontent.com/GNOME/mutter/gnome-50/data/dbus-interfaces/org.gnome.Mutter.RemoteDesktop.xml
+    title: Mutter 50 remote desktop interface
+  - id: shell-window-cycle
+    resource: https://raw.githubusercontent.com/GNOME/gnome-shell/gnome-50/js/ui/windowManager.js
+    title: GNOME Shell window cycling modes
+  - id: pygobject-packages
+    resource: https://pygobject.gnome.org/getting_started.html
+    title: Distribution Python introspection packages
   - id: csp-report-url
     resource: https://www.w3.org/TR/CSP/#strip-url-for-use-in-reports
     title: CSP violation URL serialization
@@ -167,6 +195,44 @@ The report verifies record and attachment identities, the native producer's arti
 
 The [versioned applicability inventory](../config/desktop/security-applicability.json) and [foundation security contract](foundation-security.md) retain baseline ownership. Admission and `AdmissionTests` implement early isolation/refusal controls for FND-NATIVE; assembly header/hash/ZIP checks implement native input admission. They are host-independent evidence only. Packaged positive observations and the native cases above extend FND-NATIVE, FND-RENDER and FND-INSTALL on their actual native targets. Map each native attachment to the applicable inventory IDs, including FND-NATIVE's `v5.0.0-1.4.1`–`1.4.3`, `5.3.2`, `13.2.2` and `15.2.1`. Keep failed admission, negative tests and artifact/OS identity with the same record. No agent/parser capability or final-product security conformance is certified by this harness.
 
+## Activate owned headless GNOME windows
+
+The command acceptance harness requires actual OS window focus before native-menu dispatch. Its private Wayland session launchers publish `OHTIA_NATIVE_COMPOSITOR_PID` from the child process or the ready systemd unit's `MainPID`; the filtered qualification environment carries it to the harness, while the product launch environment excludes it. Hosted CI, distribution VMs, Scaleway guests and the contributor `session` command use this same internal contract. An ordinary interactive desktop does not receive automated compositor input.
+
+Install the distribution's system Python GI bindings through the declared prerequisite inventory: `python3-gi` on Ubuntu/Debian or `python3-gobject` on Fedora. The helper uses `/usr/bin/python3`, independently of the pinned workspace Python environment.[^pygobject-packages]
+
+When a native focus request has not activated the target, the harness can invoke [the input helper](../scripts/quality_wayland_input.py). It requires an unprivileged Linux GNOME Wayland session, a positive launcher PID and a runtime directory. Before sending input, it pins the unique DBus owners of both Shell and Mutter, checks that both belong to the launcher PID and current user, and reads that process's command line to require `gnome-shell --headless --wayland`. It does not read the compositor's environment, impersonate another service or enable Shell's unsafe evaluation mode.
+
+One bounded DBus connection creates and starts a Mutter RemoteDesktop session. If Shell reports its overview active, the helper sends at most two Escape inputs, reobserving the overview after each, and requires it to dismiss; window cycling is restricted to the normal Shell mode. The first-session welcome modal can consume the first Escape when GNOME Tour is installed; a second observed-overview Escape dismisses the overview without pre-seeding desktop preferences.[^shell-welcome][^shell-startup] It then sends compositor Alt+Escape input, attempts every key release and stops the session even if a notification fails. Mutter's interface is private and promises no compatibility; interface, permission, identity and timeout failures remain failed qualification.[^mutter-input-46][^mutter-input-48][^mutter-input-50][^shell-window-cycle]
+
+The harness checks `BrowserWindow.isFocused()` after input and permits only a bounded number of window cycles. A successful input request alone cannot pass the focus gate. Receipts retain the focus strategy and input-attempt count for the denied-navigation check, the command-surface entry and each original/peer routing activation, including cleanup. On failure, structured evidence retains the target, strategy, attempted inputs and routing history through phase wrappers. An initiating operation error and its D-Bus operation remain available if cleanup also fails; the CLI emits a bounded cause without a traceback. These observations qualify automated compositor input, separately from physical keyboard layouts, OS IMEs, assistive technology and monitor transfers (PRIN-004, PRIN-005 and PRIN-016).
+
 [^electron-esm-entry]: The selected main-entry loader calls the native app-code-loaded notification after its awaited ESM import completes.
 
 [^csp-report-url]: CSP strips non-HTTP(S) violation URLs to their scheme for reporting.
+
+[^mutter-input-48]: Mutter 48 defines connection-owned remote desktop sessions and evdev keyboard notifications.
+
+[^mutter-input-50]: Mutter 50 retains those calls and explicitly excludes compatibility guarantees for this private interface.
+
+[^shell-window-cycle]: GNOME Shell allows window cycling in its normal action mode.
+
+[^pygobject-packages]: PyGObject documents the system Python bindings provided by Debian-family and Fedora package managers.
+
+[^mutter-input-46]: Mutter 46 exposes the same exercised session and keyboard-notification methods for Ubuntu noble's native route.
+
+[^shell-welcome]: The welcome dialog binds Escape to its Skip action when GNOME Tour is available.
+
+[^shell-startup]: Shell's first-session condition opens the welcome dialog when its saved welcome version predates the tour change.
+
+## Qualify browser-side command shortcuts
+
+The packaged Help shortcut uses Electron's `webContents.sendInputEvent` in the actually focused window. A temporary observer requires the expected `before-input-event` key and modifiers and confirms that the application handler prevented default dispatch; the ordinary registry/broker must then open the actual Help dialog. The observer and its bounded timer are removed on success or failure. The receipt records the input facility, actual focus and observed key metadata. This is synthetic Electron input, separately from physical keyboard layouts and OS IMEs.[^electron-native-input]
+
+Playwright's Chromium keyboard facility sends DevTools `Input.dispatchKeyEvent` without a native key code. The selected Chromium route marks these events to skip browser handling, and its widget host consequently skips the browser delegate that emits Electron's command hook. Such input remains appropriate for renderer keyboard interactions, but cannot qualify the main-process command shortcut.[^chromium-devtools-input][^chromium-keyboard-delegate]
+
+[^electron-native-input]: Electron forwards `sendInputEvent` keyboard input through its widget host and emits `before-input-event` from its browser delegate.
+
+[^chromium-devtools-input]: The selected DevTools input handler sets `skip_if_unhandled` when no admitted native event is created.
+
+[^chromium-keyboard-delegate]: The selected widget host invokes its pre-handle keyboard delegate only when that flag is absent.
