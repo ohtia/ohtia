@@ -21,6 +21,13 @@ import quality_vm as vm
 
 
 class VirtualMachineTests(unittest.TestCase):
+    def test_guest_metadata_supplies_no_hostname_for_early_cloud_init(self):
+        identity = {"run_id": 7, "run_attempt": 2}
+        for cell in ("fedora-44-x64-vm", "debian-13-x64-vm"):
+            self.assertEqual(
+                vm.guest_metadata(cell, identity), {"instance-id": f"ohtia-{cell}-7-2"}
+            )
+
     def test_cloud_configuration_preserves_native_security_and_unprivileged_execution(self):
         for profile in ("fedora-44", "debian-13"):
             config = json.loads(
