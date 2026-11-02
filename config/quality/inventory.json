@@ -2,6 +2,7 @@
   "version": 1,
   "vitest": [
     "tests/catalog-build.test.ts",
+    "tests/command-acceptance.test.ts",
     "tests/command-surfaces.test.ts",
     "tests/commands.test.ts",
     "tests/design-foundation.test.ts",

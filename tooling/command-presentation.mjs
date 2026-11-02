@@ -1,5 +1,24 @@
-/* global document, getComputedStyle, innerWidth, innerHeight, window */
+/* global document, getComputedStyle, HTMLDialogElement, innerWidth, innerHeight, window */
 import { expect } from "@playwright/test";
+
+/** Inspect the admitted document without waiting for a denied navigation to complete. */
+export async function observeCommandDialog(page, selector) {
+  return page.evaluate((selector) => {
+    const matches = document.querySelectorAll(selector);
+    if (matches.length > 1) throw new Error("Command dialog selector must identify one surface.");
+    const dialog = matches[0];
+    if (!(dialog instanceof HTMLDialogElement)) return { open: false, visible: false };
+    const bounds = dialog.getBoundingClientRect();
+    return {
+      open: dialog.open,
+      visible:
+        dialog.open &&
+        bounds.width > 0 &&
+        bounds.height > 0 &&
+        getComputedStyle(dialog).visibility === "visible",
+    };
+  }, selector);
+}
 
 /** Focus alone must reveal the target and its complete ring, without another control above it. */
 export async function verifyCommandFocus(control) {

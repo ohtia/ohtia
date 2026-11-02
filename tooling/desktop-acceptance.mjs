@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { _electron, expect } from "@playwright/test";
 import {
@@ -257,6 +257,10 @@ try {
       });
   });
   const original = page.url();
+  const expectedDocument = await page.evaluate((token) => {
+    document.documentElement.dataset.commandAcceptanceDocument = token;
+    return { url: window.location.href, token };
+  }, randomUUID());
   await page.evaluate(() => {
     window.open("https://example.invalid");
     const link = document.createElement("a");
@@ -287,8 +291,10 @@ try {
   expect((await page.evaluate(() => window.ohtia.foundation.readStatus().result)).ok).toBe(true);
   expect(application.windows()).toHaveLength(1);
   passed("navigation-denied");
-  await verifyCommandsAfterDeniedNavigation(application, page);
-  passed("commands-survive-denied-navigation-without-reload");
+  passed(
+    "commands-survive-denied-navigation-without-reload",
+    await verifyCommandsAfterDeniedNavigation(application, page, expectedDocument),
+  );
   // Start the independent accessibility phase in a fresh admitted document generation.
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect

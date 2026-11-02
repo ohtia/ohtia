@@ -9,6 +9,7 @@ import {
 } from "../packages/contracts/dist/index.js";
 import {
   verifyCommandFocus,
+  observeCommandDialog,
   verifyCommandLandmarks,
   verifyAboutRendition,
   verifyCommandDensities,
@@ -29,7 +30,11 @@ async function focusNative(nativeWindow) {
     window.focus();
     window.webContents.focus();
   });
-  await expect.poll(() => nativeWindow.evaluate((window) => window.isFocused())).toBe(true);
+  await expect
+    .poll(() => nativeWindow.evaluate((window) => window.isFocused()), {
+      message: "Native command target must have actual OS window focus.",
+    })
+    .toBe(true);
 }
 
 /** Exercise Electron's documented MenuItem.click event/role dispatcher in the focused window. */
@@ -53,10 +58,12 @@ export async function invokeNativeMenu(application, id) {
   }, id);
 }
 
-export async function verifyCommandsAfterDeniedNavigation(application, page) {
+export async function verifyCommandsAfterDeniedNavigation(application, page, expectedDocument) {
   const native = await application.browserWindow(page);
+  let phase = "focus the native window";
   try {
     await focusNative(native);
+    phase = "wait for About availability";
     await expect
       .poll(() =>
         application.evaluate(
@@ -64,10 +71,59 @@ export async function verifyCommandsAfterDeniedNavigation(application, page) {
         ),
       )
       .toBe(true);
+    phase = "dispatch About";
     await invokeNativeMenu(application, "about.open");
-    await expect(page.locator(".about-dialog")).toBeVisible();
+    phase = "observe the open About dialog";
+    let shown;
+    await expect
+      .poll(async () => {
+        shown = await observeCommandDialog(page, ".about-dialog");
+        return shown;
+      })
+      .toEqual({ open: true, visible: true });
+    phase = "dismiss About";
     await page.keyboard.press("Escape");
-    await expect(page.locator(".about-dialog")).toBeHidden();
+    let hidden;
+    await expect
+      .poll(async () => {
+        hidden = await observeCommandDialog(page, ".about-dialog");
+        return hidden;
+      })
+      .toEqual({ open: false, visible: false });
+    phase = "verify the admitted document";
+    const document = await page.evaluate(() => ({
+      url: window.location.href,
+      token: window.document.documentElement.dataset.commandAcceptanceDocument,
+    }));
+    expect(document).toEqual(expectedDocument);
+    const mainUrl = await native.evaluate((window) => window.webContents.getURL());
+    expect(mainUrl).toBe(expectedDocument.url);
+    return { shown, hidden, document, mainUrl };
+  } catch (error) {
+    let nativeState;
+    try {
+      nativeState = await application.evaluate(({ BrowserWindow, Menu }) => {
+        const about = Menu.getApplicationMenu()?.getMenuItemById("about.open");
+        return {
+          focusedWindowId: BrowserWindow.getFocusedWindow()?.id ?? null,
+          windows: BrowserWindow.getAllWindows().map((window) => ({
+            id: window.id,
+            focused: window.isFocused(),
+            visible: window.isVisible(),
+            minimized: window.isMinimized(),
+          })),
+          aboutPresent: Boolean(about),
+          aboutEnabled: about?.enabled ?? false,
+        };
+      });
+    } catch {
+      nativeState = "unavailable";
+    }
+    const detail = error instanceof Error ? error.message : "Command qualification failed.";
+    throw new Error(
+      `Denied-navigation command check failed during ${phase}; native state ${JSON.stringify(nativeState)}: ${detail}`,
+      { cause: error },
+    );
   } finally {
     await native.dispose();
   }
