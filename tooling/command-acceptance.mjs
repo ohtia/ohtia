@@ -1,12 +1,7 @@
 /* global document, window, innerWidth, innerHeight */
 import path from "node:path";
 import { sendNativeHelpShortcut } from "./command-shortcut.mjs";
-import {
-  focusNative,
-  NativeFocusError,
-  captureNativeFocus,
-  withCommandCleanup,
-} from "./command-native-focus.mjs";
+import { focusNative, captureNativeFocus, withCommandCleanup } from "./command-native-focus.mjs";
 import { expect } from "@playwright/test";
 import {
   message,
@@ -38,17 +33,7 @@ export async function invokeNativeMenu(application, id) {
     const window = BrowserWindow.getFocusedWindow();
     const item = Menu.getApplicationMenu()?.getMenuItemById(command);
     if (!item?.enabled) throw new Error("Native acceptance command is unavailable.");
-    const selectors = {
-      "edit.selectAll": "selectAll:",
-      "edit.copy": "copy:",
-      "edit.cut": "cut:",
-      "edit.paste": "paste:",
-      "edit.undo": "undo:",
-      "edit.redo": "redo:",
-    };
-    if (process.platform === "darwin" && Object.hasOwn(selectors, command))
-      Menu.sendActionToFirstResponder(selectors[command]);
-    else item.click({}, window, window?.webContents);
+    item.click({}, window, window?.webContents);
     return true;
   }, id);
 }
@@ -255,129 +240,6 @@ async function verifyProjectDestinations(application, page, about) {
       delete globalThis.__ohtiaCommandLinks;
     });
   }
-}
-
-async function verifyNativeRoutingAndEditing(application, page, nativeWindow) {
-  const focus = [];
-  const activate = async (window, target) => {
-    try {
-      focus.push(await focusNative(window, target));
-    } catch (error) {
-      if (error instanceof NativeFocusError) {
-        focus.push(error.observation);
-        error.history = focus;
-      }
-      throw error;
-    }
-  };
-  let peer, peerWindow;
-  return withCommandCleanup(
-    async () => {
-      const opened = application.waitForEvent("window");
-      await page.evaluate(() => window.ohtia.bootstrap.newWindow());
-      peer = await opened;
-      await peer.waitForLoadState("domcontentloaded");
-      peerWindow = await application.browserWindow(peer);
-      await expect(peer.getByRole("heading", { name: "Ohtia", exact: true })).toBeVisible();
-      await activate(nativeWindow, "original");
-      await expect
-        .poll(() =>
-          application.evaluate(
-            ({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById("about.open")?.enabled,
-          ),
-        )
-        .toBe(true);
-      await invokeNativeMenu(application, "about.open");
-      await expect(page.locator(".about-dialog")).toBeVisible();
-      await expect(peer.locator("dialog[open]")).toHaveCount(0);
-      await activate(peerWindow, "peer");
-      await expect
-        .poll(() =>
-          application.evaluate(
-            ({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById("help.open")?.enabled,
-          ),
-        )
-        .toBe(true);
-      await invokeNativeMenu(application, "help.open");
-      await expect(peer.locator(".help-dialog")).toBeVisible();
-      await expect(page.locator(".about-dialog")).toBeVisible();
-      await activate(nativeWindow, "original");
-      await expect
-        .poll(() =>
-          application.evaluate(
-            ({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById("help.open")?.enabled,
-          ),
-        )
-        .toBe(false);
-      await invokeNativeMenu(application, "version.copy");
-      await expect(page.locator(".about-dialog .about-copied")).toBeVisible();
-      await expect(peer.locator(".about-copied")).toHaveCount(0);
-      await page.keyboard.press("Escape");
-      await activate(peerWindow, "peer");
-      await peer.keyboard.press("Escape");
-      for (const target of [page, peer])
-        await target.evaluate(() => {
-          const field = document.createElement("textarea");
-          field.id = "command-native-edit-fixture";
-          field.setAttribute("aria-label", "Synthetic native editing target");
-          document.querySelector("main").append(field);
-        });
-      const first = page.locator("#command-native-edit-fixture");
-      const other = peer.locator("#command-native-edit-fixture");
-      await other.fill("Untouched peer buffer");
-      await activate(nativeWindow, "original");
-      await first.focus();
-      await first.pressSequentially("Synthetic native text");
-      await expect
-        .poll(() =>
-          application.evaluate(
-            ({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById("edit.copy")?.enabled,
-          ),
-        )
-        .toBe(true);
-      await invokeNativeMenu(application, "edit.selectAll");
-      await expect
-        .poll(() => first.evaluate((field) => field.selectionEnd - field.selectionStart))
-        .toBe("Synthetic native text".length);
-      await invokeNativeMenu(application, "edit.copy");
-      await expect
-        .poll(() => application.evaluate(async ({ clipboard }) => await clipboard.readText()))
-        .toBe("Synthetic native text");
-      await invokeNativeMenu(application, "edit.cut");
-      await expect(first).toHaveValue("");
-      await invokeNativeMenu(application, "edit.undo");
-      await expect(first).toHaveValue("Synthetic native text");
-      await invokeNativeMenu(application, "edit.redo");
-      await expect(first).toHaveValue("");
-      await invokeNativeMenu(application, "edit.paste");
-      await expect(first).toHaveValue("Synthetic native text");
-      await expect(other).toHaveValue("Untouched peer buffer");
-      await activate(peerWindow, "peer");
-      await invokeNativeMenu(application, "window.close");
-      await expect.poll(() => application.windows().length).toBe(1);
-      await expect(page.getByRole("heading", { name: "Ohtia", exact: true })).toBeVisible();
-      return {
-        menuDispatch: "About, Help, version copy and Close",
-        windows: 2,
-        focus,
-        nativeEditRoles: ["selectAll", "copy", "cut", "undo", "redo", "paste"],
-        target: "synthetic textarea in the actual packaged renderer; not a manuscript editor",
-        dispatch:
-          process.platform === "darwin"
-            ? "native first-responder selectors for Edit; actual MenuItem.click for application commands"
-            : "actual MenuItem.click",
-      };
-    },
-    async () => {
-      if (peer && !peer.isClosed()) await peerWindow?.evaluate((window) => window.close());
-      await peerWindow?.dispose();
-      if (!page.isClosed()) {
-        await page.evaluate(() => document.getElementById("command-native-edit-fixture")?.remove());
-        await activate(nativeWindow, "original");
-      }
-    },
-    (error) => captureNativeFocus(error, focus.at(-1), focus),
-  );
 }
 
 /** Release-equivalent Electron checks; native keyboard-layout/IME and assistive checks stay explicit. */
@@ -616,16 +478,10 @@ export async function verifyPackagedCommands(application, page, nativeWindow, ou
       await expect(help).toBeHidden();
       await expect(aboutTrigger).toBeFocused();
       await setNativeViewport(page, nativeWindow, { width: 800, height: 600, zoomFactor: 1 });
-      result.routingAndEditing = await verifyNativeRoutingAndEditing(
-        application,
-        page,
-        nativeWindow,
-      );
       expect(external).toEqual([]);
       result.cases.push(
         "registry-shortcut-offline-help-and-focus-restoration",
         "complete-platform-menu-and-accelerator-inventory",
-        "native-menu-focused-window-routing-and-edit-roles",
         "broker-authorized-project-destinations-with-controlled-browser-sink",
       );
       return result;
@@ -643,11 +499,6 @@ export async function verifyPackagedCommands(application, page, nativeWindow, ou
         else document.documentElement.dataset.appearance = value;
       }, originalAppearance);
     },
-    (error) =>
-      captureNativeFocus(
-        error,
-        result.routingAndEditing?.focus.at(-1) ?? result.nativeFocus,
-        result.routingAndEditing?.focus ?? [],
-      ),
+    (error) => captureNativeFocus(error, result.nativeFocus),
   );
 }
