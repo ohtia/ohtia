@@ -2,6 +2,7 @@
 @import "./design-tokens.css";
 @import "./design-roles.css";
 @import "./primitives.css";
+@import "./command-surfaces.css";
 
 :root {
   color-scheme: light dark;

@@ -1,10 +1,13 @@
+import { CommandMenus } from "./command-menus.js";
+import { readAboutInformation, copyVersionInformation } from "./about.js";
 import { isRendererAssetPath } from "./asset-policy.js";
 import {
   app,
+  clipboard,
+  shell,
   BrowserWindow,
   dialog,
   ipcMain,
-  Menu,
   protocol,
   session,
   utilityProcess,
@@ -29,6 +32,10 @@ import {
   type BootstrapSnapshot,
   type BootstrapState,
   type RuntimeProfile,
+  isNativeCommand,
+  isInterfaceLocale,
+  isCommandPlatform,
+  projectLinks,
 } from "@ohtia/contracts";
 import { rendererWebPreferences } from "./index.js";
 import { admitRuntimeSwitches, loadRuntimeProfile, verifyStableSentinels } from "./profile.js";
@@ -39,7 +46,7 @@ import {
   LocatorPublisher,
   posixLocatorIO,
 } from "./locator.js";
-import { PortAdmission } from "./port-admission.js";
+import { PortAdmission, RequestBudget } from "./port-admission.js";
 import { ServiceSupervisor, recoverService } from "./service-supervisor.js";
 import {
   completeStorageActivation,
@@ -67,6 +74,21 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 let locale = resolveInterfaceLocale(preferredSystemLanguages());
+if (!isCommandPlatform(process.platform)) throw new Error("Unsupported command platform.");
+const commandLifecycle = {
+  quit: () => {
+    if (!quitting) app.quit();
+  },
+  close: (window: BrowserWindow) => {
+    if (!quitting && !window.isDestroyed()) window.close();
+  },
+};
+const commandMenus = new CommandMenus(
+  process.platform,
+  () => locale,
+  desktopDocument,
+  commandLifecycle,
+);
 let profile: RuntimeProfile;
 let profileFile: string;
 try {
@@ -100,7 +122,8 @@ function preferredSystemLanguages(): readonly string[] {
   }
 }
 const settings = path.join(profile.configuration_root, "Ohtia", "settings");
-const admission = new PortAdmission();
+const requestBudget = new RequestBudget();
+const admission = new PortAdmission(requestBudget);
 let layoutFailureAnnounced = false;
 const publisher = new LocatorPublisher();
 const windows = new Map<
@@ -253,7 +276,7 @@ function createWindow(): boolean {
     },
   });
   windows.set(window, { generation: randomUUID() });
-  window.removeMenu();
+  commandMenus.attach(window);
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => {
     if (event.url !== desktopDocument) event.preventDefault();
@@ -473,7 +496,7 @@ const startup = setTimeout(() => {
 async function start(): Promise<void> {
   await app.whenReady();
   locale = resolveInterfaceLocale(preferredSystemLanguages());
-  Menu.setApplicationMenu(null);
+  commandMenus.refresh();
   const locator = readLocator(settings, profile);
   bootstrapState = locator.state;
   // Diagnostic failure never participates in storage readiness or save admission.
@@ -605,6 +628,75 @@ async function start(): Promise<void> {
     )
       service.setSystemLocale(resolveInterfaceLocale(preferredSystemLanguages()));
     service.dispatch({ ...accepted.value, deliver });
+  });
+  let about: ReturnType<typeof readAboutInformation> | undefined;
+  const aboutInformation = () => {
+    if (!isCommandPlatform(process.platform)) throw new Error("Unsupported command platform.");
+    return (about ??= readAboutInformation(
+      directory,
+      app.getVersion(),
+      process.platform,
+      process.arch,
+    ));
+  };
+  ipcMain.handle(desktopChannels.commands, async (event, action: unknown, payload: unknown) => {
+    const window = trusted(event);
+    if (!window) throw new Error("Command sender admission refused.");
+    // Session and snapshot controls complete synchronously, like the existing port handshake.
+    if (action === "context" && payload === undefined) return commandMenus.connect(window);
+    if (action === "publish") return commandMenus.publish(window, payload);
+    if (action === "perform" && (payload === "window.close" || payload === "application.quit")) {
+      if (payload === "window.close") commandLifecycle.close(window);
+      else commandLifecycle.quit();
+      return true;
+    }
+    const frame = event.senderFrame;
+    if (!frame) throw new Error("Command sender admission refused.");
+    const reservation = requestBudget.reserve(frame);
+    if (!reservation.ok) return false;
+    try {
+      if (action === "about" && payload === undefined) return aboutInformation();
+      if (
+        action === "open_link" &&
+        typeof payload === "string" &&
+        Object.hasOwn(projectLinks, payload)
+      ) {
+        await shell.openExternal(projectLinks[payload as keyof typeof projectLinks]);
+        return true;
+      }
+      if (action === "copy_version" && isInterfaceLocale(payload))
+        return await copyVersionInformation(aboutInformation(), payload, clipboard);
+      if (
+        action !== "perform" ||
+        !isNativeCommand(payload) ||
+        payload === "window.close" ||
+        payload === "application.quit"
+      )
+        return false;
+      if (payload === "link.documentation" || payload === "link.report") {
+        await shell.openExternal(
+          projectLinks[payload === "link.report" ? "report" : "documentation"],
+        );
+        return true;
+      }
+      if (payload === "window.fullscreen") window.setFullScreen(!window.isFullScreen());
+      else {
+        const edit = {
+          "edit.undo": "undo",
+          "edit.redo": "redo",
+          "edit.cut": "cut",
+          "edit.copy": "copy",
+          "edit.paste": "paste",
+          "edit.selectAll": "selectAll",
+        } as const;
+        window.webContents[edit[payload]]();
+      }
+      return true;
+    } catch {
+      return false;
+    } finally {
+      reservation.value();
+    }
   });
   ipcMain.handle(
     desktopChannels.bootstrap,

@@ -48,9 +48,9 @@ export function OhtiaGlasses({
     </svg>
   );
 }
-export function OhtiaBrand() {
+export function OhtiaBrand({ heading = false }: { readonly heading?: boolean } = {}) {
   return (
-    <span className="ohtia-brand" data-type="type.ui.subheading">
+    <span className="ohtia-brand" data-type={heading ? "type.ui.heading" : "type.ui.subheading"}>
       <OhtiaGlasses />
       <span>Ohtia</span>
     </span>

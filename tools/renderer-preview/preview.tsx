@@ -1,3 +1,4 @@
+import { CommandSpecimens } from "./command-specimens.js";
 import { useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -66,6 +67,7 @@ function Preview() {
   };
   return (
     <main lang={korean ? "ko-KR" : "en-GB"}>
+      <CommandSpecimens />
       <h1>Ohtia semantic catalog</h1>
       <p>
         Synthetic controls and callbacks. Changes are not saved. These specimens do not confirm

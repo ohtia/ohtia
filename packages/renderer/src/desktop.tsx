@@ -11,6 +11,7 @@ import {
   type PortCall,
 } from "@ohtia/contracts";
 import "./foundation.css";
+import { CommandSurfaces } from "./command-surfaces.js";
 import { OhtiaBrand } from "./branding.js";
 import { LanguagePanel } from "./language-panel.js";
 import { AppearancePanel } from "./appearance-panel.js";
@@ -134,6 +135,7 @@ function FoundationWindow() {
         <OhtiaBrand />
       </h1>
       <p>{text("intro")}</p>
+      <CommandSurfaces bridge={window.ohtia.commands} locale={bootstrap.locale} />
       <p role="status" aria-live="polite" aria-atomic="true">
         {text(
           status === "ready"
@@ -199,23 +201,6 @@ function FoundationWindow() {
           }}
         >
           {text("retry")}
-        </button>
-        <button
-          type="button"
-          aria-disabled={busy}
-          onClick={(event) => {
-            void action("newWindow", event.currentTarget);
-          }}
-        >
-          {text("new_window")}
-        </button>
-        <button
-          type="button"
-          onClick={(event) => {
-            void action("exit", event.currentTarget);
-          }}
-        >
-          {text("exit")}
         </button>
       </div>
     </main>
