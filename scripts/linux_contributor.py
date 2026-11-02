@@ -715,6 +715,7 @@ def private_session(
                 stderr=subprocess.STDOUT,
             )
             try:
+                env["OHTIA_NATIVE_COMPOSITOR_PID"] = str(compositor.pid)
                 env["WAYLAND_DISPLAY"] = wait_for_compositor(
                     compositor, directory, readiness, cancelled=cancelled
                 )

@@ -2087,6 +2087,23 @@ class EvidenceTests(unittest.TestCase):
                 self.assertEqual(failure["code"], cycle.failure_code(error))
                 self.assertFalse((output / "result.json").exists())
 
+    def test_invalid_compositor_identity_retains_a_safe_display_failure(self):
+        output = self.root / "result"
+        with (
+            patch.object(sys, "argv", ["scaleway_guest.py", "display", str(output)]),
+            patch.object(Path, "home", return_value=self.root),
+            patch.object(guest_probe, "guard", return_value={"intent": self.intent}),
+            patch.object(guest_probe, "admit_guest"),
+            patch.object(
+                guest_probe, "display", side_effect=cycle.CycleError("guest_compositor_identity")
+            ),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            self.assertEqual(guest_probe.main(), 1)
+        failure = cycle.read(output / "display-failure.json")
+        self.assertEqual(failure["code"], "guest_compositor_identity")
+        self.assertFalse((output / "result.json").exists())
+
     def test_guest_refusal_never_writes_to_an_unadmitted_output_path(self):
         output = self.root / "foreign-output"
         with (

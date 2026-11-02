@@ -105,6 +105,48 @@
       "foreground": "action.primary.content",
       "backgrounds": ["action.primary.surface-hover"],
       "minimum": 7
+    },
+    {
+      "selector": ".command-dialog .primitive-dialog-header > h2",
+      "backgrounds": ["surface.page"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".command-dialog-footer",
+      "backgrounds": ["surface.page"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".about-version",
+      "backgrounds": ["surface.page"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".about-version dt",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
+      "selector": ".about-links a",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
+      "selector": ".external-caption, .about-copied",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
+      "selector": ".command-danger",
+      "foreground": "danger.content",
+      "backgrounds": ["danger.surface"],
+      "minimum": 7
     }
   ],
   "overlays": [

@@ -108,6 +108,12 @@
       "sha256": "bc4edbaaea7f39131cfcd05dda9f34725c7c3b61eea0f2cd8c4ef2912df6db65"
     },
     {
+      "name": "external-link",
+      "file": "external-link.svg",
+      "archive_member": "package/icons/external-link.svg",
+      "sha256": "11534bf842a070702d1d97b61e7b6e239e981831141606ef376333f8eaeba623"
+    },
+    {
       "name": "file-text",
       "file": "file-text.svg",
       "archive_member": "package/icons/file-text.svg",
@@ -280,6 +286,12 @@
       "file": "user-round.svg",
       "archive_member": "package/icons/user-round.svg",
       "sha256": "011b29453d6392abbb8b175201d667c4f15df84812b694ef4e15e6491cda32fc"
+    },
+    {
+      "name": "x",
+      "file": "x.svg",
+      "archive_member": "package/icons/x.svg",
+      "sha256": "ddc7615296480f81db85fc5ae666fce70de1a2643160a8ef6db1709529f88b17"
     },
     {
       "name": "zoom-in",

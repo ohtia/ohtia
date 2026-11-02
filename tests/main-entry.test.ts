@@ -100,6 +100,10 @@ async function launch(
       isDestroyed: () => this.destroyed,
       setWindowOpenHandler: vi.fn(),
     });
+    isFocused = () => true;
+    close = vi.fn();
+    isFullScreen = () => false;
+    setFullScreen = vi.fn();
     removeMenu = vi.fn();
     setTitle = vi.fn();
     show = vi.fn();
@@ -190,7 +194,9 @@ async function launch(
     dialog,
     protocol,
     utilityProcess,
-    Menu: { setApplicationMenu: vi.fn() },
+    Menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn((value) => value) },
+    clipboard: { writeText: vi.fn(), readText: vi.fn() },
+    shell: { openExternal: vi.fn() },
   }));
   vi.doMock("../packages/main/src/profile.js", () => ({
     loadRuntimeProfile: () => {
@@ -243,6 +249,12 @@ async function launch(
       });
   }
   const readFileSync = (file: unknown, ...args: unknown[]) => {
+    if (fixturePath(file).endsWith("/licenses/Ohtia-LICENSE"))
+      return "MIT License\n\nCopyright (c) 2026 Adrian Mastronardi & Mónica Pené\n";
+    if (fixturePath(file).endsWith("/notices.json"))
+      return JSON.stringify([{ component: "React", license: "MIT" }]);
+    if (fixturePath(file).endsWith("/inventory.json"))
+      return JSON.stringify({ version: 1, files: {} });
     if (fixturePath(file).endsWith("/assets.json")) return JSON.stringify(assets);
     if (fixturePath(file).includes("/renderer/")) return bytes;
     return nativeFs.default.readFileSync(file as never, ...(args as []));
@@ -296,8 +308,14 @@ async function launch(
     sender: selected?.webContents,
     senderFrame: selected?.webContents.mainFrame,
   });
-  const bootstrap = ipcMain.handle.mock.calls[0]?.[1];
+  const bootstrap = ipcMain.handle.mock.calls.find(
+    ([channel]) => channel === constants.desktopChannels.bootstrap,
+  )?.[1];
   const action = async (value: string, selected = window) => bootstrap(event(selected), value);
+  const command = async (action: string, payload?: unknown, selected = window) =>
+    ipcMain.handle.mock.calls.find(
+      ([channel]) => channel === constants.desktopChannels.commands,
+    )![1](event(selected), action, payload);
   return {
     constants,
     state,
@@ -316,6 +334,7 @@ async function launch(
     failure,
     event,
     action,
+    command,
     recoverService,
   };
 }
@@ -692,4 +711,108 @@ it("resolves an unavailable OS language list and propagates admitted locale chan
   expect(encoded.ok).toBe(true);
   if (encoded.ok) h.ipcMain.emit(h.constants.desktopChannels.port, h.event(), encoded.value);
   expect(supervisor.setSystemLocale).toHaveBeenCalledWith("en-US");
+});
+
+it("admits the closed command broker on the actual sender, confirms localized copy and denies arbitrary links/effects", async () => {
+  const h = await launch();
+  const electron = await import("electron");
+  const context = await h.command("context");
+  expect(context.platform).toBe(process.platform);
+  expect(await h.command("perform", "research.confirm")).toBe(false);
+  expect(await h.command("open_link", "https://example.invalid")).toBe(false);
+  expect(await h.command("about", "extra")).toBe(false);
+  expect(await h.command("copy_version", "xx-XX")).toBe(false);
+  expect(await h.command("publish", {})).toBe(false);
+  const info = await h.command("about");
+  expect(info).toMatchObject({ product: "Ohtia", version: "0.0.0-test" });
+  let copied = "";
+  vi.mocked(electron.clipboard.writeText).mockImplementation(async (text) => {
+    copied = text;
+  });
+  vi.mocked(electron.clipboard.readText).mockImplementation(async () => copied);
+  expect(await h.command("copy_version", "ko-KR")).toBe(true);
+  expect(copied).toContain("시스템: ");
+  vi.mocked(electron.clipboard.readText).mockRejectedValueOnce(new Error("Clipboard unavailable"));
+  expect(await h.command("copy_version", "en-US")).toBe(false);
+  expect(await h.command("open_link", "repository")).toBe(true);
+  expect(electron.shell.openExternal).toHaveBeenLastCalledWith(h.constants.projectLinks.repository);
+  for (const id of ["link.documentation", "link.report"] as const)
+    expect(await h.command("perform", id)).toBe(true);
+  vi.mocked(electron.shell.openExternal).mockRejectedValueOnce(new Error("Browser unavailable"));
+  expect(await h.command("open_link", "report")).toBe(false);
+  expect(await h.command("perform", "window.fullscreen")).toBe(true);
+  expect(h.window.setFullScreen).toHaveBeenCalledWith(true);
+  const edits = {
+    undo: vi.fn(),
+    redo: vi.fn(),
+    cut: vi.fn(),
+    copy: vi.fn(),
+    paste: vi.fn(),
+    selectAll: vi.fn(),
+  };
+  Object.assign(h.window.webContents, edits);
+  for (const id of Object.keys(edits) as (keyof typeof edits)[]) {
+    expect(await h.command("perform", `edit.${id}`)).toBe(true);
+    expect(edits[id]).toHaveBeenCalledOnce();
+  }
+  await h.command("perform", "window.close");
+  expect(h.window.close).toHaveBeenCalledOnce();
+  await h.command("perform", "application.quit");
+  expect(h.app.quit).toHaveBeenCalled();
+  const handler = h.ipcMain.handle.mock.calls.find(
+    ([channel]) => channel === h.constants.desktopChannels.commands,
+  )![1];
+  await expect(
+    handler({ ...h.event(), senderFrame: { url: h.constants.desktopDocument } }, "about"),
+  ).rejects.toThrow(/sender admission/);
+});
+
+it("shares one admission budget between named broker requests and the service port", async () => {
+  const h = await launch();
+  const electron = await import("electron");
+  const sessionEvent = h.event();
+  h.ipcMain.emit(h.constants.desktopChannels.session, sessionEvent);
+  let serial = 0;
+  const send = () => {
+    const encoded = h.constants.encodeEnvelope({
+      ...sessionEvent.returnValue,
+      protocol: 1,
+      policy: h.constants.policyId,
+      kind: "request",
+      requestId: `shared-${++serial}`,
+      operationId: `operation-${serial}`,
+      operation: "status.read",
+      payload: {},
+    });
+    expect(encoded.ok).toBe(true);
+    if (encoded.ok) h.ipcMain.emit(h.constants.desktopChannels.port, h.event(), encoded.value);
+  };
+  const supervisor = h.supervisors[0];
+  for (let i = 0; i < h.constants.portLimits.pending_per_window; i++) send();
+  expect(supervisor.dispatch).toHaveBeenCalledTimes(h.constants.portLimits.pending_per_window);
+  expect(await h.command("about")).toBe(false);
+  // Control handshakes cannot deadlock behind effect-bearing requests.
+  expect(await h.command("context")).toHaveProperty("windowGeneration");
+  expect(await h.command("perform", "application.quit")).toBe(true);
+  expect(await h.command("perform", "window.close")).toBe(true);
+  for (const [accepted] of supervisor.dispatch.mock.calls) accepted.release();
+  supervisor.dispatch.mockClear();
+  expect(await h.command("about")).toHaveProperty("product", "Ohtia");
+  const finish: (() => void)[] = [];
+  vi.mocked(electron.clipboard.writeText).mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finish.push(resolve);
+      }),
+  );
+  const copying = Array.from({ length: h.constants.portLimits.pending_per_window }, () =>
+    h.command("copy_version", "en-US"),
+  );
+  send();
+  expect(supervisor.dispatch).not.toHaveBeenCalled();
+  finish.forEach((resolve) => resolve());
+  await Promise.all(copying);
+  send();
+  expect(supervisor.dispatch).toHaveBeenCalledOnce();
+  supervisor.dispatch.mock.calls[0][0].release();
 });

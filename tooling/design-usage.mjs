@@ -17,6 +17,16 @@ const isLineShorthand = (property) =>
 // This vocabulary is intentionally explicit. New CSS features require a checked contract.
 const layout = new Set([
   "align-items",
+  "float",
+  "aspect-ratio",
+  "flex",
+  "inset-inline-end",
+  "justify-content",
+  "object-fit",
+  "margin-inline",
+  "margin-block-start",
+  "grid-template-columns",
+  "user-select",
   "scroll-padding",
   "scroll-margin",
   "border-width",
@@ -62,6 +72,7 @@ const layout = new Set([
   "outline-offset",
   "overflow-wrap",
   "padding",
+  "padding-block-end",
   "stroke-linecap",
   "stroke-linejoin",
   "text-align",
@@ -103,6 +114,11 @@ export function checkColorUsage(model, sources, usage) {
       throw new Error("Invalid renderer color usage declaration");
     if (item.foreground && item.minimum !== (item.foreground === "content.disabled" ? 3 : 7))
       throw new Error("Text contrast minimum differs from its semantic role");
+    if (
+      item.decorativeBorders !== undefined &&
+      (item.decorativeBorders !== "border.subtle" || item.minimum !== 3)
+    )
+      throw new Error("Only border.subtle may declare a decorative border");
     const key = selectorKey(item.selector);
     if (declarations.has(key)) throw new Error(`Duplicate renderer color owner: ${key}`);
     for (const background of item.backgrounds) {
@@ -273,6 +289,10 @@ export function checkColorUsage(model, sources, usage) {
             line = token(match[2], context);
           } else if (value === "currentColor" && declared.foreground) line = declared.foreground;
           else line = token(value, `${context}/${property}`);
+          if (declared.decorativeBorders === line && property.startsWith("border")) {
+            checked++;
+            continue;
+          }
           for (const background of declared.backgrounds) {
             assertPair(model, line, background, 3);
             checked++;

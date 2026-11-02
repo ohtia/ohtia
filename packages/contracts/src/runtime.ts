@@ -1,3 +1,4 @@
+import type { CommandBridge } from "./commands.js";
 import { isInterfaceLocale } from "./locale.js";
 import type { FoundationPort, InterfaceLocale } from "./port.js";
 
@@ -11,6 +12,8 @@ export const desktopChannels = {
   port: "ohtia:foundation",
   reply: "ohtia:foundation-result",
   bootstrap: "ohtia:bootstrap",
+  commands: "ohtia:commands",
+  commandIntent: "ohtia:command-intent",
 } as const;
 export const bootstrapStates = [
   "missing",
@@ -74,6 +77,7 @@ export function decodeBootstrapSnapshot(value: unknown): BootstrapSnapshot | und
   };
 }
 export interface DesktopBridge {
+  readonly commands: CommandBridge;
   readonly foundation: FoundationPort;
   readonly bootstrap: {
     read(): Promise<BootstrapSnapshot>;

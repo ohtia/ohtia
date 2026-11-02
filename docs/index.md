@@ -16,7 +16,7 @@ okf_version: "0.2"
 
 - [System architecture](architecture.md) — Application data authority, execution boundaries, provider adapters, and schema-migration recovery.
 - [Frontend architecture](frontend-architecture.md) — Graphical research workflows, Electron interface boundaries, state ownership, editing, localization, and verification.
-- [Semantic renderer primitives](semantic-primitives.md) — Controlled React component contracts, keyboard patterns and the isolated synthetic development catalog.
+- [Semantic renderer primitives](semantic-primitives.md) — Controlled React components, named-command surfaces, keyboard patterns and the isolated synthetic development catalog.
 - [Renderer design foundations](design-foundations.md) — Generate canonical design tokens and verify bundled typography, icons and static branding before building the renderer.
 - [Ohtia design system](design-system.md) — Visual identity, tokens, symbol and character, typography, composition, accessibility, localization, components and patterns of Ohtia's interface.
 - [Workspace controller API](workspace-controller.md) — Compose deterministic per-window workspace geometry with the named layout preference and receipt boundary.
@@ -38,7 +38,7 @@ okf_version: "0.2"
 - [Isolated desktop runtime](desktop-runtime.md) — Admit an independent native profile, assemble the local desktop and verify its supervised status and fixed-home bootstrap boundaries.
 - [Durable foundation storage](storage.md) — Open the isolated local store, persist appearance choices and verify exclusive migrations and whole-database recovery through the packaged desktop.
 - [Desktop foundation contract](desktop-foundation-contract.md) — Native target and distribution qualification inputs, pinned candidate metadata, numeric resource policy and evidence ownership for the desktop foundation.
-- [Bounded foundation application port](application-port.md) — Versioned status, appearance, locale and layout messages, controlled outcomes, transaction receipts and deterministic conformance for the desktop application boundary.
+- [Bounded foundation application port](application-port.md) — Versioned preference messages, named presentation commands, controlled outcomes and deterministic conformance for the desktop application boundary.
 - [Foundation security applicability](foundation-security.md) — Versioned security applicability, enforcing boundaries and reproducible evidence obligations for the desktop foundation.
 - [Content-free broker diagnostics](diagnostics.md) — Closed diagnostic events, broker-owned bounded files, native account protection and reproducible privacy and failure evidence.
 
@@ -53,7 +53,7 @@ okf_version: "0.2"
 - [Native Windows contribution](windows-contribution.md) — Prepare, diagnose, edit, verify and package Ohtia in an independent native Windows x64 contributor profile.
 - [Native macOS contribution](macos-contribution.md) — Set up, diagnose, edit, verify and package Ohtia in an independent Apple Silicon macOS contributor profile.
 - [Locked developer workspace](developer-workspace.md) — Bootstrap isolated contributor tools, build the six package boundaries and verify the frozen workspace without changing research data.
-- [Native foundation qualification](native-qualification.md) — Assemble non-shipping native probes, admit independent profiles and retain complete target evidence without claiming partial native qualification.
+- [Native foundation qualification](native-qualification.md) — Assemble non-shipping native probes, admit independent profiles and retain complete target evidence without claiming partial native qualification, including owned headless GNOME activation and browser-side shortcut checks.
 - [Native foundation qualification report](native-foundation-report.md) — Observed native desktop feasibility, source compatibility, packaging consequences and evidence limits for the required foundation platforms.
 - [Repository policy](repository-policy.md) — GitHub repository configuration, dependency updates, quality checks, and verification procedures.
 - [Change-note tooling](change-notes.md) — Capture inert PR impact records, reconcile source scope and prepare immutable editorial note and correction evidence.

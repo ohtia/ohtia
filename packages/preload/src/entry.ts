@@ -1,6 +1,13 @@
 import { contextBridge, ipcRenderer } from "electron";
 import {
   decodeBootstrapSnapshot,
+  isCommandContext,
+  isCommandIntent,
+  isCommandSnapshot,
+  isAboutInformation,
+  isNativeCommand,
+  isInterfaceLocale,
+  projectLinks,
   desktopChannels,
   isIdentifier,
   failure,
@@ -95,7 +102,66 @@ async function bootstrap(action: BootstrapAction) {
   if (!snapshot) throw new Error("Invalid bootstrap response.");
   return snapshot;
 }
+const commandListeners = new Set<Parameters<DesktopBridge["commands"]["onIntent"]>[0]>();
+let commandContext: Awaited<ReturnType<DesktopBridge["commands"]["context"]>> | undefined;
+const commandIntent = (_event: unknown, input: unknown) => {
+  if (
+    !isCommandIntent(input) ||
+    input.source !== "native" ||
+    input.windowGeneration !== commandContext?.windowGeneration
+  )
+    return;
+  for (const listener of commandListeners) {
+    try {
+      listener(input);
+    } catch {
+      commandListeners.delete(listener);
+    }
+  }
+};
+ipcRenderer.on(desktopChannels.commandIntent, commandIntent);
+async function commandBoolean(action: string, payload: unknown): Promise<boolean> {
+  const value: unknown = await ipcRenderer.invoke(desktopChannels.commands, action, payload);
+  return value === true;
+}
 const bridge: DesktopBridge = {
+  commands: {
+    async context() {
+      const value: unknown = await ipcRenderer.invoke(
+        desktopChannels.commands,
+        "context",
+        undefined,
+      );
+      if (!isCommandContext(value)) throw new Error("Invalid command context.");
+      commandContext = value;
+      return value;
+    },
+    publish: (snapshot) =>
+      isCommandSnapshot(snapshot) && snapshot.windowGeneration === commandContext?.windowGeneration
+        ? commandBoolean("publish", snapshot)
+        : Promise.resolve(false),
+    onIntent(listener) {
+      if (commandListeners.size >= portLimits.subscriptions_per_window)
+        throw new Error("Command listener limit reached.");
+      commandListeners.add(listener);
+      return () => {
+        commandListeners.delete(listener);
+      };
+    },
+    async about() {
+      const value: unknown = await ipcRenderer.invoke(desktopChannels.commands, "about", undefined);
+      if (!isAboutInformation(value)) throw new Error("Invalid About information.");
+      return value;
+    },
+    copyVersionInformation: (locale) =>
+      isInterfaceLocale(locale) ? commandBoolean("copy_version", locale) : Promise.resolve(false),
+    perform: (command) =>
+      isNativeCommand(command) ? commandBoolean("perform", command) : Promise.resolve(false),
+    openLink: (link) =>
+      typeof link === "string" && Object.hasOwn(projectLinks, link)
+        ? commandBoolean("open_link", link)
+        : Promise.resolve(false),
+  },
   foundation: {
     readLocale: () => connection.client.port.readLocale(),
     replaceLocale: (change, expectedServiceGeneration) =>
@@ -135,6 +201,8 @@ ipcRenderer.on(desktopChannels.reconnect, reconnect);
 window.addEventListener(
   "unload",
   () => {
+    commandListeners.clear();
+    ipcRenderer.removeListener(desktopChannels.commandIntent, commandIntent);
     for (const owner of localeOwners) owner.stream.dispose();
     localeOwners.clear();
     connection.client.dispose();

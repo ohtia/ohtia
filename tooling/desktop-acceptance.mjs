@@ -1,9 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { _electron, expect } from "@playwright/test";
+import {
+  verifyPackagedCommands,
+  verifyCommandsAfterDeniedNavigation,
+} from "./command-acceptance.mjs";
+import { nativeFocusFailure } from "./command-native-focus.mjs";
 import { verifyPackagedDesign } from "./design-acceptance.mjs";
 import { setNativeViewport } from "./design-viewport.mjs";
 import { admittedLaunch } from "./desktop-launch.mjs";
@@ -89,7 +94,7 @@ try {
   }));
   expect(initial.node).toBe("undefined");
   expect(initial.require).toBe("undefined");
-  expect(initial.bridge.sort()).toEqual(["bootstrap", "foundation"]);
+  expect(initial.bridge.sort()).toEqual(["bootstrap", "commands", "foundation"]);
   expect(initial.status).toMatchObject({
     ok: true,
     value: { service: "ready", engine: "unavailable", interfaceLocale: initial.snapshot.locale },
@@ -253,6 +258,10 @@ try {
       });
   });
   const original = page.url();
+  const expectedDocument = await page.evaluate((token) => {
+    document.documentElement.dataset.commandAcceptanceDocument = token;
+    return { url: window.location.href, token };
+  }, randomUUID());
   await page.evaluate(() => {
     window.open("https://example.invalid");
     const link = document.createElement("a");
@@ -283,6 +292,10 @@ try {
   expect((await page.evaluate(() => window.ohtia.foundation.readStatus().result)).ok).toBe(true);
   expect(application.windows()).toHaveLength(1);
   passed("navigation-denied");
+  passed(
+    "commands-survive-denied-navigation-without-reload",
+    await verifyCommandsAfterDeniedNavigation(application, page, expectedDocument),
+  );
   // Start the independent accessibility phase in a fresh admitted document generation.
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect
@@ -355,6 +368,10 @@ try {
   const design = await verifyPackagedDesign(page, cdp, nativeWindow);
   passed("packaged-design-foundations", design);
   passed("packaged-design-viewport-zoom", design.viewports);
+  passed(
+    "packaged-command-surfaces",
+    await verifyPackagedCommands(application, page, nativeWindow, output, cdp),
+  );
   await nativeWindow.dispose();
   await page.evaluate(() => {
     const walker = document.createTreeWalker(document.querySelector("main"), NodeFilter.SHOW_TEXT);
@@ -536,6 +553,7 @@ try {
     id: "acceptance-failure",
     result: "fail",
     controlledMessage: error instanceof Error ? error.message.slice(0, 1024) : "Acceptance failed",
+    nativeFocus: nativeFocusFailure(error),
   });
   process.exitCode = 1;
 } finally {
