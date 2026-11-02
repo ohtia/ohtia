@@ -117,21 +117,99 @@ describe("actual focus gate with controlled native and input adapters", () => {
     async () => {
       ownedWayland();
       const target = fixture();
+      let failure: unknown;
       try {
         await focusNative(target.handle, "peer");
         expect.unreachable("Input success must not qualify OS focus.");
       } catch (error) {
+        failure = error;
         expect(nativeFocusFailure(error)).toEqual({
           target: "peer",
           strategy: "headless GNOME compositor Alt+Escape input",
           compositorInputAttempts: 3,
           focused: false,
+          inputs: [
+            { elapsedMs: expect.any(Number) as number, focused: false },
+            { elapsedMs: expect.any(Number) as number, focused: false },
+            { elapsedMs: expect.any(Number) as number, focused: false },
+          ],
           history: [],
         });
       }
       expect(input.execute).toHaveBeenCalledTimes(3);
+      const inputs = (nativeFocusFailure(failure)?.inputs ?? []) as { elapsedMs: number }[];
+      for (const record of inputs) expect(record.elapsedMs).toBeGreaterThanOrEqual(5000);
     },
-    15000,
+    30000,
+  );
+  it.runIf(process.platform === "linux")(
+    "keeps the input record when focus evaluation fails during the wait",
+    async () => {
+      ownedWayland();
+      const target = fixture();
+      let calls = 0;
+      const handle = {
+        evaluate: async (callback: (value: typeof target.window) => unknown) => {
+          if (++calls > 2) throw new Error("synthetic closed window");
+          return callback(target.window);
+        },
+      };
+      const failure = await focusNative(handle, "peer").catch((error: unknown) => error);
+      expect(nativeFocusFailure(failure)).toMatchObject({
+        compositorInputAttempts: 1,
+        inputs: [{ focused: false }],
+      });
+      expect(input.execute).toHaveBeenCalledOnce();
+    },
+  );
+  it.runIf(process.platform === "linux")(
+    "reports failure instead of hanging when focus evaluation stops after the last input",
+    async () => {
+      ownedWayland();
+      const target = fixture();
+      const handle = {
+        evaluate: (callback: (value: typeof target.window) => unknown) =>
+          input.execute.mock.calls.length < 3
+            ? Promise.resolve(callback(target.window))
+            : new Promise(() => {}),
+      };
+      const failure = await focusNative(handle, "peer").catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(NativeFocusError);
+      expect(nativeFocusFailure(failure)?.inputs).toHaveLength(3);
+    },
+    30000,
+  );
+  it.runIf(process.platform === "linux")(
+    "keeps waiting for focus that arrives just before the settling deadline",
+    async () => {
+      ownedWayland();
+      const target = fixture();
+      input.execute.mockImplementation(() => {
+        setTimeout(target.activate, 4950);
+      });
+      const observation = await focusNative(target.handle);
+      expect(input.execute).toHaveBeenCalledOnce();
+      expect(observation.inputs).toEqual([
+        { elapsedMs: expect.any(Number) as number, focused: true },
+      ]);
+    },
+  );
+  it.runIf(process.platform === "linux")(
+    "does not repeat compositor input while delayed focus can still arrive",
+    async () => {
+      ownedWayland();
+      const target = fixture();
+      input.execute.mockImplementation(() => {
+        setTimeout(target.activate, 3000);
+      });
+      const observation = await focusNative(target.handle);
+      expect(input.execute).toHaveBeenCalledOnce();
+      expect(observation.compositorInputAttempts).toBe(1);
+      expect(observation.inputs).toEqual([
+        { elapsedMs: expect.any(Number) as number, focused: true },
+      ]);
+      expect(observation.inputs?.[0]?.elapsedMs).toBeGreaterThanOrEqual(2900);
+    },
   );
 
   it("does not invoke compositor input for an X11 session with an inherited PID", async () => {
@@ -172,6 +250,7 @@ describe("actual focus gate with controlled native and input adapters", () => {
         strategy: "headless GNOME compositor Alt+Escape input",
         compositorInputAttempts: 1,
         focused: true,
+        inputs: [{ elapsedMs: expect.any(Number) as number, focused: true }],
       });
       expect(input.execute).toHaveBeenCalledWith(
         "/usr/bin/python3",
