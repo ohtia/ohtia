@@ -71,9 +71,8 @@ def check_helpers(tools: dict, installed: Path) -> dict:
 def linux_profile(package_format: str, profile: str | None = None) -> str:
     """Bind trusted maintainer scripts to an explicitly admitted distribution policy."""
     if profile is None:
-        profile = "fedora-44" if package_format == "rpm" else "ubuntu-24.04"
+        profile = "fedora-44" if package_format == "rpm" else "ubuntu-26.04"
     expected = {
-        "ubuntu-24.04": "deb",
         "ubuntu-26.04": "deb",
         "debian-13": "deb",
         "fedora-44": "rpm",

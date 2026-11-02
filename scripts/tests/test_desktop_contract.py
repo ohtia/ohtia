@@ -191,7 +191,7 @@ class QualificationAdmissionTests(unittest.TestCase):
             contract.check_policy(data)
 
     def test_facility_substitutions_do_not_qualify_another_native_profile(self):
-        for index, label in ((0, "ubuntu-26.04"), (2, "windows-2025")):
+        for index, label in ((0, "ubuntu-24.04"), (2, "windows-2025")):
             data = record("targets")
             data["targets"][index]["testing_facilities"]["hosted_candidates"] = [label]
             with self.subTest(label=label), self.assertRaises(contract.ContractError):
@@ -265,7 +265,7 @@ class QualificationAdmissionTests(unittest.TestCase):
                 elif mutation == "wrong-rpm-arch":
                     row["native_package_architectures"]["rpm"] = "arm64"
                 elif mutation == "ubuntu-as-fedora":
-                    row["distribution_profiles"][1]["hosted_candidates"] = ["ubuntu-24.04"]
+                    row["distribution_profiles"][1]["hosted_candidates"] = ["ubuntu-26.04"]
                 else:
                     image = row["distribution_profiles"][1]["qualification_image"]
                     opposite = "aarch64" if index == 0 else "x86_64"
@@ -318,6 +318,23 @@ class QualificationAdmissionTests(unittest.TestCase):
                     self.assertRaises(contract.ContractError),
                 ):
                     contract.check_targets(missing)
+
+    def test_retired_ubuntu_profile_and_x11_backend_are_rejected(self):
+        for index in (0, 1):
+            data = record("targets")
+            profiles = data["targets"][index]["distribution_profiles"]
+            profiles.append({**copy.deepcopy(profiles[0]), "id": "ubuntu-24.04"})
+            with self.subTest(target=index), self.assertRaises(contract.ContractError):
+                contract.check_targets(data)
+            for profile_index in range(3):
+                data = record("targets")
+                profile = data["targets"][index]["distribution_profiles"][profile_index]
+                profile["display_backends"] = ["wayland", "x11"]
+                with (
+                    self.subTest(target=index, profile=profile["id"]),
+                    self.assertRaises(contract.ContractError),
+                ):
+                    contract.check_targets(data)
 
     def test_linux_display_and_fedora_checksum_identity_cannot_drift(self):
         for mutation in ("ozone", "ozone-auto", "backend", "checksum"):

@@ -131,8 +131,12 @@ class DeliveryTests(unittest.TestCase):
 
     def test_complete_required_matrix_and_formats(self):
         cells = self.plan["cells"]
-        self.assertEqual(len(cells), 14)
-        self.assertEqual(sum(len(cell["formats"]) for cell in cells), 16)
+        self.assertEqual(len(cells), 8)
+        self.assertEqual(sum(len(cell["formats"]) for cell in cells), 10)
+        self.assertEqual(
+            {c["backend"] for c in cells if c["target"].startswith("linux-")}, {"wayland"}
+        )
+        self.assertEqual(len({c["runner"] for c in cells}), 6)
         self.assertEqual(
             {c["target"] for c in cells},
             {"linux-x64", "linux-arm64", "win32-x64", "win32-arm64", "darwin-arm64"},
@@ -265,6 +269,19 @@ class DeliveryTests(unittest.TestCase):
                 self.assertTrue(message.startswith(prefix))
                 self.assertEqual(json.loads(message[len(prefix) :]), dirty[:4096])
                 self.assertNotIn("\n", message)
+
+    def test_retired_ubuntu_runner_and_x11_backend_fail(self):
+        manifest = delivery.read(delivery.ROOT / "config/desktop/targets.json")
+        matrix = delivery.read(delivery.ROOT / "config/quality/build-targets.json")
+        ubuntu = next(i for i, c in enumerate(matrix["cells"]) if c["profile"] == "ubuntu-26.04")
+        for field, value in (
+            ({"backend": "x11"}, "backend"),
+            ({"runner": "ubuntu-24.04", "profile": "ubuntu-24.04"}, "runner"),
+        ):
+            invalid = copy.deepcopy(matrix)
+            invalid["cells"][ubuntu].update(field)
+            with self.subTest(change=value), self.assertRaises(delivery.DeliveryError):
+                delivery.cells(manifest, invalid)
 
     def test_missing_or_nonstandard_hosted_runner_fails(self):
         manifest = delivery.read(delivery.ROOT / "config/desktop/targets.json")

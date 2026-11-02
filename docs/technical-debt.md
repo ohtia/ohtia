@@ -2,14 +2,14 @@
 type: Reference
 title: Technical debt
 description: Deliberate technical compromises, their evidence, compensating controls and verifiable removal conditions.
+generated:
+  by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: arm-nested-virtualization
     resource: https://github.com/orgs/community/discussions/160591
     title: GitHub hosted nested virtualization and ARM fleet migration
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # Technical debt
@@ -59,7 +59,7 @@ A distribution-specific native dependency, package script, filesystem or kernel-
 
 ### Compensating controls
 
-- Keep Ubuntu 24.04 and 26.04 native ARM64 jobs on X11 and GNOME/Wayland.
+- Keep the Ubuntu 26.04 native ARM64 job on GNOME/Wayland.
 - Require x64 Fedora and Debian guest jobs to use actual KVM; fail on missing acceleration rather than falling back to TCG.
 - Preserve the full distribution target contract and the original #32 evidence.
 - Report the omitted ARM guest cells explicitly; require applicable native final-artifact qualification before a distribution guarantee.

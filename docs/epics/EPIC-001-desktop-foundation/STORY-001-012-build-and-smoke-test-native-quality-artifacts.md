@@ -2,6 +2,10 @@
 type: Story
 title: "STORY-001-012 — Build and smoke-test native quality artifacts"
 description: "Produce isolated, identifiable quality packages and complete native smoke evidence for PRs and integrated source."
+generated:
+  by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 tags: ["story", "comp:tooling", "comp:desktop"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/26
@@ -19,10 +23,6 @@ applicable_blocks:
     "SPEC-001-026",
     "SPEC-001-027",
   ]
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # STORY-001-012 — Build and smoke-test native quality artifacts
@@ -65,7 +65,7 @@ Produce isolated, identifiable quality packages and complete native smoke eviden
 - [ ] Completion gate: verify Native hosts output NH and its full release condition in the Dependencies output registry and SPEC-001-015.
 - [ ] Native job/result/provenance changes pass current-verifier compatibility and negative tests; no push run is accepted as pre-merge PR evidence.
 - [ ] Applicable CI security evidence and required live policy authorization/readback are complete before the changed authority is used.
-- [ ] All fourteen native quality cells pass; missing ARM64 or emulated-only evidence fails ci. Hosted Windows Server and Apple Silicon evidence does not qualify other distribution profiles; Fedora/Debian ARM64 guests remain an explicit technical-debt entry.
+- [ ] All eight native quality cells pass; missing ARM64 or emulated-only evidence fails ci. Hosted Windows Server and Apple Silicon evidence does not qualify other distribution profiles; Fedora/Debian ARM64 guests remain an explicit technical-debt entry.
 - [ ] PR and actual integrated source have distinct complete native quality evidence; a synthetic merge result cannot replace a different main revision.
 - [ ] Documentation-only exclusions are justified; uncertain/shared/native/build-input changes get the full relevant matrix.
 - [ ] Incomplete or unreadable required targets fail ci; PR artifacts receive no signing/publication credentials or public update feeds.

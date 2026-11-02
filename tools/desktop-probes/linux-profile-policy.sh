@@ -4,7 +4,7 @@ verify_distribution_profile() {
   VERSION_ID=
   . /etc/os-release
   case "$OHTIA_NATIVE_DISTRIBUTION_PROFILE:$ID:$VERSION_ID" in
-    ubuntu-24.04:ubuntu:24.04|ubuntu-26.04:ubuntu:26.04|debian-13:debian:13|fedora-44:fedora:44) ;;
+    ubuntu-26.04:ubuntu:26.04|debian-13:debian:13|fedora-44:fedora:44) ;;
     *) return 1 ;;
   esac
 }

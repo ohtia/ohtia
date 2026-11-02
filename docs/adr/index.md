@@ -39,6 +39,8 @@ The conventions for this register are defined in [Architecture decisions](../arc
 
 - [ADR-0041 — Independently administered Linux signing service](adr-0041-independent-linux-signing-service.md) — Separate Linux signing requests from key custody and policy administration using a bounded Scaleway container service.
 
+- [ADR-0042 — Wayland-only Linux desktop support](adr-0042-wayland-only-linux-support.md) — Retire Ubuntu 24.04 and X11 from the required Linux desktop contract, leaving three distribution profiles per CPU on native GNOME Wayland.
+
 ## Interface foundations
 
 - [ADR-0022 — React renderer built with Vite](adr-0022-react-vite-renderer.md) — Build local renderer assets with React and Vite while keeping Electron privileges outside the web component tree.

@@ -78,8 +78,6 @@ def cells(manifest: dict, quality: dict | None = None) -> list[dict]:
     )
     result = quality["cells"]
     required_runners = {
-        "ubuntu-24.04",
-        "ubuntu-24.04-arm",
         "ubuntu-26.04",
         "ubuntu-26.04-arm",
         "windows-2025",
@@ -88,7 +86,7 @@ def cells(manifest: dict, quality: dict | None = None) -> list[dict]:
         "xcode-27",
     }
     require(
-        len(result) == len(required_runners) + 6
+        len(result) == len(required_runners) + 2
         and {c["runner"] for c in result} == required_runners,
         "Missing or nonstandard required hosted runner.",
     )
@@ -125,7 +123,7 @@ def cells(manifest: dict, quality: dict | None = None) -> list[dict]:
             require(
                 cell["target"] == expected_target
                 and cell["profile"] == runner.removesuffix("-arm")
-                and cell["backend"] in {"x11", "wayland"}
+                and cell["backend"] == "wayland"
                 and cell["formats"] == ["deb"],
                 "Mismatched Ubuntu hosted cell.",
             )

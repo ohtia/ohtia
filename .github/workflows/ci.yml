@@ -150,20 +150,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - id: ubuntu-24-04-x64-x11
-            runner: ubuntu-24.04
-          - id: ubuntu-24-04-x64-wayland
-            runner: ubuntu-24.04
-          - id: ubuntu-24-04-arm64-x11
-            runner: ubuntu-24.04-arm
-          - id: ubuntu-24-04-arm64-wayland
-            runner: ubuntu-24.04-arm
-          - id: ubuntu-26-04-x64-x11
-            runner: ubuntu-26.04
           - id: ubuntu-26-04-x64-wayland
             runner: ubuntu-26.04
-          - id: ubuntu-26-04-arm64-x11
-            runner: ubuntu-26.04-arm
           - id: ubuntu-26-04-arm64-wayland
             runner: ubuntu-26.04-arm
           - id: windows-x64
@@ -223,7 +211,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y qemu-system-x86 qemu-utils cloud-image-utils xvfb xauth dbus-x11 gnome-shell gnome-session python3-gi dbus-user-session xdg-utils iproute2 acl libgtk-3-0t64 libnss3 libasound2t64 libgbm1 libxss1 libxtst6 libsecret-1-0 libnotify4 libatspi2.0-0 apparmor
+          sudo apt-get install --no-install-recommends -y qemu-system-x86 qemu-utils cloud-image-utils gnome-shell gnome-session python3-gi dbus-user-session xdg-utils iproute2 acl libgtk-3-0t64 libnss3 libasound2t64 libgbm1 libxss1 libxtst6 libsecret-1-0 libnotify4 libatspi2.0-0 apparmor
           dpkg-query -W > "$RUNNER_TEMP/ohtia-native-packages.txt"
 
       - name: Prepare native VM acceleration
@@ -245,8 +233,6 @@ jobs:
             python scripts/quality_vm.py "$OHTIA_QUALITY_CELL" artifacts/quality-result
           elif [[ "$OHTIA_QUALITY_CELL" == *-wayland ]]; then
             dbus-run-session -- python scripts/quality_display.py "$OHTIA_QUALITY_CELL" artifacts/quality-result
-          elif [ "$RUNNER_OS" = Linux ]; then
-            xvfb-run -a dbus-run-session -- python scripts/workspace.py run quality:build "$OHTIA_QUALITY_CELL" artifacts/quality-result
           else
             python scripts/workspace.py run quality:build "$OHTIA_QUALITY_CELL" artifacts/quality-result
           fi

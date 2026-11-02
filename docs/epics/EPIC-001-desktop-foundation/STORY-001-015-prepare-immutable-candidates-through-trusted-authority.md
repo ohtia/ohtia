@@ -2,6 +2,10 @@
 type: Story
 title: "STORY-001-015 — Prepare immutable candidates through trusted authority"
 description: "Reserve versions and assemble retained candidates with exact package identities, complete native-cell assignments and explicit platform capabilities."
+generated:
+  by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 tags: ["story", "comp:tooling", "comp:desktop"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/29
@@ -10,10 +14,6 @@ epic_concept: ./epic.md
 components: ["comp:tooling", "comp:desktop"]
 applicable_blocks:
   ["SPEC-001-015", "SPEC-001-016", "SPEC-001-017", "SPEC-001-018", "SPEC-001-026", "SPEC-001-028"]
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # STORY-001-015 — Prepare immutable candidates through trusted authority
@@ -62,7 +62,7 @@ Reserve versions and assemble retained Linux-qualified candidates with complete 
 - [ ] A rejected/cancelled candidate consumes its version; same-input continuation cannot replace final artifacts or infer publication authority.
 - [ ] Release authority RA is externally enforced and observed through real deny/allow/readback evidence; a self-authored workflow guard is insufficient.
 
-- [ ] C15 rejects X11 evidence for package P combined with Wayland evidence for different-digest package Q, even with identical versions/source/filenames, and admits a shared artifact only after all assigned native cells and scenarios pass against its final digest.
+- [ ] C15 rejects evidence from one cell for package P combined with evidence from another cell for different-digest package Q, even with identical versions/source/filenames, and admits a shared artifact only after all assigned native cells and scenarios pass against its final digest.
 
 ## Quality checklist
 

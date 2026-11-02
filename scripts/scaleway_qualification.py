@@ -115,7 +115,6 @@ def cloud_config(intent: dict, resources: dict, public_key: str) -> bytes:
             "libatomic",
             "dbus-daemon",
             "dbus-tools",
-            "dbus-x11",
             "btrfs-progs",
             "iproute",
             "libxcrypt-compat",

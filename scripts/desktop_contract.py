@@ -16,8 +16,8 @@ TARGETS = {
     f"{system}-{arch}" for system in ("linux", "win32", "darwin") for arch in ("x64", "arm64")
 }
 FACILITIES = {
-    "linux-x64": ["ubuntu-24.04"],
-    "linux-arm64": ["ubuntu-24.04-arm"],
+    "linux-x64": ["ubuntu-26.04"],
+    "linux-arm64": ["ubuntu-26.04-arm"],
     "win32-x64": [],
     "win32-arm64": ["windows-11-arm"],
     "darwin-x64": ["macos-15-intel", "macos-26-intel"],
@@ -205,7 +205,7 @@ def check_targets(record: dict[str, Any]) -> None:
                 "Linux runtime must use the reviewed native display selection",
             )
             profiles = row.get("distribution_profiles", [])
-            expected_profiles = {"ubuntu-24.04", "fedora-44", "ubuntu-26.04", "debian-13"}
+            expected_profiles = {"ubuntu-26.04", "fedora-44", "debian-13"}
             require(
                 isinstance(profiles, list)
                 and len(profiles) == len(expected_profiles)
@@ -222,10 +222,9 @@ def check_targets(record: dict[str, Any]) -> None:
                 "Linux native package architecture differs",
             )
             for profile in profiles:
-                ubuntu = profile["id"] == "ubuntu-24.04"
+                ubuntu = profile["id"] == "ubuntu-26.04"
                 fedora = profile["id"] == "fedora-44"
                 libc = {
-                    "ubuntu-24.04": "2.39",
                     "fedora-44": "2.43",
                     "ubuntu-26.04": "2.43",
                     "debian-13": "2.41",
@@ -247,8 +246,7 @@ def check_targets(record: dict[str, Any]) -> None:
                     "Linux native policy and display are required",
                 )
                 require(
-                    profile.get("display_backends")
-                    == (["wayland", "x11"] if ubuntu else ["wayland"]),
+                    profile.get("display_backends") == ["wayland"],
                     "Declared native display backend coverage differs",
                 )
                 if fedora:
