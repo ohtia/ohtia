@@ -159,7 +159,8 @@ export async function verifyPackagedSettings(application, page, second, output) 
         .toBe("hidden");
       await expect(dialog.locator(".settings-character-preview img")).toHaveCount(0);
       await second.getByRole("button", { name: text("command.about.open"), exact: true }).click();
-      const about = second.getByRole("dialog", { name: text("command.about.open"), exact: true });
+      // About uses the branded H1 as its accessible name, rather than the command label.
+      const about = second.getByRole("dialog", { name: "Ohtia", exact: true });
       await expect(about).toBeVisible();
       await expect(about.locator(".about-character")).toHaveCount(0);
       await about.locator("[data-close]").click();

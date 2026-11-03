@@ -113,10 +113,8 @@ export async function assembleSigningRuntime(destination) {
       rolldownOptions: { output: { entryFileNames: "installation-signing-container.mjs" } },
     },
   });
-  fs.copyFileSync(
-    path.join(root, "tooling/installation-signing-runner.mjs"),
-    path.join(destination, "tooling/installation-signing-runner.mjs"),
-  );
+  for (const name of ["installation-signing-runner.mjs", "installation-source-pack.mjs"])
+    fs.copyFileSync(path.join(root, "tooling", name), path.join(destination, "tooling", name));
   fs.mkdirSync(path.join(destination, "config/desktop"), { recursive: true });
   for (const name of ["resource-policy.json", "targets.json"])
     fs.copyFileSync(
