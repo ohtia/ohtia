@@ -11,7 +11,8 @@
       "actions/checkout@*",
       "actions/setup-python@*",
       "actions/upload-artifact@*",
-      "actions/download-artifact@*"
+      "actions/download-artifact@*",
+      "actions/attest@*"
     ]
   },
   "workflow": {
