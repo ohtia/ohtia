@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { build, preview } from "vite";
 import { expect } from "@playwright/test";
+import { verifyCharacterSpecimen } from "./catalog-character.mjs";
 import { verifyWorkspaceSpecimen } from "./catalog-workspace.mjs";
 import { verifyCommandSpecimens } from "./command-presentation.mjs";
 
@@ -142,6 +143,15 @@ export async function verifyCatalog(page, url, engine, output) {
   page.on("console", consoleError);
   page.on("request", request);
   try {
+    const browser = page.context().browser();
+    if (!browser) throw new Error("Character catalog checks require an isolated browser context.");
+    const characterContext = await browser.newContext();
+    try {
+      const characterPage = await characterContext.newPage();
+      await verifyCharacterSpecimen(characterPage, url, engine, output);
+    } finally {
+      await characterContext.close();
+    }
     await verifyWorkspaceSpecimen(page, url, engine, output);
     await verifyCommandSpecimens(page, url, engine);
     await keyboardJourneys(page, url);

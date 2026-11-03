@@ -181,6 +181,7 @@ describe("review regression contracts", () => {
           "command-surfaces.css",
           "settings.css",
           "workspace-chrome.css",
+          "character.css",
         ].map((name) => `packages/renderer/src/${name}`),
       ]) {
         fs.mkdirSync(path.dirname(path.join(temporary, file)), { recursive: true });
@@ -363,6 +364,7 @@ describe("review regression contracts", () => {
         "command-surfaces.css",
         "settings.css",
         "workspace-chrome.css",
+        "character.css",
       ].map((name) => [name, fs.readFileSync(`packages/renderer/src/${name}`, "utf8")]),
     );
     const usage = JSON.parse(fs.readFileSync("packages/renderer/color-usage.json", "utf8"));

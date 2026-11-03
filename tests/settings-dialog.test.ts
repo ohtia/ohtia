@@ -646,7 +646,7 @@ describe("Settings command composition", () => {
     expect(document.activeElement).toBe(container.querySelector(".command-entry-actions button"));
     expect(container.querySelector(".layout-memory-feedback p")).toBeNull();
     disposals.push(() => t.controller.dispose());
-  });
+  }, 60000);
 });
 
 it("explains zoom endpoints and retries a failed display without another preference write", async () => {

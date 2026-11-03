@@ -198,6 +198,23 @@
     "settings.layoutConflict": "Ett annat fönster sparade en layout under tiden. Det här fönstret behåller sin egen. Välj igen för att göra en ny ändring.",
     "settings.displayFailed": "{setting} kunde inte tillämpas i det här fönstret.",
     "settings.unavailable": "Inställningarna är inte tillgängliga förrän lokala data och den lokala tjänsten är redo.",
-    "settings.zoomUnavailable": "Den senaste zoomåtgärden var inte tillgänglig. Kontrollera de aktuella inställningarna innan du försöker igen."
+    "settings.zoomUnavailable": "Den senaste zoomåtgärden var inte tillgänglig. Kontrollera de aktuella inställningarna innan du försöker igen.",
+    "identity.ai": "AI",
+    "identity.human": "Människa",
+    "identity.supervisor": "Forskningshandledning",
+    "identity.unknown": "Okänd",
+    "identity.writingReview": "Textgranskning",
+    "identity.definition": "Rolldefinitionens version",
+    "identity.submittedVersion": "Inlämnad manuskriptversion",
+    "identity.producer": "Artefaktens upphovsperson",
+    "identity.provider": "Observerad leverantör",
+    "identity.model": "Observerad modell",
+    "identity.execution": "Körningsstatus",
+    "identity.role.virgilio": "Forskningsguide",
+    "identity.role.josefa": "Referensbibliotekarie",
+    "identity.role.jorge-luis": "Analytisk läsare",
+    "identity.role.erasmus": "Kritisk evidensgranskare",
+    "identity.role.boris": "Akademisk redaktör",
+    "identity.role.maria": "Korrekturläsare"
   }
 }

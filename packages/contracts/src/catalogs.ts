@@ -26,6 +26,24 @@ import caES from "./localization/ca-ES.json" with { type: "json" };
 import koKR from "./localization/ko-KR.json" with { type: "json" };
 
 export const messageContracts = {
+  "identity.ai": { params: {} },
+  "identity.human": { params: {} },
+  "identity.supervisor": { params: {} },
+  "identity.unknown": { params: {} },
+  "identity.writingReview": { params: {} },
+  "identity.definition": { params: {} },
+  "identity.submittedVersion": { params: {} },
+  "identity.producer": { params: {} },
+  "identity.provider": { params: {} },
+  "identity.model": { params: {} },
+  "identity.execution": { params: {} },
+  "identity.role.virgilio": { params: {} },
+  "identity.role.josefa": { params: {} },
+  "identity.role.jorge-luis": { params: {} },
+  "identity.role.erasmus": { params: {} },
+  "identity.role.boris": { params: {} },
+  "identity.role.maria": { params: {} },
+
   "settings.displayFailed": { params: { setting: "string" } },
   "settings.layoutNotRemembered": { params: {} },
   "settings.layoutConflict": { params: {} },

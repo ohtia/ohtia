@@ -1,3 +1,4 @@
+import { CharacterSpecimen } from "./character-specimen.js";
 import { WorkspaceSpecimen, ScopedWorkspaceSpecimen } from "./workspace-specimen.js";
 import { CommandSpecimens } from "./command-specimens.js";
 import { useRef, useState } from "react";
@@ -393,7 +394,9 @@ const root = document.getElementById("root");
 if (!root) throw new Error("Catalog root is missing.");
 const screen = new URLSearchParams(location.search).get("screen");
 createRoot(root).render(
-  screen === "workspace" ? (
+  screen === "characters" ? (
+    <CharacterSpecimen />
+  ) : screen === "workspace" ? (
     <WorkspaceSpecimen />
   ) : screen === "scoped-workspace" ? (
     <ScopedWorkspaceSpecimen />

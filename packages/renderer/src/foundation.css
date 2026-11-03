@@ -5,6 +5,7 @@
 @import "./command-surfaces.css";
 @import "./settings.css";
 @import "./workspace-chrome.css";
+@import "./character.css";
 
 :root {
   color-scheme: light dark;

@@ -20,7 +20,8 @@ import {
 } from "@ohtia/contracts";
 import { Dialog } from "./layers.js";
 import { LucideGlyph as Icon } from "./iconography.js";
-import { OhtiaGlasses, StaticCharacterIllustration } from "./branding.js";
+import { OhtiaGlasses } from "./branding.js";
+import { CharacterPreview } from "./character.js";
 import { LanguagePanel } from "./language-panel.js";
 import {
   SettingsNotices,
@@ -412,7 +413,10 @@ export function SettingsDialog({
                   </>
                 ) : (
                   open && (
-                    <StaticCharacterIllustration size={96} className="settings-character-image" />
+                    <CharacterPreview
+                      mode={state.settings.character.draft as "animated" | "static"}
+                      size={96}
+                    />
                   )
                 )}
               </div>
