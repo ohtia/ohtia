@@ -671,7 +671,7 @@ def guest(
                     cycle.write(
                         output / "guest-failure.json", cycle.failure_record(error, "evidence")
                     )
-        for suite in ("runtime", "storage", "diagnostics"):
+        for suite in ("runtime", "storage", "diagnostics", "startup"):
             try:
                 report = remote(
                     f"cd {GUEST_SOURCE} && runuser -u ohtia-quality -- .tooling/python/bin/python3 scripts/scaleway_guest.py collect {GUEST_OUTPUT} {suite}"

@@ -1,9 +1,9 @@
 ---
 type: Playbook
 title: Isolated desktop runtime
-description: Admit an independent native profile, assemble the local desktop and verify its supervised status and fixed-home bootstrap boundaries.
+description: Run the desktop from an ordinary account or an admitted independent profile, and verify its supervised status and fixed-home bootstrap boundaries.
 generated:
-  by: codex/gpt-6.1-sol
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 ---
@@ -15,6 +15,27 @@ verified:
 The [runtime specification](epics/EPIC-001-desktop-foundation/STORY-001-004-run-the-isolated-desktop-and-supervised-data-service.md) composes the [locked workspace](developer-workspace.md), [foundation resource policy](desktop-foundation-contract.md) and [bounded application port](application-port.md). The broker owns native dialogs, window admission and one supervised utility service. The renderer receives named functions and controlled values through a sandbox-compatible preload. PRIN-004, PRIN-006, PRIN-007 and PRIN-016 require keeping portable checks, native observations, fixed-root initialization and confirmed storage effects distinct.
 
 The utility initially reports status with the engine unavailable. [Durable foundation storage](storage.md) completes validated opening at the fixed native-home root, immutable migrations, locator activation and transactional appearance commands. The initial window explains recovery-copy sensitivity and offers explicit local opening; the broker preserves pending input during service replacement.
+
+## Runtime modes
+
+[ADR-0043](adr/adr-0043-ordinary-startup-modes.md) selects one mode, independently in main and utility:
+
+- **`development`:** `python3 scripts/workspace.py run dev`, from your ordinary account and graphical session. It takes no arguments.
+- **`installed`:** an installed package opened normally. It needs no profile.
+- **`qualification`:** the procedures below, with an independent profile.
+
+### Develop from your ordinary account
+
+```bash
+python3 scripts/workspace.py setup
+python3 scripts/workspace.py run dev
+```
+
+`dev` builds the workspace, replaces `.ohtia-dev/runtime` and opens the application. State persists in `.ohtia-dev/configuration` and `.ohtia-dev/research`, and deleting `.ohtia-dev/` is the reset. There is no automatic reload, so run `dev` again after a change. While a window from the checkout is open, `dev` attaches to it and keeps its runtime, so close the window before running `dev` to see a change. Wait for the window before running `dev` again, because two builds in one checkout overwrite each other's output. Other checkouts and an installed application run alongside with separate state. A checkout inside `<home>/ohtia` is refused. Electron's output reaches the terminal, and a failure prints its exit code and diagnostics location.
+
+`dev` does not require a qualified desktop. On Ubuntu, the Chromium sandbox needs one administrator-reviewed allowance, printed by `python3 scripts/linux_contributor.py sandbox-policy --development`. It stays valid across rebuilds, until the Electron pin or the checkout path changes.
+
+`python3 scripts/workspace.py run preview` serves the [component catalog](semantic-primitives.md#isolated-catalog-and-verification), with no Electron and no research storage.
 
 ## Prepare an independent native profile
 
@@ -72,14 +93,14 @@ Run setup and builds in the task worktree under the inspected account. The Pytho
 python3 scripts/workspace.py setup
 python3 scripts/workspace.py run build
 python3 scripts/workspace.py run desktop:prepare linux-x64 /home/isolated-user/scratch/runtime-attempt
-python3 scripts/workspace.py run dev /home/isolated-user/scratch/runtime-profile.json /home/isolated-user/scratch/runtime-attempt
+python3 scripts/workspace.py run desktop:launch /home/isolated-user/scratch/runtime-profile.json /home/isolated-user/scratch/runtime-attempt
 ```
 
 Select the actual target ID from the [target manifest](../config/desktop/targets.json). A target's archive existing or cross-building successfully does not qualify native execution. The prepared record binds the executable, application files, links and archive identity. Launch verifies those bytes and the native profile, then supplies a restricted environment with the actual native session and isolated temporary roots. It does not copy provider credentials, Node injection settings or update configuration.
 
 The build produces independent `main.mjs`, sandbox-compatible `preload.cjs`, `utility.mjs` and local React/Vite assets under `artifacts/desktop-app`. The application uses the exact `ohtia://app/index.html` document and an allowlisted, integrity-checked resource inventory, an ephemeral session, restrictive CSP and denied permissions, external navigation and window creation. Development previews and probe fixtures are outside these outputs. [The font manifest](../packages/renderer/fonts/manifest.json) binds unmodified local faces to their versions, hashes and licenses. [Catalog provenance](../packages/contracts/catalog-provenance.json) records the actual producer evidence and any unresolved identity or human-review gaps without inventing a verifier.
 
-The separate browser specimen remains available as `preview <absolute-runtime-profile.json>`. It requires the same native admission, serves synthetic transient state and follows the workspace's loopback-only server contract. Open it only within the inspected independent profile.
+The separate browser specimen remains available as `preview`. It serves synthetic transient state and follows the workspace's loopback-only server contract.
 
 ## Broker, port and lifecycle
 

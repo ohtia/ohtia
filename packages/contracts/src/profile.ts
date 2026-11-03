@@ -143,3 +143,65 @@ export function admitRuntimeProfile(input: unknown, host: ProfileHost): RuntimeP
   }
   return profile;
 }
+
+export type RuntimeMode = "qualification" | "development" | "installed";
+/** The roots one running application uses; only qualification declares stable fixtures. */
+export interface RuntimeContext {
+  readonly mode: RuntimeMode;
+  readonly home: string;
+  readonly configuration_root: string;
+  readonly research_root: string;
+  readonly scratch_root: string;
+  readonly stable_roots: Readonly<
+    Record<string, { readonly root: string; readonly sentinel_sha256: string }>
+  >;
+}
+export type RuntimeArgument =
+  | { readonly mode: "qualification"; readonly profile: string }
+  | { readonly mode: "development"; readonly root: string }
+  | { readonly mode: "installed" };
+/** Decode the closed first argument that main passes to the data service. */
+export function parseRuntimeArgument(value: unknown): RuntimeArgument | undefined {
+  if (value === "installed") return { mode: "installed" };
+  if (typeof value !== "string") return undefined;
+  if (value.startsWith("qualification:") && value.length > "qualification:".length)
+    return { mode: "qualification", profile: value.slice("qualification:".length) };
+  if (value.startsWith("development:") && value.length > "development:".length)
+    return { mode: "development", root: value.slice("development:".length) };
+  return undefined;
+}
+export interface DevelopmentHost {
+  readonly home: string;
+  readonly researchRoot: string;
+  readonly nativeApplicationRoot: string;
+  canonical(path: string): string;
+  contains(parent: string, child: string): boolean;
+  owned(path: string): boolean;
+}
+/** Whether an executable name is an Electron development runtime's, never a packaged application's. */
+export function isDevelopmentExecutable(platform: string, name: string): boolean {
+  const executable = name.toLowerCase();
+  if (platform === "win32") return executable === "electron.exe";
+  if (platform === "darwin") return /^electron( helper( \([a-z]+\))?)?$/.test(executable);
+  return executable === "electron";
+}
+
+/** Keep a development instance away from an installed application's native state. */
+export function admitDevelopmentRoot(root: string, instance: unknown, host: DevelopmentHost): void {
+  const reject = (reason: string): never => {
+    throw new Error(`Development root refused: ${reason}.`);
+  };
+  if (host.canonical(root) !== root) reject("the path is not absolute and canonical");
+  if (!host.owned(root)) reject("another account owns the path");
+  if (
+    !instance ||
+    typeof instance !== "object" ||
+    Object.keys(instance).length !== 1 ||
+    (instance as { version?: unknown }).version !== 1
+  )
+    reject("instance.json is missing or invalid");
+  for (const native of [host.researchRoot, host.nativeApplicationRoot])
+    if (host.contains(native, root) || host.contains(root, native))
+      reject(`it overlaps ${native}; move the checkout outside it`);
+  if (host.contains(root, host.home)) reject("it contains the account home");
+}

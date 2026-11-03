@@ -537,6 +537,36 @@ async function validate(config, format) {
                     self.assertEqual(read.call_count, 5)
                     processes.assert_not_called()
 
+    def test_development_allowance_covers_only_the_assembled_ubuntu_runtime(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            assembled = Path(temporary).resolve() / "assembled"
+            assembled.mkdir()
+            delivery.write(
+                assembled / "prepared.json",
+                {"executable": "runtime/electron", "electron_archive_sha256": "a" * 64},
+            )
+            ubuntu = {"id": "ubuntu-26-04-x64-wayland", "profile": "ubuntu-26.04"}
+            with patch.object(native, "command") as command:
+                native.allow_development_runtime(ubuntu, assembled)
+            self.assertEqual(command.call_count, 2)
+            installed = command.call_args_list[0].args[0][-1]
+            self.assertTrue(str(installed).startswith("/etc/apparmor.d/"))
+            self.assertEqual(
+                command.call_args_list[1].args[0], ["sudo", "apparmor_parser", "--add", installed]
+            )
+            self.assertIn(
+                str(assembled / "runtime/electron"),
+                (assembled.parent / "development.apparmor").read_text(),
+            )
+            for other in (
+                {"id": "debian-13-x64-vm", "profile": "debian-13"},
+                {"id": "fedora-44-arm64-scaleway", "profile": "fedora-44"},
+                {"id": "macos-26-arm64", "profile": "macos-26"},
+            ):
+                with patch.object(native, "command") as command:
+                    native.allow_development_runtime(other, assembled)
+                command.assert_not_called()
+
     def test_smoke_does_not_reuse_identities_when_snapshot_is_missing(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -544,6 +574,7 @@ async function validate(config, format) {
                 ("runtime", "receipt.json"),
                 ("storage", "storage-receipt.json"),
                 ("diagnostics", "diagnostic-receipt.json"),
+                ("startup", "startup-receipt.json"),
             ):
                 delivery.write(root / suite / receipt, {})
             (root / "runtime" / "foundation-320.png").write_bytes(b"synthetic capture")
@@ -582,7 +613,7 @@ async function validate(config, format) {
                 patch.object(native.time, "sleep"),
             ):
                 future = executor.return_value.__enter__.return_value.submit.return_value
-                future.done.side_effect = [False, False, False, True, True, True]
+                future.done.side_effect = [False, False, False, True, True, True, True]
                 future.result.return_value = {
                     "exit_code": 0,
                     "timed_out": False,
@@ -592,7 +623,7 @@ async function validate(config, format) {
                     root / "profile.json",
                     root / "package",
                     root,
-                    {"backend": "desktop", "target": "win32-x64"},
+                    {"id": "windows-x64", "backend": "desktop", "target": "win32-x64"},
                 )
                 observed = [
                     call.args[1]

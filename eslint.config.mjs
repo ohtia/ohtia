@@ -8,6 +8,7 @@ export default tseslint.config(
       ".tooling/**",
       ".cache/**",
       "tmp/**",
+      ".ohtia-dev/**",
       "docs/assets/**",
     ],
   },

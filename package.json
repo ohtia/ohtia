@@ -10,6 +10,7 @@
   },
   "scripts": {
     "preview": "node tooling/workspace.mjs preview",
+    "desktop:launch": "node tooling/workspace.mjs desktop:launch",
     "desktop:prepare": "node tooling/workspace.mjs desktop:prepare",
     "desktop:test": "node tooling/workspace.mjs desktop:test",
     "probes:bundle": "node tooling/workspace.mjs probes:bundle",

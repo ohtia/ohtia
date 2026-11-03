@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MARKER = "OHTIA_CI_PROVENANCE="
 SHA = re.compile(r"[a-f0-9]{40}")
 DIGEST = re.compile(r"[a-f0-9]{64}")
-SUITES = ("runtime", "storage", "diagnostics")
+SUITES = ("runtime", "storage", "diagnostics", "startup")
 FULL_MATRIX = "full-required-matrix"
 DOCUMENTATION_ONLY = "documentation-only"
 
@@ -375,10 +375,25 @@ def check_attachment(record: dict, directory: Path) -> Path:
     return file
 
 
-def suite_cases(suite: str, target: str) -> tuple[set[str], set[str]]:
+def runs_development_cases(cell_id: str) -> bool:
+    """Development cases need the checkout's own runtime, which runs directly on its runner."""
+    return not cell_id.endswith(("-vm", "-scaleway"))
+
+
+def suite_cases(suite: str, target: str, cell_id: str = "") -> tuple[set[str], set[str]]:
     if suite == "runtime":
         inventory = read(ROOT / "config/quality/packaged-cases.json")
         return set(inventory["runtime"]), set(inventory["runtime_observations"])
+    if suite == "startup":
+        inventory = read(ROOT / "config/quality/packaged-cases.json")
+        cases = {
+            case
+            for case in inventory["startup_installed"]
+            if not (target.startswith("win32-") and case.endswith("aliased-research-root"))
+        }
+        if runs_development_cases(cell_id):
+            cases |= set(inventory["startup_development"])
+        return cases, set()
     inventory = read(
         ROOT / f"config/desktop/{'storage' if suite == 'storage' else 'diagnostic'}-cases.json"
     )
@@ -392,8 +407,8 @@ def suite_cases(suite: str, target: str) -> tuple[set[str], set[str]]:
     return set(cases), set()
 
 
-def validate_suite(suite: str, target: str, evidence: dict) -> None:
-    expected, observations = suite_cases(suite, target)
+def validate_suite(suite: str, target: str, evidence: dict, cell_id: str = "") -> None:
+    expected, observations = suite_cases(suite, target, cell_id)
     cases = evidence.get("cases")
     require(isinstance(cases, list) and bool(cases), "Missing packaged cases.")
     require(len({case["id"] for case in cases}) == len(cases), "Duplicate packaged case.")
@@ -521,7 +536,7 @@ def account(expected: dict, directory: Path) -> dict:
             require(set(package["suites"]) == set(SUITES), "Incomplete packaged smoke suites.")
             for suite in SUITES:
                 evidence = read(check_attachment(package["suites"][suite], partition))
-                validate_suite(suite, cell["target"], evidence)
+                validate_suite(suite, cell["target"], evidence, cell["id"])
                 binding = "preparedSha256" if suite == "diagnostics" else "artifact"
                 require(
                     evidence.get(binding) == observed["prepared_sha256"],

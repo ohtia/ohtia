@@ -165,19 +165,37 @@ const commands = {
       await commands[name]();
   },
   async preview() {
+    if (process.argv.length > 3) throw new Error("Use preview without arguments.");
     compile();
-    const { loadRuntimeProfile, verifyStableSentinels } =
-      await import("../packages/main/dist/index.js");
-    const profile = loadRuntimeProfile(process.argv[3] ?? "");
-    verifyStableSentinels(profile);
     node("vite/bin/vite.js", ["build", "--config", "tooling/vite.catalog.mjs"]);
     node("vite/bin/vite.js", ["preview", "--config", "tooling/vite.catalog.mjs"]);
   },
   async dev() {
+    if (process.argv.length > 3)
+      throw new Error(
+        "Use dev without arguments. An inspected profile launch is desktop:launch <profile> <prepared>.",
+      );
+    // An open window keeps its runtime: this launch reaches it without replacing anything.
+    const { developmentInstanceRunning } = await import("./development-instance.mjs");
+    const attaching = developmentInstanceRunning(path.join(root, ".ohtia-dev"));
+    if (attaching)
+      console.log("A window from this checkout is open. Close it and run dev to see a change.");
+    if (!attaching) await commands.build();
+    else if (!fs.existsSync(path.join(root, "packages/main/dist/index.js"))) compile();
+    const { launchDevelopment, prepareDevelopmentRoot } = await import("./desktop-launch.mjs");
+    const directory = prepareDevelopmentRoot();
+    const runtime = path.join(directory, "runtime");
+    if (!attaching) {
+      fs.rmSync(runtime, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      run(python, ["scripts/desktop_runtime.py", `${process.platform}-${process.arch}`, runtime]);
+    }
+    await launchDevelopment(directory, runtime);
+  },
+  async "desktop:launch"() {
     const [profile, prepared] = process.argv.slice(3);
     if (!profile || !prepared)
       throw new Error(
-        "Use dev <absolute-runtime-profile.json> <absolute-prepared-runtime>. See docs/desktop-runtime.md.",
+        "Use desktop:launch <absolute-runtime-profile.json> <absolute-prepared-runtime>. See docs/desktop-runtime.md.",
       );
     const { launchDesktop } = await import("./desktop-launch.mjs");
     await launchDesktop(profile, prepared);

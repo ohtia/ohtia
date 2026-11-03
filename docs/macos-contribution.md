@@ -3,7 +3,7 @@ type: Playbook
 title: Native macOS contribution
 description: Set up, diagnose, edit, verify and package Ohtia in an independent Apple Silicon macOS contributor profile.
 generated:
-  by: codex/gpt-6.1-sol
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 sources:
@@ -17,7 +17,7 @@ sources:
 
 # Native macOS contribution
 
-Follow this procedure to build, run, change, test and package Ohtia on Apple Silicon with macOS 26 or 27. Use a separate native VM or dedicated account with synthetic data and a logged-in graphical session. Keep it independent of your ordinary Ohtia installation and research materials, as required by PRIN-004–007 and PRIN-016.
+To see your work from your ordinary account, use [`dev`](desktop-runtime.md#develop-from-your-ordinary-account). Follow this qualification procedure to build, run, change, test and package Ohtia on Apple Silicon with macOS 26 or 27. Use a separate native VM or dedicated account with synthetic data and a logged-in graphical session. Keep it independent of your ordinary Ohtia installation and research materials, as required by PRIN-004–007 and PRIN-016.
 
 ## Prepare the Mac
 
@@ -81,10 +81,10 @@ ohtia_prepared="$ohtia_scratch/runtime-1"
 .tooling/python/bin/python3 scripts/workspace.py run build
 .tooling/python/bin/python3 scripts/workspace.py run desktop:prepare darwin-arm64 "$ohtia_prepared"
 .tooling/python/bin/python3 scripts/macos_contributor.py doctor --workspace --profile "$ohtia_profile" --prepared "$ohtia_prepared"
-.tooling/python/bin/python3 scripts/workspace.py run dev "$ohtia_profile" "$ohtia_prepared"
+.tooling/python/bin/python3 scripts/workspace.py run desktop:launch "$ohtia_profile" "$ohtia_prepared"
 ```
 
-The window should show that the local service is responding. Open/create the synthetic local store, change an appearance preference and save it. Quit using the window's exit control, run the same `dev` command again, open the store and confirm that the saved preference remains. Quit before continuing.
+The window should show that the local service is responding. Open/create the synthetic local store, change an appearance preference and save it. Quit using the window's exit control, run the same `desktop:launch` command again, open the store and confirm that the saved preference remains. Quit before continuing.
 
 ## Make and check a visible change
 
@@ -95,7 +95,7 @@ In `packages/renderer/src/desktop.tsx`, replace `<h1 id="title">{text("title")}<
 .tooling/python/bin/python3 scripts/workspace.py run test
 .tooling/python/bin/python3 scripts/workspace.py run build
 .tooling/python/bin/python3 scripts/workspace.py run desktop:prepare darwin-arm64 "$ohtia_scratch/runtime-2"
-.tooling/python/bin/python3 scripts/workspace.py run dev "$ohtia_profile" "$ohtia_scratch/runtime-2"
+.tooling/python/bin/python3 scripts/workspace.py run desktop:launch "$ohtia_profile" "$ohtia_scratch/runtime-2"
 ```
 
 The checks must pass and the window must display `Ohtia contributor`. Quit, restore the original heading in the source file and rebuild a fresh canonical runtime for the remaining steps:

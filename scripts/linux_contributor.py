@@ -456,10 +456,16 @@ def display_available(profile: dict) -> bool:
     return True
 
 
-def sandbox_policy(runtime_profile: Path, runtime: Path) -> str:
+def sandbox_policy(runtime_profile: Path | None, runtime: Path) -> str:
     """Print an exact-executable Ubuntu allowance; never load or change host policy."""
-    context = inspect_context(runtime_profile, runtime)
-    executable = Path(context["executable"])
+    if runtime_profile is None:
+        record = read(runtime / "prepared.json")
+        executable = runtime / record["executable"]
+        artifact = record["electron_archive_sha256"]
+    else:
+        context = inspect_context(runtime_profile, runtime)
+        executable = Path(context["executable"])
+        artifact = workspace.digest(runtime / "prepared.json")
     require(
         executable.is_relative_to(runtime),
         "The admitted executable must remain inside its prepared-runtime directory.",
@@ -472,9 +478,7 @@ def sandbox_policy(runtime_profile: Path, runtime: Path) -> str:
         and not any(c in value for c in '*?[]{}^"\\'),
         "Use a canonical runtime executable path without AppArmor pattern/control characters; spaces and Unicode are supported.",
     )
-    identity = hashlib.sha256(
-        (value + "\0" + workspace.digest(runtime / "prepared.json")).encode("utf-8")
-    ).hexdigest()[:12]
+    identity = hashlib.sha256((value + "\0" + artifact).encode("utf-8")).hexdigest()[:12]
     return (
         "abi <abi/4.0>,\ninclude <tunables/global>\n"
         + f'profile ohtia-contributor-{identity} "{value}" flags=(unconfined) {{\n  userns,\n}}\n'
@@ -910,8 +914,13 @@ def main() -> int:
         "sandbox-policy",
         help="Print an exact-path Ubuntu AppArmor allowance for administrator review; never load it.",
     )
-    allowance.add_argument("profile", type=Path)
-    allowance.add_argument("runtime", type=Path)
+    allowance.add_argument("profile", type=Path, nargs="?")
+    allowance.add_argument("runtime", type=Path, nargs="?")
+    allowance.add_argument(
+        "--development",
+        action="store_true",
+        help="Use this checkout's .ohtia-dev runtime; a rebuild keeps the same allowance.",
+    )
     graphical = commands.add_parser(
         "session",
         help="Run an admitted command with its own private D-Bus and GNOME Wayland session.",
@@ -956,7 +965,18 @@ def main() -> int:
                 profile["id"].startswith("ubuntu-"),
                 "This allowance is Ubuntu-specific; Fedora and Debian retain their declared native policy.",
             )
-            print(sandbox_policy(args.profile, args.runtime), end="")
+            if args.development:
+                require(
+                    args.profile is None and args.runtime is None,
+                    "Use sandbox-policy --development without a profile or runtime.",
+                )
+                print(sandbox_policy(None, ROOT.resolve() / ".ohtia-dev/runtime"), end="")
+            else:
+                require(
+                    args.profile is not None and args.runtime is not None,
+                    "Use sandbox-policy <profile> <runtime>, or --development.",
+                )
+                print(sandbox_policy(args.profile, args.runtime), end="")
         elif args.command == "smoke":
             smoke(profile, args.profile, args.runtime, args.evidence)
         elif args.command == "session":

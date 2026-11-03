@@ -26,5 +26,20 @@
     "explicit-retry-preserves-fixed-root-state",
     "bounded-shutdown"
   ],
-  "runtime_observations": ["navigation-observation", "native-process-metrics"]
+  "runtime_observations": ["navigation-observation", "native-process-metrics"],
+  "startup_installed": [
+    "installed-first-launch-without-profile",
+    "installed-sandbox-and-csp",
+    "installed-explicit-opening-creates-research-root",
+    "installed-saved-value-survives-restart",
+    "installed-rejects-aliased-research-root"
+  ],
+  "startup_development": [
+    "development-sandbox-and-csp",
+    "development-second-launch-attaches",
+    "development-roots-run-together",
+    "development-round-trip",
+    "development-leaves-native-state-unchanged",
+    "development-refuses-unsafe-root"
+  ]
 }

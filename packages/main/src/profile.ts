@@ -3,8 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import {
+  admitDevelopmentRoot,
   admitRuntimeProfile,
   portLimits,
+  type RuntimeContext,
   type RuntimeProfile,
   type ProfileHost,
 } from "@ohtia/contracts";
@@ -89,7 +91,7 @@ export function loadRuntimeProfile(file: string): RuntimeProfile {
     );
   }
 }
-export function verifyStableSentinels(profile: RuntimeProfile): void {
+export function verifyStableSentinels(profile: Pick<RuntimeProfile, "stable_roots">): void {
   for (const stable of Object.values(profile.stable_roots)) {
     const file = path.join(stable.root, stable.sentinel_filename ?? ".ohtia-runtime-sentinel");
     if (
@@ -111,4 +113,79 @@ export function admitRuntimeSwitches(
   const allowed = new Set(instrumented ? ["--inspect=0", "--remote-debugging-port=0"] : []);
   if ([...argv, ...execArgv].some((arg) => arg.startsWith("-") && !allowed.has(arg)))
     throw new Error("Runtime command-line overrides are not admitted.");
+}
+
+/** Refuse a development root before any redirection of the native configuration location. */
+export function admitDevelopmentInstance(
+  root: string,
+  nativeApplicationRoot: string,
+  host: ProfileHost = nativeProfileHost(),
+): void {
+  let instance: unknown;
+  try {
+    instance = JSON.parse(readBoundedFile(path.join(root, "instance.json")).toString("utf8"));
+  } catch {
+    instance = undefined;
+  }
+  admitDevelopmentRoot(root, instance, { ...host, nativeApplicationRoot });
+  for (const name of ["configuration", "research"]) {
+    const component = path.join(root, name);
+    if (fs.existsSync(component) && !fs.lstatSync(component).isDirectory())
+      throw new Error(`Development root refused: ${name} is not a plain directory.`);
+    if (fs.lstatSync(component, { throwIfNoEntry: false })?.isSymbolicLink())
+      throw new Error(`Development root refused: ${name} is an alias.`);
+  }
+}
+
+export interface RuntimeInputs {
+  readonly profileFile: string;
+  readonly developmentRoot: string;
+  readonly packaged: boolean;
+  readonly appData: string;
+  readonly temp: string;
+}
+/** Select exactly one mode; a set profile can only add checks and never falls back. */
+export function resolveRuntimeContext(
+  inputs: RuntimeInputs,
+  host: ProfileHost = nativeProfileHost(),
+): RuntimeContext {
+  if (inputs.profileFile)
+    return { ...loadRuntimeProfile(inputs.profileFile), mode: "qualification" };
+  if (!inputs.packaged) {
+    if (!inputs.developmentRoot) throw new Error("A development root is required.");
+    admitDevelopmentInstance(
+      inputs.developmentRoot,
+      path.join(host.configurationRoot, "Ohtia"),
+      host,
+    );
+    return {
+      mode: "development",
+      home: host.home,
+      configuration_root: path.join(inputs.developmentRoot, "configuration"),
+      research_root: path.join(inputs.developmentRoot, "research"),
+      scratch_root: inputs.temp,
+      stable_roots: {},
+    };
+  }
+  return {
+    mode: "installed",
+    home: host.home,
+    configuration_root: inputs.appData,
+    research_root: host.researchRoot,
+    scratch_root: inputs.temp,
+    stable_roots: {},
+  };
+}
+
+/** Create the fixed research root on explicit opening; never adopt an alias or another type. */
+export function ensureResearchRoot(researchRoot: string): void {
+  try {
+    fs.mkdirSync(researchRoot, { mode: 0o700 });
+    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  }
+  const existing = fs.lstatSync(researchRoot);
+  if (!existing.isDirectory() || fs.realpathSync.native(researchRoot) !== researchRoot)
+    throw new Error("The research root is not a plain directory.");
 }

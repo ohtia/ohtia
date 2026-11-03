@@ -31,14 +31,19 @@ import {
   type DiagnosticEvent,
   type BootstrapSnapshot,
   type BootstrapState,
-  type RuntimeProfile,
+  type RuntimeContext,
   isNativeCommand,
   isInterfaceLocale,
   isCommandPlatform,
   projectLinks,
 } from "@ohtia/contracts";
 import { rendererWebPreferences } from "./index.js";
-import { admitRuntimeSwitches, loadRuntimeProfile, verifyStableSentinels } from "./profile.js";
+import {
+  admitRuntimeSwitches,
+  ensureResearchRoot,
+  resolveRuntimeContext,
+  verifyStableSentinels,
+} from "./profile.js";
 import {
   canonicalProspective,
   readLocator,
@@ -89,29 +94,44 @@ const commandMenus = new CommandMenus(
   desktopDocument,
   commandLifecycle,
 );
-let profile: RuntimeProfile;
-let profileFile: string;
+let context: RuntimeContext;
+let serviceContext: string;
 try {
-  profileFile = process.env.OHTIA_RUNTIME_PROFILE ?? "";
-  profile = loadRuntimeProfile(profileFile);
-  if (
-    canonicalProspective(app.getPath("home")) !== profile.home ||
-    canonicalProspective(app.getPath("appData")) !== profile.configuration_root ||
-    canonicalProspective(app.getPath("userData")) !==
-      path.join(profile.configuration_root, "Ohtia") ||
-    process.env.NODE_OPTIONS
-  )
-    throw new Error("Invalid native configuration boundary.");
+  const profileFile = process.env.OHTIA_RUNTIME_PROFILE ?? "";
+  const nativeAppData = canonicalProspective(app.getPath("appData"));
+  context = resolveRuntimeContext({
+    profileFile,
+    developmentRoot: process.env.OHTIA_DEVELOPMENT_ROOT ?? "",
+    packaged: app.isPackaged,
+    appData: nativeAppData,
+    temp: canonicalProspective(app.getPath("temp")),
+  });
+  if (context.mode === "qualification") {
+    if (
+      canonicalProspective(app.getPath("home")) !== context.home ||
+      nativeAppData !== context.configuration_root ||
+      canonicalProspective(app.getPath("userData")) !==
+        path.join(context.configuration_root, "Ohtia")
+    )
+      throw new Error("Invalid native configuration boundary.");
+    serviceContext = `qualification:${profileFile}`;
+  } else if (context.mode === "development") {
+    // This must precede the single-instance lock, so each checkout owns its own lock.
+    app.setPath("appData", context.configuration_root);
+    app.setPath("userData", path.join(context.configuration_root, "Ohtia"));
+    serviceContext = `development:${process.env.OHTIA_DEVELOPMENT_ROOT ?? ""}`;
+  } else serviceContext = "installed";
+  if (process.env.NODE_OPTIONS) throw new Error("Node runtime injection is not admitted.");
   admitRuntimeSwitches(
     process.argv.slice(1),
     process.execArgv,
     process.env.OHTIA_RUNTIME_ACCEPTANCE === "1",
   );
-  verifyStableSentinels(profile);
+  verifyStableSentinels(context);
 } catch {
   dialog.showErrorBox(message(locale, "title"), message(locale, "startup_failed"));
   app.exit(1);
-  throw new Error("Runtime isolation admission refused.");
+  throw new Error("Runtime admission refused.");
 }
 
 function preferredSystemLanguages(): readonly string[] {
@@ -121,7 +141,7 @@ function preferredSystemLanguages(): readonly string[] {
     return [];
   }
 }
-const settings = path.join(profile.configuration_root, "Ohtia", "settings");
+const settings = path.join(context.configuration_root, "Ohtia", "settings");
 const requestBudget = new RequestBudget();
 const admission = new PortAdmission(requestBudget);
 let layoutFailureAnnounced = false;
@@ -134,7 +154,7 @@ let service: ServiceSupervisor | undefined;
 let diagnostics: DiagnosticWriter | undefined;
 function openDiagnostics(): DiagnosticWriter {
   return new DiagnosticWriter({
-    root: profile.research_root,
+    root: context.research_root,
     version: app.getVersion(),
     canStartPermissionHelper: () =>
       app.getAppMetrics().length +
@@ -143,8 +163,8 @@ function openDiagnostics(): DiagnosticWriter {
         diagnosticLimits.permissionProcesses <=
       portLimits.process_tree_count,
     assertAdmission: () => {
-      verifyStableSentinels(profile);
-      validateDataDirectory(profile.research_root, settings, profile);
+      verifyStableSentinels(context);
+      validateDataDirectory(context.research_root, settings, context);
     },
   });
 }
@@ -352,14 +372,14 @@ function createWindow(): boolean {
 }
 function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"): void {
   if (quitting || (service && !service.ceased)) return;
-  const locator = readLocator(settings, profile);
+  const locator = readLocator(settings, context);
   bootstrapState = refreshLocatorState(bootstrapState, locator.state);
   const storageMode = mode === "open" && locator.state === "missing" ? "create" : mode;
   generation = randomUUID();
   const child = utilityProcess.fork(
     path.join(directory, "utility.mjs"),
     [
-      profileFile,
+      serviceContext,
       generation,
       resolveInterfaceLocale(preferredSystemLanguages()),
       [
@@ -381,15 +401,15 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
       serviceName: "Ohtia data service",
       stdio: "ignore",
       execArgv: [],
-      cwd: profile.scratch_root,
+      cwd: context.scratch_root,
       env: {
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         ...(process.env.WINDIR ? { WINDIR: process.env.WINDIR } : {}),
-        HOME: profile.home,
-        USERPROFILE: profile.home,
-        TMPDIR: profile.scratch_root,
-        TEMP: profile.scratch_root,
-        TMP: profile.scratch_root,
+        HOME: context.home,
+        USERPROFILE: context.home,
+        TMPDIR: context.scratch_root,
+        TEMP: context.scratch_root,
+        TMP: context.scratch_root,
       },
     },
   );
@@ -435,7 +455,7 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
       bootstrapState = notice.state;
       if (notice.state !== "storage_ready") return;
       bootstrapState = "storage_opening";
-      const locator = readLocator(settings, profile);
+      const locator = readLocator(settings, context);
       if (locator.state !== "missing" && locator.state !== "located") {
         bootstrapState = locator.state;
         return;
@@ -445,8 +465,8 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
           ? Promise.resolve("confirmed" as const)
           : publisher.publish(
               settings,
-              profile.research_root,
-              profile,
+              context.research_root,
+              context,
               () => Promise.resolve(!quitting && service === active && active.available),
               posixLocatorIO,
             );
@@ -481,7 +501,7 @@ let desktopSession: Electron.Session;
 const ownsBroker = app.requestSingleInstanceLock();
 if (!ownsBroker) {
   app.exit(0);
-  throw new Error("The existing broker owns this native profile.");
+  throw new Error("The existing broker owns this native context.");
 }
 app.on("second-instance", () => {
   const window = BrowserWindow.getAllWindows()[0];
@@ -497,10 +517,11 @@ async function start(): Promise<void> {
   await app.whenReady();
   locale = resolveInterfaceLocale(preferredSystemLanguages());
   commandMenus.refresh();
-  const locator = readLocator(settings, profile);
+  const locator = readLocator(settings, context);
   bootstrapState = locator.state;
   // Diagnostic failure never participates in storage readiness or save admission.
-  if (["missing", "located"].includes(locator.state)) {
+  // Before the first explicit opening, the research root may not exist yet.
+  if (["missing", "located"].includes(locator.state) && fs.existsSync(context.research_root)) {
     diagnostics = openDiagnostics();
     void diagnostics.append({
       event_name: "ohtia.application.started",
@@ -729,6 +750,15 @@ async function start(): Promise<void> {
           return snapshot();
         if (action === "restore_checkpoint" && bootstrapState !== "recovery_required")
           return snapshot();
+        if (action === "open_storage" && context.mode !== "qualification") {
+          try {
+            ensureResearchRoot(context.research_root);
+          } catch {
+            bootstrapState = "path_rejected";
+            return snapshot();
+          }
+          diagnostics ??= openDiagnostics();
+        }
         if (action === "open_storage" || action === "restore_checkpoint") storageRequested = true;
         const mode =
           action === "restore_checkpoint"
@@ -828,7 +858,7 @@ app.on("before-quit", (event) => {
       return;
     }
     try {
-      verifyStableSentinels(profile);
+      verifyStableSentinels(context);
     } catch {
       quitting = false;
       resumeDiagnostics();

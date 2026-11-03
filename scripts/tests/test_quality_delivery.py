@@ -84,7 +84,7 @@ class DeliveryTests(unittest.TestCase):
                 }
                 suites = {}
                 for suite in delivery.SUITES:
-                    required, observed = delivery.suite_cases(suite, cell["target"])
+                    required, observed = delivery.suite_cases(suite, cell["target"], cell["id"])
                     file = directory / f"{format_id}-{suite}.json"
                     delivery.write(
                         file,

@@ -243,6 +243,21 @@ class LinuxContributorTests(unittest.TestCase):
                 )
             start.assert_not_called()
 
+    def test_development_sandbox_policy_survives_a_rebuild(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            runtime = Path(temporary).resolve() / "runtime"
+            runtime.mkdir()
+            record = {"executable": "runtime/electron", "electron_archive_sha256": "a" * 64}
+            (runtime / "prepared.json").write_text(json.dumps(record))
+            first = linux.sandbox_policy(None, runtime)
+            self.assertIn(str(runtime / "runtime/electron"), first)
+            (runtime / "prepared.json").write_text(json.dumps({**record, "files": {"a": "b"}}))
+            self.assertEqual(linux.sandbox_policy(None, runtime), first)
+            (runtime / "prepared.json").write_text(
+                json.dumps({**record, "electron_archive_sha256": "b" * 64})
+            )
+            self.assertNotEqual(linux.sandbox_policy(None, runtime), first)
+
     def test_sandbox_policy_is_exact_path_and_rejects_patterns(self):
         with tempfile.TemporaryDirectory(prefix="Ohtia investigación ") as temporary:
             runtime = Path(temporary).resolve()

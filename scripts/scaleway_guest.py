@@ -139,6 +139,7 @@ def collect(output: Path, record: str) -> bytes:
         "runtime": "receipt.json",
         "storage": "storage-receipt.json",
         "diagnostics": "diagnostic-receipt.json",
+        "startup": "startup-receipt.json",
     }
     locations = {
         suite: profile.parent / "evidence" / suite / filename

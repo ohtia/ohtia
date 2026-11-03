@@ -13,6 +13,7 @@ htmlcov/
 playwright-report/
 test-results/
 tmp/
+.ohtia-dev/
 .aws/
 .codex/
 

@@ -2415,6 +2415,9 @@ class EvidenceTests(unittest.TestCase):
 
 
 class HarnessTests(unittest.TestCase):
+    def test_development_state_never_reaches_the_guest(self):
+        self.assertFalse(build.included(Path(".ohtia-dev/research/ohtia.db3")))
+
     def test_every_module_the_packaged_suites_import_reaches_the_guest(self):
         root = Path(build.__file__).resolve().parents[1]
         pattern = re.compile(
@@ -2426,6 +2429,7 @@ class HarnessTests(unittest.TestCase):
                 "desktop-acceptance.mjs",
                 "storage-acceptance.mjs",
                 "diagnostic-acceptance.mjs",
+                "startup-acceptance.mjs",
             )
         ]
         visited: set[Path] = set()
