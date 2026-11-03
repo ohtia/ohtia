@@ -364,7 +364,7 @@ class IntegrationTests(unittest.TestCase):
                 },
                 "verifiedTimestamps": [{"synthetic": True}],
                 "statement": {
-                    "predicateType": "https://slsa.dev/provenance/v1",
+                    "predicateType": contract.PREDICATE_TYPE,
                     "subject": [{"name": "package.deb", "digest": {"sha256": manifest["sha256"]}}],
                     "predicate": json.loads((output / "predicate.json").read_bytes()),
                 },
@@ -380,10 +380,8 @@ class IntegrationTests(unittest.TestCase):
         )
         result = self.verified_result(manifest)
         predicate = result["verificationResult"]["statement"]["predicate"]
-        self.assertEqual(predicate["buildDefinition"]["externalParameters"]["ohtia"], manifest)
-        self.assertEqual(
-            predicate["runDetails"]["byproducts"][0]["annotations"]["producer_job_id"], 201
-        )
+        self.assertEqual(predicate["artifact"], manifest)
+        self.assertEqual(predicate["producer"]["producer_job_id"], 201)
         runner = Mock(
             return_value=subprocess.CompletedProcess([], 0, stdout=contract.canonical([result]))
         )
@@ -416,6 +414,10 @@ class IntegrationTests(unittest.TestCase):
         )
         self.assertEqual(accepted, b"true")
         command = runner.call_args.args[0]
+        self.assertEqual(command[command.index("--predicate-type") + 1], contract.PREDICATE_TYPE)
+        workflow = (ROOT / ".github/workflows/signing-build.yml").read_text()
+        self.assertIn("predicate-type: " + contract.PREDICATE_TYPE, workflow)
+        self.assertNotIn("https://slsa.dev/provenance/v1", workflow)
         self.assertIn("--deny-self-hosted-runners", command)
         self.assertNotIn("--no-public-good", command)
         self.assertEqual(command[command.index("--signer-digest") + 1], RECIPE)
@@ -489,7 +491,7 @@ for(const fixture of fixtures){
  const proofBytes=canonical(proof);
  const request={schema_version:1,operation:a.format==="rpm"?"rpm-sign":"deb-bind",subject:{kind:"qualification",id:"synthetic-subject",repository:"ohtia/ohtia",application_version:"0.0.0-dev.100.2",source_commit:a.source_commit,source_tree:a.source_tree},execution:{workflow:policy.signing_workflow.workflow,workflow_sha:policy.signing_workflow.sha,run_id:100,attempt:2,job_id:303,invocation:"synthetic-signing"},artifact_id:a.id,input:{sha256:a.sha256,bytes:a.bytes},build_proof:{sha256:hash(proofBytes),bytes:proofBytes.length},catalog_bindings:[]};
  validateRequest(canonical(request));
- const authority=new GitHubBuildAuthority(policy,{job:async()=>({id:202,run_id:100,run_attempt:2,head_sha:a.source_commit,status:"completed",conclusion:"success"}),runner:async()=>Buffer.from(JSON.stringify([fixture.result]))});
+ const authority=new GitHubBuildAuthority(policy,{job:async(id)=>({id,run_id:100,run_attempt:2,head_sha:a.source_commit,status:"completed",conclusion:"success"}),runner:async()=>Buffer.from(JSON.stringify([fixture.result]))});
  assert.deepEqual(await authority.verify("synthetic-input-not-executed",proof,request),a);
  SigningService.prototype.checkArtifact.call({policy},request,a);
 }
@@ -502,7 +504,21 @@ process.stdout.write(String(fixtures.length));""",
 
     def test_verification_refuses_other_recipe_source_run_attempt_or_job(self):
         manifest = self.prepare()
-        for kind in ("recipe", "source", "run", "attempt", "job", "digest", "timestamp"):
+        for kind in (
+            "recipe",
+            "source",
+            "run",
+            "attempt",
+            "job",
+            "digest",
+            "timestamp",
+            "type",
+            "version",
+            "boolean_version",
+            "producer",
+            "extra",
+            "missing",
+        ):
             with self.subTest(kind=kind):
                 result = self.verified_result(manifest)
                 verified = result["verificationResult"]
@@ -516,13 +532,25 @@ process.stdout.write(String(fixtures.length));""",
                         f"https://github.com/ohtia/ohtia/actions/runs/{101 if kind == 'run' else 100}/attempts/{1 if kind == 'attempt' else 2}"
                     )
                 elif kind == "job":
-                    verified["statement"]["predicate"]["buildDefinition"]["externalParameters"][
-                        "ohtia"
-                    ]["build_execution"]["job_id"] = 201
+                    verified["statement"]["predicate"]["artifact"]["build_execution"]["job_id"] = (
+                        201
+                    )
                 elif kind == "digest":
                     verified["statement"]["subject"][0]["digest"]["sha256"] = "c" * 64
-                else:
+                elif kind == "timestamp":
                     verified["verifiedTimestamps"] = []
+                elif kind == "type":
+                    verified["statement"]["predicateType"] = "https://slsa.dev/provenance/v1"
+                elif kind == "version":
+                    verified["statement"]["predicate"]["schema_version"] = 2
+                elif kind == "boolean_version":
+                    verified["statement"]["predicate"]["schema_version"] = True
+                elif kind == "producer":
+                    verified["statement"]["predicate"]["producer"]["producer_job_id"] = 999
+                elif kind == "extra":
+                    verified["statement"]["predicate"]["unrecognized"] = True
+                else:
+                    del verified["statement"]["predicate"]["producer"]
                 runner = Mock(
                     return_value=subprocess.CompletedProcess(
                         [], 0, stdout=contract.canonical([result])

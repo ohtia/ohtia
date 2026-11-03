@@ -244,6 +244,8 @@
     "tests/installation-authority.test.ts::authenticated build provenance binding > refuses an authenticated proof from a different sourceRepositoryDigest::case-0",
     "tests/installation-authority.test.ts::authenticated build provenance binding > refuses an authenticated proof from a different sourceRepositoryIdentifier::case-0",
     "tests/installation-authority.test.ts::authenticated build provenance binding > refuses an authenticated proof from a different sourceRepositoryOwnerIdentifier::case-0",
+    "tests/installation-authority.test.ts::authenticated build provenance binding > refuses unknown predicate types versions and malformed producer relationships::case-0",
+    "tests/installation-authority.test.ts::authenticated build provenance binding > requires successful source run and attempt readback for both producer and attestor::case-0",
     "tests/installation-authority.test.ts::bounded signer execution > does not seal a signature that completes after its operation deadline::case-0",
     "tests/installation-authority.test.ts::bounded signer execution > refuses future issue times and non-JWT token types::case-0",
     "tests/installation-authority.test.ts::catalog signing over sealed private package bytes > does not quarantine a catalog identity for an unreadable sibling journal::case-0",

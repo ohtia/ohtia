@@ -23,6 +23,7 @@ import {
   signingLimits,
   trustedPolicy,
   verifyBuildResult,
+  buildPredicateType,
 } from "../tooling/installation-authority.mjs";
 import {
   SigningService,
@@ -842,9 +843,20 @@ describe("authenticated build provenance binding", () => {
       },
       verifiedTimestamps: [{ type: "Tlog", timestamp: "synthetic fixture only" }],
       statement: {
-        predicateType: "https://slsa.dev/provenance/v1",
+        predicateType: buildPredicateType,
         subject: [{ digest: { sha256: r.input.sha256 } }],
-        predicate: { buildDefinition: { externalParameters: { ohtia: a } } },
+        predicate: {
+          schema_version: 1,
+          artifact: a,
+          producer: {
+            producer_job_id: 102,
+            producer_backend_id: "22222222-2222-2222-2222-222222222222",
+            workflow_run_backend_id: "11111111-1111-1111-1111-111111111111",
+            artifact_id: 103,
+            artifact_name: "installation-build-100-1-102",
+            archive_sha256: "e".repeat(64),
+          },
+        },
       },
     };
   }
@@ -861,7 +873,7 @@ describe("authenticated build provenance binding", () => {
       conclusion: "success",
     };
     const verifier = new GitHubBuildAuthority(policy(), {
-      job: async () => job,
+      job: async (id: number) => ({ ...job, id }),
       runner: async (_program: string, args: string[]) => {
         calls.push(args);
         return Buffer.from(JSON.stringify([{ verificationResult: result(r, a) }]));
@@ -869,6 +881,7 @@ describe("authenticated build provenance binding", () => {
     });
     const proof = { schema_version: 1, artifact: a, bundle: "synthetic verified-bundle fixture" };
     expect(await verifier.verify(path.join(root(), "not-executed"), proof, r)).toEqual(a);
+    expect(calls[0][calls[0].indexOf("--predicate-type") + 1]).toBe(buildPredicateType);
     expect(calls[0]).toContain("--deny-self-hosted-runners");
     expect(calls[0]).toContain("--signer-digest");
     expect(calls[0]).not.toContain("--no-public-good");
@@ -885,6 +898,94 @@ describe("authenticated build provenance binding", () => {
       job: async () => job,
     });
     await expect(malformed.verify(path.join(root(), "not-executed"), proof, r)).rejects.toThrow();
+  });
+  it("requires successful source run and attempt readback for both producer and attestor", async () => {
+    const r = request(),
+      a = artifact(r),
+      seen: number[] = [];
+    const proof = { schema_version: 1, artifact: a, bundle: "synthetic verifier fixture" };
+    const valid = (id: number) => ({
+      id,
+      run_id: 100,
+      run_attempt: 1,
+      head_sha: r.subject.source_commit,
+      status: "completed",
+      conclusion: "success",
+    });
+    for (const id of [101, 102]) {
+      for (const mutation of [
+        { id: 999 },
+        { run_id: 999 },
+        { run_attempt: 2 },
+        { head_sha: "f".repeat(40) },
+        { conclusion: "failure" },
+        { status: "in_progress" },
+      ]) {
+        const authority = new GitHubBuildAuthority(policy(), {
+          job: async (requested: number) => {
+            seen.push(requested);
+            return requested === id ? { ...valid(requested), ...mutation } : valid(requested);
+          },
+          runner: async () => Buffer.from(JSON.stringify([{ verificationResult: result(r, a) }])),
+        });
+        await expect(authority.verify("synthetic-package", proof, r)).rejects.toThrow();
+      }
+    }
+    expect(seen).toContain(101);
+    expect(seen).toContain(102);
+  });
+  it("refuses unknown predicate types versions and malformed producer relationships", () => {
+    const r = request(),
+      a = artifact(r);
+    const mutations: ((proof: any) => void)[] = [
+      (p) => {
+        p.statement.predicateType = "https://slsa.dev/provenance/v1";
+      },
+      (p) => {
+        p.statement.predicateType = buildPredicateType + "/unknown";
+      },
+      (p) => {
+        p.statement.predicate.schema_version = 2;
+      },
+      (p) => {
+        p.statement.predicate.schema_version = true;
+      },
+      (p) => {
+        p.statement.predicate.extra = true;
+      },
+      (p) => {
+        delete p.statement.predicate.producer;
+      },
+      (p) => {
+        p.statement.predicate.producer.extra = true;
+      },
+      (p) => {
+        p.statement.predicate.producer.producer_job_id = a.build_execution.job_id;
+      },
+      (p) => {
+        p.statement.predicate.producer.producer_job_id = 0;
+      },
+      (p) => {
+        p.statement.predicate.producer.artifact_id = 0;
+      },
+      (p) => {
+        p.statement.predicate.producer.producer_backend_id = "unknown";
+      },
+      (p) => {
+        p.statement.predicate.producer.workflow_run_backend_id = "unknown";
+      },
+      (p) => {
+        p.statement.predicate.producer.archive_sha256 = "unknown";
+      },
+      (p) => {
+        p.statement.predicate.producer.artifact_name = "installation-build-100-2-102";
+      },
+    ];
+    for (const mutate of mutations) {
+      const proof = result(r, a);
+      mutate(proof);
+      expect(() => verifyBuildResult(proof, r, policy(), a)).toThrow();
+    }
   });
   it("binds a verified attestation certificate to the fixed builder source and input manifest", () => {
     const r = request(),
@@ -909,12 +1010,12 @@ describe("authenticated build provenance binding", () => {
     const r = request(),
       a = artifact(r),
       proof = result(r, a);
-    proof.statement.predicate.buildDefinition.externalParameters.ohtia = {
+    proof.statement.predicate.artifact = {
       ...a,
       inputs_sha256: "0".repeat(64),
     };
     expect(() => verifyBuildResult(proof, r, policy(), a)).toThrow("policy_refused");
-    proof.statement.predicate.buildDefinition.externalParameters.ohtia = a;
+    proof.statement.predicate.artifact = a;
     proof.statement.subject[0].digest.sha256 = "0".repeat(64);
     expect(() => verifyBuildResult(proof, r, policy(), a)).toThrow("policy_refused");
   });

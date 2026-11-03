@@ -11,6 +11,7 @@ from pathlib import Path
 
 RECIPE = ".github/workflows/signing-build.yml"
 REPOSITORY = "ohtia/ohtia"
+PREDICATE_TYPE = "https://github.com/ohtia/ohtia/attestations/installation-build/v1"
 BUDGETS = json.loads(
     (Path(__file__).resolve().parents[1] / "config/desktop/resource-policy.json").read_bytes()
 )["budgets"]
