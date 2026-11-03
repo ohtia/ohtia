@@ -18,6 +18,7 @@ afterEach(() => {
 });
 async function launch(
   options: {
+    kdeWayland?: boolean;
     locator?: string;
     ownsBroker?: boolean;
     admission?: boolean;
@@ -34,6 +35,9 @@ async function launch(
   } = {},
 ) {
   vi.resetModules();
+  vi.stubEnv("XDG_SESSION_TYPE", options.kdeWayland ? "wayland" : "");
+  vi.stubEnv("XDG_CURRENT_DESKTOP", options.kdeWayland ? "KDE" : "");
+  vi.stubEnv("WAYLAND_DISPLAY", options.kdeWayland ? "wayland-1" : "");
   vi.useFakeTimers();
   vi.stubEnv("NODE_OPTIONS", options.nodeOptions ?? "");
   vi.stubEnv("OHTIA_RUNTIME_ACCEPTANCE", options.instrumented ? "1" : "0");
@@ -65,6 +69,7 @@ async function launch(
   const app = Object.assign(new EventEmitter(), {
     setName: vi.fn(),
     enableSandbox: vi.fn(),
+    commandLine: { appendSwitch: vi.fn(), getSwitchValue: vi.fn(() => "ExistingFeature") },
     getVersion: () => "0.0.0-test",
     getPreferredSystemLanguages: () => {
       if (options.languagesUnavailable) throw new Error("Unavailable OS preferences");
@@ -81,7 +86,7 @@ async function launch(
     exit: vi.fn(),
     quit: vi.fn(),
     isReady: () => state.ready,
-    whenReady: () => (state.ready ? Promise.resolve() : new Promise<void>(() => {})),
+    whenReady: vi.fn(() => (state.ready ? Promise.resolve() : new Promise<void>(() => {}))),
     getAppMetrics: () => Array.from({ length: state.metrics }, () => ({})),
     requestSingleInstanceLock: () => options.ownsBroker !== false,
   });
@@ -854,4 +859,20 @@ it("shares one admission budget between named broker requests and the service po
   send();
   expect(supervisor.dispatch).toHaveBeenCalledOnce();
   supervisor.dispatch.mock.calls[0][0].release();
+});
+
+it("configures KDE Wayland graphics before native readiness in every runtime mode", async () => {
+  for (const mode of ["development", "installed", "qualification"] as const) {
+    const { app, failure } = await launch({ mode, kdeWayland: true, ready: false });
+    expect(failure).toBeUndefined();
+    if (process.platform === "linux") {
+      expect(app.commandLine.appendSwitch.mock.calls).toEqual([
+        ["disable-features", "ExistingFeature,WaylandWpColorManagerV1"],
+      ]);
+      expect(app.commandLine.appendSwitch.mock.invocationCallOrder[0]).toBeLessThan(
+        app.whenReady.mock.invocationCallOrder[0]!,
+      );
+    } else expect(app.commandLine.appendSwitch).not.toHaveBeenCalled();
+    expect(app.enableSandbox).toHaveBeenCalledOnce();
+  }
 });

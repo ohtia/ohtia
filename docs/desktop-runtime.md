@@ -2,10 +2,6 @@
 type: Playbook
 title: Isolated desktop runtime
 description: Run the desktop from an ordinary account or an admitted independent profile, and verify its supervised status and fixed-home bootstrap boundaries.
-generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # Isolated desktop runtime
@@ -36,6 +32,10 @@ python3 scripts/workspace.py run dev
 `dev` does not require a qualified desktop. On Ubuntu, the Chromium sandbox needs one administrator-reviewed allowance, printed by `python3 scripts/linux_contributor.py sandbox-policy --development`. It stays valid across rebuilds, until the Electron pin or the checkout path changes.
 
 `python3 scripts/workspace.py run preview` serves the [component catalog](semantic-primitives.md#isolated-catalog-and-verification), with no Electron and no research storage.
+
+## Linux graphics compatibility
+
+Main applies the fixed [Linux graphics policy](adr/adr-0044-linux-graphics-compatibility.md) before native readiness in every runtime mode. Supported GNOME Wayland profiles retain their color, GPU and WebGPU defaults. The scoped KDE Wayland fallback avoids unsupported color negotiation while retaining the default WebGPU adapter. The decision defines the exact session condition, color/HDR limitations, upstream Vulkan diagnostic disposition, validation boundary and removal conditions. Ordinary launches still reject command-line feature overrides.
 
 ## Prepare an independent native profile
 
