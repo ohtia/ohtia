@@ -59,9 +59,77 @@ async function nativeKey(nativeWindow, platform, keyCode, expectedCode) {
     { platform, keyCode, expectedCode },
   );
 }
-async function nativeControlWheel(nativeWindow, deltaY) {
+/** macOS has no Chromium zoom-changed route; observe the real Cmd+wheel DOM delivery. */
+async function nativeCommandWheel(page, nativeWindow, deltaY) {
+  await focusNative(nativeWindow, "Settings Cmd+wheel input");
+  const observation = await page.evaluateHandle(() => {
+    let timer;
+    let observe;
+    const dispose = () => {
+      clearTimeout(timer);
+      window.removeEventListener("wheel", observe);
+    };
+    const promise = new Promise((resolve, reject) => {
+      observe = (event) => {
+        if (event.deltaY === 0) return;
+        dispose();
+        if (
+          !event.isTrusted ||
+          !event.metaKey ||
+          event.ctrlKey ||
+          (event.cancelable && !event.defaultPrevented) ||
+          event.momentum !== false ||
+          !Number.isFinite(event.wheelDeltaY) ||
+          event.wheelDeltaY === 0
+        )
+          reject(new Error("Settings Cmd+wheel was not intercepted with native tick evidence."));
+        else
+          resolve({
+            direction: event.wheelDeltaY > 0 ? "in" : "out",
+            source: "Electron sendInputEvent / trusted DOM wheel",
+            cancelable: event.cancelable,
+            defaultPrevented: event.defaultPrevented,
+            momentum: event.momentum,
+            wheelDeltaY: event.wheelDeltaY,
+          });
+      };
+      window.addEventListener("wheel", observe);
+      timer = setTimeout(() => {
+        dispose();
+        reject(new Error("Settings Cmd+wheel input was not observed."));
+      }, 5000);
+    });
+    // Preserve the rejection for the consumer even if native injection itself fails.
+    promise.catch(() => {});
+    return { promise, dispose };
+  });
+  return withCommandCleanup(
+    async () => {
+      await nativeWindow.evaluate((window, deltaY) => {
+        window.webContents.sendInputEvent({
+          type: "mouseWheel",
+          x: 100,
+          y: 100,
+          deltaY,
+          deltaX: 0,
+          wheelTicksY: Math.sign(deltaY),
+          modifiers: ["meta"],
+          canScroll: true,
+        });
+      }, deltaY);
+      return observation.evaluate((state) => state.promise);
+    },
+    async () => {
+      await observation.evaluate((state) => state.dispose());
+      await observation.dispose();
+    },
+  );
+}
+async function nativeZoomWheel(page, nativeWindow, platform, deltaY) {
+  if (platform === "darwin") return nativeCommandWheel(page, nativeWindow, deltaY);
+
   await focusNative(nativeWindow, "Settings Ctrl+wheel input");
-  return nativeWindow.evaluate(
+  const direction = await nativeWindow.evaluate(
     (window, deltaY) =>
       new Promise((resolve, reject) => {
         const contents = window.webContents;
@@ -94,6 +162,7 @@ async function nativeControlWheel(nativeWindow, deltaY) {
       }),
     deltaY,
   );
+  return { direction, source: "Electron zoom-changed" };
 }
 /** Run only inside the storage harness's admitted independent native profile. */
 export async function verifyPackagedSettings(application, page, second, output) {
@@ -211,13 +280,14 @@ export async function verifyPackagedSettings(application, page, second, output) 
       inputs.push(await nativeKey(nativeWindow, platform, "num0", "Numpad0"));
       await expect(dialog).toContainText(text("command.reason.actual_size"));
       inputs.push(await nativeKey(nativeWindow, platform, "0", "Digit0"));
-      const wheelIn = await nativeControlWheel(nativeWindow, 120);
-      expect(["in", "out"]).toContain(wheelIn);
-      await expectFactors(wheelIn === "in" ? 110 : 90);
+      const wheelIn = await nativeZoomWheel(page, nativeWindow, platform, 120);
+      expect(["in", "out"]).toContain(wheelIn.direction);
+      if (platform === "darwin") expect(wheelIn.direction).toBe("in");
+      await expectFactors(wheelIn.direction === "in" ? 110 : 90);
       await changeZoom(100);
-      const wheelOut = await nativeControlWheel(nativeWindow, -120);
-      expect(wheelOut).toBe(wheelIn === "in" ? "out" : "in");
-      await expectFactors(wheelOut === "in" ? 110 : 90);
+      const wheelOut = await nativeZoomWheel(page, nativeWindow, platform, -120);
+      expect(wheelOut.direction).toBe(wheelIn.direction === "in" ? "out" : "in");
+      await expectFactors(wheelOut.direction === "in" ? 110 : 90);
       await changeZoom(100);
       const beforePinch = await page.evaluate(
         () => window.ohtia.foundation.readPresentation().result,
@@ -321,7 +391,7 @@ export async function verifyPackagedSettings(application, page, second, output) 
           "native-primary-and-keypad-zoom-shortcuts",
           "native-zoom-menu-entries",
           "native-zoom-limit-unavailable-reasons",
-          "native-control-wheel-command",
+          "native-primary-modifier-wheel-command",
           "chromium-synthetic-pinch-does-not-change-visual-or-interface-zoom",
           "character-publication-and-hidden-about",
           "admitted-zoom-100-110-125",
@@ -331,11 +401,13 @@ export async function verifyPackagedSettings(application, page, second, output) 
         ],
         before,
         inputs,
+        wheels: [wheelIn, wheelOut],
         afterSteps,
         final,
         reflow,
         limitations: [
           "Automated native DOM/factor checks do not establish physical keyboard layouts, native OS IME composition or manual assistive conformance.",
+          "Electron synthetic wheel events can be non-cancelable; their receipts do not establish physical scroll cancellation or hardware notch counts.",
         ],
       };
     },

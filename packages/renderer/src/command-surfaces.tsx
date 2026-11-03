@@ -423,6 +423,8 @@ export function CommandSurfaces({
     let unsubscribe = () => {};
     let unsubscribeResults = () => {};
     let native = () => {};
+    let wheel = () => {};
+    let resetWheel = () => {};
     let extensions = () => {};
     current.current.live = true;
     current.current.surface = undefined;
@@ -468,6 +470,7 @@ export function CommandSurfaces({
       update();
     };
     const blur = () => {
+      resetWheel();
       current.current.composing = false;
       current.current.composingTarget = undefined;
       update();
@@ -612,6 +615,59 @@ export function CommandSurfaces({
         native = bridge.onIntent((intent) => {
           void registry?.receive(intent);
         });
+        // Chromium omits macOS wheel zoom; its pinned DOM exposes native ticks and momentum.
+        if (context.platform === "darwin") {
+          let remainder = 0;
+          resetWheel = () => {
+            remainder = 0;
+          };
+          const releaseWheel = (event: KeyboardEvent) => {
+            if (!event.metaKey) resetWheel();
+          };
+          const commandWheel = (event: WheelEvent) => {
+            // Electron's synthetic end phase can retain ticks with zero displacement.
+            if (event.deltaY === 0) return;
+            const input = event as WheelEvent & {
+              readonly wheelDeltaY?: number;
+              readonly momentum?: boolean;
+            };
+            if (
+              event.defaultPrevented ||
+              !event.metaKey ||
+              event.ctrlKey ||
+              event.altKey ||
+              event.shiftKey ||
+              current.current.composing ||
+              input.momentum !== false ||
+              typeof input.wheelDeltaY !== "number" ||
+              !Number.isFinite(input.wheelDeltaY)
+            ) {
+              resetWheel();
+              return;
+            }
+            // Blink divides the legacy 120-unit tick by density and truncates it.
+            const measured = (input.wheelDeltaY * window.devicePixelRatio) / 120;
+            const nearest = Math.sign(measured) * Math.floor(Math.abs(measured) + 0.5);
+            // Recover whole native ticks within the one-DOM-unit truncation interval.
+            const ticks =
+              nearest !== 0 && Math.abs(measured - nearest) < window.devicePixelRatio / 120
+                ? nearest
+                : Math.round(input.wheelDeltaY * window.devicePixelRatio) / 120;
+            remainder += ticks;
+            // Match Chromium's nearest-whole-tick rounding in both directions.
+            const whole = Math.sign(remainder) * Math.floor(Math.abs(remainder) + 0.5);
+            remainder -= whole;
+            event.preventDefault();
+            // Consume this event's notches even if admission is busy; never replay them.
+            if (whole !== 0) void registry?.invoke(whole > 0 ? "zoom.increase" : "zoom.decrease");
+          };
+          document.addEventListener("wheel", commandWheel, { passive: false });
+          window.addEventListener("keyup", releaseWheel);
+          wheel = () => {
+            document.removeEventListener("wheel", commandWheel);
+            window.removeEventListener("keyup", releaseWheel);
+          };
+        }
         setController(registry);
         publish();
       })
@@ -641,6 +697,7 @@ export function CommandSurfaces({
       current.current.live = false;
       current.current.incarnation++;
       native();
+      wheel();
       extensions();
       unsubscribe();
       unsubscribeResults();

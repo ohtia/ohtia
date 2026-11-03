@@ -1,0 +1,67 @@
+name: Installation build provenance qualification
+run-name: Build provenance qualification · ${{ inputs.selection }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      selection:
+        description: Unsigned Linux package whose build provenance will be qualified
+        required: true
+        type: choice
+        default: linux-x64-debian-13
+        options:
+          - linux-x64-ubuntu-26.04
+          - linux-arm64-ubuntu-26.04
+          - linux-x64-fedora-44
+          - linux-arm64-fedora-44
+          - linux-x64-debian-13
+          - linux-arm64-debian-13
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate qualification request
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Refuse other execution identities and selections before construction
+        shell: bash
+        env:
+          QUALIFICATION_SELECTION: ${{ inputs.selection }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_ACTIONS:-}" != true ||
+                "${RUNNER_ENVIRONMENT:-}" != github-hosted ||
+                "${GITHUB_REPOSITORY:-}" != ohtia/ohtia ||
+                "${GITHUB_REPOSITORY_ID:-}" != 1431132416 ||
+                "${GITHUB_REPOSITORY_OWNER_ID:-}" != 346940169 ||
+                "${GITHUB_REF:-}" != refs/heads/main ||
+                "${GITHUB_EVENT_NAME:-}" != workflow_dispatch ]]; then
+            printf '%s\n' 'Build provenance qualification refused: execution identity.' >&2
+            exit 1
+          fi
+          case "${QUALIFICATION_SELECTION:-}" in
+            linux-x64-ubuntu-26.04|linux-arm64-ubuntu-26.04|linux-x64-fedora-44|linux-arm64-fedora-44|linux-x64-debian-13|linux-arm64-debian-13) ;;
+            *)
+              printf '%s\n' 'Build provenance qualification refused: selection.' >&2
+              exit 1
+              ;;
+          esac
+
+  provenance:
+    name: Qualify Linux build provenance
+    needs: validate
+    # The caller grants a ceiling; the recipe's constructor explicitly reduces it to contents:read.
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      id-token: write
+      attestations: write
+    uses: ohtia/ohtia/.github/workflows/signing-build.yml@8be2fe56fd9fbbbe82f3e773a46e9f745767ebdd
+    with:
+      selection: ${{ inputs.selection }}

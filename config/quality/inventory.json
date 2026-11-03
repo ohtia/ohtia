@@ -88,6 +88,7 @@
     "scripts/tests/test_github_policy.py",
     "scripts/tests/test_github_pr.py",
     "scripts/tests/test_installation_attestor.py",
+    "scripts/tests/test_installation_caller.py",
     "scripts/tests/test_installation_facilities.py",
     "scripts/tests/test_installation_native.py",
     "scripts/tests/test_installation_scaleway.py",
@@ -111,6 +112,21 @@
     "scripts/tests/test_workspace.py"
   ],
   "python_inapplicable": [
+    {
+      "id": "test_installation_caller.CallerGateTests.test_api_overrides_and_shell_syntax_are_refused_as_data",
+      "platforms": ["win32"],
+      "reason": "GitHub-hosted Linux caller's POSIX Bash execution"
+    },
+    {
+      "id": "test_installation_caller.CallerGateTests.test_each_native_linux_selection_is_accepted",
+      "platforms": ["win32"],
+      "reason": "GitHub-hosted Linux caller's POSIX Bash execution"
+    },
+    {
+      "id": "test_installation_caller.CallerGateTests.test_foreign_and_missing_execution_identity_are_refused",
+      "platforms": ["win32"],
+      "reason": "GitHub-hosted Linux caller's POSIX Bash execution"
+    },
     {
       "id": "test_installation_attestor.SourceTests.test_inspects_source_as_data_and_rejects_modified_tracked_bytes",
       "platforms": ["win32"],
