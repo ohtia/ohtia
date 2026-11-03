@@ -198,6 +198,23 @@
     "settings.layoutConflict": "Another window saved a layout meanwhile. This window keeps its arrangement. Choose again to make a new change.",
     "settings.displayFailed": "{setting} could not be applied in this window.",
     "settings.unavailable": "Preferences are unavailable until local data and the local service are ready.",
-    "settings.zoomUnavailable": "The last zoom action was unavailable. Check the current preferences before trying again."
+    "settings.zoomUnavailable": "The last zoom action was unavailable. Check the current preferences before trying again.",
+    "identity.ai": "AI",
+    "identity.human": "Human",
+    "identity.supervisor": "Research supervisor",
+    "identity.unknown": "Unknown",
+    "identity.writingReview": "Writing review",
+    "identity.definition": "Role definition version",
+    "identity.submittedVersion": "Submitted manuscript version",
+    "identity.producer": "Artifact producer",
+    "identity.provider": "Observed provider",
+    "identity.model": "Observed model",
+    "identity.execution": "Execution state",
+    "identity.role.virgilio": "Research guide",
+    "identity.role.josefa": "Reference librarian",
+    "identity.role.jorge-luis": "Analytical reader",
+    "identity.role.erasmus": "Critical evidence reviewer",
+    "identity.role.boris": "Academic editor",
+    "identity.role.maria": "Proofreader"
   }
 }

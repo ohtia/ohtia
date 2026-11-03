@@ -198,6 +198,23 @@
     "settings.layoutConflict": "Et annet vindu lagret et oppsett i mellomtiden. Dette vinduet beholder sitt eget. Velg på nytt for å gjøre en ny endring.",
     "settings.displayFailed": "{setting} kunne ikke brukes i dette vinduet.",
     "settings.unavailable": "Innstillingene er ikke tilgjengelige før lokale data og den lokale tjenesten er klare.",
-    "settings.zoomUnavailable": "Den siste zoomhandlingen var ikke tilgjengelig. Kontroller de gjeldende innstillingene før du prøver igjen."
+    "settings.zoomUnavailable": "Den siste zoomhandlingen var ikke tilgjengelig. Kontroller de gjeldende innstillingene før du prøver igjen.",
+    "identity.ai": "KI",
+    "identity.human": "Menneske",
+    "identity.supervisor": "Forskningsveiledning",
+    "identity.unknown": "Ukjent",
+    "identity.writingReview": "Tekstgjennomgang",
+    "identity.definition": "Versjon av rolledefinisjonen",
+    "identity.submittedVersion": "Innlevert manuskriptversjon",
+    "identity.producer": "Artefaktets opphavsperson",
+    "identity.provider": "Observert leverandør",
+    "identity.model": "Observert modell",
+    "identity.execution": "Kjøringsstatus",
+    "identity.role.virgilio": "Forskningsguide",
+    "identity.role.josefa": "Referansebibliotekar",
+    "identity.role.jorge-luis": "Analytisk leser",
+    "identity.role.erasmus": "Kritisk evidensvurderer",
+    "identity.role.boris": "Akademisk redaktør",
+    "identity.role.maria": "Korrekturleser"
   }
 }

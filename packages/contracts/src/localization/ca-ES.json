@@ -198,6 +198,23 @@
     "settings.layoutConflict": "Una altra finestra ha desat una distribució mentrestant. Aquesta finestra manté la seva. Torna a triar per fer un canvi nou.",
     "settings.displayFailed": "No s’ha pogut aplicar {setting} en aquesta finestra.",
     "settings.unavailable": "Les preferències no estan disponibles fins que les dades locals i el servei local estiguin preparats.",
-    "settings.zoomUnavailable": "La darrera acció de zoom no estava disponible. Comprova les preferències actuals abans de tornar-ho a provar."
+    "settings.zoomUnavailable": "La darrera acció de zoom no estava disponible. Comprova les preferències actuals abans de tornar-ho a provar.",
+    "identity.ai": "IA",
+    "identity.human": "Humà",
+    "identity.supervisor": "Direcció de recerca",
+    "identity.unknown": "Desconegut",
+    "identity.writingReview": "Revisió de redacció",
+    "identity.definition": "Versió de la definició del rol",
+    "identity.submittedVersion": "Versió del manuscrit lliurat",
+    "identity.producer": "Autor de l’artefacte",
+    "identity.provider": "Proveïdor observat",
+    "identity.model": "Model observat",
+    "identity.execution": "Estat d’execució",
+    "identity.role.virgilio": "Guia de recerca",
+    "identity.role.josefa": "Bibliotecària de referència",
+    "identity.role.jorge-luis": "Lector analític",
+    "identity.role.erasmus": "Revisor crític d’evidència",
+    "identity.role.boris": "Editor acadèmic",
+    "identity.role.maria": "Correctora de textos"
   }
 }

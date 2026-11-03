@@ -198,6 +198,23 @@
     "settings.layoutConflict": "Ein anderes Fenster hat inzwischen eine Anordnung gespeichert. Dieses Fenster behält seine eigene. Wählen Sie erneut, um eine neue Änderung vorzunehmen.",
     "settings.displayFailed": "{setting} konnte in diesem Fenster nicht angewendet werden.",
     "settings.unavailable": "Die Einstellungen sind nicht verfügbar, bis die lokalen Daten und der lokale Dienst bereit sind.",
-    "settings.zoomUnavailable": "Die letzte Zoomaktion war nicht verfügbar. Prüfen Sie die aktuellen Einstellungen, bevor Sie es erneut versuchen."
+    "settings.zoomUnavailable": "Die letzte Zoomaktion war nicht verfügbar. Prüfen Sie die aktuellen Einstellungen, bevor Sie es erneut versuchen.",
+    "identity.ai": "KI",
+    "identity.human": "Mensch",
+    "identity.supervisor": "Forschungsbetreuung",
+    "identity.unknown": "Unbekannt",
+    "identity.writingReview": "Textprüfung",
+    "identity.definition": "Version der Rollendefinition",
+    "identity.submittedVersion": "Eingereichte Manuskriptversion",
+    "identity.producer": "Urheber des Artefakts",
+    "identity.provider": "Beobachteter Anbieter",
+    "identity.model": "Beobachtetes Modell",
+    "identity.execution": "Ausführungsstatus",
+    "identity.role.virgilio": "Forschungsbegleiter",
+    "identity.role.josefa": "Auskunftsbibliothekarin",
+    "identity.role.jorge-luis": "Analytischer Leser",
+    "identity.role.erasmus": "Kritischer Evidenzprüfer",
+    "identity.role.boris": "Wissenschaftlicher Lektor",
+    "identity.role.maria": "Korrektorin"
   }
 }

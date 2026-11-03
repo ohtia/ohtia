@@ -198,6 +198,23 @@
     "settings.layoutConflict": "Et andet vindue gemte et layout i mellemtiden. Dette vindue beholder sit eget. Vælg igen for at foretage en ny ændring.",
     "settings.displayFailed": "{setting} kunne ikke anvendes i dette vindue.",
     "settings.unavailable": "Indstillingerne er ikke tilgængelige, før lokale data og den lokale tjeneste er klar.",
-    "settings.zoomUnavailable": "Den seneste zoomhandling var ikke tilgængelig. Kontroller de aktuelle indstillinger, før du prøver igen."
+    "settings.zoomUnavailable": "Den seneste zoomhandling var ikke tilgængelig. Kontroller de aktuelle indstillinger, før du prøver igen.",
+    "identity.ai": "AI",
+    "identity.human": "Menneske",
+    "identity.supervisor": "Forskningsvejledning",
+    "identity.unknown": "Ukendt",
+    "identity.writingReview": "Tekstgennemgang",
+    "identity.definition": "Version af rolledefinitionen",
+    "identity.submittedVersion": "Indleveret manuskriptversion",
+    "identity.producer": "Artefaktets ophavsperson",
+    "identity.provider": "Observeret udbyder",
+    "identity.model": "Observeret model",
+    "identity.execution": "Udførelsesstatus",
+    "identity.role.virgilio": "Forskningsguide",
+    "identity.role.josefa": "Referencebibliotekar",
+    "identity.role.jorge-luis": "Analytisk læser",
+    "identity.role.erasmus": "Kritisk evidensbedømmer",
+    "identity.role.boris": "Akademisk redaktør",
+    "identity.role.maria": "Korrekturlæser"
   }
 }

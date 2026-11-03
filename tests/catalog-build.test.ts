@@ -66,6 +66,7 @@ describe("catalog build admission", () => {
     for (const name of [
       "catalog-acceptance.mjs",
       "catalog-workspace.mjs",
+      "catalog-character.mjs",
       "command-presentation.mjs",
     ])
       fs.copyFileSync(path.join(repository, "tooling", name), path.join(root, "tooling", name));
@@ -84,6 +85,7 @@ describe("catalog build admission", () => {
 
   it.each([
     "tools/renderer-preview/neutral.ts",
+    "tools/renderer-preview/character-specimen.tsx",
     "tests/transport.ts",
     "packages/renderer/src/catalog.ts",
     "packages/utility/src/fixture.ts",

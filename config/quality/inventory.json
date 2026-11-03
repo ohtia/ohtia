@@ -2,6 +2,9 @@
   "version": 1,
   "vitest": [
     "tests/catalog-build.test.ts",
+    "tests/character-catalog.test.ts",
+    "tests/character-controller.test.ts",
+    "tests/character.test.ts",
     "tests/command-acceptance.test.ts",
     "tests/command-native-focus.test.ts",
     "tests/command-shortcut.test.ts",

@@ -198,6 +198,23 @@
     "settings.layoutConflict": "Een ander venster heeft intussen een indeling opgeslagen. Dit venster behoudt zijn eigen indeling. Kies opnieuw om een nieuwe wijziging te maken.",
     "settings.displayFailed": "{setting} kon niet in dit venster worden toegepast.",
     "settings.unavailable": "Voorkeuren zijn niet beschikbaar totdat de lokale gegevens en de lokale service gereed zijn.",
-    "settings.zoomUnavailable": "De laatste zoomactie was niet beschikbaar. Controleer de huidige voorkeuren voordat je het opnieuw probeert."
+    "settings.zoomUnavailable": "De laatste zoomactie was niet beschikbaar. Controleer de huidige voorkeuren voordat je het opnieuw probeert.",
+    "identity.ai": "AI",
+    "identity.human": "Mens",
+    "identity.supervisor": "Onderzoeksbegeleiding",
+    "identity.unknown": "Onbekend",
+    "identity.writingReview": "Tekstrevisie",
+    "identity.definition": "Versie van de roldefinitie",
+    "identity.submittedVersion": "Ingediende manuscriptversie",
+    "identity.producer": "Maker van het artefact",
+    "identity.provider": "Waargenomen aanbieder",
+    "identity.model": "Waargenomen model",
+    "identity.execution": "Uitvoeringsstatus",
+    "identity.role.virgilio": "Onderzoeksgids",
+    "identity.role.josefa": "Informatiebibliothecaris",
+    "identity.role.jorge-luis": "Analytisch lezer",
+    "identity.role.erasmus": "Kritisch bewijsbeoordelaar",
+    "identity.role.boris": "Academisch redacteur",
+    "identity.role.maria": "Corrector"
   }
 }

@@ -1,0 +1,65 @@
+.character-decoration {
+  display: inline-flex;
+  color: var(--voice-ohtia-content);
+}
+.character-decoration[data-full="true"] {
+  padding-block: var(--space-4);
+}
+.character-drawing {
+  display: block;
+  flex-shrink: 0;
+  max-inline-size: 100%;
+  overflow: visible;
+}
+.voice-label {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  max-inline-size: 100%;
+  color: var(--voice-ohtia-content);
+}
+.voice-label-text {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+.voice-label[data-origin="human"] {
+  color: var(--voice-tutor-content);
+}
+.voice-label[data-origin="unknown"] {
+  color: var(--content-primary);
+}
+.voice-label svg {
+  flex: 0 0 auto;
+}
+.contributor-attribution {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+.contributor-attribution > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.contributor-attribution dt {
+  font-weight: 500;
+}
+.contributor-attribution dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+@media (forced-colors: active) {
+  .character-drawing {
+    fill: Canvas;
+    stroke: CanvasText;
+  }
+  .character-pupil,
+  .character-hair,
+  .character-bun {
+    fill: CanvasText;
+  }
+  .character-drawing .character-highlight {
+    stroke: Canvas;
+  }
+}

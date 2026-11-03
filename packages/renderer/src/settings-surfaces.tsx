@@ -8,6 +8,7 @@ import {
   type CommandId,
   type CommandReason,
 } from "@ohtia/contracts";
+import { useCharacterMode } from "./character.js";
 import { CommandSurfaces } from "./command-surfaces.js";
 import { CommandController } from "./command-controller.js";
 import { type SettingFeature, SettingsController } from "./settings-controller.js";
@@ -179,7 +180,7 @@ export function SettingsSurfaces({
     },
     [controller],
   );
-  const decoration = state.current?.character.value ?? "static";
+  const decoration = useCharacterMode(state.current?.character.value ?? "static");
   return (
     <>
       <CommandSurfaces

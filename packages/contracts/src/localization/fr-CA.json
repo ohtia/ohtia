@@ -198,6 +198,23 @@
     "settings.layoutConflict": "Une autre fenêtre a entre-temps enregistré une disposition. Cette fenêtre conserve la sienne. Choisissez à nouveau pour effectuer une nouvelle modification.",
     "settings.displayFailed": "Impossible d’appliquer {setting} dans cette fenêtre.",
     "settings.unavailable": "Les préférences sont indisponibles tant que les données locales et le service local ne sont pas prêts.",
-    "settings.zoomUnavailable": "La dernière action de zoom était indisponible. Vérifiez les préférences actuelles avant de réessayer."
+    "settings.zoomUnavailable": "La dernière action de zoom était indisponible. Vérifiez les préférences actuelles avant de réessayer.",
+    "identity.ai": "IA",
+    "identity.human": "Humain",
+    "identity.supervisor": "Direction de recherche",
+    "identity.unknown": "Inconnu",
+    "identity.writingReview": "Révision rédactionnelle",
+    "identity.definition": "Version de la définition du rôle",
+    "identity.submittedVersion": "Version du manuscrit remis",
+    "identity.producer": "Auteur de l’artefact",
+    "identity.provider": "Fournisseur observé",
+    "identity.model": "Modèle observé",
+    "identity.execution": "État d’exécution",
+    "identity.role.virgilio": "Guide de recherche",
+    "identity.role.josefa": "Bibliothécaire de référence",
+    "identity.role.jorge-luis": "Lecteur analytique",
+    "identity.role.erasmus": "Examinateur critique des preuves",
+    "identity.role.boris": "Éditeur académique",
+    "identity.role.maria": "Correctrice"
   }
 }

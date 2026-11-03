@@ -198,6 +198,23 @@
     "settings.layoutConflict": "Toinen ikkuna tallensi sillä välin asettelun. Tämä ikkuna säilyttää oman asettelunsa. Tee uusi muutos valitsemalla uudelleen.",
     "settings.displayFailed": "Asetusta {setting} ei voitu ottaa käyttöön tässä ikkunassa.",
     "settings.unavailable": "Asetukset eivät ole käytettävissä, ennen kuin paikalliset tiedot ja paikallinen palvelu ovat valmiina.",
-    "settings.zoomUnavailable": "Viimeisin zoomaustoiminto ei ollut käytettävissä. Tarkista nykyiset asetukset ennen kuin yrität uudelleen."
+    "settings.zoomUnavailable": "Viimeisin zoomaustoiminto ei ollut käytettävissä. Tarkista nykyiset asetukset ennen kuin yrität uudelleen.",
+    "identity.ai": "Tekoäly",
+    "identity.human": "Ihminen",
+    "identity.supervisor": "Tutkimuksen ohjaus",
+    "identity.unknown": "Tuntematon",
+    "identity.writingReview": "Tekstin tarkistus",
+    "identity.definition": "Roolimäärityksen versio",
+    "identity.submittedVersion": "Toimitetun käsikirjoituksen versio",
+    "identity.producer": "Tuotoksen tekijä",
+    "identity.provider": "Havaittu palveluntarjoaja",
+    "identity.model": "Havaittu malli",
+    "identity.execution": "Suoritustila",
+    "identity.role.virgilio": "Tutkimusopas",
+    "identity.role.josefa": "Tietopalvelukirjastonhoitaja",
+    "identity.role.jorge-luis": "Analyyttinen lukija",
+    "identity.role.erasmus": "Näytön kriittinen arvioija",
+    "identity.role.boris": "Akateeminen toimittaja",
+    "identity.role.maria": "Oikolukija"
   }
 }
