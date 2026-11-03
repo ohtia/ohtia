@@ -42,6 +42,7 @@ test-results/
 
 # Temporary files and logs
 tmp/
+.ohtia-dev/
 *.log
 *.swp
 *.swo

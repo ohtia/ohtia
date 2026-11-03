@@ -30,6 +30,7 @@ async function launch(
     locale?: string;
     parent?: boolean;
     admission?: string;
+    runtime?: (root: string) => string;
     storage?: string;
     closeFailure?: boolean;
     openFailure?: "recovery_required" | "retry_required" | "storage_failed";
@@ -91,6 +92,11 @@ async function launch(
     file = renamed;
   }
   if (options.admission === "hardlink") actualFs.linkSync(file, path.join(scratch, "alias.json"));
+  if (options.admission === "symlink") {
+    const target = path.join(scratch, "target.json");
+    actualFs.renameSync(file, target);
+    actualFs.symlinkSync(target, file);
+  }
   if (options.admission === "oversized") actualFs.writeFileSync(file, " ".repeat(1024 * 1024));
   if (options.admission === "changed-sentinel") actualFs.writeFileSync(sentinel, "changed");
   const parent = Object.assign(new EventEmitter(), { postMessage: vi.fn() });
@@ -101,7 +107,7 @@ async function launch(
   process.argv = [
     originalArgs[0]!,
     "synthetic-utility-entry",
-    file,
+    options.runtime ? options.runtime(root) : `qualification:${file}`,
     options.generation ?? "generation-1",
     options.locale ?? "en-US",
     options.mode ?? "create",
@@ -198,6 +204,110 @@ async function launch(
   };
 }
 describe("utility process composition with isolated synthetic files", () => {
+  it.runIf(process.platform !== "win32")(
+    "keeps serving status over an aliased research root until storage opens",
+    async () => {
+      const h = await launch({
+        runtime: (root) => {
+          const research = path.join(root, "independent", "ohtia");
+          fs.rmSync(research, { recursive: true });
+          fs.symlinkSync(path.join(root, "stable"), research);
+          return "installed";
+        },
+        mode: "blocked",
+      });
+      expect(h.exit).not.toHaveBeenCalled();
+    },
+  );
+  it.runIf(process.platform !== "win32")(
+    "refuses to open storage through an aliased research root",
+    async () => {
+      const h = await launch({
+        runtime: (root) => {
+          const research = path.join(root, "independent", "ohtia");
+          fs.rmSync(research, { recursive: true });
+          fs.symlinkSync(path.join(root, "stable"), research);
+          return "installed";
+        },
+        mode: "open",
+      });
+      expect(h.exit).toHaveBeenCalledWith(1);
+      expect(h.stores).toEqual([]);
+    },
+  );
+  it.runIf(process.platform !== "win32")("refuses an aliased admission file", async () => {
+    const h = await launch({ admission: "symlink" });
+    expect(h.exit).toHaveBeenCalledWith(1);
+    expect(h.parent.listenerCount("message")).toBe(0);
+  });
+  it("runs the installed mode from native roots without a profile", async () => {
+    const h = await launch({ runtime: () => "installed", mode: "blocked" });
+    expect(h.exit).not.toHaveBeenCalled();
+    expect(h.parent.listenerCount("message")).toBe(1);
+  });
+  describe("development root", () => {
+    const executable = Object.getOwnPropertyDescriptor(process, "execPath")!;
+    afterEach(() => {
+      Object.defineProperty(process, "execPath", executable);
+    });
+    const electronRuntime = `/checkout/runtime/electron${process.platform === "win32" ? ".exe" : ""}`;
+    const developmentRoot = (root: string, instance = true) => {
+      const directory = path.join(root, "checkout-dev");
+      fs.mkdirSync(directory);
+      fs.writeFileSync(
+        path.join(directory, "instance.json"),
+        JSON.stringify(instance ? { version: 1 } : {}),
+      );
+      return `development:${directory}`;
+    };
+    it("is refused from packaged bytes", async () => {
+      Object.defineProperty(process, "execPath", { value: "/opt/ohtia-quality/ohtia-quality" });
+      const h = await launch({ runtime: (root) => developmentRoot(root), mode: "blocked" });
+      expect(h.exit).toHaveBeenCalledWith(1);
+      expect(h.parent.listenerCount("message")).toBe(0);
+    });
+    it("is admitted from an Electron development runtime", async () => {
+      Object.defineProperty(process, "execPath", { value: electronRuntime });
+      const h = await launch({ runtime: (root) => developmentRoot(root), mode: "blocked" });
+      expect(h.exit).not.toHaveBeenCalled();
+      expect(h.parent.listenerCount("message")).toBe(1);
+    });
+    it("is refused when its instance record has a second name", async () => {
+      Object.defineProperty(process, "execPath", { value: electronRuntime });
+      const h = await launch({
+        runtime: (root) => {
+          const selected = developmentRoot(root);
+          fs.linkSync(
+            path.join(root, "checkout-dev", "instance.json"),
+            path.join(root, "alias.json"),
+          );
+          return selected;
+        },
+        mode: "blocked",
+      });
+      expect(h.exit).toHaveBeenCalledWith(1);
+      expect(h.parent.listenerCount("message")).toBe(0);
+    });
+    it.runIf(process.platform !== "win32")("is refused over an aliased component", async () => {
+      Object.defineProperty(process, "execPath", { value: electronRuntime });
+      const h = await launch({
+        runtime: (root) => {
+          const selected = developmentRoot(root);
+          fs.symlinkSync(path.join(root, "stable"), path.join(root, "checkout-dev", "research"));
+          return selected;
+        },
+        mode: "blocked",
+      });
+      expect(h.exit).toHaveBeenCalledWith(1);
+      expect(h.parent.listenerCount("message")).toBe(0);
+    });
+    it("is refused without a valid instance record", async () => {
+      Object.defineProperty(process, "execPath", { value: electronRuntime });
+      const h = await launch({ runtime: (root) => developmentRoot(root, false), mode: "blocked" });
+      expect(h.exit).toHaveBeenCalledWith(1);
+      expect(h.parent.listenerCount("message")).toBe(0);
+    });
+  });
   it.each([
     { parent: false },
     { generation: "bad generation" },

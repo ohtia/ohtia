@@ -3,7 +3,7 @@ type: Story
 title: "STORY-001-004 — Run the isolated desktop and supervised data service"
 description: "Launch a minimal graphical Electron application with a single broker, fixed-home bootstrap and a supervised utility process."
 generated:
-  by: codex/gpt-6.1-sol
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 tags: ["story", "comp:desktop", "comp:app"]
@@ -45,7 +45,7 @@ Launch a minimal graphical Electron application with a single broker, fixed-home
 - [ ] Integrate gate: verify STORY-001-001 output D1a and its full release condition in the Dependencies output registry and SPEC-001-006.
 - [ ] Integrate gate: verify STORY-001-002 output W2 and its full release condition in the Dependencies output registry and SPEC-001-006.
 - [ ] Integrate gate: verify STORY-001-003 output P3 and its full release condition in the Dependencies output registry and SPEC-001-006.
-- [ ] Implement verified independent-profile/VM launch admission and stable-locator/store exclusion before any development executable starts.
+- [ ] Implement verified independent-profile/VM launch admission and stable-locator/store exclusion before any qualification executable starts.
 - [ ] Build separate main/preload/utility and local React/Vite renderer outputs with active sandbox/CSP and forbidden-import checks.
 - [ ] Deliver the minimum common locale service, complete first-surface catalogs and keyboard and assistive bootstrap/status/error controls under SPEC-001-024.
 - [ ] Implement a single broker, bounded utility handshake/status port, window lifecycle and controlled service-death handling.
@@ -56,7 +56,7 @@ Launch a minimal graphical Electron application with a single broker, fixed-home
 
 - [ ] Completion gate: verify STORY-001-018 output D1b and its full release condition in the Dependencies output registry and SPEC-001-006.
 - [ ] Completion gate: verify Native hosts output NH and its full release condition in the Dependencies output registry and SPEC-001-006.
-- [ ] Stable or unverified profile launch is refused without reading/migrating stable sentinels on all required native targets.
+- [ ] A qualification launch from a stable or unverified profile is refused without reading/migrating stable sentinels on all required native targets.
 - [ ] All delivered status/bootstrap/error messages and accessible labels use complete product-locale catalogs and the one resolver; automated packaged keyboard, focus and accessibility-tree checks pass. Manual assistive acceptance belongs to 017.
 - [ ] All required native runtime/bootstrap records identify the actual host, executable and utility architecture.
 - [ ] The built graphical window exchanges real status messages through all process boundaries without provider access.

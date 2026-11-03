@@ -2,8 +2,10 @@ import fs from "node:fs";
 import { promises as files } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { portLimits, type BootstrapState, type RuntimeProfile } from "@ohtia/contracts";
+import { portLimits, type BootstrapState, type RuntimeContext } from "@ohtia/contracts";
 import { containsPath, readBoundedFile } from "./profile.js";
+
+type LocatorContext = Pick<RuntimeContext, "configuration_root" | "research_root" | "stable_roots">;
 
 export interface DataLocator {
   readonly version: 1;
@@ -71,7 +73,7 @@ export function canonicalProspective(value: string): string {
 export function validateDataDirectory(
   directory: string,
   settings: string,
-  profile: RuntimeProfile,
+  profile: LocatorContext,
 ): string {
   if (!path.isAbsolute(directory) || path.resolve(directory) !== profile.research_root)
     throw new Error("Data location is outside the admitted research boundary.");
@@ -97,7 +99,7 @@ export function validateDataDirectory(
     throw new Error("Data location is not on the admitted local volume.");
   return resolved;
 }
-export function readLocator(settings: string, profile: RuntimeProfile): LocatorRead {
+export function readLocator(settings: string, profile: LocatorContext): LocatorRead {
   try {
     const fixed = canonicalProspective(settings);
     if (
@@ -163,7 +165,7 @@ export class LocatorPublisher {
   async publish(
     settings: string,
     directory: string,
-    profile: RuntimeProfile,
+    profile: LocatorContext,
     validateStore: (directory: string) => Promise<boolean>,
     io: LocatorPublicationIO,
   ): Promise<Publication> {

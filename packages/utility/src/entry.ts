@@ -6,10 +6,13 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import {
   suppressDiagnosticCapture,
+  admitDevelopmentRoot,
   admitRuntimeProfile,
   decodeStorageNotice,
+  isDevelopmentExecutable,
   isIdentifier,
   isInterfaceLocale,
+  parseRuntimeArgument,
   portLimits,
 } from "@ohtia/contracts";
 import { DurableStore, type StorageOptions } from "./storage.js";
@@ -36,10 +39,11 @@ async function start(): Promise<void> {
       };
     }
   ).parentPort;
-  const [profileFile, generation, locale, mode] = process.argv.slice(2);
+  const [runtimeArgument, generation, locale, mode] = process.argv.slice(2);
+  const selected = parseRuntimeArgument(runtimeArgument);
   if (
     !parent ||
-    !profileFile ||
+    !selected ||
     !generation ||
     !isIdentifier(generation) ||
     !isInterfaceLocale(locale) ||
@@ -55,31 +59,6 @@ async function start(): Promise<void> {
       (!path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${path.sep}`))
     );
   };
-  if (
-    path.basename(profileFile) !== "runtime-profile.json" ||
-    !contains(home, profileFile) ||
-    fs.lstatSync(profileFile).nlink !== 1
-  )
-    throw new Error("Invalid utility admission location.");
-  if (!path.isAbsolute(profileFile) || fs.realpathSync.native(profileFile) !== profileFile)
-    throw new Error("Invalid utility admission file.");
-  if (!fs.lstatSync(profileFile).isFile())
-    throw new Error("A regular utility admission file is required.");
-  const handle = fs.openSync(
-    profileFile,
-    fs.constants.O_RDONLY |
-      (process.platform === "win32" ? 0 : fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK),
-  );
-  let input: unknown;
-  try {
-    if (!fs.fstatSync(handle).isFile()) throw new Error("Invalid utility admission file.");
-    const bytes = Buffer.alloc(portLimits.locator_bytes + 1);
-    const count = fs.readSync(handle, bytes, 0, bytes.length, 0);
-    if (count > portLimits.locator_bytes) throw new Error("Oversized utility admission file.");
-    input = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, count)));
-  } finally {
-    fs.closeSync(handle);
-  }
   const host = {
     username: user.username,
     home,
@@ -100,20 +79,93 @@ async function start(): Promise<void> {
     },
     owned: (value: string) => process.platform === "win32" || fs.statSync(value).uid === user.uid,
   };
-  const profile = admitRuntimeProfile(input, host);
-  const assertAdmission = () => {
-    admitRuntimeProfile(input, host);
-    for (const stable of Object.values(profile.stable_roots)) {
-      const file = path.join(stable.root, stable.sentinel_filename ?? ".ohtia-runtime-sentinel");
-      if (
-        fs.realpathSync.native(file) !== file ||
-        !fs.lstatSync(file).isFile() ||
-        fs.statSync(file).size > portLimits.locator_bytes ||
-        createHash("sha256").update(fs.readFileSync(file)).digest("hex") !== stable.sentinel_sha256
-      )
-        throw new Error("Stable fixture changed.");
+  let researchRoot = host.researchRoot;
+  let assertAdmission: () => void;
+  if (selected.mode === "qualification") {
+    const profileFile = selected.profile;
+    if (
+      path.basename(profileFile) !== "runtime-profile.json" ||
+      !contains(home, profileFile) ||
+      fs.lstatSync(profileFile).nlink !== 1
+    )
+      throw new Error("Invalid utility admission location.");
+    if (!path.isAbsolute(profileFile) || fs.realpathSync.native(profileFile) !== profileFile)
+      throw new Error("Invalid utility admission file.");
+    if (!fs.lstatSync(profileFile).isFile())
+      throw new Error("A regular utility admission file is required.");
+    const handle = fs.openSync(
+      profileFile,
+      fs.constants.O_RDONLY |
+        (process.platform === "win32" ? 0 : fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK),
+    );
+    let input: unknown;
+    try {
+      if (!fs.fstatSync(handle).isFile()) throw new Error("Invalid utility admission file.");
+      const bytes = Buffer.alloc(portLimits.locator_bytes + 1);
+      const count = fs.readSync(handle, bytes, 0, bytes.length, 0);
+      if (count > portLimits.locator_bytes) throw new Error("Oversized utility admission file.");
+      input = JSON.parse(
+        new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, count)),
+      );
+    } finally {
+      fs.closeSync(handle);
     }
-  };
+    const profile = admitRuntimeProfile(input, host);
+    researchRoot = profile.research_root;
+    assertAdmission = () => {
+      admitRuntimeProfile(input, host);
+      for (const stable of Object.values(profile.stable_roots)) {
+        const file = path.join(stable.root, stable.sentinel_filename ?? ".ohtia-runtime-sentinel");
+        if (
+          fs.realpathSync.native(file) !== file ||
+          !fs.lstatSync(file).isFile() ||
+          fs.statSync(file).size > portLimits.locator_bytes ||
+          createHash("sha256").update(fs.readFileSync(file)).digest("hex") !==
+            stable.sentinel_sha256
+        )
+          throw new Error("Stable fixture changed.");
+      }
+    };
+  } else {
+    if (selected.mode === "development") {
+      // Packaged bytes can carry this branch, but only an Electron development runtime enters it.
+      if (!isDevelopmentExecutable(process.platform, path.basename(process.execPath)))
+        throw new Error("Packaged bytes do not admit a development root.");
+      const instanceFile = path.join(selected.root, "instance.json");
+      const recorded = fs.lstatSync(instanceFile);
+      if (
+        !recorded.isFile() ||
+        recorded.nlink !== 1 ||
+        recorded.size > portLimits.locator_bytes ||
+        fs.realpathSync.native(instanceFile) !== instanceFile
+      )
+        throw new Error("Invalid development instance record.");
+      const instance: unknown = JSON.parse(fs.readFileSync(instanceFile, "utf8"));
+      admitDevelopmentRoot(selected.root, instance, {
+        home,
+        researchRoot: host.researchRoot,
+        nativeApplicationRoot: path.join(host.configurationRoot, "Ohtia"),
+        canonical: host.canonical,
+        contains,
+        owned: host.owned,
+      });
+      researchRoot = path.join(selected.root, "research");
+      for (const name of ["configuration", "research"])
+        if (
+          fs.lstatSync(path.join(selected.root, name), { throwIfNoEntry: false })?.isSymbolicLink()
+        )
+          throw new Error("Development roots admit no aliased component.");
+    }
+    // A blocked service opens nothing, and main reports an aliased root on explicit opening.
+    assertAdmission = () => {
+      if (
+        mode !== "blocked" &&
+        fs.existsSync(researchRoot) &&
+        fs.realpathSync.native(researchRoot) !== researchRoot
+      )
+        throw new Error("The research root is not canonical.");
+    };
+  }
   assertAdmission();
   const directory = path.dirname(fileURLToPath(import.meta.url));
   let store: DurableStore | undefined;
@@ -135,7 +187,7 @@ async function start(): Promise<void> {
     )
       throw new Error("Storage runtime identity mismatch.");
     store = new DurableStore({
-      root: profile.research_root,
+      root: researchRoot,
       binding: path.join(directory, "native/binding.node"),
       bindingSha256: record.bindingSha256,
       engine: record.engine,

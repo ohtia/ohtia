@@ -28,11 +28,14 @@ async function launch(
     deferDocument?: boolean;
     languagesUnavailable?: boolean;
     assetNames?: string[];
+    mode?: "qualification" | "development" | "installed";
+    researchRootRefused?: boolean;
+    nodeOptions?: string;
   } = {},
 ) {
   vi.resetModules();
   vi.useFakeTimers();
-  vi.stubEnv("NODE_OPTIONS", "");
+  vi.stubEnv("NODE_OPTIONS", options.nodeOptions ?? "");
   vi.stubEnv("OHTIA_RUNTIME_ACCEPTANCE", options.instrumented ? "1" : "0");
   vi.stubEnv("OHTIA_RUNTIME_DEFER_DOCUMENT", options.deferDocument ? "1" : "0");
   cleanups.push(() => {
@@ -73,6 +76,8 @@ async function launch(
         : key === "appData"
           ? profile.configuration_root
           : path.join(profile.configuration_root, "Ohtia"),
+    setPath: vi.fn(),
+    isPackaged: options.mode === "installed",
     exit: vi.fn(),
     quit: vi.fn(),
     isReady: () => state.ready,
@@ -199,9 +204,12 @@ async function launch(
     shell: { openExternal: vi.fn() },
   }));
   vi.doMock("../packages/main/src/profile.js", () => ({
-    loadRuntimeProfile: () => {
+    resolveRuntimeContext: () => {
       if (!state.admission) throw new Error("Synthetic admission failure");
-      return profile;
+      return { ...profile, mode: options.mode ?? "qualification" };
+    },
+    ensureResearchRoot: () => {
+      if (options.researchRootRefused) throw new Error("Synthetic aliased research root");
     },
     canonicalProspective: (value: string) => value,
     admitRuntimeSwitches: vi.fn(),
@@ -410,6 +418,37 @@ describe("broker composition with synthetic Electron adapters", () => {
     expect(Reflect.get(globalThis, "__ohtiaLoadInitialDocument")).toBeUndefined();
   });
 
+  it("redirects a development instance before taking its single-instance lock", async () => {
+    vi.stubEnv("OHTIA_DEVELOPMENT_ROOT", "/checkout/.ohtia-dev");
+    const h = await launch({ mode: "development" });
+    expect(h.failure).toBeUndefined();
+    expect(h.app.setPath.mock.calls.map(([name]: string[]) => name)).toEqual([
+      "appData",
+      "userData",
+    ]);
+    expect(h.utilityProcess.fork.mock.calls[0][1][0]).toBe("development:/checkout/.ohtia-dev");
+  });
+  it("runs installed bytes without a profile or any redirection", async () => {
+    const h = await launch({ mode: "installed" });
+    expect(h.failure).toBeUndefined();
+    expect(h.app.setPath).not.toHaveBeenCalled();
+    expect(h.utilityProcess.fork.mock.calls[0][1][0]).toBe("installed");
+    expect((await h.action("open_storage")).state).toBe("storage_opening");
+  });
+  it("reports an aliased research root without starting the store", async () => {
+    const h = await launch({ mode: "installed", researchRootRefused: true });
+    const forks = h.utilityProcess.fork.mock.calls.length;
+    expect((await h.action("open_storage")).state).toBe("path_rejected");
+    expect(h.utilityProcess.fork).toHaveBeenCalledTimes(forks);
+  });
+  it("refuses Node runtime injection in every mode", async () => {
+    for (const mode of ["qualification", "development", "installed"] as const) {
+      const h = await launch({ mode, nodeOptions: "--require=/synthetic.js" });
+      expect(h.failure).toBeInstanceOf(Error);
+      expect(h.app.exit).toHaveBeenCalledWith(1);
+      expect(h.utilityProcess.fork).not.toHaveBeenCalled();
+    }
+  });
   it("refuses isolation admission and a second broker before starting a child", async () => {
     const refused = await launch({ admission: false });
     expect(refused.failure).toBeInstanceOf(Error);

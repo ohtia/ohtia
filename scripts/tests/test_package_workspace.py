@@ -57,6 +57,14 @@ class PackageArchiveTests(unittest.TestCase):
         self.assertFalse(any(name.startswith("packages/unchecked/") for name in names))
         self.assertFalse(any(name.startswith("tools/") for name in names))
 
+    def test_development_state_stays_out_of_the_library_archive(self):
+        state = self.root / ".ohtia-dev/research"
+        state.mkdir(parents=True)
+        (state / "ohtia.db3").write_text("synthetic", encoding="utf-8")
+        package_workspace.main()
+        with zipfile.ZipFile(self.archive) as archive:
+            self.assertFalse(any(".ohtia-dev" in name for name in archive.namelist()))
+
     def test_validation_failure_preserves_the_previous_archive(self):
         package_workspace.main()
         original = self.archive.read_bytes()

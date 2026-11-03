@@ -56,9 +56,13 @@ The first command prints the selected distribution's exact package command and c
 
 Diagnosis does not prove active Electron sandboxing, native addon loading, actual Ozone backend, complete shutdown, writable data storage or durable restart. Those require the admitted native walkthrough. The [read-only GitHub provenance verifier](repository-policy.md) is a separate POSIX maintainer procedure; it is not needed to build or run Ohtia.
 
-## Admit an independent profile before execution
+## Develop from your ordinary account
 
-Follow [independent native profile preparation](desktop-runtime.md#prepare-an-independent-native-profile) before the first app, test or preview launch. Use a dedicated account or native VM with its own OS-account home, fixed `.config`, `ohtia` research root and separate owned scratch root. A different data directory in the ordinary stable account is insufficient. The inspecting operator records actual CPU/virtualization, canonical roots, filesystem ownership/permissions, absence of credentials and native security/display configuration. Never populate inspection declarations from the sample without performing those checks.
+To see your work, run `python3 scripts/workspace.py setup` and `python3 scripts/workspace.py run dev`, as described in [Isolated desktop runtime](desktop-runtime.md#develop-from-your-ordinary-account). This needs no second account. On a desktop that `linux_contributor.py` does not qualify, call `scripts/workspace.py setup` directly; running there is not qualification.
+
+## Admit an independent profile for a qualification walkthrough
+
+Follow [independent native profile preparation](desktop-runtime.md#prepare-an-independent-native-profile) before the first qualification or acceptance launch. Use a dedicated account or native VM with its own OS-account home, fixed `.config`, `ohtia` research root and separate owned scratch root. A different data directory in the ordinary stable account is insufficient. The inspecting operator records actual CPU/virtualization, canonical roots, filesystem ownership/permissions, absence of credentials and native security/display configuration. Never populate inspection declarations from the sample without performing those checks.
 
 Create the existing `runtime-profile.json` contract inside the inspected account's home, using that account's username and the selected native target. Declare the complete synthetic stable configuration, store and recovery roots with their sentinel digests. Retain an independent before/after inventory of every fixture file's digest, size, ownership, mode and modification time as well as the sentinel checks. Never point this exercise at private research. Do not copy a stable locator/store into the independent account.
 
@@ -86,7 +90,7 @@ A new runtime directory needs its own exact-path allowance and native evidence. 
 
 ## Launch and verify in a private session
 
-In an inspected graphical desktop, use the [ordinary dev command](desktop-runtime.md#build-assemble-and-launch). For automated VM work without an interactive display, the same account can start a fresh private DBus/GNOME Wayland session for each declared command:
+In an inspected graphical desktop, use the [`desktop:launch` command](desktop-runtime.md#build-assemble-and-launch). For automated VM work without an interactive display, the same account can start a fresh private DBus/GNOME Wayland session for each declared command:
 
 ```bash
 python3 scripts/linux_contributor.py session doctor /home/isolated-user/scratch/runtime-profile.json /home/isolated-user/scratch/runtime-1
@@ -104,7 +108,7 @@ python3 scripts/linux_contributor.py session smoke /home/isolated-user/scratch/r
 
 Run `desktop:test` before initializing a store: it expects a missing locator and verifies the supervised runtime, actual IPC/CSP boundaries, multiple windows, service death/retry and shutdown. `storage:test` exercises opening, native binding identity, save/restart, migration/recovery and controlled failures. It leaves identified synthetic state; preserve that attempt before a new trial rather than deleting existing data to satisfy a fresh-fixture precondition. Run `diagnostics:test` with its own fresh evidence directory after those suites. Observe native process architecture, actual Wayland connection, active sandbox and complete process cessation independently; retain failed reports and check stable fixture metadata after every attempt.
 
-For a visible development round trip, launch `dev` in the admitted graphical session, explicitly open local data, change appearance, save, exit and launch the same bytes again. Confirm the saved value, then exercise explicit retry after a utility failure. Use the automated suites' receipts alongside the operator's actual observations; do not infer graphical completion from a zero exit alone.
+For a visible qualification round trip, use `desktop:launch` in the admitted graphical session, explicitly open local data, change appearance, save, exit and launch the same bytes again. Confirm the saved value, then exercise explicit retry after a utility failure. Use the automated suites' receipts alongside the operator's actual observations; do not infer graphical completion from a zero exit alone.
 
 ## Edit, check and package
 

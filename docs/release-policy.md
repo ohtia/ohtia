@@ -7,7 +7,7 @@ sources:
     resource: "https://keepachangelog.com/en/1.1.0/"
     title: "Keep a Changelog — Human-readable release histories"
 generated:
-  by: codex/gpt-6.1-sol
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 ---
@@ -34,7 +34,7 @@ Distinguish temporary quality artifacts from the two distribution channels:
 
 A release candidate is a validation state of a particular artifact set, not an additional required public channel. Final candidates can remain internal or be offered to explicitly participating preview testers. Development previews may contain prerelease versions; final candidates carry their intended stable version before final packaging and verification.
 
-Every CI/development executable, internal final candidate and preview installation runs with isolated application data. Automated and maintainer-run tests use only synthetic or permitted public material, following [ADR-0017](adr/adr-0017-real-boundary-integration-tests.md). A preview user may explicitly choose an independently isolated copy of their own research for personal testing; that permission does not admit private research or developer credential copies into CI or external evaluations. CI/development packages neither publish to nor consume public update feeds.
+Every CI executable, internal final candidate and preview installation runs with isolated application data, and daily development uses the checkout-scoped instance selected by [ADR-0043](adr/adr-0043-ordinary-startup-modes.md). The application does not detect a candidate or preview installed outside that isolation, because final bytes must not change, so this remains a documented procedure. Automated and maintainer-run tests use only synthetic or permitted public material, following [ADR-0017](adr/adr-0017-real-boundary-integration-tests.md). A preview user may explicitly choose an independently isolated copy of their own research for personal testing; that permission does not admit private research or developer credential copies into CI or external evaluations. CI/development packages neither publish to nor consume public update feeds.
 
 For exact-byte final candidates, use a separate OS user profile or VM whose native configuration and research store are independent of the stable installation. Preserve [ADR-0036](adr/adr-0036-application-preferences-and-bootstrap.md) and the architecture's fixed bootstrap-locator contract rather than silently redirecting it. Installing two executables side by side does not establish isolation, and a compiled channel name is not the isolation mechanism. Channel eligibility belongs to maintainer-controlled distribution metadata outside the package, so the same final bytes can be tested in the isolated environment and later offered to stable users. Never silently open or migrate a stable research store from a non-stable test installation. Returning to stable does not imply that an older executable can read a newer schema or that data will be downgraded automatically.
 

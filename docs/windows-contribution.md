@@ -28,7 +28,7 @@ sources:
 
 This procedure implements [STORY-001-010](epics/EPIC-001-desktop-foundation/STORY-001-010-make-windows-contribution-setup-reproducible.md) using the [locked workspace](developer-workspace.md), [isolated desktop runtime](desktop-runtime.md) and [native quality builder](quality-builds.md). Use native x64 Windows 11 25H2 build 26200 or a later supported Windows 11 release, local fixed NTFS and an ordinary account's logged-in desktop. Windows ARM64, x86 emulation and WSL do not establish this route's native acceptance. PRIN-004–007, PRIN-011 and PRIN-016 require preserving actual provenance, research privacy and the limits of each observation.
 
-Use an independent Windows VM or dedicated OS account without stable Ohtia, private research, provider credentials or maintainer credentials. Inspect it using [native profile preparation](native-qualification.md#provision-an-independent-native-profile) before any application launch. Configuration stays at the account-native `AppData\Roaming\Ohtia`; research stays at the account-native `ohtia` directory. A second checkout, renamed app or different research folder does not establish isolation.
+To see your work from your ordinary account, use [`dev`](desktop-runtime.md#develop-from-your-ordinary-account). For this qualification procedure, use an independent Windows VM or dedicated OS account without stable Ohtia, private research, provider credentials or maintainer credentials. Inspect it using [native profile preparation](native-qualification.md#provision-an-independent-native-profile) before any application launch. Configuration stays at the account-native `AppData\Roaming\Ohtia`; research stays at the account-native `ohtia` directory. A second checkout, renamed app or different research folder does not establish isolation.
 
 Install native Git for Windows from [Git's Windows download](https://git-scm.com/downloads/win) and a conventional native x64 CPython 3.12 or later from [Python's Windows downloads](https://www.python.org/downloads/windows/). Verify the publisher in their installation interfaces. The Python command below must resolve to that interpreter, rather than an unresolved Store installation alias or an x86/ARM process. An installed Store-distributed interpreter is acceptable when it meets those native conventional-interpreter requirements; an alias that only opens an installer is not an interpreter. Python installation is an explicit bootstrap prerequisite; the subsequent workspace setup installs its manifest-pinned interpreter locally.[^python-windows] An administrator may need to provision Windows or prerequisite OS packages; ordinary setup, development, checks and packaging run without elevation.
 
@@ -115,7 +115,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Runtime preparation failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Native profile or runtime admission failed.' }
 & $ohtiaPython scripts/workspace.py run desktop:test $ohtiaProfile $ohtiaPrepared (Join-Path $ohtiaScratch 'runtime-evidence-1')
 if ($LASTEXITCODE -ne 0) { throw 'Native runtime acceptance failed.' }
-& $ohtiaPython scripts/workspace.py run dev $ohtiaProfile $ohtiaPrepared
+& $ohtiaPython scripts/workspace.py run desktop:launch $ohtiaProfile $ohtiaPrepared
 if ($LASTEXITCODE -ne 0) { throw 'Development launch failed.' }
 ```
 
@@ -135,7 +135,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Edited-source checks and build failed.' }
 $ohtiaEdited = Join-Path $ohtiaScratch 'runtime-2'
 & $ohtiaPython scripts/workspace.py run desktop:prepare win32-x64 $ohtiaEdited
 if ($LASTEXITCODE -ne 0) { throw 'Edited runtime preparation failed.' }
-& $ohtiaPython scripts/workspace.py run dev $ohtiaProfile $ohtiaEdited
+& $ohtiaPython scripts/workspace.py run desktop:launch $ohtiaProfile $ohtiaEdited
 if ($LASTEXITCODE -ne 0) { throw 'Edited development launch failed.' }
 ```
 

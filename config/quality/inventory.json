@@ -24,6 +24,7 @@
     "tests/primitives.test.ts",
     "tests/quality-gates.test.ts",
     "tests/renderer.test.ts",
+    "tests/runtime-modes.test.ts",
     "tests/service-boundaries.test.ts",
     "tests/storage.test.ts",
     "tests/update-admission.test.ts",
@@ -633,6 +634,81 @@
     }
   ],
   "vitest_inapplicable": [
+    {
+      "id": "tests/runtime-modes.test.ts::development components > refuses an aliased configuration directory::case-0",
+      "platforms": ["win32"],
+      "reason": "POSIX symbolic-link fixture; native Windows reparse admission is verified separately."
+    },
+    {
+      "id": "tests/runtime-modes.test.ts::development launcher > refuses an aliased development directory::case-0",
+      "platforms": ["win32"],
+      "reason": "POSIX symbolic-link fixture; native Windows reparse admission is verified separately."
+    },
+    {
+      "id": "tests/runtime-modes.test.ts::development launcher > never writes through an instance link::case-0",
+      "platforms": ["win32"],
+      "reason": "POSIX symbolic-link fixture; native Windows reparse admission is verified separately."
+    },
+    {
+      "id": "tests/utility-entry.test.ts::utility process composition with isolated synthetic files > development root > is refused over an aliased component::case-0",
+      "platforms": ["win32"],
+      "reason": "POSIX symbolic-link fixture; native Windows reparse admission is verified separately."
+    },
+    {
+      "id": "tests/utility-entry.test.ts::utility process composition with isolated synthetic files > keeps serving status over an aliased research root until storage opens::case-0",
+      "platforms": ["win32"],
+      "reason": "POSIX symbolic-link fixture; native Windows reparse admission is verified separately."
+    },
+    {
+      "id": "tests/utility-entry.test.ts::utility process composition with isolated synthetic files > refuses to open storage through an aliased research root::case-0",
+      "platforms": ["win32"],
+      "reason": "POSIX symbolic-link fixture; native Windows reparse admission is verified separately."
+    },
+    {
+      "id": "tests/utility-entry.test.ts::utility process composition with isolated synthetic files > refuses an aliased admission file::case-0",
+      "platforms": ["win32"],
+      "reason": "POSIX symbolic-link fixture; native Windows reparse admission is verified separately."
+    },
+    {
+      "id": "tests/runtime-modes.test.ts::development launcher > keeps the temporary root short enough for the singleton socket::case-0",
+      "platforms": ["win32"],
+      "reason": "Only the POSIX singleton socket has this path limit; Windows has no such socket."
+    },
+    {
+      "id": "tests/runtime-modes.test.ts::running development instance > does not take a reused PID for the broker::case-0",
+      "platforms": ["win32"],
+      "reason": "Windows holds a lock file instead of a link naming its holder."
+    },
+    {
+      "id": "tests/runtime-modes.test.ts::running development instance > stops when it cannot identify the holder::case-0",
+      "platforms": ["win32"],
+      "reason": "Windows holds a lock file instead of a link naming its holder."
+    },
+    {
+      "id": "tests/runtime-modes.test.ts::running development instance > takes a holder that has ended for no broker::case-0",
+      "platforms": ["win32"],
+      "reason": "Windows holds a lock file instead of a link naming its holder."
+    },
+    {
+      "id": "tests/runtime-modes.test.ts::running development instance > follows the holder a POSIX lock names::case-0",
+      "platforms": ["win32"],
+      "reason": "Windows holds a lock file instead of a link naming its holder."
+    },
+    {
+      "id": "tests/runtime-modes.test.ts::running development instance > follows the Windows lock file::case-0",
+      "platforms": ["linux", "darwin"],
+      "reason": "POSIX names the holder in a link instead of holding a lock file."
+    },
+    {
+      "id": "tests/runtime-modes.test.ts::development root guards > refuses an aliased root::case-0",
+      "platforms": ["win32"],
+      "reason": "POSIX symbolic-link fixture; native Windows reparse admission is verified separately."
+    },
+    {
+      "id": "tests/runtime-modes.test.ts::explicit research root creation > leaves a symlinked research root untouched::case-0",
+      "platforms": ["win32"],
+      "reason": "POSIX symbolic-link fixture; native Windows reparse admission is verified separately."
+    },
     {
       "id": "tests/desktop-probes.test.ts::exclusive synthetic probe files > preserves a symlink target without following it::case-0",
       "platforms": ["win32"],

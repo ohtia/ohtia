@@ -700,6 +700,22 @@ def read_process_snapshot(file: Path) -> dict:
     raise AssertionError("Unreachable snapshot retry state.")
 
 
+def allow_development_runtime(cell: dict, assembled: Path) -> None:
+    """Grant Ubuntu's namespace allowance to the exact assembled executable, never a wider one."""
+    if not (cell["profile"].startswith("ubuntu-") and delivery.runs_development_cases(cell["id"])):
+        return
+    import linux_contributor
+
+    policy = linux_contributor.sandbox_policy(None, assembled.resolve())
+    name = re.search(r"^profile (\S+) ", policy, re.MULTILINE)
+    delivery.require(name is not None, "Invalid development sandbox allowance.")
+    source = assembled.parent / "development.apparmor"
+    source.write_text(policy)
+    target = f"/etc/apparmor.d/{name[1]}"
+    command(["sudo", "install", "-m", "0644", source, target])
+    command(["sudo", "apparmor_parser", "--add", target])
+
+
 def smoke(
     profile: Path, prepared: Path, destination: Path, cell: dict, *, cancelled=None
 ) -> tuple[dict, dict]:
@@ -713,6 +729,7 @@ def smoke(
         ("runtime", "desktop-acceptance.mjs", "receipt.json"),
         ("storage", "storage-acceptance.mjs", "storage-receipt.json"),
         ("diagnostics", "diagnostic-acceptance.mjs", "diagnostic-receipt.json"),
+        ("startup", "startup-acceptance.mjs", "startup-receipt.json"),
     ):
         output = destination / suite
         known = []
@@ -725,6 +742,11 @@ def smoke(
                     str(profile),
                     str(prepared),
                     str(output),
+                    *(
+                        [str(ROOT / "artifacts" / f"quality-{cell['id']}" / "assembled")]
+                        if suite == "startup" and delivery.runs_development_cases(cell["id"])
+                        else []
+                    ),
                 ],
                 ROOT,
                 build_environment(),
@@ -765,7 +787,7 @@ def smoke(
             "Packaged suite or supervised cleanup failed.",
         )
         result = delivery.read(output / receipt)
-        delivery.validate_suite(suite, cell["target"], result)
+        delivery.validate_suite(suite, cell["target"], result, cell["id"])
         if suite == "runtime" and sys.platform != "linux":
             # Successful real packaged-window capture is evidence of rendering, not an OS socket query.
             capture = output / "foundation-320.png"
@@ -850,6 +872,7 @@ def main() -> int:
         delivery.write(output / "result.json", result)
         work = ROOT / "artifacts" / f"quality-{args.cell}"
         construct_package(cell, work, planned["application_version"])
+        allow_development_runtime(cell, work / "assembled")
         context = work / "context.json"
         command([workspace.node_path(), "tooling/quality-profile.mjs", "prepare", context])
         profile = Path(delivery.read(context)["profile"])

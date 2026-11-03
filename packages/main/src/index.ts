@@ -24,6 +24,9 @@ export {
   admitRuntimeSwitches,
   loadRuntimeProfile,
   nativeProfileHost,
+  admitDevelopmentInstance,
+  resolveRuntimeContext,
+  ensureResearchRoot,
   verifyStableSentinels,
   containsPath,
 } from "./profile.js";

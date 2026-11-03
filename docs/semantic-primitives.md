@@ -2,6 +2,8 @@
 type: Reference
 title: "Semantic renderer primitives"
 description: "Controlled React components, named-command surfaces, keyboard patterns and the isolated synthetic development catalog."
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # Semantic renderer primitives
@@ -70,7 +72,7 @@ Build the catalog from the task checkout:
 python3 scripts/workspace.py run catalog:build
 ```
 
-The independent output is `artifacts/semantic-catalog`, never a product package or independently distributed design-system product. The admitted `preview` command described in [Locked developer workspace](developer-workspace.md#common-commands) serves that built artifact on loopback with the desktop's restrictive CSP. It imports the same component exports, tokens and local fonts. Display controls exercise system/light/dark themes, at least 40% label expansion and mixed Korean text. All actions are synthetic; nothing is saved or sent to a provider.
+The independent output is `artifacts/semantic-catalog`, never a product package or independently distributed design-system product. The `preview` command described in [Locked developer workspace](developer-workspace.md#common-commands) serves that built artifact on loopback with the desktop's restrictive CSP. It imports the same component exports, tokens and local fonts. Display controls exercise system/light/dark themes, at least 40% label expansion and mixed Korean text. All actions are synthetic; nothing is saved or sent to a provider.
 
 The renderer library and every desktop entry build install `productGraph`, which checks resolved development modules before tree shaking. Imports from `tools/`, `tests/`, catalogs, specimens, fixtures and test transports fail admission. Negative tests exercise otherwise-unused imports; filename filtering of emitted assets supplies an additional check, not the graph boundary itself.
 
