@@ -43,6 +43,8 @@ The conventions for this register are defined in [Architecture decisions](../arc
 
 - [ADR-0043 — Ordinary development and installed startup modes](adr-0043-ordinary-startup-modes.md) — Admit one of three explicit runtime modes, so that daily development and installed use need no qualification profile while qualification keeps every safeguard.
 
+- [ADR-0044 — Linux graphics defaults and scoped KDE color fallback](adr-0044-linux-graphics-compatibility.md) — Preserve native GPU and WebGPU defaults across supported GNOME Wayland profiles and avoid unsupported color negotiation only on KDE Wayland.
+
 ## Interface foundations
 
 - [ADR-0022 — React renderer built with Vite](adr-0022-react-vite-renderer.md) — Build local renderer assets with React and Vite while keeping Electron privileges outside the web component tree.

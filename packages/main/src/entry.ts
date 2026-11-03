@@ -1,3 +1,4 @@
+import { configureGraphicsCompatibility } from "./graphics-compatibility.js";
 import { CommandMenus } from "./command-menus.js";
 import { readAboutInformation, copyVersionInformation } from "./about.js";
 import { isRendererAssetPath } from "./asset-policy.js";
@@ -133,6 +134,8 @@ try {
   app.exit(1);
   throw new Error("Runtime admission refused.");
 }
+
+configureGraphicsCompatibility(app.commandLine, process.platform, process.env);
 
 function preferredSystemLanguages(): readonly string[] {
   try {
