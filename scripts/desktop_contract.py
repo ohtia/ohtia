@@ -124,6 +124,8 @@ BUDGET_UNITS = {
     "signing_source_bytes": "byte",
     "signing_subprocess_ms": "millisecond",
     "signing_execution_ms": "millisecond",
+    "signing_client_retry_attempts": "attempt",
+    "signing_client_retry_delay_ms": "millisecond",
     "signing_transfer_seconds": "second",
     "signing_oidc_lifetime_seconds": "second",
     "signing_jwks_cache_ms": "millisecond",

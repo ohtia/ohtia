@@ -82,7 +82,9 @@ class Network:
             data=contract.canonical(data),
         )
 
-    def download(self, url, destination, expected):
+    def download(
+        self, url, destination, expected, *, maximum=contract.MAXIMUM_PACKAGE + 1024 * 1024
+    ):
         parsed = urllib.parse.urlsplit(url)
         contract.require(
             parsed.scheme == "https"
@@ -100,8 +102,7 @@ class Network:
             while chunk := response.read(1024 * 1024):
                 count += len(chunk)
                 contract.require(
-                    count <= contract.MAXIMUM_PACKAGE + 1024 * 1024
-                    and time.monotonic() < self.expires,
+                    count <= maximum and time.monotonic() < self.expires,
                     "archive_size_or_deadline",
                 )
                 checksum.update(chunk)

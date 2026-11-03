@@ -32,6 +32,16 @@ export function watchCharacterPage(page, url) {
     },
   };
 }
+async function expectNoHorizontalOverflow(page) {
+  const dimensions = await page.evaluate(() => ({
+    scroll: document.documentElement.scrollWidth,
+    client: document.documentElement.clientWidth,
+  }));
+  expect(
+    dimensions.scroll,
+    "Character content fits the scrollbar-adjusted viewport",
+  ).toBeLessThanOrEqual(dimensions.client);
+}
 export async function verifyCharacterSpecimen(page, url, engine, output) {
   const watch = watchCharacterPage(page, url);
   try {
@@ -262,7 +272,7 @@ async function characterJourney(page, url, engine, output) {
     await expect(page.locator("html")).toHaveAttribute("lang", locale);
     for (const width of [320, 600, 1024, 1280]) {
       await page.setViewportSize({ width, height: 400 });
-      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+      await expectNoHorizontalOverflow(page);
       await expect(page.getByText("María", { exact: true })).toHaveCount(2);
     }
   }
@@ -276,7 +286,7 @@ async function characterJourney(page, url, engine, output) {
     for (const paragraph of element.querySelectorAll("p")) paragraph.style.marginBlock = "2em";
   });
   await page.setViewportSize({ width: 320, height: 400 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  await expectNoHorizontalOverflow(page);
   if (engine === "chromium") {
     await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
     await expect(page.locator(".voice-label[data-origin=human]")).toBeVisible();
