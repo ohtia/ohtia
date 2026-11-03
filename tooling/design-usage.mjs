@@ -17,6 +17,7 @@ const isLineShorthand = (property) =>
 // This vocabulary is intentionally explicit. New CSS features require a checked contract.
 const layout = new Set([
   "align-items",
+  "align-self",
   "float",
   "aspect-ratio",
   "flex",
@@ -25,6 +26,7 @@ const layout = new Set([
   "object-fit",
   "margin-inline",
   "margin-block-start",
+  "margin-block-end",
   "grid-template-columns",
   "user-select",
   "scroll-padding",
@@ -72,6 +74,7 @@ const layout = new Set([
   "outline-offset",
   "overflow-wrap",
   "padding",
+  "padding-inline",
   "padding-block-end",
   "stroke-linecap",
   "stroke-linejoin",
@@ -116,7 +119,8 @@ export function checkColorUsage(model, sources, usage) {
       throw new Error("Text contrast minimum differs from its semantic role");
     if (
       item.decorativeBorders !== undefined &&
-      (item.decorativeBorders !== "border.subtle" || item.minimum !== 3)
+      (item.decorativeBorders !== "border.subtle" ||
+        item.minimum !== (item.foreground && item.foreground !== "content.disabled" ? 7 : 3))
     )
       throw new Error("Only border.subtle may declare a decorative border");
     const key = selectorKey(item.selector);
@@ -217,6 +221,10 @@ export function checkColorUsage(model, sources, usage) {
             throw new Error(`Unsupported variable expression: ${context}/${property}`);
           const custom = property.startsWith("--") && names.has(property);
           const neutral =
+            (property === "app-region" && /^(drag|no-drag)$/.test(value)) ||
+            (property === "touch-action" && value === "none") ||
+            (property === "text-overflow" && value === "ellipsis") ||
+            (property === "transform" && /^translate[XY]\((?:-?[0-9]+%|0)\)$/.test(value)) ||
             (property === "text-emphasis" && value === "filled dot") ||
             (property === "text-decoration" &&
               /^(none|underline|line-through|overline)$/.test(value)) ||

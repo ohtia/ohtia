@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { build, preview } from "vite";
 import { expect } from "@playwright/test";
+import { verifyWorkspaceSpecimen } from "./catalog-workspace.mjs";
 import { verifyCommandSpecimens } from "./command-presentation.mjs";
 
 export async function serveCatalog(root) {
@@ -141,6 +142,7 @@ export async function verifyCatalog(page, url, engine, output) {
   page.on("console", consoleError);
   page.on("request", request);
   try {
+    await verifyWorkspaceSpecimen(page, url, engine, output);
     await verifyCommandSpecimens(page, url, engine);
     await keyboardJourneys(page, url);
     await page.goto(url);

@@ -40,6 +40,8 @@ sources:
   - id: lucide
     resource: https://github.com/lucide-icons/lucide/tree/1ef60af944de207e0d5176905a0759ba12e6ee8d
     title: Lucide — Repository at the examined commit
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # Ohtia design system
@@ -314,6 +316,7 @@ The inventory is closed: every foreground/background combination used by a compo
 | `attention.border`          | `surface.page`                 | 3:1     | 3.53:1  | 6.25:1  |
 | `attention.border`          | `surface.panel`                | 3:1     | 3.32:1  | 6.01:1  |
 | `attention.border`          | `surface.emphasis`             | 3:1     | 3.04:1  | 5.26:1  |
+| `attention.border`          | `attention.surface`            | 3:1     | 3.23:1  | 4.97:1  |
 | `danger.border`             | `surface.page`                 | 3:1     | 4.58:1  | 5.56:1  |
 | `danger.border`             | `surface.panel`                | 3:1     | 4.31:1  | 5.34:1  |
 | `danger.border`             | `surface.emphasis`             | 3:1     | 3.95:1  | 4.67:1  |

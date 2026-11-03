@@ -3,6 +3,7 @@
 @import "./design-roles.css";
 @import "./primitives.css";
 @import "./command-surfaces.css";
+@import "./workspace-chrome.css";
 
 :root {
   color-scheme: light dark;

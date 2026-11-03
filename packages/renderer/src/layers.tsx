@@ -305,8 +305,10 @@ function useLayerPosition(
 export function Tooltip({
   label,
   children,
+  className,
 }: {
   label: string;
+  className?: string;
   children: ReactElement<{ "aria-describedby"?: string | undefined }>;
 }) {
   const id = useId();
@@ -340,7 +342,7 @@ export function Tooltip({
   return (
     <span
       ref={anchor}
-      className="primitive-layer-anchor"
+      className={className ? `primitive-layer-anchor ${className}` : "primitive-layer-anchor"}
       onKeyDown={(event) => {
         if (event.key === "Escape" && visible) {
           event.preventDefault();

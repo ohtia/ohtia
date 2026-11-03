@@ -47,6 +47,7 @@ export type CommandReason =
   | "zoom_minimum"
   | "zoom_maximum"
   | "actual_size"
+  | "wide_layout"
   | "last_panel"
   | "window_limit";
 export const commandReasons: readonly CommandReason[] = [
@@ -58,6 +59,7 @@ export const commandReasons: readonly CommandReason[] = [
   "zoom_minimum",
   "zoom_maximum",
   "actual_size",
+  "wide_layout",
   "last_panel",
   "window_limit",
 ];
