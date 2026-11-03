@@ -112,6 +112,8 @@ BUDGET_UNITS = {
     "delivery_artifacts_per_inventory": "artifact",
     "delivery_cells": "cell",
     "signing_request_bytes": "byte",
+    "signing_source_acquisition_bytes": "byte",
+    "signing_source_acquisition_objects": "object",
     "signing_rpm_header_bytes": "byte",
     "signing_rpm_signature_bytes": "byte",
     "signing_oidc_bytes": "byte",

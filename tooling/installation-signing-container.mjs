@@ -21,6 +21,8 @@ import {
 import { SigningService, CryptoSigningWorker, validateRequest } from "./installation-signer.mjs";
 import { ScalewaySigningStore, ScalewaySigningSecrets } from "./installation-signing-scaleway.mjs";
 
+import { GitSourceAcquisition } from "./installation-source.mjs";
+
 const statuses = Object.freeze({
   authentication_refused: 403,
   policy_refused: 403,
@@ -222,7 +224,7 @@ export function composeSigningContainer(configuration, { environment = process.e
   const worker = new CryptoSigningWorker(policy, { keys });
   const readers = githubReaders();
   const source = new GitSourceAuthority(policy, {
-    repository: "/tmp/ohtia-signing-source.git",
+    acquisition: new GitSourceAcquisition(),
     cache: store.sourceCache(policy, worker),
   });
   const build = new GitHubBuildAuthority(policy, {

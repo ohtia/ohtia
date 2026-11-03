@@ -520,10 +520,15 @@ export function githubReaders({ fetcher = fetch, token, clock = Date.now } = {})
 export class GitSourceAuthority {
   constructor(
     policy,
-    { repository, git = "/usr/bin/git", sshKeygen = "/usr/bin/ssh-keygen", cache },
+    { repository, acquisition, git = "/usr/bin/git", sshKeygen = "/usr/bin/ssh-keygen", cache },
   ) {
     this.policy = trustedPolicy(policy);
-    demand(path.isAbsolute(repository));
+    demand(
+      acquisition
+        ? repository === undefined && typeof acquisition.open === "function"
+        : path.isAbsolute(repository),
+    );
+    this.acquisition = acquisition;
     this.repository = repository;
     this.git = git;
     this.sshKeygen = sshKeygen;
@@ -534,14 +539,17 @@ export class GitSourceAuthority {
     digest(expectedTree, 40);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ohtia-source-"));
     fs.chmodSync(dir, 0o700);
+    let acquired;
     try {
+      acquired = await this.acquisition?.open(source, { deadline });
+      const repository = acquired?.repository ?? this.repository;
       const allowed = path.join(dir, "allowed-signers");
       fs.writeFileSync(
         allowed,
         this.policy.source_signers.map((s) => `${s.principal} ${s.public_key}\n`).join(""),
         { mode: 0o600 },
       );
-      let work = this.repository;
+      let work = repository;
 
       const gitOutput = async (maximum, ...args) =>
         (
@@ -585,9 +593,9 @@ export class GitSourceAuthority {
       const git = (...args) => gitOutput(signingLimits.jwks_bytes, ...args);
       demand((await git("rev-parse", "--is-shallow-repository")) === "false", "policy_refused");
       const originalGraft = await git("rev-parse", "--git-path", "info/grafts");
-      demand(!fs.existsSync(path.resolve(this.repository, originalGraft)), "policy_refused");
+      demand(!fs.existsSync(path.resolve(repository, originalGraft)), "policy_refused");
       const objects = fs.realpathSync(
-        path.resolve(this.repository, await git("rev-parse", "--git-path", "objects")),
+        path.resolve(repository, await git("rev-parse", "--git-path", "objects")),
       );
       // Never execute merge drivers, hooks or helpers from the supplied repository configuration.
       const bare = path.join(dir, "repository.git");
@@ -598,7 +606,7 @@ export class GitSourceAuthority {
       // A shallow boundary, replacement or graft can hide unsigned ancestry.
       demand((await git("rev-parse", "--is-shallow-repository")) === "false", "policy_refused");
       const graft = await git("rev-parse", "--git-path", "info/grafts");
-      demand(!fs.existsSync(path.resolve(this.repository, graft)), "policy_refused");
+      demand(!fs.existsSync(path.resolve(repository, graft)), "policy_refused");
       await git("merge-base", "--is-ancestor", this.policy.source_anchor, source);
       const policyHash = hash(canonical(this.policy));
       const pending = [],
@@ -725,7 +733,11 @@ export class GitSourceAuthority {
         error instanceof SigningError ? "policy_refused" : "authority_unavailable",
       );
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      try {
+        acquired?.close();
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
     }
   }
 }
