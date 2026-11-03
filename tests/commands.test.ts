@@ -669,3 +669,38 @@ it("retains one aggregate request limit across auxiliary requests and service ad
   expect(last.ok).toBe(true);
   if (last.ok) last.value();
 });
+it("reports each admitted command outcome once and revokes result observers with the registry", async () => {
+  const controller = new CommandController(context, "en-US");
+  const notices = vi.fn();
+  const off = controller.subscribeResults(notices);
+  controller.subscribeResults(() => {
+    throw new Error("Consumer failed");
+  });
+  const first = controller.receive(intent("zoom.reset"));
+  expect(controller.receive(intent("zoom.reset"))).toBe(first);
+  expect(await first).toEqual({ status: "unavailable", reason: "handler_missing" });
+  expect(notices).toHaveBeenCalledOnce();
+  expect(notices).toHaveBeenCalledWith(
+    { status: "unavailable", reason: "handler_missing" },
+    "zoom.reset",
+  );
+  off();
+  await controller.invoke("zoom.increase");
+  expect(notices).toHaveBeenCalledOnce();
+  let release!: (ok: boolean) => void;
+  controller.register("zoom.increase", {
+    state: () => ({}),
+    run: () =>
+      new Promise((done) => {
+        release = done;
+      }),
+  });
+  controller.subscribeResults(notices);
+  const pending = controller.invoke("zoom.increase");
+  await Promise.resolve();
+  controller.dispose();
+  release(true);
+  expect(await pending).toEqual({ status: "revoked" });
+  expect(notices).toHaveBeenCalledOnce();
+  controller.subscribeResults(notices)();
+});

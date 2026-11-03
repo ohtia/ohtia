@@ -3,6 +3,7 @@
 @import "./design-roles.css";
 @import "./primitives.css";
 @import "./command-surfaces.css";
+@import "./settings.css";
 @import "./workspace-chrome.css";
 
 :root {

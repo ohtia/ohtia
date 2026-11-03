@@ -134,7 +134,7 @@ async function run() {
       await store.close();
       const db = raw(root);
       db.exec(
-        "DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'",
+        "DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'",
       );
       db.pragma("user_version=1");
       db.close();
@@ -220,6 +220,58 @@ async function run() {
   };
   engine.close();
   fs.writeFileSync(path.join(output, "engine.json"), JSON.stringify(identity, null, 2) + "\n");
+  await test("presentation-preferences", async (root) => {
+    const store = new DurableStore(options(root));
+    try {
+      await store.open();
+      const appearance = await store.readAppearance();
+      assert.equal((await store.readPresentationPreference("character")).value.value, "animated");
+      assert.equal((await store.readPresentationPreference("zoom")).value.value, 100);
+      const character = { operationId: "native-character", expectedRevision: 0, value: "hidden" };
+      const first = await store.replacePresentationPreference("character", character);
+      assert.equal(first.ok, true);
+      assert.deepEqual(await store.replacePresentationPreference("character", character), first);
+      const zoom = { operationId: "native-zoom", expectedRevision: 0, value: 110 };
+      assert.equal((await store.replacePresentationPreference("zoom", zoom, "increase")).ok, true);
+      const next = await store.replacePresentationPreference(
+        "zoom",
+        { operationId: "native-zoom-next", expectedRevision: 1, value: 125 },
+        "increase",
+      );
+      assert.equal(next.ok, true);
+      assert.equal(
+        (
+          await store.replacePresentationPreference("zoom", {
+            ...zoom,
+            operationId: "native-stale",
+          })
+        ).error.code,
+        "stale_revision",
+      );
+      assert.equal(
+        (
+          await store.replacePresentationPreference("zoom", {
+            operationId: "native-invalid",
+            expectedRevision: 2,
+            value: 123,
+          })
+        ).error.code,
+        "invalid_message",
+      );
+      await store.close();
+      await store.open();
+      assert.deepEqual(await store.readPresentationPreference("zoom"), next);
+      assert.deepEqual(await store.readPresentationPreference("character"), first);
+      assert.deepEqual(await store.readAppearance(), appearance);
+      assert.deepEqual(await store.readPresentationReceipt("character", character.operationId), {
+        ok: true,
+        value: { state: "recorded", outcome: first },
+      });
+      return { character: first, zoom: next, unchangedAppearance: appearance };
+    } finally {
+      await store.close();
+    }
+  });
   await test("populated-revision-two-upgrade", async (root) => {
     const store = new DurableStore(options(root));
     try {
@@ -232,7 +284,7 @@ async function run() {
       await store.close();
       const db = raw(root);
       db.exec(
-        "DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'",
+        "DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'",
       );
       db.pragma("user_version=2");
       db.close();
@@ -303,7 +355,7 @@ async function run() {
       await store.close();
       const db = raw(root);
       db.exec(
-        "DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'; UPDATE application_preferences SET value='{\"max_concurrent_inference\":4,\"max_concurrent_local_processing\":2}' WHERE key='execution_limits'",
+        "DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'; UPDATE application_preferences SET value='{\"max_concurrent_inference\":4,\"max_concurrent_local_processing\":2}' WHERE key='execution_limits'",
       );
       db.pragma("user_version=1");
       db.close();
@@ -626,7 +678,7 @@ async function run() {
       const oldDigest = sha256(oldCheckpoint);
       const db = raw(root);
       db.exec(
-        "DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'",
+        "DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'",
       );
       db.pragma("user_version=1");
       db.close();

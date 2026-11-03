@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import {
   decodeText,
   decodeLocaleSnapshot,
+  decodePresentationSnapshot,
+  type PresentationSnapshot,
   decodeChildDiagnostic,
   type DiagnosticEvent,
   decodeStorageNotice,
@@ -67,6 +69,7 @@ export class ServiceSupervisor {
       correlation?: string,
     ) => void,
     private readonly localeChanged?: (snapshot: LocaleSnapshot) => void,
+    private readonly presentationChanged?: (snapshot: PresentationSnapshot) => void,
   ) {
     if (!isIdentifier(generation)) throw new Error("Invalid service generation.");
     child.messages((message) => {
@@ -129,7 +132,8 @@ export class ServiceSupervisor {
     if (
       work.request.operation === "status.subscribe" ||
       work.request.operation === "appearance.subscribe" ||
-      work.request.operation === "locale.subscribe"
+      work.request.operation === "locale.subscribe" ||
+      work.request.operation === "presentation.subscribe"
     )
       this.streams.set(
         key(work.request.windowGeneration, work.request.payload.subscriptionId),
@@ -157,7 +161,8 @@ export class ServiceSupervisor {
         work.request.windowGeneration !== windowGeneration ||
         (work.request.operation !== "status.subscribe" &&
           work.request.operation !== "appearance.subscribe" &&
-          work.request.operation !== "locale.subscribe")
+          work.request.operation !== "locale.subscribe" &&
+          work.request.operation !== "presentation.subscribe")
       )
         continue;
       this.control({
@@ -288,6 +293,33 @@ export class ServiceSupervisor {
         /* The ordinary peer decoder rejects other input. */
       }
     }
+    if (typeof input === "string" && input.length < portLimits.message_bytes) {
+      let notice: unknown;
+      try {
+        notice = JSON.parse(input);
+      } catch {
+        /* Envelope decoder handles malformed input. */
+      }
+      if (
+        notice &&
+        typeof notice === "object" &&
+        (notice as { kind?: unknown }).kind === "presentation_changed"
+      ) {
+        const fields = notice as Record<string, unknown>;
+        const snapshot = decodePresentationSnapshot(fields.snapshot);
+        if (
+          Object.keys(fields).sort().join(",") !== "generation,kind,snapshot" ||
+          fields.generation !== this.generation ||
+          snapshot?.serviceGeneration !== this.generation ||
+          !this.ready
+        ) {
+          this.fault();
+          return;
+        }
+        this.presentationChanged?.(snapshot);
+        return;
+      }
+    }
     const decoded = decodeText(input);
     if (!decoded.ok) {
       this.fault();
@@ -307,6 +339,8 @@ export class ServiceSupervisor {
         this.fault();
         return;
       }
+      if (value.operation === "presentation.read" && value.payload.ok)
+        this.presentationChanged?.(value.payload.value);
       if (value.operation === "locale.read" && value.payload.ok)
         this.localeChanged?.(value.payload.value);
       if (value.operation === "appearance.replace") {
@@ -344,7 +378,8 @@ export class ServiceSupervisor {
         if (
           work.request.operation === "status.subscribe" ||
           work.request.operation === "appearance.subscribe" ||
-          work.request.operation === "locale.subscribe"
+          work.request.operation === "locale.subscribe" ||
+          work.request.operation === "presentation.subscribe"
         )
           this.streams.delete(
             key(work.request.windowGeneration, work.request.payload.subscriptionId),
@@ -358,15 +393,18 @@ export class ServiceSupervisor {
       const work = this.streams.get(key(value.windowGeneration, value.subscriptionId));
       if (
         !work ||
-        (value.topic === "status"
-          ? work.request.operation !== "status.subscribe"
-          : value.topic === "locale"
-            ? work.request.operation !== "locale.subscribe"
-            : work.request.operation !== "appearance.subscribe")
+        (value.topic === "presentation"
+          ? work.request.operation !== "presentation.subscribe"
+          : value.topic === "status"
+            ? work.request.operation !== "status.subscribe"
+            : value.topic === "locale"
+              ? work.request.operation !== "locale.subscribe"
+              : work.request.operation !== "appearance.subscribe")
       ) {
         this.fault();
         return;
       }
+      if (value.topic === "presentation") this.presentationChanged?.(value.payload);
       if (value.topic === "locale") this.localeChanged?.(value.payload);
       work.deliver(input as string);
       return;
@@ -399,7 +437,11 @@ export class ServiceSupervisor {
         payload: failure(
           work.request.operation === "appearance.replace" ||
             work.request.operation === "locale.replace" ||
-            work.request.operation === "layout.replace"
+            work.request.operation === "layout.replace" ||
+            work.request.operation === "character.replace" ||
+            work.request.operation === "zoom.replace" ||
+            work.request.operation === "zoom.commit" ||
+            work.request.operation === "zoom.adjust"
             ? "uncertain"
             : "service_unavailable",
         ),

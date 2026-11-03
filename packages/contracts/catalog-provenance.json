@@ -34,6 +34,15 @@
       },
       "effective_model_evidence": "The implementation runtime identifies the GPT-6 family but does not expose a confirmed effective model identifier.",
       "human_linguistic_review": null
+    },
+    {
+      "scope": "settings.* presentation controls and save states for STORY-002-007, plus updated help.zoom.text, help.characters.text and help.layout.text",
+      "producer": {
+        "agent": "codex",
+        "effective_model": null
+      },
+      "effective_model_evidence": "The implementation runtime identifies the GPT-6 family but does not expose a confirmed effective model identifier.",
+      "human_linguistic_review": null
     }
   ]
 }

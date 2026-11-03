@@ -16,7 +16,11 @@ export function LanguagePanel({
   locale,
   available,
   onLocale,
+  headingLevel = 2,
+  controller: provided,
 }: {
+  readonly headingLevel?: 2 | 3;
+  readonly controller?: LanguageController;
   readonly port: FoundationPort;
   readonly locale: InterfaceLocale;
   readonly available: boolean;
@@ -29,6 +33,7 @@ export function LanguagePanel({
   }, [onLocale]);
   const controller = useMemo(
     () =>
+      provided ??
       new LanguageController(
         port,
         (snapshot) => {
@@ -36,18 +41,18 @@ export function LanguagePanel({
         },
         () => crypto.randomUUID(),
       ),
-    [port],
+    [port, provided],
   );
   const state = useSyncExternalStore(controller.subscribe, controller.snapshot);
   useEffect(
     () => () => {
-      controller.dispose();
+      if (!provided) controller.dispose();
     },
-    [controller],
+    [controller, provided],
   );
   useEffect(() => {
-    if (available) void controller.refresh();
-  }, [controller, available]);
+    if (available && !provided) void controller.refresh();
+  }, [controller, available, provided]);
   const text = (key: SimpleMessageKey) => message(locale, key);
   const choice = state.current?.record.value ?? "system";
   const label =
@@ -67,9 +72,10 @@ export function LanguagePanel({
       : state.phase === "confirmed"
         ? "check"
         : undefined;
+  const Heading = headingLevel === 3 ? "h3" : "h2";
   return (
     <section aria-labelledby="language-title" aria-busy={state.phase === "submitting"}>
-      <h2>
+      <Heading>
         <span id="language-title">{text("settings.language.title")}</span>{" "}
         <span className="language-save-state" role="status">
           {icon && <Icon name={icon} />}
@@ -79,7 +85,7 @@ export function LanguagePanel({
               ? text("saved")
               : ""}
         </span>
-      </h2>
+      </Heading>
       <select
         ref={select}
         aria-labelledby="language-title"

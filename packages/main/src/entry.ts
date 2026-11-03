@@ -73,6 +73,10 @@ suppressDiagnosticCapture((discard) => {
 const directory = path.dirname(fileURLToPath(import.meta.url));
 app.setName("Ohtia");
 app.enableSandbox();
+import { PresentationBroker } from "./presentation-broker.js";
+const presentationBroker = new PresentationBroker(() =>
+  [...windows.keys()].filter((window) => !window.isDestroyed()).map((window) => window.webContents),
+);
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "ohtia",
@@ -151,8 +155,26 @@ let layoutFailureAnnounced = false;
 const publisher = new LocatorPublisher();
 const windows = new Map<
   BrowserWindow,
-  { generation: string; detach?: () => void; frame?: object }
+  {
+    generation: string;
+    readyForActivation: boolean;
+    activationRequested: boolean;
+    detach?: () => void;
+    frame?: object;
+  }
 >();
+function activateWindow(window: BrowserWindow | undefined): void {
+  if (!window || window.isDestroyed()) return;
+  const state = windows.get(window);
+  if (!state) return;
+  if (!state.readyForActivation) {
+    state.activationRequested = true;
+    return;
+  }
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+}
 let service: ServiceSupervisor | undefined;
 let diagnostics: DiagnosticWriter | undefined;
 function openDiagnostics(): DiagnosticWriter {
@@ -282,7 +304,7 @@ function createWindow(): boolean {
     app.getAppMetrics().length + (diagnostics?.reservedPermissionProcesses ?? 0) >=
       portLimits.process_tree_count
   ) {
-    BrowserWindow.getAllWindows()[0]?.focus();
+    activateWindow(BrowserWindow.getAllWindows()[0]);
     return false;
   }
   const window = new BrowserWindow({
@@ -298,8 +320,12 @@ function createWindow(): boolean {
       session: desktopSession,
     },
   });
-  windows.set(window, { generation: randomUUID() });
+  const state = { generation: randomUUID(), readyForActivation: false, activationRequested: false };
+  windows.set(window, state);
   commandMenus.attach(window);
+  window.webContents.on("zoom-changed", (_event, direction) => {
+    commandMenus.dispatch(window, direction === "in" ? "zoom.increase" : "zoom.decrease", true);
+  });
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => {
     if (event.url !== desktopDocument) event.preventDefault();
@@ -330,18 +356,24 @@ function createWindow(): boolean {
     detach(window);
     windows.delete(window);
   });
-  window.once("ready-to-show", () => {
-    window.show();
-  });
   const loadDocument = () => {
     void window
       .loadURL(desktopDocument)
-      .then(() => {
+      .then(async () => {
+        if (window.isDestroyed()) return;
+        // Electron needs a live render frame; acknowledge the pinch policy before showing content.
+        await window.webContents.setVisualZoomLevelLimits(1, 1);
+        if (window.isDestroyed()) return;
+        presentationBroker.apply(window.webContents);
+        state.readyForActivation = true;
         // A compositor may defer first paint until mapping; completed content can be shown directly.
-        if (!window.isDestroyed()) window.show();
+        if (state.activationRequested) {
+          state.activationRequested = false;
+          activateWindow(window);
+        } else window.show();
       })
       .catch(() => {
-        quitAfterError("startup_failed");
+        if (!window.isDestroyed()) quitAfterError("startup_failed");
       });
   };
   if (acceptance && process.env.OHTIA_RUNTIME_DEFER_DOCUMENT === "1" && windows.size === 1) {
@@ -480,6 +512,7 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
         active.setSystemLocale(systemLocale);
         bootstrapState = completeStorageActivation(result, active, resolvedLocale);
         if (bootstrapState === "storage_ready") {
+          presentationBroker.initialize(active);
           locale = resolvedLocale;
           localeFallback = notice.localeFallback === true;
           for (const existing of windows.keys())
@@ -498,6 +531,9 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
       for (const window of windows.keys())
         if (!window.isDestroyed()) window.setTitle(message(locale, "title"));
     },
+    (snapshot) => {
+      presentationBroker.accept(snapshot);
+    },
   );
 }
 let desktopSession: Electron.Session;
@@ -508,9 +544,7 @@ if (!ownsBroker) {
 }
 app.on("second-instance", () => {
   const window = BrowserWindow.getAllWindows()[0];
-  if (window?.isMinimized()) window.restore();
-  window?.show();
-  window?.focus();
+  activateWindow(window);
   if (!window) void reportError("startup_failed");
 });
 const startup = setTimeout(() => {
@@ -651,7 +685,8 @@ async function start(): Promise<void> {
       authority.value.payload.value === "system"
     )
       service.setSystemLocale(resolveInterfaceLocale(preferredSystemLanguages()));
-    service.dispatch({ ...accepted.value, deliver });
+    if (!presentationBroker.handle({ ...accepted.value, deliver }, service, window.webContents))
+      service.dispatch({ ...accepted.value, deliver });
   });
   let about: ReturnType<typeof readAboutInformation> | undefined;
   const aboutInformation = () => {

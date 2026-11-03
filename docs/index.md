@@ -61,3 +61,4 @@ okf_version: "0.2"
 - [Desktop builds, releases and change notes](release-policy.md) — Quality-build triggers, artifact-bound candidate readiness, immutable promotion, public versioning and user-facing change communication.
 - [EPICs](epics/index.md) — Published delivery specifications and their native GitHub story sub-issues.
 - [Shared interface localization](localization.md) — Author complete typed catalogs and use the durable application-wide language preference without changing research content.
+- [Settings and presentation preferences](settings.md) — Compose the compact Settings dialog with named preference operations, durable receipts and window-owned layout.

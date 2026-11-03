@@ -7,9 +7,16 @@ import {
   portLimits,
   type Envelope,
   type LocaleSnapshot,
+  type PresentationSnapshot,
 } from "../packages/contracts/src/index.js";
 import type { DurableStore } from "../packages/utility/src/storage.js";
-import { request, status, appearance } from "./fixtures/port-corpus.js";
+import {
+  request,
+  status,
+  appearance,
+  presentationSnapshot,
+  localeSnapshot,
+} from "./fixtures/port-corpus.js";
 
 afterEach(() => {
   vi.clearAllTimers();
@@ -20,7 +27,10 @@ function wire(value: unknown) {
   if (!encoded.ok) throw new Error(JSON.stringify(encoded));
   return encoded.value;
 }
-function supervisor(localeChanged?: (snapshot: LocaleSnapshot) => void) {
+function supervisor(
+  localeChanged?: (snapshot: LocaleSnapshot) => void,
+  presentationChanged?: (snapshot: PresentationSnapshot) => void,
+) {
   vi.useFakeTimers();
   let receive: (value: unknown) => void = () => {};
   let exited: () => void = () => {};
@@ -44,6 +54,7 @@ function supervisor(localeChanged?: (snapshot: LocaleSnapshot) => void) {
     false,
     undefined,
     localeChanged,
+    presentationChanged,
   );
   receive(JSON.stringify({ kind: "ready", generation: "service-1" }));
   return {
@@ -455,4 +466,94 @@ describe("trusted locale authority wiring", () => {
     expect(sendFailure.service.setSystemLocale("en-US")).toBe(false);
     sendFailure.exited();
   });
+});
+
+describe("trusted presentation publication", () => {
+  it("validates a private snapshot independently of view subscriptions and quarantines a forged generation", () => {
+    const changed = vi.fn();
+    const h = supervisor(undefined, changed);
+    h.receive(
+      JSON.stringify({
+        kind: "presentation_changed",
+        generation: "service-1",
+        snapshot: presentationSnapshot,
+      }),
+    );
+    expect(changed).toHaveBeenCalledWith(presentationSnapshot);
+    h.receive(
+      JSON.stringify({
+        kind: "presentation_changed",
+        generation: "service-1",
+        snapshot: { ...presentationSnapshot, serviceGeneration: "old-service" },
+      }),
+    );
+    expect(h.service.recoveryRequired).toBe(true);
+    h.exited();
+  });
+  it("routes the bounded presentation stream and releases it on producer disposal", () => {
+    const changed = vi.fn();
+    const h = supervisor(undefined, changed);
+    const stream = work({
+      operation: "presentation.subscribe",
+      payload: { subscriptionId: "presentation" },
+    });
+    h.service.dispatch(stream);
+    h.receive(
+      wire({
+        ...stream.request,
+        kind: "result",
+        payload: { ok: true, value: { subscriptionId: "presentation" } },
+      }),
+    );
+    h.receive(
+      wire({
+        protocol: 1,
+        policy: policyId,
+        kind: "event",
+        windowGeneration: "window-1",
+        serviceGeneration: "service-1",
+        subscriptionId: "presentation",
+        sequence: 1,
+        topic: "presentation",
+        payload: presentationSnapshot,
+      }),
+    );
+    expect(stream.deliver).toHaveBeenCalledTimes(2);
+    expect(changed).toHaveBeenCalledWith(presentationSnapshot);
+    h.service.disposeWindow("window-1");
+    h.receive(
+      JSON.stringify({
+        kind: "stream_disposed",
+        generation: "service-1",
+        windowGeneration: "window-1",
+        subscriptionId: "presentation",
+      }),
+    );
+    expect(stream.releaseSubscription).toHaveBeenCalledOnce();
+    h.exited();
+  });
+});
+
+it("quarantines a locale event delivered on a presentation subscription", () => {
+  const h = supervisor();
+  const stream = work({
+    operation: "presentation.subscribe",
+    payload: { subscriptionId: "presentation" },
+  });
+  h.service.dispatch(stream);
+  h.receive(
+    wire({
+      ...stream.request,
+      kind: "result",
+      payload: { ok: true, value: { subscriptionId: "presentation" } },
+    }),
+  );
+  h.receive(
+    wire({ ...event(), topic: "locale", subscriptionId: "presentation", payload: localeSnapshot }),
+  );
+  expect(h.service.recoveryRequired).toBe(true);
+  expect(h.child.kill).toHaveBeenCalledOnce();
+  expect(stream.releaseSubscription).not.toHaveBeenCalled();
+  h.exited();
+  expect(stream.releaseSubscription).toHaveBeenCalled();
 });

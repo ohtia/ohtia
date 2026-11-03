@@ -90,13 +90,15 @@ export class PortAdmission {
     if (!authorized.ok) return authorized;
     const request = authorized.value;
     if (request.kind !== "request") return failure("invalid_message");
+    if (request.operation === "zoom.commit") return failure("unauthorized");
     const state = this.windows.get(sender.frame);
     if (!state) return failure("unauthorized");
     if (state.pending.has(request.requestId)) return failure("duplicate_request");
     const subscriptionId =
       request.operation === "status.subscribe" ||
       request.operation === "appearance.subscribe" ||
-      request.operation === "locale.subscribe"
+      request.operation === "locale.subscribe" ||
+      request.operation === "presentation.subscribe"
         ? request.payload.subscriptionId
         : undefined;
     if (subscriptionId !== undefined) {

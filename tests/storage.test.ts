@@ -115,13 +115,13 @@ describe("durable preference and migration recovery", () => {
     await store.close();
     expectClosed();
     const newer = raw();
-    newer.pragma("user_version=5");
+    newer.pragma("user_version=6");
     newer.close();
     close.mockClear();
     await expect(store.open()).rejects.toThrow(/Unsupported/);
     expectClosed();
     const current = raw();
-    current.pragma("user_version=4");
+    current.pragma("user_version=5");
     current.close();
     close.mockClear();
     await store.open();
@@ -451,7 +451,7 @@ describe("durable preference and migration recovery", () => {
     await store.close();
     const db = raw();
     db.exec(
-      "DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'; UPDATE application_preferences SET value='{\"max_concurrent_inference\":4,\"max_concurrent_local_processing\":2}' WHERE key='execution_limits'",
+      "DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'; UPDATE application_preferences SET value='{\"max_concurrent_inference\":4,\"max_concurrent_local_processing\":2}' WHERE key='execution_limits'",
     );
     db.pragma("user_version=1");
     db.close();
@@ -572,12 +572,12 @@ describe("durable preference and migration recovery", () => {
     await store.open();
     await store.close();
     const db = raw();
-    db.pragma("user_version=5");
+    db.pragma("user_version=6");
     db.close();
     await expect(store.open()).rejects.toThrow(/Unsupported/);
     expect(checkpoints(root)).toHaveLength(1);
     const again = raw();
-    again.pragma("user_version=4");
+    again.pragma("user_version=5");
     again.exec("UPDATE ohtia_migration_artifacts SET sha256='" + "a".repeat(64) + "'");
     again.close();
     await expect(store.open()).rejects.toThrow(/identity/);
@@ -976,7 +976,7 @@ it("upgrades a populated revision-two store while preserving appearance receipts
   await store.close();
   const db = raw();
   db.exec(
-    "DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; INSERT INTO application_preferences VALUES ('interface_locale',1,7,'\"ko-KR\"')",
+    "DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; INSERT INTO application_preferences VALUES ('interface_locale',1,7,'\"ko-KR\"')",
   );
   db.pragma("user_version=2");
   db.close();
@@ -1293,7 +1293,7 @@ describe("layout migration and uncertain commit boundary", () => {
     await store.close();
     const db = raw();
     db.exec(
-      "DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; PRAGMA user_version=3",
+      "DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; PRAGMA user_version=3",
     );
     const value = defaultWorkspaceLayout(1440);
     db.prepare("INSERT INTO application_preferences VALUES ('workspace_layout',1,8,?)").run(
@@ -1317,7 +1317,7 @@ describe("layout migration and uncertain commit boundary", () => {
       ),
     );
     expect(entries).toContainEqual(
-      expect.objectContaining({ sourceRevision: 3, targetRevision: 4 }),
+      expect.objectContaining({ sourceRevision: 3, targetRevision: 5 }),
     );
   });
   it("rolls back both rows before commit and reconciles a lost acknowledgement after a real commit", async () => {
@@ -1363,4 +1363,366 @@ describe("layout migration and uncertain commit boundary", () => {
     });
     expect(await store.replaceLayout(command)).toMatchObject({ ok: true, value: { revision: 1 } });
   });
+});
+
+function presentationRequest(
+  operation: import("@ohtia/contracts").Operation,
+  payload: unknown,
+  overrides: Partial<import("@ohtia/contracts").Request> = {},
+) {
+  return request({ ...overrides, operation, payload } as Partial<
+    import("@ohtia/contracts").Request
+  >);
+}
+describe("durable character and interface zoom preferences", () => {
+  it("uses controlled defaults, persists named records and receipts across restart, and preserves other records", async () => {
+    const { store, raw, options } = fixture();
+    await store.open();
+    expect(await store.readPresentationPreference("character")).toMatchObject({
+      ok: true,
+      value: { revision: 0, value: "animated", source: "default" },
+    });
+    expect(await store.readPresentationPreference("zoom")).toMatchObject({
+      ok: true,
+      value: { revision: 0, value: 100, source: "default" },
+    });
+    const db = raw();
+    const before = db.prepare("SELECT * FROM application_preferences").all();
+    db.close();
+    const character = {
+      operationId: "characters-1",
+      expectedRevision: 0,
+      value: "hidden" as const,
+    };
+    const zoom = { operationId: "zoom-1", expectedRevision: 0, value: 110 as const };
+    expect(await store.replacePresentationPreference("character", character)).toMatchObject({
+      ok: true,
+      value: { revision: 1, value: "hidden" },
+    });
+    expect(await store.replacePresentationPreference("zoom", zoom, "increase")).toMatchObject({
+      ok: true,
+      value: { revision: 1, value: 110 },
+    });
+    expect(
+      await store.replacePresentationPreference(
+        "zoom",
+        { ...zoom, expectedRevision: 1, value: 125 },
+        "increase",
+      ),
+    ).toMatchObject({ ok: true, value: { revision: 1, value: 110 } });
+    expect(await store.replacePresentationPreference("zoom", zoom, "decrease")).toMatchObject({
+      error: { code: "operation_conflict" },
+    });
+    expect(
+      await store.replacePresentationPreference("character", { ...character, value: "static" }),
+    ).toMatchObject({ error: { code: "operation_conflict" } });
+    expect(await store.replacePresentationPreference("character", character)).toMatchObject({
+      ok: true,
+      value: { revision: 1 },
+    });
+    expect(
+      await store.replacePresentationPreference("zoom", { ...zoom, operationId: "stale-zoom" }),
+    ).toMatchObject({ error: { code: "stale_revision", parameters: { currentRevision: 1 } } });
+    expect(await store.readPresentationReceipt("zoom", "stale-zoom")).toMatchObject({
+      value: { state: "recorded", outcome: { error: { code: "stale_revision" } } },
+    });
+    await store.close();
+    const restarted = new DurableStore(options);
+    stores.push(restarted);
+    await restarted.open();
+    expect(await restarted.readPresentationPreference("zoom")).toMatchObject({
+      ok: true,
+      value: { value: 110, revision: 1, source: "saved" },
+    });
+    expect(await restarted.readPresentationReceipt("character", "characters-1")).toMatchObject({
+      value: { state: "recorded", outcome: { ok: true } },
+    });
+    const after = raw();
+    expect(
+      after
+        .prepare(
+          "SELECT * FROM application_preferences WHERE key NOT IN ('interface_zoom','character_presentation')",
+        )
+        .all(),
+    ).toEqual(before);
+    after.close();
+  });
+  it("preserves rejected bytes and allows only explicit validated replacement at the known revision", async () => {
+    const { store, raw } = fixture();
+    await store.open();
+    const db = raw();
+    db.exec(
+      "INSERT INTO application_preferences VALUES ('character_presentation',2,4,'\"unsupported\"'),('interface_zoom',1,7,'123')",
+    );
+    db.close();
+    expect(await store.readPresentationPreference("character")).toMatchObject({
+      value: { source: "invalid_fallback", revision: 4, value: "static" },
+    });
+    expect(await store.readPresentationPreference("zoom")).toMatchObject({
+      value: { source: "invalid_fallback", revision: 7, value: 100 },
+    });
+    const inspect = raw();
+    expect(
+      inspect
+        .prepare("SELECT value FROM application_preferences WHERE key='interface_zoom'")
+        .pluck()
+        .get(),
+    ).toBe("123");
+    inspect.close();
+    expect(
+      await store.replacePresentationPreference("zoom", {
+        operationId: "replace-invalid",
+        expectedRevision: 7,
+        value: 125,
+      }),
+    ).toMatchObject({ ok: true, value: { revision: 8, value: 125 } });
+    for (const value of ["125", 123, null, Infinity, NaN])
+      expect(
+        await store.replacePresentationPreference("zoom", {
+          operationId: "invalid",
+          expectedRevision: 8,
+          value,
+        } as never),
+      ).toMatchObject({ error: { code: "invalid_message" } });
+    expect(
+      await store.replacePresentationPreference("character", {
+        operationId: "invalid-extra",
+        expectedRevision: 4,
+        value: "static",
+        private: "rejected",
+      } as never),
+    ).toMatchObject({ error: { code: "invalid_message" } });
+    expect(await store.readPresentationReceipt("zoom", "unknown")).toMatchObject({
+      value: { state: "not_found" },
+    });
+    expect(await store.readPresentationReceipt("zoom", "invalid id")).toMatchObject({
+      error: { code: "invalid_message" },
+    });
+  });
+  it("rolls back pre-commit failure, reports a lost COMMIT acknowledgement as uncertain and reconciles one effect", async () => {
+    const { store, raw } = fixture();
+    await store.open();
+    const db = raw();
+    db.exec(
+      "CREATE TRIGGER fail_character BEFORE INSERT ON presentation_receipts BEGIN SELECT RAISE(ABORT,'synthetic'); END",
+    );
+    db.close();
+    expect(
+      await store.replacePresentationPreference("character", {
+        operationId: "rollback-character",
+        expectedRevision: 0,
+        value: "hidden",
+      }),
+    ).toMatchObject({ error: { code: "storage_failed" } });
+    expect(await store.readPresentationPreference("character")).toMatchObject({
+      value: { revision: 0 },
+    });
+    const clear = raw();
+    clear.exec("DROP TRIGGER fail_character");
+    clear.close();
+    const original = Database.prototype.prepare;
+    const spy = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+      this: import("better-sqlite3").Database,
+      source: string,
+    ) {
+      const statement = original.call(this, source);
+      if (source === "COMMIT") {
+        const run = statement.run.bind(statement);
+        statement.run = ((...args: unknown[]) => {
+          run(...args);
+          throw new Error("Lost acknowledgement");
+        }) as typeof statement.run;
+      }
+      return statement;
+    });
+    expect(
+      await store.replacePresentationPreference("zoom", {
+        operationId: "uncertain-zoom",
+        expectedRevision: 0,
+        value: 200,
+      }),
+    ).toMatchObject({ error: { code: "uncertain" } });
+    spy.mockRestore();
+    expect(await store.readPresentationReceipt("zoom", "uncertain-zoom")).toMatchObject({
+      value: { state: "recorded", outcome: { value: { revision: 1, value: 200 } } },
+    });
+    expect(await store.readPresentationPreference("zoom")).toMatchObject({
+      value: { revision: 1, value: 200 },
+    });
+  });
+  it("publishes a coherent snapshot across two window streams and retains idempotent operation identity", async () => {
+    const { store } = fixture();
+    await store.open();
+    const sent: string[] = [];
+    const service = createStatusService("service-1", "en-US", (text) => sent.push(text), store);
+    service.activate("en-US");
+    await service.drain();
+    for (const windowGeneration of ["window-1", "window-2"])
+      service.receive(
+        JSON.stringify(
+          presentationRequest(
+            "presentation.subscribe",
+            { subscriptionId: "presentation" },
+            { windowGeneration, requestId: windowGeneration, operationId: windowGeneration },
+          ),
+        ),
+      );
+    await service.drain();
+    sent.length = 0;
+    service.receive(
+      JSON.stringify(
+        presentationRequest(
+          "character.replace",
+          { expectedRevision: 0, value: "static" },
+          { operationId: "character-change" },
+        ),
+      ),
+    );
+    await service.drain();
+    const snapshots = sent
+      .map((text) => JSON.parse(text))
+      .filter((value) => value.kind === "event");
+    expect(snapshots).toHaveLength(2);
+    expect(snapshots.map((value) => value.windowGeneration)).toEqual(["window-1", "window-2"]);
+    expect(snapshots[0].payload.character).toMatchObject({ revision: 1, value: "static" });
+    expect(snapshots[0].payload.zoom.value).toBe(100);
+    sent.length = 0;
+    service.receive(
+      JSON.stringify(
+        presentationRequest(
+          "character.replace",
+          { expectedRevision: 0, value: "static" },
+          { operationId: "character-change" },
+        ),
+      ),
+    );
+    await service.drain();
+    expect(
+      sent.map((text) => JSON.parse(text)).filter((value) => value.kind === "event"),
+    ).toHaveLength(0);
+    service.dispose();
+  });
+});
+
+it("keeps presentation operations gated before storage admission and during another transaction", async () => {
+  const { store } = fixture();
+  expect(await store.readPresentationPreference("zoom")).toMatchObject({
+    error: { code: "service_unavailable" },
+  });
+  expect(await store.readPresentationReceipt("character", "unknown")).toMatchObject({
+    error: { code: "service_unavailable" },
+  });
+  expect(
+    await store.replacePresentationPreference("character", {
+      operationId: "before-open",
+      expectedRevision: 0,
+      value: "static",
+    }),
+  ).toMatchObject({ error: { code: "service_unavailable" } });
+  await store.open();
+  const first = store.replacePresentationPreference("character", {
+    operationId: "first-writer",
+    expectedRevision: 0,
+    value: "static",
+  });
+  expect(
+    await store.replacePresentationPreference("zoom", {
+      operationId: "second-writer",
+      expectedRevision: 0,
+      value: 125,
+    }),
+  ).toMatchObject({ error: { code: "busy" } });
+  expect((await first).ok).toBe(true);
+  expect(
+    await store.replacePresentationPreference(
+      "zoom",
+      { operationId: "invalid-step", expectedRevision: 0, value: 400 },
+      "increase",
+    ),
+  ).toMatchObject({ error: { code: "invalid_message" } });
+  expect(
+    await store.replacePresentationPreference(
+      "zoom",
+      { operationId: "invalid-no-step", expectedRevision: 0, value: 100 },
+      "increase",
+    ),
+  ).toMatchObject({ error: { code: "invalid_message" } });
+  expect(await store.readPresentationReceipt("zoom", "invalid-no-step")).toMatchObject({
+    value: { state: "not_found" },
+  });
+  expect(
+    await store.replacePresentationPreference(
+      "zoom",
+      { operationId: "no-op", expectedRevision: 0, value: 100 },
+      "reset",
+    ),
+  ).toMatchObject({ error: { code: "actual_size" } });
+  expect(await store.readPresentationReceipt("zoom", "no-op")).toMatchObject({
+    value: { state: "recorded", outcome: { error: { code: "actual_size" } } },
+  });
+  await store.replacePresentationPreference("zoom", {
+    operationId: "after-refusal",
+    expectedRevision: 0,
+    value: 125,
+  });
+  await store.close();
+  await store.open();
+  expect(
+    await store.replacePresentationPreference(
+      "zoom",
+      { operationId: "no-op", expectedRevision: 1, value: 100 },
+      "reset",
+    ),
+  ).toMatchObject({ error: { code: "actual_size" } });
+  expect(await store.readPresentationPreference("zoom")).toMatchObject({
+    value: { revision: 1, value: 125 },
+  });
+});
+it("reports unreadable presentation receipts and admission loss without changing confirmed records", async () => {
+  const { store, raw, options } = fixture();
+  await store.open();
+  await store.replacePresentationPreference("character", {
+    operationId: "receipt-corruption",
+    expectedRevision: 0,
+    value: "static",
+  });
+  const db = raw();
+  db.exec(
+    "UPDATE presentation_receipts SET value='not-json' WHERE operation_id='receipt-corruption'",
+  );
+  db.close();
+  expect(await store.readPresentationReceipt("character", "receipt-corruption")).toMatchObject({
+    error: { code: "storage_failed" },
+  });
+  expect(await store.readPresentationPreference("character")).toMatchObject({
+    value: { revision: 1, value: "static" },
+  });
+  const assertion = vi.spyOn(options, "assertAdmission").mockImplementation(() => {
+    throw new Error("Synthetic admission loss");
+  });
+  expect(await store.readPresentationPreference("zoom")).toMatchObject({
+    error: { code: "storage_failed" },
+  });
+  expect(await store.readPresentationReceipt("zoom", "unknown")).toMatchObject({
+    error: { code: "storage_failed" },
+  });
+  expect(
+    await store.replacePresentationPreference("zoom", {
+      operationId: "denied",
+      expectedRevision: 0,
+      value: 125,
+    }),
+  ).toMatchObject({ error: { code: "storage_failed" } });
+  assertion.mockRestore();
+  expect(await store.readPresentationPreference("zoom")).toMatchObject({
+    error: { code: "service_unavailable" },
+  });
+  const intact = raw();
+  expect(
+    intact
+      .prepare("SELECT count(*) FROM application_preferences WHERE key='interface_zoom'")
+      .pluck()
+      .get(),
+  ).toBe(0);
+  intact.close();
 });

@@ -68,6 +68,7 @@ afterEach(async () => {
     for (const root of mounted.splice(0)) root.unmount();
   });
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   document.body.replaceChildren();
   delete document.documentElement.dataset.appearance;
 });
@@ -234,8 +235,43 @@ describe("appearance user decisions", () => {
 
 it("runs the status-window recovery actions with preserved focus and a shared locale", async () => {
   let snapshot: BootstrapSnapshot = { version: 1, locale: "en-US", state: "pending_create" };
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+  };
   const foundation = {
     ...port(),
+    readPresentation: () =>
+      call({
+        ok: true,
+        value: {
+          serviceGeneration: "service-1",
+          appearance: { schemaVersion: 1, revision: 0, source: "default", value: "system" },
+          character: { schemaVersion: 1, revision: 0, source: "default", value: "animated" },
+          zoom: { schemaVersion: 1, revision: 0, source: "default", value: 100 },
+        },
+      }),
+    subscribePresentation: () => ({
+      ready: Promise.resolve({ ok: true, value: { subscriptionId: "presentation-test" } }),
+      dispose() {},
+    }),
+    readLayout: () =>
+      call({ ok: true, value: { schemaVersion: 1, revision: 0, value: null, source: "default" } }),
+    applyZoom: () => call({ ok: true, value: { revision: 0, percent: 100, applied: true } }),
     readLocale: vi.fn(() =>
       call({
         ok: true,
@@ -297,6 +333,11 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
   expect(document.activeElement?.id).toBe("location-state");
   expect(document.documentElement.lang).toBe("ko-KR");
   expect(container.textContent).toContain(message("ko-KR", "intro"));
+  await act(async () => {
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === message("ko-KR", "command.settings.open"))!
+      .click();
+  });
   expect(container.textContent).toContain(message("ko-KR", "settings.language.readFailed"));
   const refreshLanguage = container.querySelector<HTMLButtonElement>(
     '[aria-labelledby="language-title"] button',
@@ -313,6 +354,9 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
   snapshot = { ...snapshot, locale: "en-US" };
   expect(bootstrap.newWindow).not.toHaveBeenCalled();
   expect(container.textContent).toContain(message("en-US", "command.reason.handler_missing"));
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>("dialog[open] [data-close]")!.click();
+  });
   snapshot = { ...snapshot, state: "recovery_required" };
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1000);
@@ -324,8 +368,11 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
   await click(container, "retry");
   expect(container.textContent).toContain(message("en-US", "startup_failed"));
   await click(container, "retry");
+  await click(container, "command.settings.open");
   const focusedControl = container.querySelector("select")!;
-  focusedControl.focus();
+  await act(async () => {
+    focusedControl.focus();
+  });
   snapshot = { ...snapshot, state: "storage_ready", notice: "locale_fallback" };
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1000);
