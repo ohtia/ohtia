@@ -7,7 +7,6 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createLocalJWKSet, jwtVerify } from "jose";
 
 const budgetRecord = JSON.parse(
   fs.readFileSync(new URL("../config/desktop/resource-policy.json", import.meta.url)),
@@ -354,9 +353,12 @@ export class OidcAuthority {
         ) && new Set(keyset.keys.map((k) => k.kid)).size === keyset.keys.length,
         "authority_unavailable",
       );
-      let resolver;
+      // Client-only recipe helpers share the contracts without installing server dependencies.
+      let resolver, jwtVerify;
       try {
-        resolver = createLocalJWKSet(keyset);
+        const jose = await import("jose");
+        jwtVerify = jose.jwtVerify;
+        resolver = jose.createLocalJWKSet(keyset);
         for (const jwk of keyset.keys) {
           demand(
             !["d", "p", "q", "dp", "dq", "qi", "oth"].some((field) => Object.hasOwn(jwk, field)),

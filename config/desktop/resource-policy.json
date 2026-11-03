@@ -866,6 +866,30 @@
       "scope": "All entries in one complete cold Git pack, independently of uncached graph expansion",
       "failure": "signing_refused",
       "rationale": "Bound temporary source acquisition without loosening independent post-anchor admission limits"
+    },
+    "signing_client_retry_attempts": {
+      "value": 3,
+      "unit": "attempt",
+      "permitted": {
+        "minimum": 3,
+        "maximum": 3
+      },
+      "owner": "013",
+      "scope": "Maximum attempts for one replayable signing-client request or transfer",
+      "failure": "authority_unavailable",
+      "rationale": "Bound transient retries without changing an admitted signing identity"
+    },
+    "signing_client_retry_delay_ms": {
+      "value": 1000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 1000,
+        "maximum": 1000
+      },
+      "owner": "013",
+      "scope": "Delay between signing-client retry attempts",
+      "failure": "authority_unavailable",
+      "rationale": "Bound request pressure while preserving the original operation deadline"
     }
   }
 }

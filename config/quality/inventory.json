@@ -15,6 +15,7 @@
     "tests/graphics-compatibility.test.ts",
     "tests/installation-authority.test.ts",
     "tests/installation-scaleway-signing.test.ts",
+    "tests/installation-signing-client.test.ts",
     "tests/installation-signing-container.test.ts",
     "tests/installation-signing.test.ts",
     "tests/installation-source.test.ts",
@@ -93,6 +94,7 @@
     "scripts/tests/test_installation_native.py",
     "scripts/tests/test_installation_scaleway.py",
     "scripts/tests/test_installation_signing_image.py",
+    "scripts/tests/test_installation_signing_worker.py",
     "scripts/tests/test_installation_windows.py",
     "scripts/tests/test_linux_contributor.py",
     "scripts/tests/test_linux_e2e.py",
@@ -661,6 +663,11 @@
       "id": "test_scaleway_progress.CommandDiagnosticTests.test_cancellation_survives_reap_timeout_without_unbounded_context_wait",
       "platforms": ["win32"],
       "reason": "The Linux Scaleway controller uses POSIX selector pipes; this regression executes a synthetic child through that boundary."
+    },
+    {
+      "id": "test_installation_signing_worker.WorkerIdentityTests.test_private_staging_refuses_symlinks_shared_modes_and_noncanonical_parent",
+      "platforms": ["win32"],
+      "reason": "GitHub-hosted Linux signing worker private POSIX directory identity"
     }
   ],
   "vitest_inapplicable": [

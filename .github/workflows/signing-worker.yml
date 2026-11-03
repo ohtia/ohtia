@@ -1,0 +1,78 @@
+name: Isolated Linux signing worker
+on:
+  workflow_call:
+    inputs:
+      selection:
+        description: One of the six Linux target/profile selections
+        required: true
+        type: string
+      proof-artifact:
+        description: Locator of the current successful attestor output; never authority
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  sign:
+    name: Submit private signing requests
+    if: github.repository == 'ohtia/ohtia' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-26.04
+    environment: installation-signing
+    timeout-minutes: 55
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      id-token: write
+    env:
+      SIGNING_SELECTION: ${{ inputs.selection }}
+      SIGNING_PROOF_ARTIFACT: ${{ inputs.proof-artifact }}
+    steps:
+      - name: Check out only the immutable signing recipe
+        id: recipe
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ohtia/ohtia
+          ref: ${{ job.workflow_sha }}
+          path: recipe
+          persist-credentials: false
+      - name: Set up the fixed preparation interpreter
+        id: python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+      - name: Refuse incomplete or disabled signing configuration
+        env:
+          SIGNING_RECIPE_SHA: ${{ job.workflow_sha }}
+          SIGNING_RECIPE_REF: ${{ job.workflow_ref }}
+          SIGNING_JOB_ID: ${{ job.check_run_id }}
+        run: python3 -I recipe/scripts/installation_signing_worker.py check
+      - name: Install only checksum-pinned recipe tools without candidate dependencies
+        env:
+          SIGNING_RECIPE_SHA: ${{ job.workflow_sha }}
+          SIGNING_RECIPE_REF: ${{ job.workflow_ref }}
+          SIGNING_JOB_ID: ${{ job.check_run_id }}
+        run: python3 -I recipe/scripts/installation_signing_worker.py tools
+      - name: Inspect and retrieve the exact current attestor proof as data
+        uses: ./recipe/.github/actions/installation-signing-worker # zizmor: ignore[self-repository]
+        env:
+          SIGNING_RECIPE_SHA: ${{ job.workflow_sha }}
+          SIGNING_RECIPE_REF: ${{ job.workflow_ref }}
+          SIGNING_JOB_ID: ${{ job.check_run_id }}
+          SIGNING_PYTHON: ${{ steps.python.outputs.python-path }}
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Sign and verify the private package and catalog
+        env:
+          SIGNING_RECIPE_SHA: ${{ job.workflow_sha }}
+          SIGNING_RECIPE_REF: ${{ job.workflow_ref }}
+          SIGNING_JOB_ID: ${{ job.check_run_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+          OHTIA_SIGNING_INVOKE_TOKEN: ${{ secrets.OHTIA_SIGNING_INVOKE_TOKEN }}
+        run: python3 -I recipe/scripts/installation_signing_worker.py invoke
+      - name: Remove private local inputs and outputs
+        if: always() && steps.recipe.outcome == 'success'
+        env:
+          SIGNING_RECIPE_SHA: ${{ job.workflow_sha }}
+          SIGNING_RECIPE_REF: ${{ job.workflow_ref }}
+          SIGNING_JOB_ID: ${{ job.check_run_id }}
+        run: python3 -I recipe/scripts/installation_signing_worker.py cleanup
