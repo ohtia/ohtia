@@ -842,6 +842,30 @@
       "scope": "One RSA OpenPGP header signature exported by the qualified native RPM library",
       "failure": "signing_refused",
       "rationale": "Refuse oversized or substituted signature material before independent full-fingerprint verification"
+    },
+    "signing_source_acquisition_bytes": {
+      "value": 536870912,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 536870912,
+        "maximum": 536870912
+      },
+      "owner": "013",
+      "scope": "Cold Git acquisition pack bytes, cumulative inflation and reconstructed objects, independently of graph admission",
+      "failure": "signing_refused",
+      "rationale": "Bound temporary source acquisition without loosening independent post-anchor admission limits"
+    },
+    "signing_source_acquisition_objects": {
+      "value": 65536,
+      "unit": "object",
+      "permitted": {
+        "minimum": 65536,
+        "maximum": 65536
+      },
+      "owner": "013",
+      "scope": "All entries in one complete cold Git pack, independently of uncached graph expansion",
+      "failure": "signing_refused",
+      "rationale": "Bound temporary source acquisition without loosening independent post-anchor admission limits"
     }
   }
 }

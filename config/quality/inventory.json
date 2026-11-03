@@ -17,6 +17,7 @@
     "tests/installation-scaleway-signing.test.ts",
     "tests/installation-signing-container.test.ts",
     "tests/installation-signing.test.ts",
+    "tests/installation-source.test.ts",
     "tests/language-panel.test.ts",
     "tests/linux-e2e.test.ts",
     "tests/localization.test.ts",
@@ -897,6 +898,31 @@
       "id": "tests/installation-authority.test.ts::native RPM identity admission > refuses unsupported package leads and malformed immutable headers before signing::case-0",
       "platforms": ["darwin", "win32"],
       "reason": "Linux signing-service native worker, process-group and pidfd contract; portable authority contracts remain applicable."
+    },
+    {
+      "id": "tests/installation-source.test.ts::native cold source verification > imports a complete pack and verifies signed history without running source files::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux native Git/OpenSSH source acquisition and subprocess contract"
+    },
+    {
+      "id": "tests/installation-source.test.ts::native cold source verification > refuses unsigned fetched history and removes acquired objects::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux native Git/OpenSSH source acquisition and subprocess contract"
+    },
+    {
+      "id": "tests/installation-source.test.ts::native cold source verification > refuses an incorrect expected tree after cold acquisition::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux native Git/OpenSSH source acquisition and subprocess contract"
+    },
+    {
+      "id": "tests/installation-source.test.ts::native cold source verification > refuses a resource-hostile pack before native indexing::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux native Git/OpenSSH source acquisition and subprocess contract"
+    },
+    {
+      "id": "tests/installation-source.test.ts::native cold source verification > bounds unavailable cold acquisition without persisting an object store::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux native Git/OpenSSH source acquisition and subprocess contract"
     }
   ]
 }
