@@ -742,6 +742,9 @@ export class GitSourceAuthority {
   }
 }
 
+export const buildPredicateType =
+  "https://github.com/ohtia/ohtia/attestations/installation-build/v1";
+
 export function verifyBuildResult(result, request, policy, artifact) {
   const cert = result?.signature?.certificate,
     statement = result?.statement;
@@ -771,14 +774,35 @@ export function verifyBuildResult(result, request, policy, artifact) {
     "policy_refused",
   );
   demand(
-    statement?.predicateType === "https://slsa.dev/provenance/v1" &&
+    statement?.predicateType === buildPredicateType &&
       Array.isArray(statement.subject) &&
       statement.subject.some((s) => s.digest?.sha256 === request.input.sha256),
     "policy_refused",
   );
-  // The pinned builder, not the caller, owns this exact manifest in its authenticated predicate.
-  const bound = statement.predicate?.buildDefinition?.externalParameters?.ohtia;
+  // The pinned attestor owns this versioned manifest and authenticated producer relationship.
+  const predicate = statement.predicate;
+  fields(predicate, "schema_version artifact producer");
+  demand(predicate.schema_version === 1, "policy_refused");
+  const bound = predicate.artifact;
   demand(bound && canonical(bound).equals(canonical(artifact)), "policy_refused");
+  const producer = predicate.producer;
+  fields(
+    producer,
+    "producer_job_id producer_backend_id workflow_run_backend_id artifact_id artifact_name archive_sha256",
+  );
+  positive(producer.producer_job_id);
+  positive(producer.artifact_id);
+  digest(producer.archive_sha256);
+  demand(
+    producer.producer_job_id !== artifact.build_execution.job_id &&
+      producer.artifact_name ===
+        `installation-build-${artifact.build_execution.run_id}-${artifact.build_execution.attempt}-${producer.producer_job_id}` &&
+      [producer.producer_backend_id, producer.workflow_run_backend_id].every(
+        (value) =>
+          typeof value === "string" && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value),
+      ),
+    "policy_refused",
+  );
   return true;
 }
 
@@ -826,6 +850,8 @@ export class GitHubBuildAuthority {
           input,
           "--repo",
           "ohtia/ohtia",
+          "--predicate-type",
+          buildPredicateType,
           "--bundle",
           bundle,
           "--signer-workflow",
@@ -847,28 +873,28 @@ export class GitHubBuildAuthority {
         Array.isArray(results) && results.length > 0 && results.length <= 32,
         "policy_refused",
       );
-      demand(
-        results.some((r) => {
-          try {
-            return verifyBuildResult(r.verificationResult, request, this.policy, artifact);
-          } catch {
-            return false;
-          }
-        }),
-        "policy_refused",
-      );
+      const verified = results.find((r) => {
+        try {
+          return verifyBuildResult(r.verificationResult, request, this.policy, artifact);
+        } catch {
+          return false;
+        }
+      });
+      demand(verified, "policy_refused");
       demand(typeof this.job === "function", "authority_unavailable");
-      const actual = await this.job(artifact.build_execution.job_id);
-      if (actual.status !== "completed") throw new SigningError("authority_unavailable");
-      demand(
-        actual.id === artifact.build_execution.job_id &&
-          actual.run_id === artifact.build_execution.run_id &&
-          actual.run_attempt === artifact.build_execution.attempt &&
-          actual.head_sha === request.subject.source_commit &&
-          actual.status === "completed" &&
-          actual.conclusion === "success",
-        "policy_refused",
-      );
+      const producer = verified.verificationResult.statement.predicate.producer;
+      for (const id of [artifact.build_execution.job_id, producer.producer_job_id]) {
+        const actual = await this.job(id);
+        if (actual?.status !== "completed") throw new SigningError("authority_unavailable");
+        demand(
+          actual.id === id &&
+            actual.run_id === artifact.build_execution.run_id &&
+            actual.run_attempt === artifact.build_execution.attempt &&
+            actual.head_sha === request.subject.source_commit &&
+            actual.conclusion === "success",
+          "policy_refused",
+        );
+      }
       deadline.check();
       return structuredClone(artifact);
     } catch (error) {

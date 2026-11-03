@@ -62,6 +62,6 @@ jobs:
       checks: read
       id-token: write
       attestations: write
-    uses: ohtia/ohtia/.github/workflows/signing-build.yml@8be2fe56fd9fbbbe82f3e773a46e9f745767ebdd
+    uses: ohtia/ohtia/.github/workflows/signing-build.yml@1464c956e7e8cb06a4606dd62d51cc220e67e302
     with:
       selection: ${{ inputs.selection }}

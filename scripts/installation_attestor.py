@@ -325,27 +325,7 @@ def prepare(env, network=None):
             "invocation": f"attestor-{context['job']}",
         },
     }
-    predicate = {
-        "buildDefinition": {
-            "buildType": "https://github.com/ohtia/ohtia/installation-build/v1",
-            "externalParameters": {"ohtia": manifest},
-            "resolvedDependencies": [
-                {
-                    "uri": "git+https://github.com/ohtia/ohtia",
-                    "digest": {"gitCommit": context["source"]},
-                }
-            ],
-        },
-        "runDetails": {
-            "builder": {
-                "id": f"https://github.com/ohtia/ohtia/{contract.RECIPE}@{context['recipe']}"
-            },
-            "metadata": {
-                "invocationId": f"https://github.com/ohtia/ohtia/actions/runs/{context['run']}/job/{context['job']}"
-            },
-            "byproducts": [{"name": "ohtia-build-origin", "annotations": origin}],
-        },
-    }
+    predicate = {"schema_version": 1, "artifact": manifest, "producer": origin}
     for name, value in (
         ("manifest.json", manifest),
         ("predicate.json", predicate),
@@ -385,6 +365,8 @@ def verify_bundle(env, runner=subprocess.run):
             str(package),
             "--repo",
             contract.REPOSITORY,
+            "--predicate-type",
+            contract.PREDICATE_TYPE,
             "--bundle",
             str(bundle),
             "--signer-workflow",
@@ -428,8 +410,8 @@ def verify_bundle(env, runner=subprocess.run):
         matched |= (
             all(cert.get(key) == value for key, value in expected.items())
             and bool(verified.get("verifiedTimestamps"))
-            and statement.get("predicateType") == "https://slsa.dev/provenance/v1"
-            and statement.get("predicate") == predicate
+            and statement.get("predicateType") == contract.PREDICATE_TYPE
+            and contract.canonical(statement.get("predicate")) == contract.canonical(predicate)
             and any(
                 s.get("digest", {}).get("sha256") == manifest["sha256"]
                 for s in statement.get("subject", [])

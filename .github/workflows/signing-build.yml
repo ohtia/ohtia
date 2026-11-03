@@ -121,12 +121,12 @@ jobs:
           ATTESTOR_JOB_ID: ${{ job.check_run_id }}
           ATTESTOR_PYTHON: ${{ steps.python.outputs.python-path }}
           GITHUB_TOKEN: ${{ github.token }}
-      - name: Issue custom SLSA provenance over the exact package bytes
+      - name: Issue Ohtia build attestation over the exact package bytes
         id: provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: ${{ runner.temp }}/installation-attestation/package.*
-          predicate-type: https://slsa.dev/provenance/v1
+          predicate-type: https://github.com/ohtia/ohtia/attestations/installation-build/v1
           predicate-path: ${{ runner.temp }}/installation-attestation/predicate.json
       - name: Install the recipe's checksum-pinned verifier
         env:
