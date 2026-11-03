@@ -84,6 +84,7 @@ async function nativeControlWheel(nativeWindow, deltaY) {
             y: 100,
             deltaY,
             deltaX: 0,
+            wheelTicksY: Math.sign(deltaY),
             modifiers: ["control"],
             canScroll: true,
           });
@@ -112,6 +113,17 @@ export async function verifyPackagedSettings(application, page, second, output) 
     application.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows().map((window) => window.webContents.getZoomFactor()),
     );
+  const expectFactors = async (percent) => {
+    await expect(async () => {
+      const observed = await factors();
+      expect(observed).toHaveLength(2);
+      for (const factor of observed)
+        expect(
+          Math.abs(factor - percent / 100),
+          `Native zoom factor ${factor} must match ${percent / 100}.`,
+        ).toBeLessThanOrEqual(0.000001);
+    }).toPass({ timeout: 5000 });
+  };
   const changeZoom = async (value) => {
     const result = await page.evaluate(
       async ({ value, operationId }) => {
@@ -125,7 +137,7 @@ export async function verifyPackagedSettings(application, page, second, output) 
       { value, operationId: randomUUID() },
     );
     expect(result.ok).toBe(true);
-    await expect.poll(factors).toEqual([value / 100, value / 100]);
+    await expectFactors(value);
     return result;
   };
   return withCommandCleanup(
@@ -171,7 +183,7 @@ export async function verifyPackagedSettings(application, page, second, output) 
         await dialog
           .getByRole("button", { name: text("command.zoom.increase"), exact: true })
           .click();
-        await expect.poll(factors).toEqual([value / 100, value / 100]);
+        await expectFactors(value);
       }
       await changeZoom(100);
       await page.evaluate(() => {
@@ -185,23 +197,23 @@ export async function verifyPackagedSettings(application, page, second, output) 
         .locator("#settings-input-preservation-fixture")
         .evaluate((element) => element.setSelectionRange(10, 22));
       inputs.push(await nativeKey(nativeWindow, platform, "=", "Equal"));
-      await expect.poll(factors).toEqual([1.1, 1.1]);
+      await expectFactors(110);
       inputs.push(await nativeKey(nativeWindow, platform, "numadd", "NumpadAdd"));
-      await expect.poll(factors).toEqual([1.25, 1.25]);
+      await expectFactors(125);
       inputs.push(await nativeKey(nativeWindow, platform, "numsub", "NumpadSubtract"));
-      await expect.poll(factors).toEqual([1.1, 1.1]);
+      await expectFactors(110);
       inputs.push(await nativeKey(nativeWindow, platform, "-", "Minus"));
-      await expect.poll(factors).toEqual([1, 1]);
+      await expectFactors(100);
       inputs.push(await nativeKey(nativeWindow, platform, "num0", "Numpad0"));
       await expect(dialog).toContainText(text("command.reason.actual_size"));
       inputs.push(await nativeKey(nativeWindow, platform, "0", "Digit0"));
       const wheelIn = await nativeControlWheel(nativeWindow, 120);
       expect(["in", "out"]).toContain(wheelIn);
-      await expect.poll(factors).toEqual(wheelIn === "in" ? [1.1, 1.1] : [0.9, 0.9]);
+      await expectFactors(wheelIn === "in" ? 110 : 90);
       await changeZoom(100);
       const wheelOut = await nativeControlWheel(nativeWindow, -120);
       expect(wheelOut).toBe(wheelIn === "in" ? "out" : "in");
-      await expect.poll(factors).toEqual(wheelOut === "in" ? [1.1, 1.1] : [0.9, 0.9]);
+      await expectFactors(wheelOut === "in" ? 110 : 90);
       await changeZoom(100);
       const beforePinch = await page.evaluate(
         () => window.ohtia.foundation.readPresentation().result,
@@ -216,7 +228,7 @@ export async function verifyPackagedSettings(application, page, second, output) 
         });
         const metrics = await cdp.send("Page.getLayoutMetrics");
         expect((metrics.cssVisualViewport ?? metrics.visualViewport).scale).toBe(1);
-        expect(await factors()).toEqual([1, 1]);
+        await expectFactors(100);
         expect(
           (await page.evaluate(() => window.ohtia.foundation.readPresentation().result)).value.zoom,
         ).toEqual(beforePinch.value.zoom);
@@ -246,7 +258,7 @@ export async function verifyPackagedSettings(application, page, second, output) 
         )
         .toBe(true);
       await invokeNativeMenu(application, "zoom.increase");
-      await expect.poll(factors).toEqual([1.1, 1.1]);
+      await expectFactors(110);
       await expect
         .poll(() =>
           application.evaluate(
@@ -255,7 +267,7 @@ export async function verifyPackagedSettings(application, page, second, output) 
         )
         .toBe(true);
       await invokeNativeMenu(application, "zoom.increase");
-      await expect.poll(factors).toEqual([1.25, 1.25]);
+      await expectFactors(125);
       const afterSteps = await page.evaluate(
         () => window.ohtia.foundation.readPresentation().result,
       );
@@ -281,7 +293,7 @@ export async function verifyPackagedSettings(application, page, second, output) 
           .evaluate((element) => [element.selectionStart, element.selectionEnd]),
       ).toEqual([10, 22]);
       await dialog.getByRole("button", { name: text("command.zoom.reset"), exact: true }).click();
-      await expect.poll(factors).toEqual([1, 1]);
+      await expectFactors(100);
       const final = await page.evaluate(() => window.ohtia.foundation.readPresentation().result);
       expect(final.value.appearance).toEqual(before.value.appearance);
       expect(await page.evaluate(() => window.ohtia.foundation.readLayout().result)).toEqual(
