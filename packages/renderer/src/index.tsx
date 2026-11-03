@@ -84,3 +84,10 @@ export {
 export * from "./command-controller.js";
 
 export * from "./command-surfaces.js";
+
+export {
+  WorkspaceChrome,
+  type WorkspaceChromeProps,
+  type WorkspaceWindowInsets,
+} from "./workspace-chrome.js";
+export { Workspace, type WorkspaceProps } from "./workspace.js";

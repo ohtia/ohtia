@@ -1,4 +1,12 @@
-import { useEffect, useLayoutEffect, useId, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import {
   commandDefinitions,
   message,
@@ -86,7 +94,7 @@ export function ProjectLinks({
   );
 }
 /** The browser ratio includes interface zoom; observe both density and actual capped CSS width. */
-function AboutCharacter() {
+export function ProductCharacter() {
   const image = useRef<HTMLImageElement>(null);
   const [vector, setVector] = useState(false);
   useLayoutEffect(() => {
@@ -145,6 +153,7 @@ export function AboutDialog({
   onOpenLink,
   actionFailed = false,
   copyDisabledReason,
+  returnFocusRef,
 }: {
   open: boolean;
   locale: InterfaceLocale;
@@ -152,6 +161,7 @@ export function AboutDialog({
   failed?: boolean;
   actionFailed?: boolean;
   copyDisabledReason?: string;
+  returnFocusRef?: RefObject<HTMLElement | null>;
   decoration?: DecorationState;
   manuscriptVisible?: boolean;
   copy: CopyState;
@@ -168,13 +178,14 @@ export function AboutDialog({
       title={text("command.about.open")}
       titleContent={<OhtiaBrand heading />}
       headingLevel={1}
+      {...(returnFocusRef ? { returnFocusRef } : {})}
       className="command-dialog about-dialog"
       closeLabel={text("dialog.close")}
       closeContent={<LucideGlyph name="x" />}
       onClose={onClose}
       bodyClassName="command-dialog-body"
       headingPrefix={
-        open && decoration !== "hidden" && !manuscriptVisible ? <AboutCharacter /> : undefined
+        open && decoration !== "hidden" && !manuscriptVisible ? <ProductCharacter /> : undefined
       }
       footer={
         <div className="command-dialog-footer">
@@ -292,7 +303,9 @@ export function HelpDialog({
   onOpenLink,
   actionFailed = false,
   copy,
+  returnFocusRef,
 }: {
+  returnFocusRef?: RefObject<HTMLElement | null>;
   open: boolean;
   locale: InterfaceLocale;
   copy?: CopyState;
@@ -306,6 +319,7 @@ export function HelpDialog({
     <Dialog
       open={open}
       title={message(locale, "command.help.open")}
+      {...(returnFocusRef ? { returnFocusRef } : {})}
       closeLabel={message(locale, "dialog.close")}
       onClose={onClose}
       className="command-dialog help-dialog"
@@ -320,7 +334,16 @@ export function HelpDialog({
       {(["language", "appearance", "zoom", "characters", "layout"] as const).map((group) => (
         <section className="help-group" key={group}>
           <h3>{message(locale, `help.${group}`)}</h3>
-          <p>{message(locale, `help.${group}.text`)}</p>
+          <p>
+            {message(
+              locale,
+              group === "layout" &&
+                controller &&
+                controller.entry("layout.reset").reason !== "handler_missing"
+                ? "workspace.helpLayout"
+                : `help.${group}.text`,
+            )}
+          </p>
         </section>
       ))}
       <CommandButton
@@ -347,8 +370,12 @@ export function CommandSurfaces({
   decoration = "static",
   manuscriptVisible = false,
   registerHandlers,
+  children,
+  returnFocusRef,
 }: {
+  returnFocusRef?: RefObject<HTMLElement | null>;
   bridge: CommandBridge;
+  children?: (controller: CommandController | undefined) => ReactNode;
   registerHandlers?: (controller: CommandController) => () => void;
   locale: InterfaceLocale;
   decoration?: DecorationState;
@@ -636,32 +663,36 @@ export function CommandSurfaces({
   const copyReason = controller?.entry("version.copy").reason;
   return (
     <>
-      <div className="actions command-entry-actions">
-        <CommandButton
-          id="help.open"
-          locale={locale}
-          {...(controller ? { controller } : {})}
-          onInvoke={invoke}
-        />
-        <CommandButton
-          id="about.open"
-          locale={locale}
-          {...(controller ? { controller } : {})}
-          onInvoke={invoke}
-        />
-        <CommandButton
-          id="window.new"
-          locale={locale}
-          {...(controller ? { controller } : {})}
-          onInvoke={invoke}
-        />
-        <CommandButton
-          id="application.quit"
-          locale={locale}
-          {...(controller ? { controller } : {})}
-          onInvoke={invoke}
-        />
-      </div>
+      {children ? (
+        children(controller)
+      ) : (
+        <div className="actions command-entry-actions">
+          <CommandButton
+            id="help.open"
+            locale={locale}
+            {...(controller ? { controller } : {})}
+            onInvoke={invoke}
+          />
+          <CommandButton
+            id="about.open"
+            locale={locale}
+            {...(controller ? { controller } : {})}
+            onInvoke={invoke}
+          />
+          <CommandButton
+            id="window.new"
+            locale={locale}
+            {...(controller ? { controller } : {})}
+            onInvoke={invoke}
+          />
+          <CommandButton
+            id="application.quit"
+            locale={locale}
+            {...(controller ? { controller } : {})}
+            onInvoke={invoke}
+          />
+        </div>
+      )}
       {failure && !surface && (
         <p role="alert" className="command-danger">
           {message(locale, "command.failed")}
@@ -669,6 +700,7 @@ export function CommandSurfaces({
       )}
       {!surface && <CopyFeedback copy={copy} locale={locale} />}
       <HelpDialog
+        {...(returnFocusRef ? { returnFocusRef } : {})}
         copy={copy}
         actionFailed={failure}
         open={surface === "help"}
@@ -682,6 +714,7 @@ export function CommandSurfaces({
         onOpenLink={openLink}
       />
       <AboutDialog
+        {...(returnFocusRef ? { returnFocusRef } : {})}
         actionFailed={failure}
         {...(copyReason
           ? { copyDisabledReason: message(locale, `command.reason.${copyReason}`) }

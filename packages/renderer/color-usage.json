@@ -147,6 +147,171 @@
       "foreground": "danger.content",
       "backgrounds": ["danger.surface"],
       "minimum": 7
+    },
+    {
+      "selector": ".workspace",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".workspace-bar",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".workspace-project-context",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.secondary",
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".workspace-panel-controls,\n.workspace-selector",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".workspace-panel-controls button[aria-pressed=\"true\"]",
+      "backgrounds": ["surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".workspace-panel-controls button:not([aria-pressed=\"true\"])",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7,
+      "foreground": "content.primary",
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".workspace .workspace-primary",
+      "backgrounds": ["action.primary.surface"],
+      "minimum": 7,
+      "foreground": "action.primary.content"
+    },
+    {
+      "selector": ".workspace .workspace-primary[aria-disabled=\"true\"]",
+      "backgrounds": ["surface.page"],
+      "minimum": 3,
+      "foreground": "content.disabled"
+    },
+    {
+      "selector": ".workspace .workspace-zoom",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7,
+      "foreground": "content.secondary",
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".workspace[data-mode=\"narrow\"] .workspace-selector",
+      "backgrounds": ["surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.secondary"
+    },
+    {
+      "selector": ".workspace-selector button",
+      "backgrounds": ["surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.secondary",
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".workspace-selector button[aria-pressed=\"true\"]",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".workspace-explorer,\n.workspace-chat,\n.workspace-rail",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".workspace-panel-heading,\n.workspace-tabs",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.secondary",
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".workspace-empty",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.secondary"
+    },
+    {
+      "selector": ".workspace-explorer-footer",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".workspace kbd",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "foreground": "content.secondary",
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".workspace-splitter-line",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".workspace-splitter:hover .workspace-splitter-line,\n.workspace-splitter:focus .workspace-splitter-line",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".workspace[data-dragging=\"true\"] .workspace-splitter:focus .workspace-splitter-line",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".workspace-grip",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "foreground": "content.secondary"
+    },
+    {
+      "selector": ".workspace .primitive-tooltip",
+      "backgrounds": ["action.primary.surface"],
+      "minimum": 7,
+      "foreground": "action.primary.content"
+    },
+    {
+      "selector": ".workspace-skip",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".workspace-danger",
+      "backgrounds": ["danger.surface"],
+      "minimum": 7,
+      "foreground": "danger.content"
+    },
+    {
+      "selector": ".workspace-attention",
+      "backgrounds": ["attention.surface"],
+      "minimum": 7,
+      "foreground": "attention.content"
+    },
+    {
+      "selector": ".workspace-title-row",
+      "backgrounds": ["surface.panel"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".workspace-documents > h2:focus + .workspace-tabs [role=\"tab\"]",
+      "backgrounds": ["surface.page", "surface.panel"],
+      "minimum": 3
     }
   ],
   "overlays": [

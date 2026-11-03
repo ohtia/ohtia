@@ -63,7 +63,11 @@ describe("catalog build admission", () => {
       path.join(root, "node_modules"),
       process.platform === "win32" ? "junction" : "dir",
     );
-    for (const name of ["catalog-acceptance.mjs", "command-presentation.mjs"])
+    for (const name of [
+      "catalog-acceptance.mjs",
+      "catalog-workspace.mjs",
+      "command-presentation.mjs",
+    ])
       fs.copyFileSync(path.join(repository, "tooling", name), path.join(root, "tooling", name));
     const moduleUrl = pathToFileURL(path.join(root, "tooling/catalog-acceptance.mjs")).href;
     const result = spawnSync(
