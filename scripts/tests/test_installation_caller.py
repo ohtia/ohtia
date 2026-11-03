@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/installation-signing.yml"
-RECIPE_SHA = "8be2fe56fd9fbbbe82f3e773a46e9f745767ebdd"
+RECIPE_SHA = "1464c956e7e8cb06a4606dd62d51cc220e67e302"
 
 
 def gate():
