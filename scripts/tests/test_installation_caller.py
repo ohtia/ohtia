@@ -12,6 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/installation-signing.yml"
 RECIPE_SHA = "1464c956e7e8cb06a4606dd62d51cc220e67e302"
+WORKER_SHA = "dd633f9782e510aad51fa960f2678fb7399bb03f"
 
 
 def gate():
@@ -35,6 +36,7 @@ def environment():
         "GITHUB_REF": "refs/heads/main",
         "GITHUB_EVENT_NAME": "workflow_dispatch",
         "QUALIFICATION_SELECTION": "linux-x64-debian-13",
+        "QUALIFICATION_MODE": "provenance",
     }
 
 
@@ -53,12 +55,15 @@ class CallerContractTests(unittest.TestCase):
         self.assertEqual(set(declared), expected)
         self.assertEqual(
             re.findall(r"^    uses: (.+)$", workflow, re.MULTILINE),
-            [f"ohtia/ohtia/.github/workflows/signing-build.yml@{RECIPE_SHA}"],
+            [
+                f"ohtia/ohtia/.github/workflows/signing-build.yml@{RECIPE_SHA}",
+                f"ohtia/ohtia/.github/workflows/signing-worker.yml@{WORKER_SHA}",
+            ],
         )
         self.assertIn("    needs: validate\n", workflow)
         self.assertEqual(
             re.findall(r"^      (\w+): \$\{\{ inputs\.(\w+) \}\}$", workflow, re.MULTILINE),
-            [("selection", "selection")],
+            [("selection", "selection"), ("selection", "selection")],
         )
         self.assertNotIn("secrets:", workflow)
         self.assertNotIn("environment:", workflow)
@@ -68,14 +73,27 @@ class CallerContractTests(unittest.TestCase):
         self.assertNotIn("contents: write", workflow)
         self.assertNotIn("actions: write", workflow)
         self.assertNotIn("\nconcurrency:", workflow)
+        mode = workflow.split("      mode:\n", 1)[1].split("      selection:\n", 1)[0]
+        self.assertIn("        default: provenance\n", mode)
+        self.assertEqual(
+            re.findall(r"^          - (.+)$", mode, re.MULTILINE), ["provenance", "sign"]
+        )
 
     def test_write_permissions_belong_only_to_the_reusable_call_ceiling(self):
         workflow = WORKFLOW.read_text()
         validation, delegated = workflow.split("  provenance:\n", 1)
+        provenance, signing = delegated.split("  sign:\n", 1)
         self.assertNotIn("id-token: write", validation)
         self.assertNotIn("attestations: write", validation)
         self.assertIn("      id-token: write\n", delegated)
-        self.assertIn("      attestations: write\n", delegated)
+        self.assertIn("      attestations: write\n", provenance)
+        self.assertNotIn("attestations: write", signing)
+        self.assertIn("      id-token: write\n", signing)
+        self.assertIn("    needs: [validate, provenance]\n", signing)
+        self.assertIn("    if: inputs.mode == 'sign'\n", signing)
+        self.assertIn(
+            "      proof-artifact: ${{ needs.provenance.outputs.proof-artifact }}\n", signing
+        )
         self.assertNotIn("run:", delegated)
         self.assertNotIn("steps:", delegated)
         recipe = (ROOT / ".github/workflows/signing-build.yml").read_text()
@@ -84,7 +102,7 @@ class CallerContractTests(unittest.TestCase):
         self.assertNotIn("attestations: write", construction)
         self.assertIn("      contents: read\n", construction)
         self.assertNotIn("concurrency:", recipe)
-        self.assertEqual(gate().count("case "), 1)
+        self.assertEqual(gate().count("case "), 2)
 
 
 class CallerGateTests(unittest.TestCase):
@@ -99,15 +117,44 @@ class CallerGateTests(unittest.TestCase):
         )
 
     def test_each_native_linux_selection_is_accepted(self):
-        for arch in ("x64", "arm64"):
-            for profile in ("ubuntu-26.04", "fedora-44", "debian-13"):
-                with self.subTest(arch=arch, profile=profile):
-                    result = self.run_gate(
-                        environment() | {"QUALIFICATION_SELECTION": f"linux-{arch}-{profile}"}
-                    )
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertEqual(result.stdout, "")
-                    self.assertEqual(result.stderr, "")
+        for mode in ("provenance", "sign"):
+            for arch in ("x64", "arm64"):
+                for profile in ("ubuntu-26.04", "fedora-44", "debian-13"):
+                    with self.subTest(mode=mode, arch=arch, profile=profile):
+                        result = self.run_gate(
+                            environment()
+                            | {
+                                "QUALIFICATION_MODE": mode,
+                                "QUALIFICATION_SELECTION": f"linux-{arch}-{profile}",
+                            }
+                        )
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertEqual(result.stdout, "")
+                        self.assertEqual(result.stderr, "")
+
+    def test_unknown_missing_or_shell_mode_overrides_are_refused_as_data(self):
+        for mode in (
+            None,
+            "",
+            "release",
+            "SIGN",
+            "sign\n",
+            "sign;exit 0",
+            "$(printf injected)",
+            "`printf injected`",
+        ):
+            with self.subTest(mode=mode):
+                env = environment()
+                if mode is None:
+                    env.pop("QUALIFICATION_MODE")
+                else:
+                    env["QUALIFICATION_MODE"] = mode
+                result = self.run_gate(env)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.stdout, "")
+                self.assertEqual(
+                    result.stderr, "Installation signing qualification refused: mode.\n"
+                )
 
     def test_api_overrides_and_shell_syntax_are_refused_as_data(self):
         for value in (

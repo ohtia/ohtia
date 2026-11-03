@@ -1,11 +1,19 @@
-name: Installation build provenance qualification
-run-name: Build provenance qualification · ${{ inputs.selection }}
+name: Installation signing qualification
+run-name: Installation signing qualification · ${{ inputs.mode }} · ${{ inputs.selection }}
 
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: Qualify build provenance or request private package and catalog signing
+        required: true
+        type: choice
+        default: provenance
+        options:
+          - provenance
+          - sign
       selection:
-        description: Unsigned Linux package whose build provenance will be qualified
+        description: Linux package whose build provenance or private signing will be qualified
         required: true
         type: choice
         default: linux-x64-debian-13
@@ -28,10 +36,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Refuse other execution identities and selections before construction
+      - name: Refuse other execution identities modes and selections before construction
         shell: bash
         env:
           QUALIFICATION_SELECTION: ${{ inputs.selection }}
+          QUALIFICATION_MODE: ${{ inputs.mode }}
         run: |
           set -euo pipefail
           if [[ "${GITHUB_ACTIONS:-}" != true ||
@@ -44,6 +53,13 @@ jobs:
             printf '%s\n' 'Build provenance qualification refused: execution identity.' >&2
             exit 1
           fi
+          case "${QUALIFICATION_MODE:-}" in
+            provenance|sign) ;;
+            *)
+              printf '%s\n' 'Installation signing qualification refused: mode.' >&2
+              exit 1
+              ;;
+          esac
           case "${QUALIFICATION_SELECTION:-}" in
             linux-x64-ubuntu-26.04|linux-arm64-ubuntu-26.04|linux-x64-fedora-44|linux-arm64-fedora-44|linux-x64-debian-13|linux-arm64-debian-13) ;;
             *)
@@ -65,3 +81,17 @@ jobs:
     uses: ohtia/ohtia/.github/workflows/signing-build.yml@1464c956e7e8cb06a4606dd62d51cc220e67e302
     with:
       selection: ${{ inputs.selection }}
+
+  sign:
+    name: Sign private package and catalog
+    needs: [validate, provenance]
+    if: inputs.mode == 'sign'
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      id-token: write
+    uses: ohtia/ohtia/.github/workflows/signing-worker.yml@dd633f9782e510aad51fa960f2678fb7399bb03f
+    with:
+      selection: ${{ inputs.selection }}
+      proof-artifact: ${{ needs.provenance.outputs.proof-artifact }}

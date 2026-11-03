@@ -668,6 +668,11 @@
       "id": "test_installation_signing_worker.WorkerIdentityTests.test_private_staging_refuses_symlinks_shared_modes_and_noncanonical_parent",
       "platforms": ["win32"],
       "reason": "GitHub-hosted Linux signing worker private POSIX directory identity"
+    },
+    {
+      "id": "test_installation_caller.CallerGateTests.test_unknown_missing_or_shell_mode_overrides_are_refused_as_data",
+      "platforms": ["win32"],
+      "reason": "GitHub-hosted Linux caller's POSIX Bash execution"
     }
   ],
   "vitest_inapplicable": [
