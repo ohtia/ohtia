@@ -141,7 +141,8 @@
 }
 .settings-character-preview {
   inline-size: calc(96px + 2 * var(--space-1));
-  padding: var(--space-1);
+  /* The border belongs inside the side gutter, leaving 96px for the image. */
+  padding: calc(var(--space-1) - var(--border-width-default));
   border: var(--border-width-default) solid var(--border-subtle);
   border-radius: var(--radius-medium);
   display: grid;
