@@ -155,8 +155,26 @@ let layoutFailureAnnounced = false;
 const publisher = new LocatorPublisher();
 const windows = new Map<
   BrowserWindow,
-  { generation: string; detach?: () => void; frame?: object }
+  {
+    generation: string;
+    readyForActivation: boolean;
+    activationRequested: boolean;
+    detach?: () => void;
+    frame?: object;
+  }
 >();
+function activateWindow(window: BrowserWindow | undefined): void {
+  if (!window || window.isDestroyed()) return;
+  const state = windows.get(window);
+  if (!state) return;
+  if (!state.readyForActivation) {
+    state.activationRequested = true;
+    return;
+  }
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+}
 let service: ServiceSupervisor | undefined;
 let diagnostics: DiagnosticWriter | undefined;
 function openDiagnostics(): DiagnosticWriter {
@@ -286,7 +304,7 @@ function createWindow(): boolean {
     app.getAppMetrics().length + (diagnostics?.reservedPermissionProcesses ?? 0) >=
       portLimits.process_tree_count
   ) {
-    BrowserWindow.getAllWindows()[0]?.focus();
+    activateWindow(BrowserWindow.getAllWindows()[0]);
     return false;
   }
   const window = new BrowserWindow({
@@ -302,10 +320,8 @@ function createWindow(): boolean {
       session: desktopSession,
     },
   });
-  windows.set(window, { generation: randomUUID() });
-  void window.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {
-    if (!window.isDestroyed()) quitAfterError("startup_failed");
-  });
+  const state = { generation: randomUUID(), readyForActivation: false, activationRequested: false };
+  windows.set(window, state);
   commandMenus.attach(window);
   window.webContents.on("zoom-changed", (_event, direction) => {
     commandMenus.dispatch(window, direction === "in" ? "zoom.increase" : "zoom.decrease", true);
@@ -340,21 +356,24 @@ function createWindow(): boolean {
     detach(window);
     windows.delete(window);
   });
-  window.once("ready-to-show", () => {
-    window.show();
-  });
   const loadDocument = () => {
     void window
       .loadURL(desktopDocument)
-      .then(() => {
+      .then(async () => {
+        if (window.isDestroyed()) return;
+        // Electron needs a live render frame; acknowledge the pinch policy before showing content.
+        await window.webContents.setVisualZoomLevelLimits(1, 1);
+        if (window.isDestroyed()) return;
+        presentationBroker.apply(window.webContents);
+        state.readyForActivation = true;
         // A compositor may defer first paint until mapping; completed content can be shown directly.
-        if (!window.isDestroyed()) {
-          presentationBroker.apply(window.webContents);
-          window.show();
-        }
+        if (state.activationRequested) {
+          state.activationRequested = false;
+          activateWindow(window);
+        } else window.show();
       })
       .catch(() => {
-        quitAfterError("startup_failed");
+        if (!window.isDestroyed()) quitAfterError("startup_failed");
       });
   };
   if (acceptance && process.env.OHTIA_RUNTIME_DEFER_DOCUMENT === "1" && windows.size === 1) {
@@ -525,9 +544,7 @@ if (!ownsBroker) {
 }
 app.on("second-instance", () => {
   const window = BrowserWindow.getAllWindows()[0];
-  if (window?.isMinimized()) window.restore();
-  window?.show();
-  window?.focus();
+  activateWindow(window);
   if (!window) void reportError("startup_failed");
 });
 const startup = setTimeout(() => {

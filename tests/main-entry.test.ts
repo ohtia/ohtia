@@ -25,6 +25,9 @@ async function launch(
     asset?: string;
     ready?: boolean;
     loadFailure?: boolean;
+    requireLiveZoomFrame?: boolean;
+    deferZoomPolicy?: boolean;
+    rejectZoomPolicy?: boolean;
     instrumented?: boolean;
     deferDocument?: boolean;
     languagesUnavailable?: boolean;
@@ -91,6 +94,10 @@ async function launch(
     requestSingleInstanceLock: () => options.ownsBroker !== false,
   });
   let nextId = 0;
+  let acknowledgeZoom!: () => void;
+  const zoomAcknowledgement = new Promise<void>((resolve) => {
+    acknowledgeZoom = resolve;
+  });
   class Window extends EventEmitter {
     static all: Window[] = [];
     static getAllWindows() {
@@ -100,6 +107,7 @@ async function launch(
       return Window.all.find((window) => window.webContents === contents);
     }
     destroyed = false;
+    documentReady = false;
     minimized = false;
     visible = true;
     webContents = Object.assign(new EventEmitter(), {
@@ -109,7 +117,12 @@ async function launch(
       stop: vi.fn(),
       isDestroyed: () => this.destroyed,
       setWindowOpenHandler: vi.fn(),
-      setVisualZoomLevelLimits: vi.fn(async () => {}),
+      setVisualZoomLevelLimits: vi.fn(async () => {
+        if (options.requireLiveZoomFrame && !this.documentReady)
+          throw new Error("Render frame was disposed before WebFrameMain could be accessed");
+        if (options.deferZoomPolicy) await zoomAcknowledgement;
+        if (options.rejectZoomPolicy) throw new Error("Synthetic visual zoom policy refusal");
+      }),
       getZoomFactor: vi.fn(() => 1),
       setZoomFactor: vi.fn(),
     });
@@ -133,6 +146,8 @@ async function launch(
     }
     loadURL = vi.fn(async () => {
       if (options.loadFailure) throw new Error("Synthetic load failure");
+      await Promise.resolve();
+      this.documentReady = true;
     });
     constructor(readonly settings: unknown) {
       super();
@@ -333,6 +348,7 @@ async function launch(
       ([channel]) => channel === constants.desktopChannels.commands,
     )![1](event(selected), action, payload);
   return {
+    acknowledgeZoom,
     constants,
     state,
     app,
@@ -879,3 +895,69 @@ it("configures KDE Wayland graphics before native readiness in every runtime mod
     expect(app.enableSandbox).toHaveBeenCalledOnce();
   }
 });
+
+it.each(["qualification", "development", "installed"] as const)(
+  "configures visual zoom only after a live document exists in %s mode",
+  async (mode) => {
+    const h = await launch({ mode, requireLiveZoomFrame: true });
+    expect(h.window.documentReady).toBe(true);
+    expect(h.window.webContents.setVisualZoomLevelLimits).toHaveBeenCalledExactlyOnceWith(1, 1);
+    expect(h.app.quit).not.toHaveBeenCalled();
+    expect(h.dialog.showErrorBox).not.toHaveBeenCalled();
+    expect(h.dialog.showMessageBox).not.toHaveBeenCalled();
+    expect(h.window.show).toHaveBeenCalled();
+  },
+);
+it("keeps a loaded window hidden until its visual zoom policy is acknowledged", async () => {
+  const h = await launch({ requireLiveZoomFrame: true, deferZoomPolicy: true });
+  h.window.emit("ready-to-show");
+  expect(h.window.show).not.toHaveBeenCalled();
+  h.acknowledgeZoom();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(h.window.show).toHaveBeenCalledOnce();
+});
+it("preserves a failed visual zoom policy as a startup failure without showing the window", async () => {
+  const h = await launch({ requireLiveZoomFrame: true, rejectZoomPolicy: true });
+  h.window.emit("ready-to-show");
+  expect(h.window.show).not.toHaveBeenCalled();
+  expect(h.app.quit).toHaveBeenCalled();
+});
+it.each([false, true])(
+  "does not show or report a destroyed window after its pending zoom policy settles (reject=%s)",
+  async (rejectZoomPolicy) => {
+    const h = await launch({
+      requireLiveZoomFrame: true,
+      deferZoomPolicy: true,
+      rejectZoomPolicy,
+    });
+    h.window.destroyed = true;
+    h.acknowledgeZoom();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.window.show).not.toHaveBeenCalled();
+    expect(h.app.quit).not.toHaveBeenCalled();
+  },
+);
+
+it.each([false, true])(
+  "gates second-instance activation on the pending zoom policy (reject=%s)",
+  async (rejectZoomPolicy) => {
+    const h = await launch({ requireLiveZoomFrame: true, deferZoomPolicy: true, rejectZoomPolicy });
+    h.window.minimized = true;
+    h.app.emit("second-instance");
+    expect(h.window.restore).not.toHaveBeenCalled();
+    expect(h.window.show).not.toHaveBeenCalled();
+    expect(h.window.focus).not.toHaveBeenCalled();
+    h.acknowledgeZoom();
+    await vi.advanceTimersByTimeAsync(0);
+    if (rejectZoomPolicy) {
+      expect(h.window.show).not.toHaveBeenCalled();
+      expect(h.window.focus).not.toHaveBeenCalled();
+      expect(h.app.quit).toHaveBeenCalled();
+    } else {
+      expect(h.window.restore).toHaveBeenCalledOnce();
+      expect(h.window.show).toHaveBeenCalledOnce();
+      expect(h.window.focus).toHaveBeenCalledOnce();
+      expect(h.app.quit).not.toHaveBeenCalled();
+    }
+  },
+);
