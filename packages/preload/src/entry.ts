@@ -13,6 +13,7 @@ import {
   failure,
   portLimits,
   type LocaleSnapshot,
+  type PresentationSnapshot,
   type Outcome,
   type Subscription,
   type BootstrapAction,
@@ -67,14 +68,36 @@ function connect() {
 let connection = connect();
 // Retain only bounded logical locale owners across private connection replacement.
 const localeOwners = new Set<{
-  listener: (notice: Outcome<LocaleSnapshot>) => void;
+  listener: (notice: Outcome<LocaleSnapshot> | Outcome<PresentationSnapshot>) => void;
   stream: Subscription;
 }>();
 function subscribeLocale(listener: (notice: Outcome<LocaleSnapshot>) => void): Subscription {
   if (localeOwners.size >= portLimits.subscriptions_per_window)
     return { ready: Promise.resolve(failure("busy")), dispose() {} };
   const stream = connection.client.port.subscribeLocale(listener);
-  const owner = { listener, stream };
+  const owner = {
+    listener: listener as (notice: Outcome<LocaleSnapshot> | Outcome<PresentationSnapshot>) => void,
+    stream,
+  };
+  localeOwners.add(owner);
+  return {
+    ready: stream.ready,
+    dispose() {
+      localeOwners.delete(owner);
+      stream.dispose();
+    },
+  };
+}
+function subscribePresentation(
+  listener: (notice: Outcome<PresentationSnapshot>) => void,
+): Subscription {
+  if (localeOwners.size >= portLimits.subscriptions_per_window)
+    return { ready: Promise.resolve(failure("busy")), dispose() {} };
+  const stream = connection.client.port.subscribePresentation(listener);
+  const owner = {
+    listener: listener as (notice: Outcome<LocaleSnapshot> | Outcome<PresentationSnapshot>) => void,
+    stream,
+  };
   localeOwners.add(owner);
   return {
     ready: stream.ready,
@@ -163,6 +186,16 @@ const bridge: DesktopBridge = {
         : Promise.resolve(false),
   },
   foundation: {
+    readPresentation: () => connection.client.port.readPresentation(),
+    subscribePresentation,
+    replaceCharacter: (change, generation) =>
+      connection.client.port.replaceCharacter(change, generation),
+    readCharacterReceipt: (id) => connection.client.port.readCharacterReceipt(id),
+    replaceZoom: (change, generation) => connection.client.port.replaceZoom(change, generation),
+    adjustZoom: (id, intent, generation) =>
+      connection.client.port.adjustZoom(id, intent, generation),
+    readZoomReceipt: (id) => connection.client.port.readZoomReceipt(id),
+    applyZoom: () => connection.client.port.applyZoom(),
     readLocale: () => connection.client.port.readLocale(),
     replaceLocale: (change, expectedServiceGeneration) =>
       connection.client.port.replaceLocale(change, expectedServiceGeneration),
@@ -175,7 +208,8 @@ const bridge: DesktopBridge = {
     readStatus: () => connection.client.port.readStatus(),
     readAppearance: () => connection.client.port.readAppearance(),
     readAppearanceReceipt: (operation) => connection.client.port.readAppearanceReceipt(operation),
-    replaceAppearance: (change) => connection.client.port.replaceAppearance(change),
+    replaceAppearance: (change, generation) =>
+      connection.client.port.replaceAppearance(change, generation),
     subscribeStatus: (listener) => connection.client.port.subscribeStatus(listener),
     subscribeAppearance: (listener) => connection.client.port.subscribeAppearance(listener),
   },

@@ -22,7 +22,8 @@
     "corrupt-and-interrupted-restore",
     "checkpoint-denied",
     "uuid-reference-constraints",
-    "retry-intent-preserved"
+    "retry-intent-preserved",
+    "presentation-preferences"
   ],
   "graphical_cases": [
     "graphical-persisted-appearance",
@@ -39,7 +40,8 @@
     "missing-located-database-blocked",
     "locator-repair-without-application-restart",
     "opening-remains-gated-and-focused",
-    "admission-crash-preserves-recovery-phase"
+    "admission-crash-preserves-recovery-phase",
+    "packaged-settings-presentation"
   ],
   "interruption_points": ["checkpoint", "before", "after", "intent-before", "intent-after"]
 }

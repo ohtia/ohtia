@@ -307,7 +307,6 @@ export async function verifyPackagedCommands(application, page, nativeWindow, ou
       });
       for (const entry of menu.filter((entry) =>
         [
-          "settings.open",
           "window.new",
           "palette.open",
           "shortcuts.open",
@@ -317,6 +316,7 @@ export async function verifyPackagedCommands(application, page, nativeWindow, ou
         ].includes(entry.id),
       ))
         expect(entry.enabled).toBe(false);
+      expect(menu.find((entry) => entry.id === "settings.open")?.enabled).toBe(true);
       expect(menu.some((entry) => ["zoomin", "zoomout", "resetzoom"].includes(entry.role))).toBe(
         false,
       );

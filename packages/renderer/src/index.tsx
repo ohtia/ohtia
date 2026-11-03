@@ -85,6 +85,9 @@ export * from "./command-controller.js";
 
 export * from "./command-surfaces.js";
 
+export * from "./settings-controller.js";
+export * from "./settings-dialog.js";
+export * from "./settings-surfaces.js";
 export {
   WorkspaceChrome,
   type WorkspaceChromeProps,

@@ -19,7 +19,12 @@ export interface CommandExecution {
 export interface CommandHandler {
   /** Rechecked at invocation; availability never grants domain authority. */
   state(): Omit<CommandEntry, "id">;
-  run(execution: CommandExecution): boolean | Promise<boolean>;
+  run(
+    execution: CommandExecution,
+  ):
+    | boolean
+    | Extract<CommandResult, { status: "unavailable" }>
+    | Promise<boolean | Extract<CommandResult, { status: "unavailable" }>>;
 }
 interface CommandRegistration {
   readonly handler: CommandHandler;
@@ -29,6 +34,7 @@ export class CommandController {
   private handlers = new Map<CommandId, CommandRegistration>();
   private listeners = new Set<() => void>();
   private disposed = false;
+  private results = new Set<(result: CommandResult, command: CommandId) => void>();
   private revision = 0;
   private localSequence = 0;
   private last = new Map<
@@ -60,6 +66,13 @@ export class CommandController {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
+    };
+  }
+  subscribeResults(listener: (result: CommandResult, command: CommandId) => void): () => void {
+    if (this.disposed) return () => {};
+    this.results.add(listener);
+    return () => {
+      this.results.delete(listener);
     };
   }
   changed(): void {
@@ -104,23 +117,36 @@ export class CommandController {
       return Promise.resolve({ status: "stale_intent" });
     }
     const registration = this.handlers.get(input.command);
-    const result = Promise.resolve().then(async (): Promise<CommandResult> => {
-      if (!this.owns(input.command, registration)) return { status: "revoked" };
-      if (!registration) return { status: "unavailable", reason: "handler_missing" };
-      const handler = registration.handler;
-      try {
-        const reason = handler.state().reason;
-        if (reason) return { status: "unavailable", reason };
-        const completed = await handler.run({
-          context: this.context,
-          isCurrent: () => this.owns(input.command, registration),
-        });
+    const result = Promise.resolve()
+      .then(async (): Promise<CommandResult> => {
         if (!this.owns(input.command, registration)) return { status: "revoked" };
-        return { status: completed ? "completed" : "failed" };
-      } catch {
-        return { status: "failed" };
-      }
-    });
+        if (!registration) return { status: "unavailable", reason: "handler_missing" };
+        const handler = registration.handler;
+        try {
+          const reason = handler.state().reason;
+          if (reason) return { status: "unavailable", reason };
+          const completed = await handler.run({
+            context: this.context,
+            isCurrent: () => this.owns(input.command, registration),
+          });
+          if (!this.owns(input.command, registration)) return { status: "revoked" };
+          if (typeof completed === "object") return completed;
+          return { status: completed ? "completed" : "failed" };
+        } catch {
+          return { status: "failed" };
+        }
+      })
+      .then((outcome) => {
+        if (!this.disposed)
+          for (const listener of this.results) {
+            try {
+              listener(outcome, input.command);
+            } catch {
+              this.results.delete(listener);
+            }
+          }
+        return outcome;
+      });
     this.last.set(input.source, { intent: input, result });
     return result;
   }
@@ -128,6 +154,7 @@ export class CommandController {
     this.disposed = true;
     this.handlers.clear();
     this.listeners.clear();
+    this.results.clear();
     this.last.clear();
   }
 }

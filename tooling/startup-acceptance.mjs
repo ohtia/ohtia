@@ -133,16 +133,19 @@ async function readSavedAppearance(page) {
 }
 async function saveAppearance(page, locale) {
   const text = (key) => message(locale, key);
-  const control = page.getByRole("combobox", { name: text("appearance"), exact: true });
+  await page.getByRole("button", { name: text("command.settings.open"), exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: text("settings.title"), exact: true });
+  const control = dialog.getByRole("radio", { name: text("command.theme.dark"), exact: true });
   await expect(control).toBeEnabled();
-  await control.selectOption("dark");
-  await page.getByRole("button", { name: text("save"), exact: true }).click();
+  await control.check();
   await expect
     .poll(
       async () =>
         (await page.evaluate(() => window.ohtia.foundation.readAppearance().result)).value?.value,
     )
     .toBe("dark");
+  await expect(page.locator("html")).toHaveAttribute("data-appearance", "dark");
+  await dialog.getByRole("button", { name: text("dialog.close"), exact: true }).click();
 }
 async function boundaries(application, page) {
   const preferences = await application.evaluate(({ BrowserWindow }) => {

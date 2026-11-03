@@ -18,6 +18,7 @@ import {
   type CommandIntent,
   type CommandSnapshot,
   message,
+  interfaceZooms,
 } from "../packages/contracts/src/index.js";
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root;
@@ -96,13 +97,13 @@ async function click(element: Element) {
 function button(text: string, scope: ParentNode = container) {
   return [...scope.querySelectorAll("button")].find((node) => node.textContent === text)!;
 }
-function harness() {
+function harness(platform: "linux" | "win32" | "darwin" = "linux") {
   let listener: ((intent: CommandIntent) => void) | undefined;
   let sequence = 0;
   const dispose = vi.fn();
   const snapshots: CommandSnapshot[] = [];
   const bridge: CommandBridge = {
-    context: vi.fn(async () => ({ windowGeneration: "window-1", platform: "linux" })),
+    context: vi.fn(async () => ({ windowGeneration: "window-1", platform })),
     publish: vi.fn(async (snapshot) => {
       snapshots.push(snapshot);
       return true;
@@ -673,4 +674,291 @@ it("preserves a live composition target across registry replacement and clears i
   expect(reason()).toBe("composing");
   await act(async () => input.remove());
   expect(reason()).toBeUndefined();
+});
+
+it("invalidates command feedback when its current availability changes without a new activation", async () => {
+  const test = harness();
+  let busy = true;
+  let registry!: CommandController;
+  const register = (controller: CommandController) => {
+    registry = controller;
+    return controller.register("zoom.increase", {
+      state: () => (busy ? { reason: "busy" } : {}),
+      run: () => true,
+    });
+  };
+  await render(
+    h(CommandSurfaces, { bridge: test.bridge, locale: "en-US", registerHandlers: register }),
+  );
+  await act(async () => test.send("zoom.increase"));
+  expect(container.querySelector(".command-unavailable")?.textContent).toBe(
+    message("en-US", "command.reason.busy"),
+  );
+  await act(async () => {
+    busy = false;
+    registry.changed();
+  });
+  expect(container.querySelector(".command-unavailable")).toBeNull();
+  await act(async () => {
+    busy = true;
+    registry.changed();
+  });
+  expect(container.querySelector(".command-unavailable")).toBeNull();
+});
+
+it.each(["help.open", "about.open", "settings.open"] as const)(
+  "preserves child composition and its fallback focus when the %s trigger disappears",
+  async (command) => {
+    const test = harness();
+    const fallback = document.createElement("a");
+    fallback.href = "#workspace";
+    fallback.textContent = "Skip to workspace";
+    document.body.prepend(fallback);
+    let showTrigger = true;
+    const props: Parameters<typeof CommandSurfaces>[0] = {
+      bridge: test.bridge,
+      locale: "en-US",
+      returnFocusRef: { current: fallback },
+      children: (registry) =>
+        showTrigger &&
+        h("button", { onClick: () => void registry?.invoke(command) }, "Open synthetic surface"),
+      renderSettings: (open, close, _platform, _feedback, returnFocusRef) =>
+        h(Dialog, {
+          open,
+          title: "Synthetic Settings",
+          closeLabel: "Close",
+          onClose: close,
+          returnFocusRef,
+          children: "Synthetic settings controls",
+        }),
+    };
+    await render(h(CommandSurfaces, props));
+    expect(container.querySelector(".command-entry-actions")).toBeNull();
+    const trigger = button("Open synthetic surface");
+    await act(async () => trigger.focus());
+    await click(trigger);
+    expect(container.querySelectorAll("dialog[open]")).toHaveLength(1);
+    showTrigger = false;
+    await render(h(CommandSurfaces, props));
+    expect(trigger.isConnected).toBe(false);
+    await click(container.querySelector("dialog[open] [data-close]")!);
+    expect(container.querySelector("dialog[open]")).toBeNull();
+    expect(document.activeElement).toBe(fallback);
+    fallback.remove();
+  },
+);
+
+describe("macOS command-wheel routing", () => {
+  const wheel = async (
+    options: WheelEventInit = {},
+    native: { momentum?: boolean; ticks?: number; missing?: boolean } = {},
+  ) => {
+    const event = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      deltaY: -120,
+      metaKey: true,
+      ...options,
+    });
+    // Controlled Blink fields; these tests do not establish native wheel delivery.
+    if (!native.missing)
+      Object.defineProperties(event, {
+        wheelDeltaY: {
+          value: Math.trunc(
+            ((native.ticks ?? -(options.deltaY ?? -120) / 120) * 120) / window.devicePixelRatio,
+          ),
+        },
+        momentum: { value: native.momentum ?? false },
+      });
+    await act(async () => document.body.dispatchEvent(event));
+    return event;
+  };
+  it.each(["linux", "win32", "darwin"] as const)(
+    "owns Cmd+wheel only in the macOS composition (%s)",
+    async (platform) => {
+      const test = harness(platform);
+      const increase = vi.fn(() => true);
+      const decrease = vi.fn(() => true);
+      await render(
+        h(CommandSurfaces, {
+          bridge: test.bridge,
+          locale: "en-US",
+          registerHandlers: (registry) => {
+            const disposals = [
+              registry.register("zoom.increase", { state: () => ({}), run: increase }),
+              registry.register("zoom.decrease", { state: () => ({}), run: decrease }),
+            ];
+            return () => disposals.forEach((dispose) => dispose());
+          },
+        }),
+      );
+      expect((await wheel()).defaultPrevented).toBe(platform === "darwin");
+      expect((await wheel({ deltaY: 120 })).defaultPrevented).toBe(platform === "darwin");
+      expect(increase).toHaveBeenCalledTimes(platform === "darwin" ? 1 : 0);
+      expect(decrease).toHaveBeenCalledTimes(platform === "darwin" ? 1 : 0);
+      for (const options of [
+        { metaKey: false },
+        { ctrlKey: true },
+        { altKey: true },
+        { shiftKey: true },
+        { deltaY: 0 },
+      ])
+        expect((await wheel(options)).defaultPrevented).toBe(false);
+      await act(async () =>
+        document.body.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
+      );
+      expect((await wheel()).defaultPrevented).toBe(false);
+      await act(async () =>
+        document.body.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })),
+      );
+      await render(null);
+      expect((await wheel()).defaultPrevented).toBe(false);
+      expect(increase).toHaveBeenCalledTimes(platform === "darwin" ? 1 : 0);
+    },
+  );
+  it.each([1, 1.1, 2, 2.5, 4])(
+    "accumulates fractions at density %s without turning a burst into four zoom steps",
+    async (value) => {
+      density(value);
+      const test = harness("darwin");
+      const increase = vi.fn(() => true);
+      await render(
+        h(CommandSurfaces, {
+          bridge: test.bridge,
+          locale: "en-US",
+          registerHandlers: (registry) =>
+            registry.register("zoom.increase", { state: () => ({}), run: increase }),
+        }),
+      );
+      await wheel({ deltaY: -30 });
+      expect(increase).not.toHaveBeenCalled();
+      for (let index = 0; index < 3; index++) await wheel({ deltaY: -30 });
+      expect(increase).toHaveBeenCalledOnce();
+      await wheel();
+      expect(increase).toHaveBeenCalledTimes(2);
+    },
+  );
+  it.each([...new Set(interfaceZooms.flatMap((percent) => [percent / 100, percent / 50]))])(
+    "preserves long whole-notch sequences at admitted density %s",
+    async (value) => {
+      density(value);
+      const test = harness("darwin");
+      const increase = vi.fn(() => true);
+      const decrease = vi.fn(() => true);
+      await render(
+        h(CommandSurfaces, {
+          bridge: test.bridge,
+          locale: "en-US",
+          registerHandlers: (registry) => {
+            const dispose = [
+              registry.register("zoom.increase", { state: () => ({}), run: increase }),
+              registry.register("zoom.decrease", { state: () => ({}), run: decrease }),
+            ];
+            return () => dispose.forEach((stop) => stop());
+          },
+        }),
+      );
+      for (let index = 0; index < 128; index++) await wheel();
+      expect(increase).toHaveBeenCalledTimes(128);
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keyup", { key: "Meta" })));
+      for (let index = 0; index < 128; index++) await wheel({ deltaY: 120 });
+      expect(decrease).toHaveBeenCalledTimes(128);
+    },
+  );
+  it("ignores momentum, resets partial gestures and uses native tick direction", async () => {
+    const test = harness("darwin");
+    const increase = vi.fn(() => true);
+    const decrease = vi.fn(() => true);
+    await render(
+      h(CommandSurfaces, {
+        bridge: test.bridge,
+        locale: "en-US",
+        registerHandlers: (registry) => {
+          const dispose = [
+            registry.register("zoom.increase", { state: () => ({}), run: increase }),
+            registry.register("zoom.decrease", { state: () => ({}), run: decrease }),
+          ];
+          return () => dispose.forEach((stop) => stop());
+        },
+      }),
+    );
+    expect((await wheel({}, { momentum: true })).defaultPrevented).toBe(false);
+    expect((await wheel({}, { missing: true })).defaultPrevented).toBe(false);
+    expect((await wheel({}, { ticks: Number.NaN })).defaultPrevented).toBe(false);
+    const prevented = (event: Event) => event.preventDefault();
+    document.body.addEventListener("wheel", prevented, { passive: false });
+    expect((await wheel()).defaultPrevented).toBe(true);
+    document.body.removeEventListener("wheel", prevented);
+    expect(increase).not.toHaveBeenCalled();
+    for (const reset of [
+      async () => {
+        await act(async () => window.dispatchEvent(new KeyboardEvent("keyup", { key: "Meta" })));
+      },
+      async () => {
+        await act(async () => window.dispatchEvent(new Event("blur")));
+      },
+      async () => {
+        await wheel({}, { momentum: true });
+      },
+      async () => {
+        await wheel({ metaKey: false });
+      },
+    ]) {
+      await wheel({ deltaY: -30 });
+      await reset();
+      await wheel({ deltaY: -30 });
+      expect(increase).not.toHaveBeenCalled();
+      await reset();
+    }
+    // A zero-displacement synthetic end cannot replay a notch or clear its fraction.
+    await wheel({ deltaY: -30 });
+    await wheel({ deltaY: 0 }, { ticks: 1 });
+    await wheel({ deltaY: -30 });
+    expect(increase).toHaveBeenCalledOnce();
+    await wheel({ deltaY: -30 }, { ticks: -1 });
+    expect(decrease).toHaveBeenCalledOnce();
+  });
+  it("rejects a pending notch without replay and replaces the disposed owner", async () => {
+    let finish!: (value: boolean) => void;
+    let busy = false;
+    const increase = vi.fn(() => {
+      busy = true;
+      return new Promise<boolean>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const mount = async () => {
+      const test = harness("darwin");
+      await render(
+        h(CommandSurfaces, {
+          bridge: test.bridge,
+          locale: "en-US",
+          registerHandlers: (registry) =>
+            registry.register("zoom.increase", {
+              state: () => (busy ? { reason: "busy" } : {}),
+              run: increase,
+            }),
+        }),
+      );
+    };
+    await mount();
+    await wheel();
+    expect(increase).toHaveBeenCalledOnce();
+    await wheel();
+    expect(increase).toHaveBeenCalledOnce();
+    expect(container.textContent).toContain(message("en-US", "command.reason.busy"));
+    await act(async () => {
+      busy = false;
+      finish(true);
+    });
+    expect(increase).toHaveBeenCalledOnce();
+    await render(null);
+    await mount();
+    await wheel();
+    expect(increase).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      busy = false;
+      finish(true);
+    });
+  });
 });

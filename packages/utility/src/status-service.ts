@@ -11,6 +11,7 @@ import {
   type Outcome,
   type AppearanceRecord,
   type LocaleSnapshot,
+  type PresentationSnapshot,
 } from "@ohtia/contracts";
 
 import type { DurableStore } from "./storage.js";
@@ -29,7 +30,8 @@ export function createStatusService(
     {
       window: string;
       subscription: string;
-      topic: "status" | "appearance" | "locale";
+      topic: "status" | "appearance" | "locale" | "presentation";
+      signature?: string;
       sequence: number;
       revision: number;
     }
@@ -120,6 +122,45 @@ export function createStatusService(
       });
     }
   };
+  const presentationSnapshot = async (): Promise<Outcome<PresentationSnapshot>> => {
+    if (!storage) return failure("service_unavailable");
+    const appearance = await storage.readAppearance();
+    if (!appearance.ok) return appearance;
+    const character = await storage.readPresentationPreference("character");
+    if (!character.ok) return character;
+    const zoom = await storage.readPresentationPreference("zoom");
+    if (!zoom.ok) return zoom;
+    return {
+      ok: true,
+      value: {
+        serviceGeneration: generation,
+        appearance: appearance.value,
+        character: character.value,
+        zoom: zoom.value,
+      },
+    };
+  };
+  const presentationEvent = async () => {
+    const snapshot = await presentationSnapshot();
+    if (!snapshot.ok || disposed) return;
+    send(JSON.stringify({ kind: "presentation_changed", generation, snapshot: snapshot.value }));
+    const signature = JSON.stringify(snapshot.value);
+    for (const stream of streams.values()) {
+      if (stream.topic !== "presentation" || stream.signature === signature) continue;
+      stream.signature = signature;
+      emit({
+        protocol: 1,
+        policy: policyId,
+        kind: "event",
+        windowGeneration: stream.window,
+        serviceGeneration: generation,
+        subscriptionId: stream.subscription,
+        sequence: ++stream.sequence,
+        topic: "presentation",
+        payload: snapshot.value,
+      });
+    }
+  };
   async function dispatch(value: Request, subscription?: { cancelled: boolean }): Promise<void> {
     if (disposed) return;
     if (subscription?.cancelled) {
@@ -130,7 +171,40 @@ export function createStatusService(
       emit({ ...value, kind: "result", payload: failure("service_unavailable") });
       return;
     }
-    if (value.operation === "locale.read")
+    if (value.operation === "presentation.read")
+      emit({ ...value, kind: "result", payload: await presentationSnapshot() });
+    else if (value.operation === "character.receipt" || value.operation === "zoom.receipt")
+      emit({
+        ...value,
+        kind: "result",
+        payload: await storage.readPresentationReceipt(
+          value.operation === "character.receipt" ? "character" : "zoom",
+          value.payload.targetOperationId,
+        ),
+      });
+    else if (
+      value.operation === "character.replace" ||
+      value.operation === "zoom.replace" ||
+      value.operation === "zoom.commit"
+    ) {
+      const result =
+        value.operation === "character.replace"
+          ? await storage.replacePresentationPreference("character", {
+              operationId: value.operationId,
+              ...value.payload,
+            })
+          : await storage.replacePresentationPreference(
+              "zoom",
+              {
+                operationId: value.operationId,
+                expectedRevision: value.payload.expectedRevision,
+                value: value.payload.value,
+              },
+              value.operation === "zoom.commit" ? value.payload.intent : null,
+            );
+      emit({ ...value, kind: "result", payload: result });
+      if (result.ok || result.error.code === "uncertain") await presentationEvent();
+    } else if (value.operation === "locale.read")
       emit({ ...value, kind: "result", payload: await localeSnapshot() });
     else if (value.operation === "locale.receipt")
       emit({
@@ -175,10 +249,14 @@ export function createStatusService(
         ...value.payload,
       });
       emit({ ...value, kind: "result", payload: result });
-      if (result.ok) appearanceEvent(await storage.readAppearance());
+      if (result.ok || result.error.code === "uncertain") {
+        appearanceEvent(await storage.readAppearance());
+        await presentationEvent();
+      }
     } else if (
       value.operation === "appearance.subscribe" ||
-      value.operation === "locale.subscribe"
+      value.operation === "locale.subscribe" ||
+      value.operation === "presentation.subscribe"
     ) {
       const id = `${value.windowGeneration}/${value.payload.subscriptionId}`;
       if (
@@ -191,8 +269,10 @@ export function createStatusService(
         return;
       }
       const record =
-        value.operation === "locale.subscribe"
-          ? await localeSnapshot()
+        value.operation === "locale.subscribe" || value.operation === "presentation.subscribe"
+          ? value.operation === "presentation.subscribe"
+            ? await presentationSnapshot()
+            : await localeSnapshot()
           : await storage.readAppearance();
       if (!record.ok) {
         emit({ ...value, kind: "result", payload: record });
@@ -206,9 +286,22 @@ export function createStatusService(
       streams.set(id, {
         window: value.windowGeneration,
         subscription: value.payload.subscriptionId,
-        topic: value.operation === "locale.subscribe" ? "locale" : "appearance",
+        topic:
+          value.operation === "presentation.subscribe"
+            ? "presentation"
+            : value.operation === "locale.subscribe"
+              ? "locale"
+              : "appearance",
         sequence: 1,
-        revision: "record" in record.value ? record.value.record.revision : record.value.revision,
+        revision:
+          "record" in record.value
+            ? record.value.record.revision
+            : "revision" in record.value
+              ? record.value.revision
+              : -1,
+        ...(value.operation === "presentation.subscribe"
+          ? { signature: JSON.stringify(record.value) }
+          : {}),
       });
       emit({ ...value, kind: "result", payload: { ok: true, value: value.payload } });
       emit({
@@ -219,7 +312,12 @@ export function createStatusService(
         serviceGeneration: generation,
         subscriptionId: value.payload.subscriptionId,
         sequence: 1,
-        topic: value.operation === "locale.subscribe" ? "locale" : "appearance",
+        topic:
+          value.operation === "presentation.subscribe"
+            ? "presentation"
+            : value.operation === "locale.subscribe"
+              ? "locale"
+              : "appearance",
         payload: record.value,
       });
     }
@@ -323,11 +421,15 @@ export function createStatusService(
       }
       pending++;
       const subscription =
-        value.operation === "appearance.subscribe" || value.operation === "locale.subscribe"
+        value.operation === "appearance.subscribe" ||
+        value.operation === "locale.subscribe" ||
+        value.operation === "presentation.subscribe"
           ? { cancelled: false }
           : undefined;
       const subscriptionKey =
-        value.operation === "appearance.subscribe" || value.operation === "locale.subscribe"
+        value.operation === "appearance.subscribe" ||
+        value.operation === "locale.subscribe" ||
+        value.operation === "presentation.subscribe"
           ? `${value.windowGeneration}/${value.payload.subscriptionId}`
           : undefined;
       if (subscriptionKey && subscription) {
@@ -347,7 +449,10 @@ export function createStatusService(
             payload: failure(
               value.operation === "appearance.replace" ||
                 value.operation === "locale.replace" ||
-                value.operation === "layout.replace"
+                value.operation === "layout.replace" ||
+                value.operation === "character.replace" ||
+                value.operation === "zoom.replace" ||
+                value.operation === "zoom.commit"
                 ? "uncertain"
                 : "storage_failed",
             ),

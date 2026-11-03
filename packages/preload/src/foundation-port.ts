@@ -1,5 +1,7 @@
 import {
   decodeAppearanceChange,
+  decodePresentationChange,
+  type PresentationSnapshot,
   decodeLocaleChange,
   type LocaleSnapshot,
   decodeLayoutChange,
@@ -47,9 +49,9 @@ interface Pending {
 }
 interface Stream {
   readonly id: string;
-  readonly topic: "status" | "appearance" | "locale";
+  readonly topic: "status" | "appearance" | "locale" | "presentation";
   readonly listener: (
-    notice: Outcome<FoundationStatus | AppearanceRecord | LocaleSnapshot>,
+    notice: Outcome<FoundationStatus | AppearanceRecord | LocaleSnapshot | PresentationSnapshot>,
   ) => void;
   readonly queue: { readonly event: PortEvent; readonly bytes: number }[];
   bytes: number;
@@ -125,7 +127,8 @@ export function createFoundationPort(
         if (
           (entry.request.operation === "status.subscribe" ||
             entry.request.operation === "appearance.subscribe" ||
-            entry.request.operation === "locale.subscribe") &&
+            entry.request.operation === "locale.subscribe" ||
+            entry.request.operation === "presentation.subscribe") &&
           entry.request.payload.subscriptionId === stream.id
         )
           settle(entry, failure("sequence_gap"));
@@ -154,7 +157,10 @@ export function createFoundationPort(
         failure(
           entry.request.operation === "appearance.replace" ||
             entry.request.operation === "locale.replace" ||
-            entry.request.operation === "layout.replace"
+            entry.request.operation === "layout.replace" ||
+            entry.request.operation === "character.replace" ||
+            entry.request.operation === "zoom.replace" ||
+            entry.request.operation === "zoom.adjust"
             ? "uncertain"
             : code,
         ),
@@ -231,7 +237,10 @@ export function createFoundationPort(
         failure(
           entry.request.operation === "appearance.replace" ||
             entry.request.operation === "locale.replace" ||
-            entry.request.operation === "layout.replace"
+            entry.request.operation === "layout.replace" ||
+            entry.request.operation === "character.replace" ||
+            entry.request.operation === "zoom.replace" ||
+            entry.request.operation === "zoom.adjust"
             ? "uncertain"
             : "invalid_service_result",
         ),
@@ -241,7 +250,9 @@ export function createFoundationPort(
     if (message.payload.ok) {
       if (
         (entry.request.operation === "appearance.replace" ||
-          entry.request.operation === "locale.replace") &&
+          entry.request.operation === "locale.replace" ||
+          entry.request.operation === "character.replace" ||
+          entry.request.operation === "zoom.replace") &&
         (message.operation !== entry.request.operation ||
           message.payload.value.revision !== entry.request.payload.expectedRevision + 1 ||
           message.payload.value.value !== entry.request.payload.value)
@@ -261,7 +272,8 @@ export function createFoundationPort(
       if (
         entry.request.operation === "status.subscribe" ||
         entry.request.operation === "appearance.subscribe" ||
-        entry.request.operation === "locale.subscribe"
+        entry.request.operation === "locale.subscribe" ||
+        entry.request.operation === "presentation.subscribe"
       ) {
         const id = entry.request.payload.subscriptionId;
         if ((message.payload.value as { subscriptionId: string }).subscriptionId !== id) {
@@ -276,7 +288,8 @@ export function createFoundationPort(
     } else if (
       entry.request.operation === "status.subscribe" ||
       entry.request.operation === "appearance.subscribe" ||
-      entry.request.operation === "locale.subscribe"
+      entry.request.operation === "locale.subscribe" ||
+      entry.request.operation === "presentation.subscribe"
     ) {
       const stream = streams.get(entry.request.payload.subscriptionId);
       if (stream) close(stream, false);
@@ -323,7 +336,10 @@ export function createFoundationPort(
           failure(
             operation === "appearance.replace" ||
               operation === "locale.replace" ||
-              operation === "layout.replace"
+              operation === "layout.replace" ||
+              operation === "character.replace" ||
+              operation === "zoom.replace" ||
+              operation === "zoom.adjust"
               ? "uncertain"
               : "timeout",
           ),
@@ -332,7 +348,8 @@ export function createFoundationPort(
         if (
           operation === "status.subscribe" ||
           operation === "appearance.subscribe" ||
-          operation === "locale.subscribe"
+          operation === "locale.subscribe" ||
+          operation === "presentation.subscribe"
         ) {
           const stream = streams.get((payload as { subscriptionId: string }).subscriptionId);
           if (stream) close(stream, false);
@@ -346,7 +363,10 @@ export function createFoundationPort(
           failure(
             operation === "appearance.replace" ||
               operation === "locale.replace" ||
-              operation === "layout.replace"
+              operation === "layout.replace" ||
+              operation === "character.replace" ||
+              operation === "zoom.replace" ||
+              operation === "zoom.adjust"
               ? "uncertain"
               : "service_unavailable",
           ),
@@ -362,7 +382,10 @@ export function createFoundationPort(
           failure(
             operation === "appearance.replace" ||
               operation === "locale.replace" ||
-              operation === "layout.replace"
+              operation === "layout.replace" ||
+              operation === "character.replace" ||
+              operation === "zoom.replace" ||
+              operation === "zoom.adjust"
               ? "uncertain"
               : "cancelled",
           ),
@@ -372,7 +395,7 @@ export function createFoundationPort(
     };
   }
   function subscribe(
-    topic: "status" | "appearance" | "locale",
+    topic: "status" | "appearance" | "locale" | "presentation",
     listener: Stream["listener"],
   ): Subscription {
     if (disposed || streams.size >= portLimits.subscriptions_per_window)
@@ -393,11 +416,13 @@ export function createFoundationPort(
     };
     streams.set(id, stream);
     const opening = call(
-      topic === "status"
-        ? "status.subscribe"
-        : topic === "locale"
-          ? "locale.subscribe"
-          : "appearance.subscribe",
+      topic === "presentation"
+        ? "presentation.subscribe"
+        : topic === "status"
+          ? "status.subscribe"
+          : topic === "locale"
+            ? "locale.subscribe"
+            : "appearance.subscribe",
       {
         subscriptionId: id,
       },
@@ -414,6 +439,46 @@ export function createFoundationPort(
     };
   }
   const port: FoundationPort = Object.freeze<FoundationPort>({
+    readPresentation: () => call("presentation.read", {}),
+    subscribePresentation: (listener) => subscribe("presentation", listener as Stream["listener"]),
+    replaceCharacter: (change, expectedServiceGeneration) => {
+      if (
+        expectedServiceGeneration !== undefined &&
+        expectedServiceGeneration !== generations.serviceGeneration
+      )
+        return { result: Promise.resolve(failure("service_unavailable")), cancel() {} };
+      const decoded = decodePresentationChange("character", change);
+      return decoded.ok
+        ? call(
+            "character.replace",
+            { expectedRevision: decoded.value.expectedRevision, value: decoded.value.value },
+            decoded.value.operationId,
+          )
+        : { result: Promise.resolve(decoded), cancel() {} };
+    },
+    readCharacterReceipt: (id) => call("character.receipt", { targetOperationId: id }),
+    replaceZoom: (change, expectedServiceGeneration) => {
+      if (
+        expectedServiceGeneration !== undefined &&
+        expectedServiceGeneration !== generations.serviceGeneration
+      )
+        return { result: Promise.resolve(failure("service_unavailable")), cancel() {} };
+      const decoded = decodePresentationChange("zoom", change);
+      return decoded.ok
+        ? call(
+            "zoom.replace",
+            { expectedRevision: decoded.value.expectedRevision, value: decoded.value.value },
+            decoded.value.operationId,
+          )
+        : { result: Promise.resolve(decoded), cancel() {} };
+    },
+    adjustZoom: (id, intent, expectedServiceGeneration) =>
+      expectedServiceGeneration !== undefined &&
+      expectedServiceGeneration !== generations.serviceGeneration
+        ? { result: Promise.resolve(failure("service_unavailable")), cancel() {} }
+        : call("zoom.adjust", { intent }, id),
+    readZoomReceipt: (id) => call("zoom.receipt", { targetOperationId: id }),
+    applyZoom: () => call("zoom.apply", {}),
     claimLayoutFailureNotice: () => call("layout.failureNotice", {}),
     readLayout: () => call("layout.read", {}),
     replaceLayout: (change) => {
@@ -446,7 +511,12 @@ export function createFoundationPort(
     readLocaleReceipt: (operationId) => call("locale.receipt", { targetOperationId: operationId }),
     subscribeLocale: (listener) => subscribe("locale", listener as Stream["listener"]),
     readAppearance: () => call("appearance.read", {}),
-    replaceAppearance: (change) => {
+    replaceAppearance: (change, expectedServiceGeneration) => {
+      if (
+        expectedServiceGeneration !== undefined &&
+        expectedServiceGeneration !== generations.serviceGeneration
+      )
+        return { result: Promise.resolve(failure("service_unavailable")), cancel() {} };
       const decoded = decodeAppearanceChange(change);
       if (!decoded.ok) return { result: Promise.resolve(decoded), cancel() {} };
       return call(
@@ -474,7 +544,10 @@ export function createFoundationPort(
           failure(
             entry.request.operation === "appearance.replace" ||
               entry.request.operation === "locale.replace" ||
-              entry.request.operation === "layout.replace"
+              entry.request.operation === "layout.replace" ||
+              entry.request.operation === "character.replace" ||
+              entry.request.operation === "zoom.replace" ||
+              entry.request.operation === "zoom.adjust"
               ? "uncertain"
               : "disposed",
           ),

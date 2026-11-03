@@ -44,7 +44,82 @@ export const layout = {
   preferredWidths: { explorer: 256.5, documents: 656, chat: 360 },
 };
 const savedLayout = { schemaVersion: 1, revision: 1, source: "saved", value: layout };
+export const presentationSnapshot = {
+  serviceGeneration: "service-1",
+  appearance,
+  character: { schemaVersion: 1, revision: 1, value: "static", source: "saved" },
+  zoom: { schemaVersion: 1, revision: 2, value: 125, source: "saved" },
+};
 export const acceptedEnvelopes: readonly unknown[] = [
+  {
+    ...request({ operation: "zoom.receipt" }),
+    kind: "result",
+    payload: {
+      ok: true,
+      value: {
+        state: "recorded",
+        outcome: {
+          ok: false,
+          error: { code: "actual_size", nextAction: "check_request", parameters: {} },
+        },
+      },
+    },
+  },
+  ...["character", "zoom"].flatMap((feature) => [
+    request({
+      operation: `${feature}.replace`,
+      payload: { expectedRevision: 0, value: feature === "character" ? "hidden" : 400 },
+    } as Partial<Request>),
+    request({
+      operation: `${feature}.receipt`,
+      payload: { targetOperationId: "operation-1" },
+    } as Partial<Request>),
+    {
+      ...request({ operation: `${feature}.replace` } as Partial<Request>),
+      kind: "result",
+      payload: { ok: true, value: presentationSnapshot[feature as "character" | "zoom"] },
+    },
+    {
+      ...request({ operation: `${feature}.receipt` } as Partial<Request>),
+      kind: "result",
+      payload: {
+        ok: true,
+        value: {
+          state: "recorded",
+          outcome: { ok: true, value: presentationSnapshot[feature as "character" | "zoom"] },
+        },
+      },
+    },
+  ]),
+  request({ operation: "zoom.adjust", payload: { intent: "increase" } }),
+  request({
+    operation: "zoom.commit",
+    payload: { expectedRevision: 0, value: 110, intent: "increase" },
+  }),
+  request({ operation: "zoom.apply", payload: {} }),
+  {
+    ...request({ operation: "zoom.apply" }),
+    kind: "result",
+    payload: { ok: true, value: { revision: 2, percent: 125, applied: false } },
+  },
+  request({ operation: "presentation.read" }),
+  {
+    ...request({ operation: "presentation.read" }),
+    kind: "result",
+    payload: { ok: true, value: presentationSnapshot },
+  },
+  request({ operation: "presentation.subscribe", payload: { subscriptionId: "presentation" } }),
+  {
+    protocol: 1,
+    policy: policyId,
+    kind: "event",
+    windowGeneration: "window-1",
+    serviceGeneration: "service-1",
+    subscriptionId: "presentation",
+    sequence: 1,
+    topic: "presentation",
+    payload: presentationSnapshot,
+  },
   request({ operation: "locale.read" }),
   request({ operation: "locale.replace", payload: { expectedRevision: 1, value: "ko-KR" } }),
   request({ operation: "locale.receipt", payload: { targetOperationId: "operation-1" } }),
@@ -182,6 +257,55 @@ export const acceptedEnvelopes: readonly unknown[] = [
   return value;
 });
 export const rejectedEnvelopes: readonly { name: string; value: unknown; code: string }[] = [
+  ...[
+    request({
+      operation: "character.replace",
+      payload: { expectedRevision: 0, value: "running" },
+    } as never),
+    request({ operation: "zoom.replace", payload: { expectedRevision: 0, value: 123 } } as never),
+    request({ operation: "zoom.replace", payload: { expectedRevision: 0, value: "125" } } as never),
+    request({ operation: "zoom.adjust", payload: { intent: "increase", value: 125 } } as never),
+    request({
+      operation: "zoom.commit",
+      payload: { expectedRevision: 0, value: 123, intent: "increase" },
+    } as never),
+    {
+      ...request({ operation: "presentation.read" }),
+      kind: "result",
+      payload: { ok: true, value: { ...presentationSnapshot, serviceGeneration: "old-service" } },
+    },
+    {
+      ...request({ operation: "presentation.read" }),
+      kind: "result",
+      payload: {
+        ok: true,
+        value: {
+          ...presentationSnapshot,
+          character: {
+            schemaVersion: 1,
+            revision: 0,
+            value: "animated",
+            source: "invalid_fallback",
+          },
+        },
+      },
+    },
+    {
+      ...request({ operation: "presentation.read" }),
+      kind: "result",
+      payload: {
+        ok: true,
+        value: {
+          ...presentationSnapshot,
+          zoom: { schemaVersion: 1, revision: 1, value: 125, source: "default" },
+        },
+      },
+    },
+  ].map((value, index) => ({
+    name: `presentation exact boundary ${index}`,
+    value,
+    code: "invalid_message",
+  })),
   {
     name: "unsupported protocol",
     value: { ...request(), protocol: 2 },

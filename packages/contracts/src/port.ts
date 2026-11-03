@@ -1,3 +1,15 @@
+import {
+  isCharacterPresentation,
+  isInterfaceZoom,
+  zoomBoundaryErrors,
+  type CharacterPresentation,
+  type InterfaceZoom,
+  type PresentationChange,
+  type SavedPresentationRecord,
+  type PresentationReceipt,
+  type PresentationSnapshot,
+  type ZoomIntent,
+} from "./presentation.js";
 import { isWorkspaceLayout, type WorkspaceLayout } from "./layout.js";
 import { isAppearance, type Appearance } from "./appearance.js";
 import { policyId, portLimits } from "./generated/resource-policy.js";
@@ -104,6 +116,9 @@ export const errorActions = {
   stale_generation: "reopen_window",
   duplicate_request: "check_request",
   busy: "retry_later",
+  zoom_minimum: "check_request",
+  zoom_maximum: "check_request",
+  actual_size: "check_request",
   window_limit: "retry_later",
   service_unavailable: "retry_later",
   timeout: "retry_read",
@@ -158,6 +173,20 @@ export type AppearanceReceipt =
   | { readonly state: "not_found" | "pending" }
   | { readonly state: "recorded"; readonly outcome: RecordedAppearanceOutcome };
 export interface OperationInputs {
+  "presentation.read": Record<string, never>;
+  "presentation.subscribe": { readonly subscriptionId: string };
+  "character.replace": { readonly expectedRevision: number; readonly value: CharacterPresentation };
+  "character.receipt": { readonly targetOperationId: string };
+  "zoom.replace": { readonly expectedRevision: number; readonly value: InterfaceZoom };
+  "zoom.adjust": { readonly intent: ZoomIntent };
+  /** Broker-to-service only; renderer admission rejects this operation. */
+  "zoom.commit": {
+    readonly expectedRevision: number;
+    readonly value: InterfaceZoom;
+    readonly intent: ZoomIntent;
+  };
+  "zoom.receipt": { readonly targetOperationId: string };
+  "zoom.apply": Record<string, never>;
   "locale.read": Record<string, never>;
   "locale.replace": { readonly expectedRevision: number; readonly value: LocaleChoice };
   "locale.receipt": { readonly targetOperationId: string };
@@ -174,6 +203,19 @@ export interface OperationInputs {
   "appearance.subscribe": { readonly subscriptionId: string };
 }
 export interface OperationOutputs {
+  "presentation.read": PresentationSnapshot;
+  "presentation.subscribe": { readonly subscriptionId: string };
+  "character.replace": SavedPresentationRecord<CharacterPresentation>;
+  "character.receipt": PresentationReceipt<CharacterPresentation>;
+  "zoom.replace": SavedPresentationRecord<InterfaceZoom>;
+  "zoom.adjust": SavedPresentationRecord<InterfaceZoom>;
+  "zoom.commit": SavedPresentationRecord<InterfaceZoom>;
+  "zoom.receipt": PresentationReceipt<InterfaceZoom>;
+  "zoom.apply": {
+    readonly revision: number;
+    readonly percent: InterfaceZoom;
+    readonly applied: boolean;
+  };
   "locale.read": LocaleSnapshot;
   "locale.replace": SavedLocaleRecord;
   "locale.receipt": LocaleReceipt;
@@ -242,6 +284,7 @@ export type PortEvent = {
   readonly subscriptionId: string;
   readonly sequence: number;
 } & (
+  | { readonly topic: "presentation"; readonly payload: PresentationSnapshot }
   | { readonly topic: "status"; readonly payload: FoundationStatus }
   | { readonly topic: "appearance"; readonly payload: AppearanceRecord }
   | { readonly topic: "locale"; readonly payload: LocaleSnapshot }
@@ -256,6 +299,24 @@ export interface Subscription {
   dispose(): void;
 }
 export interface FoundationPort {
+  readPresentation(): PortCall<PresentationSnapshot>;
+  subscribePresentation(listener: (notice: Outcome<PresentationSnapshot>) => void): Subscription;
+  replaceCharacter(
+    change: PresentationChange<CharacterPresentation>,
+    expectedServiceGeneration?: string,
+  ): PortCall<SavedPresentationRecord<CharacterPresentation>>;
+  readCharacterReceipt(operationId: string): PortCall<PresentationReceipt<CharacterPresentation>>;
+  replaceZoom(
+    change: PresentationChange<InterfaceZoom>,
+    expectedServiceGeneration?: string,
+  ): PortCall<SavedPresentationRecord<InterfaceZoom>>;
+  adjustZoom(
+    operationId: string,
+    intent: ZoomIntent,
+    expectedServiceGeneration?: string,
+  ): PortCall<SavedPresentationRecord<InterfaceZoom>>;
+  readZoomReceipt(operationId: string): PortCall<PresentationReceipt<InterfaceZoom>>;
+  applyZoom(): PortCall<OperationOutputs["zoom.apply"]>;
   readLocale(): PortCall<LocaleSnapshot>;
   replaceLocale(
     change: LocaleChange,
@@ -269,7 +330,10 @@ export interface FoundationPort {
   readLayoutReceipt(operationId: string): PortCall<LayoutReceipt>;
   readStatus(): PortCall<FoundationStatus>;
   readAppearance(): PortCall<AppearanceRecord>;
-  replaceAppearance(change: AppearanceChange): PortCall<SavedAppearanceRecord>;
+  replaceAppearance(
+    change: AppearanceChange,
+    expectedServiceGeneration?: string,
+  ): PortCall<SavedAppearanceRecord>;
   readAppearanceReceipt(operationId: string): PortCall<AppearanceReceipt>;
   subscribeStatus(listener: (notice: Outcome<FoundationStatus>) => void): Subscription;
   subscribeAppearance(listener: (notice: Outcome<AppearanceRecord>) => void): Subscription;
@@ -347,6 +411,45 @@ function localeSnapshot(value: Json | undefined): boolean {
       (value.record.value === "system" ? value.systemLocale : value.record.value)
   );
 }
+function presentationRecord(
+  value: Json | undefined,
+  valid: (value: unknown) => boolean,
+  initial: Json,
+  fallback: Json,
+): boolean {
+  return (
+    exact(value, ["schemaVersion", "revision", "value", "source"]) &&
+    value.schemaVersion === 1 &&
+    revision(value.revision) &&
+    valid(value.value) &&
+    (value.source === "saved"
+      ? value.revision > 0
+      : value.source === "default"
+        ? value.revision === 0 && value.value === initial
+        : value.source === "invalid_fallback" && value.value === fallback)
+  );
+}
+function characterRecord(value: Json | undefined): boolean {
+  return presentationRecord(value, isCharacterPresentation, "animated", "static");
+}
+function zoomRecord(value: Json | undefined): boolean {
+  return presentationRecord(value, isInterfaceZoom, 100, 100);
+}
+function savedCharacter(value: Json | undefined): boolean {
+  return characterRecord(value) && object(value) && value.source === "saved";
+}
+function savedZoom(value: Json | undefined): boolean {
+  return zoomRecord(value) && object(value) && value.source === "saved";
+}
+function presentationSnapshot(value: Json | undefined): boolean {
+  return (
+    exact(value, ["serviceGeneration", "appearance", "character", "zoom"]) &&
+    isIdentifier(value.serviceGeneration) &&
+    appearance(value.appearance) &&
+    characterRecord(value.character) &&
+    zoomRecord(value.zoom)
+  );
+}
 function savedAppearance(value: Json | undefined): boolean {
   return appearance(value) && object(value) && value.source === "saved";
 }
@@ -387,7 +490,11 @@ function outcome(value: Json | undefined, valid: (value: Json | undefined) => bo
     ? exact(value, ["ok", "value"]) && valid(value.value)
     : value.ok === false && exact(value, ["ok", "error"]) && error(value.error);
 }
-function receipt(value: Json | undefined, saved = savedAppearance): boolean {
+function receipt(
+  value: Json | undefined,
+  saved = savedAppearance,
+  codes: readonly string[] = ["stale_revision"],
+): boolean {
   return (
     object(value) &&
     (value.state === "recorded"
@@ -395,7 +502,9 @@ function receipt(value: Json | undefined, saved = savedAppearance): boolean {
         outcome(value.outcome, saved) &&
         object(value.outcome) &&
         (value.outcome.ok === true ||
-          (object(value.outcome.error) && value.outcome.error.code === "stale_revision"))
+          (object(value.outcome.error) &&
+            typeof value.outcome.error.code === "string" &&
+            codes.includes(value.outcome.error.code)))
       : exact(value, ["state"]) && oneOf(value.state, ["not_found", "pending"]))
   );
 }
@@ -431,6 +540,15 @@ const replaceErrors = [
   "storage_failed",
 ] as const;
 export const operationErrorCodes = Object.freeze({
+  "presentation.read": [...readErrors, "preference_invalid"],
+  "presentation.subscribe": [...readErrors, "sequence_gap", "preference_invalid"],
+  "character.replace": replaceErrors,
+  "character.receipt": readErrors,
+  "zoom.replace": replaceErrors,
+  "zoom.adjust": [...replaceErrors, "zoom_minimum", "zoom_maximum", "actual_size"],
+  "zoom.commit": [...replaceErrors, "zoom_minimum", "zoom_maximum", "actual_size"],
+  "zoom.receipt": readErrors,
+  "zoom.apply": [...readErrors, "preference_invalid"],
   "locale.read": [...readErrors, "preference_invalid"],
   "locale.replace": replaceErrors,
   "locale.receipt": readErrors,
@@ -457,12 +575,34 @@ function operationOutcome(operation: Operation, value: Json | undefined): boolea
 
 function input(operation: Operation, value: Json | undefined): boolean {
   switch (operation) {
+    case "presentation.read":
+    case "zoom.apply":
     case "status.read":
     case "appearance.read":
     case "locale.read":
     case "layout.read":
     case "layout.failureNotice":
       return exact(value, []);
+    case "character.replace":
+    case "zoom.replace":
+      return (
+        exact(value, ["expectedRevision", "value"]) &&
+        revision(value.expectedRevision) &&
+        value.expectedRevision < Number.MAX_SAFE_INTEGER &&
+        (operation === "character.replace"
+          ? isCharacterPresentation(value.value)
+          : isInterfaceZoom(value.value))
+      );
+    case "zoom.commit":
+      return (
+        exact(value, ["expectedRevision", "value", "intent"]) &&
+        revision(value.expectedRevision) &&
+        value.expectedRevision < Number.MAX_SAFE_INTEGER &&
+        isInterfaceZoom(value.value) &&
+        oneOf(value.intent, ["increase", "decrease", "reset"])
+      );
+    case "zoom.adjust":
+      return exact(value, ["intent"]) && oneOf(value.intent, ["increase", "decrease", "reset"]);
     case "layout.replace":
       return (
         exact(value, ["expectedRevision", "value"]) &&
@@ -484,10 +624,13 @@ function input(operation: Operation, value: Json | undefined): boolean {
         value.expectedRevision < Number.MAX_SAFE_INTEGER &&
         (value.value === "system" || oneOf(value.value, supportedLocales))
       );
+    case "character.receipt":
+    case "zoom.receipt":
     case "locale.receipt":
     case "layout.receipt":
     case "appearance.receipt":
       return exact(value, ["targetOperationId"]) && isIdentifier(value.targetOperationId);
+    case "presentation.subscribe":
     case "status.subscribe":
     case "appearance.subscribe":
     case "locale.subscribe":
@@ -496,6 +639,25 @@ function input(operation: Operation, value: Json | undefined): boolean {
 }
 function output(operation: Operation, value: Json | undefined): boolean {
   switch (operation) {
+    case "presentation.read":
+      return presentationSnapshot(value);
+    case "character.replace":
+      return savedCharacter(value);
+    case "character.receipt":
+      return receipt(value, savedCharacter);
+    case "zoom.replace":
+    case "zoom.adjust":
+    case "zoom.commit":
+      return savedZoom(value);
+    case "zoom.receipt":
+      return receipt(value, savedZoom, ["stale_revision", ...zoomBoundaryErrors]);
+    case "zoom.apply":
+      return (
+        exact(value, ["revision", "percent", "applied"]) &&
+        revision(value.revision) &&
+        isInterfaceZoom(value.percent) &&
+        typeof value.applied === "boolean"
+      );
     case "locale.read":
       return localeSnapshot(value);
     case "locale.replace":
@@ -518,6 +680,7 @@ function output(operation: Operation, value: Json | undefined): boolean {
       return savedAppearance(value);
     case "appearance.receipt":
       return receipt(value);
+    case "presentation.subscribe":
     case "status.subscribe":
     case "appearance.subscribe":
     case "locale.subscribe":
@@ -608,6 +771,15 @@ const identityKeys = [
   "operation",
 ];
 const operations: readonly Operation[] = [
+  "presentation.read",
+  "presentation.subscribe",
+  "character.replace",
+  "character.receipt",
+  "zoom.replace",
+  "zoom.adjust",
+  "zoom.commit",
+  "zoom.receipt",
+  "zoom.apply",
   "locale.read",
   "locale.replace",
   "locale.receipt",
@@ -660,11 +832,13 @@ export function decodeEnvelope(raw: unknown): Outcome<Envelope> {
       isIdentifier(value.subscriptionId) &&
       revision(value.sequence) &&
       value.sequence > 0 &&
-      (value.topic === "status"
-        ? status(value.payload)
-        : value.topic === "locale"
-          ? localeSnapshot(value.payload)
-          : value.topic === "appearance" && appearance(value.payload));
+      (value.topic === "presentation"
+        ? presentationSnapshot(value.payload)
+        : value.topic === "status"
+          ? status(value.payload)
+          : value.topic === "locale"
+            ? localeSnapshot(value.payload)
+            : value.topic === "appearance" && appearance(value.payload));
   } else if (value.kind === "unsubscribe") {
     valid =
       exact(value, [
@@ -701,7 +875,7 @@ export function decodeEnvelope(raw: unknown): Outcome<Envelope> {
   if (
     valid &&
     value.kind === "event" &&
-    value.topic === "locale" &&
+    (value.topic === "locale" || value.topic === "presentation") &&
     object(value.payload) &&
     value.payload.serviceGeneration !== value.serviceGeneration
   )
@@ -709,7 +883,7 @@ export function decodeEnvelope(raw: unknown): Outcome<Envelope> {
   if (
     valid &&
     value.kind === "result" &&
-    value.operation === "locale.read" &&
+    (value.operation === "locale.read" || value.operation === "presentation.read") &&
     object(value.payload) &&
     value.payload.ok === true &&
     object(value.payload.value) &&
@@ -837,4 +1011,38 @@ export function decodeLayoutChange(raw: unknown): Outcome<LayoutChange> {
     /* Reject without exposing caller data. */
   }
   return failure("invalid_message");
+}
+
+export function decodePresentationChange<K extends "character" | "zoom">(
+  feature: K,
+  raw: unknown,
+): Outcome<PresentationChange<K extends "character" ? CharacterPresentation : InterfaceZoom>> {
+  try {
+    const value = boundedJson(raw);
+    if (exact(value, ["operationId", "expectedRevision", "value"])) {
+      const { operationId, ...payload } = value;
+      if (
+        isIdentifier(operationId) &&
+        input(feature === "character" ? "character.replace" : "zoom.replace", payload)
+      )
+        return {
+          ok: true,
+          value: value as unknown as PresentationChange<
+            K extends "character" ? CharacterPresentation : InterfaceZoom
+          >,
+        };
+    }
+  } catch {
+    /* Controlled rejection without caller data. */
+  }
+  return failure("invalid_message");
+}
+export function decodePresentationSnapshot(raw: unknown): PresentationSnapshot | undefined {
+  try {
+    const value = boundedJson(raw);
+    if (presentationSnapshot(value)) return value as unknown as PresentationSnapshot;
+  } catch {
+    /* Controlled rejection. */
+  }
+  return undefined;
 }

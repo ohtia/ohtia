@@ -249,6 +249,14 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
     const c = client();
     expect(Object.keys(c.port).sort()).toEqual(
       [
+        "readPresentation",
+        "subscribePresentation",
+        "replaceCharacter",
+        "readCharacterReceipt",
+        "replaceZoom",
+        "adjustZoom",
+        "readZoomReceipt",
+        "applyZoom",
         "claimLayoutFailureNotice",
         "readLayout",
         "replaceLayout",
@@ -932,5 +940,91 @@ describe("named layout transport", () => {
     cancelled.cancel();
     expect(await cancelled.result).toEqual(failure("uncertain"));
     c.dispose();
+  });
+});
+
+describe("named presentation consumer admission", () => {
+  it("validates detached values and rejects a replaced service before sending", async () => {
+    const c = client();
+    for (const invalid of [
+      null,
+      {},
+      { operationId: "operation", expectedRevision: 0, value: "hidden", extra: true },
+    ])
+      expect(await c.port.replaceCharacter(invalid as never).result).toEqual(
+        failure("invalid_message"),
+      );
+    expect(
+      await c.port.replaceZoom({
+        operationId: "operation",
+        expectedRevision: 0,
+        value: 123 as never,
+      }).result,
+    ).toEqual(failure("invalid_message"));
+    expect(
+      await c.port.replaceAppearance(
+        { operationId: "operation", expectedRevision: 0, value: "light" },
+        "old-service",
+      ).result,
+    ).toEqual(failure("service_unavailable"));
+    expect(
+      await c.port.replaceCharacter(
+        { operationId: "operation", expectedRevision: 0, value: "hidden" },
+        "old-service",
+      ).result,
+    ).toEqual(failure("service_unavailable"));
+    expect(
+      await c.port.replaceZoom(
+        { operationId: "operation", expectedRevision: 0, value: 125 },
+        "old-service",
+      ).result,
+    ).toEqual(failure("service_unavailable"));
+    expect(await c.port.adjustZoom("operation", "increase", "old-service").result).toEqual(
+      failure("service_unavailable"),
+    );
+    expect(c.sent).toHaveLength(0);
+    c.dispose();
+  });
+  it("retains character and zoom uncertainty on timeout, cancellation and invalid replies", async () => {
+    const c = client();
+    const character = c.port.replaceCharacter({
+      operationId: "character-1",
+      expectedRevision: 0,
+      value: "static",
+    });
+    c.respond({ schemaVersion: 1, revision: 1, value: "hidden", source: "saved" });
+    expect(await character.result).toEqual(failure("uncertain"));
+    const zoom = c.port.adjustZoom("zoom-1", "increase");
+    zoom.cancel();
+    expect(await zoom.result).toEqual(failure("uncertain"));
+    const pending = c.port.replaceZoom({ operationId: "zoom-2", expectedRevision: 0, value: 125 });
+    vi.advanceTimersByTime(portLimits.request_deadline_ms);
+    expect(await pending.result).toEqual(failure("uncertain"));
+    const receipt = c.port.readCharacterReceipt("character-1");
+    c.respond({ state: "pending" });
+    expect(await receipt.result).toMatchObject({ ok: true, value: { state: "pending" } });
+    const lookup = c.port.readZoomReceipt("zoom-2");
+    c.respond({ state: "not_found" });
+    expect(await lookup.result).toMatchObject({ ok: true });
+    c.dispose();
+  });
+  it("rejects renderer use of the broker-only relative zoom commit operation", () => {
+    const broker = new PortAdmission();
+    const frame = {};
+    broker.attach({
+      frame,
+      url: "app://local",
+      windowGeneration: "window-1",
+      serviceGeneration: "service-1",
+    });
+    const text = JSON.stringify(
+      request({
+        operation: "zoom.commit",
+        payload: { expectedRevision: 0, value: 110, intent: "increase" },
+      }),
+    );
+    expect(broker.admit({ frame, url: "app://local" }, text)).toMatchObject({
+      error: { code: "unauthorized" },
+    });
   });
 });

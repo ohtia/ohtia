@@ -165,8 +165,8 @@ export class WorkspaceController {
     this.emit();
     return { applied: true, focus };
   }
-  visibility(panel: WorkspacePanel, focused?: WorkspacePanel): LayoutAction {
-    if (this.unavailable || this.geometry.mode !== "wide")
+  visibility(panel: WorkspacePanel, focused?: WorkspacePanel, fromSettings = false): LayoutAction {
+    if (this.unavailable || (this.geometry.mode !== "wide" && !fromSettings))
       return { applied: false, reason: "unavailable" };
     this.cancelResize("visibility");
     const open = !this.layout.visible[panel];
@@ -355,6 +355,14 @@ export class WorkspaceController {
     this.release(drag);
     this.emit();
     return reason;
+  }
+  /** Explicit reconciliation reads the original receipt without rearranging this window. */
+  reconcilePreferences(): Promise<void> {
+    return this.disposed ? Promise.resolve() : this.preferences.reconcile();
+  }
+  /** A definitive failure permits a new explicit intent for the retained live layout. */
+  rememberLayout(): Promise<boolean> {
+    return this.unavailable ? Promise.resolve(false) : this.preferences.save(this.layout);
   }
   dispose(): void {
     if (this.disposed) return;

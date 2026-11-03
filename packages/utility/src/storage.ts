@@ -5,6 +5,20 @@ import Database from "better-sqlite3";
 import { Kysely, SqliteDialect, sql } from "kysely";
 import { Migrator } from "kysely/migration";
 import {
+  decodePresentationChange,
+  isCharacterPresentation,
+  isInterfaceZoom,
+  nextInterfaceZoom,
+  isZoomBoundaryError,
+  type ZoomBoundaryError,
+  type ZoomIntent,
+  type InterfaceZoom,
+  type PresentationValues,
+  type PresentationFeature,
+  type PresentationRecord,
+  type SavedPresentationRecord,
+  type PresentationChange,
+  type PresentationReceipt,
   failure,
   decodeLayoutChange,
   isWorkspaceLayout,
@@ -49,6 +63,17 @@ import {
   schema as layoutReceiptsSchema,
 } from "./migrations/0004_layout_receipts.mjs";
 
+import {
+  up as presentationReceipts,
+  schema as presentationReceiptsSchema,
+} from "./migrations/0005_presentation_receipts.mjs";
+
+interface PresentationReceiptRow extends Omit<Receipt, "value"> {
+  feature: PresentationFeature;
+  intent: ZoomIntent | null;
+  error_code: ZoomBoundaryError | null;
+  value: string;
+}
 interface Preferences {
   key: string;
   schema_version: number;
@@ -69,6 +94,7 @@ interface LayoutReceiptRow extends Omit<Receipt, "value"> {
   value: string;
 }
 interface Schema {
+  presentation_receipts: PresentationReceiptRow;
   locale_receipts: LocaleReceiptRow;
   layout_receipts: LayoutReceiptRow;
   application_preferences: Preferences;
@@ -119,9 +145,10 @@ const names = [
   "0002_receipts",
   "0003_locale_receipts",
   "0004_layout_receipts",
+  "0005_presentation_receipts",
 ] as const;
 const target = names.length;
-const targetName = names[3];
+const targetName = names[4];
 function digest(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -323,6 +350,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 2 ? ["appearance_receipts"] : []),
     ...(revision >= 3 ? ["locale_receipts"] : []),
     ...(revision >= 4 ? ["layout_receipts"] : []),
+    ...(revision >= 5 ? ["presentation_receipts"] : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -341,6 +369,20 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     throw new Error("Migration history identity mismatch.");
   // Reject altered columns instead of letting a future table rebuild discard unknown content.
   for (const [table, columns] of Object.entries({
+    ...(revision >= 5
+      ? {
+          presentation_receipts: [
+            "feature",
+            "operation_id",
+            "intent",
+            "error_code",
+            "expected_revision",
+            "value",
+            "accepted",
+            "result_revision",
+          ],
+        }
+      : {}),
     application_preferences: ["key", "schema_version", "revision", "value"],
     kysely_migration: ["name", "timestamp"],
     kysely_migration_lock: ["id", "is_locked"],
@@ -389,6 +431,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 2 ? [["appearance_receipts", receiptsSchema]] : []),
     ...(revision >= 3 ? [["locale_receipts", localeReceiptsSchema]] : []),
     ...(revision >= 4 ? [["layout_receipts", layoutReceiptsSchema]] : []),
+    ...(revision >= 5 ? [["presentation_receipts", presentationReceiptsSchema]] : []),
   ]) {
     const row = db
       .prepare("SELECT sql FROM sqlite_schema WHERE name=? AND type='table'")
@@ -671,6 +714,7 @@ export class DurableStore {
                 "0002_receipts": { up: receipts },
                 "0003_locale_receipts": { up: localeReceipts },
                 "0004_layout_receipts": { up: layoutReceipts },
+                "0005_presentation_receipts": { up: presentationReceipts },
               }),
           },
         });
@@ -1485,6 +1529,284 @@ export class DurableStore {
           commitAttempted = true;
           await sql`COMMIT`.execute(transaction);
           return result;
+        } catch (error) {
+          if (this.native?.inTransaction) {
+            try {
+              await sql`ROLLBACK`.execute(transaction);
+            } catch {
+              this.admitted = false;
+            }
+          }
+          throw error;
+        }
+      });
+    } catch {
+      try {
+        this.assert();
+      } catch {
+        this.admitted = false;
+      }
+      return failure(attempted() ? "uncertain" : "storage_failed");
+    } finally {
+      this.active = false;
+    }
+  }
+
+  private presentationRecord<K extends PresentationFeature>(
+    feature: K,
+    row: Preferences | undefined,
+  ): Outcome<PresentationRecord<PresentationValues[K]>> {
+    const initial = (feature === "character" ? "animated" : 100) as PresentationValues[K];
+    const fallback = (feature === "character" ? "static" : 100) as PresentationValues[K];
+    if (!row)
+      return {
+        ok: true,
+        value: { schemaVersion: 1, revision: 0, value: initial, source: "default" },
+      };
+    if (!Number.isSafeInteger(row.revision) || row.revision < 1)
+      return failure("preference_invalid");
+    let value: unknown;
+    try {
+      if (row.value.length <= 128) value = JSON.parse(row.value);
+    } catch {
+      /* Retain rejected evidence. */
+    }
+    const valid =
+      row.schema_version === 1 &&
+      (feature === "character" ? isCharacterPresentation(value) : isInterfaceZoom(value));
+    return {
+      ok: true,
+      value: {
+        schemaVersion: 1,
+        revision: row.revision,
+        value: valid ? (value as PresentationValues[K]) : fallback,
+        source: valid ? "saved" : "invalid_fallback",
+      },
+    };
+  }
+  async readPresentationPreference<K extends PresentationFeature>(
+    feature: K,
+  ): Promise<Outcome<PresentationRecord<PresentationValues[K]>>> {
+    if (!this.ready || !this.database) return failure("service_unavailable");
+    try {
+      this.assert();
+      return this.presentationRecord(
+        feature,
+        await this.database
+          .selectFrom("application_preferences")
+          .selectAll()
+          .where("key", "=", feature === "character" ? "character_presentation" : "interface_zoom")
+          .executeTakeFirst(),
+      );
+    } catch {
+      return failure("storage_failed");
+    }
+  }
+  private presentationReceipt<K extends PresentationFeature>(
+    feature: K,
+    row: PresentationReceiptRow | undefined,
+  ):
+    | {
+        expectedRevision: number;
+        value: PresentationValues[K];
+        intent: ZoomIntent | null;
+        outcome: Extract<
+          PresentationReceipt<PresentationValues[K]>,
+          { state: "recorded" }
+        >["outcome"];
+      }
+    | undefined {
+    if (!row) return;
+    const value: unknown = JSON.parse(row.value);
+    const boundary = row.error_code !== null;
+    if (
+      row.feature !== feature ||
+      !(feature === "character" ? isCharacterPresentation(value) : isInterfaceZoom(value)) ||
+      !isIdentifier(row.operation_id) ||
+      ![0, 1].includes(row.accepted) ||
+      !Number.isSafeInteger(row.expected_revision) ||
+      row.expected_revision < 0 ||
+      row.expected_revision >= Number.MAX_SAFE_INTEGER ||
+      !Number.isSafeInteger(row.result_revision) ||
+      row.result_revision < 0 ||
+      (boundary &&
+        (feature !== "zoom" || !isZoomBoundaryError(row.error_code) || row.intent === null)) ||
+      (row.accepted
+        ? boundary || row.result_revision !== row.expected_revision + 1
+        : boundary
+          ? row.result_revision !== row.expected_revision
+          : row.result_revision === row.expected_revision)
+    )
+      throw new Error("Invalid presentation receipt.");
+    const outcome = row.accepted
+      ? {
+          ok: true as const,
+          value: {
+            schemaVersion: 1 as const,
+            revision: row.result_revision,
+            value: value as PresentationValues[K],
+            source: "saved" as const,
+          },
+        }
+      : row.error_code
+        ? failure(row.error_code)
+        : staleRevision(row.result_revision);
+    // The row checks above prove the feature-specific persisted outcome, including terminal zoom refusals.
+    return {
+      expectedRevision: row.expected_revision,
+      value: value as PresentationValues[K],
+      intent: row.intent,
+      outcome: outcome as Extract<
+        PresentationReceipt<PresentationValues[K]>,
+        { state: "recorded" }
+      >["outcome"],
+    };
+  }
+
+  async readPresentationReceipt<K extends PresentationFeature>(
+    feature: K,
+    operation: string,
+  ): Promise<Outcome<PresentationReceipt<PresentationValues[K]>>> {
+    if (!this.ready || !this.database) return failure("service_unavailable");
+    if (!isIdentifier(operation)) return failure("invalid_message");
+    try {
+      this.assert();
+      const receipt = this.presentationReceipt(
+        feature,
+        await this.database
+          .selectFrom("presentation_receipts")
+          .selectAll()
+          .where("feature", "=", feature)
+          .where("operation_id", "=", operation)
+          .executeTakeFirst(),
+      );
+      return {
+        ok: true,
+        value: receipt ? { state: "recorded", outcome: receipt.outcome } : { state: "not_found" },
+      };
+    } catch {
+      return failure("storage_failed");
+    }
+  }
+  async replacePresentationPreference<K extends PresentationFeature>(
+    feature: K,
+    command: PresentationChange<PresentationValues[K]>,
+    intent: ZoomIntent | null = null,
+  ): Promise<Outcome<SavedPresentationRecord<PresentationValues[K]>>> {
+    if (!this.ready || !this.database) return failure(this.active ? "busy" : "service_unavailable");
+    if (
+      (feature !== "character" && feature !== "zoom") ||
+      (intent !== null &&
+        (feature !== "zoom" || !["increase", "decrease", "reset"].includes(intent)))
+    )
+      return failure("invalid_message");
+    const decoded = decodePresentationChange(feature, command);
+    if (!decoded.ok) return decoded;
+    command = decoded.value as PresentationChange<PresentationValues[K]>;
+    this.active = true;
+    let commitAttempted = false;
+    const attempted = () => commitAttempted;
+    try {
+      this.assert();
+      return await this.database.connection().execute(async (transaction) => {
+        await sql`BEGIN IMMEDIATE`.execute(transaction);
+        try {
+          const receipt = this.presentationReceipt(
+            feature,
+            await transaction
+              .selectFrom("presentation_receipts")
+              .selectAll()
+              .where("feature", "=", feature)
+              .where("operation_id", "=", command.operationId)
+              .executeTakeFirst(),
+          );
+          const key = feature === "character" ? "character_presentation" : "interface_zoom";
+          const current = this.presentationRecord(
+            feature,
+            await transaction
+              .selectFrom("application_preferences")
+              .selectAll()
+              .where("key", "=", key)
+              .executeTakeFirst(),
+          );
+          let outcome: Outcome<SavedPresentationRecord<PresentationValues[K]>>;
+          if (receipt)
+            outcome = (
+              intent !== null
+                ? receipt.intent === intent
+                : receipt.intent === null &&
+                  receipt.expectedRevision === command.expectedRevision &&
+                  receipt.value === command.value
+            )
+              ? receipt.outcome
+              : failure("operation_conflict");
+          else if (!current.ok) outcome = current;
+          else if (current.value.revision !== command.expectedRevision)
+            outcome = staleRevision(current.value.revision);
+          else if (
+            intent !== null &&
+            command.value !== nextInterfaceZoom(current.value.value as InterfaceZoom, intent)
+          )
+            outcome = failure("invalid_message");
+          else if (intent !== null && current.value.value === command.value)
+            outcome = failure(
+              intent === "reset"
+                ? "actual_size"
+                : intent === "increase"
+                  ? "zoom_maximum"
+                  : "zoom_minimum",
+            );
+          else
+            outcome = {
+              ok: true,
+              value: {
+                schemaVersion: 1,
+                revision: command.expectedRevision + 1,
+                value: command.value,
+                source: "saved",
+              },
+            };
+          if (
+            !receipt &&
+            current.ok &&
+            (outcome.ok ||
+              outcome.error.code === "stale_revision" ||
+              isZoomBoundaryError(outcome.error.code))
+          ) {
+            if (outcome.ok) {
+              const row = {
+                key,
+                schema_version: 1,
+                revision: outcome.value.revision,
+                value: JSON.stringify(command.value),
+              };
+              await transaction
+                .insertInto("application_preferences")
+                .values(row)
+                .onConflict((conflict) => conflict.column("key").doUpdateSet(row))
+                .execute();
+            }
+            await transaction
+              .insertInto("presentation_receipts")
+              .values({
+                feature,
+                intent,
+                error_code:
+                  !outcome.ok && isZoomBoundaryError(outcome.error.code)
+                    ? outcome.error.code
+                    : null,
+                operation_id: command.operationId,
+                expected_revision: command.expectedRevision,
+                value: JSON.stringify(command.value),
+                accepted: outcome.ok ? 1 : 0,
+                result_revision: outcome.ok ? outcome.value.revision : current.value.revision,
+              })
+              .execute();
+          }
+          this.assert();
+          commitAttempted = true;
+          await sql`COMMIT`.execute(transaction);
+          return outcome;
         } catch (error) {
           if (this.native?.inTransaction) {
             try {
