@@ -87,6 +87,7 @@
     "scripts/tests/test_desktop_runtime.py",
     "scripts/tests/test_github_policy.py",
     "scripts/tests/test_github_pr.py",
+    "scripts/tests/test_installation_attestor.py",
     "scripts/tests/test_installation_facilities.py",
     "scripts/tests/test_installation_native.py",
     "scripts/tests/test_installation_scaleway.py",
@@ -110,6 +111,11 @@
     "scripts/tests/test_workspace.py"
   ],
   "python_inapplicable": [
+    {
+      "id": "test_installation_attestor.SourceTests.test_inspects_source_as_data_and_rejects_modified_tracked_bytes",
+      "platforms": ["win32"],
+      "reason": "Linux build recipe's isolated POSIX Git execution"
+    },
     {
       "id": "test_desktop_delivery.DeliveryTests.test_security_hooks_refuse_failed_empty_find_observations_before_policy_changes",
       "platforms": ["win32"],

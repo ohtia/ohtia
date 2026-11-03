@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import { _electron, expect } from "@playwright/test";
 import { verifyPackagedSettings } from "./settings-acceptance.mjs";
+import { setNativeViewport } from "./design-viewport.mjs";
+import { withCommandCleanup } from "./command-native-focus.mjs";
 import { pseudolocalize } from "./pseudolocalization.mjs";
 import { admittedLaunch } from "./desktop-launch.mjs";
 import { recordReadyNativeProcesses } from "./desktop-native-observation.mjs";
@@ -57,6 +59,15 @@ function record(id, observed) {
 }
 let application;
 let openingObserved = false;
+/** Keep locale and storage checks on the actual window, without persistent emulation. */
+async function resizeNativeViewport(page, size) {
+  const nativeWindow = await application.browserWindow(page);
+  return withCommandCleanup(
+    () => setNativeViewport(page, nativeWindow, { ...size, zoomFactor: 1 }),
+    () => nativeWindow.dispose(),
+  );
+}
+
 async function start() {
   application = await _electron.launch({
     executablePath: launch.executable,
@@ -345,7 +356,7 @@ try {
       message(choice, "settings.language.title"),
     );
     for (const width of [320, 600, 1024, 1280]) {
-      await page.setViewportSize({ width, height: 700 });
+      await resizeNativeViewport(page, { width, height: 600 });
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
       ).toBe(true);
@@ -370,12 +381,12 @@ try {
     document.body.append(clone);
   }, renderedTexts.map(pseudolocalize));
   for (const width of [320, 600, 1024, 1280]) {
-    await page.setViewportSize({ width, height: 700 });
+    await resizeNativeViewport(page, { width, height: 600 });
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
   }
-  await page.setViewportSize({ width: 320, height: 700 });
+  await resizeNativeViewport(page, { width: 320, height: 600 });
   await page.screenshot({ path: path.join(output, "locale-pseudo-320.png"), fullPage: true });
   await page.locator("#locale-pseudo-fixture").evaluate((element) => element.remove());
   await page.locator("#locale-preservation-fixture").focus();
@@ -428,6 +439,7 @@ try {
   record("graphical-persisted-locale", {
     locales: [...supportedLocales],
     widths: [320, 600, 1024, 1280],
+    viewport: "Native content sizes at actual zoom, without viewport emulation.",
     restoredLanguage,
     staleLanguage,
     tree: languageTree,
@@ -476,7 +488,7 @@ try {
     localePropagationAfterReplacement: true,
   });
   await expect(page.locator("#location-state")).toHaveText(text("storage_ready"));
-  await page.setViewportSize({ width: 320, height: 700 });
+  await resizeNativeViewport(page, { width: 320, height: 600 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
@@ -719,7 +731,7 @@ try {
           .value,
     )
     .toBe("ko-KR");
-  await page.setViewportSize({ width: 320, height: 700 });
+  await resizeNativeViewport(page, { width: 320, height: 600 });
   await page.screenshot({ path: path.join(output, "locale-ko-320.png"), fullPage: true });
   record("graphical-checkpoint-restoration", {
     restored,

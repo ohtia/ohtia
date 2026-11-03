@@ -97,6 +97,10 @@ async function nativeControlWheel(nativeWindow, deltaY) {
 }
 /** Run only inside the storage harness's admitted independent native profile. */
 export async function verifyPackagedSettings(application, page, second, output) {
+  expect(
+    page.viewportSize(),
+    "Native Settings checks must not inherit viewport emulation.",
+  ).toBeNull();
   const locale = (await page.evaluate(() => window.ohtia.bootstrap.read())).locale;
   const text = (key) => message(locale, key);
   const before = await page.evaluate(() => window.ohtia.foundation.readPresentation().result);
@@ -272,9 +276,14 @@ export async function verifyPackagedSettings(application, page, second, output) 
         () => window.ohtia.foundation.readPresentation().result,
       );
       expect(afterSteps.value.zoom.value).toBe(125);
-      await nativeWindow.evaluate((window) => window.setContentSize(1280, 800));
+      await nativeWindow.evaluate((window) => window.setContentSize(1280, 600));
       await changeZoom(400);
-      await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(320);
+      await expect
+        .poll(async () => [
+          ...(await nativeWindow.evaluate((window) => window.getContentSize())),
+          ...(await page.evaluate(() => [window.innerWidth, window.innerHeight])),
+        ])
+        .toEqual([1280, 600, 320, 150]);
       const reflow = await dialog.evaluate((element) => ({
         width: element.getBoundingClientRect().width,
         height: element.getBoundingClientRect().height,
