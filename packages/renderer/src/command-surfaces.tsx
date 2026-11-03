@@ -4,8 +4,9 @@ import {
   useId,
   useRef,
   useState,
-  type ReactNode,
+  useMemo,
   type RefObject,
+  type ReactNode,
 } from "react";
 import {
   commandDefinitions,
@@ -16,6 +17,8 @@ import {
   type CommandBridge,
   type CommandId,
   type CommandSnapshot,
+  type CommandPlatform,
+  type CommandReason,
   type InterfaceLocale,
   type ProjectLink,
   type SimpleMessageKey,
@@ -23,7 +26,7 @@ import {
 import { CommandController, presentationReason } from "./command-controller.js";
 import { Dialog } from "./layers.js";
 import { Button } from "./controls.js";
-import { OhtiaBrand } from "./branding.js";
+import { OhtiaBrand, StaticCharacterIllustration } from "./branding.js";
 import { LucideGlyph } from "./iconography.js";
 
 export type DecorationState = "static" | "animated" | "hidden";
@@ -93,51 +96,9 @@ export function ProjectLinks({
     </>
   );
 }
-/** The browser ratio includes interface zoom; observe both density and actual capped CSS width. */
+
 export function ProductCharacter() {
-  const image = useRef<HTMLImageElement>(null);
-  const [vector, setVector] = useState(false);
-  useLayoutEffect(() => {
-    const element = image.current;
-    if (!element) return;
-    let density: MediaQueryList;
-    let live = true;
-    const update = () => {
-      if (live)
-        setVector((element.getBoundingClientRect().width || 128) * window.devicePixelRatio > 512);
-    };
-    const changed = () => {
-      if (!live) return;
-      density.removeEventListener("change", changed);
-      bind();
-      update();
-    };
-    const bind = () => {
-      density = window.matchMedia(`(resolution: ${String(window.devicePixelRatio)}dppx)`);
-      density.addEventListener("change", changed);
-    };
-    bind();
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(element);
-    window.addEventListener("resize", changed);
-    return () => {
-      live = false;
-      observer.disconnect();
-      density.removeEventListener("change", changed);
-      window.removeEventListener("resize", changed);
-    };
-  }, []);
-  return (
-    <img
-      ref={image}
-      className="about-character"
-      src={`/branding/illustration.${vector ? "svg" : "png"}`}
-      width={128}
-      height={128}
-      alt=""
-    />
-  );
+  return <StaticCharacterIllustration />;
 }
 
 export function AboutDialog({
@@ -152,8 +113,9 @@ export function AboutDialog({
   onClose,
   onOpenLink,
   actionFailed = false,
-  copyDisabledReason,
+  feedback,
   returnFocusRef,
+  copyDisabledReason,
 }: {
   open: boolean;
   locale: InterfaceLocale;
@@ -161,7 +123,8 @@ export function AboutDialog({
   failed?: boolean;
   actionFailed?: boolean;
   copyDisabledReason?: string;
-  returnFocusRef?: RefObject<HTMLElement | null>;
+  feedback?: ReactNode;
+  returnFocusRef?: Readonly<RefObject<HTMLElement | null>>;
   decoration?: DecorationState;
   manuscriptVisible?: boolean;
   copy: CopyState;
@@ -178,12 +141,12 @@ export function AboutDialog({
       title={text("command.about.open")}
       titleContent={<OhtiaBrand heading />}
       headingLevel={1}
-      {...(returnFocusRef ? { returnFocusRef } : {})}
       className="command-dialog about-dialog"
       closeLabel={text("dialog.close")}
       closeContent={<LucideGlyph name="x" />}
       onClose={onClose}
       bodyClassName="command-dialog-body"
+      {...(returnFocusRef ? { returnFocusRef } : {})}
       headingPrefix={
         open && decoration !== "hidden" && !manuscriptVisible ? <ProductCharacter /> : undefined
       }
@@ -193,6 +156,7 @@ export function AboutDialog({
         </div>
       }
     >
+      {feedback}
       <p>{text("about.description")}</p>
       {failed ? (
         <p role="alert" className="command-danger">
@@ -302,10 +266,10 @@ export function HelpDialog({
   onClose,
   onOpenLink,
   actionFailed = false,
-  copy,
+  feedback,
   returnFocusRef,
+  copy,
 }: {
-  returnFocusRef?: RefObject<HTMLElement | null>;
   open: boolean;
   locale: InterfaceLocale;
   copy?: CopyState;
@@ -314,22 +278,25 @@ export function HelpDialog({
   onClose: () => void;
   onOpenLink: (link: ProjectLink) => void;
   actionFailed?: boolean;
+  feedback?: ReactNode;
+  returnFocusRef?: Readonly<RefObject<HTMLElement | null>>;
 }) {
   return (
     <Dialog
       open={open}
       title={message(locale, "command.help.open")}
-      {...(returnFocusRef ? { returnFocusRef } : {})}
       closeLabel={message(locale, "dialog.close")}
       onClose={onClose}
       className="command-dialog help-dialog"
       bodyClassName="command-dialog-body"
+      {...(returnFocusRef ? { returnFocusRef } : {})}
       footer={
         <div className="command-dialog-footer">
           <Button label={message(locale, "dialog.close")} onPress={onClose} />
         </div>
       }
     >
+      {feedback}
       <p>{message(locale, "help.capabilities")}</p>
       {(["language", "appearance", "zoom", "characters", "layout"] as const).map((group) => (
         <section className="help-group" key={group}>
@@ -370,30 +337,65 @@ export function CommandSurfaces({
   decoration = "static",
   manuscriptVisible = false,
   registerHandlers,
+  renderSettings,
+  renderFeedback,
   children,
   returnFocusRef,
 }: {
-  returnFocusRef?: RefObject<HTMLElement | null>;
-  bridge: CommandBridge;
+  returnFocusRef?: Readonly<RefObject<HTMLElement | null>>;
   children?: (controller: CommandController | undefined) => ReactNode;
-  registerHandlers?: (controller: CommandController) => () => void;
+  bridge: CommandBridge;
+  registerHandlers?: (
+    controller: CommandController,
+    reason: (id: CommandId) => CommandReason | undefined,
+  ) => () => void;
+  renderSettings?: (
+    open: boolean,
+    close: () => void,
+    platform: CommandPlatform,
+    feedback: ReactNode,
+    returnFocus: Readonly<RefObject<HTMLElement | null>>,
+  ) => ReactNode;
+  renderFeedback?: (openSettings: () => void, inDialog: boolean) => ReactNode;
   locale: InterfaceLocale;
   decoration?: DecorationState;
   manuscriptVisible?: boolean;
 }) {
+  const settingsRenderer = useRef(renderSettings);
+  settingsRenderer.current = renderSettings;
+  const settingsAvailable = !!renderSettings;
   const [controller, setController] = useState<CommandController>();
   const [, setSnapshot] = useState<CommandSnapshot>();
-  const [surface, setSurface] = useState<"about" | "help">();
+  const [surface, setSurface] = useState<"about" | "help" | "settings">();
   const [info, setInfo] = useState<AboutInformation>();
   const [loadFailed, setLoadFailed] = useState(false);
   const [copy, setCopy] = useState<CopyState>({ phase: "idle", attempt: 0 });
   const [failure, setFailure] = useState(false);
+  const [unavailable, setUnavailable] = useState<{ command: CommandId; reason: CommandReason }>();
   const pendingHandoff = useRef<CommandId | undefined>(undefined);
+  const actionBar = useRef<HTMLDivElement>(null);
+  const modalTrigger = useRef<HTMLElement | null>(null);
+  const modalReturnFocus = useMemo(
+    () => ({
+      get current(): HTMLElement | null {
+        const original = modalTrigger.current;
+        return original &&
+          original.isConnected &&
+          original !== original.ownerDocument.body &&
+          !original.closest("dialog:not([open]), [hidden], [inert]")
+          ? original
+          : (returnFocusRef?.current ??
+              actionBar.current?.querySelector<HTMLElement>("button") ??
+              null);
+      },
+    }),
+    [returnFocusRef],
+  );
   const current = useRef({
     live: true,
     incarnation: 0,
     localeEpoch: 0,
-    surface: undefined as "about" | "help" | undefined,
+    surface: undefined as "about" | "help" | "settings" | undefined,
     locale,
     composing: false,
     composingTarget: undefined as Node | undefined,
@@ -419,6 +421,7 @@ export function CommandSurfaces({
     const isLive = () => live;
     let registry: CommandController | undefined;
     let unsubscribe = () => {};
+    let unsubscribeResults = () => {};
     let native = () => {};
     let extensions = () => {};
     current.current.live = true;
@@ -428,6 +431,7 @@ export function CommandSurfaces({
     setSurface(undefined);
     setCopy({ phase: "idle", attempt: 0 });
     setFailure(false);
+    setUnavailable(undefined);
     if (current.current.composingTarget && !current.current.composingTarget.isConnected) {
       current.current.composing = false;
       current.current.composingTarget = undefined;
@@ -468,7 +472,9 @@ export function CommandSurfaces({
       current.current.composingTarget = undefined;
       update();
     };
-    const open = (next: "about" | "help") => {
+    const open = (next: "about" | "help" | "settings") => {
+      modalTrigger.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
       current.current.incarnation++;
       current.current.surface = next;
       setSurface(next);
@@ -554,7 +560,15 @@ export function CommandSurfaces({
             return true;
           },
         });
-        extensions = registerHandlers?.(registry) ?? (() => {});
+        if (settingsAvailable)
+          registry.register("settings.open", {
+            state: () => state("settings.open"),
+            run: () => {
+              open("settings");
+              return true;
+            },
+          });
+        extensions = registerHandlers?.(registry, reason) ?? (() => {});
         let publishing = false;
         let latest: CommandSnapshot | undefined;
         const flush = async () => {
@@ -575,6 +589,11 @@ export function CommandSurfaces({
           if (!registry || !live) return;
           const snapshot = registry.snapshot();
           setSnapshot(snapshot);
+          setUnavailable((previous) =>
+            previous && registry?.entry(previous.command).reason !== previous.reason
+              ? undefined
+              : previous,
+          );
           latest = snapshot;
           if (!publishing) {
             publishing = true;
@@ -582,6 +601,14 @@ export function CommandSurfaces({
           }
         };
         unsubscribe = registry.subscribe(publish);
+        unsubscribeResults = registry.subscribeResults((result, command) => {
+          if (!live) return;
+          setUnavailable(
+            result.status === "unavailable" && registry?.entry(command).reason === result.reason
+              ? { command, reason: result.reason }
+              : undefined,
+          );
+        });
         native = bridge.onIntent((intent) => {
           void registry?.receive(intent);
         });
@@ -616,6 +643,7 @@ export function CommandSurfaces({
       native();
       extensions();
       unsubscribe();
+      unsubscribeResults();
       registry?.dispose();
       document.removeEventListener("focusin", update);
       document.removeEventListener("focusout", focusOut);
@@ -623,7 +651,7 @@ export function CommandSurfaces({
       document.removeEventListener("compositionstart", composition);
       document.removeEventListener("compositionend", composition);
     };
-  }, [bridge, registerHandlers]);
+  }, [bridge, registerHandlers, settingsAvailable]);
   useEffect(() => {
     if (surface || !pendingHandoff.current || !controller) return;
     const command = pendingHandoff.current;
@@ -636,6 +664,7 @@ export function CommandSurfaces({
     setSurface(undefined);
     setCopy({ phase: "idle", attempt: 0 });
     setFailure(false);
+    setUnavailable(undefined);
     controller?.changed();
   };
   const close = () => {
@@ -660,13 +689,33 @@ export function CommandSurfaces({
         if (current.current.live && incarnation === current.current.incarnation) setFailure(true);
       });
   };
+  const openSettings = () => {
+    if (surface) handoff("settings.open");
+    else invoke("settings.open");
+  };
+  const windowFeedback = renderFeedback?.(openSettings, false);
+  const dialogFeedback =
+    surface === "help" || surface === "about" ? renderFeedback?.(openSettings, true) : undefined;
   const copyReason = controller?.entry("version.copy").reason;
+  const commandFeedback = unavailable ? (
+    <p role="status" className="command-unavailable">
+      {message(locale, `command.reason.${unavailable.reason}`)}
+    </p>
+  ) : null;
   return (
     <>
       {children ? (
         children(controller)
       ) : (
-        <div className="actions command-entry-actions">
+        <div ref={actionBar} className="actions command-entry-actions">
+          {settingsAvailable && (
+            <CommandButton
+              id="settings.open"
+              locale={locale}
+              {...(controller ? { controller } : {})}
+              onInvoke={invoke}
+            />
+          )}
           <CommandButton
             id="help.open"
             locale={locale}
@@ -698,9 +747,36 @@ export function CommandSurfaces({
           {message(locale, "command.failed")}
         </p>
       )}
+      {!surface && commandFeedback}
+      {renderFeedback && (
+        <div className="command-window-feedback" hidden={!!surface}>
+          {windowFeedback}
+        </div>
+      )}
       {!surface && <CopyFeedback copy={copy} locale={locale} />}
+      {controller &&
+        settingsRenderer.current?.(
+          surface === "settings",
+          close,
+          controller.context.platform,
+          <>
+            {commandFeedback}
+            {failure && (
+              <p role="alert" className="command-danger">
+                {message(locale, "command.failed")}
+              </p>
+            )}
+          </>,
+          modalReturnFocus,
+        )}
       <HelpDialog
-        {...(returnFocusRef ? { returnFocusRef } : {})}
+        returnFocusRef={modalReturnFocus}
+        feedback={
+          <>
+            {commandFeedback}
+            {surface === "help" && dialogFeedback}
+          </>
+        }
         copy={copy}
         actionFailed={failure}
         open={surface === "help"}
@@ -714,7 +790,13 @@ export function CommandSurfaces({
         onOpenLink={openLink}
       />
       <AboutDialog
-        {...(returnFocusRef ? { returnFocusRef } : {})}
+        returnFocusRef={modalReturnFocus}
+        feedback={
+          <>
+            {commandFeedback}
+            {surface === "about" && dialogFeedback}
+          </>
+        }
         actionFailed={failure}
         {...(copyReason
           ? { copyDisabledReason: message(locale, `command.reason.${copyReason}`) }

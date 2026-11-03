@@ -109,6 +109,9 @@ async function launch(
       stop: vi.fn(),
       isDestroyed: () => this.destroyed,
       setWindowOpenHandler: vi.fn(),
+      setVisualZoomLevelLimits: vi.fn(async () => {}),
+      getZoomFactor: vi.fn(() => 1),
+      setZoomFactor: vi.fn(),
     });
     isFocused = () => true;
     close = vi.fn();

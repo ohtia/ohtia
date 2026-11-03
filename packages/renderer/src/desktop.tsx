@@ -11,10 +11,8 @@ import {
   type PortCall,
 } from "@ohtia/contracts";
 import "./foundation.css";
-import { CommandSurfaces } from "./command-surfaces.js";
+import { SettingsSurfaces } from "./settings-surfaces.js";
 import { OhtiaBrand } from "./branding.js";
-import { LanguagePanel } from "./language-panel.js";
-import { AppearancePanel } from "./appearance-panel.js";
 
 declare global {
   interface Window {
@@ -135,7 +133,13 @@ function FoundationWindow() {
         <OhtiaBrand />
       </h1>
       <p>{text("intro")}</p>
-      <CommandSurfaces bridge={window.ohtia.commands} locale={bootstrap.locale} />
+      <SettingsSurfaces
+        bridge={window.ohtia.commands}
+        port={window.ohtia.foundation}
+        locale={bootstrap.locale}
+        available={bootstrap.state === "storage_ready"}
+        onLocale={applyLocale.current}
+      />
       <p role="status" aria-live="polite" aria-atomic="true">
         {text(
           status === "ready"
@@ -180,17 +184,6 @@ function FoundationWindow() {
           </button>
         )}
       </section>
-      <LanguagePanel
-        port={window.ohtia.foundation}
-        locale={bootstrap.locale}
-        available={bootstrap.state === "storage_ready"}
-        onLocale={applyLocale.current}
-      />
-      <AppearancePanel
-        port={window.ohtia.foundation}
-        locale={bootstrap.locale}
-        available={bootstrap.state === "storage_ready"}
-      />
       <div className="actions">
         <button
           type="button"

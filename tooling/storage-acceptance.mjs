@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import { _electron, expect } from "@playwright/test";
+import { verifyPackagedSettings } from "./settings-acceptance.mjs";
 import { pseudolocalize } from "./pseudolocalization.mjs";
 import { admittedLaunch } from "./desktop-launch.mjs";
 import { recordReadyNativeProcesses } from "./desktop-native-observation.mjs";
@@ -227,10 +228,13 @@ try {
   const before = await page.evaluate(() => window.ohtia.foundation.readAppearance().result);
   expect(before.ok).toBe(true);
   const selected = before.value.value === "dark" ? "light" : "dark";
-  const control = page.getByRole("combobox", { name: text("appearance"), exact: true });
+  await page.getByRole("button", { name: text("command.settings.open"), exact: true }).click();
+  await expect(
+    page.getByRole("dialog", { name: text("settings.title"), exact: true }),
+  ).toBeVisible();
+  const control = page.locator('input[type="radio"][value="system"]');
   await expect(control).toBeEnabled();
-  await control.selectOption(selected);
-  await page.getByRole("button", { name: text("save"), exact: true }).click();
+  await page.locator(`input[type="radio"][value="${selected}"]`).check();
   await expect
     .poll(
       async () =>
@@ -317,7 +321,7 @@ try {
     const draft = document.createElement("textarea");
     draft.id = "locale-preservation-fixture";
     draft.value = "Synthetic researcher draft 연구 초안";
-    document.querySelector("main").append(draft);
+    document.querySelector(".settings-content").append(draft);
     window.__localeInput = draft;
   });
   for (const choice of supportedLocales) {
@@ -430,8 +434,12 @@ try {
     inputFixture: "synthetic textarea, not project-switch qualification",
     pseudolocalization: "separate synthetic layout clone with at least 40 percent text expansion",
   });
+  record(
+    "packaged-settings-presentation",
+    await verifyPackagedSettings(application, page, second, output),
+  );
   // Leave a draft in the first window, then replace the utility. The document and input must survive.
-  await control.selectOption("system");
+  await control.check();
   await page.evaluate(() => {
     window.__storageDocumentMarker = "retained";
   });
@@ -453,7 +461,7 @@ try {
     )
     .toBe("verified");
   expect(await page.evaluate(() => window.__storageDocumentMarker)).toBe("retained");
-  await expect(control).toHaveValue("system");
+  await expect(control).toBeChecked();
   await language.selectOption("es-AR");
   await expect(second.locator("html")).toHaveAttribute("lang", "es-AR");
   await language.selectOption(initialLanguage.value.record.value);
@@ -498,6 +506,9 @@ try {
     record(`process-interruption-${boundary}`, { interrupted, inspected });
   }
   const finalLanguage = await page.evaluate(() => window.ohtia.foundation.readLocale().result);
+  const finalPresentation = await page.evaluate(
+    () => window.ohtia.foundation.readPresentation().result,
+  );
   const final = await page.evaluate(() => window.ohtia.foundation.readAppearance().result);
   const checkpointRoot = path.join(launch.profile.research_root, "recovery/migrations");
   const priorCheckpoints = fs.readdirSync(checkpointRoot).sort();
@@ -513,6 +524,20 @@ try {
   expect(fs.readdirSync(checkpointRoot).sort()).toEqual(priorCheckpoints);
   expect(locatorFiles()).toEqual(priorLocatorFiles);
   const restartedLanguage = await page.evaluate(() => window.ohtia.foundation.readLocale().result);
+  const restartedPresentation = await page.evaluate(
+    () => window.ohtia.foundation.readPresentation().result,
+  );
+  expect(restartedPresentation).toMatchObject({
+    ok: true,
+    value: {
+      appearance: finalPresentation.value.appearance,
+      character: finalPresentation.value.character,
+      zoom: finalPresentation.value.zoom,
+    },
+  });
+  expect(restartedPresentation.value.serviceGeneration).not.toBe(
+    finalPresentation.value.serviceGeneration,
+  );
   expect(restartedLanguage).toMatchObject({
     ok: true,
     value: {
@@ -677,6 +702,13 @@ try {
     value: { revision: 0, value: "system", source: "default" },
   });
   await expect(page.locator("#location-state")).toBeFocused();
+  const restoredInterfaceLocale = (await page.evaluate(() => window.ohtia.bootstrap.read())).locale;
+  await page
+    .getByRole("button", {
+      name: message(restoredInterfaceLocale, "command.settings.open"),
+      exact: true,
+    })
+    .click();
   const restoredLocaleControl = page.locator('select[aria-describedby="language-help"]');
   await restoredLocaleControl.selectOption("ko-KR");
   await expect(page.locator("html")).toHaveAttribute("lang", "ko-KR");

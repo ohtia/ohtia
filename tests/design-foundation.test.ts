@@ -179,6 +179,7 @@ describe("review regression contracts", () => {
           "primitives.css",
           "foundation.css",
           "command-surfaces.css",
+          "settings.css",
           "workspace-chrome.css",
         ].map((name) => `packages/renderer/src/${name}`),
       ]) {
@@ -360,6 +361,7 @@ describe("review regression contracts", () => {
         "design-roles.css",
         "primitives.css",
         "command-surfaces.css",
+        "settings.css",
         "workspace-chrome.css",
       ].map((name) => [name, fs.readFileSync(`packages/renderer/src/${name}`, "utf8")]),
     );

@@ -312,6 +312,66 @@
       "selector": ".workspace-documents > h2:focus + .workspace-tabs [role=\"tab\"]",
       "backgrounds": ["surface.page", "surface.panel"],
       "minimum": 3
+    },
+    {
+      "selector": ".settings-dialog .primitive-dialog-header",
+      "backgrounds": ["surface.page"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".settings-content section",
+      "backgrounds": ["surface.page"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".settings-save-state, .settings-content small, .settings-info, .settings-zoom > p",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "foreground": "content.secondary"
+    },
+    {
+      "selector": ".settings-theme-card",
+      "backgrounds": ["surface.page"],
+      "minimum": 3
+    },
+    {
+      "selector": ".settings-theme-card[data-selected=\"true\"], .settings-character-option[data-selected=\"true\"]",
+      "backgrounds": ["surface.page"],
+      "minimum": 3
+    },
+    {
+      "selector": ".settings-theme-preview",
+      "backgrounds": ["surface.page"],
+      "minimum": 3
+    },
+    {
+      "selector": ".settings-character-preview",
+      "backgrounds": ["surface.page"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".settings-content input",
+      "backgrounds": ["surface.page"],
+      "minimum": 3
+    },
+    {
+      "selector": ".settings-character-option[data-selected=\"true\"]",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".settings-content .language-danger, .settings-feedback .language-danger",
+      "backgrounds": ["surface.page"],
+      "minimum": 3
+    },
+    {
+      "selector": ".settings-content .language-attention, .settings-feedback .language-attention",
+      "backgrounds": ["surface.page"],
+      "minimum": 3
     }
   ],
   "overlays": [

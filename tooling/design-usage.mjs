@@ -17,6 +17,11 @@ const isLineShorthand = (property) =>
 // This vocabulary is intentionally explicit. New CSS features require a checked contract.
 const layout = new Set([
   "align-items",
+  "align-content",
+  "justify-items",
+  "justify-self",
+  "padding-block",
+  "padding-block-start",
   "align-self",
   "float",
   "aspect-ratio",
@@ -68,6 +73,7 @@ const layout = new Set([
   "margin",
   "margin-block",
   "margin-inline-start",
+  "margin-inline-end",
   "max-inline-size",
   "max-width",
   "min-height",
@@ -84,6 +90,7 @@ const layout = new Set([
   "word-break",
 ]);
 const paints = new Set([
+  "accent-color",
   "background",
   "background-color",
   "color",
@@ -99,7 +106,12 @@ const isPaint = (property) =>
   paints.has(property) ||
   isLineShorthand(property) ||
   /^border-(?:(?:top|right|bottom|left|block|inline)(?:-(?:start|end))?-)?color$/.test(property);
-const media = new Set(["(pointer: coarse)", "(forced-colors: active)"]);
+const media = new Set([
+  "(pointer: coarse)",
+  "(forced-colors: active)",
+  "(max-height: 400px)",
+  "(max-width: 360px)",
+]);
 
 /** Closed declarations prevent unsupported CSS expressions from masquerading as checked tokens. */
 export function checkColorUsage(model, sources, usage) {

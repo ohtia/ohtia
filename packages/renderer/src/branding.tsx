@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from "react";
 import { designMetrics } from "./design-tokens.js";
 
 /** Canonical compact geometry; decoration never communicates research confirmation. */
@@ -54,5 +55,58 @@ export function OhtiaBrand({ heading = false }: { readonly heading?: boolean } =
       <OhtiaGlasses />
       <span>Ohtia</span>
     </span>
+  );
+}
+
+/** The browser ratio includes interface zoom; observe both density and actual capped CSS width. */
+export function StaticCharacterIllustration({
+  size = 128,
+  className = "about-character",
+}: {
+  readonly size?: 96 | 128;
+  readonly className?: string;
+}) {
+  const image = useRef<HTMLImageElement>(null);
+  const [vector, setVector] = useState(false);
+  useLayoutEffect(() => {
+    const element = image.current;
+    if (!element) return;
+    let density: MediaQueryList;
+    let live = true;
+    const update = () => {
+      if (live)
+        setVector((element.getBoundingClientRect().width || size) * window.devicePixelRatio > 512);
+    };
+    const changed = () => {
+      if (!live) return;
+      density.removeEventListener("change", changed);
+      bind();
+      update();
+    };
+    const bind = () => {
+      density = window.matchMedia(`(resolution: ${String(window.devicePixelRatio)}dppx)`);
+      density.addEventListener("change", changed);
+    };
+    bind();
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    window.addEventListener("resize", changed);
+    return () => {
+      live = false;
+      observer.disconnect();
+      density.removeEventListener("change", changed);
+      window.removeEventListener("resize", changed);
+    };
+  }, [size]);
+  return (
+    <img
+      ref={image}
+      className={className}
+      src={`/branding/illustration.${vector ? "svg" : "png"}`}
+      width={size}
+      height={size}
+      alt=""
+    />
   );
 }

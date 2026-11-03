@@ -160,34 +160,44 @@ describe("sandbox preload composition", () => {
   });
 });
 
-it("keeps locale owners observable after a seamless private service replacement", async () => {
-  const h = await load();
-  const notices = vi.fn();
-  let stream = h.bridge.foundation.subscribeLocale(notices);
-  h.ipcRenderer.emit(desktopChannels.ended, {}, "service-1");
-  h.ipcRenderer.sendSync.mockReturnValue({
-    serviceGeneration: "service-2",
-    windowGeneration: "window-2",
-  });
-  h.ipcRenderer.emit(desktopChannels.reconnect);
-  h.ipcRenderer.emit(desktopChannels.preferencesReady, {}, "service-1");
-  expect(notices).not.toHaveBeenCalled();
-  h.ipcRenderer.emit(desktopChannels.preferencesReady, {}, "service-2");
-  expect(notices).toHaveBeenCalledWith(
-    expect.objectContaining({ error: expect.objectContaining({ code: "sequence_gap" }) }),
-  );
-  stream.dispose();
-  stream = h.bridge.foundation.subscribeLocale(() => {
-    throw new Error("Consumer failed");
-  });
-  h.ipcRenderer.emit(desktopChannels.preferencesReady, {}, "service-2");
-  stream.dispose();
-  const count = notices.mock.calls.length;
-  h.window.dispatchEvent(new Event("unload"));
-  h.ipcRenderer.emit(desktopChannels.preferencesReady, {}, "service-2");
-  expect(notices).toHaveBeenCalledTimes(count);
-  expect(h.ipcRenderer.listenerCount(desktopChannels.preferencesReady)).toBe(0);
-});
+it.each(["locale", "presentation"] as const)(
+  "keeps %s owners observable after a seamless private service replacement",
+  async (topic) => {
+    const h = await load();
+    const notices = vi.fn();
+    let stream =
+      topic === "locale"
+        ? h.bridge.foundation.subscribeLocale(notices)
+        : h.bridge.foundation.subscribePresentation(notices);
+    h.ipcRenderer.emit(desktopChannels.ended, {}, "service-1");
+    h.ipcRenderer.sendSync.mockReturnValue({
+      serviceGeneration: "service-2",
+      windowGeneration: "window-2",
+    });
+    h.ipcRenderer.emit(desktopChannels.reconnect);
+    h.ipcRenderer.emit(desktopChannels.preferencesReady, {}, "service-1");
+    expect(notices).not.toHaveBeenCalled();
+    h.ipcRenderer.emit(desktopChannels.preferencesReady, {}, "service-2");
+    expect(notices).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.objectContaining({ code: "sequence_gap" }) }),
+    );
+    stream.dispose();
+    const broken = () => {
+      throw new Error("Consumer failed");
+    };
+    stream =
+      topic === "locale"
+        ? h.bridge.foundation.subscribeLocale(broken)
+        : h.bridge.foundation.subscribePresentation(broken);
+    h.ipcRenderer.emit(desktopChannels.preferencesReady, {}, "service-2");
+    stream.dispose();
+    const count = notices.mock.calls.length;
+    h.window.dispatchEvent(new Event("unload"));
+    h.ipcRenderer.emit(desktopChannels.preferencesReady, {}, "service-2");
+    expect(notices).toHaveBeenCalledTimes(count);
+    expect(h.ipcRenderer.listenerCount(desktopChannels.preferencesReady)).toBe(0);
+  },
+);
 
 it("bounds logical locale owners across replacement and cleans every owner at unload", async () => {
   const h = await load();
@@ -419,4 +429,37 @@ it("keeps named command bridge inputs/results bounded and strips native event au
   owners.forEach((dispose) => dispose());
   h.window.dispatchEvent(new Event("unload"));
   expect(h.ipcRenderer.listenerCount(desktopChannels.commandIntent)).toBe(0);
+});
+
+it("exposes the named presentation methods and preserves mutation uncertainty across service cessation", async () => {
+  const h = await load();
+  const calls = [
+    h.bridge.foundation.readPresentation(),
+    h.bridge.foundation.replaceCharacter({
+      operationId: "character",
+      expectedRevision: 0,
+      value: "hidden",
+    }),
+    h.bridge.foundation.readCharacterReceipt("character"),
+    h.bridge.foundation.replaceZoom({ operationId: "zoom", expectedRevision: 0, value: 125 }),
+    h.bridge.foundation.adjustZoom("relative", "increase"),
+    h.bridge.foundation.readZoomReceipt("zoom"),
+    h.bridge.foundation.applyZoom(),
+  ];
+  expect(h.ipcRenderer.send.mock.calls.map(([, text]) => JSON.parse(text).operation)).toEqual([
+    "presentation.read",
+    "character.replace",
+    "character.receipt",
+    "zoom.replace",
+    "zoom.adjust",
+    "zoom.receipt",
+    "zoom.apply",
+  ]);
+  h.ipcRenderer.emit(desktopChannels.ended, {}, "service-1");
+  for (const [index, call] of calls.entries())
+    expect(await call.result).toMatchObject({
+      error: { code: [1, 3, 4].includes(index) ? "uncertain" : "disposed" },
+    });
+  h.window.dispatchEvent(new Event("unload"));
+  expect(h.ipcRenderer.listenerCount(desktopChannels.reply)).toBe(0);
 });

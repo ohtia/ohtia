@@ -674,3 +674,75 @@ it("preserves a live composition target across registry replacement and clears i
   await act(async () => input.remove());
   expect(reason()).toBeUndefined();
 });
+
+it("invalidates command feedback when its current availability changes without a new activation", async () => {
+  const test = harness();
+  let busy = true;
+  let registry!: CommandController;
+  const register = (controller: CommandController) => {
+    registry = controller;
+    return controller.register("zoom.increase", {
+      state: () => (busy ? { reason: "busy" } : {}),
+      run: () => true,
+    });
+  };
+  await render(
+    h(CommandSurfaces, { bridge: test.bridge, locale: "en-US", registerHandlers: register }),
+  );
+  await act(async () => test.send("zoom.increase"));
+  expect(container.querySelector(".command-unavailable")?.textContent).toBe(
+    message("en-US", "command.reason.busy"),
+  );
+  await act(async () => {
+    busy = false;
+    registry.changed();
+  });
+  expect(container.querySelector(".command-unavailable")).toBeNull();
+  await act(async () => {
+    busy = true;
+    registry.changed();
+  });
+  expect(container.querySelector(".command-unavailable")).toBeNull();
+});
+
+it.each(["help.open", "about.open", "settings.open"] as const)(
+  "preserves child composition and its fallback focus when the %s trigger disappears",
+  async (command) => {
+    const test = harness();
+    const fallback = document.createElement("a");
+    fallback.href = "#workspace";
+    fallback.textContent = "Skip to workspace";
+    document.body.prepend(fallback);
+    let showTrigger = true;
+    const props: Parameters<typeof CommandSurfaces>[0] = {
+      bridge: test.bridge,
+      locale: "en-US",
+      returnFocusRef: { current: fallback },
+      children: (registry) =>
+        showTrigger &&
+        h("button", { onClick: () => void registry?.invoke(command) }, "Open synthetic surface"),
+      renderSettings: (open, close, _platform, _feedback, returnFocusRef) =>
+        h(Dialog, {
+          open,
+          title: "Synthetic Settings",
+          closeLabel: "Close",
+          onClose: close,
+          returnFocusRef,
+          children: "Synthetic settings controls",
+        }),
+    };
+    await render(h(CommandSurfaces, props));
+    expect(container.querySelector(".command-entry-actions")).toBeNull();
+    const trigger = button("Open synthetic surface");
+    await act(async () => trigger.focus());
+    await click(trigger);
+    expect(container.querySelectorAll("dialog[open]")).toHaveLength(1);
+    showTrigger = false;
+    await render(h(CommandSurfaces, props));
+    expect(trigger.isConnected).toBe(false);
+    await click(container.querySelector("dialog[open] [data-close]")!);
+    expect(container.querySelector("dialog[open]")).toBeNull();
+    expect(document.activeElement).toBe(fallback);
+    fallback.remove();
+  },
+);

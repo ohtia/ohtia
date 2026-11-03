@@ -73,6 +73,10 @@ suppressDiagnosticCapture((discard) => {
 const directory = path.dirname(fileURLToPath(import.meta.url));
 app.setName("Ohtia");
 app.enableSandbox();
+import { PresentationBroker } from "./presentation-broker.js";
+const presentationBroker = new PresentationBroker(() =>
+  [...windows.keys()].filter((window) => !window.isDestroyed()).map((window) => window.webContents),
+);
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "ohtia",
@@ -299,7 +303,13 @@ function createWindow(): boolean {
     },
   });
   windows.set(window, { generation: randomUUID() });
+  void window.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {
+    if (!window.isDestroyed()) quitAfterError("startup_failed");
+  });
   commandMenus.attach(window);
+  window.webContents.on("zoom-changed", (_event, direction) => {
+    commandMenus.dispatch(window, direction === "in" ? "zoom.increase" : "zoom.decrease", true);
+  });
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => {
     if (event.url !== desktopDocument) event.preventDefault();
@@ -338,7 +348,10 @@ function createWindow(): boolean {
       .loadURL(desktopDocument)
       .then(() => {
         // A compositor may defer first paint until mapping; completed content can be shown directly.
-        if (!window.isDestroyed()) window.show();
+        if (!window.isDestroyed()) {
+          presentationBroker.apply(window.webContents);
+          window.show();
+        }
       })
       .catch(() => {
         quitAfterError("startup_failed");
@@ -480,6 +493,7 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
         active.setSystemLocale(systemLocale);
         bootstrapState = completeStorageActivation(result, active, resolvedLocale);
         if (bootstrapState === "storage_ready") {
+          presentationBroker.initialize(active);
           locale = resolvedLocale;
           localeFallback = notice.localeFallback === true;
           for (const existing of windows.keys())
@@ -497,6 +511,9 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
       localeFallback = snapshot.record.source === "invalid_fallback";
       for (const window of windows.keys())
         if (!window.isDestroyed()) window.setTitle(message(locale, "title"));
+    },
+    (snapshot) => {
+      presentationBroker.accept(snapshot);
     },
   );
 }
@@ -651,7 +668,8 @@ async function start(): Promise<void> {
       authority.value.payload.value === "system"
     )
       service.setSystemLocale(resolveInterfaceLocale(preferredSystemLanguages()));
-    service.dispatch({ ...accepted.value, deliver });
+    if (!presentationBroker.handle({ ...accepted.value, deliver }, service, window.webContents))
+      service.dispatch({ ...accepted.value, deliver });
   });
   let about: ReturnType<typeof readAboutInformation> | undefined;
   const aboutInformation = () => {
