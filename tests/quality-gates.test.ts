@@ -1,5 +1,6 @@
 import { createCoverageInstrumenter } from "../tooling/quality-instrumenter.mjs";
 import vm from "node:vm";
+import ts from "typescript";
 import { transformWithOxc } from "vite";
 import { createRequire } from "node:module";
 import fs from "node:fs";
@@ -502,6 +503,63 @@ describe("independent product coverage", () => {
 });
 
 describe("complete mandatory result accounting", () => {
+  it("accounts for every Linux native authority test on Windows and macOS", () => {
+    const filename = "tests/installation-authority.test.ts";
+    const source = ts.createSourceFile(
+      filename,
+      fs.readFileSync(filename, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const names: string[] = [];
+    const visit = (node: ts.Node) => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === "linuxIt"
+      ) {
+        const name = node.arguments[0];
+        if (!name || !ts.isStringLiteral(name))
+          throw Error("Native test needs a literal inventory identity");
+        names.push(name.text);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    expect(names.length).toBeGreaterThan(0);
+    const registry = readJson("config/quality/cases.json"),
+      inventory = readJson("config/quality/inventory.json");
+    for (const platform of ["win32", "darwin"]) {
+      const excluded = inventory.vitest_inapplicable.filter((item: { platforms: string[] }) =>
+        item.platforms.includes(platform),
+      );
+      const skipped = new Set(excluded.map((item: { id: string }) => item.id));
+      for (const name of names) {
+        const ids = registry.vitest.filter(
+          (id: string) => id.startsWith(filename + "::") && id.includes("> " + name + "::case-"),
+        );
+        expect(ids.length, name).toBeGreaterThan(0);
+        for (const id of ids) expect(skipped.has(id), id).toBe(true);
+      }
+      const collected = registry.vitest.filter((id: string) => !skipped.has(id));
+      expect(
+        vitestCollection(registry, collected, inventory.vitest_inapplicable, platform).expected
+          .length,
+      ).toBe(registry.vitest.length);
+      const native = registry.vitest.find(
+        (id: string) => id.startsWith(filename + "::") && skipped.has(id),
+      );
+      expect(() =>
+        vitestCollection(
+          registry,
+          collected,
+          inventory.vitest_inapplicable.filter((item: { id: string }) => item.id !== native),
+          platform,
+        ),
+      ).toThrow(/committed\/discovered/);
+    }
+  });
+
   it("rejects a deleted or conditionally unregistered mandatory case against the committed registry", () => {
     const registry = {
       version: 1,

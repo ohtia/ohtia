@@ -33,6 +33,48 @@ export async function signingFixtureProbe(input) {
       { stdin: Buffer.concat([passphrase, Buffer.from("\n")]) },
     );
   try {
+    const sshKey = path.join(directory, "source-key");
+    const repository = path.join(directory, "source");
+    const allowed = path.join(directory, "allowed-signers");
+    await command("/usr/bin/ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", sshKey]);
+    fs.writeFileSync(
+      allowed,
+      "fixture@example.invalid " + fs.readFileSync(sshKey + ".pub", "utf8"),
+      { mode: 0o600 },
+    );
+    await command("/usr/bin/git", [
+      "-c",
+      "init.defaultBranch=fixture",
+      "init",
+      "--quiet",
+      repository,
+    ]);
+    await command("/usr/bin/git", [
+      "-C",
+      repository,
+      "-c",
+      "user.name=Disposable fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "-c",
+      "gpg.format=ssh",
+      "-c",
+      "user.signingkey=" + sshKey,
+      "commit",
+      "--allow-empty",
+      "--quiet",
+      "-S",
+      "-m",
+      "Disposable source signature fixture",
+    ]);
+    await command("/usr/bin/git", [
+      "-C",
+      repository,
+      "-c",
+      "gpg.ssh.allowedSignersFile=" + allowed,
+      "verify-commit",
+      "HEAD",
+    ]);
     await gpg(
       "--quick-generate-key",
       "Ohtia disposable signing fixture <fixture@example.invalid>",
@@ -174,8 +216,43 @@ export async function signingFixtureProbe(input) {
     const positiveText = Buffer.concat([positive.stdout, positive.stderr]).toString().toLowerCase();
     demand(
       positive.status === 0 &&
-        positiveText.includes(policy.rpm_primary) &&
+        signed.verification.primary_fingerprint === policy.rpm_primary &&
+        signed.verification.signing_subkey_fingerprint === policy.rpm_subkey &&
+        positiveText.includes("signature") &&
         !positiveText.includes("nokey"),
+    );
+    const changedHeader = path.join(directory, "changed-header.bin");
+    const headerBytes = fs.readFileSync(path.join(operation, "rpm-header.bin"));
+    headerBytes[headerBytes.length - 1] ^= 1;
+    fs.writeFileSync(changedHeader, headerBytes, { mode: 0o600 });
+    const alteredHeader = spawnSync(
+      "/usr/bin/gpg",
+      [
+        "--no-options",
+        "--homedir",
+        path.join(operation, "gnupg"),
+        "--batch",
+        "--no-auto-key-retrieve",
+        "--status-fd",
+        "1",
+        "--verify",
+        path.join(operation, "rpm-signature.bin"),
+        changedHeader,
+      ],
+      {
+        env: { PATH: "/usr/bin:/bin", HOME: directory, LANG: "C" },
+        timeout: 120000,
+        maxBuffer: 65536,
+      },
+    );
+    await command("/usr/bin/gpgconf", [
+      "--homedir",
+      path.join(operation, "gnupg"),
+      "--kill",
+      "gpg-agent",
+    ]);
+    demand(
+      alteredHeader.status !== 0 && alteredHeader.stdout?.includes(Buffer.from("[GNUPG:] BADSIG ")),
     );
     const fd = fs.openSync(signed.file, "r+");
     try {
@@ -207,12 +284,14 @@ export async function signingFixtureProbe(input) {
       real_keys_used: false,
       input: original,
       checks: {
+        native_ssh_git_verification: true,
         subkey_only_import: true,
         usable_primary_secret_refused: true,
         rpm_body_preserved: true,
         rpm_expected_test_signer: true,
         missing_key_refused: true,
         changed_payload_refused: true,
+        changed_header_refused: true,
         final_digest_changes: true,
         original_unchanged: true,
         ed25519_exact_bytes: true,

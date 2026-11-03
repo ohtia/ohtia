@@ -818,6 +818,30 @@
       "scope": "Distinct newly admitted Git objects per graph expansion",
       "failure": "signing_refused",
       "rationale": "Bound identifier and object-size metadata independently of commit count and total bytes"
+    },
+    "signing_rpm_header_bytes": {
+      "value": 2097152,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 2097152,
+        "maximum": 2097152
+      },
+      "owner": "013",
+      "scope": "One immutable RPM header exported by the qualified native library",
+      "failure": "signing_refused",
+      "rationale": "Bound header extraction and independent OpenPGP verification without buffering the package payload"
+    },
+    "signing_rpm_signature_bytes": {
+      "value": 65536,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 65536,
+        "maximum": 65536
+      },
+      "owner": "013",
+      "scope": "One RSA OpenPGP header signature exported by the qualified native RPM library",
+      "failure": "signing_refused",
+      "rationale": "Refuse oversized or substituted signature material before independent full-fingerprint verification"
     }
   }
 }

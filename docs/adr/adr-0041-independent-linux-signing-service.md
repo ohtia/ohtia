@@ -1,7 +1,7 @@
 ---
 type: DecisionRecord
 title: ADR-0041 — Independently administered Linux signing service
-description: Separate Linux signing requests from key custody and policy administration using a bounded Scaleway container service.
+description: Separate Linux signing requests from key custody and policy administration using a bounded Debian-based Scaleway container service.
 generated:
   by: codex/gpt-6.1-sol
 verified:
@@ -40,6 +40,21 @@ sources:
   - id: aws-sdk
     resource: https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/s3/
     title: S3 commands and presigning
+  - id: tini
+    resource: https://github.com/krallin/tini
+    title: Container PID 1 signal forwarding and child reaping
+  - id: debian-lifecycle
+    resource: https://www.debian.org/releases/trixie/
+    title: Debian 13 support lifecycle
+  - id: debian-tini
+    resource: https://packages.debian.org/trixie/tini
+    title: Debian native init helper package
+  - id: rpm-header
+    resource: https://rpm.org/docs/4.20.x/manual/format_header.html
+    title: RPM immutable header structure
+  - id: gpg-status
+    resource: https://github.com/gpg/gnupg/blob/STABLE-BRANCH-2-4/doc/DETAILS
+    title: GnuPG machine-readable signature status
   - id: conditional-storage
     resource: https://www.scaleway.com/en/docs/object-storage/api-cli/using-conditional-writes/
     title: Conditional object creation and replacement
@@ -61,15 +76,25 @@ Keep the RPM certification primary key, revocation certificate and full recovery
 
 The deployed image and external policy own repository identities, source trust, immutable reusable workflow revisions, allowed input/proof formats, public keys, storage origins, revocation and the kill switch. A request cannot select another verifier, policy, executable, destination or key. Changes to these controls require separate administrative authorization and actual readback; an ordinary source merge does not require copying a policy hash into a repository variable.
 
+### Container image
+
+Use the Debian 13 runtime base, GnuPG `2.4.*`, RPM `4.20.*`, OpenSSH `10.0p*` and Tini `0.19.*` for the Linux signing image. Tini runs as PID 1 to forward signals and reap terminated descendants; the signing supervisor and GnuPG cleanup retain their separate responsibilities.[^tini][^debian-tini] [The image manifest](../../config/installation/signing-image.json) owns the exact base digest and native package artifacts. Node and pnpm follow [ADR-0004](adr-0004-javascript-development-toolchain.md); the GitHub CLI uses the existing [qualification tool artifact](../../config/installation/scaleway.json). Preserve the runtime dependency notices alongside the service bundle.
+
+Debian's longer maintenance window reduces major-base transitions compared with Fedora's shorter release cycle. Debian publishes full support through August 2028 and LTS through June 2030; later architecture and package coverage must be checked explicitly.[^debian-lifecycle] Digest pinning preserves reviewed inputs, not security freshness: the signing administrator must review and rebuild OS packages, Node, CLI and locked dependencies for security updates, retain rollback evidence and qualify the resulting image before deployment. The signer base does not change the Fedora desktop qualification targets.
+
+[The context assembler](../../scripts/installation_signing_image.py) takes a new destination directory, checks the pinned artifacts, and includes only the native packages, selected Node/CLI files, bundled signer, supervisor and required policy/target records. It creates a fresh isolated frozen-lockfile installation from the existing verified package cache, using checksum-verified Node and pnpm artifacts with lifecycle scripts and configuration hooks disabled. It checks store integrity, excludes developer node_modules and does not inherit ambient credential environment variables, and refuses a changed lock. It never copies the whole checkout, credentials, fixture keys or developer dependency tree. Missing upstream license files require explicit version-specific, digest-bound notice mappings in the image manifest; an undeclared missing notice fails assembly. [The container recipe](../../tools/installation-signer/Containerfile) installs the verified native packages without network access, creates an ordinary Unix account and group, normalizes public code/tool readability independently of the invoking umask, runs the service under that UID and sets soft and hard `RLIMIT_CORE` to zero before executing Tini through its fixed entrypoint. This process limit does not establish how the provider handles host-level crash collection; qualify dump, swap and host-access assumptions separately before enabling real custody. Temporary key material remains confined to the private sandbox-v2 temporary homes already required by the custody contract.
+
+[The container transport](../../tooling/installation-signing-container.mjs) composes the provider adapters with the existing authority and worker implementations, returning exact-object provider transfer capabilities through the same three request endpoints. Metadata reception uses the existing suboperation time bound and does not own the single signing slot before bounded body collection completes. The trusted canonical configuration selects the public policy, ingress/retained buckets and four numbered secret references; separate container-only backend credentials are never supplied by a request. It requires disabled policy and retains the default-false external admission callback until the independently administered activation and deployment controls are implemented and qualified. Listening on the provider port is not evidence that signing authority is enabled. Removing backend variables from Node's `process.env` reduces accidental inheritance; it does not erase exec-time environment data or prevent a compromised same-UID helper from reading process memory, `/proc` or private working files. The pinned native helpers and service share the software-custody trust boundary; the scrub is not a sandbox or credential broker.
+
 ### Caller, source and artifact authority
 
 Verify current GitHub Actions OIDC claims with jose `6.2.*`, using the fixed GitHub issuer and bounded public JWKS retrieval. Pin immutable owner/repository IDs, audience, main ref, dispatch event, environment, hosted runner and immutable reusable workflow identity. Resolve the actual job/check-run/run/attempt/source relationship independently. The provider IAM check and application OIDC check are distinct controls.[^github-oidc][^jose]
 
-Use Git `2.56.*` for source verification. An independently approved anchor and SSH public-key allowlist authorize descendant source history. New one-parent commits require a valid authorized personal SSH signature. A two-parent merge without such a signature is admissible only when both parents are admitted and the trusted Git computation reproduces its exact tree without conflicts. Personally signed resolutions can authorize their actual resolved tree. A GitHub web-flow signature or Verified badge alone cannot authorize a source mutation. Isolate Git configuration, hooks, attributes and replacement/graft mechanisms from the repository being examined. Scope verified-prefix cache entries to the full policy identity; requests cannot insert cache records.
+Use Git `2.47.*` for source verification. An independently approved anchor and SSH public-key allowlist authorize descendant source history. New one-parent commits require a valid authorized personal SSH signature. A two-parent merge without such a signature is admissible only when both parents are admitted and the trusted Git computation reproduces its exact tree without conflicts. Personally signed resolutions can authorize their actual resolved tree. A GitHub web-flow signature or Verified badge alone cannot authorize a source mutation. Isolate Git configuration, hooks, attributes and replacement/graft mechanisms from the repository being examined. Scope verified-prefix cache entries to the full policy identity; requests cannot insert cache records.
 
 OIDC authenticates the requester, not the build output. Use the pinned GitHub CLI under [the qualification tool policy](../../config/installation/scaleway.json) to cryptographically verify GitHub artifact attestations and then check their authenticated certificate identity, builder revision, source and run/attempt. Require the declared input manifest in the authenticated pinned builder's predicate and verify its actual successful build job. Predicate data is workflow-controlled; a reusable builder whose caller can redefine privileged behavior is inadmissible. Check the actual package digest and length independently. Public repository provenance uses the Sigstore Public Good Instance; do not exclude that trust path while retaining exact repository, builder and source restrictions.[^gh-attestation][^sigstore]
 
-Use GnuPG `2.4.*` and RPM `6.0.*` for the selected RPM operation, with exact binaries and native helper inputs bound by the signer image manifest. OpenSSH retains its native upstream release identity in that manifest. [The developer Node decision](adr-0004-javascript-development-toolchain.md) owns the Node runtime line. The [toolchain manifest](../../config/desktop/toolchain.json) owns the exact JOSE patch and artifact integrity; the [numeric policy](../../config/desktop/resource-policy.json) owns signing, metadata, artifact and execution bounds.
+Use GnuPG `2.4.*` and RPM `4.20.*` for the selected RPM operation, with exact binaries and native helper inputs bound by the signer image manifest. OpenSSH retains its native upstream release identity in that manifest. [The developer Node decision](adr-0004-javascript-development-toolchain.md) owns the Node runtime line. The [toolchain manifest](../../config/desktop/toolchain.json) owns the exact JOSE patch and artifact integrity; the [numeric policy](../../config/desktop/resource-policy.json) owns signing, metadata, artifact and execution bounds.
 
 The immutable reusable builder is the build authority; another admitted-source top-level caller does not grant different builder code or permit caller-selected privileged helpers. Qualify that exact builder contract before accepting genuine attestations.
 
@@ -79,7 +104,7 @@ The immutable reusable builder is the build authority; another admitted-source t
 
 The canonical request has exactly `schema_version`, `operation`, `subject`, `execution`, `artifact_id`, `input`, `build_proof` and `catalog_bindings`. Schema version is 1. Subject and execution use the shared admission field sets; installer/proof references contain only SHA-256 and length. RPM and DEB operations require an artifact ID and no catalog bindings; catalog signing requires a null artifact ID and complete unique sealed package bindings. Unknown fields, duplicate keys, unsafe integers, noncanonical bytes, excess sizes and caller-selected trust are refused. Request identity hashes the complete canonical request; immutable subject/artifact/operation identity separately prevents a new request ID from replacing settled bytes.
 
-RPM signing verifies the expected native metadata and authorized subkey, signs an admitted copy, verifies the expected signature and seals the resulting bytes. DEB binding retains the exact authenticated build bytes and creates no native DEB signature. Catalog signing accepts the existing exact-byte catalog format and only previously sealed RPM/DEB results from the same qualification subject. Preserve the existing `candidate` as SHA-256 of canonical `{inputs, contracts}`; each authenticated build manifest binds that exact closure through `inputs_sha256`, and every catalog package must share it. Require unique native `(target, profile, format)` identities as well as unique filenames. Package profiles remain the native profiles in the target manifest; their distribution capability groups remain separate under shared admission. No operation installs a package, executes its scripts or exposes arbitrary-message signing.
+RPM signing verifies the expected native metadata and authorized subkey, signs an admitted copy, verifies the expected signature and seals the resulting bytes. Use Debian's fixed `/usr/lib/gnupg/gpg-preset-passphrase` helper and RPM 4.20 `_gpg_name` selection with the complete authorized subkey fingerprint and the exact-subkey suffix. Bind RPM `_tmppath` to that operation's private directory; do not depend on writable `/var/tmp` or the process environment to select native temporary paths. Before the private effect, export the immutable header through the native RPM library, bound it by `signing_rpm_header_bytes`, validate its immutable-region extent/trailer and require equality with the package's on-disk header. After signing, require the identical header, preserve the complete header/payload body identity, and export the RSA header signature bounded by `signing_rpm_signature_bytes`. Verify that detached signature with GnuPG over the exact header bytes, requiring one successful `VALIDSIG` with the full approved signing-subkey and primary fingerprints, RSA, SHA-256 and binary-document class; reject expired, revoked, failed or distrusted signatures even when a `VALIDSIG` is present. RPM's complete digest/signature check remains an additional check; its short printed key ID never grants identity.[^rpm-header][^gpg-status] DEB binding retains the exact authenticated build bytes and creates no native DEB signature. Catalog signing accepts the existing exact-byte catalog format and only previously sealed RPM/DEB results from the same qualification subject. Preserve the existing `candidate` as SHA-256 of canonical `{inputs, contracts}`; each authenticated build manifest binds that exact closure through `inputs_sha256`, and every catalog package must share it. Require unique native `(target, profile, format)` identities as well as unique filenames. Package profiles remain the native profiles in the target manifest; their distribution capability groups remain separate under shared admission. No operation installs a package, executes its scripts or exposes arbitrary-message signing.
 
 The independently approved pinned qualification caller owns the bounded internal campaign control metadata: schema declaration, sequence, notes and freshness times. Package provenance and catalog package bindings do not independently attest those control fields. Qualify the actual fixed caller recipe against its captured contracts and reject runtime overrides before enabling this internal route; it grants no public-feed metadata authority. The metadata workflow owns admission of refreshed revision identities over unchanged package bindings before an operational feed is enabled. A qualification event remains immutable.
 
@@ -103,7 +128,7 @@ The local Linux backend uses private directories, content-addressed immutable ob
 
 [The local HTTP transport and client](../../tooling/installation-signing-http.mjs) exercise `POST /v1/requests`, `POST /v1/requests/{id}/execute` and `GET /v1/requests/{id}` on loopback only. Execution remains synchronous within its bounded provider request; 202 never creates an untracked background signer. Transfer capabilities authorize one exact object for a bounded lifetime and are not logged. A production endpoint additionally requires private IAM invocation, approved origins, credential custody and observed deployed policy/image identity.
 
-Errors expose only bounded machine codes. Authentication/policy refusal returns 403, identity conflict/uncertainty 409, size refusal 413, invalid contract 422 and unavailable authority 503; completed retained work returns 200 and admitted/pending work 202. Recheck authority before sealing and retrieval. Retry bounded transient reads/transfers under the same identity; never retry a denial or automatically re-sign an uncertain result.
+Errors expose only bounded machine codes. Authentication/policy refusal returns 403, identity conflict/uncertainty 409, size refusal 413, invalid contract 422 and unavailable authority 503; completed retained work returns 200 and admitted/pending work 202. Recheck authority before sealing and retrieval. Retry bounded transient reads/transfers under the same identity; never retry a denial or automatically re-sign an uncertain result. The one-request-per-instance capacity applies to all three routes, including status reads: an occupied instance returns retryable 503 before consulting retained state. A later admitted status read returns 202 for pending work; a busy reply does not claim that state was observed.
 
 ## Consequences
 
@@ -134,3 +159,13 @@ Local test keys, fixture issuers and mocked provider responses establish contrac
 [^scaleway-s3-concepts]: The Amazon S3 section declares subset compatibility; Signature V2, Signature V4 describes authentication with Scaleway access keys.
 
 [^scaleway-s3-faq]: What is Object Storage? explicitly declares an Amazon S3-compatible API for compatible software.
+
+[^tini]: Tini forwards signals and reaps zombies; it does not replace signing deadlines, durable fencing or detached-agent cleanup.
+
+[^debian-tini]: The selected init helper is distributed as a Debian native package; its exact artifact is bound by the image manifest.
+
+[^debian-lifecycle]: Debian publishes the ordinary and LTS support periods and notes reduced architecture coverage during LTS.
+
+[^rpm-header]: Immutable regions preserve their original index/data representation; export through the RPM library and reject a different on-disk header.
+
+[^gpg-status]: VALIDSIG supplies the signing fingerprint, primary fingerprint, public-key algorithm, digest algorithm and signature class; failure and expiry statuses require separate checks.
