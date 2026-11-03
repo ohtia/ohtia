@@ -159,6 +159,130 @@ export async function rpmBodyIdentity(file) {
     await h.close();
   }
 }
+function decodeRpmField(text, maximum) {
+  const compact = text.replace(/[\r\n]/g, "");
+  demand(/^[A-Za-z0-9+/]+={0,2}$/.test(compact), "operation_failed");
+  const bytes = Buffer.from(compact, "base64");
+  demand(
+    bytes.length > 0 && bytes.length <= maximum && bytes.toString("base64") === compact,
+    "operation_failed",
+  );
+  return bytes;
+}
+// RPM exports its immutable region without the eight-byte header magic.
+export function rpmImmutableHeader(text) {
+  const immutable = decodeRpmField(text, signingLimits.rpm_header_bytes - 8);
+  demand(immutable.length >= 40, "operation_failed");
+  const count = immutable.readUInt32BE(0),
+    size = immutable.readUInt32BE(4);
+  demand(count > 0 && size >= 16 && 8 + count * 16 + size === immutable.length, "operation_failed");
+  const trailer = immutable.length - 16;
+  demand(
+    immutable.readUInt32BE(8) === 63 &&
+      immutable.readUInt32BE(12) === 7 &&
+      immutable.readUInt32BE(16) === size - 16 &&
+      immutable.readUInt32BE(20) === 16 &&
+      immutable.readUInt32BE(trailer) === 63 &&
+      immutable.readUInt32BE(trailer + 4) === 7 &&
+      immutable.readInt32BE(trailer + 8) === -count * 16 &&
+      immutable.readUInt32BE(trailer + 12) === 16,
+    "operation_failed",
+  );
+  return Buffer.concat([Buffer.from("8eade80100000000", "hex"), immutable]);
+}
+export function rpmSignatureMaterial(encoded) {
+  demand(
+    Buffer.isBuffer(encoded) &&
+      encoded.length <=
+        2 * (signingLimits.rpm_header_bytes + signingLimits.rpm_signature_bytes) + 1,
+    "size_refused",
+  );
+  const parts = encoded.toString("ascii").split("|");
+  demand(parts.length === 2 && encoded.every((byte) => byte < 128), "operation_failed");
+  return {
+    signature: decodeRpmField(parts[0], signingLimits.rpm_signature_bytes),
+    header: rpmImmutableHeader(parts[1]),
+  };
+}
+export function verifyRpmSignatureStatus(bytes, policy) {
+  demand(Buffer.isBuffer(bytes) && bytes.length <= signingLimits.request_bytes, "operation_failed");
+  const rows = bytes
+    .toString("utf8")
+    .trim()
+    .split("\n")
+    .map((line) => line.split(" "));
+  demand(
+    rows.every((row) => row[0] === "[GNUPG:]"),
+    "operation_failed",
+  );
+  demand(
+    !rows.some((row) =>
+      [
+        "BADSIG",
+        "ERRSIG",
+        "EXPSIG",
+        "EXPKEYSIG",
+        "REVKEYSIG",
+        "NO_PUBKEY",
+        "FAILURE",
+        "ERROR",
+        "TRUST_NEVER",
+      ].includes(row[1]),
+    ),
+    "operation_failed",
+  );
+  const valid = rows.filter((row) => row[1] === "VALIDSIG");
+  demand(valid.length === 1, "operation_failed");
+  const row = valid[0];
+  demand(
+    row.length === 12 &&
+      /^[A-Fa-f0-9]{40}$/.test(row[2]) &&
+      /^[A-Fa-f0-9]{40}$/.test(row[11]) &&
+      row[2].toLowerCase() === policy.rpm_subkey &&
+      row[11].toLowerCase() === policy.rpm_primary &&
+      row[8] === "1" &&
+      row[9] === "8" &&
+      row[10] === "00",
+    "operation_failed",
+  );
+}
+async function matchRpmHeader(file, expected) {
+  const h = await fs.promises.open(
+    file,
+    fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK,
+  );
+  try {
+    const before = await h.stat(),
+      lead = Buffer.alloc(112);
+    demand(
+      before.isFile() &&
+        before.nlink === 1 &&
+        before.size <= packageLimit &&
+        (await h.read(lead, 0, lead.length, 0)).bytesRead === lead.length &&
+        lead.readUInt32BE(0) === 0xedabeedb &&
+        [3, 4].includes(lead[4]) &&
+        lead.subarray(96, 104).equals(Buffer.from("8eade80100000000", "hex")),
+      "operation_failed",
+    );
+    const start = Math.ceil((112 + lead.readUInt32BE(104) * 16 + lead.readUInt32BE(108)) / 8) * 8;
+    demand(start + expected.length < before.size, "operation_failed");
+    const actual = Buffer.alloc(expected.length);
+    demand(
+      (await h.read(actual, 0, actual.length, start)).bytesRead === actual.length &&
+        actual.equals(expected),
+      "operation_failed",
+    );
+    const after = await h.stat();
+    demand(
+      before.size === after.size &&
+        before.mtimeMs === after.mtimeMs &&
+        before.ctimeMs === after.ctimeMs,
+      "operation_failed",
+    );
+  } finally {
+    await h.close();
+  }
+}
 function same(a, b) {
   return canonical(a).equals(canonical(b));
 }
@@ -469,7 +593,7 @@ export class CryptoSigningWorker {
     this.tools = {
       gpg: "/usr/bin/gpg",
       gpgconf: "/usr/bin/gpgconf",
-      preset: "/usr/libexec/gpg-preset-passphrase",
+      preset: "/usr/lib/gnupg/gpg-preset-passphrase",
       rpmsign: "/usr/bin/rpmsign",
       rpmkeys: "/usr/bin/rpmkeys",
       rpm: "/usr/bin/rpm",
@@ -612,6 +736,23 @@ export class CryptoSigningWorker {
         metadata[3] === (artifact.target === "linux-arm64" ? "aarch64" : "x86_64")
       ))
         throw new DeterministicSigningRefusal("policy_refused");
+      const exportedHeader = await run(
+        this.tools.rpm,
+        ["--query", "--package", "--queryformat", "%{HEADERIMMUTABLE:base64}", output],
+        { env: environment, maximum: 2 * signingLimits.rpm_header_bytes },
+      );
+      let admittedHeader;
+      try {
+        demand(
+          exportedHeader.every((byte) => byte < 128),
+          "operation_failed",
+        );
+        admittedHeader = rpmImmutableHeader(exportedHeader.toString("ascii"));
+        await matchRpmHeader(output, admittedHeader);
+      } catch (error) {
+        if (error instanceof SigningError) throw new DeterministicSigningRefusal("policy_refused");
+        throw error;
+      }
       await beforeSign?.();
       deadline.check();
       await run(
@@ -619,11 +760,13 @@ export class CryptoSigningWorker {
         [
           "--addsign",
           "--define",
-          "_openpgp_sign gpg",
+          "_signature gpg",
+          "--define",
+          `_tmppath ${directory}`,
           "--define",
           `_gpg_path ${home}`,
           "--define",
-          `_openpgp_sign_id ${this.policy.rpm_subkey}!`,
+          `_gpg_name ${this.policy.rpm_subkey}!`,
           "--define",
           "_gpg_digest_algo sha256",
           output,
@@ -651,10 +794,34 @@ export class CryptoSigningWorker {
       );
       const text = checked.toString().toLowerCase();
       demand(
-        !text.includes("nokey") &&
-          !text.includes("not ok") &&
-          text.includes(this.policy.rpm_primary),
+        !text.includes("nokey") && !text.includes("not ok") && text.includes("signature"),
         "operation_failed",
+      );
+      const signedMaterial = rpmSignatureMaterial(
+        await run(
+          this.tools.rpm,
+          [
+            "--query",
+            "--package",
+            "--queryformat",
+            "%{RSAHEADER:base64}|%{HEADERIMMUTABLE:base64}",
+            output,
+          ],
+          {
+            env: environment,
+            maximum: 2 * (signingLimits.rpm_header_bytes + signingLimits.rpm_signature_bytes) + 1,
+          },
+        ),
+      );
+      demand(signedMaterial.header.equals(admittedHeader), "operation_failed");
+      await matchRpmHeader(output, signedMaterial.header);
+      const signatureFile = path.join(directory, "rpm-signature.bin"),
+        headerFile = path.join(directory, "rpm-header.bin");
+      fs.writeFileSync(signatureFile, signedMaterial.signature, { mode: 0o600, flag: "wx" });
+      fs.writeFileSync(headerFile, signedMaterial.header, { mode: 0o600, flag: "wx" });
+      verifyRpmSignatureStatus(
+        await gpg("--status-fd", "1", "--verify", signatureFile, headerFile),
+        this.policy,
       );
       const after = await run(
         this.tools.rpm,

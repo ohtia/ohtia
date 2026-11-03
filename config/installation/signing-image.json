@@ -1,0 +1,419 @@
+{
+  "schema_version": 1,
+  "base_image": "docker.io/library/debian@sha256:bcf83fd8af414eda0c0a99d25a4e61dedd88e7aac7f7bc519d04555ff0c40ec5",
+  "packages": [
+    {
+      "file": "adduser_3.152_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/a/adduser/adduser_3.152_all.deb",
+      "sha256": "e50984d2e1ef6300e3fd51303839842189a077b10cb5cadff1923df10c61c493"
+    },
+    {
+      "file": "ca-certificates_20250419+deb13u1_all.deb",
+      "url": "https://deb.debian.org/debian-security/pool/updates/main/c/ca-certificates/ca-certificates_20250419%2bdeb13u1_all.deb",
+      "sha256": "c10585ac22c7f617a73d394eea29ba71d0356f350ae973b19043d1b017f80f54"
+    },
+    {
+      "file": "debugedit_5.1-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/d/debugedit/debugedit_5.1-2_amd64.deb",
+      "sha256": "8181b113f7f396484f595195dce316055bfeacb55474ff62709dc9da9e6722ae"
+    },
+    {
+      "file": "dirmngr_2.4.7-21+deb13u1+b5_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gnupg2/dirmngr_2.4.7-21%2bdeb13u1%2bb5_amd64.deb",
+      "sha256": "385b4689f43678dbd097ada002ec19733179777ac2a6c0229ae292cae17f0833"
+    },
+    {
+      "file": "git-man_2.47.3-0+deb13u1_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/git/git-man_2.47.3-0%2bdeb13u1_all.deb",
+      "sha256": "b58306b60e1dff920e1e18bc7e1e499f2ef75184190ab3d98657b165969bf7c9"
+    },
+    {
+      "file": "git_2.47.3-0+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/git/git_2.47.3-0%2bdeb13u1_amd64.deb",
+      "sha256": "3e35662fd5c46add561703e54031a1d8ad9df45811927689f0a51122b13be722"
+    },
+    {
+      "file": "gnupg-l10n_2.4.7-21+deb13u1_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gnupg2/gnupg-l10n_2.4.7-21%2bdeb13u1_all.deb",
+      "sha256": "65c0b5b06123f81f08cfa9b0be313cbc9cf6255c550d70eabd8b175ce8928a35"
+    },
+    {
+      "file": "gnupg_2.4.7-21+deb13u1_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gnupg2/gnupg_2.4.7-21%2bdeb13u1_all.deb",
+      "sha256": "e68f0fd24a7a62f1112ae3e442564e134f21040492f11d1aefa7b18de93ebf6e"
+    },
+    {
+      "file": "gpg-agent_2.4.7-21+deb13u1+b5_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gnupg2/gpg-agent_2.4.7-21%2bdeb13u1%2bb5_amd64.deb",
+      "sha256": "ebc440c05dd5c5ba35f0b0035d7653866ce26c47c826ffbb5a3440773f28da03"
+    },
+    {
+      "file": "gpg_2.4.7-21+deb13u1+b5_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gnupg2/gpg_2.4.7-21%2bdeb13u1%2bb5_amd64.deb",
+      "sha256": "3aeedf3d223e5e6aff08f03227af6ce308f4317472609f383350fd2ec20d33ae"
+    },
+    {
+      "file": "gpgconf_2.4.7-21+deb13u1+b5_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gnupg2/gpgconf_2.4.7-21%2bdeb13u1%2bb5_amd64.deb",
+      "sha256": "14668f3f4847d2544bdff03c2ca8dbdd2fe0ad1bc7ded00941db291954c60f1b"
+    },
+    {
+      "file": "gpgsm_2.4.7-21+deb13u1+b5_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gnupg2/gpgsm_2.4.7-21%2bdeb13u1%2bb5_amd64.deb",
+      "sha256": "092f4675a1810ca7b51a1d53595f9e0c3ab65210c15805749e91030769e2301b"
+    },
+    {
+      "file": "libarchive13t64_3.7.4-4+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/liba/libarchive/libarchive13t64_3.7.4-4%2bdeb13u1_amd64.deb",
+      "sha256": "12e06195a899e8db371803ed70111fc7302573d3ed84e967d3d48ef2d543ace8"
+    },
+    {
+      "file": "libassuan9_3.0.2-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/liba/libassuan/libassuan9_3.0.2-2_amd64.deb",
+      "sha256": "9d78ef8f016e7f24b5e20d1ce91939fe0f1f897e5f9059793201e930ded7eb8e"
+    },
+    {
+      "file": "libatomic1_14.2.0-19_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/libatomic1_14.2.0-19_amd64.deb",
+      "sha256": "212b399aae2f7299203d261a57e49372e09565a9a5ea971905f94a3960366c05"
+    },
+    {
+      "file": "libbrotli1_1.1.0-2+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian-security/pool/updates/main/b/brotli/libbrotli1_1.1.0-2%2bdeb13u1_amd64.deb",
+      "sha256": "db46824c60fee46aff3cc0be3e5f736bc606cae669b1fb17516a41e8073251a9"
+    },
+    {
+      "file": "libcbor0.10_0.10.2-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libc/libcbor/libcbor0.10_0.10.2-2_amd64.deb",
+      "sha256": "2457686e375dcb7567ba01da6638a0711e2a55725d084d65de44dd11bb1f52e2"
+    },
+    {
+      "file": "libcom-err2_1.47.2-3+b12_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/e/e2fsprogs/libcom-err2_1.47.2-3%2bb12_amd64.deb",
+      "sha256": "bd43e020b8fed399db3eebf098111f10fba4c436fff99ccad72cc7e27c9764ec"
+    },
+    {
+      "file": "libcurl3t64-gnutls_8.14.1-2+deb13u7_amd64.deb",
+      "url": "https://deb.debian.org/debian-security/pool/updates/main/c/curl/libcurl3t64-gnutls_8.14.1-2%2bdeb13u7_amd64.deb",
+      "sha256": "9475c591b338b81859ee6d06bf2a9fbb01b52f184c235afa7f6e7f1652136e55"
+    },
+    {
+      "file": "libdbus-1-3_1.16.2-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/d/dbus/libdbus-1-3_1.16.2-2_amd64.deb",
+      "sha256": "bbcb711daff7e104b5f80f9b05475b6142674bfe65518a36a56e96a91068a3f5"
+    },
+    {
+      "file": "libdw1t64_0.192-4_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/e/elfutils/libdw1t64_0.192-4_amd64.deb",
+      "sha256": "6b41d3895b40eff429dd8013f0c13b6e26371a26491f414dbf66ba86c4c2c3f1"
+    },
+    {
+      "file": "libedit2_3.1-20250104-1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libe/libedit/libedit2_3.1-20250104-1_amd64.deb",
+      "sha256": "b002ea172b9c1e34a67bc497c523c67bb74c3f0a4e98113cb083990a1f1d3bfe"
+    },
+    {
+      "file": "libelf1t64_0.192-4_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/e/elfutils/libelf1t64_0.192-4_amd64.deb",
+      "sha256": "94497b7e17b6f574a0605b380d454e20d3f01a9c63b70c2a2263f679d30053e1"
+    },
+    {
+      "file": "liberror-perl_0.17030-1_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libe/liberror-perl/liberror-perl_0.17030-1_all.deb",
+      "sha256": "06110a972bdc52f6c6d6615dddbe97f836c61d0e36c685ef4107c2eaa81f871f"
+    },
+    {
+      "file": "libexpat1_2.9.0-1~deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian-security/pool/updates/main/e/expat/libexpat1_2.9.0-1%7edeb13u1_amd64.deb",
+      "sha256": "feff874772cae904ae4d24e917b35664952bec4b4ae9100a4edda5a7fa746832"
+    },
+    {
+      "file": "libffi8_3.4.8-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libf/libffi/libffi8_3.4.8-2_amd64.deb",
+      "sha256": "0ebdc340de33333639c3c63874cd4b15ac2e83dfa1ef3053b7eefaf4919f4f68"
+    },
+    {
+      "file": "libfido2-1_1.15.0-1+b1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libf/libfido2/libfido2-1_1.15.0-1%2bb1_amd64.deb",
+      "sha256": "094fc0fe20c652be848ab2a8b3793eb03bc4327140ebd232145356352004e6c0"
+    },
+    {
+      "file": "libfsverity0_1.6-1.2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/f/fsverity-utils/libfsverity0_1.6-1.2_amd64.deb",
+      "sha256": "adc7b2a2b7a3beca31cb53481f60babd222e2f7a254209a2ca5aeefc79315f1c"
+    },
+    {
+      "file": "libgcrypt20_1.11.0-7+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libg/libgcrypt20/libgcrypt20_1.11.0-7%2bdeb13u1_amd64.deb",
+      "sha256": "f0eb41f8cb40896e0822e9ab65611e8383c12b721c76c54764f744abb4a8c247"
+    },
+    {
+      "file": "libgdbm-compat4t64_1.24-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gdbm/libgdbm-compat4t64_1.24-2_amd64.deb",
+      "sha256": "2cbd43cf2dfbf57ff48188b5d79d29cf7ea8f0dedaa61ab0bcc02eceff50ea01"
+    },
+    {
+      "file": "libgdbm6t64_1.24-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gdbm/libgdbm6t64_1.24-2_amd64.deb",
+      "sha256": "e7b42c68c391e278733adb3c1efdacd24d660862bd7bac0efbc10a91e5696dfc"
+    },
+    {
+      "file": "libgnutls30t64_3.8.9-3+deb13u4_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gnutls28/libgnutls30t64_3.8.9-3%2bdeb13u4_amd64.deb",
+      "sha256": "18a8bdfd91c7e3bcb01719d55a2b56849c7160b34f1f52b1c4fdfdd41bf1352b"
+    },
+    {
+      "file": "libgomp1_14.2.0-19_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/libgomp1_14.2.0-19_amd64.deb",
+      "sha256": "72b7a1a33c48f3195efeb044111b34ae684b1e640bb6495c832443b798601cd5"
+    },
+    {
+      "file": "libgpg-error0_1.51-4_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libg/libgpg-error/libgpg-error0_1.51-4_amd64.deb",
+      "sha256": "22b95570fd41c113ef6f5651563b4d748292844baab1278a46eb940c1dec2322"
+    },
+    {
+      "file": "libgssapi-krb5-2_1.21.3-5+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/k/krb5/libgssapi-krb5-2_1.21.3-5%2bdeb13u1_amd64.deb",
+      "sha256": "30847c1fde4240567d7ed3aeab4f655dd591203758b857e85e824045aae70299"
+    },
+    {
+      "file": "libidn2-0_2.3.8-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libi/libidn2/libidn2-0_2.3.8-2_amd64.deb",
+      "sha256": "90b039bcdc4578f8e1c4935adf8dbb525e36a164deefdbbb8c45bac347d48278"
+    },
+    {
+      "file": "libk5crypto3_1.21.3-5+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/k/krb5/libk5crypto3_1.21.3-5%2bdeb13u1_amd64.deb",
+      "sha256": "7da07ee674b47f1f0be7cc89317c25310086a1f1761217d0f72e6ae2c5a69b84"
+    },
+    {
+      "file": "libkeyutils1_1.6.3-6_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/k/keyutils/libkeyutils1_1.6.3-6_amd64.deb",
+      "sha256": "0b11ad17be0300b63ad4eeb4c6450fed24d34b7b740f23e5363dcb29ee6d5eba"
+    },
+    {
+      "file": "libkrb5-3_1.21.3-5+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/k/krb5/libkrb5-3_1.21.3-5%2bdeb13u1_amd64.deb",
+      "sha256": "47d71d6a7f2e59b9bae5f89602397594805113b95889ad18fa703cd53abafc97"
+    },
+    {
+      "file": "libkrb5support0_1.21.3-5+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/k/krb5/libkrb5support0_1.21.3-5%2bdeb13u1_amd64.deb",
+      "sha256": "3a0acd8b37955c0e102c756b52c97df2a31f67b96453c35dab70df218d309117"
+    },
+    {
+      "file": "libksba8_1.6.7-2+b1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libk/libksba/libksba8_1.6.7-2%2bb1_amd64.deb",
+      "sha256": "45bc1bfaf41a5e1136b1c1f58c495a950888da33a617de24202f3568e45b9572"
+    },
+    {
+      "file": "libldap2_2.6.10+dfsg-1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/o/openldap/libldap2_2.6.10%2bdfsg-1_amd64.deb",
+      "sha256": "60069e4a550ca890113fa89d3001417781b18e146ec5d637d31e368dec9909bd"
+    },
+    {
+      "file": "liblua5.3-0_5.3.6-2+b4_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/l/lua5.3/liblua5.3-0_5.3.6-2%2bb4_amd64.deb",
+      "sha256": "35af63e29e035d7f1ce3586922c51868df86c7fd9a4d28777d80384ad809df61"
+    },
+    {
+      "file": "libmagic-mgc_5.46-5_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/f/file/libmagic-mgc_5.46-5_amd64.deb",
+      "sha256": "1368da7c4c7dd10fb2f9ee3ed8a70801650c0c1d249a4076af15e2ddfbb14b46"
+    },
+    {
+      "file": "libmagic1t64_5.46-5_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/f/file/libmagic1t64_5.46-5_amd64.deb",
+      "sha256": "53f653873216b135570b42c423ea93825c008ac464780b4578e80ee424237a4e"
+    },
+    {
+      "file": "libncursesw6_6.5+20250216-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/n/ncurses/libncursesw6_6.5%2b20250216-2_amd64.deb",
+      "sha256": "47baa2e11579583654583a066b69bd5a5d2f22423081f707ed6c0c3ba6d538b7"
+    },
+    {
+      "file": "libnghttp2-14_1.64.0-1.1+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/n/nghttp2/libnghttp2-14_1.64.0-1.1%2bdeb13u1_amd64.deb",
+      "sha256": "896cb217537c09251fb909b8541349010ac279d802d871e98c06a62a2c67ce2c"
+    },
+    {
+      "file": "libnghttp3-9_1.8.0-1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/n/nghttp3/libnghttp3-9_1.8.0-1_amd64.deb",
+      "sha256": "388e4c33b72829cbf0d098afdc8539fa5ba7458eddb077f5538fdb4d5538716b"
+    },
+    {
+      "file": "libngtcp2-16_1.11.0-1+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/n/ngtcp2/libngtcp2-16_1.11.0-1%2bdeb13u1_amd64.deb",
+      "sha256": "627eec81ebbd48c4e6091f5cd9dc5070b792b7075000eed60ab08c7daa961caf"
+    },
+    {
+      "file": "libngtcp2-crypto-gnutls8_1.11.0-1+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/n/ngtcp2/libngtcp2-crypto-gnutls8_1.11.0-1%2bdeb13u1_amd64.deb",
+      "sha256": "2a7f109c0c4db6a800e4661c5e5e34e1f1f83c8162482276183d1ada9da7c96c"
+    },
+    {
+      "file": "libnpth0t64_1.8-3_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/n/npth/libnpth0t64_1.8-3_amd64.deb",
+      "sha256": "37d489976ef91ca0165a7789a7a7ac5923ee3cfadf316ac3e87582e15d0523d7"
+    },
+    {
+      "file": "libp11-kit0_0.25.5-3_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/p/p11-kit/libp11-kit0_0.25.5-3_amd64.deb",
+      "sha256": "784bf2063e166c8bc851a32623b74ebd85c499043a9d57c5bbd64fa63447f45a"
+    },
+    {
+      "file": "libperl5.40_5.40.1-6+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/p/perl/libperl5.40_5.40.1-6%2bdeb13u1_amd64.deb",
+      "sha256": "e44777ff47ad248d1debd57e1f96ab5e89061a341008ae39880ba3b5fc15f273"
+    },
+    {
+      "file": "libpopt0_1.19+dfsg-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/p/popt/libpopt0_1.19%2bdfsg-2_amd64.deb",
+      "sha256": "07f649b706852af937654295697dcfc7858f3295718ec18681dce1704663e4f2"
+    },
+    {
+      "file": "libpsl5t64_0.21.2-1.1+b1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libp/libpsl/libpsl5t64_0.21.2-1.1%2bb1_amd64.deb",
+      "sha256": "59d42bb1f9ebc0d1776fe616efb08a7a8568b05982e00f70b03c63863db768ab"
+    },
+    {
+      "file": "libreadline8t64_8.2-6_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/r/readline/libreadline8t64_8.2-6_amd64.deb",
+      "sha256": "eeadf2b5e755c9f183883feea2d9b5b28560284275d5f54d3e55d0923b1d0967"
+    },
+    {
+      "file": "librpm-sequoia-1_1.8.0-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/r/rust-rpm-sequoia/librpm-sequoia-1_1.8.0-2_amd64.deb",
+      "sha256": "9b4f08814cffbca14f77430a469334f30b3956ce40e17625174300d756d86fad"
+    },
+    {
+      "file": "librpm10_4.20.1+dfsg-3_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/r/rpm/librpm10_4.20.1%2bdfsg-3_amd64.deb",
+      "sha256": "a5d3eb2350c8f08b8e213388d4b19b05430a8f002b5ea90f4387c42706f8a977"
+    },
+    {
+      "file": "librpmbuild10_4.20.1+dfsg-3_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/r/rpm/librpmbuild10_4.20.1%2bdfsg-3_amd64.deb",
+      "sha256": "8271876f4cbd9a9a16c92738f72408ec1ca5554957bbcb3bfdc91b246f52a247"
+    },
+    {
+      "file": "librpmio10_4.20.1+dfsg-3_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/r/rpm/librpmio10_4.20.1%2bdfsg-3_amd64.deb",
+      "sha256": "9491f74c3c3865f3a96edc0ff711872b8a828f83bc24414ee92e565440ff26a7"
+    },
+    {
+      "file": "librpmsign10_4.20.1+dfsg-3_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/r/rpm/librpmsign10_4.20.1%2bdfsg-3_amd64.deb",
+      "sha256": "0835745c9eb2372bcc955dbdc606f5687cc80ddde22a5c9c5a8bacf0cd3c3647"
+    },
+    {
+      "file": "librtmp1_2.4+20151223.gitfa8646d.1-2+b5_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/r/rtmpdump/librtmp1_2.4%2b20151223.gitfa8646d.1-2%2bb5_amd64.deb",
+      "sha256": "93baa2004cbe6c8721b9e81beed078612540aef120970b4751305c51c6697368"
+    },
+    {
+      "file": "libsasl2-2_2.1.28+dfsg1-9_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/c/cyrus-sasl2/libsasl2-2_2.1.28%2bdfsg1-9_amd64.deb",
+      "sha256": "66e49d7ae026811b49a0050f18b0325960a2625ffd1ff60d91b7844a815fa9d2"
+    },
+    {
+      "file": "libsasl2-modules-db_2.1.28+dfsg1-9_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/c/cyrus-sasl2/libsasl2-modules-db_2.1.28%2bdfsg1-9_amd64.deb",
+      "sha256": "a5c38659fbd62c33c6d9bfa2be43e75a572d1818531aad32dd74d0a58cc4bd19"
+    },
+    {
+      "file": "libssh2-1t64_1.11.1-1+deb13u2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libs/libssh2/libssh2-1t64_1.11.1-1%2bdeb13u2_amd64.deb",
+      "sha256": "dbb1024c192d4d292b7cfa902b96076cfe81b56a5eed4fb28da36e8bf543e49a"
+    },
+    {
+      "file": "libtasn1-6_4.20.0-2+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libt/libtasn1-6/libtasn1-6_4.20.0-2%2bdeb13u1_amd64.deb",
+      "sha256": "23fec6e06583ce2bad9b2c04c9b485e90440e259b1abf8677cd80d3ce60831ad"
+    },
+    {
+      "file": "libunistring5_1.3-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libu/libunistring/libunistring5_1.3-2_amd64.deb",
+      "sha256": "6dd3490bef06ea1096f32d10766b7e016cf579bfae8451d1b7df15ce05b8aa46"
+    },
+    {
+      "file": "libxml2_2.12.7+dfsg+really2.9.14-2.1+deb13u3_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libx/libxml2/libxml2_2.12.7%2bdfsg%2breally2.9.14-2.1%2bdeb13u3_amd64.deb",
+      "sha256": "e0c6b63ce4602a036a526f60fe5e6c1586710688058d98fc1001b9b3147b7efd"
+    },
+    {
+      "file": "openssh-client_10.0p1-7+deb13u4_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/o/openssh/openssh-client_10.0p1-7%2bdeb13u4_amd64.deb",
+      "sha256": "8fff343654f86c3b3266f94cd338c7b4da2e386da029327815118ea00bce03b9"
+    },
+    {
+      "file": "openssl_3.5.7-1~deb13u3_amd64.deb",
+      "url": "https://deb.debian.org/debian-security/pool/updates/main/o/openssl/openssl_3.5.7-1%7edeb13u3_amd64.deb",
+      "sha256": "43a9cbcf2a8a0e1f0a1c3f5a33ee1f56b269690e7a2129f2b2d0582e789589d7"
+    },
+    {
+      "file": "perl-modules-5.40_5.40.1-6+deb13u1_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/p/perl/perl-modules-5.40_5.40.1-6%2bdeb13u1_all.deb",
+      "sha256": "4c46cdd8f3135aa1c95f07e817f8e5d9be590687441ac1c27e3a8c49400f35ce"
+    },
+    {
+      "file": "perl_5.40.1-6+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/p/perl/perl_5.40.1-6%2bdeb13u1_amd64.deb",
+      "sha256": "ef145c247787d6f40dcdefd5b417502484827cde0d555998c17fd5b27ec1e1dd"
+    },
+    {
+      "file": "pinentry-curses_1.3.1-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/p/pinentry/pinentry-curses_1.3.1-2_amd64.deb",
+      "sha256": "aed82cd9cc92b8a37f1332f951737f549595a3126aa609e632f9205d95405efc"
+    },
+    {
+      "file": "readline-common_8.2-6_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/r/readline/readline-common_8.2-6_all.deb",
+      "sha256": "f77e8aa0bf0de618f11cb0b21658a4ed60f177d63b3cf26d7fc3706b6d0eaaa9"
+    },
+    {
+      "file": "rpm-common_4.20.1+dfsg-3_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/r/rpm/rpm-common_4.20.1%2bdfsg-3_amd64.deb",
+      "sha256": "b6f92d96b882649ec71e2186ab84ec35a96258f4ac90e483b6d34cd00f8fe39f"
+    },
+    {
+      "file": "rpm2cpio_4.20.1+dfsg-3_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/r/rpm/rpm2cpio_4.20.1%2bdfsg-3_amd64.deb",
+      "sha256": "b9086b607e9fda5e35bef8aa523fa26bf4ace95a24564629d80e9aa809469267"
+    },
+    {
+      "file": "rpm_4.20.1+dfsg-3_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/r/rpm/rpm_4.20.1%2bdfsg-3_amd64.deb",
+      "sha256": "83d1bad29db3c64f9d9331d71a45aaf6a30b7ea6f329d031153a8cdf98b1b2e9"
+    },
+    {
+      "file": "tini_0.19.0-3+b8_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/t/tini/tini_0.19.0-3%2bb8_amd64.deb",
+      "sha256": "a443b12107331f67836a64cb6efe1dd92d2765e15568eb4567dccb409a8cd2a0"
+    }
+  ],
+  "license_fallbacks": [
+    {
+      "package": "@aws-sdk/credential-provider-http@3.972.82",
+      "license": "Apache-2.0",
+      "source_package": "@aws-sdk/client-s3@3.1161.0",
+      "file": "LICENSE",
+      "sha256": "e345c2ee7df4446e739de7b91535f0c10ddcd909b9753889e943ee637b05db8c"
+    },
+    {
+      "package": "@aws-sdk/credential-provider-login@3.972.87",
+      "license": "Apache-2.0",
+      "source_package": "@aws-sdk/client-s3@3.1161.0",
+      "file": "LICENSE",
+      "sha256": "e345c2ee7df4446e739de7b91535f0c10ddcd909b9753889e943ee637b05db8c"
+    },
+    {
+      "package": "@aws-sdk/nested-clients@3.997.54",
+      "license": "Apache-2.0",
+      "source_package": "@aws-sdk/client-s3@3.1161.0",
+      "file": "LICENSE",
+      "sha256": "e345c2ee7df4446e739de7b91535f0c10ddcd909b9753889e943ee637b05db8c"
+    }
+  ]
+}

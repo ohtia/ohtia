@@ -33,6 +33,8 @@ import {
   validateRequest,
   verifyReceipt,
   rpmBodyIdentity,
+  rpmSignatureMaterial,
+  verifyRpmSignatureStatus,
 } from "../tooling/installation-signer.mjs";
 import { prepareSigningRequest, loadSignedCatalogs } from "../tooling/installation-signing.mjs";
 import { ScalewaySigningStore } from "../tooling/installation-signing-scaleway.mjs";
@@ -1764,37 +1766,155 @@ describe("signer review regressions", () => {
   );
 });
 
+function immutableRpmHeader(padding = 0) {
+  const header = Buffer.alloc(48 + padding);
+  header.writeUInt32BE(0x8eade801, 0);
+  header.writeUInt32BE(1, 8);
+  header.writeUInt32BE(16 + padding, 12);
+  for (const offset of [16, 32 + padding]) {
+    header.writeUInt32BE(63, offset);
+    header.writeUInt32BE(7, offset + 4);
+    header.writeUInt32BE(16, offset + 12);
+  }
+  header.writeUInt32BE(padding, 24);
+  header.writeInt32BE(-16, 40 + padding);
+  return header;
+}
+describe("RPM full-fingerprint verification", () => {
+  const p = policy();
+  const status = () =>
+    Buffer.from(
+      `[GNUPG:] VALIDSIG ${p.rpm_subkey.toUpperCase()} 2026-11-02 1793620000 0 4 0 1 8 00 ${p.rpm_primary.toUpperCase()}\n`,
+    );
+  const encoded = (header = immutableRpmHeader().subarray(8)) =>
+    Buffer.from(`AQID|${header.toString("base64")}\n`);
+  it("extracts the exact immutable native header and detached signature", () => {
+    const result = rpmSignatureMaterial(encoded());
+    expect(result.header).toEqual(immutableRpmHeader());
+    expect(result.signature).toEqual(Buffer.from([1, 2, 3]));
+    expect(() => verifyRpmSignatureStatus(status(), p)).not.toThrow();
+  });
+  it("refuses truncated oversized and inconsistent immutable regions", () => {
+    const invalid = [Buffer.alloc(1), immutableRpmHeader().subarray(8)];
+    invalid[1].writeUInt32BE(999, 0);
+    for (const header of invalid)
+      expect(() => rpmSignatureMaterial(encoded(header))).toThrow("operation_failed");
+    expect(() =>
+      rpmSignatureMaterial(
+        Buffer.alloc(2 * (signingLimits.rpm_header_bytes + signingLimits.rpm_signature_bytes) + 2),
+      ),
+    ).toThrow("size_refused");
+  });
+  it("refuses noncanonical Base64 missing signatures and extra fields", () => {
+    for (const bytes of [
+      Buffer.from("(none)|AQID"),
+      Buffer.from("AQID!|AQID"),
+      Buffer.from("AQID|AQID|AQID"),
+      Buffer.from("AB==|AQID"),
+      Buffer.from("|AQID"),
+    ]) {
+      expect(() => rpmSignatureMaterial(bytes)).toThrow("operation_failed");
+    }
+  });
+  it("refuses an immutable region whose trailer or extent differs", () => {
+    for (const offset of [8, 12, 16, 20, 24, 28, 32, 36]) {
+      const header = immutableRpmHeader().subarray(8);
+      header[offset] ^= 1;
+      expect(() => rpmSignatureMaterial(encoded(header))).toThrow("operation_failed");
+    }
+  });
+  it("refuses a different primary subkey algorithm digest or signature class", () => {
+    for (const [index, value] of [
+      [2, "A".repeat(40)],
+      [11, "B".repeat(40)],
+      [8, "17"],
+      [9, "2"],
+      [10, "01"],
+    ] as const) {
+      const fields = status().toString().trim().split(" ");
+      fields[index] = value;
+      expect(() => verifyRpmSignatureStatus(Buffer.from(fields.join(" ")), p)).toThrow(
+        "operation_failed",
+      );
+    }
+  });
+  it("refuses a missing duplicate truncated or short-fingerprint success record", () => {
+    for (const bytes of [
+      Buffer.alloc(0),
+      Buffer.concat([status(), status()]),
+      Buffer.from(status().toString().split(" ").slice(0, 11).join(" ")),
+      Buffer.from(status().toString().replace(p.rpm_subkey.toUpperCase(), p.rpm_subkey.slice(-8))),
+    ]) {
+      expect(() => verifyRpmSignatureStatus(bytes, p)).toThrow("operation_failed");
+    }
+  });
+  it("refuses expired revoked failed or distrusted signatures despite VALIDSIG", () => {
+    for (const code of [
+      "BADSIG",
+      "ERRSIG",
+      "EXPSIG",
+      "EXPKEYSIG",
+      "REVKEYSIG",
+      "NO_PUBKEY",
+      "FAILURE",
+      "ERROR",
+      "TRUST_NEVER",
+    ]) {
+      expect(() =>
+        verifyRpmSignatureStatus(
+          Buffer.concat([status(), Buffer.from(`[GNUPG:] ${code} fixture\n`)]),
+          p,
+        ),
+      ).toThrow("operation_failed");
+    }
+  });
+});
+
 describe("native RPM identity admission", () => {
-  function nativeFixture(epoch: string | null, afterEpoch: string | null = null) {
+  function nativeFixture(
+    epoch: string | null,
+    afterEpoch: string | null = null,
+    fault: string | null = null,
+  ) {
     const directory = root(),
       input = path.join(directory, "input.rpm"),
       lead = Buffer.alloc(96),
       signature = Buffer.alloc(16),
-      main = Buffer.alloc(16),
+      main = immutableRpmHeader(4),
       p = policy();
     lead.writeUInt32BE(0xedabeedb);
+    lead[4] = 4;
     signature.writeUInt32BE(0x8eade801);
-    main.writeUInt32BE(0x8eade801);
     fs.writeFileSync(
       input,
       Buffer.concat([lead, signature, main, Buffer.from("synthetic payload")]),
     );
     const stateFile = path.join(directory, "native-fixture.json");
-    fs.writeFileSync(stateFile, JSON.stringify({ epoch, afterEpoch, signs: 0, cleanup: 0 }));
+    fs.writeFileSync(stateFile, JSON.stringify({ epoch, afterEpoch, fault, signs: 0, cleanup: 0 }));
     // Substitute native tool I/O while exercising the actual worker and signing boundary.
     const helper = `#!${process.execPath}
 const fs=require("node:fs"),path=require("node:path"),args=process.argv.slice(2),name=path.basename(process.argv[1]);
 const file=path.join(process.env.HOME,"native-fixture.json"),state=JSON.parse(fs.readFileSync(file));
 if(name==="gpg" && args.includes("--list-secret-keys")) {
  const row=(kind,marker)=>{const v=Array(16).fill("");v[0]=kind;v[14]=marker;return v.join(":")};
- fs.writeSync(1,[row("sec","#"),"fpr:::::::::${p.rpm_primary}:",row("ssb","+"),"fpr:::::::::${p.rpm_subkey}:","grp:::::::::${"A".repeat(40)}:"].join("\\n")+"\\n");
+ fs.writeSync(1,[row("sec","#"),"fpr:::::::::"+(state.fault==="import-wrong-primary"?"a".repeat(40):"${p.rpm_primary}")+":",row("ssb","+"),"fpr:::::::::"+(state.fault==="import-wrong-subkey"?"b".repeat(40):"${p.rpm_subkey}")+":","grp:::::::::${"A".repeat(40)}:"].join("\\n")+"\\n");
 } else if(name==="gpg" && args.includes("--export")) fs.writeSync(1,"synthetic public key");
-else if(name==="rpm" && args.includes("--queryformat")) {
+else if(name==="gpg" && args.includes("--verify")) fs.writeSync(1,"[GNUPG:] VALIDSIG "+(state.fault==="wrong-subkey"?"a".repeat(40):"${p.rpm_subkey}")+" 2026-11-02 1793620000 0 4 0 1 8 00 "+(state.fault==="wrong-primary"?"b".repeat(40):"${p.rpm_primary}")+"\\n");
+else if(name==="rpm" && args.includes("--queryformat") && args[args.indexOf("--queryformat")+1].includes("HEADERIMMUTABLE")) {
+ const b=fs.readFileSync(args.at(-1)),start=Math.ceil((112+b.readUInt32BE(104)*16+b.readUInt32BE(108))/8)*8;
+ const end=start+16+b.readUInt32BE(start+8)*16+b.readUInt32BE(start+12);
+ const header=Buffer.from(b.subarray(start+8,end));
+ if(state.fault==="wrong-export-before" || (state.fault==="wrong-export-after" && state.signs))header[24]^=1;
+ fs.writeSync(1,(args[args.indexOf("--queryformat")+1].includes("RSAHEADER")?"AQID|":"")+header.toString("base64"));
+ if(state.fault==="disk-changed-after-export" && state.signs && args[args.indexOf("--queryformat")+1].includes("RSAHEADER")) {b[start+32]^=1;fs.writeFileSync(args.at(-1),b);}
+} else if(name==="rpm" && args.includes("--queryformat")) {
  const q=args[args.indexOf("--queryformat")+1],version="0.0.0~dev.123.1";
  const values={NAME:"ohtia-quality",EPOCHNUM:state.signs && state.afterEpoch!==null?state.afterEpoch:(state.epoch??"0"),VERSION:version,RELEASE:"1",ARCH:"x86_64"};
  fs.writeSync(1,q.replace(/%\\{([A-Z]+)\\}/g,(_m,key)=>values[key]??"(none)"));
-} else if(name==="rpmsign") {state.signs++;fs.writeFileSync(file,JSON.stringify(state));}
-else if(name==="rpmkeys" && args.includes("--checksig")) fs.writeSync(1,"${p.rpm_primary}: OK\\n");
+} else if(name==="rpmsign") {if(!args.includes("_gpg_name ${p.rpm_subkey}!") || !args.includes("_tmppath "+process.env.HOME))process.exit(1);
+ if(state.fault==="changed-on-sign") {const file=args.at(-1),b=fs.readFileSync(file),start=Math.ceil((112+b.readUInt32BE(104)*16+b.readUInt32BE(108))/8)*8;b[start+32]^=1;fs.writeFileSync(file,b);}
+ state.signs++;fs.writeFileSync(file,JSON.stringify(state));}
+else if(name==="rpmkeys" && args.includes("--checksig")) fs.writeSync(1,"Header V4 RSA/SHA256 Signature: OK\\n");
 else if(name==="gpgconf") {state.cleanup++;fs.writeFileSync(file,JSON.stringify(state));}
 else if(name==="preset" || (name==="gpg" && args.includes("--import"))) fs.readFileSync(0);
 `;
@@ -1819,6 +1939,66 @@ else if(name==="preset" || (name==="gpg" && args.includes("--import"))) fs.readF
       artifact: { native_version: "0.0.0~dev.123.1-1", target: "linux-x64" },
     };
   }
+  linuxIt(
+    "refuses unsupported package leads and malformed immutable headers before signing",
+    async () => {
+      for (const malformedRegion of [false, true]) {
+        const f = nativeFixture("0"),
+          start = vi.fn(),
+          bytes = fs.readFileSync(f.input);
+        if (malformedRegion) bytes.writeUInt32BE(64, 128);
+        else bytes[4] = 6;
+        fs.writeFileSync(f.input, bytes);
+        await expect(
+          f.worker.rpmSign(f.input, f.directory, f.artifact, { beforeSign: start }),
+        ).rejects.toThrow("policy_refused");
+        expect(start).not.toHaveBeenCalled();
+        expect(f.state()).toMatchObject({ signs: 0, cleanup: 1 });
+        expect(f.key.every((value) => value === 0)).toBe(true);
+      }
+    },
+  );
+  linuxIt(
+    "refuses wrong imported fingerprints and a mismatching header before the private effect",
+    async () => {
+      for (const fault of ["wrong-export-before", "import-wrong-primary", "import-wrong-subkey"]) {
+        const f = nativeFixture("0", null, fault),
+          start = vi.fn(),
+          before = await fileReference(f.input);
+        await expect(
+          f.worker.rpmSign(f.input, f.directory, f.artifact, { beforeSign: start }),
+        ).rejects.toThrow("policy_refused");
+        expect(start).not.toHaveBeenCalled();
+        expect(f.state()).toMatchObject({ signs: 0, cleanup: 1 });
+        expect(await fileReference(f.input)).toEqual(before);
+        expect(
+          f.key.every((value) => value === 0) && f.passphrase.every((value) => value === 0),
+        ).toBe(true);
+      }
+    },
+  );
+  linuxIt("refuses wrong fingerprints and substituted headers after signing", async () => {
+    for (const fault of [
+      "wrong-subkey",
+      "wrong-primary",
+      "changed-on-sign",
+      "wrong-export-after",
+      "disk-changed-after-export",
+    ]) {
+      const f = nativeFixture("0", null, fault),
+        start = vi.fn(),
+        before = await fileReference(f.input);
+      await expect(
+        f.worker.rpmSign(f.input, f.directory, f.artifact, { beforeSign: start }),
+      ).rejects.toThrow("operation_failed");
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(f.state()).toMatchObject({ signs: 1, cleanup: 1 });
+      expect(await fileReference(f.input)).toEqual(before);
+      expect(
+        f.key.every((value) => value === 0) && f.passphrase.every((value) => value === 0),
+      ).toBe(true);
+    }
+  });
   linuxIt("refuses nonzero normalized RPM epochs before any signing effect", async () => {
     for (const epoch of ["1", "4294967295"]) {
       const f = nativeFixture(epoch),

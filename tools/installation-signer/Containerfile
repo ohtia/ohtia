@@ -1,0 +1,24 @@
+FROM docker.io/library/debian@sha256:bcf83fd8af414eda0c0a99d25a4e61dedd88e7aac7f7bc519d04555ff0c40ec5
+COPY debs/ /opt/ohtia-debs/
+RUN dpkg --install /opt/ohtia-debs/*.deb && \
+    test -z "$(dpkg --audit)" && \
+    rm -rf /opt/ohtia-debs /var/lib/apt/lists/* /var/cache/apt/archives/*
+COPY node/ /opt/node/
+COPY gh/ /opt/gh/
+RUN ln -s /opt/node/bin/node /usr/bin/node && \
+    ln -s /opt/gh/bin/gh /usr/bin/gh && \
+    mkdir -p /home/signer && chmod 0555 /home/signer && \
+    printf 'signer:x:65532:65532:Ohtia signer:/home/signer:/usr/sbin/nologin\n' >> /etc/passwd && \
+    printf 'signer:x:65532:\n' >> /etc/group
+COPY runtime/ /opt/ohtia/
+COPY entrypoint.sh /opt/ohtia/entrypoint.sh
+COPY manifest.json /opt/ohtia/image-manifest.json
+RUN chmod -R a+rX /opt/ohtia /opt/node /opt/gh && \
+    /usr/bin/node -e 'const m=require("/opt/ohtia/image-manifest.json"); if(process.versions.node!==m.tool_artifacts.node.version)process.exit(1)' && \
+    /usr/bin/gh --version && /usr/bin/git --version && /usr/bin/rpm --version && \
+    /usr/bin/gpg --version && test -x /usr/lib/gnupg/gpg-preset-passphrase
+ENV PATH=/opt/node/bin:/opt/gh/bin:/usr/bin:/bin HOME=/home/signer TMPDIR=/tmp
+WORKDIR /opt/ohtia
+USER 65532:65532
+EXPOSE 8080
+ENTRYPOINT ["/bin/sh", "/opt/ohtia/entrypoint.sh"]

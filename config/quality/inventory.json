@@ -14,6 +14,7 @@
     "tests/diagnostics.test.ts",
     "tests/installation-authority.test.ts",
     "tests/installation-scaleway-signing.test.ts",
+    "tests/installation-signing-container.test.ts",
     "tests/installation-signing.test.ts",
     "tests/language-panel.test.ts",
     "tests/linux-e2e.test.ts",
@@ -84,6 +85,7 @@
     "scripts/tests/test_installation_facilities.py",
     "scripts/tests/test_installation_native.py",
     "scripts/tests/test_installation_scaleway.py",
+    "scripts/tests/test_installation_signing_image.py",
     "scripts/tests/test_installation_windows.py",
     "scripts/tests/test_linux_contributor.py",
     "scripts/tests/test_linux_e2e.py",
@@ -879,6 +881,21 @@
       "id": "tests/installation-authority.test.ts::native helper availability classification > survives descriptor exhaustion without an unhandled spawn error or timer::case-0",
       "platforms": ["darwin", "win32"],
       "reason": "Linux signing-service native process, monotonic guard protocol and RLIMIT_NOFILE regression; portable authority contracts remain applicable."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::native RPM identity admission > refuses wrong imported fingerprints and a mismatching header before the private effect::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux signing-service native worker, process-group and pidfd contract; portable authority contracts remain applicable."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::native RPM identity admission > refuses wrong fingerprints and substituted headers after signing::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux signing-service native worker, process-group and pidfd contract; portable authority contracts remain applicable."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::native RPM identity admission > refuses unsupported package leads and malformed immutable headers before signing::case-0",
+      "platforms": ["darwin", "win32"],
+      "reason": "Linux signing-service native worker, process-group and pidfd contract; portable authority contracts remain applicable."
     }
   ]
 }

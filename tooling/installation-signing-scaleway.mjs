@@ -182,6 +182,12 @@ export class ScalewaySigningStore {
     }
     throw new SigningError("authority_unavailable");
   }
+  async readRequest(id) {
+    digest(id);
+    const bytes = await this.bytes(this.retained, `objects/${id}`, signingLimits.request_bytes);
+    demand(bytes !== null && hash(bytes) === id, "contract_refused");
+    return bytes;
+  }
   async readBytes(ref, maximum) {
     reference(ref, maximum);
     for (const b of [this.retained, this.ingress]) {
