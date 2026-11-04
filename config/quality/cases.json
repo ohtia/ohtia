@@ -960,6 +960,7 @@
     "tests/primitives.test.ts::tabs and layers > moves tab focus without selection and keeps close buttons as siblings::case-0",
     "tests/primitives.test.ts::tabs and layers > opens a single modal, requests cancellation and restores its connected trigger::case-0",
     "tests/primitives.test.ts::tabs and layers > opens/closes a popover, restores focus and disposes outside listeners::case-0",
+    "tests/primitives.test.ts::tabs and layers > places bottom-edge help above its trigger without covering the control::case-0",
     "tests/primitives.test.ts::tabs and layers > uses action menus with roving keys, disabled explanations and contextual access::case-0",
     "tests/primitives.test.ts::uses modal fallback when a connected trigger cannot receive focus::case-0",
     "tests/quality-gates.test.ts::catalog contracts without silent fallback > accepts locale-specific plural forms including Korean without an English one form::case-0",

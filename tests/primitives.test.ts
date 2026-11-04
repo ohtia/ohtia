@@ -322,6 +322,25 @@ describe("tabs and layers", () => {
     await key(document.body, "Escape");
     expect(disconnect).toHaveBeenCalledTimes(calls);
   });
+  it("places bottom-edge help above its trigger without covering the control", async () => {
+    vi.spyOn(document.documentElement, "clientWidth", "get").mockReturnValue(1280);
+    vi.spyOn(document.documentElement, "clientHeight", "get").mockReturnValue(800);
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(200);
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(64);
+    let anchor = new DOMRect(8, 744, 32, 40);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() => anchor);
+    await render(
+      h(Tooltip, { label: "Settings — Control+,", children: h("button", {}, "Settings") }),
+    );
+    await focus(button());
+    const tip = container.querySelector<HTMLElement>('[role="tooltip"]')!;
+    expect(Number.parseFloat(tip.style.top) + tip.offsetHeight).toBeLessThanOrEqual(anchor.top);
+    expect(Number.parseFloat(tip.style.top)).toBeGreaterThanOrEqual(0);
+    anchor = new DOMRect(1224, 80, 32, 40);
+    await act(async () => window.dispatchEvent(new Event("resize")));
+    expect(Number.parseFloat(tip.style.top)).toBeGreaterThanOrEqual(anchor.bottom);
+    expect(Number.parseFloat(tip.style.left) + tip.offsetWidth).toBeLessThanOrEqual(1280);
+  });
   it("opens/closes a popover, restores focus and disposes outside listeners", async () => {
     await render(
       h(Popover, { label: "Details", closeLabel: "Close details", children: "Supplement" }),

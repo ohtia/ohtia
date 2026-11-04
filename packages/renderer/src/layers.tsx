@@ -290,8 +290,16 @@ function useLayerPosition(
       const width = document.documentElement.clientWidth;
       const height = document.documentElement.clientHeight;
       const margin = Number.parseFloat(getComputedStyle(surface).paddingLeft) || 0;
+      const below = rect.bottom;
+      const above = rect.top - surface.offsetHeight;
+      const top =
+        below + surface.offsetHeight <= height - margin
+          ? below
+          : above >= margin
+            ? above
+            : Math.max(margin, Math.min(below, height - surface.offsetHeight - margin));
       surface.style.left = `${String(Math.max(margin, Math.min(rect.left, width - surface.offsetWidth - margin)))}px`;
-      surface.style.top = `${String(Math.max(margin, Math.min(rect.bottom, height - surface.offsetHeight - margin)))}px`;
+      surface.style.top = `${String(top)}px`;
     };
     position();
     const observer = new ResizeObserver(position);

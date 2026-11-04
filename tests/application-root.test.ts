@@ -380,7 +380,16 @@ describe("integrated application authority", () => {
       false,
     );
     await t.intent("panels.explorer");
+    const railSettings = container.querySelector<HTMLButtonElement>(
+      '.workspace-rail [data-workspace-command="settings.open"]',
+    )!;
+    await act(async () =>
+      railSettings.dispatchEvent(new MouseEvent("pointerover", { bubbles: true })),
+    );
+    await act(async () => railSettings.focus());
+    expect(railSettings.isConnected).toBe(true);
     await click('.workspace-rail [data-workspace-command="settings.open"]');
+    expect(container.querySelector(".settings-dialog[open]")).not.toBeNull();
     expect(checkboxes[0].checked).toBe(false);
     await click(".settings-dialog [data-close]");
     await act(async () => {

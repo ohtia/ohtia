@@ -35,7 +35,7 @@ export async function verifyWorkspaceComposition(application, page, output) {
     } catch (error) {
       const control = await trigger.evaluate((button) => ({
         disabled: button.getAttribute("aria-disabled"),
-        focused: document.activeElement === button,
+        focused: button.ownerDocument.activeElement === button,
         hidden: !!button.closest("[hidden], [inert]"),
         mode: button.closest(".workspace")?.dataset.mode,
       }));
