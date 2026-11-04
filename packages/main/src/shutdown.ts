@@ -11,10 +11,14 @@ interface DiagnosticDrain {
 export async function stopBrokerServices(
   service?: StoppableService,
   diagnostics?: DiagnosticDrain,
+  drain?: () => Promise<void>,
 ): Promise<boolean> {
+  let active = true;
+  const isActive = () => active;
   let total: ReturnType<typeof setTimeout> | undefined;
   const expired = new Promise<boolean>((resolve) => {
     total = setTimeout(() => {
+      active = false;
       resolve(false);
     }, portLimits.shutdown_total_ms);
   });
@@ -22,7 +26,10 @@ export async function stopBrokerServices(
     void diagnostics?.close().catch(() => {});
   }, portLimits.shutdown_grace_ms);
   const finish = (async () => {
+    await drain?.();
+    if (!isActive()) return false;
     if (service && !(await service.stop())) return false;
+    if (!isActive()) return false;
     if (diagnostics) {
       await diagnostics.append({
         event_name: "ohtia.application.stopped",
@@ -35,6 +42,7 @@ export async function stopBrokerServices(
   try {
     return await Promise.race([finish, expired]);
   } finally {
+    active = false;
     clearTimeout(grace);
     if (total) clearTimeout(total);
   }

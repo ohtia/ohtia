@@ -73,7 +73,7 @@ function focusedPanel(root: HTMLElement | null): WorkspacePanel | undefined {
       : undefined;
   return workspacePanels.find((panel) => panel === value);
 }
-function ShortcutControl({
+export function ShortcutControl({
   id,
   commands,
   locale,

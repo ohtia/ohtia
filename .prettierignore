@@ -46,3 +46,4 @@ packages/renderer/src/design-fonts.css
 packages/renderer/icons/*.svg
 packages/renderer/branding/*.svg
 packages/renderer/src/design-icons.ts
+packages/contracts/src/window-tokens.ts

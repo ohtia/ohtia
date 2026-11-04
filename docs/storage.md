@@ -1,7 +1,7 @@
 ---
 type: Playbook
 title: Durable foundation storage
-description: Open the isolated local store, persist appearance choices and verify exclusive migrations and whole-database recovery through the packaged desktop.
+description: Open the isolated local store, persist typed preferences and verify exclusive migrations and whole-database recovery through the packaged desktop.
 ---
 
 # Durable foundation storage
@@ -19,6 +19,8 @@ The assembled application carries the exact target addon in `native/binding.node
 `application_preferences` contains declared keys, schema versions, safe integer revisions and text values. Fresh initialization inserts both execution limits with value 1 in the schema transaction. Compatible opening preserves valid saved policy; a missing initialized policy, unsupported version or invalid positive-integer value blocks admission. A presentation fallback does not repair its stored bytes. A saved supported interface-locale identifier is decoded after store admission and resolved by the existing broker locale service; a rejected encoding produces a controlled notice and preserves the saved value.
 
 The [interface language preference](localization.md#named-preference-operations) uses the same record owner, transactional guarantees and migration/checkpoint path, with its own named operations and durable receipt table. Its value is `system` or a supported explicit locale.
+
+The main-owned `window_bounds` preference uses its own `bounds.read`, `bounds.replace` and `bounds.receipt` operations. The immutable `0006_window_bounds_receipts` migration adds only its receipt table through the existing checkpoint and compatibility path; earlier executable migrations retain their byte identities. Reads preserve missing or rejected records, and close-time transactions replace only this preference and its receipt. [Native window lifecycle](desktop-runtime.md#native-window-lifecycle) describes broker ownership and shutdown composition; the [window specification](epics/EPIC-002-basic-interface/epic.md#spec-002-022-integrated-title-bar-and-native-window-state) owns the value and placement rules.
 
 Appearance uses the existing named port operations and `system`, `light` or `dark` values. Reading an absent record returns the declared system default at revision zero. A replacement checks its expected revision and commits the record and immutable command receipt together. A matching operation replay returns its original outcome; another payload cannot reuse that identity. Stale outcomes are also recorded. Failed transactions preserve the last confirmed value. A missing acknowledgement requires receipt inspection before another explicit save; it is not permission to allocate a new operation and repeat the effect.
 

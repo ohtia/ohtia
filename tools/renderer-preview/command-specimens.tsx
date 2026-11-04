@@ -28,6 +28,7 @@ export function CommandSpecimens() {
           { component: "React", license: "MIT" },
         ],
       }),
+      windowAction: async () => ({ status: "unavailable", reason: "handler_missing" }),
       perform: async () => true,
       copyVersionInformation: async () => !copyFails,
       openLink: async () => false,

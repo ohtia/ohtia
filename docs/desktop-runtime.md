@@ -1,7 +1,7 @@
 ---
 type: Playbook
 title: Isolated desktop runtime
-description: Run the desktop from an ordinary account or an admitted independent profile, and verify its supervised status and fixed-home bootstrap boundaries.
+description: Admit native runtime contexts, manage the window lifecycle and verify supervised status and fixed-home bootstrap boundaries.
 ---
 
 # Isolated desktop runtime
@@ -11,6 +11,22 @@ description: Run the desktop from an ordinary account or an admitted independent
 The [runtime specification](epics/EPIC-001-desktop-foundation/STORY-001-004-run-the-isolated-desktop-and-supervised-data-service.md) composes the [locked workspace](developer-workspace.md), [foundation resource policy](desktop-foundation-contract.md) and [bounded application port](application-port.md). The broker owns native dialogs, window admission and one supervised utility service. The renderer receives named functions and controlled values through a sandbox-compatible preload. PRIN-004, PRIN-006, PRIN-007 and PRIN-016 require keeping portable checks, native observations, fixed-root initialization and confirmed storage effects distinct.
 
 The utility initially reports status with the engine unavailable. [Durable foundation storage](storage.md) completes validated opening at the fixed native-home root, immutable migrations, locator activation and transactional appearance commands. The initial window explains recovery-copy sensitivity and offers explicit local opening; the broker preserves pending input during service replacement.
+
+## Native window lifecycle
+
+The existing broker factory applies [ADR-0039](adr/adr-0039-integrated-window-title-bar.md) and the [native-window specification](epics/EPIC-002-basic-interface/epic.md#spec-002-022-integrated-title-bar-and-native-window-state). Main and the renderer consume colors and row height projected from the canonical design tokens. Windows start hidden with the resolved page background and become visible on `ready-to-show`, with the approved native Wayland load-completion condition defined by the linked canonical contract. Main applies the confirmed choice through Electron's application-scoped `nativeTheme.themeSource` before new renderer creation, so Chromium's `prefers-color-scheme`, native UI, background and overlay share the effective theme without waiting for a renderer preference read. Bootstrap and recovery restore the system source. The bootstrap appearance control retains its draft and receipt identity without overriding the document theme. A late older preference revision cannot replace a newer one.
+
+On Linux, backend-specific placement and first-show rules use Electron's resolved `ozone-platform` value, rather than inferring the rendering backend from session environment variables. This reads the runtime's automatic selection and does not force a backend or qualify an X11 session.
+
+The bootstrap title row reuses the delivered workspace command control and brand. It stays outside the bootstrap main scroller, including during initialization and recovery; reducing viewport height scrolls the content while the application-menu entry and title remain visible alongside the native controls. This frame does not compose future project or workspace capabilities.
+
+After storage activation, main loads bounds and appearance before exposing workspace readiness. The trusted broker serializes close-time bounds writes through the supervised data service and drains accepted writes before stopping that service at quit. A closing renderer owns no completion callback. Lost acknowledgements retain their original operation identities for receipt lookup without resubmission; failures produce only the content-free `ohtia.window.bounds_failed` diagnostic. Bootstrap and recovery windows do not save geometry. New windows use this same factory and its window/process admission limits.
+
+The command bridge and deterministic tests do not establish native overlay support or safe-area measurements. Use the specification's target-specific qualification before recording system-control widths or macOS traffic-light insets; retain each native artifact, environment, keyboard journey and omitted target under the task's ignored evidence. The reference specimen's placeholder measurements are not product fallbacks (PRIN-006 and PRIN-007).
+
+Native Wayland uses the [approved compositor-owned geometry contract](epics/EPIC-002-basic-interface/epic.md#spec-002-022-integrated-title-bar-and-native-window-state): saved size and maximized state are requests, and global positioning, display selection and cascading are not claimed. Bootstrap admission retains the existing window and private in-session state; later windows receive saved size in their constructor. Qualification records distinguish requested geometry from what the compositor accepted.
+
+Renderer preference mutations remain unavailable until the broker publishes `storage_ready`, including when the data service is active but preference initialization failed. Main returns the existing definitive `service_unavailable` result without dispatching the mutation or retaining its request reservation; reads, receipts and lifecycle controls keep their existing admission rules so recovery remains observable.
 
 ## Runtime modes
 

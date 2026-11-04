@@ -17,6 +17,7 @@ import {
   type CommandBridge,
   type CommandId,
   type CommandSnapshot,
+  type WindowCommandResult,
   type CommandPlatform,
   type CommandReason,
   type InterfaceLocale,
@@ -28,6 +29,9 @@ import { Dialog } from "./layers.js";
 import { Button } from "./controls.js";
 import { OhtiaBrand, StaticCharacterIllustration } from "./branding.js";
 import { LucideGlyph } from "./iconography.js";
+
+const menuButtonSelector =
+  '[data-workspace-command="menu.open"], [data-command-id="menu.open"] button';
 
 export type DecorationState = "static" | "animated" | "hidden";
 type CopyState = { phase: "idle" | "pending" | "copied" | "failed"; attempt: number };
@@ -244,18 +248,22 @@ export function CommandButton({
   const unavailable = controller?.entry(id).reason ?? (!controller ? "handler_missing" : undefined);
   const reason = modalHandoff && unavailable === "modal_open" ? undefined : unavailable;
   return (
-    <Button
-      label={message(locale, definition.label)}
-      ariaKeyShortcuts={definition.shortcuts[controller?.context.platform ?? "linux"]
-        .map((key) =>
-          key.replace("Ctrl+", "Control+").replace("Cmd+", "Meta+").replace(/\+\+$/, "+Plus"),
-        )
-        .join(" ")}
-      onPress={() => {
-        onInvoke(id);
-      }}
-      {...(reason ? { disabledReason: message(locale, `command.reason.${reason}`) } : {})}
-    />
+    <span data-command-id={id}>
+      <Button
+        label={message(locale, definition.label)}
+        {...(id === "menu.open" ? { ariaHasPopup: "menu" as const } : {})}
+        ariaKeyShortcuts={definition.shortcuts[controller?.context.platform ?? "linux"]
+          .filter((key) => key !== "Alt")
+          .map((key) =>
+            key.replace("Ctrl+", "Control+").replace("Cmd+", "Meta+").replace(/\+\+$/, "+Plus"),
+          )
+          .join(" ")}
+        onPress={() => {
+          onInvoke(id);
+        }}
+        {...(reason ? { disabledReason: message(locale, `command.reason.${reason}`) } : {})}
+      />
+    </span>
   );
 }
 export function HelpDialog({
@@ -539,6 +547,46 @@ export function CommandSurfaces({
               return ok;
             },
           });
+        for (const id of ["window.new", "menu.open"] as const) {
+          if (id === "menu.open" && context.platform === "darwin") continue;
+          registry.register(id, {
+            state: () => state(id),
+            run: async (execution) => {
+              const button = document.querySelector<HTMLButtonElement>(menuButtonSelector);
+              const rect = button?.getBoundingClientRect();
+              if (id === "menu.open" && !rect) return false;
+              let result: WindowCommandResult;
+              try {
+                result = await bridge.windowAction({
+                  intent: execution.intent,
+                  ...(id === "menu.open" && rect
+                    ? {
+                        anchor: {
+                          x: Math.max(0, Math.round(rect.left)),
+                          y: Math.max(0, Math.round(rect.bottom)),
+                        },
+                      }
+                    : {}),
+                });
+              } catch {
+                result = { status: "failed" };
+              }
+              if (execution.isCurrent()) {
+                if (
+                  id === "menu.open" &&
+                  result.status === "completed" &&
+                  "menuDismissed" in result &&
+                  result.menuDismissed &&
+                  button?.isConnected &&
+                  !document.querySelector("dialog[open]")
+                )
+                  button.focus();
+                if (result.status === "failed") setFailure(true);
+              }
+              return result.status === "completed" ? { status: "completed" } : result;
+            },
+          });
+        }
         registry.register("help.open", {
           state: () => state("help.open"),
           run: () => {
@@ -593,7 +641,10 @@ export function CommandSurfaces({
           const snapshot = registry.snapshot();
           setSnapshot(snapshot);
           setUnavailable((previous) =>
-            previous && registry?.entry(previous.command).reason !== previous.reason
+            previous &&
+            previous.command !== "window.new" &&
+            previous.command !== "menu.open" &&
+            registry?.entry(previous.command).reason !== previous.reason
               ? undefined
               : previous,
           );
@@ -607,7 +658,10 @@ export function CommandSurfaces({
         unsubscribeResults = registry.subscribeResults((result, command) => {
           if (!live) return;
           setUnavailable(
-            result.status === "unavailable" && registry?.entry(command).reason === result.reason
+            result.status === "unavailable" &&
+              (command === "window.new" ||
+                command === "menu.open" ||
+                registry?.entry(command).reason === result.reason)
               ? { command, reason: result.reason }
               : undefined,
           );
@@ -674,6 +728,69 @@ export function CommandSurfaces({
       .catch(() => {
         if (live) setFailure(true);
       });
+    let altTarget: EventTarget | null = null;
+    const cancelMenuKey = () => {
+      altTarget = null;
+    };
+    const menuPointerDown = (event: PointerEvent) => {
+      cancelMenuKey();
+      // The native popup owns focus while open; pointer activation must retain its Edit target.
+      if (
+        event.button === 0 &&
+        event.target instanceof Element &&
+        event.target.closest(menuButtonSelector)
+      )
+        event.preventDefault();
+    };
+    const cancelChord = (event: KeyboardEvent) => {
+      if (
+        event.code !== "AltLeft" ||
+        event.repeat ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey
+      )
+        cancelMenuKey();
+    };
+    const menuKey = (event: KeyboardEvent) => {
+      const priorAlt = altTarget;
+      cancelMenuKey();
+      if (
+        !registry ||
+        registry.context.platform === "darwin" ||
+        event.defaultPrevented ||
+        event.isComposing ||
+        current.current.composing ||
+        event.getModifierState("AltGraph") ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        event.repeat
+      )
+        return;
+      if (event.type === "keydown" && event.key === "Alt" && event.code === "AltLeft") {
+        altTarget = event.target;
+        return;
+      }
+      const f10 = event.type === "keydown" && event.key === "F10" && !event.altKey;
+      const loneAlt =
+        event.type === "keyup" &&
+        event.key === "Alt" &&
+        event.code === "AltLeft" &&
+        priorAlt === event.target &&
+        priorAlt !== null;
+      if (f10 || loneAlt) {
+        event.preventDefault();
+        void registry.invoke("menu.open");
+      }
+    };
+    // Bubble after focused controls so preventDefault and stopPropagation retain their meaning.
+    window.addEventListener("keydown", menuKey);
+    window.addEventListener("keyup", menuKey);
+    document.addEventListener("keydown", cancelChord, true);
+    document.addEventListener("pointerdown", menuPointerDown, true);
+    document.addEventListener("compositionstart", cancelMenuKey, true);
+    window.addEventListener("blur", cancelMenuKey);
     const modals = new MutationObserver((records) => {
       if (current.current.composingTarget && !current.current.composingTarget.isConnected) blur();
       else if (records.some((record) => record.type === "attributes")) update();
@@ -691,6 +808,12 @@ export function CommandSurfaces({
     document.addEventListener("compositionstart", composition);
     document.addEventListener("compositionend", composition);
     return () => {
+      window.removeEventListener("keydown", menuKey);
+      window.removeEventListener("keyup", menuKey);
+      document.removeEventListener("keydown", cancelChord, true);
+      document.removeEventListener("pointerdown", menuPointerDown, true);
+      document.removeEventListener("compositionstart", cancelMenuKey, true);
+      window.removeEventListener("blur", cancelMenuKey);
       modals.disconnect();
       window.removeEventListener("blur", blur);
       live = false;
@@ -765,6 +888,14 @@ export function CommandSurfaces({
         children(controller)
       ) : (
         <div ref={actionBar} className="actions command-entry-actions">
+          {controller && controller.context.platform !== "darwin" && (
+            <CommandButton
+              id="menu.open"
+              locale={locale}
+              controller={controller}
+              onInvoke={invoke}
+            />
+          )}
           {settingsAvailable && (
             <CommandButton
               id="settings.open"

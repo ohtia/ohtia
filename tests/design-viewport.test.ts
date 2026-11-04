@@ -33,6 +33,11 @@ function nativeFixture(overflow = false, failRestoration = false, ignoreResize =
   const window = {
     getContentSize: () => [state.width, state.height],
     getBounds: () => ({ x: 0, y: 0, width: state.width + 16, height: state.height + 39 }),
+    isMaximized: () => false,
+    isFullScreen: () => false,
+    unmaximize() {},
+    maximize() {},
+    setFullScreen(_value: boolean) {},
     setContentSize(width: number, height: number, animate: boolean) {
       if (failRestoration && width === 800) throw new Error("Synthetic restoration failure");
       events.push(["size", width, height, animate]);
@@ -47,6 +52,7 @@ function nativeFixture(overflow = false, failRestoration = false, ignoreResize =
     },
   };
   return {
+    window,
     state,
     events,
     handle: {
@@ -170,4 +176,41 @@ describe("native design viewport verification", () => {
       /document horizontal overflow[\s\S]*restoration failure/,
     );
   });
+});
+
+it("waits for native unmaximization before sizing and restores the original presentation mode", async () => {
+  const fixture = nativeFixture();
+  let maximized = true;
+  let fullscreen = true;
+  fixture.window.isMaximized = () => maximized;
+  fixture.window.isFullScreen = () => fullscreen;
+  fixture.window.unmaximize = () => {
+    maximized = false;
+  };
+  fixture.window.maximize = () => {
+    maximized = true;
+  };
+  fixture.window.setFullScreen = (value: boolean) => {
+    fullscreen = value;
+  };
+  await verifyDesignViewports(fixture.page, fixture.handle);
+  expect(maximized).toBe(true);
+  expect(fullscreen).toBe(true);
+  expect(fixture.state).toEqual({ width: 800, height: 600, zoomFactor: 1.25 });
+});
+
+it("reissues only the bounded native size request when a compositor finishes its mode transition late", async () => {
+  const fixture = nativeFixture();
+  const apply = fixture.window.setContentSize;
+  let changingMode = true;
+  fixture.window.setContentSize = (width, height, animate) => {
+    if (changingMode) {
+      changingMode = false;
+      return;
+    }
+    apply(width, height, animate);
+  };
+  const observed = await setNativeViewport(fixture.page, fixture.handle, designViewportCases[0]);
+  expect(observed.native.width).toBe(320);
+  expect(fixture.state.width).toBe(320);
 });

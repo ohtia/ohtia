@@ -60,3 +60,5 @@ export type {
 } from "./diagnostic-writer.js";
 
 export { stopBrokerServices, recoverDiagnosticsAfterShutdown } from "./shutdown.js";
+
+export * from "./window-state.js";

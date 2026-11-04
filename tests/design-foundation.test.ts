@@ -47,6 +47,7 @@ describe("canonical design foundations", () => {
       for (const file of [
         "docs/design-system.md",
         "docs/workspace-layout.md",
+        "packages/contracts/src/window-tokens.ts",
         "packages/renderer/src/design-tokens.css",
         "packages/renderer/src/design-tokens.ts",
       ]) {
@@ -171,6 +172,7 @@ describe("review regression contracts", () => {
       for (const file of [
         "docs/design-system.md",
         "docs/workspace-layout.md",
+        "packages/contracts/src/window-tokens.ts",
         "packages/renderer/color-usage.json",
         ...[
           "design-tokens.css",

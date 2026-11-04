@@ -65,6 +65,7 @@ export function WorkspaceSpecimen() {
       },
       copyVersionInformation: async () => false,
       openLink: async () => false,
+      windowAction: async () => ({ status: "unavailable", reason: "handler_missing" }),
       perform: async () => false,
     };
     return { port, bridge };

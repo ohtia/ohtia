@@ -114,6 +114,7 @@ function harness(platform: "linux" | "win32" | "darwin" = "linux") {
     }),
     about: vi.fn(async () => info),
     copyVersionInformation: vi.fn(async () => true),
+    windowAction: vi.fn(async () => ({ status: "completed" as const })),
     perform: vi.fn(async () => true),
     openLink: vi.fn(async () => true),
   };
@@ -129,9 +130,9 @@ describe("local Help and About composition", () => {
   it("opens offline help/about through the same native and contextual registry and restores dialog focus", async () => {
     const test = harness();
     await render(h(CommandSurfaces, { bridge: test.bridge, locale: "en-US" }));
-    expect(test.snapshots.at(-1)!.entries.find((entry) => entry.id === "window.new")!.reason).toBe(
-      "handler_missing",
-    );
+    expect(
+      test.snapshots.at(-1)!.entries.find((entry) => entry.id === "window.new")!.reason,
+    ).toBeUndefined();
     const about = button("About Ohtia");
     await act(async () => about.focus());
     await click(about);
@@ -307,8 +308,6 @@ it("registers the consumer handler inventory and coalesces publication while one
     "panels.chat",
     "document.focus",
     "layout.reset",
-    "window.new",
-    "menu.open",
     "palette.open",
     "shortcuts.open",
   ] as const;
@@ -674,6 +673,222 @@ it("preserves a live composition target across registry replacement and clears i
   expect(reason()).toBe("composing");
   await act(async () => input.remove());
   expect(reason()).toBeUndefined();
+});
+
+it("opens the native application menu below its actual button and restores focus after dismissal", async () => {
+  const test = harness();
+  let dismissed!: (result: import("@ohtia/contracts").WindowCommandResult) => void;
+  vi.mocked(test.bridge.windowAction).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        dismissed = resolve;
+      }),
+  );
+  await render(h(CommandSurfaces, { bridge: test.bridge, locale: "en-US" }));
+  const menu = button("Application menu");
+  menu.getBoundingClientRect = () => ({ left: 8, bottom: 48 }) as DOMRect;
+  expect(menu.getAttribute("aria-haspopup")).toBe("menu");
+  expect(menu.getAttribute("aria-keyshortcuts")).toBe("F10");
+  await click(menu);
+  expect(test.bridge.windowAction).toHaveBeenCalledWith({
+    intent: expect.objectContaining({ command: "menu.open", source: "renderer" }),
+    anchor: { x: 8, y: 48 },
+  });
+  await act(async () => {
+    button("Ohtia help").focus();
+  });
+  await act(async () => dismissed({ status: "completed", menuDismissed: true }));
+  expect(document.activeElement).toBe(menu);
+  vi.mocked(test.bridge.windowAction).mockResolvedValueOnce({ status: "failed" });
+  await click(menu);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    message("en-US", "command.failed"),
+  );
+});
+it("retains dialog focus after a menu-selected command and leaves the macOS system menu with its owner", async () => {
+  const test = harness();
+  let dismissed!: (result: import("@ohtia/contracts").WindowCommandResult) => void;
+  vi.mocked(test.bridge.windowAction).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        dismissed = resolve;
+      }),
+  );
+  await render(h(CommandSurfaces, { bridge: test.bridge, locale: "en-US" }));
+  await click(button("Application menu"));
+  await act(async () => {
+    test.send("about.open");
+  });
+  const active = document.activeElement;
+  await act(async () => dismissed({ status: "completed", menuDismissed: true }));
+  expect(document.activeElement).toBe(active);
+  const mac = harness();
+  vi.mocked(mac.bridge.context).mockResolvedValue({
+    windowGeneration: "mac-window",
+    platform: "darwin",
+  });
+  await render(h(CommandSurfaces, { bridge: mac.bridge, locale: "en-US" }));
+  expect(
+    [...container.querySelectorAll("button")].some(
+      (value) => value.textContent === "Application menu",
+    ),
+  ).toBe(false);
+  expect(mac.snapshots.at(-1)?.entries.find((entry) => entry.id === "menu.open")?.reason).toBe(
+    "handler_missing",
+  );
+});
+
+it("lets focused surfaces consume menu keys and cancels lone Alt on chords, pointers, composition and blur", async () => {
+  const { bridge } = harness();
+  await render(h(CommandSurfaces, { bridge, locale: "en-US" }));
+  const target = button(message("en-US", "command.menu.open"));
+  const key = async (type: string, value: KeyboardEventInit) => {
+    await act(async () => {
+      target.dispatchEvent(new KeyboardEvent(type, { bubbles: true, cancelable: true, ...value }));
+    });
+  };
+  const consume = (event: Event) => event.preventDefault();
+  target.addEventListener("keydown", consume);
+  await key("keydown", { key: "F10", code: "F10" });
+  await key("keydown", { key: "Alt", code: "AltLeft", altKey: true });
+  await key("keyup", { key: "Alt", code: "AltLeft" });
+  expect(bridge.windowAction).not.toHaveBeenCalled();
+  target.removeEventListener("keydown", consume);
+  const stop = (event: Event) => event.stopPropagation();
+  target.addEventListener("keydown", stop);
+  await key("keydown", { key: "F10", code: "F10" });
+  target.removeEventListener("keydown", stop);
+  await key("keydown", { key: "F10", code: "F10" });
+  expect(bridge.windowAction).toHaveBeenCalledTimes(1);
+  await key("keydown", { key: "Alt", code: "AltLeft", altKey: true });
+  await key("keyup", { key: "Alt", code: "AltLeft" });
+  expect(bridge.windowAction).toHaveBeenCalledTimes(2);
+  for (const cancel of [
+    () => target.dispatchEvent(new Event("pointerdown", { bubbles: true })),
+    () => window.dispatchEvent(new Event("blur")),
+    () => target.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
+    () =>
+      target.dispatchEvent(new KeyboardEvent("keydown", { key: "x", code: "KeyX", bubbles: true })),
+  ]) {
+    await key("keydown", { key: "Alt", code: "AltLeft", altKey: true });
+    await act(async () => {
+      cancel();
+    });
+    await key("keyup", { key: "Alt", code: "AltLeft" });
+    await act(async () => {
+      target.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+    });
+  }
+  for (const value of [
+    { ctrlKey: true },
+    { metaKey: true },
+    { shiftKey: true },
+    { repeat: true },
+    { isComposing: true },
+    { altKey: true },
+  ])
+    await key("keydown", { key: "F10", code: "F10", ...value });
+  await key("keydown", { key: "Alt", code: "AltRight", altKey: true });
+  await key("keyup", { key: "Alt", code: "AltRight" });
+  expect(bridge.windowAction).toHaveBeenCalledTimes(2);
+});
+
+it("preserves the editable surface's focus when a native popup command is selected", async () => {
+  const test = harness();
+  let finish!: (value: import("@ohtia/contracts").WindowCommandResult) => void;
+  vi.mocked(test.bridge.windowAction).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await render(h(CommandSurfaces, { bridge: test.bridge, locale: "en-US" }));
+  const input = document.createElement("input");
+  container.append(input);
+  await act(async () => {
+    input.focus();
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "F10", code: "F10", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(test.bridge.windowAction).toHaveBeenCalledOnce();
+  await act(async () => finish({ status: "completed", menuDismissed: false }));
+  expect(document.activeElement).toBe(input);
+});
+
+it.each(["window.new", "menu.open"] as const)(
+  "shows the controlled failure for rejected %s transport",
+  async (command) => {
+    const test = harness();
+    vi.mocked(test.bridge.windowAction).mockRejectedValueOnce(
+      new Error("Synthetic private transport detail"),
+    );
+    await render(h(CommandSurfaces, { bridge: test.bridge, locale: "en-US" }));
+    await click(
+      button(
+        message("en-US", command === "menu.open" ? "command.menu.open" : "command.window.new"),
+      ),
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      message("en-US", "command.failed"),
+    );
+    expect(container.textContent).not.toContain("Synthetic private transport detail");
+  },
+);
+it("keeps the editable target through primary pointer activation of the native menu", async () => {
+  const test = harness();
+  vi.mocked(test.bridge.windowAction).mockResolvedValueOnce({
+    status: "completed",
+    menuDismissed: false,
+  });
+  await render(h(CommandSurfaces, { bridge: test.bridge, locale: "en-US" }));
+  const input = document.createElement("input");
+  input.value = "Selected text";
+  container.append(input);
+  const menu = button(message("en-US", "command.menu.open"));
+  await act(async () => {
+    input.focus();
+    input.setSelectionRange(0, 8);
+    const down = new MouseEvent("pointerdown", { bubbles: true, cancelable: true, button: 0 });
+    menu.dispatchEvent(down);
+    // Model the browser focus default, which JSDOM does not implement for pointer dispatch.
+    if (!down.defaultPrevented) menu.focus();
+    menu.click();
+  });
+  expect(
+    test.snapshots.at(-1)?.entries.find((entry) => entry.id === "edit.paste")?.reason,
+  ).toBeUndefined();
+  expect(document.activeElement).toBe(input);
+  expect(input.selectionStart).toBe(0);
+  expect(input.selectionEnd).toBe(8);
+});
+
+it("does not announce a late transport rejection from a replaced command lease", async () => {
+  const first = harness();
+  let reject!: (reason: Error) => void;
+  vi.mocked(first.bridge.windowAction).mockImplementationOnce(
+    () =>
+      new Promise((_resolve, fail) => {
+        reject = fail;
+      }),
+  );
+  await render(h(CommandSurfaces, { bridge: first.bridge, locale: "en-US" }));
+  await click(button(message("en-US", "command.window.new")));
+  const next = harness();
+  await render(h(CommandSurfaces, { bridge: next.bridge, locale: "en-US" }));
+  await act(async () => reject(new Error("Synthetic old transport detail")));
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+it("keeps deliberate menu revocation silent without stealing replacement focus", async () => {
+  const test = harness();
+  vi.mocked(test.bridge.windowAction).mockResolvedValueOnce({ status: "revoked" });
+  await render(h(CommandSurfaces, { bridge: test.bridge, locale: "en-US" }));
+  const input = document.createElement("input");
+  container.append(input);
+  await act(async () => input.focus());
+  await click(button(message("en-US", "command.menu.open")));
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(document.activeElement).toBe(input);
 });
 
 it("invalidates command feedback when its current availability changes without a new activation", async () => {

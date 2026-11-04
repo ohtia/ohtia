@@ -115,13 +115,13 @@ describe("durable preference and migration recovery", () => {
     await store.close();
     expectClosed();
     const newer = raw();
-    newer.pragma("user_version=6");
+    newer.pragma("user_version=7");
     newer.close();
     close.mockClear();
     await expect(store.open()).rejects.toThrow(/Unsupported/);
     expectClosed();
     const current = raw();
-    current.pragma("user_version=5");
+    current.pragma("user_version=6");
     current.close();
     close.mockClear();
     await store.open();
@@ -451,7 +451,7 @@ describe("durable preference and migration recovery", () => {
     await store.close();
     const db = raw();
     db.exec(
-      "DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'; UPDATE application_preferences SET value='{\"max_concurrent_inference\":4,\"max_concurrent_local_processing\":2}' WHERE key='execution_limits'",
+      "DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'; UPDATE application_preferences SET value='{\"max_concurrent_inference\":4,\"max_concurrent_local_processing\":2}' WHERE key='execution_limits'",
     );
     db.pragma("user_version=1");
     db.close();
@@ -572,12 +572,12 @@ describe("durable preference and migration recovery", () => {
     await store.open();
     await store.close();
     const db = raw();
-    db.pragma("user_version=6");
+    db.pragma("user_version=7");
     db.close();
     await expect(store.open()).rejects.toThrow(/Unsupported/);
     expect(checkpoints(root)).toHaveLength(1);
     const again = raw();
-    again.pragma("user_version=5");
+    again.pragma("user_version=6");
     again.exec("UPDATE ohtia_migration_artifacts SET sha256='" + "a".repeat(64) + "'");
     again.close();
     await expect(store.open()).rejects.toThrow(/identity/);
@@ -976,7 +976,7 @@ it("upgrades a populated revision-two store while preserving appearance receipts
   await store.close();
   const db = raw();
   db.exec(
-    "DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; INSERT INTO application_preferences VALUES ('interface_locale',1,7,'\"ko-KR\"')",
+    "DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; INSERT INTO application_preferences VALUES ('interface_locale',1,7,'\"ko-KR\"')",
   );
   db.pragma("user_version=2");
   db.close();
@@ -1293,7 +1293,7 @@ describe("layout migration and uncertain commit boundary", () => {
     await store.close();
     const db = raw();
     db.exec(
-      "DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; PRAGMA user_version=3",
+      "DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; PRAGMA user_version=3",
     );
     const value = defaultWorkspaceLayout(1440);
     db.prepare("INSERT INTO application_preferences VALUES ('workspace_layout',1,8,?)").run(
@@ -1317,7 +1317,7 @@ describe("layout migration and uncertain commit boundary", () => {
       ),
     );
     expect(entries).toContainEqual(
-      expect.objectContaining({ sourceRevision: 3, targetRevision: 5 }),
+      expect.objectContaining({ sourceRevision: 3, targetRevision: 6 }),
     );
   });
   it("rolls back both rows before commit and reconciles a lost acknowledgement after a real commit", async () => {
@@ -1363,6 +1363,201 @@ describe("layout migration and uncertain commit boundary", () => {
     });
     expect(await store.replaceLayout(command)).toMatchObject({ ok: true, value: { revision: 1 } });
   });
+});
+
+describe("file-backed native window preferences", () => {
+  it("rolls back both rows before commit and reconciles a lost acknowledgement after a real commit", async () => {
+    const { store } = fixture();
+    await store.open();
+    const original = Database.prototype.prepare;
+    let phase = "before";
+    const spy = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+      text,
+      ...args
+    ) {
+      if (phase === "before" && String(text).startsWith('insert into "window_bounds_receipts"'))
+        throw new Error("Injected receipt failure");
+      const statement = original.call(this, text, ...args);
+      if (phase === "after" && String(text) === "COMMIT") {
+        const run = statement.run.bind(statement);
+        statement.run = (...parameters: any[]) => {
+          run(...parameters);
+          throw new Error("Lost commit acknowledgement");
+        };
+      }
+      return statement;
+    });
+    const command = {
+      operationId: "uncertain-bounds",
+      expectedRevision: 0,
+      value: { version: 1 as const, x: 40, y: 50, width: 1280, height: 800, maximized: false },
+    };
+    expect(await store.replaceWindowBounds({ ...command, operationId: "failed-before" })).toEqual(
+      failure("storage_failed"),
+    );
+    expect(await store.readWindowBounds()).toMatchObject({
+      ok: true,
+      value: { source: "default" },
+    });
+    expect(await store.readWindowBoundsReceipt("failed-before")).toMatchObject({
+      ok: true,
+      value: { state: "not_found" },
+    });
+    phase = "after";
+    expect(await store.replaceWindowBounds(command)).toEqual(failure("uncertain"));
+    spy.mockRestore();
+    expect(await store.readWindowBoundsReceipt(command.operationId)).toMatchObject({
+      ok: true,
+      value: { state: "recorded", outcome: { ok: true, value: { revision: 1 } } },
+    });
+    expect(await store.replaceWindowBounds(command)).toMatchObject({
+      ok: true,
+      value: { revision: 1 },
+    });
+  });
+  it("persists receipts across restart, preserves unrelated preferences and retains rejected bounds bytes", async () => {
+    const { store, raw } = fixture();
+    await store.open();
+    const bounds = {
+      version: 1 as const,
+      x: -1000,
+      y: 40,
+      width: 1000,
+      height: 700,
+      maximized: true,
+    };
+    const command = { operationId: "window-close-1", expectedRevision: 0, value: bounds };
+    const appearance = await store.replaceAppearance({
+      operationId: "bounds-unrelated",
+      expectedRevision: 0,
+      value: "dark",
+    });
+    const saved = await store.replaceWindowBounds(command);
+    expect(saved).toMatchObject({ ok: true, value: { revision: 1, value: bounds } });
+    expect(await store.replaceWindowBounds(command)).toEqual(saved);
+    expect(await store.replaceWindowBounds({ ...command, value: { ...bounds, x: 0 } })).toEqual(
+      failure("operation_conflict"),
+    );
+    expect(
+      await store.replaceWindowBounds({ ...command, operationId: "stale-close" }),
+    ).toMatchObject({ ok: false, error: { code: "stale_revision" } });
+    await store.close();
+    await store.open();
+    expect(await store.readWindowBounds()).toEqual(saved);
+    expect(await store.readWindowBoundsReceipt(command.operationId)).toEqual({
+      ok: true,
+      value: { state: "recorded", outcome: saved },
+    });
+    expect(await store.readAppearance()).toEqual(appearance);
+    await store.close();
+    const db = raw();
+    const bytes = '{"version":2,"private":"preserve"}';
+    db.prepare("UPDATE application_preferences SET value=? WHERE key='window_bounds'").run(bytes);
+    db.close();
+    await store.open();
+    expect(await store.readWindowBounds()).toMatchObject({
+      ok: true,
+      value: { value: null, revision: 1, source: "invalid_fallback" },
+    });
+    await store.close();
+    const inspect = raw();
+    expect(
+      inspect
+        .prepare("SELECT value FROM application_preferences WHERE key='window_bounds'")
+        .pluck()
+        .get(),
+    ).toBe(bytes);
+    inspect.close();
+  });
+  it("upgrades revision five through the checkpoint path and preserves bounds and unrelated receipts", async () => {
+    const { store, raw, root } = fixture();
+    await store.open();
+    const appearance = await store.replaceAppearance({
+      operationId: "pre-bounds",
+      expectedRevision: 0,
+      value: "dark",
+    });
+    const character = await store.replacePresentationPreference("character", {
+      operationId: "pre-bounds-character",
+      expectedRevision: 0,
+      value: "hidden",
+    });
+    const zoom = await store.replacePresentationPreference("zoom", {
+      operationId: "pre-bounds-zoom",
+      expectedRevision: 0,
+      value: 125,
+    });
+    await store.close();
+    const db = raw();
+    db.exec(
+      "DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; PRAGMA user_version=5",
+    );
+    db.close();
+    await store.open();
+    expect(await store.readWindowBounds()).toMatchObject({
+      ok: true,
+      value: { source: "default", revision: 0, value: null },
+    });
+    expect(await store.readPresentationPreference("character")).toEqual(character);
+    expect(await store.readPresentationPreference("zoom")).toEqual(zoom);
+    expect(await store.readPresentationReceipt("character", "pre-bounds-character")).toMatchObject({
+      value: { state: "recorded", outcome: character },
+    });
+    expect(await store.readPresentationReceipt("zoom", "pre-bounds-zoom")).toMatchObject({
+      value: { state: "recorded", outcome: zoom },
+    });
+    expect(await store.readReceipt("pre-bounds")).toEqual({
+      ok: true,
+      value: { state: "recorded", outcome: appearance },
+    });
+    expect(
+      checkpoints(root).map((name) =>
+        JSON.parse(
+          fs.readFileSync(path.join(root, "recovery/migrations", name, "manifest.json"), "utf8"),
+        ),
+      ),
+    ).toContainEqual(expect.objectContaining({ sourceRevision: 5, targetRevision: 6 }));
+  });
+});
+
+it("runs main-owned bounds read/replace/receipt through the shared real file-backed peer", async () => {
+  const { store } = fixture();
+  await store.open();
+  const sent: string[] = [];
+  const service = createStatusService("service-1", "en-US", (text) => sent.push(text), store);
+  service.activate("en-US");
+  const bounds = { version: 1, x: 80, y: 90, width: 800, height: 600, maximized: false };
+  for (const [operation, payload] of [
+    ["bounds.read", {}],
+    ["bounds.replace", { expectedRevision: 0, value: bounds }],
+    ["bounds.receipt", { targetOperationId: "window-peer-save" }],
+  ] as const) {
+    service.receive(
+      JSON.stringify(
+        request({
+          operation,
+          payload,
+          operationId: "window-peer-save",
+          requestId: `request-${operation.replace(".", "-")}`,
+        } as never),
+      ),
+    );
+    await service.drain();
+  }
+  expect(
+    sent.map((text) => JSON.parse(text)).filter((value) => value.kind === "result"),
+  ).toMatchObject([
+    { operation: "bounds.read", payload: { ok: true, value: { value: null, source: "default" } } },
+    { operation: "bounds.replace", payload: { ok: true, value: { value: bounds, revision: 1 } } },
+    {
+      operation: "bounds.receipt",
+      payload: {
+        ok: true,
+        value: { state: "recorded", outcome: { ok: true, value: { value: bounds } } },
+      },
+    },
+  ]);
+  service.dispose();
 });
 
 function presentationRequest(

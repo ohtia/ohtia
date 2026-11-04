@@ -1,3 +1,4 @@
+import { windowOptions, windowPlacement, WindowTheme, WindowPreferences } from "./window-state.js";
 import { configureGraphicsCompatibility } from "./graphics-compatibility.js";
 import { CommandMenus } from "./command-menus.js";
 import { readAboutInformation, copyVersionInformation } from "./about.js";
@@ -5,6 +6,8 @@ import { isRendererAssetPath } from "./asset-policy.js";
 import {
   app,
   clipboard,
+  nativeTheme,
+  screen,
   shell,
   BrowserWindow,
   dialog,
@@ -25,18 +28,22 @@ import {
   desktopChannels,
   desktopDocument,
   encodeEnvelope,
+  failure,
   isBootstrapAction,
   message,
   portLimits,
   resolveInterfaceLocale,
   type DiagnosticEvent,
+  type CommandResult,
   type BootstrapSnapshot,
   type BootstrapState,
   type RuntimeContext,
   isNativeCommand,
+  isWindowCommandRequest,
   isInterfaceLocale,
   isCommandPlatform,
   projectLinks,
+  windowMinimum,
 } from "@ohtia/contracts";
 import { rendererWebPreferences } from "./index.js";
 import {
@@ -157,25 +164,78 @@ const windows = new Map<
   BrowserWindow,
   {
     generation: string;
-    readyForActivation: boolean;
-    activationRequested: boolean;
+    workspace: boolean;
+    boundsSaved: boolean;
+    presentable: boolean;
+    documentPrepared: boolean;
+    frameReady: boolean;
+    firstShow: boolean;
+    activate: boolean;
+    maximizeOnShow: boolean;
     detach?: () => void;
     frame?: object;
   }
 >();
-function activateWindow(window: BrowserWindow | undefined): void {
-  if (!window || window.isDestroyed()) return;
-  const state = windows.get(window);
-  if (!state) return;
-  if (!state.readyForActivation) {
-    state.activationRequested = true;
-    return;
-  }
-  if (window.isMinimized()) window.restore();
-  window.show();
-  window.focus();
-}
 let service: ServiceSupervisor | undefined;
+let pendingWindows = 0;
+// Electron resolves its automatic Ozone selection before loading the application module.
+const nativeWayland =
+  process.platform === "linux" && app.commandLine.getSwitchValue("ozone-platform") === "wayland";
+
+const windowTheme = new WindowTheme(process.platform, () => nativeTheme.shouldUseDarkColors);
+const windowPreferences = new WindowPreferences(
+  () => (bootstrapState === "storage_ready" ? service : undefined),
+  () => {
+    void diagnostics?.append({
+      event_name: "ohtia.window.bounds_failed",
+      error_code: "storage_failed",
+    });
+  },
+  portLimits.pending_global,
+);
+function updateWindowThemes(): void {
+  // One confirmed source also sets Chromium's media query before a new renderer can paint.
+  const source = windowTheme.source(bootstrapState === "storage_ready");
+  if (nativeTheme.themeSource !== source) nativeTheme.themeSource = source;
+  for (const [window, state] of windows)
+    windowTheme.apply(window, state.workspace && bootstrapState === "storage_ready");
+}
+/** Native maximize/restore can reveal a window; every activation uses its permitted reveal gate. */
+function presentWindow(window: BrowserWindow, activate = false): void {
+  const state = windows.get(window);
+  if (!state || window.isDestroyed()) return;
+  state.activate ||= activate;
+  if (!state.presentable || quitting) return;
+  if (state.activate && window.isMinimized()) window.restore();
+  if (state.firstShow) {
+    state.firstShow = false;
+    if (state.maximizeOnShow) window.maximize();
+    window.show();
+  } else if (state.activate) {
+    window.show();
+  }
+  if (state.activate) {
+    state.activate = false;
+    window.focus();
+  }
+}
+function saveWindowBounds(window: BrowserWindow): void {
+  const state = windows.get(window);
+  if (
+    bootstrapState !== "storage_ready" ||
+    !state?.workspace ||
+    state.boundsSaved ||
+    window.isDestroyed()
+  )
+    return;
+  state.boundsSaved = true;
+  void windowPreferences.save({
+    version: 1,
+    ...window.getNormalBounds(),
+    maximized: window.isMaximized(),
+  });
+}
+
 let diagnostics: DiagnosticWriter | undefined;
 function openDiagnostics(): DiagnosticWriter {
   return new DiagnosticWriter({
@@ -212,6 +272,7 @@ let localeFallback = false;
 let generation = randomUUID();
 let bootstrapState: BootstrapState = "missing";
 let quitting = false;
+const isQuitting = () => quitting;
 let cleanExit = false;
 let resourceFailureReported = false;
 const notices = new RuntimeNotices(
@@ -297,31 +358,83 @@ function detach(window: BrowserWindow): void {
   delete state.frame;
   service?.disposeWindow(state.generation);
 }
-function createWindow(): boolean {
-  if (quitting) return false;
+async function createWindow(
+  focused?: BrowserWindow,
+  admitted: () => boolean = () => true,
+): Promise<CommandResult> {
+  if (quitting || !admitted()) return { status: "revoked" };
+  if (windows.size + pendingWindows >= portLimits.windows)
+    return { status: "unavailable", reason: "window_limit" };
+  pendingWindows++;
+  try {
+    const workspace = bootstrapState === "storage_ready";
+    const owner = service;
+    const saved = workspace ? await windowPreferences.read() : undefined;
+    if (saved && !saved.ok && saved.error.code === "busy")
+      return { status: "unavailable", reason: "busy" };
+    const appearance = workspace ? await owner?.request("appearance.read", {}) : undefined;
+    if (appearance && !appearance.ok && appearance.error.code === "busy")
+      return { status: "unavailable", reason: "busy" };
+    if (
+      isQuitting() ||
+      !admitted() ||
+      (workspace && (service !== owner || bootstrapState !== "storage_ready"))
+    )
+      return { status: "revoked" };
+    const placement = windowPlacement(
+      saved?.ok ? saved.value.value : null,
+      screen.getAllDisplays().map((display) => display.workArea),
+      screen.getPrimaryDisplay().workArea,
+      workspace && focused && !focused.isDestroyed() && focused.isFocused()
+        ? focused.getNormalBounds()
+        : undefined,
+      nativeWayland ? "wayland" : "positioned",
+    );
+    return constructWindow(placement, workspace);
+  } finally {
+    pendingWindows--;
+  }
+}
+function constructWindow(
+  placement: ReturnType<typeof windowPlacement>,
+  workspace: boolean,
+): CommandResult {
+  if (quitting) return { status: "revoked" };
+  if (windows.size >= portLimits.windows) return { status: "unavailable", reason: "window_limit" };
   if (
-    windows.size >= portLimits.windows ||
     app.getAppMetrics().length + (diagnostics?.reservedPermissionProcesses ?? 0) >=
-      portLimits.process_tree_count
+    portLimits.process_tree_count
   ) {
-    activateWindow(BrowserWindow.getAllWindows()[0]);
-    return false;
+    const existing = BrowserWindow.getAllWindows()[0];
+    if (existing) presentWindow(existing, true);
+    return { status: "unavailable", reason: "busy" };
   }
   const window = new BrowserWindow({
-    width: 800,
-    height: 650,
-    minWidth: 320,
-    minHeight: 320,
+    ...windowOptions(process.platform, windowTheme.scheme(workspace), placement, nativeWayland),
     enableLargerThanScreen: process.env.OHTIA_RUNTIME_ACCEPTANCE === "1",
-    show: false,
     title: message(locale, "title"),
     webPreferences: {
       ...rendererWebPreferences(path.join(directory, "preload.cjs")),
       session: desktopSession,
     },
   });
-  const state = { generation: randomUUID(), readyForActivation: false, activationRequested: false };
-  windows.set(window, state);
+  const outer = window.getBounds();
+  const content = window.getContentBounds();
+  window.setMinimumSize(
+    windowMinimum.width + outer.width - content.width,
+    windowMinimum.height + outer.height - content.height,
+  );
+  windows.set(window, {
+    generation: randomUUID(),
+    workspace,
+    boundsSaved: false,
+    presentable: false,
+    documentPrepared: false,
+    frameReady: false,
+    firstShow: true,
+    activate: false,
+    maximizeOnShow: placement.maximized,
+  });
   commandMenus.attach(window);
   window.webContents.on("zoom-changed", (_event, direction) => {
     commandMenus.dispatch(window, direction === "in" ? "zoom.increase" : "zoom.decrease", true);
@@ -347,6 +460,7 @@ function createWindow(): boolean {
     detach(window);
   });
   window.on("close", (event) => {
+    saveWindowBounds(window);
     if (!cleanExit && windows.size === 1) {
       event.preventDefault();
       app.quit();
@@ -356,21 +470,38 @@ function createWindow(): boolean {
     detach(window);
     windows.delete(window);
   });
+  const permitPresentation = () => {
+    const state = windows.get(window);
+    if (!state || window.isDestroyed()) return;
+    if (!state.documentPrepared || (!state.frameReady && !nativeWayland)) return;
+    state.presentable = true;
+    clearTimeout(startup);
+    presentWindow(window);
+  };
+  window.once("ready-to-show", () => {
+    const state = windows.get(window);
+    if (state) state.frameReady = true;
+    permitPresentation();
+  });
   const loadDocument = () => {
     void window
       .loadURL(desktopDocument)
       .then(async () => {
         if (window.isDestroyed()) return;
-        // Electron needs a live render frame; acknowledge the pinch policy before showing content.
         await window.webContents.setVisualZoomLevelLimits(1, 1);
         if (window.isDestroyed()) return;
-        presentationBroker.apply(window.webContents);
-        state.readyForActivation = true;
-        // A compositor may defer first paint until mapping; completed content can be shown directly.
-        if (state.activationRequested) {
-          state.activationRequested = false;
-          activateWindow(window);
-        } else window.show();
+        if (!presentationBroker.apply(window.webContents).applied)
+          throw new Error("Confirmed interface zoom could not be applied before presentation.");
+        const state = windows.get(window);
+        if (!state) return;
+        state.documentPrepared = true;
+        // Some Wayland compositors defer hidden paint until mapping the loaded local document.
+        if (
+          (nativeWayland || state.frameReady) &&
+          !window.isDestroyed() &&
+          window.webContents.mainFrame.url === desktopDocument
+        )
+          permitPresentation();
       })
       .catch(() => {
         if (!window.isDestroyed()) quitAfterError("startup_failed");
@@ -403,7 +534,7 @@ function createWindow(): boolean {
     });
     window.once("closed", clear);
   } else loadDocument();
-  return true;
+  return { status: "completed" };
 }
 function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"): void {
   if (quitting || (service && !service.ceased)) return;
@@ -411,6 +542,8 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
   bootstrapState = refreshLocatorState(bootstrapState, locator.state);
   const storageMode = mode === "open" && locator.state === "missing" ? "create" : mode;
   generation = randomUUID();
+  windowTheme.reset();
+  updateWindowThemes();
   const child = utilityProcess.fork(
     path.join(directory, "utility.mjs"),
     [
@@ -479,6 +612,7 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
           bootstrapState = storageInterruptionState(
             bootstrapState === "storage_opening" ? admissionFallback : bootstrapState,
           );
+        updateWindowThemes();
         for (const window of windows.keys())
           if (!window.isDestroyed()) window.webContents.send(desktopChannels.ended, generation);
       }
@@ -488,6 +622,7 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
       if (!active || notice.generation !== generation) return;
       admissionFallback = "storage_failed";
       bootstrapState = notice.state;
+      updateWindowThemes();
       if (notice.state !== "storage_ready") return;
       bootstrapState = "storage_opening";
       const locator = readLocator(settings, context);
@@ -505,16 +640,56 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
               () => Promise.resolve(!quitting && service === active && active.available),
               posixLocatorIO,
             );
-      void publication.then((result) => {
+      void publication.then(async (result) => {
         if (quitting || service !== active || generation !== notice.generation) return;
         const systemLocale = resolveInterfaceLocale(preferredSystemLanguages());
         const resolvedLocale = resolveInterfaceLocale([systemLocale], notice.savedLocale);
         active.setSystemLocale(systemLocale);
-        bootstrapState = completeStorageActivation(result, active, resolvedLocale);
-        if (bootstrapState === "storage_ready") {
-          presentationBroker.initialize(active);
+        const activated = completeStorageActivation(result, active, resolvedLocale);
+        bootstrapState = activated === "storage_ready" ? "storage_opening" : activated;
+        if (activated === "storage_ready") {
           locale = resolvedLocale;
           localeFallback = notice.localeFallback === true;
+          const saved = await active.request("bounds.read", {});
+          const appearance = await active.request("appearance.read", {});
+          if (
+            isQuitting() ||
+            service !== active ||
+            generation !== notice.generation ||
+            bootstrapState !== "storage_opening"
+          )
+            return;
+          if (!active.available || !saved.ok || !appearance.ok) {
+            bootstrapState = storageInterruptionState(admissionFallback);
+            updateWindowThemes();
+            return;
+          }
+          presentationBroker.initialize(active);
+          const placement = windowPlacement(
+            saved.value.value,
+            screen.getAllDisplays().map((display) => display.workArea),
+            screen.getPrimaryDisplay().workArea,
+            undefined,
+            nativeWayland ? "wayland" : "positioned",
+          );
+          for (const [existing, state] of windows)
+            if (!existing.isDestroyed()) {
+              if (!state.workspace) {
+                existing.setBounds({
+                  ...(nativeWayland ? {} : { x: placement.x, y: placement.y }),
+                  width: placement.width,
+                  height: placement.height,
+                });
+                state.maximizeOnShow = placement.maximized;
+                if (state.presentable && !state.firstShow && placement.maximized)
+                  existing.maximize();
+              }
+              state.workspace = true;
+              state.boundsSaved = false;
+            }
+          bootstrapState = "storage_ready";
+          updateWindowThemes();
+          void windowPreferences.reconcilePending();
           for (const existing of windows.keys())
             if (!existing.isDestroyed())
               existing.webContents.send(desktopChannels.preferencesReady, generation);
@@ -534,6 +709,10 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
     (snapshot) => {
       presentationBroker.accept(snapshot);
     },
+    (record) => {
+      if (windowTheme.confirm(record)) updateWindowThemes();
+    },
+    requestBudget,
   );
 }
 let desktopSession: Electron.Session;
@@ -544,14 +723,14 @@ if (!ownsBroker) {
 }
 app.on("second-instance", () => {
   const window = BrowserWindow.getAllWindows()[0];
-  activateWindow(window);
-  if (!window) void reportError("startup_failed");
+  if (window) presentWindow(window, true);
 });
 const startup = setTimeout(() => {
   quitAfterError("startup_failed");
 }, portLimits.application_start_ms);
 async function start(): Promise<void> {
   await app.whenReady();
+  nativeTheme.on("updated", updateWindowThemes);
   locale = resolveInterfaceLocale(preferredSystemLanguages());
   commandMenus.refresh();
   const locator = readLocator(settings, context);
@@ -644,7 +823,17 @@ async function start(): Promise<void> {
       service?.control(authority.value);
       return;
     }
-    const accepted = admission.admit(sender, text);
+    const accepted =
+      authority.value.kind === "request" && authority.value.operation.startsWith("bounds.")
+        ? {
+            ok: false as const,
+            error: {
+              code: "unauthorized" as const,
+              nextAction: "reopen_window" as const,
+              parameters: {},
+            },
+          }
+        : admission.admit(sender, text);
     const frame = event.senderFrame;
     const deliver = (reply: string) => {
       if (
@@ -660,6 +849,21 @@ async function start(): Promise<void> {
         const reply = encodeEnvelope({ ...authority.value, kind: "result", payload: accepted });
         if (reply.ok) deliver(reply.value);
       }
+      return;
+    }
+    if (
+      bootstrapState !== "storage_ready" &&
+      (accepted.value.request.operation.endsWith(".replace") ||
+        accepted.value.request.operation === "zoom.adjust")
+    ) {
+      const reply = encodeEnvelope({
+        ...accepted.value.request,
+        kind: "result",
+        payload: failure("service_unavailable"),
+      });
+      accepted.value.release();
+      accepted.value.releaseSubscription();
+      if (reply.ok) deliver(reply.value);
       return;
     }
     if (accepted.value.request.operation === "layout.failureNotice") {
@@ -712,8 +916,25 @@ async function start(): Promise<void> {
     const frame = event.senderFrame;
     if (!frame) throw new Error("Command sender admission refused.");
     const reservation = requestBudget.reserve(frame);
-    if (!reservation.ok) return false;
+    if (!reservation.ok)
+      return action === "window_action" && isWindowCommandRequest(payload)
+        ? { status: "unavailable", reason: "busy" }
+        : false;
     try {
+      if (action === "window_action" && isWindowCommandRequest(payload)) {
+        return await commandMenus.execute(window, payload, async (current) => {
+          if (payload.intent.command === "menu.open") {
+            const outcome = await commandMenus.popup(window, payload.anchor ?? { x: 0, y: 0 });
+            return outcome === "revoked"
+              ? { status: "revoked" }
+              : outcome
+                ? { status: "completed", menuDismissed: outcome === "dismissed" }
+                : { status: "failed" };
+          }
+          const opened = await createWindow(window, current);
+          return !current() ? { status: "revoked" } : opened;
+        });
+      }
       if (action === "about" && payload === undefined) return aboutInformation();
       if (
         action === "open_link" &&
@@ -767,7 +988,9 @@ async function start(): Promise<void> {
         return snapshot();
       }
       if (action === "new_window") {
-        return createWindow() ? snapshot() : { ...snapshot(), notice: "resource_failure" };
+        return (await createWindow(window)).status === "completed"
+          ? snapshot()
+          : { ...snapshot(), notice: "resource_failure" };
       }
       if (
         action === "retry_service" ||
@@ -859,12 +1082,11 @@ async function start(): Promise<void> {
           storageActionPending = false;
         }
       }
-      clearTimeout(startup);
       return snapshot();
     },
   );
   startService();
-  createWindow();
+  await createWindow();
   metricTimer = setInterval(() => {
     if (
       !quitting &&
@@ -881,13 +1103,18 @@ app.on("before-quit", (event) => {
   if (cleanExit) return;
   event.preventDefault();
   if (quitting) return;
+  for (const window of windows.keys()) saveWindowBounds(window);
   quitting = true;
   clearTimeout(startup);
   for (const window of windows.keys()) detach(window);
   void (async () => {
-    const ceased = await stopBrokerServices(service, diagnostics);
+    const ceased = await stopBrokerServices(service, diagnostics, () => windowPreferences.drain());
     if (!ceased) {
       quitting = false;
+      for (const [window, state] of windows) {
+        state.boundsSaved = false;
+        presentWindow(window);
+      }
       resumeDiagnostics({
         event_name: "ohtia.application.stop_uncertain",
         error_code: "shutdown_uncertain",
@@ -899,6 +1126,10 @@ app.on("before-quit", (event) => {
       verifyStableSentinels(context);
     } catch {
       quitting = false;
+      for (const [window, state] of windows) {
+        state.boundsSaved = false;
+        presentWindow(window);
+      }
       resumeDiagnostics();
       void reportError("startup_failed");
       return;

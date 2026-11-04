@@ -362,11 +362,11 @@ describe("Settings command composition", () => {
       license: "MIT",
       notices: [],
     });
-    for (const index of [1, 2]) {
+    for (const command of ["help.open", "about.open"]) {
       await act(async () =>
         container
-          .querySelectorAll<HTMLButtonElement>(".command-entry-actions button")
-          [index]!.click(),
+          .querySelector<HTMLButtonElement>(`[data-command-id="${command}"] button`)!
+          .click(),
       );
       expect(container.querySelector("dialog[open] .settings-feedback > button")).toBeNull();
       expect(
@@ -383,7 +383,11 @@ describe("Settings command composition", () => {
     await intent("zoom.increase", 2);
     expect(t.port.adjustZoom).toHaveBeenCalledWith(expect.any(String), "increase", "service-1");
     await intent("theme.dark", 3);
-    expect(document.documentElement.dataset.appearance).toBe("dark");
+    expect(t.port.replaceAppearance).toHaveBeenCalledWith(
+      expect.objectContaining({ value: "dark" }),
+      "service-1",
+    );
+    expect(document.documentElement.dataset.appearance).toBeUndefined();
     await intent("about.open", 4);
     expect(bridge.about).not.toHaveBeenCalled();
     expect(published.at(-1)?.entries.find((entry) => entry.id === "theme.dark")?.checked).toBe(

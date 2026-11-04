@@ -42,6 +42,18 @@ function harness() {
   const queue: Work[] = [];
   const service = {
     generation: "service-1",
+    request: (operation: Request["operation"], payload: unknown) =>
+      new Promise((resolve) => {
+        queue.push({
+          request: request(operation, payload, { serviceGeneration: service.generation }),
+          release() {},
+          releaseSubscription() {},
+          deliver: (text) => {
+            const decoded = decodeText(text);
+            if (decoded.ok && decoded.value.kind === "result") resolve(decoded.value.payload);
+          },
+        });
+      }),
     dispatch: (work: Work) => {
       queue.push(work);
     },
