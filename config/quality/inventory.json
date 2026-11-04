@@ -98,6 +98,7 @@
     "scripts/tests/test_installation_native.py",
     "scripts/tests/test_installation_scaleway.py",
     "scripts/tests/test_installation_signing_image.py",
+    "scripts/tests/test_installation_signing_policies.py",
     "scripts/tests/test_installation_signing_worker.py",
     "scripts/tests/test_installation_windows.py",
     "scripts/tests/test_linux_contributor.py",
