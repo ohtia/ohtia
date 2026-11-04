@@ -218,9 +218,8 @@ export async function verifyPackagedSettings(application, page, second, output) 
       await focusNative(nativeWindow, "Settings native menu");
       await page.keyboard.press("Escape");
       await expect(dialog).not.toBeVisible();
-      await expect(
-        page.getByRole("button", { name: text("command.settings.open"), exact: true }),
-      ).toBeFocused();
+      // The preceding 320px locale check hides the originating explorer footer.
+      await expect(page.locator(".workspace-skip")).toBeFocused();
       await expect
         .poll(() =>
           application.evaluate(

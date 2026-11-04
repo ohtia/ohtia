@@ -365,7 +365,16 @@ describe("integrated application authority", () => {
     expect(container.querySelector('[data-workspace-panel="chat"]')?.hasAttribute("hidden")).toBe(
       true,
     );
+    await act(async () => {
+      width = 320;
+      resize.forEach((notify) => notify());
+    });
     await click(".settings-dialog [data-close]");
+    expect(document.activeElement).toBe(container.querySelector(".workspace-skip"));
+    await act(async () => {
+      width = 1280;
+      resize.forEach((notify) => notify());
+    });
     await t.intent("layout.reset");
     expect(container.querySelector('[data-workspace-panel="chat"]')?.hasAttribute("hidden")).toBe(
       false,
