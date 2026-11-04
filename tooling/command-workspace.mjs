@@ -27,6 +27,24 @@ export async function verifyWorkspaceComposition(application, page, output) {
     return invokeNativeMenu(application, id);
   };
   const settings = page.locator(".settings-dialog");
+  const openSettings = async (trigger, entry) => {
+    const nativeFocus = await focusNative(native, `workspace Settings from ${entry}`);
+    try {
+      await trigger.click();
+      await expect(settings, `Workspace Settings from ${entry}`).toBeVisible();
+    } catch (error) {
+      const control = await trigger.evaluate((button) => ({
+        disabled: button.getAttribute("aria-disabled"),
+        focused: document.activeElement === button,
+        hidden: !!button.closest("[hidden], [inert]"),
+        mode: button.closest(".workspace")?.dataset.mode,
+      }));
+      throw new Error(
+        `Workspace Settings from ${entry}; native focus ${JSON.stringify(nativeFocus)}; control ${JSON.stringify(control)}: ${String(error)}`,
+        { cause: error },
+      );
+    }
+  };
   const settleLayout = async () => {
     await expect.poll(() => command("panels.explorer").getAttribute("aria-disabled")).toBe("false");
   };
@@ -70,8 +88,7 @@ export async function verifyWorkspaceComposition(application, page, output) {
       ).not.toBeNull();
       expect(geometry.x).toBeGreaterThanOrEqual(geometry.overlay.x);
       expect(geometry.right).toBeLessThanOrEqual(geometry.overlay.right);
-      await command("settings.open").click();
-      await expect(settings).toBeVisible();
+      await openSettings(command("settings.open"), "explorer footer");
       const chat = settings.getByRole("checkbox", {
         name: text("command.panels.chat"),
         exact: true,
@@ -120,13 +137,17 @@ export async function verifyWorkspaceComposition(application, page, output) {
       await expect.poll(widths).toEqual(beforeResize);
       await command("panels.explorer").click();
       await expect(page.locator(".workspace-rail")).toBeVisible();
-      await page.locator('.workspace-rail [data-workspace-command="settings.open"]').click();
-      await expect(settings).toBeVisible();
+      await openSettings(
+        page.locator('.workspace-rail [data-workspace-command="settings.open"]'),
+        "rail",
+      );
       await page.keyboard.press("Escape");
       await native.evaluate((window) => window.setContentSize(600, 800));
       await expect(page.locator(".workspace")).toHaveAttribute("data-mode", "narrow");
-      await page.locator('.workspace-narrow-row [data-workspace-command="settings.open"]').click();
-      await expect(settings).toBeVisible();
+      await openSettings(
+        page.locator('.workspace-narrow-row [data-workspace-command="settings.open"]'),
+        "narrow bar",
+      );
       await page.keyboard.press("Escape");
       await expect(
         page.locator('.workspace-narrow-row [data-workspace-command="settings.open"]'),

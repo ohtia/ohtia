@@ -757,6 +757,7 @@ try {
   );
 } catch (error) {
   receipt.cases.push({ id: "run", result: "fail", error: String(error) });
+  console.error(`Storage acceptance failed: ${String(error).slice(0, 8192)}`);
   process.exitCode = 1;
 } finally {
   if (application)
