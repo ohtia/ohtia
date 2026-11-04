@@ -1,4 +1,4 @@
-/* global document, innerWidth, getComputedStyle */
+/* global document, innerWidth, innerHeight, getComputedStyle */
 import fs from "node:fs";
 import path from "node:path";
 import { expect } from "@playwright/test";
@@ -172,64 +172,111 @@ export async function verifyCommandDiscovery(page, url, engine, output) {
   await trigger("en-US", "shortcuts").click();
   await page.screenshot({ path: path.join(output, `${engine}-keyboard-shortcuts.png`) });
   await page.keyboard.press("Escape");
-  await page.setViewportSize({ width: 320, height: 400 });
-  for (const locale of ["en-US", "de-DE", "fi-FI", "ko-KR"]) {
-    await specimen.getByLabel("Command specimen language").selectOption(locale);
-    for (const surface of ["palette", "shortcuts"]) {
-      await trigger(locale, surface).click();
-      const dialog = page.locator(
-        surface === "palette" ? ".command-palette[open]" : ".shortcuts-dialog[open]",
-      );
-      const feedback = dialog.locator(".discovery-feedback-scroll");
-      // Exact controlled message text with synthetic DOM notice admission, not a native command result.
-      const text = `${message(locale, "about.copyOutsideFailed")} ${message(locale, "command.reason.modal_open")}`;
-      await feedback.evaluate((element, text) => {
-        const notice = document.createElement("p");
-        notice.className = "command-danger";
-        notice.setAttribute("role", "alert");
-        notice.setAttribute("data-feedback-probe", "");
-        notice.textContent = text;
-        element.append(notice);
-        element.scrollTop = 0;
-      }, text);
-      await expect(feedback).toHaveAccessibleName(message(locale, "command.feedback"));
-      await verifyCommandFocus(feedback);
-      await feedback.press("PageDown");
-      await expect.poll(() => feedback.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
-      if (surface === "palette") {
-        for (const height of [200, 100]) {
-          await page.setViewportSize({ width: 320, height });
-          const input = dialog.getByRole("combobox");
-          await verifyCommandFocus(input);
-          await input.press("ArrowDown");
-          await expect
-            .poll(() =>
-              dialog.evaluate((dialog) => {
-                const active = dialog
-                  .querySelector('[aria-selected="true"]')
-                  .getBoundingClientRect();
-                const list = dialog.querySelector(".palette-list").getBoundingClientRect();
-                const bounds = dialog.getBoundingClientRect();
-                return (
-                  active.top >= Math.max(list.top, bounds.top) &&
-                  active.bottom <= Math.min(list.bottom, bounds.bottom)
-                );
-              }),
-            )
-            .toBe(true);
-          await verifyCommandFocus(feedback);
-          await verifyCommandFocus(dialog.locator("[data-close]"));
+  const previousScrollbarGutter = await page.evaluate(
+    () => document.documentElement.style.scrollbarGutter,
+  );
+  try {
+    await page.evaluate(() => (document.documentElement.style.scrollbarGutter = "stable"));
+    await page.setViewportSize({ width: 320, height: 400 });
+    for (const locale of ["en-US", "de-DE", "fi-FI", "ko-KR"]) {
+      await specimen.getByLabel("Command specimen language").selectOption(locale);
+      for (const surface of ["palette", "shortcuts"]) {
+        await trigger(locale, surface).click();
+        const dialog = page.locator(
+          surface === "palette" ? ".command-palette[open]" : ".shortcuts-dialog[open]",
+        );
+        const feedback = dialog.locator(".discovery-feedback-scroll");
+        // Exact controlled message text with synthetic DOM notice admission, not a native command result.
+        const text = `${message(locale, "about.copyOutsideFailed")} ${message(locale, "command.reason.modal_open")}`;
+        await feedback.evaluate((element, text) => {
+          const notice = document.createElement("p");
+          notice.className = "command-danger";
+          notice.setAttribute("role", "alert");
+          notice.setAttribute("data-feedback-probe", "");
+          notice.textContent = text;
+          element.append(notice);
+          element.scrollTop = 0;
+        }, text);
+        await expect(feedback).toHaveAccessibleName(message(locale, "command.feedback"));
+        await verifyCommandFocus(feedback);
+        await feedback.press("PageDown");
+        await expect
+          .poll(() => feedback.evaluate((element) => element.scrollTop))
+          .toBeGreaterThan(0);
+        if (surface === "palette") {
+          // Headless overlay scrollbars otherwise miss the headed CI width available to labels.
+          await dialog.evaluate((dialog) => {
+            dialog.style.scrollbarGutter = "stable";
+            dialog.querySelector(".palette-list").style.scrollbarGutter = "stable";
+          });
+          for (const height of [200, 100]) {
+            await page.setViewportSize({ width: 320, height });
+            const input = dialog.getByRole("combobox");
+            await verifyCommandFocus(input);
+            // Read geometry after navigation without refocusing or scrolling the search control.
+            for (const key of ["ArrowDown", "ArrowUp"]) {
+              await input.press(key);
+              await expect
+                .poll(
+                  () =>
+                    dialog.evaluate((dialog) => {
+                      const active = dialog
+                        .querySelector('[aria-selected="true"]')
+                        .getBoundingClientRect();
+                      const list = dialog.querySelector(".palette-list").getBoundingClientRect();
+                      const bounds = dialog.getBoundingClientRect();
+                      const input = dialog.querySelector("input");
+                      const inputBounds = input.getBoundingClientRect();
+                      const style = getComputedStyle(input);
+                      const ring =
+                        Number.parseFloat(style.outlineWidth) +
+                        Number.parseFloat(style.outlineOffset);
+                      return {
+                        fullyVisible:
+                          active.top >= Math.max(list.top, bounds.top) &&
+                          active.bottom <= Math.min(list.bottom, bounds.bottom),
+                        focusedInputVisible:
+                          document.activeElement === input &&
+                          inputBounds.top - ring >= Math.max(0, bounds.top + dialog.clientTop) &&
+                          inputBounds.bottom + ring <=
+                            Math.min(
+                              innerHeight,
+                              bounds.top + dialog.clientTop + dialog.clientHeight,
+                            ),
+                        active: { top: active.top, bottom: active.bottom, height: active.height },
+                        input: { top: inputBounds.top, bottom: inputBounds.bottom, ring },
+                        list: { top: list.top, bottom: list.bottom, height: list.height },
+                        dialog: { top: bounds.top, bottom: bounds.bottom },
+                        viewportHeight: innerHeight,
+                      };
+                    }),
+                  {
+                    message: `${locale} palette option and focused input must fit at ${height}px after ${key} with scrollbar gutters`,
+                  },
+                )
+                .toMatchObject({ fullyVisible: true, focusedInputVisible: true });
+            }
+            await verifyCommandFocus(feedback);
+            await verifyCommandFocus(dialog.locator("[data-close]"));
+          }
+          await page.setViewportSize({ width: 320, height: 400 });
         }
-        await page.setViewportSize({ width: 320, height: 400 });
+        await feedback.evaluate((element) =>
+          element.querySelector("[data-feedback-probe]").remove(),
+        );
+        expect(
+          await dialog
+            .locator(".discovery-feedback")
+            .evaluate((element) => element.getBoundingClientRect().height),
+        ).toBe(0);
+        await page.keyboard.press("Escape");
       }
-      await feedback.evaluate((element) => element.querySelector("[data-feedback-probe]").remove());
-      expect(
-        await dialog
-          .locator(".discovery-feedback")
-          .evaluate((element) => element.getBoundingClientRect().height),
-      ).toBe(0);
-      await page.keyboard.press("Escape");
     }
+  } finally {
+    await page.evaluate((value) => {
+      if (value) document.documentElement.style.scrollbarGutter = value;
+      else document.documentElement.style.removeProperty("scrollbar-gutter");
+    }, previousScrollbarGutter);
   }
   return {
     engine,
@@ -239,6 +286,8 @@ export async function verifyCommandDiscovery(page, url, engine, output) {
     hiddenConsumerFeedback: true,
     longFeedbackKeyboardScroll: true,
     shortHeightFeedback: true,
+    scrollbarGutters: true,
+    inputFocusAfterNavigation: true,
     locales: supportedLocales,
     platforms: ["win32", "linux", "darwin"],
     limitations: [
