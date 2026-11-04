@@ -806,7 +806,27 @@
       "reason": "Linux signing-service fixture backend and native Git/SSH helper paths; portable contract and JWT tests run on every platform."
     },
     {
-      "id": "tests/installation-authority.test.ts::independent source history admission > admits real personally signed commits and reproducible clean merges::case-0",
+      "id": "tests/installation-authority.test.ts::independent source history admission > admits personally signed commits and personally signed merges::case-0",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux signing-service fixture backend and native Git/SSH helper paths; portable contract and JWT tests run on every platform."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::independent source history admission > admits an approved initial anchor with unsigned history and signed descendants::case-0",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux signing-service fixture backend and native Git/SSH helper paths; portable contract and JWT tests run on every platform."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::independent source history admission > never reuses old prefix approvals, including signed descendants of unsigned merges::case-0",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux signing-service fixture backend and native Git/SSH helper paths; portable contract and JWT tests run on every platform."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::independent source history admission > refuses an unsigned clean merge even when both parents are personally signed::case-0",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux signing-service fixture backend and native Git/SSH helper paths; portable contract and JWT tests run on every platform."
+    },
+    {
+      "id": "tests/installation-authority.test.ts::independent source history admission > refuses signed merges and later signed commits above unadmitted bot ancestry::case-0",
       "platforms": ["win32", "darwin"],
       "reason": "Linux signing-service fixture backend and native Git/SSH helper paths; portable contract and JWT tests run on every platform."
     },

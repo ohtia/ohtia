@@ -519,6 +519,10 @@ export function githubReaders({ fetcher = fetch, token, clock = Date.now } = {})
   };
 }
 
+// Separate admissions made under the former unsigned-merge rule.
+export const sourceAdmissionVersion = 2;
+export const sourcePrefixDomain = `ohtia-source-prefix-v${sourceAdmissionVersion}\0`;
+
 export class GitSourceAuthority {
   constructor(
     policy,
@@ -599,7 +603,7 @@ export class GitSourceAuthority {
       const objects = fs.realpathSync(
         path.resolve(repository, await git("rev-parse", "--git-path", "objects")),
       );
-      // Never execute merge drivers, hooks or helpers from the supplied repository configuration.
+      // Never execute hooks or helpers from the supplied repository configuration.
       const bare = path.join(dir, "repository.git");
       await git("init", "--bare", "--template=", bare);
       fs.writeFileSync(path.join(bare, "objects/info/alternates"), objects + "\n", { mode: 0o600 });
@@ -632,10 +636,14 @@ export class GitSourceAuthority {
         }
         seen.add(commit);
         const tree = await git("rev-parse", `${commit}^{tree}`);
-        const cached = await this.cache?.get(`${policyHash}/${commit}`);
+        const cached = await this.cache?.get(`v${sourceAdmissionVersion}/${policyHash}/${commit}`);
         if (cached) {
+          fields(cached, "commit tree policy_sha256 kind");
           demand(
-            cached.commit === commit && cached.tree === tree && cached.policy_sha256 === policyHash,
+            cached.commit === commit &&
+              cached.tree === tree &&
+              cached.policy_sha256 === policyHash &&
+              cached.kind === "personal-signature",
             "policy_refused",
           );
           known.add(commit);
@@ -696,26 +704,17 @@ export class GitSourceAuthority {
           parents.every((p) => known.has(p)),
           "policy_refused",
         );
-        let signed = false;
-        try {
-          await git("verify-commit", commit);
-          signed = true;
-        } catch (error) {
-          if (error instanceof SigningError && error.code === "authority_unavailable") throw error;
-          /* A personal signature or an exactly reproduced clean merge is mandatory. */
-        }
-        if (!signed) {
-          demand(parents.length === 2, "policy_refused");
-          const merged = (await git("merge-tree", "--write-tree", ...parents)).split("\n")[0];
-          demand(merged === tree, "policy_refused");
-        }
+        // A merge signature never authorizes an unadmitted parent.
+        await git("verify-commit", commit);
         const record = {
           commit,
           tree,
           policy_sha256: policyHash,
-          kind: signed ? "personal-signature" : "clean-merge",
+          kind: "personal-signature",
         };
-        await this.cache?.put(`${policyHash}/${commit}`, record, { deadline });
+        await this.cache?.put(`v${sourceAdmissionVersion}/${policyHash}/${commit}`, record, {
+          deadline,
+        });
         records.push(record);
         known.add(commit);
       }
