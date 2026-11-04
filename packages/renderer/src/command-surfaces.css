@@ -152,3 +152,234 @@
     block-size: var(--component-target-coarse);
   }
 }
+
+.command-palette {
+  scroll-padding: calc(var(--focus-width) + var(--focus-offset));
+  inline-size: min(var(--component-palette-max-width), calc(100% - 2 * var(--space-4)));
+  margin-block: var(--space-16);
+  max-block-size: calc(100dvh - 2 * var(--space-16));
+}
+.command-palette > h2 {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.command-palette > [data-close] {
+  position: absolute;
+  inset-inline-end: var(--space-2);
+  inset-block-start: var(--space-3);
+}
+.palette-input-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  padding-inline: var(--space-4) calc(var(--space-10) + var(--space-4));
+  border-block-end: var(--border-width-default) solid var(--border-subtle);
+}
+.palette-input-row > svg {
+  flex: none;
+  color: var(--content-secondary);
+}
+.palette-input-row > input {
+  inline-size: 100%;
+  min-inline-size: 0;
+  border-width: 0;
+  background: var(--surface-page);
+  color: var(--content-primary);
+  font: inherit;
+}
+.palette-list {
+  min-block-size: calc(var(--space-10) + 2 * var(--space-2));
+  overflow: auto;
+  padding: var(--space-1) var(--space-2) var(--space-2);
+  scroll-padding: var(--space-2);
+}
+.palette-list:empty {
+  min-block-size: var(--space-0);
+}
+.palette-group-label {
+  font-size: var(--type-ui-label-size);
+  font-weight: var(--type-ui-label-weight);
+  color: var(--content-secondary);
+  padding: var(--space-2) var(--space-3) var(--space-1);
+}
+.palette-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-2);
+  min-block-size: var(--space-10);
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-small);
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.palette-option[aria-selected="true"] {
+  background: var(--surface-emphasis);
+  color: var(--content-primary);
+  border-inline-start: var(--focus-width) solid var(--border-strong);
+}
+.palette-option[aria-disabled="true"] {
+  cursor: default;
+}
+.palette-reason {
+  grid-column: 1 / -1;
+  color: var(--content-secondary);
+  font-size: var(--type-ui-body-small-size);
+}
+.command-keys {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: end;
+  gap: var(--space-1);
+}
+.command-keys kbd {
+  font-family: var(--font-family-ui);
+  font-size: var(--type-ui-caption-size);
+  color: var(--content-secondary);
+  background: var(--surface-page);
+  border: var(--border-width-default) solid var(--border-subtle);
+  border-radius: var(--radius-small);
+  padding-inline: var(--space-1);
+  overflow-wrap: anywhere;
+}
+.palette-empty {
+  padding-inline: var(--space-4);
+  overflow-wrap: anywhere;
+}
+.palette-footer {
+  max-inline-size: none;
+}
+.palette-footer,
+.shortcuts-footer {
+  flex: none;
+  margin: var(--space-0);
+  border-block-start: var(--border-width-default) solid var(--border-subtle);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--type-ui-caption-size);
+  color: var(--content-secondary);
+}
+.shortcuts-dialog {
+  margin-block: var(--space-10);
+  max-block-size: calc(100dvh - 2 * var(--space-10));
+}
+.shortcuts-body {
+  scroll-padding: var(--space-2);
+  padding: var(--space-4) var(--space-6) var(--space-6);
+  overflow: auto;
+}
+.shortcuts-table {
+  margin-block-start: var(--space-4);
+  inline-size: 100%;
+}
+.shortcuts-table th,
+.shortcuts-table td {
+  padding: var(--space-1) var(--space-2);
+  text-align: start;
+  font-size: var(--type-ui-body-small-size);
+  border-block-end: var(--border-width-default) solid var(--border-subtle);
+  overflow-wrap: anywhere;
+}
+.shortcuts-table th[scope="row"] {
+  font-weight: var(--type-ui-body-weight);
+}
+.shortcuts-table thead th {
+  font-size: var(--type-ui-label-size);
+  color: var(--content-secondary);
+}
+.shortcuts-table .shortcuts-group th {
+  padding-block-start: var(--space-4);
+  font-size: var(--type-ui-subheading-size);
+}
+.shortcuts-footer {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-3) var(--space-6);
+}
+.shortcuts-note {
+  min-block-size: var(--space-0);
+  overflow: auto;
+  scroll-padding: var(--space-2);
+}
+@media (forced-colors: active) {
+  .palette-option[aria-selected="true"] {
+    border-color: Highlight;
+  }
+}
+@media (pointer: coarse) {
+  .palette-list {
+    min-block-size: calc(var(--component-target-coarse) + 2 * var(--space-2));
+  }
+  .palette-option {
+    min-block-size: var(--component-target-coarse);
+  }
+  .palette-input-row {
+    padding-inline: var(--space-4) calc(var(--component-target-coarse) + var(--space-4));
+  }
+}
+
+@media (max-height: 300px) {
+  .command-palette,
+  .shortcuts-dialog {
+    margin-block: var(--space-4);
+    max-block-size: calc(100dvh - 2 * var(--space-4));
+  }
+  .shortcuts-body {
+    min-block-size: var(--space-12);
+  }
+  .shortcuts-footer {
+    flex: 0 1 auto;
+    min-block-size: var(--space-0);
+  }
+}
+@media (max-height: 150px) {
+  .command-palette,
+  .shortcuts-dialog {
+    margin-block: var(--space-1);
+    max-block-size: calc(100dvh - 2 * var(--space-1));
+  }
+  .palette-input-row {
+    padding-block: var(--space-2);
+  }
+  .palette-list {
+    min-block-size: calc(var(--space-10) + 2 * var(--space-1));
+    scroll-padding: var(--space-1);
+  }
+  .palette-footer {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+}
+
+.discovery-feedback {
+  flex: 0 1 auto;
+  min-block-size: var(--space-10);
+  max-block-size: calc(var(--space-16) * 2);
+  padding: var(--space-2) var(--space-4);
+  display: flex;
+  flex-direction: column;
+}
+.discovery-feedback:has(.discovery-feedback-scroll:empty),
+.discovery-feedback:has(.discovery-feedback-scroll > [hidden]):not(
+    :has(.discovery-feedback-scroll > :not([hidden]))
+  ) {
+  display: none;
+}
+.discovery-feedback-scroll {
+  min-block-size: var(--space-0);
+  min-inline-size: var(--space-0);
+  overflow: auto;
+  scroll-padding: var(--space-2);
+  display: grid;
+  gap: var(--space-2);
+}
+.discovery-feedback-scroll > p {
+  margin-block: var(--space-0);
+}

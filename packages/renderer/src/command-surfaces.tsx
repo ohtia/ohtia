@@ -26,6 +26,7 @@ import {
 } from "@ohtia/contracts";
 import { CommandController, presentationReason } from "./command-controller.js";
 import { Dialog } from "./layers.js";
+import { CommandPalette, KeyboardShortcutsDialog } from "./command-discovery.js";
 import { Button } from "./controls.js";
 import { OhtiaBrand, StaticCharacterIllustration } from "./branding.js";
 import { LucideGlyph } from "./iconography.js";
@@ -374,7 +375,9 @@ export function CommandSurfaces({
   const settingsAvailable = !!renderSettings;
   const [controller, setController] = useState<CommandController>();
   const [, setSnapshot] = useState<CommandSnapshot>();
-  const [surface, setSurface] = useState<"about" | "help" | "settings">();
+  const [surface, setSurface] = useState<"about" | "help" | "settings" | "palette" | "shortcuts">();
+  const [paletteSnapshot, setPaletteSnapshot] = useState<CommandSnapshot>();
+  const inspectingOrigin = useRef(false);
   const [info, setInfo] = useState<AboutInformation>();
   const [loadFailed, setLoadFailed] = useState(false);
   const [copy, setCopy] = useState<CopyState>({ phase: "idle", attempt: 0 });
@@ -403,7 +406,7 @@ export function CommandSurfaces({
     live: true,
     incarnation: 0,
     localeEpoch: 0,
-    surface: undefined as "about" | "help" | "settings" | undefined,
+    surface: undefined as "about" | "help" | "settings" | "palette" | "shortcuts" | undefined,
     locale,
     composing: false,
     composingTarget: undefined as Node | undefined,
@@ -447,7 +450,7 @@ export function CommandSurfaces({
       current.current.composingTarget = undefined;
     }
     const editable = (id: CommandId) => {
-      const element = document.activeElement;
+      const element = inspectingOrigin.current ? modalReturnFocus.current : document.activeElement;
       return (
         element instanceof HTMLElement &&
         (element.isContentEditable ||
@@ -483,7 +486,7 @@ export function CommandSurfaces({
       current.current.composingTarget = undefined;
       update();
     };
-    const open = (next: "about" | "help" | "settings") => {
+    const open = (next: "about" | "help" | "settings" | "palette" | "shortcuts") => {
       modalTrigger.current =
         document.activeElement instanceof HTMLElement ? document.activeElement : null;
       current.current.incarnation++;
@@ -502,8 +505,8 @@ export function CommandSurfaces({
           presentationReason(id, {
             modal:
               !!document.querySelector("dialog[open]:not(.command-dialog)") ||
-              !!current.current.surface,
-            composing: current.current.composing,
+              (!!current.current.surface && !inspectingOrigin.current),
+            composing: !inspectingOrigin.current && current.current.composing,
             editable: editable(id) || (id === "edit.copy" && !!document.getSelection()?.toString()),
           });
         const state = (id: CommandId) => {
@@ -545,6 +548,17 @@ export function CommandSurfaces({
                 setCopy((prior) => ({ ...prior, phase: ok ? "copied" : "failed" }));
               else if (!ok) setFailure(true);
               return ok;
+            },
+          });
+        for (const [id, surface] of [
+          ["palette.open", "palette"],
+          ["shortcuts.open", "shortcuts"],
+        ] as const)
+          registry.register(id, {
+            state: () => state(id),
+            run: () => {
+              open(surface);
+              return true;
             },
           });
         for (const id of ["window.new", "menu.open"] as const) {
@@ -640,6 +654,16 @@ export function CommandSurfaces({
           if (!registry || !live) return;
           const snapshot = registry.snapshot();
           setSnapshot(snapshot);
+          // State providers are synchronous. Inspect the restored origin target without changing
+          // native-menu availability or invocation admission while the palette owns the modal.
+          if (current.current.surface === "palette") {
+            inspectingOrigin.current = true;
+            try {
+              setPaletteSnapshot(registry.snapshot());
+            } finally {
+              inspectingOrigin.current = false;
+            }
+          }
           setUnavailable((previous) =>
             previous &&
             previous.command !== "window.new" &&
@@ -875,13 +899,27 @@ export function CommandSurfaces({
   };
   const windowFeedback = renderFeedback?.(openSettings, false);
   const dialogFeedback =
-    surface === "help" || surface === "about" ? renderFeedback?.(openSettings, true) : undefined;
+    surface === "help" || surface === "about" || surface === "palette" || surface === "shortcuts"
+      ? renderFeedback?.(openSettings, true)
+      : undefined;
   const copyReason = controller?.entry("version.copy").reason;
   const commandFeedback = unavailable ? (
     <p role="status" className="command-unavailable">
       {message(locale, `command.reason.${unavailable.reason}`)}
     </p>
   ) : null;
+  const discoveryFeedback = (
+    <>
+      {commandFeedback}
+      {dialogFeedback}
+      {failure && (
+        <p role="alert" className="command-danger">
+          {message(locale, "command.failed")}
+        </p>
+      )}
+      <CopyFeedback copy={copy} locale={locale} inDialog />
+    </>
+  );
   return (
     <>
       {children ? (
@@ -928,6 +966,15 @@ export function CommandSurfaces({
             {...(controller ? { controller } : {})}
             onInvoke={invoke}
           />
+          {(["palette.open", "shortcuts.open"] as const).map((id) => (
+            <CommandButton
+              key={id}
+              id={id}
+              locale={locale}
+              {...(controller ? { controller } : {})}
+              onInvoke={invoke}
+            />
+          ))}
         </div>
       )}
       {failure && !surface && (
@@ -957,6 +1004,31 @@ export function CommandSurfaces({
           </>,
           modalReturnFocus,
         )}
+      {controller && (
+        <>
+          <CommandPalette
+            key={controller.context.windowGeneration}
+            feedback={discoveryFeedback}
+            open={surface === "palette"}
+            locale={locale}
+            controller={controller}
+            snapshot={paletteSnapshot ?? controller.snapshot()}
+            onClose={close}
+            onInvoke={(id) => {
+              if (current.current.surface === "palette") handoff(id);
+            }}
+            returnFocusRef={modalReturnFocus}
+          />
+          <KeyboardShortcutsDialog
+            feedback={discoveryFeedback}
+            open={surface === "shortcuts"}
+            locale={locale}
+            platform={controller.context.platform}
+            onClose={close}
+            returnFocusRef={modalReturnFocus}
+          />
+        </>
+      )}
       <HelpDialog
         returnFocusRef={modalReturnFocus}
         feedback={

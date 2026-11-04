@@ -69,6 +69,7 @@ describe("catalog build admission", () => {
       "catalog-character.mjs",
       "catalog-research.mjs",
       "command-presentation.mjs",
+      "command-discovery.mjs",
     ])
       fs.copyFileSync(path.join(repository, "tooling", name), path.join(root, "tooling", name));
     const moduleUrl = pathToFileURL(path.join(root, "tooling/catalog-acceptance.mjs")).href;

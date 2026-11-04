@@ -52,6 +52,15 @@
       },
       "effective_model_evidence": "The active implementation thread rollout, matched to the issue request, records gpt-6.1-sol with effort high in its turn_context.",
       "human_linguistic_review": null
+    },
+    {
+      "scope": "palette.*, shortcuts.* and command.feedback messages for STORY-002-014",
+      "producer": {
+        "agent": "codex",
+        "effective_model": null
+      },
+      "effective_model_evidence": "The implementation runtime identifies the GPT-6 family but does not expose a confirmed effective model identifier.",
+      "human_linguistic_review": null
     }
   ]
 }

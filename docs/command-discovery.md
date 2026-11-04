@@ -1,0 +1,29 @@
+---
+type: Reference
+title: Command discovery
+description: Use the window command registry to discover available actions and inspect platform and component shortcuts.
+---
+
+# Command discovery
+
+## Commands and context
+
+The [command surfaces](../packages/renderer/src/command-surfaces.tsx) register `palette.open` and `shortcuts.open` in the originating window's [controller](../packages/renderer/src/command-controller.ts). Native menus, native shortcuts and renderer controls invoke the same handlers. [The shared command definitions](../packages/contracts/src/commands.ts) own labels, groups and platform bindings; neither surface introduces research actions or system-wide shortcuts. Unregistered handlers retain their controlled unavailable reason, following PRIN-016.
+
+The palette uses the shared modal dialog with an initially focused search combobox, a grouped listbox, visible shortcut text, unavailable descriptions and a close button. General, Panels, Appearance and zoom, and Edit retain registry order within their groups. Filtering matches a substring of the localized label or group after Unicode decomposition, removal of combining marks and case folding. Hangul is recomposed before matching, so a query cannot match only the first jamo of a longer syllable. Queries and active options exist only for that opening; closing discards them. Command failures and refusals remain visible inside either open dialog, with blocking failures announced as alerts. Long feedback uses a named, focusable inner scroll region with padding around its focus ring; empty or hidden-only consumer feedback reserves no space.
+
+Arrow keys move the active descendant while DOM focus stays in the input. Unavailable options remain inspectable and cannot execute. Enter ignores IME composition, composition key code 229 and keyboard repeat. Pointer activation retains input focus. A synchronous activation guard prevents two gestures from handing off the same opening twice.
+
+The palette reads availability against the element that will receive focus after closure. This synchronous projection uses the registered state providers and excludes only the palette's own modal and composing input; external modal conflicts and feature availability remain authoritative. Native snapshots continue to report the actual modal state. Invocation closes the palette, restores the origin and then rechecks the registry before running the command. A command that opens another dialog therefore gives it the restored trigger. Window teardown disposes the registry and revokes pending execution; it does not claim rollback of an accepted operation.
+
+## Shortcut help
+
+The keyboard-shortcuts dialog uses a semantic table with Action and Shortcut columns and five row groups: General, Panels, Zoom, Separator with focus, and Dialogs. General includes the registry's Edit bindings. Each command row reads only the running platform's bindings; commands without bindings are omitted. The component shortcut declarations beside the registry supply separator movement, limits, pair reset, pointer-resize cancellation and dialog dismissal. These keys operate inside their components and do not become application commands. Separator Enter resets the adjacent pair rather than hiding a panel, as defined in [Workspace layout](workspace-layout.md).
+
+The palette has the canonical 600 px maximum width and 64 px top offset. Shortcut help uses the canonical dialog width and 40 px offset. Both constrain themselves to viewport margins and scroll internally. At heights of 300 px or less their top margins reduce to 16 px, and at 150 px or less to 4 px, preserving usable content at high zoom and with a virtual keyboard. In that smallest arrangement the palette hint becomes visually hidden while remaining the combobox description; the shortcut explanation remains a focusable scroll region. Active options have a start border as well as emphasis fill, with system-color treatment in forced colors. The [design system](design-system.md) owns the measurements, tokens and icon mappings; [the story](epics/EPIC-002-basic-interface/STORY-002-014-command-palette-and-shortcuts.md) links the approved reference captures.
+
+## Localization and verification
+
+Every new label, group, hint and empty-result message has a typed contract and complete values in all 25 [catalogs](localization.md). Query interpolation is plain text. Locale changes preserve the mounted search input and its current query. [Catalog provenance](../packages/contracts/catalog-provenance.json) records the model-assisted extension and lack of human linguistic review (PRIN-004 and PRIN-007).
+
+The [component tests](../tests/command-discovery.test.ts) exercise localized filtering, availability, IME-safe activation, focus handoff, duplicate gestures, disposal and each platform's binding projection. The separate development catalog exposes the real surfaces with synthetic bridge inputs, under its restrictive CSP. Browser checks measure layout and focus against the reference measurements; synthetic platform and composition inputs do not certify native keyboard layouts, OS IME or assistive-technology journeys. [Shared verification](shared-verification.md) owns package coverage and inventory accounting; [native interface qualification](epics/EPIC-002-basic-interface/STORY-002-010-native-interface-qualification.md) owns the integrated packaged journeys.

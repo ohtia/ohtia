@@ -40,7 +40,7 @@ export function Dialog({
   closeLabel: string;
   children: ReactNode;
   onClose: () => void;
-  initialFocus?: "close" | "safe";
+  initialFocus?: "close" | "safe" | "input";
   returnFocusRef?: Readonly<RefObject<HTMLElement | null>>;
 }) {
   const Heading = headingLevel === 1 ? "h1" : "h2";
@@ -67,7 +67,11 @@ export function Dialog({
     const focusSafe = () => {
       (
         dialog.querySelector<HTMLElement>(
-          initialFocus === "safe" ? "[data-safe]" : "[data-close]",
+          initialFocus === "input"
+            ? "[role=combobox]"
+            : initialFocus === "safe"
+              ? "[data-safe]"
+              : "[data-close]",
         ) ?? dialog.querySelector<HTMLElement>("[data-close]")
       )?.focus();
     };

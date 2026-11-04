@@ -578,6 +578,68 @@
       "selector": ".research-local",
       "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
       "minimum": 3
+    },
+    {
+      "selector": ".palette-input-row",
+      "backgrounds": ["surface.page"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".palette-input-row > svg",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
+      "selector": ".palette-input-row > input",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
+      "selector": ".palette-group-label",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
+      "selector": ".palette-option[aria-selected=\"true\"]",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".palette-reason",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.page", "surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".command-keys kbd",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".palette-footer,\n.shortcuts-footer",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".shortcuts-table th,\n.shortcuts-table td",
+      "backgrounds": ["surface.page"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".shortcuts-table thead th",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
     }
   ],
   "overlays": [
