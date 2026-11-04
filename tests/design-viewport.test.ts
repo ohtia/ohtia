@@ -214,3 +214,36 @@ it("reissues only the bounded native size request when a compositor finishes its
   expect(observed.native.width).toBe(320);
   expect(fixture.state.width).toBe(320);
 });
+
+it("normalizes a window whose normal geometry itself fills the screen before asserting its viewport", async () => {
+  const fixture = nativeFixture();
+  let maximized = true;
+  let unmaximizeCalls = 0;
+  fixture.window.isMaximized = () => maximized;
+  fixture.window.unmaximize = () => {
+    unmaximizeCalls++;
+    // Electron on macOS leaves a user-sized screen-filling normal frame unchanged.
+  };
+  const resize = fixture.window.setContentSize;
+  fixture.window.setContentSize = (width, height, animate) => {
+    resize(width, height, animate);
+    maximized = false;
+  };
+  const result = await setNativeViewport(fixture.page, fixture.handle, designViewportCases[0], {
+    timeout: 50,
+  });
+  expect(unmaximizeCalls).toBeGreaterThan(0);
+  expect(result.native.maximized).toBe(false);
+  expect(result.native.width).toBe(320);
+  expect(result.native.height).toBe(600);
+});
+
+it("rejects a persistent maximized state even when the requested native dimensions are accepted", async () => {
+  const fixture = nativeFixture();
+  fixture.window.isMaximized = () => true;
+  await expect(
+    setNativeViewport(fixture.page, fixture.handle, designViewportCases[0], { timeout: 50 }),
+  ).rejects.toThrow(/Native viewport requires a normal window/);
+  expect(fixture.state.width).toBe(320);
+  expect(fixture.state.height).toBe(600);
+});

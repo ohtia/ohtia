@@ -55,13 +55,20 @@ async function observeViewport(page, nativeWindow) {
 export async function setNativeViewport(page, nativeWindow, target, { timeout = 5000 } = {}) {
   await nativeWindow.evaluate((window) => {
     if (window.isFullScreen()) window.setFullScreen(false);
-    if (window.isMaximized()) window.unmaximize();
   });
   await expect
-    .poll(() => nativeWindow.evaluate((window) => window.isFullScreen() || window.isMaximized()), {
-      timeout,
-      message: "Native viewport requires a normal window",
-    })
+    .poll(
+      () =>
+        nativeWindow.evaluate((window, state) => {
+          if (!window.isFullScreen() && window.isMaximized()) {
+            window.unmaximize();
+            // macOS can keep a screen-filling normal frame maximized; request the actual test size.
+            if (window.isMaximized()) window.setContentSize(state.width, state.height, false);
+          }
+          return window.isFullScreen() || window.isMaximized();
+        }, target),
+      { timeout, message: "Native viewport requires a normal window" },
+    )
     .toBe(false);
   await nativeWindow.evaluate((window, state) => {
     window.webContents.setZoomFactor(state.zoomFactor);
