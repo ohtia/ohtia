@@ -7,8 +7,9 @@ import { invokeNativeMenu } from "./command-acceptance.mjs";
 import { message } from "../packages/contracts/dist/index.js";
 
 /** Observe the actual browser-side input boundary; DevTools key events bypass it. */
-async function nativeKey(nativeWindow, platform, keyCode, expectedCode) {
+async function nativeKey(nativeWindow, platform, keyCode, expectedCode, beforeInput) {
   await focusNative(nativeWindow, "Settings keyboard input");
+  if (beforeInput) await beforeInput();
   return nativeWindow.evaluate(
     (window, { platform, keyCode, expectedCode }) =>
       new Promise((resolve, reject) => {
@@ -182,6 +183,7 @@ export async function verifyPackagedSettings(application, page, second, output) 
   const originalSize = await nativeWindow.evaluate((window) => window.getContentSize());
   const platform = await application.evaluate(() => process.platform);
   const inputs = [];
+  const actualSizeDiagnostics = { snapshots: [], notices: [] };
   const factors = () =>
     application.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows().map((window) => window.webContents.getZoomFactor()),
@@ -277,8 +279,107 @@ export async function verifyPackagedSettings(application, page, second, output) 
       await expectFactors(110);
       inputs.push(await nativeKey(nativeWindow, platform, "-", "Minus"));
       await expectFactors(100);
-      inputs.push(await nativeKey(nativeWindow, platform, "num0", "Numpad0"));
-      await expect(dialog).toContainText(text("command.reason.actual_size"));
+      const noticeObserver = await dialog.evaluateHandle((element) => {
+        const notices = [];
+        const selector = '[role="status"], [role="alert"]';
+        const record = (node, source) => {
+          const elements = node.nodeType === 1 ? [node, ...node.querySelectorAll(selector)] : [];
+          for (const notice of elements)
+            if (notice.matches(selector))
+              notices.push({
+                time: performance.now(),
+                role: notice.getAttribute("role"),
+                text: notice.textContent,
+                source,
+              });
+        };
+        const collect = (mutations) => {
+          for (const mutation of mutations) {
+            // React may remove or replace a notice before this microtask runs.
+            for (const node of mutation.removedNodes) record(node, "removed");
+            const notice = mutation.target.parentElement?.closest(selector);
+            if (notice && mutation.type === "characterData")
+              notices.push({
+                time: performance.now(),
+                role: notice.getAttribute("role"),
+                text: mutation.oldValue,
+                source: "previous-character-data",
+              });
+            if (mutation.target.nodeType === 1 && mutation.target.matches(selector))
+              for (const node of mutation.removedNodes)
+                if (node.nodeType === 3)
+                  notices.push({
+                    time: performance.now(),
+                    role: mutation.target.getAttribute("role"),
+                    text: node.textContent,
+                    source: "removed-text",
+                  });
+          }
+          record(element, "current");
+        };
+        const observer = new MutationObserver(collect);
+        observer.observe(element, {
+          subtree: true,
+          childList: true,
+          characterData: true,
+          characterDataOldValue: true,
+        });
+        record(element, "initial");
+        return {
+          stop: () => {
+            try {
+              collect(observer.takeRecords());
+              return notices;
+            } finally {
+              observer.disconnect();
+            }
+          },
+        };
+      });
+      const snapshotActualSize = async (phase) => {
+        const [menu, renderer] = await Promise.all([
+          application.evaluate(({ Menu }) =>
+            Object.fromEntries(
+              ["zoom.reset", "zoom.decrease", "zoom.increase"].map((id) => [
+                id,
+                Menu.getApplicationMenu()?.getMenuItemById(id)?.enabled ?? null,
+              ]),
+            ),
+          ),
+          dialog.evaluate((element) => ({
+            time: performance.now(),
+            zoomGroupText: element.querySelector(".settings-zoom").textContent,
+          })),
+        ]);
+        actualSizeDiagnostics.snapshots.push({ phase, menu, renderer });
+      };
+      try {
+        await withCommandCleanup(
+          async () => {
+            inputs.push(
+              await nativeKey(nativeWindow, platform, "num0", "Numpad0", () =>
+                snapshotActualSize("before-input"),
+              ),
+            );
+            await snapshotActualSize("after-input");
+            await expect(dialog).toContainText(text("command.reason.actual_size"));
+          },
+          async () => {
+            try {
+              actualSizeDiagnostics.notices = await noticeObserver.evaluate((state) =>
+                state.stop(),
+              );
+            } finally {
+              await noticeObserver.dispose();
+            }
+          },
+        );
+      } catch (error) {
+        throw new Error(
+          `${String(error)}; actual-size diagnostics: ${JSON.stringify(actualSizeDiagnostics)}`,
+          { cause: error },
+        );
+      }
       inputs.push(await nativeKey(nativeWindow, platform, "0", "Digit0"));
       const wheelIn = await nativeZoomWheel(page, nativeWindow, platform, 120);
       expect(["in", "out"]).toContain(wheelIn.direction);
@@ -401,6 +502,7 @@ export async function verifyPackagedSettings(application, page, second, output) 
         ],
         before,
         inputs,
+        actualSizeDiagnostics,
         wheels: [wheelIn, wheelOut],
         afterSteps,
         final,
