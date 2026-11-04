@@ -72,17 +72,15 @@ export function WorkspaceSpecimen() {
   }, []);
   const register = useMemo(
     () => (registry: CommandController) => {
-      const stops = (["settings.open", "shortcuts.open", "help.open"] as const)
-        .filter((id) => id !== "help.open")
-        .map((id) =>
-          registry.register(id, {
-            state: () => (document.querySelector("dialog[open]") ? { reason: "modal_open" } : {}),
-            run: () => {
-              setNotice(id);
-              return true;
-            },
-          }),
-        );
+      const stops = [
+        registry.register("settings.open", {
+          state: () => (document.querySelector("dialog[open]") ? { reason: "modal_open" } : {}),
+          run: () => {
+            setNotice("settings.open");
+            return true;
+          },
+        }),
+      ];
       registryRef.current = registry;
       stops.push(
         registry.register("zoom.reset", {

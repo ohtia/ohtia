@@ -385,6 +385,16 @@ export async function verifyWorkspaceSpecimen(page, url, engine, output) {
     await expect(page.getByRole("dialog", { name: "Synthetic command destination" })).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(page.getByRole("button", { name: "Open Settings", exact: true })).toBeFocused();
+    const shortcutTrigger = page.getByRole("button", { name: "Keyboard shortcuts", exact: true });
+    await shortcutTrigger.click();
+    const shortcuts = page.getByRole("dialog", { name: "Keyboard shortcuts", exact: true });
+    await expect(shortcuts.getByRole("table")).toBeVisible();
+    await expect(shortcuts.locator('[data-shortcut-id="palette.open"] kbd')).toHaveText(
+      "Ctrl+Shift+P",
+    );
+    await page.keyboard.press("Escape");
+    await expect(shortcuts).toBeHidden();
+    await expect(shortcutTrigger).toBeFocused();
     await page.getByRole("button", { name: "Ohtia help", exact: true }).click();
     await page.setViewportSize({ width: 600, height: 400 });
     await expect(page.locator(".workspace")).toHaveAttribute("data-mode", "narrow");
