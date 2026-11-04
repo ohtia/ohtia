@@ -6,6 +6,7 @@
 @import "./settings.css";
 @import "./workspace-chrome.css";
 @import "./character.css";
+@import "./research.css";
 
 :root {
   color-scheme: light dark;

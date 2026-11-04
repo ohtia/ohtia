@@ -67,6 +67,7 @@ describe("catalog build admission", () => {
       "catalog-acceptance.mjs",
       "catalog-workspace.mjs",
       "catalog-character.mjs",
+      "catalog-research.mjs",
       "command-presentation.mjs",
     ])
       fs.copyFileSync(path.join(repository, "tooling", name), path.join(root, "tooling", name));
@@ -86,6 +87,7 @@ describe("catalog build admission", () => {
   it.each([
     "tools/renderer-preview/neutral.ts",
     "tools/renderer-preview/character-specimen.tsx",
+    "tools/renderer-preview/research-specimen.tsx",
     "tests/transport.ts",
     "packages/renderer/src/catalog.ts",
     "packages/utility/src/fixture.ts",
@@ -110,6 +112,46 @@ describe("catalog build admission", () => {
         build: { write: false, lib: { entry: "entry.ts", formats: ["es"] } },
       }),
     ).rejects.toThrow(/Development module in product graph/);
+  });
+  it("exports research presentation from the renderer library without catalog specimens or synthetic research", async () => {
+    const result = await build({
+      configFile: "tooling/vite.renderer.mjs",
+      logLevel: "silent",
+      build: { write: false },
+    });
+    const outputs = (Array.isArray(result) ? result : [result]).flatMap((item) =>
+      "output" in item ? item.output : [],
+    );
+    const code = outputs
+      .map((item) => (item.type === "chunk" ? item.code : String(item.source)))
+      .join("\n");
+    for (const name of [
+      "EvidenceHighlight",
+      "TutorComment",
+      "ProposalCard",
+      "ContrastResult",
+      "CritiqueLevel",
+      "ObservationCard",
+      "ReviewRequired",
+      "CoverageStatement",
+      "SourceRow",
+      "ProcessingStatus",
+      "RestrictionBadge",
+      "WeeklyActions",
+      "StageStatus",
+      "PaceIndicator",
+      "SaveStatus",
+      "VersionConflict",
+    ])
+      expect(code).toMatch(new RegExp(`\\b${name}\\b`));
+    for (const sentinel of [
+      "ResearchSpecimen",
+      "Research component catalog",
+      "SYSTEM NOTICE",
+      "Synthetic source",
+      "Last synthetic callback",
+    ])
+      expect(code).not.toContain(sentinel);
   });
   it("admits product sources and retains the same restrictive CSP as the desktop", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "ohtia-product-graph-"));

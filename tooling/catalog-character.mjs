@@ -5,6 +5,9 @@ import { URL } from "node:url";
 
 /** Every owned page, including the coarse-pointer context, has independent admission checks. */
 export function watchCharacterPage(page, url) {
+  return watchCatalogPage(page, url, "Character");
+}
+export function watchCatalogPage(page, url, name) {
   const errors = [],
     violations = [],
     requests = [];
@@ -18,11 +21,11 @@ export function watchCharacterPage(page, url) {
   page.on("request", request);
   return {
     assert() {
-      expect(errors, "Character page errors").toEqual([]);
-      expect(violations, "Character console/CSP errors").toEqual([]);
+      expect(errors, `${name} page errors`).toEqual([]);
+      expect(violations, `${name} console/CSP errors`).toEqual([]);
       expect(
         requests.every((value) => new URL(value).origin === new URL(url).origin),
-        "Character request origins",
+        `${name} request origins`,
       ).toBe(true);
     },
     dispose() {

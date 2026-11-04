@@ -4,6 +4,7 @@ import path from "node:path";
 import { build, preview } from "vite";
 import { expect } from "@playwright/test";
 import { verifyCharacterSpecimen } from "./catalog-character.mjs";
+import { verifyResearchSpecimen } from "./catalog-research.mjs";
 import { verifyWorkspaceSpecimen } from "./catalog-workspace.mjs";
 import { verifyCommandSpecimens } from "./command-presentation.mjs";
 
@@ -151,6 +152,14 @@ export async function verifyCatalog(page, url, engine, output) {
       await verifyCharacterSpecimen(characterPage, url, engine, output);
     } finally {
       await characterContext.close();
+    }
+    const researchContext = await browser.newContext();
+    let research;
+    try {
+      const researchPage = await researchContext.newPage();
+      research = await verifyResearchSpecimen(researchPage, url, engine, output);
+    } finally {
+      await researchContext.close();
     }
     await verifyWorkspaceSpecimen(page, url, engine, output);
     await verifyCommandSpecimens(page, url, engine);
@@ -408,6 +417,7 @@ export async function verifyCatalog(page, url, engine, output) {
       nestedEscape: true,
       tabFocusVisibility: true,
       stickyTableHeader: true,
+      research,
       limitations: [
         "Portable catalog only; native IME, packaged zoom and manual assistive qualification are separate.",
       ],
