@@ -133,3 +133,31 @@ select {
     background: Canvas;
   }
 }
+
+/* Native controls stay fixed to the window; bootstrap content scrolls beneath its own title row. */
+.foundation-window > main {
+  flex: 1;
+  min-block-size: var(--space-0);
+  overflow: auto;
+}
+.foundation-titlebar {
+  flex-shrink: 0;
+}
+.foundation-title-row {
+  margin-inline-start: env(titlebar-area-x, 0px);
+  inline-size: env(titlebar-area-width, 100%);
+  min-block-size: max(
+    var(--component-workspace-context-bar-minimum),
+    env(titlebar-area-height, 0px)
+  );
+}
+.foundation-titlebar h1 {
+  margin: var(--space-0);
+  font: inherit;
+}
+.foundation-titlebar button,
+.foundation-titlebar a,
+.foundation-titlebar [tabindex],
+.foundation-titlebar .primitive-tooltip {
+  app-region: no-drag;
+}

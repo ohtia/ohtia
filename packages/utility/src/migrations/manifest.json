@@ -18,5 +18,9 @@
   {
     "name": "0005_presentation_receipts",
     "sha256": "6be59df9cd021149f04e9d7d2ba8cd799ce0652e5bceff950e6bfe4fd8a4fdb9"
+  },
+  {
+    "name": "0006_window_bounds_receipts",
+    "sha256": "c99cca99ddcdfed927b5ce36b9645b9e493f5e008309ed44bc2531791a2fc0a8"
   }
 ]

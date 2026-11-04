@@ -3,6 +3,8 @@ import {
   decodeBootstrapSnapshot,
   isCommandContext,
   isCommandIntent,
+  isWindowCommandRequest,
+  isWindowCommandResult,
   isCommandSnapshot,
   isAboutInformation,
   isNativeCommand,
@@ -149,6 +151,19 @@ async function commandBoolean(action: string, payload: unknown): Promise<boolean
 }
 const bridge: DesktopBridge = {
   commands: {
+    async windowAction(request) {
+      if (
+        !isWindowCommandRequest(request) ||
+        request.intent.windowGeneration !== commandContext?.windowGeneration
+      )
+        return { status: "stale_context" };
+      const result: unknown = await ipcRenderer.invoke(
+        desktopChannels.commands,
+        "window_action",
+        request,
+      );
+      return isWindowCommandResult(result) ? result : { status: "failed" };
+    },
     async context() {
       const value: unknown = await ipcRenderer.invoke(
         desktopChannels.commands,

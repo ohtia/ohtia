@@ -21,3 +21,5 @@ export {
   type LayoutTransaction,
   type RecordedLayoutCommand,
 } from "./layout-command.js";
+
+export * from "./window-bounds-command.js";

@@ -431,6 +431,60 @@ it("keeps named command bridge inputs/results bounded and strips native event au
   expect(h.ipcRenderer.listenerCount(desktopChannels.commandIntent)).toBe(0);
 });
 
+it("validates the native window request lease and closed results before crossing preload", async () => {
+  const h = await load();
+  h.ipcRenderer.invoke.mockResolvedValueOnce({
+    windowGeneration: "lease-1",
+    platform: "linux",
+  } as never);
+  await h.bridge.commands.context();
+  const request = {
+    intent: {
+      windowGeneration: "lease-1",
+      source: "renderer" as const,
+      sequence: 1,
+      command: "window.new" as const,
+    },
+  };
+  h.ipcRenderer.invoke.mockResolvedValueOnce({
+    status: "unavailable",
+    reason: "window_limit",
+  } as never);
+  expect(await h.bridge.commands.windowAction(request)).toEqual({
+    status: "unavailable",
+    reason: "window_limit",
+  });
+  h.ipcRenderer.invoke.mockResolvedValueOnce({ status: "completed", menuDismissed: true } as never);
+  expect(
+    await h.bridge.commands.windowAction({
+      ...request,
+      intent: { ...request.intent, command: "menu.open" },
+      anchor: { x: 0, y: 48 },
+    }),
+  ).toEqual({ status: "completed", menuDismissed: true });
+  h.ipcRenderer.invoke.mockResolvedValueOnce({
+    status: "completed",
+    menuDismissed: "private",
+  } as never);
+  expect(await h.bridge.commands.windowAction(request)).toEqual({ status: "failed" });
+  h.ipcRenderer.invoke.mockResolvedValueOnce({ status: "completed", private: true } as never);
+  expect(await h.bridge.commands.windowAction(request)).toEqual({ status: "failed" });
+  for (const status of [["failed"], ["completed"], ["revoked"]]) {
+    h.ipcRenderer.invoke.mockResolvedValueOnce({ status } as never);
+    expect(await h.bridge.commands.windowAction(request)).toEqual({ status: "failed" });
+  }
+  const count = h.ipcRenderer.invoke.mock.calls.length;
+  expect(
+    await h.bridge.commands.windowAction({
+      intent: { ...request.intent, windowGeneration: "old" },
+    }),
+  ).toEqual({ status: "stale_context" });
+  expect(
+    await h.bridge.commands.windowAction({ ...request, anchor: { x: 1, y: 1 } } as never),
+  ).toEqual({ status: "stale_context" });
+  expect(h.ipcRenderer.invoke).toHaveBeenCalledTimes(count);
+});
+
 it("exposes the named presentation methods and preserves mutation uncertainty across service cessation", async () => {
   const h = await load();
   const calls = [

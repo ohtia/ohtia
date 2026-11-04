@@ -1,3 +1,4 @@
+import type { ComponentProps } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   message,
@@ -26,7 +27,11 @@ export function SettingsSurfaces({
   locale,
   available,
   onLocale,
+  children,
+  returnFocusRef,
 }: {
+  readonly children?: ComponentProps<typeof CommandSurfaces>["children"];
+  readonly returnFocusRef?: ComponentProps<typeof CommandSurfaces>["returnFocusRef"];
   readonly port: FoundationPort;
   readonly bridge: CommandBridge;
   readonly locale: InterfaceLocale;
@@ -54,8 +59,6 @@ export function SettingsSurfaces({
       new SettingsController(
         port,
         async (feature, record) => {
-          if (feature === "appearance")
-            document.documentElement.dataset.appearance = String(record.value);
           if (feature === "zoom") {
             const result = await port.applyZoom().result;
             if (
@@ -184,6 +187,8 @@ export function SettingsSurfaces({
   return (
     <>
       <CommandSurfaces
+        {...(children ? { children } : {})}
+        {...(returnFocusRef ? { returnFocusRef } : {})}
         bridge={bridge}
         locale={locale}
         decoration={decoration}

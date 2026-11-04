@@ -75,7 +75,8 @@
   min-inline-size: var(--space-2);
   app-region: drag;
 }
-.workspace .workspace-control {
+.workspace .workspace-control,
+.foundation-titlebar .workspace-control {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -430,6 +431,7 @@
 }
 @media (pointer: coarse) {
   .workspace .workspace-control,
+  .foundation-titlebar .workspace-control,
   .workspace-sizing button,
   .workspace-tabs button,
   .workspace-skip {

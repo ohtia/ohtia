@@ -593,6 +593,7 @@ it("composes real registry surfaces and announces failed layout persistence once
     about: async () => {
       throw new Error("Synthetic unavailable metadata");
     },
+    windowAction: async () => ({ status: "unavailable", reason: "handler_missing" }),
     perform: async () => false,
     copyVersionInformation: async () => false,
     openLink: async () => false,

@@ -1,3 +1,4 @@
+import { RequestBudget } from "../packages/main/src/port-admission.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -721,4 +722,260 @@ describe("uncertain stop and cancelled replacement", () => {
     );
     child.exit();
   });
+});
+
+it("uses the same validated bounded service peer for broker-owned preferences and independently confirmed appearance", async () => {
+  const child = new Child();
+  const changed = vi.fn();
+  const supervisor = new ServiceSupervisor(
+    child,
+    "service-1",
+    () => {},
+    undefined,
+    false,
+    undefined,
+    undefined,
+    undefined,
+    changed,
+  );
+  child.receive(JSON.stringify({ kind: "ready", generation: "service-1" }));
+  const pending = supervisor.request("bounds.read", {});
+  const envelope = JSON.parse(child.sent.at(-1)!);
+  expect(envelope).toMatchObject({
+    operation: "bounds.read",
+    windowGeneration: "service-1",
+    serviceGeneration: "service-1",
+  });
+  child.receive(
+    JSON.stringify({
+      ...envelope,
+      kind: "result",
+      payload: {
+        ok: true,
+        value: { schemaVersion: 1, revision: 0, value: null, source: "default" },
+      },
+    }),
+  );
+  await expect(pending).resolves.toMatchObject({ ok: true, value: { source: "default" } });
+  child.receive(
+    JSON.stringify({
+      kind: "appearance_changed",
+      generation: "service-1",
+      record: { schemaVersion: 1, revision: 2, value: "dark", source: "saved" },
+    }),
+  );
+  expect(changed).toHaveBeenCalledWith({
+    schemaVersion: 1,
+    revision: 2,
+    value: "dark",
+    source: "saved",
+  });
+  await expect(
+    supervisor.request("bounds.replace", { expectedRevision: -1, value: {} } as never),
+  ).resolves.toMatchObject({ ok: false, error: { code: "invalid_message" } });
+  child.exit();
+  await expect(supervisor.request("bounds.read", {})).resolves.toMatchObject({
+    ok: false,
+    error: { code: "service_unavailable" },
+  });
+});
+
+it("shares the global pending cap with broker-owned calls and rejects malformed private theme notices", async () => {
+  const child = new Child();
+  const supervisor = new ServiceSupervisor(child, "service-1", () => {});
+  child.receive(JSON.stringify({ kind: "ready", generation: "service-1" }));
+  const pending = Array.from({ length: portLimits.pending_global }, () =>
+    supervisor.request("status.read", {}),
+  );
+  await expect(supervisor.request("bounds.read", {})).resolves.toMatchObject({
+    ok: false,
+    error: { code: "busy" },
+  });
+  const deliver = vi.fn(),
+    release = vi.fn();
+  supervisor.dispatch({ request: request(), deliver, release, releaseSubscription() {} });
+  expect(deliver).toHaveBeenCalledWith(expect.stringContaining('"busy"'));
+  expect(release).toHaveBeenCalledOnce();
+  child.exit();
+  await Promise.all(pending);
+  const malformed = new Child();
+  const changed = vi.fn();
+  const next = new ServiceSupervisor(
+    malformed,
+    "service-2",
+    () => {},
+    undefined,
+    false,
+    undefined,
+    undefined,
+    changed,
+  );
+  malformed.receive(JSON.stringify({ kind: "ready", generation: "service-2" }));
+  malformed.receive(
+    JSON.stringify({
+      kind: "appearance_changed",
+      generation: "service-2",
+      record: { value: "dark" },
+    }),
+  );
+  expect(next.available).toBe(false);
+  expect(changed).not.toHaveBeenCalled();
+  malformed.exit();
+});
+
+it("refuses an internal service request when named broker work has exhausted the aggregate budget", async () => {
+  const budget = new RequestBudget();
+  const child = new Child();
+  const supervisor = new ServiceSupervisor(
+    child,
+    "mixed-1",
+    () => {},
+    undefined,
+    false,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    budget,
+  );
+  child.receive(JSON.stringify({ kind: "ready", generation: "mixed-1" }));
+  const releases: (() => void)[] = [];
+  try {
+    for (const frame of Array.from({ length: portLimits.windows }, () => ({})))
+      for (let i = 0; i < portLimits.pending_per_window; i++) {
+        const reserved = budget.reserve(frame);
+        expect(reserved.ok).toBe(true);
+        if (reserved.ok) releases.push(reserved.value);
+      }
+    const sent = child.sent.length;
+    const read = supervisor.request("bounds.read", {});
+    expect(child.sent).toHaveLength(sent);
+    await expect(read).resolves.toMatchObject({ ok: false, error: { code: "busy" } });
+  } finally {
+    child.exit();
+    for (const release of releases) release();
+  }
+});
+
+it("counts internal service work against renderer capacity and releases it exactly once", async () => {
+  const budget = new RequestBudget();
+  const child = new Child();
+  const supervisor = new ServiceSupervisor(
+    child,
+    "mixed-2",
+    () => {},
+    undefined,
+    false,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    budget,
+  );
+  child.receive(JSON.stringify({ kind: "ready", generation: "mixed-2" }));
+  const read = supervisor.request("bounds.read", {});
+  const wire = JSON.parse(child.sent.at(-1)!);
+  const frames = Array.from({ length: portLimits.windows }, () => ({}));
+  const releases: (() => void)[] = [];
+  try {
+    for (let n = 0; n < portLimits.pending_global - 1; n++) {
+      const reserved = budget.reserve(frames[Math.floor(n / portLimits.pending_per_window)]);
+      expect(reserved.ok).toBe(true);
+      if (reserved.ok) releases.push(reserved.value);
+    }
+    expect(budget.reserve(frames.at(-1)!).ok).toBe(false);
+    child.receive(
+      JSON.stringify({
+        ...wire,
+        kind: "result",
+        payload: {
+          ok: true,
+          value: { schemaVersion: 1, revision: 0, value: null, source: "default" },
+        },
+      }),
+    );
+    await expect(read).resolves.toMatchObject({ ok: true });
+    const reopened = budget.reserve(frames.at(-1)!);
+    expect(reopened.ok).toBe(true);
+    if (reopened.ok) {
+      reopened.value();
+      reopened.value();
+    }
+    const last = budget.reserve(frames.at(-1)!);
+    expect(last.ok).toBe(true);
+    if (last.ok) releases.push(last.value);
+    expect(budget.reserve({}).ok).toBe(false);
+  } finally {
+    child.exit();
+    for (const release of releases) release();
+  }
+});
+it("releases broker capacity on service rejection, invalid input and child exit", async () => {
+  const budget = new RequestBudget();
+  const child = new Child();
+  const supervisor = new ServiceSupervisor(
+    child,
+    "mixed-3",
+    () => {},
+    undefined,
+    false,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    budget,
+  );
+  await expect(supervisor.request("bounds.read", {})).resolves.toMatchObject({ ok: false });
+  child.receive(JSON.stringify({ kind: "ready", generation: "mixed-3" }));
+  await expect(
+    supervisor.request("bounds.replace", { expectedRevision: -1 } as never),
+  ).resolves.toMatchObject({ ok: false, error: { code: "invalid_message" } });
+  const pending = supervisor.request("bounds.read", {});
+  child.exit();
+  await pending;
+  const releases: (() => void)[] = [];
+  for (let n = 0; n < portLimits.pending_global; n++) {
+    const reserved = budget.reserveBroker();
+    expect(reserved.ok).toBe(true);
+    if (reserved.ok) releases.push(reserved.value);
+  }
+  expect(budget.reserveBroker().ok).toBe(false);
+  for (const release of releases) {
+    release();
+    release();
+  }
+});
+
+it("counts Settings initialization against the same aggregate broker budget", async () => {
+  const { PresentationBroker } = await import("../packages/main/src/presentation-broker.js");
+  const budget = new RequestBudget();
+  const child = new Child();
+  const supervisor = new ServiceSupervisor(
+    child,
+    "settings-budget",
+    () => {},
+    undefined,
+    false,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    budget,
+  );
+  child.receive(JSON.stringify({ kind: "ready", generation: "settings-budget" }));
+  const held = Array.from({ length: 4 }, () => ({})).flatMap((frame) =>
+    Array.from({ length: portLimits.pending_per_window }, () => budget.reserve(frame)),
+  );
+  const sentBefore = child.sent.length;
+  const broker = new PresentationBroker(() => []);
+  broker.initialize(supervisor);
+  await Promise.resolve();
+  expect(child.sent).toHaveLength(sentBefore);
+  for (const reservation of held) {
+    expect(reservation.ok).toBe(true);
+    if (reservation.ok) reservation.value();
+  }
+  broker.initialize(supervisor);
+  expect(JSON.parse(child.sent.at(-1)!)).toMatchObject({ operation: "presentation.read" });
+  child.exit();
 });

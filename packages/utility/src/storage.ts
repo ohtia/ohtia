@@ -20,6 +20,12 @@ import {
   type PresentationChange,
   type PresentationReceipt,
   failure,
+  decodeWindowBoundsChange,
+  isWindowBounds,
+  type WindowBoundsChange,
+  type WindowBoundsRecord,
+  type WindowBoundsReceipt,
+  type SavedWindowBoundsRecord,
   decodeLayoutChange,
   isWorkspaceLayout,
   type LayoutChange,
@@ -47,6 +53,8 @@ import {
   applyLocaleCommand,
   type LocaleCommand,
   type RecordedLocaleCommand,
+  applyWindowBoundsCommand,
+  type RecordedWindowBoundsCommand,
   applyLayoutCommand,
   type RecordedLayoutCommand,
   type AppearanceCommand,
@@ -62,6 +70,11 @@ import {
   up as layoutReceipts,
   schema as layoutReceiptsSchema,
 } from "./migrations/0004_layout_receipts.mjs";
+
+import {
+  up as boundsReceipts,
+  schema as boundsReceiptsSchema,
+} from "./migrations/0006_window_bounds_receipts.mjs";
 
 import {
   up as presentationReceipts,
@@ -97,6 +110,7 @@ interface Schema {
   presentation_receipts: PresentationReceiptRow;
   locale_receipts: LocaleReceiptRow;
   layout_receipts: LayoutReceiptRow;
+  window_bounds_receipts: LayoutReceiptRow;
   application_preferences: Preferences;
   appearance_receipts: Receipt;
   kysely_migration: { name: string; timestamp: string };
@@ -146,9 +160,10 @@ const names = [
   "0003_locale_receipts",
   "0004_layout_receipts",
   "0005_presentation_receipts",
+  "0006_window_bounds_receipts",
 ] as const;
 const target = names.length;
-const targetName = names[4];
+const targetName = names[5];
 function digest(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -351,6 +366,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 3 ? ["locale_receipts"] : []),
     ...(revision >= 4 ? ["layout_receipts"] : []),
     ...(revision >= 5 ? ["presentation_receipts"] : []),
+    ...(revision >= 6 ? ["window_bounds_receipts"] : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -420,6 +436,17 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
           ],
         }
       : {}),
+    ...(revision >= 6
+      ? {
+          window_bounds_receipts: [
+            "operation_id",
+            "expected_revision",
+            "value",
+            "accepted",
+            "result_revision",
+          ],
+        }
+      : {}),
   })) {
     const actual = db.pragma(`table_info(${table})`) as { name: string }[];
     if (JSON.stringify(actual.map((row) => row.name)) !== JSON.stringify(columns))
@@ -432,6 +459,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 3 ? [["locale_receipts", localeReceiptsSchema]] : []),
     ...(revision >= 4 ? [["layout_receipts", layoutReceiptsSchema]] : []),
     ...(revision >= 5 ? [["presentation_receipts", presentationReceiptsSchema]] : []),
+    ...(revision >= 6 ? [["window_bounds_receipts", boundsReceiptsSchema]] : []),
   ]) {
     const row = db
       .prepare("SELECT sql FROM sqlite_schema WHERE name=? AND type='table'")
@@ -715,6 +743,7 @@ export class DurableStore {
                 "0003_locale_receipts": { up: localeReceipts },
                 "0004_layout_receipts": { up: layoutReceipts },
                 "0005_presentation_receipts": { up: presentationReceipts },
+                "0006_window_bounds_receipts": { up: boundsReceipts },
               }),
           },
         });
@@ -1551,7 +1580,6 @@ export class DurableStore {
       this.active = false;
     }
   }
-
   private presentationRecord<K extends PresentationFeature>(
     feature: K,
     row: Preferences | undefined,
@@ -1807,6 +1835,202 @@ export class DurableStore {
           commitAttempted = true;
           await sql`COMMIT`.execute(transaction);
           return outcome;
+        } catch (error) {
+          if (this.native?.inTransaction) {
+            try {
+              await sql`ROLLBACK`.execute(transaction);
+            } catch {
+              this.admitted = false;
+            }
+          }
+          throw error;
+        }
+      });
+    } catch {
+      try {
+        this.assert();
+      } catch {
+        this.admitted = false;
+      }
+      return failure(attempted() ? "uncertain" : "storage_failed");
+    } finally {
+      this.active = false;
+    }
+  }
+
+  private bounds(row: Preferences | undefined): Outcome<WindowBoundsRecord> {
+    if (!row)
+      return { ok: true, value: { schemaVersion: 1, revision: 0, value: null, source: "default" } };
+    if (!Number.isSafeInteger(row.revision) || row.revision < 1)
+      return failure("preference_invalid");
+    let value: unknown;
+    try {
+      if (row.value.length <= 1024) value = JSON.parse(row.value);
+    } catch {
+      /* Preserve rejected bytes. */
+    }
+    const valid = row.schema_version === 1 && isWindowBounds(value);
+    return {
+      ok: true,
+      value: {
+        schemaVersion: 1,
+        revision: row.revision,
+        value: row.schema_version === 1 && isWindowBounds(value) ? value : null,
+        source: valid ? "saved" : "invalid_fallback",
+      },
+    };
+  }
+  async readWindowBounds(): Promise<Outcome<WindowBoundsRecord>> {
+    if (!this.ready || !this.database) return failure("service_unavailable");
+    try {
+      this.assert();
+      return this.bounds(
+        await this.database
+          .selectFrom("application_preferences")
+          .selectAll()
+          .where("key", "=", "window_bounds")
+          .executeTakeFirst(),
+      );
+    } catch {
+      return failure("storage_failed");
+    }
+  }
+  private boundsReceipt(
+    row: LayoutReceiptRow | undefined,
+  ): RecordedWindowBoundsCommand | undefined {
+    if (!row) return;
+    const value: unknown = JSON.parse(row.value);
+    if (
+      !isWindowBounds(value) ||
+      !isIdentifier(row.operation_id) ||
+      ![0, 1].includes(row.accepted) ||
+      !Number.isSafeInteger(row.expected_revision) ||
+      row.expected_revision < 0 ||
+      !Number.isSafeInteger(row.result_revision) ||
+      row.result_revision < 0 ||
+      (row.accepted
+        ? row.result_revision !== row.expected_revision + 1
+        : row.result_revision === row.expected_revision)
+    )
+      throw new Error("Invalid window bounds receipt.");
+    return {
+      expectedRevision: row.expected_revision,
+      value,
+      outcome: row.accepted
+        ? {
+            ok: true,
+            value: { schemaVersion: 1, revision: row.result_revision, value, source: "saved" },
+          }
+        : staleRevision(row.result_revision),
+    };
+  }
+  async readWindowBoundsReceipt(operation: string): Promise<Outcome<WindowBoundsReceipt>> {
+    if (!this.ready || !this.database) return failure("service_unavailable");
+    if (!isIdentifier(operation)) return failure("invalid_message");
+    try {
+      this.assert();
+      const result = this.boundsReceipt(
+        await this.database
+          .selectFrom("window_bounds_receipts")
+          .selectAll()
+          .where("operation_id", "=", operation)
+          .executeTakeFirst(),
+      );
+      return {
+        ok: true,
+        value: result ? { state: "recorded", outcome: result.outcome } : { state: "not_found" },
+      };
+    } catch {
+      return failure("storage_failed");
+    }
+  }
+  async replaceWindowBounds(
+    command: WindowBoundsChange,
+  ): Promise<Outcome<SavedWindowBoundsRecord>> {
+    if (!this.ready || !this.database) return failure(this.active ? "busy" : "service_unavailable");
+    const decoded = decodeWindowBoundsChange(command);
+    if (!decoded.ok) return decoded;
+    command = decoded.value;
+    this.active = true;
+    let commitAttempted = false;
+    const attempted = () => commitAttempted;
+    try {
+      this.assert();
+      return await this.database.connection().execute(async (transaction) => {
+        await sql`BEGIN IMMEDIATE`.execute(transaction);
+        try {
+          const receipt = this.boundsReceipt(
+            await transaction
+              .selectFrom("window_bounds_receipts")
+              .selectAll()
+              .where("operation_id", "=", command.operationId)
+              .executeTakeFirst(),
+          );
+          const layout = this.bounds(
+            await transaction
+              .selectFrom("application_preferences")
+              .selectAll()
+              .where("key", "=", "window_bounds")
+              .executeTakeFirst(),
+          );
+          let replaced: SavedWindowBoundsRecord | undefined;
+          let recorded: RecordedWindowBoundsCommand | undefined;
+          const result = applyWindowBoundsCommand(
+            {
+              readReceipt: () => receipt,
+              readWindowBounds: () => layout,
+              replaceWindowBounds: (value) => {
+                if (!layout.ok || layout.value.revision >= Number.MAX_SAFE_INTEGER)
+                  throw new Error("Revision exhausted.");
+                replaced = {
+                  schemaVersion: 1,
+                  revision: layout.value.revision + 1,
+                  value,
+                  source: "saved",
+                };
+                return replaced;
+              },
+              recordReceipt: (_operation, value) => {
+                recorded = value;
+              },
+            },
+            command,
+          );
+          const saved = replaced;
+          if (saved)
+            await transaction
+              .insertInto("application_preferences")
+              .values({
+                key: "window_bounds",
+                schema_version: 1,
+                revision: saved.revision,
+                value: JSON.stringify(saved.value),
+              })
+              .onConflict((conflict) =>
+                conflict.column("key").doUpdateSet({
+                  schema_version: 1,
+                  revision: saved.revision,
+                  value: JSON.stringify(saved.value),
+                }),
+              )
+              .execute();
+          if (recorded)
+            await transaction
+              .insertInto("window_bounds_receipts")
+              .values({
+                operation_id: command.operationId,
+                expected_revision: command.expectedRevision,
+                value: JSON.stringify(command.value),
+                accepted: recorded.outcome.ok ? 1 : 0,
+                result_revision: recorded.outcome.ok
+                  ? recorded.outcome.value.revision
+                  : recorded.outcome.error.parameters.currentRevision,
+              })
+              .execute();
+          this.assert();
+          commitAttempted = true;
+          await sql`COMMIT`.execute(transaction);
+          return result;
         } catch (error) {
           if (this.native?.inTransaction) {
             try {

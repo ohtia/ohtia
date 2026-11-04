@@ -14,7 +14,7 @@ import {
 import { developmentInstanceRunning } from "./development-instance.mjs";
 import { recordReadyNativeProcesses } from "./desktop-native-observation.mjs";
 import { loadRuntimeProfile, verifyStableSentinels } from "../packages/main/dist/index.js";
-import { message, portLimits } from "../packages/contracts/dist/index.js";
+import { message, portLimits, windowTokens } from "../packages/contracts/dist/index.js";
 
 const [profileFile, prepared, output, development] = process.argv.slice(2);
 if (!profileFile || !prepared || !output)
@@ -82,6 +82,8 @@ async function start(runtime, env) {
     env: { ...env, OHTIA_RUNTIME_ACCEPTANCE: "1" },
     chromiumSandbox: true,
     bypassCSP: false,
+    // Observe the native theme without Playwright's default light emulation.
+    colorScheme: null,
     timeout: 20000,
     artifactsDir: output,
   });
@@ -144,7 +146,18 @@ async function saveAppearance(page, locale) {
         (await page.evaluate(() => window.ohtia.foundation.readAppearance().result)).value?.value,
     )
     .toBe("dark");
-  await expect(page.locator("html")).toHaveAttribute("data-appearance", "dark");
+  const darkPage = windowTokens.dark["surface.page"];
+  const red = Number.parseInt(darkPage.slice(1, 3), 16);
+  const green = Number.parseInt(darkPage.slice(3, 5), 16);
+  const blue = Number.parseInt(darkPage.slice(5, 7), 16);
+  await expect
+    .poll(() =>
+      page.evaluate(() => ({
+        background: getComputedStyle(document.documentElement).backgroundColor,
+        dark: matchMedia("(prefers-color-scheme: dark)").matches,
+      })),
+    )
+    .toEqual({ background: `rgb(${red}, ${green}, ${blue})`, dark: true });
   await dialog.getByRole("button", { name: text("dialog.close"), exact: true }).click();
 }
 async function boundaries(application, page) {

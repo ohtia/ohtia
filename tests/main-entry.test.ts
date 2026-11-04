@@ -19,12 +19,14 @@ afterEach(() => {
 async function launch(
   options: {
     kdeWayland?: boolean;
+    ozonePlatform?: string;
     locator?: string;
     ownsBroker?: boolean;
     admission?: boolean;
     asset?: string;
     ready?: boolean;
     loadFailure?: boolean;
+    loadPending?: boolean;
     requireLiveZoomFrame?: boolean;
     deferZoomPolicy?: boolean;
     rejectZoomPolicy?: boolean;
@@ -72,7 +74,14 @@ async function launch(
   const app = Object.assign(new EventEmitter(), {
     setName: vi.fn(),
     enableSandbox: vi.fn(),
-    commandLine: { appendSwitch: vi.fn(), getSwitchValue: vi.fn(() => "ExistingFeature") },
+    commandLine: {
+      appendSwitch: vi.fn(),
+      getSwitchValue: vi.fn((name: string) =>
+        name === "ozone-platform"
+          ? (options.ozonePlatform ?? (options.kdeWayland ? "wayland" : "x11"))
+          : "ExistingFeature",
+      ),
+    },
     getVersion: () => "0.0.0-test",
     getPreferredSystemLanguages: () => {
       if (options.languagesUnavailable) throw new Error("Unavailable OS preferences");
@@ -93,6 +102,20 @@ async function launch(
     getAppMetrics: () => Array.from({ length: state.metrics }, () => ({})),
     requestSingleInstanceLock: () => options.ownsBroker !== false,
   });
+  const nativeTheme = new (class extends EventEmitter {
+    private source: "system" | "light" | "dark" = "system";
+    systemDark = false;
+    get themeSource() {
+      return this.source;
+    }
+    set themeSource(value: "system" | "light" | "dark") {
+      this.source = value;
+      this.emit("updated");
+    }
+    get shouldUseDarkColors() {
+      return this.source === "dark" || (this.source === "system" && this.systemDark);
+    }
+  })();
   let nextId = 0;
   let acknowledgeZoom!: () => void;
   const zoomAcknowledgement = new Promise<void>((resolve) => {
@@ -132,9 +155,25 @@ async function launch(
     setFullScreen = vi.fn();
     removeMenu = vi.fn();
     setTitle = vi.fn();
-    show = vi.fn();
+    setMenuBarVisibility = vi.fn();
+    setBackgroundColor = vi.fn();
+    setTitleBarOverlay = vi.fn();
+    setBounds = vi.fn();
+    setMinimumSize = vi.fn();
+    getBounds = () => ({ x: 0, y: 0, width: 1280, height: 800 });
+    getContentBounds = () => ({ x: 0, y: 0, width: 1278, height: 798 });
+    maximize = vi.fn(() => {
+      this.visible = true;
+    });
+    isMaximized = () => false;
+    getNormalBounds = () => ({ x: 0, y: 0, width: 1280, height: 800 });
+    show = vi.fn(() => {
+      this.visible = true;
+    });
     focus = vi.fn();
-    restore = vi.fn();
+    restore = vi.fn(() => {
+      this.visible = true;
+    });
     isDestroyed() {
       return this.destroyed;
     }
@@ -144,13 +183,20 @@ async function launch(
     isVisible() {
       return this.visible;
     }
+    completeLoad: () => void = () => {};
     loadURL = vi.fn(async () => {
       if (options.loadFailure) throw new Error("Synthetic load failure");
+      if (options.loadPending)
+        await new Promise<void>((resolve) => {
+          this.completeLoad = resolve;
+        });
       await Promise.resolve();
       this.documentReady = true;
     });
+    themeAtCreation = nativeTheme.themeSource;
     constructor(readonly settings: unknown) {
       super();
+      this.visible = (settings as { show?: boolean }).show ?? true;
       Window.all.push(this);
     }
   }
@@ -188,6 +234,19 @@ async function launch(
       this.ceased = state.stop;
       return state.stop;
     });
+    request = vi.fn(async (operation: string): Promise<unknown> => {
+      if (operation === "bounds.read")
+        return {
+          ok: true,
+          value: { schemaVersion: 1, revision: 0, value: null, source: "default" },
+        };
+      if (operation === "appearance.read")
+        return {
+          ok: true,
+          value: { schemaVersion: 1, revision: 0, value: "system", source: "default" },
+        };
+      return { ok: false, error: { code: "service_unavailable" } };
+    });
     constructor(
       readonly childPort: {
         send(text: string): void;
@@ -201,6 +260,10 @@ async function launch(
       _storageAdmitting?: boolean,
       _diagnostic?: unknown,
       readonly localeChanged?: (snapshot: import("@ohtia/contracts").LocaleSnapshot) => void,
+      readonly presentationChanged?: (
+        snapshot: import("@ohtia/contracts").PresentationSnapshot,
+      ) => void,
+      readonly appearanceChanged?: (record: import("@ohtia/contracts").AppearanceRecord) => void,
     ) {
       supervisors.push(this);
       childPort.messages(() => {});
@@ -216,6 +279,11 @@ async function launch(
   const publish = vi.fn(async () => state.publish);
   vi.doMock("electron", () => ({
     app,
+    nativeTheme,
+    screen: {
+      getAllDisplays: () => [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }],
+      getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }),
+    },
     BrowserWindow: Window,
     ipcMain,
     session,
@@ -601,6 +669,9 @@ describe("broker composition with synthetic Electron adapters", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(h.publish).toHaveBeenCalledOnce();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
     expect(await h.action("read")).toMatchObject({
       locale: "ko-KR",
       state: "storage_ready",
@@ -658,10 +729,12 @@ describe("broker composition with synthetic Electron adapters", () => {
     current.storageChanged({ generation: current.generation, state: "storage_ready" });
     expect((await h.action("read")).state).toBe("path_rejected");
   });
-  it("limits windows, restores a minimized existing window and reports missing-window errors", async () => {
+  it("limits windows and defers second-instance activation until the native frame is ready", async () => {
     const h = await launch();
     h.window.minimized = true;
     h.app.emit("second-instance");
+    expect(h.window.restore).not.toHaveBeenCalled();
+    h.window.emit("ready-to-show");
     expect(h.window.restore).toHaveBeenCalledOnce();
     expect(h.window.focus).toHaveBeenCalled();
     for (let i = 1; i < h.constants.portLimits.windows; i++) await h.action("new_window");
@@ -673,7 +746,7 @@ describe("broker composition with synthetic Electron adapters", () => {
     }
     h.app.emit("second-instance");
     await vi.advanceTimersByTimeAsync(0);
-    expect(h.dialog.showErrorBox).toHaveBeenCalled();
+    expect(h.dialog.showErrorBox).not.toHaveBeenCalled();
     h.app.emit("window-all-closed");
     expect(h.app.quit).toHaveBeenCalled();
   });
@@ -682,6 +755,7 @@ describe("broker composition with synthetic Electron adapters", () => {
     async (outcome) => {
       const h = await launch();
       await h.action("read");
+      h.window.emit("ready-to-show");
       h.state.stop = outcome !== "stop-failed";
       h.state.verify = outcome !== "changed-sentinel";
       const preventDefault = vi.fn();
@@ -702,6 +776,7 @@ describe("broker composition with synthetic Electron adapters", () => {
   it("reports a resource overflow once and makes exit an explicit broker action", async () => {
     const h = await launch();
     await h.action("read");
+    h.window.emit("ready-to-show");
     h.state.metrics = h.constants.portLimits.process_tree_count + 1;
     await vi.advanceTimersByTimeAsync(500);
     expect(h.dialog.showMessageBox).toHaveBeenCalledOnce();
@@ -747,9 +822,12 @@ it("starts the broker and serves admitted packaged branding and icon paths", asy
 });
 
 it("resolves an unavailable OS language list and propagates admitted locale changes through the broker", async () => {
-  const h = await launch({ languagesUnavailable: true });
+  const h = await launch({ languagesUnavailable: true, locator: "located" });
   expect((await h.action("read")).locale).toBe("en-US");
   const supervisor = h.supervisors[0];
+  supervisor.storageChanged({ generation: supervisor.generation, state: "storage_ready" });
+  for (let i = 0; i < 24; i++) await Promise.resolve();
+  expect(await h.action("read")).toMatchObject({ state: "storage_ready" });
   supervisor.localeChanged?.({
     serviceGeneration: "service-1",
     record: { schemaVersion: 1, revision: 1, value: "ko-KR", source: "saved" },
@@ -896,6 +974,518 @@ it("configures KDE Wayland graphics before native readiness in every runtime mod
   }
 });
 
+it("creates at most one native window per admitted command intent and reports the live limit", async () => {
+  const h = await launch();
+  const context = await h.command("context");
+  const request = {
+    intent: {
+      windowGeneration: context.windowGeneration,
+      source: "renderer",
+      sequence: 1,
+      command: "window.new",
+    },
+  };
+  const results = await Promise.all([
+    h.command("window_action", request),
+    h.command("window_action", request),
+  ]);
+  expect(results).toEqual([{ status: "completed" }, { status: "completed" }]);
+  expect(h.Window.all).toHaveLength(2);
+  for (let sequence = 2; h.Window.all.length < h.constants.portLimits.windows; sequence++)
+    await h.command("window_action", { intent: { ...request.intent, sequence } });
+  expect(
+    await h.command("window_action", { intent: { ...request.intent, sequence: 100 } }),
+  ).toEqual({ status: "unavailable", reason: "window_limit" });
+  expect(h.Window.all).toHaveLength(h.constants.portLimits.windows);
+  expect(
+    await h.command("window_action", {
+      intent: { ...request.intent, sequence: 101, windowGeneration: "obsolete" },
+    }),
+  ).toEqual({ status: "stale_context" });
+  expect(await h.command("window_action", { ...request, private: true })).toBe(false);
+});
+it("keeps native backgrounds ordered and drains a close-time write before stopping the service", async () => {
+  const h = await launch({ locator: "located" });
+  const supervisor = h.supervisors[0];
+  const bounds = { version: 1, x: 50, y: 60, width: 900, height: 700, maximized: true };
+  let revision = 3;
+  const outcomes: string[] = [];
+  supervisor.request.mockImplementation(async (operation: string) => {
+    outcomes.push(operation);
+    if (operation === "presentation.read")
+      return { ok: false, error: { code: "service_unavailable" } } as never;
+    if (operation === "bounds.read")
+      return {
+        ok: true,
+        value: { schemaVersion: 1, revision, value: bounds, source: "saved" },
+      } as never;
+    if (operation === "appearance.read") {
+      supervisor.appearanceChanged?.({
+        schemaVersion: 1,
+        revision: 2,
+        value: "dark",
+        source: "saved",
+      });
+      return {
+        ok: true,
+        value: { schemaVersion: 1, revision: 2, value: "dark", source: "saved" },
+      } as never;
+    }
+    return {
+      ok: true,
+      value: { schemaVersion: 1, revision: ++revision, value: bounds, source: "saved" },
+    } as never;
+  });
+  supervisor.storageChanged({ generation: supervisor.generation, state: "storage_ready" });
+  for (let i = 0; i < 12; i++) await Promise.resolve();
+  expect(await h.action("read")).toMatchObject({ state: "storage_ready" });
+  expect(h.window.setBounds).toHaveBeenCalledWith({
+    x: 50,
+    y: 60,
+    width: 900,
+    height: 700,
+  });
+  expect(h.window.maximize).not.toHaveBeenCalled();
+  h.window.emit("ready-to-show");
+  expect(h.window.maximize).toHaveBeenCalledOnce();
+  expect(h.window.setBackgroundColor).toHaveBeenLastCalledWith(
+    h.constants.windowTokens.dark["surface.page"],
+  );
+  supervisor.appearanceChanged?.({
+    schemaVersion: 1,
+    revision: 1,
+    value: "light",
+    source: "saved",
+  });
+  expect(h.window.setBackgroundColor).toHaveBeenLastCalledWith(
+    h.constants.windowTokens.dark["surface.page"],
+  );
+  await h.action("new_window");
+  h.window.emit("close", { preventDefault: vi.fn() });
+  expect(supervisor.stop).not.toHaveBeenCalled();
+  h.app.emit("before-quit", { preventDefault: vi.fn() });
+  for (let i = 0; i < 40; i++) await Promise.resolve();
+  expect(outcomes).toContain("bounds.replace");
+  expect(supervisor.stop).toHaveBeenCalledOnce();
+  expect(outcomes.filter((operation) => operation === "bounds.replace")).toHaveLength(2);
+});
+it("refuses renderer window preference operations before dispatch and paints only on ready-to-show", async () => {
+  const h = await launch();
+  expect(h.window.show).not.toHaveBeenCalled();
+  expect(h.window.setMinimumSize).toHaveBeenCalledWith(322, 402);
+  expect(h.window.settings).toMatchObject({
+    show: false,
+    minWidth: 320,
+    minHeight: 400,
+    backgroundColor: h.constants.windowTokens.light["surface.page"],
+  });
+  const sessionEvent = h.event();
+  h.ipcMain.emit(h.constants.desktopChannels.session, sessionEvent);
+  const encoded = h.constants.encodeEnvelope({
+    ...sessionEvent.returnValue,
+    protocol: 1,
+    policy: h.constants.policyId,
+    kind: "request",
+    requestId: "bounds-spoof",
+    operationId: "bounds-spoof",
+    operation: "bounds.read",
+    payload: {},
+  });
+  expect(encoded.ok).toBe(true);
+  if (encoded.ok) h.ipcMain.emit(h.constants.desktopChannels.port, h.event(), encoded.value);
+  expect(h.supervisors[0].dispatch).not.toHaveBeenCalled();
+  expect(h.window.webContents.mainFrame.send).toHaveBeenCalledWith(
+    h.constants.desktopChannels.reply,
+    expect.stringContaining('"unauthorized"'),
+  );
+  h.window.emit("ready-to-show");
+  expect(h.window.show).toHaveBeenCalledOnce();
+});
+
+it("opens the validated native application menu on the admitted originating window", async () => {
+  const h = await launch();
+  const electron = await import("electron");
+  const context = await h.command("context");
+  expect(
+    await h.command("publish", {
+      windowGeneration: context.windowGeneration,
+      revision: 1,
+      locale: "en-US",
+      entries: h.constants.commandIds.map((id) => ({ id })),
+    }),
+  ).toBe(true);
+  const popup = vi.fn((options) => options.callback());
+  vi.mocked(electron.Menu.buildFromTemplate).mockReturnValueOnce({
+    popup,
+    closePopup: vi.fn(),
+  } as never);
+  const result = await h.command("window_action", {
+    intent: {
+      windowGeneration: context.windowGeneration,
+      source: "renderer",
+      sequence: 1,
+      command: "menu.open",
+    },
+    anchor: { x: 8, y: 48 },
+  });
+  expect(result).toEqual(
+    process.platform === "darwin"
+      ? { status: "failed" }
+      : { status: "completed", menuDismissed: true },
+  );
+  if (process.platform !== "darwin")
+    expect(popup).toHaveBeenCalledWith(expect.objectContaining({ window: h.window, x: 8, y: 48 }));
+});
+
+it("saves the latest bounds on a second quit after shutdown was refused", async () => {
+  const h = await launch({ locator: "located" });
+  const supervisor = h.supervisors[0];
+  const values: unknown[] = [];
+  let revision = 0;
+  supervisor.request.mockImplementation(async (operation: string, payload?: { value: unknown }) => {
+    if (operation === "appearance.read")
+      return {
+        ok: true,
+        value: { schemaVersion: 1, revision: 0, value: "system", source: "default" },
+      };
+    if (operation === "bounds.read")
+      return {
+        ok: true,
+        value: {
+          schemaVersion: 1,
+          revision,
+          value: revision ? values.at(-1) : null,
+          source: revision ? "saved" : "default",
+        },
+      } as never;
+    if (operation === "bounds.replace") {
+      values.push(payload?.value);
+      return {
+        ok: true,
+        value: { schemaVersion: 1, revision: ++revision, source: "saved", value: payload?.value },
+      } as never;
+    }
+    return { ok: false, error: { code: "service_unavailable" } } as never;
+  });
+  supervisor.storageChanged({ generation: supervisor.generation, state: "storage_ready" });
+  for (let i = 0; i < 12; i++) await Promise.resolve();
+  h.window.getNormalBounds = vi.fn(() => ({ x: 50, y: 60, width: 900, height: 700 }));
+  h.state.stop = false;
+  h.app.emit("before-quit", { preventDefault: vi.fn() });
+  for (let i = 0; i < 40; i++) await Promise.resolve();
+  expect(values).toHaveLength(1);
+  h.window.getNormalBounds = vi.fn(() => ({ x: 90, y: 60, width: 900, height: 700 }));
+  h.state.stop = true;
+  h.app.emit("before-quit", { preventDefault: vi.fn() });
+  for (let i = 0; i < 40; i++) await Promise.resolve();
+  expect(values).toMatchObject([{ x: 50 }, { x: 90 }]);
+});
+
+it("uses system native colors during storage recovery and skips outage-time bounds writes", async () => {
+  const h = await launch({ locator: "located" });
+  await h.action("open_storage");
+  const peer = h.supervisors.at(-1)!;
+  peer.storageChanged({ generation: peer.generation, state: "storage_ready" });
+  for (let i = 0; i < 16; i++) await Promise.resolve();
+  peer.appearanceChanged?.({ schemaVersion: 1, revision: 5, value: "dark", source: "saved" });
+  expect(h.window.setBackgroundColor).toHaveBeenLastCalledWith(
+    h.constants.windowTokens.dark["surface.page"],
+  );
+  const { nativeTheme } = await import("electron");
+  expect(nativeTheme.themeSource).toBe("dark");
+  const updates = vi.fn();
+  nativeTheme.on("updated", updates);
+  nativeTheme.emit("updated");
+  expect(updates).toHaveBeenCalledOnce();
+  await h.action("new_window");
+  expect(h.Window.all.at(-1)!.themeAtCreation).toBe("dark");
+  peer.request.mockClear();
+  peer.stateChanged("unavailable");
+  expect(nativeTheme.themeSource).toBe("system");
+  const system = nativeTheme as typeof nativeTheme & { systemDark: boolean };
+  system.systemDark = true;
+  nativeTheme.emit("updated");
+  expect(h.window.setBackgroundColor).toHaveBeenLastCalledWith(
+    h.constants.windowTokens.dark["surface.page"],
+  );
+  system.systemDark = false;
+  nativeTheme.emit("updated");
+  expect(h.window.setBackgroundColor).toHaveBeenLastCalledWith(
+    h.constants.windowTokens.light["surface.page"],
+  );
+  h.window.emit("close", { preventDefault: vi.fn() });
+  expect(peer.request).not.toHaveBeenCalled();
+});
+
+it("reports process capacity as busy rather than the active-window limit", async () => {
+  const h = await launch();
+  const context = await h.command("context");
+  h.state.metrics = h.constants.portLimits.process_tree_count;
+  expect(
+    await h.command("window_action", {
+      intent: {
+        windowGeneration: context.windowGeneration,
+        command: "window.new",
+        source: "renderer",
+        sequence: 1,
+      },
+    }),
+  ).toEqual({ status: "unavailable", reason: "busy" });
+  expect(h.Window.all).toHaveLength(1);
+});
+
+it("keeps restored maximized windows hidden until ready, including New window", async () => {
+  const h = await launch({ locator: "located" });
+  const peer = h.supervisors[0];
+  peer.request.mockImplementation(async (operation: string) =>
+    operation === "bounds.read"
+      ? ({
+          ok: true,
+          value: {
+            schemaVersion: 1,
+            revision: 1,
+            source: "saved",
+            value: { version: 1, x: 0, y: 0, width: 900, height: 650, maximized: true },
+          },
+        } as never)
+      : operation === "appearance.read"
+        ? { ok: true, value: { schemaVersion: 1, revision: 0, value: "system", source: "default" } }
+        : ({ ok: false, error: { code: "service_unavailable" } } as never),
+  );
+  peer.storageChanged({ generation: peer.generation, state: "storage_ready" });
+  for (let i = 0; i < 16; i++) await Promise.resolve();
+  h.app.emit("second-instance");
+  expect(h.window.visible).toBe(false);
+  expect(h.window.maximize).not.toHaveBeenCalled();
+  expect(h.window.focus).not.toHaveBeenCalled();
+  h.window.emit("ready-to-show");
+  expect(h.window.visible).toBe(true);
+  expect(h.window.focus).toHaveBeenCalledOnce();
+  await h.action("new_window");
+  const next = h.Window.all[1]!;
+  expect(next.visible).toBe(false);
+  expect(next.maximize).not.toHaveBeenCalled();
+  next.emit("ready-to-show");
+  expect(next.maximize).toHaveBeenCalledOnce();
+  expect(next.visible).toBe(true);
+});
+
+it.each(["service", "sentinel"])(
+  "presents a frame that became ready during a refused %s shutdown",
+  async (failure) => {
+    const h = await launch();
+    if (failure === "service") h.state.stop = false;
+    else h.state.verify = false;
+    h.app.emit("before-quit", { preventDefault: vi.fn() });
+    h.window.emit("ready-to-show");
+    expect(h.window.visible).toBe(false);
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+    expect(h.window.visible).toBe(true);
+    expect(h.window.show).toHaveBeenCalledOnce();
+  },
+);
+
+it("retains the application startup bound until first paint even after bootstrap IPC succeeds", async () => {
+  const h = await launch();
+  await h.action("read");
+  await vi.advanceTimersByTimeAsync(h.constants.portLimits.application_start_ms);
+  expect(h.window.show).not.toHaveBeenCalled();
+  expect(h.dialog.showErrorBox).toHaveBeenCalled();
+  expect(h.app.quit).toHaveBeenCalled();
+});
+
+it("does not publish workspace readiness when the admitted writer dies during preference reads", async () => {
+  const h = await launch({ locator: "located" });
+  let finishRecovery!: () => void;
+  const recovery = new Promise<void>((resolve) => {
+    finishRecovery = resolve;
+  });
+  h.recoverService.mockImplementationOnce(async (_service, admitted, restart) => {
+    if (!admitted()) return "cancelled";
+    restart();
+    await recovery;
+    return "ready";
+  });
+  const opening = h.action("open_storage");
+  for (let i = 0; i < 12; i++) await Promise.resolve();
+  const peer = h.supervisors.at(-1)!;
+  let finishAppearance!: () => void;
+  peer.request.mockImplementation(async (operation: string) =>
+    operation === "appearance.read"
+      ? new Promise((resolve) => {
+          finishAppearance = () =>
+            resolve({ ok: false, error: { code: "service_unavailable" } } as never);
+        })
+      : ({ ok: false, error: { code: "service_unavailable" } } as never),
+  );
+  peer.storageChanged({ generation: peer.generation, state: "storage_ready" });
+  for (let i = 0; i < 16; i++) await Promise.resolve();
+  expect(finishAppearance).toBeTypeOf("function");
+  peer.available = false;
+  peer.stateChanged("unavailable");
+  finishAppearance();
+  for (let i = 0; i < 16; i++) await Promise.resolve();
+  finishRecovery();
+  expect(await opening).toMatchObject({ state: "storage_failed" });
+  expect(await h.action("read")).toMatchObject({ state: "storage_failed" });
+});
+
+it("permits Wayland reveal after admitted local load without requiring a hidden first frame", async () => {
+  const h = await launch({ kdeWayland: true, loadPending: true });
+  expect(h.window.show).not.toHaveBeenCalled();
+  h.app.emit("second-instance");
+  expect(h.window.focus).not.toHaveBeenCalled();
+  h.window.completeLoad();
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+  if (process.platform === "linux") {
+    expect(h.window.show).toHaveBeenCalledOnce();
+    expect(h.window.focus).toHaveBeenCalledOnce();
+  } else {
+    expect(h.window.show).not.toHaveBeenCalled();
+    expect(h.window.focus).not.toHaveBeenCalled();
+  }
+  h.window.emit("ready-to-show");
+  expect(h.window.show).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(h.constants.portLimits.application_start_ms);
+  expect(h.app.exit).not.toHaveBeenCalled();
+  const ordinary = await launch({ loadPending: true });
+  ordinary.window.completeLoad();
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+  expect(ordinary.window.show).not.toHaveBeenCalled();
+  ordinary.window.emit("ready-to-show");
+  expect(ordinary.window.show).toHaveBeenCalledOnce();
+});
+it("does not reveal a failed, disposed, quitting or unadmitted Wayland document", async () => {
+  const failed = await launch({ kdeWayland: true, loadFailure: true });
+  expect(failed.window.show).not.toHaveBeenCalled();
+  for (const condition of ["disposed", "quitting", "other-document"] as const) {
+    const h = await launch({ kdeWayland: true, loadPending: true });
+    if (condition === "disposed") {
+      h.window.destroyed = true;
+      Object.defineProperty(h.window.webContents, "mainFrame", {
+        get: () => {
+          throw new Error("Destroyed native frame must not be inspected");
+        },
+      });
+    } else if (condition === "quitting") h.app.emit("before-quit", { preventDefault: vi.fn() });
+    else h.window.webContents.mainFrame.url = "about:blank";
+    h.window.completeLoad();
+    for (let i = 0; i < 6; i++) await Promise.resolve();
+    expect(h.window.show).not.toHaveBeenCalled();
+    if (condition === "disposed") expect(h.app.exit).not.toHaveBeenCalled();
+  }
+});
+it("waits for document configuration when a Wayland ready frame precedes load completion", async () => {
+  const h = await launch({ kdeWayland: true, loadPending: true });
+  h.window.emit("ready-to-show");
+  expect(h.window.show).not.toHaveBeenCalled();
+  h.window.completeLoad();
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+  expect(h.window.show).toHaveBeenCalledOnce();
+});
+
+it("uses the resolved Ozone backend instead of session hints for Wayland exceptions", async () => {
+  const x11 = await launch({ kdeWayland: true, ozonePlatform: "x11", loadPending: true });
+  expect(x11.window.settings).toHaveProperty("x");
+  x11.window.completeLoad();
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+  expect(x11.window.show).not.toHaveBeenCalled();
+  x11.window.emit("ready-to-show");
+  expect(x11.window.show).toHaveBeenCalledOnce();
+  const wayland = await launch({ ozonePlatform: "wayland", loadPending: true });
+  expect("x" in (wayland.window.settings as object)).toBe(process.platform !== "linux");
+  wayland.window.completeLoad();
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+  expect(wayland.window.show).toHaveBeenCalledTimes(process.platform === "linux" ? 1 : 0);
+});
+
+it.each(["bounds.read", "appearance.read"])(
+  "refuses New window when its %s read is busy",
+  async (busy) => {
+    const h = await launch({ locator: "located" });
+    await h.action("open_storage");
+    const peer = h.supervisors.at(-1)!;
+    peer.storageChanged({ generation: peer.generation, state: "storage_ready" });
+    for (let i = 0; i < 16; i++) await Promise.resolve();
+    peer.request.mockImplementation(async (operation: string) =>
+      operation === busy
+        ? ({ ok: false, error: { code: "busy" } } as never)
+        : ({
+            ok: true,
+            value: { schemaVersion: 1, revision: 0, value: null, source: "default" },
+          } as never),
+    );
+    const context = await h.command("context");
+    expect(
+      await h.command("window_action", {
+        intent: {
+          windowGeneration: context.windowGeneration,
+          source: "renderer",
+          sequence: 1,
+          command: "window.new",
+        },
+      }),
+    ).toEqual({ status: "unavailable", reason: "busy" });
+    expect(h.Window.all).toHaveLength(1);
+  },
+);
+it("preserves popup revocation as a silent command outcome in the broker reply", async () => {
+  const h = await launch();
+  const { CommandMenus } = await import("../packages/main/src/command-menus.js");
+  const popup = vi.spyOn(CommandMenus.prototype, "popup").mockResolvedValueOnce("revoked");
+  try {
+    const context = await h.command("context");
+    expect(
+      await h.command("window_action", {
+        intent: {
+          windowGeneration: context.windowGeneration,
+          source: "renderer",
+          sequence: 1,
+          command: "menu.open",
+        },
+        anchor: { x: 0, y: 48 },
+      }),
+    ).toEqual({ status: "revoked" });
+  } finally {
+    popup.mockRestore();
+  }
+});
+
+it("returns the closed busy result when native broker work exhausts a window's request quota", async () => {
+  const h = await launch();
+  const { shell } = await import("electron");
+  let finish!: () => void;
+  const held = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  vi.mocked(shell.openExternal).mockImplementation(() => held);
+  const pending = Array.from({ length: h.constants.portLimits.pending_per_window }, () =>
+    h.command("open_link", "documentation"),
+  );
+  const context = await h.command("context");
+  const request = {
+    intent: {
+      windowGeneration: context.windowGeneration,
+      source: "renderer",
+      sequence: 1,
+      command: "window.new",
+    },
+  };
+  try {
+    expect(await h.command("window_action", request)).toEqual({
+      status: "unavailable",
+      reason: "busy",
+    });
+    expect(h.Window.all).toHaveLength(1);
+  } finally {
+    finish();
+    await Promise.all(pending);
+  }
+  expect(await h.command("window_action", { intent: { ...request.intent, sequence: 2 } })).toEqual({
+    status: "completed",
+  });
+  expect(h.Window.all).toHaveLength(2);
+});
 it.each(["qualification", "development", "installed"] as const)(
   "configures visual zoom only after a live document exists in %s mode",
   async (mode) => {
@@ -905,6 +1495,7 @@ it.each(["qualification", "development", "installed"] as const)(
     expect(h.app.quit).not.toHaveBeenCalled();
     expect(h.dialog.showErrorBox).not.toHaveBeenCalled();
     expect(h.dialog.showMessageBox).not.toHaveBeenCalled();
+    h.window.emit("ready-to-show");
     expect(h.window.show).toHaveBeenCalled();
   },
 );
@@ -944,6 +1535,7 @@ it.each([false, true])(
     const h = await launch({ requireLiveZoomFrame: true, deferZoomPolicy: true, rejectZoomPolicy });
     h.window.minimized = true;
     h.app.emit("second-instance");
+    h.window.emit("ready-to-show");
     expect(h.window.restore).not.toHaveBeenCalled();
     expect(h.window.show).not.toHaveBeenCalled();
     expect(h.window.focus).not.toHaveBeenCalled();
@@ -959,5 +1551,146 @@ it.each([false, true])(
       expect(h.window.focus).toHaveBeenCalledOnce();
       expect(h.app.quit).not.toHaveBeenCalled();
     }
+  },
+);
+
+it.each(["throwing", "ineffective"] as const)(
+  "refuses every reveal effect after %s confirmed zoom application",
+  async (failureMode) => {
+    const h = await launch({ requireLiveZoomFrame: true, deferZoomPolicy: true });
+    if (failureMode === "throwing")
+      h.window.webContents.setZoomFactor.mockImplementation(() => {
+        throw new Error("Synthetic zoom application failure");
+      });
+    const peer = h.supervisors[0];
+    peer.presentationChanged?.({
+      serviceGeneration: peer.generation,
+      appearance: { schemaVersion: 1, revision: 0, value: "system", source: "default" },
+      character: { schemaVersion: 1, revision: 0, value: "animated", source: "default" },
+      zoom: { schemaVersion: 1, revision: 1, value: 125, source: "saved" },
+    });
+    h.window.minimized = true;
+    h.app.emit("second-instance");
+    h.window.emit("ready-to-show");
+    h.acknowledgeZoom();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.window.show).not.toHaveBeenCalled();
+    expect(h.window.restore).not.toHaveBeenCalled();
+    expect(h.window.maximize).not.toHaveBeenCalled();
+    expect(h.window.focus).not.toHaveBeenCalled();
+    expect(h.app.quit).toHaveBeenCalled();
+  },
+);
+it.each(["bounds.read", "appearance.read"] as const)(
+  "refuses storage activation when %s is busy or fails",
+  async (operation) => {
+    for (const code of ["busy", "storage_failed"] as const) {
+      const h = await launch({ locator: "located" });
+      const peer = h.supervisors[0];
+      peer.request.mockImplementation(async (current) =>
+        current === operation
+          ? { ok: false, error: { code } }
+          : current === "bounds.read"
+            ? {
+                ok: true,
+                value: {
+                  schemaVersion: 1,
+                  revision: 2,
+                  value: { version: 1, x: 50, y: 60, width: 900, height: 700, maximized: false },
+                  source: "saved",
+                },
+              }
+            : current === "appearance.read"
+              ? {
+                  ok: true,
+                  value: { schemaVersion: 1, revision: 2, value: "dark", source: "saved" },
+                }
+              : { ok: false, error: { code: "service_unavailable" } },
+      );
+      peer.storageChanged({ generation: peer.generation, state: "storage_ready" });
+      for (let i = 0; i < 24; i++) await Promise.resolve();
+      expect(await h.action("read")).toMatchObject({ state: "storage_failed" });
+      expect(h.window.setBounds).not.toHaveBeenCalled();
+      expect(h.window.setBackgroundColor).not.toHaveBeenCalledWith(
+        h.constants.windowTokens.dark["surface.page"],
+      );
+    }
+  },
+);
+
+it.each([
+  ["appearance.replace", { expectedRevision: 0, value: "dark" }],
+  ["locale.replace", { expectedRevision: 0, value: "es-ES" }],
+  [
+    "layout.replace",
+    {
+      expectedRevision: 0,
+      value: {
+        version: 1,
+        visible: { explorer: true, documents: true, chat: true },
+        preferredWidths: { explorer: 256, documents: 652, chat: 360 },
+      },
+    },
+  ],
+  ["character.replace", { expectedRevision: 0, value: "hidden" }],
+  ["zoom.replace", { expectedRevision: 0, value: 125 }],
+  ["zoom.adjust", { intent: "increase" }],
+] as const)(
+  "refuses %s while broker preference readiness is withheld without retaining a request slot",
+  async (operation, payload) => {
+    const h = await launch({ locator: "located" });
+    const peer = h.supervisors[0];
+    peer.request.mockResolvedValue({ ok: false, error: { code: "busy" } });
+    peer.storageChanged({ generation: peer.generation, state: "storage_ready" });
+    for (let i = 0; i < 24; i++) await Promise.resolve();
+    expect(await h.action("read")).toMatchObject({ state: "storage_failed" });
+    const event = h.event();
+    h.ipcMain.emit(h.constants.desktopChannels.session, event);
+    const send = (id: number, op: string, data: unknown) => {
+      const request = h.constants.encodeEnvelope({
+        ...event.returnValue,
+        protocol: 1,
+        policy: h.constants.policyId,
+        kind: "request",
+        requestId: `readiness-request-${id}`,
+        operationId: `readiness-operation-${id}`,
+        operation: op,
+        payload: data,
+      });
+      expect(request.ok).toBe(true);
+      if (request.ok) h.ipcMain.emit(h.constants.desktopChannels.port, h.event(), request.value);
+    };
+    for (let id = 0; id <= h.constants.portLimits.pending_per_window; id++) {
+      send(id, operation, payload);
+      expect(peer.dispatch).not.toHaveBeenCalled();
+      expect(h.window.webContents.mainFrame.send).toHaveBeenLastCalledWith(
+        h.constants.desktopChannels.reply,
+        expect.stringContaining('"code":"service_unavailable"'),
+      );
+    }
+    send(100, "appearance.read", {});
+    expect(peer.dispatch).toHaveBeenCalledOnce();
+    expect(peer.dispatch.mock.calls[0]![0].request.operation).toBe("appearance.read");
+    const ready = await launch({ locator: "located" });
+    const active = ready.supervisors[0];
+    active.storageChanged({ generation: active.generation, state: "storage_ready" });
+    for (let i = 0; i < 24; i++) await Promise.resolve();
+    expect(await ready.action("read")).toMatchObject({ state: "storage_ready" });
+    const readyEvent = ready.event();
+    ready.ipcMain.emit(ready.constants.desktopChannels.session, readyEvent);
+    const encoded = ready.constants.encodeEnvelope({
+      ...readyEvent.returnValue,
+      protocol: 1,
+      policy: ready.constants.policyId,
+      kind: "request",
+      requestId: "ready-request",
+      operationId: "ready-operation",
+      operation,
+      payload,
+    });
+    expect(encoded.ok).toBe(true);
+    if (encoded.ok)
+      ready.ipcMain.emit(ready.constants.desktopChannels.port, ready.event(), encoded.value);
+    expect(active.dispatch).toHaveBeenCalledOnce();
   },
 );

@@ -14,17 +14,13 @@ import {
 
 export interface CommandExecution {
   readonly context: CommandContext;
+  readonly intent: CommandIntent;
   isCurrent(): boolean;
 }
 export interface CommandHandler {
   /** Rechecked at invocation; availability never grants domain authority. */
   state(): Omit<CommandEntry, "id">;
-  run(
-    execution: CommandExecution,
-  ):
-    | boolean
-    | Extract<CommandResult, { status: "unavailable" }>
-    | Promise<boolean | Extract<CommandResult, { status: "unavailable" }>>;
+  run(execution: CommandExecution): boolean | CommandResult | Promise<boolean | CommandResult>;
 }
 interface CommandRegistration {
   readonly handler: CommandHandler;
@@ -127,6 +123,7 @@ export class CommandController {
           if (reason) return { status: "unavailable", reason };
           const completed = await handler.run({
             context: this.context,
+            intent: input,
             isCurrent: () => this.owns(input.command, registration),
           });
           if (!this.owns(input.command, registration)) return { status: "revoked" };
@@ -178,7 +175,14 @@ export function presentationReason(
   if (id.startsWith("edit.") && !state.editable) return "no_edit_target";
   if (
     state.modal &&
-    ["about.open", "help.open", "settings.open", "palette.open", "shortcuts.open"].includes(id)
+    [
+      "about.open",
+      "help.open",
+      "settings.open",
+      "palette.open",
+      "shortcuts.open",
+      "menu.open",
+    ].includes(id)
   )
     return "modal_open";
   return undefined;

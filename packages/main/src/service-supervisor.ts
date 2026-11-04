@@ -1,6 +1,8 @@
+import { RequestBudget } from "./port-admission.js";
 import { randomUUID } from "node:crypto";
 import {
   decodeText,
+  decodeEnvelope,
   decodeLocaleSnapshot,
   decodePresentationSnapshot,
   type PresentationSnapshot,
@@ -15,6 +17,12 @@ import {
   failure,
   isIdentifier,
   portLimits,
+  policyId,
+  type Operation,
+  type OperationInputs,
+  type OperationOutputs,
+  type Outcome,
+  type AppearanceRecord,
   type Request,
   type Envelope,
 } from "@ohtia/contracts";
@@ -70,6 +78,8 @@ export class ServiceSupervisor {
     ) => void,
     private readonly localeChanged?: (snapshot: LocaleSnapshot) => void,
     private readonly presentationChanged?: (snapshot: PresentationSnapshot) => void,
+    private readonly appearanceChanged?: (record: AppearanceRecord) => void,
+    private readonly requestBudget = new RequestBudget(),
   ) {
     if (!isIdentifier(generation)) throw new Error("Invalid service generation.");
     child.messages((message) => {
@@ -115,9 +125,57 @@ export class ServiceSupervisor {
   get ceased(): boolean {
     return this.stopped;
   }
+  /** Trusted broker calls share the bounded peer, decoders and pending work inventory. */
+  request<K extends Operation>(
+    operation: K,
+    payload: OperationInputs[K],
+    operationId = randomUUID(),
+  ): Promise<Outcome<OperationOutputs[K]>> {
+    if (this.pending.size >= portLimits.pending_global) return Promise.resolve(failure("busy"));
+    return new Promise((resolve) => {
+      const request = {
+        protocol: 1,
+        policy: policyId,
+        kind: "request",
+        requestId: randomUUID(),
+        operationId,
+        windowGeneration: this.generation,
+        serviceGeneration: this.generation,
+        operation,
+        payload,
+      };
+      const decoded = decodeEnvelope(request);
+      if (!decoded.ok || decoded.value.kind !== "request") {
+        resolve(failure("invalid_message"));
+        return;
+      }
+      const reservation = this.requestBudget.reserveBroker();
+      if (!reservation.ok) {
+        resolve(reservation);
+        return;
+      }
+      this.dispatch({
+        request: decoded.value,
+        release: reservation.value,
+        releaseSubscription() {},
+        deliver: (text) => {
+          const result = decodeText(text);
+          resolve(
+            result.ok && result.value.kind === "result" && result.value.operation === operation
+              ? (result.value.payload as Outcome<OperationOutputs[K]>)
+              : failure("invalid_service_result"),
+          );
+        },
+      });
+    });
+  }
   dispatch(work: Work): void {
     if (!this.available || this.storageAdmitting) {
       this.reject(work);
+      return;
+    }
+    if (this.pending.size >= portLimits.pending_global) {
+      this.reject(work, "busy");
       return;
     }
     const id = key(work.request.windowGeneration, work.request.requestId);
@@ -199,11 +257,11 @@ export class ServiceSupervisor {
       return false;
     }
   }
-  private reject(work: Work): void {
+  private reject(work: Work, code: "busy" | "service_unavailable" = "service_unavailable"): void {
     const encoded = encodeEnvelope({
       ...work.request,
       kind: "result",
-      payload: failure("service_unavailable"),
+      payload: failure(code),
     });
     if (encoded.ok) work.deliver(encoded.value);
     work.release();
@@ -230,6 +288,36 @@ export class ServiceSupervisor {
         const ack: unknown = JSON.parse(input);
         if (ack && typeof ack === "object" && "kind" in ack && ack.kind === "diagnostic") {
           this.diagnostic?.(decodeChildDiagnostic(input, this.generation));
+          return;
+        }
+        if (ack && typeof ack === "object" && "kind" in ack && ack.kind === "appearance_changed") {
+          const notice = ack as Record<string, unknown>;
+          // Validate the record with the existing closed result decoder.
+          const encoded = encodeEnvelope({
+            protocol: 1,
+            policy: policyId,
+            kind: "result",
+            requestId: "appearance-notice",
+            operationId: "appearance-notice",
+            windowGeneration: this.generation,
+            serviceGeneration: this.generation,
+            operation: "appearance.read",
+            payload: { ok: true, value: notice.record },
+          });
+          const record = encoded.ok ? decodeText(encoded.value) : undefined;
+          if (
+            Object.keys(notice).sort().join(",") !== "generation,kind,record" ||
+            notice.generation !== this.generation ||
+            !this.ready ||
+            !record?.ok ||
+            record.value.kind !== "result" ||
+            record.value.operation !== "appearance.read" ||
+            !record.value.payload.ok
+          ) {
+            this.fault();
+            return;
+          }
+          this.appearanceChanged?.(record.value.payload.value);
           return;
         }
         const storage = decodeStorageNotice(ack);
@@ -339,6 +427,8 @@ export class ServiceSupervisor {
         this.fault();
         return;
       }
+      if (value.operation === "appearance.read" && value.payload.ok)
+        this.appearanceChanged?.(value.payload.value);
       if (value.operation === "presentation.read" && value.payload.ok)
         this.presentationChanged?.(value.payload.value);
       if (value.operation === "locale.read" && value.payload.ok)
@@ -438,6 +528,7 @@ export class ServiceSupervisor {
           work.request.operation === "appearance.replace" ||
             work.request.operation === "locale.replace" ||
             work.request.operation === "layout.replace" ||
+            work.request.operation === "bounds.replace" ||
             work.request.operation === "character.replace" ||
             work.request.operation === "zoom.replace" ||
             work.request.operation === "zoom.commit" ||

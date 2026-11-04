@@ -5,6 +5,7 @@ import childProcess from "node:child_process";
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  portLimits,
   diagnosticCatalog,
   diagnosticLimits,
   decodeDiagnosticEvent,
@@ -727,4 +728,20 @@ describe("diagnostics after uncertain shutdown", { timeout: nativeAclCaseTimeout
         .every((call) => call[1] === true),
     ).toBe(true);
   });
+});
+
+it("revokes an expired quit's authority before a late bounds drain can stop a service", async () => {
+  vi.useFakeTimers();
+  let release!: () => void;
+  const drain = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const stop = vi.fn(async () => true);
+  const stopped = stopBrokerServices({ stop }, undefined, () => drain);
+  await vi.advanceTimersByTimeAsync(portLimits.shutdown_total_ms);
+  expect(await stopped).toBe(false);
+  release();
+  await Promise.resolve();
+  expect(stop).not.toHaveBeenCalled();
+  vi.useRealTimers();
 });
