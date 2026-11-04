@@ -6,7 +6,6 @@
 @import "./settings.css";
 @import "./workspace-chrome.css";
 @import "./character.css";
-@import "./research.css";
 
 :root {
   color-scheme: light dark;
@@ -160,4 +159,22 @@ select {
 .foundation-titlebar [tabindex],
 .foundation-titlebar .primitive-tooltip {
   app-region: no-drag;
+}
+
+/* The installed workspace fills the same admitted window; bootstrap recovery stays mounted. */
+.application-workspace {
+  display: flex;
+  flex: 1;
+  min-block-size: var(--space-0);
+  min-inline-size: var(--space-0);
+}
+.application-workspace > .workspace {
+  flex: 1;
+  block-size: auto;
+  min-block-size: var(--space-0);
+}
+.application-workspace[hidden],
+.foundation-window > main[hidden],
+.foundation-titlebar[hidden] {
+  display: none;
 }

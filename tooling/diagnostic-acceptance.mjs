@@ -153,7 +153,7 @@ try {
     mainOutput += bytes.toString();
   });
   const page = await application.firstWindow();
-  await expect(page.getByRole("heading", { name: "Ohtia", exact: true })).toBeVisible();
+  await expect(page.locator(".workspace-window")).toBeVisible();
   await recordReadyNativeProcesses(application, output);
   const state = await page.evaluate(() => window.ohtia.bootstrap.read());
   if (state.state !== "storage_ready") {

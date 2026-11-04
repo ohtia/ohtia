@@ -48,7 +48,7 @@ const actionKeys = {
   chat: ["workspace.chat.open", "workspace.chat.hide"],
 } as const;
 
-/** CSS-pixel measurements supplied by the qualified window owner, never guessed here. */
+/** Additional CSS-pixel safe-area minima; the native overlay rectangle remains authoritative. */
 export interface WorkspaceWindowInsets {
   readonly start: number;
   readonly end: number;
@@ -58,12 +58,19 @@ export interface WorkspaceChromeProps {
   readonly preferences: LayoutPreferences;
   readonly commands: CommandController;
   readonly locale: InterfaceLocale;
+  /** Retain the controller while temporarily unavailable, without admitting new layout commands. */
+  readonly available?: boolean;
   readonly windowInsets: WorkspaceWindowInsets;
   readonly decoration?: DecorationState;
   /** Only a confirmed effective value; absent before the zoom producer is connected. */
   readonly zoom?: number;
   readonly layoutFailure?: boolean;
   readonly onDismissLayoutFailure?: () => void;
+  /** Share this exact window authority with Settings; disposal revokes the binding. */
+  readonly onWorkspaceChange?: (
+    workspace: WorkspaceController | undefined,
+    state?: WorkspaceState,
+  ) => void;
 }
 function focusedPanel(root: HTMLElement | null): WorkspacePanel | undefined {
   const active = root?.ownerDocument.activeElement;
@@ -162,14 +169,18 @@ export function WorkspaceChrome({
   commands,
   fallbackFocusRef,
   locale,
+  available = true,
   windowInsets,
   decoration = "static",
   zoom,
   layoutFailure = false,
   onDismissLayoutFailure,
+  onWorkspaceChange,
 }: WorkspaceChromeProps) {
   const root = useRef<HTMLDivElement>(null);
   const controller = useRef<WorkspaceController | undefined>(undefined);
+  const availability = useRef(available);
+  availability.current = available;
   const [state, setState] = useState<WorkspaceState>();
   const [, refreshCommands] = useState(0);
   const [lastPanel, setLastPanel] = useState(false);
@@ -197,6 +208,9 @@ export function WorkspaceChrome({
       }),
     [commands],
   );
+  useEffect(() => {
+    commands.changed();
+  }, [commands, available]);
   useLayoutEffect(() => {
     const element = root.current;
     if (!element) return;
@@ -247,18 +261,20 @@ export function WorkspaceChrome({
         )
           setLastPanel(false);
         setState(next);
+        if (controller.current) onWorkspaceChange?.(controller.current, next);
         commands.changed();
       },
       focus,
     );
     controller.current = layout;
     setState(layout.state);
+    onWorkspaceChange?.(layout, layout.state);
     const reason = () =>
       presentationReason("panels.explorer", {
         composing: composing,
         modal: !!document.querySelector("dialog[open]"),
         editable: false,
-      });
+      }) ?? (!availability.current ? "busy" : undefined);
     let composing = false;
     let composingTarget: Node | undefined;
     const composition = (event: Event) => {
@@ -349,12 +365,17 @@ export function WorkspaceChrome({
       }),
     );
     const viewport = () => {
+      const width = element.getBoundingClientRect().width;
+      if (width <= 0 || element.closest("[hidden]")) {
+        layout.cancelResize("visibility");
+        return;
+      }
       suppressFocus =
         !element.contains(document.activeElement) || !!document.querySelector("dialog[open]");
       const before = layout.state.geometry.mode;
       const active = document.activeElement;
       const command = active instanceof HTMLElement ? active.dataset.workspaceCommand : undefined;
-      layout.viewport(element.getBoundingClientRect().width, coarse.matches, focusedPanel(element));
+      layout.viewport(width, coarse.matches, focusedPanel(element));
       if (!suppressFocus && before !== layout.state.geometry.mode) {
         const panel = workspacePanels.find((panel) => command === `panels.${panel}`);
         if (panel) focus({ target: "panel-control", panel });
@@ -397,10 +418,11 @@ export function WorkspaceChrome({
         stop();
       });
       layout.dispose();
+      onWorkspaceChange?.(undefined);
       controller.current = undefined;
       pendingFocus.current = undefined;
     };
-  }, [preferences, commands]);
+  }, [preferences, commands, onWorkspaceChange]);
   useLayoutEffect(() => {
     const intent = pendingFocus.current;
     pendingFocus.current = undefined;

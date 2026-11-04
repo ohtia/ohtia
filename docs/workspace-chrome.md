@@ -2,8 +2,6 @@
 type: Reference
 title: Workspace chrome API
 description: Compose the first-run workspace with controlled commands, deterministic layout, accessible resizing and qualified window insets.
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # Workspace chrome API
@@ -16,9 +14,11 @@ Keep `port`, `commandBridge` and `registerHandlers` identities stable for the wi
 
 `WorkspaceChrome` can instead receive an existing `LayoutPreferences` and `CommandController` from a trusted composition. It registers `panels.explorer`, `panels.documents`, `panels.chat`, `document.focus` and `layout.reset` while mounted, and removes those handlers on disposal. Do not register those IDs a second time. Layout initialization and unresolved saves disable persistent actions; narrow selection and focus mode remain in memory. Dialog and IME availability is rechecked at invocation.
 
+Keep `onWorkspaceChange` stable for the mounted controller's lifetime; replacing it intentionally replaces that controller. The optional `available` input defaults to true for standalone chrome. The installed root sets it to false while presenting bootstrap or recovery, so layout commands report the controlled busy reason and reject new commands without changing the retained arrangement. Hidden zero-sized observations cancel a resize gesture but do not replace the last meaningful viewport or exit document focus mode.
+
 `decoration` is the effective `static`, `animated` or `hidden` input. The welcome uses the shared static character rendition, switching PNG/SVG with physical image width; Hidden omits it. This first-run surface admits no manuscript or project content. `zoom`, when supplied, is the window's confirmed effective percentage. Its indicator invokes `zoom.reset`; an absent value or 100 hides it. In narrow mode the indicator precedes the segmented selector in the second row, preserving the first row’s system-control safe area. Confirmed reset and reflow retain a visible focus destination. These inputs grant no preference or native-window authority.
 
-`windowInsets.start` and `.end` are CSS-pixel safe areas measured by the qualified window owner. The title row also respects Window Controls Overlay environment variables. Supply zero only for a window with no overlapping controls; never use the reference specimen's placeholder widths as native measurements. [The integrated title-bar specification](epics/EPIC-002-basic-interface/epic.md#spec-002-022-integrated-title-bar-and-native-window-state) assigns native options, overlay qualification and menu popup behavior to their window producer. [STORY-002-012](epics/EPIC-002-basic-interface/STORY-002-012-compose-application-root.md) owns final desktop entry composition and confirmed notification wiring.
+`windowInsets.start` and `.end` are additional CSS-pixel safe-area minima measured by the qualified window owner. The title row also respects the native Window Controls Overlay environment rectangle. Zero additional insets are appropriate when that rectangle fully accounts for the native controls, or when the window has no overlapping controls; never use the reference specimen's placeholder widths as native measurements. [The integrated title-bar specification](epics/EPIC-002-basic-interface/epic.md#spec-002-022-integrated-title-bar-and-native-window-state) assigns native options, overlay qualification and menu popup behavior to their window producer. [The installed composition](application-composition.md#installed-application) uses the native rectangle directly and its packaged integration case requires an observable, nonoverlapping safe area.
 
 ## Surfaces and states
 

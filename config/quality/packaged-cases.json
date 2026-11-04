@@ -32,6 +32,7 @@
     "installed-sandbox-and-csp",
     "installed-explicit-opening-creates-research-root",
     "installed-saved-value-survives-restart",
+    "installed-window-bounds-survive-restart",
     "installed-rejects-aliased-research-root"
   ],
   "startup_development": [

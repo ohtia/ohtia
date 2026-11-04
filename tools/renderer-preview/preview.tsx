@@ -34,6 +34,7 @@ import {
   type PresentationPhase,
 } from "@ohtia/renderer";
 import "../../packages/renderer/src/foundation.css";
+import "../../packages/renderer/src/research.css";
 
 function Preview() {
   const [appearance, setAppearance] = useState("system");

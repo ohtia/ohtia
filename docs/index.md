@@ -16,6 +16,7 @@ okf_version: "0.2"
 
 - [System architecture](architecture.md) — Application data authority, execution boundaries, provider adapters, and schema-migration recovery.
 - [Frontend architecture](frontend-architecture.md) — Graphical research workflows, Electron interface boundaries, state ownership, editing, localization, and verification.
+- [Application composition and interface candidates](application-composition.md) — Compose the installed workspace and bind native packages and the separate development catalog to one immutable verification candidate.
 - [Semantic renderer primitives](semantic-primitives.md) — Controlled React components, named-command surfaces, keyboard patterns and the isolated synthetic development catalog.
 - [Character presentation API](character-presentation.md) — Compose controlled character modes, cancellable presentation batches and static contributor attribution without preference or research authority.
 - [Research presentation API](research-presentation.md) — Compose controlled voice, trust, comparison, coverage, source, Navigator and saving components without research, storage or provider authority.

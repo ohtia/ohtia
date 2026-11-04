@@ -1,6 +1,7 @@
 {
   "version": 1,
   "vitest": [
+    "tests/application-root.test.ts",
     "tests/catalog-build.test.ts",
     "tests/character-catalog.test.ts",
     "tests/character-controller.test.ts",
@@ -103,6 +104,7 @@
     "scripts/tests/test_installation_signing_policies.py",
     "scripts/tests/test_installation_signing_worker.py",
     "scripts/tests/test_installation_windows.py",
+    "scripts/tests/test_interface_candidate.py",
     "scripts/tests/test_linux_contributor.py",
     "scripts/tests/test_linux_e2e.py",
     "scripts/tests/test_linux_e2e_image.py",

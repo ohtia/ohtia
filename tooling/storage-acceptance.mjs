@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import { _electron, expect } from "@playwright/test";
+import { verifyWorkspaceComposition } from "./command-workspace.mjs";
 import { verifyPackagedSettings } from "./settings-acceptance.mjs";
 import { setNativeViewport } from "./design-viewport.mjs";
 import { withCommandCleanup } from "./command-native-focus.mjs";
@@ -79,7 +80,7 @@ async function start() {
     artifactsDir: output,
   });
   const page = await application.firstWindow();
-  await expect(page.getByRole("heading", { name: "Ohtia", exact: true })).toBeVisible();
+  await expect(page.locator(".workspace-window")).toBeVisible();
   await expect
     .poll(async () => (await page.evaluate(() => window.ohtia.foundation.readStatus().result)).ok, {
       timeout: portLimits.service_start_ms,
@@ -713,7 +714,7 @@ try {
     ok: true,
     value: { revision: 0, value: "system", source: "default" },
   });
-  await expect(page.locator("#location-state")).toBeFocused();
+  await expect(page.locator(".workspace-skip")).toBeFocused();
   const restoredInterfaceLocale = (await page.evaluate(() => window.ohtia.bootstrap.read())).locale;
   await page
     .getByRole("button", {
@@ -733,6 +734,10 @@ try {
     .toBe("ko-KR");
   await resizeNativeViewport(page, { width: 320, height: 600 });
   await page.screenshot({ path: path.join(output, "locale-ko-320.png"), fullPage: true });
+  record(
+    "integrated-application-root",
+    await verifyWorkspaceComposition(application, page, output),
+  );
   record("graphical-checkpoint-restoration", {
     restored,
     sourceRevision: checkpointManifest.sourceRevision,

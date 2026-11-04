@@ -41,7 +41,8 @@
     "locator-repair-without-application-restart",
     "opening-remains-gated-and-focused",
     "admission-crash-preserves-recovery-phase",
-    "packaged-settings-presentation"
+    "packaged-settings-presentation",
+    "integrated-application-root"
   ],
   "interruption_points": ["checkpoint", "before", "after", "intent-before", "intent-after"]
 }

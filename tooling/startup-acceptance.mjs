@@ -89,7 +89,7 @@ async function start(runtime, env) {
   });
   open.add(application);
   const page = await application.firstWindow();
-  await expect(page.getByRole("heading", { name: "Ohtia", exact: true })).toBeVisible();
+  await expect(page.locator(".workspace-window")).toBeVisible();
   await expect
     .poll(async () => (await page.evaluate(() => window.ohtia.foundation.readStatus().result)).ok, {
       timeout: portLimits.service_start_ms,
@@ -211,11 +211,73 @@ async function installedJourney(scratch) {
   expect(fs.lstatSync(profile.research_root).isDirectory()).toBe(true);
   record("installed-explicit-opening-creates-research-root", {});
   await saveAppearance(page, locale);
+  const positional = await application.evaluate(
+    ({ app }) =>
+      process.platform !== "linux" ||
+      app.commandLine.getSwitchValue("ozone-platform") !== "wayland",
+  );
+  const requestedBounds = await application.evaluate(({ BrowserWindow, screen }) => {
+    const window = BrowserWindow.getAllWindows()[0];
+    const area = screen.getDisplayMatching(window.getBounds()).workArea;
+    return {
+      width: Math.min(960, area.width),
+      height: Math.min(640, area.height),
+      x: area.x + Math.min(24, Math.max(0, area.width - 960)),
+      y: area.y + Math.min(24, Math.max(0, area.height - 640)),
+    };
+  });
+  await application.evaluate(
+    ({ BrowserWindow }, bounds) => BrowserWindow.getAllWindows()[0].setBounds(bounds),
+    requestedBounds,
+  );
+  await expect
+    .poll(() =>
+      application.evaluate(({ BrowserWindow }) => {
+        const bounds = BrowserWindow.getAllWindows()[0].getNormalBounds();
+        return { width: bounds.width, height: bounds.height };
+      }),
+    )
+    .toEqual({ width: requestedBounds.width, height: requestedBounds.height });
+  if (positional)
+    await expect
+      .poll(() =>
+        application.evaluate(({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows()[0].getNormalBounds(),
+        ),
+      )
+      .toEqual(requestedBounds);
+  const savedBounds = await application.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].getNormalBounds(),
+  );
   await stop(application);
   ({ application, page } = await start(installedRuntime, env));
   await openStorage(page);
   const reopened = await readSavedAppearance(page);
   expect(reopened.value.value).toBe("dark");
+  await expect
+    .poll(() =>
+      application.evaluate(({ BrowserWindow }) => {
+        const bounds = BrowserWindow.getAllWindows()[0].getNormalBounds();
+        return { width: bounds.width, height: bounds.height };
+      }),
+    )
+    .toEqual({ width: savedBounds.width, height: savedBounds.height });
+  if (positional)
+    await expect
+      .poll(() =>
+        application.evaluate(({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows()[0].getNormalBounds(),
+        ),
+      )
+      .toEqual(savedBounds);
+  const restoredBounds = await application.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].getNormalBounds(),
+  );
+  record("installed-window-bounds-survive-restart", {
+    savedBounds,
+    restoredBounds,
+    position: positional ? "verified" : "Wayland compositor-owned position; size verified",
+  });
   await stop(application);
   record("installed-saved-value-survives-restart", { revision: reopened.value.revision });
   await retain("after");

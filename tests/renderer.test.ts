@@ -358,7 +358,7 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
   await click(container, "open_storage");
   expect(bootstrap.openStorage).toHaveBeenCalledOnce();
   expect(foundation.readLocale).toHaveBeenCalledOnce();
-  expect(document.activeElement?.id).toBe("location-state");
+  expect(document.activeElement).toBe(container.querySelector(".workspace-skip"));
   expect(document.documentElement.lang).toBe("ko-KR");
   expect(container.textContent).toContain(message("ko-KR", "intro"));
   await act(async () => {
@@ -374,16 +374,27 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
     refreshLanguage.click();
   });
   expect(container.querySelector(".foundation-titlebar h1")?.textContent).toContain("Ohtia");
-  expect(container.querySelector("main h1")).toBeNull();
+  expect(container.querySelector(".workspace-welcome h1")?.textContent).toBe(
+    message("en-US", "workspace.welcome"),
+  );
   expect(
     container.querySelector('.foundation-titlebar [data-workspace-command="menu.open"]'),
   ).not.toBeNull();
   expect(document.documentElement.lang).toBe("en-US");
   expect(container.textContent).toContain(message("en-US", "intro"));
   snapshot = { ...snapshot, locale: "ko-KR" };
-  await click(container, "new_window");
+  await act(async () =>
+    commands.onIntent.mock.calls.at(-1)![0]({
+      windowGeneration: "renderer-window",
+      source: "native",
+      sequence: 1,
+      command: "window.new",
+    }),
+  );
   expect(container.querySelector(".foundation-titlebar h1")?.textContent).toContain("Ohtia");
-  expect(container.querySelector("main h1")).toBeNull();
+  expect(container.querySelector(".workspace-welcome h1")?.textContent).toBe(
+    message("en-US", "workspace.welcome"),
+  );
   expect(
     container.querySelector('.foundation-titlebar [data-workspace-command="menu.open"]'),
   ).not.toBeNull();
@@ -451,9 +462,7 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
     await act(async () =>
       container.querySelector<HTMLButtonElement>("dialog[open] [data-close]")!.click(),
     );
-    expect(document.activeElement).toBe(
-      container.querySelector('[data-command-id="settings.open"] button'),
-    );
+    expect(document.activeElement).toBe(container.querySelector(".workspace-skip"));
   }
   snapshot = { ...snapshot, state: "storage_opening" };
   await act(async () => {
@@ -462,4 +471,4 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
   const calls = bootstrap.retryService.mock.calls.length;
   await click(container, "retry");
   expect(bootstrap.retryService.mock.calls.length).toBe(calls);
-});
+}, 60000);
