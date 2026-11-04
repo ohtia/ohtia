@@ -7,6 +7,9 @@ generated:
 verified:
   by: human:AdrianMastronardi
 sources:
+  - id: github-protected-merges
+    resource: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches
+    title: GitHub — Protected-branch requirements for manually prepared pull-request merges
   - id: github-pull-request-api
     resource: https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request
     title: GitHub — Pull request mergeability
@@ -123,6 +126,20 @@ Cooldown does not delay security updates.[^dependabot-options] Routine dependenc
 
 Review the entire update, retain full SHA references for Actions, and run the repository checks. Python and pre-commit versions installed directly in the workflow are explicit pins and are maintained in an issue-backed pull request; the two configured ecosystems do not maintain those pins automatically. When application manifests are introduced, add their ecosystem and keep duplicate tool pins consistent in the same pull request.
 
+### Issue-backed dependency adoption
+
+Treat Dependabot pull requests as update proposals. Inspect the complete proposed diff, applicability, compatibility and existing open or closed issues. Reuse an applicable issue or create an authorized issue defining scope and validation before implementing the dependency change. A bot pull request alone does not satisfy [the issue-first requirement](../CONTRIBUTING.md#work-from-an-issue).
+
+Adopt the selected diff in the issue's task branch from the current admitted base without merging or cherry-picking the original bot commit as an unsigned or bot-signed commit. Create a new personally signed commit through the normal validation and independent-review process; preserve the original proposal's attribution and reference it in the issue-backed PR. Keep task publication within the owner's authorization. Integrate the replacement PR, then close the superseded bot proposal only when authorized. Do not give a bot a personal signing key or automatically accept later bot pushes as part of an earlier review.
+
+### Personally signed source integration
+
+[ADR-0045](adr/adr-0045-personally-signed-source-history.md) requires an independently approved initial baseline and an authorized personal signature on every subsequent commit, including final merges. All parents must be admitted. A later personal signature cannot repair unauthorized ancestry. Baseline selection and collaborator-key administration are separate from ordinary repository changes; record the exact approved identity and review coverage outside the request workflow. An ordinary release does not change the baseline.
+
+Prepare the final two-parent merge on a task integration branch, with the current `origin/main` as its first parent and the exact reviewed PR head as its second. Before creating the commit, compare the proposed tree with the approved PR candidate, resolve and review any difference, and complete the applicable checks and independent review. Create the merge with an explicitly authorized personal SSH signing key, verify its signature against the independently approved allowlist and verify its parents/tree. Keep the main checkout unchanged during preparation. Creating a commit on a task branch does not authorize integration.
+
+Before an explicitly authorized integration, recheck the current base/head, live protections, required checks and their provenance, conversations and signature. Qualify acceptance of the personally signed merge through the protected PR integration route without relaxing protections or adding a bypass. GitHub documents content-matching constraints on manually prepared PR merges under protected-branch review settings.[^github-protected-merges] Require a successful live integration/readback before activating the signer; local Git verification alone cannot establish acceptance by GitHub. If protection prevents integration, leave signing disabled and resolve the integration contract rather than using a platform merge followed by a signed repair commit. Never force-push or rewrite published history to manufacture admission.
+
 ## Integration and closure
 
 1. Run the repository checks on the candidate, including new files. Before committing or pushing, respect the owner's review checkpoint and the code review requirements in [AGENTS.md](../AGENTS.md).
@@ -143,3 +160,5 @@ Review the entire update, retain full SHA references for Actions, and run the re
 [^dependabot-options]: Dependabot options.
 
 [^dependabot-runners]: Dependabot on GitHub Actions runners.
+
+[^github-protected-merges]: GitHub requires a manually prepared merge to match the generated PR merge contents when the specified review settings apply.

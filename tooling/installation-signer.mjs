@@ -28,6 +28,7 @@ import {
   positive,
   reference,
   signingLimits,
+  sourcePrefixDomain,
   subject,
   trustedPolicy,
   command,
@@ -353,7 +354,7 @@ function writeOnce(file, bytes) {
 }
 
 export function authenticatedSourceCache(store, policy, worker) {
-  const prefix = Buffer.from("ohtia-source-prefix-v1\0");
+  const prefix = Buffer.from(sourcePrefixDomain);
   return {
     get: async (key) => {
       const row = await store.read(hash(canonical({ kind: "verified-source", key })));
@@ -634,12 +635,11 @@ export class CryptoSigningWorker {
     digest(record.commit, 40);
     digest(record.tree, 40);
     demand(
-      record.policy_sha256 === hash(canonical(this.policy)) &&
-        ["personal-signature", "clean-merge"].includes(record.kind),
+      record.policy_sha256 === hash(canonical(this.policy)) && record.kind === "personal-signature",
       "policy_refused",
     );
     return this.catalogSign(
-      Buffer.concat([Buffer.from("ohtia-source-prefix-v1\0"), canonical(record)]),
+      Buffer.concat([Buffer.from(sourcePrefixDomain), canonical(record)]),
       options,
     );
   }

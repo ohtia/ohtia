@@ -24,6 +24,7 @@ import {
   trustedPolicy,
   verifyBuildResult,
   buildPredicateType,
+  sourceAdmissionVersion,
 } from "../tooling/installation-authority.mjs";
 import {
   SigningService,
@@ -672,7 +673,29 @@ describe("independent source history admission", () => {
       );
       return git("rev-parse", "HEAD");
     }
-    return { dir, git, p, commit, anchor };
+    function merge(branch: string, signed = true, signingKey = privateKey) {
+      git(
+        "-c",
+        "gpg.format=ssh",
+        "-c",
+        `user.signingkey=${signingKey}`,
+        "-c",
+        `commit.gpgsign=${signed}`,
+        "merge",
+        "--no-ff",
+        branch,
+        "-m",
+        "Synthetic merge",
+      );
+      return git("rev-parse", "HEAD");
+    }
+    function unsigned(name: string, file = name) {
+      fs.writeFileSync(path.join(dir, file), name + "\n");
+      git("add", file);
+      git("-c", "commit.gpgsign=false", "commit", "-m", name);
+      return git("rev-parse", "HEAD");
+    }
+    return { dir, git, p, commit, anchor, merge, unsigned, signingKey: privateKey };
   }
   linuxIt(
     "admits a bounded signed expansion beyond the former incidental object-output limit",
@@ -694,18 +717,23 @@ describe("independent source history admission", () => {
       ).toHaveLength(1);
     },
   );
-  linuxIt("admits real personally signed commits and reproducible clean merges", async () => {
+  linuxIt("admits personally signed commits and personally signed merges", async () => {
     const f = graph();
     f.git("checkout", "-b", "left");
     f.commit("left");
     f.git("checkout", "main");
     f.commit("right");
-    f.git("-c", "commit.gpgsign=false", "merge", "--no-ff", "left", "-m", "Synthetic clean merge");
+    const collaborator = graph();
+    f.merge("left", true, collaborator.signingKey);
     const source = f.git("rev-parse", "HEAD"),
       tree = f.git("rev-parse", "HEAD^{tree}");
+    await expect(
+      new GitSourceAuthority(f.p, { repository: f.dir }).inspect(source, tree),
+    ).rejects.toThrow("policy_refused");
+    f.p.source_signers.push(collaborator.p.source_signers[0]);
     const result = await new GitSourceAuthority(f.p, { repository: f.dir }).inspect(source, tree);
     expect(result.records.map((r: any) => r.kind).sort()).toEqual([
-      "clean-merge",
+      "personal-signature",
       "personal-signature",
       "personal-signature",
     ]);
@@ -722,6 +750,135 @@ describe("independent source history admission", () => {
           f.git("rev-parse", "HEAD"),
           f.git("rev-parse", "HEAD^{tree}"),
         ),
+      ).rejects.toThrow("policy_refused");
+    },
+  );
+  linuxIt(
+    "refuses an unsigned clean merge even when both parents are personally signed",
+    async () => {
+      const f = graph();
+      f.git("checkout", "-b", "left");
+      f.commit("left");
+      f.git("checkout", "main");
+      f.commit("right");
+      const source = f.merge("left", false);
+      await expect(
+        new GitSourceAuthority(f.p, { repository: f.dir }).inspect(
+          source,
+          f.git("rev-parse", "HEAD^{tree}"),
+        ),
+      ).rejects.toThrow("policy_refused");
+    },
+  );
+  linuxIt(
+    "admits an approved initial anchor with unsigned history and signed descendants",
+    async () => {
+      const f = graph();
+      f.git("checkout", "-b", "bot");
+      f.unsigned("dependency-update");
+      f.git("checkout", "main");
+      f.commit("personal-work");
+      const anchor = f.merge("bot", false);
+      const tree = f.git("rev-parse", "HEAD^{tree}");
+      await expect(
+        new GitSourceAuthority(f.p, { repository: f.dir }).inspect(anchor, tree),
+      ).rejects.toThrow("policy_refused");
+      f.p.source_anchor = anchor;
+      const authority = new GitSourceAuthority(f.p, { repository: f.dir });
+      expect((await authority.inspect(anchor, tree)).records).toEqual([]);
+      const source = f.commit("post-anchor");
+      expect((await authority.inspect(source, f.git("rev-parse", "HEAD^{tree}"))).records).toEqual([
+        {
+          commit: source,
+          tree: f.git("rev-parse", "HEAD^{tree}"),
+          policy_sha256: hash(canonical(f.p)),
+          kind: "personal-signature",
+        },
+      ]);
+    },
+  );
+  linuxIt(
+    "refuses signed merges and later signed commits above unadmitted bot ancestry",
+    async () => {
+      const f = graph();
+      f.git("checkout", "-b", "bot");
+      f.unsigned("dependency-update");
+      f.git("checkout", "main");
+      const base = f.commit("personal-work");
+      const merged = f.merge("bot");
+      const mergedTree = f.git("rev-parse", "HEAD^{tree}");
+      const source = f.commit("later-personal-work");
+      const authority = new GitSourceAuthority(f.p, { repository: f.dir });
+      await expect(authority.inspect(merged, mergedTree)).rejects.toThrow("policy_refused");
+      await expect(authority.inspect(source, f.git("rev-parse", "HEAD^{tree}"))).rejects.toThrow(
+        "policy_refused",
+      );
+      f.git("checkout", "-b", "adopted", base);
+      const adopted = f.commit("dependency-update");
+      expect(f.git("rev-parse", "HEAD^{tree}")).toBe(mergedTree);
+      expect(
+        (await authority.inspect(adopted, mergedTree)).records.map((r: any) => r.kind),
+      ).toEqual(["personal-signature", "personal-signature"]);
+      f.git("checkout", "main");
+      f.git("checkout", "-b", "integration", base);
+      const integrated = f.merge("adopted");
+      expect(
+        (await authority.inspect(integrated, mergedTree)).records.map((r: any) => r.kind),
+      ).toEqual(["personal-signature", "personal-signature", "personal-signature"]);
+    },
+  );
+  linuxIt(
+    "never reuses old prefix approvals, including signed descendants of unsigned merges",
+    async () => {
+      const f = graph(),
+        store = new FileSigningStore(root());
+      f.git("checkout", "-b", "left");
+      f.commit("left");
+      f.git("checkout", "main");
+      f.commit("right");
+      f.merge("left", false);
+      const source = f.commit("later-personal-work"),
+        tree = f.git("rev-parse", "HEAD^{tree}");
+      const worker = new CryptoSigningWorker(f.p, {
+        keys: {
+          catalog: async () => ({
+            key: Buffer.from(catalogKey.privateKey.export({ format: "pem", type: "pkcs8" })),
+            passphrase: Buffer.alloc(0),
+          }),
+        },
+      });
+      const cache = store.sourceCache(f.p, worker);
+      const record = {
+        commit: source,
+        tree,
+        policy_sha256: hash(canonical(f.p)),
+        kind: "personal-signature",
+      };
+      const signature = sign(
+        null,
+        Buffer.concat([Buffer.from("ohtia-source-prefix-v1\0"), canonical(record)]),
+        catalogKey.privateKey,
+      ).toString("base64");
+      const oldKey = `${hash(canonical(f.p))}/${source}`;
+      await store.cas(hash(canonical({ kind: "verified-source", key: oldKey })), null, {
+        record,
+        signature,
+      });
+      await expect(
+        new GitSourceAuthority(f.p, { repository: f.dir, cache }).inspect(source, tree),
+      ).rejects.toThrow("policy_refused");
+      const newKey = `v${sourceAdmissionVersion}/${oldKey}`;
+      await store.cas(hash(canonical({ kind: "verified-source", key: newKey })), null, {
+        record,
+        signature,
+      });
+      await expect(cache.get(newKey)).rejects.toThrow("policy_refused");
+      await expect(worker.sourcePrefixSign({ ...record, kind: "clean-merge" })).rejects.toThrow(
+        "policy_refused",
+      );
+      const fakeCache = { get: async () => ({ ...record, kind: "clean-merge" }) };
+      await expect(
+        new GitSourceAuthority(f.p, { repository: f.dir, cache: fakeCache }).inspect(source, tree),
       ).rejects.toThrow("policy_refused");
     },
   );

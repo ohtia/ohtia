@@ -45,6 +45,8 @@ The conventions for this register are defined in [Architecture decisions](../arc
 
 - [ADR-0044 — Linux graphics defaults and scoped KDE color fallback](adr-0044-linux-graphics-compatibility.md) — Preserve native GPU and WebGPU defaults across supported GNOME Wayland profiles and avoid unsupported color negotiation only on KDE Wayland.
 
+- [ADR-0045 — Personally signed source history after an approved baseline](adr-0045-personally-signed-source-history.md) — Approve an initial source baseline independently and require authorized personal signatures on every subsequent commit, including merges.
+
 ## Interface foundations
 
 - [ADR-0022 — React renderer built with Vite](adr-0022-react-vite-renderer.md) — Build local renderer assets with React and Vite while keeping Electron privileges outside the web component tree.
