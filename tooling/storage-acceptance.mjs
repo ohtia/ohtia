@@ -363,15 +363,18 @@ try {
       ).toBe(true);
     }
   }
-  const renderedTexts = await page.locator("main").evaluate((element) => {
+  const workspaceMain = page.locator(".application-workspace main");
+  await expect(workspaceMain).toHaveCount(1);
+  await expect(workspaceMain).toBeVisible();
+  const renderedTexts = await workspaceMain.evaluate((element) => {
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
     const values = [];
     while (walker.nextNode())
       if (walker.currentNode.textContent.trim()) values.push(walker.currentNode.textContent);
     return values;
   });
-  await page.evaluate((expanded) => {
-    const clone = document.querySelector("main").cloneNode(true);
+  await workspaceMain.evaluate((element, expanded) => {
+    const clone = element.cloneNode(true);
     for (const element of clone.querySelectorAll("[id]")) element.removeAttribute("id");
     clone.id = "locale-pseudo-fixture";
     clone.setAttribute("aria-hidden", "true");
