@@ -396,6 +396,188 @@
       "foreground": "content.primary",
       "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
       "minimum": 7
+    },
+    {
+      "selector": ".research-card[data-state=\"proposed\"]",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".research-card[data-state=\"confirmed\"]",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".research-card[data-state=\"pending\"]",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".research-card[data-state=\"rejected\"]",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".research-card[data-state=\"review-required\"]",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".research-trust[data-state=\"proposed\"]",
+      "foreground": "voice.ohtia.content",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".research-card[data-state=\"proposed\"][data-origin=\"unknown\"]",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".research-card[data-origin=\"unknown\"] .research-trust[data-state=\"proposed\"]",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".research-review-notice",
+      "foreground": "attention.content",
+      "backgrounds": ["attention.surface"],
+      "minimum": 7
+    },
+    {
+      "selector": ".evidence-highlight[data-state=\"proposed\"]",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".evidence-highlight[data-state=\"confirmed\"]",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".evidence-highlight-fill",
+      "foreground": "content.primary",
+      "backgrounds": ["evidence.surface"],
+      "minimum": 7
+    },
+    {
+      "selector": ".research-tutor",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".research-tutor-quote",
+      "foreground": "voice.tutor.content",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".research-interpretation",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".research-interpretation[data-origin=\"unknown\"]",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".research-outcome",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".research-outcome[data-tone=\"attention\"]",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".research-outcome[data-tone=\"attention\"] .research-outcome-label",
+      "foreground": "attention.content",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".research-critique",
+      "foreground": "voice.ohtia.content",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".research-processing[data-state=\"unprocessable\"] .research-processing-label",
+      "foreground": "attention.content",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".research-restriction-label",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".research-source",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".research-stage[data-focus=\"true\"]",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".research-badge",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".research-stage-proposal",
+      "foreground": "voice.ohtia.content",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".research-pace-label[data-state=\"behind\"]",
+      "foreground": "attention.content",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".research-save-label, .research-offline",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".research-save-label[data-state=\"unsaved\"], .research-save-label[data-state=\"conflict\"]",
+      "foreground": "attention.content",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".research-save-label[data-state=\"failed\"]",
+      "foreground": "danger.content",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".research-conflict",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".research-conflict-title",
+      "foreground": "attention.content",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".research-local",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 3
     }
   ],
   "overlays": [

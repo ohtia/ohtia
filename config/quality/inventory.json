@@ -32,6 +32,7 @@
     "tests/primitives.test.ts",
     "tests/quality-gates.test.ts",
     "tests/renderer.test.ts",
+    "tests/research-presentation.test.ts",
     "tests/runtime-modes.test.ts",
     "tests/service-boundaries.test.ts",
     "tests/settings-controller.test.ts",

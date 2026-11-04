@@ -98,3 +98,4 @@ export { Workspace, type WorkspaceProps } from "./workspace.js";
 export * from "./character-controller.js";
 export * from "./character.js";
 export * from "./contributor-identity.js";
+export * from "./research-presentation.js";

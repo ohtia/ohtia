@@ -182,6 +182,7 @@ describe("review regression contracts", () => {
           "settings.css",
           "workspace-chrome.css",
           "character.css",
+          "research.css",
         ].map((name) => `packages/renderer/src/${name}`),
       ]) {
         fs.mkdirSync(path.dirname(path.join(temporary, file)), { recursive: true });
@@ -365,6 +366,7 @@ describe("review regression contracts", () => {
         "settings.css",
         "workspace-chrome.css",
         "character.css",
+        "research.css",
       ].map((name) => [name, fs.readFileSync(`packages/renderer/src/${name}`, "utf8")]),
     );
     const usage = JSON.parse(fs.readFileSync("packages/renderer/color-usage.json", "utf8"));
@@ -538,5 +540,59 @@ describe("review regression contracts", () => {
       expect(() => renderToStaticMarkup(createElement(OhtiaGlasses, { size }))).toThrow(
         /Glasses size/,
       );
+  });
+  it("rejects an unlisted research color pair and an unregistered research selector", () => {
+    const model = checkTokens();
+    const names = fs
+      .readdirSync("packages/renderer/src")
+      .filter(
+        (name) =>
+          name.endsWith(".css") && !["design-tokens.css", "design-fonts.css"].includes(name),
+      );
+    const sources = Object.fromEntries(
+      names.map((name) => [name, fs.readFileSync(`packages/renderer/src/${name}`, "utf8")]),
+    );
+    const usage = JSON.parse(fs.readFileSync("packages/renderer/color-usage.json", "utf8")) as {
+      rules: { selector: string; foreground?: string; backgrounds: string[] }[];
+    };
+    expect(checkColorUsage(model, sources, usage)).toBeGreaterThan(0);
+    const research = sources["research.css"]!;
+    expect(() =>
+      checkColorUsage(
+        model,
+        {
+          ...sources,
+          "research.css": research.replace(
+            "background: var(--attention-surface);",
+            "background: var(--evidence-surface);",
+          ),
+        },
+        usage,
+      ),
+    ).toThrow(/Background differs/);
+    expect(() =>
+      checkColorUsage(
+        model,
+        { ...sources },
+        {
+          ...usage,
+          rules: usage.rules.map((rule) =>
+            rule.selector === ".research-review-notice"
+              ? { ...rule, backgrounds: ["evidence.surface"] }
+              : rule,
+          ),
+        },
+      ),
+    ).toThrow(/Unlisted contrast pair|Background differs/);
+    expect(() =>
+      checkColorUsage(
+        model,
+        {
+          ...sources,
+          "research.css": `${research}\n.research-unregistered {\n  color: var(--voice-ohtia-content);\n}\n`,
+        },
+        usage,
+      ),
+    ).toThrow(/Unregistered colored selector/);
   });
 });

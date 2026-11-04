@@ -1,4 +1,5 @@
 import { CharacterSpecimen } from "./character-specimen.js";
+import { ResearchSpecimen } from "./research-specimen.js";
 import { WorkspaceSpecimen, ScopedWorkspaceSpecimen } from "./workspace-specimen.js";
 import { CommandSpecimens } from "./command-specimens.js";
 import { useRef, useState } from "react";
@@ -396,6 +397,8 @@ const screen = new URLSearchParams(location.search).get("screen");
 createRoot(root).render(
   screen === "characters" ? (
     <CharacterSpecimen />
+  ) : screen === "research" ? (
+    <ResearchSpecimen />
   ) : screen === "workspace" ? (
     <WorkspaceSpecimen />
   ) : screen === "scoped-workspace" ? (
