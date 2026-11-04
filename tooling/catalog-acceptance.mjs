@@ -6,6 +6,7 @@ import { expect } from "@playwright/test";
 import { verifyCharacterSpecimen } from "./catalog-character.mjs";
 import { verifyResearchSpecimen } from "./catalog-research.mjs";
 import { verifyWorkspaceSpecimen } from "./catalog-workspace.mjs";
+import { verifyCommandDiscovery } from "./command-discovery.mjs";
 import { verifyCommandSpecimens } from "./command-presentation.mjs";
 
 export async function serveCatalog(root) {
@@ -163,6 +164,7 @@ export async function verifyCatalog(page, url, engine, output) {
     }
     await verifyWorkspaceSpecimen(page, url, engine, output);
     await verifyCommandSpecimens(page, url, engine);
+    const commandDiscovery = await verifyCommandDiscovery(page, url, engine, output);
     await keyboardJourneys(page, url);
     await page.goto(url);
     await page.evaluate(() => document.fonts.ready);
@@ -418,6 +420,7 @@ export async function verifyCatalog(page, url, engine, output) {
       tabFocusVisibility: true,
       stickyTableHeader: true,
       research,
+      commandDiscovery,
       limitations: [
         "Portable catalog only; native IME, packaged zoom and manual assistive qualification are separate.",
       ],

@@ -6,6 +6,7 @@
     "tests/character-controller.test.ts",
     "tests/character.test.ts",
     "tests/command-acceptance.test.ts",
+    "tests/command-discovery.test.ts",
     "tests/command-native-focus.test.ts",
     "tests/command-shortcut.test.ts",
     "tests/command-surfaces.test.ts",

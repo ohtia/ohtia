@@ -33,6 +33,7 @@ const layout = new Set([
   "margin-block-start",
   "margin-block-end",
   "grid-template-columns",
+  "grid-column",
   "user-select",
   "scroll-padding",
   "scroll-margin",
@@ -110,6 +111,8 @@ const media = new Set([
   "(pointer: coarse)",
   "(forced-colors: active)",
   "(max-height: 400px)",
+  "(max-height: 300px)",
+  "(max-height: 150px)",
   "(max-width: 360px)",
 ]);
 

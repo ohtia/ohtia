@@ -305,14 +305,10 @@ export async function verifyPackagedCommands(application, page, nativeWindow, ou
           "zoom.reset",
         ].map((id) => (id === "menu.open" ? { id, registered: false } : read(id)));
       });
-      expect(menu.find((entry) => entry.id === "window.new").enabled).toBe(true);
-      for (const entry of menu.filter((entry) =>
-        ["palette.open", "shortcuts.open", "zoom.increase", "zoom.decrease", "zoom.reset"].includes(
-          entry.id,
-        ),
-      ))
-        expect(entry.enabled).toBe(false);
-      expect(menu.find((entry) => entry.id === "settings.open")?.enabled).toBe(true);
+      for (const id of ["window.new", "settings.open", "palette.open", "shortcuts.open"])
+        expect(menu.find((entry) => entry.id === id)?.enabled).toBe(true);
+      for (const id of ["zoom.increase", "zoom.decrease", "zoom.reset"])
+        expect(menu.find((entry) => entry.id === id)?.enabled).toBe(false);
       expect(menu.some((entry) => ["zoomin", "zoomout", "resetzoom"].includes(entry.role))).toBe(
         false,
       );
@@ -423,6 +419,37 @@ export async function verifyPackagedCommands(application, page, nativeWindow, ou
       await page.keyboard.press("Escape");
       await expect(about).toBeHidden();
       await expect(aboutTrigger).toBeFocused();
+      result.discoveryFocus = await focusNative(nativeWindow, "command discovery");
+      await expect
+        .poll(() =>
+          application.evaluate(
+            ({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById("palette.open")?.enabled,
+          ),
+        )
+        .toBe(true);
+      await invokeNativeMenu(application, "palette.open");
+      const palette = page.locator(".command-palette[open]");
+      const query = palette.getByRole("combobox");
+      await expect(query).toBeFocused();
+      await expect(palette.getByRole("option")).toHaveCount(commandDefinitions.length);
+      await query.fill(text("command.shortcuts.open"));
+      await expect(palette.locator('[role="option"][id$="-shortcuts.open"]')).toHaveAttribute(
+        "aria-disabled",
+        "false",
+      );
+      await query.press("Enter");
+      const shortcuts = page.locator(".shortcuts-dialog[open]");
+      await expect(palette).toHaveCount(0);
+      await expect(shortcuts.getByRole("table")).toBeVisible();
+      const paletteBinding = commandDefinitions.find((command) => command.id === "palette.open");
+      await expect(shortcuts.locator('[data-shortcut-id="palette.open"] kbd')).toHaveText(
+        paletteBinding.shortcuts[running.platform],
+      );
+      await expect(shortcuts.locator("[data-close]")).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(shortcuts).toHaveCount(0);
+      await expect(aboutTrigger).toBeFocused();
+      result.cases.push("native-palette-registry-and-shortcuts-handoff");
       await expect
         .poll(() =>
           application.evaluate(
@@ -437,8 +464,7 @@ export async function verifyPackagedCommands(application, page, nativeWindow, ou
       await expect(help).toContainText(text("help.capabilities"));
       await expect(
         help.getByRole("button", { name: text("command.shortcuts.open"), exact: true }),
-      ).toHaveAttribute("aria-disabled", "true");
-      await expect(help).toContainText(text("command.reason.handler_missing"));
+      ).toHaveAttribute("aria-disabled", "false");
       for (const theme of ["light", "dark"]) {
         await page.evaluate(
           (value) => (document.documentElement.dataset.appearance = value),
@@ -474,6 +500,23 @@ export async function verifyPackagedCommands(application, page, nativeWindow, ou
       await expect(help).toBeHidden();
       await expect(aboutTrigger).toBeFocused();
       await setNativeViewport(page, nativeWindow, { width: 800, height: 600, zoomFactor: 1 });
+      result.helpHandoffFocus = await focusNative(nativeWindow, "Help shortcut handoff");
+      await expect
+        .poll(() =>
+          application.evaluate(
+            ({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById("help.open")?.enabled,
+          ),
+        )
+        .toBe(true);
+      await invokeNativeMenu(application, "help.open");
+      await expect(help).toBeVisible();
+      await help.getByRole("button", { name: text("command.shortcuts.open"), exact: true }).click();
+      await expect(help).toBeHidden();
+      await expect(shortcuts.getByRole("table")).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(shortcuts).toHaveCount(0);
+      await expect(aboutTrigger).toBeFocused();
+      result.cases.push("native-help-to-shortcuts-and-origin-focus");
       expect(external).toEqual([]);
       result.cases.push(
         "registry-shortcut-offline-help-and-focus-restoration",

@@ -113,6 +113,60 @@ export const commandDefinitions: readonly CommandDefinition[] = commandIds.map((
         : "general",
   shortcuts: bindings[id] ?? { win32: [], linux: [], darwin: [] },
 }));
+/** Component-scoped keys supplement the command registry without creating application commands. */
+export const componentShortcutDefinitions: readonly {
+  readonly id: string;
+  readonly group: "separator" | "dialogs";
+  readonly label: SimpleMessageKey;
+  readonly shortcuts: CommandDefinition["shortcuts"];
+}[] = [
+  {
+    id: "separator.step",
+    group: "separator",
+    label: "shortcuts.separator.step",
+    shortcuts: allPlatforms(["ArrowLeft", "ArrowRight"]),
+  },
+  {
+    id: "separator.largeStep",
+    group: "separator",
+    label: "shortcuts.separator.largeStep",
+    shortcuts: allPlatforms(["Shift+ArrowLeft", "Shift+ArrowRight"]),
+  },
+  {
+    id: "separator.limits",
+    group: "separator",
+    label: "shortcuts.separator.limits",
+    shortcuts: allPlatforms(["Home", "End"]),
+  },
+  {
+    id: "separator.reset",
+    group: "separator",
+    label: "shortcuts.separator.reset",
+    shortcuts: allPlatforms(["Enter"]),
+  },
+  {
+    id: "separator.cancel",
+    group: "separator",
+    label: "shortcuts.separator.cancel",
+    shortcuts: allPlatforms(["Escape"]),
+  },
+  {
+    id: "dialogs.close",
+    group: "dialogs",
+    label: "dialog.close",
+    shortcuts: allPlatforms(["Escape"]),
+  },
+];
+function allPlatforms(keys: readonly string[]): CommandDefinition["shortcuts"] {
+  return { win32: keys, linux: keys, darwin: keys };
+}
+/** ARIA uses DOM modifier names and names the literal plus key explicitly. */
+export function ariaShortcuts(shortcuts: readonly string[]): string {
+  return shortcuts
+    .filter((key) => key !== "Alt")
+    .map((key) => key.replace(/\+\+$/, "+Plus").replace(/Ctrl/g, "Control").replace(/Cmd/g, "Meta"))
+    .join(" ");
+}
 export const isCommandId = (value: unknown): value is CommandId =>
   typeof value === "string" && commandIds.some((id) => id === value);
 export const isCommandPlatform = (value: unknown): value is CommandPlatform =>

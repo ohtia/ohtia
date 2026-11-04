@@ -1,3 +1,4 @@
+import { supportedLocales, type CommandPlatform } from "../../packages/contracts/dist/index.js";
 import { useMemo, useState } from "react";
 import { CommandSurfaces } from "@ohtia/renderer";
 type CommandBridge = Parameters<typeof CommandSurfaces>[0]["bridge"];
@@ -6,11 +7,12 @@ type InterfaceLocale = Parameters<typeof CommandSurfaces>[0]["locale"];
 /** Development-only controlled data. No broker, clipboard, storage or browser launch is used. */
 export function CommandSpecimens() {
   const [locale, setLocale] = useState<InterfaceLocale>("en-US");
+  const [platform, setPlatform] = useState<CommandPlatform>("linux");
   const [hidden, setHidden] = useState(false);
   const [copyFails, setCopyFails] = useState(false);
   const bridge = useMemo<CommandBridge>(
     () => ({
-      context: async () => ({ windowGeneration: "catalog-command-window", platform: "linux" }),
+      context: async () => ({ windowGeneration: "catalog-command-window", platform }),
       publish: async () => true,
       onIntent: () => () => {},
       about: async () => ({
@@ -33,11 +35,11 @@ export function CommandSpecimens() {
       copyVersionInformation: async () => !copyFails,
       openLink: async () => false,
     }),
-    [copyFails],
+    [copyFails, platform],
   );
   return (
     <section aria-label="Command surface specimens">
-      <h2>Local Help and About — synthetic presentation</h2>
+      <h2>Commands, Help and About — synthetic presentation</h2>
       <label>
         Command specimen language{" "}
         <select
@@ -46,7 +48,18 @@ export function CommandSpecimens() {
             setLocale(event.currentTarget.value as InterfaceLocale);
           }}
         >
-          {(["en-US", "es-AR", "de-DE", "fi-FI", "ko-KR"] as const).map((value) => (
+          {supportedLocales.map((value) => (
+            <option key={value}>{value}</option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Command specimen platform{" "}
+        <select
+          value={platform}
+          onChange={(event) => setPlatform(event.currentTarget.value as CommandPlatform)}
+        >
+          {(["linux", "win32", "darwin"] as const).map((value) => (
             <option key={value}>{value}</option>
           ))}
         </select>
@@ -75,7 +88,12 @@ export function CommandSpecimens() {
         Commands, metadata, copy results and links below are synthetic and unsaved. No system
         clipboard or external browser is used.
       </p>
-      <CommandSurfaces bridge={bridge} locale={locale} decoration={hidden ? "hidden" : "static"} />
+      <CommandSurfaces
+        bridge={bridge}
+        locale={locale}
+        decoration={hidden ? "hidden" : "static"}
+        renderFeedback={() => <div className="settings-feedback" hidden />}
+      />
     </section>
   );
 }

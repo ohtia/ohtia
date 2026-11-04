@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, createElement as h, useState, useCallback } from "react";
+import { act, createElement as h } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -8,10 +8,7 @@ import {
   CommandButton,
 } from "../packages/renderer/src/command-surfaces.js";
 import { Dialog } from "../packages/renderer/src/layers.js";
-import {
-  CommandController,
-  presentationReason,
-} from "../packages/renderer/src/command-controller.js";
+import { CommandController } from "../packages/renderer/src/command-controller.js";
 import {
   type AboutInformation,
   type CommandBridge,
@@ -158,9 +155,7 @@ describe("local Help and About composition", () => {
     expect(dialog.hasAttribute("open")).toBe(true);
     expect(dialog.textContent).toContain(message("en-US", "help.capabilities"));
     const shortcuts = button("Keyboard shortcuts", dialog);
-    expect(shortcuts.getAttribute("aria-disabled")).toBe("true");
-    await click(shortcuts);
-    expect(dialog.textContent).toContain(message("en-US", "command.reason.handler_missing"));
+    expect(shortcuts.getAttribute("aria-disabled")).not.toBe("true");
     await click(dialog.querySelector('a[href*="docs/index"]')!);
     expect(test.bridge.openLink).toHaveBeenCalledWith("documentation");
     await click(button("Close", dialog));
@@ -308,8 +303,6 @@ it("registers the consumer handler inventory and coalesces publication while one
     "panels.chat",
     "document.focus",
     "layout.reset",
-    "palette.open",
-    "shortcuts.open",
   ] as const;
   const registerHandlers = (registry: typeof controller) => {
     controller = registry;
@@ -335,7 +328,8 @@ it("registers the consumer handler inventory and coalesces publication while one
   expect(run).toHaveBeenCalledTimes(ids.length);
   await click(button("Ohtia help"));
   await click(button("Keyboard shortcuts", container.querySelector(".help-dialog")!));
-  expect(run).toHaveBeenCalledTimes(ids.length + 1);
+  expect(container.querySelector(".shortcuts-dialog[open]")).not.toBeNull();
+  expect(run).toHaveBeenCalledTimes(ids.length);
   await render(null);
   await act(async () => accepted[1](true));
   expect(disposed).toHaveBeenCalledOnce();
@@ -452,52 +446,16 @@ it("resets removed composition targets and distinguishes native mutable and read
 
 it("closes Help and restores its origin before invoking a modal-aware consumer shortcuts dialog", async () => {
   const test = harness();
-  const run = vi.fn();
-  function Composition() {
-    const [open, setOpen] = useState(false);
-    const registerHandlers = useCallback(
-      (controller: CommandController) =>
-        controller.register("shortcuts.open", {
-          state: () => {
-            const reason = presentationReason("shortcuts.open", {
-              modal: !!document.querySelector("dialog[open]"),
-              composing: false,
-              editable: false,
-            });
-            return reason ? { reason } : {};
-          },
-          run: () => {
-            expect(document.querySelector("dialog[open]")).toBeNull();
-            run();
-            setOpen(true);
-            return true;
-          },
-        }),
-      [],
-    );
-    return h(
-      "div",
-      null,
-      h(CommandSurfaces, { bridge: test.bridge, locale: "en-US", registerHandlers }),
-      h(Dialog, {
-        open,
-        title: "Synthetic shortcuts",
-        closeLabel: "Close",
-        onClose: () => setOpen(false),
-        children: h("p", null, "Synthetic consumer dialog"),
-      }),
-    );
-  }
-  await render(h(Composition));
+  await render(h(CommandSurfaces, { bridge: test.bridge, locale: "en-US" }));
   const origin = button("Ohtia help");
   await act(async () => origin.focus());
   await click(origin);
   const action = button("Keyboard shortcuts", container.querySelector(".help-dialog")!);
   expect(action.getAttribute("aria-disabled")).not.toBe("true");
   await click(action);
-  expect(run).toHaveBeenCalledOnce();
-  expect(container.querySelector("dialog[open]")!.textContent).toContain("Synthetic shortcuts");
-  await click(button("Close", container.querySelector("dialog[open]")!));
+  expect(container.querySelector(".help-dialog[open]")).toBeNull();
+  expect(container.querySelector(".shortcuts-dialog[open]")).not.toBeNull();
+  await click(container.querySelector(".shortcuts-dialog [data-close]")!);
   expect(document.activeElement).toBe(origin);
 });
 
