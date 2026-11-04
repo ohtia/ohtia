@@ -277,8 +277,6 @@ export async function verifyPackagedSettings(application, page, second, output) 
       await expectFactors(125);
       inputs.push(await nativeKey(nativeWindow, platform, "numsub", "NumpadSubtract"));
       await expectFactors(110);
-      inputs.push(await nativeKey(nativeWindow, platform, "-", "Minus"));
-      await expectFactors(100);
       const noticeObserver = await dialog.evaluateHandle((element) => {
         const notices = [];
         const selector = '[role="status"], [role="alert"]';
@@ -356,6 +354,8 @@ export async function verifyPackagedSettings(application, page, second, output) 
       try {
         await withCommandCleanup(
           async () => {
+            inputs.push(await nativeKey(nativeWindow, platform, "-", "Minus"));
+            await expectFactors(100);
             inputs.push(
               await nativeKey(nativeWindow, platform, "num0", "Numpad0", () =>
                 snapshotActualSize("before-input"),
