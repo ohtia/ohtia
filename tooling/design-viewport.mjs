@@ -17,6 +17,8 @@ async function readNativeViewport(nativeWindow) {
       height,
       zoomFactor: window.webContents.getZoomFactor(),
       bounds: window.getBounds(),
+      maximized: window.isMaximized(),
+      fullscreen: window.isFullScreen(),
     };
   });
 }
@@ -51,6 +53,23 @@ async function observeViewport(page, nativeWindow) {
 
 /** Resize the real content area and use Electron page zoom, without viewport emulation. */
 export async function setNativeViewport(page, nativeWindow, target, { timeout = 5000 } = {}) {
+  await nativeWindow.evaluate((window) => {
+    if (window.isFullScreen()) window.setFullScreen(false);
+  });
+  await expect
+    .poll(
+      () =>
+        nativeWindow.evaluate((window, state) => {
+          if (!window.isFullScreen() && window.isMaximized()) {
+            window.unmaximize();
+            // macOS can keep a screen-filling normal frame maximized; request the actual test size.
+            if (window.isMaximized()) window.setContentSize(state.width, state.height, false);
+          }
+          return window.isFullScreen() || window.isMaximized();
+        }, target),
+      { timeout, message: "Native viewport requires a normal window" },
+    )
+    .toBe(false);
   await nativeWindow.evaluate((window, state) => {
     window.webContents.setZoomFactor(state.zoomFactor);
     window.setContentSize(state.width, state.height, false);
@@ -61,6 +80,11 @@ export async function setNativeViewport(page, nativeWindow, target, { timeout = 
       .poll(
         async () => {
           observed = await observeViewport(page, nativeWindow);
+          if (observed.native.width !== target.width || observed.native.height !== target.height)
+            // A compositor can acknowledge unmaximizing before accepting the next size request.
+            await nativeWindow.evaluate((window, state) => {
+              window.setContentSize(state.width, state.height, false);
+            }, target);
           return [
             observed.native.width,
             observed.native.height,
@@ -134,6 +158,15 @@ export async function verifyDesignViewports(page, nativeWindow) {
   } finally {
     try {
       await setNativeViewport(page, nativeWindow, previous);
+      await nativeWindow.evaluate((window, state) => {
+        if (state.maximized) window.maximize();
+        if (state.fullscreen) window.setFullScreen(true);
+      }, previous);
+      await expect
+        .poll(() =>
+          nativeWindow.evaluate((window) => [window.isMaximized(), window.isFullScreen()]),
+        )
+        .toEqual([previous.maximized, previous.fullscreen]);
     } catch (error) {
       if (primaryError)
         throw new AggregateError(

@@ -97,7 +97,7 @@ describe("appearance user decisions", () => {
       value: "dark",
     });
     expect(element.textContent).toContain(message("en-US", "saved"));
-    expect(document.documentElement.dataset.appearance).toBe("dark");
+    expect(document.documentElement.dataset.appearance).toBeUndefined();
     await click(element, "save");
     expect(service.replaceAppearance).toHaveBeenCalledOnce();
   });
@@ -203,6 +203,26 @@ describe("appearance user decisions", () => {
     await click(element, "refresh");
     expect(element.textContent).toContain(message("en-US", "save_failed"));
   });
+  it("retains a dirty choice through recovery without overriding the broker's CSS theme", async () => {
+    const service = port();
+    const props = { port: service as unknown as FoundationPort, locale: "en-US" as const };
+    const element = await mount(createElement(AppearancePanel, { ...props, available: true }));
+    await choose(element, "dark");
+    await act(async () => {
+      mounted[0].render(createElement(AppearancePanel, { ...props, available: false }));
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(element.querySelector("select")?.value).toBe("dark");
+    expect(document.documentElement.dataset.appearance).toBeUndefined();
+    expect(element.textContent).toContain(message("en-US", "status_unavailable"));
+    expect(service.replaceAppearance).not.toHaveBeenCalled();
+    await act(async () => {
+      mounted[0].render(createElement(AppearancePanel, { ...props, available: true }));
+    });
+    await click(element, "save");
+    expect(service.replaceAppearance).toHaveBeenCalledOnce();
+    expect(document.documentElement.dataset.appearance).toBeUndefined();
+  });
   it("ignores a completion after unmount and cancels its outstanding read", async () => {
     let resolve: (value: unknown) => void = () => {};
     const cancel = vi.fn();
@@ -306,7 +326,10 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
   const commands = {
     context: vi.fn(async () => ({ windowGeneration: "renderer-window", platform: "linux" })),
     publish: vi.fn(async () => true),
-    onIntent: vi.fn(() => () => {}),
+    onIntent: vi.fn(
+      (_listener: (intent: import("@ohtia/contracts").CommandIntent) => void) => () => {},
+    ),
+    windowAction: vi.fn(async () => ({ status: "unavailable", reason: "window_limit" })),
     perform: vi.fn(async () => true),
     copyVersionInformation: vi.fn(async () => true),
     about: vi.fn(),
@@ -322,6 +345,11 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
   await act(async () => {
     await import("../packages/renderer/src/desktop.js");
   });
+  expect(container.querySelector(".foundation-titlebar h1")?.textContent).toContain("Ohtia");
+  expect(container.querySelector("main h1")).toBeNull();
+  expect(
+    container.querySelector('.foundation-titlebar [data-workspace-command="menu.open"]'),
+  ).not.toBeNull();
   expect(document.documentElement.lang).toBe("en-US");
   expect(container.textContent).toContain(message("en-US", "open_storage"));
   foundation.readLocale.mockImplementationOnce(
@@ -345,15 +373,26 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
   await act(async () => {
     refreshLanguage.click();
   });
+  expect(container.querySelector(".foundation-titlebar h1")?.textContent).toContain("Ohtia");
+  expect(container.querySelector("main h1")).toBeNull();
+  expect(
+    container.querySelector('.foundation-titlebar [data-workspace-command="menu.open"]'),
+  ).not.toBeNull();
   expect(document.documentElement.lang).toBe("en-US");
   expect(container.textContent).toContain(message("en-US", "intro"));
   snapshot = { ...snapshot, locale: "ko-KR" };
   await click(container, "new_window");
+  expect(container.querySelector(".foundation-titlebar h1")?.textContent).toContain("Ohtia");
+  expect(container.querySelector("main h1")).toBeNull();
+  expect(
+    container.querySelector('.foundation-titlebar [data-workspace-command="menu.open"]'),
+  ).not.toBeNull();
   expect(document.documentElement.lang).toBe("en-US");
   expect(container.textContent).toContain(message("en-US", "intro"));
   snapshot = { ...snapshot, locale: "en-US" };
   expect(bootstrap.newWindow).not.toHaveBeenCalled();
-  expect(container.textContent).toContain(message("en-US", "command.reason.handler_missing"));
+  expect(commands.windowAction).toHaveBeenCalledOnce();
+  expect(container.textContent).toContain(message("en-US", "command.reason.window_limit"));
   await act(async () => {
     container.querySelector<HTMLButtonElement>("dialog[open] [data-close]")!.click();
   });
@@ -381,6 +420,41 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
   await click(container, "command.application.quit");
   expect(commands.perform).toHaveBeenCalledWith("application.quit");
   expect(bootstrap.exit).not.toHaveBeenCalled();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>("dialog[open] [data-close]")!.click(),
+  );
+  commands.about.mockResolvedValue({
+    product: "Ohtia",
+    version: "synthetic",
+    build: "synthetic",
+    platform: "linux",
+    architecture: "x86-64",
+    copyright: "Synthetic",
+    license: "MIT",
+    notices: [],
+  });
+  const nativeIntent = commands.onIntent.mock.calls.at(-1)![0];
+  for (const [index, command] of (
+    ["help.open", "about.open", "settings.open"] as const
+  ).entries()) {
+    await act(async () => {
+      (document.activeElement as HTMLElement).blur();
+      expect(document.activeElement).toBe(document.body);
+      nativeIntent({
+        windowGeneration: "renderer-window",
+        source: "native",
+        sequence: 100 + index,
+        command,
+      });
+    });
+    expect(container.querySelector("dialog[open]")).not.toBeNull();
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("dialog[open] [data-close]")!.click(),
+    );
+    expect(document.activeElement).toBe(
+      container.querySelector('[data-command-id="settings.open"] button'),
+    );
+  }
   snapshot = { ...snapshot, state: "storage_opening" };
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1000);

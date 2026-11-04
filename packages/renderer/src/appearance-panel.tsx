@@ -10,7 +10,7 @@ import {
 } from "@ohtia/contracts";
 import { AppearanceControl } from "./index.js";
 
-/** Retain unsaved input and uncertain operation identity across service replacement. */
+/** Retain drafts and operation identity; the broker supplies the effective native/CSS theme. */
 export function AppearancePanel({
   port,
   locale,
@@ -43,11 +43,9 @@ export function AppearancePanel({
       const result = await call.result;
       if (disposed) return;
       if (result.ok) {
-        document.documentElement.dataset.appearance = result.value.value;
         if (!dirtyRef.current) {
           setRecord(result.value);
           setDraft(result.value.value);
-          document.documentElement.dataset.appearance = result.value.value;
         }
       }
       timer = setTimeout(() => {
@@ -86,7 +84,6 @@ export function AppearancePanel({
       setDirty(false);
       setUnresolved(undefined);
       setNotice("saved");
-      document.documentElement.dataset.appearance = result.value.value;
     } else if (result.error.code === "uncertain") setNotice("save_uncertain");
     else {
       setUnresolved(undefined);
@@ -122,7 +119,6 @@ export function AppearancePanel({
     if (current.ok) {
       setRecord(current.value);
       // Keep the user's draft while refreshing the revision used by a subsequent explicit save.
-      document.documentElement.dataset.appearance = current.value.value;
     } else setNotice("save_failed");
     setBusy(false);
   }

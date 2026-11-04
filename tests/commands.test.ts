@@ -12,6 +12,8 @@ import {
   commandDefinitions,
   commandIds,
   isCommandContext,
+  isCommandResult,
+  isWindowCommandResult,
   isCommandIntent,
   isCommandSnapshot,
   isAboutInformation,
@@ -176,6 +178,16 @@ describe("closed command boundary decoding", () => {
     ])
       expect(isCommandSnapshot(value)).toBe(false);
   });
+  it("rejects coercible non-string statuses in command and window replies", () => {
+    const toString = vi.fn(() => "failed");
+    for (const status of [["failed"], ["completed"], new String("failed"), { toString }, null, 0]) {
+      expect(isCommandResult({ status })).toBe(false);
+      expect(isWindowCommandResult({ status })).toBe(false);
+    }
+    expect(toString).not.toHaveBeenCalled();
+    expect(isCommandResult({ status: "failed" })).toBe(true);
+    expect(isWindowCommandResult({ status: "completed", menuDismissed: false })).toBe(true);
+  });
   it("reads actual artifact/license identity and copies only the displayed localized version and system after confirmation", async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ohtia-about-"));
     try {
@@ -275,11 +287,20 @@ describe("closed command boundary decoding", () => {
 
 async function nativeMenus() {
   vi.resetModules();
-  const buildFromTemplate = vi.fn((template) => template);
+  const popup = vi.fn();
+  const closePopup = vi.fn();
+  const buildFromTemplate = vi.fn((template) => Object.assign(template, { popup, closePopup }));
   const setApplicationMenu = vi.fn();
   vi.doMock("electron", () => ({ Menu: { buildFromTemplate, setApplicationMenu } }));
   const { CommandMenus, commandForInput } = await import("../packages/main/src/command-menus.js");
-  return { CommandMenus, commandForInput, buildFromTemplate, setApplicationMenu };
+  return {
+    CommandMenus,
+    commandForInput,
+    buildFromTemplate,
+    setApplicationMenu,
+    popup,
+    closePopup,
+  };
 }
 describe("native menu and focused-window shortcut projection", () => {
   it("routes menu clicks and application keys to the focused generation, mirrors state and disposes every listener", async () => {
@@ -296,6 +317,7 @@ describe("native menu and focused-window shortcut projection", () => {
         if (this.destroyed) throw new Error("Object has been destroyed");
         return this.contents;
       }
+      setMenuBarVisibility = vi.fn();
       isFocused = () => this.focused;
       isDestroyed = () => this.destroyed;
     }
@@ -490,6 +512,7 @@ it("retains main-owned lifecycle actions, revokes replaced registry leases and i
       setIgnoreMenuShortcuts: vi.fn(),
       isDestroyed: () => false,
     });
+    setMenuBarVisibility = vi.fn();
     isFocused = () => true;
     isDestroyed = () => false;
   }
@@ -575,6 +598,7 @@ it("never invents a native radio selection and restores confirmed state after na
       setIgnoreMenuShortcuts: vi.fn(),
       isDestroyed: () => false,
     }),
+    setMenuBarVisibility: vi.fn(),
     isFocused: () => true,
     isDestroyed: () => false,
   });
@@ -669,6 +693,251 @@ it("retains one aggregate request limit across auxiliary requests and service ad
   expect(last.ok).toBe(true);
   if (last.ok) last.value();
 });
+
+describe("main-owned native window command effects", () => {
+  it("coalesces duplicate admitted intents, rejects stale leases and revokes a queued effect on teardown", async () => {
+    const { CommandMenus } = await nativeMenus();
+    const window = Object.assign(new EventEmitter(), {
+      webContents: Object.assign(new EventEmitter(), { send: vi.fn(), isDestroyed: () => false }),
+      setMenuBarVisibility: vi.fn(),
+      isFocused: () => true,
+      isDestroyed: () => false,
+    });
+    const native = window as unknown as Electron.BrowserWindow;
+    const menus = new CommandMenus("linux", () => "en-US", "ohtia://app/index.html", {
+      quit() {},
+      close() {},
+    });
+    menus.attach(native);
+    const context = menus.connect(native)!;
+    const request = {
+      intent: {
+        windowGeneration: context.windowGeneration,
+        source: "renderer" as const,
+        sequence: 1,
+        command: "window.new" as const,
+      },
+    };
+    const run = vi.fn(async () => ({ status: "completed" as const }));
+    const alt = { preventDefault: vi.fn() };
+    const altKey = {
+      type: "keyDown",
+      key: "Alt",
+      code: "AltLeft",
+      control: false,
+      meta: false,
+      shift: false,
+      alt: true,
+      isComposing: false,
+    };
+    Object.assign(window.webContents, { setIgnoreMenuShortcuts: vi.fn() });
+    window.webContents.emit("before-input-event", alt, altKey);
+    expect(alt.preventDefault).not.toHaveBeenCalled();
+    window.webContents.emit("before-input-event", alt, { ...altKey, type: "keyUp" });
+    expect(alt.preventDefault).not.toHaveBeenCalled();
+    window.webContents.emit("before-input-event", alt, {
+      ...altKey,
+      key: "AltGraph",
+      code: "AltRight",
+      type: "keyUp",
+    });
+    expect(window.webContents.setIgnoreMenuShortcuts).toHaveBeenLastCalledWith(true);
+    const first = menus.execute(native, request, run);
+    expect(menus.execute(native, request, run)).toBe(first);
+    expect(
+      menus.execute(
+        native,
+        {
+          intent: {
+            command: "window.new",
+            sequence: 1,
+            source: "renderer",
+            windowGeneration: context.windowGeneration,
+          },
+        },
+        run,
+      ),
+    ).toBe(first);
+    await expect(first).resolves.toEqual({ status: "completed" });
+    expect(run).toHaveBeenCalledOnce();
+    await expect(
+      menus.execute(native, { intent: { ...request.intent, sequence: 0 } }, run),
+    ).resolves.toEqual({ status: "stale_intent" });
+    menus.connect(native);
+    await expect(menus.execute(native, request, run)).resolves.toEqual({ status: "stale_context" });
+    const pending = menus.execute(
+      native,
+      { intent: { ...request.intent, windowGeneration: menus.context(native)!.windowGeneration } },
+      run,
+    );
+    window.webContents.emit("render-process-gone");
+    await expect(pending).resolves.toEqual({ status: "revoked" });
+    window.emit("closed");
+    expect(run).toHaveBeenCalledOnce();
+    menus.dispose();
+  });
+  it("opens the same menu below the zoomed button, retains the originating window and settles on dismissal or teardown", async () => {
+    const { CommandMenus, popup, closePopup, buildFromTemplate } = await nativeMenus();
+    const window = Object.assign(new EventEmitter(), {
+      webContents: Object.assign(new EventEmitter(), {
+        send: vi.fn(),
+        getZoomFactor: () => 2,
+        isDestroyed: () => false,
+      }),
+      setMenuBarVisibility: vi.fn(),
+      isFocused: () => true,
+      isDestroyed: () => false,
+      getContentBounds: () => ({ x: 0, y: 0, width: 1280, height: 800 }),
+    });
+    const native = window as unknown as Electron.BrowserWindow;
+    const menus = new CommandMenus("linux", () => "en-US", "ohtia://app/index.html", {
+      quit() {},
+      close() {},
+    });
+    menus.attach(native);
+    const controller = new CommandController(menus.connect(native)!, "en-US");
+    controller.register("help.open", { state: () => ({}), run: () => true });
+    menus.publish(native, controller.snapshot());
+    const opened = menus.popup(native, { x: 8, y: 40 });
+    const options = popup.mock.calls[0][0];
+    expect(options).toMatchObject({ window: native, x: 16, y: 80 });
+    options.callback();
+    await expect(opened).resolves.toBe("dismissed");
+    const revoked = menus.popup(native, { x: 8, y: 40 });
+    const staleTemplate = buildFromTemplate.mock.calls.at(
+      -1,
+    )![0] as Electron.MenuItemConstructorOptions[];
+    const help = staleTemplate
+      .flatMap((group) => (Array.isArray(group.submenu) ? group.submenu : []))
+      .find((item) => item.id === "help.open")!;
+    const context = menus.connect(native)!;
+    const replacement = new CommandController(context, "en-US");
+    replacement.register("help.open", { state: () => ({}), run: () => true });
+    menus.publish(native, replacement.snapshot());
+    help.click!({} as never, undefined, {} as never);
+    expect(window.webContents.send).not.toHaveBeenCalled();
+    await expect(revoked).resolves.toBe("revoked");
+    popup.mock.calls[1][0].callback();
+    const closed = menus.popup(native, { x: 100000, y: 100000 });
+    expect(popup.mock.calls[2][0]).toMatchObject({ x: 1280, y: 800 });
+    window.emit("closed");
+    await expect(closed).resolves.toBe("revoked");
+    expect(closePopup).toHaveBeenCalledWith(native);
+    menus.dispose();
+  });
+});
+
+it("hides a newly attached unfocused window even when the focused menu projection is unchanged", async () => {
+  const { CommandMenus } = await nativeMenus();
+  const make = (focused: boolean) =>
+    Object.assign(new EventEmitter(), {
+      webContents: Object.assign(new EventEmitter(), { send: vi.fn(), isDestroyed: () => false }),
+      setMenuBarVisibility: vi.fn(),
+      isFocused: () => focused,
+      isDestroyed: () => false,
+    });
+  const first = make(true),
+    second = make(false);
+  const menus = new CommandMenus("linux", () => "en-US", "ohtia://app/index.html", {
+    quit() {},
+    close() {},
+  });
+  menus.attach(first as unknown as Electron.BrowserWindow);
+  menus.attach(second as unknown as Electron.BrowserWindow);
+  expect(second.setMenuBarVisibility).toHaveBeenCalledWith(false);
+  const context = menus.context(first as unknown as Electron.BrowserWindow)!;
+  const run = vi.fn(async () => ({ status: "completed" as const }));
+  await expect(
+    menus.execute(
+      first as unknown as Electron.BrowserWindow,
+      {
+        intent: {
+          windowGeneration: context.windowGeneration,
+          command: "window.new",
+          source: "native",
+          sequence: 100000,
+        },
+      },
+      run,
+    ),
+  ).resolves.toEqual({ status: "stale_intent" });
+  expect(run).not.toHaveBeenCalled();
+  menus.dispose();
+});
+
+it("keeps native Edit roles in the application menu and records a popup Edit selection through the same registry", async () => {
+  const { CommandMenus, popup, buildFromTemplate } = await nativeMenus();
+  const window = Object.assign(new EventEmitter(), {
+    webContents: Object.assign(new EventEmitter(), {
+      send: vi.fn(),
+      isDestroyed: () => false,
+      getZoomFactor: () => 1,
+    }),
+    isDestroyed: () => false,
+    isFocused: () => true,
+    setMenuBarVisibility: vi.fn(),
+    getContentBounds: () => ({ x: 0, y: 0, width: 800, height: 600 }),
+  });
+  const native = window as unknown as Electron.BrowserWindow;
+  const menus = new CommandMenus("linux", () => "en-US", "ohtia://app/index.html", {
+    quit() {},
+    close() {},
+  });
+  menus.attach(native);
+  const controller = new CommandController(menus.connect(native)!, "en-US");
+  controller.register("edit.copy", { state: () => ({}), run: () => true });
+  menus.publish(native, controller.snapshot());
+  const flatten = (
+    items: Electron.MenuItemConstructorOptions[],
+  ): Electron.MenuItemConstructorOptions[] =>
+    items.flatMap((item) => [item, ...(Array.isArray(item.submenu) ? flatten(item.submenu) : [])]);
+  expect(flatten(menus.template(native)).find((item) => item.id === "edit.copy")?.role).toBe(
+    "copy",
+  );
+  const result = menus.popup(native, { x: 0, y: 48 });
+  const copy = flatten(buildFromTemplate.mock.calls.at(-1)![0]).find(
+    (item) => item.id === "edit.copy",
+  )!;
+  expect(copy.role).toBeUndefined();
+  copy.click!({} as never, undefined, {} as never);
+  popup.mock.calls.at(-1)![0].callback();
+  await expect(result).resolves.toBe("selected");
+  expect(window.webContents.send).toHaveBeenCalledWith(
+    "ohtia:command-intent",
+    expect.objectContaining({ command: "edit.copy" }),
+  );
+  menus.dispose();
+});
+
+it("reports an intentionally replaced native popup as revoked instead of failed", async () => {
+  const { CommandMenus, popup } = await nativeMenus();
+  const window = Object.assign(new EventEmitter(), {
+    webContents: Object.assign(new EventEmitter(), {
+      send: vi.fn(),
+      isDestroyed: () => false,
+      getZoomFactor: () => 1,
+    }),
+    setMenuBarVisibility: vi.fn(),
+    isFocused: () => true,
+    isDestroyed: () => false,
+    getContentBounds: () => ({ x: 0, y: 0, width: 800, height: 600 }),
+  });
+  const native = window as unknown as Electron.BrowserWindow;
+  const menus = new CommandMenus("linux", () => "en-US", "ohtia://app/index.html", {
+    quit() {},
+    close() {},
+  });
+  menus.attach(native);
+  const context = menus.connect(native)!;
+  menus.publish(native, new CommandController(context, "en-US").snapshot());
+  const first = menus.popup(native, { x: 0, y: 48 });
+  const second = menus.popup(native, { x: 0, y: 48 });
+  await expect(first).resolves.toBe("revoked");
+  popup.mock.calls.at(-1)![0].callback();
+  await expect(second).resolves.toBe("dismissed");
+  menus.dispose();
+});
+
 it("reports each admitted command outcome once and revokes result observers with the registry", async () => {
   const controller = new CommandController(context, "en-US");
   const notices = vi.fn();

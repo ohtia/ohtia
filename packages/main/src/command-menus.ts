@@ -6,6 +6,8 @@ import {
   message,
   type SimpleMessageKey,
   type CommandContext,
+  type WindowCommandRequest,
+  type WindowCommandResult,
   type CommandId,
   type CommandPlatform,
   type CommandSnapshot,
@@ -66,6 +68,8 @@ export function commandForInput(
 interface WindowCommands {
   context: CommandContext;
   sequence: number;
+  popups: Set<() => void>;
+  actions: Map<string, { request: WindowCommandRequest; result: Promise<WindowCommandResult> }>;
   snapshot?: CommandSnapshot | undefined;
   dispose(): void;
 }
@@ -84,29 +88,26 @@ export class CommandMenus {
     const state: WindowCommands = {
       context: { windowGeneration: randomUUID(), platform: this.platform },
       sequence: 0,
+      popups: new Set(),
+      actions: new Map(),
       dispose: () => {},
     };
-    let altAlone = false;
+    const revokePopups = () => {
+      for (const close of state.popups) close();
+    };
     const input = (event: Electron.Event, key: Input) => {
-      // macOS owns native accelerator registration; composing keys must reach the editor only.
-      contents.setIgnoreMenuShortcuts(key.isComposing);
-      if (key.type === "keyUp") {
-        if (key.key === "Alt" && altAlone && !key.isComposing) this.dispatch(window, "menu.open");
-        altAlone = false;
-        return;
-      }
+      // Menu keys reach the focused surface before the renderer's bubbling handler.
+      contents.setIgnoreMenuShortcuts(
+        key.isComposing ||
+          key.key === "Alt" ||
+          key.key === "AltGraph" ||
+          key.key === "F10" ||
+          key.code === "AltLeft" ||
+          key.code === "AltRight",
+      );
       if (key.type !== "keyDown") return;
-      const singleAlt =
-        this.platform !== "darwin" &&
-        key.key === "Alt" &&
-        key.code !== "AltRight" &&
-        !key.control &&
-        !key.meta &&
-        !key.shift &&
-        !key.isComposing;
-      altAlone = singleAlt;
       const command = commandForInput(this.platform, key);
-      if (!command) return;
+      if (!command || command === "menu.open") return;
       event.preventDefault();
       if (!key.isAutoRepeat) this.dispatch(window, command, true);
     };
@@ -114,30 +115,35 @@ export class CommandMenus {
       this.refresh();
     };
     const blur = () => {
-      altAlone = false;
       this.refresh();
     };
     const navigation = (_event: unknown, url: string, inPlace: boolean, main: boolean) => {
       if (main && !inPlace && url === this.documentUrl) {
-        altAlone = false;
+        revokePopups();
         state.context = { windowGeneration: randomUUID(), platform: this.platform };
         state.snapshot = undefined;
         state.sequence = 0;
+        state.actions.clear();
         this.refresh();
       }
     };
     const gone = () => {
-      altAlone = false;
+      revokePopups();
+      state.context = { windowGeneration: randomUUID(), platform: this.platform };
+      state.sequence = 0;
+      state.actions.clear();
       state.snapshot = undefined;
       this.refresh();
     };
     state.dispose = () => {
+      revokePopups();
       contents.removeListener("before-input-event", input);
       contents.removeListener("did-start-navigation", navigation);
       contents.removeListener("render-process-gone", gone);
       window.removeListener("focus", focus);
       window.removeListener("blur", blur);
     };
+    if (this.platform !== "darwin") window.setMenuBarVisibility(false);
     this.windows.set(window, state);
     contents.on("before-input-event", input);
     contents.on("did-start-navigation", navigation);
@@ -158,8 +164,10 @@ export class CommandMenus {
   connect(window: BrowserWindow): CommandContext | undefined {
     const state = this.windows.get(window);
     if (!state) return;
+    for (const close of state.popups) close();
     state.context = { windowGeneration: randomUUID(), platform: this.platform };
     state.sequence = 0;
+    state.actions.clear();
     state.snapshot = undefined;
     this.refresh();
     return state.context;
@@ -207,7 +215,91 @@ export class CommandMenus {
       command: id,
     });
   }
-  template(window: BrowserWindow | null): MenuItemConstructorOptions[] {
+  /** Last intent per source is bounded; repeated deliveries share the accepted effect. */
+  execute(
+    window: BrowserWindow,
+    request: WindowCommandRequest,
+    run: (current: () => boolean) => Promise<WindowCommandResult>,
+  ): Promise<WindowCommandResult> {
+    const state = this.windows.get(window);
+    if (
+      !state ||
+      request.intent.windowGeneration !== state.context.windowGeneration ||
+      window.isDestroyed()
+    )
+      return Promise.resolve({ status: "stale_context" });
+    if (request.intent.source === "native" && request.intent.sequence > state.sequence)
+      return Promise.resolve({ status: "stale_intent" });
+    const prior = state.actions.get(request.intent.source);
+    if (prior && request.intent.sequence <= prior.request.intent.sequence) {
+      return request.intent.sequence === prior.request.intent.sequence &&
+        request.intent.command === prior.request.intent.command &&
+        request.anchor?.x === prior.request.anchor?.x &&
+        request.anchor?.y === prior.request.anchor?.y
+        ? prior.result
+        : Promise.resolve({ status: "stale_intent" });
+    }
+    const generation = state.context.windowGeneration;
+    const current = () =>
+      !window.isDestroyed() && this.windows.get(window)?.context.windowGeneration === generation;
+    const result = Promise.resolve()
+      .then(() => (current() ? run(current) : ({ status: "revoked" } as const)))
+      .catch(() => ({ status: "failed" }) as const);
+    state.actions.set(request.intent.source, { request, result });
+    return result;
+  }
+  popup(
+    window: BrowserWindow,
+    anchor: { x: number; y: number },
+  ): Promise<"dismissed" | "selected" | "revoked" | false> {
+    if (this.platform === "darwin" || window.isDestroyed()) return Promise.resolve(false);
+    const state = this.windows.get(window);
+    if (!state?.snapshot) return Promise.resolve(false);
+    for (const close of state.popups) close();
+    const generation = state.context.windowGeneration;
+    const current = () =>
+      !window.isDestroyed() && this.windows.get(window)?.context.windowGeneration === generation;
+    let selected = false;
+    const menu = Menu.buildFromTemplate(
+      this.template(window, true, current, () => {
+        selected = true;
+      }),
+    );
+    const factor = window.webContents.getZoomFactor();
+    const size = window.getContentBounds();
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (result: "dismissed" | "selected" | "revoked" | false) => {
+        if (settled) return;
+        settled = true;
+        state.popups.delete(close);
+        resolve(result);
+      };
+      const close = () => {
+        finish("revoked");
+        menu.closePopup(window);
+      };
+      state.popups.add(close);
+      try {
+        menu.popup({
+          window,
+          x: Math.max(0, Math.min(Math.round(anchor.x * factor), size.width)),
+          y: Math.max(0, Math.min(Math.round(anchor.y * factor), size.height)),
+          callback: () => {
+            finish(current() ? (selected ? "selected" : "dismissed") : "revoked");
+          },
+        });
+      } catch {
+        finish(false);
+      }
+    });
+  }
+  template(
+    window: BrowserWindow | null,
+    popup = false,
+    current: () => boolean = () => true,
+    selected: () => void = () => {},
+  ): MenuItemConstructorOptions[] {
     const state = window ? this.windows.get(window) : undefined;
     const locale = state?.snapshot?.locale ?? this.locale();
     const text = (key: SimpleMessageKey) => message(locale, key);
@@ -255,11 +347,13 @@ export class CommandMenus {
         ...(this.platform === "darwin" && entry?.reason
           ? { toolTip: text(`command.reason.${entry.reason}`) }
           : {}),
-        ...(nativeRole
+        ...(nativeRole && !popup
           ? { role: nativeRole }
           : {
               click: () => {
-                this.dispatch(this.focusedWindow(), id);
+                if (!current()) return;
+                selected();
+                this.dispatch(popup ? window : this.focusedWindow(), id);
                 // Native checkbox/radio activation is optimistic; restore the confirmed projection.
                 this.refresh(true);
               },
@@ -348,6 +442,9 @@ export class CommandMenus {
       return;
     this.lastMenu = { window, projection };
     Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+    if (this.platform !== "darwin")
+      for (const existing of this.windows.keys())
+        if (!existing.isDestroyed()) existing.setMenuBarVisibility(false);
   }
   dispose(): void {
     for (const state of this.windows.values()) state.dispose();

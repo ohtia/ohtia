@@ -305,15 +305,11 @@ export async function verifyPackagedCommands(application, page, nativeWindow, ou
           "zoom.reset",
         ].map((id) => (id === "menu.open" ? { id, registered: false } : read(id)));
       });
+      expect(menu.find((entry) => entry.id === "window.new").enabled).toBe(true);
       for (const entry of menu.filter((entry) =>
-        [
-          "window.new",
-          "palette.open",
-          "shortcuts.open",
-          "zoom.increase",
-          "zoom.decrease",
-          "zoom.reset",
-        ].includes(entry.id),
+        ["palette.open", "shortcuts.open", "zoom.increase", "zoom.decrease", "zoom.reset"].includes(
+          entry.id,
+        ),
       ))
         expect(entry.enabled).toBe(false);
       expect(menu.find((entry) => entry.id === "settings.open")?.enabled).toBe(true);

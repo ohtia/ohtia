@@ -1,3 +1,4 @@
+import { isWindowBounds, type WindowBounds } from "./window-bounds.js";
 import {
   isCharacterPresentation,
   isInterfaceZoom,
@@ -108,6 +109,27 @@ export type RecordedLayoutOutcome =
 export type LayoutReceipt =
   | { readonly state: "not_found" | "pending" }
   | { readonly state: "recorded"; readonly outcome: RecordedLayoutOutcome };
+export interface WindowBoundsRecord {
+  readonly schemaVersion: 1;
+  readonly revision: number;
+  readonly value: WindowBounds | null;
+  readonly source: "saved" | "default" | "invalid_fallback";
+}
+export type SavedWindowBoundsRecord = WindowBoundsRecord & {
+  readonly source: "saved";
+  readonly value: WindowBounds;
+};
+export interface WindowBoundsChange {
+  readonly operationId: string;
+  readonly expectedRevision: number;
+  readonly value: WindowBounds;
+}
+export type RecordedWindowBoundsOutcome =
+  | { readonly ok: true; readonly value: SavedWindowBoundsRecord }
+  | { readonly ok: false; readonly error: Extract<PortError, { readonly code: "stale_revision" }> };
+export type WindowBoundsReceipt =
+  | { readonly state: "not_found" | "pending" }
+  | { readonly state: "recorded"; readonly outcome: RecordedWindowBoundsOutcome };
 export const errorActions = {
   invalid_message: "check_request",
   unsupported_version: "upgrade_application",
@@ -173,6 +195,9 @@ export type AppearanceReceipt =
   | { readonly state: "not_found" | "pending" }
   | { readonly state: "recorded"; readonly outcome: RecordedAppearanceOutcome };
 export interface OperationInputs {
+  "bounds.read": Record<string, never>;
+  "bounds.replace": { readonly expectedRevision: number; readonly value: WindowBounds };
+  "bounds.receipt": { readonly targetOperationId: string };
   "presentation.read": Record<string, never>;
   "presentation.subscribe": { readonly subscriptionId: string };
   "character.replace": { readonly expectedRevision: number; readonly value: CharacterPresentation };
@@ -203,6 +228,9 @@ export interface OperationInputs {
   "appearance.subscribe": { readonly subscriptionId: string };
 }
 export interface OperationOutputs {
+  "bounds.read": WindowBoundsRecord;
+  "bounds.replace": SavedWindowBoundsRecord;
+  "bounds.receipt": WindowBoundsReceipt;
   "presentation.read": PresentationSnapshot;
   "presentation.subscribe": { readonly subscriptionId: string };
   "character.replace": SavedPresentationRecord<CharacterPresentation>;
@@ -469,6 +497,21 @@ function layoutRecord(value: Json | undefined): boolean {
 function savedLayout(value: Json | undefined): boolean {
   return layoutRecord(value) && object(value) && value.source === "saved";
 }
+function boundsRecord(value: Json | undefined): boolean {
+  return (
+    exact(value, ["schemaVersion", "revision", "value", "source"]) &&
+    value.schemaVersion === 1 &&
+    revision(value.revision) &&
+    (value.source === "saved"
+      ? value.revision > 0 && isWindowBounds(value.value)
+      : value.value === null &&
+        (value.source === "invalid_fallback" ||
+          (value.source === "default" && value.revision === 0)))
+  );
+}
+function savedBounds(value: Json | undefined): boolean {
+  return boundsRecord(value) && object(value) && value.source === "saved";
+}
 function error(value: Json | undefined): boolean {
   if (
     !exact(value, ["code", "nextAction", "parameters"]) ||
@@ -540,6 +583,9 @@ const replaceErrors = [
   "storage_failed",
 ] as const;
 export const operationErrorCodes = Object.freeze({
+  "bounds.read": [...readErrors, "preference_invalid"],
+  "bounds.replace": replaceErrors,
+  "bounds.receipt": readErrors,
   "presentation.read": [...readErrors, "preference_invalid"],
   "presentation.subscribe": [...readErrors, "sequence_gap", "preference_invalid"],
   "character.replace": replaceErrors,
@@ -581,6 +627,7 @@ function input(operation: Operation, value: Json | undefined): boolean {
     case "appearance.read":
     case "locale.read":
     case "layout.read":
+    case "bounds.read":
     case "layout.failureNotice":
       return exact(value, []);
     case "character.replace":
@@ -610,6 +657,13 @@ function input(operation: Operation, value: Json | undefined): boolean {
         value.expectedRevision < Number.MAX_SAFE_INTEGER &&
         isWorkspaceLayout(value.value)
       );
+    case "bounds.replace":
+      return (
+        exact(value, ["expectedRevision", "value"]) &&
+        revision(value.expectedRevision) &&
+        value.expectedRevision < Number.MAX_SAFE_INTEGER &&
+        isWindowBounds(value.value)
+      );
     case "appearance.replace":
       return (
         exact(value, ["expectedRevision", "value"]) &&
@@ -628,6 +682,7 @@ function input(operation: Operation, value: Json | undefined): boolean {
     case "zoom.receipt":
     case "locale.receipt":
     case "layout.receipt":
+    case "bounds.receipt":
     case "appearance.receipt":
       return exact(value, ["targetOperationId"]) && isIdentifier(value.targetOperationId);
     case "presentation.subscribe":
@@ -639,6 +694,12 @@ function input(operation: Operation, value: Json | undefined): boolean {
 }
 function output(operation: Operation, value: Json | undefined): boolean {
   switch (operation) {
+    case "bounds.read":
+      return boundsRecord(value);
+    case "bounds.replace":
+      return savedBounds(value);
+    case "bounds.receipt":
+      return receipt(value, savedBounds);
     case "presentation.read":
       return presentationSnapshot(value);
     case "character.replace":
@@ -784,6 +845,9 @@ const operations: readonly Operation[] = [
   "locale.replace",
   "locale.receipt",
   "locale.subscribe",
+  "bounds.read",
+  "bounds.replace",
+  "bounds.receipt",
   "layout.failureNotice",
   "layout.read",
   "layout.replace",
@@ -1013,6 +1077,22 @@ export function decodeLayoutChange(raw: unknown): Outcome<LayoutChange> {
   return failure("invalid_message");
 }
 
+export function decodeWindowBoundsChange(raw: unknown): Outcome<WindowBoundsChange> {
+  try {
+    const value = boundedJson(raw, true);
+    if (
+      exact(value, ["operationId", "expectedRevision", "value"]) &&
+      isIdentifier(value.operationId) &&
+      revision(value.expectedRevision) &&
+      value.expectedRevision < Number.MAX_SAFE_INTEGER &&
+      isWindowBounds(value.value)
+    )
+      return { ok: true, value: value as unknown as WindowBoundsChange };
+  } catch {
+    /* Reject without exposing caller data. */
+  }
+  return failure("invalid_message");
+}
 export function decodePresentationChange<K extends "character" | "zoom">(
   feature: K,
   raw: unknown,

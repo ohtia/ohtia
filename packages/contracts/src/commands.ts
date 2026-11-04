@@ -191,12 +191,65 @@ export const nativeCommandIds: readonly NativeCommand[] = [
 ];
 export const isNativeCommand = (value: unknown): value is NativeCommand =>
   nativeCommandIds.some((id) => id === value);
+export interface WindowCommandRequest {
+  readonly intent: CommandIntent;
+  readonly anchor?: { readonly x: number; readonly y: number };
+}
+export function isWindowCommandRequest(value: unknown): value is WindowCommandRequest {
+  if (
+    !plain(value) ||
+    !["intent", "anchor,intent"].includes(Object.keys(value).sort().join(",")) ||
+    !isCommandIntent(value.intent) ||
+    !["window.new", "menu.open"].includes(value.intent.command)
+  )
+    return false;
+  if (!("anchor" in value)) return value.intent.command === "window.new";
+  const anchor = value.anchor;
+  return (
+    value.intent.command === "menu.open" &&
+    plain(anchor) &&
+    keys(anchor, "x,y") &&
+    [anchor.x, anchor.y].every(
+      (n) => typeof n === "number" && Number.isSafeInteger(n) && n >= 0 && n <= 100000,
+    )
+  );
+}
+export function isCommandResult(value: unknown): value is CommandResult {
+  return (
+    plain(value) &&
+    typeof value.status === "string" &&
+    (value.status === "unavailable"
+      ? keys(value, "reason,status") && commandReasons.some((reason) => reason === value.reason)
+      : keys(value, "status") &&
+        [
+          "completed",
+          "failed",
+          "revoked",
+          "stale_context",
+          "unknown_command",
+          "stale_intent",
+        ].includes(value.status))
+  );
+}
+/** A popup dismissal restores its trigger; selecting an action preserves that action's focus. */
+export type WindowCommandResult =
+  CommandResult | { readonly status: "completed"; readonly menuDismissed: boolean };
+export function isWindowCommandResult(value: unknown): value is WindowCommandResult {
+  return (
+    isCommandResult(value) ||
+    (plain(value) &&
+      keys(value, "menuDismissed,status") &&
+      value.status === "completed" &&
+      typeof value.menuDismissed === "boolean")
+  );
+}
 export interface CommandBridge {
   context(): Promise<CommandContext>;
   publish(snapshot: CommandSnapshot): Promise<boolean>;
   onIntent(listener: (intent: CommandIntent) => void): () => void;
   about(): Promise<AboutInformation>;
   perform(command: NativeCommand): Promise<boolean>;
+  windowAction(request: WindowCommandRequest): Promise<WindowCommandResult>;
   copyVersionInformation(locale: InterfaceLocale): Promise<boolean>;
   openLink(link: ProjectLink): Promise<boolean>;
 }

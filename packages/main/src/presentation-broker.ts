@@ -7,7 +7,6 @@ import {
   type InterfaceZoom,
   type PresentationSnapshot,
   type PresentationRecord,
-  policyId,
   type Request,
   type Outcome,
   type Operation,
@@ -144,7 +143,7 @@ export class PresentationBroker {
       });
     });
   }
-  private reconcile(service: ServiceSupervisor, origin: Request): void {
+  private reconcile(service: ServiceSupervisor): void {
     const lock = this.unresolved;
     if (
       !lock ||
@@ -156,7 +155,8 @@ export class PresentationBroker {
       return;
     const check = { operationId: lock.operationId, generation: service.generation };
     this.reconciliation = check;
-    void this.request(service, origin, "zoom.receipt", { targetOperationId: lock.operationId })
+    void service
+      .request("zoom.receipt", { targetOperationId: lock.operationId })
       .then((receipt) => {
         if (this.unresolved !== lock || service.generation !== check.generation) return;
         if (
@@ -174,21 +174,10 @@ export class PresentationBroker {
       });
   }
   initialize(service: ServiceSupervisor): void {
-    const origin: Request = {
-      protocol: 1,
-      policy: policyId,
-      kind: "request",
-      requestId: randomUUID(),
-      operationId: randomUUID(),
-      windowGeneration: "broker-preferences",
-      serviceGeneration: service.generation,
-      operation: "presentation.read",
-      payload: {},
-    };
-    void this.request(service, origin, "presentation.read", {}).then((snapshot) => {
+    void service.request("presentation.read", {}).then((snapshot) => {
       if (snapshot.ok) this.accept(snapshot.value);
     });
-    this.reconcile(service, origin);
+    this.reconcile(service);
   }
   /** Returns false for operations whose existing service dispatch remains unchanged. */
   handle(work: Work, service: ServiceSupervisor, target: ZoomTarget): boolean {
@@ -228,7 +217,7 @@ export class PresentationBroker {
     };
     if (request.operation !== "zoom.apply" && this.unresolved) {
       reply(failure("busy"));
-      this.reconcile(service, request);
+      this.reconcile(service);
       return true;
     }
     const lock = {
@@ -239,7 +228,7 @@ export class PresentationBroker {
     if (request.operation !== "zoom.apply") this.unresolved = lock;
     void (async () => {
       if (request.operation === "zoom.apply") {
-        this.reconcile(service, request);
+        this.reconcile(service);
         const snapshot = await this.request(service, request, "presentation.read", {});
         if (!snapshot.ok) {
           reply(snapshot);

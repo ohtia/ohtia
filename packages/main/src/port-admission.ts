@@ -22,11 +22,23 @@ export class RequestBudget {
   private frames = new Map<object, { pending: number }>();
   private count = 0;
   reserve(frame: object): Outcome<() => void> {
-    const state = this.frames.get(frame) ?? { pending: 0 };
-    if (state.pending >= portLimits.pending_per_window || this.count >= portLimits.pending_global)
+    return this.claim(frame);
+  }
+  /** Broker-owned service work has no renderer-frame quota but shares the aggregate cap. */
+  reserveBroker(): Outcome<() => void> {
+    return this.claim();
+  }
+  private claim(frame?: object): Outcome<() => void> {
+    const state = frame ? (this.frames.get(frame) ?? { pending: 0 }) : undefined;
+    if (
+      (state && state.pending >= portLimits.pending_per_window) ||
+      this.count >= portLimits.pending_global
+    )
       return failure("busy");
-    this.frames.set(frame, state);
-    state.pending++;
+    if (frame && state) {
+      this.frames.set(frame, state);
+      state.pending++;
+    }
     this.count++;
     let released = false;
     return {
@@ -34,8 +46,10 @@ export class RequestBudget {
       value: () => {
         if (released) return;
         released = true;
-        state.pending--;
-        if (!state.pending) this.frames.delete(frame);
+        if (frame && state) {
+          state.pending--;
+          if (!state.pending) this.frames.delete(frame);
+        }
         this.count--;
       },
     };

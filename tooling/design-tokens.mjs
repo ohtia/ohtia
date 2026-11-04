@@ -226,7 +226,23 @@ export function renderTokens(model) {
       .map((name) => [name, parseFloat(model.resolve(name, "light"))]),
   );
   const ts = `// Generated from the canonical design and workspace definitions; values use CSS px or ms.\nexport const designMetrics = ${JSON.stringify(numeric, null, 2)} as const;\nexport const iconMappings = ${JSON.stringify(model.icons, null, 2)} as const;\n`;
-  return { css, ts };
+  const windowTokens = {
+    height: numeric["component.workspace.context-bar.minimum"],
+    light: Object.fromEntries(
+      ["surface.page", "surface.panel", "content.primary"].map((name) => [
+        name,
+        model.resolve(name, "light"),
+      ]),
+    ),
+    dark: Object.fromEntries(
+      ["surface.page", "surface.panel", "content.primary"].map((name) => [
+        name,
+        model.resolve(name, "dark"),
+      ]),
+    ),
+  };
+  const windowTs = `// Generated from the canonical design and workspace definitions.\nexport const windowTokens = ${JSON.stringify(windowTokens, null, 2)} as const;\n`;
+  return { css, ts, windowTs };
 }
 export function checkTokens(directory = root, write = false) {
   const model = readDesign(
@@ -237,6 +253,7 @@ export function checkTokens(directory = root, write = false) {
   for (const [file, value] of [
     ["packages/renderer/src/design-tokens.css", output.css],
     ["packages/renderer/src/design-tokens.ts", output.ts],
+    ["packages/contracts/src/window-tokens.ts", output.windowTs],
   ]) {
     const target = path.join(directory, file);
     if (write) fs.writeFileSync(target, value);

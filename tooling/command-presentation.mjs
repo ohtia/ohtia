@@ -170,9 +170,10 @@ export async function verifyCommandSpecimens(page, url, engine) {
           await page.setViewportSize({ width: 320, height });
           await page.getByLabel("Theme", { exact: true }).selectOption(theme);
           await specimen.getByLabel("Command specimen language").selectOption(locale);
-          const trigger = specimen
-            .locator(".command-entry-actions button")
-            .nth(surface === "about" ? 1 : 0);
+          const trigger = specimen.getByRole("button", {
+            name: message(locale, `command.${surface}.open`),
+            exact: true,
+          });
           await trigger.click();
           const dialog = page.locator(`.${surface}-dialog[open]`);
           await expect(dialog).toBeVisible();
@@ -190,6 +191,7 @@ export async function verifyCommandSpecimens(page, url, engine) {
           await page.keyboard.press("Escape");
           await expect(trigger).toBeFocused();
         }
+  await specimen.getByLabel("Command specimen language").selectOption("en-US");
   // Reserve the classic scrollbar gutter even in headless browsers that hide scrollbars.
   // This exercises the available containing width rather than assuming 100vw is usable.
   try {
@@ -198,8 +200,7 @@ export async function verifyCommandSpecimens(page, url, engine) {
       await page.setViewportSize({ width, height: 600 });
       for (const surface of ["about", "help"]) {
         await specimen
-          .locator(".command-entry-actions button")
-          .nth(surface === "about" ? 1 : 0)
+          .getByRole("button", { name: message("en-US", `command.${surface}.open`), exact: true })
           .click();
         const geometry = await page.locator(`.${surface}-dialog[open]`).evaluate((dialog) => {
           const bounds = dialog.getBoundingClientRect();
@@ -221,13 +222,17 @@ export async function verifyCommandSpecimens(page, url, engine) {
   }
   if (engine === "chromium") {
     await page.setViewportSize({ width: 800, height: 600 });
-    await specimen.locator(".command-entry-actions button").nth(1).click();
+    await specimen
+      .getByRole("button", { name: message("en-US", "command.about.open"), exact: true })
+      .click();
     const cdp = await page.context().newCDPSession(page);
     try {
       await verifyCommandLandmarks(cdp);
       await verifyCommandDensities(cdp, page.locator(".about-dialog[open] img"));
       await page.keyboard.press("Escape");
-      await specimen.locator(".command-entry-actions button").nth(0).click();
+      await specimen
+        .getByRole("button", { name: message("en-US", "command.help.open"), exact: true })
+        .click();
       await verifyCommandLandmarks(cdp);
     } finally {
       await cdp.detach();

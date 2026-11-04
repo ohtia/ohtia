@@ -56,6 +56,8 @@ export function createStatusService(
   };
   const appearanceEvent = (record: Outcome<AppearanceRecord>) => {
     if (!record.ok) return;
+    if (!disposed)
+      send(JSON.stringify({ kind: "appearance_changed", generation, record: record.value }));
     for (const stream of streams.values()) {
       if (stream.topic !== "appearance" || record.value.revision <= stream.revision) continue;
       stream.revision = record.value.revision;
@@ -171,7 +173,24 @@ export function createStatusService(
       emit({ ...value, kind: "result", payload: failure("service_unavailable") });
       return;
     }
-    if (value.operation === "presentation.read")
+    if (value.operation === "bounds.read")
+      emit({ ...value, kind: "result", payload: await storage.readWindowBounds() });
+    else if (value.operation === "bounds.receipt")
+      emit({
+        ...value,
+        kind: "result",
+        payload: await storage.readWindowBoundsReceipt(value.payload.targetOperationId),
+      });
+    else if (value.operation === "bounds.replace")
+      emit({
+        ...value,
+        kind: "result",
+        payload: await storage.replaceWindowBounds({
+          operationId: value.operationId,
+          ...value.payload,
+        }),
+      });
+    else if (value.operation === "presentation.read")
       emit({ ...value, kind: "result", payload: await presentationSnapshot() });
     else if (value.operation === "character.receipt" || value.operation === "zoom.receipt")
       emit({
@@ -450,6 +469,7 @@ export function createStatusService(
               value.operation === "appearance.replace" ||
                 value.operation === "locale.replace" ||
                 value.operation === "layout.replace" ||
+                value.operation === "bounds.replace" ||
                 value.operation === "character.replace" ||
                 value.operation === "zoom.replace" ||
                 value.operation === "zoom.commit"

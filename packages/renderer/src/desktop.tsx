@@ -11,6 +11,8 @@ import {
   type PortCall,
 } from "@ohtia/contracts";
 import "./foundation.css";
+import { ShortcutControl } from "./workspace-chrome.js";
+import { CommandButton } from "./command-surfaces.js";
 import { SettingsSurfaces } from "./settings-surfaces.js";
 import { OhtiaBrand } from "./branding.js";
 
@@ -36,6 +38,7 @@ function FoundationWindow() {
   const [bootstrap, setBootstrap] = useState<BootstrapSnapshot>();
   const [status, setStatus] = useState<FoundationStatus["service"]>("starting");
   const [busy, setBusy] = useState(false);
+  const commandReturn = useRef<HTMLButtonElement | null>(null);
   const [failed, setFailed] = useState(false);
   const [announcement, setAnnouncement] = useState(0);
   const notice = useRef<HTMLParagraphElement>(null);
@@ -128,75 +131,129 @@ function FoundationWindow() {
     }
   }
   return (
-    <main aria-labelledby="title">
-      <h1 id="title">
-        <OhtiaBrand />
-      </h1>
-      <p>{text("intro")}</p>
+    <div className="workspace-window foundation-window">
       <SettingsSurfaces
         bridge={window.ohtia.commands}
         port={window.ohtia.foundation}
         locale={bootstrap.locale}
         available={bootstrap.state === "storage_ready"}
         onLocale={applyLocale.current}
-      />
-      <p role="status" aria-live="polite" aria-atomic="true">
-        {text(
-          status === "ready"
-            ? "status_ready"
-            : status === "starting"
-              ? "status_starting"
-              : "status_unavailable",
+        returnFocusRef={commandReturn}
+      >
+        {(commands) => (
+          <>
+            <header className="workspace-bar foundation-titlebar">
+              <div className="workspace-title-row foundation-title-row">
+                {commands && commands.context.platform !== "darwin" && (
+                  <ShortcutControl
+                    id="menu.open"
+                    commands={commands}
+                    locale={bootstrap.locale}
+                    icon="menu"
+                  />
+                )}
+                <h1 id="title">
+                  <OhtiaBrand />
+                </h1>
+                <span className="workspace-drag-space" aria-hidden="true" />
+              </div>
+            </header>
+            <main aria-labelledby="title">
+              <p>{text("intro")}</p>
+              <div
+                className="actions command-entry-actions"
+                ref={(element) => {
+                  commandReturn.current =
+                    element?.querySelector<HTMLButtonElement>(
+                      '[data-command-id="settings.open"] button',
+                    ) ?? null;
+                }}
+              >
+                {(
+                  [
+                    "settings.open",
+                    "help.open",
+                    "about.open",
+                    "window.new",
+                    "application.quit",
+                  ] as const
+                ).map((id) => (
+                  <CommandButton
+                    key={id}
+                    id={id}
+                    locale={bootstrap.locale}
+                    {...(commands ? { controller: commands } : {})}
+                    onInvoke={(command) => {
+                      void commands?.invoke(command);
+                    }}
+                  />
+                ))}
+              </div>
+              <p role="status" aria-live="polite" aria-atomic="true">
+                {text(
+                  status === "ready"
+                    ? "status_ready"
+                    : status === "starting"
+                      ? "status_starting"
+                      : "status_unavailable",
+                )}
+              </p>
+              <section aria-labelledby="location-title" aria-busy={busy}>
+                <h2 id="location-title">{text("location")}</h2>
+                <p
+                  key={announcement}
+                  id="location-state"
+                  ref={notice}
+                  tabIndex={-1}
+                  role={
+                    failed || locationNotice || bootstrapFailure(bootstrap.state)
+                      ? "alert"
+                      : "status"
+                  }
+                >
+                  {text(failed ? "startup_failed" : (locationNotice ?? bootstrap.state))}
+                </p>
+                {bootstrap.state !== "storage_ready" && <p>{text("storage_disclosure")}</p>}
+                {["pending_create", "located"].includes(bootstrap.state) && (
+                  <button
+                    type="button"
+                    aria-disabled={busy}
+                    onClick={(event) => {
+                      void action("openStorage", event.currentTarget);
+                    }}
+                  >
+                    {text("open_storage")}
+                  </button>
+                )}
+                {bootstrap.state === "recovery_required" && (
+                  <button
+                    type="button"
+                    aria-disabled={busy}
+                    onClick={(event) => {
+                      void action("restoreCheckpoint", event.currentTarget);
+                    }}
+                  >
+                    {text("restore_checkpoint")}
+                  </button>
+                )}
+              </section>
+              <div className="actions">
+                <button
+                  type="button"
+                  aria-disabled={busy || bootstrap.state === "storage_opening"}
+                  onClick={(event) => {
+                    if (bootstrap.state === "storage_opening") return;
+                    void action("retryService", event.currentTarget);
+                  }}
+                >
+                  {text("retry")}
+                </button>
+              </div>
+            </main>
+          </>
         )}
-      </p>
-      <section aria-labelledby="location-title" aria-busy={busy}>
-        <h2 id="location-title">{text("location")}</h2>
-        <p
-          key={announcement}
-          id="location-state"
-          ref={notice}
-          tabIndex={-1}
-          role={failed || locationNotice || bootstrapFailure(bootstrap.state) ? "alert" : "status"}
-        >
-          {text(failed ? "startup_failed" : (locationNotice ?? bootstrap.state))}
-        </p>
-        {bootstrap.state !== "storage_ready" && <p>{text("storage_disclosure")}</p>}
-        {["pending_create", "located"].includes(bootstrap.state) && (
-          <button
-            type="button"
-            aria-disabled={busy}
-            onClick={(event) => {
-              void action("openStorage", event.currentTarget);
-            }}
-          >
-            {text("open_storage")}
-          </button>
-        )}
-        {bootstrap.state === "recovery_required" && (
-          <button
-            type="button"
-            aria-disabled={busy}
-            onClick={(event) => {
-              void action("restoreCheckpoint", event.currentTarget);
-            }}
-          >
-            {text("restore_checkpoint")}
-          </button>
-        )}
-      </section>
-      <div className="actions">
-        <button
-          type="button"
-          aria-disabled={busy || bootstrap.state === "storage_opening"}
-          onClick={(event) => {
-            if (bootstrap.state === "storage_opening") return;
-            void action("retryService", event.currentTarget);
-          }}
-        >
-          {text("retry")}
-        </button>
-      </div>
-    </main>
+      </SettingsSurfaces>
+    </div>
   );
 }
 const root = document.getElementById("root");

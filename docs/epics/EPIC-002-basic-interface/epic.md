@@ -1,11 +1,14 @@
 ---
 type: "EPIC"
 title: "EPIC-002 — Basic interface"
-description: "Deliver accessible localized desktop menus, an integrated title bar, workspace controls, a command palette, extensible Settings and shared visual primitives."
+description: "Deliver accessible localized desktop menus, an integrated title bar, workspace controls, a command palette, extensible Settings and shared visual primitives, with native Wayland geometry limits."
 tags: ["epic", "comp:app", "comp:desktop"]
 status: "stable"
 resource: https://github.com/ohtia/ohtia/issues/42
 sources:
+  - id: "electron-wayland"
+    resource: "https://github.com/electron/electron/blob/v45.0.0/docs/api/browser-window.md"
+    title: "Electron 45.0.0 BrowserWindow — native Wayland geometry limits"
   - id: "roadmap"
     resource: "https://github.com/ohtia/ohtia/blob/e5ee1cdf9e97cebb9781b682bee7c3e7fc22ee7c/docs/product-roadmap.md"
     title: "Product roadmap"
@@ -437,11 +440,13 @@ Application menu on Windows and Linux: the first control is an icon button with 
 
 Linux qualification: qualify the overlay on every supported Linux target and desktop environment of the native inventory. If the locked Electron version or a qualified Linux environment cannot draw the overlay controls, report a blocker; never ship a window without reachable system minimize, maximize and close controls and native move and resize behavior. Any fallback to a native frame requires an approved amendment to the title-bar ADR, not an implementation-time choice.
 
-First show: create each window with `show: false` and a `backgroundColor` equal to the effective theme's `surface.page`, resolved from the confirmed appearance preference when the store is available and from the operating-system appearance otherwise, and show it on `ready-to-show`, so a dark-theme window never paints a white first frame.[^electron-window] A later confirmed theme change also calls `setBackgroundColor`. Bootstrap and recovery windows follow the same rule using the operating-system appearance.
+First show: create each window with `show: false` and a `backgroundColor` equal to the effective theme's `surface.page`, resolved from the confirmed appearance preference when the store is available and from the operating-system appearance otherwise. Apply the same confirmed or system choice to Chromium's native theme source before renderer creation so its first CSS frame agrees with the native background. Show the window on `ready-to-show`. On native Wayland, where a compositor can defer a hidden surface's first frame until mapping, successful completion of loading the admitted local application document also permits reveal through that same window lifecycle. Loading failure never permits reveal; the existing application-start deadline remains bounded. Queue initial maximization and activation until one of those permitted reveal conditions, and do not introduce a second window factory. A dark-theme window must never paint a white first frame. A later confirmed theme change updates background, overlay and the effective renderer theme together. Bootstrap and recovery use the operating-system appearance.[^electron-window]
 
 New window: the New window command opens another Ohtia workspace window through the foundation window lifecycle and its admission limits. At the active-window limit the command reports the controlled `window_limit` reason and opens nothing. A new window loads preferences like any other window and keeps its own live layout under SPEC-002-008.
 
 Window bounds, agreed at the refinement checkpoint:[^mockups] declare `window_bounds` schema version 1 as exactly `{version: 1, x, y, width, height, maximized}`, with integer device-independent pixels and a boolean `maximized`; `width` and `height` lie between the window minimum and 100000. The window minimum content size is 320 × 400, matching the 320 CSS px reflow and 400 px height cases at 100% zoom. When a window closes, including during application quit, save its `getNormalBounds()` and maximized state through the named preference operation; full screen is not persisted, there is no write on move or resize events and the last accepted write wins. Load the record with the other preferences before the first workspace window is created. Restore it only when the rectangle fits completely inside the work area of a currently connected display after clamping its size to that work area; otherwise open at 1280 × 800 clamped to the primary display's work area and centered. A New window opened while another window is focused uses the saved size, offset 24 DIP down and to the end from the focused window and clamped into that display's work area. Missing, invalid or unsupported records use the default without rewriting them. A failed write on close is not announced; record a content-free diagnostic and keep the previous valid record. The record contains no display names or identifiers, paths, titles or project data. Bootstrap and recovery windows use the default bounds and do not write. Publication adds `window_bounds` to the canonical preference-key inventory with this value contract, beside `interface_zoom`.
+
+Native Wayland delegates global placement to the compositor. Keep the same validated `window_bounds` record and receipt discipline, but use only the saved width, height and maximized state as constructor requests within the primary work area when the store is already available; unavailable global coordinates do not select a display, determine off-screen restoration or produce a 24-DIP cascade. A bootstrap window remains visible at its default while storage opens explicitly, then requests the saved size and maximized state before admitting its workspace; the compositor can retain its placement or restrict that resize. Later windows receive the saved size in their constructor. Qualification records requested and accepted size/state separately and does not claim exact positioning, centering or a selected display on this backend. Coordinate restoration and cascading above continue to apply on platforms whose native API exposes global coordinates. These limits do not authorize an X11 switch, a native-frame fallback, weakened sandboxing or custom system controls.[^electron-wayland]
 
 Ordering for this block's effects: `window_bounds` writes, overlay and background updates and New window follow the receipt discipline used elsewhere in this EPIC. Keep the admitted operation identity while reconciling an uncertain `window_bounds` write and never resubmit it on a lost reply; an overlay or background update derived from an older confirmed theme revision never replaces a newer one; closing a window revokes its pending callbacks without cancelling an already accepted write; and a repeated New window command delivery opens at most one window per admitted intent. Test these with deterministic schedules: duplicate receipt, late older theme revision, window closed during a pending write and duplicate command delivery.
 
@@ -839,3 +844,5 @@ Catalog keys, lockfiles, IPC schemas, preference validators and shared interface
 [^electron-menuitem]: Electron — MenuItem.
 
 [^apg-splitter]: W3C ARIA Authoring Practices — Window splitter pattern.
+
+[^electron-wayland]: The pinned BrowserWindow API documents unavailable global coordinates and positioning on Wayland and compositor restrictions on resizing.

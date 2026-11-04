@@ -8,6 +8,7 @@ export interface ButtonProps {
   disabledReason?: string;
   loadingLabel?: string;
   ariaKeyShortcuts?: string;
+  ariaHasPopup?: "menu";
 }
 export function Button({
   label,
@@ -16,6 +17,7 @@ export function Button({
   disabledReason,
   loadingLabel,
   ariaKeyShortcuts,
+  ariaHasPopup,
 }: ButtonProps) {
   const id = useId();
   return (
@@ -26,6 +28,7 @@ export function Button({
         aria-disabled={!!disabledReason || !!loadingLabel}
         aria-busy={!!loadingLabel}
         aria-keyshortcuts={ariaKeyShortcuts}
+        aria-haspopup={ariaHasPopup}
         aria-describedby={disabledReason || loadingLabel ? id : undefined}
         onClick={() => {
           if (!disabledReason && !loadingLabel) onPress();

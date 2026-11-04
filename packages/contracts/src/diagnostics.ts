@@ -23,6 +23,9 @@ const event = <
   errors: E,
 ) => Object.freeze({ component, operation, severity, outcome, errors: Object.freeze(errors) });
 export const diagnosticCatalog = Object.freeze({
+  "ohtia.window.bounds_failed": event("broker", "bounds.replace", "WARN", "failure", [
+    "storage_failed",
+  ]),
   "ohtia.application.stop_uncertain": event("broker", "application.stop", "WARN", "uncertain", [
     "shutdown_uncertain",
   ]),

@@ -1,6 +1,6 @@
 # EPIC-002 — Basic interface
 
-- [EPIC-002 — Basic interface](epic.md) — Deliver accessible localized desktop menus, an integrated title bar, workspace controls, a command palette, extensible Settings and shared visual primitives.
+- [EPIC-002 — Basic interface](epic.md) — Deliver accessible localized desktop menus, an integrated title bar, workspace controls, a command palette, extensible Settings and shared visual primitives, with native Wayland geometry limits.
 
 ## Stories
 
