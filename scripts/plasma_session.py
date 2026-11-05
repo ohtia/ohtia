@@ -30,6 +30,8 @@ ACTIVATION = (
     "QT_QPA_PLATFORM",
 )
 PORTAL = "org.freedesktop.impl.portal.desktop.kde"
+# KWin activates the portal frontend at startup; it reads its desktop from its own environment.
+FRONTEND = "org.freedesktop.portal.Desktop"
 
 
 class PlasmaError(RuntimeError):
@@ -72,6 +74,70 @@ def has_owner(env: dict[str, str], name: str) -> bool:
 def start_portal(env: dict[str, str]) -> bool:
     result = bus(env, "StartServiceByName", f"string:{PORTAL}", "uint32:0")
     return result.returncode == 0 and ("uint32 1" in result.stdout or "uint32 2" in result.stdout)
+
+
+def owner_pid(env: dict[str, str], name: str) -> int | None:
+    """Ask the bus which process owns a name; the bus daemon answers for itself too."""
+    result = bus(env, "GetConnectionUnixProcessID", f"string:{name}")
+    match = re.search(r"\buint32 (\d+)\b", result.stdout) if result.returncode == 0 else None
+    return int(match.group(1)) if match and int(match.group(1)) > 0 else None
+
+
+def environment_entries(pid: int, proc: Path = Path("/proc")) -> list[bytes] | None:
+    """Read another process's own environment only when this account owns it."""
+    entry = proc / str(pid)
+    try:
+        if entry.stat().st_uid != os.getuid():
+            return None
+        return (entry / "environ").read_bytes().split(b"\0")
+    except OSError:
+        return None
+
+
+def portal_on_plasma(env: dict[str, str], proc: Path = Path("/proc")) -> bool:
+    """Require the frontend started with this session's desktop, or it serves GTK fallbacks."""
+    started = bus(env, "StartServiceByName", f"string:{FRONTEND}", "uint32:0")
+    if started.returncode != 0 or not re.search(r"\buint32 [12]\b", started.stdout):
+        return False
+    pid = owner_pid(env, FRONTEND)
+    entries = environment_entries(pid, proc) if pid is not None else None
+    return entries is not None and {
+        b"XDG_CURRENT_DESKTOP=KDE",
+        b"XDG_RUNTIME_DIR=" + os.fsencode(env["XDG_RUNTIME_DIR"]),
+    } <= set(entries)
+
+
+def update_activation(env: dict[str, str], log: BinaryIO) -> None:
+    """Give bus-activated services the session's values before KWin can activate any of them."""
+    values = {**{name: env[name] for name in ACTIVATION if name in env}, "WAYLAND_DISPLAY": SOCKET}
+    try:
+        update = subprocess.run(
+            [
+                "dbus-update-activation-environment",
+                *(f"{name}={values[name]}" for name in ACTIVATION),
+            ],
+            env=env,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            check=False,
+            timeout=10,
+        )
+    except subprocess.TimeoutExpired:
+        update = None
+    require(
+        update is not None and update.returncode == 0,
+        "The D-Bus activation environment update failed.",
+    )
+
+
+def login_runtime(runtime: Path) -> bool:
+    """Report whether a runtime directory is the account's login runtime.
+
+    Callers may pass the session runtime in their own `XDG_RUNTIME_DIR`, as the contributor
+    and Scaleway routes do. The startup marker scan then refuses a directory that another
+    process of this account, with a readable environment, already carries.
+    """
+    return runtime.resolve() == Path(f"/run/user/{os.getuid()}").resolve()
 
 
 def session_environment(base: dict[str, str], runtime: Path) -> dict[str, str]:
@@ -133,6 +199,102 @@ def release_document_mount(runtime: Path, env: dict[str, str]) -> None:
     )
 
 
+def process_start(pid: int, proc: Path = Path("/proc")) -> tuple[bytes, bytes] | None:
+    """Return a live process's state and start time; the pair identifies it against PID reuse."""
+    try:
+        fields = (proc / str(pid) / "stat").read_bytes().rsplit(b")", 1)[-1].split()
+    except OSError:
+        return None
+    return (fields[0], fields[19]) if len(fields) > 19 else None
+
+
+def ancestors(proc: Path = Path("/proc")) -> set[int]:
+    """Return this process and every ancestor, including a PID 1 of this PID namespace."""
+    result, pid = set(), os.getpid()
+    while pid > 0 and pid not in result:
+        result.add(pid)
+        try:
+            fields = (proc / str(pid) / "stat").read_bytes().rsplit(b")", 1)[-1].split()
+            pid = int(fields[1])
+        except (OSError, IndexError, ValueError):
+            break
+    return result
+
+
+def identities(pids: set[int], proc: Path = Path("/proc")) -> dict[int, bytes]:
+    """Bind excluded processes to their start times so a reused PID is not excluded."""
+    return {pid: identity[1] for pid in pids if (identity := process_start(pid, proc))}
+
+
+def session_processes(
+    runtime: Path, excluded: dict[int, bytes], proc: Path = Path("/proc")
+) -> dict[int, bytes]:
+    """Find this account's live processes that carry the session's private runtime directory.
+
+    Bus-activated services inherit it from the activation environment and can outlive the
+    session's process groups; a remaining process of the command carries it as well. The
+    launcher, its ancestors and the bus daemon are excluded. A process that rewrote its own
+    environment area, as Chromium does, is not found here and stays the caller's to supervise.
+    """
+    marker = b"XDG_RUNTIME_DIR=" + os.fsencode(runtime)
+    found = {}
+    for entry in proc.iterdir():
+        if not entry.name.isdecimal():
+            continue
+        pid = int(entry.name)
+        identity = process_start(pid, proc)
+        if identity is None or excluded.get(pid) == identity[1]:
+            continue
+        entries = environment_entries(pid, proc)
+        if identity[0] not in {b"Z", b"X"} and entries and marker in entries:
+            found[pid] = identity[1]
+    return found
+
+
+def signal_identified(pid: int, start: bytes, sig: int, proc: Path = Path("/proc")) -> None:
+    """Signal through a process handle whose start time was checked after it was opened.
+
+    The handle keeps naming the same process even if the numeric PID is reused afterwards.
+    A process that vanished or refuses the signal stays for the final cessation check.
+    """
+    try:
+        handle = os.pidfd_open(pid)
+    except OSError:
+        return
+    try:
+        identity = process_start(pid, proc)
+        if identity is not None and identity[1] == start:
+            signal.pidfd_send_signal(handle, sig)
+    except OSError:
+        pass
+    finally:
+        os.close(handle)
+
+
+def stop_session_processes(
+    runtime: Path, excluded: dict[int, bytes], proc: Path = Path("/proc")
+) -> None:
+    """Stop leftover session services and verify cessation, never signaling a reused PID."""
+    for sig, seconds in ((signal.SIGTERM, 10), (signal.SIGKILL, 5)):
+        deadline = time.monotonic() + seconds
+        signalled = set()
+        while True:
+            remaining = session_processes(runtime, excluded, proc)
+            if not remaining:
+                return
+            for pid, start in remaining.items():
+                if (pid, start) not in signalled:
+                    signal_identified(pid, start, sig, proc)
+                    signalled.add((pid, start))
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.05)
+    require(
+        not session_processes(runtime, excluded, proc),
+        "Processes of the private Plasma session remain after shutdown.",
+    )
+
+
 def teardown(
     shell: subprocess.Popen | None,
     compositor: subprocess.Popen | None,
@@ -140,8 +302,9 @@ def teardown(
     env: dict[str, str],
     *,
     report: bool,
+    excluded: dict[int, bytes] | None = None,
 ) -> None:
-    """Always stop the shell, then KWin, then release the portal mount, in that order.
+    """Always stop the shell, then KWin, release the portal mount, then remaining services.
 
     An earlier session failure stays the reported one; otherwise the first teardown failure,
     including an interruption, is raised after every step was attempted.
@@ -151,6 +314,7 @@ def teardown(
         lambda: stop(shell),
         lambda: stop(compositor),
         lambda: release_document_mount(runtime, env),
+        lambda: excluded is not None and stop_session_processes(runtime, excluded),
     ):
         try:
             step()
@@ -243,7 +407,20 @@ def session(
         not has_owner(env, "org.kde.KWin"),
         "Start the Plasma session on a fresh private bus; this bus already has a KWin.",
     )
+    require(
+        not login_runtime(runtime),
+        "Use a runtime directory created for this Plasma session, not the login runtime.",
+    )
+    daemon = owner_pid(env, "org.freedesktop.DBus")
+    require(daemon is not None, "The private D-Bus daemon did not identify itself.")
+    excluded = identities({daemon, *ancestors()})
+    # Teardown signals by this runtime marker, so no other process may carry it beforehand.
+    require(
+        not session_processes(runtime, excluded),
+        "Other processes already use this runtime directory; use one created for this session.",
+    )
     try:
+        update_activation(env, log)
         compositor = subprocess.Popen(
             [
                 "kwin_wayland",
@@ -269,22 +446,6 @@ def session(
         )
         waiting(lambda: has_owner(env, "org.kde.KWin"), "KWin did not take its bus name in time.")
         env["WAYLAND_DISPLAY"] = SOCKET
-        # Bus-activated portals need the session display; without it they abort at startup.
-        try:
-            update = subprocess.run(
-                ["dbus-update-activation-environment", *ACTIVATION],
-                env=env,
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                check=False,
-                timeout=10,
-            )
-        except subprocess.TimeoutExpired:
-            update = None
-        require(
-            update is not None and update.returncode == 0,
-            "The D-Bus activation environment update failed.",
-        )
         shell = subprocess.Popen(
             ["plasmashell", "--no-respawn"],
             env=env,
@@ -297,6 +458,10 @@ def session(
             "plasmashell did not take its bus name in time; KWin alone does not qualify.",
         )
         waiting(lambda: start_portal(env), "The KDE portal backend did not start in time.")
+        waiting(
+            lambda: portal_on_plasma(env),
+            "The desktop portal is not running with the Plasma session environment.",
+        )
         env["OHTIA_NATIVE_COMPOSITOR_PID"] = str(compositor.pid)
         yield env
         # A session whose shell or compositor stopped during the command did not qualify it.
@@ -305,9 +470,9 @@ def session(
             "KWin or plasmashell exited during the session; KWin alone does not qualify.",
         )
     except BaseException:
-        teardown(shell, compositor, runtime, env, report=False)
+        teardown(shell, compositor, runtime, env, report=False, excluded=excluded)
         raise
-    teardown(shell, compositor, runtime, env, report=True)
+    teardown(shell, compositor, runtime, env, report=True, excluded=excluded)
 
 
 def main() -> int:
