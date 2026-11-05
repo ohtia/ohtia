@@ -70,6 +70,11 @@ SCENARIO_CASES = {
 }
 
 
+# A native cell is its target, OS profile, display backend and, on Linux, desktop.
+SCOPE = ("target", "profile", "backend", "desktop")
+DESKTOP_SESSIONS = {"gnome": "GNOME", "kde": "KDE"}
+
+
 class ProbeError(Exception):
     """A failed prerequisite or observation leaves the profile unqualified."""
 
@@ -160,7 +165,7 @@ def is_elevated() -> bool:
         kernel.CloseHandle(token)
 
 
-def profile_cells(*, required_only: bool = False) -> list[tuple[str, str, str]]:
+def profile_cells(*, required_only: bool = False) -> list[tuple[str, str, str, str | None]]:
     """Enumerate admitted native cells, or only the explicitly required qualification set."""
     record = read_json(ROOT / "config/desktop/targets.json")
     try:
@@ -174,14 +179,15 @@ def profile_cells(*, required_only: bool = False) -> list[tuple[str, str, str]]:
         if target["os"] == "linux":
             for profile in target["distribution_profiles"]:
                 for backend in profile["display_backends"]:
-                    cells.append((target["id"], profile["id"], backend))
+                    for desktop in profile["desktops"]:
+                        cells.append((target["id"], profile["id"], backend, desktop))
         elif target["os"] == "darwin":
             for major in (
                 target["required_os_majors"] if required_only else target["admitted_os_majors"]
             ):
-                cells.append((target["id"], f"macos-{major}", "windowserver"))
+                cells.append((target["id"], f"macos-{major}", "windowserver", None))
         else:
-            cells.append((target["id"], "windows-11", "desktop"))
+            cells.append((target["id"], "windows-11", "desktop", None))
     return cells
 
 
@@ -204,6 +210,7 @@ def validate_declaration(data: dict) -> None:
         "target",
         "profile",
         "backend",
+        "desktop",
         "home",
         "configuration_root",
         "research_root",
@@ -220,6 +227,14 @@ def validate_declaration(data: dict) -> None:
         or data["schema_version"] != 1
     ):
         raise ProbeError("Admission keys or schema version differ from the probe contract.")
+    linux = isinstance(data["target"], str) and data["target"].startswith("linux-")
+    desktop = data["desktop"]
+    if (
+        not (isinstance(desktop, str) and desktop in DESKTOP_SESSIONS)
+        if linux
+        else desktop is not None
+    ):
+        raise ProbeError("Declare GNOME or KDE on Linux and no desktop on other platforms.")
     if (
         data["kind"] != "independent-native-profile"
         or data["native"] is not True
@@ -256,8 +271,10 @@ def admission(file: Path) -> dict:
         raise ProbeError("Never launch native probes with an elevated account token.")
     if data["target"] != workspace.target_id():
         raise ProbeError("Host CPU/OS differs from the admitted native target.")
-    if (data["target"], data["profile"], data["backend"]) not in profile_cells():
-        raise ProbeError("The native profile/backend is outside the selected target contract.")
+    if tuple(data[key] for key in SCOPE) not in profile_cells():
+        raise ProbeError(
+            "The native profile/backend/desktop is outside the selected target contract."
+        )
     home = real_directory(data["home"])
     if home != account_home() or home != Path.home().resolve():
         raise ProbeError(
@@ -537,6 +554,7 @@ def prepare(admission_file: Path, scenario: str = "journey") -> Path:
             "target": data["target"],
             "profile": data["profile"],
             "backend": data["backend"],
+            "desktop": data["desktop"],
         },
     )
     return attempt
@@ -555,6 +573,12 @@ def run(admission_file: Path, attempt: Path) -> None:
         and os.environ.get("XDG_SESSION_TYPE") != data["backend"]
     ):
         raise ProbeError("Linux login session differs from the admitted display backend.")
+    if data["target"].startswith("linux-") and (
+        DESKTOP_SESSIONS[data["desktop"]]
+        not in os.environ.get("XDG_CURRENT_DESKTOP", "").split(":")
+        or (data["desktop"] == "kde" and os.environ.get("KDE_SESSION_VERSION") != "6")
+    ):
+        raise ProbeError("Linux login session differs from the admitted desktop.")
     if attempt.resolve().parent != Path(data["scratch_root"]):
         raise ProbeError("Run only a prepared attempt in the admitted scratch directory.")
     prepared = read_json(attempt / "prepared.json")
@@ -592,6 +616,7 @@ def run(admission_file: Path, attempt: Path) -> None:
         "XDG_CURRENT_DESKTOP",
         "XDG_SESSION_DESKTOP",
         "DESKTOP_SESSION",
+        "KDE_SESSION_VERSION",
         "XDG_DATA_DIRS",
         "DISPLAY",
         "WAYLAND_DISPLAY",
@@ -698,6 +723,7 @@ def run(admission_file: Path, attempt: Path) -> None:
                 "attempt_id": admitted["attempt_id"],
                 "profile": data["profile"],
                 "backend": data["backend"],
+                "desktop": data["desktop"],
                 "exit_code": result["exit_code"] if result else None,
                 "process_supervision": result,
                 "elapsed_ms": (time.monotonic_ns() - start) // 1_000_000,
@@ -744,12 +770,12 @@ def checked_native_record(directory: Path, scenario: str) -> tuple[dict, dict, d
         or execution["prepared_sha256"] != digest(directory / "prepared.json")
         or execution["admitted_sha256"] != digest(directory / "admitted.json")
         or execution["runtime_result_sha256"] != digest(directory / "observations/runtime.json")
-        or any(execution[key] != admitted[key] for key in ("target", "profile", "backend"))
+        or any(execution[key] != admitted[key] for key in SCOPE)
         or prepared["target"] != admitted["target"]
         or execution["attempt_id"] != admitted["attempt_id"]
         or admitted["admission_sha256"] != digest(directory / "admission.json")
         or declaration["host_evidence"]["sha256"] != digest(directory / "host-evidence.bin")
-        or any(declaration[key] != admitted[key] for key in ("target", "profile", "backend"))
+        or any(declaration[key] != admitted[key] for key in SCOPE)
         or execution["native_runtime_inventory_sha256"]
         != object_digest(prepared["runtime_inventory"])
     ):
@@ -953,7 +979,7 @@ def report(records: list[Path]) -> dict:
     for directory in records:
         try:
             prepared, admitted, execution, observed = checked_native_record(directory, "journey")
-            cell = tuple(admitted[key] for key in ("target", "profile", "backend"))
+            cell = tuple(admitted[key] for key in SCOPE)
             if cell not in admitted_cells or cell in passing:
                 raise ProbeError("Unexpected or duplicate native profile record.")
             cases = read_json(directory / "native-cases.json")
@@ -978,7 +1004,7 @@ def report(records: list[Path]) -> dict:
                     )
                 record = checked_native_record(file.parent, scenario)
                 if (
-                    tuple(record[1][key] for key in ("target", "profile", "backend")) != cell
+                    tuple(record[1][key] for key in SCOPE) != cell
                     or record[1]["attempt_id"] in attempt_ids
                 ):
                     raise ProbeError(
@@ -1003,6 +1029,7 @@ def report(records: list[Path]) -> dict:
                         "target",
                         "profile",
                         "backend",
+                        "desktop",
                         "source_inputs_sha256",
                         "runtime_inventory_sha256",
                         "execution_sha256",
@@ -1013,10 +1040,7 @@ def report(records: list[Path]) -> dict:
                         "limitations",
                     }
                     or observation["case_id"] != case_id
-                    or any(
-                        observation[key] != admitted[key]
-                        for key in ("target", "profile", "backend")
-                    )
+                    or any(observation[key] != admitted[key] for key in SCOPE)
                     or observation["source_inputs_sha256"] != object_digest(case_prepared["inputs"])
                     or observation["runtime_inventory_sha256"]
                     != object_digest(case_prepared["runtime_inventory"])

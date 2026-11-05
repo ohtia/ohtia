@@ -9,6 +9,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import quality_delivery as delivery
@@ -63,7 +64,7 @@ def admit_guest(selected: dict) -> dict:
     import pwd
 
     value = guard()
-    cycle.require(selected == cycle.cell(value["intent"]["profile"]), "guest_cell")
+    cycle.require(selected == cycle.intent_cell(value["intent"]), "guest_cell")
     account = pwd.getpwuid(os.getuid())
     cycle.require(
         account.pw_name == "ohtia-quality"
@@ -101,7 +102,7 @@ def admit_guest(selected: dict) -> dict:
 def seal() -> None:
     cycle.require(os.getuid() == 0, "package_seal_requires_root")
     value = guard()
-    selected = cycle.cell(value["intent"]["profile"])
+    selected = cycle.intent_cell(value["intent"])
     payload = Path("/opt/ohtia-quality")
     cycle.require(payload.is_dir() and not payload.is_symlink(), "package_install_missing")
     delivery.write(payload / "prepared.json", native.prepared_record(payload, selected))
@@ -111,7 +112,7 @@ def collect(output: Path, record: str) -> bytes:
     """Read a fixed completed report directly from the still-live private scratch tree."""
     identity = guard()["intent"]["identity"]
     if record == "compositor":
-        file = Path.home() / ".ohtia-qualification-gnome.log"
+        file = compositor_log(cycle.intent_cell(guard()["intent"])["desktop"])
         info = file.lstat()
         cycle.require(
             file.resolve() == file and stat.S_ISREG(info.st_mode) and info.st_nlink == 1,
@@ -168,7 +169,7 @@ def collect(output: Path, record: str) -> bytes:
 
 def smoke(output: Path) -> None:
     value = guard()
-    selected = cycle.cell(value["intent"]["profile"])
+    selected = cycle.intent_cell(value["intent"])
     value = admit_guest(selected)
     identity = value["intent"]["identity"]
     os.environ.update(
@@ -234,6 +235,51 @@ def smoke(output: Path) -> None:
     native.command([workspace.node_path(), "tooling/quality-profile.mjs", "retain-cloud", context])
 
 
+def compositor_log(desktop: str) -> Path:
+    name = {"gnome": "gnome", "kde": "plasma"}[desktop]
+    return Path.home() / f".ohtia-qualification-{name}.log"
+
+
+def plasma_display(value: dict, output: Path) -> int:
+    """KDE cells run the smoke inside the shared Plasma launcher on a private bus."""
+    runtime = Path(tempfile.mkdtemp(prefix="kde-", dir=Path.home()))
+    log = compositor_log("kde")
+    env = display_environment(value["intent"]["identity"], runtime)
+    env.pop("DBUS_SESSION_BUS_ADDRESS", None)
+    seconds = cycle.policy()["limits"]["test_seconds"]
+    try:
+        result = subprocess.run(
+            [
+                "dbus-run-session",
+                "--",
+                sys.executable,
+                str(cycle.ROOT / "scripts/plasma_session.py"),
+                "run",
+                "--runtime",
+                str(runtime),
+                "--log",
+                str(log),
+                "--timeout",
+                str(seconds),
+                "--",
+                sys.executable,
+                str(Path(__file__).absolute()),
+                "smoke",
+                str(output),
+            ],
+            cwd=cycle.ROOT,
+            env=env,
+            timeout=seconds + 120,
+            check=False,
+        )
+        return result.returncode
+    finally:
+        output.mkdir(exist_ok=True)
+        if log.is_file():
+            with log.open("rb") as incoming, (output / "compositor.log").open("xb") as target:
+                target.write(incoming.read(cycle.policy()["limits"]["maximum_json_bytes"]))
+
+
 def display_environment(identity: dict, runtime: Path) -> dict:
     env = {
         **native.build_environment(),
@@ -251,7 +297,10 @@ def display_environment(identity: dict, runtime: Path) -> dict:
 
 def display(output: Path) -> int:
     value = guard()
-    admit_guest(cycle.cell(value["intent"]["profile"]))
+    selected = cycle.intent_cell(value["intent"])
+    admit_guest(selected)
+    if selected["desktop"] == "kde":
+        return plasma_display(value, output)
     runtime = Path(f"/run/user/{os.getuid()}")
     env = display_environment(value["intent"]["identity"], runtime)
 
@@ -278,7 +327,7 @@ def display(output: Path) -> int:
         "XDG_CURRENT_DESKTOP",
     ]
     run(["dbus-update-activation-environment", "--systemd", *variables])
-    log = Path.home() / ".ohtia-qualification-gnome.log"
+    log = compositor_log("gnome")
     log.touch(mode=0o600, exist_ok=False)
     try:
         run(
@@ -400,7 +449,7 @@ def main() -> int:
             output == Path.home() / "result" and output.resolve() == output, "guest_output_path"
         )
         output_admitted = True
-        admit_guest(cycle.cell(guard()["intent"]["profile"]))
+        admit_guest(cycle.intent_cell(guard()["intent"]))
         if args.operation == "collect":
             sys.stdout.buffer.write(collect(output, args.record))
             return 0

@@ -18,6 +18,8 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlencode
 
+import linux_desktop
+
 ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = ROOT / "config/installation/scaleway.json"
 GUARD = Path("/run/ohtia-qualification.json")
@@ -401,6 +403,10 @@ SAFE_PROGRAMS = frozenset(
         "ssh-keygen",
         "ssh-keyscan",
         "gnome-shell",
+        "kwin_wayland",
+        "plasmashell",
+        "dbus-run-session",
+        "dbus-send",
         "gdbus",
         "dbus-update-activation-environment",
         "systemd-run",
@@ -813,17 +819,37 @@ def configuration(profile: str | None = None) -> dict:
     return result
 
 
-def cell(profile: str) -> dict:
+def cell(profile: str, desktop: str) -> dict:
     selected = policy()["profiles"].get(profile)
     require(selected is not None, "unknown_profile")
+    require(desktop in linux_desktop.DESKTOPS, "unknown_desktop")
     return {
-        "id": f"{profile}-arm64-scaleway",
+        "id": linux_desktop.cell_id("linux-arm64", profile, desktop),
         "target": "linux-arm64",
         "profile": profile,
+        "desktop": desktop,
         "backend": "wayland",
         "filesystem": selected["filesystem"],
         "formats": [selected["format"]],
     }
+
+
+def build_cell(value: dict) -> dict:
+    """A build names its declared ARM64 cell; its desktop selects GNOME or KDE Plasma."""
+    selected = value.get("cell")
+    require(
+        isinstance(selected, dict)
+        and isinstance(selected.get("desktop"), str)
+        and isinstance(value.get("profile"), str),
+        "build_cell",
+    )
+    expected = cell(value["profile"], selected["desktop"])
+    require(selected == expected, "build_cell")
+    return expected
+
+
+def intent_cell(intent: dict) -> dict:
+    return build_cell(intent["build"])
 
 
 def validate_build(value: dict, *, historical: bool = False) -> None:
@@ -855,8 +881,9 @@ def validate_build(value: dict, *, historical: bool = False) -> None:
         and re.fullmatch(r"[a-z][a-z0-9.-]{0,63}", value["profile"]) is not None,
         "build_profile",
     )
-    if historical:
-        selected = value["cell"]
+    selected = value["cell"]
+    if historical and isinstance(selected, dict) and "desktop" not in selected:
+        # Retained records from before the desktop dimension keep their recorded GNOME names.
         require(
             set(selected) == {"id", "target", "profile", "backend", "filesystem", "formats"}
             and selected["id"] == f"{value['profile']}-arm64-scaleway"
@@ -867,8 +894,23 @@ def validate_build(value: dict, *, historical: bool = False) -> None:
             and selected["formats"] in (["rpm"], ["deb"]),
             "build_cell",
         )
+    elif historical:
+        require(
+            isinstance(selected.get("desktop"), str)
+            and selected["desktop"] in linux_desktop.DESKTOPS
+            and selected.get("id")
+            == linux_desktop.cell_id("linux-arm64", value["profile"], selected["desktop"])
+            and set(selected)
+            == {"id", "target", "profile", "desktop", "backend", "filesystem", "formats"}
+            and selected["profile"] == value["profile"]
+            and selected["target"] == "linux-arm64"
+            and selected["backend"] == "wayland"
+            and selected["filesystem"] in {"btrfs", "ext4"}
+            and selected["formats"] in (["rpm"], ["deb"]),
+            "build_cell",
+        )
     else:
-        require(value["cell"] == cell(value["profile"]), "build_cell")
+        build_cell(value)
     identity = value["identity"]
     require(
         value["application_version"] == f"0.0.0-dev.{identity['run_id']}.{identity['attempt']}",

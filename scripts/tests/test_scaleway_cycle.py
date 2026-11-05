@@ -44,7 +44,7 @@ SNAPSHOT = "00000000-0000-4000-8000-000000000003"
 TOKEN = "synthetic-credential-for-tests"
 
 
-def fixtures(profile="fedora-44"):
+def fixtures(profile="fedora-44", desktop="gnome"):
     settings = {
         "project": PROJECT,
         "project_binding": hashlib.sha256(PROJECT.encode()).hexdigest(),
@@ -68,7 +68,7 @@ def fixtures(profile="fedora-44"):
         "version": 1,
         "identity": identity,
         "profile": profile,
-        "cell": cycle.cell(profile),
+        "cell": cycle.cell(profile, desktop),
         "application_version": "0.0.0-dev.101.1",
         "source_tree": "d" * 40,
         "policy_sha256": cycle.digest(cycle.POLICY_PATH),
@@ -672,6 +672,95 @@ class CycleTests(unittest.TestCase):
                 )
                 self.assertIn(package, value["packages"])
 
+    def test_cells_name_the_arm64_target_profile_and_desktop(self):
+        for profile in ("fedora-44", "debian-13"):
+            for desktop in ("gnome", "kde"):
+                with self.subTest(profile=profile, desktop=desktop):
+                    selected = cycle.cell(profile, desktop)
+                    self.assertEqual(
+                        selected["id"], f"linux-arm64-{profile.replace('.', '-')}-{desktop}"
+                    )
+                    self.assertEqual(selected["desktop"], desktop)
+        for desktop in ("xfce", "KDE", None):
+            with self.subTest(desktop=desktop), self.assertRaises(cycle.CycleError):
+                cycle.cell("fedora-44", desktop)
+
+    def test_build_cell_must_match_its_profile_and_declared_desktop(self):
+        _, intent = fixtures("debian-13", "kde")
+        self.assertEqual(cycle.intent_cell(intent)["id"], "linux-arm64-debian-13-kde")
+        for change in (
+            {"desktop": "xfce"},
+            {"id": "debian-13-arm64-scaleway"},
+            {"profile": "fedora-44"},
+        ):
+            build = copy.deepcopy(intent["build"])
+            build["cell"].update(change)
+            with self.subTest(change=change), self.assertRaises(cycle.CycleError):
+                cycle.validate_build(build)
+        build = copy.deepcopy(intent["build"])
+        del build["cell"]["desktop"]
+        with self.assertRaises(cycle.CycleError):
+            cycle.validate_build(build)
+
+    def test_historical_builds_keep_their_recorded_pre_desktop_names(self):
+        _, intent = fixtures("fedora-44")
+        build = copy.deepcopy(intent["build"])
+        build["cell"] = {
+            "id": "fedora-44-arm64-scaleway",
+            "target": "linux-arm64",
+            "profile": "fedora-44",
+            "backend": "wayland",
+            "filesystem": "btrfs",
+            "formats": ["rpm"],
+        }
+        cycle.validate_build(build, historical=True)
+        with self.assertRaises(cycle.CycleError):
+            cycle.validate_build(build)
+        build["cell"]["id"] = "fedora-44-arm64-other"
+        with self.assertRaises(cycle.CycleError):
+            cycle.validate_build(build, historical=True)
+        _, current = fixtures("debian-13", "kde")
+        cycle.validate_build(current["build"], historical=True)
+
+    def test_guest_readiness_requires_each_desktop_session_command(self):
+        import scaleway_bootstrap
+
+        kde = scaleway_bootstrap.required_commands("kde")
+        gnome = scaleway_bootstrap.required_commands("gnome")
+        for command in ("kwin_wayland", "plasmashell", "dbus-run-session", "dbus-send"):
+            self.assertIn(command, kde)
+        self.assertNotIn("gnome-shell", kde)
+        self.assertIn("gnome-shell", gnome)
+        for desktop in (None, "xfce"):
+            with self.subTest(desktop=desktop), self.assertRaises(ValueError):
+                scaleway_bootstrap.required_commands(desktop)
+
+    def test_kde_cloud_config_installs_the_official_set_without_gnome(self):
+        for profile, identity in (
+            ("fedora-44", "fedora-release-identity-kde-desktop"),
+            ("debian-13", "task-kde-desktop"),
+        ):
+            with self.subTest(profile=profile):
+                _, intent = fixtures(profile, "kde")
+                resources = {kind: str(uuid.uuid4()) for kind in cycle.KINDS}
+                value = json.loads(
+                    qualification.cloud_config(intent, resources, self.key)
+                    .decode()
+                    .split("\n", 1)[1]
+                )
+                text = json.dumps(value["runcmd"])
+                self.assertNotIn("packages", value)
+                self.assertNotIn("gnome-shell", text)
+                self.assertNotIn("gnome-session", text)
+                self.assertNotIn("fedora-release-identity-workstation", text)
+                installs = [c for c in value["runcmd"] if isinstance(c, list) and "install" in c]
+                self.assertTrue(any(identity in command for command in installs))
+                for command in installs:
+                    if "apt-get" in command:
+                        self.assertIn("--no-install-recommends", command)
+                    if "@kde-desktop" in command:
+                        self.assertIn("--setopt=install_weak_deps=False", command)
+
     def test_debian_cloud_config_uses_concrete_time64_packages(self):
         _, intent = fixtures("debian-13")
         resources = {kind: str(uuid.uuid4()) for kind in cycle.KINDS}
@@ -814,7 +903,7 @@ class CycleTests(unittest.TestCase):
             patch("scaleway_guest.admit_guest", side_effect=cycle.CycleError("guest_not_ready")),
         ):
             with self.assertRaisesRegex(cycle.CycleError, "guest_not_ready"):
-                quality_native.host_matches(cycle.cell("fedora-44"), external_guard={})
+                quality_native.host_matches(cycle.cell("fedora-44", "gnome"), external_guard={})
 
 
 class TransportTests(unittest.TestCase):
@@ -2088,6 +2177,36 @@ class EvidenceTests(unittest.TestCase):
                 self.assertEqual(failure["code"], cycle.failure_code(error))
                 self.assertFalse((output / "result.json").exists())
 
+    def test_kde_guest_runs_the_smoke_in_the_shared_plasma_launcher(self):
+        _, intent = fixtures("fedora-44", "kde")
+        output = self.root / "result"
+        calls = []
+
+        def execute(arguments, **options):
+            calls.append([str(argument) for argument in arguments])
+            self.assertNotIn("DBUS_SESSION_BUS_ADDRESS", options["env"])
+            log = Path(arguments[arguments.index("--log") + 1])
+            log.write_bytes(b"plasma")
+            return subprocess.CompletedProcess(arguments, 0)
+
+        with (
+            patch.object(Path, "home", return_value=self.root),
+            patch.object(guest_probe, "guard", return_value={"intent": intent}),
+            patch.object(guest_probe, "admit_guest") as admitted,
+            patch.object(guest_probe.subprocess, "run", side_effect=execute),
+        ):
+            self.assertEqual(guest_probe.display(output), 0)
+        admitted.assert_called_once_with(cycle.intent_cell(intent))
+        self.assertEqual(len(calls), 1)
+        command = calls[0]
+        self.assertEqual(command[:2], ["dbus-run-session", "--"])
+        self.assertTrue(command[3].endswith("scripts/plasma_session.py"))
+        self.assertEqual(command[4], "run")
+        self.assertEqual(command[-2:], ["smoke", str(output)])
+        self.assertEqual(Path(command[command.index("--runtime") + 1]).parent, self.root)
+        self.assertEqual((output / "compositor.log").read_bytes(), b"plasma")
+        self.assertNotIn("systemd-run", " ".join(command))
+
     def test_invalid_compositor_identity_retains_a_safe_display_failure(self):
         output = self.root / "result"
         with (
@@ -2215,7 +2334,7 @@ class EvidenceTests(unittest.TestCase):
             "status": "failed",
             "identity": self.intent["identity"],
             "build": self.intent["build"],
-            "cell": cycle.cell(self.intent["profile"]),
+            "cell": cycle.intent_cell(self.intent),
             "distribution_qualified": False,
             "publisher_signed": False,
         }

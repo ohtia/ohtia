@@ -1,5 +1,5 @@
 name: Installation ARM qualification
-run-name: ARM qualification · ${{ inputs.profile }} · fault=${{ inputs.fault }}
+run-name: ARM qualification · ${{ inputs.profile }} · ${{ inputs.desktop }} · fault=${{ inputs.fault }}
 
 on:
   workflow_dispatch:
@@ -9,6 +9,11 @@ on:
         required: true
         type: choice
         options: [fedora-44, debian-13]
+      desktop:
+        description: Native Linux desktop of the cell
+        required: true
+        type: choice
+        options: [gnome, kde]
       fault:
         description: Intentionally lose the controller after native smoke on this same VM
         required: true
@@ -82,7 +87,8 @@ jobs:
       - name: Construct the selected package and probe harness
         env:
           QUALIFICATION_PROFILE: ${{ inputs.profile }}
-        run: python3 scripts/scaleway_build.py "$QUALIFICATION_PROFILE" artifacts/scw-build
+          QUALIFICATION_DESKTOP: ${{ inputs.desktop }}
+        run: python3 scripts/scaleway_build.py "$QUALIFICATION_PROFILE" "$QUALIFICATION_DESKTOP" artifacts/scw-build
       - name: Retain exact unsigned build inputs
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

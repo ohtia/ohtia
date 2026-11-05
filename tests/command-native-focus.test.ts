@@ -38,9 +38,10 @@ function fixture() {
     },
   };
 }
-function ownedWayland() {
+function ownedWayland(desktop = "GNOME") {
   vi.stubEnv("OHTIA_NATIVE_COMPOSITOR_PID", "42");
   vi.stubEnv("XDG_SESSION_TYPE", "wayland");
+  vi.stubEnv("XDG_CURRENT_DESKTOP", desktop);
 }
 describe("actual focus gate with controlled native and input adapters", () => {
   it("preserves successful focus, initiating failure and later cleanup history together", async () => {
@@ -179,6 +180,44 @@ describe("actual focus gate with controlled native and input adapters", () => {
         { timeout: 10000, maxBuffer: 4096 },
       );
     },
+  );
+  it.runIf(process.platform === "linux")(
+    "activates the application's own process through KWin on a Plasma session",
+    async () => {
+      ownedWayland("KDE");
+      const target = fixture();
+      input.execute.mockImplementation(target.activate);
+      expect(await focusNative(target.handle)).toEqual({
+        target: "window",
+        strategy: "headless KWin script activation",
+        compositorInputAttempts: 1,
+        focused: true,
+      });
+      expect(input.execute).toHaveBeenCalledWith(
+        "/usr/bin/python3",
+        [expect.stringMatching(/quality_kwin_focus\.py$/), String(process.pid)],
+        { timeout: 10000, maxBuffer: 4096 },
+      );
+    },
+  );
+  it.runIf(process.platform === "linux")(
+    "rejects KWin activation without actual focus after three attempts",
+    async () => {
+      ownedWayland("KDE");
+      const target = fixture();
+      try {
+        await focusNative(target.handle, "peer");
+        expect.unreachable("Script completion must not qualify OS focus.");
+      } catch (error) {
+        expect(nativeFocusFailure(error)).toMatchObject({
+          strategy: "headless KWin script activation",
+          compositorInputAttempts: 3,
+          focused: false,
+        });
+      }
+      expect(input.execute).toHaveBeenCalledTimes(3);
+    },
+    15000,
   );
   it.runIf(process.platform === "linux")(
     "does not equate a successful cycle of another window with target focus",

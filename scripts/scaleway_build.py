@@ -83,7 +83,7 @@ def harness(root: Path, destination: Path) -> None:
     )
 
 
-def build(profile: str, output: Path) -> dict:
+def build(profile: str, desktop: str, output: Path) -> dict:
     identity = cycle.source_context("build")
     cycle.require(
         not any(
@@ -93,7 +93,7 @@ def build(profile: str, output: Path) -> dict:
         ),
         "credentialed_builder",
     )
-    selected = cycle.cell(profile)
+    selected = cycle.cell(profile, desktop)
     cycle.require(not output.exists(), "fresh_build_output")
     output.mkdir(parents=True)
     version = f"0.0.0-dev.{identity['run_id']}.{identity['attempt']}"
@@ -135,10 +135,11 @@ def build(profile: str, output: Path) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("profile", choices=list(cycle.policy()["profiles"]))
+    parser.add_argument("desktop", choices=list(cycle.linux_desktop.DESKTOPS))
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
     try:
-        build(args.profile, args.output.absolute())
+        build(args.profile, args.desktop, args.output.absolute())
         return 0
     except (OSError, ValueError, KeyError, TypeError, RuntimeError):
         print("ARM qualification package construction failed; no cloud resources were requested.")

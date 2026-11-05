@@ -21,13 +21,24 @@
         "libatspi2.0-0t64",
         "apparmor",
         "dbus-user-session",
-        "gnome-shell",
-        "gnome-session",
         "xdg-utils",
         "unzip",
         "zip",
         "python3-gi"
       ],
+      "desktops": {
+        "gnome": ["gnome-shell", "gnome-session"],
+        "kde": [
+          "kwin-wayland",
+          "plasma-workspace",
+          "dbus-bin",
+          "at-spi2-core",
+          "xdg-desktop-portal-kde",
+          "xsettingsd",
+          "breeze-gtk-theme",
+          "kde-config-gtk-style"
+        ]
+      },
       "sources": ["https://packages.ubuntu.com/resolute/"]
     },
     "debian-13": {
@@ -50,13 +61,24 @@
         "libatspi2.0-0t64",
         "apparmor",
         "dbus-user-session",
-        "gnome-shell",
-        "gnome-session",
         "xdg-utils",
         "unzip",
         "zip",
         "python3-gi"
       ],
+      "desktops": {
+        "gnome": ["gnome-shell", "gnome-session"],
+        "kde": [
+          "kwin-wayland",
+          "plasma-workspace",
+          "dbus-bin",
+          "at-spi2-core",
+          "xdg-desktop-portal-kde",
+          "xsettingsd",
+          "breeze-gtk-theme",
+          "kde-config-gtk-style"
+        ]
+      },
       "sources": ["https://packages.debian.org/trixie/"]
     },
     "fedora-44": {
@@ -81,8 +103,6 @@
         "at-spi2-atk",
         "policycoreutils",
         "dbus-daemon",
-        "gnome-shell",
-        "gnome-session",
         "xdg-utils",
         "rpm-build",
         "unzip",
@@ -90,6 +110,19 @@
         "libxcrypt-compat",
         "python3-gobject"
       ],
+      "desktops": {
+        "gnome": ["gnome-shell", "gnome-session"],
+        "kde": [
+          "kwin",
+          "plasma-workspace",
+          "dbus-tools",
+          "at-spi2-core",
+          "xdg-desktop-portal-kde",
+          "xsettingsd",
+          "breeze-gtk-gtk3",
+          "kde-gtk-config"
+        ]
+      },
       "sources": ["https://packages.fedoraproject.org/"]
     }
   }

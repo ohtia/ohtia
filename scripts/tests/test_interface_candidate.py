@@ -45,7 +45,7 @@ class CandidateTests(unittest.TestCase):
     def test_binds_actual_packages_catalog_and_assets_to_both_streams(self):
         result = self.freeze()
         self.assertEqual(result["verification_streams"], ["STORY-002-010", "STORY-002-011"])
-        self.assertEqual(len(result["packages"]), 10)
+        self.assertEqual(len(result["packages"]), 14)
         self.assertEqual(result["source_tree"], self.tree)
         self.assertEqual(len(result["locales"]["files"]), 25)
         self.assertEqual(result, self.freeze())

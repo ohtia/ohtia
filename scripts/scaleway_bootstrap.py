@@ -291,14 +291,7 @@ def prepare() -> None:
     if profile == "fedora-44":
         run("restorecon", "-RF", str(home))
     run("loginctl", "enable-linger", "ohtia-quality")
-    commands = (
-        "gnome-shell",
-        "gdbus",
-        "dbus-update-activation-environment",
-        "systemd-run",
-        "sudo",
-        "ss",
-    )
+    commands = required_commands(guard["intent"]["build"]["cell"].get("desktop"))
     if not all(shutil.which(command) for command in commands):
         raise ValueError("guest_required_command")
     # Make completion contingent on an already armed shutdown timer and an ordinary locked account.
@@ -311,6 +304,31 @@ def prepare() -> None:
     temporary.chmod(0o644)
     os.replace(temporary, GUARD)
     Path("/var/lib/ohtia-qualification-ready").touch(exist_ok=False)
+
+
+def required_commands(desktop: str | None) -> tuple[str, ...]:
+    """Name the session commands each desktop's guest must provide before readiness."""
+    if desktop == "kde":
+        # Plasma runs through the shared launcher on its own private bus.
+        return (
+            "kwin_wayland",
+            "plasmashell",
+            "dbus-run-session",
+            "dbus-send",
+            "dbus-update-activation-environment",
+            "sudo",
+            "ss",
+        )
+    if desktop == "gnome":
+        return (
+            "gnome-shell",
+            "gdbus",
+            "dbus-update-activation-environment",
+            "systemd-run",
+            "sudo",
+            "ss",
+        )
+    raise ValueError("guest_desktop")
 
 
 def artifact(file: Path, record: dict) -> None:

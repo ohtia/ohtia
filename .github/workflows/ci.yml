@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   checks:
-    name: full-suite (ubuntu-26.04-x64)
+    name: full-suite (linux-x64-ubuntu-26-04)
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
@@ -150,22 +150,42 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - id: ubuntu-26-04-x64-wayland
+          - id: linux-x64-ubuntu-26-04-gnome
             runner: ubuntu-26.04
-          - id: ubuntu-26-04-arm64-wayland
+            launcher: display-session
+          - id: linux-x64-ubuntu-26-04-kde
+            runner: ubuntu-26.04
+            launcher: display-session
+          - id: linux-arm64-ubuntu-26-04-gnome
             runner: ubuntu-26.04-arm
-          - id: windows-x64
+            launcher: display-session
+          - id: linux-arm64-ubuntu-26-04-kde
+            runner: ubuntu-26.04-arm
+            launcher: display-session
+          - id: win32-x64-windows-server-2025
             runner: windows-2025
-          - id: windows-arm64
+            launcher: workspace
+          - id: win32-arm64-windows-11
             runner: windows-11-arm
-          - id: macos-26-arm64
+            launcher: workspace
+          - id: darwin-arm64-macos-26
             runner: macos-26
-          - id: macos-27-arm64
+            launcher: workspace
+          - id: darwin-arm64-macos-27
             runner: xcode-27
-          - id: fedora-44-x64-vm
+            launcher: workspace
+          - id: linux-x64-fedora-44-gnome
             runner: ubuntu-26.04
-          - id: debian-13-x64-vm
+            launcher: kvm
+          - id: linux-x64-fedora-44-kde
             runner: ubuntu-26.04
+            launcher: kvm
+          - id: linux-x64-debian-13-gnome
+            runner: ubuntu-26.04
+            launcher: kvm
+          - id: linux-x64-debian-13-kde
+            runner: ubuntu-26.04
+            launcher: kvm
     steps:
       - name: Check out source with full Git history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -209,33 +229,43 @@ jobs:
 
       - name: Prepare native Linux dependencies
         if: runner.os == 'Linux'
+        env:
+          OHTIA_QUALITY_CELL: ${{ matrix.id }}
+          OHTIA_QUALITY_LAUNCHER: ${{ matrix.launcher }}
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y qemu-system-x86 qemu-utils cloud-image-utils gnome-shell gnome-session python3-gi dbus-user-session xdg-utils iproute2 acl libgtk-3-0t64 libnss3 libasound2t64 libgbm1 libxss1 libxtst6 libsecret-1-0 libnotify4 libatspi2.0-0 apparmor
+          # A KDE cell installs the official Kubuntu desktop without recommended packages and never GNOME.
+          if [[ "$OHTIA_QUALITY_LAUNCHER" == kvm && "$OHTIA_QUALITY_CELL" == *-kde ]]; then
+            sudo apt-get install --no-install-recommends -y qemu-system-x86 qemu-utils cloud-image-utils iproute2 acl
+          elif [[ "$OHTIA_QUALITY_CELL" == *-kde ]]; then
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y kubuntu-desktop qemu-system-x86 qemu-utils cloud-image-utils python3-gi dbus-user-session xdg-utils iproute2 acl libgtk-3-0t64 libnss3 libasound2t64 libgbm1 libxss1 libxtst6 libsecret-1-0 libnotify4 libatspi2.0-0 apparmor at-spi2-core xdg-desktop-portal-kde xsettingsd breeze-gtk-theme kde-config-gtk-style
+          else
+            sudo apt-get install --no-install-recommends -y qemu-system-x86 qemu-utils cloud-image-utils gnome-shell gnome-session python3-gi dbus-user-session xdg-utils iproute2 acl libgtk-3-0t64 libnss3 libasound2t64 libgbm1 libxss1 libxtst6 libsecret-1-0 libnotify4 libatspi2.0-0 apparmor
+          fi
           dpkg-query -W > "$RUNNER_TEMP/ohtia-native-packages.txt"
 
       - name: Prepare native VM acceleration
-        if: endsWith(matrix.id, '-vm')
+        if: matrix.launcher == 'kvm'
         run: |
           test -c /dev/kvm
           sudo setfacl -m "u:$(id -u):rw" /dev/kvm
           test -r /dev/kvm && test -w /dev/kvm
 
       - name: Set up frozen workspace
-        if: ${{ !endsWith(matrix.id, '-vm') }}
+        if: matrix.launcher != 'kvm'
         run: python scripts/workspace.py setup
 
       - name: Build and smoke-test native packages
         env:
           OHTIA_QUALITY_CELL: ${{ matrix.id }}
+          OHTIA_QUALITY_LAUNCHER: ${{ matrix.launcher }}
         run: |
-          if [[ "$OHTIA_QUALITY_CELL" == *-vm ]]; then
-            python scripts/quality_vm.py "$OHTIA_QUALITY_CELL" artifacts/quality-result
-          elif [[ "$OHTIA_QUALITY_CELL" == *-wayland ]]; then
-            dbus-run-session -- python scripts/quality_display.py "$OHTIA_QUALITY_CELL" artifacts/quality-result
-          else
-            python scripts/workspace.py run quality:build "$OHTIA_QUALITY_CELL" artifacts/quality-result
-          fi
+          case "$OHTIA_QUALITY_LAUNCHER" in
+            kvm) python scripts/quality_vm.py "$OHTIA_QUALITY_CELL" artifacts/quality-result ;;
+            display-session) dbus-run-session -- python scripts/quality_display.py "$OHTIA_QUALITY_CELL" artifacts/quality-result ;;
+            workspace) python scripts/workspace.py run quality:build "$OHTIA_QUALITY_CELL" artifacts/quality-result ;;
+            *) echo "Unknown native cell launcher." >&2; exit 1 ;;
+          esac
 
       - name: Retain native quality artifacts
         if: always()

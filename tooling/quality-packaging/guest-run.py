@@ -4,11 +4,16 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 home = Path("/home/ohtia-quality")
 env = {**os.environ, **json.loads((home / "environment.json").read_text())}
 source = home / "source"
+# The cell identifier ends with its desktop: <target>-<profile>-<desktop>.
+desktop = env["OHTIA_QUALITY_VM"].rsplit("-", 1)[-1]
+if desktop not in {"gnome", "kde"}:
+    raise SystemExit("The guest cell must name its GNOME or KDE desktop.")
 subprocess.run(
     ["git", "clone", "--no-checkout", str(home / "source.bundle"), str(source)], check=True
 )
@@ -29,34 +34,181 @@ for operation in (["daemon-reload"], ["start", "dbus.socket"]):
     )
 if not bus.is_socket() or bus.stat().st_uid != os.getuid():
     raise SystemExit("The guest account's native D-Bus socket is unavailable.")
-subprocess.run(
-    [
-        "gdbus",
-        "call",
-        "--session",
-        "--dest",
-        "org.freedesktop.DBus",
-        "--object-path",
-        "/org/freedesktop/DBus",
-        "--method",
-        "org.freedesktop.DBus.GetId",
-    ],
-    env=env,
-    stdout=subprocess.DEVNULL,
-    check=True,
-    timeout=10,
-)
-# Socket activation starts the daemon; wait for the manager's bus name before
-# relying on systemd-backed desktop activation. This is a readiness wait, not a retry.
-subprocess.run(
-    ["gdbus", "wait", "--session", "--timeout=8", "org.freedesktop.systemd1"],
-    env=env,
-    stdout=subprocess.DEVNULL,
-    check=True,
-    timeout=10,
-)
+# GNOME activation uses this user bus; Plasma runs on its own private bus instead.
+if desktop == "gnome":
+    subprocess.run(
+        [
+            "gdbus",
+            "call",
+            "--session",
+            "--dest",
+            "org.freedesktop.DBus",
+            "--object-path",
+            "/org/freedesktop/DBus",
+            "--method",
+            "org.freedesktop.DBus.GetId",
+        ],
+        env=env,
+        stdout=subprocess.DEVNULL,
+        check=True,
+        timeout=10,
+    )
+    # Socket activation starts the daemon; wait for the manager's bus name before
+    # relying on systemd-backed desktop activation. This is a readiness wait, not a retry.
+    subprocess.run(
+        ["gdbus", "wait", "--session", "--timeout=8", "org.freedesktop.systemd1"],
+        env=env,
+        stdout=subprocess.DEVNULL,
+        check=True,
+        timeout=10,
+    )
 os.environ.update(env)
+
+
+def retain_session_diagnostics(output: Path) -> None:
+    """Retain the bounded user journal and, on Fedora, the boot SELinux audit."""
+    try:
+        with (home / "user-session.log").open("x+b") as journal:
+            try:
+                subprocess.run(
+                    [
+                        "/usr/bin/journalctl",
+                        "--user",
+                        "--boot",
+                        "--lines=100",
+                        "--no-pager",
+                    ],
+                    env=env,
+                    stdin=subprocess.DEVNULL,
+                    stdout=journal,
+                    stderr=subprocess.STDOUT,
+                    timeout=5,
+                    check=False,
+                )
+            finally:
+                journal.flush()
+                with (output / "user-session.log").open("xb") as retained:
+                    retained.write(os.pread(journal.fileno(), 64 * 1024, 0))
+    except (OSError, subprocess.SubprocessError) as error:
+        print(
+            f"Guest user-session diagnostics could not be retained: {type(error).__name__}",
+            file=sys.stderr,
+        )
+    if env["OHTIA_QUALITY_VM"].startswith("linux-x64-fedora-44-"):
+        try:
+            service = subprocess.run(
+                ["/usr/bin/systemctl", "is-active", "auditd"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            auditd = {
+                "exit_code": service.returncode,
+                "state": (service.stdout or "").strip()[:32],
+            }
+        except (OSError, subprocess.SubprocessError) as error:
+            auditd = {"exit_code": None, "error_type": type(error).__name__}
+        try:
+            descriptor = os.open(
+                home / "selinux-audit.log", os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600
+            )
+            with os.fdopen(descriptor, "r+b") as audit:
+                status = {
+                    "exit_code": None,
+                    "watchdog": False,
+                    "query": "boot AVC,USER_AVC",
+                    "auditd": auditd,
+                    "retained_byte_limit": 256 * 1024,
+                }
+                try:
+                    query = subprocess.run(
+                        [
+                            "/usr/bin/sudo",
+                            "-n",
+                            "/usr/bin/timeout",
+                            "--signal=TERM",
+                            "--kill-after=1s",
+                            "8s",
+                            "/usr/sbin/ausearch",
+                            "--input-logs",
+                            "-m",
+                            "AVC,USER_AVC",
+                            "-ts",
+                            "boot",
+                            "--raw",
+                        ],
+                        stdin=subprocess.DEVNULL,
+                        stdout=audit,
+                        stderr=subprocess.STDOUT,
+                        timeout=12,
+                        check=False,
+                    )
+                    status["exit_code"] = query.returncode
+                except subprocess.TimeoutExpired:
+                    status["watchdog"] = True
+                except (OSError, subprocess.SubprocessError) as error:
+                    status["error_type"] = type(error).__name__
+                finally:
+                    audit.flush()
+                    status["truncated"] = os.fstat(audit.fileno()).st_size > 256 * 1024
+                    with (output / "selinux-audit.log").open("xb") as retained:
+                        retained.write(os.pread(audit.fileno(), 256 * 1024, 0))
+                    with (output / "selinux-audit.json").open("x", encoding="utf-8") as receipt:
+                        json.dump(status, receipt)
+        except OSError as error:
+            print(
+                f"Guest SELinux diagnostics could not be retained: {type(error).__name__}",
+                file=sys.stderr,
+            )
+
+
 subprocess.run(["python3", "scripts/workspace.py", "setup"], cwd=source, env=env, check=True)
+if desktop == "kde":
+    # Plasma runs on its own private bus through the shared launcher, never the user's GNOME path.
+    output = source / "artifacts" / "quality-result"
+    runtime = Path(tempfile.mkdtemp(prefix="kde-", dir=home))
+    plasma_log = home / "plasma.log"
+    plasma_env = {key: value for key, value in env.items() if key != "DBUS_SESSION_BUS_ADDRESS"}
+    plasma_env.pop("DISPLAY", None)
+    try:
+        subprocess.run(
+            [
+                "dbus-run-session",
+                "--",
+                "python3",
+                "scripts/plasma_session.py",
+                "run",
+                "--runtime",
+                str(runtime),
+                "--log",
+                str(plasma_log),
+                "--",
+                "python3",
+                "scripts/workspace.py",
+                "run",
+                "quality:build",
+                env["OHTIA_QUALITY_VM"],
+                "artifacts/quality-result",
+            ],
+            cwd=source,
+            env=plasma_env,
+            check=True,
+        )
+    finally:
+        try:
+            output.mkdir(parents=True, exist_ok=True)
+            with plasma_log.open("rb") as log, (output / "plasma.log").open("xb") as retained:
+                retained.write(log.read(2 * 1024 * 1024))
+        except OSError as error:
+            print(
+                f"Guest compositor diagnostics could not be retained: {type(error).__name__}",
+                file=sys.stderr,
+            )
+        retain_session_diagnostics(output)
+    raise SystemExit(0)
 # Seed activation before GNOME can request services; publish its actual socket later.
 env.pop("DISPLAY", None)
 subprocess.run(
@@ -254,101 +406,4 @@ with (home / "gnome.log").open("x+b") as log:
                         f"Guest compositor diagnostics could not be retained: {type(error).__name__}",
                         file=sys.stderr,
                     )
-                try:
-                    with (home / "user-session.log").open("x+b") as journal:
-                        try:
-                            subprocess.run(
-                                [
-                                    "/usr/bin/journalctl",
-                                    "--user",
-                                    "--boot",
-                                    "--lines=100",
-                                    "--no-pager",
-                                ],
-                                env=env,
-                                stdin=subprocess.DEVNULL,
-                                stdout=journal,
-                                stderr=subprocess.STDOUT,
-                                timeout=5,
-                                check=False,
-                            )
-                        finally:
-                            journal.flush()
-                            with (output / "user-session.log").open("xb") as retained:
-                                retained.write(os.pread(journal.fileno(), 64 * 1024, 0))
-                except (OSError, subprocess.SubprocessError) as error:
-                    print(
-                        f"Guest user-session diagnostics could not be retained: {type(error).__name__}",
-                        file=sys.stderr,
-                    )
-                if env["OHTIA_QUALITY_VM"] == "fedora-44-x64-vm":
-                    try:
-                        service = subprocess.run(
-                            ["/usr/bin/systemctl", "is-active", "auditd"],
-                            stdin=subprocess.DEVNULL,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.DEVNULL,
-                            text=True,
-                            timeout=5,
-                            check=False,
-                        )
-                        auditd = {
-                            "exit_code": service.returncode,
-                            "state": (service.stdout or "").strip()[:32],
-                        }
-                    except (OSError, subprocess.SubprocessError) as error:
-                        auditd = {"exit_code": None, "error_type": type(error).__name__}
-                    try:
-                        descriptor = os.open(
-                            home / "selinux-audit.log", os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600
-                        )
-                        with os.fdopen(descriptor, "r+b") as audit:
-                            status = {
-                                "exit_code": None,
-                                "watchdog": False,
-                                "query": "boot AVC,USER_AVC",
-                                "auditd": auditd,
-                                "retained_byte_limit": 256 * 1024,
-                            }
-                            try:
-                                query = subprocess.run(
-                                    [
-                                        "/usr/bin/sudo",
-                                        "-n",
-                                        "/usr/bin/timeout",
-                                        "--signal=TERM",
-                                        "--kill-after=1s",
-                                        "8s",
-                                        "/usr/sbin/ausearch",
-                                        "--input-logs",
-                                        "-m",
-                                        "AVC,USER_AVC",
-                                        "-ts",
-                                        "boot",
-                                        "--raw",
-                                    ],
-                                    stdin=subprocess.DEVNULL,
-                                    stdout=audit,
-                                    stderr=subprocess.STDOUT,
-                                    timeout=12,
-                                    check=False,
-                                )
-                                status["exit_code"] = query.returncode
-                            except subprocess.TimeoutExpired:
-                                status["watchdog"] = True
-                            except (OSError, subprocess.SubprocessError) as error:
-                                status["error_type"] = type(error).__name__
-                            finally:
-                                audit.flush()
-                                status["truncated"] = os.fstat(audit.fileno()).st_size > 256 * 1024
-                                with (output / "selinux-audit.log").open("xb") as retained:
-                                    retained.write(os.pread(audit.fileno(), 256 * 1024, 0))
-                                with (output / "selinux-audit.json").open(
-                                    "x", encoding="utf-8"
-                                ) as receipt:
-                                    json.dump(status, receipt)
-                    except OSError as error:
-                        print(
-                            f"Guest SELinux diagnostics could not be retained: {type(error).__name__}",
-                            file=sys.stderr,
-                        )
+                retain_session_diagnostics(output)

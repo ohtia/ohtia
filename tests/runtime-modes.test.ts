@@ -12,6 +12,7 @@ import {
 } from "@ohtia/contracts";
 import {
   developmentRootLocation,
+  nativeEnvironment,
   prepareDevelopmentRoot,
   shortTemporaryDirectory,
   waitForDesktop,
@@ -447,5 +448,31 @@ describe("workspace entries", () => {
     const result = command("desktop:launch");
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("desktop:launch <absolute-runtime-profile.json>");
+  });
+});
+
+describe("native session environment", () => {
+  it("passes the Plasma session version that Chromium needs and no other session secrets", () => {
+    vi.stubEnv("XDG_CURRENT_DESKTOP", "KDE");
+    vi.stubEnv("KDE_SESSION_VERSION", "6");
+    vi.stubEnv("XDG_SESSION_TYPE", "wayland");
+    vi.stubEnv("WAYLAND_DISPLAY", "wayland-ohtia");
+    vi.stubEnv("KDE_FULL_SESSION", "true");
+    vi.stubEnv("AWS_SECRET_ACCESS_KEY", "synthetic-unforwarded");
+    try {
+      const env = nativeEnvironment({
+        home: "/home/synthetic",
+        username: "synthetic",
+        configurationRoot: "/home/synthetic/.config",
+        scratch: "/home/synthetic/scratch",
+      });
+      expect(env.XDG_CURRENT_DESKTOP).toBe("KDE");
+      expect(env.KDE_SESSION_VERSION).toBe("6");
+      expect(env.WAYLAND_DISPLAY).toBe("wayland-ohtia");
+      expect(env.KDE_FULL_SESSION).toBeUndefined();
+      expect(env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

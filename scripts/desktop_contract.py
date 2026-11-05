@@ -255,6 +255,10 @@ def check_targets(record: dict[str, Any]) -> None:
                     profile.get("display_backends") == ["wayland"],
                     "Declared native display backend coverage differs",
                 )
+                require(
+                    profile.get("desktops") == ["gnome", "kde"],
+                    "Every Linux profile requires its GNOME and KDE Plasma desktops",
+                )
                 if fedora:
                     image = profile.get("qualification_image", {})
                     check_artifact(image)

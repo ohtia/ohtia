@@ -23,6 +23,8 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import desktop_runtime
+import linux_desktop
+import plasma_session
 import quality_native
 import workspace
 from probe_process import _signal_anchored_group, group_has_members, run_owned
@@ -65,13 +67,18 @@ def native_profile() -> tuple[str, dict, dict]:
         name in {p["id"] for p in profiles},
         "Unsupported Linux distribution/version. Use a declared Ubuntu, Debian or Fedora profile in config/desktop/targets.json.",
     )
-    if name == "fedora-44":
-        require(
-            release.get("VARIANT_ID") == "workstation",
-            "Use Fedora 44 Workstation with GNOME; another Fedora edition is not a qualified route.",
-        )
+    try:
+        desktop = linux_desktop.detect_desktop(name, release)
+    except linux_desktop.DesktopError as exc:
+        raise ContributorError(str(exc)) from None
     profile = next(p for p in profiles if p["id"] == name)
-    packages = read(ROOT / "config/desktop/linux-contributor.json")["profiles"][name]
+    route = read(ROOT / "config/desktop/linux-contributor.json")["profiles"][name]
+    packages = {
+        "manager": route["manager"],
+        "packages": [*route["packages"], *route["desktops"][desktop]],
+        "sources": route["sources"],
+        "desktop": desktop,
+    }
     return target, profile, packages
 
 
@@ -347,8 +354,8 @@ def doctor(
         )
     check(
         "display-session",
-        lambda: display_available(profile),
-        "Use this profile's native GNOME Wayland session; an X11 session is unqualified. Start the private session described in docs/linux-contribution.md for automated runs; SSH alone supplies no display.",
+        lambda: display_available(profile, packages["desktop"]),
+        "Use this profile's native GNOME or KDE Plasma 6 Wayland session; an X11 session is unqualified. Start the private session described in docs/linux-contribution.md for automated runs; SSH alone supplies no display.",
     )
     for name, executable, prefix in (
         ("node", workspace.node_path(), "v"),
@@ -437,11 +444,15 @@ def doctor(
     }
 
 
-def display_available(profile: dict) -> bool:
+def display_available(profile: dict, desktop: str) -> bool:
     backend = os.environ.get("XDG_SESSION_TYPE")
-    if backend not in profile["display_backends"]:
+    if backend not in profile["display_backends"] or desktop not in profile["desktops"]:
         return False
-    if "GNOME" not in os.environ.get("XDG_CURRENT_DESKTOP", "").split(":"):
+    if linux_desktop.CURRENT_DESKTOP[desktop] not in os.environ.get(
+        "XDG_CURRENT_DESKTOP", ""
+    ).split(":"):
+        return False
+    if desktop == "kde" and os.environ.get("KDE_SESSION_VERSION") != "6":
         return False
     directory = Path(os.environ.get("XDG_RUNTIME_DIR", "/nonexistent"))
     name = os.environ.get("WAYLAND_DISPLAY", "")
@@ -657,7 +668,7 @@ def session(runtime_profile: Path, runtime: Path, action: str, evidence: Path | 
 def private_session(
     runtime_profile: Path, runtime: Path, action: str, evidence: Path | None, cancelled
 ) -> int:
-    """Run one admitted command with an owned private bus and ready GNOME display."""
+    """Run one admitted command with an owned private bus and ready GNOME or Plasma display."""
     require(os.getuid() != 0, "Start the private session as the ordinary independent account.")
     context = inspect_context(runtime_profile, runtime, cancelled=cancelled)
     scratch = Path(context["scratch_root"])
@@ -680,20 +691,78 @@ def private_session(
             and evidence.parent.resolve().is_relative_to(scratch),
             "Use a new absolute evidence directory inside the admitted scratch root.",
         )
+    _, _, route = native_profile()
+    desktop = route["desktop"]
     ensure_session_active(cancelled)
     attempt = Path(tempfile.mkdtemp(prefix="contributor-wayland-", dir=scratch))
+
+    def run_action(env: dict[str, str]) -> int:
+        ensure_session_active(cancelled)
+        if action in {"smoke", "doctor"}:
+            with session_environment(env):
+                _, profile, packages = native_profile()
+                if action == "smoke":
+                    smoke(
+                        profile,
+                        packages["desktop"],
+                        runtime_profile,
+                        runtime,
+                        evidence,
+                        cancelled=cancelled,
+                    )
+                    return 0
+                result = doctor(profile, packages, runtime_profile, runtime, cancelled=cancelled)
+                ensure_session_active(cancelled)
+                print(json.dumps(result, indent=2))
+                return 0 if result["passed"] else 1
+        args = [
+            sys.executable,
+            "scripts/workspace.py",
+            "run",
+            action,
+            str(runtime_profile),
+            str(runtime),
+        ]
+        if evidence is not None:
+            args.append(str(evidence))
+        result = run_owned(args, ROOT, env, float("inf"), 5, cancelled=cancelled)
+        ensure_session_active(cancelled)
+        require(
+            not result["contained_processes_remaining_after_cleanup"],
+            "Native command cleanup is unverified. Preserve this attempt and inspect its owned command group before retrying.",
+        )
+        return result["exit_code"]
+
     with private_runtime_directory(context["stable_roots"]) as directory:
         env = quality_native.build_environment()
         env.update(
             {
                 "XDG_RUNTIME_DIR": str(directory),
                 "XDG_SESSION_TYPE": "wayland",
-                "XDG_CURRENT_DESKTOP": "GNOME",
+                "XDG_CURRENT_DESKTOP": linux_desktop.CURRENT_DESKTOP[desktop],
                 "LIBGL_ALWAYS_SOFTWARE": "1",
             }
         )
         env.pop("DISPLAY", None)
         env.pop("WAYLAND_DISPLAY", None)
+        if desktop == "kde":
+            with (
+                (attempt / "compositor.log").open("wb") as log,
+                private_bus(env, directory, log, cancelled=cancelled) as bus_env,
+            ):
+                try:
+                    with plasma_session.session(
+                        bus_env, directory, log, cancelled=cancelled
+                    ) as plasma_env:
+                        return run_action(plasma_env)
+                except plasma_session.PlasmaError as error:
+                    ensure_session_active(cancelled)
+                    raise ContributorError(
+                        f"Private KDE Plasma session failed: {error} Preserve this attempt, inspect the retained compositor log, native session prerequisites and owned process groups before retrying; never stop the login user bus."
+                    ) from None
+                except Exception:
+                    ensure_session_active(cancelled)
+                    raise
         with (
             (attempt / "compositor.log").open("wb") as log,
             private_bus(env, directory, log, cancelled=cancelled) as bus_env,
@@ -717,36 +786,7 @@ def private_session(
                     compositor, directory, readiness, cancelled=cancelled
                 )
                 env.pop("NOTIFY_SOCKET", None)
-                ensure_session_active(cancelled)
-                if action in {"smoke", "doctor"}:
-                    with session_environment(env):
-                        _, profile, packages = native_profile()
-                        if action == "smoke":
-                            smoke(profile, runtime_profile, runtime, evidence, cancelled=cancelled)
-                            return 0
-                        result = doctor(
-                            profile, packages, runtime_profile, runtime, cancelled=cancelled
-                        )
-                        ensure_session_active(cancelled)
-                        print(json.dumps(result, indent=2))
-                        return 0 if result["passed"] else 1
-                args = [
-                    sys.executable,
-                    "scripts/workspace.py",
-                    "run",
-                    action,
-                    str(runtime_profile),
-                    str(runtime),
-                ]
-                if evidence is not None:
-                    args.append(str(evidence))
-                result = run_owned(args, ROOT, env, float("inf"), 5, cancelled=cancelled)
-                ensure_session_active(cancelled)
-                require(
-                    not result["contained_processes_remaining_after_cleanup"],
-                    "Native command cleanup is unverified. Preserve this attempt and inspect its owned command group before retrying.",
-                )
-                return result["exit_code"]
+                return run_action(env)
             except Exception:
                 ensure_session_active(cancelled)
                 raise
@@ -755,19 +795,25 @@ def private_session(
 
 
 def smoke(
-    profile: dict, runtime_profile: Path, runtime: Path, evidence: Path, *, cancelled=None
+    profile: dict,
+    desktop: str,
+    runtime_profile: Path,
+    runtime: Path,
+    evidence: Path,
+    *,
+    cancelled=None,
 ) -> None:
     if cancelled is None:
         with terminal_signals() as interrupted:
-            return native_smoke(profile, runtime_profile, runtime, evidence, interrupted)
-    return native_smoke(profile, runtime_profile, runtime, evidence, cancelled)
+            return native_smoke(profile, desktop, runtime_profile, runtime, evidence, interrupted)
+    return native_smoke(profile, desktop, runtime_profile, runtime, evidence, cancelled)
 
 
 def native_smoke(
-    profile: dict, runtime_profile: Path, runtime: Path, evidence: Path, cancelled
+    profile: dict, desktop: str, runtime_profile: Path, runtime: Path, evidence: Path, cancelled
 ) -> None:
     require(
-        os.getuid() != 0 and display_available(profile),
+        os.getuid() != 0 and display_available(profile, desktop),
         "Use the admitted ordinary account and native graphical session for smoke.",
     )
     context = inspect_context(runtime_profile, runtime, cancelled=cancelled)
@@ -781,7 +827,11 @@ def native_smoke(
     )
     ensure_session_active(cancelled)
     evidence.mkdir()
-    cell = {"target": workspace.target_id(), "backend": os.environ.get("XDG_SESSION_TYPE")}
+    cell = {
+        "target": workspace.target_id(),
+        "backend": os.environ.get("XDG_SESSION_TYPE"),
+        "desktop": desktop,
+    }
     try:
         suites, native = quality_native.smoke(
             runtime_profile, runtime, evidence, cell, cancelled=cancelled
@@ -978,7 +1028,7 @@ def main() -> int:
                 )
                 print(sandbox_policy(args.profile, args.runtime), end="")
         elif args.command == "smoke":
-            smoke(profile, args.profile, args.runtime, args.evidence)
+            smoke(profile, packages["desktop"], args.profile, args.runtime, args.evidence)
         elif args.command == "session":
             return session(args.profile, args.runtime, args.action, args.evidence)
         else:

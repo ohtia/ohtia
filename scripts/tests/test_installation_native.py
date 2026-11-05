@@ -22,6 +22,46 @@ import installation_operator as operator
 
 @unittest.skipUnless(os.name == "posix", "POSIX internal Linux/macOS qualification helpers")
 class InstallationTests(unittest.TestCase):
+    def linux_cell(self, desktop, identity_error=None):
+        read = native.Path.read_text
+
+        def require_identity(profile, selected, release):
+            self.assertEqual((profile, selected), ("ubuntu-26.04", desktop))
+            if identity_error:
+                raise native.linux_desktop.DesktopError(identity_error)
+
+        with (
+            patch.object(native.sys, "platform", "linux"),
+            patch.object(native.os, "getuid", return_value=1000),
+            patch.object(native.workspace, "target_id", return_value="linux-x64"),
+            patch.object(
+                native.platform,
+                "freedesktop_os_release",
+                return_value={"ID": "ubuntu", "VERSION_ID": "26.04"},
+            ),
+            patch.object(native, "command", return_value="ext4"),
+            patch.object(
+                native.Path,
+                "read_text",
+                autospec=True,
+                side_effect=lambda path, *a, **k: (
+                    "Y\n" if str(path).startswith("/sys/module/apparmor") else read(path, *a, **k)
+                ),
+            ),
+            patch.dict(native.os.environ, {"WAYLAND_DISPLAY": "wayland-ohtia"}),
+            patch.object(native.linux_desktop, "require_identity", side_effect=require_identity),
+        ):
+            return native.native_profile("linux-x64", "ubuntu-26.04", "wayland", desktop)
+
+    def test_linux_installation_cell_declares_and_admits_its_desktop(self):
+        self.assertEqual(self.linux_cell("kde")["desktop"], "kde")
+        self.assertEqual(self.linux_cell("gnome")["desktop"], "gnome")
+        for desktop in (None, "xfce"):
+            with self.subTest(desktop=desktop), self.assertRaisesRegex(ValueError, "desktop"):
+                self.linux_cell(desktop)
+        with self.assertRaisesRegex(ValueError, "gnome-shell"):
+            self.linux_cell("kde", "A KDE cell must not have gnome-shell installed.")
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name).resolve()
