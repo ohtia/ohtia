@@ -14,6 +14,7 @@ import {
 import { developmentInstanceRunning } from "./development-instance.mjs";
 import { setNativeViewport } from "./design-viewport.mjs";
 import { withCommandCleanup } from "./command-native-focus.mjs";
+import { openWorkspaceSettings } from "./command-workspace.mjs";
 import { recordReadyNativeProcesses } from "./desktop-native-observation.mjs";
 import {
   loadRuntimeProfile,
@@ -141,7 +142,7 @@ async function readSavedAppearance(page) {
 }
 async function saveAppearance(page, locale) {
   const text = (key) => message(locale, key);
-  await page.getByRole("button", { name: text("command.settings.open"), exact: true }).click();
+  await openWorkspaceSettings(page);
   const dialog = page.getByRole("dialog", { name: text("settings.title"), exact: true });
   const control = dialog.getByRole("radio", { name: text("command.theme.dark"), exact: true });
   await expect(control).toBeEnabled();

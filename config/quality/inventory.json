@@ -110,6 +110,7 @@
     "scripts/tests/test_linux_e2e.py",
     "scripts/tests/test_linux_e2e_image.py",
     "scripts/tests/test_linux_e2e_image_ci.py",
+    "scripts/tests/test_localization_qualification.py",
     "scripts/tests/test_macos_contributor.py",
     "scripts/tests/test_package_workspace.py",
     "scripts/tests/test_plasma_session.py",

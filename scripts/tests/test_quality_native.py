@@ -1026,6 +1026,11 @@ assert.equal(selectStableTemporaryParent(posix,['/tmp','/home/runner/work/_temp'
             }
             (diagnostics / "component-process.json").write_text(json.dumps(report))
             (source / "diagnostics-supervision.json").write_text(json.dumps({"exit_code": 1}))
+            storage = source / "storage"
+            storage.mkdir()
+            progress = {"version": 1, "phases": ["read-initial-state", "pinch-gesture"]}
+            (storage / "settings-progress.json").write_text(json.dumps(progress))
+            (storage / "settings-progress.json.partial").write_text("{incomplete replacement")
             fixture = diagnostics / "diagnostic-fixture"
             fixture.mkdir()
             (fixture / "state.db3").write_text("synthetic store")
@@ -1075,6 +1080,11 @@ with patch.object(quality_native.delivery, 'read', side_effect=parser_failure):
                 json.loads((destination / "diagnostics-supervision.json").read_text()),
                 {"exit_code": 1},
             )
+            self.assertEqual(
+                json.loads((destination / "storage/settings-progress.json").read_text()), progress
+            )
+            self.assertFalse((destination / "storage/settings-progress.json.partial").exists())
+            self.assertFalse((destination / "storage/storage-receipt.json").exists())
             self.assertFalse((destination / "diagnostics/alias.json").exists())
             self.assertFalse((destination / "diagnostics/diagnostic-fixture").exists())
             expected_rejections = {"alias.json", "partial.json", "hardlink.json", "deep.json"}

@@ -2,7 +2,10 @@
 import { act, createElement as h } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { openWorkspaceSettings } from "../tooling/command-workspace.mjs";
+import {
+  openWorkspaceSettings,
+  resetWorkspaceLayoutFromPalette,
+} from "../tooling/command-workspace.mjs";
 import { ApplicationRoot } from "../packages/renderer/src/application-root.js";
 import { harness, call, deferred } from "./fixtures/settings.js";
 import { createFoundationPort } from "../packages/preload/src/foundation-port.js";
@@ -273,6 +276,83 @@ describe("integrated application authority", () => {
     stableClick.resolve();
     await opening;
     expect(container.querySelector(".settings-dialog[open]")).not.toBeNull();
+  });
+
+  it("waits for the palette reset command while an actual layout save is pending", async () => {
+    vi.useRealTimers();
+    const t = fixture();
+    await mount(t);
+    const save = deferred<Awaited<ReturnType<typeof t.port.replaceLayout>["result"]>>();
+    const replace = t.port.replaceLayout.getMockImplementation()!;
+    let saved!: Awaited<ReturnType<typeof t.port.replaceLayout>["result"]>;
+    t.port.replaceLayout.mockImplementationOnce((change) => {
+      const call = replace(change);
+      void call.result.then((value) => {
+        saved = value;
+      });
+      return { ...call, result: save.promise };
+    });
+    await t.intent("panels.explorer");
+    await t.intent("palette.open");
+    const palette = container.querySelector<HTMLDialogElement>(".command-palette[open]")!;
+    const input = palette.querySelector<HTMLInputElement>('[role="combobox"]')!;
+    const fill = async (value: string) => {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+          input,
+          value,
+        );
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+    const press = async (key: string) => {
+      await act(async () =>
+        input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })),
+      );
+    };
+    await fill(message("en-US", "command.layout.reset"));
+    expect(palette.querySelector('[id$="-layout.reset"]')?.getAttribute("aria-disabled")).toBe(
+      "true",
+    );
+    // The old immediate Enter is correctly ignored while the preference authority is busy.
+    await press("Enter");
+    expect(palette.open).toBe(true);
+    expect(t.port.replaceLayout).toHaveBeenCalledOnce();
+    const waiting = deferred<void>();
+    const observations: { enabled: boolean }[] = [];
+    const enter = vi.fn(press);
+    const page = {
+      evaluate: async (callback: () => { enabled: boolean }) => {
+        const observed = callback();
+        observations.push(observed);
+        // A second read proves the driver processed the first busy result and kept waiting.
+        if (observations.length === 2) waiting.resolve();
+        return observed;
+      },
+      locator: (selector: string) => {
+        expect(selector).toBe(".command-palette[open]");
+        return {
+          getByRole: (role: string) => {
+            expect(role).toBe("combobox");
+            return { fill, press: enter };
+          },
+          count: async () => container.querySelectorAll(selector).length,
+        };
+      },
+    };
+    const resetting = resetWorkspaceLayoutFromPalette(page, "en-US");
+    await waiting.promise;
+    expect(observations.map((observed) => observed.enabled)).toEqual([false, false]);
+    expect(enter).not.toHaveBeenCalled();
+    expect(palette.open).toBe(true);
+    await act(async () => save.resolve(saved));
+    await resetting;
+    expect(enter).toHaveBeenCalledExactlyOnceWith("Enter");
+    expect(container.querySelector(".command-palette[open]")).toBeNull();
+    expect(
+      container.querySelector('[data-workspace-panel="explorer"]')?.hasAttribute("hidden"),
+    ).toBe(false);
+    expect(t.port.replaceLayout).toHaveBeenCalledTimes(2);
   });
 
   it("composes the real bounded port with corpus failures, old generations and fresh-ID stream recovery without disturbing private input", async () => {

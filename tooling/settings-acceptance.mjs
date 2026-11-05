@@ -1,4 +1,5 @@
 /* global clearTimeout */
+import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { expect } from "@playwright/test";
@@ -166,6 +167,17 @@ async function nativeZoomWheel(page, nativeWindow, platform, deltaY) {
 }
 /** Run only inside the storage harness's admitted independent native profile. */
 export async function verifyPackagedSettings(application, page, second, output) {
+  const phases = [];
+  const progressFile = path.join(output, "settings-progress.json");
+  const phase = (name) => {
+    phases.push(name);
+    // Publish a complete checkpoint before an awaited native operation can stall.
+    const temporary = `${progressFile}.partial`;
+    fs.writeFileSync(temporary, JSON.stringify({ version: 1, phases }, null, 2) + "\n");
+    fs.renameSync(temporary, progressFile);
+    console.log(`Settings acceptance phase: ${name}`);
+  };
+  phase("read-initial-state");
   expect(
     page.viewportSize(),
     "Native Settings checks must not inherit viewport emulation.",
@@ -178,6 +190,7 @@ export async function verifyPackagedSettings(application, page, second, output) 
   expect(beforeLayout.ok).toBe(true);
   const dialog = page.getByRole("dialog", { name: text("settings.title"), exact: true });
   await expect(dialog).toBeVisible();
+  phase("read-native-window");
   const nativeWindow = await application.browserWindow(page);
   const originalSize = await nativeWindow.evaluate((window) => window.getContentSize());
   const platform = await application.evaluate(() => process.platform);
@@ -187,6 +200,7 @@ export async function verifyPackagedSettings(application, page, second, output) 
       BrowserWindow.getAllWindows().map((window) => window.webContents.getZoomFactor()),
     );
   const expectFactors = async (percent) => {
+    phase(`zoom-${percent}-native-factors`);
     await expect(async () => {
       const observed = await factors();
       expect(observed).toHaveLength(2);
@@ -198,6 +212,7 @@ export async function verifyPackagedSettings(application, page, second, output) 
     }).toPass({ timeout: 5000 });
     // Native factors can update before this window receives the mutation receipt.
     // Wait for the originating controller before sending another intent.
+    phase(`zoom-${percent}-controller-receipt`);
     await expect(dialog.locator(".settings-zoom output")).toHaveText(
       new Intl.NumberFormat(locale, { style: "percent" }).format(percent / 100),
     );
@@ -211,6 +226,7 @@ export async function verifyPackagedSettings(application, page, second, output) 
       ).toHaveAttribute("aria-disabled", String(percent === boundary));
   };
   const changeZoom = async (value) => {
+    phase(`zoom-${value}-write`);
     const result = await page.evaluate(
       async ({ value, operationId }) => {
         const current = await window.ohtia.foundation.readPresentation().result;
@@ -228,6 +244,7 @@ export async function verifyPackagedSettings(application, page, second, output) 
   };
   return withCommandCleanup(
     async () => {
+      phase("native-settings-menu");
       await focusNative(nativeWindow, "Settings native menu");
       await page.keyboard.press("Escape");
       await expect(dialog).not.toBeVisible();
@@ -244,8 +261,10 @@ export async function verifyPackagedSettings(application, page, second, output) 
       await expect(dialog).toBeVisible();
       await page.keyboard.press("Escape");
       await expect(dialog).not.toBeVisible();
+      phase("native-settings-shortcut");
       inputs.push(await nativeKey(nativeWindow, platform, ",", "Comma"));
       await expect(dialog).toBeVisible();
+      phase("hide-character");
       await dialog.locator('input[type="radio"][value="hidden"]').check();
       await expect
         .poll(
@@ -255,12 +274,14 @@ export async function verifyPackagedSettings(application, page, second, output) 
         )
         .toBe("hidden");
       await expect(dialog.locator(".settings-character-preview img")).toHaveCount(0);
+      phase("second-window-about");
       await second.getByRole("button", { name: text("command.about.open"), exact: true }).click();
       // About uses the branded H1 as its accessible name, rather than the command label.
       const about = second.getByRole("dialog", { name: "Ohtia", exact: true });
       await expect(about).toBeVisible();
       await expect(about.locator(".about-character")).toHaveCount(0);
       await about.locator("[data-close]").click();
+      phase("static-character");
       await dialog.locator('input[type="radio"][value="static"]').check();
       await expect(dialog.locator(".settings-character-preview img")).toHaveCSS("width", "96px");
       await changeZoom(100);
@@ -281,22 +302,30 @@ export async function verifyPackagedSettings(application, page, second, output) 
       await page
         .locator("#settings-input-preservation-fixture")
         .evaluate((element) => element.setSelectionRange(10, 22));
+      phase("native-zoom-equal");
       inputs.push(await nativeKey(nativeWindow, platform, "=", "Equal"));
       await expectFactors(110);
+      phase("native-zoom-keypad-add");
       inputs.push(await nativeKey(nativeWindow, platform, "numadd", "NumpadAdd"));
       await expectFactors(125);
+      phase("native-zoom-keypad-subtract");
       inputs.push(await nativeKey(nativeWindow, platform, "numsub", "NumpadSubtract"));
       await expectFactors(110);
+      phase("native-zoom-minus");
       inputs.push(await nativeKey(nativeWindow, platform, "-", "Minus"));
       await expectFactors(100);
+      phase("native-zoom-keypad-reset");
       inputs.push(await nativeKey(nativeWindow, platform, "num0", "Numpad0"));
       await expect(dialog).toContainText(text("command.reason.actual_size"));
+      phase("native-zoom-reset");
       inputs.push(await nativeKey(nativeWindow, platform, "0", "Digit0"));
+      phase("native-wheel-positive");
       const wheelIn = await nativeZoomWheel(page, nativeWindow, platform, 120);
       expect(["in", "out"]).toContain(wheelIn.direction);
       if (platform === "darwin") expect(wheelIn.direction).toBe("in");
       await expectFactors(wheelIn.direction === "in" ? 110 : 90);
       await changeZoom(100);
+      phase("native-wheel-negative");
       const wheelOut = await nativeZoomWheel(page, nativeWindow, platform, -120);
       expect(wheelOut.direction).toBe(wheelIn.direction === "in" ? "out" : "in");
       await expectFactors(wheelOut.direction === "in" ? 110 : 90);
@@ -304,14 +333,17 @@ export async function verifyPackagedSettings(application, page, second, output) 
       const beforePinch = await page.evaluate(
         () => window.ohtia.foundation.readPresentation().result,
       );
+      phase("pinch-session");
       const cdp = await page.context().newCDPSession(page);
       try {
+        phase("pinch-gesture");
         await cdp.send("Input.synthesizePinchGesture", {
           x: 100,
           y: 100,
           scaleFactor: 1.5,
           gestureSourceType: "touch",
         });
+        phase("pinch-layout-metrics");
         const metrics = await cdp.send("Page.getLayoutMetrics");
         expect((metrics.cssVisualViewport ?? metrics.visualViewport).scale).toBe(1);
         await expectFactors(100);
@@ -319,10 +351,12 @@ export async function verifyPackagedSettings(application, page, second, output) 
           (await page.evaluate(() => window.ohtia.foundation.readPresentation().result)).value.zoom,
         ).toEqual(beforePinch.value.zoom);
       } finally {
+        phase("pinch-detach");
         await cdp.detach();
       }
       await changeZoom(75);
       const minimum = await page.evaluate(() => window.ohtia.foundation.readPresentation().result);
+      phase("native-zoom-keypad-subtract");
       inputs.push(await nativeKey(nativeWindow, platform, "numsub", "NumpadSubtract"));
       await expect(dialog).toContainText(text("command.reason.zoom_minimum"));
       expect(
@@ -330,6 +364,7 @@ export async function verifyPackagedSettings(application, page, second, output) 
       ).toEqual(minimum.value.zoom);
       await changeZoom(400);
       const maximum = await page.evaluate(() => window.ohtia.foundation.readPresentation().result);
+      phase("native-zoom-keypad-add");
       inputs.push(await nativeKey(nativeWindow, platform, "numadd", "NumpadAdd"));
       await expect(dialog).toContainText(text("command.reason.zoom_maximum"));
       expect(
@@ -343,6 +378,7 @@ export async function verifyPackagedSettings(application, page, second, output) 
           ),
         )
         .toBe(true);
+      phase("native-zoom-menu");
       await invokeNativeMenu(application, "zoom.increase");
       await expectFactors(110);
       await expect
@@ -352,12 +388,14 @@ export async function verifyPackagedSettings(application, page, second, output) 
           ),
         )
         .toBe(true);
+      phase("native-zoom-menu");
       await invokeNativeMenu(application, "zoom.increase");
       await expectFactors(125);
       const afterSteps = await page.evaluate(
         () => window.ohtia.foundation.readPresentation().result,
       );
       expect(afterSteps.value.zoom.value).toBe(125);
+      phase("native-reflow-resize");
       await nativeWindow.evaluate((window) => window.setContentSize(1280, 600));
       await changeZoom(400);
       await expect
@@ -376,6 +414,7 @@ export async function verifyPackagedSettings(application, page, second, output) 
       expect(reflow.width).toBeLessThanOrEqual(reflow.viewportWidth - 32);
       expect(reflow.height).toBeLessThanOrEqual(reflow.viewportHeight - 32);
       expect(reflow.overflow).toBe(false);
+      phase("native-reflow-screenshot");
       await page.screenshot({ path: path.join(output, "settings-400-percent.png") });
       await expect(page.locator("#settings-input-preservation-fixture")).toBeFocused();
       expect(
@@ -385,6 +424,7 @@ export async function verifyPackagedSettings(application, page, second, output) 
       ).toEqual([10, 22]);
       await dialog.getByRole("button", { name: text("command.zoom.reset"), exact: true }).click();
       await expectFactors(100);
+      phase("final-preferences");
       const final = await page.evaluate(() => window.ohtia.foundation.readPresentation().result);
       expect(final.value.appearance).toEqual(before.value.appearance);
       expect(await page.evaluate(() => window.ohtia.foundation.readLayout().result)).toEqual(
@@ -424,11 +464,14 @@ export async function verifyPackagedSettings(application, page, second, output) 
       };
     },
     async () => {
+      phase("cleanup-remove-input");
       await page.evaluate(() =>
         document.getElementById("settings-input-preservation-fixture")?.remove(),
       );
+      phase("cleanup-read-presentation");
       const current = await page.evaluate(() => window.ohtia.foundation.readPresentation().result);
       if (current.ok) {
+        phase("cleanup-restore-character");
         await page.evaluate(
           async ({ value, revision, operationId }) =>
             window.ohtia.foundation.replaceCharacter({
@@ -444,8 +487,11 @@ export async function verifyPackagedSettings(application, page, second, output) 
         );
         await changeZoom(before.value.zoom.value);
       }
+      phase("cleanup-restore-window");
       await nativeWindow.evaluate((window, size) => window.setContentSize(...size), originalSize);
+      phase("cleanup-dispose-window");
       await nativeWindow.dispose();
+      phase("cleanup-complete");
     },
   );
 }

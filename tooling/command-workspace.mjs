@@ -1,4 +1,4 @@
-/* global window, getComputedStyle, crypto */
+/* global window, document, getComputedStyle, crypto */
 import path from "node:path";
 import { expect } from "@playwright/test";
 import { message } from "../packages/contracts/dist/index.js";
@@ -11,6 +11,32 @@ export async function openWorkspaceSettings(page) {
     .locator('.application-workspace [data-workspace-command="settings.open"]:visible')
     .first()
     .click();
+}
+
+/** Enter only after the rendered reset option and its keyboard target are ready. */
+export async function resetWorkspaceLayoutFromPalette(page, locale) {
+  const palette = page.locator(".command-palette[open]");
+  const input = palette.getByRole("combobox");
+  await input.fill(message(locale, "command.layout.reset"));
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const palette = document.querySelector(".command-palette[open]");
+          const input = palette?.querySelector('[role="combobox"]');
+          const option = palette?.querySelector('[role="option"][id$="-layout.reset"]');
+          return {
+            focused: !!input && document.activeElement === input,
+            enabled: option?.getAttribute("aria-disabled") === "false",
+            selected: option?.getAttribute("aria-selected") === "true",
+            active: !!option && input?.getAttribute("aria-activedescendant") === option.id,
+          };
+        }),
+      { message: "The palette must present an enabled, selected reset command with input focus" },
+    )
+    .toEqual({ focused: true, enabled: true, selected: true, active: true });
+  await input.press("Enter");
+  await expect.poll(() => palette.count()).toBe(0);
 }
 
 /** Installed root only: no catalog navigation, fixture root or synthetic research controls. */
@@ -161,12 +187,13 @@ export async function verifyWorkspaceComposition(application, page, output) {
         page.locator('.workspace-narrow-row [data-workspace-command="settings.open"]'),
       ).toBeFocused();
       await native.evaluate((window) => window.setContentSize(1280, 800));
+      await expect(page.locator(".workspace")).toHaveAttribute("data-mode", "wide");
+      await settleLayout();
+      await focusNative(native, "workspace command palette");
       await invoke("palette.open");
       const palette = page.locator(".command-palette[open]");
       await expect(palette).toBeVisible();
-      await palette.getByRole("combobox").fill(text("command.layout.reset"));
-      await palette.getByRole("combobox").press("Enter");
-      await expect(palette).toHaveCount(0);
+      await resetWorkspaceLayoutFromPalette(page, locale);
       await settleLayout();
       await expect(page.locator('[data-workspace-panel="explorer"]')).toBeVisible();
       await invoke("shortcuts.open");
