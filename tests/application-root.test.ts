@@ -2,6 +2,7 @@
 import { act, createElement as h } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { openWorkspaceSettings } from "../tooling/command-workspace.mjs";
 import { ApplicationRoot } from "../packages/renderer/src/application-root.js";
 import { harness, call, deferred } from "./fixtures/settings.js";
 import { createFoundationPort } from "../packages/preload/src/foundation-port.js";
@@ -9,6 +10,7 @@ import { rejectedEnvelopes } from "./fixtures/port-corpus.js";
 import { decodeText, encodeEnvelope, policyId, type Request } from "@ohtia/contracts";
 import {
   failure,
+  message,
   type DesktopBridge,
   type CommandIntent,
   type CommandSnapshot,
@@ -220,6 +222,57 @@ describe("integrated application authority", () => {
     expect(document.activeElement).toBe(language);
     expect(content.scrollTop).toBe(45);
     expect(t.port.readLayout).toHaveBeenCalledOnce();
+  });
+
+  it("opens Settings after the bootstrap launcher disappears at the driver's stable-click boundary", async () => {
+    const t = fixture();
+    vi.mocked(t.bridge.bootstrap.read).mockResolvedValue({
+      version: 1,
+      locale: "en-US",
+      state: "pending_create",
+    });
+    await mount(t);
+    const legacySelector = '[data-bootstrap-surface] [data-command-id="settings.open"] button';
+    const legacy = container.querySelector<HTMLElement>(legacySelector)!;
+    expect(legacy.closest("[hidden]")).toBeNull();
+    vi.mocked(t.bridge.bootstrap.read).mockResolvedValue({
+      version: 1,
+      locale: "en-US",
+      state: "storage_ready",
+    });
+    expect((await t.bridge.bootstrap.read()).state).toBe("storage_ready");
+    expect(container.querySelector(".application-workspace")).toBeNull();
+    const stableClick = deferred<void>();
+    // A controlled page adapter releases actionability after the actual renderer handoff.
+    const queuedClick = (selector: string) => {
+      const locator = {
+        first: () => locator,
+        click: async () => {
+          await stableClick.promise;
+          const target = [
+            ...container.querySelectorAll<HTMLElement>(selector.replaceAll(":visible", "")),
+          ].find((element) => !element.closest("[hidden], [inert]"));
+          if (!target) throw new Error("No visible Settings trigger after renderer handoff");
+          await act(async () => target.click());
+        },
+      };
+      return locator;
+    };
+    const page = {
+      locator: queuedClick,
+      getByRole: (role: string, options: { name: string; exact: boolean }) => {
+        expect(role).toBe("button");
+        expect(options).toEqual({ name: message("en-US", "command.settings.open"), exact: true });
+        return queuedClick(legacySelector);
+      },
+    };
+    const opening = openWorkspaceSettings(page);
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(legacy.closest("[hidden]")).not.toBeNull();
+    expect(container.querySelector(".application-workspace")?.hasAttribute("hidden")).toBe(false);
+    stableClick.resolve();
+    await opening;
+    expect(container.querySelector(".settings-dialog[open]")).not.toBeNull();
   });
 
   it("composes the real bounded port with corpus failures, old generations and fresh-ID stream recovery without disturbing private input", async () => {

@@ -5,6 +5,14 @@ import { message } from "../packages/contracts/dist/index.js";
 import { focusNative, withCommandCleanup } from "./command-native-focus.mjs";
 import { invokeNativeMenu } from "./command-acceptance.mjs";
 
+/** Wait for the workspace entry; the bootstrap launcher can hide after main reports ready. */
+export async function openWorkspaceSettings(page) {
+  await page
+    .locator('.application-workspace [data-workspace-command="settings.open"]:visible')
+    .first()
+    .click();
+}
+
 /** Installed root only: no catalog navigation, fixture root or synthetic research controls. */
 export async function verifyWorkspaceComposition(application, page, output) {
   const locale = (await page.evaluate(() => window.ohtia.bootstrap.read())).locale;

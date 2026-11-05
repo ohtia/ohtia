@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import { _electron, expect } from "@playwright/test";
-import { verifyWorkspaceComposition } from "./command-workspace.mjs";
+import { openWorkspaceSettings, verifyWorkspaceComposition } from "./command-workspace.mjs";
 import { verifyPackagedSettings } from "./settings-acceptance.mjs";
 import { setNativeViewport } from "./design-viewport.mjs";
 import { withCommandCleanup } from "./command-native-focus.mjs";
@@ -240,7 +240,7 @@ try {
   const before = await page.evaluate(() => window.ohtia.foundation.readAppearance().result);
   expect(before.ok).toBe(true);
   const selected = before.value.value === "dark" ? "light" : "dark";
-  await page.getByRole("button", { name: text("command.settings.open"), exact: true }).click();
+  await openWorkspaceSettings(page);
   await expect(
     page.getByRole("dialog", { name: text("settings.title"), exact: true }),
   ).toBeVisible();
@@ -718,13 +718,7 @@ try {
     value: { revision: 0, value: "system", source: "default" },
   });
   await expect(page.locator(".workspace-skip")).toBeFocused();
-  const restoredInterfaceLocale = (await page.evaluate(() => window.ohtia.bootstrap.read())).locale;
-  await page
-    .getByRole("button", {
-      name: message(restoredInterfaceLocale, "command.settings.open"),
-      exact: true,
-    })
-    .click();
+  await openWorkspaceSettings(page);
   const restoredLocaleControl = page.locator('select[aria-describedby="language-help"]');
   await restoredLocaleControl.selectOption("ko-KR");
   await expect(page.locator("html")).toHaveAttribute("lang", "ko-KR");
