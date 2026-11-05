@@ -709,9 +709,64 @@
       "reason": "Linux guest compositor, Unix-domain socket and user-service ownership fixture; Windows is not a Linux VM host."
     },
     {
-      "id": "test_plasma_session.PlasmaSessionTests.test_activation_environment_failure_fails_before_plasmashell",
+      "id": "test_plasma_session.PlasmaSessionTests.test_activation_environment_failure_fails_before_kwin",
       "platforms": ["win32"],
       "reason": "POSIX account, owner-only runtime and Unix-socket session fixture for the Linux-only Plasma launcher; Windows does not establish this Linux contract."
+    },
+    {
+      "id": "test_plasma_session.PlasmaSessionTests.test_a_runtime_already_carried_by_other_processes_is_refused_before_kwin",
+      "platforms": ["win32"],
+      "reason": "POSIX account, owner-only runtime and Unix-socket session fixture for the Linux-only Plasma launcher; Windows does not establish this Linux contract."
+    },
+    {
+      "id": "test_plasma_session.PlasmaSessionTests.test_the_login_runtime_is_refused_and_a_caller_supplied_one_is_admitted",
+      "platforms": ["win32"],
+      "reason": "POSIX account, owner-only runtime and Unix-socket session fixture for the Linux-only Plasma launcher; Windows does not establish this Linux contract."
+    },
+    {
+      "id": "test_plasma_session.SessionServiceTests.test_signals_only_through_a_handle_checked_after_opening",
+      "platforms": ["win32"],
+      "reason": "POSIX account and process fixture for the Linux-only Plasma launcher; Windows does not establish this Linux contract."
+    },
+    {
+      "id": "test_plasma_session.PlasmaSessionTests.test_an_unidentified_bus_daemon_fails_before_starting_kwin",
+      "platforms": ["win32"],
+      "reason": "POSIX account, owner-only runtime and Unix-socket session fixture for the Linux-only Plasma launcher; Windows does not establish this Linux contract."
+    },
+    {
+      "id": "test_plasma_session.PlasmaSessionTests.test_portal_frontend_without_the_plasma_environment_fails_the_cell",
+      "platforms": ["win32"],
+      "reason": "POSIX account, owner-only runtime and Unix-socket session fixture for the Linux-only Plasma launcher; Windows does not establish this Linux contract."
+    },
+    {
+      "id": "test_plasma_session.SessionServiceTests.test_finds_only_live_owned_processes_of_this_runtime_directory",
+      "platforms": ["win32"],
+      "reason": "POSIX account and process fixture for the Linux-only Plasma launcher; Windows does not establish this Linux contract."
+    },
+    {
+      "id": "test_plasma_session.SessionServiceTests.test_ancestors_include_this_process_and_its_parent",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux procfs process identity and environment fixture for the Plasma launcher teardown"
+    },
+    {
+      "id": "test_plasma_session.SessionServiceTests.test_a_launcher_that_carries_the_marker_never_selects_itself",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux procfs process identity and environment fixture for the Plasma launcher teardown"
+    },
+    {
+      "id": "test_plasma_session.SessionServiceTests.test_stops_a_leftover_service_and_spares_excluded_processes",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux procfs process identity and environment fixture for the Plasma launcher teardown"
+    },
+    {
+      "id": "test_plasma_session.SessionServiceTests.test_never_signals_a_reused_identifier_and_reports_survivors",
+      "platforms": ["win32"],
+      "reason": "POSIX account and process fixture for the Linux-only Plasma launcher; Windows does not establish this Linux contract."
+    },
+    {
+      "id": "test_plasma_session.SessionServiceTests.test_portal_frontend_must_carry_the_plasma_session_environment",
+      "platforms": ["win32"],
+      "reason": "POSIX account and process fixture for the Linux-only Plasma launcher; Windows does not establish this Linux contract."
     },
     {
       "id": "test_plasma_session.PlasmaSessionTests.test_interrupted_session_stops_its_processes",
