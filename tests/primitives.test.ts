@@ -341,6 +341,36 @@ describe("tabs and layers", () => {
     expect(Number.parseFloat(tip.style.top)).toBeGreaterThanOrEqual(anchor.bottom);
     expect(Number.parseFloat(tip.style.left) + tip.offsetWidth).toBeLessThanOrEqual(1280);
   });
+  it("keeps tall separator help beside the hit target and clear of title controls", async () => {
+    vi.spyOn(document.documentElement, "clientWidth", "get").mockReturnValue(1280);
+    vi.spyOn(document.documentElement, "clientHeight", "get").mockReturnValue(800);
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(200);
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(26);
+    vi.stubGlobal("getComputedStyle", () => ({ paddingLeft: "8px" }));
+    let hit = new DOMRect(900, 48, 32, 752);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return this.getAttribute("role") === "separator"
+        ? hit
+        : new DOMRect(hit.x + 15, hit.y, 1, hit.height);
+    });
+    await render(
+      h(Tooltip, {
+        label: "Document 656 px, Dialogue 360 px",
+        children: h("div", { role: "separator", "aria-orientation": "vertical", tabIndex: 0 }),
+      }),
+    );
+    await focus(container.querySelector('[role="separator"]')!);
+    const tip = container.querySelector<HTMLElement>('[role="tooltip"]')!;
+    expect(Number.parseFloat(tip.style.top)).toBeGreaterThanOrEqual(hit.top);
+    expect(Number.parseFloat(tip.style.top) + tip.offsetHeight).toBeLessThanOrEqual(hit.bottom);
+    expect(Number.parseFloat(tip.style.left)).toBe(hit.right);
+    hit = new DOMRect(1200, 48, 32, 752);
+    await act(async () => window.dispatchEvent(new Event("resize")));
+    expect(Number.parseFloat(tip.style.left) + tip.offsetWidth).toBe(hit.left);
+    expect(Number.parseFloat(tip.style.left)).toBeGreaterThanOrEqual(0);
+  });
   it("opens/closes a popover, restores focus and disposes outside listeners", async () => {
     await render(
       h(Popover, { label: "Details", closeLabel: "Close details", children: "Supplement" }),

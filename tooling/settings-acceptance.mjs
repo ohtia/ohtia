@@ -196,6 +196,19 @@ export async function verifyPackagedSettings(application, page, second, output) 
           `Native zoom factor ${factor} must match ${percent / 100}.`,
         ).toBeLessThanOrEqual(0.000001);
     }).toPass({ timeout: 5000 });
+    // Native factors can update before this window receives the mutation receipt.
+    // Wait for the originating controller before sending another intent.
+    await expect(dialog.locator(".settings-zoom output")).toHaveText(
+      new Intl.NumberFormat(locale, { style: "percent" }).format(percent / 100),
+    );
+    for (const [command, boundary] of [
+      ["decrease", 75],
+      ["increase", 400],
+      ["reset", 100],
+    ])
+      await expect(
+        dialog.getByRole("button", { name: text(`command.zoom.${command}`), exact: true }),
+      ).toHaveAttribute("aria-disabled", String(percent === boundary));
   };
   const changeZoom = async (value) => {
     const result = await page.evaluate(
