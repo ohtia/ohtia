@@ -1,4 +1,10 @@
-import { windowOptions, windowPlacement, WindowTheme, WindowPreferences } from "./window-state.js";
+import {
+  requestBootstrapPlacement,
+  windowOptions,
+  windowPlacement,
+  WindowTheme,
+  WindowPreferences,
+} from "./window-state.js";
 import { configureGraphicsCompatibility } from "./graphics-compatibility.js";
 import { CommandMenus } from "./command-menus.js";
 import { readAboutInformation, copyVersionInformation } from "./about.js";
@@ -675,14 +681,13 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
           for (const [existing, state] of windows)
             if (!existing.isDestroyed()) {
               if (!state.workspace) {
-                existing.setBounds({
-                  ...(nativeWayland ? {} : { x: placement.x, y: placement.y }),
-                  width: placement.width,
-                  height: placement.height,
-                });
+                requestBootstrapPlacement(
+                  existing,
+                  placement,
+                  state.presentable && !state.firstShow,
+                  nativeWayland,
+                );
                 state.maximizeOnShow = placement.maximized;
-                if (state.presentable && !state.firstShow && placement.maximized)
-                  existing.maximize();
               }
               state.workspace = true;
               state.boundsSaved = false;

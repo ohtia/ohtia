@@ -33,6 +33,11 @@ import { LucideGlyph } from "./iconography.js";
 
 const menuButtonSelector =
   '[data-workspace-command="menu.open"], [data-command-id="menu.open"] button';
+function currentMenuButton(): HTMLButtonElement | undefined {
+  return [...document.querySelectorAll<HTMLButtonElement>(menuButtonSelector)].find(
+    (button) => !button.closest("[hidden], [inert], dialog:not([open])"),
+  );
+}
 
 export type DecorationState = "static" | "animated" | "hidden";
 type CopyState = { phase: "idle" | "pending" | "copied" | "failed"; attempt: number };
@@ -566,7 +571,7 @@ export function CommandSurfaces({
           registry.register(id, {
             state: () => state(id),
             run: async (execution) => {
-              const button = document.querySelector<HTMLButtonElement>(menuButtonSelector);
+              const button = currentMenuButton();
               const rect = button?.getBoundingClientRect();
               if (id === "menu.open" && !rect) return false;
               let result: WindowCommandResult;
@@ -591,10 +596,9 @@ export function CommandSurfaces({
                   result.status === "completed" &&
                   "menuDismissed" in result &&
                   result.menuDismissed &&
-                  button?.isConnected &&
                   !document.querySelector("dialog[open]")
                 )
-                  button.focus();
+                  currentMenuButton()?.focus();
                 if (result.status === "failed") setFailure(true);
               }
               return result.status === "completed" ? { status: "completed" } : result;

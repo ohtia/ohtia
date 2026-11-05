@@ -85,6 +85,26 @@ export function windowPlacement(
     }
   return normal;
 }
+export interface BootstrapPlacementWindow {
+  setBounds(bounds: Partial<Rectangle>): void;
+  maximize(): void;
+  unmaximize(): void;
+}
+/** Request saved normal state before resizing; hidden windows keep their reveal gate. */
+export function requestBootstrapPlacement(
+  window: BootstrapPlacementWindow,
+  placement: Placement,
+  revealed: boolean,
+  wayland: boolean,
+): void {
+  if (revealed) window.unmaximize();
+  window.setBounds({
+    ...(wayland ? {} : { x: placement.x, y: placement.y }),
+    width: placement.width,
+    height: placement.height,
+  });
+  if (revealed && placement.maximized) window.maximize();
+}
 export function windowOptions(
   platform: string,
   scheme: "light" | "dark",

@@ -12,8 +12,14 @@ import {
   verifyPrepared,
 } from "./desktop-launch.mjs";
 import { developmentInstanceRunning } from "./development-instance.mjs";
+import { setNativeViewport } from "./design-viewport.mjs";
+import { withCommandCleanup } from "./command-native-focus.mjs";
 import { recordReadyNativeProcesses } from "./desktop-native-observation.mjs";
-import { loadRuntimeProfile, verifyStableSentinels } from "../packages/main/dist/index.js";
+import {
+  loadRuntimeProfile,
+  verifyStableSentinels,
+  windowPlacement,
+} from "../packages/main/dist/index.js";
 import { message, portLimits, windowTokens } from "../packages/contracts/dist/index.js";
 
 const [profileFile, prepared, output, development] = process.argv.slice(2);
@@ -89,7 +95,7 @@ async function start(runtime, env) {
   });
   open.add(application);
   const page = await application.firstWindow();
-  await expect(page.getByRole("heading", { name: "Ohtia", exact: true })).toBeVisible();
+  await expect(page.locator(".workspace-window")).toBeVisible();
   await expect
     .poll(async () => (await page.evaluate(() => window.ohtia.foundation.readStatus().result)).ok, {
       timeout: portLimits.service_start_ms,
@@ -211,9 +217,153 @@ async function installedJourney(scratch) {
   expect(fs.lstatSync(profile.research_root).isDirectory()).toBe(true);
   record("installed-explicit-opening-creates-research-root", {});
   await saveAppearance(page, locale);
+  const positional = await application.evaluate(
+    ({ app }) =>
+      process.platform !== "linux" ||
+      app.commandLine.getSwitchValue("ozone-platform") !== "wayland",
+  );
+  const requestedViewport = await application.evaluate(({ BrowserWindow, screen }) => {
+    const window = BrowserWindow.getAllWindows()[0];
+    const area = screen.getDisplayMatching(window.getBounds()).workArea;
+    return {
+      width: Math.min(960, area.width),
+      height: Math.min(600, area.height),
+      zoomFactor: window.webContents.getZoomFactor(),
+    };
+  });
+  const native = await application.browserWindow(page);
+  const normalized = await withCommandCleanup(
+    () => setNativeViewport(page, native, requestedViewport),
+    () => native.dispose(),
+  );
+  await expect
+    .poll(
+      () =>
+        application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMaximized()),
+      { message: "Normal window state before saving" },
+    )
+    .toBe(false);
+  if (positional) {
+    const requestedPosition = await application.evaluate(({ BrowserWindow, screen }) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      const bounds = window.getNormalBounds();
+      const area = screen.getDisplayMatching(bounds).workArea;
+      return {
+        x: area.x + Math.min(24, Math.max(0, area.width - bounds.width)),
+        y: area.y + Math.min(24, Math.max(0, area.height - bounds.height)),
+      };
+    });
+    await application.evaluate(
+      ({ BrowserWindow }, position) =>
+        BrowserWindow.getAllWindows()[0].setPosition(position.x, position.y, false),
+      requestedPosition,
+    );
+    await expect
+      .poll(() =>
+        application.evaluate(({ BrowserWindow }) => {
+          const { x, y } = BrowserWindow.getAllWindows()[0].getNormalBounds();
+          return { x, y };
+        }),
+      )
+      .toEqual(requestedPosition);
+  }
+  const saved = await application.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows()[0];
+    return { bounds: window.getNormalBounds(), maximized: window.isMaximized() };
+  });
   await stop(application);
   ({ application, page } = await start(installedRuntime, env));
-  await openStorage(page);
+  await expect
+    .poll(() =>
+      application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()),
+    )
+    .toBe(true);
+  const displays = await application.evaluate(({ screen }) => ({
+    areas: screen.getAllDisplays().map((display) => display.workArea),
+    primary: screen.getPrimaryDisplay().workArea,
+  }));
+  const expectedPlacement = windowPlacement(
+    { version: 1, ...saved.bounds, maximized: saved.maximized },
+    displays.areas,
+    displays.primary,
+    undefined,
+    positional ? "positioned" : "wayland",
+  );
+  const { maximized: expectedMaximized, ...expectedNormalBounds } = expectedPlacement;
+  const nativeAfterRestart = await application.browserWindow(page);
+  let restored;
+  try {
+    // Observe the actual instance without replacing the preference authority or its effects.
+    await nativeAfterRestart.evaluate((window) => {
+      window.__ohtiaBoundsRequests = [];
+      window.__ohtiaBoundsMethods = {};
+      for (const method of ["setBounds", "maximize", "unmaximize"]) {
+        const original = window[method];
+        window.__ohtiaBoundsMethods[method] = original;
+        window[method] = function (...args) {
+          this.__ohtiaBoundsRequests.push({ method, args });
+          return original.apply(this, args);
+        };
+      }
+    });
+    await openStorage(page);
+    restored = await nativeAfterRestart.evaluate((window) => ({
+      requests: window.__ohtiaBoundsRequests,
+      accepted: {
+        bounds: window.getBounds(),
+        normalBounds: window.getNormalBounds(),
+        contentBounds: window.getContentBounds(),
+        maximized: window.isMaximized(),
+      },
+    }));
+  } finally {
+    await withCommandCleanup(
+      () =>
+        nativeAfterRestart.evaluate((window) => {
+          for (const [method, original] of Object.entries(window.__ohtiaBoundsMethods ?? {}))
+            window[method] = original;
+          delete window.__ohtiaBoundsRequests;
+          delete window.__ohtiaBoundsMethods;
+        }),
+      () => nativeAfterRestart.dispose(),
+    );
+  }
+  // The fresh process obtains these requests only by reading the close-time durable record.
+  // Wayland's compositor may restrict acceptance; it does not relax this request contract.
+  const boundsObservation = {
+    requestedViewport,
+    normalizedNative: normalized.native,
+    saved,
+    displays,
+    expectedPlacement,
+    ...restored,
+    position: positional ? "exact restoration required" : "compositor-owned",
+  };
+  fs.writeFileSync(
+    path.join(output, "window-bounds-observation.json"),
+    JSON.stringify(boundsObservation, null, 2) + "\n",
+  );
+  const requestedBounds = positional
+    ? expectedNormalBounds
+    : { width: expectedNormalBounds.width, height: expectedNormalBounds.height };
+  expect(restored.requests).toEqual([
+    { method: "unmaximize", args: [] },
+    { method: "setBounds", args: [requestedBounds] },
+    ...(expectedMaximized ? [{ method: "maximize", args: [] }] : []),
+  ]);
+  if (positional) {
+    await expect
+      .poll(
+        () =>
+          application.evaluate(({ BrowserWindow }) => {
+            const window = BrowserWindow.getAllWindows()[0];
+            return { bounds: window.getNormalBounds(), maximized: window.isMaximized() };
+          }),
+        { message: "Normal window bounds and state restored after ordinary restart" },
+      )
+      .toEqual({ bounds: expectedNormalBounds, maximized: expectedMaximized });
+  }
+  record("installed-window-bounds-survive-restart", boundsObservation);
   const reopened = await readSavedAppearance(page);
   expect(reopened.value.value).toBe("dark");
   await stop(application);
@@ -306,6 +456,7 @@ try {
   await installedCases();
 } catch (error) {
   receipt.cases.push({ id: "run", result: "fail", error: String(error) });
+  console.error(`Startup acceptance failed: ${String(error).slice(0, 8192)}`);
   process.exitCode = 1;
 } finally {
   for (const application of open) await application.close().catch(() => {});

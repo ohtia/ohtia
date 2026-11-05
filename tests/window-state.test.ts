@@ -20,6 +20,7 @@ import {
 import {
   WindowTheme,
   WindowPreferences,
+  requestBootstrapPlacement,
   windowOptions,
   windowPlacement,
   type WindowPreferencePeer,
@@ -136,6 +137,50 @@ describe("closed native window contracts and safe placement", () => {
     ).toEqual({ x: 1120, y: 480, width: 800, height: 600, maximized: false });
   });
 });
+it("requests saved normal state before bootstrap resize without revealing hidden windows", () => {
+  const calls: unknown[] = [];
+  const window = {
+    setBounds: (value: unknown) => calls.push(["bounds", value]),
+    unmaximize: () => calls.push(["unmaximize"]),
+    maximize: () => calls.push(["maximize"]),
+  };
+  const placement = { x: 24, y: 32, width: 960, height: 600, maximized: false };
+  requestBootstrapPlacement(window, placement, true, true);
+  expect(calls).toEqual([["unmaximize"], ["bounds", { width: 960, height: 600 }]]);
+  calls.length = 0;
+  requestBootstrapPlacement(window, { ...placement, maximized: true }, true, false);
+  expect(calls).toEqual([
+    ["unmaximize"],
+    ["bounds", { x: 24, y: 32, width: 960, height: 600 }],
+    ["maximize"],
+  ]);
+  for (const maximized of [false, true]) {
+    calls.length = 0;
+    requestBootstrapPlacement(window, { ...placement, maximized }, false, true);
+    expect(calls).toEqual([["bounds", { width: 960, height: 600 }]]);
+  }
+});
+it.each(["wayland", "positioned"] as const)(
+  "clamps oversized close-time geometry before requesting bootstrap restoration on %s",
+  (backend) => {
+    const calls: unknown[] = [];
+    const window = {
+      setBounds: (value: unknown) => calls.push(["bounds", value]),
+      unmaximize: () => calls.push(["unmaximize"]),
+      maximize: () => calls.push(["maximize"]),
+    };
+    const area = { x: 0, y: 0, width: 1280, height: 720 };
+    const saved = { version: 1, x: 24, y: 24, width: 1292, height: 742, maximized: true };
+    const placement = windowPlacement(saved, [area], area, undefined, backend);
+    requestBootstrapPlacement(window, placement, true, backend === "wayland");
+    expect(calls).toEqual([
+      ["unmaximize"],
+      ["bounds", { ...(backend === "wayland" ? {} : { x: 0, y: 0 }), width: 1280, height: 720 }],
+      ...(backend === "wayland" ? [["maximize"]] : []),
+    ]);
+    expect(saved).toEqual({ version: 1, x: 24, y: 24, width: 1292, height: 742, maximized: true });
+  },
+);
 describe("native theme ordering and initial window options", () => {
   it.each(["linux", "win32", "darwin"])(
     "uses generated theme colors, hidden first paint and platform controls on %s",

@@ -9,6 +9,9 @@ import {
   staleRevision,
   type FoundationPort,
   type InterfaceLocale,
+  type Outcome,
+  type SavedPresentationRecord,
+  type InterfaceZoom,
 } from "@ohtia/contracts";
 import { SettingsDialog } from "../packages/renderer/src/settings-dialog.js";
 import { LanguageController } from "../packages/renderer/src/language-controller.js";
@@ -17,7 +20,7 @@ import {
   type WorkspaceState,
 } from "../packages/renderer/src/workspace-controller.js";
 import { LayoutPreferences } from "../packages/renderer/src/layout-preferences.js";
-import { harness, call } from "./fixtures/settings.js";
+import { harness, call, deferred } from "./fixtures/settings.js";
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root;
 let container: HTMLDivElement;
@@ -459,6 +462,10 @@ describe("Settings command composition", () => {
     await intent("zoom.increase", 10);
     expect(t.port.adjustZoom).toHaveBeenLastCalledWith(expect.any(String), "increase", "service-3");
     await intent("settings.open", 11);
+    // Native factor/readback can reach 100 before the originating receipt settles.
+    const completion = deferred<Outcome<SavedPresentationRecord<InterfaceZoom>>>();
+    t.port.adjustZoom.mockReturnValueOnce({ result: completion.promise, cancel: vi.fn() } as never);
+    await intent("zoom.decrease", 12);
     await act(async () =>
       t.notify({
         ok: true,
@@ -468,18 +475,41 @@ describe("Settings command composition", () => {
         },
       }),
     );
-    await intent("zoom.reset", 12);
+    expect(container.querySelector(".settings-zoom output")?.textContent).toBe("100%");
+    expect(published.at(-1)?.entries.find((entry) => entry.id === "zoom.reset")?.reason).toBe(
+      "busy",
+    );
+    expect(published.at(-1)?.entries.find((entry) => entry.id === "zoom.increase")?.reason).toBe(
+      "busy",
+    );
+    await intent("zoom.reset", 13);
+    expect(container.querySelector("dialog[open]")?.textContent).not.toContain(
+      message("en-US", "command.reason.actual_size"),
+    );
+    await act(async () =>
+      completion.resolve({
+        ok: true,
+        value: t.current.zoom as SavedPresentationRecord<InterfaceZoom>,
+      }),
+    );
+    expect(published.at(-1)?.entries.find((entry) => entry.id === "zoom.reset")?.reason).toBe(
+      "actual_size",
+    );
+    expect(
+      published.at(-1)?.entries.find((entry) => entry.id === "zoom.increase")?.reason,
+    ).toBeUndefined();
+    await intent("zoom.reset", 15);
     expect(container.querySelector("dialog[open]")?.textContent).toContain(
       message("en-US", "command.reason.actual_size"),
     );
     await click("dialog[open] [data-close]");
-    await intent("help.open", 13);
+    await intent("help.open", 16);
     expect(container.querySelector("dialog[open] .settings-feedback > button")).toBeNull();
     expect(container.querySelector("dialog[open] .settings-feedback")?.hasAttribute("hidden")).toBe(
       true,
     );
     t.port.replaceAppearance.mockReturnValueOnce(call(failure("storage_failed")) as never);
-    await intent("theme.dark", 14);
+    await intent("theme.dark", 17);
     expect(container.querySelector("dialog[open]")?.textContent).toContain(
       "Appearance could not be saved",
     );
@@ -502,7 +532,7 @@ describe("Settings command composition", () => {
       true,
     );
     t.port.adjustZoom.mockReturnValueOnce(call(staleRevision(5)) as never);
-    await intent("zoom.increase", 15);
+    await intent("zoom.increase", 18);
     const chooseInHelp = [
       ...container.querySelectorAll<HTMLButtonElement>("dialog[open] button"),
     ].find((button) => button.textContent === "Choose again")!;
@@ -514,7 +544,7 @@ describe("Settings command composition", () => {
     expect(document.activeElement?.closest(".settings-zoom")).not.toBeNull();
     await click("dialog[open] [data-close]");
     t.port.readPresentation.mockReturnValueOnce(call(failure("storage_failed")) as never);
-    await intent("theme.light", 16);
+    await intent("theme.light", 19);
     expect(container.querySelector(".settings-feedback")?.textContent).toContain(
       message("en-US", "settings.readFailed"),
     );
@@ -529,7 +559,7 @@ describe("Settings command composition", () => {
     vi.mocked(port.applyZoom).mockReturnValueOnce(
       call({ ok: true, value: { revision: 6, percent: 110, applied: false } }),
     );
-    await intent("zoom.increase", 17);
+    await intent("zoom.increase", 20);
     expect(container.querySelector(".settings-feedback")?.textContent).toContain(
       "was saved, but could not be applied",
     );
@@ -545,7 +575,7 @@ describe("Settings command composition", () => {
       "was saved, but could not be applied",
     );
     t.port.adjustZoom.mockReturnValueOnce(call(failure("busy")) as never);
-    await intent("zoom.increase", 18);
+    await intent("zoom.increase", 21);
     expect(container.querySelector(".settings-feedback")?.textContent).toContain(
       message("en-US", "settings.zoomUnavailable"),
     );
@@ -558,7 +588,7 @@ describe("Settings command composition", () => {
     expect(t.port.adjustZoom).toHaveBeenCalledTimes(busyWrites);
     expect(document.activeElement).toBe(container.querySelector(".command-entry-actions button"));
     t.port.adjustZoom.mockReturnValueOnce(call(staleRevision(t.current.zoom.revision)) as never);
-    await intent("zoom.increase", 19);
+    await intent("zoom.increase", 22);
     const windowChoose = [
       ...container.querySelectorAll<HTMLButtonElement>(".command-window-feedback button"),
     ].find((button) => button.textContent === "Choose again")!;
@@ -589,7 +619,7 @@ describe("Settings command composition", () => {
         },
       }),
     );
-    await intent("zoom.reset", 20);
+    await intent("zoom.reset", 23);
     expect(container.querySelector(".command-unavailable")?.textContent).toContain(
       message("en-US", "command.reason.actual_size"),
     );
@@ -613,15 +643,15 @@ describe("Settings command composition", () => {
       }),
     );
     expect(container.querySelector(".command-unavailable")).toBeNull();
-    await intent("settings.open", 21);
-    await intent("zoom.reset", 22);
+    await intent("settings.open", 24);
+    await intent("zoom.reset", 25);
     expect(container.querySelector("dialog[open] .command-unavailable")).not.toBeNull();
     await click('dialog[open] .settings-zoom-actions button[aria-label="Increase zoom"]');
     expect(container.querySelector(".command-unavailable")).toBeNull();
     expect(container.querySelector("dialog[open] output")?.textContent).toBe("110%");
     await click("dialog[open] [data-close]");
     t.port.adjustZoom.mockReturnValueOnce(call(staleRevision(t.current.zoom.revision)) as never);
-    await intent("zoom.increase", 23);
+    await intent("zoom.increase", 26);
     const resolvedTrigger = [
       ...container.querySelectorAll<HTMLButtonElement>(".command-window-feedback button"),
     ].find((button) => button.textContent === "Choose again")!;
@@ -633,7 +663,7 @@ describe("Settings command composition", () => {
     expect(resolvedTrigger.isConnected).toBe(false);
     await click("dialog[open] [data-close]");
     expect(document.activeElement).toBe(container.querySelector(".command-entry-actions button"));
-    await intent("settings.open", 24);
+    await intent("settings.open", 27);
     await click('dialog[open] input[type="checkbox"]');
     expect(container.querySelector(".layout-memory-feedback")?.textContent).toContain(
       message("en-US", "settings.layoutNotRemembered"),

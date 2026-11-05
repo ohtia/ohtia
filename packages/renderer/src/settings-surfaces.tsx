@@ -1,4 +1,4 @@
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   message,
@@ -19,8 +19,21 @@ import { SettingsDialog } from "./settings-dialog.js";
 import { LanguageController } from "./language-controller.js";
 import { LayoutPreferences } from "./layout-preferences.js";
 import { WorkspaceController, type WorkspaceState } from "./workspace-controller.js";
+import type { DecorationState } from "./command-surfaces.js";
 
-/** Foundation composition; later workspace composition supplies this same window-owned layout. */
+export interface WorkspaceSettingsBinding {
+  readonly preferences: LayoutPreferences;
+  readonly decoration: DecorationState;
+  readonly zoom: number;
+  readonly layoutFailure: boolean;
+  readonly onDismissLayoutFailure: () => void;
+  readonly onWorkspaceChange: (
+    workspace: WorkspaceController | undefined,
+    state?: WorkspaceState,
+  ) => void;
+}
+
+/** Window-lifetime settings and command ownership, shared with the actual workspace when composed. */
 export function SettingsSurfaces({
   port,
   bridge,
@@ -29,8 +42,13 @@ export function SettingsSurfaces({
   onLocale,
   children,
   returnFocusRef,
+  composeWorkspace = false,
 }: {
-  readonly children?: ComponentProps<typeof CommandSurfaces>["children"];
+  readonly children?: (
+    commands: CommandController | undefined,
+    binding: WorkspaceSettingsBinding,
+  ) => ReactNode;
+  readonly composeWorkspace?: boolean;
   readonly returnFocusRef?: ComponentProps<typeof CommandSurfaces>["returnFocusRef"];
   readonly port: FoundationPort;
   readonly bridge: CommandBridge;
@@ -41,6 +59,18 @@ export function SettingsSurfaces({
   const applyLocale = useRef(onLocale);
   applyLocale.current = onLocale;
   const [layoutState, setLayoutState] = useState<WorkspaceState>();
+  const [sharedWorkspace, setSharedWorkspace] = useState<WorkspaceController>();
+  const previousWorkspace = useRef<WorkspaceController | undefined>(undefined);
+  const storageAvailable = useRef(available);
+  storageAvailable.current = available;
+  const commandRegistry = useRef<CommandController | undefined>(undefined);
+  const onWorkspaceChange = useCallback(
+    (workspace: WorkspaceController | undefined, state?: WorkspaceState) => {
+      setSharedWorkspace(workspace);
+      setLayoutState(state);
+    },
+    [],
+  );
   const [layoutFailure, setLayoutFailure] = useState(false);
   const [requestedFocus, setRequestedFocus] = useState<SettingFeature>();
   const language = useMemo(
@@ -74,44 +104,57 @@ export function SettingsSurfaces({
       ),
     [port],
   );
-  const workspace = useMemo(
+  const preferences = useMemo(
     () =>
-      new WorkspaceController(
-        new LayoutPreferences(
-          port,
-          () => crypto.randomUUID(),
-          () => {
-            setLayoutFailure(true);
-          },
-        ),
-        window.innerWidth,
-        false,
-        setLayoutState,
+      new LayoutPreferences(
+        port,
+        () => crypto.randomUUID(),
+        () => {
+          setLayoutFailure(true);
+        },
       ),
     [port],
   );
+  const ownWorkspace = useMemo(
+    () =>
+      composeWorkspace
+        ? undefined
+        : new WorkspaceController(preferences, window.innerWidth, false, setLayoutState),
+    [preferences, composeWorkspace],
+  );
+  const workspace = ownWorkspace ?? sharedWorkspace ?? previousWorkspace.current;
+  previousWorkspace.current = workspace;
   const state = useSyncExternalStore(controller.subscribe, controller.snapshot);
   useEffect(() => {
+    commandRegistry.current?.changed();
+  }, [available]);
+  useEffect(() => {
     const resize = () => {
-      workspace.viewport(window.innerWidth);
+      ownWorkspace?.viewport(window.innerWidth);
     };
     window.addEventListener("resize", resize);
     return () => {
       window.removeEventListener("resize", resize);
-      workspace.dispose();
+      ownWorkspace?.dispose();
+    };
+  }, [ownWorkspace]);
+  useEffect(
+    () => () => {
       controller.dispose();
       language.dispose();
-    };
-  }, [workspace, controller, language]);
+    },
+    [controller, language],
+  );
   useEffect(() => {
     if (available) {
       void controller.refresh();
       void language.refresh();
-      void workspace.initialize();
+      void ownWorkspace?.initialize();
     }
-  }, [available, controller, language, workspace]);
+  }, [available, controller, language, ownWorkspace]);
   const register = useCallback(
     (registry: CommandController, reason: (id: CommandId) => CommandReason | undefined) => {
+      commandRegistry.current = registry;
       const zoom = (intent: "increase" | "decrease" | "reset"): CommandReason | undefined => {
         const snapshot = controller.snapshot();
         if (!snapshot.current) return "handler_missing";
@@ -132,7 +175,10 @@ export function SettingsSurfaces({
         stops.push(
           registry.register(`zoom.${intent}`, {
             state: () => {
-              const unavailable = reason(`zoom.${intent}`) ?? zoom(intent);
+              const unavailable =
+                reason(`zoom.${intent}`) ??
+                (!storageAvailable.current ? "busy" : undefined) ??
+                zoom(intent);
               return unavailable ? { reason: unavailable } : {};
             },
             run: async () => {
@@ -158,6 +204,7 @@ export function SettingsSurfaces({
               const phase = snapshot.settings.appearance.phase;
               const unavailable =
                 reason(`theme.${value}`) ??
+                (!storageAvailable.current ? "busy" : undefined) ??
                 (!snapshot.current
                   ? "handler_missing"
                   : phase === "submitting" ||
@@ -178,6 +225,7 @@ export function SettingsSurfaces({
         }),
       );
       return () => {
+        if (commandRegistry.current === registry) commandRegistry.current = undefined;
         for (const stop of stops) stop();
       };
     },
@@ -187,7 +235,21 @@ export function SettingsSurfaces({
   return (
     <>
       <CommandSurfaces
-        {...(children ? { children } : {})}
+        {...(children
+          ? {
+              children: (commands: CommandController | undefined) =>
+                children(commands, {
+                  preferences,
+                  decoration,
+                  zoom: state.effectiveZoom,
+                  layoutFailure,
+                  onDismissLayoutFailure: () => {
+                    setLayoutFailure(false);
+                  },
+                  onWorkspaceChange,
+                }),
+            }
+          : {})}
         {...(returnFocusRef ? { returnFocusRef } : {})}
         bridge={bridge}
         locale={locale}
@@ -208,24 +270,26 @@ export function SettingsSurfaces({
         )}
         renderSettings={(open, close, platform, feedback, returnFocusRef) => (
           <>
-            <SettingsDialog
-              open={open}
-              feedback={feedback}
-              onClose={() => {
-                setRequestedFocus(undefined);
-                close();
-              }}
-              requestedFocus={requestedFocus}
-              returnFocusRef={returnFocusRef}
-              port={port}
-              locale={locale}
-              available={available}
-              language={language}
-              controller={controller}
-              workspace={workspace}
-              workspaceState={layoutState ?? workspace.state}
-              platform={platform}
-            />
+            {workspace && (
+              <SettingsDialog
+                open={open}
+                feedback={feedback}
+                onClose={() => {
+                  setRequestedFocus(undefined);
+                  close();
+                }}
+                requestedFocus={requestedFocus}
+                returnFocusRef={returnFocusRef}
+                port={port}
+                locale={locale}
+                available={available}
+                language={language}
+                controller={controller}
+                workspace={workspace}
+                workspaceState={layoutState ?? workspace.state}
+                platform={platform}
+              />
+            )}
           </>
         )}
       />
@@ -236,7 +300,7 @@ export function SettingsSurfaces({
             document.querySelector<HTMLButtonElement>(".command-entry-actions button")?.focus();
         }}
       >
-        {layoutFailure && (
+        {layoutFailure && !composeWorkspace && (
           <p className="language-danger" role="alert">
             <Icon name="octagon-alert" />
             {message(locale, "settings.layoutNotRemembered")}{" "}

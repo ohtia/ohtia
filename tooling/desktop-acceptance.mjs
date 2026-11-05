@@ -78,7 +78,7 @@ try {
     timeout: 20000,
   });
   const page = await application.firstWindow();
-  await expect(page.getByRole("heading", { name: "Ohtia", exact: true })).toBeVisible();
+  await expect(page.locator(".workspace-window")).toBeVisible();
   await expect
     .poll(async () => (await page.evaluate(() => window.ohtia.foundation.readStatus().result)).ok, {
       timeout: portLimits.service_start_ms,
@@ -411,7 +411,7 @@ try {
   await cdp.detach();
   await page.emulateMedia({ forcedColors: "none", reducedMotion: "no-preference" });
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Ohtia", exact: true })).toBeVisible();
+  await expect(page.locator(".workspace-window")).toBeVisible();
   expect(launch.profile.research_root).toBe(path.join(launch.profile.home, "ohtia"));
   expect(await page.evaluate(() => Object.keys(window.ohtia.bootstrap).sort())).toEqual([
     "exit",
@@ -497,7 +497,7 @@ try {
   );
   passed("utility-crash-responsive");
   await page.evaluate(() => window.ohtia.bootstrap.retryService()).catch(() => {});
-  await expect(page.getByRole("heading", { name: "Ohtia", exact: true })).toBeVisible();
+  await expect(page.locator(".workspace-window")).toBeVisible();
   await expect
     .poll(async () => (await page.evaluate(() => window.ohtia.foundation.readStatus().result)).ok)
     .toBe(true);

@@ -280,6 +280,7 @@ function useLayerPosition(
   open: boolean,
   anchor: RefObject<HTMLElement | null>,
   layer: RefObject<HTMLElement | null>,
+  besideSeparator = false,
 ) {
   useLayoutEffect(() => {
     if (!open || !anchor.current || !layer.current) return;
@@ -290,8 +291,30 @@ function useLayerPosition(
       const width = document.documentElement.clientWidth;
       const height = document.documentElement.clientHeight;
       const margin = Number.parseFloat(getComputedStyle(surface).paddingLeft) || 0;
+      const separator = besideSeparator ? control.firstElementChild : null;
+      if (
+        separator?.getAttribute("role") === "separator" &&
+        separator.getAttribute("aria-orientation") === "vertical"
+      ) {
+        // Clear the full hit target, which can be wider than its layout slot.
+        const hit = separator.getBoundingClientRect();
+        const right = hit.right;
+        const left =
+          right + surface.offsetWidth <= width - margin ? right : hit.left - surface.offsetWidth;
+        surface.style.left = `${String(Math.max(margin, Math.min(left, width - surface.offsetWidth - margin)))}px`;
+        surface.style.top = `${String(Math.max(margin, Math.min(hit.top + (hit.height - surface.offsetHeight) / 2, height - surface.offsetHeight - margin)))}px`;
+        return;
+      }
+      const below = rect.bottom;
+      const above = rect.top - surface.offsetHeight;
+      const top =
+        below + surface.offsetHeight <= height - margin
+          ? below
+          : above >= margin
+            ? above
+            : Math.max(margin, Math.min(below, height - surface.offsetHeight - margin));
       surface.style.left = `${String(Math.max(margin, Math.min(rect.left, width - surface.offsetWidth - margin)))}px`;
-      surface.style.top = `${String(Math.max(margin, Math.min(rect.bottom, height - surface.offsetHeight - margin)))}px`;
+      surface.style.top = `${String(top)}px`;
     };
     position();
     const observer = new ResizeObserver(position);
@@ -304,7 +327,7 @@ function useLayerPosition(
       window.removeEventListener("resize", position);
       window.removeEventListener("scroll", position, true);
     };
-  }, [open, anchor, layer]);
+  }, [open, anchor, layer, besideSeparator]);
 }
 export function Tooltip({
   label,
@@ -321,7 +344,7 @@ export function Tooltip({
   const [visible, setVisible] = useState(false);
   const dismissed = useRef(false);
   const hovered = useRef(false);
-  useLayerPosition(visible, anchor, layer);
+  useLayerPosition(visible, anchor, layer, true);
   useEffect(() => {
     if (!visible) return;
     const escape = (event: KeyboardEvent) => {

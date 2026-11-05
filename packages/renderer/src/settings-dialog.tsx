@@ -453,13 +453,14 @@ export function SettingsDialog({
                 type="checkbox"
                 checked={layout.visible[panel]}
                 aria-disabled={
+                  !available ||
                   workspaceState.initializing ||
                   workspaceState.persistence.save.state === "submitting" ||
                   workspaceState.persistence.save.state === "uncertain" ||
                   (count === 1 && layout.visible[panel])
                 }
                 onChange={() => {
-                  workspace.visibility(panel, undefined, true);
+                  if (available) workspace.visibility(panel, undefined, true);
                 }}
               />
               {text(`command.panels.${panel}`)}
@@ -469,12 +470,13 @@ export function SettingsDialog({
           <button
             type="button"
             aria-disabled={
+              !available ||
               workspaceState.initializing ||
               workspaceState.persistence.save.state === "submitting" ||
               workspaceState.persistence.save.state === "uncertain"
             }
             onClick={() => {
-              workspace.reset();
+              if (available) workspace.reset();
             }}
           >
             <Icon name="rotate-ccw" />
@@ -492,7 +494,9 @@ export function SettingsDialog({
                 {text("settings.layoutNotRemembered")}{" "}
                 <button
                   type="button"
+                  aria-disabled={!available}
                   onClick={() => {
+                    if (!available) return;
                     if (open) focusSetting(id, "layout");
                     void workspace.rememberLayout();
                   }}
