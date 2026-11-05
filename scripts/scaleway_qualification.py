@@ -233,7 +233,8 @@ def cloud_config(intent: dict, resources: dict, public_key: str) -> bytes:
             },
         ],
         "package_update": True,
-        "packages": packages,
+        # cloud-init's schema refuses an empty list; KDE guests install through runcmd.
+        **({"packages": packages} if packages else {}),
         "runcmd": commands,
     }
     return ("#cloud-config\n" + json.dumps(value, indent=2) + "\n").encode()

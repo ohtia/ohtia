@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import signal
 import stat
@@ -101,6 +102,80 @@ def group_alive(pgid: int, proc: Path = Path("/proc")) -> bool:
         fields = stat_line.rsplit(b")", 1)[-1].split()
         if len(fields) > 2 and fields[2] == str(pgid).encode():
             return True
+    return False
+
+
+def release_document_mount(runtime: Path, env: dict[str, str]) -> None:
+    """Detach the document portal's FUSE mount, which outlives the session inside its runtime.
+
+    The bus-activated portal belongs to the private bus, not to the session's process groups,
+    so its mount at `<runtime>/doc` would otherwise block removing the runtime directory.
+    """
+    mount = runtime / "doc"
+    if not mounted(mount):
+        return
+    tool = shutil.which("fusermount3", path=env.get("PATH")) or shutil.which(
+        "fusermount", path=env.get("PATH")
+    )
+    require(tool is not None, "The document portal mount needs fusermount3 to be released.")
+    try:
+        result = subprocess.run(
+            [str(tool), "-u", "-z", str(mount)],
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+    except subprocess.TimeoutExpired:
+        result = None
+    require(
+        result is not None and result.returncode == 0 and not mounted(mount),
+        "The document portal mount in the Plasma runtime directory could not be released.",
+    )
+
+
+def teardown(
+    shell: subprocess.Popen | None,
+    compositor: subprocess.Popen | None,
+    runtime: Path,
+    env: dict[str, str],
+    *,
+    report: bool,
+) -> None:
+    """Always stop the shell, then KWin, then release the portal mount, in that order.
+
+    An earlier session failure stays the reported one; otherwise the first teardown failure,
+    including an interruption, is raised after every step was attempted.
+    """
+    first: BaseException | None = None
+    for step in (
+        lambda: stop(shell),
+        lambda: stop(compositor),
+        lambda: release_document_mount(runtime, env),
+    ):
+        try:
+            step()
+        except BaseException as error:
+            if first is None:
+                first = error
+    if report and first is not None:
+        raise first
+
+
+def mounted(path: Path, mountinfo: Path = Path("/proc/self/mountinfo")) -> bool:
+    """Read the mount table; a mount whose FUSE daemon died fails lstat and `os.path.ismount`."""
+    try:
+        lines = mountinfo.read_bytes().splitlines()
+    except OSError:
+        return os.path.ismount(path)
+    target = os.fsencode(path)
+    for line in lines:
+        fields = line.split(b" ")
+        if len(fields) > 4:
+            point = re.sub(
+                rb"\\([0-7]{3})", lambda match: bytes([int(match.group(1), 8)]), fields[4]
+            )
+            if point == target:
+                return True
     return False
 
 
@@ -229,17 +304,10 @@ def session(
             compositor.poll() is None and shell.poll() is None,
             "KWin or plasmashell exited during the session; KWin alone does not qualify.",
         )
-    finally:
-        # Stop KWin whatever stopping the shell raised, including an interruption; the shell's
-        # failure is then reported first.
-        try:
-            stop(shell)
-        except BaseException as failure:
-            try:
-                stop(compositor)
-            finally:
-                raise failure
-        stop(compositor)
+    except BaseException:
+        teardown(shell, compositor, runtime, env, report=False)
+        raise
+    teardown(shell, compositor, runtime, env, report=True)
 
 
 def main() -> int:

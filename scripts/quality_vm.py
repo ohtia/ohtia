@@ -145,7 +145,8 @@ def cloud_config(profile: str, public_key: str, *, desktop: str) -> str:
         # The guest keeps its image hostname; nothing reads it.
         "preserve_hostname": True,
         "package_update": True,
-        "packages": packages,
+        # cloud-init's schema refuses an empty list; KDE guests install through runcmd.
+        **({"packages": packages} if packages else {}),
         "runcmd": commands,
     }
     if profile == "debian-13":

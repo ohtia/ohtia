@@ -264,6 +264,11 @@ def chromium_desktop(env: Mapping[str, str]) -> str:
     return "OTHER"
 
 
+def process_arguments(pid: int) -> list[str]:
+    raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    return [os.fsdecode(item) for item in raw.split(b"\0") if item]
+
+
 def process_environment(pid: int) -> dict[str, str]:
     raw = Path(f"/proc/{pid}/environ").read_bytes()
     values = {}

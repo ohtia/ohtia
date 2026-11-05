@@ -817,6 +817,16 @@
       "id": "test_plasma_session.PlasmaSessionTests.test_kwin_is_stopped_when_stopping_the_shell_is_interrupted",
       "platforms": ["win32"],
       "reason": "POSIX account, owner-only runtime and Unix-socket session fixture for the Linux-only Plasma launcher; Windows does not establish this Linux contract."
+    },
+    {
+      "id": "test_quality_native.NativeTests.test_listener_credentials_identify_a_wayland_server_hidden_from_ss",
+      "platforms": ["win32", "darwin"],
+      "reason": "Linux Unix-socket SO_PEERCRED fixture for the Wayland compositor observation; other platforms have no Wayland session."
+    },
+    {
+      "id": "test_plasma_session.PlasmaSessionTests.test_teardown_runs_every_step_and_keeps_the_first_or_earlier_failure",
+      "platforms": ["win32"],
+      "reason": "POSIX account, owner-only runtime and Unix-socket session fixture for the Linux-only Plasma launcher; Windows does not establish this Linux contract."
     }
   ],
   "vitest_inapplicable": [

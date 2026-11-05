@@ -7,6 +7,7 @@ import errno
 import json
 import os
 import plistlib
+import socket
 import subprocess
 import sys
 import tempfile
@@ -571,7 +572,7 @@ async function validate(config, format) {
                     native.allow_development_runtime(other, assembled)
                 command.assert_not_called()
 
-    def linux_smoke(self, root, server, environments):
+    def linux_smoke(self, root, server, environments, arguments=None):
         for suite, receipt in (
             ("runtime", "receipt.json"),
             ("storage", "storage-receipt.json"),
@@ -613,6 +614,11 @@ async function validate(config, format) {
                 "process_environment",
                 side_effect=lambda pid: environments[pid],
             ),
+            patch.object(
+                native.linux_desktop,
+                "process_arguments",
+                side_effect=lambda pid: (arguments or {}).get(pid, ["/opt/ohtia/ohtia"]),
+            ),
             patch.object(native.time, "sleep"),
         ):
             future = executor.return_value.__enter__.return_value.submit.return_value
@@ -639,6 +645,12 @@ async function validate(config, format) {
         plasma = {"XDG_CURRENT_DESKTOP": "KDE", "KDE_SESSION_VERSION": "6"}
         for label, server, environments, error in (
             ("KWin serves KDE6", "kwin_wayland", {101: plasma, 102: plasma}, None),
+            (
+                "a helper with a reduced environment is not the browser",
+                "kwin_wayland",
+                {101: plasma, 102: {"PATH": "/usr/bin"}},
+                None,
+            ),
             ("an exited process is ignored", "kwin_wayland", {101: plasma, 102: {}}, None),
             (
                 "gnome-shell serves a KDE cell",
@@ -653,13 +665,64 @@ async function validate(config, format) {
                 "Chromium",
             ),
         ):
+            helper = (
+                {102: ["/opt/ohtia/ohtia", "--enable-logging", "--type=gpu-process"]}
+                if "helper" in label
+                else None
+            )
             with self.subTest(label=label), tempfile.TemporaryDirectory() as temporary:
                 if error is None:
-                    _, observed = self.linux_smoke(Path(temporary), server, environments)
+                    _, observed = self.linux_smoke(Path(temporary), server, environments, helper)
                     self.assertEqual(observed["chromium_desktops"], ["KDE6"])
                 else:
                     with self.assertRaisesRegex(delivery.DeliveryError, error):
                         self.linux_smoke(Path(temporary), server, environments)
+
+    def test_listener_credentials_identify_a_wayland_server_hidden_from_ss(self):
+        with tempfile.TemporaryDirectory(prefix="w") as temporary:
+            path = Path(temporary) / "wayland-ohtia"
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
+                server.bind(str(path))
+                server.listen()
+                self.assertEqual(native.listener_pids(str(path)), [os.getpid()])
+            self.assertEqual(native.listener_pids(str(path)), [])
+        self.assertEqual(native.listener_pids("wayland-0"), [])
+
+    def test_display_connection_falls_back_to_listener_credentials(self):
+        listing = (
+            'u_str ESTAB 0 0 * 100 * 200 users:(("ohtia",pid=101,fd=5))\n'
+            "u_str ESTAB 0 0 /run/user/1/kde-x/wayland-ohtia 200 * 100\n"
+        )
+        with (
+            patch.object(native.sys, "platform", "linux"),
+            patch.object(native, "command", return_value=listing),
+            patch.object(native, "listener_pids", return_value=[7]) as listener,
+            patch.object(native.linux_desktop, "process_name", return_value="kwin_wayland"),
+        ):
+            connected = native.display_connection([{"pid": 101}], "wayland")
+        listener.assert_called_once_with("/run/user/1/kde-x/wayland-ohtia")
+        self.assertEqual(connected["server_pids"], [7])
+        self.assertEqual(connected["server_commands"], ["kwin_wayland"])
+
+    def test_hidden_server_is_resolved_once_and_a_failed_lookup_records_nothing(self):
+        listing = (
+            'u_str ESTAB 0 0 * 300 * 400 users:(("ohtia",pid=101,fd=5))\n'
+            "u_str ESTAB 0 0 /run/user/1/kde-x/wayland-ohtia 400 * 300\n"
+        )
+        native.LISTENERS.clear()
+        self.addCleanup(native.LISTENERS.clear)
+        with (
+            patch.object(native.sys, "platform", "linux"),
+            patch.object(native, "command", return_value=listing),
+            patch.object(native, "listener_pids", side_effect=[[], [7]]) as listener,
+            patch.object(native.linux_desktop, "process_name", return_value="kwin_wayland"),
+        ):
+            self.assertIsNone(native.display_connection([{"pid": 101}], "wayland"))
+            first = native.display_connection([{"pid": 101}], "wayland")
+            second = native.display_connection([{"pid": 101}], "wayland")
+        self.assertEqual(listener.call_count, 2)
+        self.assertEqual(first, second)
+        self.assertEqual(first["server_pids"], [7])
 
     def test_smoke_does_not_reuse_identities_when_snapshot_is_missing(self):
         with tempfile.TemporaryDirectory() as temporary:

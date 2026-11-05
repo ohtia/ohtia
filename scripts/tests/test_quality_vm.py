@@ -818,7 +818,7 @@ class VirtualMachineTests(unittest.TestCase):
                 self.assertNotIn("gnome-shell", text)
                 self.assertNotIn("gnome-session", text)
                 self.assertNotIn("fedora-release-identity-workstation", text)
-                self.assertEqual(config["packages"], [])
+                self.assertNotIn("packages", config)
                 installs = [c for c in config["runcmd"] if "install" in c]
                 self.assertTrue(any(identity in c for c in installs))
                 for name in ("at-spi2-core", "xdg-desktop-portal-kde", "xsettingsd", "binutils"):

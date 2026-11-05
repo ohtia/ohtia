@@ -243,6 +243,59 @@ class PlasmaSessionTests(unittest.TestCase):
                 pass
         self.assertEqual(stopped, ["plasmashell", "kwin_wayland"])
 
+    def teardown_trace(self, failures, body=None):
+        trace = []
+
+        def step(name):
+            def run(*args):
+                if name != "release" and args[0] is None:
+                    return
+                label = name if name == "release" else args[0].arguments[0]
+                trace.append(label)
+                if name != "release":
+                    args[0].returncode = 0
+                if label in failures:
+                    raise failures[label]
+
+            return run
+
+        self.enterContext(patch.object(plasma, "stop", side_effect=step("stop")))
+        self.enterContext(
+            patch.object(plasma, "release_document_mount", side_effect=step("release"))
+        )
+        try:
+            with self.enter():
+                if body is not None:
+                    raise body
+        except BaseException as error:
+            return trace, error
+        return trace, None
+
+    def test_teardown_runs_every_step_and_keeps_the_first_or_earlier_failure(self):
+        shell = plasma.PlasmaError("plasmashell helpers remain after shutdown.")
+        kwin = plasma.PlasmaError("kwin_wayland helpers remain after shutdown.")
+        mount = plasma.PlasmaError("The document portal mount could not be released.")
+        body = plasma.PlasmaError("KWin or plasmashell exited during the session.")
+        steps = ["plasmashell", "kwin_wayland", "release"]
+        for label, failures, raised, expected in (
+            ("clean", {}, None, None),
+            ("shell", {"plasmashell": shell}, None, shell),
+            ("kwin and mount", {"kwin_wayland": kwin, "release": mount}, None, kwin),
+            ("mount only", {"release": mount}, None, mount),
+            ("body keeps precedence", {"release": mount}, body, body),
+            ("interrupted shell", {"plasmashell": KeyboardInterrupt()}, None, KeyboardInterrupt),
+        ):
+            with self.subTest(label=label):
+                self.order.clear()
+                self.processes.clear()
+                (self.runtime / plasma.SOCKET).unlink(missing_ok=True)
+                trace, error = self.teardown_trace(failures, raised)
+                self.assertEqual(trace, steps)
+                if expected is KeyboardInterrupt:
+                    self.assertIsInstance(error, KeyboardInterrupt)
+                else:
+                    self.assertIs(error, expected)
+
     def test_unanswered_bus_is_not_ready(self):
         def hang(*args, **kwargs):
             raise subprocess.TimeoutExpired("dbus-send", 10)
@@ -262,6 +315,66 @@ class PlasmaSessionTests(unittest.TestCase):
             plasma, "bus", return_value=subprocess.CompletedProcess([], 1, stdout="")
         ):
             self.assertFalse(plasma.has_owner({}, "org.kde.KWin"))
+
+
+class DocumentMountTests(unittest.TestCase):
+    def test_mount_table_finds_escaped_and_dead_fuse_mounts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            table = Path(temporary) / "mountinfo"
+            table.write_bytes(
+                b"36 25 0:32 / /run/user/1000/kde\\040x/doc rw - fuse.portal portal rw\n"
+                b"37 25 0:33 / /tmp rw - tmpfs tmpfs rw\n"
+            )
+            self.assertTrue(plasma.mounted(Path("/run/user/1000/kde x/doc"), table))
+            self.assertFalse(plasma.mounted(Path("/run/user/1000/kde x"), table))
+            with patch.object(plasma.os.path, "ismount", return_value=True) as fallback:
+                self.assertTrue(plasma.mounted(Path("/x"), Path(temporary) / "missing"))
+            fallback.assert_called_once()
+
+    def test_a_hung_unmount_fails_the_session(self):
+        def hang(*args, **kwargs):
+            raise subprocess.TimeoutExpired("fusermount3", 10)
+
+        with (
+            patch.object(plasma, "mounted", return_value=True),
+            patch.object(plasma.shutil, "which", return_value="/usr/bin/fusermount3"),
+            patch.object(plasma.subprocess, "run", side_effect=hang),
+            self.assertRaisesRegex(plasma.PlasmaError, "could not be released"),
+        ):
+            plasma.release_document_mount(Path("/run/user/1000/kde-x"), {"PATH": "/usr/bin"})
+
+    def test_release_detaches_only_a_mounted_document_portal(self):
+        runtime = Path("/run/user/1000/kde-x")
+        with patch.object(plasma.subprocess, "run") as run:
+            with patch.object(plasma, "mounted", return_value=False):
+                plasma.release_document_mount(runtime, {"PATH": "/usr/bin"})
+            run.assert_not_called()
+        states = iter([True, False])
+        with (
+            patch.object(plasma, "mounted", side_effect=lambda path: next(states)),
+            patch.object(plasma.shutil, "which", return_value="/usr/bin/fusermount3"),
+            patch.object(
+                plasma.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)
+            ) as run,
+        ):
+            plasma.release_document_mount(runtime, {"PATH": "/usr/bin"})
+        self.assertEqual(
+            run.call_args.args[0], ["/usr/bin/fusermount3", "-u", "-z", str(runtime / "doc")]
+        )
+
+    def test_a_mount_that_cannot_be_released_fails_the_session(self):
+        runtime = Path("/run/user/1000/kde-x")
+        for which, status in (("/usr/bin/fusermount3", 1), (None, 0)):
+            with (
+                self.subTest(which=which, status=status),
+                patch.object(plasma, "mounted", return_value=True),
+                patch.object(plasma.shutil, "which", return_value=which),
+                patch.object(
+                    plasma.subprocess, "run", return_value=subprocess.CompletedProcess([], status)
+                ),
+                self.assertRaises(plasma.PlasmaError),
+            ):
+                plasma.release_document_mount(runtime, {"PATH": "/usr/bin"})
 
 
 class GroupStopTests(unittest.TestCase):

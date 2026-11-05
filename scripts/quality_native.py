@@ -12,7 +12,9 @@ import platform
 import plistlib
 import re
 import shutil
+import socket
 import stat
+import struct
 import subprocess
 import sys
 import time
@@ -665,6 +667,32 @@ def windows_token(
         kernel.CloseHandle(handle)
 
 
+# Wayland server identities resolved through peer credentials, by server socket inode.
+LISTENERS: dict[str, list[int]] = {}
+
+
+def listener_pids(address: str) -> list[int]:
+    """Identify a Wayland socket's listening process through the kernel's peer credentials.
+
+    KWin marks itself non-dumpable, so its descriptors are hidden from `ss -p`; SO_PEERCRED still
+    reports the process that created the listening socket.
+    """
+    path = Path(address)
+    if not path.is_absolute() or not path.is_socket():
+        return []
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            connection.settimeout(2)
+            connection.connect(str(path))
+            credentials = connection.getsockopt(
+                socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")
+            )
+    except OSError:
+        return []
+    pid, _, _ = struct.unpack("3i", credentials)
+    return [pid] if pid > 0 else []
+
+
 def display_connection(known: list[dict], backend: str) -> dict | None:
     if sys.platform != "linux":
         return None
@@ -691,8 +719,16 @@ def display_connection(known: list[dict], backend: str) -> dict | None:
         peers = [peer for peer in rows if peer["inode"] == row["peer"]]
         for peer in peers:
             if "wayland-" in peer["address"]:
+                server_pids = peer["pids"]
+                if not server_pids:
+                    # Resolve each hidden server connection once; a transient lookup failure
+                    # records nothing this poll instead of an unattributed observation.
+                    server_pids = LISTENERS.get(peer["inode"]) or listener_pids(peer["address"])
+                    if not server_pids:
+                        continue
+                    LISTENERS[peer["inode"]] = server_pids
                 names = {}
-                for pid in peer["pids"]:
+                for pid in server_pids:
                     try:
                         names[pid] = linux_desktop.process_name(pid)
                     except OSError:
@@ -701,7 +737,7 @@ def display_connection(known: list[dict], backend: str) -> dict | None:
                     "backend": backend,
                     "source": "unix-peer",
                     "client_pids": row["pids"],
-                    "server_pids": peer["pids"],
+                    "server_pids": server_pids,
                     "server_commands": sorted(set(names.values())),
                     "peer_inode": peer["inode"],
                 }
@@ -797,14 +833,17 @@ def smoke(
                 if connected is not None and connected not in displays:
                     displays.append(connected)
                 if sys.platform == "linux":
-                    # Classify only package processes verified in this poll; an exited
-                    # process reads as an empty environment and says nothing about Chromium.
+                    # Chromium classifies the desktop in its main process, which carries no
+                    # --type; helpers such as the data service run with a reduced
+                    # environment. Classify only main processes verified in this poll, and
+                    # ignore an exited process's empty environment.
                     for row in current:
                         try:
+                            arguments = linux_desktop.process_arguments(row["pid"])
                             environment = linux_desktop.process_environment(row["pid"])
                         except OSError:
                             continue
-                        if environment:
+                        if environment and not any(a.startswith("--type=") for a in arguments):
                             desktops.add(linux_desktop.chromium_desktop(environment))
                 time.sleep(0.2)
             supervision = future.result()

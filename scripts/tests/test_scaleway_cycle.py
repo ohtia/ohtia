@@ -749,7 +749,7 @@ class CycleTests(unittest.TestCase):
                     .split("\n", 1)[1]
                 )
                 text = json.dumps(value["runcmd"])
-                self.assertEqual(value["packages"], [])
+                self.assertNotIn("packages", value)
                 self.assertNotIn("gnome-shell", text)
                 self.assertNotIn("gnome-session", text)
                 self.assertNotIn("fedora-release-identity-workstation", text)
