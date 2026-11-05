@@ -21,6 +21,7 @@ import time
 from pathlib import Path, PurePosixPath
 
 import desktop_runtime
+import linux_desktop
 import quality_native
 import workspace
 
@@ -137,7 +138,7 @@ def store_snapshot(profile):
     return result
 
 
-def native_profile(target, profile, backend):
+def native_profile(target, profile, backend, desktop=None):
     if sys.platform == "win32":
         import windows_contributor
 
@@ -170,11 +171,15 @@ def native_profile(target, profile, backend):
             filesystem in declared["filesystems"] and backend in declared["display_backends"],
             "Unqualified filesystem or display.",
         )
+        require(desktop in declared["desktops"], "Declare the cell's GNOME or KDE desktop.")
+        try:
+            linux_desktop.require_identity(profile, desktop, release)
+        except linux_desktop.DesktopError as exc:
+            raise ValueError(str(exc)) from None
         if profile == "fedora-44":
             require(
-                release.get("VARIANT_ID") == "workstation"
-                and command(["getenforce"], capture=True) == "Enforcing",
-                "Fedora Workstation and enforcing SELinux required.",
+                command(["getenforce"], capture=True) == "Enforcing",
+                "Fedora with enforcing SELinux required.",
             )
         else:
             require(
@@ -214,6 +219,7 @@ def native_profile(target, profile, backend):
         "target": target,
         "profile": profile,
         "backend": backend,
+        **({"desktop": desktop} if sys.platform == "linux" else {}),
         "filesystem": filesystem,
         "formats": formats,
     }
@@ -849,7 +855,8 @@ def prepare_mac(profile_file, cell_file, staged_file, destination, output):
     record = json.loads(staged_file.read_text())
     require(
         sys.platform == "darwin"
-        and native_profile(cell["target"], cell["profile"], cell["backend"]) == cell,
+        and native_profile(cell["target"], cell["profile"], cell["backend"], cell.get("desktop"))
+        == cell,
         "Use the admitted native macOS fixture.",
     )
     require(
@@ -997,7 +1004,8 @@ def exercise(
     cell = json.loads(cell_file.read_text())
     record = json.loads(staged_file.read_text())
     require(
-        native_profile(cell["target"], cell["profile"], cell["backend"]) == cell,
+        native_profile(cell["target"], cell["profile"], cell["backend"], cell.get("desktop"))
+        == cell,
         "Native cell changed.",
     )
     check_installation_admission(record, profile)
@@ -1276,6 +1284,7 @@ def main():
     build.add_argument("profile")
     build.add_argument("backend")
     build.add_argument("output", type=Path)
+    build.add_argument("--desktop", choices=linux_desktop.DESKTOPS)
     run = sub.add_parser("exercise")
     run.add_argument("runtime_profile", type=Path)
     run.add_argument("cell", type=Path)
@@ -1424,7 +1433,7 @@ def main():
             )
             return 0
         require(0 < args.run_id <= 2**53 - 1, "Use a finite positive unique run identity.")
-        cell = native_profile(args.target, args.profile, args.backend)
+        cell = native_profile(args.target, args.profile, args.backend, args.desktop)
         output = args.output.absolute()
         require(not output.exists(), "Use a new retained build destination.")
         output.mkdir(parents=True)

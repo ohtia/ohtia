@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import delivery_admission as admission
-from delivery_fixture import NOW, SECOND_SESSION, Fixture, second_session
+from delivery_fixture import NOW, Fixture
 
 
 class AdmissionTests(unittest.TestCase):
@@ -22,36 +22,47 @@ class AdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(admission.AdmissionError, "^" + code + "$"):
             fixture.admit(context)
 
-    def test_required_scope_derives_six_linux_cells_on_wayland(self):
+    def test_required_scope_derives_twelve_linux_cells_with_both_desktops(self):
         f = Fixture()
         self.assertEqual(f.admit().report()["status"], "admitted")
-        self.assertEqual(len(f.cells["cells"]), 9)
+        self.assertEqual(len(f.cells["cells"]), 15)
         linux = [c for c in f.cells["cells"] if c["target"].startswith("linux-")]
-        self.assertEqual(len(linux), 6)
+        self.assertEqual(len(linux), 12)
         self.assertEqual({c["display"] for c in linux}, {"wayland"})
         self.assertEqual(
-            {c["os_profile"] for c in linux}, {"ubuntu-26.04", "fedora-44", "debian-13"}
+            {c["id"] for c in linux},
+            {
+                f"{target}-{profile}-{desktop}"
+                for target in ("linux-x64", "linux-arm64")
+                for profile in ("ubuntu-26-04", "fedora-44", "debian-13")
+                for desktop in ("gnome", "kde")
+            },
+        )
+        self.assertEqual(
+            {c["desktop"] for c in f.cells["cells"] if not c["target"].startswith("linux-")},
+            {None},
         )
 
-    def test_same_sealed_deb_covers_independent_sessions_and_arm_cells(self):
-        with second_session():
-            f = Fixture()
-            self.assertEqual(f.admit().report()["status"], "admitted")
-            self.assertEqual(len(f.cells["cells"]), 11)
-            installs = {}
-            for target in ("linux-x64", "linux-arm64"):
+    def test_same_sealed_package_covers_gnome_and_kde_cells_of_one_profile(self):
+        f = Fixture()
+        self.assertEqual(f.admit().report()["status"], "admitted")
+        installs = {}
+        for target in ("linux-x64", "linux-arm64"):
+            for profile in ("ubuntu-26.04", "fedora-44", "debian-13"):
                 cells = [
                     c
                     for c in f.cells["cells"]
-                    if c["target"] == target and c["os_profile"] == "ubuntu-26.04"
+                    if c["target"] == target and c["os_profile"] == profile
                 ]
-                self.assertEqual({c["display"] for c in cells}, {SECOND_SESSION, "wayland"})
+                self.assertEqual({c["desktop"] for c in cells}, {"gnome", "kde"})
                 self.assertEqual(
                     cells[0]["assignments"]["install"], cells[1]["assignments"]["install"]
                 )
-                installs[target] = cells[0]["assignments"]["install"]["sha256"]
-            self.assertNotEqual(installs["linux-x64"], installs["linux-arm64"])
-            self.assertFalse(f.admit().report()["publication_authorized"])
+                installs[target, profile] = cells[0]["assignments"]["install"]["sha256"]
+        self.assertNotEqual(
+            installs["linux-x64", "ubuntu-26.04"], installs["linux-arm64", "ubuntu-26.04"]
+        )
+        self.assertFalse(f.admit().report()["publication_authorized"])
 
     def test_macos_families_sharing_one_sealed_package_are_admitted(self):
         f = Fixture()
@@ -62,8 +73,8 @@ class AdmissionTests(unittest.TestCase):
 
     def test_ubuntu_package_is_never_assigned_to_a_debian_cell(self):
         f = Fixture()
-        ubuntu = next(c for c in f.cells["cells"] if c["id"] == "linux-x64-ubuntu-26-04-wayland")
-        debian = next(c for c in f.cells["cells"] if c["id"] == "linux-x64-debian-13-wayland")
+        ubuntu = next(c for c in f.cells["cells"] if c["id"] == "linux-x64-ubuntu-26-04-gnome")
+        debian = next(c for c in f.cells["cells"] if c["id"] == "linux-x64-debian-13-gnome")
         debian["assignments"]["install"] = copy.deepcopy(ubuntu["assignments"]["install"])
         f.refresh()
         self.denied(f, "artifact_assignment")
@@ -168,7 +179,7 @@ class AdmissionTests(unittest.TestCase):
             False,
         )
         f = Fixture(optional=("darwin-x64", "win32-arm64"))
-        self.assertEqual(len(f.cells["cells"]), 12)
+        self.assertEqual(len(f.cells["cells"]), 18)
         f.admit()
         context = f.context()
         f.cells["cells"].pop()
@@ -220,20 +231,21 @@ class AdmissionTests(unittest.TestCase):
                 )
 
     def test_sessions_consuming_p_and_q_are_refused_with_same_source_version_and_format(self):
-        with second_session():
-            f = Fixture()
-            original = f.artifacts["inventories"][0]["artifacts"][0]
-            replacement = copy.deepcopy(original)
-            replacement.update(id="same-version-rebuilt", sha256="1" * 64)
-            f.artifacts["inventories"][0]["artifacts"].append(replacement)
-            cell = next(
-                c
-                for c in f.cells["cells"]
-                if c["target"] == original["targets"][0] and c["display"] == SECOND_SESSION
-            )
-            cell["assignments"].update(install=f.ref(replacement), update=f.ref(replacement))
-            f.refresh()
-            self.denied(f, "session_package_substitution")
+        f = Fixture()
+        original = f.artifacts["inventories"][0]["artifacts"][0]
+        replacement = copy.deepcopy(original)
+        replacement.update(id="same-version-rebuilt", sha256="1" * 64)
+        f.artifacts["inventories"][0]["artifacts"].append(replacement)
+        cell = next(
+            c
+            for c in f.cells["cells"]
+            if c["target"] == original["targets"][0]
+            and c["profile"] == original["profile"]
+            and c["desktop"] == "kde"
+        )
+        cell["assignments"].update(install=f.ref(replacement), update=f.ref(replacement))
+        f.refresh()
+        self.denied(f, "session_package_substitution")
 
     def test_wrong_transferred_digest_or_length_is_refused_in_assignment(self):
         for field, value in (("sha256", "1" * 64), ("bytes", 1), ("bytes", True)):
@@ -295,6 +307,8 @@ class AdmissionTests(unittest.TestCase):
             ("process_architecture", "x64"),
             ("addon_architecture", "x64"),
             ("display", "desktop"),
+            ("desktop", "xfce"),
+            ("desktop", None),
             ("security", "disabled"),
             ("filesystem", "nfs"),
             ("os_version", "12"),
@@ -651,19 +665,20 @@ class AdmissionTests(unittest.TestCase):
                 admission.load_bundle(root)
 
     def test_update_only_substitution_cannot_split_the_sealed_package(self):
-        with second_session():
-            f = Fixture()
-            original = f.artifacts["inventories"][0]["artifacts"][0]
-            other = {**copy.deepcopy(original), "id": "different-update-bytes", "sha256": "1" * 64}
-            f.artifacts["inventories"][0]["artifacts"].append(other)
-            cell = next(
-                c
-                for c in f.cells["cells"]
-                if c["target"] == "linux-x64" and c["display"] == SECOND_SESSION
-            )
-            cell["assignments"]["update"] = f.ref(other)
-            f.refresh()
-            self.denied(f, "artifact_role_substitution")
+        f = Fixture()
+        original = f.artifacts["inventories"][0]["artifacts"][0]
+        other = {**copy.deepcopy(original), "id": "different-update-bytes", "sha256": "1" * 64}
+        f.artifacts["inventories"][0]["artifacts"].append(other)
+        cell = next(
+            c
+            for c in f.cells["cells"]
+            if c["target"] == original["targets"][0]
+            and c["profile"] == original["profile"]
+            and c["desktop"] == "kde"
+        )
+        cell["assignments"]["update"] = f.ref(other)
+        f.refresh()
+        self.denied(f, "artifact_role_substitution")
 
     def test_passed_deferred_update_requires_nonempty_baseline_coverage(self):
         f = Fixture()

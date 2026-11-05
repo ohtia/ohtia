@@ -38,7 +38,7 @@ The [qualification workflow](../.github/workflows/installation-qualification.yml
 
 Build execution receives no provider or publisher credentials. Creator and recovery authority are separate. Resource UUIDs and the current IPv4 come from authenticated provider responses; callers cannot supply an address, endpoint, source revision or arbitrary remote command. Ephemeral SSH identities remain on the controller. Host-key admission compares Ed25519 fingerprints through the authenticated provider API before strict SSH is enabled.
 
-The normal eight-cell hosted CI does not allocate paid guests. Native package/runtime/storage/diagnostics results establish their observed unsigned quality scope. They do not establish publisher signing, authenticated first installation, installed updates, cryptographic artifact attestations, assistive acceptance or permission to distribute.
+The normal twelve-cell hosted CI does not allocate paid guests. Native package/runtime/storage/diagnostics results establish their observed unsigned quality scope. They do not establish publisher signing, authenticated first installation, installed updates, cryptographic artifact attestations, assistive acceptance or permission to distribute.
 
 ## Configuration placement
 
@@ -69,7 +69,7 @@ The controller binds actual workflow/source/run/attempt, native target, package 
 
 A nonsecret immutable intent precedes every provider write. Allocation requests are journalled before transmission and returned UUIDs recorded before another operation. A lost create response is never blindly retried. Uncertain or unavailable evidence blocks another allocation while known owned resources can still be reconciled.
 
-The guest shutdown timer is armed before application work. An ordinary locked account has an isolated home and no administrative authority. Only the verified newly allocated data volume may be formatted; its provider UUID must match the guest's vendor serial, with root, existing filesystems and partitions refused.[^devices] Fedora requires its Workstation identity/vendor kernel, Btrfs and enforcing SELinux. Debian requires its vendor kernel, ext4 and enabled AppArmor. The native graphical session preserves Chromium sandboxing.
+The guest shutdown timer is armed before application work. An ordinary locked account has an isolated home and no administrative authority. Only the verified newly allocated data volume may be formatted; its provider UUID must match the guest's vendor serial, with root, existing filesystems and partitions refused.[^devices] Each run selects one profile and one desktop, and its cell is `linux-arm64-<profile>-<desktop>`. Fedora requires its Workstation or KDE identity, vendor kernel, Btrfs and enforcing SELinux. A KDE guest installs the official KDE set without recommended or weak dependencies and never GNOME, and runs its smoke through the shared [Plasma launcher](../scripts/plasma_session.py) on a private bus. Debian requires its vendor kernel, ext4 and enabled AppArmor. The native graphical session preserves Chromium sandboxing.
 
 Normal cleanup and independent recovery verify owned server, volume, address and network-policy removal through exact-ID and project-filtered reads. Successful stop or DELETE responses alone do not establish absence. Foreign ownership, duplicate resources, unexpected attachments and incomplete reads fail closed. Disabling new allocations leaves recovery available. The current attempt of an active unexpired producer is deferred; completed attempts, expired leases and earlier attempts of a rerun whose intent is still listed may be reclaimed.
 
@@ -107,7 +107,7 @@ Each decision change appears as an `OHTIA_ARM_PREFLIGHT` JSON record with the re
 
 ## Progress and failure diagnostics
 
-The qualification run title identifies the selected profile and fault mode. Keep the workflow name, controller job name, intent-publication and provider-step names and refresh job name stable: the recovery trigger, the historical allocation-attempt reader and the evidence wait use those identities. A display title does not establish native profile, source or authority.
+The qualification run title identifies the selected profile, desktop and fault mode. Keep the workflow name, controller job name, intent-publication and provider-step names and refresh job name stable: the recovery trigger, the historical allocation-attempt reader and the evidence wait use those identities. A display title does not establish native profile, source or authority.
 
 The controller publishes `OHTIA_ARM_PROGRESS` JSON records on phase and observation changes and every thirty seconds during silent work. Heartbeats establish controller liveness only. Guest state changes require validated observations; a provider resource response or matching SSH host key does not establish successful account authentication, guest readiness or native smoke. Records identify source/run/attempt, profile/fault, phase, monotonic elapsed/remaining budget, attempt counts and normalized failures, without resource IDs, addresses, project identifiers, paths, credentials or raw guest text.
 
@@ -133,7 +133,7 @@ After retention loss, an exceptional manual execution may restore a privately re
 
 The deliberate controller-loss mode runs after native smoke on the same allocation and bypasses normal finally cleanup. The producer remains failed; a separate recovery result must establish actual deletion. Synthetic provider fixtures test control logic and do not qualify real provider operations.
 
-Headless GNOME/Wayland and software rendering establish their observed native session scope, not physical graphics or human assistive behavior. Scheduled recovery can be delayed, dropped or disabled by the hosting service.[^schedules] A shutdown timer can stop compute but cannot release storage or addresses. These mitigations do not establish a hard billing ceiling or independent recovery during a shared hosting outage.
+Headless GNOME or KDE Plasma Wayland and software rendering establish their observed native session scope, not physical graphics or human assistive behavior. Scheduled recovery can be delayed, dropped or disabled by the hosting service.[^schedules] A shutdown timer can stop compute but cannot release storage or addresses. These mitigations do not establish a hard billing ceiling or independent recovery during a shared hosting outage.
 
 [^devices]: Scaleway identifies SBS devices through vendor/model and a serial containing the allocated volume UUID; device letters are not stable identities.
 

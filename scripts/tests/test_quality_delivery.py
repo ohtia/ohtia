@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import linux_desktop
 import quality_delivery as delivery
 
 
@@ -61,8 +62,24 @@ class DeliveryTests(unittest.TestCase):
                                 "source": "unix-peer"
                                 if cell["target"].startswith("linux-")
                                 else "packaged-window-capture",
+                                **(
+                                    {
+                                        "server_commands": [
+                                            "kwin_wayland"
+                                            if cell["desktop"] == "kde"
+                                            else "gnome-shell"
+                                        ]
+                                    }
+                                    if cell["target"].startswith("linux-")
+                                    else {}
+                                ),
                             }
                         ],
+                        **(
+                            {"chromium_desktop": "KDE6" if cell["desktop"] == "kde" else "GNOME"}
+                            if cell["target"].startswith("linux-")
+                            else {}
+                        ),
                         "samples": [{"pid": 1000, "renderer": True, "sandbox": True}],
                         "remaining": [],
                     },
@@ -76,6 +93,7 @@ class DeliveryTests(unittest.TestCase):
                     "target": cell["target"],
                     "profile": cell["profile"],
                     "backend": cell["backend"],
+                    **({"desktop": cell["desktop"]} if "desktop" in cell else {}),
                     "filesystem": cell["filesystem"],
                     "tree_cessation": True,
                     "sandbox_observed": True,
@@ -84,7 +102,7 @@ class DeliveryTests(unittest.TestCase):
                 }
                 suites = {}
                 for suite in delivery.SUITES:
-                    required, observed = delivery.suite_cases(suite, cell["target"], cell["id"])
+                    required, observed = delivery.suite_cases(suite, cell["target"], cell)
                     file = directory / f"{format_id}-{suite}.json"
                     delivery.write(
                         file,
@@ -111,10 +129,22 @@ class DeliveryTests(unittest.TestCase):
                     "cell": cell,
                     "plan": self.plan,
                     "packages": packages,
+                    **(
+                        {
+                            "host": {
+                                "desktop": cell["desktop"],
+                                "display_managers": [],
+                                "installed_packages": 1500,
+                                "plasma_version": "6.6.6" if cell["desktop"] == "kde" else None,
+                            }
+                        }
+                        if cell["target"].startswith("linux-")
+                        else {}
+                    ),
                 },
             )
 
-            if cell["id"].endswith("-vm"):
+            if cell["launcher"] == "kvm":
                 delivery.write(
                     directory / "virtual-machine.json",
                     {
@@ -131,10 +161,27 @@ class DeliveryTests(unittest.TestCase):
 
     def test_complete_required_matrix_and_formats(self):
         cells = self.plan["cells"]
-        self.assertEqual(len(cells), 8)
-        self.assertEqual(sum(len(cell["formats"]) for cell in cells), 10)
+        self.assertEqual(len(cells), 12)
+        self.assertEqual(sum(len(cell["formats"]) for cell in cells), 14)
         self.assertEqual(
             {c["backend"] for c in cells if c["target"].startswith("linux-")}, {"wayland"}
+        )
+        self.assertEqual(
+            {
+                (c["target"], c["profile"], c["desktop"])
+                for c in cells
+                if c["target"].startswith("linux-")
+            },
+            {
+                (target, profile, desktop)
+                for target, profile in (
+                    ("linux-x64", "ubuntu-26.04"),
+                    ("linux-arm64", "ubuntu-26.04"),
+                    ("linux-x64", "fedora-44"),
+                    ("linux-x64", "debian-13"),
+                )
+                for desktop in ("gnome", "kde")
+            },
         )
         self.assertEqual(len({c["runner"] for c in cells}), 6)
         self.assertEqual(
@@ -283,6 +330,96 @@ class DeliveryTests(unittest.TestCase):
             with self.subTest(change=value), self.assertRaises(delivery.DeliveryError):
                 delivery.cells(manifest, invalid)
 
+    def test_cell_identifiers_name_target_profile_and_desktop(self):
+        cells = delivery.read(delivery.ROOT / "config/quality/build-targets.json")["cells"]
+        for cell in cells:
+            with self.subTest(cell=cell["id"]):
+                expected = f"{cell['target']}-{cell['profile'].replace('.', '-')}"
+                if cell["target"].startswith("linux-"):
+                    expected += "-" + cell["desktop"]
+                self.assertEqual(cell["id"], expected)
+                self.assertFalse(cell["id"].endswith(("-wayland", "-vm", "-scaleway")))
+        self.assertEqual(
+            {c["id"] for c in cells if not c["target"].startswith("linux-")},
+            {
+                "win32-x64-windows-server-2025",
+                "win32-arm64-windows-11",
+                "darwin-arm64-macos-26",
+                "darwin-arm64-macos-27",
+            },
+        )
+
+    def test_workflow_matrix_equals_the_quality_inventory(self):
+        text = (delivery.ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        quality = delivery.read(delivery.ROOT / "config/quality/build-targets.json")
+        delivery.require_workflow_matrix(text, quality)
+        self.assertEqual(len(delivery.workflow_matrix(text)), 12)
+        kde = next(c for c in quality["cells"] if c["id"] == "linux-x64-ubuntu-26-04-kde")
+        for old, new in (
+            ("id: linux-x64-ubuntu-26-04-kde", "id: ubuntu-26-04-x64-kde"),
+            (
+                "runner: ubuntu-26.04-arm\n            launcher: display-session\n          - id: win32",
+                "runner: ubuntu-26.04\n            launcher: display-session\n          - id: win32",
+            ),
+            (
+                "id: linux-x64-fedora-44-kde\n            runner: ubuntu-26.04\n            launcher: kvm",
+                "id: linux-x64-fedora-44-kde\n            runner: ubuntu-26.04\n            launcher: workspace",
+            ),
+            (
+                "          - id: linux-x64-debian-13-kde\n            runner: ubuntu-26.04\n            launcher: kvm\n",
+                "",
+            ),
+            (
+                "          - id: linux-x64-debian-13-kde\n            runner: ubuntu-26.04\n            launcher: kvm\n",
+                "          - id: linux-x64-debian-13-kde\n            runner: ubuntu-26.04\n",
+            ),
+        ):
+            with self.subTest(change=new[:40]):
+                self.assertEqual(text.count(old), 1)
+                with self.assertRaises(delivery.DeliveryError):
+                    delivery.require_workflow_matrix(text.replace(old, new), quality)
+        reordered = copy.deepcopy(quality)
+        reordered["cells"].remove(kde)
+        reordered["cells"].append(kde)
+        with self.assertRaises(delivery.DeliveryError):
+            delivery.require_workflow_matrix(text, reordered)
+
+    def test_hosted_kde_packages_follow_the_shared_rule_without_gnome(self):
+        text = (delivery.ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        prefix = "apt-get install --no-install-recommends -y "
+        lines = [line.split(prefix, 1)[1].split() for line in text.splitlines() if prefix in line]
+        gnome = next(packages for packages in lines if "gnome-shell" in packages)
+        kde = next(packages for packages in lines if "kubuntu-desktop" in packages)
+        self.assertEqual(
+            kde, ["kubuntu-desktop", *linux_desktop.kde_packages("ubuntu-26.04", gnome)]
+        )
+        self.assertNotIn("gnome-shell", kde)
+        self.assertNotIn("gnome-session", kde)
+        self.assertIn("DEBIAN_FRONTEND=noninteractive apt-get install", text)
+
+    def test_wrong_identifier_desktop_or_launcher_fails(self):
+        manifest = delivery.read(delivery.ROOT / "config/desktop/targets.json")
+        matrix = delivery.read(delivery.ROOT / "config/quality/build-targets.json")
+        kde = next(i for i, c in enumerate(matrix["cells"]) if c.get("desktop") == "kde")
+        windows = next(i for i, c in enumerate(matrix["cells"]) if c["target"] == "win32-x64")
+        for index, change in (
+            (kde, {"id": "ubuntu-26-04-x64-wayland"}),
+            (kde, {"desktop": "xfce"}),
+            (kde, {"desktop": "gnome"}),
+            (kde, {"launcher": "kvm"}),
+            (kde, {"launcher": "scaleway"}),
+            (windows, {"desktop": "gnome"}),
+            (windows, {"launcher": "display-session"}),
+        ):
+            invalid = copy.deepcopy(matrix)
+            invalid["cells"][index].update(change)
+            with self.subTest(change=change), self.assertRaises(delivery.DeliveryError):
+                delivery.cells(manifest, invalid)
+        invalid = copy.deepcopy(matrix)
+        del invalid["cells"][kde]["desktop"]
+        with self.assertRaises(delivery.DeliveryError):
+            delivery.cells(manifest, invalid)
+
     def test_missing_or_nonstandard_hosted_runner_fails(self):
         manifest = delivery.read(delivery.ROOT / "config/desktop/targets.json")
         matrix = delivery.read(delivery.ROOT / "config/quality/build-targets.json")
@@ -294,6 +431,67 @@ class DeliveryTests(unittest.TestCase):
         matrix["cells"].pop()
         with self.assertRaises(delivery.DeliveryError):
             delivery.cells(manifest, matrix)
+
+    def test_kde_cell_rejects_gnome_compositor_desktop_and_display_manager(self):
+        self.populate()
+        name = next(c["id"] for c in self.plan["cells"] if c.get("desktop") == "kde")
+        receipt_file = next(self.output.glob(f"quality-{name}-*/result.json"))
+        receipt = delivery.read(receipt_file)
+        package = next(iter(receipt["packages"].values()))
+        evidence_file = receipt_file.parent / package["native"]["evidence"]["file"]
+        observed = delivery.read(evidence_file)
+        for label, mutate, file, original in (
+            (
+                "gnome-shell serves",
+                lambda o: o["display_observations"][0].update(server_commands=["gnome-shell"]),
+                evidence_file,
+                observed,
+            ),
+            (
+                "kwin without peer name",
+                lambda o: o["display_observations"][0].update(server_commands=[]),
+                evidence_file,
+                observed,
+            ),
+            (
+                "KDE4 desktop",
+                lambda o: o.update(chromium_desktop="KDE4"),
+                evidence_file,
+                observed,
+            ),
+            (
+                "display manager",
+                lambda r: r["host"].update(display_managers=["sddm"]),
+                receipt_file,
+                receipt,
+            ),
+            (
+                "missing plasma",
+                lambda r: r["host"].update(plasma_version=None),
+                receipt_file,
+                receipt,
+            ),
+            (
+                "plasma 5",
+                lambda r: r["host"].update(plasma_version="5.27.11"),
+                receipt_file,
+                receipt,
+            ),
+            ("gnome host", lambda r: r["host"].update(desktop="gnome"), receipt_file, receipt),
+        ):
+            with self.subTest(label=label):
+                changed = copy.deepcopy(original)
+                mutate(changed)
+                delivery.write(file, changed)
+                if file == evidence_file:
+                    rewritten = delivery.read(receipt_file)
+                    for entry in rewritten["packages"].values():
+                        entry["native"]["evidence"] = delivery.artifact(file, receipt_file.parent)
+                    delivery.write(receipt_file, rewritten)
+                with self.assertRaises(delivery.DeliveryError):
+                    delivery.account(self.plan, self.output)
+                delivery.write(evidence_file, observed)
+                delivery.write(receipt_file, receipt)
 
     def test_boolean_version_and_foreign_backend_observation_fail(self):
         self.populate()

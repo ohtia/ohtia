@@ -11,12 +11,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+import linux_desktop
+
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = "OHTIA_CI_PROVENANCE="
 SHA = re.compile(r"[a-f0-9]{40}")
 DIGEST = re.compile(r"[a-f0-9]{64}")
 SUITES = ("runtime", "storage", "diagnostics", "startup")
 FULL_MATRIX = "full-required-matrix"
+# How each recurring cell runs: a private hosted session, a KVM guest or the hosted workspace.
+LAUNCHERS = ("display-session", "kvm", "workspace")
 DOCUMENTATION_ONLY = "documentation-only"
 
 
@@ -86,19 +90,28 @@ def cells(manifest: dict, quality: dict | None = None) -> list[dict]:
         "xcode-27",
     }
     require(
-        len(result) == len(required_runners) + 2
-        and {c["runner"] for c in result} == required_runners,
+        len(result) == 12 and {c["runner"] for c in result} == required_runners,
         "Missing or nonstandard required hosted runner.",
     )
     require(len({c["id"] for c in result}) == len(result), "Duplicate native cell.")
     for cell in result:
+        linux = isinstance(cell.get("target"), str) and cell["target"].startswith("linux-")
+        common = {"id", "runner", "target", "profile", "backend", "launcher", "filesystem"}
         require(
-            set(cell) == {"id", "runner", "target", "profile", "backend", "filesystem", "formats"},
+            set(cell) == common | {"formats"} | ({"desktop"} if linux else set()),
             "Invalid quality cell schema.",
         )
         require(
             re.fullmatch(r"[a-z0-9-]+", cell["id"]) is not None, "Unsafe native cell identifier."
         )
+        try:
+            expected_id = linux_desktop.cell_id(
+                cell["target"], cell["profile"], cell.get("desktop")
+            )
+        except linux_desktop.DesktopError as exc:
+            raise DeliveryError("Invalid native cell desktop.") from exc
+        require(cell["id"] == expected_id, "Native cell identifier differs from its scope.")
+        require(cell["launcher"] in LAUNCHERS, "Unknown native cell launcher.")
         target = next(t for t in targets if t["id"] == cell["target"])
         require(cell["filesystem"] in target["filesystems"], "Undeclared native filesystem.")
         require(
@@ -114,6 +127,7 @@ def cells(manifest: dict, quality: dict | None = None) -> list[dict]:
                 cell["runner"] == "ubuntu-26.04"
                 and cell["target"] == "linux-x64"
                 and cell["backend"] == "wayland"
+                and cell["launcher"] == "kvm"
                 and cell["formats"] == [expected_format]
                 and cell["filesystem"] == ("btrfs" if expected_format == "rpm" else "ext4"),
                 "Invalid native VM cell.",
@@ -124,6 +138,7 @@ def cells(manifest: dict, quality: dict | None = None) -> list[dict]:
                 cell["target"] == expected_target
                 and cell["profile"] == runner.removesuffix("-arm")
                 and cell["backend"] == "wayland"
+                and cell["launcher"] == "display-session"
                 and cell["formats"] == ["deb"],
                 "Mismatched Ubuntu hosted cell.",
             )
@@ -133,6 +148,7 @@ def cells(manifest: dict, quality: dict | None = None) -> list[dict]:
                 cell["target"] == ("win32-arm64" if arm else "win32-x64")
                 and cell["profile"] == ("windows-11" if arm else "windows-server-2025")
                 and cell["backend"] == "desktop"
+                and cell["launcher"] == "workspace"
                 and cell["formats"] == ["nsis"],
                 "Mismatched Windows hosted cell.",
             )
@@ -141,12 +157,20 @@ def cells(manifest: dict, quality: dict | None = None) -> list[dict]:
                 cell["target"] == "darwin-arm64"
                 and cell["profile"] == ("macos-26" if runner == "macos-26" else "macos-27")
                 and cell["backend"] == "windowserver"
+                and cell["launcher"] == "workspace"
                 and cell["formats"] == ["dmg", "zip"],
                 "Mismatched macOS hosted cell.",
             )
     require(
-        len({(c["target"], c["profile"], c["backend"]) for c in result}) == len(result),
-        "Duplicate native profile/backend.",
+        len({(c["target"], c["profile"], c["backend"], c.get("desktop")) for c in result})
+        == len(result),
+        "Duplicate native profile/backend/desktop.",
+    )
+    linux = [c for c in result if c["target"].startswith("linux-")]
+    require(
+        {(c["target"], c["profile"]) for c in linux if c["desktop"] == "gnome"}
+        == {(c["target"], c["profile"]) for c in linux if c["desktop"] == "kde"},
+        "Every recurring Linux profile requires its GNOME and KDE cells.",
     )
     return result
 
@@ -285,6 +309,31 @@ def quality_scope(env: dict | None = None) -> str:
     return DOCUMENTATION_ONLY if limited else FULL_MATRIX
 
 
+def workflow_matrix(text: str) -> list[tuple[str, str, str]]:
+    """Read the native job's `include` entries as (id, runner, launcher) without a YAML parser."""
+    require(text.count("    strategy:\n") == 1, "Unexpected native workflow strategy layout.")
+    block = text.split("    strategy:\n", 1)[1].split("    steps:\n", 1)[0]
+    entries = re.findall(
+        r"^ {10}- id: ([a-z0-9-]+)\n {12}runner: ([a-z0-9.-]+)\n {12}launcher: ([a-z-]+)\n",
+        block,
+        re.MULTILINE,
+    )
+    require(
+        len(entries) == block.count("- id:") and "include:" in block,
+        "Every native workflow entry must declare id, runner and launcher.",
+    )
+    return entries
+
+
+def require_workflow_matrix(text: str, quality: dict) -> None:
+    """The workflow matrix and the quality inventory name the same cells, runners and launchers."""
+    expected = [(cell["id"], cell["runner"], cell["launcher"]) for cell in quality["cells"]]
+    require(
+        workflow_matrix(text) == expected,
+        "The workflow native matrix differs from config/quality/build-targets.json.",
+    )
+
+
 def require_needs(env: dict | None = None) -> None:
     """Admit only the complete upstream result that the reported selection requires."""
     env = os.environ if env is None else env
@@ -375,12 +424,15 @@ def check_attachment(record: dict, directory: Path) -> Path:
     return file
 
 
-def runs_development_cases(cell_id: str) -> bool:
-    """Development cases need the checkout's own runtime, which runs directly on its runner."""
-    return not cell_id.endswith(("-vm", "-scaleway"))
+def runs_development_cases(cell: dict) -> bool:
+    """Development cases need the checkout's own runtime, which runs directly on its runner.
+
+    KVM guests and Scaleway guests, which declare no hosted launcher, receive built packages.
+    """
+    return cell.get("launcher") in {"display-session", "workspace"}
 
 
-def suite_cases(suite: str, target: str, cell_id: str = "") -> tuple[set[str], set[str]]:
+def suite_cases(suite: str, target: str, cell: dict) -> tuple[set[str], set[str]]:
     if suite == "runtime":
         inventory = read(ROOT / "config/quality/packaged-cases.json")
         return set(inventory["runtime"]), set(inventory["runtime_observations"])
@@ -391,7 +443,7 @@ def suite_cases(suite: str, target: str, cell_id: str = "") -> tuple[set[str], s
             for case in inventory["startup_installed"]
             if not (target.startswith("win32-") and case.endswith("aliased-research-root"))
         }
-        if runs_development_cases(cell_id):
+        if runs_development_cases(cell):
             cases |= set(inventory["startup_development"])
         return cases, set()
     inventory = read(
@@ -407,8 +459,8 @@ def suite_cases(suite: str, target: str, cell_id: str = "") -> tuple[set[str], s
     return set(cases), set()
 
 
-def validate_suite(suite: str, target: str, evidence: dict, cell_id: str = "") -> None:
-    expected, observations = suite_cases(suite, target, cell_id)
+def validate_suite(suite: str, target: str, evidence: dict, cell: dict) -> None:
+    expected, observations = suite_cases(suite, target, cell)
     cases = evidence.get("cases")
     require(isinstance(cases, list) and bool(cases), "Missing packaged cases.")
     require(len({case["id"] for case in cases}) == len(cases), "Duplicate packaged case.")
@@ -449,6 +501,22 @@ def account(expected: dict, directory: Path) -> dict:
             receipt.get("cell") == cell and receipt.get("plan") == expected,
             "Native source/run/policy identity differs.",
         )
+        linux = cell["target"].startswith("linux-")
+        if linux:
+            host = receipt.get("host")
+            require(
+                isinstance(host, dict)
+                and host.get("desktop") == cell["desktop"]
+                and host.get("display_managers") == []
+                and type(host.get("installed_packages")) is int
+                and host["installed_packages"] > 0
+                and (
+                    re.fullmatch(r"6\.\d+\.\d+", host.get("plasma_version") or "") is not None
+                    if cell["desktop"] == "kde"
+                    else host.get("plasma_version") is None
+                ),
+                "Missing desktop, package or display-manager observation.",
+            )
         require(
             set(receipt["packages"]) == set(cell["formats"]),
             "Missing or unexpected package format.",
@@ -476,6 +544,7 @@ def account(expected: dict, directory: Path) -> dict:
                 native["target"] == cell["target"]
                 and native["profile"] == cell["profile"]
                 and native["backend"] == cell["backend"]
+                and native.get("desktop") == cell.get("desktop")
                 and native["filesystem"] == cell["filesystem"],
                 "Native profile mismatch.",
             )
@@ -513,6 +582,17 @@ def account(expected: dict, directory: Path) -> dict:
                 ),
                 "Missing or wrong native display backend observation.",
             )
+            if linux:
+                compositor = linux_desktop.COMPOSITORS[cell["desktop"]]
+                require(
+                    all(row.get("server_commands") == [compositor] for row in display),
+                    "The Wayland peer serving the application is not the desktop's compositor.",
+                )
+                require(
+                    observed.get("chromium_desktop")
+                    == {"gnome": "GNOME", "kde": "KDE6"}[cell["desktop"]],
+                    "Chromium observed a different desktop environment.",
+                )
             samples = observed.get("samples")
             require(
                 isinstance(samples, list) and bool(samples) and observed.get("remaining") == [],
@@ -536,14 +616,14 @@ def account(expected: dict, directory: Path) -> dict:
             require(set(package["suites"]) == set(SUITES), "Incomplete packaged smoke suites.")
             for suite in SUITES:
                 evidence = read(check_attachment(package["suites"][suite], partition))
-                validate_suite(suite, cell["target"], evidence, cell["id"])
+                validate_suite(suite, cell["target"], evidence, cell)
                 binding = "preparedSha256" if suite == "diagnostics" else "artifact"
                 require(
                     evidence.get(binding) == observed["prepared_sha256"],
                     "Smoke suite tested a different payload.",
                 )
             require(format_id in cell["formats"], "Unexpected package format.")
-        if cell["id"].endswith("-vm"):
+        if cell["launcher"] == "kvm":
             machine = read(partition / "virtual-machine.json")
             require(
                 machine.get("plan") == expected

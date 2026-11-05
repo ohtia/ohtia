@@ -37,11 +37,11 @@ Each entry has a stable `TD-NNN` identifier, an owning issue, affected paths, co
 
 ### Desired technical state
 
-Recurring quality CI runs Fedora 44 and Debian 13 in native ARM64 VMs with their own kernels and the profiles established by [native foundation qualification](native-foundation-report.md). Fedora uses GNOME/Wayland, Btrfs and enforcing SELinux; Debian uses GNOME/Wayland and ext4. Each cell produces identifiable packages and complete packaged runtime, storage, diagnostics and shutdown evidence.
+Recurring quality CI runs Fedora 44 and Debian 13 in native ARM64 VMs with their own kernels and the profiles established by [native foundation qualification](native-foundation-report.md). Each runs on GNOME and on KDE Plasma Wayland; Fedora uses Btrfs and enforcing SELinux, and Debian uses ext4. Each cell produces identifiable packages and complete packaged runtime, storage, diagnostics and shutdown evidence.
 
 ### Current compromise
 
-The [quality matrix](../config/quality/build-targets.json) includes x64 Fedora and Debian VMs on the standard Ubuntu 26.04 runner and omits their ARM64 VM counterparts. The [VM policy](../config/quality/virtual-machines.json) explicitly retains ARM64 as pending. Ubuntu ARM64 jobs do not establish Fedora or Debian ARM64 compatibility. This is a recurring CI coverage limit, not removal of either distribution/CPU from the supported target contract.
+The [quality matrix](../config/quality/build-targets.json) includes x64 Fedora and Debian VMs on the standard Ubuntu 26.04 runner and omits their four ARM64 VM counterparts: Fedora and Debian, each on GNOME and KDE Plasma. The [VM policy](../config/quality/virtual-machines.json) explicitly retains ARM64 as pending. Ubuntu ARM64 jobs do not establish Fedora or Debian ARM64 compatibility. This is a recurring CI coverage limit, not removal of either distribution/CPU from the supported target contract.
 
 ### Acceptance evidence
 
@@ -59,18 +59,18 @@ A distribution-specific native dependency, package script, filesystem or kernel-
 
 ### Compensating controls
 
-- Keep the Ubuntu 26.04 native ARM64 job on GNOME/Wayland.
+- Keep the Ubuntu 26.04 native ARM64 jobs on GNOME and KDE Plasma Wayland.
 - Require x64 Fedora and Debian guest jobs to use actual KVM; fail on missing acceleration rather than falling back to TCG.
 - Preserve the full distribution target contract and the original #32 evidence.
 - Report the omitted ARM guest cells explicitly; require applicable native final-artifact qualification before a distribution guarantee.
 
 ### Claim boundary
 
-Passing Ubuntu ARM64 jobs, passing Fedora/Debian x64 guests or the historical #32 qualification do not establish recurring Fedora/Debian ARM64 CI coverage or qualify changed final ARM64 artifacts. Until the exit condition is met, these two ARM64 guest cells must remain explicitly unverified in the recurring CI inventory.
+Passing Ubuntu ARM64 jobs, passing Fedora/Debian x64 guests or the historical #32 qualification do not establish recurring Fedora/Debian ARM64 CI coverage or qualify changed final ARM64 artifacts. Until the exit condition is met, these four ARM64 guest cells must remain explicitly unverified in the recurring CI inventory; approved ephemeral Scaleway guests run their packaged cases for qualification and each candidate.
 
 ### Exit condition
 
-Verify reliable nested KVM on the selected standard GitHub-hosted ARM64 runner and boot both pinned native ARM64 guest images with actual acceleration observed. Run the selected distro-native kernels, GNOME/Wayland, filesystems and enforcing security policy. Verify actual ARM64 host, guest, executable and addon identities and all required packaged success/failure suites. Add both cells to the mandatory workflow and trusted inventories, demonstrate that missing or failed cells fail the aggregate, and retain real PR and integrated-source run evidence. An announcement, `/dev/kvm` pathname alone, cross-build or emulation is insufficient.
+Verify reliable nested KVM on the selected standard GitHub-hosted ARM64 runner and boot both pinned native ARM64 guest images with actual acceleration observed. Run the selected distro-native kernels, GNOME and KDE Plasma on Wayland, filesystems and enforcing security policy. Verify actual ARM64 host, guest, executable and addon identities and all required packaged success/failure suites. Add all four cells to the mandatory workflow and trusted inventories, demonstrate that missing or failed cells fail the aggregate, and retain real PR and integrated-source run evidence. An announcement, `/dev/kvm` pathname alone, cross-build or emulation is insufficient.
 
 ### Review trigger
 

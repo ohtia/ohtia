@@ -36,7 +36,7 @@ The native comparison before and after the workspace-chrome change reproduces bo
 
 ### Supported Linux profiles
 
-[ADR-0042](adr-0042-wayland-only-linux-support.md) and the [target manifest](../../config/desktop/targets.json) require Ubuntu, Debian and Fedora Workstation on both x86-64 and ARM64, all using native GNOME Wayland. The compatibility policy has no distribution or CPU exception. Every one of these six GNOME profiles retains Electron's native graphics, WebGPU and color-management defaults.
+[ADR-0042](adr-0042-wayland-only-linux-support.md) and the [target manifest](../../config/desktop/targets.json) require Ubuntu, Debian and Fedora Workstation on both x86-64 and ARM64, all using native GNOME Wayland. The compatibility policy has no distribution or CPU exception. Every one of these six GNOME profiles retains Electron's native graphics, WebGPU and color-management defaults. [ADR-0046](adr-0046-required-kde-plasma-desktop-and-native-cell-identifiers.md) adds KDE Plasma 6 on Wayland to every profile, so the scoped KDE fallback applies to qualified cells.
 
 Mutter source corresponding to Debian's compositor advertises the legacy sRGB transfer function. The newer Mutter source corresponding to Ubuntu and Fedora also advertises it when the client binds protocol version 1, preserving compatibility with Chromium's negotiation.[^mutter-debian][^mutter-ubuntu-fedora] This source comparison supports preserving GNOME's color path rather than generalizing a KWin workaround. It does not substitute for native verification of vendor patches, GPUs, physical displays or either CPU. Earlier [foundation qualification](../native-foundation-report.md) used other source bytes and virtual software displays; it does not qualify this change.
 

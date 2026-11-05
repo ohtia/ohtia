@@ -23,7 +23,7 @@ import quality_vm as vm
 class VirtualMachineTests(unittest.TestCase):
     def test_guest_metadata_supplies_no_hostname_for_early_cloud_init(self):
         identity = {"run_id": 7, "run_attempt": 2}
-        for cell in ("fedora-44-x64-vm", "debian-13-x64-vm"):
+        for cell in ("linux-x64-fedora-44-gnome", "linux-x64-debian-13-gnome"):
             self.assertEqual(
                 vm.guest_metadata(cell, identity), {"instance-id": f"ohtia-{cell}-7-2"}
             )
@@ -31,7 +31,9 @@ class VirtualMachineTests(unittest.TestCase):
     def test_cloud_configuration_preserves_native_security_and_unprivileged_execution(self):
         for profile in ("fedora-44", "debian-13"):
             config = json.loads(
-                vm.cloud_config(profile, "ssh-ed25519 synthetic-public-key").split("\n", 1)[1]
+                vm.cloud_config(profile, "ssh-ed25519 synthetic-public-key", desktop="gnome").split(
+                    "\n", 1
+                )[1]
             )
             self.assertFalse(config["ssh_pwauth"])
             self.assertTrue(config["disable_root"])
@@ -46,7 +48,7 @@ class VirtualMachineTests(unittest.TestCase):
                 self.assertIn("Enforcing", commands)
                 self.assertIn("fedora-release-identity-workstation", commands)
         with self.assertRaises(delivery.DeliveryError):
-            vm.cloud_config("unreviewed-distribution", "public-key")
+            vm.cloud_config("unreviewed-distribution", "public-key", desktop="gnome")
 
     def test_readiness_marker_never_overrides_failed_cloud_initialization(self):
         for status in (0, 1, 2):
@@ -81,8 +83,12 @@ class VirtualMachineTests(unittest.TestCase):
                         "sudo cloud-init status --wait --long",
                     ],
                 )
-        debian = json.loads(vm.cloud_config("debian-13", "public-key").split("\n", 1)[1])
-        fedora = json.loads(vm.cloud_config("fedora-44", "public-key").split("\n", 1)[1])
+        debian = json.loads(
+            vm.cloud_config("debian-13", "public-key", desktop="gnome").split("\n", 1)[1]
+        )
+        fedora = json.loads(
+            vm.cloud_config("fedora-44", "public-key", desktop="gnome").split("\n", 1)[1]
+        )
         self.assertEqual(debian["apt"], {"conf": 'Acquire::Retries "5";\n'})
         self.assertIn("libatspi2.0-0t64", debian["packages"])
         self.assertNotIn("libatspi2.0-0", debian["packages"])
@@ -107,7 +113,9 @@ class VirtualMachineTests(unittest.TestCase):
         with (
             tempfile.TemporaryDirectory() as temporary,
             patch.dict(os.environ, {}, clear=True),
-            patch.object(sys, "argv", ["quality_vm.py", "fedora-44-x64-vm", temporary + "/output"]),
+            patch.object(
+                sys, "argv", ["quality_vm.py", "linux-x64-fedora-44-gnome", temporary + "/output"]
+            ),
             patch.object(vm, "run") as command,
         ):
             self.assertEqual(vm.main(), 1)
@@ -125,7 +133,7 @@ class VirtualMachineTests(unittest.TestCase):
         cell = next(
             c
             for c in delivery.cells(delivery.read(delivery.ROOT / "config/desktop/targets.json"))
-            if c["id"] == "fedora-44-x64-vm"
+            if c["id"] == "linux-x64-fedora-44-gnome"
         )
         policy = delivery.read(delivery.ROOT / "config/quality/virtual-machines.json")
         with tempfile.TemporaryDirectory() as temporary:
@@ -163,7 +171,9 @@ class VirtualMachineTests(unittest.TestCase):
     def test_guest_packaging_dependencies_and_modern_disk_device_options(self):
         for profile in ("fedora-44", "debian-13"):
             config = json.loads(
-                vm.cloud_config(profile, "ssh-ed25519 synthetic-key").split("\n", 1)[1]
+                vm.cloud_config(profile, "ssh-ed25519 synthetic-key", desktop="gnome").split(
+                    "\n", 1
+                )[1]
             )
             self.assertIn("binutils", config["packages"])
         args = vm.home_disk_arguments(Path("/fixture/home.qcow2"))
@@ -234,7 +244,7 @@ class VirtualMachineTests(unittest.TestCase):
         cell = next(
             c
             for c in delivery.cells(delivery.read(delivery.ROOT / "config/desktop/targets.json"))
-            if c["id"] == "fedora-44-x64-vm"
+            if c["id"] == "linux-x64-fedora-44-gnome"
         )
         policy = delivery.read(delivery.ROOT / "config/quality/virtual-machines.json")
         with tempfile.TemporaryDirectory() as temporary:
@@ -276,7 +286,11 @@ class VirtualMachineTests(unittest.TestCase):
         ):
             with self.subTest(invalid_bus=invalid_bus), tempfile.TemporaryDirectory() as temporary:
                 home = Path(temporary)
-                (home / "environment.json").write_text(json.dumps({"GITHUB_SHA": "synthetic"}))
+                (home / "environment.json").write_text(
+                    json.dumps(
+                        {"GITHUB_SHA": "synthetic", "OHTIA_QUALITY_VM": "linux-x64-fedora-44-gnome"}
+                    )
+                )
                 real_path = Path
                 candidate = Mock()
                 candidate.is_socket.return_value = invalid_bus != "missing"
@@ -375,7 +389,7 @@ class VirtualMachineTests(unittest.TestCase):
                         json.dumps(
                             {
                                 "GITHUB_SHA": "synthetic",
-                                "OHTIA_QUALITY_VM": "fedora-44-x64-vm",
+                                "OHTIA_QUALITY_VM": "linux-x64-fedora-44-gnome",
                                 "XDG_SESSION_TYPE": "wayland",
                                 "XDG_CURRENT_DESKTOP": "GNOME",
                             }
@@ -699,8 +713,132 @@ class VirtualMachineTests(unittest.TestCase):
                     self.assertTrue(receipt["truncated"])
                     self.assertEqual(receipt["query"], "boot AVC,USER_AVC")
 
+    def test_kde_guest_runs_the_quality_build_in_the_shared_plasma_launcher(self):
+        for suite_failure in (False, True):
+            with (
+                self.subTest(suite_failure=suite_failure),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                home = Path(temporary)
+                source = home / "source"
+                source.mkdir()
+                runtime = home / "runtime"
+                runtime.mkdir()
+                (home / "environment.json").write_text(
+                    json.dumps(
+                        {"GITHUB_SHA": "synthetic", "OHTIA_QUALITY_VM": "linux-x64-fedora-44-kde"}
+                    )
+                )
+                real_path = Path
+
+                def guest_path(value):
+                    if value == "/home/ohtia-quality":
+                        return home
+                    if value == f"/run/user/{os.getuid()}":
+                        return runtime
+                    return real_path(value)
+
+                calls = []
+
+                def command(arguments, **options):
+                    arguments = [str(argument) for argument in arguments]
+                    calls.append(arguments)
+                    if arguments[0] == "dbus-run-session":
+                        self.assertNotIn("DBUS_SESSION_BUS_ADDRESS", options["env"])
+                        self.assertNotIn("DISPLAY", options["env"])
+                        self.assertEqual(
+                            arguments[1:5], ["--", "python3", "scripts/plasma_session.py", "run"]
+                        )
+                        launched_runtime = real_path(arguments[arguments.index("--runtime") + 1])
+                        self.assertEqual(launched_runtime.parent, home)
+                        log = real_path(arguments[arguments.index("--log") + 1])
+                        log.write_bytes(b"p" * (3 * 1024 * 1024))
+                        self.assertEqual(
+                            arguments[-5:],
+                            [
+                                "scripts/workspace.py",
+                                "run",
+                                "quality:build",
+                                "linux-x64-fedora-44-kde",
+                                "artifacts/quality-result",
+                            ],
+                        )
+                        if suite_failure:
+                            raise subprocess.CalledProcessError(1, arguments)
+                    stdout = options.get("stdout")
+                    if arguments[0] == "/usr/bin/journalctl":
+                        stdout.write(b"j" * (128 * 1024))
+                    if arguments[0] == "/usr/bin/sudo":
+                        stdout.write(b"a" * 1024)
+                    return subprocess.CompletedProcess(
+                        arguments, 0, stdout="active\n" if options.get("text") else b""
+                    )
+
+                with socket.socket(socket.AF_UNIX) as user_bus:
+                    user_bus.bind(str(runtime / "bus"))
+                    with (
+                        patch.dict(os.environ, {}, clear=True),
+                        patch("pathlib.Path", side_effect=guest_path),
+                        patch("subprocess.Popen") as launched,
+                        patch("subprocess.run", side_effect=command),
+                    ):
+                        if suite_failure:
+                            with self.assertRaises(subprocess.CalledProcessError):
+                                runpy.run_path(
+                                    str(delivery.ROOT / "tooling/quality-packaging/guest-run.py")
+                                )
+                        else:
+                            with self.assertRaises(SystemExit) as finished:
+                                runpy.run_path(
+                                    str(delivery.ROOT / "tooling/quality-packaging/guest-run.py")
+                                )
+                            self.assertEqual(finished.exception.code, 0)
+                    launched.assert_not_called()
+                flattened = " ".join(" ".join(call) for call in calls)
+                self.assertNotIn("gnome-shell", flattened)
+                self.assertNotIn("systemd-run", flattened)
+                self.assertFalse(any(call[0] == "gdbus" for call in calls))
+                output = source / "artifacts/quality-result"
+                self.assertEqual((output / "plasma.log").stat().st_size, 2 * 1024 * 1024)
+                self.assertEqual((output / "user-session.log").stat().st_size, 64 * 1024)
+                self.assertTrue((output / "selinux-audit.json").is_file())
+
+    def test_kde_guests_install_the_official_set_without_gnome_or_recommendations(self):
+        for profile, identity in (
+            ("fedora-44", "fedora-release-identity-kde-desktop"),
+            ("debian-13", "task-kde-desktop"),
+        ):
+            with self.subTest(profile=profile):
+                config = json.loads(
+                    vm.cloud_config(profile, "ssh-ed25519 synthetic", desktop="kde").split("\n", 1)[
+                        1
+                    ]
+                )
+                text = json.dumps(config)
+                self.assertNotIn("gnome-shell", text)
+                self.assertNotIn("gnome-session", text)
+                self.assertNotIn("fedora-release-identity-workstation", text)
+                self.assertNotIn("packages", config)
+                installs = [c for c in config["runcmd"] if "install" in c]
+                self.assertTrue(any(identity in c for c in installs))
+                for name in ("at-spi2-core", "xdg-desktop-portal-kde", "xsettingsd", "binutils"):
+                    self.assertTrue(any(name in c for c in installs), name)
+                for command in installs:
+                    if "apt-get" in command:
+                        self.assertIn("--no-install-recommends", command)
+                        self.assertIn("DEBIAN_FRONTEND=noninteractive", command)
+                    elif "@kde-desktop" in command:
+                        self.assertIn("--setopt=install_weak_deps=False", command)
+                if profile == "fedora-44":
+                    self.assertIn("Enforcing", text)
+                    self.assertIn(["systemctl", "start", "auditd"], config["runcmd"])
+        with self.assertRaises(delivery.DeliveryError):
+            vm.cloud_config("debian-13", "public-key", desktop="xfce")
+
     def test_fedora_identity_uses_install_scoped_dnf5_options(self):
-        config = json.loads(vm.cloud_config("fedora-44", "ssh-ed25519 synthetic").split("\n", 1)[1])
+        config = json.loads(
+            vm.cloud_config("fedora-44", "ssh-ed25519 synthetic", desktop="gnome").split("\n", 1)[1]
+        )
         self.assertIn(["systemctl", "start", "auditd"], config["runcmd"])
         command = next(c for c in config["runcmd"] if c[0] == "dnf")
         self.assertLess(command.index("install"), command.index("--allowerasing"))

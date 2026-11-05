@@ -83,6 +83,8 @@ export function nativeEnvironment({ home, username, configurationRoot, scratch }
     "XDG_RUNTIME_DIR",
     "XDG_SESSION_TYPE",
     "XDG_CURRENT_DESKTOP",
+    // Chromium reports KDE 4 unless it receives Plasma's session version.
+    "KDE_SESSION_VERSION",
     "DBUS_SESSION_BUS_ADDRESS",
     "LANG",
     "LC_ALL",

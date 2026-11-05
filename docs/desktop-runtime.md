@@ -51,7 +51,7 @@ python3 scripts/workspace.py run dev
 
 ## Linux graphics compatibility
 
-Main applies the fixed [Linux graphics policy](adr/adr-0044-linux-graphics-compatibility.md) before native readiness in every runtime mode. Supported GNOME Wayland profiles retain their color, GPU and WebGPU defaults. The scoped KDE Wayland fallback avoids unsupported color negotiation while retaining the default WebGPU adapter. The decision defines the exact session condition, color/HDR limitations, upstream Vulkan diagnostic disposition, validation boundary and removal conditions. Ordinary launches still reject command-line feature overrides.
+Main applies the fixed [Linux graphics policy](adr/adr-0044-linux-graphics-compatibility.md) before native readiness in every runtime mode. GNOME Wayland cells retain their color, GPU and WebGPU defaults. On the qualified KDE Plasma Wayland cells, the scoped KDE fallback avoids unsupported color negotiation while retaining the default WebGPU adapter. The decision defines the exact session condition, color/HDR limitations, upstream Vulkan diagnostic disposition, validation boundary and removal conditions. Ordinary launches still reject command-line feature overrides.
 
 ## Prepare an independent native profile
 

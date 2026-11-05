@@ -90,16 +90,27 @@ export async function focusNative(nativeWindow, target = "window") {
       /^[1-9][0-9]*$/.test(process.env.OHTIA_NATIVE_COMPOSITOR_PID ?? "") &&
       process.env.XDG_SESSION_TYPE === "wayland"
     ) {
+      // Plasma activates the application's window through a KWin script; GNOME cycles
+      // windows through compositor keyboard input.
+      const kde = process.env.XDG_CURRENT_DESKTOP === "KDE";
+      const helper = fileURLToPath(
+        new URL(
+          kde ? "../scripts/quality_kwin_focus.py" : "../scripts/quality_wayland_input.py",
+          import.meta.url,
+        ),
+      );
+      const helperArguments = kde
+        ? [helper, String(await nativeWindow.evaluate(() => process.pid))]
+        : [helper];
       // The acceptance journey has at most two app windows. Input completion alone
       // never qualifies activation; retain attempted input even if the helper fails.
       for (let attempt = 0; attempt < 3; attempt++) {
         if (await focused()) break;
-        const helper = fileURLToPath(
-          new URL("../scripts/quality_wayland_input.py", import.meta.url),
-        );
-        observation.strategy = "headless GNOME compositor Alt+Escape input";
+        observation.strategy = kde
+          ? "headless KWin script activation"
+          : "headless GNOME compositor Alt+Escape input";
         observation.compositorInputAttempts++;
-        await execute("/usr/bin/python3", [helper], { timeout: 10000, maxBuffer: 4096 });
+        await execute("/usr/bin/python3", helperArguments, { timeout: 10000, maxBuffer: 4096 });
         try {
           await expect.poll(focused, { timeout: 1000 }).toBe(true);
           break;

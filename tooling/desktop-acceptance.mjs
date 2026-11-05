@@ -112,6 +112,15 @@ try {
         architecture: process.arch,
         argv: process.argv,
         execArgv: process.execArgv,
+        // Chromium classifies the Linux desktop from the browser process's own environment.
+        ...(process.platform === "linux"
+          ? {
+              desktopEnvironment: {
+                XDG_CURRENT_DESKTOP: process.env.XDG_CURRENT_DESKTOP ?? null,
+                KDE_SESSION_VERSION: process.env.KDE_SESSION_VERSION ?? null,
+              },
+            }
+          : {}),
         window: { bounds: window.getBounds(), contentSize: window.getContentSize() },
         display: {
           bounds: display.bounds,

@@ -4,27 +4,12 @@ from __future__ import annotations
 
 import copy
 import hashlib
-from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
-from unittest.mock import patch
 
 import delivery_admission as admission
 
 NOW = 10000
-SECOND_SESSION = "synthetic-session"
-
-
-@contextmanager
-def second_session():
-    """Declare a second Ubuntu session so tests keep the shared-package rule without a real one."""
-    targets, policy, limits = admission.configuration()
-    for target in targets["targets"]:
-        for profile in target.get("distribution_profiles", []):
-            if profile["id"] == "ubuntu-26.04":
-                profile["display_backends"] = ["wayland", SECOND_SESSION]
-    with patch.object(admission, "configuration", return_value=(targets, policy, limits)):
-        yield
 
 
 class Fixture:
@@ -250,6 +235,7 @@ class Fixture:
                                     "filesystem",
                                     "security",
                                     "display",
+                                    "desktop",
                                 )
                             },
                             "native": True,

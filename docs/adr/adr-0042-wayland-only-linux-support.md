@@ -33,7 +33,7 @@ The alternatives were to keep Ubuntu 24.04 as a required profile, to keep X11 ce
 
 ## Decision
 
-Ubuntu 24.04 stops being a supported Linux profile on both CPUs. X11 stops being a qualified session on every Linux profile. Linux support is Wayland only, with Ubuntu 26.04, Fedora 44 and Debian 13 on x86-64 and ARM64, each on native GNOME Wayland. That is six required Linux cells and nine required native records across all platforms.
+Ubuntu 24.04 stops being a supported Linux profile on both CPUs. X11 stops being a qualified session on every Linux profile. Linux support is Wayland only, with Ubuntu 26.04, Fedora 44 and Debian 13 on x86-64 and ARM64, each on native GNOME Wayland. That is six required Linux cells and nine required native records across all platforms. [ADR-0046](adr-0046-required-kde-plasma-desktop-and-native-cell-identifiers.md) later adds KDE Plasma 6 on Wayland to every profile, for twelve Linux cells and fifteen records.
 
 This replaces the Ubuntu 24.04 and X11 parts of the recurring matrix in [ADR-0020](adr-0020-github-policy-and-trusted-ci.md#recurring-hosted-quality-matrix) and of the package grouping example in [ADR-0038](adr-0038-desktop-delivery-mechanisms.md#packages-and-tools). The recurring matrix has eight cells and ten package results on six runner labels. The rule that several session cells of one OS, profile and CPU consume one sealed package remains in force.
 

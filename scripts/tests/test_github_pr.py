@@ -551,7 +551,7 @@ class DocumentationOnlyTests(unittest.TestCase):
         result = self.verify()
         self.assertEqual(result["selection"], "documentation-only")
         required = {name for name in POLICY["jobs"] if not name.startswith(self.prefix)}
-        self.assertEqual(required, {"ci", "scope", "full-suite (ubuntu-26.04-x64)"})
+        self.assertEqual(required, {"ci", "scope", "full-suite (linux-x64-ubuntu-26-04)"})
         self.assertEqual(set(result["checkouts"]), required)
         self.assertEqual({job["name"] for job in result["jobs"]}, required)
 
@@ -656,7 +656,7 @@ class DocumentationOnlyTests(unittest.TestCase):
 
     def test_retained_jobs_cannot_be_skipped_or_missing(self):
         original = copy.deepcopy(self.github.jobs)
-        for name in ("scope", "full-suite (ubuntu-26.04-x64)", "ci"):
+        for name in ("scope", "full-suite (linux-x64-ubuntu-26-04)", "ci"):
             with self.subTest(job=name, missing=True):
                 self.github.jobs = [job for job in original if job["name"] != name]
                 with self.assertRaises(pr_check.VerificationError):
@@ -697,7 +697,10 @@ class DocumentationOnlyTests(unittest.TestCase):
             ("empty prefix", {**block, "skipped_job_prefix": ""}),
             ("prefix without jobs", {**block, "skipped_job_prefix": "other ("}),
             ("undeclared job", {**block, "skipped_steps": {"other": ci}}),
-            ("native job", {**block, "skipped_steps": {"native (windows-x64)": []}}),
+            (
+                "native job",
+                {**block, "skipped_steps": {"native (win32-x64-windows-server-2025)": []}},
+            ),
             ("undeclared step", {**block, "skipped_steps": {"ci": ["Other"]}}),
             ("duplicate step", {**block, "skipped_steps": {"ci": [ci[0], ci[0]]}}),
             ("receipt step", {**block, "skipped_steps": {"ci": ["Record tested revision"]}}),

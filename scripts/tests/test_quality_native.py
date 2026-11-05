@@ -7,6 +7,7 @@ import errno
 import json
 import os
 import plistlib
+import socket
 import subprocess
 import sys
 import tempfile
@@ -545,7 +546,11 @@ async function validate(config, format) {
                 assembled / "prepared.json",
                 {"executable": "runtime/electron", "electron_archive_sha256": "a" * 64},
             )
-            ubuntu = {"id": "ubuntu-26-04-x64-wayland", "profile": "ubuntu-26.04"}
+            ubuntu = {
+                "id": "linux-x64-ubuntu-26-04-kde",
+                "profile": "ubuntu-26.04",
+                "launcher": "display-session",
+            }
             with patch.object(native, "command") as command:
                 native.allow_development_runtime(ubuntu, assembled)
             self.assertEqual(command.call_count, 2)
@@ -559,13 +564,154 @@ async function validate(config, format) {
                 (assembled.parent / "development.apparmor").read_text(),
             )
             for other in (
-                {"id": "debian-13-x64-vm", "profile": "debian-13"},
-                {"id": "fedora-44-arm64-scaleway", "profile": "fedora-44"},
-                {"id": "macos-26-arm64", "profile": "macos-26"},
+                {"id": "linux-x64-debian-13-kde", "profile": "debian-13", "launcher": "kvm"},
+                {"id": "linux-arm64-fedora-44-gnome", "profile": "fedora-44"},
+                {"id": "darwin-arm64-macos-26", "profile": "macos-26", "launcher": "workspace"},
             ):
                 with patch.object(native, "command") as command:
                     native.allow_development_runtime(other, assembled)
                 command.assert_not_called()
+
+    def linux_smoke(self, root, server, environment):
+        for suite, receipt in (
+            ("runtime", "receipt.json"),
+            ("storage", "storage-receipt.json"),
+            ("diagnostics", "diagnostic-receipt.json"),
+            ("startup", "startup-receipt.json"),
+        ):
+            identities = {"id": "native-executable-identities", "observed": {}}
+            if environment is not None:
+                identities["observed"]["desktopEnvironment"] = environment
+            delivery.write(root / suite / receipt, {"cases": [identities]})
+        original = delivery.read
+
+        def read(file):
+            if file.name == "native-processes.json":
+                return {"processes": [{"pid": 101}, {"pid": 102}]}
+            return original(file)
+
+        def observe(prepared, known, *, ready_only=False):
+            if not ready_only:
+                return []
+            return [{"pid": row["pid"], "renderer": True, "sandbox": True} for row in known]
+
+        display = {
+            "backend": "wayland",
+            "source": "unix-peer",
+            "client_pids": [101],
+            "server_pids": [7],
+            "server_commands": [server],
+            "peer_inode": "1",
+        }
+        with (
+            patch.object(native.sys, "platform", "linux"),
+            patch("concurrent.futures.ThreadPoolExecutor") as executor,
+            patch.object(native.workspace, "node_path", return_value=Path("node")),
+            patch.object(native, "build_environment", return_value={}),
+            patch.object(delivery, "read", side_effect=read),
+            patch.object(delivery, "validate_suite"),
+            patch.object(native, "processes", side_effect=observe),
+            patch.object(native, "display_connection", return_value=display),
+            patch.object(native.time, "sleep"),
+        ):
+            future = executor.return_value.__enter__.return_value.submit.return_value
+            future.done.side_effect = [False, True] * 4
+            future.result.return_value = {
+                "exit_code": 0,
+                "timed_out": False,
+                "contained_processes_remaining_at_exit": False,
+            }
+            return native.smoke(
+                root / "profile.json",
+                root / "package",
+                root,
+                {
+                    "id": "linux-x64-ubuntu-26-04-kde",
+                    "backend": "wayland",
+                    "target": "linux-x64",
+                    "desktop": "kde",
+                    "launcher": "display-session",
+                },
+            )
+
+    def test_linux_smoke_requires_the_desktops_compositor_and_chromium_desktop(self):
+        plasma = {"XDG_CURRENT_DESKTOP": "KDE", "KDE_SESSION_VERSION": "6"}
+        for label, server, environment, error in (
+            ("KWin serves KDE6", "kwin_wayland", plasma, None),
+            ("gnome-shell serves a KDE cell", "gnome-shell", plasma, "compositor"),
+            (
+                "missing session version",
+                "kwin_wayland",
+                {"XDG_CURRENT_DESKTOP": "KDE", "KDE_SESSION_VERSION": None},
+                "different desktop environment: KDE4",
+            ),
+            (
+                "a GNOME browser process",
+                "kwin_wayland",
+                {"XDG_CURRENT_DESKTOP": "GNOME", "KDE_SESSION_VERSION": None},
+                "different desktop environment: GNOME",
+            ),
+            ("no browser environment", "kwin_wayland", None, "browser process"),
+            (
+                "an incomplete browser environment",
+                "kwin_wayland",
+                {"XDG_CURRENT_DESKTOP": "KDE"},
+                "browser process",
+            ),
+        ):
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as temporary:
+                if error is None:
+                    _, observed = self.linux_smoke(Path(temporary), server, environment)
+                    self.assertEqual(observed["chromium_desktop"], "KDE6")
+                else:
+                    with self.assertRaisesRegex(delivery.DeliveryError, error):
+                        self.linux_smoke(Path(temporary), server, environment)
+
+    def test_listener_credentials_identify_a_wayland_server_hidden_from_ss(self):
+        with tempfile.TemporaryDirectory(prefix="w") as temporary:
+            path = Path(temporary) / "wayland-ohtia"
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
+                server.bind(str(path))
+                server.listen()
+                self.assertEqual(native.listener_pids(str(path)), [os.getpid()])
+            self.assertEqual(native.listener_pids(str(path)), [])
+        self.assertEqual(native.listener_pids("wayland-0"), [])
+
+    def test_display_connection_falls_back_to_listener_credentials(self):
+        listing = (
+            'u_str ESTAB 0 0 * 100 * 200 users:(("ohtia",pid=101,fd=5))\n'
+            "u_str ESTAB 0 0 /run/user/1/kde-x/wayland-ohtia 200 * 100\n"
+        )
+        with (
+            patch.object(native.sys, "platform", "linux"),
+            patch.object(native, "command", return_value=listing),
+            patch.object(native, "listener_pids", return_value=[7]) as listener,
+            patch.object(native.linux_desktop, "process_name", return_value="kwin_wayland"),
+        ):
+            connected = native.display_connection([{"pid": 101}], "wayland")
+        listener.assert_called_once_with("/run/user/1/kde-x/wayland-ohtia")
+        self.assertEqual(connected["server_pids"], [7])
+        self.assertEqual(connected["server_commands"], ["kwin_wayland"])
+
+    def test_hidden_server_is_resolved_once_and_a_failed_lookup_records_nothing(self):
+        listing = (
+            'u_str ESTAB 0 0 * 300 * 400 users:(("ohtia",pid=101,fd=5))\n'
+            "u_str ESTAB 0 0 /run/user/1/kde-x/wayland-ohtia 400 * 300\n"
+        )
+        native.LISTENERS.clear()
+        self.addCleanup(native.LISTENERS.clear)
+        with (
+            patch.object(native.sys, "platform", "linux"),
+            patch.object(native, "command", return_value=listing),
+            patch.object(native, "listener_pids", side_effect=[[], [7]]) as listener,
+            patch.object(native.linux_desktop, "process_name", return_value="kwin_wayland"),
+        ):
+            self.assertIsNone(native.display_connection([{"pid": 101}], "wayland"))
+            first = native.display_connection([{"pid": 101}], "wayland")
+            second = native.display_connection([{"pid": 101}], "wayland")
+        self.assertEqual(listener.call_count, 2)
+        self.assertEqual(first, second)
+        self.assertEqual(first["server_pids"], [7])
 
     def test_smoke_does_not_reuse_identities_when_snapshot_is_missing(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -623,7 +769,12 @@ async function validate(config, format) {
                     root / "profile.json",
                     root / "package",
                     root,
-                    {"id": "windows-x64", "backend": "desktop", "target": "win32-x64"},
+                    {
+                        "id": "win32-x64-windows-server-2025",
+                        "backend": "desktop",
+                        "target": "win32-x64",
+                        "launcher": "workspace",
+                    },
                 )
                 observed = [
                     call.args[1]
