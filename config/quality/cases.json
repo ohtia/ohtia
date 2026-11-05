@@ -7,6 +7,7 @@
     "tests/application-root.test.ts::integrated application authority > opens Settings after the bootstrap launcher disappears at the driver's stable-click boundary::case-0",
     "tests/application-root.test.ts::integrated application authority > retains an uncertain mutation across close/reopen and reconciles the original receipt without a second write::case-0",
     "tests/application-root.test.ts::integrated application authority > shares one layout between chrome, Settings, rail and narrow entries while wiring actual commands and confirmed presentation::case-0",
+    "tests/application-root.test.ts::integrated application authority > waits for the palette reset command while an actual layout save is pending::case-0",
     "tests/catalog-build.test.ts::catalog build admission > admits product sources and retains the same restrictive CSP as the desktop::case-0",
     "tests/catalog-build.test.ts::catalog build admission > declares every unconditional successful runtime report in the packaged-case catalog::case-0",
     "tests/catalog-build.test.ts::catalog build admission > exports research presentation from the renderer library without catalog specimens or synthetic research::case-0",
