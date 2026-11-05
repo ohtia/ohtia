@@ -638,7 +638,7 @@ class RerunTests(unittest.TestCase):
                 run: [
                     {
                         "id": run * 10,
-                        "name": "full-suite (ubuntu-26.04-x64)",
+                        "name": "full-suite (linux-x64-ubuntu-26-04)",
                         "conclusion": "failure",
                     },
                     {"id": run * 100, "name": "ci", "conclusion": "failure"},

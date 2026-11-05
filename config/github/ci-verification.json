@@ -27,7 +27,7 @@
       ],
       "optional_steps": ["Post Set up Python", "Post Check out source with full Git history"]
     },
-    "full-suite (ubuntu-26.04-x64)": {
+    "full-suite (linux-x64-ubuntu-26-04)": {
       "steps": [
         "Set up job",
         "Check out source with full Git history",
@@ -54,7 +54,7 @@
       ],
       "optional_steps": ["Post Set up Python", "Post Check out source with full Git history"]
     },
-    "native (ubuntu-26-04-x64-wayland)": {
+    "native (linux-x64-ubuntu-26-04-gnome)": {
       "steps": [
         "Set up job",
         "Check out source with full Git history",
@@ -72,7 +72,7 @@
         "Prepare native VM acceleration"
       ]
     },
-    "native (ubuntu-26-04-arm64-wayland)": {
+    "native (linux-x64-ubuntu-26-04-kde)": {
       "steps": [
         "Set up job",
         "Check out source with full Git history",
@@ -90,7 +90,43 @@
         "Prepare native VM acceleration"
       ]
     },
-    "native (windows-x64)": {
+    "native (linux-arm64-ubuntu-26-04-gnome)": {
+      "steps": [
+        "Set up job",
+        "Check out source with full Git history",
+        "Set up Python",
+        "Record tested revision",
+        "Prepare native Linux dependencies",
+        "Set up frozen workspace",
+        "Build and smoke-test native packages",
+        "Retain native quality artifacts",
+        "Complete job"
+      ],
+      "optional_steps": [
+        "Post Set up Python",
+        "Post Check out source with full Git history",
+        "Prepare native VM acceleration"
+      ]
+    },
+    "native (linux-arm64-ubuntu-26-04-kde)": {
+      "steps": [
+        "Set up job",
+        "Check out source with full Git history",
+        "Set up Python",
+        "Record tested revision",
+        "Prepare native Linux dependencies",
+        "Set up frozen workspace",
+        "Build and smoke-test native packages",
+        "Retain native quality artifacts",
+        "Complete job"
+      ],
+      "optional_steps": [
+        "Post Set up Python",
+        "Post Check out source with full Git history",
+        "Prepare native VM acceleration"
+      ]
+    },
+    "native (win32-x64-windows-server-2025)": {
       "steps": [
         "Set up job",
         "Check out source with full Git history",
@@ -108,7 +144,7 @@
         "Prepare native VM acceleration"
       ]
     },
-    "native (windows-arm64)": {
+    "native (win32-arm64-windows-11)": {
       "steps": [
         "Set up job",
         "Check out source with full Git history",
@@ -126,7 +162,7 @@
         "Prepare native VM acceleration"
       ]
     },
-    "native (macos-26-arm64)": {
+    "native (darwin-arm64-macos-26)": {
       "steps": [
         "Set up job",
         "Check out source with full Git history",
@@ -144,7 +180,7 @@
         "Prepare native VM acceleration"
       ]
     },
-    "native (macos-27-arm64)": {
+    "native (darwin-arm64-macos-27)": {
       "steps": [
         "Set up job",
         "Check out source with full Git history",
@@ -162,7 +198,7 @@
         "Prepare native VM acceleration"
       ]
     },
-    "native (fedora-44-x64-vm)": {
+    "native (linux-x64-fedora-44-gnome)": {
       "steps": [
         "Set up job",
         "Check out source with full Git history",
@@ -180,7 +216,43 @@
         "Set up frozen workspace"
       ]
     },
-    "native (debian-13-x64-vm)": {
+    "native (linux-x64-fedora-44-kde)": {
+      "steps": [
+        "Set up job",
+        "Check out source with full Git history",
+        "Set up Python",
+        "Record tested revision",
+        "Prepare native Linux dependencies",
+        "Prepare native VM acceleration",
+        "Build and smoke-test native packages",
+        "Retain native quality artifacts",
+        "Complete job"
+      ],
+      "optional_steps": [
+        "Post Set up Python",
+        "Post Check out source with full Git history",
+        "Set up frozen workspace"
+      ]
+    },
+    "native (linux-x64-debian-13-gnome)": {
+      "steps": [
+        "Set up job",
+        "Check out source with full Git history",
+        "Set up Python",
+        "Record tested revision",
+        "Prepare native Linux dependencies",
+        "Prepare native VM acceleration",
+        "Build and smoke-test native packages",
+        "Retain native quality artifacts",
+        "Complete job"
+      ],
+      "optional_steps": [
+        "Post Set up Python",
+        "Post Check out source with full Git history",
+        "Set up frozen workspace"
+      ]
+    },
+    "native (linux-x64-debian-13-kde)": {
       "steps": [
         "Set up job",
         "Check out source with full Git history",

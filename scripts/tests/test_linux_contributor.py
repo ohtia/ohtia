@@ -42,8 +42,10 @@ class LinuxContributorTests(unittest.TestCase):
         target.start()
         self.addCleanup(target.stop)
 
-    def profile(self, name="ubuntu-26.04", arch="x86_64"):
+    def profile(self, name="ubuntu-26.04", arch="x86_64", desktop="gnome"):
         distro, version = name.split("-", 1)
+        identity = linux.linux_desktop.KDE_IDENTITY[name]
+        installed = {"gnome-shell"} if desktop == "gnome" else {identity}
         with (
             patch.object(linux.sys, "platform", "linux"),
             patch.object(linux.platform, "machine", return_value=arch),
@@ -51,7 +53,16 @@ class LinuxContributorTests(unittest.TestCase):
             patch.object(
                 linux.platform,
                 "freedesktop_os_release",
-                return_value={"ID": distro, "VERSION_ID": version, "VARIANT_ID": "workstation"},
+                return_value={
+                    "ID": distro,
+                    "VERSION_ID": version,
+                    "VARIANT_ID": "workstation" if desktop == "gnome" else "kde",
+                },
+            ),
+            patch.object(
+                linux.linux_desktop,
+                "package_installed",
+                side_effect=lambda profile, package: package in installed,
             ),
         ):
             return linux.native_profile()
@@ -80,10 +91,45 @@ class LinuxContributorTests(unittest.TestCase):
             required,
         )
 
+    def test_each_profile_routes_gnome_and_kde_to_their_own_session_packages(self):
+        for name in ("ubuntu-26.04", "fedora-44", "debian-13"):
+            for desktop in ("gnome", "kde"):
+                with self.subTest(profile=name, desktop=desktop):
+                    _, _, route = self.profile(name, desktop=desktop)
+                    self.assertEqual(route["desktop"], desktop)
+                    if desktop == "kde":
+                        self.assertNotIn("gnome-shell", route["packages"])
+                        self.assertNotIn("gnome-session", route["packages"])
+                        self.assertIn("plasma-workspace", route["packages"])
+                        self.assertIn("xdg-desktop-portal-kde", route["packages"])
+                    else:
+                        self.assertIn("gnome-shell", route["packages"])
+                        self.assertNotIn("plasma-workspace", route["packages"])
+                    self.assertEqual(len(route["packages"]), len(set(route["packages"])))
+
+    def test_mixed_or_missing_official_desktops_are_refused(self):
+        for installed in (set(), {"gnome-shell", "kubuntu-desktop"}):
+            with (
+                self.subTest(installed=installed),
+                patch.object(linux.sys, "platform", "linux"),
+                patch.object(
+                    linux.platform,
+                    "freedesktop_os_release",
+                    return_value={"ID": "ubuntu", "VERSION_ID": "26.04"},
+                ),
+                patch.object(
+                    linux.linux_desktop,
+                    "package_installed",
+                    side_effect=lambda profile, package: package in installed,
+                ),
+                self.assertRaisesRegex(linux.ContributorError, "exactly one official desktop"),
+            ):
+                linux.native_profile()
+
     def test_unsupported_distro_and_fedora_edition_are_refused_without_execution(self):
         for release in (
             {"ID": "ubuntu", "VERSION_ID": "25.10"},
-            {"ID": "fedora", "VERSION_ID": "44", "VARIANT_ID": "kde"},
+            {"ID": "fedora", "VERSION_ID": "44", "VARIANT_ID": "server"},
             {"ID": "PRIVATE-HOST", "VERSION_ID": "PRIVATE-VERSION"},
         ):
             with patch.object(linux.platform, "freedesktop_os_release", return_value=release):
@@ -166,7 +212,7 @@ class LinuxContributorTests(unittest.TestCase):
     def test_dead_or_wrong_display_cannot_pass(self):
         _, profile, _ = self.profile()
         with patch.dict(os.environ, {"XDG_SESSION_TYPE": "x11", "DISPLAY": ":0"}, clear=True):
-            self.assertFalse(linux.display_available(profile))
+            self.assertFalse(linux.display_available(profile, "gnome"))
         with tempfile.TemporaryDirectory() as temporary:
             endpoint = Path(temporary) / "wayland-0"
             with socket.socket(socket.AF_UNIX) as server:
@@ -182,10 +228,38 @@ class LinuxContributorTests(unittest.TestCase):
                     },
                     clear=True,
                 ):
-                    self.assertTrue(linux.display_available(profile))
+                    self.assertTrue(linux.display_available(profile, "gnome"))
                     os.environ["WAYLAND_DISPLAY"] = "../private"
-                    self.assertFalse(linux.display_available(profile))
+                    self.assertFalse(linux.display_available(profile, "gnome"))
             endpoint.unlink()
+
+    def test_kde_display_requires_plasma_6_on_wayland(self):
+        _, profile, _ = self.profile()
+        with tempfile.TemporaryDirectory() as temporary:
+            endpoint = Path(temporary) / "wayland-ohtia"
+            with socket.socket(socket.AF_UNIX) as server:
+                server.bind(str(endpoint))
+                server.listen()
+                session = {
+                    "XDG_SESSION_TYPE": "wayland",
+                    "XDG_CURRENT_DESKTOP": "KDE",
+                    "KDE_SESSION_VERSION": "6",
+                    "XDG_RUNTIME_DIR": temporary,
+                    "WAYLAND_DISPLAY": "wayland-ohtia",
+                }
+                with patch.dict(os.environ, session, clear=True):
+                    self.assertTrue(linux.display_available(profile, "kde"))
+                    self.assertFalse(linux.display_available(profile, "gnome"))
+                for change in (
+                    {"KDE_SESSION_VERSION": "5"},
+                    {"KDE_SESSION_VERSION": ""},
+                    {"XDG_CURRENT_DESKTOP": "GNOME"},
+                ):
+                    with self.subTest(change=change):
+                        with patch.dict(os.environ, {**session, **change}, clear=True):
+                            self.assertFalse(linux.display_available(profile, "kde"))
+                with patch.dict(os.environ, session, clear=True):
+                    self.assertFalse(linux.display_available(profile, "xfce"))
 
     def test_inspection_reuses_admission_without_launching_or_exposing_errors(self):
         _, profile, packages = self.profile()
@@ -557,7 +631,11 @@ with linux.terminal_signals() as cancelled:
                         linux.session(root / "runtime-profile.json", root / "runtime", "dev", None)
                     else:
                         linux.smoke(
-                            {}, root / "runtime-profile.json", root / "runtime", root / "evidence"
+                            {},
+                            "gnome",
+                            root / "runtime-profile.json",
+                            root / "runtime",
+                            root / "evidence",
                         )
                 start.assert_not_called()
 
@@ -720,7 +798,9 @@ with linux.terminal_signals() as cancelled:
                 with self.assertRaisesRegex(linux.ContributorError, "60-byte"):
                     linux.session(Path("/profile"), Path("/runtime"), "dev", None)
                 with self.assertRaisesRegex(linux.ContributorError, "60-byte"):
-                    linux.smoke({}, Path("/profile"), Path("/runtime"), Path(root) / "evidence")
+                    linux.smoke(
+                        {}, "gnome", Path("/profile"), Path("/runtime"), Path(root) / "evidence"
+                    )
                 start.assert_not_called()
                 mkdir.assert_not_called()
 

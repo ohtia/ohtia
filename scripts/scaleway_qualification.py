@@ -164,12 +164,18 @@ def cloud_config(intent: dict, resources: dict, public_key: str) -> bytes:
         "maximum_harness_expanded_bytes": policy["limits"]["maximum_harness_expanded_bytes"],
     }
     cycle.require(len(json.dumps(guard).encode()) <= 65536, "guest_guard_bound")
+    desktop = cycle.intent_cell(intent)["desktop"]
     commands = []
+    if desktop == "kde":
+        # The official KDE set installs without recommended or weak dependencies, never GNOME.
+        commands += cycle.linux_desktop.kde_install_commands(profile, packages)
+        packages = []
+    elif profile == "fedora-44":
+        commands.append(
+            ["dnf", "-y", "install", "--allowerasing", "fedora-release-identity-workstation"]
+        )
     if profile == "fedora-44":
-        commands += [
-            ["dnf", "-y", "install", "--allowerasing", "fedora-release-identity-workstation"],
-            ["systemctl", "start", "auditd"],
-        ]
+        commands.append(["systemctl", "start", "auditd"])
     commands += [
         ["mkdir", "-p", INCOMING],
         ["chmod", "0755", "/var/lib/ohtia-qualification", INCOMING],
@@ -645,7 +651,7 @@ def guest(
             value["status"] in {"passed", "failed"}
             and value["identity"] == intent["identity"]
             and value["build"] == intent["build"]
-            and value["cell"] == cycle.cell(intent["profile"])
+            and value["cell"] == cycle.intent_cell(intent)
             and value["distribution_qualified"] is False
             and value["publisher_signed"] is False,
             "guest_result_binding",

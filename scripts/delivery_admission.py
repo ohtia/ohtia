@@ -196,16 +196,20 @@ def cell_specs(targets, selected):
                     else "fedora-rpm"
                 )
                 for display in profile["display_backends"]:
-                    key = target["id"] + "-" + profile["id"].replace(".", "-") + "-" + display
-                    result[key] = {
-                        "target": target["id"],
-                        "profile": group,
-                        "os_profile": profile["id"],
-                        "os_version": profile["id"].split("-", 1)[1],
-                        "filesystem": profile["filesystems"][0],
-                        "security": profile["security_policy"],
-                        "display": display,
-                    }
+                    for desktop in profile["desktops"]:
+                        # Wayland is the only Linux backend, so the desktop names the cell.
+                        key = f"{target['id']}-{profile['id'].replace('.', '-')}-{desktop}"
+                        require(key not in result, "cell_identity")
+                        result[key] = {
+                            "target": target["id"],
+                            "profile": group,
+                            "os_profile": profile["id"],
+                            "os_version": profile["id"].split("-", 1)[1],
+                            "filesystem": profile["filesystems"][0],
+                            "security": profile["security_policy"],
+                            "display": display,
+                            "desktop": desktop,
+                        }
         elif target["os"] == "darwin":
             majors = (
                 target["required_os_majors"]
@@ -222,6 +226,7 @@ def cell_specs(targets, selected):
                     "filesystem": "APFS",
                     "security": "native-sandbox",
                     "display": "windowserver",
+                    "desktop": None,
                 }
         else:
             result[target["id"] + "-windows-11"] = {
@@ -232,6 +237,7 @@ def cell_specs(targets, selected):
                 "filesystem": "NTFS",
                 "security": "native-sandbox",
                 "display": "desktop",
+                "desktop": None,
             }
     return result
 
@@ -447,7 +453,7 @@ def _reconcile(capabilities, artifacts, cells, evidence, context, records):
     for cell in cells["cells"]:
         fields(
             cell,
-            "id target profile os_profile os_version filesystem security display scenarios assignments",
+            "id target profile os_profile os_version filesystem security display desktop scenarios assignments",
         )
         cid = identifier(cell["id"])
         require(cid not in bycell and cid in specs, "cell_identity")

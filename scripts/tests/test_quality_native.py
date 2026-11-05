@@ -545,7 +545,11 @@ async function validate(config, format) {
                 assembled / "prepared.json",
                 {"executable": "runtime/electron", "electron_archive_sha256": "a" * 64},
             )
-            ubuntu = {"id": "ubuntu-26-04-x64-wayland", "profile": "ubuntu-26.04"}
+            ubuntu = {
+                "id": "linux-x64-ubuntu-26-04-kde",
+                "profile": "ubuntu-26.04",
+                "launcher": "display-session",
+            }
             with patch.object(native, "command") as command:
                 native.allow_development_runtime(ubuntu, assembled)
             self.assertEqual(command.call_count, 2)
@@ -559,13 +563,103 @@ async function validate(config, format) {
                 (assembled.parent / "development.apparmor").read_text(),
             )
             for other in (
-                {"id": "debian-13-x64-vm", "profile": "debian-13"},
-                {"id": "fedora-44-arm64-scaleway", "profile": "fedora-44"},
-                {"id": "macos-26-arm64", "profile": "macos-26"},
+                {"id": "linux-x64-debian-13-kde", "profile": "debian-13", "launcher": "kvm"},
+                {"id": "linux-arm64-fedora-44-gnome", "profile": "fedora-44"},
+                {"id": "darwin-arm64-macos-26", "profile": "macos-26", "launcher": "workspace"},
             ):
                 with patch.object(native, "command") as command:
                     native.allow_development_runtime(other, assembled)
                 command.assert_not_called()
+
+    def linux_smoke(self, root, server, environments):
+        for suite, receipt in (
+            ("runtime", "receipt.json"),
+            ("storage", "storage-receipt.json"),
+            ("diagnostics", "diagnostic-receipt.json"),
+            ("startup", "startup-receipt.json"),
+        ):
+            delivery.write(root / suite / receipt, {})
+        original = delivery.read
+
+        def read(file):
+            if file.name == "native-processes.json":
+                return {"processes": [{"pid": 101}, {"pid": 102}]}
+            return original(file)
+
+        def observe(prepared, known, *, ready_only=False):
+            if not ready_only:
+                return []
+            return [{"pid": row["pid"], "renderer": True, "sandbox": True} for row in known]
+
+        display = {
+            "backend": "wayland",
+            "source": "unix-peer",
+            "client_pids": [101],
+            "server_pids": [7],
+            "server_commands": [server],
+            "peer_inode": "1",
+        }
+        with (
+            patch.object(native.sys, "platform", "linux"),
+            patch("concurrent.futures.ThreadPoolExecutor") as executor,
+            patch.object(native.workspace, "node_path", return_value=Path("node")),
+            patch.object(native, "build_environment", return_value={}),
+            patch.object(delivery, "read", side_effect=read),
+            patch.object(delivery, "validate_suite"),
+            patch.object(native, "processes", side_effect=observe),
+            patch.object(native, "display_connection", return_value=display),
+            patch.object(
+                native.linux_desktop,
+                "process_environment",
+                side_effect=lambda pid: environments[pid],
+            ),
+            patch.object(native.time, "sleep"),
+        ):
+            future = executor.return_value.__enter__.return_value.submit.return_value
+            future.done.side_effect = [False, True] * 4
+            future.result.return_value = {
+                "exit_code": 0,
+                "timed_out": False,
+                "contained_processes_remaining_at_exit": False,
+            }
+            return native.smoke(
+                root / "profile.json",
+                root / "package",
+                root,
+                {
+                    "id": "linux-x64-ubuntu-26-04-kde",
+                    "backend": "wayland",
+                    "target": "linux-x64",
+                    "desktop": "kde",
+                    "launcher": "display-session",
+                },
+            )
+
+    def test_linux_smoke_requires_the_desktops_compositor_and_chromium_desktop(self):
+        plasma = {"XDG_CURRENT_DESKTOP": "KDE", "KDE_SESSION_VERSION": "6"}
+        for label, server, environments, error in (
+            ("KWin serves KDE6", "kwin_wayland", {101: plasma, 102: plasma}, None),
+            ("an exited process is ignored", "kwin_wayland", {101: plasma, 102: {}}, None),
+            (
+                "gnome-shell serves a KDE cell",
+                "gnome-shell",
+                {101: plasma, 102: plasma},
+                "compositor",
+            ),
+            (
+                "missing session version",
+                "kwin_wayland",
+                {101: {"XDG_CURRENT_DESKTOP": "KDE"}, 102: plasma},
+                "Chromium",
+            ),
+        ):
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as temporary:
+                if error is None:
+                    _, observed = self.linux_smoke(Path(temporary), server, environments)
+                    self.assertEqual(observed["chromium_desktops"], ["KDE6"])
+                else:
+                    with self.assertRaisesRegex(delivery.DeliveryError, error):
+                        self.linux_smoke(Path(temporary), server, environments)
 
     def test_smoke_does_not_reuse_identities_when_snapshot_is_missing(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -623,7 +717,12 @@ async function validate(config, format) {
                     root / "profile.json",
                     root / "package",
                     root,
-                    {"id": "windows-x64", "backend": "desktop", "target": "win32-x64"},
+                    {
+                        "id": "win32-x64-windows-server-2025",
+                        "backend": "desktop",
+                        "target": "win32-x64",
+                        "launcher": "workspace",
+                    },
                 )
                 observed = [
                     call.args[1]

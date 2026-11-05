@@ -16,6 +16,7 @@ import time
 import urllib.request
 from pathlib import Path
 
+import linux_desktop
 import quality_delivery as delivery
 
 ROOT = delivery.ROOT
@@ -43,7 +44,7 @@ def download(record: dict, destination: Path) -> None:
     )
 
 
-def cloud_config(profile: str, public_key: str) -> str:
+def cloud_config(profile: str, public_key: str, *, desktop: str) -> str:
     delivery.require(profile in {"fedora-44", "debian-13"}, "Unknown native guest.")
     packages = (
         [
@@ -104,10 +105,18 @@ def cloud_config(profile: str, public_key: str) -> str:
             "unzip",
         ]
     )
+    delivery.require(desktop in linux_desktop.DESKTOPS, "Unknown guest desktop.")
     commands = []
+    if desktop == "kde":
+        # The official KDE set installs without recommended or weak dependencies, never GNOME.
+        commands += linux_desktop.kde_install_commands(profile, packages)
+        packages = []
+    elif profile == "fedora-44":
+        commands.append(
+            ["dnf", "-y", "install", "--allowerasing", "fedora-release-identity-workstation"]
+        )
     if profile == "fedora-44":
         commands += [
-            ["dnf", "-y", "install", "--allowerasing", "fedora-release-identity-workstation"],
             ["systemctl", "start", "auditd"],
             [
                 "bash",
@@ -300,7 +309,7 @@ def main() -> int:
         policy = delivery.read(ROOT / "config/quality/virtual-machines.json")
         guest = policy["guests"][cell["profile"]]
         delivery.require(
-            cell["target"] == "linux-x64" and args.cell.endswith("-vm"),
+            cell["target"] == "linux-x64" and cell["launcher"] == "kvm",
             "Only the declared x64 VM cells are admitted.",
         )
         candidate_attempt = ROOT / "artifacts" / args.cell
@@ -327,7 +336,9 @@ def main() -> int:
         key = attempt / "ssh-key"
         run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key])
         (attempt / "user-data").write_text(
-            cloud_config(cell["profile"], (attempt / "ssh-key.pub").read_text())
+            cloud_config(
+                cell["profile"], (attempt / "ssh-key.pub").read_text(), desktop=cell["desktop"]
+            )
         )
         (attempt / "meta-data").write_text(
             json.dumps(guest_metadata(args.cell, planned["identity"]))

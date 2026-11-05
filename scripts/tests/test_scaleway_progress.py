@@ -1566,7 +1566,7 @@ class GuestDiagnosticTests(unittest.TestCase):
         )
         self.assertIn("artifacts/scw-cycle/host-key-diagnostics.json", source)
         self.assertIn(
-            "run-name: ARM qualification · ${{ inputs.profile }} · fault=${{ inputs.fault }}",
+            "run-name: ARM qualification · ${{ inputs.profile }} · ${{ inputs.desktop }} · fault=${{ inputs.fault }}",
             source,
         )
         self.assertIn("name: Create and qualify one ARM lease", source)

@@ -83,6 +83,7 @@ class AdmissionTests(unittest.TestCase):
             "target": "linux-x64",
             "profile": "ubuntu-26.04",
             "backend": "wayland",
+            "desktop": "gnome",
             "home": str(self.home),
             "configuration_root": str(config),
             "research_root": str(research),
@@ -109,7 +110,14 @@ class AdmissionTests(unittest.TestCase):
         self.enterContext(patch.object(probes.workspace, "target_id", return_value="linux-x64"))
         self.enterContext(patch.object(probes.sys, "platform", "linux"))
         self.enterContext(
-            patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config), "XDG_SESSION_TYPE": "wayland"})
+            patch.dict(
+                os.environ,
+                {
+                    "XDG_CONFIG_HOME": str(config),
+                    "XDG_SESSION_TYPE": "wayland",
+                    "XDG_CURRENT_DESKTOP": "GNOME",
+                },
+            )
         )
 
     def admit(self):
@@ -174,6 +182,19 @@ class AdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(probes.ProbeError, "outside"):
             self.admit()
 
+    def test_kde_is_a_declared_desktop_of_each_linux_profile(self):
+        for profile in ("ubuntu-26.04", "fedora-44", "debian-13"):
+            with self.subTest(profile=profile):
+                self.data.update({"profile": profile, "desktop": "kde"})
+                self.assertEqual(self.admit()["desktop"], "kde")
+
+    def test_linux_admission_requires_a_declared_desktop(self):
+        for desktop in (None, "xfce", "KDE", ["kde"]):
+            with self.subTest(desktop=desktop):
+                self.data["desktop"] = desktop
+                with self.assertRaisesRegex(probes.ProbeError, "Declare GNOME or KDE"):
+                    self.admit()
+
     @unittest.skipUnless(
         os.name == "nt" or hasattr(os, "symlink"),
         "Directory alias fixture needs native link support",
@@ -229,7 +250,7 @@ class AdmissionTests(unittest.TestCase):
                 "attempt_id": attempt.name,
                 "admission_sha256": probes.digest(self.file),
                 "prepared_sha256": probes.digest(attempt / "prepared.json"),
-                **{key: self.data[key] for key in ("target", "profile", "backend")},
+                **{key: self.data[key] for key in probes.SCOPE},
             },
         )
         return attempt
@@ -279,6 +300,56 @@ class AdmissionTests(unittest.TestCase):
                             probes.run(self.file, attempt)
                     launch.assert_not_called()
                     self.assertFalse((attempt / "observations").exists())
+
+    def test_mismatched_linux_desktop_refuses_before_launch(self):
+        cases = (
+            ("gnome", {"XDG_CURRENT_DESKTOP": "KDE", "KDE_SESSION_VERSION": "6"}),
+            ("kde", {"XDG_CURRENT_DESKTOP": "GNOME", "KDE_SESSION_VERSION": "6"}),
+            ("kde", {"XDG_CURRENT_DESKTOP": "KDE", "KDE_SESSION_VERSION": "5"}),
+            ("kde", {"XDG_CURRENT_DESKTOP": "KDE", "KDE_SESSION_VERSION": ""}),
+        )
+        for index, (desktop, session) in enumerate(cases):
+            with self.subTest(desktop=desktop, session=session):
+                self.data["desktop"] = desktop
+                self.admit()
+                attempt = self.attempt_fixture(f"-desktop-{index}")
+                with (
+                    patch.dict(os.environ, {"XDG_SESSION_TYPE": "wayland", **session}),
+                    patch.object(probes, "run_owned") as launch,
+                ):
+                    with self.assertRaisesRegex(probes.ProbeError, "admitted desktop"):
+                        probes.run(self.file, attempt)
+                launch.assert_not_called()
+
+    def test_native_launch_preserves_the_kde_session_version(self):
+        self.data["desktop"] = "kde"
+        self.admit()
+        attempt = self.attempt_fixture("-kde")
+
+        def execute(command, cwd, env, *args):
+            self.assertEqual(env["XDG_CURRENT_DESKTOP"], "KDE")
+            self.assertEqual(env["KDE_SESSION_VERSION"], "6")
+            (attempt / "observations/runtime.json").write_text("{}")
+            return {
+                "exit_code": 0,
+                "timed_out": False,
+                "contained_processes_remaining_at_exit": False,
+            }
+
+        with (
+            patch.object(probes, "source_inputs", return_value={}),
+            patch.object(probes, "run_owned", side_effect=execute),
+            patch.dict(
+                os.environ,
+                {
+                    "XDG_SESSION_TYPE": "wayland",
+                    "XDG_CURRENT_DESKTOP": "KDE",
+                    "KDE_SESSION_VERSION": "6",
+                },
+            ),
+        ):
+            probes.run(self.file, attempt)
+        self.assertEqual(probes.read_json(attempt / "execution.json")["desktop"], "kde")
 
     def test_native_launch_uses_manifest_arguments_and_preserves_session(self):
         attempt = self.attempt_fixture()
@@ -988,7 +1059,7 @@ print(json.dumps(result))
         result = probes.report([])
         self.assertFalse(result["complete"])
         self.assertEqual(result["qualified_targets"], [])
-        self.assertEqual(len(result["missing_profiles"]), 9)
+        self.assertEqual(len(result["missing_profiles"]), 15)
 
     def test_malformed_required_scope_cannot_report_success_without_native_records(self):
         original = probes.read_json(probes.ROOT / "config/desktop/targets.json")
@@ -1092,7 +1163,7 @@ class ReportTests(unittest.TestCase):
                 "messageBytes": 65536,
                 "stringBytes": 4096,
             }
-            for target, _, _ in probes.profile_cells()
+            for target, *_ in probes.profile_cells()
         }
         self.enterContext(
             patch.object(
@@ -1111,11 +1182,13 @@ class ReportTests(unittest.TestCase):
         file.write_text(json.dumps(data))
 
     def record(self, cell, scenario="journey", directory=None, dark_before=False):
-        target, profile, backend = cell
-        directory = directory or self.root / f"{target}-{profile}-{backend}"
+        target, profile, backend, desktop = cell
+        directory = directory or self.root / "-".join(
+            part for part in (target, profile, backend, desktop) if part
+        )
         (directory / "observations").mkdir(parents=True)
         (directory / "host-evidence.bin").write_text("Synthetic host fixture; not native evidence.")
-        scope = dict(zip(("target", "profile", "backend"), cell, strict=True))
+        scope = dict(zip(probes.SCOPE, cell, strict=True))
         attempt_id = f"synthetic-{directory.name}"
         declaration = {
             "schema_version": 1,
@@ -1544,13 +1617,10 @@ class ReportTests(unittest.TestCase):
         records = [
             directory
             for directory in self.records
-            if tuple(
-                probes.read_json(directory / "admitted.json")[key]
-                for key in ("target", "profile", "backend")
-            )
+            if tuple(probes.read_json(directory / "admitted.json")[key] for key in probes.SCOPE)
             in required
         ]
-        self.assertEqual(len(records), 9)
+        self.assertEqual(len(records), 15)
         result = probes.report(records)
         self.assertTrue(result["complete"], result["failures"])
         self.assertEqual(result["missing_profiles"], [])

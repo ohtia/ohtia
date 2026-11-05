@@ -19,12 +19,15 @@ import time
 from pathlib import Path
 
 import desktop_runtime
+import linux_desktop
 import quality_delivery as delivery
 import quality_processes as process_observer
 import workspace
 from probe_process import run_owned
 
 ROOT = delivery.ROOT
+# Chromium's classification of each qualified Linux desktop, as base/nix/xdg_util.cc reports it.
+CHROMIUM_DESKTOPS = {"gnome": "GNOME", "kde": "KDE6"}
 
 
 def command(args: list, *, capture: bool = False, encoding: str | None = None) -> str:
@@ -88,6 +91,7 @@ def build_environment() -> dict:
         "OHTIA_NATIVE_COMPOSITOR_PID",
         "WAYLAND_DISPLAY",
         "XDG_CURRENT_DESKTOP",
+        "KDE_SESSION_VERSION",
     }
     env = {
         key: value
@@ -159,10 +163,9 @@ def host_matches(cell: dict, *, external_guard: dict | None = None) -> dict:
             )
             if expected_id == "fedora":
                 delivery.require(
-                    release.get("VARIANT_ID") == "workstation"
-                    and ".fc44" in platform.release()
+                    ".fc44" in platform.release()
                     and command(["getenforce"], capture=True).strip() == "Enforcing",
-                    "Provisioned Fedora requires its vendor kernel, Workstation release package and enforcing SELinux.",
+                    "Provisioned Fedora requires its vendor kernel and enforcing SELinux.",
                 )
             else:
                 delivery.require(
@@ -185,10 +188,25 @@ def host_matches(cell: dict, *, external_guard: dict | None = None) -> dict:
         ).strip()
         delivery.require(filesystem == cell["filesystem"], "Unqualified Linux data filesystem.")
         delivery.require(
-            not os.environ.get("DISPLAY")
-            and os.environ.get("WAYLAND_DISPLAY")
-            and os.environ.get("XDG_CURRENT_DESKTOP") == "GNOME",
-            "Use the private GNOME Wayland session without an XWayland fallback.",
+            not os.environ.get("DISPLAY") and bool(os.environ.get("WAYLAND_DISPLAY")),
+            "Use the private Wayland session without an XWayland fallback.",
+        )
+        try:
+            linux_desktop.require_identity(cell["profile"], cell["desktop"], release)
+        except linux_desktop.DesktopError as exc:
+            raise delivery.DeliveryError(str(exc)) from exc
+        managers = linux_desktop.running_display_managers()
+        delivery.require(not managers, "A display manager is running in the qualification cell.")
+        desktop = {
+            "desktop": cell["desktop"],
+            "installed_packages": linux_desktop.installed_package_count(cell["profile"]),
+            "display_managers": managers,
+            "plasma_version": linux_desktop.plasma_version() if cell["desktop"] == "kde" else None,
+        }
+        delivery.require(
+            cell["desktop"] != "kde"
+            or re.fullmatch(r"6\.\d+\.\d+", desktop["plasma_version"] or "") is not None,
+            "A KDE cell requires an observed Plasma 6 version.",
         )
     elif sys.platform == "darwin":
         release = command(["/usr/bin/sw_vers", "-productVersion"], capture=True).strip()
@@ -224,6 +242,7 @@ def host_matches(cell: dict, *, external_guard: dict | None = None) -> dict:
         "filesystem": filesystem,
         "image_os": os.environ.get("ImageOS"),
         "image_version": os.environ.get("ImageVersion"),
+        **(desktop if sys.platform == "linux" else {}),
     }
 
 
@@ -672,11 +691,18 @@ def display_connection(known: list[dict], backend: str) -> dict | None:
         peers = [peer for peer in rows if peer["inode"] == row["peer"]]
         for peer in peers:
             if "wayland-" in peer["address"]:
+                names = {}
+                for pid in peer["pids"]:
+                    try:
+                        names[pid] = linux_desktop.process_name(pid)
+                    except OSError:
+                        names[pid] = ""
                 return {
                     "backend": backend,
                     "source": "unix-peer",
                     "client_pids": row["pids"],
                     "server_pids": peer["pids"],
+                    "server_commands": sorted(set(names.values())),
                     "peer_inode": peer["inode"],
                 }
     return None
@@ -702,7 +728,7 @@ def read_process_snapshot(file: Path) -> dict:
 
 def allow_development_runtime(cell: dict, assembled: Path) -> None:
     """Grant Ubuntu's namespace allowance to the exact assembled executable, never a wider one."""
-    if not (cell["profile"].startswith("ubuntu-") and delivery.runs_development_cases(cell["id"])):
+    if not (cell["profile"].startswith("ubuntu-") and delivery.runs_development_cases(cell)):
         return
     import linux_contributor
 
@@ -725,6 +751,7 @@ def smoke(
     known = []
     identity_history = []
     displays = []
+    desktops = set()
     for suite, entry, receipt in (
         ("runtime", "desktop-acceptance.mjs", "receipt.json"),
         ("storage", "storage-acceptance.mjs", "storage-receipt.json"),
@@ -744,7 +771,7 @@ def smoke(
                     str(output),
                     *(
                         [str(ROOT / "artifacts" / f"quality-{cell['id']}" / "assembled")]
-                        if suite == "startup" and delivery.runs_development_cases(cell["id"])
+                        if suite == "startup" and delivery.runs_development_cases(cell)
                         else []
                     ),
                 ],
@@ -764,10 +791,21 @@ def smoke(
                 for row in known:
                     if row not in identity_history:
                         identity_history.append(row)
-                observations.extend(processes(prepared, known, ready_only=True))
+                current = processes(prepared, known, ready_only=True)
+                observations.extend(current)
                 connected = display_connection(known, cell["backend"])
                 if connected is not None and connected not in displays:
                     displays.append(connected)
+                if sys.platform == "linux":
+                    # Classify only package processes verified in this poll; an exited
+                    # process reads as an empty environment and says nothing about Chromium.
+                    for row in current:
+                        try:
+                            environment = linux_desktop.process_environment(row["pid"])
+                        except OSError:
+                            continue
+                        if environment:
+                            desktops.add(linux_desktop.chromium_desktop(environment))
                 time.sleep(0.2)
             supervision = future.result()
         delivery.write(destination / f"{suite}-supervision.json", supervision)
@@ -787,7 +825,7 @@ def smoke(
             "Packaged suite or supervised cleanup failed.",
         )
         result = delivery.read(output / receipt)
-        delivery.validate_suite(suite, cell["target"], result, cell["id"])
+        delivery.validate_suite(suite, cell["target"], result, cell)
         if suite == "runtime" and sys.platform != "linux":
             # Successful real packaged-window capture is evidence of rendering, not an OS socket query.
             capture = output / "foundation-320.png"
@@ -805,6 +843,16 @@ def smoke(
         not processes(prepared, identity_history), "Packaged processes remain after shutdown."
     )
     delivery.require(bool(displays), "The actual native display connection was not observed.")
+    if sys.platform == "linux":
+        compositor = linux_desktop.COMPOSITORS[cell["desktop"]]
+        delivery.require(
+            all(row["server_commands"] == [compositor] for row in displays),
+            "The Wayland peer serving the application is not the desktop's compositor.",
+        )
+        delivery.require(
+            desktops == {CHROMIUM_DESKTOPS[cell["desktop"]]},
+            "Chromium observes a different desktop environment.",
+        )
     renderers = [row for row in observations if row["renderer"]]
     delivery.require(
         renderers and all(row["sandbox"] for row in renderers),
@@ -813,6 +861,7 @@ def smoke(
     return suites, {
         "samples": observations,
         "display_observations": displays,
+        **({"chromium_desktops": sorted(desktops)} if sys.platform == "linux" else {}),
         "remaining": [],
         "minimum_poll_delay_ms": 200,
         "limitations": "Samples establish ready renderer OS sandbox and final absence of package executables; they do not measure lifetime resources or physical power loss.",
@@ -952,6 +1001,7 @@ def main() -> int:
                     "target": cell["target"],
                     "profile": cell["profile"],
                     "backend": cell["backend"],
+                    **({"desktop": cell["desktop"]} if "desktop" in cell else {}),
                     "filesystem": cell["filesystem"],
                     "host_arch": arch,
                     "process_arch": runtime_identity["architecture"],
