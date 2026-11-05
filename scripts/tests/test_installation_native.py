@@ -388,6 +388,8 @@ class InstallationTests(unittest.TestCase):
     def test_archive_binding_rejects_same_version_different_payload_even_with_forged_inventory(
         self,
     ):
+        # A restrictive creation mask proves the fixture sets the archive's modes itself.
+        self.addCleanup(os.umask, os.umask(0o077))
         manifest = b'[{"name":"0001_initial","sha256":"' + b"a" * 64 + b'"}]'
         stream = io.BytesIO()
         with tarfile.open(fileobj=stream, mode="w") as archive:
@@ -401,7 +403,15 @@ class InstallationTests(unittest.TestCase):
         payload = self.root / "installed"
         (payload / "resources/app/migrations").mkdir(parents=True)
         (payload / "resources/app/migrations/manifest.json").write_bytes(manifest)
-        (payload / "resources/app/package.json").write_text('{"version":"0.1.0"}')
+
+        def install(data):
+            # The package manager applies archive modes; the account's file-creation mask must not.
+            file = payload / "resources/app/package.json"
+            file.write_text(data)
+            file.chmod(0o644)
+
+        install('{"version":"0.1.0"}')
+        (payload / "resources/app/migrations/manifest.json").chmod(0o644)
 
         def process(*_args, **_kwargs):
             return SimpleNamespace(
@@ -416,15 +426,20 @@ class InstallationTests(unittest.TestCase):
                 self.subTest(format=suffix),
                 patch.object(native.subprocess, "Popen", side_effect=process) as conversion,
             ):
-                (payload / "resources/app/package.json").write_text('{"version":"0.1.0"}')
+                install('{"version":"0.1.0"}')
                 native.verify_installed_payload(self.file.with_suffix(suffix), self.cell, payload)
                 self.assertEqual(
                     conversion.call_args.args[0][0],
                     "dpkg-deb" if suffix == ".deb" else "rpm2archive",
                 )
-                (payload / "resources/app/package.json").write_text(
-                    '{"version":"0.1.0", "different":true}'
-                )
+                install('{"version":"0.1.0", "different":true}')
+                (payload / "prepared.json").write_text(json.dumps(native.tree_inventory(payload)))
+                with self.assertRaisesRegex(ValueError, "Installed bytes"):
+                    native.verify_installed_payload(
+                        self.file.with_suffix(suffix), self.cell, payload
+                    )
+                install('{"version":"0.1.0"}')
+                (payload / "resources/app/package.json").chmod(0o664)
                 (payload / "prepared.json").write_text(json.dumps(native.tree_inventory(payload)))
                 with self.assertRaisesRegex(ValueError, "Installed bytes"):
                     native.verify_installed_payload(
