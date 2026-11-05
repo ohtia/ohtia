@@ -1,0 +1,333 @@
+{
+  "schema_version": 1,
+  "candidate_id": "e0a713eafd1d45ce1c1be7329096a4d56c6128ab879b5ef149f5f99f2457c58c",
+  "source_tree": "d4207c78e42a64e0d3da97d25d39b25e8aa78117",
+  "generation_manifest": {
+    "resource": "packages/contracts/catalog-provenance.json",
+    "sha256": "8a65e76876b2f633e4e1b4a426f2c895159365142ef4f65c023e706216db6aca",
+    "records": [
+      {
+        "schema_version": 1,
+        "scope": "Inherited foundation messages in src/localization/*.json",
+        "producer": {
+          "agent": "codex",
+          "effective_model": null
+        },
+        "effective_model_evidence": "The implementation session does not expose a confirmed effective model identifier.",
+        "human_linguistic_review": null
+      },
+      {
+        "scope": "settings.language.* messages and controlled autonyms",
+        "producer": {
+          "agent": "codex",
+          "effective_model": null
+        },
+        "effective_model_evidence": "The implementation runtime identifies the GPT-6 family but does not expose a confirmed effective model identifier.",
+        "human_linguistic_review": null
+      },
+      {
+        "scope": "command.*, menu.*, about.*, help.* and dialog.close messages for STORY-002-004",
+        "producer": {
+          "agent": "codex",
+          "effective_model": null
+        },
+        "effective_model_evidence": "The implementation runtime identifies the GPT-6 family but does not expose a confirmed effective model identifier.",
+        "human_linguistic_review": null
+      },
+      {
+        "scope": "workspace.* and command.reason.wide_layout messages for STORY-002-006",
+        "producer": {
+          "agent": "codex",
+          "effective_model": null
+        },
+        "effective_model_evidence": "The implementation runtime identifies the GPT-6 family but does not expose a confirmed effective model identifier.",
+        "human_linguistic_review": null
+      },
+      {
+        "scope": "settings.* presentation controls and save states for STORY-002-007, plus updated help.zoom.text, help.characters.text and help.layout.text",
+        "producer": {
+          "agent": "codex",
+          "effective_model": null
+        },
+        "effective_model_evidence": "The implementation runtime identifies the GPT-6 family but does not expose a confirmed effective model identifier.",
+        "human_linguistic_review": null
+      },
+      {
+        "scope": "identity.* static contributor roles, origin and attribution fields for STORY-002-008",
+        "producer": {
+          "agent": "codex",
+          "effective_model": "gpt-6.1-sol"
+        },
+        "effective_model_evidence": "The active implementation thread rollout, matched to the issue request, records gpt-6.1-sol with effort high in its turn_context.",
+        "human_linguistic_review": null
+      },
+      {
+        "scope": "palette.*, shortcuts.* and command.feedback messages for STORY-002-014",
+        "producer": {
+          "agent": "codex",
+          "effective_model": null
+        },
+        "effective_model_evidence": "The implementation runtime identifies the GPT-6 family but does not expose a confirmed effective model identifier.",
+        "human_linguistic_review": null
+      }
+    ]
+  },
+  "catalogs": [
+    {
+      "locale": "ca-AD",
+      "resource": "packages/contracts/src/localization/ca-AD.json",
+      "sha256": "499ed3a91eaedde2b1ad027889c5184d3465c7a762e17f2ae9d2ad7a07b03c61",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "ca-ES",
+      "resource": "packages/contracts/src/localization/ca-ES.json",
+      "sha256": "f8f8c6598138a619c4a1840c11b03169212bbd0d15d4291ac681261f2ed8c7df",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "da-DK",
+      "resource": "packages/contracts/src/localization/da-DK.json",
+      "sha256": "34bb3d4744504c97e8abb083f8a3b0bea33a61acdbc294b8c287be82fdea5653",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "de-AT",
+      "resource": "packages/contracts/src/localization/de-AT.json",
+      "sha256": "760154a9ad50b992e8f24a593105d0b50b4e4b6aa1a9a258e4fa0ef93387bda3",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "de-CH",
+      "resource": "packages/contracts/src/localization/de-CH.json",
+      "sha256": "ee63722d4f0b6851849ac90c49b429cd2ace23f9015b925a47562b588937895b",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "de-DE",
+      "resource": "packages/contracts/src/localization/de-DE.json",
+      "sha256": "68d730f273c56fd941fcd2a024edd0be3b395c5668dfb209f20b144b4a84cfc9",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "en-AU",
+      "resource": "packages/contracts/src/localization/en-AU.json",
+      "sha256": "7b0c098919ddbda5983676a6e0d4c500177933b480a6f530adec55f9e9195042",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "en-CA",
+      "resource": "packages/contracts/src/localization/en-CA.json",
+      "sha256": "e977a1629ecc4977fe75e453ebbd92bb5b7bbb7886a8596cd458f0f7355c4443",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "en-GB",
+      "resource": "packages/contracts/src/localization/en-GB.json",
+      "sha256": "c79e05bd2b23b4b2817c062d2ffe688f404a612ea71bf9bf285de23db1e2472f",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "en-US",
+      "resource": "packages/contracts/src/localization/en-US.json",
+      "sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "es-AR",
+      "resource": "packages/contracts/src/localization/es-AR.json",
+      "sha256": "b35bf8ed081f34852cf9367084c26748abcc3571bad8b1d58920a90415cf242d",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "es-ES",
+      "resource": "packages/contracts/src/localization/es-ES.json",
+      "sha256": "f862befc2bdc52d9e3ae3d3019c61b225a43df1816bce52a630a618cba8dfb05",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "es-MX",
+      "resource": "packages/contracts/src/localization/es-MX.json",
+      "sha256": "f586af3b2969ff633adadb9c6d4cd8d9a5a61a9024a71508a380ea8d5163c3f5",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "fi-FI",
+      "resource": "packages/contracts/src/localization/fi-FI.json",
+      "sha256": "5cc54f7d3032a05c14697e11b59020bc66d243af9a5185ce3e07b3a869e6bfa7",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "fr-BE",
+      "resource": "packages/contracts/src/localization/fr-BE.json",
+      "sha256": "bc4b5371f06c2dc3cccdbd2324d7e59bd7c7b7ddbe362c821ba436db1a60ce69",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "fr-CA",
+      "resource": "packages/contracts/src/localization/fr-CA.json",
+      "sha256": "91ac8b3b838f6603aab87081bee1260530fa5d833f9cd0b50e73c334f80e0b33",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "fr-FR",
+      "resource": "packages/contracts/src/localization/fr-FR.json",
+      "sha256": "1a25a733f684362227009964cf983af4f12a840d69d35910b847ceb962498081",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "it-IT",
+      "resource": "packages/contracts/src/localization/it-IT.json",
+      "sha256": "fca0e559d98929b6dc2e1d0daa919053e5cbc8f291e30795810ef6091c238dab",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "ko-KR",
+      "resource": "packages/contracts/src/localization/ko-KR.json",
+      "sha256": "8b00756ff2955233ead37e7be4bbec89e046f2af113b0c7c590bc9c5f656f7b7",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "nb-NO",
+      "resource": "packages/contracts/src/localization/nb-NO.json",
+      "sha256": "340ffcf063d2363d263b0748db7cf47cd5c48f687d3bd2131b64eaf5f889bfba",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "nl-BE",
+      "resource": "packages/contracts/src/localization/nl-BE.json",
+      "sha256": "17e300adee208490c1149cf50d210187ce8e1f52ee092c5b012aac75863ffa40",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "nl-NL",
+      "resource": "packages/contracts/src/localization/nl-NL.json",
+      "sha256": "afae71677e4df2fda291046dcd798edcbab2471d7b258f998137fe21e4a8c10c",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "pt-BR",
+      "resource": "packages/contracts/src/localization/pt-BR.json",
+      "sha256": "e880f314a7ae0b5de35862b86c9b02928b3aa5475f3a78f23e5bc7d06866d339",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "pt-PT",
+      "resource": "packages/contracts/src/localization/pt-PT.json",
+      "sha256": "c44606f44bdf38859e7e7dba66113842339741a7b87cb0deb6de388e97097543",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    },
+    {
+      "locale": "sv-SE",
+      "resource": "packages/contracts/src/localization/sv-SE.json",
+      "sha256": "4e83040c6c9a4b9e91fe2cd85bbf923fde5de388112673b8119aa30ca511f890",
+      "reference_locale": "en-US",
+      "reference_sha256": "b573b032ab55d96d240c9ea26833bcec491789770f4e45e333e746ef9e1fd305",
+      "producer_kind": "language-model",
+      "generation_records": [0, 1, 2, 3, 4, 5, 6],
+      "human_linguistic_review": "not-performed"
+    }
+  ],
+  "limitations": [
+    "Generation records describe message batches across all locales; they do not prove regional review.",
+    "A null effective model remains unknown; verification does not replace the original producer.",
+    "No human translation, name-connotation or native Korean linguistic review is recorded.",
+    "Structural and presentation checks do not certify fluency, usability or accessibility conformance."
+  ]
+}

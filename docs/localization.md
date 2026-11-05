@@ -2,6 +2,10 @@
 type: Reference
 title: Shared interface localization
 description: Author complete typed catalogs and use the durable application-wide language preference without changing research content.
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # Shared interface localization
@@ -14,7 +18,7 @@ Each supported locale has one complete UTF-8 JSON file in [the shared localizati
 
 The delivered messages use plain text and named string parameters. The TypeScript `message` API requires the declared parameters; runtime checks also reject missing or extra parameters. `formatNumber` and `formatDate` use the selected locale within the actual runtime ICU environment; stored and protocol values do not use presentation formatting. The common [catalog gate](../tooling/quality-catalogs.mjs) checks exact keys, parameter types, ICU syntax and declared plural/select forms, including each locale’s required plural categories. Future plural/select message producers must supply a matching typed rendering contract before introducing such messages.
 
-[Catalog provenance](../packages/contracts/catalog-provenance.json) separates inherited foundation messages from the language-control extension. These translations have no human linguistic verification. The extension session exposes no confirmed exact effective model identifier, so its producer record explicitly leaves that identifier unavailable. Structural checks and rendering do not certify fluency, regional review or human approval (PRIN-004 and PRIN-007).
+[Catalog provenance](../packages/contracts/catalog-provenance.json) separates inherited foundation messages from later surface-specific generation batches. The [candidate-bound provenance snapshot](../config/localization/catalog-provenance.json) records each locale’s catalog and English-reference hashes with the inherited generation records. These translations have no human linguistic verification. Known effective model identities are retained; batches without a confirmed exact identity explicitly leave that identifier unavailable. Structural checks and rendering do not certify fluency, regional review or human approval (PRIN-004 and PRIN-007).
 
 ## Named preference operations
 
@@ -35,3 +39,17 @@ After a stream gap or invalidation, the controller uses fresh subscription ident
 ## Verification boundaries
 
 The [localization tests](../tests/localization.test.ts) exercise catalog contracts, actual-runtime formatting and deterministic controller ordering. The [language surface tests](../tests/language-panel.test.ts) render every locale and verify control labeling, notices, focus and preservation of a mixed-script draft. The [storage suite](../tests/storage.test.ts) uses real file-backed SQLite to verify transactions, receipts, stale windows, invalid records and restart; it does not establish Electron execution. [Shared verification](shared-verification.md) owns the common inventory and coverage gates. Packaged native accessibility and complete-page/manual assistive qualification remain separate evidence under the consuming stories’ contracts.
+
+## Check candidate provenance
+
+Use the [snapshot checker](../scripts/localization_qualification.py) with the complete manifest produced by [candidate admission](application-composition.md#freeze-a-verification-candidate). Retain that manifest with its original candidate and source-tree identities; the source Git objects must be available in the checkout. Replace the example absolute manifest path below with the actual retained file.
+
+```bash
+python3 scripts/localization_qualification.py /absolute/evidence/interface-candidate.json config/localization/catalog-provenance.json --check
+```
+
+The checker binds each locale and the English reference to the frozen hashes and exact original Git blobs. It preserves the recorded generation batches and unknown effective model identities. Its initial-catalog snapshot requires human linguistic review to remain explicitly not performed; recording a later review requires its actual version and scope. Checking provenance does not perform or certify that review.
+
+`--check` rejects stale content and incorrectly typed JSON values while accepting formatting and object-member ordering differences. To create a snapshot, omit `--check` and provide a new output path; an existing output file is never overwritten. The command checks provenance, catalog bytes and source binding. It does not replace full candidate admission, the shared catalog syntax gate or contextual presentation testing.
+
+Record candidate-specific execution results, artifact digests, findings and limitations in the associated issue and retained evidence. Keep reusable procedures in this guide; a passing structural or presentation check does not certify linguistic fluency or accessibility conformance (PRIN-004 and PRIN-007).
