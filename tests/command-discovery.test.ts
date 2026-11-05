@@ -203,6 +203,100 @@ describe("command discovery", () => {
     await test.open();
     expect(input().value).toBe("");
   });
+  it.each(["Enter", "NumpadEnter"])(
+    "keeps Korean IME confirmation on %s separate from the next command activation",
+    async (code) => {
+      const test = harness("win32");
+      const run = vi.fn(async () => true);
+      await render(h(CommandSurfaces, { ...test, locale: "ko-KR" }));
+      await act(async () => {
+        test.registry.register("settings.open", { state: () => ({}), run });
+      });
+      await test.open();
+      await act(async () =>
+        input().dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
+      );
+      await query("설정");
+      // Windows emits both keydowns before either keyup for one physical IME confirmation.
+      await key(input(), "Process", { code, keyCode: 229, isComposing: true });
+      await act(async () =>
+        input().dispatchEvent(
+          new CompositionEvent("compositionend", { bubbles: true, data: "정" }),
+        ),
+      );
+      await key(input(), "Enter", { code, keyCode: 13 });
+      expect(run).not.toHaveBeenCalled();
+      await key(input(), "Enter", { code, repeat: true });
+      await act(async () =>
+        input().dispatchEvent(new KeyboardEvent("keyup", { key: "Shift", bubbles: true })),
+      );
+      await key(input(), "Enter", { code });
+      expect(run).not.toHaveBeenCalled();
+      expect(input().value).toBe("설정");
+      expect(document.activeElement).toBe(input());
+      expect(host.querySelector(".command-palette[open]")).not.toBeNull();
+      await act(async () => {
+        input().dispatchEvent(new KeyboardEvent("keyup", { key: "Process", code, bubbles: true }));
+        input().dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code, bubbles: true }));
+      });
+      await key(input(), "Enter", { code });
+      expect(run).toHaveBeenCalledOnce();
+      expect(host.querySelector(".command-palette[open]")).toBeNull();
+      expect(document.activeElement).toBe(origin);
+    },
+  );
+  it.each([" ", "Escape", "a"])(
+    "allows a deliberate Enter after composition ends with %j",
+    async (commitKey) => {
+      const test = harness();
+      await render(h(CommandSurfaces, { ...test, locale: "en-US" }));
+      await test.open();
+      await query("Ohtia help");
+      await act(async () =>
+        input().dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
+      );
+      await key(input(), commitKey, { isComposing: true });
+      await act(async () =>
+        input().dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })),
+      );
+      await key(input(), "Enter");
+      expect(host.querySelector(".help-dialog[open]")).not.toBeNull();
+    },
+  );
+  it.each(["pointer", "blur", "window blur", "reopen"])(
+    "allows explicit activation after IME confirmation and %s without observing its keyup",
+    async (gesture) => {
+      const test = harness();
+      await render(h(CommandSurfaces, { ...test, locale: "en-US" }));
+      await test.open();
+      await query("Ohtia help");
+      await act(async () =>
+        input().dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
+      );
+      await key(input(), "Enter", { code: "Enter" });
+      await act(async () =>
+        input().dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })),
+      );
+      if (gesture === "pointer") {
+        await act(async () => option("help.open").click());
+      } else {
+        if (gesture === "window blur") {
+          await act(async () => window.dispatchEvent(new Event("blur")));
+        } else if (gesture === "blur") {
+          await act(async () => {
+            host.querySelector<HTMLButtonElement>(".command-palette button")!.focus();
+            input().focus();
+          });
+        } else {
+          await key(input(), "Escape");
+          await test.open();
+          await query("Ohtia help");
+        }
+        await key(input(), "Enter");
+      }
+      expect(host.querySelector(".help-dialog[open]")).not.toBeNull();
+    },
+  );
   it("updates late availability, refuses disabled activation and closes before exactly one invocation in the origin context", async () => {
     const test = harness();
     await render(h(CommandSurfaces, { ...test, locale: "en-US" }));

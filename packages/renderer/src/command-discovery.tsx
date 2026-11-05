@@ -93,7 +93,17 @@ function PaletteOpening({
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<CommandId>();
   const composing = useRef(false);
+  const confirmingEnter = useRef(false);
   const activating = useRef(false);
+  useEffect(() => {
+    const release = () => {
+      confirmingEnter.current = false;
+    };
+    window.addEventListener("blur", release);
+    return () => {
+      window.removeEventListener("blur", release);
+    };
+  }, []);
   const list = useRef<HTMLDivElement>(null);
   const commands = paletteCommands(locale, query);
   const entry = (command: CommandId): CommandEntry =>
@@ -156,15 +166,26 @@ function PaletteOpening({
           onCompositionEnd={() => {
             composing.current = false;
           }}
+          onBlur={() => {
+            confirmingEnter.current = false;
+          }}
+          onKeyUp={(event) => {
+            if (event.key === "Enter" || event.code === "Enter" || event.code === "NumpadEnter")
+              confirmingEnter.current = false;
+          }}
           onKeyDown={(event) => {
+            if (event.defaultPrevented) return;
             if (
-              event.defaultPrevented ||
               event.nativeEvent.isComposing ||
               composing.current ||
               // eslint-disable-next-line @typescript-eslint/no-deprecated -- IME confirmation may report 229 after compositionend.
               event.keyCode === 229
-            )
+            ) {
+              // Windows Korean IME can emit another Enter keydown after compositionend, before keyup.
+              if (event.key === "Enter" || event.code === "Enter" || event.code === "NumpadEnter")
+                confirmingEnter.current = true;
               return;
+            }
             if (event.key === "ArrowDown" || event.key === "ArrowUp") {
               event.preventDefault();
               if (!commands.length) return;
@@ -177,7 +198,7 @@ function PaletteOpening({
               );
             } else if (event.key === "Enter") {
               event.preventDefault();
-              if (!event.repeat && active) activate(active.id);
+              if (!event.repeat && !confirmingEnter.current && active) activate(active.id);
             }
           }}
         />
