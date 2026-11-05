@@ -6,6 +6,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { _electron, expect } from "@playwright/test";
 import { openWorkspaceSettings, verifyWorkspaceComposition } from "./command-workspace.mjs";
 import { verifyPackagedSettings } from "./settings-acceptance.mjs";
+import { verifyMissingLocatedDatabase } from "./storage-native-recovery.mjs";
+import {
+  recordNativeFailure,
+  withNativeFailureObservation,
+} from "./native-failure-observation.mjs";
 import { setNativeViewport } from "./design-viewport.mjs";
 import { withCommandCleanup } from "./command-native-focus.mjs";
 import { pseudolocalize } from "./pseudolocalization.mjs";
@@ -51,25 +56,49 @@ const receipt = {
     "Instrumented failure cases are distinct from ordinary native execution and physical power loss.",
   ],
 };
+let phase = "initialization";
+let failureSelector = null;
+function enterPhase(name, selector = null) {
+  phase = name;
+  failureSelector = selector;
+}
 function record(id, observed) {
   receipt.cases.push({ id, result: "pass", observed });
+  enterPhase(`after-${id}`);
   fs.writeFileSync(
     path.join(output, "storage-receipt.json"),
     JSON.stringify(receipt, null, 2) + "\n",
   );
 }
+function persistReceipt() {
+  fs.writeFileSync(
+    path.join(output, "storage-receipt.json"),
+    JSON.stringify(receipt, null, 2) + "\n",
+  );
+}
+const failureMetadata = () => ({ phase, selector: failureSelector });
+const reportFailure = (error) =>
+  recordNativeFailure(receipt, error, application, failureMetadata(), persistReceipt);
+const observeFailure = (operation, overrides = {}) =>
+  withNativeFailureObservation(
+    () => application,
+    () => ({ ...failureMetadata(), ...overrides }),
+    operation,
+    reportFailure,
+  );
 let application;
 let openingObserved = false;
 /** Keep locale and storage checks on the actual window, without persistent emulation. */
 async function resizeNativeViewport(page, size) {
   const nativeWindow = await application.browserWindow(page);
   return withCommandCleanup(
-    () => setNativeViewport(page, nativeWindow, { ...size, zoomFactor: 1 }),
-    () => nativeWindow.dispose(),
+    () => observeFailure(() => setNativeViewport(page, nativeWindow, { ...size, zoomFactor: 1 })),
+    () => observeFailure(() => nativeWindow.dispose(), { phase: "dispose-native-viewport-handle" }),
   );
 }
 
 async function start() {
+  enterPhase("launch-application");
   application = await _electron.launch({
     executablePath: launch.executable,
     args: [launch.app, ...launch.args],
@@ -79,13 +108,17 @@ async function start() {
     timeout: 20000,
     artifactsDir: output,
   });
+  enterPhase("wait-first-window");
   const page = await application.firstWindow();
+  enterPhase("wait-workspace", ".workspace-window");
   await expect(page.locator(".workspace-window")).toBeVisible();
+  enterPhase("wait-service-ready");
   await expect
     .poll(async () => (await page.evaluate(() => window.ohtia.foundation.readStatus().result)).ok, {
       timeout: portLimits.service_start_ms,
     })
     .toBe(true);
+  enterPhase("observe-ready-native-processes");
   await recordReadyNativeProcesses(application, output);
   return page;
 }
@@ -116,18 +149,25 @@ async function holdNextStorageNotice() {
   });
 }
 async function open(page, expected = "storage_ready") {
+  enterPhase("read-storage-opening-state");
   const snapshot = await page.evaluate(() => window.ohtia.bootstrap.read());
   const observeOpening = !openingObserved && expected === "storage_ready";
-  if (observeOpening) await holdNextStorageNotice();
+  if (observeOpening) {
+    enterPhase("hold-opening-notice");
+    await holdNextStorageNotice();
+  }
+  enterPhase("request-open-storage", 'section[aria-labelledby="location-title"] button');
   await page
     .getByRole("button", { name: message(snapshot.locale, "open_storage"), exact: true })
     .click();
   if (observeOpening) {
+    enterPhase("wait-held-opening-notice");
     await expect
       .poll(() =>
         application.evaluate(() => typeof globalThis.__releaseStorageNotice === "function"),
       )
       .toBe(true);
+    enterPhase("assert-opening-gate", "#location-state");
     await expect(page.locator("#location-state")).toHaveText(
       message(snapshot.locale, "storage_opening"),
     );
@@ -160,21 +200,25 @@ async function open(page, expected = "storage_ready") {
         "non-shipping main test peer holds one real utility outcome; no simulated filesystem latency",
     });
   }
+  enterPhase(`wait-storage-${expected}`, "#location-state");
   await expect
     .poll(async () => (await page.evaluate(() => window.ohtia.bootstrap.read())).state, {
       timeout: 20000,
     })
     .toBe(expected);
-  if (expected === "storage_ready")
+  if (expected === "storage_ready") {
+    enterPhase("verify-storage-engine");
     await expect
       .poll(
         async () =>
           (await page.evaluate(() => window.ohtia.foundation.readStatus().result)).value?.engine,
       )
       .toBe("verified");
+  }
   return (await page.evaluate(() => window.ohtia.bootstrap.read())).locale;
 }
 async function component(mode, directory, expectedInterruption = false) {
+  enterPhase(`component-${mode}`);
   const helper = fileURLToPath(new URL("./storage-native-cases.mjs", import.meta.url));
   return application.evaluate(
     async ({ utilityProcess }, input) => {
@@ -227,6 +271,7 @@ try {
   let page = await start();
   const locale = await open(page);
   const text = (key) => message(locale, key);
+  enterPhase("subscribe-appearance");
   await page.evaluate(async () => {
     window.__storageAppearanceEvents = [];
     window.__storageAppearanceSubscription = window.ohtia.foundation.subscribeAppearance(
@@ -237,15 +282,18 @@ try {
     const ready = await window.__storageAppearanceSubscription.ready;
     if (!ready.ok) throw new Error("Appearance subscription failed.");
   });
+  enterPhase("read-initial-appearance");
   const before = await page.evaluate(() => window.ohtia.foundation.readAppearance().result);
   expect(before.ok).toBe(true);
   const selected = before.value.value === "dark" ? "light" : "dark";
+  enterPhase("open-settings", ".settings-dialog[open]");
   await openWorkspaceSettings(page);
   await expect(
     page.getByRole("dialog", { name: text("settings.title"), exact: true }),
   ).toBeVisible();
   const control = page.locator('input[type="radio"][value="system"]');
   await expect(control).toBeEnabled();
+  enterPhase("save-appearance", `input[type="radio"][value="${selected}"]`);
   await page.locator(`input[type="radio"][value="${selected}"]`).check();
   await expect
     .poll(
@@ -256,6 +304,7 @@ try {
   const saved = await page.evaluate(() => window.ohtia.foundation.readAppearance().result);
   expect(saved.value.revision).toBe(before.value.revision + 1);
   record("graphical-persisted-appearance", { before, saved });
+  enterPhase("reconcile-lost-appearance-response");
   const operationId = `native-${randomUUID()}`;
   const changed = selected === "dark" ? "light" : "dark";
   await application.evaluate(({ BrowserWindow }, operation) => {
@@ -298,6 +347,7 @@ try {
     },
   });
   record("lost-response-reconciled-without-replay", { uncertain, recovered });
+  enterPhase("replay-appearance-command");
   const replay = await page.evaluate(
     async (command) => window.ohtia.foundation.replaceAppearance(command).result,
     { operationId, expectedRevision: saved.value.revision, value: changed },
@@ -315,6 +365,7 @@ try {
     saved.value.revision + 1,
   ]);
   record("ipc-replay-preserves-subscription", { replay, events });
+  enterPhase("open-second-window");
   await page.evaluate(() => window.ohtia.bootstrap.newWindow());
   await expect.poll(() => application.windows().length).toBe(2);
   const second = application.windows().find((window) => window !== page);
@@ -325,6 +376,7 @@ try {
     )
     .toBe(changed);
   // Exercise the language owner through the actual packaged bridge and existing isolated store.
+  enterPhase("read-initial-locale", 'select[aria-describedby="language-help"]');
   const language = page.locator('select[aria-describedby="language-help"]');
   const initialLanguage = await page.evaluate(() => window.ohtia.foundation.readLocale().result);
   expect(initialLanguage.ok).toBe(true);
@@ -337,6 +389,7 @@ try {
     window.__localeInput = draft;
   });
   for (const choice of supportedLocales) {
+    enterPhase(`verify-locale-${choice}`, 'select[aria-describedby="language-help"]');
     await language.focus();
     await language.selectOption(choice);
     await expect(language).toBeFocused();
@@ -363,6 +416,7 @@ try {
       ).toBe(true);
     }
   }
+  enterPhase("verify-pseudolocale-reflow", ".application-workspace main");
   const workspaceMain = page.locator(".application-workspace main");
   await expect(workspaceMain).toHaveCount(1);
   await expect(workspaceMain).toBeVisible();
@@ -394,6 +448,7 @@ try {
   await page.screenshot({ path: path.join(output, "locale-pseudo-320.png"), fullPage: true });
   await page.locator("#locale-pseudo-fixture").evaluate((element) => element.remove());
   await page.locator("#locale-preservation-fixture").focus();
+  enterPhase("restore-and-verify-locale");
   const currentLanguage = await page.evaluate(() => window.ohtia.foundation.readLocale().result);
   const localeOperationId = randomUUID();
   const languageCommand = {
@@ -450,15 +505,18 @@ try {
     inputFixture: "synthetic textarea, not project-switch qualification",
     pseudolocalization: "separate synthetic layout clone with at least 40 percent text expansion",
   });
+  enterPhase("packaged-settings-presentation", ".settings-dialog[open]");
   record(
     "packaged-settings-presentation",
-    await verifyPackagedSettings(application, page, second, output),
+    await verifyPackagedSettings(application, page, second, output, reportFailure),
   );
+  enterPhase("prepare-utility-replacement", 'input[type="radio"][value="system"]');
   // Leave a draft in the first window, then replace the utility. The document and input must survive.
   await control.check();
   await page.evaluate(() => {
     window.__storageDocumentMarker = "retained";
   });
+  enterPhase("replace-utility");
   const processes = await application.evaluate(({ app }) => app.getAppMetrics());
   const services = processes.filter(
     (value) => value.type === "Utility" && value.name === "Ohtia data service",
@@ -477,7 +535,9 @@ try {
     )
     .toBe("verified");
   expect(await page.evaluate(() => window.__storageDocumentMarker)).toBe("retained");
+  enterPhase("verify-retained-appearance", 'input[type="radio"][value="system"]');
   await expect(control).toBeChecked();
+  enterPhase("verify-replaced-utility-locale", 'select[aria-describedby="language-help"]');
   await language.selectOption("es-AR");
   await expect(second.locator("html")).toHaveAttribute("lang", "es-AR");
   await language.selectOption(initialLanguage.value.record.value);
@@ -491,11 +551,13 @@ try {
     processes,
     localePropagationAfterReplacement: true,
   });
+  enterPhase("verify-keyboard-reflow", ".settings-dialog[open]");
   await expect(page.locator("#location-state")).toHaveText(text("storage_ready"));
   await resizeNativeViewport(page, { width: 320, height: 600 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
+  enterPhase("focus-appearance-after-reflow", 'input[type="radio"][value="system"]');
   await control.focus();
   await expect(control).toBeFocused();
   const tree = await page.locator("body").ariaSnapshot();
@@ -521,6 +583,7 @@ try {
     expect(inspected.messages.some((value) => value.kind === "complete")).toBe(true);
     record(`process-interruption-${boundary}`, { interrupted, inspected });
   }
+  enterPhase("verify-restart-persistence");
   const finalLanguage = await page.evaluate(() => window.ohtia.foundation.readLocale().result);
   const finalPresentation = await page.evaluate(
     () => window.ohtia.foundation.readPresentation().result,
@@ -536,6 +599,7 @@ try {
   verifyStableSentinels(launch.profile);
   page = await start();
   await open(page);
+  enterPhase("verify-restarted-preferences");
   expect(await page.evaluate(() => window.ohtia.foundation.readAppearance().result)).toEqual(final);
   expect(fs.readdirSync(checkpointRoot).sort()).toEqual(priorCheckpoints);
   expect(locatorFiles()).toEqual(priorLocatorFiles);
@@ -574,22 +638,27 @@ try {
   const locatorFile = path.join(settings, "data-location.json");
   const locatorBytes = fs.readFileSync(locatorFile);
   for (const corrected of ["located", "pending_create"]) {
+    enterPhase(`prepare-locator-repair-${corrected}`);
     fs.writeFileSync(locatorFile, "{");
     page = await start();
+    enterPhase(`assert-invalid-locator-${corrected}`, "#location-state");
     expect((await page.evaluate(() => window.ohtia.bootstrap.read())).state).toBe(
       "locator_invalid",
     );
     if (corrected === "located") fs.writeFileSync(locatorFile, locatorBytes);
     else fs.unlinkSync(locatorFile);
+    enterPhase(`retry-locator-repair-${corrected}`, ".actions > button");
     const snapshot = await page.evaluate(() => window.ohtia.bootstrap.read());
     await page
       .getByRole("button", { name: message(snapshot.locale, "retry"), exact: true })
       .last()
       .click();
+    enterPhase(`verify-locator-repair-${corrected}`, "#location-state");
     await expect
       .poll(async () => (await page.evaluate(() => window.ohtia.bootstrap.read())).state)
       .toBe(corrected);
     await open(page);
+    enterPhase(`verify-repaired-locator-preferences-${corrected}`);
     expect(await page.evaluate(() => window.ohtia.foundation.readAppearance().result)).toEqual(
       final,
     );
@@ -600,32 +669,25 @@ try {
     correctedStates: ["located", "pending_create"],
     previousValuePreserved: true,
   });
+  enterPhase("verify-missing-located-database");
   // Remove only this test profile's synthetic database while every product connection is closed.
   const databaseFile = path.join(launch.profile.research_root, "ohtia.db3");
-  const retainedDatabase = databaseFile + ".acceptance-retained";
-  fs.renameSync(databaseFile, retainedDatabase);
-  try {
-    page = await start();
-    await open(page, "storage_failed");
-    expect(fs.existsSync(databaseFile)).toBe(false);
-    expect((await page.evaluate(() => window.ohtia.foundation.readAppearance().result)).ok).toBe(
-      false,
-    );
-    await application.close();
-    application = undefined;
-  } finally {
-    if (application) {
-      await application.close();
-      application = undefined;
-    }
-    expect(fs.existsSync(databaseFile)).toBe(false);
-    fs.linkSync(retainedDatabase, databaseFile);
-    fs.unlinkSync(retainedDatabase);
-  }
-  record("missing-located-database-blocked", {
-    replacementCreated: false,
-    retainedOriginalRestored: true,
-  });
+  record(
+    "missing-located-database-blocked",
+    await verifyMissingLocatedDatabase(databaseFile, {
+      start,
+      open,
+      enterPhase,
+      observeFailure,
+      close: async () => {
+        if (application) {
+          await application.close();
+          application = undefined;
+        }
+      },
+    }),
+  );
+  enterPhase("prepare-unresolved-migration");
   // Synthetic unresolved-upgrade input is installed only while all product connections are closed.
   const operation = priorCheckpoints.find((name) => /^[0-9a-f-]{36}$/.test(name));
   const checkpointManifest = JSON.parse(
@@ -641,6 +703,7 @@ try {
   fs.writeFileSync(gate, JSON.stringify(intent), { flag: "wx", mode: 0o600 });
   page = await start();
   const recoveryLocale = await open(page, "recovery_required");
+  enterPhase("retry-recovery", ".actions > button");
   await expect(page.locator("#location-state")).toBeFocused();
   await page
     .getByRole("button", { name: message(recoveryLocale, "retry"), exact: true })
@@ -661,6 +724,7 @@ try {
   fs.writeFileSync(gate, JSON.stringify(intent), { flag: "wx", mode: 0o600 });
   page = await start();
   await open(page, "recovery_required");
+  enterPhase("restore-checkpoint", 'section[aria-labelledby="location-title"] button');
   await page
     .getByRole("button", { name: message(recoveryLocale, "restore_checkpoint"), exact: true })
     .click();
@@ -674,6 +738,7 @@ try {
   );
   const retained = fs.readdirSync(checkpointRoot).filter((name) => name.includes(".failed-"));
   expect(retained.length).toBeGreaterThan(0);
+  enterPhase("interrupt-restored-checkpoint-admission", ".actions > button");
   await holdNextStorageNotice();
   await page
     .getByRole("button", { name: message(recoveryLocale, "retry"), exact: true })
@@ -703,6 +768,7 @@ try {
     normalStorageAdmitted: false,
     boundary: "real child terminated before its held storage outcome reached main",
   });
+  enterPhase("retry-after-admission-crash", ".actions > button");
   await page
     .getByRole("button", { name: message(recoveryLocale, "retry"), exact: true })
     .last()
@@ -712,13 +778,16 @@ try {
       timeout: 20000,
     })
     .toBe("storage_ready");
+  enterPhase("verify-restored-checkpoint");
   const restored = await page.evaluate(() => window.ohtia.foundation.readAppearance().result);
   expect(restored).toMatchObject({
     ok: true,
     value: { revision: 0, value: "system", source: "default" },
   });
   await expect(page.locator(".workspace-skip")).toBeFocused();
+  enterPhase("open-settings", ".settings-dialog[open]");
   await openWorkspaceSettings(page);
+  enterPhase("restore-korean-locale", 'select[aria-describedby="language-help"]');
   const restoredLocaleControl = page.locator('select[aria-describedby="language-help"]');
   await restoredLocaleControl.selectOption("ko-KR");
   await expect(page.locator("html")).toHaveAttribute("lang", "ko-KR");
@@ -730,10 +799,12 @@ try {
     )
     .toBe("ko-KR");
   await resizeNativeViewport(page, { width: 320, height: 600 });
+  enterPhase("capture-restored-korean-reflow", ".settings-dialog[open]");
   await page.screenshot({ path: path.join(output, "locale-ko-320.png"), fullPage: true });
+  enterPhase("verify-integrated-application-root");
   record(
     "integrated-application-root",
-    await verifyWorkspaceComposition(application, page, output),
+    await verifyWorkspaceComposition(application, page, output, observeFailure),
   );
   record("graphical-checkpoint-restoration", {
     restored,
@@ -750,12 +821,14 @@ try {
     ].sort(),
   );
 } catch (error) {
-  receipt.cases.push({ id: "run", result: "fail", error: String(error) });
   console.error(`Storage acceptance failed: ${String(error).slice(0, 8192)}`);
   process.exitCode = 1;
+  await reportFailure(error);
 } finally {
   if (application)
-    await application.close().catch(() => {
+    await application.close().catch((error) => {
+      receipt.cases.push({ id: "cleanup", result: "fail", error: String(error) });
+      console.error(`Storage acceptance cleanup failed: ${String(error).slice(0, 8192)}`);
       process.exitCode = 1;
     });
   fs.writeFileSync(
