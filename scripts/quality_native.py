@@ -787,7 +787,7 @@ def smoke(
     known = []
     identity_history = []
     displays = []
-    desktops = set()
+    chromium_desktop = None
     for suite, entry, receipt in (
         ("runtime", "desktop-acceptance.mjs", "receipt.json"),
         ("storage", "storage-acceptance.mjs", "storage-receipt.json"),
@@ -832,19 +832,6 @@ def smoke(
                 connected = display_connection(known, cell["backend"])
                 if connected is not None and connected not in displays:
                     displays.append(connected)
-                if sys.platform == "linux":
-                    # Chromium classifies the desktop in its main process, which carries no
-                    # --type; helpers such as the data service run with a reduced
-                    # environment. Classify only main processes verified in this poll, and
-                    # ignore an exited process's empty environment.
-                    for row in current:
-                        try:
-                            arguments = linux_desktop.process_arguments(row["pid"])
-                            environment = linux_desktop.process_environment(row["pid"])
-                        except OSError:
-                            continue
-                        if environment and not any(a.startswith("--type=") for a in arguments):
-                            desktops.add(linux_desktop.chromium_desktop(environment))
                 time.sleep(0.2)
             supervision = future.result()
         delivery.write(destination / f"{suite}-supervision.json", supervision)
@@ -865,6 +852,29 @@ def smoke(
         )
         result = delivery.read(output / receipt)
         delivery.validate_suite(suite, cell["target"], result, cell)
+        if suite == "runtime" and sys.platform == "linux":
+            # Chromium rewrites its process titles over the initial argument and environment
+            # area, so /proc/<pid>/environ no longer shows what it classified. The browser
+            # process reports the environment it holds, which base/nix/xdg_util.cc reads.
+            identities = next(
+                case["observed"]
+                for case in result["cases"]
+                if case["id"] == "native-executable-identities"
+            )
+            environment = identities.get("desktopEnvironment")
+            delivery.require(
+                isinstance(environment, dict)
+                and set(environment) == {"XDG_CURRENT_DESKTOP", "KDE_SESSION_VERSION"}
+                and all(value is None or isinstance(value, str) for value in environment.values()),
+                "Missing the browser process's desktop environment.",
+            )
+            chromium_desktop = linux_desktop.chromium_desktop(
+                {key: value for key, value in environment.items() if value is not None}
+            )
+            delivery.require(
+                chromium_desktop == CHROMIUM_DESKTOPS[cell["desktop"]],
+                f"Chromium observes a different desktop environment: {chromium_desktop}.",
+            )
         if suite == "runtime" and sys.platform != "linux":
             # Successful real packaged-window capture is evidence of rendering, not an OS socket query.
             capture = output / "foundation-320.png"
@@ -888,10 +898,6 @@ def smoke(
             all(row["server_commands"] == [compositor] for row in displays),
             "The Wayland peer serving the application is not the desktop's compositor.",
         )
-        delivery.require(
-            desktops == {CHROMIUM_DESKTOPS[cell["desktop"]]},
-            "Chromium observes a different desktop environment.",
-        )
     renderers = [row for row in observations if row["renderer"]]
     delivery.require(
         renderers and all(row["sandbox"] for row in renderers),
@@ -900,7 +906,7 @@ def smoke(
     return suites, {
         "samples": observations,
         "display_observations": displays,
-        **({"chromium_desktops": sorted(desktops)} if sys.platform == "linux" else {}),
+        **({"chromium_desktop": chromium_desktop} if sys.platform == "linux" else {}),
         "remaining": [],
         "minimum_poll_delay_ms": 200,
         "limitations": "Samples establish ready renderer OS sandbox and final absence of package executables; they do not measure lifetime resources or physical power loss.",

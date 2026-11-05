@@ -699,11 +699,6 @@
       "reason": "Native Linux Unix-socket, account-runtime permissions or symlink fixture; Windows does not establish this Linux contract."
     },
     {
-      "id": "test_linux_desktop.LinuxDesktopTests.test_process_environment_is_read_from_the_process_itself",
-      "platforms": ["win32", "darwin"],
-      "reason": "Reads the Linux /proc process environment that Chromium inherits; other platforms have no /proc."
-    },
-    {
       "id": "test_quality_display.QualityDisplayTests.test_dispatches_each_desktop_to_its_own_session",
       "platforms": ["win32"],
       "reason": "Hosted Linux display-session dispatch uses the POSIX account identity; Windows cells use the workspace launcher."

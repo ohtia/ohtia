@@ -1,6 +1,5 @@
 """Contracts for Linux desktop identity, naming and KDE package selection."""
 
-import os
 import sys
 import tempfile
 import unittest
@@ -258,10 +257,6 @@ class LinuxDesktopTests(unittest.TestCase):
                 desktop.running_display_managers(proc),
                 ["gdm-session-worker", "lightdm", "plasmalogin", "sddm"],
             )
-
-    def test_process_environment_is_read_from_the_process_itself(self):
-        environment = desktop.process_environment(os.getpid())
-        self.assertEqual(environment.get("PATH"), os.environ.get("PATH"))
 
 
 if __name__ == "__main__":

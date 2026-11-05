@@ -572,14 +572,17 @@ async function validate(config, format) {
                     native.allow_development_runtime(other, assembled)
                 command.assert_not_called()
 
-    def linux_smoke(self, root, server, environments, arguments=None):
+    def linux_smoke(self, root, server, environment):
         for suite, receipt in (
             ("runtime", "receipt.json"),
             ("storage", "storage-receipt.json"),
             ("diagnostics", "diagnostic-receipt.json"),
             ("startup", "startup-receipt.json"),
         ):
-            delivery.write(root / suite / receipt, {})
+            identities = {"id": "native-executable-identities", "observed": {}}
+            if environment is not None:
+                identities["observed"]["desktopEnvironment"] = environment
+            delivery.write(root / suite / receipt, {"cases": [identities]})
         original = delivery.read
 
         def read(file):
@@ -609,16 +612,6 @@ async function validate(config, format) {
             patch.object(delivery, "validate_suite"),
             patch.object(native, "processes", side_effect=observe),
             patch.object(native, "display_connection", return_value=display),
-            patch.object(
-                native.linux_desktop,
-                "process_environment",
-                side_effect=lambda pid: environments[pid],
-            ),
-            patch.object(
-                native.linux_desktop,
-                "process_arguments",
-                side_effect=lambda pid: (arguments or {}).get(pid, ["/opt/ohtia/ohtia"]),
-            ),
             patch.object(native.time, "sleep"),
         ):
             future = executor.return_value.__enter__.return_value.submit.return_value
@@ -643,40 +636,36 @@ async function validate(config, format) {
 
     def test_linux_smoke_requires_the_desktops_compositor_and_chromium_desktop(self):
         plasma = {"XDG_CURRENT_DESKTOP": "KDE", "KDE_SESSION_VERSION": "6"}
-        for label, server, environments, error in (
-            ("KWin serves KDE6", "kwin_wayland", {101: plasma, 102: plasma}, None),
-            (
-                "a helper with a reduced environment is not the browser",
-                "kwin_wayland",
-                {101: plasma, 102: {"PATH": "/usr/bin"}},
-                None,
-            ),
-            ("an exited process is ignored", "kwin_wayland", {101: plasma, 102: {}}, None),
-            (
-                "gnome-shell serves a KDE cell",
-                "gnome-shell",
-                {101: plasma, 102: plasma},
-                "compositor",
-            ),
+        for label, server, environment, error in (
+            ("KWin serves KDE6", "kwin_wayland", plasma, None),
+            ("gnome-shell serves a KDE cell", "gnome-shell", plasma, "compositor"),
             (
                 "missing session version",
                 "kwin_wayland",
-                {101: {"XDG_CURRENT_DESKTOP": "KDE"}, 102: plasma},
-                "Chromium",
+                {"XDG_CURRENT_DESKTOP": "KDE", "KDE_SESSION_VERSION": None},
+                "different desktop environment: KDE4",
+            ),
+            (
+                "a GNOME browser process",
+                "kwin_wayland",
+                {"XDG_CURRENT_DESKTOP": "GNOME", "KDE_SESSION_VERSION": None},
+                "different desktop environment: GNOME",
+            ),
+            ("no browser environment", "kwin_wayland", None, "browser process"),
+            (
+                "an incomplete browser environment",
+                "kwin_wayland",
+                {"XDG_CURRENT_DESKTOP": "KDE"},
+                "browser process",
             ),
         ):
-            helper = (
-                {102: ["/opt/ohtia/ohtia", "--enable-logging", "--type=gpu-process"]}
-                if "helper" in label
-                else None
-            )
             with self.subTest(label=label), tempfile.TemporaryDirectory() as temporary:
                 if error is None:
-                    _, observed = self.linux_smoke(Path(temporary), server, environments, helper)
-                    self.assertEqual(observed["chromium_desktops"], ["KDE6"])
+                    _, observed = self.linux_smoke(Path(temporary), server, environment)
+                    self.assertEqual(observed["chromium_desktop"], "KDE6")
                 else:
                     with self.assertRaisesRegex(delivery.DeliveryError, error):
-                        self.linux_smoke(Path(temporary), server, environments)
+                        self.linux_smoke(Path(temporary), server, environment)
 
     def test_listener_credentials_identify_a_wayland_server_hidden_from_ss(self):
         with tempfile.TemporaryDirectory(prefix="w") as temporary:

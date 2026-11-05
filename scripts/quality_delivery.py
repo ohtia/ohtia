@@ -589,8 +589,8 @@ def account(expected: dict, directory: Path) -> dict:
                     "The Wayland peer serving the application is not the desktop's compositor.",
                 )
                 require(
-                    observed.get("chromium_desktops")
-                    == [{"gnome": "GNOME", "kde": "KDE6"}[cell["desktop"]]],
+                    observed.get("chromium_desktop")
+                    == {"gnome": "GNOME", "kde": "KDE6"}[cell["desktop"]],
                     "Chromium observed a different desktop environment.",
                 )
             samples = observed.get("samples")

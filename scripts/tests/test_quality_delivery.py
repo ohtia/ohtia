@@ -76,7 +76,7 @@ class DeliveryTests(unittest.TestCase):
                             }
                         ],
                         **(
-                            {"chromium_desktops": ["KDE6" if cell["desktop"] == "kde" else "GNOME"]}
+                            {"chromium_desktop": "KDE6" if cell["desktop"] == "kde" else "GNOME"}
                             if cell["target"].startswith("linux-")
                             else {}
                         ),
@@ -455,7 +455,7 @@ class DeliveryTests(unittest.TestCase):
             ),
             (
                 "KDE4 desktop",
-                lambda o: o.update(chromium_desktops=["KDE4"]),
+                lambda o: o.update(chromium_desktop="KDE4"),
                 evidence_file,
                 observed,
             ),

@@ -1944,7 +1944,6 @@
     "test_linux_desktop.LinuxDesktopTests.test_kde_installation_has_no_recommended_or_weak_dependencies",
     "test_linux_desktop.LinuxDesktopTests.test_kde_packages_replace_gnome_session_and_add_explicit_set",
     "test_linux_desktop.LinuxDesktopTests.test_official_kde_identity_of_each_distribution_is_admitted",
-    "test_linux_desktop.LinuxDesktopTests.test_process_environment_is_read_from_the_process_itself",
     "test_linux_desktop.LinuxDesktopTests.test_running_display_managers_are_found_by_executable_or_truncated_comm",
     "test_linux_e2e.LinuxE2ETests.test_apparmor_requires_enforcement_and_real_sensitive_path_denials",
     "test_linux_e2e.LinuxE2ETests.test_effective_policy_rejects_host_mounts_root_privileges_and_unbounded_resources",
