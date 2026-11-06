@@ -93,6 +93,10 @@ function PaletteOpening({
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<CommandId>();
   const composing = useRef(false);
+  // Linux IBus Hangul commits on Enter and then dispatches that Enter as an ordinary keydown. Its
+  // timeStamp precedes compositionend because it was pressed first. Only the next keydown is
+  // compared, so a key pressed after compositionend is never attributed to the ended composition.
+  const compositionEnd = useRef<number>(undefined);
   const confirmingEnter = useRef(false);
   const activating = useRef(false);
   useEffect(() => {
@@ -163,8 +167,9 @@ function PaletteOpening({
           onCompositionStart={() => {
             composing.current = true;
           }}
-          onCompositionEnd={() => {
+          onCompositionEnd={(event) => {
             composing.current = false;
+            compositionEnd.current = event.nativeEvent.timeStamp;
           }}
           onBlur={() => {
             confirmingEnter.current = false;
@@ -174,6 +179,9 @@ function PaletteOpening({
               confirmingEnter.current = false;
           }}
           onKeyDown={(event) => {
+            const ended = compositionEnd.current;
+            compositionEnd.current = undefined;
+            const endedComposition = ended !== undefined && event.nativeEvent.timeStamp < ended;
             if (event.defaultPrevented) return;
             if (
               event.nativeEvent.isComposing ||
@@ -198,7 +206,8 @@ function PaletteOpening({
               );
             } else if (event.key === "Enter") {
               event.preventDefault();
-              if (!event.repeat && !confirmingEnter.current && active) activate(active.id);
+              if (!event.repeat && !confirmingEnter.current && !endedComposition && active)
+                activate(active.id);
             }
           }}
         />
