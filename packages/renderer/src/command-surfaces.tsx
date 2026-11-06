@@ -21,6 +21,7 @@ import {
   type CommandPlatform,
   type CommandReason,
   type InterfaceLocale,
+  type MenuInput,
   type ProjectLink,
   type SimpleMessageKey,
 } from "@ohtia/contracts";
@@ -442,6 +443,8 @@ export function CommandSurfaces({
     let wheel = () => {};
     let resetWheel = () => {};
     let extensions = () => {};
+    // The latest activation modality tells main whether Windows should select the first menu item.
+    let menuInput: MenuInput = "pointer";
     current.current.live = true;
     current.current.surface = undefined;
     current.current.copyBusy = false;
@@ -584,6 +587,7 @@ export function CommandSurfaces({
                           x: Math.max(0, Math.round(rect.left)),
                           y: Math.max(0, Math.round(rect.bottom)),
                         },
+                        input: menuInput,
                       }
                     : {}),
                 });
@@ -760,7 +764,15 @@ export function CommandSurfaces({
     const cancelMenuKey = () => {
       altTarget = null;
     };
+    const keyboardInput = () => {
+      menuInput = "keyboard";
+    };
+    // Keyboard and assistive-technology activation dispatch a click without a pointer press.
+    const activationInput = (event: MouseEvent) => {
+      if (event.detail === 0) menuInput = "keyboard";
+    };
     const menuPointerDown = (event: PointerEvent) => {
+      menuInput = "pointer";
       cancelMenuKey();
       // The native popup owns focus while open; pointer activation must retain its Edit target.
       if (
@@ -816,6 +828,8 @@ export function CommandSurfaces({
     window.addEventListener("keydown", menuKey);
     window.addEventListener("keyup", menuKey);
     document.addEventListener("keydown", cancelChord, true);
+    window.addEventListener("keydown", keyboardInput, true);
+    window.addEventListener("click", activationInput, true);
     document.addEventListener("pointerdown", menuPointerDown, true);
     document.addEventListener("compositionstart", cancelMenuKey, true);
     window.addEventListener("blur", cancelMenuKey);
@@ -839,6 +853,8 @@ export function CommandSurfaces({
       window.removeEventListener("keydown", menuKey);
       window.removeEventListener("keyup", menuKey);
       document.removeEventListener("keydown", cancelChord, true);
+      window.removeEventListener("keydown", keyboardInput, true);
+      window.removeEventListener("click", activationInput, true);
       document.removeEventListener("pointerdown", menuPointerDown, true);
       document.removeEventListener("compositionstart", cancelMenuKey, true);
       window.removeEventListener("blur", cancelMenuKey);

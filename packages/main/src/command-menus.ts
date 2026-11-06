@@ -235,7 +235,8 @@ export class CommandMenus {
       return request.intent.sequence === prior.request.intent.sequence &&
         request.intent.command === prior.request.intent.command &&
         request.anchor?.x === prior.request.anchor?.x &&
-        request.anchor?.y === prior.request.anchor?.y
+        request.anchor?.y === prior.request.anchor?.y &&
+        request.input === prior.request.input
         ? prior.result
         : Promise.resolve({ status: "stale_intent" });
     }
@@ -250,9 +251,10 @@ export class CommandMenus {
   }
   popup(
     window: BrowserWindow,
-    anchor: { x: number; y: number },
+    { anchor, input }: Pick<WindowCommandRequest, "anchor" | "input">,
   ): Promise<"dismissed" | "selected" | "revoked" | false> {
-    if (this.platform === "darwin" || window.isDestroyed()) return Promise.resolve(false);
+    if (this.platform === "darwin" || !anchor || window.isDestroyed())
+      return Promise.resolve(false);
     const state = this.windows.get(window);
     if (!state?.snapshot) return Promise.resolve(false);
     for (const close of state.popups) close();
@@ -285,6 +287,9 @@ export class CommandMenus {
           window,
           x: Math.max(0, Math.min(Math.round(anchor.x * factor), size.width)),
           y: Math.max(0, Math.min(Math.round(anchor.y * factor), size.height)),
+          // Windows selects the first item only for keyboard-sourced menus, which moves
+          // accessibility focus into the menu. Pointer opening keeps Electron's default.
+          ...(input === "keyboard" ? { sourceType: "keyboard" as const } : {}),
           callback: () => {
             finish(current() ? (selected ? "selected" : "dismissed") : "revoked");
           },

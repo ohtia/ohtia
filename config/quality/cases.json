@@ -194,6 +194,7 @@
     "tests/commands.test.ts::closed command boundary decoding > reads actual artifact/license identity and copies only the displayed localized version and system after confirmation::case-0",
     "tests/commands.test.ts::closed command boundary decoding > rejects coercible non-string statuses in command and window replies::case-0",
     "tests/commands.test.ts::closed command boundary decoding > requires exact contexts, monotonic identities and one complete bounded registry projection::case-0",
+    "tests/commands.test.ts::closed command boundary decoding > requires the activating input with every application-menu anchor and nowhere else::case-0",
     "tests/commands.test.ts::hides a newly attached unfocused window even when the focused menu projection is unchanged::case-0",
     "tests/commands.test.ts::keeps native Edit roles in the application menu and records a popup Edit selection through the same registry::case-0",
     "tests/commands.test.ts::keeps registration leases distinct when a consumer reuses its handler object::case-0",
