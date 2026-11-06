@@ -958,7 +958,9 @@ function WorkspaceSplitter({
             if (event.pointerId === activePointer.current) controller.cancelResize("pointercancel");
           }}
           onBlur={() => {
-            controller.cancelResize("focus-loss");
+            // A drag started on the other separator focuses it after the shared controller
+            // has accepted that gesture, so only this separator's own gesture ends here.
+            if (activePointer.current !== undefined) controller.cancelResize("focus-loss");
           }}
         >
           {busy && (

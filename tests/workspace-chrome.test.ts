@@ -582,6 +582,51 @@ it("captures only the initiating pointer and releases locks on every cancellatio
   expect(document.body.style.userSelect).toBe("text");
   root = createRoot(container);
 });
+it("keeps a drag started on either separator while focus leaves the other one", async () => {
+  const { preferences, saved } = store();
+  await render(preferences);
+  let captured: number | undefined;
+  HTMLElement.prototype.setPointerCapture = vi.fn((id: number) => {
+    captured = id;
+  });
+  HTMLElement.prototype.hasPointerCapture = vi.fn((id: number) => captured === id);
+  HTMLElement.prototype.releasePointerCapture = vi.fn(() => {
+    captured = undefined;
+  });
+  const order: string[] = [];
+  for (const index of [0, 1]) {
+    splitter(index).addEventListener("pointerdown", () => order.push(`pointerdown:${index}`));
+    splitter(index).addEventListener("focusout", () => order.push(`focusout:${index}`));
+    splitter(index).addEventListener("focusin", () => order.push(`focusin:${index}`));
+  }
+  const drags: [number, number, number, number[]][] = [
+    [1, 0, 256, [240, 672, 360]],
+    [0, 1, 912, [240, 656, 376]],
+  ];
+  for (const [focused, dragged, x, expected] of drags) {
+    act(() => splitter(focused).focus());
+    order.length = 0;
+    await pointer(splitter(dragged), "pointerdown", x);
+    expect(order).toEqual([`pointerdown:${dragged}`, `focusout:${focused}`, `focusin:${dragged}`]);
+    expect(document.activeElement).toBe(splitter(dragged));
+    expect(captured).toBe(1);
+    expect(document.body.style.userSelect).toBe("none");
+    await pointer(splitter(dragged), "pointermove", x - 16);
+    expect(widths()).toEqual(expected);
+    await pointer(splitter(dragged), "pointerup", x - 16);
+    expect(widths()).toEqual(expected);
+    expect(captured).toBeUndefined();
+  }
+  expect(saved).toHaveLength(2);
+  await pointer(splitter(0), "pointerdown", 240);
+  await pointer(splitter(0), "pointermove", 270);
+  expect(widths()).toEqual([270, 626, 376]);
+  act(() => splitter(1).focus());
+  expect(widths()).toEqual([240, 656, 376]);
+  expect(captured).toBeUndefined();
+  expect(document.body.style.userSelect).not.toBe("none");
+  expect(saved).toHaveLength(2);
+});
 it("composes real registry surfaces and announces failed layout persistence once through the shared claim", async () => {
   const { port, fail, saved } = store();
   fail(failure("service_unavailable"));
