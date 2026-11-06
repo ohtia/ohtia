@@ -804,6 +804,42 @@ with linux.terminal_signals() as cancelled:
                 start.assert_not_called()
                 mkdir.assert_not_called()
 
+    def test_smoke_runs_development_only_startup_and_records_the_installed_limitation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            scratch = Path(temporary).resolve()
+            evidence = scratch / "smoke-evidence-1"
+            runtime = scratch / "runtime-1"
+
+            def smoke(profile, prepared, destination, cell, **options):
+                receipt = destination / "startup" / "startup-receipt.json"
+                receipt.parent.mkdir()
+                receipt.write_text("{}")
+                return {"startup": receipt}, {"remaining": []}
+
+            with (
+                patch.object(linux.os, "getuid", return_value=1000),
+                patch.object(linux, "display_available", return_value=True),
+                patch.object(linux, "inspect_context", return_value={"scratch_root": str(scratch)}),
+                patch.object(linux, "input_hashes", return_value={}),
+                patch.object(linux.quality_native, "smoke", side_effect=smoke) as run,
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                linux.smoke(
+                    {"id": "ubuntu-26.04"},
+                    "kde",
+                    scratch / "runtime-profile.json",
+                    runtime,
+                    evidence,
+                    cancelled=lambda: False,
+                )
+            self.assertEqual(run.call_args.args[1], runtime)
+            self.assertIs(run.call_args.kwargs["development_only"], True)
+            report = json.loads((evidence / "contributor-smoke.json").read_text())
+            self.assertEqual(report["startup_selection"], "development-only")
+            self.assertEqual(report["limitations"], [linux.STARTUP_LIMITATION])
+            self.assertIn("packaged bytes", linux.STARTUP_LIMITATION)
+            self.assertEqual(report["suites"]["startup"]["file"], "startup/startup-receipt.json")
+
     def test_doctor_reports_scratch_path_limit_without_launching(self):
         _, profile, packages = self.profile()
         for root, expected in (("/" + "a" * 59, True), ("/" + "á" * 30, False)):

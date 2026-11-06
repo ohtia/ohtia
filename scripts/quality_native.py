@@ -778,8 +778,32 @@ def allow_development_runtime(cell: dict, assembled: Path) -> None:
     command(["sudo", "apparmor_parser", "--add", target])
 
 
+def suite_arguments(
+    suite: str, profile: Path, prepared: Path, output: Path, cell: dict, development_only: bool
+) -> list[str]:
+    """Build one suite entry's arguments; startup selects the modes the prepared bytes can open.
+
+    A package opens the installed mode; a direct cell also opens the development mode with its
+    checkout's assembled runtime. An unpackaged runtime opens only the development mode itself.
+    """
+    arguments = [str(profile), str(prepared), str(output)]
+    if suite != "startup":
+        return arguments
+    if development_only:
+        return ["--development-only", *arguments, str(prepared)]
+    if delivery.runs_development_cases(cell):
+        return [*arguments, str(ROOT / "artifacts" / f"quality-{cell['id']}" / "assembled")]
+    return arguments
+
+
 def smoke(
-    profile: Path, prepared: Path, destination: Path, cell: dict, *, cancelled=None
+    profile: Path,
+    prepared: Path,
+    destination: Path,
+    cell: dict,
+    *,
+    cancelled=None,
+    development_only: bool = False,
 ) -> tuple[dict, dict]:
     import concurrent.futures
 
@@ -802,14 +826,7 @@ def smoke(
                 [
                     str(workspace.node_path()),
                     str(ROOT / "tooling" / entry),
-                    str(profile),
-                    str(prepared),
-                    str(output),
-                    *(
-                        [str(ROOT / "artifacts" / f"quality-{cell['id']}" / "assembled")]
-                        if suite == "startup" and delivery.runs_development_cases(cell)
-                        else []
-                    ),
+                    *suite_arguments(suite, profile, prepared, output, cell, development_only),
                 ],
                 ROOT,
                 build_environment(),
@@ -851,7 +868,9 @@ def smoke(
             "Packaged suite or supervised cleanup failed.",
         )
         result = delivery.read(output / receipt)
-        delivery.validate_suite(suite, cell["target"], result, cell)
+        delivery.validate_suite(
+            suite, cell["target"], result, cell, development_only=development_only
+        )
         if suite == "runtime" and sys.platform == "linux":
             # Chromium rewrites its process titles over the initial argument and environment
             # area, so /proc/<pid>/environ no longer shows what it classified. The browser

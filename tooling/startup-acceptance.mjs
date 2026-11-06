@@ -23,10 +23,15 @@ import {
 } from "../packages/main/dist/index.js";
 import { message, portLimits, windowTokens } from "../packages/contracts/dist/index.js";
 
-const [profileFile, prepared, output, development] = process.argv.slice(2);
-if (!profileFile || !prepared || !output)
+const DEVELOPMENT_ONLY = "--development-only";
+const developmentOnly = process.argv[2] === DEVELOPMENT_ONLY;
+const [profileFile, prepared, output, development, ...unexpected] = process.argv.slice(
+  developmentOnly ? 3 : 2,
+);
+// The development-only selection serves unpackaged runtimes, which cannot open the installed mode.
+if (!profileFile || !prepared || !output || unexpected.length || (developmentOnly && !development))
   throw new Error(
-    "Use startup-acceptance.mjs <profile> <prepared> <new-evidence> [<dev-runtime>].",
+    `Use startup-acceptance.mjs <profile> <prepared> <new-evidence> [<dev-runtime>], or ${DEVELOPMENT_ONLY} <profile> <prepared> <new-evidence> <dev-runtime>.`,
   );
 // The profile identifies this disposable fixture account. The application never receives it.
 const profile = loadRuntimeProfile(profileFile);
@@ -42,7 +47,12 @@ const receipt = {
     .update(fs.readFileSync(path.join(prepared, "prepared.json")))
     .digest("hex"),
   cases: [],
-  limitations: ["Development cases use synthetic roots, not a checkout's .ohtia-dev directory."],
+  limitations: [
+    "Development cases use synthetic roots, not a checkout's .ohtia-dev directory.",
+    ...(developmentOnly
+      ? ["Installed-mode cases need packaged bytes and were not run on this unpackaged runtime."]
+      : []),
+  ],
 };
 function record(id, observed) {
   receipt.cases.push({ id, result: "pass", observed });
@@ -442,19 +452,28 @@ async function developmentCases() {
     const unsafe = developmentRoot();
     fs.rmSync(path.join(unsafe, "instance.json"));
     expect(() => developmentLaunch(unsafe, development, scratch)).toThrow("instance.json");
+    const researchExisted = fs.existsSync(profile.research_root);
     const overlapping = path.join(profile.research_root, "startup-overlap");
     fs.mkdirSync(overlapping, { recursive: true });
     fs.writeFileSync(path.join(overlapping, "instance.json"), JSON.stringify({ version: 1 }));
     expect(() => developmentLaunch(overlapping, development, scratch)).toThrow("overlaps");
     fs.rmSync(overlapping, { recursive: true });
+    if (!researchExisted) fs.rmdirSync(profile.research_root);
     record("development-refuses-unsafe-root", {});
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 }
 try {
+  const nativeState = () => ({
+    research: fs.existsSync(profile.research_root),
+    files: inventory(),
+  });
+  const found = developmentOnly && nativeState();
   if (development) await developmentCases();
-  await installedCases();
+  // The installed cases retain and recreate the native roots; without them nothing may change.
+  if (developmentOnly) expect(nativeState()).toEqual(found);
+  else await installedCases();
 } catch (error) {
   receipt.cases.push({ id: "run", result: "fail", error: String(error) });
   console.error(`Startup acceptance failed: ${String(error).slice(0, 8192)}`);

@@ -4,8 +4,6 @@ title: Native Linux contribution
 description: Prepare a declared Linux contributor environment with consented vendor packages, pinned checkout-local tools, read-only diagnosis and isolated native execution.
 generated:
   by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: ubuntu-packages
     resource: https://packages.ubuntu.com/resolute/libgtk-3-0t64
@@ -107,6 +105,8 @@ For the complete sequence with native process/sandbox/display observations, use 
 ```bash
 python3 scripts/linux_contributor.py session smoke /home/isolated-user/scratch/runtime-profile.json /home/isolated-user/scratch/runtime-1 --evidence /home/isolated-user/scratch/smoke-evidence-1
 ```
+
+`session smoke` runs the runtime, storage, diagnostics and startup suites against the prepared runtime and writes `contributor-smoke.json` in the evidence directory. Its startup suite runs only the development startup cases, with the prepared runtime as the development runtime. [ADR-0043](adr/adr-0043-ordinary-startup-modes.md) admits the installed mode only for a packaged executable, and `desktop:prepare` keeps Electron's unpackaged executable name. The startup receipt and `contributor-smoke.json` record that the installed cases were not run. [Native quality builds](quality-builds.md) qualify the installed mode on the built package payloads. Without the installed cases, the startup suite fails if it changes the research root or the native configuration state.
 
 Run `desktop:test` before initializing a store: it expects a missing locator and verifies the supervised runtime, actual IPC/CSP boundaries, multiple windows, service death/retry and shutdown. `storage:test` exercises opening, native binding identity, save/restart, migration/recovery and controlled failures. It leaves identified synthetic state; preserve that attempt before a new trial rather than deleting existing data to satisfy a fresh-fixture precondition. Run `diagnostics:test` with its own fresh evidence directory after those suites. Observe native process architecture, actual Wayland connection, active sandbox and complete process cessation independently; retain failed reports and check stable fixture metadata after every attempt.
 
