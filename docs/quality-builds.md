@@ -1,9 +1,9 @@
 ---
 type: Playbook
 title: Native quality builds
-description: Build unsigned development packages on standard hosted native VMs and verify complete artifact and checkout provenance.
+description: Build unsigned development packages with bounded Linux host provisioning on standard hosted native VMs and verify artifact and checkout provenance.
 generated:
-  by: claude-code/claude-opus-5-5
+  by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
 ---
@@ -31,6 +31,16 @@ Every package runs the runtime, storage, diagnostics and startup acceptance entr
 Retain each synthetic state generation inside the owned scratch root before starting another package format. Never adopt an existing account store or erase private material to make a fixture fresh. Native process observations identify sampled renderer sandbox state and absence of package executables after shutdown. Sampling is not lifetime resource accounting, physical power-loss evidence, native assistive acceptance or proof of an untested distribution/display profile.
 
 ## Common commands and records
+
+### Linux host dependencies
+
+The workflow runs `scripts/ci_linux_dependencies.py` with package-manager authority only on fresh GitHub-hosted Ubuntu 26.04 VMs. Both GNOME and KDE KVM cells install the minimal QEMU, cloud-image, networking and ACL host prerequisites; their desktops and application dependencies belong inside the guests. Native Ubuntu display-session cells install their own GNOME or official Kubuntu desktop set without recommended packages and do not need QEMU.
+
+Host provisioning keeps the runner's APT source definitions, suites, components and signature settings. It replaces the Azure-first `/etc/apt/apt-mirrors.txt` with the official HTTPS archive and security mirrors, in that order, for both x64 and ARM64. A missing mirror-list source or a direct Azure source fails with a configuration-drift diagnostic rather than silently retaining the degraded source. This procedure changes only the ephemeral host; guest distribution sources retain their own preparation procedure.
+
+Index refresh, archive acquisition, installation/configuration and package inventory share a twelve-minute wall-clock budget. APT retries a failed transfer once and uses fifteen-second connection/inactivity timeouts. GNU `timeout` bounds the entire child process group even when downloads keep progressing slowly, reserving five seconds for termination before forced cleanup. Downloads complete before installation, which uses `--no-download`; index refresh errors and any incomplete phase fail the job. All phases log their available time, result and elapsed time, while APT records the actual download sources and volume. The workflow has a separate fifteen-minute step limit as an outer cancellation bound. Inspect these phase records before attributing a delay to package installation or tests.
+
+### Build and aggregate
 
 Frozen setup and the common build entry precede native construction. These CI commands require their genuine GitHub event context and hosted VM; they do not grant local execution admission:
 

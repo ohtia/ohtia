@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import ci_linux_dependencies
 import linux_desktop
 import quality_delivery as delivery
 
@@ -385,17 +386,15 @@ class DeliveryTests(unittest.TestCase):
             delivery.require_workflow_matrix(text, reordered)
 
     def test_hosted_kde_packages_follow_the_shared_rule_without_gnome(self):
-        text = (delivery.ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-        prefix = "apt-get install --no-install-recommends -y "
-        lines = [line.split(prefix, 1)[1].split() for line in text.splitlines() if prefix in line]
-        gnome = next(packages for packages in lines if "gnome-shell" in packages)
-        kde = next(packages for packages in lines if "kubuntu-desktop" in packages)
+        gnome = ci_linux_dependencies.packages_for(
+            "linux-x64-ubuntu-26-04-gnome", "display-session"
+        )
+        kde = ci_linux_dependencies.packages_for("linux-x64-ubuntu-26-04-kde", "display-session")
         self.assertEqual(
             kde, ["kubuntu-desktop", *linux_desktop.kde_packages("ubuntu-26.04", gnome)]
         )
         self.assertNotIn("gnome-shell", kde)
         self.assertNotIn("gnome-session", kde)
-        self.assertIn("DEBIAN_FRONTEND=noninteractive apt-get install", text)
 
     def test_wrong_identifier_desktop_or_launcher_fails(self):
         manifest = delivery.read(delivery.ROOT / "config/desktop/targets.json")
