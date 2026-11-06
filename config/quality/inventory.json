@@ -92,6 +92,7 @@
   ],
   "python": [
     "scripts/tests/test_change_notes.py",
+    "scripts/tests/test_ci_linux_dependencies.py",
     "scripts/tests/test_delivery_admission.py",
     "scripts/tests/test_design_assets.py",
     "scripts/tests/test_desktop_contract.py",
@@ -882,6 +883,11 @@
       "id": "test_plasma_session.PlasmaSessionTests.test_teardown_runs_every_step_and_keeps_the_first_or_earlier_failure",
       "platforms": ["win32"],
       "reason": "POSIX account, owner-only runtime and Unix-socket session fixture for the Linux-only Plasma launcher; Windows does not establish this Linux contract."
+    },
+    {
+      "id": "test_ci_linux_dependencies.LinuxDependenciesTests.test_real_budget_stops_stalled_and_continuously_progressing_process_groups",
+      "platforms": ["win32", "darwin"],
+      "reason": "Hosted Linux provisioning uses GNU timeout and Linux process-state observations."
     }
   ],
   "vitest_inapplicable": [

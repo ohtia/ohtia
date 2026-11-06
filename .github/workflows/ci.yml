@@ -229,20 +229,13 @@ jobs:
 
       - name: Prepare native Linux dependencies
         if: runner.os == 'Linux'
+        timeout-minutes: 15
         env:
           OHTIA_QUALITY_CELL: ${{ matrix.id }}
           OHTIA_QUALITY_LAUNCHER: ${{ matrix.launcher }}
         run: |
-          sudo apt-get update
-          # A KDE cell installs the official Kubuntu desktop without recommended packages and never GNOME.
-          if [[ "$OHTIA_QUALITY_LAUNCHER" == kvm && "$OHTIA_QUALITY_CELL" == *-kde ]]; then
-            sudo apt-get install --no-install-recommends -y qemu-system-x86 qemu-utils cloud-image-utils iproute2 acl
-          elif [[ "$OHTIA_QUALITY_CELL" == *-kde ]]; then
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y kubuntu-desktop qemu-system-x86 qemu-utils cloud-image-utils python3-gi dbus-user-session xdg-utils iproute2 acl libgtk-3-0t64 libnss3 libasound2t64 libgbm1 libxss1 libxtst6 libsecret-1-0 libnotify4 libatspi2.0-0 apparmor at-spi2-core xdg-desktop-portal-kde xsettingsd breeze-gtk-theme kde-config-gtk-style
-          else
-            sudo apt-get install --no-install-recommends -y qemu-system-x86 qemu-utils cloud-image-utils gnome-shell gnome-session python3-gi dbus-user-session xdg-utils iproute2 acl libgtk-3-0t64 libnss3 libasound2t64 libgbm1 libxss1 libxtst6 libsecret-1-0 libnotify4 libatspi2.0-0 apparmor
-          fi
-          dpkg-query -W > "$RUNNER_TEMP/ohtia-native-packages.txt"
+          sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,RUNNER_TEMP \
+            python3 scripts/ci_linux_dependencies.py "$OHTIA_QUALITY_CELL" "$OHTIA_QUALITY_LAUNCHER"
 
       - name: Prepare native VM acceleration
         if: matrix.launcher == 'kvm'

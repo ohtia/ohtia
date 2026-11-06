@@ -1,0 +1,302 @@
+"""Exercise host package selection and bounded provisioning without changing host packages."""
+
+from __future__ import annotations
+
+import contextlib
+import io
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import ci_linux_dependencies as dependencies
+
+
+class LinuxDependenciesTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.apt = self.root / "apt"
+        self.parts = self.apt / "sources.list.d"
+        self.parts.mkdir(parents=True)
+        self.source = self.parts / "ubuntu.sources"
+        self.source.write_text(
+            "Types: deb\n"
+            f"URIs: {dependencies.MIRROR_SOURCE}\n"
+            "Suites: resolute resolute-updates resolute-security resolute-backports\n"
+            "Components: main restricted universe multiverse\n"
+            "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n"
+        )
+        self.mirrors = self.apt / "apt-mirrors.txt"
+        self.mirrors.write_text(
+            "http://azure.archive.ubuntu.com/ubuntu/\tpriority:1\n"
+            "https://archive.ubuntu.com/ubuntu/\tpriority:2\n"
+            "https://security.ubuntu.com/ubuntu/\tpriority:3\n"
+        )
+        self.inventory = self.root / "packages.txt"
+
+    def provision(self):
+        dependencies.provision(
+            "linux-x64-ubuntu-26-04-gnome", "display-session", self.apt, self.inventory
+        )
+
+    def test_every_linux_matrix_cell_keeps_its_own_desktop_authority(self):
+        cells = json.loads((dependencies.ROOT / "config/quality/build-targets.json").read_text())[
+            "cells"
+        ]
+        for cell in cells:
+            if not cell["target"].startswith("linux-"):
+                continue
+            with self.subTest(cell=cell["id"]):
+                packages = dependencies.packages_for(cell["id"], cell["launcher"])
+                if cell["launcher"] == "kvm":
+                    self.assertEqual(
+                        set(packages),
+                        {"qemu-system-x86", "qemu-utils", "cloud-image-utils", "iproute2", "acl"},
+                    )
+                else:
+                    self.assertFalse(
+                        {"qemu-system-x86", "qemu-utils", "cloud-image-utils"} & set(packages)
+                    )
+                    if cell["desktop"] == "gnome":
+                        self.assertTrue({"gnome-shell", "gnome-session"} <= set(packages))
+                        self.assertNotIn("kubuntu-desktop", packages)
+                    else:
+                        self.assertIn("kubuntu-desktop", packages)
+                        self.assertFalse({"gnome-shell", "gnome-session"} & set(packages))
+
+    def test_invalid_cell_or_mismatched_launcher_fails_before_package_work(self):
+        for cell, launcher in (
+            ("unknown", "kvm"),
+            ("win32-x64-windows-server-2025", "workspace"),
+            ("linux-x64-debian-13-gnome", "display-session"),
+            ("linux-arm64-ubuntu-26-04-kde", "kvm"),
+        ):
+            with self.subTest(cell=cell), self.assertRaises(dependencies.ProvisionError):
+                dependencies.packages_for(cell, launcher)
+
+    def test_mirror_selection_preserves_source_bytes_and_authentication(self):
+        for filename in ("ubuntu.sources", "ubuntu.list"):
+            with self.subTest(format=filename):
+                if filename.endswith(".list"):
+                    self.source.unlink()
+                    self.source = self.apt / "sources.list"
+                    self.source.write_text(
+                        "deb [arch=arm64 signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] "
+                        f"{dependencies.MIRROR_SOURCE} resolute main universe\n"
+                    )
+                original = self.source.read_bytes()
+                other = self.parts / "vendor.list"
+                other.write_text(
+                    "deb [signed-by=/vendor.gpg] https://vendor.invalid/ stable main\n"
+                )
+                vendor = other.read_bytes()
+                with contextlib.redirect_stdout(io.StringIO()):
+                    dependencies.configure_mirrors(self.apt)
+                self.assertEqual(self.source.read_bytes(), original)
+                self.assertEqual(other.read_bytes(), vendor)
+                self.assertEqual(
+                    self.mirrors.read_text().splitlines(),
+                    [
+                        "https://archive.ubuntu.com/ubuntu/\tpriority:1",
+                        "https://security.ubuntu.com/ubuntu/\tpriority:2",
+                    ],
+                )
+
+    def test_source_drift_fails_without_rewriting_the_mirror_list(self):
+        original = self.mirrors.read_bytes()
+        for content in (
+            "URIs: https://archive.ubuntu.com/ubuntu/\n",
+            f"URIs: {dependencies.MIRROR_SOURCE} http://azure.archive.ubuntu.com/ubuntu/\n",
+        ):
+            self.source.write_text(content)
+            with self.subTest(content=content), self.assertRaises(dependencies.ProvisionError):
+                dependencies.configure_mirrors(self.apt)
+            self.assertEqual(self.mirrors.read_bytes(), original)
+        self.source.write_text(f"URIs: {dependencies.MIRROR_SOURCE}\n")
+        self.mirrors.unlink()
+        with self.assertRaises(dependencies.ProvisionError):
+            dependencies.configure_mirrors(self.apt)
+
+    def test_successful_phases_share_budget_and_install_only_downloaded_archives(self):
+        now = [0.0]
+        calls = []
+
+        def execute(command, **kwargs):
+            calls.append((command, kwargs))
+            now[0] += 100
+            if kwargs["stdout"]:
+                kwargs["stdout"].write("synthetic-package 1.0\n")
+            return subprocess.CompletedProcess(command, 0)
+
+        with (
+            patch.object(dependencies.time, "monotonic", side_effect=lambda: now[0]),
+            patch.object(dependencies.subprocess, "run", side_effect=execute),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            self.provision()
+        commands = [command for command, _ in calls]
+        self.assertEqual(
+            [command[3] for command in commands], ["715.000s", "615.000s", "515.000s", "415.000s"]
+        )
+        self.assertIn("--error-on=any", commands[0])
+        self.assertIn("--download-only", commands[1])
+        self.assertIn("--no-download", commands[2])
+        self.assertEqual(
+            commands[1][commands[1].index("install") :], commands[2][commands[2].index("install") :]
+        )
+        self.assertIn("--no-install-recommends", commands[2])
+        self.assertEqual(commands[3][4:], ["dpkg-query", "-W"])
+        for _, kwargs in calls:
+            self.assertEqual(kwargs["env"]["DEBIAN_FRONTEND"], "noninteractive")
+        self.assertEqual(self.inventory.read_text(), "synthetic-package 1.0\n")
+        for phase in (
+            "index refresh",
+            "archive acquisition",
+            "installation/configuration",
+            "package inventory",
+        ):
+            self.assertIn(f"Provisioning {phase}: exit=0; elapsed=100.0s", output.getvalue())
+
+    def test_source_download_and_install_errors_stop_before_the_next_phase(self):
+        for failed in range(3):
+            calls = []
+
+            def execute(command, **kwargs):
+                calls.append(command)
+                return subprocess.CompletedProcess(command, 100 if len(calls) == failed + 1 else 0)
+
+            with (
+                self.subTest(failed=failed),
+                patch.object(dependencies.subprocess, "run", side_effect=execute),
+                contextlib.redirect_stdout(io.StringIO()),
+                self.assertRaisesRegex(dependencies.ProvisionError, "failed.*100"),
+            ):
+                self.provision()
+            self.assertEqual(len(calls), failed + 1)
+            self.assertFalse(self.inventory.exists())
+
+    def test_exhausted_budget_never_starts_another_child(self):
+        for deadline in (104, 105, 105.0004):
+            with (
+                self.subTest(deadline=deadline),
+                patch.object(dependencies.time, "monotonic", return_value=100),
+                patch.object(dependencies.subprocess, "run") as execute,
+                self.assertRaisesRegex(dependencies.ProvisionError, "budget exhausted before"),
+            ):
+                dependencies.run_phase("archive acquisition", ["apt-get"], deadline)
+            execute.assert_not_called()
+        with (
+            patch.object(dependencies.time, "monotonic", return_value=100),
+            patch.object(
+                dependencies.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)
+            ) as execute,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            dependencies.run_phase("archive acquisition", ["apt-get"], 105.0011)
+        self.assertEqual(execute.call_args.args[0][3], "0.001s")
+
+    def test_external_kill_is_not_misreported_as_an_exhausted_budget(self):
+        for code in (-9, 137):
+            with (
+                self.subTest(code=code),
+                patch.object(
+                    dependencies.subprocess,
+                    "run",
+                    return_value=subprocess.CompletedProcess([], code),
+                ),
+                contextlib.redirect_stdout(io.StringIO()),
+                self.assertRaisesRegex(
+                    dependencies.ProvisionError, "was killed.*external termination"
+                ),
+            ):
+                dependencies.run_phase("archive acquisition", ["apt-get"], time.monotonic() + 100)
+
+    @unittest.skipUnless(
+        sys.platform.startswith("linux") and shutil.which("timeout"), "GNU timeout on Linux"
+    )
+    def test_real_budget_stops_stalled_and_continuously_progressing_process_groups(self):
+        for progressing, force_kill in ((False, False), (False, True), (True, True)):
+            pidfile = self.root / f"pids-{progressing}-{force_kill}.txt"
+            child = (
+                "import os,signal,time\n"
+                + ("signal.signal(signal.SIGTERM, signal.SIG_IGN)\n" if force_kill else "")
+                + "while True: time.sleep(.01)\n"
+            )
+            program = (
+                "import os,signal,subprocess,sys,time\n"
+                "from pathlib import Path\n"
+                + ("signal.signal(signal.SIGTERM, signal.SIG_IGN)\n" if force_kill else "")
+                + f"child=subprocess.Popen([sys.executable,'-c',{child!r}])\n"
+                f"Path({str(pidfile)!r}).write_text(str(os.getpid())+' '+str(child.pid))\n"
+                "while True:\n"
+                + (" print('synthetic transfer progress',flush=True)\n" if progressing else "")
+                + " time.sleep(.01)\n"
+            )
+            with (
+                self.subTest(progressing=progressing, force_kill=force_kill),
+                patch.object(dependencies, "KILL_GRACE_SECONDS", 0.1),
+                contextlib.redirect_stdout(io.StringIO()),
+                self.inventory.open("w") as log,
+            ):
+                started = time.monotonic()
+                message = "was killed" if force_kill else "budget exhausted during"
+                with self.assertRaisesRegex(dependencies.ProvisionError, message):
+                    dependencies.run_phase(
+                        "archive acquisition",
+                        [sys.executable, "-c", program],
+                        started + 1.5,
+                        stdout=log,
+                    )
+                self.assertLess(time.monotonic() - started, 5)
+            self.assertTrue(
+                pidfile.exists(), "Synthetic transfer did not start before its deadline"
+            )
+
+            def stopped(pid):
+                try:
+                    return Path(f"/proc/{pid}/stat").read_text().split()[2] == "Z"
+                except FileNotFoundError:
+                    return True
+
+            pids = list(map(int, pidfile.read_text().split()))
+            settled = time.monotonic() + 1
+            while not all(stopped(pid) for pid in pids) and time.monotonic() < settled:
+                time.sleep(0.01)
+            self.assertTrue(all(stopped(pid) for pid in pids))
+            if progressing:
+                self.assertIn("synthetic transfer progress", self.inventory.read_text())
+
+    def test_workflow_invokes_the_bounded_helper_with_an_outer_timeout(self):
+        workflow = (dependencies.ROOT / ".github/workflows/ci.yml").read_text()
+        step = workflow.split("- name: Prepare native Linux dependencies\n", 1)[1].split(
+            "\n      - name:", 1
+        )[0]
+        self.assertIn("timeout-minutes: 15", step)
+        self.assertIn(
+            'scripts/ci_linux_dependencies.py "$OHTIA_QUALITY_CELL" "$OHTIA_QUALITY_LAUNCHER"', step
+        )
+        self.assertIn("--preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,RUNNER_TEMP", step)
+        self.assertNotIn("apt-get", step)
+
+    def test_main_rejects_local_execution_before_mutating_sources(self):
+        with (
+            patch.object(sys, "argv", ["ci_linux_dependencies.py", "cell", "kvm"]),
+            patch.dict(os.environ, {"GITHUB_ACTIONS": "false"}),
+            patch.object(dependencies, "provision") as provision,
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            self.assertEqual(dependencies.main(), 1)
+        provision.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()
