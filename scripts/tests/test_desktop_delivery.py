@@ -18,7 +18,7 @@ import desktop_delivery as delivery
 
 
 class DeliveryTests(unittest.TestCase):
-    @unittest.skipUnless(os.name == "posix" and Path("/opt").is_dir(), "Native POSIX shell fixture")
+    @unittest.skipUnless(os.name == "posix", "Native POSIX shell fixture")
     def test_security_hooks_refuse_failed_empty_find_observations_before_policy_changes(self):
         for name, failure in (
             ("linux-before-install.sh", "permissions"),
@@ -30,9 +30,16 @@ class DeliveryTests(unittest.TestCase):
                 tempfile.TemporaryDirectory() as temporary,
             ):
                 marker = Path(temporary) / "policy-changed"
-                # Source the actual hook with shell functions replacing native observations.
-                # The fixed PATH cannot bypass these functions; no privileged action is run.
+                # Source the actual hook with shell functions replacing native observations,
+                # including the existence of /opt. The fixed PATH cannot bypass these
+                # functions; no privileged action is run.
                 harness = """
+                    test() {
+                        case "$#:$*" in
+                            '2:-e /opt' | '2:-d /opt') return 0 ;;
+                        esac
+                        command test "$@"
+                    }
                     id() { printf '0\\n'; }
                     verify_distribution_profile() { :; }
                     stat() { printf '0\\n'; }
