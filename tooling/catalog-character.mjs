@@ -35,6 +35,16 @@ export function watchCatalogPage(page, url, name) {
     },
   };
 }
+/**
+ * Compares a selected contributor label with its exact one-line identity. Selection
+ * serialization may close the label's blockified flex content with one block-boundary line
+ * feed, as WebKit does in the catalog layout and Chromium does after inline placements; that
+ * boundary is not identity text. Every name, role, origin and separator must still match.
+ */
+export function expectSelectedIdentity(selected, expected) {
+  const identity = selected.endsWith("\n") ? selected.slice(0, -1) : selected;
+  expect(identity, "Selected contributor identity").toBe(expected);
+}
 async function expectNoHorizontalOverflow(page) {
   const dimensions = await page.evaluate(() => ({
     scroll: document.documentElement.scrollWidth,
@@ -79,7 +89,7 @@ async function characterJourney(page, url, engine, output) {
       selection.removeAllRanges();
       return text;
     });
-    expect(copied).toBe(expected);
+    expectSelectedIdentity(copied, expected);
     expect(await label.ariaSnapshot()).toContain(expected);
   }
   const play = page.getByRole("button", { name: "New synthetic batch", exact: true });
