@@ -36,6 +36,7 @@ RUNTIME_PARENT = Path("/run/user")
 MAX_SCRATCH_BYTES = 60
 SESSION_INTERRUPTED = "Native session interrupted. Its owned command, compositor and private bus are stopped with bounded cleanup; retain the scratch log and receipts before retrying."
 SCRATCH_REMEDY = "The admitted scratch root exceeds this Linux entry’s 60-byte UTF-8 limit for Electron temporary sockets. Select a shorter canonical owned scratch directory, repeat its independent-profile inspection and retry; do not alias a stable root or redirect application configuration."
+STARTUP_LIMITATION = "Installed-mode startup cases need packaged bytes and are not run on the unpackaged contributor runtime; package-based native quality qualifies them."
 
 
 class ContributorError(ValueError):
@@ -833,8 +834,10 @@ def native_smoke(
         "desktop": desktop,
     }
     try:
+        # The prepared runtime keeps Electron's unpackaged name, so it opens only the development
+        # mode. Package-based routes qualify the installed mode.
         suites, native = quality_native.smoke(
-            runtime_profile, runtime, evidence, cell, cancelled=cancelled
+            runtime_profile, runtime, evidence, cell, cancelled=cancelled, development_only=True
         )
     except Exception:
         ensure_session_active(cancelled)
@@ -849,6 +852,8 @@ def native_smoke(
                 "profile": profile["id"],
                 "inputs": input_hashes(),
                 "native": native,
+                "startup_selection": "development-only",
+                "limitations": [STARTUP_LIMITATION],
                 "suites": {
                     key: {"file": str(file.relative_to(evidence)), "sha256": workspace.digest(file)}
                     for key, file in suites.items()
@@ -860,7 +865,7 @@ def native_smoke(
         encoding="utf-8",
     )
     print(
-        "Native runtime, storage and diagnostic suites passed with sampled OS sandbox/display and final process-absence observations. Retain the stable fixture metadata comparison separately."
+        "Native runtime, storage, diagnostic and development startup suites passed with sampled OS sandbox/display and final process-absence observations. Installed-mode startup needs packaged bytes and was not run. Retain the stable fixture metadata comparison separately."
     )
 
 

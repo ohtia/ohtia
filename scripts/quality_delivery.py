@@ -432,12 +432,21 @@ def runs_development_cases(cell: dict) -> bool:
     return cell.get("launcher") in {"display-session", "workspace"}
 
 
-def suite_cases(suite: str, target: str, cell: dict) -> tuple[set[str], set[str]]:
+def suite_cases(
+    suite: str, target: str, cell: dict, *, development_only: bool = False
+) -> tuple[set[str], set[str]]:
+    """Return the exact required and observation-only cases of one smoke suite.
+
+    `development_only` selects only the development startup cases, for an unpackaged runtime that
+    cannot open the installed mode.
+    """
     if suite == "runtime":
         inventory = read(ROOT / "config/quality/packaged-cases.json")
         return set(inventory["runtime"]), set(inventory["runtime_observations"])
     if suite == "startup":
         inventory = read(ROOT / "config/quality/packaged-cases.json")
+        if development_only:
+            return set(inventory["startup_development"]), set()
         cases = {
             case
             for case in inventory["startup_installed"]
@@ -459,8 +468,10 @@ def suite_cases(suite: str, target: str, cell: dict) -> tuple[set[str], set[str]
     return set(cases), set()
 
 
-def validate_suite(suite: str, target: str, evidence: dict, cell: dict) -> None:
-    expected, observations = suite_cases(suite, target, cell)
+def validate_suite(
+    suite: str, target: str, evidence: dict, cell: dict, *, development_only: bool = False
+) -> None:
+    expected, observations = suite_cases(suite, target, cell, development_only=development_only)
     cases = evidence.get("cases")
     require(isinstance(cases, list) and bool(cases), "Missing packaged cases.")
     require(len({case["id"] for case in cases}) == len(cases), "Duplicate packaged case.")

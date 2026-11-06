@@ -268,6 +268,56 @@ class DeliveryTests(unittest.TestCase):
         with self.assertRaisesRegex(delivery.DeliveryError, "case inventory"):
             delivery.account(self.plan, self.output)
 
+    def test_startup_inventory_follows_the_runtime_each_route_can_open(self):
+        inventory = delivery.read(delivery.ROOT / "config/quality/packaged-cases.json")
+        installed = set(inventory["startup_installed"])
+        development = set(inventory["startup_development"])
+        package = {"id": "linux-x64-debian-13-kde", "target": "linux-x64", "launcher": "kvm"}
+        direct = {
+            "id": "linux-x64-ubuntu-26-04-kde",
+            "target": "linux-x64",
+            "launcher": "display-session",
+        }
+        contributor = {"target": "linux-x64", "backend": "wayland", "desktop": "kde"}
+        for label, cell, development_only, required, foreign in (
+            ("package", package, False, installed, sorted(development)[0]),
+            ("direct", direct, False, installed | development, "unexpected-case"),
+            ("contributor", contributor, True, development, sorted(installed)[0]),
+        ):
+            with self.subTest(route=label):
+                self.assertEqual(
+                    delivery.suite_cases(
+                        "startup", "linux-x64", cell, development_only=development_only
+                    ),
+                    (required, set()),
+                )
+                cases = [{"id": case, "result": "pass"} for case in sorted(required)]
+                delivery.validate_suite(
+                    "startup",
+                    "linux-x64",
+                    {"cases": cases},
+                    cell,
+                    development_only=development_only,
+                )
+                for change, refused in (
+                    ("missing", cases[1:]),
+                    ("extra", [*cases, {"id": foreign, "result": "pass"}]),
+                    ("failed", [{**cases[0], "result": "fail"}, *cases[1:]]),
+                ):
+                    with (
+                        self.subTest(change=change),
+                        self.assertRaises(delivery.DeliveryError),
+                    ):
+                        delivery.validate_suite(
+                            "startup",
+                            "linux-x64",
+                            {"cases": refused},
+                            cell,
+                            development_only=development_only,
+                        )
+        # The contributor's unpackaged runtime cannot produce the installed cases.
+        self.assertEqual(delivery.suite_cases("startup", "linux-x64", contributor)[0], installed)
+
     def test_main_and_pr_identities_are_distinct(self):
         main = {
             **self.identity,

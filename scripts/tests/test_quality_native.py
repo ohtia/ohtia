@@ -572,7 +572,7 @@ async function validate(config, format) {
                     native.allow_development_runtime(other, assembled)
                 command.assert_not_called()
 
-    def linux_smoke(self, root, server, environment):
+    def linux_smoke(self, root, server, environment, **options):
         for suite, receipt in (
             ("runtime", "receipt.json"),
             ("storage", "storage-receipt.json"),
@@ -609,11 +609,13 @@ async function validate(config, format) {
             patch.object(native.workspace, "node_path", return_value=Path("node")),
             patch.object(native, "build_environment", return_value={}),
             patch.object(delivery, "read", side_effect=read),
-            patch.object(delivery, "validate_suite"),
+            patch.object(delivery, "validate_suite") as validate,
             patch.object(native, "processes", side_effect=observe),
             patch.object(native, "display_connection", return_value=display),
             patch.object(native.time, "sleep"),
         ):
+            self.validated = validate.call_args_list
+            self.submitted = executor.return_value.__enter__.return_value.submit.call_args_list
             future = executor.return_value.__enter__.return_value.submit.return_value
             future.done.side_effect = [False, True] * 4
             future.result.return_value = {
@@ -632,7 +634,67 @@ async function validate(config, format) {
                     "desktop": "kde",
                     "launcher": "display-session",
                 },
+                **options,
             )
+
+    def test_suite_arguments_select_the_startup_modes_the_runtime_can_open(self):
+        root = Path("/synthetic")
+        profile, prepared, output = root / "profile.json", root / "runtime", root / "startup"
+        common = [str(profile), str(prepared), str(output)]
+        direct = {"id": "linux-x64-ubuntu-26-04-kde", "launcher": "display-session"}
+        package = {"id": "linux-x64-debian-13-kde", "launcher": "kvm"}
+        contributor = {"target": "linux-x64", "backend": "wayland", "desktop": "kde"}
+        assembled = native.ROOT / "artifacts/quality-linux-x64-ubuntu-26-04-kde/assembled"
+        for label, cell, development_only, startup in (
+            ("package", package, False, common),
+            ("direct", direct, False, [*common, str(assembled)]),
+            ("contributor", contributor, True, ["--development-only", *common, str(prepared)]),
+        ):
+            with self.subTest(route=label):
+                self.assertEqual(
+                    native.suite_arguments(
+                        "startup", profile, prepared, output, cell, development_only
+                    ),
+                    startup,
+                )
+                for suite in ("runtime", "storage", "diagnostics"):
+                    self.assertEqual(
+                        native.suite_arguments(
+                            suite, profile, prepared, output, cell, development_only
+                        ),
+                        common,
+                    )
+
+    def test_development_only_smoke_launches_and_validates_only_that_selection(self):
+        plasma = {"XDG_CURRENT_DESKTOP": "KDE", "KDE_SESSION_VERSION": "6"}
+        for development_only in (False, True):
+            with (
+                self.subTest(development_only=development_only),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                root = Path(temporary)
+                self.linux_smoke(root, "kwin_wayland", plasma, development_only=development_only)
+                startup = self.submitted[-1].args[1]
+                self.assertEqual(startup[1], str(native.ROOT / "tooling/startup-acceptance.mjs"))
+                self.assertEqual(startup[2] == "--development-only", development_only)
+                self.assertEqual(
+                    startup[-1],
+                    str(root / "package")
+                    if development_only
+                    else str(
+                        native.ROOT / "artifacts/quality-linux-x64-ubuntu-26-04-kde/assembled"
+                    ),
+                )
+                self.assertEqual(
+                    [call.args[0] for call in self.validated],
+                    ["runtime", "storage", "diagnostics", "startup"],
+                )
+                self.assertTrue(
+                    all(
+                        call.kwargs == {"development_only": development_only}
+                        for call in self.validated
+                    )
+                )
 
     def test_linux_smoke_requires_the_desktops_compositor_and_chromium_desktop(self):
         plasma = {"XDG_CURRENT_DESKTOP": "KDE", "KDE_SESSION_VERSION": "6"}
