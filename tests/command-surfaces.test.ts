@@ -647,16 +647,39 @@ it("opens the native application menu below its actual button and restores focus
   menu.getBoundingClientRect = () => ({ left: 8, bottom: 48 }) as DOMRect;
   expect(menu.getAttribute("aria-haspopup")).toBe("menu");
   expect(menu.getAttribute("aria-keyshortcuts")).toBe("F10");
+  // Keyboard and assistive-technology activation reach the button as a click without a press.
   await click(menu);
   expect(test.bridge.windowAction).toHaveBeenCalledWith({
     intent: expect.objectContaining({ command: "menu.open", source: "renderer" }),
     anchor: { x: 8, y: 48 },
+    input: "keyboard",
   });
   await act(async () => {
     button("Ohtia help").focus();
   });
   await act(async () => dismissed({ status: "completed", menuDismissed: true }));
   expect(document.activeElement).toBe(menu);
+  vi.mocked(test.bridge.windowAction).mockResolvedValueOnce({
+    status: "completed",
+    menuDismissed: true,
+  });
+  await act(async () => {
+    menu.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+    menu.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+  });
+  expect(test.bridge.windowAction).toHaveBeenLastCalledWith(
+    expect.objectContaining({ anchor: { x: 8, y: 48 }, input: "pointer" }),
+  );
+  vi.mocked(test.bridge.windowAction).mockResolvedValueOnce({
+    status: "completed",
+    menuDismissed: true,
+  });
+  await act(async () => {
+    menu.dispatchEvent(new KeyboardEvent("keydown", { key: "F10", code: "F10", bubbles: true }));
+  });
+  expect(test.bridge.windowAction).toHaveBeenLastCalledWith(
+    expect.objectContaining({ anchor: { x: 8, y: 48 }, input: "keyboard" }),
+  );
   vi.mocked(test.bridge.windowAction).mockResolvedValueOnce({ status: "failed" });
   await click(menu);
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(

@@ -16,6 +16,7 @@ import {
   isWindowCommandResult,
   isCommandIntent,
   isCommandSnapshot,
+  isWindowCommandRequest,
   isAboutInformation,
   message,
   supportedLocales,
@@ -187,6 +188,22 @@ describe("closed command boundary decoding", () => {
     expect(toString).not.toHaveBeenCalled();
     expect(isCommandResult({ status: "failed" })).toBe(true);
     expect(isWindowCommandResult({ status: "completed", menuDismissed: false })).toBe(true);
+  });
+  it("requires the activating input with every application-menu anchor and nowhere else", () => {
+    const menu = { intent: intent("menu.open"), anchor: { x: 8, y: 48 } };
+    for (const input of ["keyboard", "pointer"])
+      expect(isWindowCommandRequest({ ...menu, input })).toBe(true);
+    expect(isWindowCommandRequest({ intent: intent("window.new") })).toBe(true);
+    for (const value of [
+      menu,
+      { ...menu, input: "touch" },
+      { ...menu, input: undefined },
+      { ...menu, input: "keyboard", extra: true },
+      { intent: intent("menu.open"), input: "keyboard" },
+      { intent: intent("window.new"), input: "keyboard" },
+      { intent: intent("window.new"), anchor: { x: 8, y: 48 }, input: "keyboard" },
+    ])
+      expect(isWindowCommandRequest(value)).toBe(false);
   });
   it("reads actual artifact/license identity and copies only the displayed localized version and system after confirmation", async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ohtia-about-"));
@@ -763,6 +780,18 @@ describe("main-owned native window command effects", () => {
     await expect(
       menus.execute(native, { intent: { ...request.intent, sequence: 0 } }, run),
     ).resolves.toEqual({ status: "stale_intent" });
+    const menu = {
+      intent: { ...request.intent, sequence: 2, command: "menu.open" as const },
+      anchor: { x: 8, y: 48 },
+      input: "keyboard" as const,
+    };
+    const opened = menus.execute(native, menu, run);
+    expect(menus.execute(native, { ...menu }, run)).toBe(opened);
+    await expect(menus.execute(native, { ...menu, input: "pointer" }, run)).resolves.toEqual({
+      status: "stale_intent",
+    });
+    await opened;
+    expect(run).toHaveBeenCalledTimes(2);
     menus.connect(native);
     await expect(menus.execute(native, request, run)).resolves.toEqual({ status: "stale_context" });
     const pending = menus.execute(
@@ -773,7 +802,7 @@ describe("main-owned native window command effects", () => {
     window.webContents.emit("render-process-gone");
     await expect(pending).resolves.toEqual({ status: "revoked" });
     window.emit("closed");
-    expect(run).toHaveBeenCalledOnce();
+    expect(run).toHaveBeenCalledTimes(2);
     menus.dispose();
   });
   it("opens the same menu below the zoomed button, retains the originating window and settles on dismissal or teardown", async () => {
@@ -798,12 +827,17 @@ describe("main-owned native window command effects", () => {
     const controller = new CommandController(menus.connect(native)!, "en-US");
     controller.register("help.open", { state: () => ({}), run: () => true });
     menus.publish(native, controller.snapshot());
-    const opened = menus.popup(native, { x: 8, y: 40 });
+    await expect(menus.popup(native, { input: "keyboard" })).resolves.toBe(false);
+    expect(popup).not.toHaveBeenCalled();
+    const opened = menus.popup(native, { anchor: { x: 8, y: 40 }, input: "pointer" });
     const options = popup.mock.calls[0][0];
     expect(options).toMatchObject({ window: native, x: 16, y: 80 });
+    // Pointer opening keeps Electron's own source type.
+    expect(options).not.toHaveProperty("sourceType");
     options.callback();
     await expect(opened).resolves.toBe("dismissed");
-    const revoked = menus.popup(native, { x: 8, y: 40 });
+    const revoked = menus.popup(native, { anchor: { x: 8, y: 40 }, input: "keyboard" });
+    expect(popup.mock.calls[1][0]).toMatchObject({ x: 16, y: 80, sourceType: "keyboard" });
     const staleTemplate = buildFromTemplate.mock.calls.at(
       -1,
     )![0] as Electron.MenuItemConstructorOptions[];
@@ -818,7 +852,7 @@ describe("main-owned native window command effects", () => {
     expect(window.webContents.send).not.toHaveBeenCalled();
     await expect(revoked).resolves.toBe("revoked");
     popup.mock.calls[1][0].callback();
-    const closed = menus.popup(native, { x: 100000, y: 100000 });
+    const closed = menus.popup(native, { anchor: { x: 100000, y: 100000 }, input: "pointer" });
     expect(popup.mock.calls[2][0]).toMatchObject({ x: 1280, y: 800 });
     window.emit("closed");
     await expect(closed).resolves.toBe("revoked");
@@ -894,7 +928,7 @@ it("keeps native Edit roles in the application menu and records a popup Edit sel
   expect(flatten(menus.template(native)).find((item) => item.id === "edit.copy")?.role).toBe(
     "copy",
   );
-  const result = menus.popup(native, { x: 0, y: 48 });
+  const result = menus.popup(native, { anchor: { x: 0, y: 48 }, input: "pointer" });
   const copy = flatten(buildFromTemplate.mock.calls.at(-1)![0]).find(
     (item) => item.id === "edit.copy",
   )!;
@@ -930,8 +964,8 @@ it("reports an intentionally replaced native popup as revoked instead of failed"
   menus.attach(native);
   const context = menus.connect(native)!;
   menus.publish(native, new CommandController(context, "en-US").snapshot());
-  const first = menus.popup(native, { x: 0, y: 48 });
-  const second = menus.popup(native, { x: 0, y: 48 });
+  const first = menus.popup(native, { anchor: { x: 0, y: 48 }, input: "pointer" });
+  const second = menus.popup(native, { anchor: { x: 0, y: 48 }, input: "pointer" });
   await expect(first).resolves.toBe("revoked");
   popup.mock.calls.at(-1)![0].callback();
   await expect(second).resolves.toBe("dismissed");

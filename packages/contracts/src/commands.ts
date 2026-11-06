@@ -245,14 +245,17 @@ export const nativeCommandIds: readonly NativeCommand[] = [
 ];
 export const isNativeCommand = (value: unknown): value is NativeCommand =>
   nativeCommandIds.some((id) => id === value);
+/** The input modality that activated the application-menu command. */
+export type MenuInput = "keyboard" | "pointer";
 export interface WindowCommandRequest {
   readonly intent: CommandIntent;
   readonly anchor?: { readonly x: number; readonly y: number };
+  readonly input?: MenuInput;
 }
 export function isWindowCommandRequest(value: unknown): value is WindowCommandRequest {
   if (
     !plain(value) ||
-    !["intent", "anchor,intent"].includes(Object.keys(value).sort().join(",")) ||
+    !["intent", "anchor,input,intent"].includes(Object.keys(value).sort().join(",")) ||
     !isCommandIntent(value.intent) ||
     !["window.new", "menu.open"].includes(value.intent.command)
   )
@@ -261,6 +264,7 @@ export function isWindowCommandRequest(value: unknown): value is WindowCommandRe
   const anchor = value.anchor;
   return (
     value.intent.command === "menu.open" &&
+    (value.input === "keyboard" || value.input === "pointer") &&
     plain(anchor) &&
     keys(anchor, "x,y") &&
     [anchor.x, anchor.y].every(
