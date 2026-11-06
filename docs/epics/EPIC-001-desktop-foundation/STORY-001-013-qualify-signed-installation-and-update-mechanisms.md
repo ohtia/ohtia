@@ -49,7 +49,7 @@ Deliver common Actions signing/update foundations and complete Linux signed qual
 - [ ] Implement the common capability contract, independently qualified Linux signing authority, Linux installer/updater selections and license/notice packaging without depending on candidate/publication consumers.
 - [ ] Obtain separately authorized Linux signing/testing facilities and verify every applicable transformation before final digests; define testable macOS/Windows callback interfaces without requiring their publisher credentials.
 - [ ] Qualify isolated native profiles/VMs, external channel eligibility and version ordering without altering bootstrap or stable data.
-- [ ] Use controlled qualification artifacts/endpoints to exercise actual installation, upgrade, interruption, refusal and compatible rollback on all six Linux native cells; preserve native foundation build/smoke coverage on Windows and macOS.
+- [ ] Use controlled qualification artifacts/endpoints to exercise actual installation, upgrade, interruption, refusal and compatible rollback on all twelve Linux native cells; preserve native foundation build/smoke coverage on Windows and macOS.
 - [ ] Qualify signed installation/authentic updates on every required Linux target/profile and included optional distribution target, reject cross-architecture packages, and retain native macOS/Windows builds/smoke plus verified GitHub attestations with explicit distribution-ineligible capabilities.
 - [ ] Produce common authority and Linux installer/signature/updater ADR-0000 applicability and actual native/external evidence; transfer real macOS/Windows signed user-route qualification to 019/020 under SPEC-001-028.
 
