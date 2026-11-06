@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { expect } from "@playwright/test";
 import { verifyCommandFocus } from "./command-presentation.mjs";
+import { captureCatalog } from "./catalog-character.mjs";
 
 /** Real browser layout with synthetic platform/bridge inputs, separate from native qualification. */
 export async function verifyCommandDiscovery(page, url, engine, output) {
@@ -158,7 +159,7 @@ export async function verifyCommandDiscovery(page, url, engine, output) {
   await specimen.getByLabel("Command specimen platform").selectOption("linux");
   await page.getByLabel("Theme", { exact: true }).selectOption("light");
   await trigger("en-US", "palette").click();
-  await page.screenshot({ path: path.join(output, `${engine}-command-palette.png`) });
+  await captureCatalog(page, { path: path.join(output, `${engine}-command-palette.png`) });
   if (engine === "chromium") {
     await page.emulateMedia({ forcedColors: "active" });
     const active = page.locator('.command-palette[open] [aria-selected="true"]');
@@ -170,7 +171,7 @@ export async function verifyCommandDiscovery(page, url, engine, output) {
   await page.keyboard.press("Escape");
   await page.setViewportSize({ width: 1280, height: 1080 });
   await trigger("en-US", "shortcuts").click();
-  await page.screenshot({ path: path.join(output, `${engine}-keyboard-shortcuts.png`) });
+  await captureCatalog(page, { path: path.join(output, `${engine}-keyboard-shortcuts.png`) });
   await page.keyboard.press("Escape");
   const previousScrollbarGutter = await page.evaluate(
     () => document.documentElement.style.scrollbarGutter,
