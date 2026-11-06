@@ -44,9 +44,57 @@ class LinuxDependenciesTests(unittest.TestCase):
         self.inventory = self.root / "packages.txt"
 
     def provision(self):
-        dependencies.provision(
-            "linux-x64-ubuntu-26-04-gnome", "display-session", self.apt, self.inventory
-        )
+        with patch.object(dependencies, "gnu_timeout", return_value="/synthetic/gnutimeout"):
+            dependencies.provision(
+                "linux-x64-ubuntu-26-04-gnome", "display-session", self.apt, self.inventory
+            )
+
+    def test_gnu_timeout_prefers_prefixed_tool_and_verifies_fallback(self):
+        for found, selected in (
+            (["/usr/bin/gnutimeout"], "/usr/bin/gnutimeout"),
+            ([None, "/usr/bin/timeout"], "/usr/bin/timeout"),
+        ):
+            with (
+                self.subTest(selected=selected),
+                patch.object(dependencies.shutil, "which", side_effect=found),
+                patch.object(
+                    dependencies.subprocess,
+                    "run",
+                    return_value=subprocess.CompletedProcess(
+                        [], 0, "timeout (GNU coreutils) 9.7\n"
+                    ),
+                ) as execute,
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(dependencies.gnu_timeout(), selected)
+            self.assertEqual(execute.call_args.args[0], [selected, "--version"])
+
+    def test_non_gnu_missing_or_unverifiable_timeout_fails_before_apt_changes(self):
+        original = self.mirrors.read_bytes()
+        for found, result in (
+            (None, subprocess.CompletedProcess([], 0, "")),
+            ("/timeout", subprocess.CompletedProcess([], 0, "timeout (uutils coreutils) 0.10.0\n")),
+            ("/timeout", subprocess.CompletedProcess([], 1, "timeout (GNU coreutils) 9.7\n")),
+            ("/timeout", subprocess.TimeoutExpired(["/timeout", "--version"], 5)),
+            ("/timeout", OSError("synthetic missing executable")),
+        ):
+            with (
+                self.subTest(found=found, result=str(result)),
+                patch.object(dependencies.shutil, "which", return_value=found),
+                patch.object(
+                    dependencies.subprocess,
+                    "run",
+                    side_effect=result if isinstance(result, Exception) else None,
+                    return_value=result,
+                ),
+                contextlib.redirect_stdout(io.StringIO()),
+                self.assertRaises(dependencies.ProvisionError),
+            ):
+                dependencies.provision(
+                    "linux-x64-ubuntu-26-04-gnome", "display-session", self.apt, self.inventory
+                )
+            self.assertEqual(self.mirrors.read_bytes(), original)
+            self.assertFalse(self.inventory.exists())
 
     def test_every_linux_matrix_cell_keeps_its_own_desktop_authority(self):
         cells = json.loads((dependencies.ROOT / "config/quality/build-targets.json").read_text())[
@@ -144,6 +192,7 @@ class LinuxDependenciesTests(unittest.TestCase):
         ):
             self.provision()
         commands = [command for command, _ in calls]
+        self.assertTrue(all(command[0] == "/synthetic/gnutimeout" for command in commands))
         self.assertEqual(
             [command[3] for command in commands], ["715.000s", "615.000s", "515.000s", "415.000s"]
         )
@@ -192,7 +241,12 @@ class LinuxDependenciesTests(unittest.TestCase):
                 patch.object(dependencies.subprocess, "run") as execute,
                 self.assertRaisesRegex(dependencies.ProvisionError, "budget exhausted before"),
             ):
-                dependencies.run_phase("archive acquisition", ["apt-get"], deadline)
+                dependencies.run_phase(
+                    "archive acquisition",
+                    ["apt-get"],
+                    deadline,
+                    timeout_executable="/synthetic/gnutimeout",
+                )
             execute.assert_not_called()
         with (
             patch.object(dependencies.time, "monotonic", return_value=100),
@@ -201,7 +255,12 @@ class LinuxDependenciesTests(unittest.TestCase):
             ) as execute,
             contextlib.redirect_stdout(io.StringIO()),
         ):
-            dependencies.run_phase("archive acquisition", ["apt-get"], 105.0011)
+            dependencies.run_phase(
+                "archive acquisition",
+                ["apt-get"],
+                105.0011,
+                timeout_executable="/synthetic/gnutimeout",
+            )
         self.assertEqual(execute.call_args.args[0][3], "0.001s")
 
     def test_external_kill_is_not_misreported_as_an_exhausted_budget(self):
@@ -218,12 +277,18 @@ class LinuxDependenciesTests(unittest.TestCase):
                     dependencies.ProvisionError, "was killed.*external termination"
                 ),
             ):
-                dependencies.run_phase("archive acquisition", ["apt-get"], time.monotonic() + 100)
+                dependencies.run_phase(
+                    "archive acquisition",
+                    ["apt-get"],
+                    time.monotonic() + 100,
+                    timeout_executable="/synthetic/gnutimeout",
+                )
 
     @unittest.skipUnless(
         sys.platform.startswith("linux") and shutil.which("timeout"), "GNU timeout on Linux"
     )
     def test_real_budget_stops_stalled_and_continuously_progressing_process_groups(self):
+        timeout_executable = dependencies.gnu_timeout()
         for progressing, force_kill in ((False, False), (False, True), (True, True)):
             pidfile = self.root / f"pids-{progressing}-{force_kill}.txt"
             child = (
@@ -254,6 +319,7 @@ class LinuxDependenciesTests(unittest.TestCase):
                         "archive acquisition",
                         [sys.executable, "-c", program],
                         started + 1.5,
+                        timeout_executable=timeout_executable,
                         stdout=log,
                     )
                 self.assertLess(time.monotonic() - started, 5)
@@ -271,7 +337,10 @@ class LinuxDependenciesTests(unittest.TestCase):
             settled = time.monotonic() + 1
             while not all(stopped(pid) for pid in pids) and time.monotonic() < settled:
                 time.sleep(0.01)
-            self.assertTrue(all(stopped(pid) for pid in pids))
+            self.assertTrue(
+                all(stopped(pid) for pid in pids),
+                f"Synthetic children survived termination: {pids}",
+            )
             if progressing:
                 self.assertIn("synthetic transfer progress", self.inventory.read_text())
 

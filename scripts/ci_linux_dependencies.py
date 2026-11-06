@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import time
@@ -57,6 +58,26 @@ class ProvisionError(RuntimeError):
     pass
 
 
+def gnu_timeout() -> str:
+    """Ubuntu 26.04's unprefixed timeout is uutils; require GNU's group-wide KILL behavior."""
+    executable = shutil.which("gnutimeout") or shutil.which("timeout")
+    if executable is None:
+        raise ProvisionError("GNU timeout is required for process-group cleanup but is missing.")
+    try:
+        result = subprocess.run(
+            [executable, "--version"], capture_output=True, text=True, timeout=5, check=False
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ProvisionError("Could not verify the GNU timeout implementation.") from exc
+    version = result.stdout.splitlines()[0] if result.stdout else ""
+    if result.returncode or not version.startswith(
+        ("timeout (GNU coreutils) ", "gnutimeout (GNU coreutils) ")
+    ):
+        raise ProvisionError(f"GNU timeout is required; detected implementation: {version!r}.")
+    print(f"Provisioning timeout implementation: {executable}: {version}", flush=True)
+    return executable
+
+
 def packages_for(cell: str, launcher: str) -> list[str]:
     cells = json.loads((ROOT / "config/quality/build-targets.json").read_text())["cells"]
     selected = next((item for item in cells if item["id"] == cell), None)
@@ -94,7 +115,9 @@ def configure_mirrors(apt_root: Path) -> None:
     print("Ubuntu APT mirrors (source authentication unchanged):\n" + MIRRORS, flush=True)
 
 
-def run_phase(name: str, command: list[str], deadline: float, *, stdout=None) -> None:
+def run_phase(
+    name: str, command: list[str], deadline: float, *, timeout_executable: str, stdout=None
+) -> None:
     """GNU timeout supervises the whole root-owned process group, including apt/dpkg children."""
     started = time.monotonic()
     remaining_ms = int((deadline - started - KILL_GRACE_SECONDS) * 1000)
@@ -105,7 +128,7 @@ def run_phase(name: str, command: list[str], deadline: float, *, stdout=None) ->
     print(f"Provisioning {name}: start; {remaining:.1f}s available", flush=True)
     result = subprocess.run(
         [
-            "timeout",
+            timeout_executable,
             "--verbose",
             f"--kill-after={KILL_GRACE_SECONDS}s",
             f"{remaining:.3f}s",
@@ -135,15 +158,37 @@ def provision(cell: str, launcher: str, apt_root: Path, inventory: Path) -> None
     started = time.monotonic()
     deadline = started + BUDGET_SECONDS
     print(f"Provisioning {cell} via {launcher}; budget={BUDGET_SECONDS}s", flush=True)
+    timeout_executable = gnu_timeout()
     configure_mirrors(apt_root)
     print("Requested host packages: " + " ".join(packages), flush=True)
-    run_phase("index refresh", [*APT, "update", "--error-on=any"], deadline)
+    run_phase(
+        "index refresh",
+        [*APT, "update", "--error-on=any"],
+        deadline,
+        timeout_executable=timeout_executable,
+    )
     install = ["install", "--no-install-recommends", "-y", *packages]
-    run_phase("archive acquisition", [*APT, "--download-only", *install], deadline)
+    run_phase(
+        "archive acquisition",
+        [*APT, "--download-only", *install],
+        deadline,
+        timeout_executable=timeout_executable,
+    )
     # Installation cannot silently start another network transfer after the bounded download.
-    run_phase("installation/configuration", [*APT, "--no-download", *install], deadline)
+    run_phase(
+        "installation/configuration",
+        [*APT, "--no-download", *install],
+        deadline,
+        timeout_executable=timeout_executable,
+    )
     with inventory.open("w") as stream:
-        run_phase("package inventory", ["dpkg-query", "-W"], deadline, stdout=stream)
+        run_phase(
+            "package inventory",
+            ["dpkg-query", "-W"],
+            deadline,
+            timeout_executable=timeout_executable,
+            stdout=stream,
+        )
     print(f"Provisioning complete; elapsed={time.monotonic() - started:.1f}s", flush=True)
 
 
