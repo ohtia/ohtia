@@ -19,6 +19,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import ci_linux_dependencies as dependencies
 
 
+def process_stopped(pid: int) -> bool:
+    """Treat a missing, reaped or zombie process as stopped.
+
+    Reading `/proc/<pid>/stat` raises `ProcessLookupError` when the process is reaped between
+    opening and reading the file, and `FileNotFoundError` once it has been reaped.
+    """
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().split()[2] == "Z"
+    except (FileNotFoundError, ProcessLookupError):
+        return True
+
+
 class LinuxDependenciesTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
@@ -327,22 +339,38 @@ class LinuxDependenciesTests(unittest.TestCase):
                 pidfile.exists(), "Synthetic transfer did not start before its deadline"
             )
 
-            def stopped(pid):
-                try:
-                    return Path(f"/proc/{pid}/stat").read_text().split()[2] == "Z"
-                except FileNotFoundError:
-                    return True
-
             pids = list(map(int, pidfile.read_text().split()))
             settled = time.monotonic() + 1
-            while not all(stopped(pid) for pid in pids) and time.monotonic() < settled:
+            while not all(process_stopped(pid) for pid in pids) and time.monotonic() < settled:
                 time.sleep(0.01)
             self.assertTrue(
-                all(stopped(pid) for pid in pids),
+                all(process_stopped(pid) for pid in pids),
                 f"Synthetic children survived termination: {pids}",
             )
             if progressing:
                 self.assertIn("synthetic transfer progress", self.inventory.read_text())
+
+    def test_process_stopped_treats_missing_reaped_and_zombie_processes_as_stopped(self):
+        for label, outcome, expected in (
+            ("missing", FileNotFoundError(2, "No such file or directory"), True),
+            ("reaped during the read", ProcessLookupError(3, "No such process"), True),
+            ("zombie", "4242 (python3) Z 1 4242 4242 0 -1 4194560\n", True),
+            ("sleeping", "4242 (python3) S 1 4242 4242 0 -1 4194560\n", False),
+        ):
+            with (
+                self.subTest(process=label),
+                patch.object(
+                    Path,
+                    "read_text",
+                    **(
+                        {"side_effect": outcome}
+                        if isinstance(outcome, Exception)
+                        else {"return_value": outcome}
+                    ),
+                ) as read,
+            ):
+                self.assertIs(process_stopped(4242), expected)
+                read.assert_called_once_with()
 
     def test_workflow_invokes_the_bounded_helper_with_an_outer_timeout(self):
         workflow = (dependencies.ROOT / ".github/workflows/ci.yml").read_text()
