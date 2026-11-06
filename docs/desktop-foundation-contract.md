@@ -243,7 +243,7 @@ The metadata command checks target completeness, exact patches against their ado
 
 [^fedora-btrfs]: Fedora's desktop change record documents Btrfs adoption; local Btrfs is Ohtia's selected Fedora qualification filesystem.
 
-[^fedora-wayland]: Fedora's GNOME change record documents the Wayland session direction; native GNOME Wayland is Ohtia's selected Fedora qualification session.
+[^fedora-wayland]: Fedora's GNOME change record documents the Wayland session direction; native GNOME and KDE Plasma 6 Wayland sessions are Ohtia's selected Fedora qualification sessions.
 
 [^electron-native-init]: The pinned native delegate selects Linux Ozone during native pre-sandbox startup.
 
@@ -251,6 +251,6 @@ The metadata command checks target completeness, exact patches against their ado
 
 [^ubuntu-26-profile]: Ubuntu documents its GNOME Wayland-only session and libc family; actual runtime and sandbox observations remain required on each selected CPU.
 
-[^debian-13-profile]: Debian identifies its maintained release and desktop families; choosing GNOME Wayland here does not qualify its other sessions.
+[^debian-13-profile]: Debian identifies its maintained release and desktop families; choosing GNOME and KDE Plasma 6 on Wayland here does not qualify its other sessions.
 
 [^debian-13-libc]: Debian publishes the selected libc family; native artifact loading remains empirical evidence from 018.
