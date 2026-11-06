@@ -1127,6 +1127,7 @@ it("opens the validated native application menu on the admitted originating wind
       command: "menu.open",
     },
     anchor: { x: 8, y: 48 },
+    input: "keyboard",
   });
   expect(result).toEqual(
     process.platform === "darwin"
@@ -1134,7 +1135,9 @@ it("opens the validated native application menu on the admitted originating wind
       : { status: "completed", menuDismissed: true },
   );
   if (process.platform !== "darwin")
-    expect(popup).toHaveBeenCalledWith(expect.objectContaining({ window: h.window, x: 8, y: 48 }));
+    expect(popup).toHaveBeenCalledWith(
+      expect.objectContaining({ window: h.window, x: 8, y: 48, sourceType: "keyboard" }),
+    );
 });
 
 it("saves the latest bounds on a second quit after shutdown was refused", async () => {
@@ -1444,6 +1447,7 @@ it("preserves popup revocation as a silent command outcome in the broker reply",
           command: "menu.open",
         },
         anchor: { x: 0, y: 48 },
+        input: "pointer",
       }),
     ).toEqual({ status: "revoked" });
   } finally {

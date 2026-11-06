@@ -929,7 +929,7 @@ async function start(): Promise<void> {
       if (action === "window_action" && isWindowCommandRequest(payload)) {
         return await commandMenus.execute(window, payload, async (current) => {
           if (payload.intent.command === "menu.open") {
-            const outcome = await commandMenus.popup(window, payload.anchor ?? { x: 0, y: 0 });
+            const outcome = await commandMenus.popup(window, payload);
             return outcome === "revoked"
               ? { status: "revoked" }
               : outcome

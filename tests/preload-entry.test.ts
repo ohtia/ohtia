@@ -460,8 +460,14 @@ it("validates the native window request lease and closed results before crossing
       ...request,
       intent: { ...request.intent, command: "menu.open" },
       anchor: { x: 0, y: 48 },
+      input: "keyboard",
     }),
   ).toEqual({ status: "completed", menuDismissed: true });
+  expect(h.ipcRenderer.invoke).toHaveBeenLastCalledWith(
+    expect.any(String),
+    "window_action",
+    expect.objectContaining({ anchor: { x: 0, y: 48 }, input: "keyboard" }),
+  );
   h.ipcRenderer.invoke.mockResolvedValueOnce({
     status: "completed",
     menuDismissed: "private",
@@ -481,6 +487,12 @@ it("validates the native window request lease and closed results before crossing
   ).toEqual({ status: "stale_context" });
   expect(
     await h.bridge.commands.windowAction({ ...request, anchor: { x: 1, y: 1 } } as never),
+  ).toEqual({ status: "stale_context" });
+  expect(
+    await h.bridge.commands.windowAction({
+      intent: { ...request.intent, command: "menu.open" },
+      anchor: { x: 0, y: 48 },
+    }),
   ).toEqual({ status: "stale_context" });
   expect(h.ipcRenderer.invoke).toHaveBeenCalledTimes(count);
 });
