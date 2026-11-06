@@ -1,7 +1,7 @@
 /* global document, window, getComputedStyle */
 import { expect } from "@playwright/test";
 import path from "node:path";
-import { watchCatalogPage } from "./catalog-character.mjs";
+import { captureCatalog, watchCatalogPage } from "./catalog-character.mjs";
 
 const trustStates = ["proposed", "confirmed", "pending", "rejected", "review-required"];
 const components = {
@@ -47,7 +47,7 @@ const border = (locator, side = "top") =>
 
 /** Portable Chromium journey for synthetic research specimens; no product or native claim. */
 export async function verifyResearchSpecimen(page, url, engine, output) {
-  const watch = watchCatalogPage(page, url, "Research");
+  const watch = await watchCatalogPage(page, url, "Research", engine);
   const dialogs = [];
   const dialog = (value) => {
     dialogs.push(value.message());
@@ -57,11 +57,11 @@ export async function verifyResearchSpecimen(page, url, engine, output) {
   try {
     const result = await researchJourney(page, url, engine, output);
     expect(dialogs, "Untrusted text opened no dialog").toEqual([]);
-    watch.assert();
+    await watch.assert();
     return result;
   } finally {
     page.off("dialog", dialog);
-    watch.dispose();
+    await watch.dispose();
   }
 }
 
@@ -292,14 +292,14 @@ async function researchJourney(page, url, engine, output) {
   await page.setViewportSize({ width: 1280, height: 800 });
   for (const theme of ["light", "dark"]) {
     await page.getByLabel("Theme", { exact: true }).selectOption(theme);
-    await page.screenshot({
+    await captureCatalog(page, {
       path: path.join(output, `${engine}-research-${theme}.png`),
       fullPage: true,
     });
     await page.locator("main").evaluate((element) => {
       element.style.filter = "grayscale(1)";
     });
-    await page.screenshot({
+    await captureCatalog(page, {
       path: path.join(output, `${engine}-research-${theme}-grayscale.png`),
       fullPage: true,
     });
@@ -324,7 +324,7 @@ async function researchJourney(page, url, engine, output) {
     await page.setViewportSize({ width, height: 400 });
     await expectFits(page, `${String(width)}/expanded`);
   }
-  await page.screenshot({
+  await captureCatalog(page, {
     path: path.join(output, `${engine}-research-320-expanded.png`),
     fullPage: true,
   });
@@ -360,7 +360,7 @@ async function researchJourney(page, url, engine, output) {
       });
     try {
       const touch = await coarse.newPage();
-      const touchWatch = watchCatalogPage(touch, url, "Research coarse");
+      const touchWatch = await watchCatalogPage(touch, url, "Research coarse", engine);
       try {
         await touch.goto(`${url}?screen=research`);
         await touch.evaluate(() => document.fonts.ready);
@@ -379,9 +379,9 @@ async function researchJourney(page, url, engine, output) {
           expect(target.width, target.name).toBeGreaterThanOrEqual(44);
         }
         await expectFits(touch, "coarse/320");
-        touchWatch.assert();
+        await touchWatch.assert();
       } finally {
-        touchWatch.dispose();
+        await touchWatch.dispose();
       }
     } finally {
       await coarse.close();

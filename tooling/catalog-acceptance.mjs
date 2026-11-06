@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { build, preview } from "vite";
 import { expect } from "@playwright/test";
-import { verifyCharacterSpecimen } from "./catalog-character.mjs";
+import { captureCatalog, verifyCharacterSpecimen, watchCatalogPage } from "./catalog-character.mjs";
 import { verifyResearchSpecimen } from "./catalog-research.mjs";
 import { verifyWorkspaceSpecimen } from "./catalog-workspace.mjs";
 import { verifyCommandDiscovery } from "./command-discovery.mjs";
@@ -133,17 +133,7 @@ async function keyboardJourneys(page, url) {
 }
 
 export async function verifyCatalog(page, url, engine, output) {
-  const errors = [];
-  const violations = [];
-  const requests = [];
-  const error = (value) => errors.push(value.message);
-  const consoleError = (value) => {
-    if (value.type() === "error") violations.push(value.text());
-  };
-  const request = (value) => requests.push(value.url());
-  page.on("pageerror", error);
-  page.on("console", consoleError);
-  page.on("request", request);
+  const watch = await watchCatalogPage(page, url, "Catalog", engine);
   try {
     const browser = page.context().browser();
     if (!browser) throw new Error("Character catalog checks require an isolated browser context.");
@@ -316,7 +306,6 @@ export async function verifyCatalog(page, url, engine, output) {
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
-    expect(requests.every((request) => request.startsWith(url))).toBe(true);
     expect(
       await page.evaluate(
         () => [...document.fonts].filter((font) => font.status === "error").length,
@@ -402,9 +391,11 @@ export async function verifyCatalog(page, url, engine, output) {
     });
     expect(bodyFocus.top).toBeGreaterThanOrEqual(bodyFocus.headerBottom - 0.5);
     fs.mkdirSync(output, { recursive: true });
-    await page.screenshot({ path: path.join(output, `${engine}-catalog.png`), fullPage: true });
-    expect(errors).toEqual([]);
-    expect(violations).toEqual([]);
+    await captureCatalog(page, {
+      path: path.join(output, `${engine}-catalog.png`),
+      fullPage: true,
+    });
+    await watch.assert();
     return {
       engine,
       widths: [320, 600, 1024, 1280],
@@ -426,8 +417,6 @@ export async function verifyCatalog(page, url, engine, output) {
       ],
     };
   } finally {
-    page.off("pageerror", error);
-    page.off("console", consoleError);
-    page.off("request", request);
+    await watch.dispose();
   }
 }

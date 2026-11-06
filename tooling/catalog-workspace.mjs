@@ -1,6 +1,7 @@
 /* global document, window, getComputedStyle */
 import path from "node:path";
 import { expect } from "@playwright/test";
+import { captureCatalog } from "./catalog-character.mjs";
 
 async function assertChromeBounds(page) {
   const results = await page.locator(".workspace-title-row").evaluate((row) => {
@@ -203,7 +204,7 @@ export async function verifyWorkspaceSpecimen(page, url, engine, output) {
           await page.getByRole("button", { name: "Documents", exact: true }).click();
         }
         if ([1280, 600].includes(width))
-          await page.screenshot({
+          await captureCatalog(page, {
             path: path.join(output, `${engine}-workspace-${width}-${theme}.png`),
           });
       }
@@ -216,7 +217,9 @@ export async function verifyWorkspaceSpecimen(page, url, engine, output) {
       await expect(separator.locator(".workspace-splitter-line")).toHaveCSS("inline-size", "4px");
       const grip = await separator.locator(".workspace-grip").boundingBox();
       expect([grip.width, grip.height]).toEqual([16, 32]);
-      await page.screenshot({ path: path.join(output, `${engine}-separator-hover-${theme}.png`) });
+      await captureCatalog(page, {
+        path: path.join(output, `${engine}-separator-hover-${theme}.png`),
+      });
       const box = await separator.boundingBox();
       const x = box.x + box.width / 2,
         y = box.y + box.height / 2;
@@ -231,7 +234,7 @@ export async function verifyWorkspaceSpecimen(page, url, engine, output) {
       ).toBe(
         await page.locator(".workspace").evaluate((element) => getComputedStyle(element).color),
       );
-      await page.screenshot({
+      await captureCatalog(page, {
         path: path.join(output, `${engine}-separator-dragging-${theme}.png`),
       });
       await page.keyboard.press("Escape");
@@ -253,7 +256,7 @@ export async function verifyWorkspaceSpecimen(page, url, engine, output) {
       await expect(page.getByRole("alert")).toContainText(
         message("en-US", "workspace.notRemembered"),
       );
-      await page.screenshot({ path: path.join(output, `${engine}-save-failed-${theme}.png`) });
+      await captureCatalog(page, { path: path.join(output, `${engine}-save-failed-${theme}.png`) });
       await page.getByRole("button", { name: "Dismiss", exact: true }).click();
       const before = Number(
         await page.locator("output[data-synthetic-saves]").getAttribute("data-synthetic-saves"),
@@ -270,7 +273,7 @@ export async function verifyWorkspaceSpecimen(page, url, engine, output) {
       await expect(separator).toHaveAttribute("data-minimum", "left");
       await expect(separator).toHaveCSS("cursor", "e-resize");
       await expect(separator.locator("..").getByRole("tooltip")).toContainText("Minimum");
-      await page.screenshot({
+      await captureCatalog(page, {
         path: path.join(output, `${engine}-separator-minimum-${theme}.png`),
       });
       await page.keyboard.press("Enter");
@@ -280,18 +283,20 @@ export async function verifyWorkspaceSpecimen(page, url, engine, output) {
       await expect(page.getByRole("status")).toContainText(
         message("en-US", "command.reason.last_panel"),
       );
-      await page.screenshot({ path: path.join(output, `${engine}-last-panel-${theme}.png`) });
+      await captureCatalog(page, { path: path.join(output, `${engine}-last-panel-${theme}.png`) });
       await page.getByRole("button", { name: "Return to previous layout", exact: true }).click();
       await expect(page.locator(".workspace-attention")).toHaveCount(0);
       await page.getByRole("button", { name: "Expand document", exact: true }).click();
-      await page.screenshot({ path: path.join(output, `${engine}-focus-${theme}.png`) });
+      await captureCatalog(page, { path: path.join(output, `${engine}-focus-${theme}.png`) });
       await page.getByRole("button", { name: "Return to previous layout", exact: true }).click();
       await page.goto(route(`&theme=${theme}&uncertain`));
       await page.getByRole("button", { name: "Hide chat", exact: true }).click();
       await expect(page.locator(".workspace-attention")).toContainText(
         message("en-US", "workspace.uncertain"),
       );
-      await page.screenshot({ path: path.join(output, `${engine}-save-uncertain-${theme}.png`) });
+      await captureCatalog(page, {
+        path: path.join(output, `${engine}-save-uncertain-${theme}.png`),
+      });
       await page.getByRole("button", { name: "Check", exact: true }).click();
       await expect(page.locator("output[data-synthetic-saves]")).toHaveAttribute(
         "data-synthetic-saves",
@@ -303,7 +308,9 @@ export async function verifyWorkspaceSpecimen(page, url, engine, output) {
       await expect(page.locator(".workspace-documents > h2")).toBeFocused();
       await expect(page.getByRole("tab")).toHaveCSS("outline-width", "3px");
       await expect(page.getByRole("tab")).toHaveCSS("outline-offset", "2px");
-      await page.screenshot({ path: path.join(output, `${engine}-heading-focus-${theme}.png`) });
+      await captureCatalog(page, {
+        path: path.join(output, `${engine}-heading-focus-${theme}.png`),
+      });
       await page.setViewportSize({ width: 600, height: 400 });
       await expect(page.locator(".workspace")).toHaveAttribute("data-mode", "narrow");
       await focusByTab(page, page.locator(".workspace-documents .workspace-panel-scroll"));
@@ -512,7 +519,9 @@ export async function verifyWorkspaceSpecimen(page, url, engine, output) {
         });
         expect(clearance.textInset).toBe(32);
         expect(clearance.covered).toEqual([]);
-        await touch.screenshot({ path: path.join(output, `${engine}-coarse-chat-heading.png`) });
+        await captureCatalog(touch, {
+          path: path.join(output, `${engine}-coarse-chat-heading.png`),
+        });
       } finally {
         await coarse.close();
       }

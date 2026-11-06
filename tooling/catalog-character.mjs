@@ -1,39 +1,153 @@
-/* global document, window */
+/* global document, MessageChannel, window */
 import { expect } from "@playwright/test";
 import path from "node:path";
 import { URL } from "node:url";
 
-/** Every owned page, including the coarse-pointer context, has independent admission checks. */
-export function watchCharacterPage(page, url) {
-  return watchCatalogPage(page, url, "Character");
+const cspReport = "__ohtiaCatalogCsp";
+const captureMark = "__ohtiaCatalogCapture";
+/** WebKit's console text for each refused stylesheet or style attribute; used only to count. */
+export const webkitStyleRefusal =
+  "Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear in the style-src directive of the Content Security Policy.";
+/**
+ * Admits the two portable WebKit refusals that the engine or Playwright causes, not the page:
+ * WebKit refuses an inline style for every `<select>`, and each Playwright screenshot injects a
+ * stylesheet with no source file. Every other violation fails, including both in other engines.
+ */
+export function admittedCspViolation(engine, violation) {
+  if (engine !== "webkit" || violation.blocked !== "inline" || violation.disposition !== "enforce")
+    return false;
+  if (violation.directive === "style-src-attr") return violation.target === "SELECT";
+  return (
+    violation.directive === "style-src-elem" &&
+    violation.target === "#document" &&
+    violation.source === "" &&
+    violation.capture === true
+  );
 }
-export function watchCatalogPage(page, url, name) {
+/** Keeps every console error except one WebKit refusal message per admitted violation. */
+export function unadmittedConsoleErrors(engine, messages, admitted) {
+  let skipped = 0;
+  return messages.filter((text) => {
+    if (engine !== "webkit" || text !== webkitStyleRefusal || skipped >= admitted) return true;
+    skipped += 1;
+    return false;
+  });
+}
+/** Every owned page, including the coarse-pointer context, has independent admission checks. */
+export function watchCharacterPage(page, url, engine) {
+  return watchCatalogPage(page, url, "Character", engine);
+}
+/**
+ * Observes page errors, console errors, structured CSP violations and request origins. Install it
+ * before the page's first navigation so that the violation reporter runs in every document.
+ */
+export async function watchCatalogPage(page, url, name, engine) {
   const errors = [],
+    consoleErrors = [],
     violations = [],
     requests = [];
   const error = (value) => errors.push(value.message);
   const consoleError = (value) => {
-    if (value.type() === "error") violations.push(value.text());
+    if (value.type() === "error") consoleErrors.push(value.text());
   };
   const request = (value) => requests.push(value.url());
   page.on("pageerror", error);
   page.on("console", consoleError);
   page.on("request", request);
+  const disposables = [];
+  try {
+    disposables.push(
+      await page.exposeBinding(cspReport, (_source, violation) => violations.push(violation)),
+    );
+    disposables.push(
+      await page.addInitScript(
+        ({ report, capture }) => {
+          document.addEventListener(
+            "securitypolicyviolation",
+            (event) => {
+              // A disposed watcher removes the binding; this document's listener then stays inert.
+              if (typeof window[report] !== "function") return;
+              void window[report]({
+                directive: event.effectiveDirective,
+                blocked: event.blockedURI,
+                disposition: event.disposition,
+                source: event.sourceFile || "",
+                target: event.target?.nodeName ?? "",
+                capture: (window[capture] ?? 0) > 0,
+              });
+            },
+            true,
+          );
+        },
+        { report: cspReport, capture: captureMark },
+      ),
+    );
+  } catch (failure) {
+    page.off("pageerror", error);
+    page.off("console", consoleError);
+    page.off("request", request);
+    // The installation failure is the diagnostic that matters here.
+    await release(page, disposables).catch(() => undefined);
+    throw failure;
+  }
   return {
-    assert() {
+    async assert() {
+      // A page round trip delivers reports sent before it.
+      if (!page.isClosed()) await page.evaluate(() => 0);
       expect(errors, `${name} page errors`).toEqual([]);
-      expect(violations, `${name} console/CSP errors`).toEqual([]);
+      const admitted = violations.filter((item) => admittedCspViolation(engine, item));
+      expect(
+        violations.filter((item) => !admittedCspViolation(engine, item)),
+        `${name} CSP violations`,
+      ).toEqual([]);
+      expect(
+        unadmittedConsoleErrors(engine, consoleErrors, admitted.length),
+        `${name} console/CSP errors`,
+      ).toEqual([]);
       expect(
         requests.every((value) => new URL(value).origin === new URL(url).origin),
         `${name} request origins`,
       ).toBe(true);
     },
-    dispose() {
+    async dispose() {
       page.off("pageerror", error);
       page.off("console", consoleError);
       page.off("request", request);
+      await release(page, disposables);
     },
   };
+}
+/** Releases every disposable; a closed page's release failures do not replace the journey's own. */
+async function release(page, disposables) {
+  const failure = (
+    await Promise.allSettled(disposables.map((disposable) => disposable.dispose()))
+  ).find((result) => result.status === "rejected");
+  if (failure && !page.isClosed()) throw failure.reason;
+}
+/** Takes an evidence screenshot while the page marks a capture for the CSP watcher. */
+export async function captureCatalog(target, options) {
+  const page = typeof target.page === "function" ? target.page() : target;
+  await page.evaluate((mark) => {
+    window[mark] = (window[mark] ?? 0) + 1;
+  }, captureMark);
+  try {
+    return await target.screenshot(options);
+  } finally {
+    // Let violation events queued by the capture run before the mark is released. A message
+    // task is used because journeys may install Playwright's fake timers.
+    if (!page.isClosed())
+      await page.evaluate(async (mark) => {
+        await new Promise((resolve) => {
+          const channel = new MessageChannel();
+          channel.port1.onmessage = () => {
+            channel.port1.close();
+            resolve();
+          };
+          channel.port2.postMessage(null);
+        });
+        window[mark] = Math.max(0, (window[mark] ?? 1) - 1);
+      }, captureMark);
+  }
 }
 /**
  * Compares a selected contributor label with its exact one-line identity. Selection
@@ -56,13 +170,13 @@ async function expectNoHorizontalOverflow(page) {
   ).toBeLessThanOrEqual(dimensions.client);
 }
 export async function verifyCharacterSpecimen(page, url, engine, output) {
-  const watch = watchCharacterPage(page, url);
+  const watch = await watchCharacterPage(page, url, engine);
   try {
     const result = await characterJourney(page, url, engine, output);
-    watch.assert();
+    await watch.assert();
     return result;
   } finally {
-    watch.dispose();
+    await watch.dispose();
   }
 }
 async function characterJourney(page, url, engine, output) {
@@ -192,7 +306,9 @@ async function characterJourney(page, url, engine, output) {
       });
     });
     expect(noControlOverlap, `${pose}/neighboring controls`).toBe(true);
-    await stage.screenshot({ path: path.join(output, `${engine}-character-${pose}-main.png`) });
+    await captureCatalog(stage, {
+      path: path.join(output, `${engine}-character-${pose}-main.png`),
+    });
     await expect(stage.locator(".character-drawing")).toHaveCount(1);
     await page.clock.runFor(duration);
     await expect(stage.locator(".character-drawing")).toHaveCount(0);
@@ -307,14 +423,17 @@ async function characterJourney(page, url, engine, output) {
   }
   await page.getByLabel("Presentation", { exact: true }).selectOption("static");
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.screenshot({ path: path.join(output, `${engine}-characters.png`), fullPage: true });
+  await captureCatalog(page, {
+    path: path.join(output, `${engine}-characters.png`),
+    fullPage: true,
+  });
   for (const theme of ["light", "dark"]) {
     await page.evaluate((value) => {
       document.documentElement.dataset.appearance = value;
       document.querySelector("main").style.filter = "grayscale(1)";
     }, theme);
     await expect(page.locator(".voice-label")).toHaveCount(9);
-    await page.screenshot({
+    await captureCatalog(page, {
       path: path.join(output, `${engine}-characters-${theme}-grayscale.png`),
       fullPage: true,
     });
@@ -329,7 +448,7 @@ async function characterJourney(page, url, engine, output) {
       });
     try {
       const touch = await coarse.newPage();
-      const touchWatch = watchCharacterPage(touch, url);
+      const touchWatch = await watchCharacterPage(touch, url, engine);
       try {
         await touch.goto(`${url}?screen=characters`);
         await touch.evaluate(() => document.fonts.ready);
@@ -346,9 +465,9 @@ async function characterJourney(page, url, engine, output) {
           expect(target.width, target.name).toBeGreaterThanOrEqual(44);
           expect(target.height, target.name).toBeGreaterThanOrEqual(44);
         }
-        touchWatch.assert();
+        await touchWatch.assert();
       } finally {
-        touchWatch.dispose();
+        await touchWatch.dispose();
       }
     } finally {
       await coarse.close();
