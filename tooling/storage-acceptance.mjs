@@ -7,6 +7,7 @@ import { _electron, expect } from "@playwright/test";
 import { openWorkspaceSettings, verifyWorkspaceComposition } from "./command-workspace.mjs";
 import { verifyPackagedSettings } from "./settings-acceptance.mjs";
 import { verifyMissingLocatedDatabase } from "./storage-native-recovery.mjs";
+import { installStorageNoticeHold, waitForHeldStorageNotice } from "./storage-opening-notice.mjs";
 import {
   recordNativeFailure,
   withNativeFailureObservation,
@@ -123,31 +124,9 @@ async function start() {
   return page;
 }
 async function holdNextStorageNotice() {
-  await application.evaluate(({ utilityProcess }) => {
-    const fork = utilityProcess.fork;
-    utilityProcess.fork = (...args) => {
-      utilityProcess.fork = fork;
-      const child = fork.apply(utilityProcess, args);
-      const emit = child.emit;
-      child.emit = function (event, ...values) {
-        if (
-          event === "message" &&
-          typeof values[0] === "string" &&
-          JSON.parse(values[0]).kind === "storage"
-        ) {
-          globalThis.__heldStoragePid = child.pid;
-          globalThis.__releaseStorageNotice = () => {
-            child.emit = emit;
-            emit.call(child, event, ...values);
-          };
-          return true;
-        }
-        return emit.call(child, event, ...values);
-      };
-      return child;
-    };
-  });
+  await application.evaluate(installStorageNoticeHold);
 }
+
 async function open(page, expected = "storage_ready") {
   enterPhase("read-storage-opening-state");
   const snapshot = await page.evaluate(() => window.ohtia.bootstrap.read());
@@ -162,11 +141,10 @@ async function open(page, expected = "storage_ready") {
     .click();
   if (observeOpening) {
     enterPhase("wait-held-opening-notice");
-    await expect
-      .poll(() =>
-        application.evaluate(() => typeof globalThis.__releaseStorageNotice === "function"),
-      )
-      .toBe(true);
+    expect(
+      await waitForHeldStorageNotice(application),
+      "Storage notice must be held within 5000 ms",
+    ).toBe(true);
     enterPhase("assert-opening-gate", "#location-state");
     await expect(page.locator("#location-state")).toHaveText(
       message(snapshot.locale, "storage_opening"),
@@ -190,6 +168,7 @@ async function open(page, expected = "storage_ready") {
     await application.evaluate(() => {
       globalThis.__releaseStorageNotice();
       delete globalThis.__releaseStorageNotice;
+      delete globalThis.__storageNoticeHeld;
     });
     openingObserved = true;
     record("opening-remains-gated-and-focused", {
@@ -744,14 +723,16 @@ try {
     .getByRole("button", { name: message(recoveryLocale, "retry"), exact: true })
     .last()
     .click();
-  await expect
-    .poll(() => application.evaluate(() => typeof globalThis.__releaseStorageNotice === "function"))
-    .toBe(true);
+  expect(
+    await waitForHeldStorageNotice(application),
+    "Storage notice must be held within 5000 ms",
+  ).toBe(true);
   const interruptedPid = await application.evaluate(() => globalThis.__heldStoragePid);
   process.kill(interruptedPid, "SIGKILL");
   await application.evaluate(() => {
     delete globalThis.__releaseStorageNotice;
     delete globalThis.__heldStoragePid;
+    delete globalThis.__storageNoticeHeld;
   });
   await expect
     .poll(async () => (await page.evaluate(() => window.ohtia.bootstrap.read())).state)

@@ -43,6 +43,7 @@
     "tests/settings-dialog.test.ts",
     "tests/settings-native-pinch.test.ts",
     "tests/storage-native-recovery.test.ts",
+    "tests/storage-opening-notice.test.ts",
     "tests/storage.test.ts",
     "tests/update-admission.test.ts",
     "tests/utility-entry.test.ts",
