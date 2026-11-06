@@ -1405,6 +1405,7 @@
     "tests/window-state.test.ts::retires a missing uncertain receipt only after the original writer ceases, without replay::case-0",
     "tests/workspace-chrome.test.ts::captures only the initiating pointer and releases locks on every cancellation route::case-0",
     "tests/workspace-chrome.test.ts::composes real registry surfaces and announces failed layout persistence once through the shared claim::case-0",
+    "tests/workspace-chrome.test.ts::keeps a drag started on either separator while focus leaves the other one::case-0",
     "tests/workspace-chrome.test.ts::workspace chrome composition > binds separator values, width alternatives and the documented Enter/double-click pair reset::case-0",
     "tests/workspace-chrome.test.ts::workspace chrome composition > does not steal modal focus or react to late initialization after disposal::case-0",
     "tests/workspace-chrome.test.ts::workspace chrome composition > enforces the last-panel rule, reset and seven visibility combinations without disposing content::case-0",
