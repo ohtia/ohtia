@@ -245,6 +245,113 @@ describe("command discovery", () => {
       expect(document.activeElement).toBe(origin);
     },
   );
+  // jsdom stamps events with Date.now(); Linux cases set strictly increasing native-like times.
+  let clock = 0;
+  const stamp = <T extends Event>(event: T, time = (clock += 10)) =>
+    Object.defineProperty(event, "timeStamp", { value: time, configurable: true });
+  const composition = async (type: string, data = "") => {
+    await act(async () =>
+      input().dispatchEvent(stamp(new CompositionEvent(type, { bubbles: true, data }))),
+    );
+  };
+  const keyup = async (key: string, options: KeyboardEventInit = {}) => {
+    await act(async () =>
+      input().dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true, ...options })),
+    );
+  };
+  const keydown = (key: string, options: KeyboardEventInit = {}) =>
+    stamp(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...options }));
+  const press = async (key: string, options: KeyboardEventInit = {}) => {
+    await act(async () => input().dispatchEvent(keydown(key, options)));
+  };
+  // Recorded Ubuntu GNOME Wayland IBus Hangul order: composition keys produce no keydown and a
+  // syllable boundary ends and restarts composition.
+  async function linuxHangulComposition() {
+    await composition("compositionstart");
+    for (const [physical, code, text] of [
+      ["t", "KeyT", "ㅅ"],
+      ["j", "KeyJ", "서"],
+      ["f", "KeyF", "설"],
+    ] as const) {
+      await composition("compositionupdate", text);
+      await query(text);
+      await keyup(physical, { code, isComposing: true });
+    }
+    await composition("compositionupdate", "설");
+    await composition("compositionend", "설");
+    await composition("compositionstart");
+    for (const [physical, code, text] of [
+      ["w", "KeyW", "ㅈ"],
+      ["j", "KeyJ", "저"],
+      ["d", "KeyD", "정"],
+    ] as const) {
+      await composition("compositionupdate", text);
+      await query(`설${text}`);
+      await keyup(physical, { code, isComposing: true });
+    }
+    await composition("compositionupdate", "정");
+  }
+  // The key that ends composition is pressed first, so its keydown timeStamp precedes
+  // compositionend even though IBus Hangul dispatches it afterwards.
+  async function endWith(event: KeyboardEvent) {
+    stamp(event, clock + 5);
+    await composition("compositionend", "정");
+    await act(async () => input().dispatchEvent(event));
+  }
+  async function linuxHarness() {
+    const test = harness("linux");
+    const run = vi.fn(async () => true);
+    await render(h(CommandSurfaces, { ...test, locale: "ko-KR" }));
+    await act(async () => {
+      test.registry.register("settings.open", { state: () => ({}), run });
+    });
+    await test.open();
+    return run;
+  }
+  it.each(["Enter", "NumpadEnter"])(
+    "keeps Linux IBus Hangul confirmation on %s separate from the next command activation",
+    async (code) => {
+      const run = await linuxHarness();
+      await linuxHangulComposition();
+      await endWith(keydown("Enter", { code, keyCode: 13 }));
+      await press("Enter", { code, keyCode: 13, repeat: true });
+      expect(run).not.toHaveBeenCalled();
+      expect(input().value).toBe("설정");
+      expect(document.activeElement).toBe(input());
+      expect(host.querySelector(".command-palette[open]")).not.toBeNull();
+      await keyup("Enter", { code, keyCode: 13 });
+      await press("Enter", { code, keyCode: 13 });
+      expect(run).toHaveBeenCalledOnce();
+      expect(host.querySelector(".command-palette[open]")).toBeNull();
+      expect(document.activeElement).toBe(origin);
+    },
+  );
+  it.each(["missing confirmation keyup", "unannounced ending", "other ending key", "earlier key"])(
+    "allows a deliberate Enter after a Linux IBus Hangul composition with %s",
+    async (variant) => {
+      const run = await linuxHarness();
+      await linuxHangulComposition();
+      if (variant === "missing confirmation keyup") {
+        await endWith(keydown("Enter", { code: "Enter", keyCode: 13 }));
+        expect(run).not.toHaveBeenCalled();
+      } else if (variant === "unannounced ending") {
+        // An ending followed by no key, pointer or focus event cannot claim a later press.
+        await composition("compositionend", "정");
+      } else if (variant === "other ending key") {
+        // IBus Hangul commits on an arrow key and then delivers it as an ordinary keydown.
+        await endWith(keydown("ArrowRight", { code: "ArrowRight", keyCode: 39 }));
+      } else {
+        // Only the first keydown after compositionend is compared with its timeStamp.
+        const early = keydown("Enter", { code: "Enter", keyCode: 13 });
+        await endWith(keydown("Shift", { code: "ShiftLeft", keyCode: 16 }));
+        await act(async () => input().dispatchEvent(early));
+        expect(run).toHaveBeenCalledOnce();
+        return;
+      }
+      await press("Enter", { code: "Enter", keyCode: 13 });
+      expect(run).toHaveBeenCalledOnce();
+    },
+  );
   it.each([" ", "Escape", "a"])(
     "allows a deliberate Enter after composition ends with %j",
     async (commitKey) => {
