@@ -25,6 +25,8 @@
     "tests/character-catalog.test.ts::character catalog page admission > fails on a runtime error from any observed character page::case-0",
     "tests/character-catalog.test.ts::character catalog page admission > fails on console and CSP errors from a coarse or ordinary character page::case-0",
     "tests/character-catalog.test.ts::character catalog page admission > observes local requests and removes every listener when the page is released::case-0",
+    "tests/character-catalog.test.ts::selected contributor identity > accepts the exact identity with at most one closing block-boundary line feed::case-0",
+    "tests/character-catalog.test.ts::selected contributor identity > rejects changed identity text, interior or repeated line breaks and other whitespace::case-0",
     "tests/character-controller.test.ts::workspace character event lifetime > bounds all delivered poses and removes real clock timers on disposal::case-0",
     "tests/character-controller.test.ts::workspace character event lifetime > cancels motion synchronously for Static, Hidden and reduced motion without replay::case-0",
     "tests/character-controller.test.ts::workspace character event lifetime > captures attribution and rejects duplicates even when a caller changes the batch or result::case-0",

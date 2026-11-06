@@ -3,7 +3,7 @@ type: Reference
 title: Character presentation API
 description: Compose controlled character modes, cancellable presentation batches and static contributor attribution without preference or research authority.
 generated:
-  by: codex/gpt-6.1-sol
+  by: claude-code/claude-opus-5-5
 ---
 
 # Character presentation API
@@ -32,7 +32,7 @@ Event identities are consumed once per workspace lifetime, including delivery un
 
 `ContributorAttribution` separates the identity and role-definition version from the actual artifact producer, observed provider, observed model and translated execution text. Missing observations display Unknown. Producer/provider/model and version values are names or identifiers, not translated research prose; their unknown language remains separate from localized labels and execution text. These text fields do not establish readiness, independent examination or human confirmation. Store historical identity with the contribution rather than deriving it from a selected contributor. Render artifact text separately with its recorded language and `dir="auto"`; changing interface language localizes role labels without relabeling or translating historical research content.
 
-Labels wrap at every width; compact symbols remain still in grayscale, Hidden mode and narrow layouts. Product/AI labels use `voice.ohtia.content`; original supervisor labels use `voice.tutor.content`; unknown labels use `content.primary`. The checked color inventory covers their supported surfaces. No icon, color or portrait supplies indispensable information without text. These components add no focusable controls, live announcements, dialogs or keyboard shortcuts; their consumer owns notice/action semantics and any accepted-outcome announcement.
+Labels wrap at every width; compact symbols remain still in grayscale, Hidden mode and narrow layouts. Product/AI labels use `voice.ohtia.content`; original supervisor labels use `voice.tutor.content`; unknown labels use `content.primary`. The checked color inventory covers their supported surfaces. No icon, color or portrait supplies indispensable information without text. Selecting a complete label yields its complete visible identity as one line of text, with every separator and no symbol text; a browser may end that selection with one block-boundary line feed, which carries no identity. These components add no focusable controls, live announcements, dialogs or keyboard shortcuts; their consumer owns notice/action semantics and any accepted-outcome announcement.
 
 ## Catalog and verification
 
