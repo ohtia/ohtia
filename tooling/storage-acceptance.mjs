@@ -360,6 +360,14 @@ try {
   const initialLanguage = await page.evaluate(() => window.ohtia.foundation.readLocale().result);
   expect(initialLanguage.ok).toBe(true);
   await expect(language.locator("option")).toHaveCount(26);
+  // WCAG 2.2 SC 1.3.5 input purpose beside the packaged accessible name and description.
+  await expect(language).toHaveAttribute("autocomplete", "language");
+  await expect(language).toHaveAccessibleName(
+    message(initialLanguage.value.effectiveLocale, "settings.language.title"),
+  );
+  await expect(language).toHaveAccessibleDescription(
+    message(initialLanguage.value.effectiveLocale, "settings.language.help"),
+  );
   await page.evaluate(() => {
     const draft = document.createElement("textarea");
     draft.id = "locale-preservation-fixture";

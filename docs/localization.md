@@ -3,9 +3,19 @@ type: Reference
 title: Shared interface localization
 description: Author complete typed catalogs and use the durable application-wide language preference without changing research content.
 generated:
-  by: codex/gpt-6.1-sol
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
+sources:
+  - id: wcag-input-purposes
+    resource: https://www.w3.org/TR/WCAG22/#input-purposes
+    title: W3C — WCAG 2.2, Input Purposes for User Interface Components
+  - id: understanding-input-purpose
+    resource: https://www.w3.org/WAI/WCAG22/Understanding/identify-input-purpose.html
+    title: W3C — Understanding SC 1.3.5 Identify Input Purpose
+  - id: html-autofill
+    resource: https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#autofill
+    title: WHATWG — HTML Living Standard, Autofill
 ---
 
 # Shared interface localization
@@ -30,7 +40,7 @@ The existing [application port](application-port.md) adds `locale.read`, `locale
 
 ## Presentation and recovery
 
-The [language controller](../packages/renderer/src/language-controller.ts) and [native select](../packages/renderer/src/language-panel.tsx) save each explicit choice immediately. System mode precedes the 25 autonyms. Help text distinguishes interface language from document and analysis language. Applying a confirmed locale updates messages and `html.lang` while preserving mounted form/editor state and focus (PRIN-002).
+The [language controller](../packages/renderer/src/language-controller.ts) and [native select](../packages/renderer/src/language-panel.tsx) save each explicit choice immediately. System mode precedes the 25 autonyms. Help text distinguishes interface language from document and analysis language. The select collects the researcher's own preferred interface language, so WCAG 2.2 SC 1.3.5 applies even though Ohtia has no sign-in or profile: the criterion covers `select` controls collecting information about the user, and its input-purpose list names `language` as preferred language.[^understanding-input-purpose][^wcag-input-purposes] The select therefore declares the HTML `autocomplete="language"` token, which `select` elements may carry, while its accessible name and description remain the Language title and help text.[^html-autofill] The token exposes that purpose to software; Ohtia provides no autofill service, and the `system` value keeps following the operating-system preference. Applying a confirmed locale updates messages and `html.lang` while preserving mounted form/editor state and focus (PRIN-002).
 
 Submitting, confirmed, rejected, conflicting and uncertain outcomes remain distinct. A rejected choice retains the confirmed value; Try again allocates a fresh explicit intent. Check queries the uncertain command’s original receipt. `pending`, a failed receipt read and `not_found` alone preserve uncertainty; none resubmits the mutation. After a snapshot from a new admitted service generation and a `not_found` receipt from its current store, the prior execution is known to have ceased and its receipt is absent from the authoritative ledger. The original identity remains available to Check until the researcher explicitly chooses again; that action creates a new operation identity rather than replaying the original. A confirmed save followed by a refresh or display error remains saved; refresh/application recovery never repeats the mutation (PRIN-006).
 
@@ -38,7 +48,7 @@ After a stream gap or invalidation, the controller uses fresh subscription ident
 
 ## Verification boundaries
 
-The [localization tests](../tests/localization.test.ts) exercise catalog contracts, actual-runtime formatting and deterministic controller ordering. The [language surface tests](../tests/language-panel.test.ts) render every locale and verify control labeling, notices, focus and preservation of a mixed-script draft. The [storage suite](../tests/storage.test.ts) uses real file-backed SQLite to verify transactions, receipts, stale windows, invalid records and restart; it does not establish Electron execution. [Shared verification](shared-verification.md) owns the common inventory and coverage gates. Packaged native accessibility and complete-page/manual assistive qualification remain separate evidence under the consuming stories’ contracts.
+The [localization tests](../tests/localization.test.ts) exercise catalog contracts, actual-runtime formatting and deterministic controller ordering. The [language surface tests](../tests/language-panel.test.ts) render every locale and verify control labeling, input purpose, notices, focus and preservation of a mixed-script draft. The [storage suite](../tests/storage.test.ts) uses real file-backed SQLite to verify transactions, receipts, stale windows, invalid records and restart; it does not establish Electron execution. [Shared verification](shared-verification.md) owns the common inventory and coverage gates. Packaged native accessibility and complete-page/manual assistive qualification remain separate evidence under the consuming stories’ contracts.
 
 ## Check candidate provenance
 
@@ -53,3 +63,9 @@ The checker binds each locale and the English reference to the frozen hashes and
 `--check` rejects stale content and incorrectly typed JSON values while accepting formatting and object-member ordering differences. To create a snapshot, omit `--check` and provide a new output path; an existing output file is never overwritten. The command checks provenance, catalog bytes and source binding. It does not replace full candidate admission, the shared catalog syntax gate or contextual presentation testing.
 
 Record candidate-specific execution results, artifact digests, findings and limitations in the associated issue and retained evidence. Keep reusable procedures in this guide; a passing structural or presentation check does not certify linguistic fluency or accessibility conformance (PRIN-004 and PRIN-007).
+
+[^wcag-input-purposes]: Section 7 lists `language - Preferred language`.
+
+[^understanding-input-purpose]: The Understanding document includes `select` in the term input and scopes the criterion to inputs collecting information about the user; actual autofill is not relevant to the evaluation.
+
+[^html-autofill]: The `language` autofill field name means preferred language with a valid BCP 47 tag; its Text control group includes `select` elements.
