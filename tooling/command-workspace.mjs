@@ -4,6 +4,7 @@ import { expect } from "@playwright/test";
 import { message } from "../packages/contracts/dist/index.js";
 import { focusNative, withCommandCleanup } from "./command-native-focus.mjs";
 import { invokeNativeMenu } from "./command-acceptance.mjs";
+import { verifyDialogSafeAreas } from "./dialog-safe-area.mjs";
 
 /** Wait for the workspace entry; the bootstrap launcher can hide after main reports ready. */
 export async function openWorkspaceSettings(page) {
@@ -230,6 +231,13 @@ export async function verifyWorkspaceComposition(
         await expect(
           page.locator('.workspace-narrow-row [data-workspace-command="settings.open"]'),
         ).toBeFocused();
+        // Every case is narrower than 1024 CSS px, so the narrow-bar entry stays the focus origin.
+        const safeArea = await verifyDialogSafeAreas({
+          page,
+          native,
+          invoke,
+          trigger: page.locator('.workspace-narrow-row [data-workspace-command="settings.open"]'),
+        });
         await native.evaluate((window) => window.setContentSize(1280, 800));
         await expect(page.locator(".workspace")).toHaveAttribute("data-mode", "wide");
         await settleLayout();
@@ -304,9 +312,11 @@ export async function verifyWorkspaceComposition(
         await page.screenshot({ path: path.join(output, "integrated-workspace.png") });
         return {
           geometry,
+          safeArea,
           entries: ["footer", "rail", "narrow"],
           cases: [
             "shared-settings-layout",
+            ...safeArea.cases,
             "separator-key-and-pair-reset",
             "palette-real-command",
             "shortcuts",
@@ -317,6 +327,7 @@ export async function verifyWorkspaceComposition(
           ],
           limitations: [
             "Menu popup dismissal is controlled by the non-shipping observer; physical Alt/menu input, native IME, assistive operators and window-manager first-frame capture remain separately qualified.",
+            ...safeArea.limitations,
           ],
         };
       }),

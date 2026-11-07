@@ -58,10 +58,14 @@ a {
   max-block-size: calc(100dvh - var(--space-8));
   overflow-y: auto;
 }
+/* Modal surfaces start below the native window-controls band, never beneath its controls. */
 .primitive-dialog {
   inline-size: var(--component-dialog-max-width);
   border-radius: var(--radius-large);
-  max-block-size: calc(100dvh - var(--space-8));
+  inset-block-start: calc(env(titlebar-area-y, 0px) + env(titlebar-area-height, 0px));
+  max-block-size: calc(
+    100dvh - env(titlebar-area-y, 0px) - env(titlebar-area-height, 0px) - var(--space-8)
+  );
   overflow-y: auto;
 }
 .primitive-layer-anchor {

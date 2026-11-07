@@ -18,6 +18,7 @@
     "tests/desktop-probes.test.ts",
     "tests/desktop-runtime.test.ts",
     "tests/diagnostics.test.ts",
+    "tests/dialog-safe-area.test.ts",
     "tests/graphics-compatibility.test.ts",
     "tests/installation-authority.test.ts",
     "tests/installation-scaleway-signing.test.ts",

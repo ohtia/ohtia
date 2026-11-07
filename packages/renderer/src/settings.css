@@ -1,6 +1,8 @@
 .settings-dialog {
   margin-block: var(--space-10);
-  max-block-size: calc(100dvh - 2 * var(--space-10));
+  max-block-size: calc(
+    100dvh - env(titlebar-area-y, 0px) - env(titlebar-area-height, 0px) - 2 * var(--space-10)
+  );
   overflow: hidden;
 }
 .settings-dialog-body {
@@ -167,7 +169,9 @@
 @media (max-height: 400px) {
   .settings-dialog {
     margin-block: var(--space-4);
-    max-block-size: calc(100dvh - 2 * var(--space-4));
+    max-block-size: calc(
+      100dvh - env(titlebar-area-y, 0px) - env(titlebar-area-height, 0px) - 2 * var(--space-4)
+    );
   }
 }
 @media (max-width: 360px) {

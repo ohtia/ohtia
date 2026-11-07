@@ -1,7 +1,9 @@
 .command-dialog {
   padding: var(--space-0);
   inline-size: min(var(--component-dialog-max-width), calc(100% - 2 * var(--space-4)));
-  max-block-size: calc(100dvh - 2 * var(--space-8));
+  max-block-size: calc(
+    100dvh - env(titlebar-area-y, 0px) - env(titlebar-area-height, 0px) - 2 * var(--space-8)
+  );
   margin-block: var(--space-8);
   overflow: auto;
 }
@@ -157,7 +159,9 @@
   scroll-padding: calc(var(--focus-width) + var(--focus-offset));
   inline-size: min(var(--component-palette-max-width), calc(100% - 2 * var(--space-4)));
   margin-block: var(--space-16);
-  max-block-size: calc(100dvh - 2 * var(--space-16));
+  max-block-size: calc(
+    100dvh - env(titlebar-area-y, 0px) - env(titlebar-area-height, 0px) - 2 * var(--space-16)
+  );
 }
 .command-palette > h2 {
   position: absolute;
@@ -266,7 +270,9 @@
 }
 .shortcuts-dialog {
   margin-block: var(--space-10);
-  max-block-size: calc(100dvh - 2 * var(--space-10));
+  max-block-size: calc(
+    100dvh - env(titlebar-area-y, 0px) - env(titlebar-area-height, 0px) - 2 * var(--space-10)
+  );
 }
 .shortcuts-body {
   scroll-padding: var(--space-2);
@@ -324,7 +330,9 @@
   .command-palette,
   .shortcuts-dialog {
     margin-block: var(--space-4);
-    max-block-size: calc(100dvh - 2 * var(--space-4));
+    max-block-size: calc(
+      100dvh - env(titlebar-area-y, 0px) - env(titlebar-area-height, 0px) - 2 * var(--space-4)
+    );
   }
   .shortcuts-body {
     min-block-size: var(--space-12);
@@ -338,12 +346,14 @@
   .command-palette,
   .shortcuts-dialog {
     margin-block: var(--space-1);
-    max-block-size: calc(100dvh - 2 * var(--space-1));
+    max-block-size: calc(
+      100dvh - env(titlebar-area-y, 0px) - env(titlebar-area-height, 0px) - 2 * var(--space-1)
+    );
   }
   /* Fit the focused search and a wrapped option together at extreme zoom heights. */
   .command-palette {
     margin-block: var(--space-0);
-    max-block-size: 100dvh;
+    max-block-size: calc(100dvh - env(titlebar-area-y, 0px) - env(titlebar-area-height, 0px));
   }
   .command-palette > [data-close] {
     inset-block-start: calc(var(--focus-width) + var(--focus-offset));
