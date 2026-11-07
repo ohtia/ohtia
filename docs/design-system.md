@@ -40,8 +40,6 @@ sources:
   - id: lucide
     resource: https://github.com/lucide-icons/lucide/tree/1ef60af944de207e0d5176905a0759ba12e6ee8d
     title: Lucide — Repository at the examined commit
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # Ohtia design system
@@ -529,7 +527,7 @@ The following component tokens prevent scattered visual values in primitives:
 
 - `motion.duration.quick` is 120 ms for control-state changes; `motion.duration.standard`, 200 ms, for opening panels and drawers; `motion.duration.slow`, 320 ms, for transitions between views.
 - `motion.easing.standard` is `cubic-bezier(0.2, 0, 0, 1)`.
-- With `prefers-reduced-motion: reduce`, all durations are 0 ms: motion is removed, not shortened.
+- With `prefers-reduced-motion: reduce`, or a Linux desktop portal reduced-motion request observed as defined in [ADR-0047](adr/adr-0047-linux-portal-reduced-motion.md), all durations are 0 ms: motion is removed, not shortened.
 - There is no decorative motion, parallax or flashing. The only exceptions are [Ohtia's animations](#animations) and [contributor character animations](#contributor-characters-and-avatars), with their own bounded presentation rules.
 - No animation repeats indefinitely. A process longer than five seconds shows determinate progress or phase text without continuous animation, according to criterion 2.2.2.
 

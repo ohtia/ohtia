@@ -1,3 +1,4 @@
+import { useSystemReducedMotion } from "./system-motion.js";
 import {
   useEffect,
   useCallback,
@@ -119,7 +120,7 @@ export function SettingsDialog({
     if (open && requestedFocus) focusSetting(id, requestedFocus);
   }, [open, requestedFocus, id]);
   const systemDark = useSystemPreference("(prefers-color-scheme: dark)", open);
-  const reducedMotion = useSystemPreference("(prefers-reduced-motion: reduce)", open);
+  const reducedMotion = useSystemReducedMotion(open);
   const [reason, setReason] = useState<SimpleMessageKey>();
   useEffect(() => {
     setReason(undefined);

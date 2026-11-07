@@ -45,6 +45,7 @@
     "tests/storage-native-recovery.test.ts",
     "tests/storage-opening-notice.test.ts",
     "tests/storage.test.ts",
+    "tests/system-motion.test.ts",
     "tests/update-admission.test.ts",
     "tests/utility-entry.test.ts",
     "tests/window-state.test.ts",
@@ -1205,6 +1206,41 @@
       "id": "tests/command-native-focus.test.ts::actual focus gate with controlled native and input adapters > rejects KWin activation without actual focus after three attempts::case-0",
       "platforms": ["win32", "darwin"],
       "reason": "The controlled KWin activation adapter is Linux-only; native focus on Windows and macOS uses the OS request and remains separately required."
+    },
+    {
+      "id": "tests/system-motion.test.ts::desktop portal reduced-motion observer > authenticates, installs both matches before reading and follows ordered live changes::case-0",
+      "platforms": ["win32"],
+      "reason": "Controlled session-bus peer on a POSIX Unix socket; the observer runs only on Linux."
+    },
+    {
+      "id": "tests/system-motion.test.ts::desktop portal reduced-motion observer > ignores other senders and keys and adopts a replacement portal through a fresh read::case-0",
+      "platforms": ["win32"],
+      "reason": "Controlled session-bus peer on a POSIX Unix socket; the observer runs only on Linux."
+    },
+    {
+      "id": "tests/system-motion.test.ts::desktop portal reduced-motion observer > keeps an unsupported setting unknown until a portal owner provides it::case-0",
+      "platforms": ["win32"],
+      "reason": "Controlled session-bus peer on a POSIX Unix socket; the observer runs only on Linux."
+    },
+    {
+      "id": "tests/system-motion.test.ts::desktop portal reduced-motion observer > reports a refused match rule as unknown and closes the connection::case-0",
+      "platforms": ["win32"],
+      "reason": "Controlled session-bus peer on a POSIX Unix socket; the observer runs only on Linux."
+    },
+    {
+      "id": "tests/system-motion.test.ts::desktop portal reduced-motion observer > reports rejected authentication as unknown and closes the connection::case-0",
+      "platforms": ["win32"],
+      "reason": "Controlled session-bus peer on a POSIX Unix socket; the observer runs only on Linux."
+    },
+    {
+      "id": "tests/system-motion.test.ts::desktop portal reduced-motion observer > bounds a silent handshake and an oversized message, then publishes unknown::case-0",
+      "platforms": ["win32"],
+      "reason": "Controlled session-bus peer on a POSIX Unix socket; the observer runs only on Linux."
+    },
+    {
+      "id": "tests/system-motion.test.ts::desktop portal reduced-motion observer > publishes unknown when the bus disconnects and stays silent after disposal::case-0",
+      "platforms": ["win32"],
+      "reason": "Controlled session-bus peer on a POSIX Unix socket; the observer runs only on Linux."
     }
   ]
 }

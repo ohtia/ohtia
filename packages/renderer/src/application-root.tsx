@@ -14,6 +14,7 @@ import { CommandButton } from "./command-surfaces.js";
 import { SettingsSurfaces } from "./settings-surfaces.js";
 import { OhtiaBrand } from "./branding.js";
 import { WorkspaceChrome } from "./workspace-chrome.js";
+import { SystemMotionProvider } from "./system-motion.js";
 
 declare global {
   interface Window {
@@ -34,6 +35,13 @@ function bootstrapFailure(state: string | undefined): boolean {
   );
 }
 export function ApplicationRoot({ bridge }: { readonly bridge: DesktopBridge }) {
+  return (
+    <SystemMotionProvider source={bridge.system}>
+      <ApplicationContent bridge={bridge} />
+    </SystemMotionProvider>
+  );
+}
+function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
   const [bootstrap, setBootstrap] = useState<BootstrapSnapshot>();
   const [status, setStatus] = useState<FoundationStatus["service"]>("starting");
   const [busy, setBusy] = useState(false);

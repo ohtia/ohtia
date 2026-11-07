@@ -91,10 +91,14 @@ try {
     node: typeof window.process,
     require: typeof window.require,
     bridge: Object.keys(window.ohtia),
+    system: Object.keys(window.ohtia.system),
+    motion: window.ohtia.system.readMotion(),
   }));
   expect(initial.node).toBe("undefined");
   expect(initial.require).toBe("undefined");
-  expect(initial.bridge.sort()).toEqual(["bootstrap", "commands", "foundation"]);
+  expect(initial.bridge.sort()).toEqual(["bootstrap", "commands", "foundation", "system"]);
+  expect(initial.system.sort()).toEqual(["readMotion", "subscribeMotion"]);
+  expect(["reduce", "no_preference", "unknown"]).toContain(initial.motion);
   expect(initial.status).toMatchObject({
     ok: true,
     value: { service: "ready", engine: "unavailable", interfaceLocale: initial.snapshot.locale },

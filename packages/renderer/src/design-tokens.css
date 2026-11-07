@@ -395,6 +395,14 @@
   --motion-duration-contributor-result: 0ms;
   }
 }
+:root[data-system-motion="reduce"] {
+  --motion-duration-quick: 0ms;
+  --motion-duration-standard: 0ms;
+  --motion-duration-slow: 0ms;
+  --motion-duration-contributor-introduction: 0ms;
+  --motion-duration-contributor-active: 0ms;
+  --motion-duration-contributor-result: 0ms;
+}
 [data-type="type.ui.display"] {
   font-family: var(--font-family-ui);
   font-size: var(--type-ui-display-size);

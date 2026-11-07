@@ -92,11 +92,15 @@ describe("canonical design foundations", () => {
     );
     expect(model.resolve("surface.page", "light")).toBe("#faf8f5");
     expect(model.resolve("surface.page", "dark")).toBe("#151411");
-    const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
-    for (const name of Object.keys(model.tokens).filter((name) =>
-      name.startsWith("motion.duration."),
-    ))
-      expect(reduced).toContain(`--${name.replaceAll(".", "-")}: 0ms;`);
+    const media = css.indexOf("@media (prefers-reduced-motion: reduce)"),
+      native = css.indexOf(':root[data-system-motion="reduce"] {');
+    expect(media).toBeGreaterThan(0);
+    expect(native).toBeGreaterThan(media);
+    for (const reduced of [css.slice(media, native), css.slice(native, css.indexOf("}", native))])
+      for (const name of Object.keys(model.tokens).filter((name) =>
+        name.startsWith("motion.duration."),
+      ))
+        expect(reduced).toContain(`--${name.replaceAll(".", "-")}: 0ms;`);
   });
 });
 

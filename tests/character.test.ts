@@ -3,7 +3,11 @@ import { act, createElement as h, useEffect, useState } from "react";
 import { readFileSync } from "node:fs";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import { message, supportedLocales } from "@ohtia/contracts";
+import { message, supportedLocales, type SystemMotion } from "@ohtia/contracts";
+import {
+  SystemMotionProvider,
+  useSystemMotionSource,
+} from "../packages/renderer/src/system-motion.js";
 import { CharacterController } from "../packages/renderer/src/character-controller.js";
 import {
   CharacterDecoration,
@@ -107,6 +111,179 @@ it("removes active/deferred motion immediately on OS override and never replays 
   expect(controller.snapshot().mode).toBe("hidden");
   expect(container.querySelector(".character-drawing")).toBeNull();
   expect(container.querySelector(".ohtia-glasses")).not.toBeNull();
+});
+function nativeMotion(initial: SystemMotion) {
+  let value = initial;
+  const subscribers = new Set<(value: SystemMotion) => void>();
+  return {
+    subscribers,
+    source: {
+      readMotion: () => value,
+      subscribeMotion(listener: (value: SystemMotion) => void) {
+        subscribers.add(listener);
+        return () => {
+          subscribers.delete(listener);
+        };
+      },
+    },
+    set(next: SystemMotion) {
+      value = next;
+      for (const listener of [...subscribers]) listener(next);
+    },
+  };
+}
+it("applies a native portal request at startup and live without rewriting the confirmed choice", async () => {
+  const native = nativeMotion("reduce");
+  const controller = new CharacterController("p", "animated");
+  const render = (confirmed: "animated" | "hidden") =>
+    root.render(
+      h(
+        SystemMotionProvider,
+        { source: native.source },
+        h(CharacterDecoration, { controller, confirmed, manuscriptVisible: false }),
+      ),
+    );
+  await act(async () => {
+    render("animated");
+  });
+  expect(reduced).toBe(false);
+  expect(controller.snapshot().mode).toBe("static");
+  expect(document.documentElement.dataset.systemMotion).toBe("reduce");
+  await act(async () => {
+    controller.receive(event);
+  });
+  expect(container.querySelector('[data-moving="true"]')).toBeNull();
+  expect(container.querySelector('[data-pose="thinking"]')).not.toBeNull();
+  await act(async () => {
+    native.set("no_preference");
+  });
+  expect(controller.snapshot().mode).toBe("animated");
+  expect(document.documentElement.dataset.systemMotion).toBeUndefined();
+  expect(container.querySelector('[data-moving="true"]')).toBeNull();
+  await act(async () => {
+    render("hidden");
+  });
+  await act(async () => {
+    native.set("reduce");
+  });
+  expect(controller.snapshot().mode).toBe("hidden");
+  expect(container.querySelector(".character-drawing")).toBeNull();
+  await act(async () => {
+    root.render(h("p", {}, "Unmounted"));
+  });
+  expect(native.subscribers.size).toBe(0);
+  expect(document.documentElement.dataset.systemMotion).toBeUndefined();
+});
+it("shares one bridge subscription per window and isolates a failing consumer", async () => {
+  const native = nativeMotion("no_preference");
+  const first = new CharacterController("p", "animated");
+  const second = new CharacterController("q", "animated");
+  function Failing() {
+    const source = useSystemMotionSource();
+    useEffect(
+      () =>
+        source.subscribeMotion(() => {
+          throw new Error("synthetic consumer failure");
+        }),
+      [source],
+    );
+    return null;
+  }
+  await act(async () => {
+    root.render(
+      h(
+        SystemMotionProvider,
+        { source: native.source },
+        h(Failing),
+        h(CharacterDecoration, {
+          controller: first,
+          confirmed: "animated",
+          manuscriptVisible: false,
+        }),
+        h(CharacterDecoration, {
+          controller: second,
+          confirmed: "animated",
+          manuscriptVisible: false,
+        }),
+      ),
+    );
+  });
+  expect(native.subscribers.size).toBe(1);
+  await act(async () => {
+    native.set("reduce");
+  });
+  expect([first.snapshot().mode, second.snapshot().mode]).toEqual(["static", "static"]);
+  await act(async () => {
+    native.set("no_preference");
+  });
+  expect([first.snapshot().mode, second.snapshot().mode]).toEqual(["animated", "animated"]);
+  expect(native.subscribers.size).toBe(1);
+});
+it("keeps the legacy toolkit media request when the portal reports no preference", async () => {
+  const native = nativeMotion("no_preference");
+  const controller = new CharacterController("p", "animated");
+  reduced = true;
+  await act(async () => {
+    root.render(
+      h(
+        SystemMotionProvider,
+        { source: native.source },
+        h(CharacterDecoration, { controller, confirmed: "animated", manuscriptVisible: false }),
+      ),
+    );
+  });
+  expect(controller.snapshot().mode).toBe("static");
+  await act(async () => {
+    reduced = false;
+    for (const changed of listeners) changed();
+  });
+  expect(controller.snapshot().mode).toBe("animated");
+});
+it("cancels deferred and active motion when a live portal request arrives, without replay", async () => {
+  const native = nativeMotion("unknown");
+  const controller = new CharacterController("p", "animated");
+  const render = (manuscriptVisible: boolean) =>
+    root.render(
+      h(
+        SystemMotionProvider,
+        { source: native.source },
+        h(CharacterDecoration, { controller, confirmed: "animated", manuscriptVisible }),
+      ),
+    );
+  await act(async () => {
+    render(true);
+  });
+  await act(async () => {
+    controller.receive(event);
+  });
+  expect(controller.snapshot().deferred).toBeDefined();
+  await act(async () => {
+    native.set("reduce");
+  });
+  expect(controller.snapshot().deferred).toBeUndefined();
+  await act(async () => {
+    native.set("no_preference");
+  });
+  await act(async () => {
+    controller.setManuscriptVisible(false);
+    controller.openNavigator(true, true);
+    render(false);
+  });
+  expect(container.querySelector('[data-moving="true"]')).toBeNull();
+  await act(async () => {
+    controller.receive({ ...event, id: "event-2", batch: "b2" });
+  });
+  expect(container.querySelector('[data-moving="true"]')).not.toBeNull();
+  await act(async () => {
+    native.set("reduce");
+  });
+  expect(controller.snapshot().playing).toBeUndefined();
+  expect(cancel).toHaveBeenCalled();
+  expect(container.querySelector('[data-moving="true"]')).toBeNull();
+  await act(async () => {
+    native.set("no_preference");
+  });
+  expect(container.querySelector('[data-moving="true"]')).toBeNull();
 });
 it("guards manuscript placement, compact sizing and renderer replacement without losing notice text", async () => {
   const controller = new CharacterController("p", "animated");

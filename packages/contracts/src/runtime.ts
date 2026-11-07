@@ -14,7 +14,33 @@ export const desktopChannels = {
   bootstrap: "ohtia:bootstrap",
   commands: "ohtia:commands",
   commandIntent: "ohtia:command-intent",
+  systemMotion: "ohtia:system-motion",
 } as const;
+/** ADR-0047: a native reduced-motion observation beside Chromium's own media query. */
+export const systemMotions = ["reduce", "no_preference", "unknown"] as const;
+export type SystemMotion = (typeof systemMotions)[number];
+export interface SystemMotionNotice {
+  readonly sequence: number;
+  readonly value: SystemMotion;
+}
+export function decodeSystemMotionNotice(value: unknown): SystemMotionNotice | undefined {
+  if (!value || typeof value !== "object" || Object.getPrototypeOf(value) !== Object.prototype)
+    return;
+  const record = value as Record<string, unknown>;
+  if (
+    Object.keys(record).sort().join(",") !== "sequence,value" ||
+    !Number.isSafeInteger(record.sequence) ||
+    (record.sequence as number) < 0 ||
+    !systemMotions.some((motion) => motion === record.value)
+  )
+    return;
+  return { sequence: record.sequence as number, value: record.value as SystemMotion };
+}
+/** Read-only renderer view of the native observation; listeners receive each later value. */
+export interface SystemMotionBridge {
+  readMotion(): SystemMotion;
+  subscribeMotion(listener: (value: SystemMotion) => void): () => void;
+}
 export const bootstrapStates = [
   "missing",
   "located",
@@ -78,6 +104,7 @@ export function decodeBootstrapSnapshot(value: unknown): BootstrapSnapshot | und
 }
 export interface DesktopBridge {
   readonly commands: CommandBridge;
+  readonly system: SystemMotionBridge;
   readonly foundation: FoundationPort;
   readonly bootstrap: {
     read(): Promise<BootstrapSnapshot>;

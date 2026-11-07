@@ -6,6 +6,7 @@ import {
   WindowPreferences,
 } from "./window-state.js";
 import { configureGraphicsCompatibility } from "./graphics-compatibility.js";
+import { nativeSystemMotionHost, SystemMotionObserver } from "./system-motion.js";
 import { CommandMenus } from "./command-menus.js";
 import { readAboutInformation, copyVersionInformation } from "./about.js";
 import { isRendererAssetPath } from "./asset-policy.js";
@@ -44,6 +45,7 @@ import {
   type BootstrapSnapshot,
   type BootstrapState,
   type RuntimeContext,
+  type SystemMotionNotice,
   isNativeCommand,
   isWindowCommandRequest,
   isInterfaceLocale,
@@ -184,6 +186,17 @@ const windows = new Map<
 >();
 let service: ServiceSupervisor | undefined;
 let pendingWindows = 0;
+// ADR-0047: Linux windows also receive the desktop portal's reduced-motion setting.
+let systemMotion: SystemMotionNotice = { sequence: 0, value: "unknown" };
+const motionObserver =
+  process.platform === "linux"
+    ? new SystemMotionObserver(nativeSystemMotionHost(), (value) => {
+        systemMotion = { sequence: systemMotion.sequence + 1, value };
+        for (const window of windows.keys())
+          if (!window.isDestroyed())
+            window.webContents.send(desktopChannels.systemMotion, systemMotion);
+      })
+    : undefined;
 // Electron resolves its automatic Ozone selection before loading the application module.
 const nativeWayland =
   process.platform === "linux" && app.commandLine.getSwitchValue("ozone-platform") === "wayland";
@@ -734,6 +747,7 @@ const startup = setTimeout(() => {
   quitAfterError("startup_failed");
 }, portLimits.application_start_ms);
 async function start(): Promise<void> {
+  motionObserver?.start();
   await app.whenReady();
   nativeTheme.on("updated", updateWindowThemes);
   locale = resolveInterfaceLocale(preferredSystemLanguages());
@@ -805,6 +819,9 @@ async function start(): Promise<void> {
       window && state && attach(window)
         ? { windowGeneration: state.generation, serviceGeneration: generation }
         : null;
+  });
+  ipcMain.on(desktopChannels.systemMotion, (event) => {
+    event.returnValue = trusted(event) ? systemMotion : null;
   });
   ipcMain.on(desktopChannels.port, (event, text: unknown) => {
     if (acceptance) acceptance.received++;
@@ -1140,6 +1157,7 @@ app.on("before-quit", (event) => {
       return;
     }
     cleanExit = true;
+    motionObserver?.dispose();
     if (metricTimer) clearInterval(metricTimer);
     clearTimeout(startup);
     app.quit();
