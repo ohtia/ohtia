@@ -2,6 +2,8 @@
 type: Specification
 title: Ohtia design system
 description: Visual identity, tokens, symbol and character, typography, composition, accessibility, localization, components and patterns of Ohtia's interface.
+verified:
+  by: human:AdrianMastronardi
 tags:
   - design
   - accessibility
