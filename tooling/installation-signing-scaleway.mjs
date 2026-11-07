@@ -182,6 +182,9 @@ export class ScalewaySigningStore {
     }
     throw new SigningError("authority_unavailable");
   }
+  async activation() {
+    return this.bytes(this.retained, "control/active.json", signingLimits.request_bytes);
+  }
   async readRequest(id) {
     digest(id);
     const bytes = await this.bytes(this.retained, `objects/${id}`, signingLimits.request_bytes);
@@ -365,6 +368,125 @@ export class ScalewaySigningStore {
       "policy_refused",
     );
     return { url, expires_at_ms: this.clock() + signingLimits.transfer_seconds * 1000 };
+  }
+}
+
+// Readback exposes selected configuration and secret names, never secret values.
+export class ScalewaySigningDeployment {
+  constructor({ token, fetcher = fetch, deadline = currentSigningDeadline }) {
+    demand(
+      typeof token === "function" &&
+        typeof fetcher === "function" &&
+        typeof deadline === "function",
+    );
+    this.token = token;
+    this.fetcher = fetcher;
+    this.deadline = deadline;
+  }
+  async #snapshot(kind, id, names) {
+    demand(
+      typeof id === "string" &&
+        /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(id) &&
+        id !== "00000000-0000-0000-0000-000000000000",
+      "policy_refused",
+    );
+    demand(kind === "containers" || kind === "namespaces");
+    const parts = [];
+    let bytes;
+    let response;
+    try {
+      const deadline = this.deadline();
+      const token = await this.token();
+      demand(typeof token === "string" && token.length > 0, "authority_unavailable");
+      deadline.check();
+      response = await this.fetcher(
+        `https://api.scaleway.com/containers/v1/regions/fr-par/${kind}/${id}`,
+        {
+          method: "GET",
+          redirect: "error",
+          headers: { "X-Auth-Token": token, "Accept-Encoding": "identity" },
+          signal: AbortSignal.timeout(deadline.remaining()),
+        },
+      );
+      demand(response.status === 200, "authority_unavailable");
+      demand(
+        (response.headers.get("content-encoding") ?? "identity").trim().toLowerCase() ===
+          "identity",
+        "authority_unavailable",
+      );
+      const header = response.headers.get("content-length");
+      if (header !== null)
+        demand(
+          /^(?:0|[1-9][0-9]*)$/.test(header) &&
+            Number.isSafeInteger(Number(header)) &&
+            Number(header) <= signingLimits.deployment_readback_bytes,
+          "authority_unavailable",
+        );
+      await consume(
+        response.body,
+        signingLimits.deployment_readback_bytes,
+        (part) => parts.push(part),
+        deadline,
+      );
+      bytes = Buffer.concat(parts);
+      demand(header === null || Number(header) === bytes.length, "authority_unavailable");
+      const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+      demand(value && Object.getPrototypeOf(value) === Object.prototype, "authority_unavailable");
+      demand(value.id === id, "policy_refused");
+      const secrets = value.secret_environment_variables;
+      demand(
+        secrets && Object.getPrototypeOf(secrets) === Object.prototype,
+        "authority_unavailable",
+      );
+      deadline.check();
+      return {
+        ...Object.fromEntries(names.map((name) => [name, value[name]])),
+        secret_environment_names: Object.keys(secrets).sort(),
+        has_error: value.error_message !== null && value.error_message !== "",
+      };
+    } catch (error) {
+      if (error instanceof SigningError && error.code === "policy_refused") throw error;
+      throw new SigningError("authority_unavailable");
+    } finally {
+      bytes?.fill(0);
+      for (const part of parts) part.fill(0);
+      Promise.resolve(response?.body?.cancel?.()).catch(() => {});
+    }
+  }
+  container(id) {
+    return this.#snapshot("containers", id, [
+      "id",
+      "namespace_id",
+      "region",
+      "status",
+      "image",
+      "environment_variables",
+      "min_scale",
+      "max_scale",
+      "memory_limit_bytes",
+      "mvcpu_limit",
+      "local_storage_limit_bytes",
+      "timeout",
+      "privacy",
+      "protocol",
+      "port",
+      "https_connections_only",
+      "sandbox",
+      "scaling_option",
+      "command",
+      "args",
+      "private_network_id",
+      "default_public_endpoint_enabled",
+    ]);
+  }
+  namespace(id) {
+    return this.#snapshot("namespaces", id, [
+      "id",
+      "project_id",
+      "region",
+      "status",
+      "environment_variables",
+    ]);
   }
 }
 

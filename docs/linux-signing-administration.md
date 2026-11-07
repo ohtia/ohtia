@@ -1,7 +1,7 @@
 ---
 type: Playbook
 title: Linux signing administration
-description: Prepare independently reviewed Scaleway IAM and bucket-policy previews without exposing credentials or enabling signing.
+description: Prepare independently reviewed Scaleway access and activation previews without exposing credentials or enabling signing.
 generated:
   by: codex/gpt-6.1-sol
 verified:
@@ -66,7 +66,7 @@ The bundle contains `iam-invoker.json`, `iam-runtime.json`, `bucket-ingress.json
 
 The invoker policy grants only `ContainersPrivateAccess` in the selected Project. The runtime policy grants `ContainersReadOnly` there for independent deployment readback, `SecretManagerSecretAccess` conditioned on membership in the exact four-secret ID set, and `ObjectStorageObjectsRead`/`ObjectStorageObjectsWrite` for the selected Project. No rule uses Organization-wide scope. The policy payload's top-level `organization_id` identifies its owner; each rule's `project_ids` limits its scope.[^iam-policy-api][^permission-sets]
 
-Reserve the `ContainersReadOnly` rule for the proposed deployment-readback consumer. Before attaching this runtime policy for a disposable rehearsal, implement and locally verify that consumer and have the administrator inspect and approve the permission set's actual expanded permissions, including any container configuration, token or secret exposure. The public catalog describes container list/read access but does not establish a secret-free response contract. If its expansion exceeds the approved boundary, revise the proposal and keep signing disabled.[^permission-sets]
+The deployment-readback consumer uses the `ContainersReadOnly` rule. Before attaching this runtime policy for a disposable rehearsal, complete local consumer verification and have the administrator inspect and approve the permission set's actual expanded permissions, including any container configuration, token or secret exposure. The public catalog describes container list/read access but does not establish a secret-free response contract. If its expansion exceeds the approved boundary, revise the proposal and keep signing disabled.[^permission-sets]
 
 Do not substitute FullAccess sets, policy editing, IAM administration, deletion or registry publication. Do not add a missing-resource-ID exception to the secret condition: a listing request without a matching secret must not acquire secret data access. Scaleway documents resource conditions for Secret Manager but not container-ID or bucket-ID scoping; Project isolation and bucket policies therefore remain part of the boundary.[^resource-conditions][^resource-products]
 
@@ -80,7 +80,26 @@ The runtime may GET/HEAD ingress `objects/*` and retained `objects/*`, `journal/
 
 Create-only PUT statements combine the documented non-null conditional-header requirement with a `StringEquals` restriction to the literal `*`, plus TLS. Do not add multipart exemptions or a copy path. The adapters use single-object PUTs with that exact header and do not make copy/multipart calls. The provider documents conditional-copy rejection under enforced conditional-write policies. The provider's conditional-write guide explicitly demonstrates `Null` with `s3:if-none-match`; its general bucket-policy overview omits both from its supported-condition lists. Resolve this documentation gap through enforcing-boundary tests: a PUT without the header to a fresh key and a PUT with a wrong header value must be denied, while an overwrite with `If-None-Match: *` must be refused and preserve the original bytes. Qualify the exact combined condition before enabling signing; a local payload evaluator is not evidence of provider enforcement.[^conditional-writes][^bucket-policy]
 
-The retained policy reserves the proposed activation object `control/active.json`. This is a draft access boundary for the planned independent-admission implementation. Finalize its canonical architecture contract and implement and locally verify that consumer before applying this template for a disposable rehearsal. The runtime may GET only that control object and cannot write it. Only the named administrator has explicit GET/PUT permission for that control object. Policy readback and policy management use the administrator's separately held IAM authority; no bucket-policy management action is inserted into the data policy. A named administrator must already hold the necessary independent IAM permissions. Neither application receives those administrative permission sets, and the renderer does not grant administrative IAM authority.[^bucket-policy]
+The retained policy reserves the activation object `control/active.json` defined by [ADR-0041](adr/adr-0041-independent-linux-signing-service.md#independent-activation-and-deployment-admission). Complete local consumer verification before applying this template for a disposable rehearsal. The runtime may GET only that control object and cannot write it. Only the named administrator has explicit GET/PUT permission for that control object. Policy readback and policy management use the administrator's separately held IAM authority; no bucket-policy management action is inserted into the data policy. A named administrator must already hold the necessary independent IAM permissions. Neither application receives those administrative permission sets, and the renderer does not grant administrative IAM authority.[^bucket-policy]
+
+## Prepare an activation preview
+
+Assemble the complete public runtime configuration from the independently reviewed policy and the renderer's `buckets`/`secret_versions` fragment. Use the canonical JSON encoding defined by [the activation contract](adr/adr-0041-independent-linux-signing-service.md#independent-activation-and-deployment-admission), rather than pretty-printed JSON: the offline producer rejects different encodings, duplicate keys and extra fields. Select the independently approved container and image digest, source baseline, personal source signers, workflow revisions and public signing identities. Use only metadata from separately authorized provisioning; do not invent real bindings or include credentials. Keep this complete configuration in a private ignored location, with `policy.enabled: true` only when preparing an enabled proposal. Generating that proposal does not activate anything.
+
+From the reviewed checkout and its pinned Node environment, generate a new preview directory:
+
+```bash
+.tooling/node/bin/node tooling/installation-signing-activation.mjs \
+  --configuration tmp/signing-runtime.json \
+  --output tmp/signing-activation-preview \
+  --enabled true
+```
+
+The producer performs no network operation and writes `active.json`, `container-requirements.json` and `plan.json`. On POSIX the fresh directory uses mode `0700` and its files mode `0600`; existing directories and symlink/nonordinary inputs are refused. An interrupted write can leave a partial directory; inspect it and choose a fresh destination. Verify every exact payload hash in `plan.json`, its retained-bucket/control destination, and the automatically computed configuration hash before independently approving application. The approved configuration includes four numbered secret references and public policy, never secret values. Keep the review evidence outside GitHub artifacts and public logs.
+
+For separately authorized activation, first deploy the independently approved image and exact configuration with the generated requirements, inspect both container and namespace readback, and apply/read back the approved control bytes through the administrative identity. The runtime refuses changed capacity, transport, scaling, inherited environment, Project, image or configuration. No runtime or invocation identity may write its own approval. A disabled or missing control keeps admission refused even with an enabled local policy. Keep the repository's disabled/null client configuration until the deployed enforcing-boundary qualification and its bindings have been approved separately.
+
+For a separately authorized revocation, generate a fresh preview with the same approved configuration and `--enabled false`, approve its exact bytes and replace/read back the control as administrator. Already warm workers reread control at their existing checkpoints; errors or revocation refuse further authorized work and preserve any uncertainty fence. This is checkpoint-based revocation, not an atomic cancellation of an effect already in progress. Re-enabling or changing the approved configuration requires its own reviewed administrative operation and readback. Do not resolve an uncertain signing outcome by simply reactivating or clearing retained evidence.
 
 ## Approval and enforcing-boundary checks
 

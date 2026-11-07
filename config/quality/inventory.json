@@ -21,6 +21,7 @@
     "tests/graphics-compatibility.test.ts",
     "tests/installation-authority.test.ts",
     "tests/installation-scaleway-signing.test.ts",
+    "tests/installation-signing-admission.test.ts",
     "tests/installation-signing-client.test.ts",
     "tests/installation-signing-container.test.ts",
     "tests/installation-signing.test.ts",

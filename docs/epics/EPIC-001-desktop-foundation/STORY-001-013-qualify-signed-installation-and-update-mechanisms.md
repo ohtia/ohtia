@@ -3,7 +3,7 @@ type: Story
 title: "STORY-001-013 — Qualify signed installation and update mechanisms"
 description: "Deliver common signing/update foundations and Linux qualification with every native cell bound to its exact final package."
 generated:
-  by: claude-code/claude-opus-5-5
+  by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
 tags: ["story", "comp:desktop", "comp:tooling"]
@@ -63,7 +63,7 @@ Deliver common Actions signing/update foundations and complete Linux signed qual
 - [ ] Completion gate: verify Native facilities output NF and its full release condition in the Dependencies output registry and SPEC-001-016.
 - [ ] Completion gate: verify Native hosts output NH and its full release condition in the Dependencies output registry and SPEC-001-016.
 - [ ] The installer/update owner delivers its security inventory with final native qualification rather than leaving it to integrated acceptance.
-- [ ] Required Linux signed-install/update evidence covers all six native cells and any admitted optional distribution target; native macOS/Windows build/smoke/provenance remains complete without falsely claiming their deferred publisher guarantees.
+- [ ] Required Linux signed-install/update evidence covers all twelve Linux native cells and any admitted optional distribution target; native macOS/Windows build/smoke/provenance remains complete without falsely claiming their deferred publisher guarantees.
 - [ ] I13 binds common capability/authority contracts, real Linux signed native installation/update evidence and final transformed digests, and all-platform native build/attestation records; 019/020 own real macOS/Windows publisher signing and signed-route evidence.
 - [ ] Bad signatures/digests/targets/schema and interrupted operations refuse or recover safely with previous stable data preserved.
 - [ ] Development packages use no public feeds; preview opt-in and stable/prerelease ordering are verified without assuming an Ohtia account.

@@ -43,6 +43,16 @@ import { ScalewaySigningStore } from "../tooling/installation-signing-scaleway.m
 import { MockS3 } from "./fixtures/signing-store";
 import { localSigningServer, LocalSigningClient } from "../tooling/installation-signing-http.mjs";
 
+import {
+  signingActivationRecord,
+  signingAdmission,
+} from "../tooling/installation-signing-admission.mjs";
+import {
+  signingConfiguration,
+  signingContainerSnapshot,
+  signingNamespaceSnapshot,
+} from "./fixtures/signing-configuration";
+
 const NOW = 1790000000000;
 const catalogKey = generateKeyPairSync("ed25519");
 const issuer = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -1623,6 +1633,66 @@ describe("signer uncertainty and alias refusal", () => {
       "signing_uncertain",
     );
     expect(f.store.journal.get(f.service.identity(f.r)).state).toBe("uncertain");
+  });
+});
+
+describe("external activation across signing effects", () => {
+  function activate(service: SigningService) {
+    const config = signingConfiguration();
+    config.policy = service.policy;
+    let record = signingActivationRecord(config, true);
+    service.admit = signingAdmission(config, {
+      store: { activation: async () => canonical(record) },
+      deployment: {
+        container: async () => signingContainerSnapshot(config),
+        namespace: async () => signingNamespaceSnapshot(),
+      },
+    });
+    return () => {
+      record = { ...record, enabled: false };
+    };
+  }
+  it("refuses a revoked warm request immediately before its first private effect", async () => {
+    const f = await fixture(),
+      bytes = canonical(f.r),
+      revoke = activate(f.service);
+    await f.service.create(f.token, bytes);
+    const verify = f.service.build.verify;
+    f.service.build.verify = async (...args: unknown[]) => {
+      const result = await verify(...args);
+      revoke();
+      return result;
+    };
+    await expect(f.service.execute(f.token, hash(bytes), bytes)).rejects.toThrow("policy_refused");
+    expect(f.calls.sign).toBe(0);
+    expect(f.store.journal.get(f.service.identity(f.r)).state).toBe("admitted");
+  });
+  it("keeps completed private work uncertain when activation is revoked before sealing", async () => {
+    const f = await fixture(),
+      bytes = canonical(f.r),
+      revoke = activate(f.service);
+    const sign = f.worker.receiptSign.bind(f.worker);
+    f.worker.receiptSign = async (value: Buffer, options: any) => {
+      const result = await sign(value, options);
+      revoke();
+      return result;
+    };
+    await f.service.create(f.token, bytes);
+    await expect(f.service.execute(f.token, hash(bytes), bytes)).rejects.toThrow(
+      "signing_uncertain",
+    );
+    expect(f.calls.sign).toBe(1);
+    expect(f.store.journal.get(f.service.identity(f.r)).state).toBe("uncertain");
+  });
+  it("refuses sealed result retrieval after independently revoking an already warm service", async () => {
+    const f = await fixture(),
+      bytes = canonical(f.r),
+      revoke = activate(f.service);
+    await f.service.create(f.token, bytes);
+    expect((await f.service.execute(f.token, hash(bytes), bytes)).state).toBe("sealed");
+    revoke();
+    await expect(f.service.status(f.token, hash(bytes), bytes)).rejects.toThrow("policy_refused");
+    expect(f.calls.sign).toBe(1);
   });
 });
 
