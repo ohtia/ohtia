@@ -90,6 +90,7 @@ export function LanguagePanel({
         ref={select}
         aria-labelledby="language-title"
         aria-describedby="language-help"
+        autoComplete="language"
         value={state.draft}
         aria-disabled={
           !available ||

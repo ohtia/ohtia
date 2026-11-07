@@ -123,9 +123,17 @@ describe("localized language surface", () => {
       expect(options[index + 1]!.lang).toBe(value);
       expect(options[index + 1]!.textContent).toBe(localeAutonyms[value].label);
     });
-    expect(container.querySelector("select")!.getAttribute("aria-describedby")).toBe(
-      "language-help",
+    const select = container.querySelector("select")!;
+    expect(select.getAttribute("aria-labelledby")).toBe("language-title");
+    expect(container.querySelector("#language-title")!.textContent).toBe(
+      message(locale, "settings.language.title"),
     );
+    expect(select.getAttribute("aria-describedby")).toBe("language-help");
+    expect(container.querySelector("#language-help")!.textContent).toBe(
+      message(locale, "settings.language.help"),
+    );
+    // WCAG 2.2 SC 1.3.5: software identifies the preferred-language purpose without the label.
+    expect(select.getAttribute("autocomplete")).toBe("language");
   });
   it("changes messages and html.lang without remounting private input or moving focus", async () => {
     const h = harness();
