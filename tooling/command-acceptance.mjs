@@ -457,7 +457,7 @@ export async function verifyPackagedCommands(application, page, nativeWindow, ou
           ),
         )
         .toBe(true);
-      result.helpShortcut = await sendNativeHelpShortcut(nativeWindow, running.platform);
+      result.helpShortcut = await sendNativeHelpShortcut(nativeWindow, running.platform, page);
       const help = page.locator(".help-dialog");
       await expect(help).toBeVisible();
       await verifyCommandLandmarks(cdp);

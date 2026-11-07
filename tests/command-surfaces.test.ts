@@ -774,6 +774,56 @@ it("lets focused surfaces consume menu keys and cancels lone Alt on chords, poin
   expect(bridge.windowAction).toHaveBeenCalledTimes(2);
 });
 
+for (const platform of ["linux", "win32", "darwin"] as const)
+  it(`cancels ${platform} application keys only where main leaves them unconsumed`, async () => {
+    // Issue 181: on Linux main dispatches without consuming, so the page must cancel the key.
+    const { bridge } = harness(platform);
+    await render(h(CommandSurfaces, { bridge, locale: "en-US" }));
+    const input = document.createElement("input");
+    container.append(input);
+    input.focus();
+    const page: string[] = [];
+    const record = (event: KeyboardEvent) => page.push(event.key);
+    input.addEventListener("keydown", record);
+    const later: boolean[] = [];
+    const observe = (event: KeyboardEvent) => later.push(event.defaultPrevented);
+    window.addEventListener("keydown", observe, true);
+    const press = async (value: KeyboardEventInit) => {
+      const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...value });
+      await act(async () => {
+        input.dispatchEvent(event);
+      });
+      return event.defaultPrevented;
+    };
+    const mac = platform === "darwin";
+    const linux = platform === "linux";
+    const primary = mac ? { metaKey: true } : { ctrlKey: true };
+    try {
+      expect(await press({ key: "P", code: "KeyP", shiftKey: true, ...primary })).toBe(linux);
+      expect(await press({ key: "ㅔ", code: "KeyP", shiftKey: true, ...primary })).toBe(linux);
+      expect(await press({ key: "=", code: "Equal", repeat: true, ...primary })).toBe(linux);
+      expect(await press({ key: "q", code: "KeyQ", isComposing: true, ...primary })).toBe(linux);
+      expect(later).toEqual([linux, linux, linux, linux]);
+      expect(page).toEqual(linux ? [] : ["P", "ㅔ", "=", "q"]);
+      page.length = 0;
+      for (const value of [
+        { key: "y", code: "KeyY" },
+        { key: "P", code: "KeyP", shiftKey: true, isComposing: true, ...primary },
+        { key: "@", code: "Digit2", ctrlKey: true, altKey: true },
+        { key: "c", code: "KeyC", ...primary },
+      ])
+        expect(await press(value)).toBe(false);
+      expect(page).toEqual(["y", "P", "@", "c"]);
+      if (!mac) {
+        // F10 reaches the page uncancelled; the bubbling menu-key handler then owns it.
+        await press({ key: "F10", code: "F10" });
+        expect(later.at(-1)).toBe(false);
+        expect(page.at(-1)).toBe("F10");
+      }
+    } finally {
+      window.removeEventListener("keydown", observe, true);
+    }
+  });
 it("preserves the editable surface's focus when a native popup command is selected", async () => {
   const test = harness();
   let finish!: (value: import("@ohtia/contracts").WindowCommandResult) => void;

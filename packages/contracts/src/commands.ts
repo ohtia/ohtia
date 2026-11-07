@@ -167,6 +167,73 @@ export function ariaShortcuts(shortcuts: readonly string[]): string {
     .map((key) => key.replace(/\+\+$/, "+Plus").replace(/Ctrl/g, "Control").replace(/Cmd/g, "Meta"))
     .join(" ");
 }
+/** Key fields shared by Electron's `before-input-event` input and a DOM KeyboardEvent. */
+export interface CommandKeyInput {
+  readonly key: string;
+  readonly code: string;
+  readonly control: boolean;
+  readonly meta: boolean;
+  readonly alt: boolean;
+  readonly shift: boolean;
+  readonly isComposing: boolean;
+}
+/** Only application keys; AltGr and composition remain with the focused native editor. */
+export function commandForInput(
+  platform: CommandPlatform,
+  input: CommandKeyInput,
+): CommandId | undefined {
+  if (input.alt || (platform === "darwin" ? input.control && !input.meta : input.meta)) return;
+  const primary = platform === "darwin" ? input.meta : input.control;
+  // Hangul input mode can report a jamo for a Latin command key; composition still wins above.
+  const key =
+    /^\p{Script=Hangul}$/u.test(input.key) && /^Key[A-Z]$/.test(input.code)
+      ? input.code.slice(3).toLowerCase()
+      : input.key.toLowerCase();
+  if (input.isComposing) {
+    if (primary && !(platform === "darwin" && input.control)) {
+      if (key === "q" && !input.shift) return "application.quit";
+      if (key === "w" && input.shift === (platform !== "darwin")) return "window.close";
+    }
+    return;
+  }
+  if (!primary) {
+    if (input.control || input.meta || input.shift) return;
+    return key === "f1" && platform !== "darwin"
+      ? "help.open"
+      : key === "f11" && platform !== "darwin"
+        ? "window.fullscreen"
+        : key === "f10" && platform !== "darwin"
+          ? "menu.open"
+          : undefined;
+  }
+  if (platform === "darwin" && input.control)
+    return key === "f" && !input.shift ? "window.fullscreen" : undefined;
+  // Electron reports the shifted glyph (for example ! or §) for a numbered key.
+  const panelKey = /^Digit([1-3])$/.exec(input.code)?.[1];
+  if (input.shift && panelKey)
+    return panelKey === "1"
+      ? "panels.explorer"
+      : panelKey === "2"
+        ? "panels.documents"
+        : "panels.chat";
+  // Native Edit roles own their accelerators and IME-aware responder behavior.
+  if (["+", "=", "add"].includes(key) || input.code === "NumpadAdd") return "zoom.increase";
+  if ((key === "-" && !input.shift) || input.code === "NumpadSubtract") return "zoom.decrease";
+  if (key === "/") return "shortcuts.open";
+  if (key === "?" && input.code === "Slash" && input.shift && platform === "darwin")
+    return "help.open";
+  const chord = `${platform === "darwin" ? "Cmd" : "Ctrl"}+${input.shift ? "Shift+" : ""}${key.length === 1 && /[a-z]/.test(key) ? key.toUpperCase() : key}`;
+  return commandDefinitions.find(
+    (definition) =>
+      !definition.id.startsWith("edit.") && definition.shortcuts[platform].includes(chord),
+  )?.id;
+}
+/**
+ * On Linux, consuming a key in main makes Chromium drop the next IME text commits until another
+ * key press, so main dispatches without consuming and the renderer cancels the key instead.
+ */
+export const rendererCancelsCommandKeys = (platform: CommandPlatform): boolean =>
+  platform === "linux";
 export const isCommandId = (value: unknown): value is CommandId =>
   typeof value === "string" && commandIds.some((id) => id === value);
 export const isCommandPlatform = (value: unknown): value is CommandPlatform =>

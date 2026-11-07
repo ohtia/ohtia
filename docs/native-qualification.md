@@ -4,6 +4,8 @@ title: Native foundation qualification
 description: Assemble non-shipping native probes, admit independent profiles and retain complete target evidence without claiming partial native qualification.
 generated:
   by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: electron-esm-entry
     resource: https://github.com/electron/electron/blob/v45.0.0/lib/browser/init.ts
@@ -226,7 +228,7 @@ The harness checks `BrowserWindow.isFocused()` after input and permits only a bo
 
 ## Qualify browser-side command shortcuts
 
-The packaged Help shortcut uses Electron's `webContents.sendInputEvent` in the actually focused window. A temporary observer requires the expected `before-input-event` key and modifiers and confirms that the application handler prevented default dispatch; the ordinary registry/broker must then open the actual Help dialog. The observer and its bounded timer are removed on success or failure. The receipt records the input facility, actual focus and observed key metadata. This is synthetic Electron input, separately from physical keyboard layouts and OS IMEs.[^electron-native-input]
+The packaged Help shortcut uses Electron's `webContents.sendInputEvent` in the actually focused window. A temporary observer requires the expected `before-input-event` key and modifiers and confirms that the application handler consumed the key there, or on Linux that it left the key unconsumed and that the renderer cancelled the trusted keydown; the ordinary registry/broker must then open the actual Help dialog. The Settings and zoom shortcut checks apply the same platform rule. The observer and its bounded timer are removed on success or failure. The receipt records the input facility, actual focus and observed key metadata. This is synthetic Electron input, separately from physical keyboard layouts and OS IMEs.[^electron-native-input]
 
 Playwright's Chromium keyboard facility sends DevTools `Input.dispatchKeyEvent` without a native key code. The selected Chromium route marks these events to skip browser handling, and its widget host consequently skips the browser delegate that emits Electron's command hook. Such input remains appropriate for renderer keyboard interactions, but cannot qualify the main-process command shortcut.[^chromium-devtools-input][^chromium-keyboard-delegate]
 

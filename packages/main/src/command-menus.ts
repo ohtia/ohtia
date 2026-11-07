@@ -2,7 +2,9 @@ import { Menu, type BrowserWindow, type Input, type MenuItemConstructorOptions }
 import { randomUUID } from "node:crypto";
 import {
   commandDefinitions,
+  commandForInput,
   isCommandSnapshot,
+  rendererCancelsCommandKeys,
   message,
   type SimpleMessageKey,
   type CommandContext,
@@ -14,57 +16,6 @@ import {
   type InterfaceLocale,
 } from "@ohtia/contracts";
 
-/** Only application keys; AltGr and composition remain with the focused native editor. */
-export function commandForInput(
-  platform: CommandPlatform,
-  input: Pick<Input, "key" | "code" | "control" | "meta" | "alt" | "shift" | "isComposing">,
-): CommandId | undefined {
-  if (input.alt || (platform === "darwin" ? input.control && !input.meta : input.meta)) return;
-  const primary = platform === "darwin" ? input.meta : input.control;
-  // Hangul input mode can report a jamo for a Latin command key; composition still wins above.
-  const key =
-    /^\p{Script=Hangul}$/u.test(input.key) && /^Key[A-Z]$/.test(input.code)
-      ? input.code.slice(3).toLowerCase()
-      : input.key.toLowerCase();
-  if (input.isComposing) {
-    if (primary && !(platform === "darwin" && input.control)) {
-      if (key === "q" && !input.shift) return "application.quit";
-      if (key === "w" && input.shift === (platform !== "darwin")) return "window.close";
-    }
-    return;
-  }
-  if (!primary) {
-    if (input.control || input.meta || input.shift) return;
-    return key === "f1" && platform !== "darwin"
-      ? "help.open"
-      : key === "f11" && platform !== "darwin"
-        ? "window.fullscreen"
-        : key === "f10" && platform !== "darwin"
-          ? "menu.open"
-          : undefined;
-  }
-  if (platform === "darwin" && input.control)
-    return key === "f" && !input.shift ? "window.fullscreen" : undefined;
-  // Electron reports the shifted glyph (for example ! or §) for a numbered key.
-  const panelKey = /^Digit([1-3])$/.exec(input.code)?.[1];
-  if (input.shift && panelKey)
-    return panelKey === "1"
-      ? "panels.explorer"
-      : panelKey === "2"
-        ? "panels.documents"
-        : "panels.chat";
-  // Native Edit roles own their accelerators and IME-aware responder behavior.
-  if (["+", "=", "add"].includes(key) || input.code === "NumpadAdd") return "zoom.increase";
-  if ((key === "-" && !input.shift) || input.code === "NumpadSubtract") return "zoom.decrease";
-  if (key === "/") return "shortcuts.open";
-  if (key === "?" && input.code === "Slash" && input.shift && platform === "darwin")
-    return "help.open";
-  const chord = `${platform === "darwin" ? "Cmd" : "Ctrl"}+${input.shift ? "Shift+" : ""}${key.length === 1 && /[a-z]/.test(key) ? key.toUpperCase() : key}`;
-  return commandDefinitions.find(
-    (definition) =>
-      !definition.id.startsWith("edit.") && definition.shortcuts[platform].includes(chord),
-  )?.id;
-}
 interface WindowCommands {
   context: CommandContext;
   sequence: number;
@@ -108,7 +59,7 @@ export class CommandMenus {
       if (key.type !== "keyDown") return;
       const command = commandForInput(this.platform, key);
       if (!command || command === "menu.open") return;
-      event.preventDefault();
+      if (!rendererCancelsCommandKeys(this.platform)) event.preventDefault();
       if (!key.isAutoRepeat) this.dispatch(window, command, true);
     };
     const focus = () => {

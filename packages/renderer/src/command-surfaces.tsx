@@ -10,9 +10,11 @@ import {
 } from "react";
 import {
   commandDefinitions,
+  commandForInput,
   message,
   nativeCommandIds,
   projectLinks,
+  rendererCancelsCommandKeys,
   type AboutInformation,
   type CommandBridge,
   type CommandId,
@@ -824,6 +826,25 @@ export function CommandSurfaces({
         void registry.invoke("menu.open");
       }
     };
+    // Main dispatches Linux application keys without consuming them; cancel them before any page
+    // handler, as main does elsewhere. Later window capture listeners can still observe them.
+    const commandKey = (event: KeyboardEvent) => {
+      const platform = registry?.context.platform;
+      if (!platform || !rendererCancelsCommandKeys(platform)) return;
+      const command = commandForInput(platform, {
+        key: event.key,
+        code: event.code,
+        control: event.ctrlKey,
+        meta: event.metaKey,
+        alt: event.altKey,
+        shift: event.shiftKey,
+        isComposing: event.isComposing,
+      });
+      if (!command || command === "menu.open") return;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    window.addEventListener("keydown", commandKey, true);
     // Bubble after focused controls so preventDefault and stopPropagation retain their meaning.
     window.addEventListener("keydown", menuKey);
     window.addEventListener("keyup", menuKey);
@@ -850,6 +871,7 @@ export function CommandSurfaces({
     document.addEventListener("compositionstart", composition);
     document.addEventListener("compositionend", composition);
     return () => {
+      window.removeEventListener("keydown", commandKey, true);
       window.removeEventListener("keydown", menuKey);
       window.removeEventListener("keyup", menuKey);
       document.removeEventListener("keydown", cancelChord, true);
