@@ -12,7 +12,10 @@ import {
   type Outcome,
   type SavedPresentationRecord,
   type InterfaceZoom,
+  type SystemMotion,
+  type SystemMotionBridge,
 } from "@ohtia/contracts";
+import { SystemMotionProvider } from "../packages/renderer/src/system-motion.js";
 import { SettingsDialog } from "../packages/renderer/src/settings-dialog.js";
 import { LanguageController } from "../packages/renderer/src/language-controller.js";
 import {
@@ -65,7 +68,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   media.clear();
 });
-async function mount(locale: InterfaceLocale = "en-US") {
+async function mount(locale: InterfaceLocale = "en-US", motion?: SystemMotionBridge) {
   const t = harness();
   const localeSnapshot = {
     serviceGeneration: "service-1",
@@ -146,7 +149,10 @@ async function mount(locale: InterfaceLocale = "en-US") {
     });
   }
   const render = async (open = true, workspaceState?: WorkspaceState, available = true) => {
-    await act(async () => root.render(h(View, { open, workspaceState, available })));
+    const view = h(View, { open, workspaceState, available });
+    await act(async () =>
+      root.render(motion ? h(SystemMotionProvider, { source: motion }, view) : view),
+    );
   };
   await render();
   return { ...t, workspace, render, onClose, foundationPort: port };
@@ -193,6 +199,37 @@ describe("compact Settings dialog", () => {
     expect(container.querySelector(".settings-character-preview img")?.getAttribute("width")).toBe(
       "96",
     );
+  });
+  it("explains a native portal reduced-motion request live without changing the confirmed choice", async () => {
+    let native: SystemMotion = "reduce";
+    const listeners = new Set<(value: SystemMotion) => void>();
+    const t = await mount("en-US", {
+      readMotion: () => native,
+      subscribeMotion(listener) {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+    });
+    await click('input[value="static"]');
+    await click('input[value="animated"]');
+    expect(t.port.replaceCharacter).toHaveBeenCalledTimes(2);
+    expect(container.querySelector<HTMLInputElement>('input[value="animated"]')?.checked).toBe(
+      true,
+    );
+    expect(container.textContent).toContain(message("en-US", "settings.reducedMotion"));
+    await act(async () => {
+      native = "no_preference";
+      listeners.forEach((listener) => listener(native));
+    });
+    expect(container.textContent).not.toContain(message("en-US", "settings.reducedMotion"));
+    await act(async () => {
+      native = "reduce";
+      listeners.forEach((listener) => listener(native));
+    });
+    expect(container.textContent).toContain(message("en-US", "settings.reducedMotion"));
+    expect(t.port.replaceCharacter).toHaveBeenCalledTimes(2);
   });
   it("keeps zoom bounds focusable and explains pending, uncertain, rejected and conflict states", async () => {
     const t = await mount();

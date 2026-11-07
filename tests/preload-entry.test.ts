@@ -25,6 +25,7 @@ afterEach(() => {
 });
 async function load(
   session: unknown = { serviceGeneration: "service-1", windowGeneration: "window-1" },
+  motion: unknown = { sequence: 0, value: "unknown" },
 ) {
   vi.resetModules();
   vi.useFakeTimers();
@@ -33,7 +34,9 @@ async function load(
   const window = new EventTarget();
   vi.stubGlobal("window", window);
   const ipcRenderer = Object.assign(new EventEmitter(), {
-    sendSync: vi.fn(() => session),
+    sendSync: vi.fn((channel: string) =>
+      channel === desktopChannels.systemMotion ? motion : session,
+    ),
     send: vi.fn(),
     invoke: vi.fn(async () => ({ version: 1, locale: "en-US", state: "pending_create" })),
   });
@@ -363,6 +366,52 @@ it("guards a choice made after reconnect but before its replacement snapshot and
   h.window.dispatchEvent(new Event("unload"));
 });
 
+it("exposes only sequenced, valid native motion and bounds and releases its listeners", async () => {
+  const h = await load(undefined, { sequence: 2, value: "reduce" });
+  expect(h.ipcRenderer.sendSync).toHaveBeenCalledWith(desktopChannels.systemMotion);
+  expect(Object.keys(h.bridge.system).sort()).toEqual(["readMotion", "subscribeMotion"]);
+  expect(h.bridge.system.readMotion()).toBe("reduce");
+  const seen: string[] = [];
+  const stop = h.bridge.system.subscribeMotion((value) => seen.push(value));
+  for (const stale of [
+    { sequence: 1, value: "no_preference" },
+    { sequence: 2, value: "no_preference" },
+    { sequence: 3, value: "maybe" },
+    { sequence: 3, value: "no_preference", extra: true },
+    { sequence: -1, value: "no_preference" },
+    "reduce",
+  ])
+    h.ipcRenderer.emit(desktopChannels.systemMotion, {}, stale);
+  expect(h.bridge.system.readMotion()).toBe("reduce");
+  h.ipcRenderer.emit(desktopChannels.systemMotion, {}, { sequence: 4, value: "reduce" });
+  expect(seen).toEqual([]);
+  h.ipcRenderer.emit(desktopChannels.systemMotion, {}, { sequence: 5, value: "no_preference" });
+  expect(h.bridge.system.readMotion()).toBe("no_preference");
+  expect(seen).toEqual(["no_preference"]);
+  stop();
+  h.ipcRenderer.emit(desktopChannels.systemMotion, {}, { sequence: 6, value: "reduce" });
+  expect(seen).toEqual(["no_preference"]);
+  const failing = vi.fn(() => {
+    throw new Error("renderer listener failure");
+  });
+  h.bridge.system.subscribeMotion(failing);
+  h.ipcRenderer.emit(desktopChannels.systemMotion, {}, { sequence: 7, value: "unknown" });
+  h.ipcRenderer.emit(desktopChannels.systemMotion, {}, { sequence: 8, value: "reduce" });
+  expect(failing).toHaveBeenCalledOnce();
+  expect(() => h.bridge.system.subscribeMotion("listener" as never)).toThrow(TypeError);
+  for (let index = 0; index < portLimits.subscriptions_per_window; index++)
+    h.bridge.system.subscribeMotion(() => {});
+  expect(() => h.bridge.system.subscribeMotion(() => {})).toThrow(/limit/);
+  h.window.dispatchEvent(new Event("unload"));
+  expect(h.ipcRenderer.listenerCount(desktopChannels.systemMotion)).toBe(0);
+});
+it("treats a refused or malformed initial motion read as unknown", async () => {
+  for (const motion of [null, { sequence: 0, value: "reduce", extra: 1 }, { value: "reduce" }]) {
+    const h = await load(undefined, motion);
+    expect(h.error).toBeUndefined();
+    expect(h.bridge.system.readMotion()).toBe("unknown");
+  }
+});
 it("keeps named command bridge inputs/results bounded and strips native event authority", async () => {
   const h = await load();
   const context = { windowGeneration: "command-window", platform: "linux" };

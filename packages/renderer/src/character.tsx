@@ -7,27 +7,27 @@ import {
   characterDurations,
   type CharacterPose,
 } from "./character-controller.js";
+import {
+  observeSystemMotion,
+  systemReducesMotion,
+  useSystemMotionSource,
+} from "./system-motion.js";
 
 /** OS override is observed for the whole mounted consumer lifetime, including closed dialogs. */
 export function useCharacterMode(
   confirmed: CharacterPresentation,
   controller?: CharacterController,
 ): CharacterPresentation {
-  const [reduced, setReduced] = useState(
-    () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-  );
+  const source = useSystemMotionSource();
+  const [reduced, setReduced] = useState(() => systemReducesMotion(source));
   useLayoutEffect(() => {
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const changed = () => {
-      controller?.setMode(effectiveCharacterMode(confirmed, media.matches));
-      setReduced(media.matches);
+    const changed = (value: boolean) => {
+      controller?.setMode(effectiveCharacterMode(confirmed, value));
+      setReduced(value);
     };
-    changed();
-    media.addEventListener("change", changed);
-    return () => {
-      media.removeEventListener("change", changed);
-    };
-  }, [confirmed, controller]);
+    changed(systemReducesMotion(source));
+    return observeSystemMotion(source, changed);
+  }, [confirmed, controller, source]);
   return effectiveCharacterMode(confirmed, reduced);
 }
 

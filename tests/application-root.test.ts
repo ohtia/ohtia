@@ -168,6 +168,7 @@ function fixture() {
       })),
       openLink: vi.fn(async () => true),
     },
+    system: { readMotion: () => "unknown", subscribeMotion: () => () => {} },
   } as unknown as DesktopBridge;
   return {
     settings,

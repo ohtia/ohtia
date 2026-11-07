@@ -218,7 +218,7 @@ export function renderTokens(model) {
         `[data-type="${name}"] {\n  font-family: var(${cssName(style.family)});\n  font-size: var(${cssName(name + ".size")});\n  font-weight: var(${cssName(name + ".weight")});\n  line-height: ${style.height ? style.height / style.size : 1.5};\n}\n`,
     )
     .join("\n");
-  const css = `/* Generated from docs/design-system.md and docs/workspace-layout.md. */\n:root {\n${block("light")}\n}\n:root[data-appearance="dark"] {\n${dark}\n}\n@media (prefers-color-scheme: dark) {\n  :root:where(:not([data-appearance="light"]):not([data-appearance="dark"])) {\n${dark}\n  }\n}\n@media (prefers-reduced-motion: reduce) {\n  :root {\n${motion}\n  }\n}\n${typeRules}`;
+  const css = `/* Generated from docs/design-system.md and docs/workspace-layout.md. */\n:root {\n${block("light")}\n}\n:root[data-appearance="dark"] {\n${dark}\n}\n@media (prefers-color-scheme: dark) {\n  :root:where(:not([data-appearance="light"]):not([data-appearance="dark"])) {\n${dark}\n  }\n}\n@media (prefers-reduced-motion: reduce) {\n  :root {\n${motion}\n  }\n}\n:root[data-system-motion="reduce"] {\n${motion}\n}\n${typeRules}`;
   const numeric = Object.fromEntries(
     Object.keys(model.tokens)
       .filter((name) => /^-?\d+(\.\d+)?(px|ms)?$/.test(model.resolve(name, "light")))

@@ -15,6 +15,7 @@ afterEach(() => {
   vi.doUnmock("../packages/main/src/locator.js");
   vi.doUnmock("../packages/main/src/service-supervisor.js");
   vi.doUnmock("../packages/main/src/diagnostic-writer.js");
+  vi.doUnmock("../packages/main/src/system-motion.js");
 });
 async function launch(
   options: {
@@ -37,9 +38,17 @@ async function launch(
     mode?: "qualification" | "development" | "installed";
     researchRootRefused?: boolean;
     nodeOptions?: string;
+    platform?: NodeJS.Platform;
   } = {},
 ) {
   vi.resetModules();
+  if (options.platform) {
+    const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+    Object.defineProperty(process, "platform", { ...platform, value: options.platform });
+    cleanups.push(() => {
+      Object.defineProperty(process, "platform", platform);
+    });
+  }
   vi.stubEnv("XDG_SESSION_TYPE", options.kdeWayland ? "wayland" : "");
   vi.stubEnv("XDG_CURRENT_DESKTOP", options.kdeWayland ? "KDE" : "");
   vi.stubEnv("WAYLAND_DISPLAY", options.kdeWayland ? "wayland-1" : "");
@@ -375,6 +384,26 @@ async function launch(
       close = vi.fn(async () => undefined);
     },
   }));
+  // The broker never reaches a real session bus from a unit test.
+  const motion = {
+    started: 0,
+    disposed: 0,
+    changed: undefined as ((value: string) => void) | undefined,
+  };
+  vi.doMock("../packages/main/src/system-motion.js", () => ({
+    nativeSystemMotionHost: () => ({}),
+    SystemMotionObserver: class {
+      constructor(_host: unknown, changed: (value: string) => void) {
+        motion.changed = changed;
+      }
+      start() {
+        motion.started++;
+      }
+      dispose() {
+        motion.disposed++;
+      }
+    },
+  }));
   const stdout = process.stdout.write,
     stderr = process.stderr.write;
   const listeners = new Map(
@@ -436,6 +465,7 @@ async function launch(
     action,
     command,
     recoverService,
+    motion,
   };
 }
 
@@ -652,6 +682,37 @@ describe("broker composition with synthetic Electron adapters", () => {
     h.window.webContents.emit("render-process-gone");
     expect(h.supervisors[0].disposeWindow).toHaveBeenCalled();
     await expect(h.action("not-a-bootstrap-action")).rejects.toThrow(/admission/);
+  });
+  it("serves sequenced Linux portal motion to trusted windows and stops observing at a clean exit", async () => {
+    const h = await launch({ platform: "linux" });
+    expect(h.motion.started).toBe(1);
+    const initial = h.event();
+    h.ipcMain.emit(h.constants.desktopChannels.systemMotion, initial);
+    expect(initial.returnValue).toEqual({ sequence: 0, value: "unknown" });
+    const forged = { sender: h.window.webContents, senderFrame: { url: "https://example.test/" } };
+    h.ipcMain.emit(h.constants.desktopChannels.systemMotion, forged);
+    expect(forged.returnValue).toBeNull();
+    h.motion.changed?.("reduce");
+    expect(h.window.webContents.send).toHaveBeenCalledWith(
+      h.constants.desktopChannels.systemMotion,
+      { sequence: 1, value: "reduce" },
+    );
+    const later = h.event();
+    h.ipcMain.emit(h.constants.desktopChannels.systemMotion, later);
+    expect(later.returnValue).toEqual({ sequence: 1, value: "reduce" });
+    h.app.emit("before-quit", { preventDefault: vi.fn() });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.motion.disposed).toBe(1);
+  });
+  it("leaves Windows and macOS reduced motion to Chromium without a portal observer", async () => {
+    for (const platform of ["win32", "darwin"] as const) {
+      const h = await launch({ platform });
+      expect(h.motion.started).toBe(0);
+      const read = h.event();
+      h.ipcMain.emit(h.constants.desktopChannels.systemMotion, read);
+      expect(read.returnValue).toEqual({ sequence: 0, value: "unknown" });
+      cleanups.splice(0).forEach((cleanup) => cleanup());
+    }
   });
   it("opens a missing store only after explicit action, publishes admission and adopts the saved locale", async () => {
     const h = await launch();

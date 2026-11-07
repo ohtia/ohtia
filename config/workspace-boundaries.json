@@ -22,7 +22,15 @@
   "main": {
     "packages": ["@ohtia/contracts"],
     "external": ["electron"],
-    "builtins": ["node:path", "node:fs", "node:os", "node:crypto", "node:url", "node:child_process"]
+    "builtins": [
+      "node:path",
+      "node:fs",
+      "node:os",
+      "node:crypto",
+      "node:url",
+      "node:child_process",
+      "node:net"
+    ]
   },
   "utility": {
     "packages": ["@ohtia/contracts", "@ohtia/domain"],

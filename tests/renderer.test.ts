@@ -336,7 +336,12 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
     openLink: vi.fn(async () => false),
   };
   Object.defineProperty(window, "ohtia", {
-    value: { foundation, bootstrap, commands },
+    value: {
+      foundation,
+      bootstrap,
+      commands,
+      system: { readMotion: () => "unknown", subscribeMotion: () => () => {} },
+    },
     configurable: true,
   });
   const container = document.createElement("div");

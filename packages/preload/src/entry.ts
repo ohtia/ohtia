@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import {
   decodeBootstrapSnapshot,
+  decodeSystemMotionNotice,
   isCommandContext,
   isCommandIntent,
   isWindowCommandRequest,
@@ -20,6 +21,8 @@ import {
   type Subscription,
   type BootstrapAction,
   type DesktopBridge,
+  type SystemMotion,
+  type SystemMotionNotice,
 } from "@ohtia/contracts";
 import { createFoundationPort } from "./foundation-port.js";
 
@@ -145,6 +148,28 @@ const commandIntent = (_event: unknown, input: unknown) => {
   }
 };
 ipcRenderer.on(desktopChannels.commandIntent, commandIntent);
+// Sequenced notices let the synchronous initial read and earlier queued pushes arrive in any order.
+const motionListeners = new Set<(value: SystemMotion) => void>();
+let motion: SystemMotionNotice = { sequence: -1, value: "unknown" };
+function acceptMotion(input: unknown): void {
+  const notice = decodeSystemMotionNotice(input);
+  if (!notice || notice.sequence <= motion.sequence) return;
+  const changed = notice.value !== motion.value;
+  motion = notice;
+  if (!changed) return;
+  for (const listener of [...motionListeners]) {
+    try {
+      listener(notice.value);
+    } catch {
+      motionListeners.delete(listener);
+    }
+  }
+}
+const systemMotion = (_event: unknown, input: unknown) => {
+  acceptMotion(input);
+};
+ipcRenderer.on(desktopChannels.systemMotion, systemMotion);
+acceptMotion(ipcRenderer.sendSync(desktopChannels.systemMotion));
 async function commandBoolean(action: string, payload: unknown): Promise<boolean> {
   const value: unknown = await ipcRenderer.invoke(desktopChannels.commands, action, payload);
   return value === true;
@@ -200,6 +225,18 @@ const bridge: DesktopBridge = {
         ? commandBoolean("open_link", link)
         : Promise.resolve(false),
   },
+  system: {
+    readMotion: () => motion.value,
+    subscribeMotion(listener) {
+      if (typeof listener !== "function") throw new TypeError("Invalid system motion listener.");
+      if (motionListeners.size >= portLimits.subscriptions_per_window)
+        throw new Error("System motion listener limit reached.");
+      motionListeners.add(listener);
+      return () => {
+        motionListeners.delete(listener);
+      };
+    },
+  },
   foundation: {
     readPresentation: () => connection.client.port.readPresentation(),
     subscribePresentation,
@@ -251,6 +288,8 @@ window.addEventListener(
   "unload",
   () => {
     commandListeners.clear();
+    motionListeners.clear();
+    ipcRenderer.removeListener(desktopChannels.systemMotion, systemMotion);
     ipcRenderer.removeListener(desktopChannels.commandIntent, commandIntent);
     for (const owner of localeOwners) owner.stream.dispose();
     localeOwners.clear();
