@@ -131,6 +131,10 @@ BUDGET_UNITS = {
     "signing_jwks_cache_ms": "millisecond",
     "signing_transfer_tickets": "ticket",
     "signing_journal_revisions": "revision",
+    "signing_container_memory_bytes": "byte",
+    "signing_container_mvcpu": "millicpu",
+    "signing_container_storage_bytes": "byte",
+    "signing_deployment_readback_bytes": "byte",
 }
 REQUIRED_BUDGETS = set(BUDGET_UNITS)
 

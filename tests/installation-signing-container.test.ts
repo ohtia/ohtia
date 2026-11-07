@@ -1,9 +1,9 @@
+import { signingConfiguration as configuration } from "./fixtures/signing-configuration";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { writeDependencyNotices } from "../tooling/installation-signing-image.mjs";
 import { request as httpRequest } from "node:http";
-import { generateKeyPairSync } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { canonical, currentSigningDeadline, hash } from "../tooling/installation-authority.mjs";
 import {
@@ -102,43 +102,6 @@ async function listen(service = fixture(), bodyTimeout?: number) {
         ...init,
         headers: { Authorization: "Bearer fixture", ...init.headers },
       }),
-  };
-}
-function configuration() {
-  const publicKey = generateKeyPairSync("ed25519")
-    .publicKey.export({ format: "pem", type: "spki" })
-    .toString();
-  return {
-    schema_version: 1,
-    policy: {
-      schema_version: 1,
-      enabled: false,
-      repository_id: "1431132416",
-      owner_id: "346940169",
-      audience: "ohtia:installation-signing",
-      environment: "installation-signing",
-      caller_workflow: ".github/workflows/installation-signing.yml",
-      signing_workflow: { workflow: ".github/workflows/signing-worker.yml", sha: "c".repeat(40) },
-      build_workflow: { workflow: ".github/workflows/signing-build.yml", sha: "d".repeat(40) },
-      source_anchor: "e".repeat(40),
-      source_signers: [{ principal: "fixture", public_key: "ssh-ed25519 AAAA" }],
-      catalog_public_key: publicKey,
-      rpm_primary: "1".repeat(40),
-      rpm_subkey: "2".repeat(40),
-      deployment: {
-        provider: "scaleway-serverless-containers",
-        region: "fr-par",
-        container_id: "00000000-0000-0000-0000-000000000000",
-        image_digest: "sha256:" + "f".repeat(64),
-      },
-    },
-    buckets: { ingress: "fixture-ingress", retained: "fixture-retained" },
-    secret_versions: Object.fromEntries(
-      ["rpm", "rpm_passphrase", "catalog", "catalog_passphrase"].map((name, i) => [
-        name,
-        { secret_id: "00000000-0000-0000-0000-" + String(i + 1).padStart(12, "0"), revision: 1 },
-      ]),
-    ),
   };
 }
 
@@ -431,10 +394,18 @@ describe("signing container composition", () => {
       throw error;
     }
   });
-  it("refuses configuration that tries to activate unfinished admission", () => {
+  it("requires independent activation even when local policy is enabled", async () => {
     const config = configuration();
     config.policy.enabled = true;
-    expect(() => composeSigningContainer(config, { environment })).toThrow("policy_refused");
+    vi.spyOn(ScalewaySigningStore.prototype, "activation").mockResolvedValue(null);
+    const provider = vi.spyOn(globalThis, "fetch");
+    const composed = composeSigningContainer(config, { environment });
+    try {
+      await expect(composed.service.checkAuthority()).rejects.toThrow("policy_refused");
+      expect(provider).not.toHaveBeenCalled();
+    } finally {
+      composed.close();
+    }
   });
   it("never falls back to ambient provider credentials", () => {
     expect(() => composeSigningContainer(configuration(), { environment: {} })).toThrow(

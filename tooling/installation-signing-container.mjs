@@ -1,4 +1,4 @@
-// Production transport composition; deployment admission stays disabled until externally qualified.
+// Production transport composition requires fresh independent activation and deployment readback.
 import path from "node:path";
 import http from "node:http";
 import { fileURLToPath } from "node:url";
@@ -19,7 +19,15 @@ import {
   GitHubBuildAuthority,
 } from "./installation-authority.mjs";
 import { SigningService, CryptoSigningWorker, validateRequest } from "./installation-signer.mjs";
-import { ScalewaySigningStore, ScalewaySigningSecrets } from "./installation-signing-scaleway.mjs";
+import {
+  ScalewaySigningStore,
+  ScalewaySigningSecrets,
+  ScalewaySigningDeployment,
+} from "./installation-signing-scaleway.mjs";
+import {
+  signingAdmission,
+  signingDeploymentRequirements,
+} from "./installation-signing-admission.mjs";
 
 import { GitSourceAcquisition } from "./installation-source.mjs";
 
@@ -201,8 +209,7 @@ export function composeSigningContainer(configuration, { environment = process.e
   fields(configuration, "schema_version policy buckets secret_versions");
   demand(configuration.schema_version === 1);
   const policy = trustedPolicy(configuration.policy);
-  // No environment flag, mounted configuration or caller can enable the unfinished live admission gate.
-  demand(policy.enabled === false, "policy_refused");
+  // Enabled local policy still needs independent control and live provider readback at every gate.
   fields(configuration.buckets, "ingress retained");
   const accessKeyId = environment.OHTIA_SIGNING_BACKEND_ACCESS_KEY;
   const secretAccessKey = environment.OHTIA_SIGNING_BACKEND_SECRET_KEY;
@@ -231,6 +238,12 @@ export function composeSigningContainer(configuration, { environment = process.e
     job: readers.job,
     environment: { HOME: "/tmp", GH_CONFIG_DIR: "/tmp/ohtia-gh" },
   });
+  const admit = policy.enabled
+    ? signingAdmission(configuration, {
+        store,
+        deployment: new ScalewaySigningDeployment({ token: async () => secretAccessKey }),
+      })
+    : async () => false;
   const service = new SigningService(policy, {
     store,
     worker,
@@ -238,6 +251,7 @@ export function composeSigningContainer(configuration, { environment = process.e
     build,
     caller: new OidcAuthority(policy, readers),
     deadline: currentSigningDeadline,
+    admit,
   });
   return { service, store, close: () => store.client.destroy() };
 }
@@ -251,7 +265,7 @@ export async function runSigningContainer() {
   const composed = composeSigningContainer(configuration);
   for (const name of ["OHTIA_SIGNING_BACKEND_ACCESS_KEY", "OHTIA_SIGNING_BACKEND_SECRET_KEY"])
     delete process.env[name];
-  const portText = process.env.PORT ?? "8080";
+  const portText = process.env.PORT ?? String(signingDeploymentRequirements.port);
   demand(/^[1-9][0-9]{0,4}$/.test(portText) && Number(portText) <= 65535);
   const server = productionSigningServer(composed.service);
   await new Promise((resolve, reject) => {

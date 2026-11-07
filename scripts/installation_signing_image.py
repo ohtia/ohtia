@@ -90,6 +90,7 @@ def isolated_runtime(context: Path, temporary: Path, tools: dict) -> str:
         shutil.copy2(metadata, destination)
     names = (
         "installation-signing-container.mjs",
+        "installation-signing-admission.mjs",
         "installation-source.mjs",
         "installation-source-pack.mjs",
         "installation-signing-image.mjs",

@@ -890,6 +890,54 @@
       "scope": "Delay between signing-client retry attempts",
       "failure": "authority_unavailable",
       "rationale": "Bound request pressure while preserving the original operation deadline"
+    },
+    "signing_container_memory_bytes": {
+      "value": 4294967296,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 4294967296,
+        "maximum": 4294967296
+      },
+      "owner": "013",
+      "scope": "Approved signing container RAM allocation",
+      "failure": "policy_refused",
+      "rationale": "Bind the independently approved deployment to one exact bounded container allocation before signing"
+    },
+    "signing_container_mvcpu": {
+      "value": 1000,
+      "unit": "millicpu",
+      "permitted": {
+        "minimum": 1000,
+        "maximum": 1000
+      },
+      "owner": "013",
+      "scope": "Approved signing container CPU allocation",
+      "failure": "policy_refused",
+      "rationale": "Bind the independently approved deployment to one exact bounded container allocation before signing"
+    },
+    "signing_container_storage_bytes": {
+      "value": 1000000000,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 1000000000,
+        "maximum": 1000000000
+      },
+      "owner": "013",
+      "scope": "Approved signing container non-temporary local storage allocation",
+      "failure": "policy_refused",
+      "rationale": "Bind the independently approved deployment to one exact bounded container allocation before signing"
+    },
+    "signing_deployment_readback_bytes": {
+      "value": 262144,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 262144,
+        "maximum": 262144
+      },
+      "owner": "013",
+      "scope": "One signing container or namespace API readback response",
+      "failure": "authority_unavailable",
+      "rationale": "Leave bounded JSON-escaping and provider-envelope headroom above the 65536-byte public configuration limit"
     }
   }
 }
