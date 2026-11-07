@@ -5,14 +5,33 @@ import { randomUUID } from "node:crypto";
 import { expect } from "@playwright/test";
 import { focusNative, withCommandCleanup } from "./command-native-focus.mjs";
 import { invokeNativeMenu } from "./command-acceptance.mjs";
-import { message } from "../packages/contracts/dist/index.js";
+import { message, rendererCancelsCommandKeys } from "../packages/contracts/dist/index.js";
 import { withNativeFailureObservation } from "./native-failure-observation.mjs";
+import {
+  observeRendererCommandKey,
+  releaseRendererCommandKey,
+  settleRendererCommandKey,
+} from "./command-shortcut.mjs";
 
 /** Observe the actual browser-side input boundary; DevTools key events bypass it. */
-async function nativeKey(nativeWindow, platform, keyCode, expectedCode) {
+async function nativeKey(page, nativeWindow, platform, keyCode, expectedCode) {
   await focusNative(nativeWindow, "Settings keyboard input");
+  const rendererCancels = rendererCancelsCommandKeys(platform);
+  const renderer = rendererCancels
+    ? await observeRendererCommandKey(page, expectedCode)
+    : undefined;
+  let input;
+  try {
+    input = await nativeKeyInput(nativeWindow, platform, keyCode, expectedCode, rendererCancels);
+  } catch (error) {
+    if (renderer) await releaseRendererCommandKey(renderer).catch(() => {});
+    throw error;
+  }
+  return renderer ? { ...input, renderer: await settleRendererCommandKey(renderer) } : input;
+}
+function nativeKeyInput(nativeWindow, platform, keyCode, expectedCode, rendererCancels) {
   return nativeWindow.evaluate(
-    (window, { platform, keyCode, expectedCode }) =>
+    (window, { platform, keyCode, expectedCode, rendererCancels }) =>
       new Promise((resolve, reject) => {
         const contents = window.webContents;
         let timer;
@@ -33,7 +52,8 @@ async function nativeKey(nativeWindow, platform, keyCode, expectedCode) {
           };
           if (
             input.code !== expectedCode ||
-            !event.defaultPrevented ||
+            // Main consumes the key unless the renderer cancels it on this platform.
+            event.defaultPrevented === rendererCancels ||
             input.isComposing ||
             input.alt ||
             input.control !== (platform !== "darwin") ||
@@ -58,7 +78,7 @@ async function nativeKey(nativeWindow, platform, keyCode, expectedCode) {
           finish(error);
         }
       }),
-    { platform, keyCode, expectedCode },
+    { platform, keyCode, expectedCode, rendererCancels },
   );
 }
 /** macOS has no Chromium zoom-changed route; observe the real Cmd+wheel DOM delivery. */
@@ -327,7 +347,7 @@ async function verifySettings(application, page, second, output, phases, observe
         await page.keyboard.press("Escape");
         await expect(dialog).not.toBeVisible();
         phase("native-settings-shortcut");
-        inputs.push(await nativeKey(nativeWindow, platform, ",", "Comma"));
+        inputs.push(await nativeKey(page, nativeWindow, platform, ",", "Comma"));
         await expect(dialog).toBeVisible();
         phase("hide-character", '.settings-dialog[open] input[type="radio"][value="hidden"]');
         await dialog.locator('input[type="radio"][value="hidden"]').check();
@@ -374,22 +394,22 @@ async function verifySettings(application, page, second, output, phases, observe
           .locator("#settings-input-preservation-fixture")
           .evaluate((element) => element.setSelectionRange(10, 22));
         phase("native-zoom-equal");
-        inputs.push(await nativeKey(nativeWindow, platform, "=", "Equal"));
+        inputs.push(await nativeKey(page, nativeWindow, platform, "=", "Equal"));
         await expectFactors(110);
         phase("native-zoom-keypad-add");
-        inputs.push(await nativeKey(nativeWindow, platform, "numadd", "NumpadAdd"));
+        inputs.push(await nativeKey(page, nativeWindow, platform, "numadd", "NumpadAdd"));
         await expectFactors(125);
         phase("native-zoom-keypad-subtract");
-        inputs.push(await nativeKey(nativeWindow, platform, "numsub", "NumpadSubtract"));
+        inputs.push(await nativeKey(page, nativeWindow, platform, "numsub", "NumpadSubtract"));
         await expectFactors(110);
         phase("native-zoom-minus");
-        inputs.push(await nativeKey(nativeWindow, platform, "-", "Minus"));
+        inputs.push(await nativeKey(page, nativeWindow, platform, "-", "Minus"));
         await expectFactors(100);
         phase("native-zoom-keypad-reset");
-        inputs.push(await nativeKey(nativeWindow, platform, "num0", "Numpad0"));
+        inputs.push(await nativeKey(page, nativeWindow, platform, "num0", "Numpad0"));
         await expect(dialog).toContainText(text("command.reason.actual_size"));
         phase("native-zoom-reset");
-        inputs.push(await nativeKey(nativeWindow, platform, "0", "Digit0"));
+        inputs.push(await nativeKey(page, nativeWindow, platform, "0", "Digit0"));
         phase("native-wheel-positive");
         const wheelIn = await nativeZoomWheel(page, nativeWindow, platform, 120, observeFailure);
         expect(["in", "out"]).toContain(wheelIn.direction);
@@ -407,7 +427,7 @@ async function verifySettings(application, page, second, output, phases, observe
           () => window.ohtia.foundation.readPresentation().result,
         );
         phase("native-zoom-keypad-subtract");
-        inputs.push(await nativeKey(nativeWindow, platform, "numsub", "NumpadSubtract"));
+        inputs.push(await nativeKey(page, nativeWindow, platform, "numsub", "NumpadSubtract"));
         await expect(dialog).toContainText(text("command.reason.zoom_minimum"));
         expect(
           (await page.evaluate(() => window.ohtia.foundation.readPresentation().result)).value.zoom,
@@ -417,7 +437,7 @@ async function verifySettings(application, page, second, output, phases, observe
           () => window.ohtia.foundation.readPresentation().result,
         );
         phase("native-zoom-keypad-add");
-        inputs.push(await nativeKey(nativeWindow, platform, "numadd", "NumpadAdd"));
+        inputs.push(await nativeKey(page, nativeWindow, platform, "numadd", "NumpadAdd"));
         await expect(dialog).toContainText(text("command.reason.zoom_maximum"));
         expect(
           (await page.evaluate(() => window.ohtia.foundation.readPresentation().result)).value.zoom,

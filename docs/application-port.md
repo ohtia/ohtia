@@ -2,6 +2,17 @@
 type: Specification
 title: Bounded foundation application port
 description: Versioned preference messages, named presentation commands, controlled outcomes and deterministic conformance for the desktop application boundary.
+generated:
+  by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
+sources:
+  - id: chromium-keyboard-suppression
+    resource: https://github.com/chromium/chromium/blob/156.0.8078.48/content/browser/renderer_host/render_widget_host_impl.cc
+    title: Selected Chromium browser-side keyboard suppression
+  - id: chromium-ime-commit
+    resource: https://github.com/chromium/chromium/blob/156.0.8078.48/ui/base/ime/linux/input_method_auralinux.cc
+    title: Selected Chromium Linux input-method commit delivery
 ---
 
 # Bounded foundation application port
@@ -67,6 +78,12 @@ Under [Foundation security applicability](foundation-security.md), these tests p
 ## Named presentation commands
 
 [STORY-002-004](epics/EPIC-002-basic-interface/STORY-002-004-commands-native-menus-about.md) extends `DesktopBridge` with the closed `commands` surface. The [command contract](../packages/contracts/src/commands.ts) owns command IDs, localized label keys, groups, per-platform shortcut arrays, unavailable reasons, context, snapshots and intents. The registry is a per-window [CommandController](../packages/renderer/src/command-controller.ts), shared by contextual controls and native menu/keyboard intents. Preference effects continue through `FoundationPort` and its durable operation/receipt contracts; registry availability grants no storage, provider or human-confirmation authority (PRIN-002, PRIN-005 and PRIN-016).
+
+Main recognizes application keys in Electron's `before-input-event` with the shared `commandForInput` decision and dispatches each one. On Windows and macOS it consumes the key there. On Linux it leaves the key unconsumed, and `CommandSurfaces` cancels the same key, by the same decision, in a window capture listener before any page handler. Chromium drops the character and key-release events that follow a key consumed in the browser until the next key press. An IBus XKB engine on KDE Wayland commits Latin text through text-input-v3 without key events, and Chromium delivers such a single-character commit as a character event, so a consumed shortcut would discard the letters typed next.[^chromium-keyboard-suppression][^chromium-ime-commit]
+
+[^chromium-keyboard-suppression]: The selected widget host keeps suppressing character and key-up events after a browser-handled raw key-down until the next key-down.
+
+[^chromium-ime-commit]: The selected Linux input method delivers an asynchronous single-character commit through `InsertChar`, which the widget host view forwards as a character event.
 
 `context()` claims the broker-issued window-controller incarnation and platform. Claiming it revokes the previous registry, including same-document remounts; a denied foreign navigation preserves the live incarnation. `publish(snapshot)` supplies an exact complete command projection, locale and strictly advancing revision for that generation. Main validates the actual frame/origin and generation before accepting it. Native menu labels, enabled state, checked state and macOS unavailable tooltips follow the focused window. Native lifecycle actions stay in main; other menu clicks and non-edit application shortcuts enter `onIntent(listener)` as detached closed intents; its returned function removes the listener. Edit items use native responder roles. No operating-system-wide shortcuts are registered, and View zoom commands never use Electron zoom roles.
 

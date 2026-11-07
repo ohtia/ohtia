@@ -10,7 +10,9 @@ import {
 } from "../packages/renderer/src/command-controller.js";
 import {
   commandDefinitions,
+  commandForInput,
   commandIds,
+  rendererCancelsCommandKeys,
   isCommandContext,
   isCommandResult,
   isWindowCommandResult,
@@ -309,10 +311,9 @@ async function nativeMenus() {
   const buildFromTemplate = vi.fn((template) => Object.assign(template, { popup, closePopup }));
   const setApplicationMenu = vi.fn();
   vi.doMock("electron", () => ({ Menu: { buildFromTemplate, setApplicationMenu } }));
-  const { CommandMenus, commandForInput } = await import("../packages/main/src/command-menus.js");
+  const { CommandMenus } = await import("../packages/main/src/command-menus.js");
   return {
     CommandMenus,
-    commandForInput,
     buildFromTemplate,
     setApplicationMenu,
     popup,
@@ -386,7 +387,8 @@ describe("native menu and focused-window shortcut projection", () => {
       isComposing: false,
     };
     one.webContents.emit("before-input-event", event, key);
-    expect(event.preventDefault).toHaveBeenCalledOnce();
+    // Linux leaves the key to the renderer's cancellation; see the key-consumption test below.
+    expect(event.preventDefault).not.toHaveBeenCalled();
     expect(one.webContents.send).toHaveBeenCalledTimes(2);
     one.webContents.emit(
       "before-input-event",
@@ -420,7 +422,7 @@ describe("native menu and focused-window shortcut projection", () => {
     expect(menus.context(nativeOne)).toBeUndefined();
   });
   it("uses each platform inventory and preserves composition, AltGr, native edits and OS conventions", async () => {
-    const { CommandMenus, commandForInput } = await nativeMenus();
+    const { CommandMenus } = await nativeMenus();
     const base = {
       key: "",
       code: "",
@@ -567,7 +569,7 @@ it("retains main-owned lifecycle actions, revokes replaced registry leases and i
   };
   const event = { preventDefault: vi.fn() };
   window.webContents.emit("before-input-event", event, { ...input, isAutoRepeat: true });
-  expect(event.preventDefault).toHaveBeenCalledOnce();
+  expect(event.preventDefault).not.toHaveBeenCalled();
   expect(window.webContents.send).not.toHaveBeenCalled();
   window.webContents.emit("before-input-event", event, {
     ...input,
@@ -605,6 +607,65 @@ it("retains main-owned lifecycle actions, revokes replaced registry leases and i
   expect(lifecycle.quit).toHaveBeenCalledTimes(2);
   expect(lifecycle.close).toHaveBeenCalledTimes(2);
   menus.dispose();
+});
+
+it("consumes dispatched application keys in main except on Linux, where the renderer cancels them", async () => {
+  // Issue 181: a consumed Linux keyDown makes Chromium drop the following IME character commits.
+  const { CommandMenus } = await nativeMenus();
+  for (const platform of ["linux", "win32", "darwin"] as const) {
+    const window = Object.assign(new EventEmitter(), {
+      webContents: Object.assign(new EventEmitter(), {
+        send: vi.fn(),
+        setIgnoreMenuShortcuts: vi.fn(),
+        isDestroyed: () => false,
+      }),
+      setMenuBarVisibility: vi.fn(),
+      isFocused: () => true,
+      isDestroyed: () => false,
+    });
+    const native = window as unknown as Electron.BrowserWindow;
+    const menus = new CommandMenus(platform, () => "en-US", "ohtia://app/index.html", {
+      quit: vi.fn(),
+      close: vi.fn(),
+    });
+    menus.attach(native);
+    const controller = new CommandController(menus.connect(native)!, "en-US");
+    controller.register("palette.open", { state: () => ({}), run: () => true });
+    expect(menus.publish(native, controller.snapshot())).toBe(true);
+    const mac = platform === "darwin";
+    const press = (input: Record<string, unknown>) => {
+      const event = { preventDefault: vi.fn() };
+      window.webContents.emit("before-input-event", event, {
+        type: "keyDown",
+        key: "P",
+        code: "KeyP",
+        control: !mac,
+        meta: mac,
+        alt: false,
+        shift: true,
+        isComposing: false,
+        isAutoRepeat: false,
+        ...input,
+      });
+      return event.preventDefault;
+    };
+    expect(rendererCancelsCommandKeys(platform)).toBe(platform === "linux");
+    expect(press({})).toHaveBeenCalledTimes(platform === "linux" ? 0 : 1);
+    expect(press({ isAutoRepeat: true })).toHaveBeenCalledTimes(platform === "linux" ? 0 : 1);
+    expect(window.webContents.send).toHaveBeenCalledOnce();
+    expect(window.webContents.send).toHaveBeenCalledWith(
+      "ohtia:command-intent",
+      expect.objectContaining({ command: "palette.open", source: "native" }),
+    );
+    for (const input of [
+      { key: "y", code: "KeyY", control: false, meta: false, shift: false },
+      { key: "F10", code: "F10", control: false, meta: false, shift: false },
+      { isComposing: true },
+    ])
+      expect(press(input)).not.toHaveBeenCalled();
+    expect(window.webContents.send).toHaveBeenCalledOnce();
+    menus.dispose();
+  }
 });
 
 it("never invents a native radio selection and restores confirmed state after native activation", async () => {
