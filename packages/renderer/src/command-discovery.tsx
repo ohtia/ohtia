@@ -93,15 +93,23 @@ function PaletteOpening({
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<CommandId>();
   const composing = useRef(false);
-  // Linux IBus Hangul commits on Enter and then dispatches that Enter as an ordinary keydown. Its
-  // timeStamp precedes compositionend because it was pressed first. Only the next keydown is
-  // compared, so a key pressed after compositionend is never attributed to the ended composition.
-  const compositionEnd = useRef<number>(undefined);
+  // Linux IBus Hangul delivers no keydown while composing. The key that ends a composition arrives
+  // as the first ordinary keydown after compositionend, with a timeStamp that natively precedes,
+  // equals or follows compositionend. A composition with no keydown, input pointerdown or focus
+  // change is unannounced; only the first keydown after it is attributed to its ending, never by
+  // time. Option pointerdown keeps input focus and composition, so it does not announce an ending.
+  const announced = useRef(true);
+  const unannouncedEnding = useRef(false);
+  const interrupt = () => {
+    announced.current = true;
+    unannouncedEnding.current = false;
+  };
   const confirmingEnter = useRef(false);
   const activating = useRef(false);
   useEffect(() => {
     const release = () => {
       confirmingEnter.current = false;
+      interrupt();
     };
     window.addEventListener("blur", release);
     return () => {
@@ -166,22 +174,25 @@ function PaletteOpening({
           }}
           onCompositionStart={() => {
             composing.current = true;
+            announced.current = false;
           }}
-          onCompositionEnd={(event) => {
+          onCompositionEnd={() => {
             composing.current = false;
-            compositionEnd.current = event.nativeEvent.timeStamp;
+            unannouncedEnding.current = !announced.current;
           }}
+          onPointerDown={interrupt}
           onBlur={() => {
             confirmingEnter.current = false;
+            interrupt();
           }}
           onKeyUp={(event) => {
             if (event.key === "Enter" || event.code === "Enter" || event.code === "NumpadEnter")
               confirmingEnter.current = false;
           }}
           onKeyDown={(event) => {
-            const ended = compositionEnd.current;
-            compositionEnd.current = undefined;
-            const endedComposition = ended !== undefined && event.nativeEvent.timeStamp < ended;
+            const endingKey = unannouncedEnding.current;
+            unannouncedEnding.current = false;
+            announced.current = true;
             if (event.defaultPrevented) return;
             if (
               event.nativeEvent.isComposing ||
@@ -206,7 +217,7 @@ function PaletteOpening({
               );
             } else if (event.key === "Enter") {
               event.preventDefault();
-              if (!event.repeat && !confirmingEnter.current && !endedComposition && active)
+              if (!event.repeat && !confirmingEnter.current && !endingKey && active)
                 activate(active.id);
             }
           }}

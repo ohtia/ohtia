@@ -42,12 +42,25 @@ afterEach(async () => {
 const render = async (node: Parameters<Root["render"]>[0]) => {
   await act(async () => root.render(node));
 };
+// jsdom stamps events with whole-millisecond Date.now() values, so a compositionend and a later
+// keydown can share a time by chance. Keydowns and composition events here take strictly increasing
+// native-like times instead; only cases that model the recorded boundary set equal times.
+let clock = 0;
+const stamp = <T extends Event>(event: T, time = (clock += 10)) =>
+  Object.defineProperty(event, "timeStamp", { value: time, configurable: true });
 const key = async (element: Element, key: string, options: KeyboardEventInit = {}) => {
-  const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...options });
+  const event = stamp(
+    new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...options }),
+  );
   await act(async () => element.dispatchEvent(event));
   return event;
 };
 const input = () => host.querySelector<HTMLInputElement>('[role="combobox"]')!;
+const composition = async (type: string, data = "", time?: number) => {
+  await act(async () =>
+    input().dispatchEvent(stamp(new CompositionEvent(type, { bubbles: true, data }), time)),
+  );
+};
 async function query(value: string) {
   const element = input();
   await act(async () => {
@@ -184,17 +197,13 @@ describe("command discovery", () => {
     await key(input(), "ArrowDown");
     await key(input(), "Enter");
     await query("Ohtia help");
-    await act(async () =>
-      input().dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
-    );
+    await composition("compositionstart");
     const active = input().getAttribute("aria-activedescendant");
     await key(input(), "Enter");
     await key(input(), "ArrowDown", { isComposing: true });
     expect(input().getAttribute("aria-activedescendant")).toBe(active);
     expect(host.querySelector(".command-palette[open]")).not.toBeNull();
-    await act(async () =>
-      input().dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })),
-    );
+    await composition("compositionend");
     await key(input(), "Enter", { isComposing: true });
     await key(input(), "Enter", { keyCode: 229 });
     await key(input(), "Enter", { repeat: true });
@@ -213,17 +222,11 @@ describe("command discovery", () => {
         test.registry.register("settings.open", { state: () => ({}), run });
       });
       await test.open();
-      await act(async () =>
-        input().dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
-      );
+      await composition("compositionstart");
       await query("설정");
       // Windows emits both keydowns before either keyup for one physical IME confirmation.
       await key(input(), "Process", { code, keyCode: 229, isComposing: true });
-      await act(async () =>
-        input().dispatchEvent(
-          new CompositionEvent("compositionend", { bubbles: true, data: "정" }),
-        ),
-      );
+      await composition("compositionend", "정");
       await key(input(), "Enter", { code, keyCode: 13 });
       expect(run).not.toHaveBeenCalled();
       await key(input(), "Enter", { code, repeat: true });
@@ -245,15 +248,6 @@ describe("command discovery", () => {
       expect(document.activeElement).toBe(origin);
     },
   );
-  // jsdom stamps events with Date.now(); Linux cases set strictly increasing native-like times.
-  let clock = 0;
-  const stamp = <T extends Event>(event: T, time = (clock += 10)) =>
-    Object.defineProperty(event, "timeStamp", { value: time, configurable: true });
-  const composition = async (type: string, data = "") => {
-    await act(async () =>
-      input().dispatchEvent(stamp(new CompositionEvent(type, { bubbles: true, data }))),
-    );
-  };
   const keyup = async (key: string, options: KeyboardEventInit = {}) => {
     await act(async () =>
       input().dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true, ...options })),
@@ -291,11 +285,15 @@ describe("command discovery", () => {
     }
     await composition("compositionupdate", "정");
   }
-  // The key that ends composition is pressed first, so its keydown timeStamp precedes
-  // compositionend even though IBus Hangul dispatches it afterwards.
-  async function endWith(event: KeyboardEvent) {
-    stamp(event, clock + 5);
-    await composition("compositionend", "정");
+  // IBus Hangul dispatches the key that ends composition as the first keydown after
+  // compositionend. Native Ubuntu GNOME observations recorded that keydown's timeStamp before,
+  // equal to and 2.4 ms after compositionend; the palette must not depend on any of these orders.
+  const orders = { earlier: -5, equal: 0, later: 2.4 } as const;
+  type Order = keyof typeof orders;
+  async function endWith(event: KeyboardEvent, order: Order = "earlier") {
+    const ended = (clock += 10);
+    stamp(event, ended + orders[order]);
+    await composition("compositionend", "정", ended);
     await act(async () => input().dispatchEvent(event));
   }
   async function linuxHarness() {
@@ -306,14 +304,18 @@ describe("command discovery", () => {
       test.registry.register("settings.open", { state: () => ({}), run });
     });
     await test.open();
-    return run;
+    return { run, open: test.open };
   }
-  it.each(["Enter", "NumpadEnter"])(
-    "keeps Linux IBus Hangul confirmation on %s separate from the next command activation",
-    async (code) => {
-      const run = await linuxHarness();
+  it.each(
+    (["Enter", "NumpadEnter"] as const).flatMap((code) =>
+      (Object.keys(orders) as Order[]).map((order) => [code, order] as const),
+    ),
+  )(
+    "keeps Linux IBus Hangul confirmation on %s separate from the next command activation when its keydown time is %s",
+    async (code, order) => {
+      const { run } = await linuxHarness();
       await linuxHangulComposition();
-      await endWith(keydown("Enter", { code, keyCode: 13 }));
+      await endWith(keydown("Enter", { code, keyCode: 13 }), order);
       await press("Enter", { code, keyCode: 13, repeat: true });
       expect(run).not.toHaveBeenCalled();
       expect(input().value).toBe("설정");
@@ -326,32 +328,86 @@ describe("command discovery", () => {
       expect(document.activeElement).toBe(origin);
     },
   );
-  it.each(["missing confirmation keyup", "unannounced ending", "other ending key", "earlier key"])(
-    "allows a deliberate Enter after a Linux IBus Hangul composition with %s",
-    async (variant) => {
-      const run = await linuxHarness();
-      await linuxHangulComposition();
-      if (variant === "missing confirmation keyup") {
-        await endWith(keydown("Enter", { code: "Enter", keyCode: 13 }));
-        expect(run).not.toHaveBeenCalled();
-      } else if (variant === "unannounced ending") {
-        // An ending followed by no key, pointer or focus event cannot claim a later press.
-        await composition("compositionend", "정");
-      } else if (variant === "other ending key") {
-        // IBus Hangul commits on an arrow key and then delivers it as an ordinary keydown.
-        await endWith(keydown("ArrowRight", { code: "ArrowRight", keyCode: 39 }));
-      } else {
-        // Only the first keydown after compositionend is compared with its timeStamp.
-        const early = keydown("Enter", { code: "Enter", keyCode: 13 });
-        await endWith(keydown("Shift", { code: "ShiftLeft", keyCode: 16 }));
-        await act(async () => input().dispatchEvent(early));
-        expect(run).toHaveBeenCalledOnce();
-        return;
-      }
+  it("keeps Linux IBus Hangul confirmation separate after an option pointerdown during composition", async () => {
+    const { run } = await linuxHarness();
+    await linuxHangulComposition();
+    // Option pointerdown keeps input focus and composition, so it does not cause the ending.
+    await act(async () =>
+      option("settings.open").dispatchEvent(
+        new Event("pointerdown", { bubbles: true, cancelable: true }),
+      ),
+    );
+    await endWith(keydown("Enter", { code: "Enter", keyCode: 13 }), "later");
+    expect(run).not.toHaveBeenCalled();
+    expect(host.querySelector(".command-palette[open]")).not.toBeNull();
+    await keyup("Enter", { code: "Enter", keyCode: 13 });
+    await press("Enter", { code: "Enter", keyCode: 13 });
+    expect(run).toHaveBeenCalledOnce();
+  });
+  it.each([
+    "missing confirmation keyup",
+    "ending without a delivered key",
+    "other ending key",
+    "modifier ending key",
+    "Escape ending key",
+    "pointer during composition",
+    "input pointer after the ending",
+    "input blur during composition",
+    "window blur during composition",
+    "pointer activation",
+  ])("allows a deliberate Enter after a Linux IBus Hangul composition with %s", async (variant) => {
+    const { run, open } = await linuxHarness();
+    await linuxHangulComposition();
+    if (variant === "missing confirmation keyup") {
+      await endWith(keydown("Enter", { code: "Enter", keyCode: 13 }), "later");
+      expect(run).not.toHaveBeenCalled();
+    } else if (variant === "ending without a delivered key") {
+      // Accepted cost: with no key, pointer or focus evidence, the first Enter is attributed to the
+      // ending and a second Enter activates.
+      await composition("compositionend", "정");
       await press("Enter", { code: "Enter", keyCode: 13 });
+      expect(run).not.toHaveBeenCalled();
+      expect(host.querySelector(".command-palette[open]")).not.toBeNull();
+      await keyup("Enter", { code: "Enter", keyCode: 13 });
+    } else if (variant === "other ending key") {
+      // IBus Hangul commits on an arrow key and then delivers it as an ordinary keydown.
+      await endWith(keydown("ArrowRight", { code: "ArrowRight", keyCode: 39 }), "later");
+    } else if (variant === "modifier ending key") {
+      // Only the first keydown after compositionend is attributed to the ending.
+      await endWith(keydown("Shift", { code: "ShiftLeft", keyCode: 16 }), "equal");
+    } else if (variant === "Escape ending key") {
+      // Cancelling closes this opening; the reopened palette accepts a deliberate Enter.
+      await endWith(keydown("Escape", { code: "Escape", keyCode: 27 }), "later");
+      expect(host.querySelector(".command-palette[open]")).toBeNull();
+      expect(run).not.toHaveBeenCalled();
+      await open();
+      await query("설정");
+    } else if (variant === "pointer during composition") {
+      // A pointer inside the input announces the ending it causes.
+      await act(async () => input().dispatchEvent(new Event("pointerdown", { bubbles: true })));
+      await composition("compositionend", "정");
+    } else if (variant === "input pointer after the ending") {
+      await composition("compositionend", "정");
+      await act(async () => input().dispatchEvent(new Event("pointerdown", { bubbles: true })));
+    } else if (variant === "input blur during composition") {
+      await act(async () => {
+        host.querySelector<HTMLButtonElement>(".command-palette button")!.focus();
+      });
+      await composition("compositionend", "정");
+      await act(async () => input().focus());
+    } else if (variant === "window blur during composition") {
+      await act(async () => window.dispatchEvent(new Event("blur")));
+      await composition("compositionend", "정");
+    } else {
+      // A pointer activation has no keydown, so the unannounced ending cannot refuse it.
+      await composition("compositionend", "정");
+      await act(async () => option("settings.open").click());
       expect(run).toHaveBeenCalledOnce();
-    },
-  );
+      return;
+    }
+    await press("Enter", { code: "Enter", keyCode: 13 });
+    expect(run).toHaveBeenCalledOnce();
+  });
   it.each([" ", "Escape", "a"])(
     "allows a deliberate Enter after composition ends with %j",
     async (commitKey) => {
@@ -359,13 +415,9 @@ describe("command discovery", () => {
       await render(h(CommandSurfaces, { ...test, locale: "en-US" }));
       await test.open();
       await query("Ohtia help");
-      await act(async () =>
-        input().dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
-      );
+      await composition("compositionstart");
       await key(input(), commitKey, { isComposing: true });
-      await act(async () =>
-        input().dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })),
-      );
+      await composition("compositionend");
       await key(input(), "Enter");
       expect(host.querySelector(".help-dialog[open]")).not.toBeNull();
     },
@@ -377,13 +429,9 @@ describe("command discovery", () => {
       await render(h(CommandSurfaces, { ...test, locale: "en-US" }));
       await test.open();
       await query("Ohtia help");
-      await act(async () =>
-        input().dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
-      );
+      await composition("compositionstart");
       await key(input(), "Enter", { code: "Enter" });
-      await act(async () =>
-        input().dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })),
-      );
+      await composition("compositionend");
       if (gesture === "pointer") {
         await act(async () => option("help.open").click());
       } else {
