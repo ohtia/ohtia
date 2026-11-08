@@ -1,6 +1,10 @@
 .settings-dialog {
-  margin-block: var(--space-10);
-  max-block-size: calc(100dvh - 2 * var(--space-10));
+  margin-block: max(var(--space-10), env(titlebar-area-y, 0px) + env(titlebar-area-height, 0px))
+    var(--space-10);
+  max-block-size: calc(
+    100dvh - max(var(--space-10), env(titlebar-area-y, 0px) + env(titlebar-area-height, 0px)) -
+      var(--space-10)
+  );
   overflow: hidden;
 }
 .settings-dialog-body {
@@ -166,8 +170,18 @@
 }
 @media (max-height: 400px) {
   .settings-dialog {
-    margin-block: var(--space-4);
-    max-block-size: calc(100dvh - 2 * var(--space-4));
+    margin-block: max(var(--space-4), env(titlebar-area-y, 0px) + env(titlebar-area-height, 0px))
+      var(--space-4);
+    max-block-size: calc(
+      100dvh - max(var(--space-4), env(titlebar-area-y, 0px) + env(titlebar-area-height, 0px)) -
+        var(--space-4)
+    );
+  }
+}
+/* At extreme zoom heights focus scrolling keeps only the ring clear, so a spaced control fits. */
+@media (max-height: 150px) {
+  .settings-content {
+    scroll-padding: calc(var(--focus-width) + var(--focus-offset));
   }
 }
 @media (max-width: 360px) {

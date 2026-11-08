@@ -20,12 +20,24 @@ export async function observeCommandDialog(page, selector) {
   }, selector);
 }
 
+/**
+ * Chromium floors outline width and offset to whole device pixels, so at a fractional device-pixel
+ * ratio (page zoom times display scale) the declared 3px width and 2px offset are expected at
+ * their snapped CSS values. Whole ratios keep the declared values.
+ */
+export function focusRingMinimum(devicePixelRatio = 1) {
+  const snapped = (declared) =>
+    Math.max(1, Math.floor(declared * devicePixelRatio)) / devicePixelRatio;
+  return { width: snapped(3) - 0.001, offset: snapped(2) - 0.001 };
+}
+
 /** Focus alone must reveal the target and its complete ring, without another control above it. */
 export async function verifyCommandFocus(control) {
   await control.page().keyboard.press("Tab");
   await control.focus();
   await expect(control).toBeFocused();
-  const observation = await control.evaluate((element) => {
+  const minimum = focusRingMinimum(await control.evaluate(() => window.devicePixelRatio));
+  const observation = await control.evaluate((element, minimum) => {
     const rect = element.getBoundingClientRect();
     const style = getComputedStyle(element);
     const width = Number.parseFloat(style.outlineWidth);
@@ -38,7 +50,8 @@ export async function verifyCommandFocus(control) {
       bottom: rect.bottom + ring,
     };
     const issues = [];
-    if (width < 3 || offset < 2) issues.push("Focus ring is below the declared width or offset.");
+    if (width < minimum.width || offset < minimum.offset)
+      issues.push("Focus ring is below the declared width or offset.");
     if (
       bounds.left < 0 ||
       bounds.right > innerWidth ||
@@ -87,7 +100,7 @@ export async function verifyCommandFocus(control) {
       }
     }
     return { bounds, width, offset, issues: [...new Set(issues)] };
-  });
+  }, minimum);
   expect(observation.issues).toEqual([]);
   return observation;
 }
