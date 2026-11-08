@@ -6,6 +6,7 @@ import {
   windowControlsExclusions,
   withCleanup,
 } from "../tooling/dialog-safe-area.mjs";
+import { focusRingMinimum } from "../tooling/command-presentation.mjs";
 
 // The overlay and Settings Close geometry observed at 320 x 400 and 100% zoom in GNOME.
 const gnome = { x: 0, y: 0, width: 281, height: 48 };
@@ -75,17 +76,50 @@ describe("window-controls safe area", () => {
       zoomFactor: 1,
       textSpacing: true,
     });
-    for (const target of dialogSafeAreaViewports)
-      expect(Math.round(target.width / target.zoomFactor)).toBeGreaterThanOrEqual(320);
-    // Each size lowers zoom without resizing, so stale overlay geometry would under-reserve.
+    for (const target of dialogSafeAreaViewports) {
+      expect(target.width).toBeGreaterThanOrEqual(320);
+      expect(target.height).toBeGreaterThanOrEqual(400);
+      expect(target.width / target.zoomFactor).toBeGreaterThanOrEqual(320);
+      // The native viewport helper requires the exact CSS size, so each case maps to whole pixels.
+      expect(Number.isInteger(target.width / target.zoomFactor)).toBe(true);
+      expect(Number.isInteger(target.height / target.zoomFactor)).toBe(true);
+    }
+    // A later case lowers zoom without resizing, so stale overlay geometry would under-reserve.
     expect(dialogSafeAreaViewports.map((target) => target.zoomFactor)).toEqual([
-      1, 0.75, 0.9, 4, 2,
+      1, 0.9, 0.75, 4, 2,
     ]);
+    expect(dialogSafeAreaViewports[2]).toMatchObject({
+      width: dialogSafeAreaViewports[1].width,
+      height: dialogSafeAreaViewports[1].height,
+    });
     expect(
       dialogSafeAreaViewports
         .filter((target) => target.textSpacing)
         .map((target) => target.zoomFactor),
     ).toEqual([1, 4]);
+  });
+
+  it("expects the declared focus ring at Chromium's device-pixel snapping for the device-pixel ratio", () => {
+    const close = (value: number, expected: number) => expect(value).toBeCloseTo(expected, 2);
+    // Values observed in Electron: 2.22/1.11 px at 90%, 2.67/1.33 px at 75%, 2.4/1.6 px at 125%.
+    // The ratio is page zoom times display scale, so 125% display scaling at 100% zoom matches.
+    for (const [ratio, width, offset] of [
+      [1, 3, 2],
+      [2, 3, 2],
+      [4, 3, 2],
+      [0.9, 2.222, 1.111],
+      [0.75, 2.667, 1.333],
+      [1.25, 2.4, 1.6],
+    ]) {
+      const minimum = focusRingMinimum(ratio);
+      close(minimum.width, width);
+      close(minimum.offset, offset);
+      expect(width).toBeGreaterThanOrEqual(minimum.width);
+      expect(offset).toBeGreaterThanOrEqual(minimum.offset);
+    }
+    // A thinner ring than the snapped declaration still fails.
+    expect(2).toBeLessThan(focusRingMinimum(0.9).width);
+    expect(2.5).toBeLessThan(focusRingMinimum(1).width);
   });
 
   it("keeps the primary failure when cleanup also fails", async () => {

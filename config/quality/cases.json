@@ -423,6 +423,7 @@
     "tests/dialog-safe-area.test.ts::window-controls safe area > accepts controls below the band or beside it, within layout rounding::case-0",
     "tests/dialog-safe-area.test.ts::window-controls safe area > covers every delivered dialog at the minimum window and the zoom-reflow cases::case-0",
     "tests/dialog-safe-area.test.ts::window-controls safe area > detects the reported Settings Close overlap and its focus ring::case-0",
+    "tests/dialog-safe-area.test.ts::window-controls safe area > expects the declared focus ring at Chromium's device-pixel snapping for the device-pixel ratio::case-0",
     "tests/dialog-safe-area.test.ts::window-controls safe area > keeps the primary failure when cleanup also fails::case-0",
     "tests/dialog-safe-area.test.ts::window-controls safe area > refuses to infer a safe area from missing or empty overlay geometry::case-0",
     "tests/dialog-safe-area.test.ts::window-controls safe area > reserves leading traffic lights and both sides when the usable area is inset::case-0",

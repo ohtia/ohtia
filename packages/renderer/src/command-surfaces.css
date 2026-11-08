@@ -1,11 +1,19 @@
+/*
+ * Each dialog keeps its block-start margin from the window edge unless the native window-controls
+ * band is taller; it then starts below that band, never beneath the system controls.
+ */
 .command-dialog {
   padding: var(--space-0);
   inline-size: min(var(--component-dialog-max-width), calc(100% - 2 * var(--space-4)));
+  margin-block: max(var(--space-8), env(titlebar-area-y, 0px) + env(titlebar-area-height, 0px))
+    var(--space-8);
   max-block-size: calc(
-    100dvh - env(titlebar-area-y, 0px) - env(titlebar-area-height, 0px) - 2 * var(--space-8)
+    100dvh - max(var(--space-8), env(titlebar-area-y, 0px) + env(titlebar-area-height, 0px)) -
+      var(--space-8)
   );
-  margin-block: var(--space-8);
   overflow: auto;
+  /* Focus scrolling keeps the complete ring inside the scrolling dialog. */
+  scroll-padding: calc(var(--focus-width) + var(--focus-offset));
 }
 .command-dialog[open] {
   display: flex;
@@ -122,6 +130,10 @@
 .about-license {
   white-space: pre-wrap;
 }
+/* Adjacent focus rings of the license disclosure and the notices toggle never touch the other control. */
+.about-dialog details {
+  margin-block-end: var(--space-3);
+}
 .command-danger {
   background: var(--danger-surface);
   color: var(--danger-content);
@@ -158,9 +170,11 @@
 .command-palette {
   scroll-padding: calc(var(--focus-width) + var(--focus-offset));
   inline-size: min(var(--component-palette-max-width), calc(100% - 2 * var(--space-4)));
-  margin-block: var(--space-16);
+  margin-block: max(var(--space-16), env(titlebar-area-y, 0px) + env(titlebar-area-height, 0px))
+    var(--space-16);
   max-block-size: calc(
-    100dvh - env(titlebar-area-y, 0px) - env(titlebar-area-height, 0px) - 2 * var(--space-16)
+    100dvh - max(var(--space-16), env(titlebar-area-y, 0px) + env(titlebar-area-height, 0px)) -
+      var(--space-16)
   );
 }
 .command-palette > h2 {
@@ -269,9 +283,11 @@
   color: var(--content-secondary);
 }
 .shortcuts-dialog {
-  margin-block: var(--space-10);
+  margin-block: max(var(--space-10), env(titlebar-area-y, 0px) + env(titlebar-area-height, 0px))
+    var(--space-10);
   max-block-size: calc(
-    100dvh - env(titlebar-area-y, 0px) - env(titlebar-area-height, 0px) - 2 * var(--space-10)
+    100dvh - max(var(--space-10), env(titlebar-area-y, 0px) + env(titlebar-area-height, 0px)) -
+      var(--space-10)
   );
 }
 .shortcuts-body {
@@ -329,9 +345,11 @@
 @media (max-height: 300px) {
   .command-palette,
   .shortcuts-dialog {
-    margin-block: var(--space-4);
+    margin-block: max(var(--space-4), env(titlebar-area-y, 0px) + env(titlebar-area-height, 0px))
+      var(--space-4);
     max-block-size: calc(
-      100dvh - env(titlebar-area-y, 0px) - env(titlebar-area-height, 0px) - 2 * var(--space-4)
+      100dvh - max(var(--space-4), env(titlebar-area-y, 0px) + env(titlebar-area-height, 0px)) -
+        var(--space-4)
     );
   }
   .shortcuts-body {
@@ -345,15 +363,26 @@
 @media (max-height: 150px) {
   .command-palette,
   .shortcuts-dialog {
-    margin-block: var(--space-1);
+    margin-block: max(var(--space-1), env(titlebar-area-y, 0px) + env(titlebar-area-height, 0px))
+      var(--space-1);
     max-block-size: calc(
-      100dvh - env(titlebar-area-y, 0px) - env(titlebar-area-height, 0px) - 2 * var(--space-1)
+      100dvh - max(var(--space-1), env(titlebar-area-y, 0px) + env(titlebar-area-height, 0px)) -
+        var(--space-1)
     );
+  }
+  /* Focus scrolling keeps only the ring clear, so a spaced control fits the short body. */
+  .command-dialog-body,
+  .shortcuts-body {
+    scroll-padding: calc(var(--focus-width) + var(--focus-offset));
   }
   /* Fit the focused search and a wrapped option together at extreme zoom heights. */
   .command-palette {
-    margin-block: var(--space-0);
-    max-block-size: calc(100dvh - env(titlebar-area-y, 0px) - env(titlebar-area-height, 0px));
+    margin-block: max(var(--space-0), env(titlebar-area-y, 0px) + env(titlebar-area-height, 0px))
+      var(--space-0);
+    max-block-size: calc(
+      100dvh - max(var(--space-0), env(titlebar-area-y, 0px) + env(titlebar-area-height, 0px)) -
+        var(--space-0)
+    );
   }
   .command-palette > [data-close] {
     inset-block-start: calc(var(--focus-width) + var(--focus-offset));

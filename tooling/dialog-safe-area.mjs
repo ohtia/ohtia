@@ -8,15 +8,17 @@ import { setNativeViewport } from "./design-viewport.mjs";
 const layoutTolerance = 1 / 64;
 
 /**
- * The minimum content size at zoom levels that keep at least the 320 CSS px reflow width,
- * then the documented 400% and 200% zoom-reflow cases. Each size also lowers zoom without
- * resizing, so stale overlay geometry would under-reserve. Text-spacing overrides run at the
- * reported minimum and at the most height-constrained case, bounding the packaged suite time.
+ * The reported 320 x 400 minimum at 100%, 90% and 75% just above the minimum (324 x 405, the
+ * nearest size mapping to whole CSS pixels, which the native viewport helper requires), then
+ * the documented 400% and 200% zoom-reflow cases. Every case keeps at least the 320 CSS px reflow
+ * width. The 324 x 405 and 1280 x 600 pairs lower zoom without resizing, so stale overlay geometry
+ * would under-reserve. Text-spacing overrides run at the reported minimum and at the most
+ * height-constrained case, bounding the packaged suite time.
  */
 export const dialogSafeAreaViewports = Object.freeze([
   Object.freeze({ width: 320, height: 400, zoomFactor: 1, textSpacing: true }),
-  Object.freeze({ width: 320, height: 400, zoomFactor: 0.75, textSpacing: false }),
-  Object.freeze({ width: 320, height: 400, zoomFactor: 0.9, textSpacing: false }),
+  Object.freeze({ width: 324, height: 405, zoomFactor: 0.9, textSpacing: false }),
+  Object.freeze({ width: 324, height: 405, zoomFactor: 0.75, textSpacing: false }),
   Object.freeze({ width: 1280, height: 600, zoomFactor: 4, textSpacing: true }),
   Object.freeze({ width: 1280, height: 600, zoomFactor: 2, textSpacing: false }),
 ]);
@@ -133,7 +135,6 @@ async function verifyDialogControls(dialog, exclusions, label) {
         element.getClientRects().length > 0,
     );
     if (!reachable) continue;
-    const { bounds } = await verifyCommandFocus(control);
     const name = await control.evaluate(
       (element) =>
         element.getAttribute("aria-label") ||
@@ -141,6 +142,13 @@ async function verifyDialogControls(dialog, exclusions, label) {
         element.getAttribute("type") ||
         element.tagName.toLowerCase(),
     );
+    let bounds;
+    try {
+      ({ bounds } = await verifyCommandFocus(control));
+    } catch (error) {
+      // Name the dialog case and control; the focus helper reports only the geometry issue.
+      throw new Error(`${label}: ${name}: ${error.message}`, { cause: error });
+    }
     expect(
       safeAreaIntersections(bounds, exclusions),
       `${label}: ${name} and its focus ring stay outside the window controls`,
@@ -296,6 +304,7 @@ export async function verifyDialogSafeAreas({ page, native, invoke, trigger }) {
         limitations: [
           "Window Controls Overlay geometry is read from Chromium; native pixels, system-control activation, window movement and resize require independent native observation.",
           "Zoom above 100% at the 320 x 400 minimum is below the 320 CSS px reflow width and is covered by the 1280 x 600 zoom cases.",
+          "The 90% and 75% cases run at 324 x 405, because 320 x 400 maps to fractional CSS pixels at those factors.",
         ],
       };
     },
