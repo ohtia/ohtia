@@ -228,6 +228,8 @@ jobs:
           name: scw-native-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             artifacts/scw-cycle/native.json
+            artifacts/scw-cycle/native-os-packages.txt
+            artifacts/scw-cycle/native-os-packages.json
             artifacts/scw-cycle/native-observations.json.gz
             artifacts/scw-cycle/runtime.json
             artifacts/scw-cycle/storage.json

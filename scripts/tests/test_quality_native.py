@@ -58,6 +58,47 @@ class NativeTests(unittest.TestCase):
             with self.assertRaisesRegex(delivery.DeliveryError, "OS/CPU"):
                 native.host_matches(cell)
 
+    def test_linux_package_list_uses_the_guest_function_and_policy_limits(self):
+        limits = delivery.read(delivery.ROOT / "config/installation/scaleway.json")["limits"]
+        data = b"bash\t5.3-1\tamd64\nlibc6\t2.42-1\tamd64\n"
+        linux = [
+            cell
+            for cell in delivery.cells(delivery.read(delivery.ROOT / "config/desktop/targets.json"))
+            if cell["target"].startswith("linux-")
+        ]
+        self.assertEqual(
+            {cell["profile"] for cell in linux}, {"ubuntu-26.04", "fedora-44", "debian-13"}
+        )
+        for cell in linux:
+            with self.subTest(cell=cell["id"]), tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary).resolve()
+                with patch.object(
+                    native.package_inventory, "package_inventory", return_value=data
+                ) as listed:
+                    record = native.os_package_record(cell, output)
+                listed.assert_called_once_with(
+                    "rpm" if cell["profile"] == "fedora-44" else "dpkg",
+                    limits["package_inventory_bytes"],
+                    limits["package_inventory_seconds"],
+                )
+                inventory = output / "native-os-packages.txt"
+                self.assertEqual(inventory.read_bytes(), data)
+                self.assertEqual(
+                    record, {"artifact": delivery.artifact(inventory, output), "packages": 2}
+                )
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary).resolve()
+            with (
+                patch.object(
+                    native.package_inventory,
+                    "package_inventory",
+                    side_effect=ValueError("package_inventory_timeout"),
+                ),
+                self.assertRaisesRegex(ValueError, "^package_inventory_timeout$"),
+            ):
+                native.os_package_record(linux[0], output)
+            self.assertEqual(list(output.iterdir()), [])
+
     def test_build_and_product_children_inherit_no_authority_credentials(self):
         with patch.dict(
             os.environ,

@@ -23,6 +23,7 @@ import linux_desktop
 ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = ROOT / "config/installation/scaleway.json"
 GUARD = Path("/run/ohtia-qualification.json")
+GUEST_INVENTORY = Path("/var/lib/ohtia-qualification/native-os-packages.txt")
 KINDS = ("root", "home", "ip", "server", "security")
 REPOSITORY = "ohtia/ohtia"
 API_HOST = "api.scaleway.com"
@@ -170,6 +171,8 @@ SAFE_FAILURE_CODES = frozenset(
         "guest_not_ready",
         "guest_operation_failed",
         "guest_output_path",
+        "guest_package_inventory_digest",
+        "guest_package_inventory_shape",
         "guest_output_required",
         "guest_policy",
         "guest_process_architecture",
@@ -265,6 +268,14 @@ SAFE_FAILURE_CODES = frozenset(
         "ordinary_extractor_required",
         "package_count",
         "package_install_missing",
+        "package_inventory_budget",
+        "package_inventory_failed",
+        "package_inventory_identity",
+        "package_inventory_invalid",
+        "package_inventory_oversized",
+        "package_inventory_root_required",
+        "package_inventory_timeout",
+        "package_inventory_unavailable",
         "package_seal_requires_root",
         "policy_version",
         "prepare_arguments",
@@ -512,6 +523,11 @@ def policy() -> dict:
     )
     require(limits["managed_instances"] == 1, "instance_budget")
     require(limits["evidence_seconds"] < limits["cleanup_seconds"], "evidence_budget")
+    require(
+        limits["package_inventory_bytes"] <= limits["maximum_json_bytes"]
+        and limits["package_inventory_seconds"] < limits["test_seconds"],
+        "package_inventory_budget",
+    )
     require(
         limits["recovery_reuse_seconds"]
         < limits["recovery_admission_seconds"]

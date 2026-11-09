@@ -8,16 +8,51 @@ import json
 import os
 import platform
 import re
+import selectors
 import shutil
 import stat
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 from pathlib import Path
 
 GUARD = Path("/run/ohtia-qualification.json")
 FAILURE = Path("/var/lib/ohtia-qualification-failed.json")
+INVENTORY = Path("/var/lib/ohtia-qualification/native-os-packages.txt")
+INVENTORY_CODES = frozenset(
+    {
+        "package_inventory_failed",
+        "package_inventory_timeout",
+        "package_inventory_oversized",
+        "package_inventory_invalid",
+        "package_inventory_identity",
+        "package_inventory_root_required",
+    }
+)
+# Fixed absolute programs and formats; each line is name, [epoch:]version and architecture.
+INVENTORY_COMMANDS = {
+    "rpm": (
+        "/usr/bin/rpm",
+        "--query",
+        "--all",
+        "--queryformat",
+        "%{NAME}\t%|EPOCH?{%{EPOCH}:}:{}|%{VERSION}-%{RELEASE}\t%{ARCH}\n",
+    ),
+    "dpkg": (
+        "/usr/bin/dpkg-query",
+        "--show",
+        "--showformat=${db:Status-Status}\t${Package}\t${Version}\t${Architecture}\n",
+    ),
+}
+INVENTORY_FIELDS = (
+    re.compile(r"[A-Za-z0-9][A-Za-z0-9+._-]*"),
+    re.compile(r"[A-Za-z0-9.+~^:_-]+"),
+    re.compile(r"[A-Za-z0-9_]+|\(none\)"),
+)
+# dpkg keeps removed packages' configuration files; intermediate states remain invalid.
+DPKG_ABSENT = frozenset({"not-installed", "config-files"})
 BOOTSTRAP_CODES = frozenset(
     {
         "native_guest_root_required",
@@ -231,6 +266,172 @@ def run(*args):
     return subprocess.run(
         list(args), check=True, capture_output=True, text=True, timeout=120
     ).stdout.strip()
+
+
+def bounded_output(arguments: tuple[str, ...], maximum: int, seconds: int) -> bytes:
+    """Read at most the bounded stdout of a fixed program before its deadline, or refuse."""
+    data = bytearray()
+    deadline = time.monotonic() + seconds
+    try:
+        with subprocess.Popen(
+            list(arguments),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            env={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"},
+        ) as child:
+            try:
+                with selectors.DefaultSelector() as selector:
+                    selector.register(child.stdout, selectors.EVENT_READ)
+                    while True:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0 or not selector.select(remaining):
+                            raise ValueError("package_inventory_timeout")
+                        block = os.read(child.stdout.fileno(), min(65536, maximum + 1 - len(data)))
+                        if not block:
+                            break
+                        data.extend(block)
+                        if len(data) > maximum:
+                            raise ValueError("package_inventory_oversized")
+                status = child.wait(timeout=max(0.001, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                raise ValueError("package_inventory_timeout") from None
+            finally:
+                if child.poll() is None:
+                    child.kill()
+                    child.wait()
+    except OSError:
+        raise ValueError("package_inventory_failed") from None
+    if status:
+        raise ValueError("package_inventory_failed")
+    return bytes(data)
+
+
+def inventory_rows(data: bytes, *, dpkg_states: bool = False) -> list[str]:
+    """Admit complete fixed-field rows only; a partial or unexpected row refuses the whole list."""
+    try:
+        text = data.decode("ascii")
+    except UnicodeDecodeError:
+        raise ValueError("package_inventory_invalid") from None
+    if not text.endswith("\n"):
+        raise ValueError("package_inventory_invalid")
+    rows = []
+    for line in text[:-1].split("\n"):
+        fields = line.split("\t")
+        if dpkg_states:
+            if len(fields) != 4:
+                raise ValueError("package_inventory_invalid")
+            state, *fields = fields
+            if state in DPKG_ABSENT:
+                # Omitted rows must be equally well formed; an absent package may lack
+                # a version and an architecture.
+                name, *details = fields
+                if not INVENTORY_FIELDS[0].fullmatch(name) or not all(
+                    not field or pattern.fullmatch(field)
+                    for pattern, field in zip(INVENTORY_FIELDS[1:], details)
+                ):
+                    raise ValueError("package_inventory_invalid")
+                continue
+            if state != "installed":
+                raise ValueError("package_inventory_invalid")
+        if len(fields) != 3 or not all(
+            pattern.fullmatch(field) for pattern, field in zip(INVENTORY_FIELDS, fields)
+        ):
+            raise ValueError("package_inventory_invalid")
+        rows.append("\t".join(fields))
+    if not rows or len(set(rows)) != len(rows):
+        raise ValueError("package_inventory_invalid")
+    return sorted(rows)
+
+
+def package_inventory(manager: str, maximum: int, seconds: int) -> bytes:
+    """Return the sorted installed-package list shared by native CI and disposable guests."""
+    if manager not in INVENTORY_COMMANDS:
+        raise ValueError("package_inventory_failed")
+    rows = inventory_rows(
+        bounded_output(INVENTORY_COMMANDS[manager], maximum, seconds),
+        dpkg_states=manager == "dpkg",
+    )
+    data = ("\n".join(rows) + "\n").encode("ascii")
+    if len(data) > maximum:
+        raise ValueError("package_inventory_oversized")
+    return data
+
+
+def inventory_count(data: bytes, maximum: int) -> int:
+    """Validate a retained list as produced: bounded, canonical, sorted and duplicate-free."""
+    if len(data) > maximum:
+        raise ValueError("package_inventory_oversized")
+    rows = inventory_rows(data)
+    if ("\n".join(rows) + "\n").encode("ascii") != data:
+        raise ValueError("package_inventory_invalid")
+    return len(rows)
+
+
+def read_inventory(maximum: int) -> bytes:
+    info = INVENTORY.lstat()
+    if (
+        not stat.S_ISREG(info.st_mode)
+        or info.st_uid != 0
+        or info.st_nlink != 1
+        or info.st_mode & 0o022
+        or info.st_size > maximum
+    ):
+        raise ValueError("package_inventory_identity")
+    with INVENTORY.open("rb") as stream:
+        return stream.read(maximum + 1)
+
+
+def packages() -> dict:
+    """Record the guest's package list once; later calls report the retained first observation."""
+    if os.getuid() != 0:
+        raise ValueError("package_inventory_root_required")
+    guard = json.loads(GUARD.read_bytes())
+    manager = {"fedora-44": "rpm", "debian-13": "dpkg"}.get(guard["intent"]["profile"])
+    maximum, seconds = guard["package_inventory_bytes"], guard["package_inventory_seconds"]
+    if type(maximum) is not int or type(seconds) is not int or maximum <= 0 or seconds <= 0:
+        raise ValueError("package_inventory_failed")
+    folder = INVENTORY.parent
+    folder.mkdir(mode=0o755, exist_ok=True)
+    info = folder.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+        raise ValueError("package_inventory_identity")
+    if os.path.lexists(INVENTORY):
+        data = read_inventory(maximum)
+    else:
+        data = package_inventory(manager, maximum, seconds)
+        descriptor, name = tempfile.mkstemp(prefix=".native-os-packages-", dir=folder)
+        try:
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.chmod(name, 0o644)
+            # A hard link publishes the complete list without replacing an earlier one.
+            os.link(name, INVENTORY)
+        finally:
+            os.unlink(name)
+    count = inventory_count(data, maximum)
+    return {
+        "version": 1,
+        "status": "observed",
+        "machine": platform.machine(),
+        "packages": count,
+        "bytes": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+    }
+
+
+def packages_report() -> dict:
+    try:
+        return packages()
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+        code = str(error) if isinstance(error, ValueError) else ""
+        return {
+            "version": 1,
+            "status": "failed",
+            "code": code if code in INVENTORY_CODES else "package_inventory_failed",
+        }
 
 
 def prepare() -> None:
@@ -550,6 +751,8 @@ def main():
             print(json.dumps(status(), sort_keys=True))
         elif operation == "diagnostics":
             print(json.dumps(diagnostics(), sort_keys=True))
+        elif operation == "packages":
+            print(json.dumps(packages_report(), sort_keys=True))
         else:
             raise ValueError("guest_bootstrap_operation")
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
