@@ -42,6 +42,7 @@ PROJECT = "00000000-0000-4000-8000-000000000001"
 IMAGE = "00000000-0000-4000-8000-000000000002"
 SNAPSHOT = "00000000-0000-4000-8000-000000000003"
 TOKEN = "synthetic-credential-for-tests"
+INVENTORY = b"bash\t5.3.0-2.fc44\taarch64\nkernel\t1:6.19.0-1.fc44\taarch64\n"
 
 
 def fixtures(profile="fedora-44", desktop="gnome"):
@@ -321,6 +322,7 @@ class CycleTests(unittest.TestCase):
                 "guest_shutdown_seconds": 60,
                 "evidence_seconds": 5,
                 "maximum_package_bytes": 1,
+                "package_inventory_seconds": 10,
             }
         )
         changed["profiles"].pop("fedora-44")
@@ -2326,15 +2328,46 @@ class EvidenceTests(unittest.TestCase):
         bad_receipt=False,
         result_error=False,
         invalid_result=False,
+        inventory="observed",
+        inventory_binding=True,
+        readiness="ready",
+        admitted=True,
     ):
         output = self.root / "output"
         output.mkdir()
         now = [0.0]
+        packages = INVENTORY
+        if inventory == "unsorted":
+            packages = b"".join(reversed(INVENTORY.splitlines(keepends=True)))
+        summary = {
+            "version": 1,
+            "status": "observed",
+            "machine": "aarch64",
+            "packages": 2,
+            "bytes": len(packages),
+            "sha256": hashlib.sha256(packages).hexdigest(),
+        }
+        if inventory == "digest":
+            summary["sha256"] = "0" * 64
+        elif inventory == "machine":
+            summary["machine"] = "x86_64"
+        elif inventory in {"reported-timeout", "reported-unknown"}:
+            summary = {
+                "version": 1,
+                "status": "failed",
+                "code": "package_inventory_timeout" if inventory == "reported-timeout" else TOKEN,
+            }
         native = {
             "status": "failed",
             "identity": self.intent["identity"],
             "build": self.intent["build"],
             "cell": cycle.intent_cell(self.intent),
+            "os_packages": {
+                "bytes": len(INVENTORY),
+                "sha256": hashlib.sha256(
+                    INVENTORY if inventory_binding else INVENTORY + INVENTORY
+                ).hexdigest(),
+            },
             "distribution_qualified": False,
             "publisher_signed": False,
         }
@@ -2410,7 +2443,13 @@ class EvidenceTests(unittest.TestCase):
 
         def command(args, **kwargs):
             text = args[-1]
+            if args[0] == "ssh" and readiness == "unreachable":
+                now[0] = 100.0
+                raise subprocess.CalledProcessError(255, args)
             if args[0] == "ssh" and text == qualification.reporting.READINESS_COMMAND:
+                if readiness == "helper-missing":
+                    now[0] = 100.0
+                    return subprocess.CompletedProcess(args, 0, b'{"python":true,"helper":false}')
                 return subprocess.CompletedProcess(args, 0, b'{"python":true,"helper":true}')
             if args[0] == "ssh" and text.endswith("bootstrap.py status"):
                 return subprocess.CompletedProcess(
@@ -2425,6 +2464,10 @@ class EvidenceTests(unittest.TestCase):
                         }
                     ).encode(),
                 )
+            if args[0] == "ssh" and text.endswith("bootstrap.py packages"):
+                return subprocess.CompletedProcess(args, 0, json.dumps(summary).encode())
+            if args[0] == "ssh" and text == f"cat {cycle.GUEST_INVENTORY}":
+                return subprocess.CompletedProcess(args, 0, packages)
             if (
                 args[0] == "ssh"
                 and "scripts/scaleway_guest.py display" in text
@@ -2432,6 +2475,7 @@ class EvidenceTests(unittest.TestCase):
                 and not bad_receipt
                 and not result_error
                 and not invalid_result
+                and inventory_binding
             ):
                 now[0] = 100.0
                 raise subprocess.TimeoutExpired(args, 100)
@@ -2461,7 +2505,12 @@ class EvidenceTests(unittest.TestCase):
             return subprocess.CompletedProcess(args, 0, data)
 
         with (
-            patch.object(qualification, "host_key", return_value=("8.8.8.8", self.root / "known")),
+            patch.object(
+                qualification,
+                "host_key",
+                return_value=("8.8.8.8", self.root / "known"),
+                side_effect=None if admitted else cycle.CycleError("host_key_deadline"),
+            ),
             patch.object(cycle, "verify_artifact", return_value=self.root / "fixture.bin"),
             patch.object(cycle.time, "monotonic", side_effect=lambda: now[0]),
             patch.object(cycle.time, "sleep") as sleeping,
@@ -2531,6 +2580,453 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(cycle.read(output / "guest-failure.json")["phase"], "bootstrap")
         self.assertFalse(any(call.args[0][0] == "scp" for call in called.call_args_list))
         sleeping.assert_not_called()
+
+    def test_package_list_is_verified_and_retained_before_transfer(self):
+        base = self.root
+        for profile in ("fedora-44", "debian-13"):
+            for desktop in ("gnome", "kde"):
+                with self.subTest(profile=profile, desktop=desktop):
+                    self.root = base / f"{profile}-{desktop}"
+                    self.root.mkdir()
+                    self.settings, self.intent = fixtures(profile, desktop)
+                    output, _, called = self.call_guest(timeout=True)
+                    self.assertEqual((output / "native-os-packages.txt").read_bytes(), INVENTORY)
+                    self.assertEqual(
+                        cycle.read(output / "native-os-packages.json"),
+                        {
+                            "version": 1,
+                            "status": "observed",
+                            "identity": self.intent["identity"],
+                            "cell": cycle.cell(profile, desktop),
+                            "selected_image_id": self.intent["image_id"],
+                            "guest_state": "ready",
+                            "architecture": "aarch64",
+                            "packages": 2,
+                            "bytes": len(INVENTORY),
+                            "sha256": hashlib.sha256(INVENTORY).hexdigest(),
+                        },
+                    )
+                    texts = [call.args[0][-1] for call in called.call_args_list]
+                    listed = [
+                        i for i, text in enumerate(texts) if text.endswith("bootstrap.py packages")
+                    ]
+                    copied = [
+                        i
+                        for i, call in enumerate(called.call_args_list)
+                        if call.args[0][0] == "scp"
+                    ]
+                    self.assertEqual(len(listed), 1)
+                    self.assertLess(listed[0], copied[0])
+
+    def test_package_list_failures_stop_before_transfer_without_a_second_attempt(self):
+        base = self.root
+        for mode, code in (
+            ("reported-timeout", "package_inventory_timeout"),
+            ("reported-unknown", "package_inventory_failed"),
+            ("digest", "guest_package_inventory_digest"),
+            ("unsorted", "package_inventory_invalid"),
+            ("machine", "guest_package_inventory_shape"),
+        ):
+            with self.subTest(mode=mode):
+                self.root = base / mode
+                self.root.mkdir()
+                output, _, called = self.call_guest(inventory=mode)
+                failure = cycle.read(output / "guest-failure.json")
+                self.assertEqual((failure["phase"], failure["code"]), ("inventory", code))
+                record = cycle.read(output / "native-os-packages.json")
+                self.assertEqual((record["status"], record["code"]), ("failed", code))
+                self.assertEqual(record["guest_state"], "ready")
+                self.assertNotIn(TOKEN, json.dumps(record))
+                self.assertFalse((output / "native-os-packages.txt").exists())
+                self.assertFalse(any(call.args[0][0] == "scp" for call in called.call_args_list))
+                listed = [
+                    call
+                    for call in called.call_args_list
+                    if call.args[0][-1].endswith("bootstrap.py packages")
+                ]
+                self.assertEqual(len(listed), 1)
+
+    def test_failed_guest_still_yields_an_explicitly_marked_package_list(self):
+        output, _, _ = self.call_guest(bootstrap_failure=True)
+        self.assertEqual((output / "native-os-packages.txt").read_bytes(), INVENTORY)
+        record = cycle.read(output / "native-os-packages.json")
+        self.assertEqual((record["status"], record["guest_state"]), ("observed", "failed"))
+        self.assertEqual(cycle.read(output / "guest-failure.json")["phase"], "bootstrap")
+
+    def test_guest_that_cannot_run_the_helper_marks_its_package_list_unavailable(self):
+        self.assertEqual(
+            cycle.failure_code(cycle.CycleError("package_inventory_unavailable")),
+            "package_inventory_unavailable",
+        )
+        base = self.root
+        for readiness, admitted in (
+            ("unreachable", True),
+            ("helper-missing", True),
+            ("unreachable", False),
+        ):
+            with self.subTest(readiness=readiness, host_key_admitted=admitted):
+                self.root = base / f"{readiness}-{admitted}"
+                self.root.mkdir()
+                output, _, called = self.call_guest(readiness=readiness, admitted=admitted)
+                self.assertEqual(
+                    cycle.read(output / "native-os-packages.json"),
+                    {
+                        "version": 1,
+                        "identity": self.intent["identity"],
+                        "cell": cycle.intent_cell(self.intent),
+                        "selected_image_id": self.intent["image_id"],
+                        "guest_state": "failed",
+                        "status": "failed",
+                        "code": "package_inventory_unavailable",
+                    },
+                )
+                self.assertFalse((output / "native-os-packages.txt").exists())
+                self.assertFalse(
+                    any(
+                        call.args[0][-1].endswith("bootstrap.py packages")
+                        for call in called.call_args_list
+                    )
+                )
+                if not admitted:
+                    # Without host-key admission the controller never contacts the guest.
+                    called.assert_not_called()
+
+    def test_native_result_must_carry_the_retained_package_list_digest(self):
+        output, _, _ = self.call_guest(inventory_binding=False)
+        self.assertFalse((output / "native.json").exists())
+        self.assertEqual(cycle.read(output / "guest-failure.json")["code"], "guest_result_binding")
+
+
+def owned_by_root(real):
+    """Report fixture files as root-owned while keeping their real type, links, mode and size."""
+
+    def lstat(path, *args, **kwargs):
+        info = real(path, *args, **kwargs)
+        return os.stat_result(
+            (
+                info.st_mode,
+                info.st_ino,
+                info.st_dev,
+                info.st_nlink,
+                0,
+                info.st_gid,
+                info.st_size,
+                int(info.st_atime),
+                int(info.st_mtime),
+                int(info.st_ctime),
+            )
+        )
+
+    return lstat
+
+
+class PackageInventoryTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+
+    @staticmethod
+    def program(script: str) -> tuple[str, ...]:
+        return (sys.executable, "-I", "-c", script)
+
+    def listing(self, manager: str, rows: str, *, maximum=4096, seconds=10) -> bytes:
+        script = f"import sys; sys.stdout.write({rows!r})"
+        with patch.dict(bootstrap.INVENTORY_COMMANDS, {manager: self.program(script)}):
+            return bootstrap.package_inventory(manager, maximum, seconds)
+
+    def test_lists_are_sorted_installed_rows_with_epoch_and_architecture(self):
+        rpm = bootstrap.INVENTORY_COMMANDS["rpm"]
+        self.assertEqual(rpm[:3], ("/usr/bin/rpm", "--query", "--all"))
+        self.assertIn("\t%|EPOCH?{%{EPOCH}:}:{}|%{VERSION}-%{RELEASE}\t%{ARCH}\n", rpm[-1])
+        dpkg = bootstrap.INVENTORY_COMMANDS["dpkg"]
+        self.assertEqual(dpkg[0], "/usr/bin/dpkg-query")
+        self.assertIn("${db:Status-Status}\t${Package}\t${Version}\t${Architecture}\n", dpkg[-1])
+        self.assertEqual(
+            self.listing(
+                "rpm",
+                "kernel\t1:6.19.0-1.fc44\taarch64\n"
+                "gpg-pubkey\t36f612dc-6786af3b\t(none)\n"
+                "bash\t5.3.0-2.fc44\taarch64\n",
+            ),
+            b"bash\t5.3.0-2.fc44\taarch64\n"
+            b"gpg-pubkey\t36f612dc-6786af3b\t(none)\n"
+            b"kernel\t1:6.19.0-1.fc44\taarch64\n",
+        )
+        self.assertEqual(
+            self.listing(
+                "dpkg",
+                "installed\tzlib1g\t1:1.3.dfsg+really1.3.1-1+b1\tarm64\n"
+                "config-files\tremoved\t1.0-1\tarm64\n"
+                "not-installed\tpurged\t\t\n"
+                "installed\tbash\t5.2.37-2\tarm64\n",
+            ),
+            b"bash\t5.2.37-2\tarm64\nzlib1g\t1:1.3.dfsg+really1.3.1-1+b1\tarm64\n",
+        )
+
+    def test_partial_unknown_or_duplicate_rows_refuse_the_whole_list(self):
+        for data in (
+            b"",
+            b"\n",
+            b"bash\t5.3-1\tamd64",
+            b"bash\t5.3-1\tamd64\nbash\t5.3-1\tamd64\n",
+            b"bash 5.3-1\tamd64\n",
+            b"bash\t5.3-1\tamd64\textra\n",
+            "bäsh\t5.3-1\tamd64\n".encode(),
+            b"bash\thttps://example.invalid/private\tamd64\n",
+            b"bash\t5.3-1\tamd64\r\n",
+        ):
+            with (
+                self.subTest(data=data),
+                self.assertRaisesRegex(ValueError, "^package_inventory_invalid$"),
+            ):
+                bootstrap.inventory_rows(data)
+        for data in (
+            b"half-installed\tbash\t5.3-1\tamd64\n",
+            b"triggers-pending\tbash\t5.3-1\tamd64\n",
+            b"config-files\tremoved\t1.0-1\tamd64\n",
+            b"bash\t5.3-1\tamd64\n",
+            # An omitted row is still checked; it never hides malformed output.
+            b"installed\tbash\t5.3-1\tamd64\n"
+            b"config-files\tbad/name\thttps://example.invalid/private\tamd64\n",
+            b"installed\tbash\t5.3-1\tamd64\nnot-installed\t\t\t\n",
+            b"installed\tbash\t5.3-1\tamd64\nconfig-files\tremoved\t1.0 1\tamd64\n",
+            b"installed\tbash\t5.3-1\tamd64\nnot-installed\tpurged\t\tamd64\textra\n",
+        ):
+            with (
+                self.subTest(data=data),
+                self.assertRaisesRegex(ValueError, "^package_inventory_invalid$"),
+            ):
+                bootstrap.inventory_rows(data, dpkg_states=True)
+
+    def test_oversized_slow_or_failed_listing_is_refused_without_a_list(self):
+        row = "bash\\t5.3-1\\tamd64\\n"
+        for label, command, code in (
+            (
+                "oversized",
+                self.program(f"import sys; sys.stdout.write('{row}' * 1000)"),
+                "oversized",
+            ),
+            ("silent", self.program("import time; time.sleep(30)"), "timeout"),
+            (
+                "stalled",
+                self.program(
+                    f"import sys, time; sys.stdout.write('{row}'); sys.stdout.flush(); "
+                    "time.sleep(30)"
+                ),
+                "timeout",
+            ),
+            (
+                "failed",
+                self.program(f"import sys; sys.stdout.write('{row}'); sys.exit(3)"),
+                "failed",
+            ),
+            ("missing", (str(self.root / "missing-rpm"),), "failed"),
+        ):
+            with (
+                self.subTest(label=label),
+                patch.dict(bootstrap.INVENTORY_COMMANDS, {"rpm": command}),
+                self.assertRaisesRegex(ValueError, f"^package_inventory_{code}$"),
+            ):
+                started = time.monotonic()
+                try:
+                    bootstrap.package_inventory("rpm", 4096, 1)
+                finally:
+                    self.assertLess(time.monotonic() - started, 10)
+        with self.assertRaisesRegex(ValueError, "^package_inventory_failed$"):
+            bootstrap.package_inventory("pacman", 4096, 1)
+
+    def test_retained_list_must_keep_its_canonical_bounded_form(self):
+        self.assertEqual(bootstrap.inventory_count(INVENTORY, len(INVENTORY)), 2)
+        unsorted = b"".join(reversed(INVENTORY.splitlines(keepends=True)))
+        with self.assertRaisesRegex(ValueError, "^package_inventory_invalid$"):
+            bootstrap.inventory_count(unsorted, 4096)
+        with self.assertRaisesRegex(ValueError, "^package_inventory_oversized$"):
+            bootstrap.inventory_count(INVENTORY, len(INVENTORY) - 1)
+
+    def guarded(self, profile="debian-13"):
+        guard = self.root / "guard.json"
+        guard.write_text(
+            json.dumps(
+                {
+                    "intent": {"profile": profile},
+                    "package_inventory_bytes": 4096,
+                    "package_inventory_seconds": 10,
+                }
+            )
+        )
+        return guard
+
+    def test_guest_keeps_its_first_list_and_reports_the_same_observation_again(self):
+        target = self.root / "lib" / "native-os-packages.txt"
+        first = "installed\tzlib1g\t1:1.3.1-1\tarm64\ninstalled\tbash\t5.2.37-2\tarm64\n"
+        expected = b"bash\t5.2.37-2\tarm64\nzlib1g\t1:1.3.1-1\tarm64\n"
+        with (
+            patch.object(bootstrap, "GUARD", self.guarded()),
+            patch.object(bootstrap, "INVENTORY", target),
+            patch.object(bootstrap.os, "getuid", return_value=0, create=True),
+            patch.object(bootstrap.platform, "machine", return_value="aarch64"),
+            patch.object(bootstrap.Path, "lstat", owned_by_root(Path.lstat)),
+        ):
+            for rows in (first, "installed\tother\t1.0-1\tarm64\n"):
+                script = f"import sys; sys.stdout.write({rows!r})"
+                with (
+                    patch.dict(bootstrap.INVENTORY_COMMANDS, {"dpkg": self.program(script)}),
+                    patch.object(sys, "argv", ["bootstrap.py", "packages"]),
+                    contextlib.redirect_stdout(io.StringIO()) as printed,
+                ):
+                    bootstrap.main()
+                self.assertEqual(
+                    json.loads(printed.getvalue()),
+                    {
+                        "version": 1,
+                        "status": "observed",
+                        "machine": "aarch64",
+                        "packages": 2,
+                        "bytes": len(expected),
+                        "sha256": hashlib.sha256(expected).hexdigest(),
+                    },
+                )
+                self.assertEqual(target.read_bytes(), expected)
+                self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o644)
+                self.assertEqual([path.name for path in target.parent.iterdir()], [target.name])
+
+    def test_guest_selects_the_package_manager_of_its_profile(self):
+        target = self.root / "lib" / "native-os-packages.txt"
+        rows = "kernel\t1:6.19.0-1.fc44\taarch64\nbash\t5.3.0-2.fc44\taarch64\n"
+        commands = {
+            "rpm": self.program(f"import sys; sys.stdout.write({rows!r})"),
+            "dpkg": self.program("import sys; sys.exit(9)"),
+        }
+        with (
+            patch.object(bootstrap, "INVENTORY", target),
+            patch.object(bootstrap.os, "getuid", return_value=0, create=True),
+            patch.object(bootstrap.platform, "machine", return_value="aarch64"),
+            patch.object(bootstrap.Path, "lstat", owned_by_root(Path.lstat)),
+            patch.dict(bootstrap.INVENTORY_COMMANDS, commands),
+        ):
+            with patch.object(bootstrap, "GUARD", self.guarded("fedora-44")):
+                self.assertEqual(bootstrap.packages_report()["status"], "observed")
+            self.assertEqual(target.read_bytes(), INVENTORY)
+            target.unlink()
+            with patch.object(bootstrap, "GUARD", self.guarded("unknown-1")):
+                self.assertEqual(
+                    bootstrap.packages_report(),
+                    {"version": 1, "status": "failed", "code": "package_inventory_failed"},
+                )
+            self.assertEqual(list(target.parent.iterdir()), [])
+
+    def test_linked_lists_are_refused_by_the_guest_and_the_native_result(self):
+        target = self.root / "lib" / "native-os-packages.txt"
+        target.parent.mkdir()
+        real = self.root / "real.txt"
+        real.write_bytes(INVENTORY)
+        real.chmod(0o644)
+        for label, link in (("symbolic", target.symlink_to), ("hard", target.hardlink_to)):
+            with self.subTest(link=label):
+                link(real)
+                try:
+                    with (
+                        patch.object(bootstrap, "GUARD", self.guarded()),
+                        patch.object(bootstrap, "INVENTORY", target),
+                        patch.object(bootstrap.os, "getuid", return_value=0, create=True),
+                        patch.object(bootstrap.Path, "lstat", owned_by_root(Path.lstat)),
+                    ):
+                        self.assertEqual(
+                            bootstrap.packages_report()["code"], "package_inventory_identity"
+                        )
+                        with (
+                            patch.object(cycle, "GUEST_INVENTORY", target),
+                            self.assertRaisesRegex(cycle.CycleError, "package_inventory_identity"),
+                        ):
+                            guest_probe.os_packages()
+                finally:
+                    target.unlink()
+                self.assertEqual(real.read_bytes(), INVENTORY)
+
+    def test_policy_keeps_the_list_within_the_reply_and_test_budgets(self):
+        limits = cycle.policy()["limits"]
+        for change in (
+            {"package_inventory_bytes": limits["maximum_json_bytes"] + 1},
+            {"package_inventory_seconds": limits["test_seconds"]},
+        ):
+            changed = copy.deepcopy(cycle.policy())
+            changed["limits"].update(change)
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temporary:
+                file = Path(temporary).resolve() / "policy.json"
+                cycle.write(file, changed)
+                with (
+                    patch.object(cycle, "POLICY_PATH", file),
+                    self.assertRaisesRegex(cycle.CycleError, "package_inventory_budget"),
+                ):
+                    cycle.policy()
+
+    def test_guest_list_requires_root_and_a_protected_location(self):
+        target = self.root / "lib" / "native-os-packages.txt"
+        with (
+            patch.object(bootstrap, "GUARD", self.guarded()),
+            patch.object(bootstrap, "INVENTORY", target),
+            patch.object(bootstrap.os, "getuid", return_value=1000, create=True),
+        ):
+            self.assertEqual(
+                bootstrap.packages_report(),
+                {"version": 1, "status": "failed", "code": "package_inventory_root_required"},
+            )
+        target.parent.mkdir()
+        target.parent.chmod(0o777)
+        with (
+            patch.object(bootstrap, "GUARD", self.guarded()),
+            patch.object(bootstrap, "INVENTORY", target),
+            patch.object(bootstrap.os, "getuid", return_value=0, create=True),
+            patch.object(bootstrap.Path, "lstat", owned_by_root(Path.lstat)),
+        ):
+            self.assertEqual(bootstrap.packages_report()["code"], "package_inventory_identity")
+            target.parent.chmod(0o755)
+            target.write_bytes(INVENTORY)
+            target.chmod(0o666)
+            self.assertEqual(bootstrap.packages_report()["code"], "package_inventory_identity")
+        self.assertEqual(bootstrap.INVENTORY, cycle.GUEST_INVENTORY)
+
+    def test_native_result_binds_only_the_root_owned_retained_list(self):
+        file = self.root / "native-os-packages.txt"
+        file.write_bytes(INVENTORY)
+        file.chmod(0o644)
+        with (
+            patch.object(cycle, "GUEST_INVENTORY", file),
+            patch.object(Path, "lstat", owned_by_root(Path.lstat)),
+        ):
+            self.assertEqual(
+                guest_probe.os_packages(),
+                {"bytes": len(INVENTORY), "sha256": hashlib.sha256(INVENTORY).hexdigest()},
+            )
+            file.chmod(0o664)
+            with self.assertRaisesRegex(cycle.CycleError, "package_inventory_identity"):
+                guest_probe.os_packages()
+        file.chmod(0o644)
+        with (
+            patch.object(cycle, "GUEST_INVENTORY", file),
+            self.assertRaisesRegex(cycle.CycleError, "package_inventory_identity"),
+        ):
+            guest_probe.os_packages()
+
+    def test_guest_receives_the_policy_list_limits(self):
+        _, intent = fixtures()
+        resources = {kind: str(uuid.uuid4()) for kind in cycle.KINDS}
+        value = json.loads(
+            qualification.cloud_config(intent, resources, "ssh-ed25519 synthetic")
+            .decode()
+            .split("\n", 1)[1]
+        )
+        guard = json.loads(
+            next(entry for entry in value["write_files"] if entry["path"] == str(cycle.GUARD))[
+                "content"
+            ]
+        )
+        limits = cycle.policy()["limits"]
+        self.assertEqual(
+            (guard["package_inventory_bytes"], guard["package_inventory_seconds"]),
+            (limits["package_inventory_bytes"], limits["package_inventory_seconds"]),
+        )
 
 
 class HarnessTests(unittest.TestCase):

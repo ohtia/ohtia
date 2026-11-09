@@ -24,6 +24,7 @@ import desktop_runtime
 import linux_desktop
 import quality_delivery as delivery
 import quality_processes as process_observer
+import scaleway_bootstrap as package_inventory
 import workspace
 from probe_process import run_owned
 
@@ -955,6 +956,22 @@ def retain_failed_reports(source: Path, destination: Path) -> None:
         delivery.write(destination / "retention-issues.json", {"issues": issues})
 
 
+def os_package_record(cell: dict, output: Path) -> dict:
+    """Retain the Linux package list with the list function and limits of the ARM guest."""
+    limits = delivery.read(ROOT / "config/installation/scaleway.json")["limits"]
+    data = package_inventory.package_inventory(
+        "rpm" if cell["profile"] == "fedora-44" else "dpkg",
+        limits["package_inventory_bytes"],
+        limits["package_inventory_seconds"],
+    )
+    inventory = output / "native-os-packages.txt"
+    inventory.write_bytes(data)
+    return {
+        "artifact": delivery.artifact(inventory, output),
+        "packages": package_inventory.inventory_count(data, limits["package_inventory_bytes"]),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("cell")
@@ -976,12 +993,7 @@ def main() -> int:
             "packages": {},
         }
         if sys.platform == "linux":
-            package_command = (
-                ["rpm", "-qa", "--qf", "%{NAME}\t%{VERSION}-%{RELEASE}\t%{ARCH}\n"]
-                if cell["profile"] == "fedora-44"
-                else ["dpkg-query", "-W", "-f=${binary:Package}\t${Version}\n"]
-            )
-            (output / "native-os-packages.txt").write_text(command(package_command, capture=True))
+            result["os_packages"] = os_package_record(cell, output)
         delivery.write(output / "result.json", result)
         work = ROOT / "artifacts" / f"quality-{args.cell}"
         construct_package(cell, work, planned["application_version"])

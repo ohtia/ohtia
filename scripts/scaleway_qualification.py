@@ -15,6 +15,7 @@ import sys
 import time
 from pathlib import Path
 
+import scaleway_bootstrap as bootstrap
 import scaleway_cycle as cycle
 import scaleway_evidence as evidence_archive
 import scaleway_preflight as preflight
@@ -162,6 +163,8 @@ def cloud_config(intent: dict, resources: dict, public_key: str) -> bytes:
         "home_bytes": policy["storage"]["home_bytes"],
         "maximum_harness_files": policy["limits"]["maximum_harness_files"],
         "maximum_harness_expanded_bytes": policy["limits"]["maximum_harness_expanded_bytes"],
+        "package_inventory_bytes": policy["limits"]["package_inventory_bytes"],
+        "package_inventory_seconds": policy["limits"]["package_inventory_seconds"],
     }
     cycle.require(len(json.dumps(guard).encode()) <= 65536, "guest_guard_bound")
     desktop = cycle.intent_cell(intent)["desktop"]
@@ -412,9 +415,38 @@ def guest(
     deadline: float,
     progress: reporting.Progress | None = None,
 ) -> dict:
+
+    def inventory_record(state: str) -> dict:
+        # The image is the selected input; the architecture is observed in the guest.
+        return {
+            "version": 1,
+            "identity": intent["identity"],
+            "cell": cycle.intent_cell(intent),
+            "selected_image_id": intent["image_id"],
+            "guest_state": state,
+        }
+
+    def inventory_unavailable() -> None:
+        # The helper cannot be reached: mark the list explicitly instead of omitting it.
+        try:
+            cycle.write(
+                output / "native-os-packages.json",
+                {
+                    **inventory_record("failed"),
+                    "status": "failed",
+                    "code": "package_inventory_unavailable",
+                },
+            )
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+
     if progress is not None:
         progress.phase("host-key", deadline=deadline)
-    address, known = host_key(api, intent, resources, key, deadline, progress)
+    try:
+        address, known = host_key(api, intent, resources, key, deadline, progress)
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        inventory_unavailable()
+        raise
     if progress is not None:
         progress.observe("host-key-admitted")
         progress.phase("bootstrap", deadline=deadline)
@@ -480,8 +512,67 @@ def guest(
         cycle.write(output / "bootstrap.json", safe)
         return safe
 
+    def observe_inventory(state: str) -> dict:
+        """Retain the root-produced package list only after its digest and form are verified."""
+        limits = cycle.policy()["limits"]
+        record = inventory_record(state)
+        try:
+            summary = cycle.decode(
+                remote(
+                    "/usr/bin/python3 /usr/local/lib/ohtia-qualification/bootstrap.py packages",
+                    timeout=limits["package_inventory_seconds"] + 30,
+                    operation="inventory",
+                )
+            )
+            if summary.get("status") == "failed":
+                code = summary.get("code")
+                raise cycle.CycleError(
+                    code if code in bootstrap.INVENTORY_CODES else "package_inventory_failed"
+                )
+            cycle.require(
+                set(summary) == {"version", "status", "machine", "packages", "bytes", "sha256"}
+                and summary["version"] == 1
+                and summary["status"] == "observed"
+                and summary["machine"] == "aarch64"
+                and type(summary["packages"]) is int
+                and type(summary["bytes"]) is int
+                and 0 < summary["bytes"] <= limits["package_inventory_bytes"]
+                and isinstance(summary["sha256"], str),
+                "guest_package_inventory_shape",
+            )
+            data = remote(f"cat {cycle.GUEST_INVENTORY}", operation="inventory")
+            cycle.require(
+                len(data) == summary["bytes"]
+                and hashlib.sha256(data).hexdigest() == summary["sha256"],
+                "guest_package_inventory_digest",
+            )
+            try:
+                count = bootstrap.inventory_count(data, limits["package_inventory_bytes"])
+            except ValueError as error:
+                raise cycle.CycleError(str(error)) from None
+            cycle.require(count == summary["packages"], "guest_package_inventory_digest")
+            with (output / "native-os-packages.txt").open("xb") as retained:
+                retained.write(data)
+            record.update(
+                status="observed",
+                architecture=summary["machine"],
+                packages=count,
+                bytes=len(data),
+                sha256=summary["sha256"],
+            )
+        except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+            record.update(status="failed", code=cycle.failure_code(error))
+            try:
+                cycle.write(output / "native-os-packages.json", record)
+            except (OSError, ValueError):
+                pass
+            raise
+        cycle.write(output / "native-os-packages.json", record)
+        return record
+
     primary = None
     readiness_confirmed = False
+    inventory, inventory_attempted = None, False
     try:
         while time.monotonic() < test_deadline:
             try:
@@ -528,8 +619,14 @@ def guest(
                 )
             )
         cycle.require(time.monotonic() < test_deadline, "guest_bootstrap_deadline")
+        phase = "inventory"
+        if progress is not None:
+            progress.phase(phase, deadline=deadline)
+        inventory_attempted = True
+        inventory = observe_inventory("ready")
         phase = "transfer"
         if progress is not None:
+            progress.observe("inventory-complete")
             progress.phase(phase, deadline=deadline)
         for kind in ("harness", "package"):
             file = cycle.verify_artifact(build_directory, intent["build"][kind])
@@ -645,6 +742,16 @@ def guest(
             bootstrap_status(operation="guest-diagnostics")
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
         pass
+    # A guest that failed before the list was taken still yields an explicitly marked
+    # record: one bounded attempt when it can run the helper, otherwise an unavailable list.
+    if not inventory_attempted:
+        if diagnostic["readiness"] is not None and all(diagnostic["readiness"].values()):
+            try:
+                observe_inventory("failed")
+            except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+                pass
+        else:
+            inventory_unavailable()
     try:
         data = remote(f"runuser -u ohtia-quality -- cat {GUEST_OUTPUT}/result.json")
         value = cycle.decode(data)
@@ -654,7 +761,10 @@ def guest(
             and value["build"] == intent["build"]
             and value["cell"] == cycle.intent_cell(intent)
             and value["distribution_qualified"] is False
-            and value["publisher_signed"] is False,
+            and value["publisher_signed"] is False
+            and inventory is not None
+            and value.get("os_packages")
+            == {"bytes": inventory["bytes"], "sha256": inventory["sha256"]},
             "guest_result_binding",
         )
         cycle.write(output / "native.json", value)

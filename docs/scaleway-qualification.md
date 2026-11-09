@@ -4,8 +4,6 @@ title: Ephemeral ARM installation qualification
 description: Define protected authority, bounded diagnostics and recovery for unsigned native ARM qualification on ephemeral Scaleway leases.
 generated:
   by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: cloud-init-errors
     resource: https://github.com/canonical/cloud-init/blob/25.1.4/cloudinit/cmd/main.py
@@ -128,6 +126,8 @@ Changes to these policy limits take effect through a reviewed merge into `main`,
 ## Evidence and limits
 
 Retained artifacts identify the exact build, allocation intent, controller journal, bounded synthetic native results and recovery ledger. Successful recovery carries complete intents and verified absence receipts forward across the original artifacts' retention period. Missing evidence, exhausted history bounds or unresolved writes suspend allocation rather than silently discarding obligations. A missing controller journal cannot establish a successful native test. Verified workflow attempts that never reached provider execution are carried separately from allocated leases.
+
+After guest preparation and before package transfer, the root bootstrap helper records the installed operating-system packages once in a root-owned guest file. Each sorted line contains the package name, version including any epoch, and architecture; Debian packages that retain only configuration files are omitted. The list records no repository, URL, host or account data, and a row with unexpected fields or characters refuses the whole list. The [policy](../config/installation/scaleway.json) bounds its size and acquisition time; failure, timeout or excess fails the run before installation. The controller verifies the reported length, SHA-256 and canonical form when copying it, and retains `native-os-packages.txt` with `native-os-packages.json`, which records source/run/attempt, cell, selected image, observed architecture and guest state. The guest's native result must carry the same digest. A guest that fails before the list is taken receives one bounded attempt during evidence collection when it can still run the helper, marked as a failed guest; otherwise the record marks the list as unavailable. The list identifies the observed package set; it neither freezes distribution updates nor establishes reproducibility.
 
 After retention loss, an exceptional manual execution may restore a privately retained complete checkpoint. Creation must remain suspended, the protected creator environment requires human approval of the checkpoint digest, and read-only provider checks must establish an empty project and inactive recorded resources. The restore client permits only GET routes; this source restriction does not narrow its credential’s provider permissions. Restoration cannot discard uncovered history or establish fresh cleanup-key health. A subsequent independent recovery observation is required before new allocation.
 
