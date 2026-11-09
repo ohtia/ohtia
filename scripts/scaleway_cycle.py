@@ -331,6 +331,14 @@ SAFE_FAILURE_CODES = frozenset(
         "recovery_trigger",
         "recovery_wait_deadline",
         "request_size",
+        "resolution_bound",
+        "resolution_conflict",
+        "resolution_duplicate",
+        "resolution_fields",
+        "resolution_identity",
+        "resolution_observation",
+        "resolution_run",
+        "resolution_time",
         "resource_identity",
         "resource_kind",
         "resource_list",
@@ -1318,6 +1326,35 @@ class API:
         require(
             not any(self.objects(kind) for kind in ("server", "root", "ip")), "project_not_empty"
         )
+
+    def project_inventory(self) -> dict:
+        """Count every project server, volume and address, and the security groups Ohtia owns.
+
+        Each listing is complete or refused; other groups, such as a provider default, are counted
+        but do not count as Ohtia resources.
+        """
+        prefix = policy()["name_prefix"]
+        groups = self.objects("security")
+        ohtia = 0
+        for row in groups:
+            labels = row.get("tags", [])
+            require(
+                isinstance(row.get("name"), str)
+                and isinstance(labels, list)
+                and all(isinstance(label, str) for label in labels),
+                "resource_list",
+            )
+            if row["name"].startswith(prefix) or any(
+                label == "ohtia-lease" or label.startswith("ohtia-lease:") for label in labels
+            ):
+                ohtia += 1
+        return {
+            "servers": len(self.objects("server")),
+            "volumes": len(self.objects("root")),
+            "ips": len(self.objects("ip")),
+            "ohtia_security_groups": ohtia,
+            "other_security_groups": len(groups) - ohtia,
+        }
 
     def admit_profile(self, intent: dict) -> None:
         selected = None

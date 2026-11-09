@@ -106,11 +106,13 @@ def observe(gh: GitHub, settings: dict, current: tuple[str, str], maximum_age: i
         "attempt": value["identity"]["attempt"],
         "age_seconds": age,
     }
+    resolutions = value.get("empty_project_resolutions", [])
     pending = gh.intents(
         settings,
         previous=value["leases"],
         excluding=current,
         unallocated=value.get("unallocated_attempts", []),
+        resolutions=resolutions,
     )
     cycle.require(
         all(
@@ -122,7 +124,8 @@ def observe(gh: GitHub, settings: dict, current: tuple[str, str], maximum_age: i
     if pending:
         return {"decision": "refresh", "reason": "unresolved_prior_intent", **state}
     cycle.require(
-        len(value["leases"]) < cycle.policy()["limits"]["maximum_leases"], "ledger_capacity"
+        len(value["leases"]) + len(resolutions) < cycle.policy()["limits"]["maximum_leases"],
+        "ledger_capacity",
     )
     if age > maximum_age:
         return {"decision": "refresh", "reason": "fresh_recovery_required", **state}

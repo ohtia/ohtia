@@ -20,7 +20,13 @@ import scaleway_cycle as cycle
 import scaleway_evidence as evidence_archive
 import scaleway_preflight as preflight
 import scaleway_progress as reporting
-from scaleway_ledger import GitHub, attempt_ended, install_cli
+from scaleway_ledger import (
+    GitHub,
+    attempt_ended,
+    install_cli,
+    settled_records,
+    validate_resolutions,
+)
 
 INCOMING = "/var/lib/ohtia-qualification/incoming"
 GUEST_SOURCE = "/home/ohtia-quality/source"
@@ -49,15 +55,18 @@ def key_lifetimes() -> None:
 
 def previous(gh: GitHub, settings: dict, *, current: tuple[str, str], fresh: bool) -> list:
     value = gh.completed_ledger(settings, fresh=fresh)
+    resolutions = value.get("empty_project_resolutions", [])
     unresolved = gh.intents(
         settings,
         previous=value["leases"],
         excluding=current,
         unallocated=value.get("unallocated_attempts", []),
+        resolutions=resolutions,
     )
     cycle.require(not unresolved, "unresolved_prior_intent")
     cycle.require(
-        len(value["leases"]) < cycle.policy()["limits"]["maximum_leases"], "ledger_capacity"
+        len(value["leases"]) + len(resolutions) < cycle.policy()["limits"]["maximum_leases"],
+        "ledger_capacity",
     )
     return value["leases"]
 
@@ -989,18 +998,81 @@ def recovery_context(gh: GitHub) -> tuple[dict, dict]:
     return identity, settings
 
 
+def resolve_lost(gh: GitHub, api: cycle.API, identity: dict) -> list:
+    """Settle ended attempts whose intent is no longer listed, only through an empty project.
+
+    The provider step starts after its intent was prepared, so the lease it could have created has
+    expired and its cleanup budget has passed by the read. Anything present, an incomplete read or
+    an attempt that has not ended keeps the refusal and deletes nothing.
+    """
+    lost = gh.lost()
+    if not lost:
+        return []
+    limits = cycle.policy()["limits"]
+    margin = dt.timedelta(seconds=limits["lease_seconds"] + limits["cleanup_seconds"])
+    started = []
+    for run, attempt in lost:
+        cycle.require(
+            run["status"] == "completed" or attempt < run["run_attempt"],
+            "missing_allocation_intent",
+        )
+        try:
+            started.append(gh.provider_started(run, attempt))
+        except cycle.CycleError as error:
+            # A failed read leaves the step start unreported.
+            raise cycle.CycleError("missing_allocation_intent") from error
+    now = cycle.utc()
+    cycle.require(
+        all(cycle.timestamp(now) >= start + margin for start in started),
+        "missing_allocation_intent",
+    )
+    try:
+        observed = api.project_inventory()
+    except cycle.CycleError as error:
+        # An incomplete or refused read cannot establish an empty project.
+        raise cycle.CycleError("missing_allocation_intent") from error
+    cycle.require(
+        all(observed[key] == 0 for key in ("servers", "volumes", "ips", "ohtia_security_groups")),
+        "missing_allocation_intent",
+    )
+    rows = [
+        {
+            "identity": {
+                "repository": cycle.REPOSITORY,
+                "source_sha": run["head_sha"],
+                "workflow": cycle.policy()["qualification_workflow"],
+                "run_id": str(run["id"]),
+                "attempt": str(attempt),
+                "event": run["event"],
+            },
+            "provider_started_at": start.isoformat().replace("+00:00", "Z"),
+            "observed_at": now,
+            "recovery": {"run_id": identity["run_id"], "attempt": identity["attempt"]},
+            "observed": observed,
+        }
+        for (run, attempt), start in zip(lost, started, strict=True)
+    ]
+    validate_resolutions(rows)
+    return rows
+
+
 def prepare_recovery(gh: GitHub, output: Path) -> None:
     identity, settings = recovery_context(gh)
     ledger = gh.completed_ledger(settings)
     carried = ledger["leases"]
     pending = gh.intents(
-        settings, previous=carried, unallocated=ledger.get("unallocated_attempts", [])
+        settings,
+        previous=carried,
+        unallocated=ledger.get("unallocated_attempts", []),
+        resolutions=ledger.get("empty_project_resolutions", []),
+        collect_lost=True,
     )
     cycle.require(
         len(pending) <= cycle.policy()["limits"]["managed_instances"], "recovery_pending_bound"
     )
     api = cycle.API(os.environ.get("SCW_SECRET_KEY", ""), settings, "cleanup")
     api.deadline = time.monotonic() + cycle.policy()["limits"]["cleanup_seconds"]
+    resolutions = ledger.get("empty_project_resolutions", []) + resolve_lost(gh, api, identity)
     items = []
     for intent, producer in pending:
         cycle.validate_intent(intent, settings, historical=True)
@@ -1062,6 +1134,7 @@ def prepare_recovery(gh: GitHub, output: Path) -> None:
         "policy_sha256": cycle.digest(cycle.POLICY_PATH),
         "carried": carried,
         "unallocated_attempts": gh.unallocated(),
+        "empty_project_resolutions": resolutions,
         "items": items,
         "distribution_qualified": False,
     }
@@ -1091,6 +1164,13 @@ def recover(gh: GitHub, output: Path, plan_file: Path) -> None:
         planned["items"][0]["intent"]["nonce"] if planned["items"] else "empty", identity["attempt"]
     )
     cycle.require(planned["artifact_name"] == expected_name, "recovery_plan_name")
+    settled_records(
+        {
+            "leases": planned["carried"],
+            "unallocated_attempts": planned["unallocated_attempts"],
+            "empty_project_resolutions": planned["empty_project_resolutions"],
+        }
+    )
     artifacts = [a for a in gh.artifacts(identity["run_id"]) if a["name"] == expected_name]
     cycle.require(
         len(artifacts) == 1 and gh.artifact(artifacts[0], "plan.json") == planned,
@@ -1112,6 +1192,7 @@ def recover(gh: GitHub, output: Path, plan_file: Path) -> None:
         "authority": "cleanup",
         "leases": leases,
         "unallocated_attempts": planned.get("unallocated_attempts", []),
+        "empty_project_resolutions": planned["empty_project_resolutions"],
         "deferred": deferred,
         "checked_at": cycle.utc(),
         "distribution_qualified": False,

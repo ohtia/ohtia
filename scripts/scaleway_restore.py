@@ -15,7 +15,7 @@ import zlib
 from pathlib import Path
 
 import scaleway_cycle as cycle
-from scaleway_ledger import GitHub, validate_unallocated
+from scaleway_ledger import GitHub, settled_records
 
 
 def checkpoint(value: dict, settings: dict) -> None:
@@ -28,6 +28,7 @@ def checkpoint(value: dict, settings: dict) -> None:
         "status",
         "leases",
         "unallocated_attempts",
+        "empty_project_resolutions",
         "deferred",
         "checked_at",
         "distribution_qualified",
@@ -68,7 +69,6 @@ def checkpoint(value: dict, settings: dict) -> None:
         ),
         "backup_run",
     )
-    validate_unallocated(value.get("unallocated_attempts", []))
     leases = value["leases"]
     cycle.require(
         isinstance(leases, list) and len(leases) <= cycle.policy()["limits"]["maximum_leases"],
@@ -103,6 +103,7 @@ def checkpoint(value: dict, settings: dict) -> None:
             "backup_native_flags",
         )
         cycle.timestamp(receipt["checked_at"])
+    settled_records(value)
 
 
 def from_archive(file: Path) -> dict:
@@ -223,7 +224,10 @@ def restore(gh: GitHub, output: Path) -> None:
     cycle.require(all(run["status"] == "completed" for run in producers), "backup_active_producer")
     cycle.require(
         not gh.intents(
-            settings, previous=value["leases"], unallocated=value.get("unallocated_attempts", [])
+            settings,
+            previous=value["leases"],
+            unallocated=value.get("unallocated_attempts", []),
+            resolutions=value.get("empty_project_resolutions", []),
         ),
         "backup_incomplete_history",
     )
@@ -262,6 +266,7 @@ def restore(gh: GitHub, output: Path) -> None:
         "status": "passed",
         "leases": leases,
         "unallocated_attempts": gh.unallocated(),
+        "empty_project_resolutions": copy.deepcopy(value.get("empty_project_resolutions", [])),
         "deferred": [],
         "checked_at": cycle.utc(),
         "authority": "restore",

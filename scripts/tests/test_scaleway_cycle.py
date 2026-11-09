@@ -34,6 +34,7 @@ import scaleway_build as build
 import scaleway_cycle as cycle
 import scaleway_evidence as evidence_archive
 import scaleway_guest as guest_probe
+import scaleway_ledger as ledger
 import scaleway_qualification as qualification
 import scaleway_restore as restoration
 from scaleway_ledger import GitHub
@@ -79,6 +80,36 @@ def fixtures(profile="fedora-44", desktop="gnome"):
         "publisher_signed": False,
     }
     return settings, cycle.create_intent(identity, settings, manifest, "2026-10-31T00:00:00Z")
+
+
+LOST_STARTED = "2026-10-31T00:00:00Z"
+# The provider step start plus lease_seconds and cleanup_seconds.
+LOST_EARLIEST = "2026-10-31T01:10:00Z"
+EMPTY_PROJECT = {
+    "servers": 0,
+    "volumes": 0,
+    "ips": 0,
+    "ohtia_security_groups": 0,
+    "other_security_groups": 0,
+}
+
+
+def resolution(run_id="101", attempt="1", source="a" * 40):
+    """An empty-project resolution as recovery records it for an attempt without its intent."""
+    return {
+        "identity": {
+            "repository": cycle.REPOSITORY,
+            "source_sha": source,
+            "workflow": cycle.policy()["qualification_workflow"],
+            "run_id": run_id,
+            "attempt": attempt,
+            "event": "workflow_dispatch",
+        },
+        "provider_started_at": LOST_STARTED,
+        "observed_at": LOST_EARLIEST,
+        "recovery": {"run_id": "999", "attempt": "1"},
+        "observed": dict(EMPTY_PROJECT),
+    }
 
 
 class RecordingEnvironment(dict):
@@ -932,6 +963,73 @@ class TransportTests(unittest.TestCase):
             connection.request.call_args.kwargs["headers"]["Content-Type"], "text/plain"
         )
 
+    def inventory(self, groups, *, full=False):
+        """Answer project listings like the provider, one page at a time."""
+        settings, _ = fixtures()
+        api = cycle.API(TOKEN, settings, "cleanup")
+        size = cycle.policy()["limits"]["page_size"]
+        paths = []
+
+        def request(method, path, value=None, **kwargs):
+            paths.append(path)
+            query = parse_qs(urlsplit(path).query)
+            page = int(query["page"][0])
+            if path.split("?")[0].endswith("/security_groups"):
+                rows = groups[(page - 1) * size : page * size]
+                if full:
+                    rows = [groups[0]] * size
+                return {"security_groups": rows}
+            key = path.split("?")[0].rsplit("/", 1)[1]
+            return {key: []}
+
+        with patch.object(api, "request", side_effect=request):
+            return api.project_inventory(), paths
+
+    def test_project_inventory_reads_every_page_and_counts_only_ohtia_groups(self):
+        def group(name, tags=()):
+            return {"id": str(uuid.uuid4()), "project": PROJECT, "name": name, "tags": list(tags)}
+
+        groups = [group("Default security group")] * 99 + [
+            group("ohtia-ci-0123-security"),
+            group("manual", ["ohtia-lease:" + str(uuid.uuid4())]),
+            group("manual", ["ohtia-lease"]),
+            group("manual", ["ohtia-leased", "ohtia-kind:security"]),
+        ]
+        counts, paths = self.inventory(groups)
+        self.assertEqual(
+            counts,
+            {
+                "servers": 0,
+                "volumes": 0,
+                "ips": 0,
+                "ohtia_security_groups": 3,
+                "other_security_groups": 100,
+            },
+        )
+        listed = [path for path in paths if "/security_groups?" in path]
+        self.assertEqual(len(listed), 2)
+        for path in paths:
+            field = "project_id" if "/block/" in path else "project"
+            self.assertEqual(parse_qs(urlsplit(path).query)[field], [PROJECT])
+        self.assertEqual(
+            sorted({path.split("?")[0].rsplit("/", 1)[1] for path in paths}),
+            ["ips", "security_groups", "servers", "volumes"],
+        )
+
+    def test_project_inventory_refuses_incomplete_or_malformed_listings(self):
+        default = {"id": str(uuid.uuid4()), "project": PROJECT, "name": "Default", "tags": []}
+        with self.assertRaisesRegex(cycle.CycleError, "resource_page_limit"):
+            self.inventory([default], full=True)
+        for label, row in {
+            "unnamed": {**default, "name": None},
+            "tags": {**default, "tags": "ohtia-lease"},
+            "tag": {**default, "tags": [1]},
+        }.items():
+            with self.subTest(label), self.assertRaisesRegex(cycle.CycleError, "resource_list"):
+                self.inventory([row])
+        with self.assertRaisesRegex(cycle.CycleError, "foreign_project"):
+            self.inventory([{**default, "project": str(uuid.uuid4())}])
+
     def test_restoration_transport_rejects_all_provider_writes(self):
         settings, _ = fixtures()
         api = cycle.API(TOKEN, settings, "observer")
@@ -999,6 +1097,7 @@ class RecoveryTests(unittest.TestCase):
         }
         self.gh = Mock(spec=GitHub)
         self.gh.unallocated.return_value = []
+        self.gh.lost.return_value = []
         self.gh.completed_ledger.return_value = {"leases": []}
         self.producer = {"id": 101, "status": "completed", "run_attempt": 1}
         self.gh.intents.return_value = [(self.intent, self.producer)]
@@ -1174,6 +1273,158 @@ class RecoveryTests(unittest.TestCase):
         with self.assertRaisesRegex(cycle.CycleError, "unresolved_prior_intent"):
             qualification.previous(self.gh, self.settings, current=("102", "1"), fresh=True)
 
+    def lose_intent(self, *, status="completed", run_attempt=1):
+        """An attempt whose provider step may have run but whose intent GitHub no longer lists."""
+        self.gh.intents.return_value = []
+        self.lost_run = {
+            "id": 101,
+            "status": status,
+            "run_attempt": run_attempt,
+            "head_sha": self.intent["identity"]["source_sha"],
+            "event": "workflow_dispatch",
+        }
+        self.gh.lost.return_value = [(self.lost_run, 1)]
+        self.gh.provider_started.return_value = cycle.timestamp(LOST_STARTED)
+
+    def refused(self, now=LOST_EARLIEST, *, read=True):
+        plan = self.root / "refused-plan"
+        with (
+            patch.object(cycle, "utc", return_value=now),
+            patch.object(
+                self.api, "project_inventory", wraps=self.api.project_inventory
+            ) as inventory,
+            self.assertRaisesRegex(cycle.CycleError, "missing_allocation_intent"),
+        ):
+            qualification.prepare_recovery(self.gh, plan)
+        self.assertEqual(inventory.called, read)
+        self.assertFalse(plan.exists())
+        self.assertFalse(any(method != "GET" for method, _, _ in self.api.calls))
+
+    def test_lost_intent_of_an_ended_attempt_is_resolved_by_an_empty_project(self):
+        cases = {
+            "hidden by a rerun": ("in_progress", 2),
+            "expired with its run": ("completed", 1),
+        }
+        for label, (status, attempts) in cases.items():
+            with self.subTest(label):
+                self.api.calls.clear()
+                self.lose_intent(status=status, run_attempt=attempts)
+                default = str(uuid.uuid4())
+                self.api.rows["security"] = {
+                    default: {"id": default, "project": PROJECT, "name": "Default", "tags": []}
+                }
+                with patch.object(cycle, "utc", return_value=LOST_EARLIEST):
+                    result = self.recover()
+                self.assertEqual(result["status"], "passed")
+                self.assertEqual(result["leases"], [])
+                self.assertEqual(result["unallocated_attempts"], [])
+                self.assertEqual(
+                    result["empty_project_resolutions"],
+                    [
+                        {
+                            "identity": {
+                                "repository": cycle.REPOSITORY,
+                                "source_sha": self.intent["identity"]["source_sha"],
+                                "workflow": cycle.policy()["qualification_workflow"],
+                                "run_id": "101",
+                                "attempt": "1",
+                                "event": "workflow_dispatch",
+                            },
+                            "provider_started_at": LOST_STARTED,
+                            "observed_at": LOST_EARLIEST,
+                            "recovery": {"run_id": "999", "attempt": self.identity["attempt"]},
+                            "observed": {**EMPTY_PROJECT, "other_security_groups": 1},
+                        }
+                    ],
+                )
+                self.assertTrue(self.gh.intents.call_args.kwargs["collect_lost"])
+                self.gh.provider_started.assert_called_with(self.lost_run, 1)
+                self.assertFalse(any(method != "GET" for method, _, _ in self.api.calls))
+                self.assertIn(default, self.api.rows["security"])
+
+    def test_lost_intent_of_an_unended_attempt_or_before_its_lease_budget_stays_refused(self):
+        self.lose_intent(status="in_progress", run_attempt=1)
+        self.refused(read=False)
+        self.gh.provider_started.assert_not_called()
+        self.lose_intent()
+        # The time rule is checked before any provider read.
+        self.refused(now="2026-10-31T01:09:59Z", read=False)
+        self.lose_intent()
+        self.gh.provider_started.side_effect = cycle.CycleError("missing_allocation_intent")
+        self.refused(read=False)
+
+    def test_any_present_resource_keeps_the_lost_intent_refused_and_deletes_nothing(self):
+        owned = f"ohtia-lease:{uuid.uuid4()}"
+        cases = {
+            "server": ("server", {"name": "manual", "tags": []}),
+            "volume": ("root", {"name": "manual", "tags": [], "status": "available"}),
+            "address": ("ip", {"tags": []}),
+            "Ohtia-named group": ("security", {"name": "ohtia-ci-manual", "tags": []}),
+            "Ohtia-tagged group": ("security", {"name": "manual", "tags": [owned]}),
+        }
+        for label, (kind, fields) in cases.items():
+            with self.subTest(label):
+                self.api.rows = {"server": {}, "root": {}, "ip": {}, "security": {}}
+                self.api.calls.clear()
+                resource = str(uuid.uuid4())
+                field = "project_id" if kind == "root" else "project"
+                self.api.rows[kind][resource] = {"id": resource, field: PROJECT, **fields}
+                self.lose_intent()
+                self.refused()
+                self.assertIn(resource, self.api.rows[kind])
+
+    def test_incomplete_or_failed_reads_keep_the_lost_intent_refused(self):
+        for code in (
+            "resource_page_limit",
+            "resource_list",
+            "foreign_project",
+            "provider_transport",
+        ):
+            with self.subTest(project=code):
+                self.lose_intent()
+                plan = self.root / "incomplete-plan"
+                with (
+                    patch.object(cycle, "utc", return_value=LOST_EARLIEST),
+                    patch.object(self.api, "objects", side_effect=cycle.CycleError(code)),
+                    self.assertRaisesRegex(cycle.CycleError, "missing_allocation_intent") as caught,
+                ):
+                    qualification.prepare_recovery(self.gh, plan)
+                self.assertEqual(caught.exception.__cause__.args, (code,))
+                self.assertFalse(plan.exists())
+        self.lose_intent()
+        self.gh.provider_started.side_effect = cycle.CycleError("github_read_failed")
+        self.refused(read=False)
+
+    def test_carried_resolution_is_kept_without_another_project_read(self):
+        carried = resolution()
+        self.gh.intents.return_value = []
+        self.gh.completed_ledger.return_value = {
+            "leases": [],
+            "empty_project_resolutions": [carried],
+        }
+        with patch.object(self.api, "project_inventory") as inventory:
+            result = self.recover()
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["empty_project_resolutions"], [carried])
+        self.assertEqual(self.gh.intents.call_args.kwargs["resolutions"], [carried])
+        self.gh.provider_started.assert_not_called()
+        inventory.assert_not_called()
+
+    def test_admission_reads_resolutions_and_counts_them_toward_capacity(self):
+        maximum = cycle.policy()["limits"]["maximum_leases"]
+        carried = resolution()
+        self.gh.intents.return_value = []
+        self.gh.completed_ledger.return_value = {
+            "leases": [{"intent": self.intent}] * (maximum - 2),
+            "empty_project_resolutions": [carried],
+        }
+        qualification.previous(self.gh, self.settings, current=("102", "1"), fresh=True)
+        self.assertEqual(self.gh.intents.call_args.kwargs["resolutions"], [carried])
+        self.assertNotIn("collect_lost", self.gh.intents.call_args.kwargs)
+        self.gh.completed_ledger.return_value["leases"].append({"intent": self.intent})
+        with self.assertRaisesRegex(cycle.CycleError, "ledger_capacity"):
+            qualification.previous(self.gh, self.settings, current=("102", "1"), fresh=True)
+
 
 class LedgerTests(unittest.TestCase):
     def setUp(self):
@@ -1334,6 +1585,135 @@ class LedgerTests(unittest.TestCase):
         ):
             self.gh.intents(self.settings, previous=[])
 
+    def listing(self, **kwargs):
+        """Read intents against one run whose intent artifact is no longer listed."""
+        with (
+            patch.object(self.gh, "workflow", return_value=self.workflow),
+            patch.object(self.gh, "pages", return_value=[self.run]),
+            patch.object(self.gh, "run", return_value=self.run) as read_run,
+            patch.object(self.gh, "artifacts", return_value=[]),
+            patch.object(self.gh, "provider_attempted", return_value=True),
+        ):
+            result = self.gh.intents(self.settings, **kwargs)
+        return result, read_run
+
+    def test_lost_intent_is_collected_only_for_recovery(self):
+        self.run["run_attempt"] = 1
+        with self.assertRaisesRegex(cycle.CycleError, "missing_allocation_intent"):
+            self.listing(previous=[])
+        result, _ = self.listing(previous=[], collect_lost=True)
+        self.assertEqual(result, [])
+        self.assertEqual(self.gh.lost(), [(self.run, 1)])
+        self.assertEqual(self.gh.unallocated(), [])
+        self.listing(previous=[], resolutions=[resolution()], collect_lost=True)
+        self.assertEqual(self.gh.lost(), [])
+
+    def test_carried_resolution_settles_only_its_attempt_from_the_same_source(self):
+        self.run["run_attempt"] = 1
+        result, read_run = self.listing(previous=[], resolutions=[resolution()])
+        self.assertEqual(result, [])
+        read_run.assert_not_called()
+        # A later attempt of the same run is still read and still refused.
+        self.run["run_attempt"] = 2
+        with self.assertRaisesRegex(cycle.CycleError, "missing_allocation_intent"):
+            self.listing(previous=[], resolutions=[resolution()])
+        for attempts in (1, 2):
+            with self.subTest(attempts=attempts):
+                self.run["run_attempt"] = attempts
+                with self.assertRaisesRegex(cycle.CycleError, "carried_source"):
+                    self.listing(previous=[], resolutions=[resolution(source="b" * 40)])
+
+    def test_an_attempt_is_settled_by_one_kind_of_record_only(self):
+        lease = {"intent": self.intent, "receipt": {"status": "absent"}}
+        for label, kwargs in {
+            "receipt": {"previous": [lease]},
+            "nonexecution": {"previous": [], "unallocated": [{"run_id": "101", "attempt": "1"}]},
+        }.items():
+            with self.subTest(label):
+                with self.assertRaisesRegex(cycle.CycleError, "resolution_conflict"):
+                    self.listing(resolutions=[resolution()], **kwargs)
+                with self.assertRaisesRegex(cycle.CycleError, "resolution_conflict"):
+                    ledger.settled_records(
+                        {
+                            "leases": kwargs["previous"],
+                            "unallocated_attempts": kwargs.get("unallocated", []),
+                            "empty_project_resolutions": [resolution()],
+                        }
+                    )
+
+    def test_lost_attempts_and_resolutions_count_toward_the_ledger_bound(self):
+        maximum = cycle.policy()["limits"]["maximum_leases"]
+        carried = [resolution(run_id=str(1000 + index)) for index in range(maximum)]
+        self.run["run_attempt"] = 1
+        with self.assertRaisesRegex(cycle.CycleError, "ledger_bound"):
+            self.listing(previous=[], resolutions=carried, collect_lost=True)
+        with self.assertRaisesRegex(cycle.CycleError, "ledger_bound"):
+            ledger.settled_records(
+                {"leases": [{"intent": self.intent}], "empty_project_resolutions": carried}
+            )
+
+    def test_provider_start_is_read_from_its_single_reported_step(self):
+        def jobs(steps, controllers=1):
+            return [{"name": "Create and qualify one ARM lease", "steps": steps}] * controllers
+
+        step = {"name": ledger.PROVIDER_STEP, "started_at": LOST_STARTED}
+        with patch.object(self.gh, "pages", return_value=jobs([step])) as pages:
+            self.assertEqual(self.gh.provider_started(self.run, 1), cycle.timestamp(LOST_STARTED))
+        pages.assert_called_once_with(
+            "repos/{owner}/{repo}/actions/runs/101/attempts/1/jobs", "jobs"
+        )
+        for label, value in {
+            "no controller": jobs([step], 0),
+            "two controllers": jobs([step], 2),
+            "no provider step": jobs([]),
+            "two provider steps": jobs([step, step]),
+            "unreported start": jobs([{**step, "started_at": None}]),
+            "local time": jobs([{**step, "started_at": "2026-10-31T01:00:00+01:00"}]),
+            "malformed time": jobs([{**step, "started_at": "yesterday"}]),
+        }.items():
+            with (
+                self.subTest(label),
+                patch.object(self.gh, "pages", return_value=value),
+                self.assertRaisesRegex(cycle.CycleError, "missing_allocation_intent"),
+            ):
+                self.gh.provider_started(self.run, 1)
+
+    def test_empty_project_resolution_records_are_validated(self):
+        def changed(edit):
+            row = resolution()
+            edit(row)
+            return row
+
+        cases = {
+            "resolution_fields": changed(lambda row: row.update({"extra": True})),
+            "resolution_identity": changed(
+                lambda row: row["identity"].update({"workflow": "other.yml"})
+            ),
+            "resolution_run": changed(lambda row: row["recovery"].update({"run_id": "0"})),
+            "invalid_digest": changed(lambda row: row["identity"].update({"source_sha": "x"})),
+            "resolution_time": changed(lambda row: row.update({"observed_at": LOST_STARTED})),
+            "invalid_timestamp": changed(lambda row: row.update({"provider_started_at": 1})),
+            "resolution_observation": changed(lambda row: row["observed"].update({"ips": 1})),
+        }
+        for code, row in cases.items():
+            with self.subTest(code), self.assertRaisesRegex(cycle.CycleError, code):
+                ledger.validate_resolutions([row])
+        for code, value in {
+            "resolution_duplicate": [resolution(), resolution()],
+            "resolution_bound": [resolution(run_id=str(1000 + index)) for index in range(129)],
+        }.items():
+            with self.subTest(code), self.assertRaisesRegex(cycle.CycleError, code):
+                ledger.validate_resolutions(value)
+        for count in (True, -1, 2001):
+            with (
+                self.subTest(count=count),
+                self.assertRaisesRegex(cycle.CycleError, "resolution_observation"),
+            ):
+                ledger.validate_resolutions(
+                    [changed(lambda row: row["observed"].update({"other_security_groups": count}))]
+                )
+        self.assertEqual(list(ledger.validate_resolutions([resolution()])), [("101", "1")])
+
     def test_carried_absence_survives_original_intent_artifact_expiry(self):
         self.run["run_attempt"] = 1
         with (
@@ -1443,6 +1823,31 @@ class LedgerTests(unittest.TestCase):
             self.assertRaisesRegex(cycle.CycleError, "fresh_recovery_required"),
         ):
             self.gh.completed_ledger(self.settings, fresh=True)
+
+    def test_recovery_evidence_carries_only_valid_resolutions(self):
+        run, value = self.ledger_fixture()
+        value["empty_project_resolutions"] = [resolution()]
+        reads = (
+            patch.object(self.gh, "workflow", return_value=self.workflow),
+            patch.object(self.gh, "run", return_value=run),
+            patch.object(self.gh, "artifacts", return_value=[{"name": "scw-recovery-999-1"}]),
+            patch.object(self.gh, "artifact", return_value=value),
+        )
+        with contextlib.ExitStack() as stack:
+            for read in reads:
+                stack.enter_context(read)
+            stack.enter_context(patch.object(self.gh, "rows", return_value=iter([run])))
+            self.assertEqual(
+                self.gh.completed_ledger(self.settings)["empty_project_resolutions"],
+                [resolution()],
+            )
+        value["empty_project_resolutions"][0]["observed"]["servers"] = 1
+        with contextlib.ExitStack() as stack:
+            for read in reads:
+                stack.enter_context(read)
+            stack.enter_context(patch.object(self.gh, "rows", return_value=iter([run])))
+            with self.assertRaisesRegex(cycle.CycleError, "resolution_observation"):
+                self.gh.completed_ledger(self.settings)
 
     def test_stale_or_unresolved_recovery_never_becomes_creation_health(self):
         run, value = self.ledger_fixture()
@@ -1956,12 +2361,38 @@ class RestoreTests(unittest.TestCase):
         self.gh.guards.assert_called_once_with()
         self.gh.run.assert_called_once_with("999", "cleanup", require_active=True)
         self.gh.intents.assert_called_once_with(
-            self.settings, previous=self.checkpoint["leases"], unallocated=[]
+            self.settings, previous=self.checkpoint["leases"], unallocated=[], resolutions=[]
         )
         self.factory.assert_called_once_with("", self.settings, "observer")
         self.assertEqual(self.api.calls, [])
         if os.name != "nt":
             self.assertEqual(self.request.stat().st_mode & 0o777, 0o600)
+
+    def restore_checkpoint(self, value):
+        archive = self.root / "resolutions.zip"
+        with zipfile.ZipFile(archive, "w") as stream:
+            stream.writestr("recovery.json", json.dumps(value))
+        request = self.root / "resolutions.json"
+        request.unlink(missing_ok=True)
+        prepared = restoration.prepare_input(archive, request)
+        inputs = cycle.read(request)["inputs"]
+        cycle.write(self.event, {"inputs": inputs})
+        output = self.root / ("result-" + str(uuid.uuid4()))
+        with patch.dict(os.environ, {"SCW_RESTORE_SHA256": prepared["sha256"]}):
+            restoration.restore(self.gh, output)
+        return cycle.read(output / "recovery.json")
+
+    def test_restoration_keeps_checkpoint_resolutions_and_refuses_shared_attempts(self):
+        value = copy.deepcopy(self.checkpoint)
+        value["empty_project_resolutions"] = [resolution(run_id="100")]
+        result = self.restore_checkpoint(value)
+        self.assertEqual(result["empty_project_resolutions"], [resolution(run_id="100")])
+        self.assertEqual(
+            self.gh.intents.call_args.kwargs["resolutions"], [resolution(run_id="100")]
+        )
+        value["empty_project_resolutions"] = [resolution(run_id="101")]
+        with self.assertRaisesRegex(cycle.CycleError, "resolution_conflict"):
+            self.restore_checkpoint(value)
 
     def test_restore_reads_no_policy_approval_from_the_environment(self):
         # The code reads the environment only through get or []; both are recorded here.
