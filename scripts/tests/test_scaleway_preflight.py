@@ -81,7 +81,7 @@ class FakeActions:
             raise self.evidence
         return self.evidence
 
-    def intents(self, settings, *, previous, excluding=None, unallocated=None):
+    def intents(self, settings, *, previous, excluding=None, unallocated=None, resolutions=None):
         assert excluding == ("101", "1")
         return self.pending
 
@@ -256,6 +256,13 @@ class StopTests(PreflightCase):
     def test_full_ledger_stops_without_a_request(self):
         self.actions.evidence = receipt(100)
         self.actions.evidence["leases"] = [{}] * self.limits["maximum_leases"]
+        self.refused("ledger_capacity")
+        self.assertEqual(self.actions.requests, 0)
+
+    def test_empty_project_resolutions_count_toward_a_full_ledger(self):
+        self.actions.evidence = receipt(100)
+        self.actions.evidence["leases"] = [{}] * (self.limits["maximum_leases"] - 1)
+        self.actions.evidence["empty_project_resolutions"] = [{}]
         self.refused("ledger_capacity")
         self.assertEqual(self.actions.requests, 0)
 
@@ -1008,6 +1015,7 @@ class RecoveryInteractionTests(unittest.TestCase):
         }
         self.gh = Mock(spec=GitHub)
         self.gh.unallocated.return_value = []
+        self.gh.lost.return_value = []
         self.gh.completed_ledger.return_value = {"leases": []}
         self.gh.journal.return_value = None
         self.gh.prior_recovery.return_value = None
