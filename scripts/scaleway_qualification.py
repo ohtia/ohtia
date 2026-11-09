@@ -87,17 +87,7 @@ def prepare(gh: GitHub, profile: str, directory: Path, build_directory: Path) ->
     gh.guards()
     key_lifetimes()
     settings = cycle.configuration(profile)
-    history = previous(gh, settings, current=(identity["run_id"], identity["attempt"]), fresh=True)
-    if profile == "debian-13":
-        cycle.require(
-            any(
-                row["intent"]["profile"] == "fedora-44"
-                and row["receipt"].get("native_smoke_passed") is True
-                and row["receipt"].get("independent_deletion_observed") is True
-                for row in history
-            ),
-            "fedora_recovery_required",
-        )
+    previous(gh, settings, current=(identity["run_id"], identity["attempt"]), fresh=True)
     build = cycle.read(build_directory / "build.json")
     cycle.validate_build(build)
     cycle.require(

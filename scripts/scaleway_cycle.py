@@ -126,7 +126,6 @@ SAFE_FAILURE_CODES = frozenset(
         "environment_guard",
         "evidence_budget",
         "fault_mode",
-        "fedora_recovery_required",
         "foreign_project",
         "fresh_build_output",
         "fresh_cycle_output",

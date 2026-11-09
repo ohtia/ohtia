@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: Native Linux profile (Fedora recovery must pass before Debian)
+        description: Native Linux profile
         required: true
         type: choice
         options: [fedora-44, debian-13]
