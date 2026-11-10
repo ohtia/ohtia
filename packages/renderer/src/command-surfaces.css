@@ -36,7 +36,9 @@
   inset-inline-end: calc(var(--space-0) - var(--space-2));
   margin-inline-start: var(--space-3);
 }
+/* The body contains its hidden announcements, so they never extend the dialog's own overflow. */
 .command-dialog-body {
+  position: relative;
   padding: var(--space-4) var(--space-6) var(--space-6);
   min-block-size: calc(var(--space-12) + var(--space-4) + var(--space-6));
   overflow: auto;
@@ -117,8 +119,12 @@
 .command-danger svg {
   flex: none;
 }
+/*
+ * The focusable notices list stays shorter than the visible scrolling area that contains it, so
+ * focus can reveal its complete ring at short heights and high zoom.
+ */
 .about-notices {
-  max-block-size: calc(var(--space-16) * 3);
+  max-block-size: min(calc(var(--space-16) * 3), 40dvh);
   overflow: auto;
   padding: var(--space-2);
   margin: var(--space-2);
@@ -359,8 +365,18 @@
     flex: 0 1 auto;
     min-block-size: var(--space-0);
   }
+  /*
+   * The body and footer no longer fit together, so the dialog becomes the only scrolling region.
+   * The body keeps its content height, so its content never overlaps the footer.
+   */
+  .command-dialog-body {
+    flex: none;
+    overflow: visible;
+  }
 }
 @media (max-height: 150px) {
+  .about-dialog,
+  .help-dialog,
   .command-palette,
   .shortcuts-dialog {
     margin-block: max(var(--space-1), env(titlebar-area-y, 0px) + env(titlebar-area-height, 0px))
@@ -371,9 +387,12 @@
     );
   }
   /* Focus scrolling keeps only the ring clear, so a spaced control fits the short body. */
-  .command-dialog-body,
   .shortcuts-body {
     scroll-padding: calc(var(--focus-width) + var(--focus-offset));
+  }
+  /* A window-controls band can occupy the top margin, so the notices list leaves more room. */
+  .about-notices {
+    max-block-size: min(calc(var(--space-16) * 3), 30dvh);
   }
   /* Fit the focused search and a wrapped option together at extreme zoom heights. */
   .command-palette {
