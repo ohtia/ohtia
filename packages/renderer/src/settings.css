@@ -178,10 +178,20 @@
     );
   }
 }
-/* At extreme zoom heights focus scrolling keeps only the ring clear, so a spaced control fits. */
+/*
+ * At extreme zoom heights the fixed header leaves too little room for a wrapped control and its
+ * focus ring, so the whole dialog becomes the only scrolling region and keeps only the ring clear.
+ */
 @media (max-height: 150px) {
+  .settings-dialog {
+    overflow: auto;
+  }
+  .settings-dialog-body {
+    flex: none;
+    overflow: visible;
+  }
   .settings-content {
-    scroll-padding: calc(var(--focus-width) + var(--focus-offset));
+    overflow: visible;
   }
 }
 @media (max-width: 360px) {

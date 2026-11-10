@@ -208,12 +208,29 @@ async function verifyDialogCase(page, dialog, label, zoomFactor, reference) {
   ).toBeLessThanOrEqual(zoomFactor);
   const surface = await dialog.evaluate((element) => {
     const rect = element.getBoundingClientRect();
+    // A region scrolls vertically when it allows it and its content exceeds its visible height.
+    const scrolls = (node) =>
+      ["auto", "scroll"].includes(getComputedStyle(node).overflowY) &&
+      node.scrollHeight > node.clientHeight;
+    const name = (node) => [node.tagName.toLowerCase(), ...node.classList].join(".");
+    const nestedScrollers = [];
+    for (const inner of element.querySelectorAll("*")) {
+      if (!scrolls(inner)) continue;
+      for (let outer = inner.parentElement; outer; outer = outer.parentElement) {
+        if (scrolls(outer)) {
+          nestedScrollers.push(`${name(outer)} > ${name(inner)}`);
+          break;
+        }
+        if (outer === element) break;
+      }
+    }
     return {
       left: rect.left,
       right: rect.right,
       top: rect.top,
       bottom: rect.bottom,
       horizontalOverflow: element.scrollWidth > element.clientWidth,
+      nestedScrollers,
     };
   });
   expect(
@@ -224,6 +241,7 @@ async function verifyDialogCase(page, dialog, label, zoomFactor, reference) {
     viewport.height + layoutTolerance,
   );
   expect(surface.horizontalOverflow, `${label}: dialog horizontal overflow`).toBe(false);
+  expect(surface.nestedScrollers, `${label}: one vertical scrolling region`).toEqual([]);
   const controls = await verifyDialogControls(dialog, exclusions, label);
   const option = (await dialog.evaluate((element) => element.matches(".command-palette")))
     ? await verifyPaletteOption(dialog, exclusions, label)
@@ -233,7 +251,9 @@ async function verifyDialogCase(page, dialog, label, zoomFactor, reference) {
 
 /**
  * Open each delivered dialog at the minimum window and supported zoom cases, in both themes and
- * with text-spacing overrides, and keep it and every focus ring outside the native controls.
+ * with text-spacing overrides, and keep it and every focus ring outside the native controls. As
+ * opened, each dialog has one vertical scrolling region: none scrolls inside another. Designed inner
+ * regions shown later, such as expanded About notices, are outside this check.
  */
 export async function verifyDialogSafeAreas({ page, native, invoke, trigger }) {
   const originalSize = await native.evaluate((window) => window.getContentSize());
@@ -299,6 +319,7 @@ export async function verifyDialogSafeAreas({ page, native, invoke, trigger }) {
           "dialog-escape-and-close-restore-focus",
           "dialog-overlay-band-follows-zoom-decrease",
           "palette-active-option-visible-outside-window-controls",
+          "dialogs-without-nested-vertical-scrolling",
         ],
         observations,
         limitations: [
