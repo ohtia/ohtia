@@ -530,54 +530,54 @@
       }
     },
     "ruff": {
-      "version": "0.17.2",
+      "version": "0.17.4",
       "adr": "0005",
-      "source": "https://pypi.org/pypi/ruff/0.17.2/json",
+      "source": "https://pypi.org/pypi/ruff/0.17.4/json",
       "artifacts": {
         "linux-x64": {
-          "url": "https://files.pythonhosted.org/packages/c3/d8/59894cf630d2d86882457a2a6a0a1533410c5c805bfbac6f6eb4b5aef69d/ruff-0.17.2-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-          "sha256": "c60f93fec7142dba5b8f487f94bf2f6231dae24dc11e4c48648347c8b0720004",
-          "bytes": 10528000,
+          "url": "https://files.pythonhosted.org/packages/af/1b/62874f14c7873f27c7887d2b1ea41de990e14ba9518801ffe8eacb5d51a6/ruff-0.17.4-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "sha256": "2cd025509b2e15721b426fc70fd946d71f43b3db3b08e946dfec2d696d911690",
+          "bytes": 10572829,
           "inspection": "published-metadata-only",
           "requires_python": ">=3.7",
           "yanked": false
         },
         "linux-arm64": {
-          "url": "https://files.pythonhosted.org/packages/b7/b6/6a64fae86ca5e5e29d5adc311e5481de726cedf9aee607435a16c31c442a/ruff-0.17.2-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
-          "sha256": "b7d0906677d89bbf3cf73cde64b5bbe2ab35df3ae43e49ee2627301e91265bac",
-          "bytes": 10047078,
+          "url": "https://files.pythonhosted.org/packages/58/de/a392dc38b215798ae72e639d228b7f6c02d826a95d1c0ad7c4c0ee49ef5b/ruff-0.17.4-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+          "sha256": "8ea6e0017c785f7282092b11e46338e4ebed1b9e575ebf2e55a8a1eda968241a",
+          "bytes": 10136900,
           "inspection": "published-metadata-only",
           "requires_python": ">=3.7",
           "yanked": false
         },
         "win32-x64": {
-          "url": "https://files.pythonhosted.org/packages/1c/9a/c7da96c2c96d20704cf9027f7a5121da272a8c05f1d1531ba949e3b3df04/ruff-0.17.2-py3-none-win_amd64.whl",
-          "sha256": "1b59d447f197bef9ef48a22ba1a6016137753c6099e9bac9c36eb566e422424c",
-          "bytes": 10282826,
+          "url": "https://files.pythonhosted.org/packages/bd/15/42af8a72d8946e3c9efd2bbf6641e462b6832783b0d043d63ef5b280ba7f/ruff-0.17.4-py3-none-win_amd64.whl",
+          "sha256": "67c5a894fc054cf41f75f7afa24815de5a74329d97634126c2a1015740ff4e8c",
+          "bytes": 10292922,
           "inspection": "published-metadata-only",
           "requires_python": ">=3.7",
           "yanked": false
         },
         "win32-arm64": {
-          "url": "https://files.pythonhosted.org/packages/81/60/a3604c79cb02777b6cb84da894104021986f06c4bc41375102cc95049a32/ruff-0.17.2-py3-none-win_arm64.whl",
-          "sha256": "195ad918027f817c119310ca89a42d347887dfc28934aaa869325e9c5dc9d962",
-          "bytes": 9827036,
+          "url": "https://files.pythonhosted.org/packages/68/9e/f1dbffcfb8ff25dadbc21f87a8b73c3848abe4abada9d4b08ccef8bec40c/ruff-0.17.4-py3-none-win_arm64.whl",
+          "sha256": "181ae38a9a8fb94925bf7d0794327b48d7fd7f4b50cfd84c0e999cc09ef8d131",
+          "bytes": 9889396,
           "inspection": "published-metadata-only",
           "requires_python": ">=3.7",
           "yanked": false
         },
         "darwin-x64": {
-          "url": "https://files.pythonhosted.org/packages/e8/61/12cc2ff7b2fa90a268ce1e2162c23aaf76e601d22623f6a31b0eeaa764b0/ruff-0.17.2-py3-none-macosx_10_12_x86_64.whl",
-          "sha256": "39c5b55c960515cdb32be16e69efb5734c589c06a0eb38a22694524a336b889d",
-          "bytes": 10210904,
+          "url": "https://files.pythonhosted.org/packages/0a/12/dd158708378866e8b53e145a465dbc51a7cccb9fa197a74d67eaedde7234/ruff-0.17.4-py3-none-macosx_10_12_x86_64.whl",
+          "sha256": "13e781c3c5f663e7fba737eaaeb70dd943dd55171daf316afb25cd5268cfe0c7",
+          "bytes": 10266044,
           "inspection": "published-metadata-only",
           "requires_python": ">=3.7",
           "yanked": false
         },
         "darwin-arm64": {
-          "url": "https://files.pythonhosted.org/packages/e8/7c/b8850a8e4ad29f64a827dd6c6902db4a9aa538fb2b9eef4e26084001a3bb/ruff-0.17.2-py3-none-macosx_11_0_arm64.whl",
-          "sha256": "92a80d2f44584dabb0189b3a6c393e37e525e04942838482010575cb81945be7",
-          "bytes": 9408439,
+          "url": "https://files.pythonhosted.org/packages/28/32/89a94a8eb11fd505a381ae6f04e190d038d9958695209dc1786ce5cfcda3/ruff-0.17.4-py3-none-macosx_11_0_arm64.whl",
+          "sha256": "7ed2f416349944f908f9574215994602242b0836844eba48eec61473033afca0",
+          "bytes": 9432227,
           "inspection": "published-metadata-only",
           "requires_python": ">=3.7",
           "yanked": false

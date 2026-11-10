@@ -205,7 +205,7 @@ class QualificationAdmissionTests(unittest.TestCase):
             ("runner", "ubuntu-26.04", "ubuntu-24.04"),
             ("python", 'python-version: "3.14.8"', 'python-version: "3.14.9"'),
             ("prettier", "rev: v3.9.10", "rev: v3.9.9"),
-            ("ruff", "rev: v0.17.2", "rev: v0.17.1"),
+            ("ruff", "rev: v0.17.4", "rev: v0.17.3"),
         ):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
