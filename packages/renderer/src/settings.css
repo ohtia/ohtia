@@ -79,6 +79,8 @@
   font-weight: var(--type-ui-body-weight);
 }
 .settings-content select {
+  color: var(--content-primary);
+  background-color: var(--surface-panel);
   inline-size: 100%;
   min-block-size: calc(var(--space-8) + var(--space-1));
 }

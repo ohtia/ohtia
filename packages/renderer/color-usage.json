@@ -31,6 +31,12 @@
       "minimum": 7
     },
     {
+      "selector": ".settings-content select",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7
+    },
+    {
       "selector": ".language-save-state",
       "foreground": "content.secondary",
       "backgrounds": ["surface.page"],
