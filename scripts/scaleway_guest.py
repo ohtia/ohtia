@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import platform
 import shutil
@@ -99,6 +100,25 @@ def admit_guest(selected: dict) -> dict:
     return value
 
 
+def os_packages() -> dict:
+    """Bind the root-produced pre-installation package list into the native result."""
+    file = cycle.GUEST_INVENTORY
+    info = file.lstat()
+    maximum = cycle.policy()["limits"]["package_inventory_bytes"]
+    cycle.require(
+        stat.S_ISREG(info.st_mode)
+        and info.st_uid == 0
+        and info.st_nlink == 1
+        and not info.st_mode & 0o022
+        and 0 < info.st_size <= maximum,
+        "package_inventory_identity",
+    )
+    with file.open("rb") as source:
+        data = source.read(maximum + 1)
+    cycle.require(len(data) == info.st_size, "package_inventory_identity")
+    return {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+
+
 def seal() -> None:
     cycle.require(os.getuid() == 0, "package_seal_requires_root")
     value = guard()
@@ -192,6 +212,7 @@ def smoke(output: Path) -> None:
         "identity": identity,
         "build": value["intent"]["build"],
         "host": host,
+        "os_packages": os_packages(),
         "distribution_qualified": False,
         "publisher_signed": False,
     }

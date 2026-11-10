@@ -15,11 +15,18 @@ import sys
 import time
 from pathlib import Path
 
+import scaleway_bootstrap as bootstrap
 import scaleway_cycle as cycle
 import scaleway_evidence as evidence_archive
 import scaleway_preflight as preflight
 import scaleway_progress as reporting
-from scaleway_ledger import GitHub, attempt_ended, install_cli
+from scaleway_ledger import (
+    GitHub,
+    attempt_ended,
+    install_cli,
+    settled_records,
+    validate_resolutions,
+)
 
 INCOMING = "/var/lib/ohtia-qualification/incoming"
 GUEST_SOURCE = "/home/ohtia-quality/source"
@@ -48,15 +55,18 @@ def key_lifetimes() -> None:
 
 def previous(gh: GitHub, settings: dict, *, current: tuple[str, str], fresh: bool) -> list:
     value = gh.completed_ledger(settings, fresh=fresh)
+    resolutions = value.get("empty_project_resolutions", [])
     unresolved = gh.intents(
         settings,
         previous=value["leases"],
         excluding=current,
         unallocated=value.get("unallocated_attempts", []),
+        resolutions=resolutions,
     )
     cycle.require(not unresolved, "unresolved_prior_intent")
     cycle.require(
-        len(value["leases"]) < cycle.policy()["limits"]["maximum_leases"], "ledger_capacity"
+        len(value["leases"]) + len(resolutions) < cycle.policy()["limits"]["maximum_leases"],
+        "ledger_capacity",
     )
     return value["leases"]
 
@@ -77,17 +87,7 @@ def prepare(gh: GitHub, profile: str, directory: Path, build_directory: Path) ->
     gh.guards()
     key_lifetimes()
     settings = cycle.configuration(profile)
-    history = previous(gh, settings, current=(identity["run_id"], identity["attempt"]), fresh=True)
-    if profile == "debian-13":
-        cycle.require(
-            any(
-                row["intent"]["profile"] == "fedora-44"
-                and row["receipt"].get("native_smoke_passed") is True
-                and row["receipt"].get("independent_deletion_observed") is True
-                for row in history
-            ),
-            "fedora_recovery_required",
-        )
+    previous(gh, settings, current=(identity["run_id"], identity["attempt"]), fresh=True)
     build = cycle.read(build_directory / "build.json")
     cycle.validate_build(build)
     cycle.require(
@@ -162,6 +162,8 @@ def cloud_config(intent: dict, resources: dict, public_key: str) -> bytes:
         "home_bytes": policy["storage"]["home_bytes"],
         "maximum_harness_files": policy["limits"]["maximum_harness_files"],
         "maximum_harness_expanded_bytes": policy["limits"]["maximum_harness_expanded_bytes"],
+        "package_inventory_bytes": policy["limits"]["package_inventory_bytes"],
+        "package_inventory_seconds": policy["limits"]["package_inventory_seconds"],
     }
     cycle.require(len(json.dumps(guard).encode()) <= 65536, "guest_guard_bound")
     desktop = cycle.intent_cell(intent)["desktop"]
@@ -412,9 +414,38 @@ def guest(
     deadline: float,
     progress: reporting.Progress | None = None,
 ) -> dict:
+
+    def inventory_record(state: str) -> dict:
+        # The image is the selected input; the architecture is observed in the guest.
+        return {
+            "version": 1,
+            "identity": intent["identity"],
+            "cell": cycle.intent_cell(intent),
+            "selected_image_id": intent["image_id"],
+            "guest_state": state,
+        }
+
+    def inventory_unavailable() -> None:
+        # The helper cannot be reached: mark the list explicitly instead of omitting it.
+        try:
+            cycle.write(
+                output / "native-os-packages.json",
+                {
+                    **inventory_record("failed"),
+                    "status": "failed",
+                    "code": "package_inventory_unavailable",
+                },
+            )
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+
     if progress is not None:
         progress.phase("host-key", deadline=deadline)
-    address, known = host_key(api, intent, resources, key, deadline, progress)
+    try:
+        address, known = host_key(api, intent, resources, key, deadline, progress)
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        inventory_unavailable()
+        raise
     if progress is not None:
         progress.observe("host-key-admitted")
         progress.phase("bootstrap", deadline=deadline)
@@ -480,8 +511,67 @@ def guest(
         cycle.write(output / "bootstrap.json", safe)
         return safe
 
+    def observe_inventory(state: str) -> dict:
+        """Retain the root-produced package list only after its digest and form are verified."""
+        limits = cycle.policy()["limits"]
+        record = inventory_record(state)
+        try:
+            summary = cycle.decode(
+                remote(
+                    "/usr/bin/python3 /usr/local/lib/ohtia-qualification/bootstrap.py packages",
+                    timeout=limits["package_inventory_seconds"] + 30,
+                    operation="inventory",
+                )
+            )
+            if summary.get("status") == "failed":
+                code = summary.get("code")
+                raise cycle.CycleError(
+                    code if code in bootstrap.INVENTORY_CODES else "package_inventory_failed"
+                )
+            cycle.require(
+                set(summary) == {"version", "status", "machine", "packages", "bytes", "sha256"}
+                and summary["version"] == 1
+                and summary["status"] == "observed"
+                and summary["machine"] == "aarch64"
+                and type(summary["packages"]) is int
+                and type(summary["bytes"]) is int
+                and 0 < summary["bytes"] <= limits["package_inventory_bytes"]
+                and isinstance(summary["sha256"], str),
+                "guest_package_inventory_shape",
+            )
+            data = remote(f"cat {cycle.GUEST_INVENTORY}", operation="inventory")
+            cycle.require(
+                len(data) == summary["bytes"]
+                and hashlib.sha256(data).hexdigest() == summary["sha256"],
+                "guest_package_inventory_digest",
+            )
+            try:
+                count = bootstrap.inventory_count(data, limits["package_inventory_bytes"])
+            except ValueError as error:
+                raise cycle.CycleError(str(error)) from None
+            cycle.require(count == summary["packages"], "guest_package_inventory_digest")
+            with (output / "native-os-packages.txt").open("xb") as retained:
+                retained.write(data)
+            record.update(
+                status="observed",
+                architecture=summary["machine"],
+                packages=count,
+                bytes=len(data),
+                sha256=summary["sha256"],
+            )
+        except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+            record.update(status="failed", code=cycle.failure_code(error))
+            try:
+                cycle.write(output / "native-os-packages.json", record)
+            except (OSError, ValueError):
+                pass
+            raise
+        cycle.write(output / "native-os-packages.json", record)
+        return record
+
     primary = None
     readiness_confirmed = False
+    inventory, inventory_attempted = None, False
     try:
         while time.monotonic() < test_deadline:
             try:
@@ -528,8 +618,14 @@ def guest(
                 )
             )
         cycle.require(time.monotonic() < test_deadline, "guest_bootstrap_deadline")
+        phase = "inventory"
+        if progress is not None:
+            progress.phase(phase, deadline=deadline)
+        inventory_attempted = True
+        inventory = observe_inventory("ready")
         phase = "transfer"
         if progress is not None:
+            progress.observe("inventory-complete")
             progress.phase(phase, deadline=deadline)
         for kind in ("harness", "package"):
             file = cycle.verify_artifact(build_directory, intent["build"][kind])
@@ -645,6 +741,16 @@ def guest(
             bootstrap_status(operation="guest-diagnostics")
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
         pass
+    # A guest that failed before the list was taken still yields an explicitly marked
+    # record: one bounded attempt when it can run the helper, otherwise an unavailable list.
+    if not inventory_attempted:
+        if diagnostic["readiness"] is not None and all(diagnostic["readiness"].values()):
+            try:
+                observe_inventory("failed")
+            except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+                pass
+        else:
+            inventory_unavailable()
     try:
         data = remote(f"runuser -u ohtia-quality -- cat {GUEST_OUTPUT}/result.json")
         value = cycle.decode(data)
@@ -654,7 +760,10 @@ def guest(
             and value["build"] == intent["build"]
             and value["cell"] == cycle.intent_cell(intent)
             and value["distribution_qualified"] is False
-            and value["publisher_signed"] is False,
+            and value["publisher_signed"] is False
+            and inventory is not None
+            and value.get("os_packages")
+            == {"bytes": inventory["bytes"], "sha256": inventory["sha256"]},
             "guest_result_binding",
         )
         cycle.write(output / "native.json", value)
@@ -879,18 +988,81 @@ def recovery_context(gh: GitHub) -> tuple[dict, dict]:
     return identity, settings
 
 
+def resolve_lost(gh: GitHub, api: cycle.API, identity: dict) -> list:
+    """Settle ended attempts whose intent is no longer listed, only through an empty project.
+
+    The provider step starts after its intent was prepared, so the lease it could have created has
+    expired and its cleanup budget has passed by the read. Anything present, an incomplete read or
+    an attempt that has not ended keeps the refusal and deletes nothing.
+    """
+    lost = gh.lost()
+    if not lost:
+        return []
+    limits = cycle.policy()["limits"]
+    margin = dt.timedelta(seconds=limits["lease_seconds"] + limits["cleanup_seconds"])
+    started = []
+    for run, attempt in lost:
+        cycle.require(
+            run["status"] == "completed" or attempt < run["run_attempt"],
+            "missing_allocation_intent",
+        )
+        try:
+            started.append(gh.provider_started(run, attempt))
+        except cycle.CycleError as error:
+            # A failed read leaves the step start unreported.
+            raise cycle.CycleError("missing_allocation_intent") from error
+    now = cycle.utc()
+    cycle.require(
+        all(cycle.timestamp(now) >= start + margin for start in started),
+        "missing_allocation_intent",
+    )
+    try:
+        observed = api.project_inventory()
+    except cycle.CycleError as error:
+        # An incomplete or refused read cannot establish an empty project.
+        raise cycle.CycleError("missing_allocation_intent") from error
+    cycle.require(
+        all(observed[key] == 0 for key in ("servers", "volumes", "ips", "ohtia_security_groups")),
+        "missing_allocation_intent",
+    )
+    rows = [
+        {
+            "identity": {
+                "repository": cycle.REPOSITORY,
+                "source_sha": run["head_sha"],
+                "workflow": cycle.policy()["qualification_workflow"],
+                "run_id": str(run["id"]),
+                "attempt": str(attempt),
+                "event": run["event"],
+            },
+            "provider_started_at": start.isoformat().replace("+00:00", "Z"),
+            "observed_at": now,
+            "recovery": {"run_id": identity["run_id"], "attempt": identity["attempt"]},
+            "observed": observed,
+        }
+        for (run, attempt), start in zip(lost, started, strict=True)
+    ]
+    validate_resolutions(rows)
+    return rows
+
+
 def prepare_recovery(gh: GitHub, output: Path) -> None:
     identity, settings = recovery_context(gh)
     ledger = gh.completed_ledger(settings)
     carried = ledger["leases"]
     pending = gh.intents(
-        settings, previous=carried, unallocated=ledger.get("unallocated_attempts", [])
+        settings,
+        previous=carried,
+        unallocated=ledger.get("unallocated_attempts", []),
+        resolutions=ledger.get("empty_project_resolutions", []),
+        collect_lost=True,
     )
     cycle.require(
         len(pending) <= cycle.policy()["limits"]["managed_instances"], "recovery_pending_bound"
     )
     api = cycle.API(os.environ.get("SCW_SECRET_KEY", ""), settings, "cleanup")
     api.deadline = time.monotonic() + cycle.policy()["limits"]["cleanup_seconds"]
+    resolutions = ledger.get("empty_project_resolutions", []) + resolve_lost(gh, api, identity)
     items = []
     for intent, producer in pending:
         cycle.validate_intent(intent, settings, historical=True)
@@ -952,6 +1124,7 @@ def prepare_recovery(gh: GitHub, output: Path) -> None:
         "policy_sha256": cycle.digest(cycle.POLICY_PATH),
         "carried": carried,
         "unallocated_attempts": gh.unallocated(),
+        "empty_project_resolutions": resolutions,
         "items": items,
         "distribution_qualified": False,
     }
@@ -981,6 +1154,13 @@ def recover(gh: GitHub, output: Path, plan_file: Path) -> None:
         planned["items"][0]["intent"]["nonce"] if planned["items"] else "empty", identity["attempt"]
     )
     cycle.require(planned["artifact_name"] == expected_name, "recovery_plan_name")
+    settled_records(
+        {
+            "leases": planned["carried"],
+            "unallocated_attempts": planned["unallocated_attempts"],
+            "empty_project_resolutions": planned["empty_project_resolutions"],
+        }
+    )
     artifacts = [a for a in gh.artifacts(identity["run_id"]) if a["name"] == expected_name]
     cycle.require(
         len(artifacts) == 1 and gh.artifact(artifacts[0], "plan.json") == planned,
@@ -1002,6 +1182,7 @@ def recover(gh: GitHub, output: Path, plan_file: Path) -> None:
         "authority": "cleanup",
         "leases": leases,
         "unallocated_attempts": planned.get("unallocated_attempts", []),
+        "empty_project_resolutions": planned["empty_project_resolutions"],
         "deferred": deferred,
         "checked_at": cycle.utc(),
         "distribution_qualified": False,

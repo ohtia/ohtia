@@ -19,6 +19,8 @@ import ci_linux_dependencies
 import linux_desktop
 import quality_delivery as delivery
 
+INVENTORY = b"bash\t5.3-1\tamd64\nlibc6\t2.42-1\tamd64\n"
+
 
 class DeliveryTests(unittest.TestCase):
     def setUp(self):
@@ -122,6 +124,10 @@ class DeliveryTests(unittest.TestCase):
                     "native": native,
                     "suites": suites,
                 }
+            linux = cell["target"].startswith("linux-")
+            if linux:
+                inventory = directory / "native-os-packages.txt"
+                inventory.write_bytes(INVENTORY)
             delivery.write(
                 directory / "result.json",
                 {
@@ -137,9 +143,13 @@ class DeliveryTests(unittest.TestCase):
                                 "display_managers": [],
                                 "installed_packages": 1500,
                                 "plasma_version": "6.6.6" if cell["desktop"] == "kde" else None,
-                            }
+                            },
+                            "os_packages": {
+                                "artifact": delivery.artifact(inventory, directory),
+                                "packages": 2,
+                            },
                         }
-                        if cell["target"].startswith("linux-")
+                        if linux
                         else {}
                     ),
                 },
@@ -267,6 +277,51 @@ class DeliveryTests(unittest.TestCase):
         delivery.write(file, receipt)
         with self.assertRaisesRegex(delivery.DeliveryError, "case inventory"):
             delivery.account(self.plan, self.output)
+
+    def test_operating_system_package_list_is_rechecked_when_aggregating(self):
+        self.populate()
+        file = next(self.output.glob("quality-linux-*/result.json"))
+        original = delivery.read(file)
+        inventory = file.parent / "native-os-packages.txt"
+        unsorted = b"libc6\t2.42-1\tamd64\nbash\t5.3-1\tamd64\n"
+        oversized = b"".join(b"p%06d\t1.0-1\tamd64\n" % index for index in range(30000))
+        for label, data, message in (
+            ("missing", INVENTORY, "Missing operating-system package inventory"),
+            ("foreign-file", INVENTORY, "Missing operating-system package inventory"),
+            ("changed-bytes", INVENTORY.replace(b"5.3-1", b"5.3-2"), "bytes changed"),
+            ("unsorted", unsorted, "Invalid operating-system package inventory"),
+            ("count", INVENTORY, "package count differs"),
+            ("oversized", oversized, "Invalid operating-system package inventory"),
+            ("oversized-file", oversized, "Invalid operating-system package inventory"),
+        ):
+            with self.subTest(label=label):
+                receipt = copy.deepcopy(original)
+                inventory.write_bytes(data)
+                if label == "missing":
+                    receipt.pop("os_packages")
+                elif label == "foreign-file":
+                    receipt["os_packages"]["artifact"]["file"] = "result.json"
+                elif label == "unsorted":
+                    receipt["os_packages"]["artifact"] = delivery.artifact(inventory, file.parent)
+                elif label == "count":
+                    receipt["os_packages"]["packages"] = 3
+                elif label == "oversized":
+                    receipt["os_packages"] = {
+                        "artifact": delivery.artifact(inventory, file.parent),
+                        "packages": 30000,
+                    }
+                delivery.write(file, receipt)
+                with (
+                    patch.object(delivery, "digest", wraps=delivery.digest) as hashed,
+                    self.assertRaisesRegex(delivery.DeliveryError, message),
+                ):
+                    delivery.account(self.plan, self.output)
+                if label.startswith("oversized"):
+                    # The list is refused by its size before it is hashed or read.
+                    self.assertNotIn(inventory, [call.args[0] for call in hashed.call_args_list])
+        inventory.write_bytes(INVENTORY)
+        delivery.write(file, original)
+        self.assertEqual(delivery.account(self.plan, self.output)["status"], "passed")
 
     def test_startup_inventory_follows_the_runtime_each_route_can_open(self):
         inventory = delivery.read(delivery.ROOT / "config/quality/packaged-cases.json")

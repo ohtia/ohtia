@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 import linux_desktop
+import scaleway_bootstrap as package_inventory
 
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = "OHTIA_CI_PROVENANCE="
@@ -368,6 +369,7 @@ def input_seal() -> dict:
         "config/quality/packaged-cases.json",
         "config/desktop/storage-cases.json",
         "config/desktop/diagnostic-cases.json",
+        "config/installation/scaleway.json",
     ]
     return {name: digest(ROOT / name) for name in paths}
 
@@ -422,6 +424,35 @@ def check_attachment(record: dict, directory: Path) -> Path:
     )
     require(artifact(file, directory) == record, "Artifact bytes changed or disappeared.")
     return file
+
+
+def check_os_packages(record: object, directory: Path) -> None:
+    """Recheck the retained operating-system package list against its recorded identity."""
+    require(
+        isinstance(record, dict)
+        and set(record) == {"artifact", "packages"}
+        and isinstance(record["artifact"], dict)
+        and record["artifact"].get("file") == "native-os-packages.txt"
+        and type(record["packages"]) is int,
+        "Missing operating-system package inventory.",
+    )
+    maximum = read(ROOT / "config/installation/scaleway.json")["limits"]["package_inventory_bytes"]
+    file = directory / "native-os-packages.txt"
+    # Refuse an oversized list before hashing or reading it.
+    require(
+        type(record["artifact"].get("bytes")) is int
+        and 0 < record["artifact"]["bytes"] <= maximum
+        and file.is_file()
+        and not file.is_symlink()
+        and file.stat().st_size <= maximum,
+        "Invalid operating-system package inventory.",
+    )
+    data = check_attachment(record["artifact"], directory).read_bytes()
+    try:
+        count = package_inventory.inventory_count(data, maximum)
+    except ValueError:
+        raise DeliveryError("Invalid operating-system package inventory.") from None
+    require(count == record["packages"], "Operating-system package count differs.")
 
 
 def runs_development_cases(cell: dict) -> bool:
@@ -528,6 +559,7 @@ def account(expected: dict, directory: Path) -> dict:
                 ),
                 "Missing desktop, package or display-manager observation.",
             )
+            check_os_packages(receipt.get("os_packages"), partition)
         require(
             set(receipt["packages"]) == set(cell["formats"]),
             "Missing or unexpected package format.",

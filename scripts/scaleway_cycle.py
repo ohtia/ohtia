@@ -23,6 +23,7 @@ import linux_desktop
 ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = ROOT / "config/installation/scaleway.json"
 GUARD = Path("/run/ohtia-qualification.json")
+GUEST_INVENTORY = Path("/var/lib/ohtia-qualification/native-os-packages.txt")
 KINDS = ("root", "home", "ip", "server", "security")
 REPOSITORY = "ohtia/ohtia"
 API_HOST = "api.scaleway.com"
@@ -125,7 +126,6 @@ SAFE_FAILURE_CODES = frozenset(
         "environment_guard",
         "evidence_budget",
         "fault_mode",
-        "fedora_recovery_required",
         "foreign_project",
         "fresh_build_output",
         "fresh_cycle_output",
@@ -170,6 +170,8 @@ SAFE_FAILURE_CODES = frozenset(
         "guest_not_ready",
         "guest_operation_failed",
         "guest_output_path",
+        "guest_package_inventory_digest",
+        "guest_package_inventory_shape",
         "guest_output_required",
         "guest_policy",
         "guest_process_architecture",
@@ -265,6 +267,14 @@ SAFE_FAILURE_CODES = frozenset(
         "ordinary_extractor_required",
         "package_count",
         "package_install_missing",
+        "package_inventory_budget",
+        "package_inventory_failed",
+        "package_inventory_identity",
+        "package_inventory_invalid",
+        "package_inventory_oversized",
+        "package_inventory_root_required",
+        "package_inventory_timeout",
+        "package_inventory_unavailable",
         "package_seal_requires_root",
         "policy_version",
         "prepare_arguments",
@@ -320,6 +330,14 @@ SAFE_FAILURE_CODES = frozenset(
         "recovery_trigger",
         "recovery_wait_deadline",
         "request_size",
+        "resolution_bound",
+        "resolution_conflict",
+        "resolution_duplicate",
+        "resolution_fields",
+        "resolution_identity",
+        "resolution_observation",
+        "resolution_run",
+        "resolution_time",
         "resource_identity",
         "resource_kind",
         "resource_list",
@@ -512,6 +530,11 @@ def policy() -> dict:
     )
     require(limits["managed_instances"] == 1, "instance_budget")
     require(limits["evidence_seconds"] < limits["cleanup_seconds"], "evidence_budget")
+    require(
+        limits["package_inventory_bytes"] <= limits["maximum_json_bytes"]
+        and limits["package_inventory_seconds"] < limits["test_seconds"],
+        "package_inventory_budget",
+    )
     require(
         limits["recovery_reuse_seconds"]
         < limits["recovery_admission_seconds"]
@@ -1302,6 +1325,35 @@ class API:
         require(
             not any(self.objects(kind) for kind in ("server", "root", "ip")), "project_not_empty"
         )
+
+    def project_inventory(self) -> dict:
+        """Count every project server, volume and address, and the security groups Ohtia owns.
+
+        Each listing is complete or refused; other groups, such as a provider default, are counted
+        but do not count as Ohtia resources.
+        """
+        prefix = policy()["name_prefix"]
+        groups = self.objects("security")
+        ohtia = 0
+        for row in groups:
+            labels = row.get("tags", [])
+            require(
+                isinstance(row.get("name"), str)
+                and isinstance(labels, list)
+                and all(isinstance(label, str) for label in labels),
+                "resource_list",
+            )
+            if row["name"].startswith(prefix) or any(
+                label == "ohtia-lease" or label.startswith("ohtia-lease:") for label in labels
+            ):
+                ohtia += 1
+        return {
+            "servers": len(self.objects("server")),
+            "volumes": len(self.objects("root")),
+            "ips": len(self.objects("ip")),
+            "ohtia_security_groups": ohtia,
+            "other_security_groups": len(groups) - ohtia,
+        }
 
     def admit_profile(self, intent: dict) -> None:
         selected = None

@@ -48,7 +48,9 @@
     "progress_record_bytes": 2048,
     "progress_maximum_records": 256,
     "diagnostic_stderr_bytes": 8192,
-    "guest_diagnostic_bytes": 16384
+    "guest_diagnostic_bytes": 16384,
+    "package_inventory_bytes": 524288,
+    "package_inventory_seconds": 60
   },
   "profiles": {
     "fedora-44": {

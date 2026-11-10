@@ -3,7 +3,7 @@ type: Playbook
 title: Native quality builds
 description: Build unsigned development packages with bounded Linux host provisioning on standard hosted native VMs and verify artifact and checkout provenance.
 generated:
-  by: codex/gpt-6.1-sol
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 ---
@@ -53,7 +53,7 @@ python3 scripts/workspace.py run quality:aggregate artifacts/quality-plan.json a
 
 Linux uses the workflow's private display/session wrapper. Other platforms select their own declared cell and use `python` where appropriate. The coordinated aggregator reads the complete set of downloaded native artifact directories rather than one local cell. Shared checks and deterministic accounting tests remain usable locally without launching an unqualified Electron process.
 
-A development version has the form `0.0.0-dev.<run>.<attempt>`, never a reserved final version. Each plan binds repository, event, PR head/base where applicable, actual checkout commit/tree, workflow and policy digests, locks, target/tool manifests and smoke inventories. Native receipts bind the plan, host/image identity, package format, exact bytes and SHA-256, executable/addon architecture, prepared payload and packaged suite reports. The PR and actual integrated-main identities remain distinct.
+A development version has the form `0.0.0-dev.<run>.<attempt>`, never a reserved final version. Each plan binds repository, event, PR head/base where applicable, actual checkout commit/tree, workflow and policy digests, locks, target/tool manifests and smoke inventories. Native receipts bind the plan, host/image identity, package format, exact bytes and SHA-256, executable/addon architecture, prepared payload and packaged suite reports. Linux receipts also bind the operating-system package list taken before package construction by the [shared bounded list function](scaleway-qualification.md#evidence-and-limits); the aggregator rechecks its length, SHA-256, canonical form and package count. The PR and actual integrated-main identities remain distinct.
 
 Each job records its checkout before repository tooling. The trusted pre-merge verifier checks the exact reviewed workflow/inventory and requires the corresponding receipt in every job's bounded log. It still accepts only `pull_request` evidence. A successful main push never substitutes for PR admission, and a synthetic merge never substitutes for the actual integrated revision. Rerun all jobs for a new attempt: previous-attempt packages do not qualify the new coordinated result.
 

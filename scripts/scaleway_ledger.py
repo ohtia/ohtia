@@ -22,6 +22,7 @@ REPO = "repos/{owner}/{repo}"
 # GitHub reports a not-yet-started step as pending while its job runs.
 NOT_STARTED_STEPS = frozenset({"queued", "pending"})
 PUBLISH_STEP = "Publish the allocation intent before any provider write"
+PROVIDER_STEP = "Create, test and remove the lease"
 
 
 def install_cli(directory: Path) -> Path:
@@ -99,6 +100,86 @@ def validate_unallocated(rows: list) -> dict:
     return result
 
 
+RESOLUTION_COUNTS = ("servers", "volumes", "ips", "ohtia_security_groups")
+
+
+def validate_resolutions(rows: list) -> dict:
+    """Validate attempts settled by an empty-project read, kept apart from exact-ID receipts."""
+    p = cycle.policy()
+    cycle.require(
+        isinstance(rows, list) and len(rows) <= p["limits"]["maximum_leases"], "resolution_bound"
+    )
+    result = {}
+    for row in rows:
+        cycle.require(
+            isinstance(row, dict)
+            and set(row)
+            == {"identity", "provider_started_at", "observed_at", "recovery", "observed"},
+            "resolution_fields",
+        )
+        identity, recovery, observed = row["identity"], row["recovery"], row["observed"]
+        cycle.require(
+            isinstance(identity, dict)
+            and set(identity)
+            == {"repository", "source_sha", "workflow", "run_id", "attempt", "event"}
+            and identity["repository"] == cycle.REPOSITORY
+            and identity["workflow"] == p["qualification_workflow"]
+            and identity["event"] == "workflow_dispatch",
+            "resolution_identity",
+        )
+        cycle.sha(identity["source_sha"], 40)
+        cycle.require(
+            isinstance(recovery, dict)
+            and set(recovery) == {"run_id", "attempt"}
+            and all(
+                isinstance(value, str) and re.fullmatch(r"[1-9][0-9]{0,19}", value) is not None
+                for value in (
+                    identity["run_id"],
+                    identity["attempt"],
+                    recovery["run_id"],
+                    recovery["attempt"],
+                )
+            ),
+            "resolution_run",
+        )
+        # The time rule is checked when the read is made; a later policy keeps earlier records.
+        cycle.require(
+            cycle.timestamp(row["observed_at"]) > cycle.timestamp(row["provider_started_at"]),
+            "resolution_time",
+        )
+        cycle.require(
+            isinstance(observed, dict)
+            and set(observed) == {*RESOLUTION_COUNTS, "other_security_groups"}
+            and all(type(observed[key]) is int and observed[key] == 0 for key in RESOLUTION_COUNTS)
+            and type(observed["other_security_groups"]) is int
+            and 0
+            <= observed["other_security_groups"]
+            <= p["limits"]["maximum_pages"] * p["limits"]["page_size"],
+            "resolution_observation",
+        )
+        key = (identity["run_id"], identity["attempt"])
+        cycle.require(key not in result, "resolution_duplicate")
+        result[key] = row
+    return result
+
+
+def settled_records(value: dict) -> tuple[dict, dict]:
+    """Check that receipts, nonexecution and empty-project resolutions never share an attempt."""
+    leases = {
+        (row["intent"]["identity"]["run_id"], row["intent"]["identity"]["attempt"])
+        for row in value["leases"]
+    }
+    unallocated = validate_unallocated(value.get("unallocated_attempts", []))
+    resolutions = validate_resolutions(value.get("empty_project_resolutions", []))
+    cycle.require(not leases & set(unallocated), "unallocated_conflict")
+    cycle.require(not (leases | set(unallocated)) & set(resolutions), "resolution_conflict")
+    cycle.require(
+        len(value["leases"]) + len(resolutions) <= cycle.policy()["limits"]["maximum_leases"],
+        "ledger_bound",
+    )
+    return unallocated, resolutions
+
+
 def attempt_ended(intent: dict, producer: dict) -> bool:
     """A rerun starts only after the whole run finished, so an earlier attempt cannot be active."""
     return (
@@ -115,6 +196,7 @@ class GitHub:
         self.executable = executable
         self._plan_index = {}
         self._unallocated = {}
+        self._lost = []
 
     def bytes(self, endpoint: str, maximum: int = 2 * 1024 * 1024) -> bytes:
         cycle.require(
@@ -435,7 +517,7 @@ class GitHub:
                     and receipt["distribution_qualified"] is False,
                     "ledger_unresolved",
                 )
-            validate_unallocated(value.get("unallocated_attempts", []))
+            settled_records(value)
             return value
         cycle.require(not fresh, "fresh_recovery_required")
         return {"leases": []}
@@ -453,15 +535,28 @@ class GitHub:
             cycle.require(len(published) <= 1, "provider_step_count")
             if published and published[0]["conclusion"] != "success":
                 return False
-        steps = [
-            s for s in controllers[0]["steps"] if s["name"] == "Create, test and remove the lease"
-        ]
+        steps = [s for s in controllers[0]["steps"] if s["name"] == PROVIDER_STEP]
         cycle.require(len(steps) <= 1, "provider_step_count")
         return bool(
             steps
             and steps[0]["status"] not in NOT_STARTED_STEPS
             and steps[0]["conclusion"] != "skipped"
         )
+
+    def provider_started(self, run: dict, attempt: int):
+        """Read when GitHub started the provider step; its intent was prepared before it."""
+        jobs = self.pages(f"{REPO}/actions/runs/{run['id']}/attempts/{attempt}/jobs", "jobs")
+        controllers = [j for j in jobs if j["name"] == "Create and qualify one ARM lease"]
+        cycle.require(len(controllers) == 1, "missing_allocation_intent")
+        steps = [s for s in controllers[0]["steps"] if s["name"] == PROVIDER_STEP]
+        cycle.require(
+            len(steps) == 1 and isinstance(steps[0].get("started_at"), str),
+            "missing_allocation_intent",
+        )
+        try:
+            return cycle.timestamp(steps[0]["started_at"])
+        except cycle.CycleError:
+            raise cycle.CycleError("missing_allocation_intent") from None
 
     def intents(
         self,
@@ -470,7 +565,10 @@ class GitHub:
         previous: list,
         excluding: tuple[str, str] | None = None,
         unallocated: list | None = None,
+        resolutions: list | None = None,
+        collect_lost: bool = False,
     ) -> list[tuple[dict, dict]]:
+        """List unsettled intents; only recovery may collect lost ones for an empty-project read."""
         workflow = self.workflow(cycle.policy()["qualification_workflow"])
         runs = self.pages(
             f"{REPO}/actions/workflows/{workflow['id']}/runs?branch=main&event=workflow_dispatch",
@@ -483,8 +581,13 @@ class GitHub:
             for row in previous
         }
         self._unallocated = validate_unallocated(unallocated or [])
+        empty = validate_resolutions(resolutions or [])
+        self._lost = []
         cycle.require(not set(resolved) & set(self._unallocated), "unallocated_conflict")
-        settled = set(resolved) | set(self._unallocated)
+        cycle.require(
+            not (set(resolved) | set(self._unallocated)) & set(empty), "resolution_conflict"
+        )
+        settled = set(resolved) | set(self._unallocated) | set(empty)
         found = []
         for candidate in runs:
             run_id = str(candidate["id"])
@@ -500,10 +603,11 @@ class GitHub:
             ):
                 cycle.require(
                     all(
-                        resolved[(run_id, str(attempt))]["identity"]["source_sha"]
+                        carried[(run_id, str(attempt))]["identity"]["source_sha"]
                         == candidate["head_sha"]
+                        for carried in (resolved, empty)
                         for attempt in range(1, candidate["run_attempt"] + 1)
-                        if (run_id, str(attempt)) in resolved
+                        if (run_id, str(attempt)) in carried
                     ),
                     "carried_source",
                 )
@@ -520,18 +624,21 @@ class GitHub:
                     continue
                 if key in self._unallocated:
                     continue
-                if key in resolved:
+                if key in resolved or key in empty:
                     cycle.require(
-                        resolved[key]["identity"]["source_sha"] == run["head_sha"], "carried_source"
+                        (resolved.get(key) or empty[key])["identity"]["source_sha"]
+                        == run["head_sha"],
+                        "carried_source",
                     )
                     continue
                 matching = [a for a in artifacts if a["name"] == f"scw-intent-{run_id}-{attempt}"]
                 cycle.require(len(matching) <= 1, "intent_artifact_count")
                 if not matching:
-                    cycle.require(
-                        not self.provider_attempted(run, attempt, intent_missing=True),
-                        "missing_allocation_intent",
-                    )
+                    if self.provider_attempted(run, attempt, intent_missing=True):
+                        # Only recovery may settle it, through a complete empty-project read.
+                        cycle.require(collect_lost, "missing_allocation_intent")
+                        self._lost.append((run, attempt))
+                        continue
                     if run["status"] == "completed":
                         self._unallocated[key] = {"run_id": run_id, "attempt": str(attempt)}
                     continue
@@ -545,13 +652,19 @@ class GitHub:
                 )
                 found.append((intent, run))
         cycle.require(
-            len(found) + len(previous) <= cycle.policy()["limits"]["maximum_leases"], "ledger_bound"
+            len(found) + len(previous) + len(empty) + len(self._lost)
+            <= cycle.policy()["limits"]["maximum_leases"],
+            "ledger_bound",
         )
         validate_unallocated(self.unallocated())
         return found
 
     def unallocated(self) -> list:
         return [self._unallocated[key] for key in sorted(self._unallocated)]
+
+    def lost(self) -> list[tuple[dict, int]]:
+        """Attempts of the last listing whose provider step may have run without a listed intent."""
+        return list(self._lost)
 
     def prior_recovery(self, settings: dict, intent: dict, current: dict) -> dict | None:
         """Read cumulative plans in publication order, independent of workflow creation/reruns."""

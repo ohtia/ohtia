@@ -34,6 +34,7 @@ import scaleway_build as build
 import scaleway_cycle as cycle
 import scaleway_evidence as evidence_archive
 import scaleway_guest as guest_probe
+import scaleway_ledger as ledger
 import scaleway_qualification as qualification
 import scaleway_restore as restoration
 from scaleway_ledger import GitHub
@@ -42,6 +43,7 @@ PROJECT = "00000000-0000-4000-8000-000000000001"
 IMAGE = "00000000-0000-4000-8000-000000000002"
 SNAPSHOT = "00000000-0000-4000-8000-000000000003"
 TOKEN = "synthetic-credential-for-tests"
+INVENTORY = b"bash\t5.3.0-2.fc44\taarch64\nkernel\t1:6.19.0-1.fc44\taarch64\n"
 
 
 def fixtures(profile="fedora-44", desktop="gnome"):
@@ -78,6 +80,36 @@ def fixtures(profile="fedora-44", desktop="gnome"):
         "publisher_signed": False,
     }
     return settings, cycle.create_intent(identity, settings, manifest, "2026-10-31T00:00:00Z")
+
+
+LOST_STARTED = "2026-10-31T00:00:00Z"
+# The provider step start plus lease_seconds and cleanup_seconds.
+LOST_EARLIEST = "2026-10-31T01:10:00Z"
+EMPTY_PROJECT = {
+    "servers": 0,
+    "volumes": 0,
+    "ips": 0,
+    "ohtia_security_groups": 0,
+    "other_security_groups": 0,
+}
+
+
+def resolution(run_id="101", attempt="1", source="a" * 40):
+    """An empty-project resolution as recovery records it for an attempt without its intent."""
+    return {
+        "identity": {
+            "repository": cycle.REPOSITORY,
+            "source_sha": source,
+            "workflow": cycle.policy()["qualification_workflow"],
+            "run_id": run_id,
+            "attempt": attempt,
+            "event": "workflow_dispatch",
+        },
+        "provider_started_at": LOST_STARTED,
+        "observed_at": LOST_EARLIEST,
+        "recovery": {"run_id": "999", "attempt": "1"},
+        "observed": dict(EMPTY_PROJECT),
+    }
 
 
 class RecordingEnvironment(dict):
@@ -321,6 +353,7 @@ class CycleTests(unittest.TestCase):
                 "guest_shutdown_seconds": 60,
                 "evidence_seconds": 5,
                 "maximum_package_bytes": 1,
+                "package_inventory_seconds": 10,
             }
         )
         changed["profiles"].pop("fedora-44")
@@ -930,6 +963,73 @@ class TransportTests(unittest.TestCase):
             connection.request.call_args.kwargs["headers"]["Content-Type"], "text/plain"
         )
 
+    def inventory(self, groups, *, full=False):
+        """Answer project listings like the provider, one page at a time."""
+        settings, _ = fixtures()
+        api = cycle.API(TOKEN, settings, "cleanup")
+        size = cycle.policy()["limits"]["page_size"]
+        paths = []
+
+        def request(method, path, value=None, **kwargs):
+            paths.append(path)
+            query = parse_qs(urlsplit(path).query)
+            page = int(query["page"][0])
+            if path.split("?")[0].endswith("/security_groups"):
+                rows = groups[(page - 1) * size : page * size]
+                if full:
+                    rows = [groups[0]] * size
+                return {"security_groups": rows}
+            key = path.split("?")[0].rsplit("/", 1)[1]
+            return {key: []}
+
+        with patch.object(api, "request", side_effect=request):
+            return api.project_inventory(), paths
+
+    def test_project_inventory_reads_every_page_and_counts_only_ohtia_groups(self):
+        def group(name, tags=()):
+            return {"id": str(uuid.uuid4()), "project": PROJECT, "name": name, "tags": list(tags)}
+
+        groups = [group("Default security group")] * 99 + [
+            group("ohtia-ci-0123-security"),
+            group("manual", ["ohtia-lease:" + str(uuid.uuid4())]),
+            group("manual", ["ohtia-lease"]),
+            group("manual", ["ohtia-leased", "ohtia-kind:security"]),
+        ]
+        counts, paths = self.inventory(groups)
+        self.assertEqual(
+            counts,
+            {
+                "servers": 0,
+                "volumes": 0,
+                "ips": 0,
+                "ohtia_security_groups": 3,
+                "other_security_groups": 100,
+            },
+        )
+        listed = [path for path in paths if "/security_groups?" in path]
+        self.assertEqual(len(listed), 2)
+        for path in paths:
+            field = "project_id" if "/block/" in path else "project"
+            self.assertEqual(parse_qs(urlsplit(path).query)[field], [PROJECT])
+        self.assertEqual(
+            sorted({path.split("?")[0].rsplit("/", 1)[1] for path in paths}),
+            ["ips", "security_groups", "servers", "volumes"],
+        )
+
+    def test_project_inventory_refuses_incomplete_or_malformed_listings(self):
+        default = {"id": str(uuid.uuid4()), "project": PROJECT, "name": "Default", "tags": []}
+        with self.assertRaisesRegex(cycle.CycleError, "resource_page_limit"):
+            self.inventory([default], full=True)
+        for label, row in {
+            "unnamed": {**default, "name": None},
+            "tags": {**default, "tags": "ohtia-lease"},
+            "tag": {**default, "tags": [1]},
+        }.items():
+            with self.subTest(label), self.assertRaisesRegex(cycle.CycleError, "resource_list"):
+                self.inventory([row])
+        with self.assertRaisesRegex(cycle.CycleError, "foreign_project"):
+            self.inventory([{**default, "project": str(uuid.uuid4())}])
+
     def test_restoration_transport_rejects_all_provider_writes(self):
         settings, _ = fixtures()
         api = cycle.API(TOKEN, settings, "observer")
@@ -997,6 +1097,7 @@ class RecoveryTests(unittest.TestCase):
         }
         self.gh = Mock(spec=GitHub)
         self.gh.unallocated.return_value = []
+        self.gh.lost.return_value = []
         self.gh.completed_ledger.return_value = {"leases": []}
         self.producer = {"id": 101, "status": "completed", "run_attempt": 1}
         self.gh.intents.return_value = [(self.intent, self.producer)]
@@ -1172,6 +1273,158 @@ class RecoveryTests(unittest.TestCase):
         with self.assertRaisesRegex(cycle.CycleError, "unresolved_prior_intent"):
             qualification.previous(self.gh, self.settings, current=("102", "1"), fresh=True)
 
+    def lose_intent(self, *, status="completed", run_attempt=1):
+        """An attempt whose provider step may have run but whose intent GitHub no longer lists."""
+        self.gh.intents.return_value = []
+        self.lost_run = {
+            "id": 101,
+            "status": status,
+            "run_attempt": run_attempt,
+            "head_sha": self.intent["identity"]["source_sha"],
+            "event": "workflow_dispatch",
+        }
+        self.gh.lost.return_value = [(self.lost_run, 1)]
+        self.gh.provider_started.return_value = cycle.timestamp(LOST_STARTED)
+
+    def refused(self, now=LOST_EARLIEST, *, read=True):
+        plan = self.root / "refused-plan"
+        with (
+            patch.object(cycle, "utc", return_value=now),
+            patch.object(
+                self.api, "project_inventory", wraps=self.api.project_inventory
+            ) as inventory,
+            self.assertRaisesRegex(cycle.CycleError, "missing_allocation_intent"),
+        ):
+            qualification.prepare_recovery(self.gh, plan)
+        self.assertEqual(inventory.called, read)
+        self.assertFalse(plan.exists())
+        self.assertFalse(any(method != "GET" for method, _, _ in self.api.calls))
+
+    def test_lost_intent_of_an_ended_attempt_is_resolved_by_an_empty_project(self):
+        cases = {
+            "hidden by a rerun": ("in_progress", 2),
+            "expired with its run": ("completed", 1),
+        }
+        for label, (status, attempts) in cases.items():
+            with self.subTest(label):
+                self.api.calls.clear()
+                self.lose_intent(status=status, run_attempt=attempts)
+                default = str(uuid.uuid4())
+                self.api.rows["security"] = {
+                    default: {"id": default, "project": PROJECT, "name": "Default", "tags": []}
+                }
+                with patch.object(cycle, "utc", return_value=LOST_EARLIEST):
+                    result = self.recover()
+                self.assertEqual(result["status"], "passed")
+                self.assertEqual(result["leases"], [])
+                self.assertEqual(result["unallocated_attempts"], [])
+                self.assertEqual(
+                    result["empty_project_resolutions"],
+                    [
+                        {
+                            "identity": {
+                                "repository": cycle.REPOSITORY,
+                                "source_sha": self.intent["identity"]["source_sha"],
+                                "workflow": cycle.policy()["qualification_workflow"],
+                                "run_id": "101",
+                                "attempt": "1",
+                                "event": "workflow_dispatch",
+                            },
+                            "provider_started_at": LOST_STARTED,
+                            "observed_at": LOST_EARLIEST,
+                            "recovery": {"run_id": "999", "attempt": self.identity["attempt"]},
+                            "observed": {**EMPTY_PROJECT, "other_security_groups": 1},
+                        }
+                    ],
+                )
+                self.assertTrue(self.gh.intents.call_args.kwargs["collect_lost"])
+                self.gh.provider_started.assert_called_with(self.lost_run, 1)
+                self.assertFalse(any(method != "GET" for method, _, _ in self.api.calls))
+                self.assertIn(default, self.api.rows["security"])
+
+    def test_lost_intent_of_an_unended_attempt_or_before_its_lease_budget_stays_refused(self):
+        self.lose_intent(status="in_progress", run_attempt=1)
+        self.refused(read=False)
+        self.gh.provider_started.assert_not_called()
+        self.lose_intent()
+        # The time rule is checked before any provider read.
+        self.refused(now="2026-10-31T01:09:59Z", read=False)
+        self.lose_intent()
+        self.gh.provider_started.side_effect = cycle.CycleError("missing_allocation_intent")
+        self.refused(read=False)
+
+    def test_any_present_resource_keeps_the_lost_intent_refused_and_deletes_nothing(self):
+        owned = f"ohtia-lease:{uuid.uuid4()}"
+        cases = {
+            "server": ("server", {"name": "manual", "tags": []}),
+            "volume": ("root", {"name": "manual", "tags": [], "status": "available"}),
+            "address": ("ip", {"tags": []}),
+            "Ohtia-named group": ("security", {"name": "ohtia-ci-manual", "tags": []}),
+            "Ohtia-tagged group": ("security", {"name": "manual", "tags": [owned]}),
+        }
+        for label, (kind, fields) in cases.items():
+            with self.subTest(label):
+                self.api.rows = {"server": {}, "root": {}, "ip": {}, "security": {}}
+                self.api.calls.clear()
+                resource = str(uuid.uuid4())
+                field = "project_id" if kind == "root" else "project"
+                self.api.rows[kind][resource] = {"id": resource, field: PROJECT, **fields}
+                self.lose_intent()
+                self.refused()
+                self.assertIn(resource, self.api.rows[kind])
+
+    def test_incomplete_or_failed_reads_keep_the_lost_intent_refused(self):
+        for code in (
+            "resource_page_limit",
+            "resource_list",
+            "foreign_project",
+            "provider_transport",
+        ):
+            with self.subTest(project=code):
+                self.lose_intent()
+                plan = self.root / "incomplete-plan"
+                with (
+                    patch.object(cycle, "utc", return_value=LOST_EARLIEST),
+                    patch.object(self.api, "objects", side_effect=cycle.CycleError(code)),
+                    self.assertRaisesRegex(cycle.CycleError, "missing_allocation_intent") as caught,
+                ):
+                    qualification.prepare_recovery(self.gh, plan)
+                self.assertEqual(caught.exception.__cause__.args, (code,))
+                self.assertFalse(plan.exists())
+        self.lose_intent()
+        self.gh.provider_started.side_effect = cycle.CycleError("github_read_failed")
+        self.refused(read=False)
+
+    def test_carried_resolution_is_kept_without_another_project_read(self):
+        carried = resolution()
+        self.gh.intents.return_value = []
+        self.gh.completed_ledger.return_value = {
+            "leases": [],
+            "empty_project_resolutions": [carried],
+        }
+        with patch.object(self.api, "project_inventory") as inventory:
+            result = self.recover()
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["empty_project_resolutions"], [carried])
+        self.assertEqual(self.gh.intents.call_args.kwargs["resolutions"], [carried])
+        self.gh.provider_started.assert_not_called()
+        inventory.assert_not_called()
+
+    def test_admission_reads_resolutions_and_counts_them_toward_capacity(self):
+        maximum = cycle.policy()["limits"]["maximum_leases"]
+        carried = resolution()
+        self.gh.intents.return_value = []
+        self.gh.completed_ledger.return_value = {
+            "leases": [{"intent": self.intent}] * (maximum - 2),
+            "empty_project_resolutions": [carried],
+        }
+        qualification.previous(self.gh, self.settings, current=("102", "1"), fresh=True)
+        self.assertEqual(self.gh.intents.call_args.kwargs["resolutions"], [carried])
+        self.assertNotIn("collect_lost", self.gh.intents.call_args.kwargs)
+        self.gh.completed_ledger.return_value["leases"].append({"intent": self.intent})
+        with self.assertRaisesRegex(cycle.CycleError, "ledger_capacity"):
+            qualification.previous(self.gh, self.settings, current=("102", "1"), fresh=True)
+
 
 class LedgerTests(unittest.TestCase):
     def setUp(self):
@@ -1332,6 +1585,135 @@ class LedgerTests(unittest.TestCase):
         ):
             self.gh.intents(self.settings, previous=[])
 
+    def listing(self, **kwargs):
+        """Read intents against one run whose intent artifact is no longer listed."""
+        with (
+            patch.object(self.gh, "workflow", return_value=self.workflow),
+            patch.object(self.gh, "pages", return_value=[self.run]),
+            patch.object(self.gh, "run", return_value=self.run) as read_run,
+            patch.object(self.gh, "artifacts", return_value=[]),
+            patch.object(self.gh, "provider_attempted", return_value=True),
+        ):
+            result = self.gh.intents(self.settings, **kwargs)
+        return result, read_run
+
+    def test_lost_intent_is_collected_only_for_recovery(self):
+        self.run["run_attempt"] = 1
+        with self.assertRaisesRegex(cycle.CycleError, "missing_allocation_intent"):
+            self.listing(previous=[])
+        result, _ = self.listing(previous=[], collect_lost=True)
+        self.assertEqual(result, [])
+        self.assertEqual(self.gh.lost(), [(self.run, 1)])
+        self.assertEqual(self.gh.unallocated(), [])
+        self.listing(previous=[], resolutions=[resolution()], collect_lost=True)
+        self.assertEqual(self.gh.lost(), [])
+
+    def test_carried_resolution_settles_only_its_attempt_from_the_same_source(self):
+        self.run["run_attempt"] = 1
+        result, read_run = self.listing(previous=[], resolutions=[resolution()])
+        self.assertEqual(result, [])
+        read_run.assert_not_called()
+        # A later attempt of the same run is still read and still refused.
+        self.run["run_attempt"] = 2
+        with self.assertRaisesRegex(cycle.CycleError, "missing_allocation_intent"):
+            self.listing(previous=[], resolutions=[resolution()])
+        for attempts in (1, 2):
+            with self.subTest(attempts=attempts):
+                self.run["run_attempt"] = attempts
+                with self.assertRaisesRegex(cycle.CycleError, "carried_source"):
+                    self.listing(previous=[], resolutions=[resolution(source="b" * 40)])
+
+    def test_an_attempt_is_settled_by_one_kind_of_record_only(self):
+        lease = {"intent": self.intent, "receipt": {"status": "absent"}}
+        for label, kwargs in {
+            "receipt": {"previous": [lease]},
+            "nonexecution": {"previous": [], "unallocated": [{"run_id": "101", "attempt": "1"}]},
+        }.items():
+            with self.subTest(label):
+                with self.assertRaisesRegex(cycle.CycleError, "resolution_conflict"):
+                    self.listing(resolutions=[resolution()], **kwargs)
+                with self.assertRaisesRegex(cycle.CycleError, "resolution_conflict"):
+                    ledger.settled_records(
+                        {
+                            "leases": kwargs["previous"],
+                            "unallocated_attempts": kwargs.get("unallocated", []),
+                            "empty_project_resolutions": [resolution()],
+                        }
+                    )
+
+    def test_lost_attempts_and_resolutions_count_toward_the_ledger_bound(self):
+        maximum = cycle.policy()["limits"]["maximum_leases"]
+        carried = [resolution(run_id=str(1000 + index)) for index in range(maximum)]
+        self.run["run_attempt"] = 1
+        with self.assertRaisesRegex(cycle.CycleError, "ledger_bound"):
+            self.listing(previous=[], resolutions=carried, collect_lost=True)
+        with self.assertRaisesRegex(cycle.CycleError, "ledger_bound"):
+            ledger.settled_records(
+                {"leases": [{"intent": self.intent}], "empty_project_resolutions": carried}
+            )
+
+    def test_provider_start_is_read_from_its_single_reported_step(self):
+        def jobs(steps, controllers=1):
+            return [{"name": "Create and qualify one ARM lease", "steps": steps}] * controllers
+
+        step = {"name": ledger.PROVIDER_STEP, "started_at": LOST_STARTED}
+        with patch.object(self.gh, "pages", return_value=jobs([step])) as pages:
+            self.assertEqual(self.gh.provider_started(self.run, 1), cycle.timestamp(LOST_STARTED))
+        pages.assert_called_once_with(
+            "repos/{owner}/{repo}/actions/runs/101/attempts/1/jobs", "jobs"
+        )
+        for label, value in {
+            "no controller": jobs([step], 0),
+            "two controllers": jobs([step], 2),
+            "no provider step": jobs([]),
+            "two provider steps": jobs([step, step]),
+            "unreported start": jobs([{**step, "started_at": None}]),
+            "local time": jobs([{**step, "started_at": "2026-10-31T01:00:00+01:00"}]),
+            "malformed time": jobs([{**step, "started_at": "yesterday"}]),
+        }.items():
+            with (
+                self.subTest(label),
+                patch.object(self.gh, "pages", return_value=value),
+                self.assertRaisesRegex(cycle.CycleError, "missing_allocation_intent"),
+            ):
+                self.gh.provider_started(self.run, 1)
+
+    def test_empty_project_resolution_records_are_validated(self):
+        def changed(edit):
+            row = resolution()
+            edit(row)
+            return row
+
+        cases = {
+            "resolution_fields": changed(lambda row: row.update({"extra": True})),
+            "resolution_identity": changed(
+                lambda row: row["identity"].update({"workflow": "other.yml"})
+            ),
+            "resolution_run": changed(lambda row: row["recovery"].update({"run_id": "0"})),
+            "invalid_digest": changed(lambda row: row["identity"].update({"source_sha": "x"})),
+            "resolution_time": changed(lambda row: row.update({"observed_at": LOST_STARTED})),
+            "invalid_timestamp": changed(lambda row: row.update({"provider_started_at": 1})),
+            "resolution_observation": changed(lambda row: row["observed"].update({"ips": 1})),
+        }
+        for code, row in cases.items():
+            with self.subTest(code), self.assertRaisesRegex(cycle.CycleError, code):
+                ledger.validate_resolutions([row])
+        for code, value in {
+            "resolution_duplicate": [resolution(), resolution()],
+            "resolution_bound": [resolution(run_id=str(1000 + index)) for index in range(129)],
+        }.items():
+            with self.subTest(code), self.assertRaisesRegex(cycle.CycleError, code):
+                ledger.validate_resolutions(value)
+        for count in (True, -1, 2001):
+            with (
+                self.subTest(count=count),
+                self.assertRaisesRegex(cycle.CycleError, "resolution_observation"),
+            ):
+                ledger.validate_resolutions(
+                    [changed(lambda row: row["observed"].update({"other_security_groups": count}))]
+                )
+        self.assertEqual(list(ledger.validate_resolutions([resolution()])), [("101", "1")])
+
     def test_carried_absence_survives_original_intent_artifact_expiry(self):
         self.run["run_attempt"] = 1
         with (
@@ -1441,6 +1823,31 @@ class LedgerTests(unittest.TestCase):
             self.assertRaisesRegex(cycle.CycleError, "fresh_recovery_required"),
         ):
             self.gh.completed_ledger(self.settings, fresh=True)
+
+    def test_recovery_evidence_carries_only_valid_resolutions(self):
+        run, value = self.ledger_fixture()
+        value["empty_project_resolutions"] = [resolution()]
+        reads = (
+            patch.object(self.gh, "workflow", return_value=self.workflow),
+            patch.object(self.gh, "run", return_value=run),
+            patch.object(self.gh, "artifacts", return_value=[{"name": "scw-recovery-999-1"}]),
+            patch.object(self.gh, "artifact", return_value=value),
+        )
+        with contextlib.ExitStack() as stack:
+            for read in reads:
+                stack.enter_context(read)
+            stack.enter_context(patch.object(self.gh, "rows", return_value=iter([run])))
+            self.assertEqual(
+                self.gh.completed_ledger(self.settings)["empty_project_resolutions"],
+                [resolution()],
+            )
+        value["empty_project_resolutions"][0]["observed"]["servers"] = 1
+        with contextlib.ExitStack() as stack:
+            for read in reads:
+                stack.enter_context(read)
+            stack.enter_context(patch.object(self.gh, "rows", return_value=iter([run])))
+            with self.assertRaisesRegex(cycle.CycleError, "resolution_observation"):
+                self.gh.completed_ledger(self.settings)
 
     def test_stale_or_unresolved_recovery_never_becomes_creation_health(self):
         run, value = self.ledger_fixture()
@@ -1954,12 +2361,38 @@ class RestoreTests(unittest.TestCase):
         self.gh.guards.assert_called_once_with()
         self.gh.run.assert_called_once_with("999", "cleanup", require_active=True)
         self.gh.intents.assert_called_once_with(
-            self.settings, previous=self.checkpoint["leases"], unallocated=[]
+            self.settings, previous=self.checkpoint["leases"], unallocated=[], resolutions=[]
         )
         self.factory.assert_called_once_with("", self.settings, "observer")
         self.assertEqual(self.api.calls, [])
         if os.name != "nt":
             self.assertEqual(self.request.stat().st_mode & 0o777, 0o600)
+
+    def restore_checkpoint(self, value):
+        archive = self.root / "resolutions.zip"
+        with zipfile.ZipFile(archive, "w") as stream:
+            stream.writestr("recovery.json", json.dumps(value))
+        request = self.root / "resolutions.json"
+        request.unlink(missing_ok=True)
+        prepared = restoration.prepare_input(archive, request)
+        inputs = cycle.read(request)["inputs"]
+        cycle.write(self.event, {"inputs": inputs})
+        output = self.root / ("result-" + str(uuid.uuid4()))
+        with patch.dict(os.environ, {"SCW_RESTORE_SHA256": prepared["sha256"]}):
+            restoration.restore(self.gh, output)
+        return cycle.read(output / "recovery.json")
+
+    def test_restoration_keeps_checkpoint_resolutions_and_refuses_shared_attempts(self):
+        value = copy.deepcopy(self.checkpoint)
+        value["empty_project_resolutions"] = [resolution(run_id="100")]
+        result = self.restore_checkpoint(value)
+        self.assertEqual(result["empty_project_resolutions"], [resolution(run_id="100")])
+        self.assertEqual(
+            self.gh.intents.call_args.kwargs["resolutions"], [resolution(run_id="100")]
+        )
+        value["empty_project_resolutions"] = [resolution(run_id="101")]
+        with self.assertRaisesRegex(cycle.CycleError, "resolution_conflict"):
+            self.restore_checkpoint(value)
 
     def test_restore_reads_no_policy_approval_from_the_environment(self):
         # The code reads the environment only through get or []; both are recorded here.
@@ -2326,15 +2759,46 @@ class EvidenceTests(unittest.TestCase):
         bad_receipt=False,
         result_error=False,
         invalid_result=False,
+        inventory="observed",
+        inventory_binding=True,
+        readiness="ready",
+        admitted=True,
     ):
         output = self.root / "output"
         output.mkdir()
         now = [0.0]
+        packages = INVENTORY
+        if inventory == "unsorted":
+            packages = b"".join(reversed(INVENTORY.splitlines(keepends=True)))
+        summary = {
+            "version": 1,
+            "status": "observed",
+            "machine": "aarch64",
+            "packages": 2,
+            "bytes": len(packages),
+            "sha256": hashlib.sha256(packages).hexdigest(),
+        }
+        if inventory == "digest":
+            summary["sha256"] = "0" * 64
+        elif inventory == "machine":
+            summary["machine"] = "x86_64"
+        elif inventory in {"reported-timeout", "reported-unknown"}:
+            summary = {
+                "version": 1,
+                "status": "failed",
+                "code": "package_inventory_timeout" if inventory == "reported-timeout" else TOKEN,
+            }
         native = {
             "status": "failed",
             "identity": self.intent["identity"],
             "build": self.intent["build"],
             "cell": cycle.intent_cell(self.intent),
+            "os_packages": {
+                "bytes": len(INVENTORY),
+                "sha256": hashlib.sha256(
+                    INVENTORY if inventory_binding else INVENTORY + INVENTORY
+                ).hexdigest(),
+            },
             "distribution_qualified": False,
             "publisher_signed": False,
         }
@@ -2410,7 +2874,13 @@ class EvidenceTests(unittest.TestCase):
 
         def command(args, **kwargs):
             text = args[-1]
+            if args[0] == "ssh" and readiness == "unreachable":
+                now[0] = 100.0
+                raise subprocess.CalledProcessError(255, args)
             if args[0] == "ssh" and text == qualification.reporting.READINESS_COMMAND:
+                if readiness == "helper-missing":
+                    now[0] = 100.0
+                    return subprocess.CompletedProcess(args, 0, b'{"python":true,"helper":false}')
                 return subprocess.CompletedProcess(args, 0, b'{"python":true,"helper":true}')
             if args[0] == "ssh" and text.endswith("bootstrap.py status"):
                 return subprocess.CompletedProcess(
@@ -2425,6 +2895,10 @@ class EvidenceTests(unittest.TestCase):
                         }
                     ).encode(),
                 )
+            if args[0] == "ssh" and text.endswith("bootstrap.py packages"):
+                return subprocess.CompletedProcess(args, 0, json.dumps(summary).encode())
+            if args[0] == "ssh" and text == f"cat {cycle.GUEST_INVENTORY}":
+                return subprocess.CompletedProcess(args, 0, packages)
             if (
                 args[0] == "ssh"
                 and "scripts/scaleway_guest.py display" in text
@@ -2432,6 +2906,7 @@ class EvidenceTests(unittest.TestCase):
                 and not bad_receipt
                 and not result_error
                 and not invalid_result
+                and inventory_binding
             ):
                 now[0] = 100.0
                 raise subprocess.TimeoutExpired(args, 100)
@@ -2461,7 +2936,12 @@ class EvidenceTests(unittest.TestCase):
             return subprocess.CompletedProcess(args, 0, data)
 
         with (
-            patch.object(qualification, "host_key", return_value=("8.8.8.8", self.root / "known")),
+            patch.object(
+                qualification,
+                "host_key",
+                return_value=("8.8.8.8", self.root / "known"),
+                side_effect=None if admitted else cycle.CycleError("host_key_deadline"),
+            ),
             patch.object(cycle, "verify_artifact", return_value=self.root / "fixture.bin"),
             patch.object(cycle.time, "monotonic", side_effect=lambda: now[0]),
             patch.object(cycle.time, "sleep") as sleeping,
@@ -2531,6 +3011,453 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(cycle.read(output / "guest-failure.json")["phase"], "bootstrap")
         self.assertFalse(any(call.args[0][0] == "scp" for call in called.call_args_list))
         sleeping.assert_not_called()
+
+    def test_package_list_is_verified_and_retained_before_transfer(self):
+        base = self.root
+        for profile in ("fedora-44", "debian-13"):
+            for desktop in ("gnome", "kde"):
+                with self.subTest(profile=profile, desktop=desktop):
+                    self.root = base / f"{profile}-{desktop}"
+                    self.root.mkdir()
+                    self.settings, self.intent = fixtures(profile, desktop)
+                    output, _, called = self.call_guest(timeout=True)
+                    self.assertEqual((output / "native-os-packages.txt").read_bytes(), INVENTORY)
+                    self.assertEqual(
+                        cycle.read(output / "native-os-packages.json"),
+                        {
+                            "version": 1,
+                            "status": "observed",
+                            "identity": self.intent["identity"],
+                            "cell": cycle.cell(profile, desktop),
+                            "selected_image_id": self.intent["image_id"],
+                            "guest_state": "ready",
+                            "architecture": "aarch64",
+                            "packages": 2,
+                            "bytes": len(INVENTORY),
+                            "sha256": hashlib.sha256(INVENTORY).hexdigest(),
+                        },
+                    )
+                    texts = [call.args[0][-1] for call in called.call_args_list]
+                    listed = [
+                        i for i, text in enumerate(texts) if text.endswith("bootstrap.py packages")
+                    ]
+                    copied = [
+                        i
+                        for i, call in enumerate(called.call_args_list)
+                        if call.args[0][0] == "scp"
+                    ]
+                    self.assertEqual(len(listed), 1)
+                    self.assertLess(listed[0], copied[0])
+
+    def test_package_list_failures_stop_before_transfer_without_a_second_attempt(self):
+        base = self.root
+        for mode, code in (
+            ("reported-timeout", "package_inventory_timeout"),
+            ("reported-unknown", "package_inventory_failed"),
+            ("digest", "guest_package_inventory_digest"),
+            ("unsorted", "package_inventory_invalid"),
+            ("machine", "guest_package_inventory_shape"),
+        ):
+            with self.subTest(mode=mode):
+                self.root = base / mode
+                self.root.mkdir()
+                output, _, called = self.call_guest(inventory=mode)
+                failure = cycle.read(output / "guest-failure.json")
+                self.assertEqual((failure["phase"], failure["code"]), ("inventory", code))
+                record = cycle.read(output / "native-os-packages.json")
+                self.assertEqual((record["status"], record["code"]), ("failed", code))
+                self.assertEqual(record["guest_state"], "ready")
+                self.assertNotIn(TOKEN, json.dumps(record))
+                self.assertFalse((output / "native-os-packages.txt").exists())
+                self.assertFalse(any(call.args[0][0] == "scp" for call in called.call_args_list))
+                listed = [
+                    call
+                    for call in called.call_args_list
+                    if call.args[0][-1].endswith("bootstrap.py packages")
+                ]
+                self.assertEqual(len(listed), 1)
+
+    def test_failed_guest_still_yields_an_explicitly_marked_package_list(self):
+        output, _, _ = self.call_guest(bootstrap_failure=True)
+        self.assertEqual((output / "native-os-packages.txt").read_bytes(), INVENTORY)
+        record = cycle.read(output / "native-os-packages.json")
+        self.assertEqual((record["status"], record["guest_state"]), ("observed", "failed"))
+        self.assertEqual(cycle.read(output / "guest-failure.json")["phase"], "bootstrap")
+
+    def test_guest_that_cannot_run_the_helper_marks_its_package_list_unavailable(self):
+        self.assertEqual(
+            cycle.failure_code(cycle.CycleError("package_inventory_unavailable")),
+            "package_inventory_unavailable",
+        )
+        base = self.root
+        for readiness, admitted in (
+            ("unreachable", True),
+            ("helper-missing", True),
+            ("unreachable", False),
+        ):
+            with self.subTest(readiness=readiness, host_key_admitted=admitted):
+                self.root = base / f"{readiness}-{admitted}"
+                self.root.mkdir()
+                output, _, called = self.call_guest(readiness=readiness, admitted=admitted)
+                self.assertEqual(
+                    cycle.read(output / "native-os-packages.json"),
+                    {
+                        "version": 1,
+                        "identity": self.intent["identity"],
+                        "cell": cycle.intent_cell(self.intent),
+                        "selected_image_id": self.intent["image_id"],
+                        "guest_state": "failed",
+                        "status": "failed",
+                        "code": "package_inventory_unavailable",
+                    },
+                )
+                self.assertFalse((output / "native-os-packages.txt").exists())
+                self.assertFalse(
+                    any(
+                        call.args[0][-1].endswith("bootstrap.py packages")
+                        for call in called.call_args_list
+                    )
+                )
+                if not admitted:
+                    # Without host-key admission the controller never contacts the guest.
+                    called.assert_not_called()
+
+    def test_native_result_must_carry_the_retained_package_list_digest(self):
+        output, _, _ = self.call_guest(inventory_binding=False)
+        self.assertFalse((output / "native.json").exists())
+        self.assertEqual(cycle.read(output / "guest-failure.json")["code"], "guest_result_binding")
+
+
+def owned_by_root(real):
+    """Report fixture files as root-owned while keeping their real type, links, mode and size."""
+
+    def lstat(path, *args, **kwargs):
+        info = real(path, *args, **kwargs)
+        return os.stat_result(
+            (
+                info.st_mode,
+                info.st_ino,
+                info.st_dev,
+                info.st_nlink,
+                0,
+                info.st_gid,
+                info.st_size,
+                int(info.st_atime),
+                int(info.st_mtime),
+                int(info.st_ctime),
+            )
+        )
+
+    return lstat
+
+
+class PackageInventoryTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+
+    @staticmethod
+    def program(script: str) -> tuple[str, ...]:
+        return (sys.executable, "-I", "-c", script)
+
+    def listing(self, manager: str, rows: str, *, maximum=4096, seconds=10) -> bytes:
+        script = f"import sys; sys.stdout.write({rows!r})"
+        with patch.dict(bootstrap.INVENTORY_COMMANDS, {manager: self.program(script)}):
+            return bootstrap.package_inventory(manager, maximum, seconds)
+
+    def test_lists_are_sorted_installed_rows_with_epoch_and_architecture(self):
+        rpm = bootstrap.INVENTORY_COMMANDS["rpm"]
+        self.assertEqual(rpm[:3], ("/usr/bin/rpm", "--query", "--all"))
+        self.assertIn("\t%|EPOCH?{%{EPOCH}:}:{}|%{VERSION}-%{RELEASE}\t%{ARCH}\n", rpm[-1])
+        dpkg = bootstrap.INVENTORY_COMMANDS["dpkg"]
+        self.assertEqual(dpkg[0], "/usr/bin/dpkg-query")
+        self.assertIn("${db:Status-Status}\t${Package}\t${Version}\t${Architecture}\n", dpkg[-1])
+        self.assertEqual(
+            self.listing(
+                "rpm",
+                "kernel\t1:6.19.0-1.fc44\taarch64\n"
+                "gpg-pubkey\t36f612dc-6786af3b\t(none)\n"
+                "bash\t5.3.0-2.fc44\taarch64\n",
+            ),
+            b"bash\t5.3.0-2.fc44\taarch64\n"
+            b"gpg-pubkey\t36f612dc-6786af3b\t(none)\n"
+            b"kernel\t1:6.19.0-1.fc44\taarch64\n",
+        )
+        self.assertEqual(
+            self.listing(
+                "dpkg",
+                "installed\tzlib1g\t1:1.3.dfsg+really1.3.1-1+b1\tarm64\n"
+                "config-files\tremoved\t1.0-1\tarm64\n"
+                "not-installed\tpurged\t\t\n"
+                "installed\tbash\t5.2.37-2\tarm64\n",
+            ),
+            b"bash\t5.2.37-2\tarm64\nzlib1g\t1:1.3.dfsg+really1.3.1-1+b1\tarm64\n",
+        )
+
+    def test_partial_unknown_or_duplicate_rows_refuse_the_whole_list(self):
+        for data in (
+            b"",
+            b"\n",
+            b"bash\t5.3-1\tamd64",
+            b"bash\t5.3-1\tamd64\nbash\t5.3-1\tamd64\n",
+            b"bash 5.3-1\tamd64\n",
+            b"bash\t5.3-1\tamd64\textra\n",
+            "bäsh\t5.3-1\tamd64\n".encode(),
+            b"bash\thttps://example.invalid/private\tamd64\n",
+            b"bash\t5.3-1\tamd64\r\n",
+        ):
+            with (
+                self.subTest(data=data),
+                self.assertRaisesRegex(ValueError, "^package_inventory_invalid$"),
+            ):
+                bootstrap.inventory_rows(data)
+        for data in (
+            b"half-installed\tbash\t5.3-1\tamd64\n",
+            b"triggers-pending\tbash\t5.3-1\tamd64\n",
+            b"config-files\tremoved\t1.0-1\tamd64\n",
+            b"bash\t5.3-1\tamd64\n",
+            # An omitted row is still checked; it never hides malformed output.
+            b"installed\tbash\t5.3-1\tamd64\n"
+            b"config-files\tbad/name\thttps://example.invalid/private\tamd64\n",
+            b"installed\tbash\t5.3-1\tamd64\nnot-installed\t\t\t\n",
+            b"installed\tbash\t5.3-1\tamd64\nconfig-files\tremoved\t1.0 1\tamd64\n",
+            b"installed\tbash\t5.3-1\tamd64\nnot-installed\tpurged\t\tamd64\textra\n",
+        ):
+            with (
+                self.subTest(data=data),
+                self.assertRaisesRegex(ValueError, "^package_inventory_invalid$"),
+            ):
+                bootstrap.inventory_rows(data, dpkg_states=True)
+
+    def test_oversized_slow_or_failed_listing_is_refused_without_a_list(self):
+        row = "bash\\t5.3-1\\tamd64\\n"
+        for label, command, code in (
+            (
+                "oversized",
+                self.program(f"import sys; sys.stdout.write('{row}' * 1000)"),
+                "oversized",
+            ),
+            ("silent", self.program("import time; time.sleep(30)"), "timeout"),
+            (
+                "stalled",
+                self.program(
+                    f"import sys, time; sys.stdout.write('{row}'); sys.stdout.flush(); "
+                    "time.sleep(30)"
+                ),
+                "timeout",
+            ),
+            (
+                "failed",
+                self.program(f"import sys; sys.stdout.write('{row}'); sys.exit(3)"),
+                "failed",
+            ),
+            ("missing", (str(self.root / "missing-rpm"),), "failed"),
+        ):
+            with (
+                self.subTest(label=label),
+                patch.dict(bootstrap.INVENTORY_COMMANDS, {"rpm": command}),
+                self.assertRaisesRegex(ValueError, f"^package_inventory_{code}$"),
+            ):
+                started = time.monotonic()
+                try:
+                    bootstrap.package_inventory("rpm", 4096, 1)
+                finally:
+                    self.assertLess(time.monotonic() - started, 10)
+        with self.assertRaisesRegex(ValueError, "^package_inventory_failed$"):
+            bootstrap.package_inventory("pacman", 4096, 1)
+
+    def test_retained_list_must_keep_its_canonical_bounded_form(self):
+        self.assertEqual(bootstrap.inventory_count(INVENTORY, len(INVENTORY)), 2)
+        unsorted = b"".join(reversed(INVENTORY.splitlines(keepends=True)))
+        with self.assertRaisesRegex(ValueError, "^package_inventory_invalid$"):
+            bootstrap.inventory_count(unsorted, 4096)
+        with self.assertRaisesRegex(ValueError, "^package_inventory_oversized$"):
+            bootstrap.inventory_count(INVENTORY, len(INVENTORY) - 1)
+
+    def guarded(self, profile="debian-13"):
+        guard = self.root / "guard.json"
+        guard.write_text(
+            json.dumps(
+                {
+                    "intent": {"profile": profile},
+                    "package_inventory_bytes": 4096,
+                    "package_inventory_seconds": 10,
+                }
+            )
+        )
+        return guard
+
+    def test_guest_keeps_its_first_list_and_reports_the_same_observation_again(self):
+        target = self.root / "lib" / "native-os-packages.txt"
+        first = "installed\tzlib1g\t1:1.3.1-1\tarm64\ninstalled\tbash\t5.2.37-2\tarm64\n"
+        expected = b"bash\t5.2.37-2\tarm64\nzlib1g\t1:1.3.1-1\tarm64\n"
+        with (
+            patch.object(bootstrap, "GUARD", self.guarded()),
+            patch.object(bootstrap, "INVENTORY", target),
+            patch.object(bootstrap.os, "getuid", return_value=0, create=True),
+            patch.object(bootstrap.platform, "machine", return_value="aarch64"),
+            patch.object(bootstrap.Path, "lstat", owned_by_root(Path.lstat)),
+        ):
+            for rows in (first, "installed\tother\t1.0-1\tarm64\n"):
+                script = f"import sys; sys.stdout.write({rows!r})"
+                with (
+                    patch.dict(bootstrap.INVENTORY_COMMANDS, {"dpkg": self.program(script)}),
+                    patch.object(sys, "argv", ["bootstrap.py", "packages"]),
+                    contextlib.redirect_stdout(io.StringIO()) as printed,
+                ):
+                    bootstrap.main()
+                self.assertEqual(
+                    json.loads(printed.getvalue()),
+                    {
+                        "version": 1,
+                        "status": "observed",
+                        "machine": "aarch64",
+                        "packages": 2,
+                        "bytes": len(expected),
+                        "sha256": hashlib.sha256(expected).hexdigest(),
+                    },
+                )
+                self.assertEqual(target.read_bytes(), expected)
+                self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o644)
+                self.assertEqual([path.name for path in target.parent.iterdir()], [target.name])
+
+    def test_guest_selects_the_package_manager_of_its_profile(self):
+        target = self.root / "lib" / "native-os-packages.txt"
+        rows = "kernel\t1:6.19.0-1.fc44\taarch64\nbash\t5.3.0-2.fc44\taarch64\n"
+        commands = {
+            "rpm": self.program(f"import sys; sys.stdout.write({rows!r})"),
+            "dpkg": self.program("import sys; sys.exit(9)"),
+        }
+        with (
+            patch.object(bootstrap, "INVENTORY", target),
+            patch.object(bootstrap.os, "getuid", return_value=0, create=True),
+            patch.object(bootstrap.platform, "machine", return_value="aarch64"),
+            patch.object(bootstrap.Path, "lstat", owned_by_root(Path.lstat)),
+            patch.dict(bootstrap.INVENTORY_COMMANDS, commands),
+        ):
+            with patch.object(bootstrap, "GUARD", self.guarded("fedora-44")):
+                self.assertEqual(bootstrap.packages_report()["status"], "observed")
+            self.assertEqual(target.read_bytes(), INVENTORY)
+            target.unlink()
+            with patch.object(bootstrap, "GUARD", self.guarded("unknown-1")):
+                self.assertEqual(
+                    bootstrap.packages_report(),
+                    {"version": 1, "status": "failed", "code": "package_inventory_failed"},
+                )
+            self.assertEqual(list(target.parent.iterdir()), [])
+
+    def test_linked_lists_are_refused_by_the_guest_and_the_native_result(self):
+        target = self.root / "lib" / "native-os-packages.txt"
+        target.parent.mkdir()
+        real = self.root / "real.txt"
+        real.write_bytes(INVENTORY)
+        real.chmod(0o644)
+        for label, link in (("symbolic", target.symlink_to), ("hard", target.hardlink_to)):
+            with self.subTest(link=label):
+                link(real)
+                try:
+                    with (
+                        patch.object(bootstrap, "GUARD", self.guarded()),
+                        patch.object(bootstrap, "INVENTORY", target),
+                        patch.object(bootstrap.os, "getuid", return_value=0, create=True),
+                        patch.object(bootstrap.Path, "lstat", owned_by_root(Path.lstat)),
+                    ):
+                        self.assertEqual(
+                            bootstrap.packages_report()["code"], "package_inventory_identity"
+                        )
+                        with (
+                            patch.object(cycle, "GUEST_INVENTORY", target),
+                            self.assertRaisesRegex(cycle.CycleError, "package_inventory_identity"),
+                        ):
+                            guest_probe.os_packages()
+                finally:
+                    target.unlink()
+                self.assertEqual(real.read_bytes(), INVENTORY)
+
+    def test_policy_keeps_the_list_within_the_reply_and_test_budgets(self):
+        limits = cycle.policy()["limits"]
+        for change in (
+            {"package_inventory_bytes": limits["maximum_json_bytes"] + 1},
+            {"package_inventory_seconds": limits["test_seconds"]},
+        ):
+            changed = copy.deepcopy(cycle.policy())
+            changed["limits"].update(change)
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temporary:
+                file = Path(temporary).resolve() / "policy.json"
+                cycle.write(file, changed)
+                with (
+                    patch.object(cycle, "POLICY_PATH", file),
+                    self.assertRaisesRegex(cycle.CycleError, "package_inventory_budget"),
+                ):
+                    cycle.policy()
+
+    def test_guest_list_requires_root_and_a_protected_location(self):
+        target = self.root / "lib" / "native-os-packages.txt"
+        with (
+            patch.object(bootstrap, "GUARD", self.guarded()),
+            patch.object(bootstrap, "INVENTORY", target),
+            patch.object(bootstrap.os, "getuid", return_value=1000, create=True),
+        ):
+            self.assertEqual(
+                bootstrap.packages_report(),
+                {"version": 1, "status": "failed", "code": "package_inventory_root_required"},
+            )
+        target.parent.mkdir()
+        target.parent.chmod(0o777)
+        with (
+            patch.object(bootstrap, "GUARD", self.guarded()),
+            patch.object(bootstrap, "INVENTORY", target),
+            patch.object(bootstrap.os, "getuid", return_value=0, create=True),
+            patch.object(bootstrap.Path, "lstat", owned_by_root(Path.lstat)),
+        ):
+            self.assertEqual(bootstrap.packages_report()["code"], "package_inventory_identity")
+            target.parent.chmod(0o755)
+            target.write_bytes(INVENTORY)
+            target.chmod(0o666)
+            self.assertEqual(bootstrap.packages_report()["code"], "package_inventory_identity")
+        self.assertEqual(bootstrap.INVENTORY, cycle.GUEST_INVENTORY)
+
+    def test_native_result_binds_only_the_root_owned_retained_list(self):
+        file = self.root / "native-os-packages.txt"
+        file.write_bytes(INVENTORY)
+        file.chmod(0o644)
+        with (
+            patch.object(cycle, "GUEST_INVENTORY", file),
+            patch.object(Path, "lstat", owned_by_root(Path.lstat)),
+        ):
+            self.assertEqual(
+                guest_probe.os_packages(),
+                {"bytes": len(INVENTORY), "sha256": hashlib.sha256(INVENTORY).hexdigest()},
+            )
+            file.chmod(0o664)
+            with self.assertRaisesRegex(cycle.CycleError, "package_inventory_identity"):
+                guest_probe.os_packages()
+        file.chmod(0o644)
+        with (
+            patch.object(cycle, "GUEST_INVENTORY", file),
+            self.assertRaisesRegex(cycle.CycleError, "package_inventory_identity"),
+        ):
+            guest_probe.os_packages()
+
+    def test_guest_receives_the_policy_list_limits(self):
+        _, intent = fixtures()
+        resources = {kind: str(uuid.uuid4()) for kind in cycle.KINDS}
+        value = json.loads(
+            qualification.cloud_config(intent, resources, "ssh-ed25519 synthetic")
+            .decode()
+            .split("\n", 1)[1]
+        )
+        guard = json.loads(
+            next(entry for entry in value["write_files"] if entry["path"] == str(cycle.GUARD))[
+                "content"
+            ]
+        )
+        limits = cycle.policy()["limits"]
+        self.assertEqual(
+            (guard["package_inventory_bytes"], guard["package_inventory_seconds"]),
+            (limits["package_inventory_bytes"], limits["package_inventory_seconds"]),
+        )
 
 
 class HarnessTests(unittest.TestCase):
