@@ -42,6 +42,9 @@ def environment():
         "GITHUB_RUN_ATTEMPT": "2",
         "SIGNING_JOB_ID": "300",
         "SIGNING_SELECTION": "linux-x64-debian-13",
+        "SCW_SIGNING_SERVICE_ORIGIN": "https://fixture.fnc.fr-par.scw.cloud",
+        "SCW_SIGNING_INGRESS_BUCKET": "fixture-ingress",
+        "SCW_SIGNING_RETAINED_BUCKET": "fixture-retained",
     }
 
 
@@ -125,6 +128,47 @@ class WorkerIdentityTests(unittest.TestCase):
                 worker.check(environment())
         with patch.object(worker.contract, "git", return_value=SOURCE.encode()):
             with self.assertRaisesRegex(ValueError, "worker_checkout"):
+                worker.check(environment())
+
+    def test_enabled_worker_requires_repository_metadata_without_tracked_resource_fallback(self):
+        template = {
+            "schema_version": 1,
+            "enabled": True,
+            "service_origin": None,
+            "buckets": None,
+            "resource_bindings_sha256": worker.metadata.caller_hash(
+                worker.metadata.caller_bindings(environment())
+            ),
+        }
+        with (
+            patch.object(worker.contract, "git", return_value=RECIPE.encode()),
+            patch.object(worker.attestor, "json_value", return_value=template),
+        ):
+            self.assertEqual(worker.check(environment()), worker.context(environment()))
+            for name, value in (
+                ("SCW_SIGNING_SERVICE_ORIGIN", ""),
+                ("SCW_SIGNING_SERVICE_ORIGIN", "https://fixture.fnc.fr-par.scw.cloud/"),
+                ("SCW_SIGNING_SERVICE_ORIGIN", "https://foreign.invalid"),
+                ("SCW_SIGNING_SERVICE_ORIGIN", "https://other-tenant.fnc.fr-par.scw.cloud"),
+                ("SCW_SIGNING_SERVICE_ORIGIN", "https://" + "a" * 500 + ".fnc.fr-par.scw.cloud"),
+                ("SCW_SIGNING_INGRESS_BUCKET", "another-valid-bucket"),
+                ("SCW_SIGNING_INGRESS_BUCKET", "1invalid-bucket"),
+                ("SCW_SIGNING_INGRESS_BUCKET", "../foreign"),
+                ("SCW_SIGNING_RETAINED_BUCKET", "fixture-ingress"),
+            ):
+                with (
+                    self.subTest(name=name, value=value),
+                    self.assertRaisesRegex(ValueError, "worker_configuration"),
+                ):
+                    worker.check(environment() | {name: value})
+            approved = template["resource_bindings_sha256"]
+            for commitment in (None, "0" * 64):
+                template["resource_bindings_sha256"] = commitment
+                with self.assertRaisesRegex(ValueError, "worker_configuration"):
+                    worker.check(environment())
+            template["resource_bindings_sha256"] = approved
+            template["service_origin"] = "https://fixture.fnc.fr-par.scw.cloud"
+            with self.assertRaisesRegex(ValueError, "worker_configuration"):
                 worker.check(environment())
 
     @unittest.skipIf(sys.platform == "win32", "Linux worker private directory identity")
@@ -220,6 +264,12 @@ class WorkerIdentityTests(unittest.TestCase):
                 "ACTIONS_RUNTIME_TOKEN",
             ):
                 self.assertNotIn(key, clean)
+            for name in (
+                "SCW_SIGNING_SERVICE_ORIGIN",
+                "SCW_SIGNING_INGRESS_BUCKET",
+                "SCW_SIGNING_RETAINED_BUCKET",
+            ):
+                self.assertEqual(clean[name], env[name])
             self.assertEqual(clean["OHTIA_SIGNING_INVOKE_TOKEN"], "synthetic-invoker")
             self.assertNotIn("synthetic-invoker", " ".join(command))
 

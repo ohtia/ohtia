@@ -6,29 +6,32 @@ import { execFileSync } from "node:child_process";
 export function requireGate(condition, diagnostic) {
   if (!condition) throw new Error(`Quality gate: ${diagnostic}`);
 }
+export function parseJson(source) {
+  const value = JSON.parse(source);
+  const tokens = [...source.matchAll(/"(?:\\.|[^"\\])*"|[{}\[\]:,]/g)].map((match) => match[0]);
+  const stack = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token === "{") stack.push(new Set());
+    else if (token === "[") stack.push(null);
+    else if (token === "}" || token === "]") stack.pop();
+    else if (token.startsWith('"') && tokens[i + 1] === ":") {
+      const key = JSON.parse(token),
+        keys = stack.at(-1);
+      requireGate(!keys.has(key), `duplicate JSON key: ${key}`);
+      keys.add(key);
+    }
+  }
+  return value;
+}
 export function readJson(file) {
   try {
-    const source = fs.readFileSync(file, "utf8");
-    const value = JSON.parse(source);
-    const tokens = [...source.matchAll(/"(?:\\.|[^"\\])*"|[{}\[\]:,]/g)].map((match) => match[0]);
-    const stack = [];
-    for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i];
-      if (token === "{") stack.push(new Set());
-      else if (token === "[") stack.push(null);
-      else if (token === "}" || token === "]") stack.pop();
-      else if (token.startsWith('"') && tokens[i + 1] === ":") {
-        const key = JSON.parse(token),
-          keys = stack.at(-1);
-        requireGate(!keys.has(key), `duplicate JSON key: ${key}`);
-        keys.add(key);
-      }
-    }
-    return value;
+    return parseJson(fs.readFileSync(file, "utf8"));
   } catch (error) {
     throw new Error(`Quality gate: missing/invalid JSON report ${file}: ${error.message}`);
   }
 }
+
 export function sameSet(actual, expected, context) {
   requireGate(
     Array.isArray(actual) &&

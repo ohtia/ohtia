@@ -49,16 +49,18 @@ function uuid(value) {
   return value;
 }
 function configurationRecord(configuration) {
-  fields(configuration, "schema_version policy buckets secret_versions");
+  fields(configuration, "schema_version project_id policy buckets secret_versions");
   demand(configuration.schema_version === 1);
   const policy = trustedPolicy(configuration.policy);
   uuid(policy.deployment.container_id);
   fields(configuration.buckets, "ingress retained");
-  demand(typeof configuration.buckets.ingress === "string", "policy_refused");
-  const match = /^ohtia-signing-ingress-(.+)$/.exec(configuration.buckets.ingress);
-  demand(match, "policy_refused");
-  const project = uuid(match[1]);
-  demand(configuration.buckets.retained === `ohtia-signing-retained-${project}`, "policy_refused");
+  const project = uuid(configuration.project_id);
+  for (const name of Object.values(configuration.buckets))
+    demand(
+      typeof name === "string" && /^[a-z][a-z0-9-]{1,61}[a-z0-9]$/.test(name),
+      "policy_refused",
+    );
+  demand(configuration.buckets.ingress !== configuration.buckets.retained, "policy_refused");
   fields(configuration.secret_versions, roles);
   for (const ref of Object.values(configuration.secret_versions)) {
     fields(ref, "secret_id revision");

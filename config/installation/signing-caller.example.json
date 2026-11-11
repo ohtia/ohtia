@@ -1,0 +1,7 @@
+{
+  "service_origin": "https://synthetic.fnc.fr-par.scw.cloud",
+  "buckets": {
+    "ingress": "ohtia-signing-ingress",
+    "retained": "ohtia-signing-retained"
+  }
+}
