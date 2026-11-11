@@ -181,3 +181,47 @@ An Electron update under ADR-0003; a change in the Chromium issue or code for te
 [^chromium-text-input-v3-2]: The Chromium issue tracks protocol version 2 support, including showing and hiding the virtual keyboard.
 
 [^chromium-osk-report]: The report describes the on-screen keyboard not opening for Chromium's own or HTML inputs.
+
+## TD-003 — Conversation archive and deletion
+
+### Desired technical state
+
+The researcher can archive a project-scoped conversation, which hides it from the project history and allows its restoration, and can delete it. Deletion defines and verifies how it treats the conversation's active work, the records that cite its messages, copies held by the provider runtime and the managed pre-migration recovery copies that [ADR-0010](adr/adr-0010-pre-migration-recovery.md#retention-erasure-and-disclosure) requires purging before destructive erasure is claimed.
+
+### Current compromise
+
+[EPIC-003](epics/EPIC-003-research-agents/epic.md) delivers project-scoped conversations that can be created, listed in the project history and renamed. It offers no archive or delete action, so conversation records and their messages remain in the application database. This is a deliberate simplification of the first conversation delivery, not a change to the retention requirements of the [data model](data-model.md#referential-and-lifecycle-invariants) or the [workspace layout](workspace-layout.md#presentation-integration).
+
+### Acceptance evidence
+
+The maintainer postponed archive and delete on 2026-11-08 while preparing EPIC-003, to simplify its first conversation delivery. The handling of active work, dependent records, provider-held copies and recovery copies was not decided; no measurement or implementation evidence is claimed.
+
+### Affected scope
+
+The conversation records, port operations and history surface specified by EPIC-003, and the archive/delete subcases of workspace scenario V14 in [workspace layout](workspace-layout.md#acceptance-scenarios).
+
+### Technical risk or cost
+
+A researcher cannot hide or remove a conversation that contains mistaken, private or restricted material, and project histories only grow. A later delete added without the missing rules could stop work silently, leave findings that cite removed messages without disclosure or report an erasure that recovery copies or provider history contradict.
+
+### Compensating controls
+
+- Offer no archive or delete control, disabled placeholder or menu command until the exit condition is met.
+- Keep conversation content out of operational diagnostics under [ADR-0013](adr/adr-0013-private-content-free-structured-logging.md).
+- Keep provider-held thread history separate from Ohtia records; Ohtia never claims to control or erase it.
+
+### Claim boundary
+
+Ohtia does not claim that a conversation can be hidden, removed or erased. The archive and delete subcases of V14 are not verified while this entry remains.
+
+### Exit condition
+
+An issue specifies and delivers archive with restoration and delete, with explicit rules for active work, records that cite deleted messages, provider-held copies and recovery-copy purging. Its file-backed storage tests and the archive/delete subcases of V14 pass on the packaged application, and the entry is removed.
+
+### Review trigger
+
+A request to remove private or mistaken conversation content; a conversation retention, export or erasure feature; a change to ADR-0010 recovery copies; or a change to how memory entries or syntheses cite conversation messages. The issue crossing a trigger must take explicit responsibility for resolving or reassessing this entry.
+
+### Owning issue
+
+[EPIC-003, #202](https://github.com/ohtia/ohtia/issues/202) owns this accepted simplification. Implementing the exit requires an issue before code changes, following the contribution rules.
