@@ -12,6 +12,8 @@ import sys
 import tempfile
 import time
 import unittest
+from datetime import UTC, datetime, timedelta
+from email.utils import format_datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -54,11 +56,30 @@ class LinuxDependenciesTests(unittest.TestCase):
             "https://security.ubuntu.com/ubuntu/\tpriority:3\n"
         )
         self.inventory = self.root / "packages.txt"
+        self.lists = self.root / "lists"
+        self.lists.mkdir()
+        for suite in dependencies.FRESH_SUITES:
+            self.write_index(suite, datetime.now(UTC) - timedelta(hours=6))
+        self.real_resolves = dependencies.resolves
+        resolver = patch.object(dependencies, "resolves", return_value=True)
+        self.resolves = resolver.start()
+        self.addCleanup(resolver.stop)
+
+    def write_index(self, suite, date, prefix="mirror+file:%2fetc%2fapt%2fapt-mirrors.txt"):
+        header = f"Date: {format_datetime(date, usegmt=True)}\n" if date else ""
+        (self.lists / f"{prefix}_dists_{suite}_InRelease").write_text(
+            "-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\n"
+            f"Origin: Ubuntu\nSuite: {suite}\n{header}Components: main\n"
+        )
 
     def provision(self):
         with patch.object(dependencies, "gnu_timeout", return_value="/synthetic/gnutimeout"):
             dependencies.provision(
-                "linux-x64-ubuntu-26-04-gnome", "display-session", self.apt, self.inventory
+                "linux-x64-ubuntu-26-04-gnome",
+                "display-session",
+                self.apt,
+                self.inventory,
+                self.lists,
             )
 
     def test_gnu_timeout_prefers_prefixed_tool_and_verifies_fallback(self):
@@ -168,8 +189,104 @@ class LinuxDependenciesTests(unittest.TestCase):
                     [
                         "https://archive.ubuntu.com/ubuntu/\tpriority:1",
                         "https://security.ubuntu.com/ubuntu/\tpriority:2",
+                        "https://mirrors.edge.kernel.org/ubuntu/\tpriority:3",
+                        "https://mirrors.mit.edu/ubuntu/\tpriority:4",
                     ],
                 )
+
+    def test_unresolvable_mirrors_are_skipped_in_their_declared_order(self):
+        self.resolves.side_effect = lambda host: not host.endswith("ubuntu.com")
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            dependencies.configure_mirrors(self.apt)
+        self.assertEqual(
+            self.mirrors.read_text().splitlines(),
+            [
+                "https://mirrors.edge.kernel.org/ubuntu/\tpriority:1",
+                "https://mirrors.mit.edu/ubuntu/\tpriority:2",
+            ],
+        )
+        self.assertEqual(
+            [call.args[0] for call in self.resolves.call_args_list],
+            [
+                "archive.ubuntu.com",
+                "security.ubuntu.com",
+                "mirrors.edge.kernel.org",
+                "mirrors.mit.edu",
+            ],
+        )
+        self.assertIn("archive.ubuntu.com did not resolve", output.getvalue())
+
+    def test_no_resolvable_mirror_fails_before_any_apt_command(self):
+        original = self.mirrors.read_bytes()
+        self.resolves.return_value = False
+        with (
+            patch.object(dependencies.subprocess, "run") as execute,
+            contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaisesRegex(dependencies.ProvisionError, "No Ubuntu APT mirror resolved"),
+        ):
+            self.provision()
+        execute.assert_not_called()
+        self.assertEqual(self.mirrors.read_bytes(), original)
+        self.assertFalse(self.inventory.exists())
+
+    def test_host_lookup_is_bounded_and_failures_count_as_unresolved(self):
+        for outcome, expected in (
+            (subprocess.CompletedProcess([], 0, b"151.101.1.1 STREAM host\n"), True),
+            (subprocess.CompletedProcess([], 2, b""), False),
+            (subprocess.CompletedProcess([], 0, b""), False),
+            (subprocess.TimeoutExpired(["getent"], 10), False),
+            (OSError("synthetic missing getent"), False),
+        ):
+            with (
+                self.subTest(outcome=str(outcome)),
+                patch.object(
+                    dependencies.subprocess,
+                    "run",
+                    side_effect=outcome if isinstance(outcome, Exception) else None,
+                    return_value=outcome,
+                ) as execute,
+            ):
+                self.assertIs(self.real_resolves("mirror.invalid"), expected)
+            self.assertEqual(execute.call_args.args[0], ["getent", "ahosts", "mirror.invalid"])
+            self.assertEqual(execute.call_args.kwargs["timeout"], 10)
+
+    def test_stale_missing_or_undated_indexes_stop_before_downloading(self):
+        for case in ("stale", "missing", "undated"):
+            for path in self.lists.iterdir():
+                path.unlink()
+            for suite in dependencies.FRESH_SUITES:
+                self.write_index(suite, datetime.now(UTC) - timedelta(hours=6))
+            if case == "stale":
+                self.write_index("resolute-updates", datetime.now(UTC) - timedelta(days=8))
+            elif case == "missing":
+                next(self.lists.glob("*resolute-security_InRelease")).unlink()
+            else:
+                self.write_index("resolute-security", None)
+            calls = []
+
+            def execute(command, **kwargs):
+                calls.append(command)
+                return subprocess.CompletedProcess(command, 0)
+
+            with (
+                self.subTest(case=case),
+                patch.object(dependencies.subprocess, "run", side_effect=execute),
+                contextlib.redirect_stdout(io.StringIO()),
+                self.assertRaises(dependencies.ProvisionError),
+            ):
+                self.provision()
+            self.assertEqual(len(calls), 1)
+            self.assertIn("update", calls[0])
+
+    def test_index_age_limit_is_seven_days(self):
+        now = datetime(2026, 11, 11, 12, tzinfo=UTC)
+        for suite in dependencies.FRESH_SUITES:
+            self.write_index(suite, now - timedelta(days=7))
+        with contextlib.redirect_stdout(io.StringIO()):
+            dependencies.check_index_freshness(self.lists, now)
+        self.write_index("resolute-security", now - timedelta(days=7, seconds=1))
+        with self.assertRaisesRegex(dependencies.ProvisionError, "more than 7 days old"):
+            dependencies.check_index_freshness(self.lists, now)
 
     def test_source_drift_fails_without_rewriting_the_mirror_list(self):
         original = self.mirrors.read_bytes()
