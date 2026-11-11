@@ -4,8 +4,6 @@ title: Native quality builds
 description: Build unsigned development packages with bounded Linux host provisioning on standard hosted native VMs and verify artifact and checkout provenance.
 generated:
   by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # Native quality builds
@@ -36,7 +34,7 @@ Retain each synthetic state generation inside the owned scratch root before star
 
 The workflow runs `scripts/ci_linux_dependencies.py` with package-manager authority only on fresh GitHub-hosted Ubuntu 26.04 VMs. Both GNOME and KDE KVM cells install the minimal QEMU, cloud-image, networking and ACL host prerequisites; their desktops and application dependencies belong inside the guests. Native Ubuntu display-session cells install their own GNOME or official Kubuntu desktop set without recommended packages and do not need QEMU.
 
-Host provisioning keeps the runner's APT source definitions, suites, components and signature settings. It replaces the Azure-first `/etc/apt/apt-mirrors.txt` with the official HTTPS archive and security mirrors, in that order, for both x64 and ARM64. A missing mirror-list source or a direct Azure source fails with a configuration-drift diagnostic rather than silently retaining the degraded source. This procedure changes only the ephemeral host; guest distribution sources retain their own preparation procedure.
+Host provisioning keeps the runner's APT source definitions, suites, components and signature settings. It replaces the Azure-first `/etc/apt/apt-mirrors.txt` with the official HTTPS archive and security mirrors, in that order, followed by the kernel.org and MIT mirrors outside the `ubuntu.com` domain, for both x64 and ARM64. Only mirrors whose host resolves within 10 seconds are listed, and provisioning fails before any APT command when none resolves. Every mirror is authenticated with the same Ubuntu archive keys; because Ubuntu's `InRelease` files carry no `Valid-Until`, provisioning also rejects `resolute-security` and `resolute-updates` indexes dated more than 7 days before the check. A missing mirror-list source or a direct Azure source fails with a configuration-drift diagnostic rather than silently retaining the degraded source. This procedure changes only the ephemeral host; guest distribution sources retain their own preparation procedure.
 
 Index refresh, archive acquisition, installation/configuration and package inventory share a twelve-minute wall-clock budget. APT retries a failed transfer once and uses fifteen-second connection/inactivity timeouts. GNU `timeout` bounds the entire child process group even when downloads keep progressing slowly, reserving five seconds for termination before forced cleanup. Downloads complete before installation, which uses `--no-download`; index refresh errors and any incomplete phase fail the job. All phases log their available time, result and elapsed time, while APT records the actual download sources and volume. The workflow has a separate fifteen-minute step limit as an outer cancellation bound. Inspect these phase records before attributing a delay to package installation or tests.
 

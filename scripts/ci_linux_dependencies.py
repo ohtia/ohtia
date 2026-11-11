@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import email.utils
 import json
 import os
 import platform
@@ -9,7 +10,9 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import linux_desktop
 
@@ -17,10 +20,18 @@ ROOT = Path(__file__).resolve().parents[1]
 BUDGET_SECONDS = 12 * 60
 KILL_GRACE_SECONDS = 5
 MIRROR_SOURCE = "mirror+file:/etc/apt/apt-mirrors.txt"
+# Official mirrors first; the fallbacks sit outside ubuntu.com so a failure resolving that domain
+# does not take every mirror down. All of them are authenticated with the same Ubuntu keys.
 MIRRORS = (
-    "https://archive.ubuntu.com/ubuntu/\tpriority:1\n"
-    "https://security.ubuntu.com/ubuntu/\tpriority:2\n"
+    "https://archive.ubuntu.com/ubuntu/",
+    "https://security.ubuntu.com/ubuntu/",
+    "https://mirrors.edge.kernel.org/ubuntu/",
+    "https://mirrors.mit.edu/ubuntu/",
 )
+LOOKUP_TIMEOUT_SECONDS = 10
+# Ubuntu InRelease files carry no Valid-Until; bound the age of the pockets that change.
+FRESH_SUITES = ("resolute-security", "resolute-updates")
+MAX_INDEX_AGE = timedelta(days=7)
 KVM_PACKAGES = ["qemu-system-x86", "qemu-utils", "cloud-image-utils", "iproute2", "acl"]
 GNOME_PACKAGES = [
     "gnome-shell",
@@ -94,6 +105,20 @@ def packages_for(cell: str, launcher: str) -> list[str]:
     return list(GNOME_PACKAGES)
 
 
+def resolves(host: str) -> bool:
+    """Bounded lookup through the system resolver; a hung or failed lookup counts as absent."""
+    try:
+        result = subprocess.run(
+            ["getent", "ahosts", host],
+            capture_output=True,
+            timeout=LOOKUP_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0 and bool(result.stdout.strip())
+
+
 def configure_mirrors(apt_root: Path) -> None:
     """Keep sources, suites, components and Signed-By; change only the hosted mirror list."""
     sources = [apt_root / "sources.list"]
@@ -111,8 +136,55 @@ def configure_mirrors(apt_root: Path) -> None:
     mirrors = apt_root / "apt-mirrors.txt"
     if not mirrors.is_file():
         raise ProvisionError("Hosted APT mirror list is missing.")
-    mirrors.write_text(MIRRORS)
-    print("Ubuntu APT mirrors (source authentication unchanged):\n" + MIRRORS, flush=True)
+    available = []
+    for mirror in MIRRORS:
+        host = urlsplit(mirror).hostname
+        if resolves(host):
+            available.append(mirror)
+        else:
+            print(f"Ubuntu APT mirror skipped: {host} did not resolve.", flush=True)
+    if not available:
+        raise ProvisionError("No Ubuntu APT mirror resolved; inspect runner DNS.")
+    listing = "".join(
+        f"{mirror}\tpriority:{index}\n" for index, mirror in enumerate(available, start=1)
+    )
+    mirrors.write_text(listing)
+    print("Ubuntu APT mirrors (source authentication unchanged):\n" + listing, flush=True)
+
+
+def release_date(text: str) -> datetime | None:
+    """Read the Date field of a clearsigned InRelease's first paragraph."""
+    lines = text.splitlines()
+    if lines and lines[0] == "-----BEGIN PGP SIGNED MESSAGE-----":
+        lines = lines[lines.index("") + 1 :] if "" in lines else []
+    for line in lines:
+        if not line.strip() or line.startswith("-----BEGIN PGP SIGNATURE-----"):
+            break
+        if line.startswith("Date:"):
+            try:
+                return email.utils.parsedate_to_datetime(line[5:].strip())
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def check_index_freshness(lists: Path, now: datetime | None = None) -> None:
+    """Reject stale but validly signed indexes, which a fallback mirror could serve."""
+    now = now or datetime.now(UTC)
+    for suite in FRESH_SUITES:
+        found = sorted(lists.glob(f"*_dists_{suite}_InRelease"))
+        if not found:
+            raise ProvisionError(f"The {suite} index is missing after the index refresh.")
+        for path in found:
+            date = release_date(path.read_text(errors="replace"))
+            if date is None or date.tzinfo is None:
+                raise ProvisionError(f"The {suite} index has no valid Date field.")
+            if now - date > MAX_INDEX_AGE:
+                raise ProvisionError(
+                    f"The {suite} index is dated {date.isoformat()}, more than "
+                    f"{MAX_INDEX_AGE.days} days old; a mirror may be stale."
+                )
+            print(f"Ubuntu index {suite}: dated {date.isoformat()}", flush=True)
 
 
 def run_phase(
@@ -153,7 +225,13 @@ def run_phase(
         raise ProvisionError(f"Provisioning {name} failed (exit {result.returncode}).")
 
 
-def provision(cell: str, launcher: str, apt_root: Path, inventory: Path) -> None:
+def provision(
+    cell: str,
+    launcher: str,
+    apt_root: Path,
+    inventory: Path,
+    lists: Path = Path("/var/lib/apt/lists"),
+) -> None:
     packages = packages_for(cell, launcher)
     started = time.monotonic()
     deadline = started + BUDGET_SECONDS
@@ -167,6 +245,7 @@ def provision(cell: str, launcher: str, apt_root: Path, inventory: Path) -> None
         deadline,
         timeout_executable=timeout_executable,
     )
+    check_index_freshness(lists)
     install = ["install", "--no-install-recommends", "-y", *packages]
     run_phase(
         "archive acquisition",
