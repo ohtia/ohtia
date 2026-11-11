@@ -38,6 +38,7 @@ export function signingConfiguration() {
     .toString();
   return {
     schema_version: 1,
+    project_id: signingProjectId,
     policy: {
       schema_version: 1,
       enabled: false,
@@ -61,8 +62,8 @@ export function signingConfiguration() {
       },
     },
     buckets: {
-      ingress: "ohtia-signing-ingress-22222222-2222-4222-8222-222222222222",
-      retained: "ohtia-signing-retained-22222222-2222-4222-8222-222222222222",
+      ingress: "ohtia-signing-ingress",
+      retained: "ohtia-signing-retained",
     },
     secret_versions: Object.fromEntries(
       ["rpm", "rpm_passphrase", "catalog", "catalog_passphrase"].map((name, i) => [

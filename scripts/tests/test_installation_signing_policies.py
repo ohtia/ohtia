@@ -56,6 +56,109 @@ class SigningPolicyTests(unittest.TestCase):
         self.runtime = "application_id:" + self.bindings["runtime_application_id"]
         self.administrator = "user_id:" + self.bindings["administrator_user_id"]
 
+    def github_variables(self):
+        rows = []
+        for fields, name in policies.VARIABLES.items():
+            value = self.bindings
+            for field in fields:
+                value = value[field]
+            rows.append({"name": name, "value": str(value)})
+        return rows
+
+    def test_repository_variables_round_trip_without_credential_or_policy_inputs(self):
+        rows = self.github_variables() + [{"name": "UNRELATED", "value": "never-log-this-secret"}]
+        pages = [{"total_count": len(rows), "variables": chunk} for chunk in (rows[:7], rows[7:])]
+        parsed = policies.bindings_from_variables(json.dumps(pages).encode())
+        self.assertEqual(parsed, self.bindings)
+        self.assertEqual(policies.render(parsed), policies.render(self.bindings))
+        self.assertNotIn(
+            "never-log-this-secret", b"".join(policies.render(parsed).values()).decode()
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--github-variables",
+                    "--output",
+                    str(Path(temporary) / "preview"),
+                ],
+                input=json.dumps(pages),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn("never-log-this-secret", result.stdout + result.stderr)
+
+    def test_repository_variables_refuse_partial_duplicate_or_malformed_pages(self):
+        rows = self.github_variables()
+        cases = [
+            [],
+            {},
+            [{"total_count": len(rows), "variables": rows[:-1]}],
+            [{"total_count": len(rows) - 1, "variables": rows[:-1]}],
+            [{"total_count": len(rows) + 1, "variables": rows + [rows[0]]}],
+            [{"total_count": True, "variables": rows}],
+            [
+                {"total_count": len(rows), "variables": rows[:4]},
+                {"total_count": len(rows) + 1, "variables": rows[4:]},
+            ],
+        ]
+        for pages in cases:
+            with self.subTest(pages=pages), self.assertRaises(ValueError):
+                policies.bindings_from_variables(json.dumps(pages).encode())
+        revision = next(i for i, row in enumerate(rows) if row["name"].endswith("_REVISION"))
+        for value in ("latest", "01", "0", "1.0", "4294967296", " 1", "1\n"):
+            changed = copy.deepcopy(rows)
+            changed[revision]["value"] = value
+            with self.subTest(revision=value), self.assertRaises(ValueError):
+                policies.bindings_from_variables(
+                    json.dumps([{"total_count": len(changed), "variables": changed}]).encode()
+                )
+        for raw in (
+            b"[]" * policies.MAX_VARIABLE_BYTES,
+            b'[{"total_count":0,"total_count":0,"variables":[]}]',
+        ):
+            with self.assertRaises(ValueError):
+                policies.bindings_from_variables(raw)
+
+    def test_caller_snapshot_binds_only_selected_locators_without_iam_bootstrap_dependencies(self):
+        caller = json.loads((ROOT / "config/installation/signing-caller.example.json").read_bytes())
+        variables = {
+            "SCW_SIGNING_SERVICE_ORIGIN": caller["service_origin"],
+            **{"SCW_SIGNING_" + k.upper() + "_BUCKET": v for k, v in caller["buckets"].items()},
+        }
+        rows = [{"name": k, "value": v} for k, v in variables.items()]
+        raw = json.dumps([{"total_count": len(rows), "variables": rows}])
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "caller"
+            result = subprocess.run(
+                [sys.executable, "-I", str(SCRIPT), "--caller-variables", "--output", str(output)],
+                input=raw,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads((output / "caller-fragment.json").read_bytes()), caller)
+            plan = json.loads((output / "plan.json").read_bytes())
+            self.assertEqual(
+                plan["resource_bindings_sha256"], policies.metadata.caller_hash(caller)
+            )
+            self.assertEqual(set(plan["files"]), {"caller-fragment.json"})
+            self.assertEqual(
+                plan["files"]["caller-fragment.json"],
+                hashlib.sha256((output / "caller-fragment.json").read_bytes()).hexdigest(),
+            )
+        for name, value in [
+            ("SCW_SIGNING_SERVICE_ORIGIN", "https://other.invalid"),
+            ("SCW_SIGNING_INGRESS_BUCKET", "1invalid-bucket"),
+            ("SCW_SIGNING_RETAINED_BUCKET", variables["SCW_SIGNING_INGRESS_BUCKET"]),
+        ]:
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                policies.metadata.caller_bindings(variables | {name: value})
+
     def test_invoker_has_only_project_scoped_private_invocation(self):
         value = self.files["iam-invoker.json"]
         self.assertEqual(value["application_id"], self.bindings["invoker_application_id"])
@@ -93,6 +196,36 @@ class SigningPolicyTests(unittest.TestCase):
             set(json.loads(secret["condition"].removeprefix("resource.id in "))),
             {v["secret_id"] for v in self.bindings["secret_versions"].values()},
         )
+
+    def test_configured_bucket_names_keep_explicit_project_and_iam_binding(self):
+        changed = copy.deepcopy(self.bindings)
+        changed["project_id"] = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        changed["buckets"] = {"ingress": "another-ingress", "retained": "another-retained"}
+        for bindings in (self.bindings, changed):
+            rendered = {name: json.loads(data) for name, data in policies.render(bindings).items()}
+            fragment = rendered["runtime-fragment.json"]
+            self.assertEqual(fragment["project_id"], bindings["project_id"])
+            self.assertEqual(
+                fragment["buckets"],
+                bindings["buckets"],
+            )
+            for role in ("runtime", "invoker"):
+                for rule in rendered["iam-" + role + ".json"]["rules"]:
+                    self.assertEqual(rule["project_ids"], [bindings["project_id"]])
+            for request in rendered["plan.json"]["requests"][:2]:
+                self.assertNotIn(bindings["project_id"], request["url"])
+
+    def test_rejects_bucket_authority_or_path_injection(self):
+        for value in (None, 1, "ab", "x" * 64, "a/*", "https://foreign.invalid", "a.b", "A-B"):
+            changed = copy.deepcopy(self.bindings)
+            changed["buckets"]["retained"] = value
+            with self.subTest(bucket=value), self.assertRaises(ValueError):
+                policies.render(changed)
+        for buckets in ({}, {"ingress": "same", "retained": "same"}, {"ingress": "valid-name"}):
+            changed = copy.deepcopy(self.bindings)
+            changed["buckets"] = buckets
+            with self.subTest(buckets=buckets), self.assertRaises(ValueError):
+                policies.render(changed)
 
     def test_version_pin_changes_fragment_without_claiming_per_version_iam(self):
         changed = copy.deepcopy(self.bindings)

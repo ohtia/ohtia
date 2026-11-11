@@ -33,6 +33,11 @@ import {
   signingProjectId as projectId,
 } from "./fixtures/signing-configuration";
 import { MockS3 } from "./fixtures/signing-store";
+import {
+  signingClientEnvironmentConfiguration,
+  signingResourceBindingsHash,
+} from "../tooling/installation-signing-client.mjs";
+import { prepareSigningConfiguration } from "../tooling/installation-signing-configuration.mjs";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -124,6 +129,31 @@ describe("independent signing activation", () => {
     changed.secret_versions.rpm.revision++;
     expect(signingConfigurationHash(changed)).not.toBe(record.configuration_sha256);
     expect(signingActivationRecord(config, false)).toEqual({ ...record, enabled: false });
+  });
+  it("binds the explicit project independently of the configured bucket names", async () => {
+    const f = fixture();
+    expect(f.config.buckets).toEqual({
+      ingress: "ohtia-signing-ingress",
+      retained: "ohtia-signing-retained",
+    });
+    await expect(f.admit(f.config.policy)).resolves.toBe(true);
+    const renamed = structuredClone(f.config);
+    renamed.buckets.ingress = "another-ingress";
+    renamed.buckets.retained = "another-retained";
+    expect(signingConfigurationHash(renamed)).not.toBe(f.record.configuration_sha256);
+    const rebound = fixture(renamed);
+    await expect(rebound.admit(renamed.policy)).resolves.toBe(true);
+    // A UUID-looking name is not authoritative Project metadata.
+    renamed.buckets.ingress = "ohtia-signing-ingress-" + namespaceId;
+    renamed.buckets.retained = "ohtia-signing-retained-" + namespaceId;
+    await expect(fixture(renamed).admit(renamed.policy)).resolves.toBe(true);
+    const changed = structuredClone(f.config);
+    changed.project_id = namespaceId;
+    expect(signingConfigurationHash(changed)).not.toBe(f.record.configuration_sha256);
+    expect(signingActivationRecord(changed, true).policy_sha256).toBe(f.record.policy_sha256);
+    // Even approval for the changed configuration cannot admit a namespace in the old Project.
+    const wrongProject = fixture(changed);
+    await expect(wrongProject.admit(changed.policy)).rejects.toThrow("policy_refused");
   });
   it("admits documented raw v1 container and namespace responses through both adapters", async () => {
     const f = fixture(),
@@ -255,9 +285,25 @@ describe("independent signing activation", () => {
   });
   it("rejects changed configuration and credential fields before producing an approval", () => {
     const { config } = fixture();
+    const missingProject = structuredClone(config);
+    delete (missingProject as Partial<typeof config>).project_id;
     for (const changed of [
+      missingProject,
+      ...[undefined, null, 1, "", "PROJECT_ID", "00000000-0000-0000-0000-000000000000"].map(
+        (project_id) => ({ ...config, project_id }),
+      ),
+      {
+        ...missingProject,
+        buckets: {
+          ingress: "ohtia-signing-ingress-" + projectId,
+          retained: "ohtia-signing-retained-" + projectId,
+        },
+      },
+      ...[null, 1, "ab", "x".repeat(64), "a/*", "https://foreign.invalid", "a.b", "A-B"].map(
+        (retained) => ({ ...config, buckets: { ...config.buckets, retained } }),
+      ),
       { ...config, token: "sensitive-fixture" },
-      { ...config, buckets: { ...config.buckets, retained: "unbound-bucket" } },
+      { ...config, buckets: { ...config.buckets, retained: config.buckets.ingress } },
       {
         ...config,
         secret_versions: {
@@ -277,6 +323,154 @@ describe("independent signing activation", () => {
       },
     ])
       expect(() => signingActivationRecord(changed, true)).toThrow();
+  });
+  it("assembles ordinary public metadata into canonical runtime and a disabled caller template", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "ohtia-runtime-assembly-"));
+    roots.push(root);
+    const config = signingConfiguration(),
+      fragment = path.join(root, "fragment.json"),
+      policy = path.join(root, "policy.json"),
+      output = path.join(root, "runtime");
+    const { project_id, buckets, secret_versions } = config;
+    fs.writeFileSync(fragment, JSON.stringify({ project_id, buckets, secret_versions }, null, 2));
+    fs.writeFileSync(policy, JSON.stringify(config.policy, null, 2));
+    prepareSigningConfiguration(fragment, policy, output);
+    expect(fs.readFileSync(path.join(output, "runtime.json"))).toEqual(canonical(config));
+    const template = JSON.parse(fs.readFileSync(path.join(output, "client-template.json"), "utf8"));
+    expect(template.enabled).toBe(false);
+    expect(template.service_origin).toBeNull();
+    expect(template.buckets).toBeNull();
+    expect(template.resource_bindings_sha256).toBeNull();
+    const caller = path.join(root, "caller.json");
+    const resources = { service_origin: "https://fixture.fnc.fr-par.scw.cloud", buckets };
+    fs.writeFileSync(caller, JSON.stringify(resources));
+    const boundOutput = path.join(root, "bound");
+    prepareSigningConfiguration(fragment, policy, boundOutput, caller);
+    const bound = JSON.parse(
+      fs.readFileSync(path.join(boundOutput, "client-template.json"), "utf8"),
+    );
+    const environment = {
+      SCW_SIGNING_SERVICE_ORIGIN: resources.service_origin,
+      SCW_SIGNING_INGRESS_BUCKET: buckets.ingress,
+      SCW_SIGNING_RETAINED_BUCKET: buckets.retained,
+    };
+    expect(bound.resource_bindings_sha256).toBe(signingResourceBindingsHash(resources));
+    expect(() =>
+      signingClientEnvironmentConfiguration(bound, config.policy.signing_workflow.sha, environment),
+    ).toThrow();
+    const enabled = { ...bound, enabled: true }; // Unit fixture only; the producer always emits disabled output.
+    expect(
+      signingClientEnvironmentConfiguration(
+        enabled,
+        config.policy.signing_workflow.sha,
+        environment,
+      ).origin,
+    ).toBe(resources.service_origin);
+    expect(() =>
+      signingClientEnvironmentConfiguration(
+        { ...template, enabled: true },
+        config.policy.signing_workflow.sha,
+        environment,
+      ),
+    ).toThrow();
+    expect(() =>
+      signingClientEnvironmentConfiguration(enabled, config.policy.signing_workflow.sha, {
+        ...environment,
+        SCW_SIGNING_SERVICE_ORIGIN: "https://another.fnc.fr-par.scw.cloud",
+      }),
+    ).toThrow();
+    const python = spawnSync(
+      process.env.OHTIA_PYTHON ?? "python3",
+      [
+        "-I",
+        "-c",
+        "import json,sys;sys.path.insert(0,'scripts');import installation_signing_metadata as m;print(m.caller_hash(json.loads(sys.stdin.read())))",
+      ],
+      { input: JSON.stringify(resources), encoding: "utf8" },
+    );
+    expect(python.status, python.stderr).toBe(0);
+    expect(python.stdout.trim()).toBe(bound.resource_bindings_sha256);
+    fs.writeFileSync(
+      caller,
+      JSON.stringify({ ...resources, buckets: { ...buckets, ingress: "other-valid-bucket" } }),
+    );
+    expect(() =>
+      prepareSigningConfiguration(fragment, policy, path.join(root, "mismatch"), caller),
+    ).toThrow();
+    expect(fs.existsSync(path.join(root, "mismatch"))).toBe(false);
+    expect(template.policy.source_anchor).toBe(config.policy.source_anchor);
+    expect(template.policy.signing_workflow).toBeUndefined();
+    const plan = JSON.parse(fs.readFileSync(path.join(output, "plan.json"), "utf8"));
+    expect(plan.configuration_sha256).toBe(signingConfigurationHash(config));
+    expect(plan.requires_independent_approval).toBe(true);
+    for (const [name, digest] of Object.entries(plan.files))
+      expect(hash(fs.readFileSync(path.join(output, name)))).toBe(digest);
+    prepareSigningActivation(
+      path.join(output, "runtime.json"),
+      path.join(root, "activation"),
+      false,
+    );
+    expect(
+      JSON.parse(fs.readFileSync(path.join(root, "activation/active.json"), "utf8")).enabled,
+    ).toBe(false);
+    expect(() => prepareSigningConfiguration(fragment, policy, output)).toThrow();
+    const cli = spawnSync(
+      process.execPath,
+      [
+        "tooling/installation-signing-configuration.mjs",
+        "--fragment",
+        fragment,
+        "--policy",
+        policy,
+        "--output",
+        path.join(root, "cli"),
+      ],
+      { encoding: "utf8" },
+    );
+    expect(cli.status, cli.stderr).toBe(0);
+    if (process.platform !== "win32") {
+      expect(fs.statSync(output).mode & 0o777).toBe(0o700);
+      expect(fs.statSync(path.join(output, "runtime.json")).mode & 0o777).toBe(0o600);
+    }
+  });
+  it("refuses ambiguous oversized or credential-bearing assembly inputs before creating output", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "ohtia-runtime-refusal-"));
+    roots.push(root);
+    const config = signingConfiguration(),
+      fragment = path.join(root, "fragment.json"),
+      policy = path.join(root, "policy.json"),
+      output = path.join(root, "output");
+    const { project_id, buckets, secret_versions } = config;
+    const good = JSON.stringify({ project_id, buckets, secret_versions });
+    fs.writeFileSync(policy, JSON.stringify(config.policy));
+    for (const bytes of [
+      good.replace("{", '{"project_id":"sensitive-value",'),
+      " ".repeat(signingLimits.request_bytes + 1),
+      JSON.stringify({ project_id, buckets, secret_versions, token: "sensitive-value" }),
+    ]) {
+      fs.writeFileSync(fragment, bytes);
+      expect(() => prepareSigningConfiguration(fragment, policy, output)).toThrow();
+      expect(fs.existsSync(output)).toBe(false);
+    }
+    fs.writeFileSync(fragment, good);
+    fs.writeFileSync(policy, JSON.stringify({ ...config.policy, private_key: "sensitive-value" }));
+    const cli = spawnSync(
+      process.execPath,
+      [
+        "tooling/installation-signing-configuration.mjs",
+        "--fragment",
+        fragment,
+        "--policy",
+        policy,
+        "--output",
+        output,
+      ],
+      { encoding: "utf8" },
+    );
+    expect(cli.status).toBe(1);
+    expect(cli.stderr).toBe("Unable to prepare signing configuration.\n");
+    expect(cli.stdout).toBe("");
+    expect(fs.existsSync(output)).toBe(false);
   });
   it("prepares fresh private metadata with payload hashes and no network operation", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "ohtia-activation-"));

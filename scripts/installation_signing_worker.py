@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import installation_attestor as attestor
 import installation_build_contract as contract
+import installation_signing_metadata as metadata
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ".github/workflows/signing-worker.yml"
@@ -84,6 +85,18 @@ def check(env):
     contract.require(
         configuration.get("schema_version") == 1 and configuration.get("enabled") is True,
         "worker_disabled",
+    )
+    contract.require(
+        configuration.get("service_origin") is None and configuration.get("buckets") is None,
+        "worker_configuration",
+    )
+    try:
+        resources = metadata.caller_bindings(env)
+    except (ValueError, TypeError):
+        raise ValueError("worker_configuration") from None
+    contract.require(
+        configuration.get("resource_bindings_sha256") == metadata.caller_hash(resources),
+        "worker_configuration",
     )
     contract.selection(env["SIGNING_SELECTION"], ROOT)
     return identity
@@ -299,6 +312,9 @@ def invoke(env):
         "ACTIONS_ID_TOKEN_REQUEST_URL",
         "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
         "OHTIA_SIGNING_INVOKE_TOKEN",
+        "SCW_SIGNING_SERVICE_ORIGIN",
+        "SCW_SIGNING_INGRESS_BUCKET",
+        "SCW_SIGNING_RETAINED_BUCKET",
     }
     clean = {key: value for key, value in env.items() if key in allowed}
     clean.update(PATH=os.defpath, LANG="C.UTF-8", OHTIA_SIGNING_STAGE=str(directory))

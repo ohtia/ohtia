@@ -362,6 +362,17 @@ describe("signing container composition", () => {
     OHTIA_SIGNING_BACKEND_ACCESS_KEY: "fixture-only-access",
     OHTIA_SIGNING_BACKEND_SECRET_KEY: "fixture-only-secret",
   };
+  it("rejects an invalid project configuration before composing either policy mode", () => {
+    const provider = vi.spyOn(globalThis, "fetch");
+    for (const enabled of [false, true]) {
+      for (const project_id of [undefined, "PROJECT_ID", "00000000-0000-0000-0000-000000000000"]) {
+        const config = { ...configuration(), project_id };
+        config.policy.enabled = enabled;
+        expect(() => composeSigningContainer(config, { environment })).toThrow("policy_refused");
+      }
+    }
+    expect(provider).not.toHaveBeenCalled();
+  });
   it("keeps admission disabled and makes no provider request", async () => {
     const provider = vi.spyOn(globalThis, "fetch");
     const composed = composeSigningContainer(configuration(), { environment });

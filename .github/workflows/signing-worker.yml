@@ -27,6 +27,9 @@ jobs:
     env:
       SIGNING_SELECTION: ${{ inputs.selection }}
       SIGNING_PROOF_ARTIFACT: ${{ inputs.proof-artifact }}
+      SCW_SIGNING_SERVICE_ORIGIN: ${{ vars.SCW_SIGNING_SERVICE_ORIGIN }}
+      SCW_SIGNING_INGRESS_BUCKET: ${{ vars.SCW_SIGNING_INGRESS_BUCKET }}
+      SCW_SIGNING_RETAINED_BUCKET: ${{ vars.SCW_SIGNING_RETAINED_BUCKET }}
     steps:
       - name: Check out only the immutable signing recipe
         id: recipe

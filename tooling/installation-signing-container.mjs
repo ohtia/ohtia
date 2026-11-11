@@ -26,6 +26,7 @@ import {
 } from "./installation-signing-scaleway.mjs";
 import {
   signingAdmission,
+  signingConfigurationHash,
   signingDeploymentRequirements,
 } from "./installation-signing-admission.mjs";
 
@@ -206,8 +207,7 @@ export function productionSigningServer(
 }
 
 export function composeSigningContainer(configuration, { environment = process.env } = {}) {
-  fields(configuration, "schema_version policy buckets secret_versions");
-  demand(configuration.schema_version === 1);
+  signingConfigurationHash(configuration);
   const policy = trustedPolicy(configuration.policy);
   // Enabled local policy still needs independent control and live provider readback at every gate.
   fields(configuration.buckets, "ingress retained");

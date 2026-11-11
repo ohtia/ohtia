@@ -20,6 +20,7 @@ import { catalogBytes, updateLimits, verifyCatalog } from "./update-admission.mj
 import {
   ProductionSigningClient,
   signingClientConfiguration,
+  signingClientEnvironmentConfiguration,
 } from "./installation-signing-client.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -395,10 +396,17 @@ async function main() {
     context = signingContext(env);
   const stage = env.OHTIA_SIGNING_STAGE;
   demand(typeof stage === "string" && path.isAbsolute(stage) && fs.realpathSync(stage) === stage);
-  const configuration = JSON.parse(
+  const template = JSON.parse(
     fs.readFileSync(path.join(root, "config/installation/signing-client.json")),
   );
-  const cfg = signingClientConfiguration(configuration, context.worker);
+  const cfg = signingClientEnvironmentConfiguration(template, context.worker, env);
+  const configuration = {
+    schema_version: template.schema_version,
+    enabled: template.enabled,
+    service_origin: cfg.origin,
+    buckets: cfg.buckets,
+    policy: template.policy,
+  };
   const run = decode(fs.readFileSync(path.join(stage, "run.json")), 2 * 1024 ** 2);
   try {
     await privateSigningCampaign({

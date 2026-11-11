@@ -14,6 +14,8 @@ import {
 import {
   ProductionSigningClient,
   signingClientConfiguration,
+  signingClientEnvironmentConfiguration,
+  signingResourceBindingsHash,
 } from "../tooling/installation-signing-client.mjs";
 import { fileReference } from "../tooling/installation-signer.mjs";
 import { catalogBytes } from "../tooling/update-admission.mjs";
@@ -401,6 +403,78 @@ describe("private signing client", () => {
     expect(result.request_id).toBe(f.id);
     const executed = f.calls.find((x) => x.url.endsWith("/execute"));
     expect(JSON.parse(executed.init.body).request_id).toBe(f.id);
+  });
+  it("loads resource locators from repository variables without accepting a tracked fallback or a policy override", () => {
+    const f = fixture();
+    const { schema_version, enabled, signing_workflow, ...policy } = f.policy;
+    const template = {
+      schema_version,
+      enabled,
+      service_origin: null,
+      buckets: null,
+      policy,
+      resource_bindings_sha256: signingResourceBindingsHash({
+        service_origin: f.cfg.origin,
+        buckets: f.cfg.buckets,
+      }),
+    };
+    const environment = {
+      SCW_SIGNING_SERVICE_ORIGIN: f.cfg.origin,
+      SCW_SIGNING_INGRESS_BUCKET: f.cfg.buckets.ingress,
+      SCW_SIGNING_RETAINED_BUCKET: f.cfg.buckets.retained,
+      SCW_SIGNING_SOURCE_ANCHOR: "9".repeat(40),
+    };
+    const loaded = signingClientEnvironmentConfiguration(
+      template,
+      signing_workflow.sha,
+      environment,
+    );
+    expect(loaded.origin).toBe(f.cfg.origin);
+    expect(loaded.buckets).toEqual(f.cfg.buckets);
+    expect(loaded.policy.source_anchor).toBe(f.policy.source_anchor);
+    for (const changed of [
+      { ...environment, SCW_SIGNING_SERVICE_ORIGIN: "https://other-tenant.fnc.fr-par.scw.cloud" },
+      { ...environment, SCW_SIGNING_INGRESS_BUCKET: "another-valid-bucket" },
+      { ...environment, SCW_SIGNING_INGRESS_BUCKET: "1invalid-bucket" },
+      {
+        ...environment,
+        SCW_SIGNING_SERVICE_ORIGIN: "https://" + "a".repeat(500) + ".fnc.fr-par.scw.cloud",
+      },
+    ])
+      expect(() =>
+        signingClientEnvironmentConfiguration(template, signing_workflow.sha, changed),
+      ).toThrow();
+    for (const commitment of [null, "0".repeat(64), undefined])
+      expect(() =>
+        signingClientEnvironmentConfiguration(
+          { ...template, resource_bindings_sha256: commitment },
+          signing_workflow.sha,
+          environment,
+        ),
+      ).toThrow();
+    expect(() =>
+      signingClientEnvironmentConfiguration(template, signing_workflow.sha, {}),
+    ).toThrow();
+    expect(() =>
+      signingClientEnvironmentConfiguration(
+        { ...template, service_origin: f.cfg.origin },
+        signing_workflow.sha,
+        environment,
+      ),
+    ).toThrow();
+    expect(() =>
+      signingClientEnvironmentConfiguration(
+        { ...template, enabled: false },
+        signing_workflow.sha,
+        environment,
+      ),
+    ).toThrow();
+    expect(() =>
+      signingClientEnvironmentConfiguration(template, signing_workflow.sha, {
+        ...environment,
+        SCW_SIGNING_RETAINED_BUCKET: environment.SCW_SIGNING_INGRESS_BUCKET,
+      }),
+    ).toThrow();
   });
   it("keeps disabled or incomplete immutable configuration ineligible for invocation", () => {
     const f = fixture();

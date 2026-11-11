@@ -2,10 +2,6 @@
 type: Reference
 title: Ephemeral ARM installation qualification
 description: Define protected authority, bounded diagnostics and recovery for unsigned native ARM qualification on ephemeral Scaleway leases.
-generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: cloud-init-errors
     resource: https://github.com/canonical/cloud-init/blob/25.1.4/cloudinit/cmd/main.py
@@ -42,7 +38,7 @@ The normal twelve-cell hosted CI does not allocate paid guests. Native package/r
 
 ## Configuration placement
 
-Store all nonsecret Scaleway configuration in GitHub repository variables. Project, zone, machine type, disk capacity and images form one resource configuration and use the same scope. The workflow controls and key-expiration assertions use that scope as well. Keep no duplicate `SCW_*` configuration variables in either GitHub environment; workflow `env` mappings pass selected repository values to processes without creating another configuration store.
+Follow the shared [Scaleway configuration](scaleway-configuration.md#shared-placement-rule) for deployment metadata, workflow credentials and authorization records. The ARM Project, zone, machine type, disk capacity and image selections use GitHub repository Variables, as do the workflow controls and key-expiration assertions. Keep no duplicate `SCW_*` configuration variables in either GitHub environment; workflow `env` mappings only inject selected repository values. The following map owns the ARM-specific names and consumers.
 
 The complete repository-variable map is:
 

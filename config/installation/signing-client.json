@@ -3,5 +3,6 @@
   "enabled": false,
   "service_origin": null,
   "buckets": null,
-  "policy": null
+  "policy": null,
+  "resource_bindings_sha256": null
 }

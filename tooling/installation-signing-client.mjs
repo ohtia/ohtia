@@ -55,12 +55,10 @@ function origin(value) {
 export function signingClientConfiguration(value, workerSha) {
   fields(value, "schema_version enabled service_origin buckets policy");
   demand(value.schema_version === 1 && value.enabled === true, "policy_refused");
-  const service = origin(value.service_origin);
-  demand(new URL(service).hostname.endsWith(".fnc.fr-par.scw.cloud"), "policy_refused");
-  fields(value.buckets, "ingress retained");
-  for (const bucket of Object.values(value.buckets))
-    demand(typeof bucket === "string" && /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(bucket));
-  demand(value.buckets.ingress !== value.buckets.retained);
+  const resources = signingResourceBindings({
+    service_origin: value.service_origin,
+    buckets: value.buckets,
+  });
   fields(
     value.policy,
     "repository_id owner_id audience environment caller_workflow build_workflow source_anchor source_signers catalog_public_key rpm_primary rpm_subkey deployment",
@@ -77,8 +75,50 @@ export function signingClientConfiguration(value, workerSha) {
       policy.caller_workflow === ".github/workflows/installation-signing.yml",
     "policy_refused",
   );
-  return { origin: service, buckets: structuredClone(value.buckets), policy };
+  return { origin: resources.service_origin, buckets: resources.buckets, policy };
 }
+export function signingResourceBindings(value) {
+  fields(value, "service_origin buckets");
+  const service = origin(value.service_origin);
+  demand(
+    /^https:\/\/[a-z0-9][a-z0-9.-]*\.fnc\.fr-par\.scw\.cloud$/.test(service),
+    "policy_refused",
+  );
+  demand(new URL(service).hostname.endsWith(".fnc.fr-par.scw.cloud"), "policy_refused");
+  fields(value.buckets, "ingress retained");
+  for (const bucket of Object.values(value.buckets))
+    demand(typeof bucket === "string" && /^[a-z][a-z0-9-]{1,61}[a-z0-9]$/.test(bucket));
+  demand(value.buckets.ingress !== value.buckets.retained);
+  return { service_origin: service, buckets: structuredClone(value.buckets) };
+}
+export function signingResourceBindingsHash(value) {
+  return hash(canonical(signingResourceBindings(value)));
+}
+export function signingClientEnvironmentConfiguration(value, workerSha, environment) {
+  fields(value, "schema_version enabled service_origin buckets policy resource_bindings_sha256");
+  demand(value.service_origin === null && value.buckets === null, "policy_refused");
+  const resources = signingResourceBindings({
+    service_origin: environment.SCW_SIGNING_SERVICE_ORIGIN,
+    buckets: {
+      ingress: environment.SCW_SIGNING_INGRESS_BUCKET,
+      retained: environment.SCW_SIGNING_RETAINED_BUCKET,
+    },
+  });
+  demand(
+    value.resource_bindings_sha256 === signingResourceBindingsHash(resources),
+    "policy_refused",
+  );
+  return signingClientConfiguration(
+    {
+      schema_version: value.schema_version,
+      enabled: value.enabled,
+      ...resources,
+      policy: value.policy,
+    },
+    workerSha,
+  );
+}
+
 class SigningResponseLost extends SigningError {
   constructor() {
     super("authority_unavailable");
