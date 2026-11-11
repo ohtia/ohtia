@@ -1,8 +1,11 @@
 ---
 type: Playbook
 title: Linux signing administration
-description: Prepare independently reviewed Scaleway access and activation previews without exposing credentials or enabling signing.
+description: Prepare signing access and activation previews and collect bounded local native-probe resource observations.
 sources:
+  - id: linux-cgroup-memory
+    resource: https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html
+    title: Linux cgroup v2 memory accounting and events
   - id: iam-policy-api
     resource: https://www.scaleway.com/en/developers/api/iam/policies
     title: Scaleway IAM policy creation fields and project scopes
@@ -151,6 +154,20 @@ Record the selected image digest, pinned native package manifest, observed runti
 
 Keep actual provider dump/swap exposure, cold start/termination, storage races, effective grants, credential expiry/rotation and recovery in the qualification evidence with their real coverage limits. Real signing keys and enabled invocation require separately approved real-custody deployment after those gates. Rendering a JSON proposal or passing fixtures completes neither gate.
 
+## Collect local native-probe resource observations
+
+The [disposable native probe](../tooling/installation-signing-probe.mjs) accepts `--resources` before its absolute unsigned fixture-RPM path. Use the separately bundled probe and its standalone subprocess runner in the independently selected Linux image, with a private cgroup v2 namespace, the fixed 4 GiB/1000-mvCPU allocation, swap disabled and external networking disabled. The image context builder bundles the production entry, not this diagnostic; bundle the current probe separately and retain its source/bundle hashes alongside the image identity. Preserve the canonical resource-policy and target records at their expected paths. This mode generates its own disposable keys and must not receive existing custody files or backend credentials.
+
+```bash
+node /proof/runtime/probe.mjs --resources /tmp/capacity-input/input.rpm
+```
+
+The command names paths inside that independently prepared diagnostic container; it does not provision a container, generate a fixture or qualify an image by itself. The existing one-argument probe remains available without resource collection. Resource mode refuses missing, unlimited or differently allocated memory/CPU and enabled swap before cryptographic work. Its optional `resource_observations` contains before/last snapshots, sampled current-memory/tmpfs maxima, counter deltas, collection completeness and a 25 ms target sampling interval. Blocking work can delay sampling; snapshots are sequential reads, not atomic decompositions of the kernel peak. The peak covers the cgroup's lifetime and descendants, including earlier work in a warm container. `file` already includes tmpfs/shared-memory accounting; do not add `file` and `shmem` as independent allocations.[^linux-cgroup-memory]
+
+Resource mode checks the configured limits visible in its cgroup namespace. It does not inspect `memory.high`, effective ancestor ceilings or host contention; the operator records those conditions independently. `collection_complete` describes valid collected snapshots and stable counters, rather than uninterrupted 25 ms coverage or effective available headroom.
+
+A failed operation retains its original failure code and available resource observations. Incomplete collection or newly observed OOM events fail the diagnostic; a peak at the limit alone is recorded without inventing a working-set estimate or an admission decision. This is scoped native-worker evidence. Bind the actual fixture/source sizes, process lifecycle, exact image/native packages and cold/warm conditions separately. It does not exercise complete OIDC/source/build/provider admission, gVisor behavior, the provider's non-temporary disk quota, real custody or installed-user routes. Preserve PRIN-004, PRIN-005, PRIN-006 and PRIN-007 when interpreting the result.
+
 ## Request package operations
 
 After the service and immutable caller policy are qualified, the approved Actions worker receives the service origin/bucket Variables and `OHTIA_SIGNING_INVOKE_TOKEN` from its protected environment. The provider credential admits private invocation; a separate OIDC proof authenticates the current admitted job. A request cannot provide a Project, choose a key, replace policy or administer Scaleway.
@@ -182,3 +199,5 @@ Preserve the retained journal, approved source baseline, control/configuration i
 [^operation-permissions]: HEAD/Get operations require the corresponding object-read permission; mutation families have separate action mappings.
 
 [^secret-versions]: Secret revisions are numbered, with aliases available in the API but excluded from the pinned runtime contract.
+
+[^linux-cgroup-memory]: Linux defines cgroup lifetime peaks, overlapping file/shared-memory accounting and memory event counters.

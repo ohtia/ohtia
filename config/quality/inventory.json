@@ -25,6 +25,7 @@
     "tests/installation-signing-admission.test.ts",
     "tests/installation-signing-client.test.ts",
     "tests/installation-signing-container.test.ts",
+    "tests/installation-signing-resources.test.ts",
     "tests/installation-signing.test.ts",
     "tests/installation-source.test.ts",
     "tests/language-panel.test.ts",

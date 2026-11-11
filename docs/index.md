@@ -60,7 +60,7 @@ okf_version: "0.2"
 - [Locked developer workspace](developer-workspace.md) — Bootstrap isolated contributor tools, build the six package boundaries and verify the frozen workspace without changing research data.
 - [Native foundation qualification](native-qualification.md) — Assemble non-shipping native probes, admit independent profiles and retain complete target evidence without claiming partial native qualification, including owned headless GNOME and Plasma activation and browser-side shortcut checks.
 - [Native foundation qualification report](native-foundation-report.md) — Observed native desktop feasibility, source compatibility, packaging consequences and evidence limits for the required foundation platforms.
-- [Linux signing administration](linux-signing-administration.md) — Prepare independently reviewed Scaleway access and activation previews without exposing credentials or enabling signing.
+- [Linux signing administration](linux-signing-administration.md) — Prepare signing access and activation previews and collect bounded local native-probe resource observations.
 - [Repository policy](repository-policy.md) — GitHub repository configuration, dependency updates, quality checks, and verification procedures.
 - [Change-note tooling](change-notes.md) — Capture inert PR impact records, reconcile source scope and prepare immutable editorial note and correction evidence.
 - [Desktop builds, releases and change notes](release-policy.md) — Quality-build triggers, artifact-bound candidate readiness, immutable promotion, public versioning and user-facing change communication.

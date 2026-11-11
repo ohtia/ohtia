@@ -5,10 +5,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateKeyPairSync, randomBytes, verify } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { canonical, command, demand } from "./installation-authority.mjs";
+import { canonical, command, demand, SigningError } from "./installation-authority.mjs";
+import { observeSigningResources } from "./installation-signing-resources.mjs";
 import { CryptoSigningWorker, fileReference, keyId } from "./installation-signer.mjs";
 
-export async function signingFixtureProbe(input) {
+async function nativeSigningFixtureProbe(input) {
   demand(path.isAbsolute(input) && input.endsWith(".rpm"));
   const original = await fileReference(input);
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ohtia-disposable-signer-"));
@@ -310,16 +311,41 @@ export async function signingFixtureProbe(input) {
     fs.rmSync(directory, { recursive: true, force: true });
   }
 }
+export async function signingFixtureProbe(input, { resources = false } = {}) {
+  if (!resources) return nativeSigningFixtureProbe(input);
+  const { result, resource_observations } = await observeSigningResources(() =>
+    nativeSigningFixtureProbe(input),
+  );
+  return { ...result, resource_observations };
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 3) {
-    process.stderr.write("Use installation-signing-probe.mjs <absolute-unsigned-fixture-rpm>.\n");
+  const args = process.argv.slice(2);
+  const resources = args.length === 2 && args[0] === "--resources";
+  if (!(args.length === 1 || resources)) {
+    process.stderr.write(
+      "Use installation-signing-probe.mjs [--resources] <absolute-unsigned-fixture-rpm>.\n",
+    );
     process.exitCode = 1;
   } else
     try {
       process.stdout.write(
-        JSON.stringify(await signingFixtureProbe(process.argv[2]), null, 2) + "\n",
+        JSON.stringify(await signingFixtureProbe(args.at(-1), { resources }), null, 2) + "\n",
       );
-    } catch {
+    } catch (error) {
+      if (resources)
+        process.stdout.write(
+          JSON.stringify(
+            {
+              fixture_only: true,
+              status: "failed",
+              code: error instanceof SigningError ? error.code : "operation_failed",
+              resource_observations: error.resource_observations ?? null,
+            },
+            null,
+            2,
+          ) + "\n",
+        );
       process.stderr.write("Disposable signing probe refused.\n");
       process.exitCode = 1;
     }
