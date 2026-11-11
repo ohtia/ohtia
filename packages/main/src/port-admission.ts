@@ -109,6 +109,7 @@ export class PortAdmission {
     if (!state) return failure("unauthorized");
     if (state.pending.has(request.requestId)) return failure("duplicate_request");
     const subscriptionId =
+      request.operation === "connection.subscribe" ||
       request.operation === "status.subscribe" ||
       request.operation === "appearance.subscribe" ||
       request.operation === "locale.subscribe" ||

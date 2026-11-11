@@ -119,7 +119,7 @@
         "maximum": 4
       },
       "owner": "003",
-      "scope": "Active status or preference subscriptions in one window",
+      "scope": "All active subscriptions in one window",
       "failure": "busy_before_acceptance",
       "rationale": "Initial surfaces require few live streams"
     },
@@ -155,7 +155,7 @@
         "maximum": 5000
       },
       "owner": "003",
-      "scope": "Status and preference requests from admission to reply; includes queues",
+      "scope": "Status, preference and connection requests from admission to reply; includes queues",
       "failure": "timeout_or_uncertain",
       "rationale": "Short local operations must return control promptly"
     },
@@ -275,7 +275,7 @@
         "maximum": 1024
       },
       "owner": "003",
-      "scope": "Payload only for each initial status or appearance read/change operation",
+      "scope": "Payload only for each initial status or appearance read/change operation and each connection operation",
       "failure": "invalid_message",
       "rationale": "No research text or arbitrary preference records"
     },
@@ -287,7 +287,7 @@
         "maximum": 8
       },
       "owner": "003",
-      "scope": "Total own fields in initial operation payload",
+      "scope": "Total own fields in each initial or connection operation payload",
       "failure": "invalid_message",
       "rationale": "Named operations have small explicit shapes"
     },
@@ -299,7 +299,7 @@
         "maximum": 32768
       },
       "owner": "003",
-      "scope": "Payload only for each initial operation result",
+      "scope": "Payload only for each initial or connection operation result or event",
       "failure": "invalid_service_result",
       "rationale": "Allows bounded component identities and controlled codes"
     },
@@ -311,7 +311,7 @@
         "maximum": 1
       },
       "owner": "005",
-      "scope": "One status snapshot, preference read or atomic appearance replacement per request",
+      "scope": "One status snapshot, preference read, atomic appearance replacement or connection operation per request",
       "failure": "invalid_message",
       "rationale": "No batches or hidden research work"
     },
@@ -938,6 +938,18 @@
       "scope": "One signing container or namespace API readback response",
       "failure": "authority_unavailable",
       "rationale": "Leave bounded JSON-escaping and provider-envelope headroom above the 65536-byte public configuration limit"
+    },
+    "connection_probe_ms": {
+      "value": 30000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 30000,
+        "maximum": 30000
+      },
+      "owner": "003",
+      "scope": "One connection probe, from its request until its result event",
+      "failure": "probe_unreachable",
+      "rationale": "A model list arrives well within this time; a slower answer is reported as unreachable"
     }
   }
 }

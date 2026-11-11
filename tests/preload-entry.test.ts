@@ -578,3 +578,171 @@ it("exposes the named presentation methods and preserves mutation uncertainty ac
   h.window.dispatchEvent(new Event("unload"));
   expect(h.ipcRenderer.listenerCount(desktopChannels.reply)).toBe(0);
 });
+
+it("exposes connection calls and revokes bounded logical subscriptions on reconnect and unload", async () => {
+  const h = await load();
+  const snapshot = {
+    connection: "fake",
+    state: "disconnected",
+    reason: null,
+    probing: false,
+    probe_id: null,
+    model_list_revision: null,
+    model_count: 0,
+  };
+  h.ipcRenderer.send.mockImplementation((_channel: string, text: string) => {
+    const request = JSON.parse(text);
+    if (request.kind !== "request") return;
+    const value =
+      request.operation === "connection.subscribe"
+        ? { subscriptionId: request.payload.subscriptionId }
+        : request.operation === "connection.listModels"
+          ? {
+              connection: "fake",
+              model_list_revision: 1,
+              models: [],
+              nextCursor: 0,
+              hasMore: false,
+            }
+          : snapshot;
+    h.ipcRenderer.emit(
+      desktopChannels.reply,
+      {},
+      JSON.stringify({ ...request, kind: "result", payload: { ok: true, value } }),
+    );
+  });
+  for (const call of [
+    h.bridge.foundation.readConnection("fake"),
+    h.bridge.foundation.connectConnection("fake"),
+    h.bridge.foundation.disconnectConnection("fake"),
+    h.bridge.foundation.probeConnection("fake"),
+    h.bridge.foundation.listConnectionModels({
+      connection: "fake",
+      model_list_revision: 1,
+      cursor: 0,
+      count: 128,
+    }),
+  ])
+    expect((await call.result).ok).toBe(true);
+  const listener = vi.fn();
+  const first = h.bridge.foundation.subscribeConnection("fake", listener);
+  expect((await first.ready).ok).toBe(true);
+  first.dispose();
+  const subscriptions = Array.from({ length: portLimits.subscriptions_per_window }, (_, n) =>
+    h.bridge.foundation.subscribeConnection(
+      "fake",
+      n === 0
+        ? listener
+        : () => {
+            throw new Error("consumer-error");
+          },
+    ),
+  );
+  for (const subscription of subscriptions) expect((await subscription.ready).ok).toBe(true);
+  expect(await h.bridge.foundation.subscribeConnection("fake", listener).ready).toMatchObject({
+    error: { code: "busy" },
+  });
+  h.ipcRenderer.emit(desktopChannels.reconnect, {});
+  expect(listener).toHaveBeenCalledWith(failure("sequence_gap"));
+  const current = h.bridge.foundation.subscribeConnection("fake", listener);
+  expect((await current.ready).ok).toBe(true);
+  h.window.dispatchEvent(new Event("unload"));
+  expect(h.ipcRenderer.listenerCount(desktopChannels.reply)).toBe(0);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("reclaims connection capacity after rejected openings, sequence gaps and consumer failures", async () => {
+  const h = await load();
+  let reject = true;
+  let wrongAcknowledgement = false;
+  let request: any;
+  const snapshot = {
+    connection: "fake",
+    state: "disconnected",
+    reason: null,
+    probing: false,
+    probe_id: null,
+    model_list_revision: null,
+    model_count: 0,
+    kind: "state",
+  };
+  h.ipcRenderer.send.mockImplementation((_channel: string, text: string) => {
+    const value = JSON.parse(text);
+    if (value.kind !== "request") return;
+    request = value;
+    h.ipcRenderer.emit(
+      desktopChannels.reply,
+      {},
+      JSON.stringify({
+        ...request,
+        kind: "result",
+        payload: reject
+          ? failure("service_unavailable")
+          : {
+              ok: true,
+              value: {
+                subscriptionId: wrongAcknowledgement ? "wrong" : request.payload.subscriptionId,
+              },
+            },
+      }),
+    );
+  });
+  const listener = vi.fn();
+  for (let n = 0; n < 5; n++)
+    expect(await h.bridge.foundation.subscribeConnection("fake", listener).ready).toMatchObject({
+      error: { code: "service_unavailable" },
+    });
+  reject = false;
+  for (let n = 0; n < 5; n++) {
+    expect((await h.bridge.foundation.subscribeConnection("fake", listener).ready).ok).toBe(true);
+    h.ipcRenderer.emit(
+      desktopChannels.reply,
+      {},
+      JSON.stringify({
+        protocol: 1,
+        policy: request.policy,
+        kind: "event",
+        windowGeneration: request.windowGeneration,
+        serviceGeneration: request.serviceGeneration,
+        subscriptionId: request.payload.subscriptionId,
+        sequence: 2,
+        topic: "connection",
+        payload: snapshot,
+      }),
+    );
+  }
+  expect(listener).toHaveBeenCalledWith(failure("sequence_gap"));
+  for (let n = 0; n < 5; n++) {
+    expect(
+      (
+        await h.bridge.foundation.subscribeConnection("fake", () => {
+          throw new Error("consumer-error");
+        }).ready
+      ).ok,
+    ).toBe(true);
+    h.ipcRenderer.emit(
+      desktopChannels.reply,
+      {},
+      JSON.stringify({
+        protocol: 1,
+        policy: request.policy,
+        kind: "event",
+        windowGeneration: request.windowGeneration,
+        serviceGeneration: request.serviceGeneration,
+        subscriptionId: request.payload.subscriptionId,
+        sequence: 1,
+        topic: "connection",
+        payload: snapshot,
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+  }
+  wrongAcknowledgement = true;
+  expect(await h.bridge.foundation.subscribeConnection("fake", listener).ready).toMatchObject({
+    error: { code: "invalid_service_result" },
+  });
+  wrongAcknowledgement = false;
+  expect((await h.bridge.foundation.subscribeConnection("fake", listener).ready).ok).toBe(true);
+  h.window.dispatchEvent(new Event("unload"));
+  expect(vi.getTimerCount()).toBe(0);
+});

@@ -1,4 +1,6 @@
 import {
+  decodeConnectionReport,
+  ServiceConnections,
   decodeText,
   encodeEnvelope,
   failure,
@@ -25,6 +27,7 @@ export function createStatusService(
   admissionLost?: () => void,
 ) {
   if (!isInterfaceLocale(locale)) throw new Error("Unsupported trusted service locale.");
+  const connections = new ServiceConnections();
   const streams = new Map<
     string,
     {
@@ -367,6 +370,11 @@ export function createStatusService(
     },
     receive(text: unknown): void {
       if (disposed) return;
+      const report = decodeConnectionReport(text, generation);
+      if (report) {
+        if (!connections.receive(report)) throw new Error("Invalid connection report.");
+        return;
+      }
       const decoded = decodeText(text);
       if (!decoded.ok) throw new Error("Invalid broker message.");
       const value = decoded.value;
@@ -487,6 +495,7 @@ export function createStatusService(
     drain(): Promise<void> {
       return queue;
     },
+    connections,
     dispose(): void {
       disposed = true;
       enabled = false;

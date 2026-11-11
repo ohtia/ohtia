@@ -96,11 +96,11 @@ const commands = {
     compile();
     node("vite/bin/vite.js", ["build", "--config", "tooling/vite.catalog.mjs"]);
   },
-  async build() {
+  async build(development = false) {
     compile();
     node("vite/bin/vite.js", ["build", "--config", "tooling/vite.renderer.mjs"]);
     const { buildDesktop } = await import("./desktop-build.mjs");
-    await buildDesktop(root);
+    await buildDesktop(root, { development });
   },
   typecheck() {
     compile(true);
@@ -121,6 +121,7 @@ const commands = {
       "tooling/catalog*.mjs",
       "tooling/command*.mjs",
       "tooling/product-graph.mjs",
+      "tooling/credential-acceptance.mjs",
       "tooling/linux-e2e*.mjs",
       "tooling/update-*.mjs",
       "tooling/installation-*.mjs",
@@ -180,7 +181,7 @@ const commands = {
     const attaching = developmentInstanceRunning(path.join(root, ".ohtia-dev"));
     if (attaching)
       console.log("A window from this checkout is open. Close it and run dev to see a change.");
-    if (!attaching) await commands.build();
+    if (!attaching) await commands.build(true);
     else if (!fs.existsSync(path.join(root, "packages/main/dist/index.js"))) compile();
     const { launchDevelopment, prepareDevelopmentRoot } = await import("./desktop-launch.mjs");
     const directory = prepareDevelopmentRoot();
@@ -207,6 +208,18 @@ const commands = {
     if (process.platform !== "linux" || process.arch !== "x64")
       throw new Error("Use a native Linux x86-64 host for the Docker/AppArmor E2E route.");
     run("bash", ["tools/linux-e2e/run.sh", ...process.argv.slice(3)]);
+  },
+  async "credentials:test"() {
+    const { developmentInstanceRunning } = await import("./development-instance.mjs");
+    if (developmentInstanceRunning(path.join(root, ".ohtia-dev")))
+      throw new Error("Close this checkout's development application before checking credentials.");
+    await commands.build(true);
+    const { prepareDevelopmentRoot } = await import("./desktop-launch.mjs");
+    const directory = prepareDevelopmentRoot();
+    const runtime = path.join(directory, "runtime");
+    fs.rmSync(runtime, { recursive: true, force: true });
+    run(python, ["scripts/desktop_runtime.py", `${process.platform}-${process.arch}`, runtime]);
+    run(process.execPath, ["tooling/credential-acceptance.mjs", ...process.argv.slice(3)]);
   },
   "desktop:test"() {
     run(process.execPath, ["tooling/desktop-acceptance.mjs", ...process.argv.slice(3)]);

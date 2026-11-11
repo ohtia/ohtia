@@ -21,7 +21,8 @@
   },
   "dependencies": {
     "@ohtia/contracts": "workspace:*",
-    "electron": "45.0.0"
+    "electron": "45.0.0",
+    "@napi-rs/keyring": "2.1.2"
   },
   "devDependencies": {
     "typescript": "6.0.3",

@@ -21,7 +21,7 @@
   },
   "main": {
     "packages": ["@ohtia/contracts"],
-    "external": ["electron"],
+    "external": ["electron", "@napi-rs/keyring"],
     "builtins": [
       "node:path",
       "node:fs",

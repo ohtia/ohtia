@@ -3,9 +3,7 @@ type: Specification
 title: "System architecture"
 description: "Application data authority, execution boundaries, provider adapters, and schema-migration recovery."
 generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
+  by: codex/gpt-6.1-sol
 sources:
   - id: electron-security
     resource: "https://www.electronjs.org/docs/latest/tutorial/security"
@@ -13,18 +11,12 @@ sources:
   - id: sqlite-use
     resource: "https://www.sqlite.org/whentouse.html"
     title: "SQLite — Appropriate uses"
-  - id: codex-app-server
-    resource: "https://developers.openai.com/codex/app-server/"
-    title: "OpenAI — Codex app-server"
   - id: claude-agent-sdk
     resource: "https://code.claude.com/docs/en/agent-sdk/overview"
     title: "Anthropic — Agent SDK overview"
   - id: claude-programmatic
     resource: "https://code.claude.com/docs/en/headless"
     title: "Anthropic — Run Claude Code programmatically"
-  - id: electron-secrets
-    resource: "https://www.electronjs.org/docs/latest/api/safe-storage"
-    title: "Electron — safeStorage"
   - id: electron-paths
     resource: "https://www.electronjs.org/docs/latest/api/app#appgetpathname"
     title: "Electron — Native application configuration paths"
@@ -57,6 +49,7 @@ flowchart TB
     Bridge --> Main[Main: trusted desktop broker]
     Main --> Data[Application data service]
     Main --> Secrets[OS credential service]
+    Main --> Providers
     Data --> DB[(Ohtia SQLite)]
     Data --> Objects[Immutable local objects]
     Data --> Tasks[Durable task scheduler]
@@ -67,7 +60,7 @@ flowchart TB
     Tools --> Data
 ```
 
-The renderer presents data and researcher intent. It has no direct filesystem, database, credential or process access. Preload exposes named domain operations rather than a generic IPC, path, shell or SQL proxy. Main validates the sender and envelope, owns native dialogs and brokered credentials, and supervises the application data service. These choices implement the [Electron boundary decision](adr/adr-0003-electron-desktop-boundaries.md). Electron's isolation guidance informs this boundary; isolation alone is not a complete content or child-process sandbox.[^electron-security]
+The renderer presents data and researcher intent. It has no direct filesystem, database, credential or process access. Preload exposes named domain operations rather than a generic IPC, path, shell or SQL proxy. Main validates the sender and envelope, owns native dialogs and brokered credentials, and supervises the application data service. For direct HTTPS provider adapters, main also performs the provider requests: the data service's task engine admits each request and sends main its request data, without credentials, with a single-use dispatch permit; main attaches the credential, sends the request and returns the provider's events to the data service. No credential enters the data service. These choices implement the [Electron boundary decision](adr/adr-0003-electron-desktop-boundaries.md). Electron's isolation guidance informs this boundary; isolation alone is not a complete content or child-process sandbox.[^electron-security]
 
 The desktop broker is single-instance per operating-system user; additional windows attach to that instance. It coordinates connection admission across open projects. One application data service in a supervised utility process owns the application SQLite connection boundary, scoped domain commands and local task coordination across research projects. It keeps database work and large transformations out of the renderer and main event loop. Untrusted parsers and provider runtimes execute in separate restricted processes; a worker thread or merely using a child process does not establish OS isolation.
 
@@ -161,11 +154,13 @@ The adapter records provider session/turn references, runtime and effective mode
 
 ### Initial provider routes
 
-For OpenAI, use a local Codex app-server over stdio as the initial rich-integration route. Its documented surface supports threads, streamed turns, managed account login and approval requests; the adapter must check the pinned runtime protocol and account capabilities. Model access is tested separately from listing a catalog. Do not expose remote app-server listeners or make experimental fields a silent requirement.[^codex-app-server]
+[ADR-0048](adr/adr-0048-provider-access-routes-and-credential-store.md) owns the provider access routes and credential storage decision.
+
+For OpenAI, the initial routes are Sign in with ChatGPT, OpenAI's sign-in program for applications, over the Responses API, and an OpenAI API key. Both are direct HTTPS adapters whose requests main sends with the credential it holds. Model access is tested separately from listing a catalog.
 
 For Anthropic, target a supported programmatic Claude integration behind the same contract. Anthropic's current Agent SDK documentation requires prior approval for offering claude.ai login or rate limits in third-party products. Therefore API-key access is the baseline candidate; subscription-backed access is unavailable in Ohtia unless its permitted integration is established. Wrapping a locally signed-in CLI does not by itself establish permission. The SDK and programmatic CLI provide integration candidates, not evidence of Ohtia-specific authentication eligibility.[^claude-agent-sdk][^claude-programmatic]
 
-Both routes require version-specific conformance and a supported graphical setup path before release. Never scrape provider token stores, reuse another product's OAuth client identity, copy personal sessions into projects or bypass provider restrictions. Optional direct model-API adapters can be introduced later without replacing the agent contract or claiming equivalent behavior.
+Every route requires version-specific conformance and a supported graphical setup path before release. Never scrape provider token stores, reuse another product's OAuth client identity, copy personal sessions into projects or bypass provider restrictions.
 
 ## Agent authority and context
 
@@ -195,7 +190,7 @@ All external transfers initiated by Ohtia pass a trusted connection broker that 
 
 Agents may manage inference transport internally. For those integrations, Ohtia authorizes the materialized input scope and restricts available network/tool routes before launch; it cannot truthfully claim interception of every internal request. Disable such an operation if its required data-transfer controls cannot be enforced. Preserve a manifest of material made available and any more precise per-request evidence the runtime supplies.
 
-Keep secrets outside projects, exports, renderer state, logs and command-line arguments. Credentials managed by Ohtia use OS-backed protected storage when available; runtime-owned login remains owned by that runtime in its isolated configuration. Electron documents platform-dependent protection and a Linux plaintext fallback, so absence of a suitable protected backend must be detected. Offer session-only use or leave the connection unavailable; never silently persist secrets with weak fallback.[^electron-secrets]
+Keep secrets outside projects, exports, renderer state, logs and command-line arguments. Credentials managed by Ohtia live in the operating-system credential store through `@napi-rs/keyring`, held by main: the Keychain on macOS and the Secret Service on Linux hold them whole, and on Windows a random key in Credential Manager encrypts the session file `provider-sessions.enc`, which main keeps directly inside Electron's `userData` directory, outside the research data directory.[^electron-paths] Runtime-owned login remains owned by that runtime in its isolated configuration. A missing or unusable store, or a cancelled unlock, leaves the connection unavailable; Ohtia offers no session-only use and never persists secrets with a weaker fallback.
 
 Following [ADR-0013](adr/adr-0013-private-content-free-structured-logging.md), diagnostics use its versioned local JSONL profile and explicit OpenTelemetry Logs Data Model mapping. The broker validates the typed event catalog and allowed metadata before writing. Prompts, source text, responses, credentials, local document titles and paths are excluded by default. Diagnostic exports are user-initiated, previewable and redacted; arbitrary child stdout/stderr is not automatically a safe diagnostic. No default project upload, usage analytics or remote error-content capture is required for core operation.
 
@@ -241,13 +236,9 @@ Qualify the [roadmap's six required OS/CPU targets](product-roadmap.md#desktop-s
 
 [^sqlite-use]: SQLite documents application-local persistence as an intended use; Ohtia's project-authority rules are its own contract.
 
-[^codex-app-server]: The documented integration surface is a protocol candidate; Ohtia must verify its pinned runtime and effective policy.
-
 [^claude-agent-sdk]: Anthropic documents authentication restrictions for third-party products; no subscription eligibility is inferred.
 
 [^claude-programmatic]: Claude's programmatic interfaces supply integration candidates; they do not waive account-access conditions.
-
-[^electron-secrets]: Protected storage varies by platform and backend; Ohtia must detect unavailable or inadequate protection.
 
 [^electron-paths]: Electron defines the per-application `userData` configuration path; Ohtia selects the fixed locator beneath it independently of the research data directory.
 
