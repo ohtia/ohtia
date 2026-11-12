@@ -14,13 +14,6 @@
     "workflow": ".github/workflows/signing-build.yml",
     "sha": "dddddddddddddddddddddddddddddddddddddddd"
   },
-  "source_anchor": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-  "source_signers": [
-    {
-      "principal": "synthetic-example",
-      "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDaws7ibZFTtl2H5nRV1NpxzKxbX/niFlM8QdDf0n66V"
-    }
-  ],
   "catalog_public_key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAbIlEUeN9kGCweGktR8QoqoA9PLptlOV0aE0yoO4KwMM=\n-----END PUBLIC KEY-----\n",
   "rpm_primary": "1111111111111111111111111111111111111111",
   "rpm_subkey": "2222222222222222222222222222222222222222",

@@ -22,7 +22,7 @@ import {
   reference,
   signingLimits,
 } from "./installation-authority.mjs";
-import { authenticatedSourceCache, fileReference } from "./installation-signer.mjs";
+import { fileReference } from "./installation-signer.mjs";
 
 const budgets = JSON.parse(
   fs.readFileSync(new URL("../config/desktop/resource-policy.json", import.meta.url)),
@@ -320,9 +320,6 @@ export class ScalewaySigningStore {
       const prior = await this.bytes(this.retained, key, signingLimits.request_bytes);
       demand(prior?.equals(value), "authentication_refused");
     }
-  }
-  sourceCache(policy, worker) {
-    return authenticatedSourceCache(this, policy, worker);
   }
   async uploadTicket(ref) {
     reference(ref, maximumObject);

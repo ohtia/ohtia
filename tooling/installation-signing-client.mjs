@@ -61,7 +61,7 @@ export function signingClientConfiguration(value, workerSha) {
   });
   fields(
     value.policy,
-    "repository_id owner_id audience environment caller_workflow build_workflow source_anchor source_signers catalog_public_key rpm_primary rpm_subkey deployment",
+    "repository_id owner_id audience environment caller_workflow build_workflow catalog_public_key rpm_primary rpm_subkey deployment",
   );
   const policy = trustedPolicy({
     schema_version: 1,

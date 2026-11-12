@@ -172,9 +172,10 @@ describe("independent signing activation", () => {
   it("admits a maximum-size public configuration inside a separately bounded provider response", async () => {
     const config = signingConfiguration();
     config.policy.enabled = true;
-    const signer = config.policy.source_signers[0];
-    signer.principal = "a".repeat(
-      signer.principal.length + signingLimits.request_bytes - canonical(config).length,
+    const padding = signingLimits.request_bytes - canonical(config).length;
+    config.policy.catalog_public_key = config.policy.catalog_public_key.replace(
+      "\n-----END PUBLIC KEY-----",
+      "A".repeat(padding) + "\n-----END PUBLIC KEY-----",
     );
     expect(canonical(config).length).toBe(signingLimits.request_bytes);
     const f = fixture(config),
@@ -398,7 +399,8 @@ describe("independent signing activation", () => {
       prepareSigningConfiguration(fragment, policy, path.join(root, "mismatch"), caller),
     ).toThrow();
     expect(fs.existsSync(path.join(root, "mismatch"))).toBe(false);
-    expect(template.policy.source_anchor).toBe(config.policy.source_anchor);
+    expect(template.policy).not.toHaveProperty("source_anchor");
+    expect(template.policy).not.toHaveProperty("source_signers");
     expect(template.policy.signing_workflow).toBeUndefined();
     const plan = JSON.parse(fs.readFileSync(path.join(output, "plan.json"), "utf8"));
     expect(plan.configuration_sha256).toBe(signingConfigurationHash(config));

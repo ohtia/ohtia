@@ -49,8 +49,7 @@ export function signingConfiguration() {
       caller_workflow: ".github/workflows/installation-signing.yml",
       signing_workflow: { workflow: ".github/workflows/signing-worker.yml", sha: "c".repeat(40) },
       build_workflow: { workflow: ".github/workflows/signing-build.yml", sha: "d".repeat(40) },
-      source_anchor: "e".repeat(40),
-      source_signers: [{ principal: "fixture", public_key: "ssh-ed25519 AAAA" }],
+
       catalog_public_key: publicKey,
       rpm_primary: "1".repeat(40),
       rpm_subkey: "2".repeat(40),

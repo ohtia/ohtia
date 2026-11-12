@@ -36,15 +36,18 @@ def context(env):
         and env.get("RUNNER_ENVIRONMENT") == "github-hosted",
         "worker_context",
     )
-    source, recipe = env.get("GITHUB_SHA", ""), env.get("SIGNING_RECIPE_SHA", "")
+    main, recipe = env.get("GITHUB_SHA", ""), env.get("SIGNING_RECIPE_SHA", "")
+    source = env.get("SOURCE_COMMIT", main)
     contract.require(
-        all(re.fullmatch("[a-f0-9]{40}", x) for x in [source, recipe]), "worker_context"
+        all(re.fullmatch("[a-f0-9]{40}", x) for x in [source, main, recipe]), "worker_context"
     )
     contract.require(
-        env.get("SIGNING_RECIPE_REF") == f"ohtia/ohtia/{WORKFLOW}@{recipe}", "worker_context"
+        env.get("SIGNING_RECIPE_REF") == f"ohtia/ohtia/{WORKFLOW}@{recipe}",
+        "worker_context",
     )
     return {
         "source": source,
+        "main": main,
         "recipe": recipe,
         "run": contract.positive(env["GITHUB_RUN_ID"]),
         "attempt": contract.positive(env["GITHUB_RUN_ATTEMPT"]),
@@ -116,7 +119,7 @@ def artifact_origin(network, identity, token, locator):
         contract.require(
             row["run_id"] == run
             and row["run_attempt"] == attempt
-            and row["head_sha"] == identity["source"],
+            and row["head_sha"] == identity["main"],
             "worker_job",
         )
     contract.require(
@@ -173,7 +176,7 @@ def artifact_origin(network, identity, token, locator):
         and rest["expired"] is False
         and rest["digest"] == digest
         and rest["workflow_run"]["id"] == run
-        and rest["workflow_run"]["head_sha"] == identity["source"],
+        and rest["workflow_run"]["head_sha"] == identity["main"],
         "worker_artifact",
     )
     url = network.results(
@@ -302,6 +305,7 @@ def invoke(env):
         "GITHUB_EVENT_NAME",
         "RUNNER_ENVIRONMENT",
         "GITHUB_SHA",
+        "SOURCE_COMMIT",
         "GITHUB_RUN_ID",
         "GITHUB_RUN_ATTEMPT",
         "SIGNING_RECIPE_SHA",

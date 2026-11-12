@@ -1,8 +1,15 @@
 ---
 type: Playbook
 title: Linux signing administration
-description: Prepare independently reviewed Scaleway access and activation previews without exposing credentials or enabling signing.
+description: Prepare signing access and activation previews and collect bounded local native-probe resource observations.
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 sources:
+  - id: linux-cgroup-memory
+    resource: https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html
+    title: Linux cgroup v2 memory accounting and events
   - id: iam-policy-api
     resource: https://www.scaleway.com/en/developers/api/iam/policies
     title: Scaleway IAM policy creation fields and project scopes
@@ -34,13 +41,19 @@ sources:
 
 # Linux signing administration
 
+## Package source selection
+
+Run **Installation signing qualification** from `main` in GitHub Actions. Leave `hash` empty to use the main commit captured at dispatch, or supply the full lowercase SHA of an older commit already integrated into main. Other workflow refs and commits outside that captured history are refused. The selected commit/tree and workflow main snapshot appear in the execution summary and remain fixed for all jobs. Choose the Linux selection and `provenance` to construct/verify an unsigned package, or `sign` to request the private package/catalog operations after their separate operational admission. The tracked caller is disabled until that admission is independently configured; source selection does not enable real-key use or publish a release.
+
+[ADR-0049](adr/adr-0049-main-source-selection-for-packages.md) owns the distinction between workflow and package source. Normal GitHub merges need no additional personal signature for packaging. When publishing new reusable recipes, retain full-SHA references in the caller and review their exact new builder/worker digests and qualify the resulting service image before separately approving its operational policy; the optional application hash never selects recipe code or a policy.
+
 ## Roles and operating locations
 
 The maintainer administers Scaleway from their laptop through an independently controlled administrative identity. The service runs and performs cryptographic operations in Scaleway; GitHub Actions requests operations with a narrowly scoped invocation credential. The administrator is a role of the maintainer, not an additional person required for each package. Its authority covers IAM, deployment, activation, revocation and recovery. Runtime and invocation applications are distinct identities with different permissions.
 
 Use the same [configuration placement rule as ARM](scaleway-configuration.md): deployment selections come from GitHub repository Variables, workflow credentials from the appropriate environment Secrets, and private signing/backend/administrative material stays outside GitHub. A Project identifier identifies infrastructure; it is neither an API credential nor a field supplied with a package-signing request. A local generated JSON file is a proposal/snapshot for review, not another editable configuration store.
 
-[ADR-0041](adr/adr-0041-independent-linux-signing-service.md) owns the signing authority and runtime contract. [ADR-0045](adr/adr-0045-personally-signed-source-history.md) owns personal-source signatures and initial baseline approval. The procedures below prepare proposals and describe their separately authorized handoffs; generation performs no deployment or activation.
+[ADR-0041](adr/adr-0041-independent-linux-signing-service.md) owns the signing authority and runtime contract. [ADR-0049](adr/adr-0049-main-source-selection-for-packages.md) owns exact integrated-main source selection without commit-signature or repository-governance checks. The procedures below prepare proposals and describe their separately authorized handoffs; generation performs no deployment or activation.
 
 ## Prepare access from repository Variables
 
@@ -87,7 +100,7 @@ Qualify the combined non-null and literal-value conditional policy at the provid
 
 ## Generate the complete runtime configuration
 
-Select the separately approved public policy: container/image identity, source baseline, personal source public keys, immutable workflow revisions and public signing identities. The real policy is not selected or approved by a repository Variable, package request or ordinary merge. The supplied [disabled policy example](../config/installation/signing-policy.example.json) contains synthetic deployment, key and workflow identities together with the fixed public Ohtia repository and owner IDs and is usable for the offline exercise below.
+Select the separately approved public policy: container/image identity, exact workflow revisions and public package/catalog signing identities. The real policy is not selected or approved by a repository Variable, package request or ordinary merge. The supplied [disabled policy example](../config/installation/signing-policy.example.json) contains synthetic deployment, key and workflow identities together with the fixed public Ohtia repository and owner IDs and is usable for the offline exercise below.
 
 Combine the generated fragment with the selected policy using the [offline configuration producer](../tooling/installation-signing-configuration.mjs):
 
@@ -137,7 +150,7 @@ The activation producer writes `active.json`, `container-requirements.json` and 
 
 For actual activation, deploy the approved image/configuration, inspect the container and namespace and replace/read back the exact approved control through administrative authority only after the disposable qualification below succeeds. Keep [the repository client](../config/installation/signing-client.json) disabled until its public policy and deployed enforcing-boundary evidence are approved. A generated caller template needs that separate review before an authorized source update; leave resource placeholders null so the worker uses Variables. Configuration and policy hashes are produced by tools rather than copied into an approval Variable manually.
 
-For revocation, generate a fresh control proposal from the same approved runtime with `--enabled false`, review it, then replace/read back that exact control as administrator. Warm workers reread control at checkpoints. This is not atomic cancellation of an in-progress effect and it does not revoke runtime credentials. Preserve uncertainty records; do not restore operation by clearing journals, guessing absent outcomes or silently advancing the source baseline.
+For revocation, generate a fresh control proposal from the same approved runtime with `--enabled false`, review it, then replace/read back that exact control as administrator. Warm workers reread control at checkpoints. This is not atomic cancellation of an in-progress effect and it does not revoke runtime credentials. Preserve uncertainty records; do not restore operation by clearing journals, guessing absent outcomes or changing the selected package source.
 
 ## Deploy and qualify the disabled service
 
@@ -151,6 +164,20 @@ Record the selected image digest, pinned native package manifest, observed runti
 
 Keep actual provider dump/swap exposure, cold start/termination, storage races, effective grants, credential expiry/rotation and recovery in the qualification evidence with their real coverage limits. Real signing keys and enabled invocation require separately approved real-custody deployment after those gates. Rendering a JSON proposal or passing fixtures completes neither gate.
 
+## Collect local native-probe resource observations
+
+The [disposable native probe](../tooling/installation-signing-probe.mjs) accepts `--resources` before its absolute unsigned fixture-RPM path. Use the separately bundled probe and its standalone subprocess runner in the independently selected Linux image, with a private cgroup v2 namespace, the fixed 4 GiB/1000-mvCPU allocation, swap disabled and external networking disabled. The image context builder bundles the production entry, not this diagnostic; bundle the current probe separately and retain its source/bundle hashes alongside the image identity. Preserve the canonical resource-policy and target records at their expected paths. This mode generates its own disposable keys and must not receive existing custody files or backend credentials.
+
+```bash
+node /proof/runtime/probe.mjs --resources /tmp/capacity-input/input.rpm
+```
+
+The command names paths inside that independently prepared diagnostic container; it does not provision a container, generate a fixture or qualify an image by itself. The existing one-argument probe remains available without resource collection. Resource mode refuses missing, unlimited or differently allocated memory/CPU and enabled swap before cryptographic work. Its optional `resource_observations` contains before/last snapshots, sampled current-memory/tmpfs maxima, counter deltas, collection completeness and a 25 ms target sampling interval. Blocking work can delay sampling; snapshots are sequential reads, not atomic decompositions of the kernel peak. The peak covers the cgroup's lifetime and descendants, including earlier work in a warm container. `file` already includes tmpfs/shared-memory accounting; do not add `file` and `shmem` as independent allocations.[^linux-cgroup-memory]
+
+Resource mode checks the configured limits visible in its cgroup namespace. It does not inspect `memory.high`, effective ancestor ceilings or host contention; the operator records those conditions independently. `collection_complete` describes valid collected snapshots and stable counters, rather than uninterrupted 25 ms coverage or effective available headroom.
+
+A failed operation retains its original failure code and available resource observations. Incomplete collection or newly observed OOM events fail the diagnostic; a peak at the limit alone is recorded without inventing a working-set estimate or an admission decision. This is scoped native-worker evidence. Bind the actual fixture/source sizes, process lifecycle, exact image/native packages and cold/warm conditions separately. It does not exercise complete OIDC/source/build/provider admission, gVisor behavior, the provider's non-temporary disk quota, real custody or installed-user routes. Preserve PRIN-004, PRIN-005, PRIN-006 and PRIN-007 when interpreting the result.
+
 ## Request package operations
 
 After the service and immutable caller policy are qualified, the approved Actions worker receives the service origin/bucket Variables and `OHTIA_SIGNING_INVOKE_TOKEN` from its protected environment. The provider credential admits private invocation; a separate OIDC proof authenticates the current admitted job. A request cannot provide a Project, choose a key, replace policy or administer Scaleway.
@@ -163,7 +190,7 @@ From the independent administrative environment, inspect the actual credential o
 
 The maintainer changes the invoker credential in the GitHub `installation-signing` environment Secret; backend rotation changes only the Scaleway container's protected entries and follows its deployment-admission requirements. Updating selected secret versions, approved policy, image or runtime metadata requires a new independently approved generated runtime/control identity. Credential rotation never discards uncertain journals or grants permission to re-sign an unknown outcome.
 
-Preserve the retained journal, approved source baseline, control/configuration identities, public verification material and independently protected recovery backups. Test restoration, lost/revoked credentials and maintainer absence with disposable resources before real custody. During an authority or storage outage, refuse affected work and retain the obligation to reconcile; expired caller tokens and cancelled Actions runs do not establish absence or authorize another signature. Follow the [shared configuration rule](scaleway-configuration.md#shared-placement-rule) when changing workflow credentials or deployment metadata. The ARM facility's [recovery and observed-package evidence](scaleway-qualification.md#evidence-and-limits) remains separate from the signer's retained state and independently qualified recovery.
+Preserve the retained journal, selected package commit/tree, control/configuration identities, public verification material and independently protected recovery backups. Test restoration, lost/revoked credentials and maintainer absence with disposable resources before real custody. During an authority or storage outage, refuse affected work and retain the obligation to reconcile; expired caller tokens and cancelled Actions runs do not establish absence or authorize another signature. Follow the [shared configuration rule](scaleway-configuration.md#shared-placement-rule) when changing workflow credentials or deployment metadata. The ARM facility's [recovery and observed-package evidence](scaleway-qualification.md#evidence-and-limits) remains separate from the signer's retained state and independently qualified recovery.
 
 [^iam-policy-api]: Scaleway's creation API separates policy ownership/principal from project-scoped rules.
 
@@ -182,3 +209,5 @@ Preserve the retained journal, approved source baseline, control/configuration i
 [^operation-permissions]: HEAD/Get operations require the corresponding object-read permission; mutation families have separate action mappings.
 
 [^secret-versions]: Secret revisions are numbered, with aliases available in the API but excluded from the pinned runtime contract.
+
+[^linux-cgroup-memory]: Linux defines cgroup lifetime peaks, overlapping file/shared-memory accounting and memory event counters.

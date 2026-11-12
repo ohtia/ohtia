@@ -42,6 +42,7 @@ export function signingContext(env) {
     env.SIGNING_RECIPE_REF ===
       `ohtia/ohtia/.github/workflows/signing-worker.yml@${env.SIGNING_RECIPE_SHA}`,
   );
+  demand(/^[a-f0-9]{40}$/.test(env.SOURCE_COMMIT ?? env.GITHUB_SHA));
   const numbers = {};
   for (const [name, key] of [
     ["run", "GITHUB_RUN_ID"],
@@ -53,7 +54,8 @@ export function signingContext(env) {
   }
   return {
     ...numbers,
-    source: env.GITHUB_SHA,
+    source: env.SOURCE_COMMIT ?? env.GITHUB_SHA,
+    main: env.GITHUB_SHA,
     worker: env.SIGNING_RECIPE_SHA,
     selection: env.SIGNING_SELECTION,
   };
@@ -62,7 +64,7 @@ export function qualificationControl(run, context, closure, now = Date.now()) {
   demand(
     run.id === context.run &&
       run.run_attempt === context.attempt &&
-      run.head_sha === context.source &&
+      run.head_sha === context.main &&
       run.head_branch === "main" &&
       run.event === "workflow_dispatch" &&
       run.path === ".github/workflows/installation-signing.yml",
@@ -129,7 +131,7 @@ export function packageRequest(manifest, proofReference, context) {
     },
     execution: {
       workflow: ".github/workflows/installation-signing.yml",
-      workflow_sha: context.source,
+      workflow_sha: context.main,
       run_id: context.run,
       attempt: context.attempt,
       job_id: context.job,
@@ -191,7 +193,7 @@ export async function freshSigningToken(
       claims.aud === policy.audience &&
       claims.repository_id === policy.repository_id &&
       claims.repository_owner_id === policy.owner_id &&
-      claims.sha === context.source &&
+      claims.sha === context.main &&
       claims.ref === "refs/heads/main" &&
       claims.event_name === "workflow_dispatch" &&
       claims.runner_environment === "github-hosted" &&
@@ -199,7 +201,7 @@ export async function freshSigningToken(
       claims.run_id === String(context.run) &&
       claims.run_attempt === String(context.attempt) &&
       claims.check_run_id === String(context.job) &&
-      claims.workflow_sha === context.source &&
+      claims.workflow_sha === context.main &&
       claims.workflow_ref === `ohtia/ohtia/${policy.caller_workflow}@refs/heads/main` &&
       claims.job_workflow_ref ===
         `ohtia/ohtia/${policy.signing_workflow.workflow}@${context.worker}` &&

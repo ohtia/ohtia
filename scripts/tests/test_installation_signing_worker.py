@@ -20,6 +20,7 @@ import installation_signing_worker as worker
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = "a" * 40
+MAIN = "f" * 40
 RECIPE = "c" * 40
 BACKEND = "11111111-1111-1111-1111-111111111111"
 OWN = "22222222-2222-2222-2222-222222222222"
@@ -35,7 +36,8 @@ def environment():
         "GITHUB_REF": "refs/heads/main",
         "GITHUB_EVENT_NAME": "workflow_dispatch",
         "RUNNER_ENVIRONMENT": "github-hosted",
-        "GITHUB_SHA": SOURCE,
+        "GITHUB_SHA": MAIN,
+        "SOURCE_COMMIT": SOURCE,
         "SIGNING_RECIPE_SHA": RECIPE,
         "SIGNING_RECIPE_REF": f"ohtia/ohtia/{worker.WORKFLOW}@{RECIPE}",
         "GITHUB_RUN_ID": "100",
@@ -70,7 +72,7 @@ class FakeNetwork:
                 "name": name,
                 "run_id": 100,
                 "run_attempt": 2,
-                "head_sha": SOURCE,
+                "head_sha": MAIN,
                 "status": status,
                 "conclusion": "success" if identifier == 200 else None,
             }
@@ -92,7 +94,7 @@ class FakeNetwork:
             "name": self.artifact["name"],
             "expired": False,
             "digest": self.artifact["digest"],
-            "workflow_run": {"id": 100, "head_sha": SOURCE},
+            "workflow_run": {"id": 100, "head_sha": MAIN},
         }
 
     def api(self, endpoint):
@@ -270,6 +272,8 @@ class WorkerIdentityTests(unittest.TestCase):
                 "SCW_SIGNING_RETAINED_BUCKET",
             ):
                 self.assertEqual(clean[name], env[name])
+            self.assertEqual(clean["SOURCE_COMMIT"], SOURCE)
+            self.assertEqual(clean["GITHUB_SHA"], MAIN)
             self.assertEqual(clean["OHTIA_SIGNING_INVOKE_TOKEN"], "synthetic-invoker")
             self.assertNotIn("synthetic-invoker", " ".join(command))
 

@@ -11,8 +11,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/installation-signing.yml"
-RECIPE_SHA = "1464c956e7e8cb06a4606dd62d51cc220e67e302"
-WORKER_SHA = "dd633f9782e510aad51fa960f2678fb7399bb03f"
+RECIPE_SHA = "c126422120996d39c976201d002d1ded8137913c"
+WORKER_SHA = "c126422120996d39c976201d002d1ded8137913c"
 
 
 def gate():
@@ -78,6 +78,20 @@ class CallerContractTests(unittest.TestCase):
         self.assertEqual(
             re.findall(r"^          - (.+)$", mode, re.MULTILINE), ["provenance", "sign"]
         )
+
+    def test_exact_resolved_source_is_shared_by_constructor_attestor_and_worker(self):
+        caller = WORKFLOW.read_text()
+        self.assertIn("      hash:\n", caller)
+        self.assertIn('        default: ""\n', caller)
+        self.assertEqual(
+            caller.count("      source-commit: ${{ needs.validate.outputs.source-commit }}"), 2
+        )
+        builder = (ROOT / ".github/workflows/signing-build.yml").read_text()
+        self.assertEqual(builder.count("ref: ${{ inputs.source-commit }}"), 2)
+        self.assertEqual(builder.count("SOURCE_COMMIT: ${{ inputs.source-commit }}"), 2)
+        worker = (ROOT / ".github/workflows/signing-worker.yml").read_text()
+        self.assertIn("SOURCE_COMMIT: ${{ inputs.source-commit }}", worker)
+        self.assertNotIn("inputs.hash", builder + worker)
 
     def test_write_permissions_belong_only_to_the_reusable_call_ceiling(self):
         workflow = WORKFLOW.read_text()

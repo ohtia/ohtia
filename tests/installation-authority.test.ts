@@ -15,7 +15,7 @@ import {
   DeterministicSigningRefusal,
   OidcAuthority,
   githubReaders,
-  GitSourceAuthority,
+  MainSourceAuthority,
   GitHubBuildAuthority,
   SigningDeadline,
   withSigningDeadline,
@@ -24,7 +24,6 @@ import {
   trustedPolicy,
   verifyBuildResult,
   buildPredicateType,
-  sourceAdmissionVersion,
 } from "../tooling/installation-authority.mjs";
 import {
   SigningService,
@@ -67,8 +66,7 @@ const policy = () => ({
   caller_workflow: ".github/workflows/installation-signing.yml",
   signing_workflow: { workflow: ".github/workflows/signing-worker.yml", sha: "c".repeat(40) },
   build_workflow: { workflow: ".github/workflows/signing-build.yml", sha: "d".repeat(40) },
-  source_anchor: "e".repeat(40),
-  source_signers: [{ principal: "fixture@example.invalid", public_key: "ssh-ed25519 AAAA" }],
+
   catalog_public_key: catalogKey.publicKey.export({ format: "pem", type: "spki" }).toString(),
   rpm_primary: "1".repeat(40),
   rpm_subkey: "2".repeat(40),
@@ -147,8 +145,8 @@ function claims(r = request()) {
     event_name: "workflow_dispatch",
     runner_environment: "github-hosted",
     environment: "ohtia-signing",
-    sha: r.subject.source_commit,
-    workflow_sha: r.subject.source_commit,
+    sha: r.execution.workflow_sha,
+    workflow_sha: r.execution.workflow_sha,
     workflow_ref: "ohtia/ohtia/.github/workflows/installation-signing.yml@refs/heads/main",
     job_workflow_ref: "ohtia/ohtia/.github/workflows/signing-worker.yml@" + "c".repeat(40),
     job_workflow_sha: "c".repeat(40),
@@ -176,7 +174,7 @@ async function authority(r = request(), overrides = {}) {
       id: 300,
       run_id: 200,
       run_attempt: 1,
-      head_sha: r.subject.source_commit,
+      head_sha: r.execution.workflow_sha,
       status: "in_progress",
       check_run_url: "https://api.github.com/repos/ohtia/ohtia/check-runs/400",
       ...overrides,
@@ -631,362 +629,136 @@ describe("local durable signer backend", () => {
   });
 });
 
-describe("independent source history admission", () => {
-  function graph() {
-    const dir = root();
-    const env = {
-      ...process.env,
-      GIT_CONFIG_NOSYSTEM: "1",
-      GIT_CONFIG_GLOBAL: "/dev/null",
-      GIT_AUTHOR_NAME: "Synthetic fixture",
-      GIT_AUTHOR_EMAIL: "fixture@example.invalid",
-      GIT_COMMITTER_NAME: "Synthetic fixture",
-      GIT_COMMITTER_EMAIL: "fixture@example.invalid",
+describe("historical package source identity", () => {
+  it("authenticates a main workflow independently of the selected package revision", async () => {
+    const r = request();
+    r.subject.source_commit = "f".repeat(40);
+    const actual = await authority(r);
+    expect((await actual.verify(await token(r), r)).source_commit).toBe(r.subject.source_commit);
+    r.execution.workflow_sha = "e".repeat(40);
+    await expect(actual.verify(await token(), r)).rejects.toThrow("authentication_refused");
+  });
+});
+
+describe("main package source selection", () => {
+  const source = "a".repeat(40),
+    tree = "b".repeat(40),
+    main = "c".repeat(40);
+  function readers(status = "ahead") {
+    return {
+      commit: vi.fn(async () => ({
+        sha: source,
+        tree: { sha: tree },
+        verification: {
+          verified: false,
+          reason: "unsigned",
+          signature: null,
+        },
+      })),
+      compare: vi.fn(async () => ({
+        status,
+        base_commit: { sha: source },
+        merge_base_commit: { sha: source },
+      })),
     };
-    const git = (...args: string[]) =>
-      execFileSync("/usr/bin/git", ["-c", "core.hooksPath=/dev/null", ...args], {
-        cwd: dir,
-        env,
-        encoding: "utf8",
-        stdio: ["pipe", "pipe", "pipe"],
-      }).trim();
-    git("init", "--initial-branch=main");
-    fs.writeFileSync(path.join(dir, "source"), "anchor\n");
-    git("add", "source");
-    git("-c", "commit.gpgsign=false", "commit", "-m", "Synthetic anchor");
-    const anchor = git("rev-parse", "HEAD");
-    const privateKey = path.join(dir, "fixture-key");
-    execFileSync("/usr/bin/ssh-keygen", ["-t", "ed25519", "-N", "", "-f", privateKey], {
-      stdio: "pipe",
-    });
-    const publicKey = fs
-      .readFileSync(privateKey + ".pub", "utf8")
-      .split(" ")
-      .slice(0, 2)
-      .join(" ");
-    const p = policy();
-    p.source_anchor = anchor;
-    p.source_signers = [{ principal: "fixture@example.invalid", public_key: publicKey }];
-    function commit(name: string, file = name) {
-      fs.writeFileSync(path.join(dir, file), name + "\n");
-      git("add", file);
-      git(
-        "-c",
-        "gpg.format=ssh",
-        "-c",
-        `user.signingkey=${privateKey}`,
-        "-c",
-        "commit.gpgsign=true",
-        "commit",
-        "-m",
-        name,
-      );
-      return git("rev-parse", "HEAD");
-    }
-    function merge(branch: string, signed = true, signingKey = privateKey) {
-      git(
-        "-c",
-        "gpg.format=ssh",
-        "-c",
-        `user.signingkey=${signingKey}`,
-        "-c",
-        `commit.gpgsign=${signed}`,
-        "merge",
-        "--no-ff",
-        branch,
-        "-m",
-        "Synthetic merge",
-      );
-      return git("rev-parse", "HEAD");
-    }
-    function unsigned(name: string, file = name) {
-      fs.writeFileSync(path.join(dir, file), name + "\n");
-      git("add", file);
-      git("-c", "commit.gpgsign=false", "commit", "-m", name);
-      return git("rev-parse", "HEAD");
-    }
-    return { dir, git, p, commit, anchor, merge, unsigned, signingKey: privateKey };
   }
-  linuxIt(
-    "admits a bounded signed expansion beyond the former incidental object-output limit",
-    async () => {
-      const f = graph(),
-        directory = path.join(f.dir, "synthetic-objects");
-      fs.mkdirSync(directory);
-      for (let i = 0; i < 6400; i++)
-        fs.writeFileSync(path.join(directory, `file-${i}.txt`), `fixture-${i}\n`);
-      f.git("add", "synthetic-objects");
-      const source = f.commit("many-objects");
-      expect(
-        (
-          await new GitSourceAuthority(f.p, { repository: f.dir }).inspect(
-            source,
-            f.git("rev-parse", "HEAD^{tree}"),
-          )
-        ).records,
-      ).toHaveLength(1);
-    },
-  );
-  linuxIt("admits personally signed commits and personally signed merges", async () => {
-    const f = graph();
-    f.git("checkout", "-b", "left");
-    f.commit("left");
-    f.git("checkout", "main");
-    f.commit("right");
-    const collaborator = graph();
-    f.merge("left", true, collaborator.signingKey);
-    const source = f.git("rev-parse", "HEAD"),
-      tree = f.git("rev-parse", "HEAD^{tree}");
+  it("accepts the main snapshot without consulting signatures or ancestors", async () => {
+    const api = readers();
+    expect(
+      await new MainSourceAuthority(api).inspect(source, tree, { mainCommit: source }),
+    ).toEqual({ source_commit: source, source_tree: tree, main_commit: source });
+    expect(api.commit).toHaveBeenCalledExactlyOnceWith(source);
+    expect(api.compare).not.toHaveBeenCalled();
+  });
+  it("accepts an older integrated source independently of its signature kind", async () => {
+    const api = readers();
+    api.commit.mockResolvedValue({
+      sha: source,
+      tree: { sha: tree },
+      verification: {
+        verified: true,
+        reason: "valid",
+        signature: "GitHub platform signature",
+      },
+    });
+    expect(await new MainSourceAuthority(api).inspect(source, tree, { mainCommit: main })).toEqual({
+      source_commit: source,
+      source_tree: tree,
+      main_commit: main,
+    });
+    expect(api.compare).toHaveBeenCalledExactlyOnceWith(source, main);
+  });
+  it("rejects a divergent or newer unintegrated source and a changed tree", async () => {
+    for (const status of ["diverged", "behind", "identical"]) {
+      await expect(
+        new MainSourceAuthority(readers(status)).inspect(source, tree, { mainCommit: main }),
+      ).rejects.toThrow("policy_refused");
+    }
+    const api = readers();
     await expect(
-      new GitSourceAuthority(f.p, { repository: f.dir }).inspect(source, tree),
+      new MainSourceAuthority(api).inspect(source, "d".repeat(40), { mainCommit: main }),
     ).rejects.toThrow("policy_refused");
-    f.p.source_signers.push(collaborator.p.source_signers[0]);
-    const result = await new GitSourceAuthority(f.p, { repository: f.dir }).inspect(source, tree);
-    expect(result.records.map((r: any) => r.kind).sort()).toEqual([
-      "personal-signature",
-      "personal-signature",
-      "personal-signature",
+    expect(api.compare).not.toHaveBeenCalled();
+    api.compare.mockResolvedValue({
+      status: "ahead",
+      base_commit: { sha: source },
+      merge_base_commit: { sha: "d".repeat(40) },
+    });
+    await expect(
+      new MainSourceAuthority(api).inspect(source, tree, { mainCommit: main }),
+    ).rejects.toThrow("policy_refused");
+  });
+  it("reads only exact commit and main-membership endpoints without PR or signature queries", async () => {
+    const api = readers();
+    const fetcher = vi.fn(
+      async (url: string) =>
+        new Response(
+          JSON.stringify(url.includes("/git/commits/") ? await api.commit() : await api.compare()),
+        ),
+    );
+    const actual = githubReaders({ fetcher });
+    await new MainSourceAuthority(actual).inspect(source, tree, { mainCommit: main });
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      `https://api.github.com/repos/ohtia/ohtia/git/commits/${source}`,
+      `https://api.github.com/repos/ohtia/ohtia/compare/${source}...${main}?per_page=1&page=2`,
     ]);
   });
-  linuxIt(
-    "refuses an unsigned source mutation despite matching branch and tree fields",
-    async () => {
-      const f = graph();
-      fs.writeFileSync(path.join(f.dir, "source"), "unreviewed\n");
-      f.git("add", "source");
-      f.git("-c", "commit.gpgsign=false", "commit", "-m", "Synthetic unsigned mutation");
-      await expect(
-        new GitSourceAuthority(f.p, { repository: f.dir }).inspect(
-          f.git("rev-parse", "HEAD"),
-          f.git("rev-parse", "HEAD^{tree}"),
-        ),
-      ).rejects.toThrow("policy_refused");
-    },
-  );
-  linuxIt(
-    "refuses an unsigned clean merge even when both parents are personally signed",
-    async () => {
-      const f = graph();
-      f.git("checkout", "-b", "left");
-      f.commit("left");
-      f.git("checkout", "main");
-      f.commit("right");
-      const source = f.merge("left", false);
-      await expect(
-        new GitSourceAuthority(f.p, { repository: f.dir }).inspect(
-          source,
-          f.git("rev-parse", "HEAD^{tree}"),
-        ),
-      ).rejects.toThrow("policy_refused");
-    },
-  );
-  linuxIt(
-    "admits an approved initial anchor with unsigned history and signed descendants",
-    async () => {
-      const f = graph();
-      f.git("checkout", "-b", "bot");
-      f.unsigned("dependency-update");
-      f.git("checkout", "main");
-      f.commit("personal-work");
-      const anchor = f.merge("bot", false);
-      const tree = f.git("rev-parse", "HEAD^{tree}");
-      await expect(
-        new GitSourceAuthority(f.p, { repository: f.dir }).inspect(anchor, tree),
-      ).rejects.toThrow("policy_refused");
-      f.p.source_anchor = anchor;
-      const authority = new GitSourceAuthority(f.p, { repository: f.dir });
-      expect((await authority.inspect(anchor, tree)).records).toEqual([]);
-      const source = f.commit("post-anchor");
-      expect((await authority.inspect(source, f.git("rev-parse", "HEAD^{tree}"))).records).toEqual([
-        {
-          commit: source,
-          tree: f.git("rev-parse", "HEAD^{tree}"),
-          policy_sha256: hash(canonical(f.p)),
-          kind: "personal-signature",
-        },
-      ]);
-    },
-  );
-  linuxIt(
-    "refuses signed merges and later signed commits above unadmitted bot ancestry",
-    async () => {
-      const f = graph();
-      f.git("checkout", "-b", "bot");
-      f.unsigned("dependency-update");
-      f.git("checkout", "main");
-      const base = f.commit("personal-work");
-      const merged = f.merge("bot");
-      const mergedTree = f.git("rev-parse", "HEAD^{tree}");
-      const source = f.commit("later-personal-work");
-      const authority = new GitSourceAuthority(f.p, { repository: f.dir });
-      await expect(authority.inspect(merged, mergedTree)).rejects.toThrow("policy_refused");
-      await expect(authority.inspect(source, f.git("rev-parse", "HEAD^{tree}"))).rejects.toThrow(
-        "policy_refused",
-      );
-      f.git("checkout", "-b", "adopted", base);
-      const adopted = f.commit("dependency-update");
-      expect(f.git("rev-parse", "HEAD^{tree}")).toBe(mergedTree);
-      expect(
-        (await authority.inspect(adopted, mergedTree)).records.map((r: any) => r.kind),
-      ).toEqual(["personal-signature", "personal-signature"]);
-      f.git("checkout", "main");
-      f.git("checkout", "-b", "integration", base);
-      const integrated = f.merge("adopted");
-      expect(
-        (await authority.inspect(integrated, mergedTree)).records.map((r: any) => r.kind),
-      ).toEqual(["personal-signature", "personal-signature", "personal-signature"]);
-    },
-  );
-  linuxIt(
-    "never reuses old prefix approvals, including signed descendants of unsigned merges",
-    async () => {
-      const f = graph(),
-        store = new FileSigningStore(root());
-      f.git("checkout", "-b", "left");
-      f.commit("left");
-      f.git("checkout", "main");
-      f.commit("right");
-      f.merge("left", false);
-      const source = f.commit("later-personal-work"),
-        tree = f.git("rev-parse", "HEAD^{tree}");
-      const worker = new CryptoSigningWorker(f.p, {
-        keys: {
-          catalog: async () => ({
-            key: Buffer.from(catalogKey.privateKey.export({ format: "pem", type: "pkcs8" })),
-            passphrase: Buffer.alloc(0),
+  it("refuses missing or invalid source identities without a retryable outage", async () => {
+    for (const status of [404, 422])
+      for (const where of ["commit", "compare"]) {
+        const fetcher = async (url: string) =>
+          new Response(JSON.stringify({ sha: source, tree: { sha: tree } }), {
+            status: where === "commit" || url.includes("/compare/") ? status : 200,
+          });
+        await expect(
+          new MainSourceAuthority(githubReaders({ fetcher })).inspect(source, tree, {
+            mainCommit: main,
           }),
-        },
-      });
-      const cache = store.sourceCache(f.p, worker);
-      const record = {
-        commit: source,
-        tree,
-        policy_sha256: hash(canonical(f.p)),
-        kind: "personal-signature",
-      };
-      const signature = sign(
-        null,
-        Buffer.concat([Buffer.from("ohtia-source-prefix-v1\0"), canonical(record)]),
-        catalogKey.privateKey,
-      ).toString("base64");
-      const oldKey = `${hash(canonical(f.p))}/${source}`;
-      await store.cas(hash(canonical({ kind: "verified-source", key: oldKey })), null, {
-        record,
-        signature,
-      });
+        ).rejects.toThrow("policy_refused");
+      }
+    for (const data of ["null", "{invalid", "[]"]) {
+      const fetcher = async (url: string) =>
+        new Response(
+          url.includes("/compare/") ? data : JSON.stringify({ sha: source, tree: { sha: tree } }),
+        );
       await expect(
-        new GitSourceAuthority(f.p, { repository: f.dir, cache }).inspect(source, tree),
+        new MainSourceAuthority(githubReaders({ fetcher })).inspect(source, tree, {
+          mainCommit: main,
+        }),
       ).rejects.toThrow("policy_refused");
-      const newKey = `v${sourceAdmissionVersion}/${oldKey}`;
-      await store.cas(hash(canonical({ kind: "verified-source", key: newKey })), null, {
-        record,
-        signature,
-      });
-      await expect(cache.get(newKey)).rejects.toThrow("policy_refused");
-      await expect(worker.sourcePrefixSign({ ...record, kind: "clean-merge" })).rejects.toThrow(
-        "policy_refused",
-      );
-      const fakeCache = { get: async () => ({ ...record, kind: "clean-merge" }) };
-      await expect(
-        new GitSourceAuthority(f.p, { repository: f.dir, cache: fakeCache }).inspect(source, tree),
-      ).rejects.toThrow("policy_refused");
-    },
-  );
-  linuxIt("refuses a forged merge tree and an unknown personal key", async () => {
-    const f = graph();
-    f.git("checkout", "-b", "left");
-    const left = f.commit("left");
-    f.git("checkout", "main");
-    const right = f.commit("right");
-    const evilTree = f.git("rev-parse", `${left}^{tree}`);
-    const forged = execFileSync(
-      "/usr/bin/git",
-      [
-        "-c",
-        "commit.gpgsign=false",
-        "commit-tree",
-        evilTree,
-        "-p",
-        left,
-        "-p",
-        right,
-        "-m",
-        "Synthetic forged merge",
-      ],
-      {
-        cwd: f.dir,
-        env: {
-          ...process.env,
-          GIT_AUTHOR_NAME: "fixture",
-          GIT_AUTHOR_EMAIL: "fixture@example.invalid",
-          GIT_COMMITTER_NAME: "fixture",
-          GIT_COMMITTER_EMAIL: "fixture@example.invalid",
-        },
-        encoding: "utf8",
-      },
-    ).trim();
-    await expect(
-      new GitSourceAuthority(f.p, { repository: f.dir }).inspect(forged, evilTree),
-    ).rejects.toThrow("policy_refused");
-    const other = generateKeyPairSync("ed25519").publicKey.export({ format: "der", type: "spki" });
-    const ssh = Buffer.concat([
-      Buffer.from([0, 0, 0, 11]),
-      Buffer.from("ssh-ed25519"),
-      Buffer.from([0, 0, 0, 32]),
-      other.subarray(-32),
-    ]).toString("base64");
-    f.p.source_signers[0].public_key = "ssh-ed25519 " + ssh;
-    await expect(
-      new GitSourceAuthority(f.p, { repository: f.dir }).inspect(
-        right,
-        f.git("rev-parse", `${right}^{tree}`),
-      ),
-    ).rejects.toThrow("policy_refused");
+    }
   });
-  linuxIt(
-    "reuses authenticated prefix records without trusting caller-supplied cache flags",
-    async () => {
-      const f = graph(),
-        records = new Map();
-      const source = f.commit("first"),
-        tree = f.git("rev-parse", "HEAD^{tree}");
-      const cache = {
-        get: async (k: string) => records.get(k),
-        put: async (k: string, v: any) => {
-          records.set(k, structuredClone(v));
-        },
-      };
-      const a = new GitSourceAuthority(f.p, { repository: f.dir, cache });
-      expect((await a.inspect(source, tree)).records).toHaveLength(1);
-      expect((await a.inspect(source, tree)).records).toHaveLength(0);
-      const next = f.commit("second");
-      expect((await a.inspect(next, f.git("rev-parse", "HEAD^{tree}"))).records).toHaveLength(1);
-    },
-  );
-  linuxIt(
-    "uses authenticated persistent prefixes through the real Git source authority",
-    async () => {
-      const f = graph(),
-        source = f.commit("authenticated cache"),
-        tree = f.git("rev-parse", "HEAD^{tree}");
-      const store = new FileSigningStore(root());
-      const worker = new CryptoSigningWorker(f.p, {
-        clock: () => NOW,
-        keys: {
-          catalog: async () => ({
-            key: Buffer.from(catalogKey.privateKey.export({ format: "pem", type: "pkcs8" })),
-            passphrase: Buffer.alloc(0),
-          }),
-        },
-      });
-      const authority = new GitSourceAuthority(f.p, {
-        repository: f.dir,
-        cache: store.sourceCache(f.p, worker),
-      });
-      expect((await authority.inspect(source, tree)).records).toHaveLength(1);
-      expect((await authority.inspect(source, tree)).records).toHaveLength(0);
-    },
-  );
+  it("refuses obsolete source-key and baseline policy fields", () => {
+    for (const legacy of [{ source_anchor: source }, { source_signers: [] }])
+      expect(() => trustedPolicy({ ...policy(), ...legacy })).toThrow("contract_refused");
+  });
+  it("rejects unavailable membership evidence before accepting package source", async () => {
+    const api = readers();
+    api.compare.mockRejectedValue(new SigningError("authority_unavailable"));
+    await expect(
+      new MainSourceAuthority(api).inspect(source, tree, { mainCommit: main }),
+    ).rejects.toThrow("authority_unavailable");
+  });
 });
 
 describe("authenticated build provenance binding", () => {
@@ -998,7 +770,7 @@ describe("authenticated build provenance binding", () => {
           sourceRepositoryURI: "https://github.com/ohtia/ohtia",
           sourceRepositoryIdentifier: "1431132416",
           sourceRepositoryOwnerIdentifier: "346940169",
-          sourceRepositoryDigest: r.subject.source_commit,
+          sourceRepositoryDigest: r.execution.workflow_sha,
           sourceRepositoryRef: "refs/heads/main",
           runnerEnvironment: "github-hosted",
           buildTrigger: "workflow_dispatch",
@@ -1027,6 +799,20 @@ describe("authenticated build provenance binding", () => {
       },
     };
   }
+  it("binds an older package source to the main caller and exact reusable recipe digest", () => {
+    const r = request();
+    r.subject.source_commit = "f".repeat(40);
+    const a = artifact(r),
+      proof = result(r, a);
+    proof.signature.certificate.buildSignerURI =
+      "https://github.com/ohtia/ohtia/.github/workflows/signing-build.yml@" + "d".repeat(40);
+    expect(verifyBuildResult(proof, r, policy(), a)).toBe(true);
+    proof.signature.certificate.sourceRepositoryDigest = r.subject.source_commit;
+    expect(() => verifyBuildResult(proof, r, policy(), a)).toThrow("policy_refused");
+    proof.signature.certificate.sourceRepositoryDigest = r.execution.workflow_sha;
+    proof.statement.predicate.artifact.source_commit = "e".repeat(40);
+    expect(() => verifyBuildResult(proof, r, policy(), artifact(r))).toThrow("policy_refused");
+  });
   it("executes the attestation adapter contract and independently requires a successful build job", async () => {
     const r = request(),
       a = artifact(r),
@@ -1035,7 +821,7 @@ describe("authenticated build provenance binding", () => {
       id: a.build_execution.job_id,
       run_id: a.build_execution.run_id,
       run_attempt: a.build_execution.attempt,
-      head_sha: r.subject.source_commit,
+      head_sha: r.execution.workflow_sha,
       status: "completed",
       conclusion: "success",
     };
@@ -1075,7 +861,7 @@ describe("authenticated build provenance binding", () => {
       id,
       run_id: 100,
       run_attempt: 1,
-      head_sha: r.subject.source_commit,
+      head_sha: r.execution.workflow_sha,
       status: "completed",
       conclusion: "success",
     });
@@ -1210,7 +996,7 @@ describe("catalog signing over sealed private package bytes", () => {
       issued_ms: NOW - 1,
       expires_ms: NOW + 60000,
       candidate: a.inputs_sha256,
-      source_sha: r.subject.source_commit,
+      source_sha: r.execution.workflow_sha,
       version: r.subject.application_version,
       channels: ["preview"],
       notes_sha256: "8".repeat(64),
@@ -1439,34 +1225,6 @@ describe("catalog signing over sealed private package bytes", () => {
 });
 
 describe("signer retained-state integrity", () => {
-  linuxIt("authenticates source-prefix records against private-storage tampering", async () => {
-    const dir = root(),
-      store = new FileSigningStore(dir),
-      p = policy();
-    const worker = new CryptoSigningWorker(p, {
-      keys: {
-        catalog: async () => ({
-          key: Buffer.from(catalogKey.privateKey.export({ format: "pem", type: "pkcs8" })),
-          passphrase: Buffer.alloc(0),
-        }),
-      },
-    });
-    const cache = store.sourceCache(p, worker),
-      record = {
-        commit: "a".repeat(40),
-        tree: "b".repeat(40),
-        policy_sha256: hash(canonical(p)),
-        kind: "personal-signature",
-      };
-    await cache.put("prefix", record);
-    expect(await cache.get("prefix")).toEqual(record);
-    const id = hash(canonical({ kind: "verified-source", key: "prefix" })),
-      file = path.join(dir, "journal", id, "000.json"),
-      row = decode(fs.readFileSync(file));
-    row.record.tree = "c".repeat(40);
-    fs.writeFileSync(file, canonical(row));
-    await expect(cache.get("prefix")).rejects.toThrow("policy_refused");
-  });
   linuxIt("allows exactly one writer across separate Node processes", async () => {
     const dir = root(),
       id = "f".repeat(64);

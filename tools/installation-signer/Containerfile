@@ -15,7 +15,7 @@ COPY entrypoint.sh /opt/ohtia/entrypoint.sh
 COPY manifest.json /opt/ohtia/image-manifest.json
 RUN chmod -R a+rX /opt/ohtia /opt/node /opt/gh && \
     /usr/bin/node -e 'const m=require("/opt/ohtia/image-manifest.json"); if(process.versions.node!==m.tool_artifacts.node.version)process.exit(1)' && \
-    /usr/bin/gh --version && /usr/bin/git --version && /usr/bin/rpm --version && \
+    /usr/bin/gh --version && /usr/bin/rpm --version && \
     /usr/bin/gpg --version && test -x /usr/lib/gnupg/gpg-preset-passphrase
 ENV PATH=/opt/node/bin:/opt/gh/bin:/usr/bin:/bin HOME=/home/signer TMPDIR=/tmp
 WORKDIR /opt/ohtia

@@ -28,7 +28,6 @@ import {
   positive,
   reference,
   signingLimits,
-  sourcePrefixDomain,
   subject,
   trustedPolicy,
   command,
@@ -353,44 +352,6 @@ function writeOnce(file, bytes) {
   syncDirectory(path.dirname(file));
 }
 
-export function authenticatedSourceCache(store, policy, worker) {
-  const prefix = Buffer.from(sourcePrefixDomain);
-  return {
-    get: async (key) => {
-      const row = await store.read(hash(canonical({ kind: "verified-source", key })));
-      if (!row) return undefined;
-      const record = row.record;
-      demand(
-        typeof row.signature === "string" &&
-          Buffer.from(row.signature, "base64").toString("base64") === row.signature &&
-          verify(
-            null,
-            Buffer.concat([prefix, canonical(record)]),
-            policy.catalog_public_key,
-            Buffer.from(row.signature, "base64"),
-          ),
-        "policy_refused",
-      );
-      return record;
-    },
-    put: async (key, record, options) => {
-      const id = hash(canonical({ kind: "verified-source", key }));
-      const signature = (await worker.sourcePrefixSign(record, options)).toString("base64");
-      const old = await store.read(id);
-      if (old) {
-        demand(same(old.record, record) && old.signature === signature, "policy_refused");
-        return;
-      }
-      const written = await store.cas(id, null, { record, signature });
-      if (!written) {
-        const actual = await store.read(id);
-        demand(same(actual.record, record) && actual.signature === signature, "policy_refused");
-      }
-    },
-  };
-}
-
-// Local Linux fixture backend. Production requires the separately qualified S3 conditional-write adapter.
 export class FileSigningStore {
   constructor(root) {
     secureDirectory(root);
@@ -505,9 +466,6 @@ export class FileSigningStore {
     } finally {
       fs.closeSync(fd);
     }
-  }
-  sourceCache(policy, worker) {
-    return authenticatedSourceCache(this, policy, worker);
   }
   async copyObject(ref, dest) {
     reference(ref, packageLimit);
@@ -629,19 +587,6 @@ export class CryptoSigningWorker {
   }
   async receiptSign(bytes, options) {
     return this.catalogSign(Buffer.concat([receiptDomain, bytes]), options);
-  }
-  async sourcePrefixSign(record, options) {
-    fields(record, "commit tree policy_sha256 kind");
-    digest(record.commit, 40);
-    digest(record.tree, 40);
-    demand(
-      record.policy_sha256 === hash(canonical(this.policy)) && record.kind === "personal-signature",
-      "policy_refused",
-    );
-    return this.catalogSign(
-      Buffer.concat([Buffer.from(sourcePrefixDomain), canonical(record)]),
-      options,
-    );
   }
   async rpmSign(input, directory, artifact, { deadline = new SigningDeadline(), beforeSign } = {}) {
     const cleanupDeadline = deadline,
@@ -974,6 +919,7 @@ export class SigningService {
     const auth = await this.authorize(token, r);
     await this.store.bindToken(auth.jti, id, auth.expires_ms);
     await this.source.inspect(r.subject.source_commit, r.subject.source_tree, {
+      mainCommit: r.execution.workflow_sha,
       deadline: currentSigningDeadline(),
     });
     const key = this.identity(r);
@@ -1064,6 +1010,7 @@ export class SigningService {
     demand(state.state !== "uncertain" && state.state !== "signing", "signing_uncertain");
     demand(state.state === "admitted", "request_conflict");
     const sourceProof = await this.source.inspect(r.subject.source_commit, r.subject.source_tree, {
+      mainCommit: r.execution.workflow_sha,
       deadline,
     });
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ohtia-signing-operation-"));

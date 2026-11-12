@@ -150,7 +150,7 @@ export function deepFreeze(value) {
 export function trustedPolicy(policy) {
   fields(
     policy,
-    "schema_version enabled repository_id owner_id audience environment caller_workflow signing_workflow build_workflow source_anchor source_signers catalog_public_key rpm_primary rpm_subkey deployment",
+    "schema_version enabled repository_id owner_id audience environment caller_workflow signing_workflow build_workflow catalog_public_key rpm_primary rpm_subkey deployment",
   );
   demand(policy.schema_version === 1 && typeof policy.enabled === "boolean");
   demand(policy.repository_id === "1431132416" && policy.owner_id === "346940169");
@@ -162,19 +162,6 @@ export function trustedPolicy(policy) {
     digest(w.sha, 40);
   }
   demand(/^\.github\/workflows\/[a-z0-9-]+\.yml$/.test(policy.caller_workflow));
-  digest(policy.source_anchor, 40);
-  demand(
-    Array.isArray(policy.source_signers) &&
-      policy.source_signers.length > 0 &&
-      policy.source_signers.length <= 32,
-  );
-  for (const s of policy.source_signers) {
-    fields(s, "principal public_key");
-    demand(
-      /^[a-zA-Z0-9@._-]+$/.test(s.principal) &&
-        /^ssh-ed25519 [A-Za-z0-9+/]+={0,2}$/.test(s.public_key),
-    );
-  }
   demand(
     typeof policy.catalog_public_key === "string" &&
       /^-----BEGIN PUBLIC KEY-----\n[A-Za-z0-9+/=\n]+\n-----END PUBLIC KEY-----\n$/.test(
@@ -410,7 +397,7 @@ export class OidcAuthority {
       );
       const e = request.execution;
       demand(
-        p.sha === request.subject.source_commit &&
+        p.sha === e.workflow_sha &&
           p.workflow_sha === p.sha &&
           p.workflow_ref === `ohtia/ohtia/${this.policy.caller_workflow}@refs/heads/main`,
         "authentication_refused",
@@ -452,7 +439,7 @@ export class OidcAuthority {
         jti: p.jti,
         expires_ms: p.exp * 1000,
         execution: structuredClone(e),
-        source_commit: p.sha,
+        source_commit: request.subject.source_commit,
       });
     } catch (error) {
       if (
@@ -467,7 +454,7 @@ export class OidcAuthority {
 
 // Only trusted bootstrap code supplies these readers; request data never selects origins.
 export function githubReaders({ fetcher = fetch, token, clock = Date.now } = {}) {
-  async function read(url, maximum) {
+  async function read(url, maximum, refuseMissingSource = false) {
     try {
       const headers = { Accept: "application/vnd.github+json" };
       if (token && new URL(url).hostname === "api.github.com")
@@ -477,6 +464,8 @@ export function githubReaders({ fetcher = fetch, token, clock = Date.now } = {})
         redirect: "error",
         signal: AbortSignal.timeout(currentSigningDeadline().remaining()),
       });
+      if (refuseMissingSource && [404, 422].includes(response.status))
+        throw new SigningError("policy_refused");
       demand(response.ok, "authority_unavailable");
       let count = 0;
       const chunks = [];
@@ -489,6 +478,15 @@ export function githubReaders({ fetcher = fetch, token, clock = Date.now } = {})
     } catch (error) {
       if (error instanceof SigningError) throw error;
       throw new SigningError("authority_unavailable");
+    }
+  }
+
+  async function sourceJson(url) {
+    const bytes = await read(url, signingLimits.request_bytes, true);
+    try {
+      return JSON.parse(bytes);
+    } catch {
+      throw new SigningError("policy_refused");
     }
   }
 
@@ -507,6 +505,18 @@ export function githubReaders({ fetcher = fetch, token, clock = Date.now } = {})
       }
       return Buffer.from(cache.bytes);
     },
+    commit: async (sha) => {
+      digest(sha, 40);
+      return sourceJson(`https://api.github.com/repos/ohtia/ohtia/git/commits/${sha}`);
+    },
+    compare: async (source, main) => {
+      digest(source, 40);
+      digest(main, 40);
+      // Page two omits the potentially large changed-files list; ancestry metadata remains present.
+      return sourceJson(
+        `https://api.github.com/repos/ohtia/ohtia/compare/${source}...${main}?per_page=1&page=2`,
+      );
+    },
     job: async (id) => {
       positive(id);
       return JSON.parse(
@@ -519,227 +529,31 @@ export function githubReaders({ fetcher = fetch, token, clock = Date.now } = {})
   };
 }
 
-// Separate admissions made under the former unsigned-merge rule.
-export const sourceAdmissionVersion = 2;
-export const sourcePrefixDomain = `ohtia-source-prefix-v${sourceAdmissionVersion}\0`;
-
-export class GitSourceAuthority {
-  constructor(
-    policy,
-    { repository, acquisition, git = "/usr/bin/git", sshKeygen = "/usr/bin/ssh-keygen", cache },
-  ) {
-    this.policy = trustedPolicy(policy);
-    demand(
-      acquisition
-        ? repository === undefined && typeof acquisition.open === "function"
-        : path.isAbsolute(repository),
-    );
-    this.acquisition = acquisition;
-    this.repository = repository;
-    this.git = git;
-    this.sshKeygen = sshKeygen;
-    this.cache = cache;
+// Package source admission checks main membership and exact bytes, never repository governance.
+export class MainSourceAuthority {
+  constructor({ commit, compare }) {
+    demand(typeof commit === "function" && typeof compare === "function");
+    this.commit = commit;
+    this.compare = compare;
   }
-  async inspect(source, expectedTree, { deadline = new SigningDeadline() } = {}) {
+  async inspect(source, expectedTree, { mainCommit, deadline = new SigningDeadline() } = {}) {
     digest(source, 40);
     digest(expectedTree, 40);
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ohtia-source-"));
-    fs.chmodSync(dir, 0o700);
-    let acquired;
-    try {
-      acquired = await this.acquisition?.open(source, { deadline });
-      const repository = acquired?.repository ?? this.repository;
-      const allowed = path.join(dir, "allowed-signers");
-      fs.writeFileSync(
-        allowed,
-        this.policy.source_signers.map((s) => `${s.principal} ${s.public_key}\n`).join(""),
-        { mode: 0o600 },
+    digest(mainCommit, 40);
+    deadline.check();
+    const commit = await this.commit(source);
+    demand(commit?.sha === source && commit.tree?.sha === expectedTree, "policy_refused");
+    if (source !== mainCommit) {
+      const compared = await this.compare(source, mainCommit);
+      demand(
+        compared?.status === "ahead" &&
+          compared.base_commit?.sha === source &&
+          compared.merge_base_commit?.sha === source,
+        "policy_refused",
       );
-      let work = repository;
-
-      const gitOutput = async (maximum, ...args) =>
-        (
-          await command(
-            this.git,
-            [
-              "-c",
-              "core.hooksPath=/dev/null",
-              "-c",
-              "core.fsmonitor=false",
-              "-c",
-              "core.attributesFile=/dev/null",
-              "-c",
-              `gpg.ssh.program=${this.sshKeygen}`,
-              "-c",
-              `gpg.ssh.allowedSignersFile=${allowed}`,
-              "-c",
-              "gpg.format=ssh",
-              "-c",
-              "gpg.program=/bin/false",
-              "-c",
-              "gpg.x509.program=/bin/false",
-              ...args,
-            ],
-            {
-              cwd: work,
-              deadline,
-              maximum,
-              env: {
-                GIT_CONFIG_NOSYSTEM: "1",
-                GIT_CONFIG_GLOBAL: "/dev/null",
-                GIT_NO_REPLACE_OBJECTS: "1",
-                GIT_NO_LAZY_FETCH: "1",
-                GIT_TERMINAL_PROMPT: "0",
-              },
-            },
-          )
-        )
-          .toString()
-          .trim();
-      const git = (...args) => gitOutput(signingLimits.jwks_bytes, ...args);
-      demand((await git("rev-parse", "--is-shallow-repository")) === "false", "policy_refused");
-      const originalGraft = await git("rev-parse", "--git-path", "info/grafts");
-      demand(!fs.existsSync(path.resolve(repository, originalGraft)), "policy_refused");
-      const objects = fs.realpathSync(
-        path.resolve(repository, await git("rev-parse", "--git-path", "objects")),
-      );
-      // Never execute hooks or helpers from the supplied repository configuration.
-      const bare = path.join(dir, "repository.git");
-      await git("init", "--bare", "--template=", bare);
-      fs.writeFileSync(path.join(bare, "objects/info/alternates"), objects + "\n", { mode: 0o600 });
-      work = bare;
-      demand((await git("rev-parse", `${source}^{tree}`)) === expectedTree, "policy_refused");
-      // A shallow boundary, replacement or graft can hide unsigned ancestry.
-      demand((await git("rev-parse", "--is-shallow-repository")) === "false", "policy_refused");
-      const graft = await git("rev-parse", "--git-path", "info/grafts");
-      demand(!fs.existsSync(path.resolve(repository, graft)), "policy_refused");
-      await git("merge-base", "--is-ancestor", this.policy.source_anchor, source);
-      const policyHash = hash(canonical(this.policy));
-      const pending = [],
-        seen = new Set();
-      const known = new Set([this.policy.source_anchor]);
-      let uncached = 0;
-      const visit = async (commit) => {
-        digest(commit, 40);
-        if (known.has(commit) || seen.has(commit)) return;
-        try {
-          await git("merge-base", "--is-ancestor", commit, this.policy.source_anchor);
-          known.add(commit);
-          return;
-        } catch (error) {
-          if (
-            error instanceof SigningError &&
-            ["authority_unavailable", "size_refused"].includes(error.code)
-          )
-            throw error;
-          /* Not in the independently trusted anchor history. */
-        }
-        seen.add(commit);
-        const tree = await git("rev-parse", `${commit}^{tree}`);
-        const cached = await this.cache?.get(`v${sourceAdmissionVersion}/${policyHash}/${commit}`);
-        if (cached) {
-          fields(cached, "commit tree policy_sha256 kind");
-          demand(
-            cached.commit === commit &&
-              cached.tree === tree &&
-              cached.policy_sha256 === policyHash &&
-              cached.kind === "personal-signature",
-            "policy_refused",
-          );
-          known.add(commit);
-          return;
-        }
-        demand(++uncached <= signingLimits.source_commits, "size_refused");
-        const parents = (await git("show", "-s", "--format=%P", commit)).split(" ").filter(Boolean);
-        demand(parents.length > 0 && parents.length <= 2, "policy_refused");
-        for (const parent of parents) await visit(parent);
-        pending.push({ commit, tree, parents });
-      };
-      await visit(source);
-      const records = [];
-      if (pending.length) {
-        const ids = (
-          await gitOutput(
-            (signingLimits.source_objects + 1) * 41,
-            "rev-list",
-            "--objects",
-            "--no-object-names",
-            ...pending.map((r) => r.commit),
-            "--not",
-            ...known,
-          )
-        )
-          .split("\n")
-          .filter(Boolean);
-        demand(ids.length <= signingLimits.source_objects, "size_refused");
-        ids.forEach((id) => digest(id, 40));
-        const sizes = await command(
-          this.git,
-          ["--git-dir", bare, "cat-file", "--batch-check=%(objectsize)"],
-          {
-            cwd: bare,
-            stdin: Buffer.from(ids.join("\n") + "\n"),
-            maximum: signingLimits.source_objects * 24,
-            deadline,
-            env: {
-              GIT_CONFIG_NOSYSTEM: "1",
-              GIT_CONFIG_GLOBAL: "/dev/null",
-              GIT_NO_REPLACE_OBJECTS: "1",
-              GIT_NO_LAZY_FETCH: "1",
-            },
-          },
-        );
-        let total = 0;
-        for (const line of sizes.toString().trim().split("\n")) {
-          demand(/^\d+$/.test(line), "policy_refused");
-          total += Number(line);
-          demand(
-            Number.isSafeInteger(total) && total <= signingLimits.source_bytes,
-            "size_refused",
-          );
-        }
-      }
-      for (const { commit, tree, parents } of pending) {
-        demand(
-          parents.every((p) => known.has(p)),
-          "policy_refused",
-        );
-        // A merge signature never authorizes an unadmitted parent.
-        await git("verify-commit", commit);
-        const record = {
-          commit,
-          tree,
-          policy_sha256: policyHash,
-          kind: "personal-signature",
-        };
-        await this.cache?.put(`v${sourceAdmissionVersion}/${policyHash}/${commit}`, record, {
-          deadline,
-        });
-        records.push(record);
-        known.add(commit);
-      }
-      return {
-        source_commit: source,
-        source_tree: expectedTree,
-        anchor: this.policy.source_anchor,
-        records,
-      };
-    } catch (error) {
-      if (
-        error instanceof SigningError &&
-        ["size_refused", "authority_unavailable"].includes(error.code)
-      )
-        throw error;
-      throw new SigningError(
-        error instanceof SigningError ? "policy_refused" : "authority_unavailable",
-      );
-    } finally {
-      try {
-        acquired?.close();
-      } finally {
-        fs.rmSync(dir, { recursive: true, force: true });
-      }
     }
+    deadline.check();
+    return { source_commit: source, source_tree: expectedTree, main_commit: mainCommit };
   }
 }
 
@@ -755,7 +569,7 @@ export function verifyBuildResult(result, request, policy, artifact) {
       cert.sourceRepositoryURI === "https://github.com/ohtia/ohtia" &&
       cert.sourceRepositoryIdentifier === policy.repository_id &&
       cert.sourceRepositoryOwnerIdentifier === policy.owner_id &&
-      cert.sourceRepositoryDigest === request.subject.source_commit &&
+      cert.sourceRepositoryDigest === request.execution.workflow_sha &&
       cert.sourceRepositoryRef === "refs/heads/main" &&
       cert.runnerEnvironment === "github-hosted" &&
       cert.buildTrigger === "workflow_dispatch",
@@ -860,7 +674,7 @@ export class GitHubBuildAuthority {
           "--signer-digest",
           this.policy.build_workflow.sha,
           "--source-digest",
-          request.subject.source_commit,
+          request.execution.workflow_sha,
           "--source-ref",
           "refs/heads/main",
           "--deny-self-hosted-runners",
@@ -891,7 +705,7 @@ export class GitHubBuildAuthority {
           actual.id === id &&
             actual.run_id === artifact.build_execution.run_id &&
             actual.run_attempt === artifact.build_execution.attempt &&
-            actual.head_sha === request.subject.source_commit &&
+            actual.head_sha === request.execution.workflow_sha &&
             actual.conclusion === "success",
           "policy_refused",
         );

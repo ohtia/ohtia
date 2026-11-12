@@ -5,10 +5,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateKeyPairSync, randomBytes, verify } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { canonical, command, demand } from "./installation-authority.mjs";
+import { canonical, command, demand, SigningError } from "./installation-authority.mjs";
+import { observeSigningResources } from "./installation-signing-resources.mjs";
 import { CryptoSigningWorker, fileReference, keyId } from "./installation-signer.mjs";
 
-export async function signingFixtureProbe(input) {
+async function nativeSigningFixtureProbe(input) {
   demand(path.isAbsolute(input) && input.endsWith(".rpm"));
   const original = await fileReference(input);
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ohtia-disposable-signer-"));
@@ -33,48 +34,6 @@ export async function signingFixtureProbe(input) {
       { stdin: Buffer.concat([passphrase, Buffer.from("\n")]) },
     );
   try {
-    const sshKey = path.join(directory, "source-key");
-    const repository = path.join(directory, "source");
-    const allowed = path.join(directory, "allowed-signers");
-    await command("/usr/bin/ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", sshKey]);
-    fs.writeFileSync(
-      allowed,
-      "fixture@example.invalid " + fs.readFileSync(sshKey + ".pub", "utf8"),
-      { mode: 0o600 },
-    );
-    await command("/usr/bin/git", [
-      "-c",
-      "init.defaultBranch=fixture",
-      "init",
-      "--quiet",
-      repository,
-    ]);
-    await command("/usr/bin/git", [
-      "-C",
-      repository,
-      "-c",
-      "user.name=Disposable fixture",
-      "-c",
-      "user.email=fixture@example.invalid",
-      "-c",
-      "gpg.format=ssh",
-      "-c",
-      "user.signingkey=" + sshKey,
-      "commit",
-      "--allow-empty",
-      "--quiet",
-      "-S",
-      "-m",
-      "Disposable source signature fixture",
-    ]);
-    await command("/usr/bin/git", [
-      "-C",
-      repository,
-      "-c",
-      "gpg.ssh.allowedSignersFile=" + allowed,
-      "verify-commit",
-      "HEAD",
-    ]);
     await gpg(
       "--quick-generate-key",
       "Ohtia disposable signing fixture <fixture@example.invalid>",
@@ -94,15 +53,7 @@ export async function signingFixtureProbe(input) {
       .filter((l) => l.startsWith("fpr:"))
       .map((l) => l.split(":")[9]);
     const secret = await gpg("--armor", "--export-secret-subkeys", primary);
-    const catalog = generateKeyPairSync("ed25519"),
-      source = generateKeyPairSync("ed25519");
-    const raw = source.publicKey.export({ format: "der", type: "spki" }).subarray(-32);
-    const ssh = Buffer.concat([
-      Buffer.from([0, 0, 0, 11]),
-      Buffer.from("ssh-ed25519"),
-      Buffer.from([0, 0, 0, 32]),
-      raw,
-    ]).toString("base64");
+    const catalog = generateKeyPairSync("ed25519");
     const policy = {
       schema_version: 1,
       enabled: true,
@@ -113,8 +64,7 @@ export async function signingFixtureProbe(input) {
       caller_workflow: ".github/workflows/installation-signing.yml",
       signing_workflow: { workflow: ".github/workflows/signing-worker.yml", sha: "c".repeat(40) },
       build_workflow: { workflow: ".github/workflows/signing-build.yml", sha: "d".repeat(40) },
-      source_anchor: "e".repeat(40),
-      source_signers: [{ principal: "fixture@example.invalid", public_key: "ssh-ed25519 " + ssh }],
+
       catalog_public_key: catalog.publicKey.export({ format: "pem", type: "spki" }).toString(),
       rpm_primary: fingerprints[0].toLowerCase(),
       rpm_subkey: fingerprints[1].toLowerCase(),
@@ -284,7 +234,6 @@ export async function signingFixtureProbe(input) {
       real_keys_used: false,
       input: original,
       checks: {
-        native_ssh_git_verification: true,
         subkey_only_import: true,
         usable_primary_secret_refused: true,
         rpm_body_preserved: true,
@@ -310,16 +259,41 @@ export async function signingFixtureProbe(input) {
     fs.rmSync(directory, { recursive: true, force: true });
   }
 }
+export async function signingFixtureProbe(input, { resources = false } = {}) {
+  if (!resources) return nativeSigningFixtureProbe(input);
+  const { result, resource_observations } = await observeSigningResources(() =>
+    nativeSigningFixtureProbe(input),
+  );
+  return { ...result, resource_observations };
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 3) {
-    process.stderr.write("Use installation-signing-probe.mjs <absolute-unsigned-fixture-rpm>.\n");
+  const args = process.argv.slice(2);
+  const resources = args.length === 2 && args[0] === "--resources";
+  if (!(args.length === 1 || resources)) {
+    process.stderr.write(
+      "Use installation-signing-probe.mjs [--resources] <absolute-unsigned-fixture-rpm>.\n",
+    );
     process.exitCode = 1;
   } else
     try {
       process.stdout.write(
-        JSON.stringify(await signingFixtureProbe(process.argv[2]), null, 2) + "\n",
+        JSON.stringify(await signingFixtureProbe(args.at(-1), { resources }), null, 2) + "\n",
       );
-    } catch {
+    } catch (error) {
+      if (resources)
+        process.stdout.write(
+          JSON.stringify(
+            {
+              fixture_only: true,
+              status: "failed",
+              code: error instanceof SigningError ? error.code : "operation_failed",
+              resource_observations: error.resource_observations ?? null,
+            },
+            null,
+            2,
+          ) + "\n",
+        );
       process.stderr.write("Disposable signing probe refused.\n");
       process.exitCode = 1;
     }

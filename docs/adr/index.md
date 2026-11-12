@@ -45,7 +45,7 @@ The conventions for this register are defined in [Architecture decisions](../arc
 
 - [ADR-0044 — Linux graphics defaults and scoped KDE color fallback](adr-0044-linux-graphics-compatibility.md) — Preserve native GPU and WebGPU defaults across supported GNOME Wayland profiles and avoid unsupported color negotiation only on KDE Wayland.
 
-- [ADR-0045 — Personally signed source history after an approved baseline](adr-0045-personally-signed-source-history.md) — Approve an initial source baseline independently and require authorized personal signatures on every subsequent commit, including merges.
+- [ADR-0045 — Personally signed source history after an approved baseline](adr-0045-personally-signed-source-history.md) — Deprecated source-history signature decision, replaced by ADR-0049 main source selection without historical signature checks.
 - [ADR-0046 — Required KDE Plasma desktop and native cell identifiers](adr-0046-required-kde-plasma-desktop-and-native-cell-identifiers.md) — Require KDE Plasma 6 beside GNOME on every Linux profile and CPU, and name every native cell by its target, profile and Linux desktop.
 
 ## Interface foundations
@@ -85,3 +85,5 @@ The conventions for this register are defined in [Architecture decisions](../arc
 ## Native delivery mechanisms
 
 - [ADR-0038 — Native desktop packages with authenticated update admission](adr-0038-desktop-delivery-mechanisms.md) — Select native package profiles, shared display-session qualification and authenticated updates with independently gated platform distribution.
+
+- [ADR-0049 — Main source selection for package preparation](adr-0049-main-source-selection-for-packages.md) — Prepare packages from an exact commit integrated into main without auditing repository integration or commit signatures.
