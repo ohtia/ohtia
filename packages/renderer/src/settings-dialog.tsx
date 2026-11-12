@@ -1,3 +1,4 @@
+import { ConnectionsPanel } from "./connections-panel.js";
 import { useSystemReducedMotion } from "./system-motion.js";
 import {
   useEffect,
@@ -545,6 +546,7 @@ export function SettingsDialog({
             if (open) focusSetting(id, "appearance");
           }}
         />
+        {open && <ConnectionsPanel port={port} locale={locale} available={available} />}
         {sections.map((section) => (
           <section key={section.id} aria-labelledby={`${id}-${section.id}`}>
             <h3 id={`${id}-${section.id}`}>{section.title}</h3>

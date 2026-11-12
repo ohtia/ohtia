@@ -45,6 +45,9 @@ export interface ConnectionSnapshot {
   readonly connection: string;
   readonly state: ConnectionState;
   readonly reason: ConnectionReason | null;
+  readonly display_name: string;
+  readonly account_email: string | null;
+  readonly last_account_email: string | null;
   readonly probing: boolean;
   readonly probe_id: string | null;
   readonly model_list_revision: number | null;
@@ -107,6 +110,9 @@ export function isConnectionSnapshot(value: unknown): value is ConnectionSnapsho
       "connection",
       "state",
       "reason",
+      "display_name",
+      "account_email",
+      "last_account_email",
       "probing",
       "probe_id",
       "model_list_revision",
@@ -124,6 +130,12 @@ function snapshotFields(value: Record<string, unknown>): boolean {
       value.state as ConnectionState,
       value.reason as ConnectionReason | null,
     ) &&
+    typeof value.display_name === "string" &&
+    value.display_name.length > 0 &&
+    (value.account_email === null ||
+      (typeof value.account_email === "string" && value.account_email.length > 0)) &&
+    (value.last_account_email === null ||
+      (typeof value.last_account_email === "string" && value.last_account_email.length > 0)) &&
     typeof value.probing === "boolean" &&
     (value.probe_id === null ||
       (typeof value.probe_id === "string" &&

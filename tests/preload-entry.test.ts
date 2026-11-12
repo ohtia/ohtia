@@ -589,6 +589,9 @@ it("exposes connection calls and revokes bounded logical subscriptions on reconn
     probe_id: null,
     model_list_revision: null,
     model_count: 0,
+    display_name: "Fake",
+    account_email: null,
+    last_account_email: null,
   };
   h.ipcRenderer.send.mockImplementation((_channel: string, text: string) => {
     const request = JSON.parse(text);
@@ -664,6 +667,9 @@ it("reclaims connection capacity after rejected openings, sequence gaps and cons
     probe_id: null,
     model_list_revision: null,
     model_count: 0,
+    display_name: "Fake",
+    account_email: null,
+    last_account_email: null,
     kind: "state",
   };
   h.ipcRenderer.send.mockImplementation((_channel: string, text: string) => {

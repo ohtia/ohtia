@@ -293,3 +293,73 @@
 .settings-feedback[hidden] {
   display: none;
 }
+
+.connection-row {
+  display: grid;
+  gap: var(--space-2);
+  min-inline-size: var(--space-0);
+  hyphens: auto;
+}
+.connection-email {
+  overflow-wrap: anywhere;
+}
+.connection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.connection-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  white-space: normal;
+}
+.connection-actions button > span {
+  display: inline-flex;
+}
+.connection-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-width: var(--border-width-default);
+  border-style: solid;
+  border-radius: var(--radius-small);
+}
+.connection-notice > svg {
+  flex-shrink: 0;
+}
+.connection-attention {
+  background: var(--attention-surface);
+  color: var(--attention-content);
+  border-color: var(--attention-border);
+}
+.connection-info {
+  border-color: var(--border-control);
+  background: var(--surface-emphasis);
+  color: var(--content-primary);
+}
+.connection-danger {
+  background: var(--danger-surface);
+  color: var(--danger-content);
+  border-color: var(--danger-border);
+}
+
+@media (forced-colors: active) {
+  .connection-notice {
+    color: CanvasText;
+    background: Canvas;
+    border-color: CanvasText;
+  }
+}
+
+.connection-feedback:not(:empty) {
+  display: grid;
+  gap: var(--space-2);
+  margin-block-start: var(--space-2);
+}
+
+.connection-retry {
+  margin-block-start: var(--space-2);
+}
