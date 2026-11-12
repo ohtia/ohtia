@@ -30,6 +30,7 @@ applicable_blocks:
     "SPEC-001-028",
     "SPEC-001-032",
     "SPEC-001-042",
+    "SPEC-001-043",
   ]
 ---
 
@@ -58,6 +59,7 @@ Demonstrate common foundation and native contributor paths on every required pla
 - [SPEC-001-028: Linux-first delivery and platform capability admission](./epic.md#spec-001-028-linux-first-delivery-and-platform-capability-admission)
 - [SPEC-001-032: Release redesign and replaced scope](./epic.md#spec-001-032-release-redesign-and-replaced-scope)
 - [SPEC-001-042: Release security inventory and output R37](./epic.md#spec-001-042-release-security-inventory-and-output-r37)
+- [SPEC-001-043: Withdrawal of a published release](./epic.md#spec-001-043-withdrawal-of-a-published-release)
 
 ## Tasks
 
@@ -82,6 +84,7 @@ Demonstrate common foundation and native contributor paths on every required pla
 - [ ] Completion gate: verify STORY-001-011 output U11 and its full release condition in the Dependencies output registry and SPEC-001-021.
 - [ ] Completion gate: verify STORY-001-012 output B12 and its full release condition in the Dependencies output registry and SPEC-001-021.
 - [ ] Completion gate: verify STORY-001-037 output R37 and its full release condition in the Dependencies output registry and SPEC-001-042.
+- [ ] Completion gate: verify STORY-001-038 output W38 and its full release condition in the Dependencies output registry and SPEC-001-043.
 - [ ] Completion gate: verify STORY-001-014 output N14 and its full release condition in the Dependencies output registry and SPEC-001-021.
 - [ ] Completion gate: verify STORY-001-018 output D1b and its full release condition in the Dependencies output registry and SPEC-001-021.
 - [ ] Completion gate: verify Native facilities output NF and its full release condition in the Dependencies output registry and SPEC-001-021.
