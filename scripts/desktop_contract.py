@@ -24,6 +24,7 @@ FACILITIES = {
     "darwin-arm64": ["macos-15", "macos-26", "xcode-27"],
 }
 TOOL_ADRS = {
+    "@napi-rs/keyring": "0048",
     "typescript": "0002",
     "electron": "0003",
     "node": "0004",
@@ -70,6 +71,7 @@ BUDGET_UNITS = {
     "event_queue_items": "event",
     "event_queue_bytes": "byte",
     "request_deadline_ms": "millisecond",
+    "connection_probe_ms": "millisecond",
     "service_start_ms": "millisecond",
     "application_start_ms": "millisecond",
     "shutdown_grace_ms": "millisecond",
@@ -499,6 +501,19 @@ def check_toolchain(record: dict[str, Any], root: Path) -> None:
                         artifact.get("path") == f"package/prebuilds/{target}.node",
                         "Native addon path mismatch",
                     )
+    keyring = tools["@napi-rs/keyring"]
+    require(set(keyring.get("artifacts", {})) == TARGETS, "Keyring native target coverage differs")
+    for target, artifact in keyring["artifacts"].items():
+        check_artifact(artifact)
+        require(
+            bool(re.fullmatch(r"[a-f0-9]{64}", artifact.get("binding_sha256", ""))),
+            "Invalid keyring binding hash",
+        )
+        require(
+            artifact.get("package", "").startswith("@napi-rs/keyring-"),
+            "Invalid keyring native package",
+        )
+        require(artifact.get("path", "").endswith(".node"), "Missing keyring native binding path")
     helpers = tools["electron-builder"].get("linux_packaging_helpers", {})
     require(set(helpers) == {"fpm", "7zip"}, "Frozen Linux packaging helpers are required")
     for name, helper in helpers.items():

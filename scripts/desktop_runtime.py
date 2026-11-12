@@ -128,6 +128,17 @@ def assemble(target: str, destination: Path) -> None:
     native.mkdir()
     shutil.copyfile(addon, native / "binding.node")
     shutil.rmtree(app_directory / "node_modules/better-sqlite3/prebuilds")
+    keyring = manifest["tools"]["@napi-rs/keyring"]["artifacts"][target]
+    scope = app_directory / "node_modules/@napi-rs"
+    binding = scope / keyring["package"].split("/")[1] / keyring["path"].removeprefix("package/")
+    if (
+        sha256(binding) != keyring["binding_sha256"]
+        or architecture(binding) != target.split("-")[1]
+    ):
+        raise ValueError("The keyring binding does not match its reviewed target.")
+    for directory in scope.iterdir():
+        if directory.name not in ("keyring", keyring["package"].split("/")[1]):
+            shutil.rmtree(directory)
     (app_directory / "storage.json").write_text(
         json.dumps(
             {

@@ -23,6 +23,29 @@ const event = <
   errors: E,
 ) => Object.freeze({ component, operation, severity, outcome, errors: Object.freeze(errors) });
 export const diagnosticCatalog = Object.freeze({
+  "ohtia.connection.connected": event("broker", "connection.connect", "INFO", "connected", []),
+  "ohtia.connection.failed": event("broker", "connection.run", "WARN", "failure", [
+    "store_unavailable",
+    "connection_failed",
+    "sign_in_timeout",
+    "plan_use_not_allowed",
+    "sign_in_rejected",
+  ]),
+  "ohtia.connection.subscribe": event("broker", "connection.subscribe", "DEBUG", "accepted", []),
+  "ohtia.connection.list_models": event(
+    "broker",
+    "connection.listModels",
+    "DEBUG",
+    "completed",
+    [],
+  ),
+  "ohtia.connection.read": event("broker", "connection.read", "DEBUG", "success", []),
+  "ohtia.connection.connect": event("broker", "connection.connect", "INFO", "accepted", []),
+  "ohtia.connection.disconnect": event("broker", "connection.disconnect", "INFO", "completed", []),
+  "ohtia.connection.probe_listed": event("broker", "connection.probe", "INFO", "listed", []),
+  "ohtia.connection.probe_unreachable": event("broker", "connection.probe", "WARN", "unreachable", [
+    "probe_unreachable",
+  ]),
   "ohtia.window.bounds_failed": event("broker", "bounds.replace", "WARN", "failure", [
     "storage_failed",
   ]),

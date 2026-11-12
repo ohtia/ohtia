@@ -6,7 +6,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { _electron, expect } from "@playwright/test";
 import { openWorkspaceSettings, verifyWorkspaceComposition } from "./command-workspace.mjs";
 import { verifyPackagedSettings } from "./settings-acceptance.mjs";
-import { verifyMissingLocatedDatabase } from "./storage-native-recovery.mjs";
+import {
+  verifyMissingLocatedDatabase,
+  waitForReplacedLocalePublication,
+} from "./storage-native-recovery.mjs";
 import { installStorageNoticeHold, waitForHeldStorageNotice } from "./storage-opening-notice.mjs";
 import {
   recordNativeFailure,
@@ -514,19 +517,22 @@ try {
     .poll(async () => (await page.evaluate(() => window.ohtia.foundation.readStatus().result)).ok)
     .toBe(false);
   await page.evaluate(() => window.ohtia.bootstrap.retryService());
-  await expect
-    .poll(
-      async () =>
-        (await page.evaluate(() => window.ohtia.foundation.readStatus().result)).value?.engine,
-      { timeout: 20000 },
-    )
-    .toBe("verified");
+  enterPhase("wait-replaced-utility-locale-publication", "html");
+  await waitForReplacedLocalePublication(
+    page,
+    second,
+    initialLanguage.value.serviceGeneration,
+    (observed) => record("utility-locale-recovery-publication", observed),
+  );
   expect(await page.evaluate(() => window.__storageDocumentMarker)).toBe("retained");
   enterPhase("verify-retained-appearance", 'input[type="radio"][value="system"]');
   await expect(control).toBeChecked();
   enterPhase("verify-replaced-utility-locale", 'select[aria-describedby="language-help"]');
+  await expect(language).toHaveAttribute("aria-disabled", "false");
   await language.selectOption("es-AR");
+  await expect(page.locator("html")).toHaveAttribute("lang", "es-AR");
   await expect(second.locator("html")).toHaveAttribute("lang", "es-AR");
+  await expect(language).toHaveAttribute("aria-disabled", "false");
   await language.selectOption(initialLanguage.value.record.value);
   await expect(page.locator("html")).toHaveAttribute("lang", initialLanguage.value.effectiveLocale);
   await expect(second.locator("html")).toHaveAttribute(

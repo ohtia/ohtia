@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 /** Check resolved modules, before tree shaking can hide an accidental development import. */
-export function productGraph(root) {
+export function productGraph(root, { development = false } = {}) {
   const canonical = fs.realpathSync(root);
   return {
     name: "exclude-development-graphs",
@@ -15,6 +15,7 @@ export function productGraph(root) {
       // This is the controlled product localization module, not a development catalog.
       if (/^packages\/contracts\/(?:src\/catalogs\.ts|dist\/catalogs\.js)$/.test(relative)) return;
       if (
+        (!development && /(?:^|\/)fake-provider\.(?:ts|js)$/.test(relative)) ||
         /^(?:tools|tests)\//.test(relative) ||
         relative
           .split("/")
@@ -24,4 +25,21 @@ export function productGraph(root) {
         throw new Error(`Development module in product graph: ${relative}`);
     },
   };
+}
+
+/** Inspect assembled and final package bytes in every native CI cell. */
+export function inspectProviderArtifact(directory) {
+  for (const name of fs.readdirSync(directory, { recursive: true })) {
+    const file = path.join(directory, name);
+    if (!fs.lstatSync(file).isFile()) continue;
+    if (/fake-provider\.(?:ts|js|mjs|cjs|map|d\.ts)$/.test(path.basename(name)))
+      throw new Error("Fake provider module in installed artifact.");
+    if (
+      /\.(?:js|mjs|cjs)$/.test(name) &&
+      /fake-provider|synthetic-session|__ohtiaCredentialAcceptance/.test(
+        fs.readFileSync(file, "utf8"),
+      )
+    )
+      throw new Error("Fake provider bytes in installed artifact.");
+  }
 }

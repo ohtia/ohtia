@@ -1,3 +1,7 @@
+import { ConnectionManager } from "./connection-manager.js";
+import { ConnectionBroker } from "./connection-broker.js";
+import { nativeCredentialStore } from "./native-credentials.js";
+declare const __OHTIA_DEVELOPMENT_BUILD__: boolean;
 import {
   requestBootstrapPlacement,
   windowOptions,
@@ -185,6 +189,8 @@ const windows = new Map<
   }
 >();
 let service: ServiceSupervisor | undefined;
+let connections: ConnectionBroker | undefined;
+let credentials: Awaited<ReturnType<typeof nativeCredentialStore>> | undefined;
 let pendingWindows = 0;
 // ADR-0047: Linux windows also receive the desktop portal's reduced-motion setting.
 let systemMotion: SystemMotionNotice = { sequence: 0, value: "unknown" };
@@ -376,6 +382,7 @@ function detach(window: BrowserWindow): void {
   delete state.detach;
   delete state.frame;
   service?.disposeWindow(state.generation);
+  connections?.disposeWindow(state.generation);
 }
 async function createWindow(
   focused?: BrowserWindow,
@@ -618,8 +625,10 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
     },
     generation,
     (state, requestedStop = false) => {
-      if (state === "ready") void diagnostics?.append({ event_name: "ohtia.service.ready" });
-      else if (!requestedStop && !failureReported) {
+      if (state === "ready") {
+        void diagnostics?.append({ event_name: "ohtia.service.ready" });
+        if (connections && service) service.reportConnections(connections.manager);
+      } else if (!requestedStop && !failureReported) {
         failureReported = true;
         void diagnostics?.append({
           event_name: "ohtia.service.unavailable",
@@ -749,6 +758,31 @@ const startup = setTimeout(() => {
 async function start(): Promise<void> {
   motionObserver?.start();
   await app.whenReady();
+  credentials = await nativeCredentialStore(context, app.getPath("userData"));
+  const developmentProvider =
+    typeof __OHTIA_DEVELOPMENT_BUILD__ !== "undefined" &&
+    __OHTIA_DEVELOPMENT_BUILD__ &&
+    context.mode === "development"
+      ? await import("./fake-provider.js")
+      : undefined;
+  const adapters = developmentProvider ? [developmentProvider.createFakeProvider()] : [];
+  if (acceptance && developmentProvider)
+    Object.defineProperty(globalThis, "__ohtiaCredentialAcceptance", {
+      configurable: true,
+      value: developmentProvider.credentialAcceptance(credentials),
+    });
+  const connectionDiagnostic = (event: DiagnosticEvent) => {
+    void diagnostics?.append(event);
+  };
+  connections = new ConnectionBroker(
+    new ConnectionManager(adapters, connectionDiagnostic),
+    connectionDiagnostic,
+  );
+  const manager = connections.manager;
+  await Promise.all(manager.ids().map((id) => manager.read(id)));
+  manager.subscribe(() => {
+    if (service?.available) service.reportConnections(manager);
+  });
   nativeTheme.on("updated", updateWindowThemes);
   locale = resolveInterfaceLocale(preferredSystemLanguages());
   commandMenus.refresh();
@@ -842,7 +876,7 @@ async function start(): Promise<void> {
       return;
     }
     if (authority.value.kind === "cancel" || authority.value.kind === "unsubscribe") {
-      service?.control(authority.value);
+      if (!connections?.control(authority.value)) service?.control(authority.value);
       return;
     }
     const accepted =
@@ -899,6 +933,7 @@ async function start(): Promise<void> {
       if (reply.ok) deliver(reply.value);
       return;
     }
+    if (connections?.handle({ ...accepted.value, deliver })) return;
     if (!service) {
       accepted.value.release();
       accepted.value.releaseSubscription();
@@ -1130,7 +1165,10 @@ app.on("before-quit", (event) => {
   clearTimeout(startup);
   for (const window of windows.keys()) detach(window);
   void (async () => {
-    const ceased = await stopBrokerServices(service, diagnostics, () => windowPreferences.drain());
+    const ceased = await stopBrokerServices(service, diagnostics, async () => {
+      await windowPreferences.drain();
+      await credentials?.drain();
+    });
     if (!ceased) {
       quitting = false;
       for (const [window, state] of windows) {
@@ -1156,6 +1194,7 @@ app.on("before-quit", (event) => {
       void reportError("startup_failed");
       return;
     }
+    connections?.dispose();
     cleanExit = true;
     motionObserver?.dispose();
     if (metricTimer) clearInterval(metricTimer);

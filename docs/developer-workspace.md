@@ -2,6 +2,8 @@
 type: Playbook
 title: Locked developer workspace
 description: Bootstrap isolated contributor tools, build the six package boundaries and verify the frozen workspace without changing research data.
+generated:
+  by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
 sources:
@@ -80,6 +82,12 @@ All packages export their root only, with `dist/index.js` and `dist/index.d.ts`.
 - `packages/utility`: the admitted file-backed store, immutable migrations, verified checkpoint/recovery lifecycle and transactional appearance receipts described in [Durable foundation storage](storage.md), plus a disposable in-memory engine inspection for workspace checks.
 
 The checker rejects undeclared dependencies, prohibited renderer/domain imports, cross-package filesystem imports, package subpaths, computed dynamic imports, CommonJS imports, symlinked sources, source-level compiler references and package dependency cycles across runtime, development, optional and peer declarations. It checks import/export declarations, type imports and dynamic import expressions through the TypeScript syntax tree. Tests include deliberate authority violations and a cyclic manifest. Allowed runtime dependencies do not authorize every API of an otherwise permitted module; subsequent boundary owners still implement their operation-specific admission controls. IPC and wire schemas follow the [bounded application-port specification](epics/EPIC-001-desktop-foundation/STORY-001-003-define-and-verify-the-bounded-application-port.md), and storage follows the [persistent storage specification](epics/EPIC-001-desktop-foundation/STORY-001-005-persist-a-minimal-command-with-verified-migration-recovery.md).
+
+## Native credential-store check
+
+[STORY-003-001](epics/EPIC-003-research-agents/STORY-003-001-provider-adapter-contract-and-credential-store.md) supplies `python3 scripts/workspace.py run credentials:test`. Run it in the task checkout's ordinary development account with its graphical desktop and native credential service available. Close any development window from that checkout first. The command builds the development runtime, then starts three separate Electron processes to store a fixed synthetic session, read it after restart and delete it. Main uses the admitted checkout's credential namespace and refuses to replace any existing or unusable session. It never reads the installed service or returns a credential to the controller. After an interrupted run, `credentials:test read` checks its retained synthetic session and `credentials:test delete` removes only that exact synthetic value; both refuse any other session. Results are retained under ignored `tmp/credential-acceptance/result.json`; retain the exact candidate and native OS, CPU, desktop, store implementation and observed unlock behavior with that result.
+
+Use `python3 scripts/workspace.py run credentials:test unavailable` in an isolated Linux account with no Secret Service, then with its store locked and its unlock prompt cancelled, to confirm unavailability without writing a session. Those are separate native observations. Repeat the normal three-process check on the issue's x86-64 Windows, Ubuntu, Fedora and Debian virtual machines, with GNOME and KDE for each Linux distribution. GNOME Keyring, `ksecretd` and `kwalletd6` remain distinct implementations to observe. A local synthetic store or one desktop's result does not qualify another environment.
 
 ## Native qualification handoff
 

@@ -2,15 +2,40 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { verifyMissingLocatedDatabase } from "../tooling/storage-native-recovery.mjs";
+import { failure } from "@ohtia/contracts";
+import {
+  verifyMissingLocatedDatabase,
+  waitForReplacedLocalePublication,
+} from "../tooling/storage-native-recovery.mjs";
 import {
   nativeFailureObservations,
   recordNativeFailure,
   withNativeFailureObservation,
 } from "../tooling/native-failure-observation.mjs";
 
+// Native locator waits are driven explicitly so a delayed renderer cannot pass the barrier.
+const { observeAttribute } = vi.hoisted(() => ({ observeAttribute: vi.fn() }));
+vi.mock("@playwright/test", async (original) => {
+  const actual = await original<typeof import("@playwright/test")>();
+  return {
+    ...actual,
+    expect: Object.assign(
+      (value: unknown, message?: string) =>
+        value && typeof value === "object" && "nativeLocaleFixture" in value
+          ? {
+              toHaveAttribute: (name: string, expected: string) =>
+                observeAttribute(value, name, expected),
+            }
+          : actual.expect(value, message),
+      { poll: actual.expect.poll },
+    ),
+  };
+});
+
 const roots: string[] = [];
 afterEach(() => {
+  vi.unstubAllGlobals();
+  observeAttribute.mockReset();
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 function fixture() {
@@ -214,5 +239,183 @@ describe("missing-database native recovery evidence", () => {
     expect(input.page.evaluate).toHaveBeenCalledOnce();
     expect(input.persist).not.toHaveBeenCalled();
     expect(fs.readFileSync(input.database, "utf8")).toBe("synthetic database bytes");
+  });
+});
+
+function localeFixture(effectiveLocale = "en-US", generation = "replacement") {
+  const record = { schemaVersion: 1, revision: 7, value: "system", source: "saved" };
+  const port = {
+    readStatus: vi.fn(() => ({
+      result: Promise.resolve({ ok: true, value: { engine: "verified" } }),
+    })),
+    readLocale: vi.fn(() => ({
+      result: Promise.resolve({
+        ok: true,
+        value: { effectiveLocale, serviceGeneration: generation, record },
+      }),
+    })),
+    replaceLocale: vi.fn(
+      (command: { value: string; expectedRevision: number; operationId: string }) => ({
+        result: Promise.resolve({
+          ok: true,
+          value: { ...record, value: command.value, revision: 8 },
+        }),
+      }),
+    ),
+  };
+  const bootstrap = { read: vi.fn(async () => ({ state: "storage_ready" })) };
+  vi.stubGlobal("window", { ohtia: { foundation: port, bootstrap } });
+  const publications = [0, 1].map(() => {
+    let publish!: () => void;
+    const published = new Promise<void>((resolve) => (publish = resolve));
+    return { nativeLocaleFixture: true, published, publish };
+  });
+  observeAttribute.mockImplementation(async (locator, name, value) => {
+    expect(name).toBe("lang");
+    expect(value).toBe(effectiveLocale === "ko-KR" ? "fr-FR" : "ko-KR");
+    await locator.published;
+  });
+  const pages = publications.map((publication) => ({
+    evaluate: vi.fn(async (callback: (argument: unknown) => unknown, argument?: unknown) =>
+      callback(argument),
+    ),
+    locator: vi.fn((selector: string) => {
+      expect(selector).toBe("html");
+      return publication;
+    }),
+  }));
+  const recordPublication = vi.fn();
+  return { port, bootstrap, publications, pages, recordPublication };
+}
+
+describe("replacement locale publication barrier", () => {
+  it("waits for storage admission before reading or changing the recovered locale", async () => {
+    const input = localeFixture();
+    let admit!: (value: { state: string }) => void;
+    input.bootstrap.read
+      .mockResolvedValueOnce({ state: "storage_opening" })
+      .mockImplementationOnce(() => new Promise((resolve) => (admit = resolve)));
+    const pending = waitForReplacedLocalePublication(
+      ...input.pages,
+      "original",
+      input.recordPublication,
+    );
+    await vi.waitFor(() => expect(input.bootstrap.read).toHaveBeenCalledTimes(2));
+    expect(input.port.readLocale).not.toHaveBeenCalled();
+    expect(input.port.replaceLocale).not.toHaveBeenCalled();
+    input.publications.forEach((publication) => publication.publish());
+    admit({ state: "storage_ready" });
+    await expect(pending).resolves.toMatchObject({ serviceGeneration: "replacement" });
+    expect(input.port.replaceLocale).toHaveBeenCalledOnce();
+  });
+  it("keeps a subsequent selector action pending until both retained renderers observe the replacement", async () => {
+    const input = localeFixture();
+    const select = vi.fn();
+    const pending = waitForReplacedLocalePublication(
+      ...input.pages,
+      "original",
+      input.recordPublication,
+    ).then(select);
+    await vi.waitFor(() => expect(observeAttribute).toHaveBeenCalledTimes(1));
+    expect(select).not.toHaveBeenCalled();
+    expect(input.recordPublication).not.toHaveBeenCalled();
+    input.publications[0]!.publish();
+    await vi.waitFor(() => expect(observeAttribute).toHaveBeenCalledTimes(2));
+    expect(select).not.toHaveBeenCalled();
+    expect(input.recordPublication).not.toHaveBeenCalled();
+    input.publications[1]!.publish();
+    await pending;
+    expect(select).toHaveBeenCalledWith({
+      serviceGeneration: "replacement",
+      choice: "ko-KR",
+      record: { schemaVersion: 1, revision: 8, value: "ko-KR", source: "saved" },
+    });
+    expect(input.port.replaceLocale).toHaveBeenCalledOnce();
+    expect(input.port.replaceLocale).toHaveBeenCalledWith(
+      { operationId: expect.any(String), expectedRevision: 7, value: "ko-KR" },
+      "replacement",
+    );
+  });
+
+  it("uses a distinct publication when the recovered language is already Korean", async () => {
+    const input = localeFixture("ko-KR");
+    input.publications.forEach((publication) => publication.publish());
+    await expect(
+      waitForReplacedLocalePublication(...input.pages, "original", input.recordPublication),
+    ).resolves.toMatchObject({ choice: "fr-FR" });
+    expect(input.port.replaceLocale).toHaveBeenCalledOnce();
+  });
+
+  it("refuses the old generation before creating a synthetic locale mutation", async () => {
+    const input = localeFixture("en-US", "original");
+    await expect(
+      waitForReplacedLocalePublication(...input.pages, "original", input.recordPublication),
+    ).rejects.toThrow();
+    expect(input.port.replaceLocale).not.toHaveBeenCalled();
+    expect(observeAttribute).not.toHaveBeenCalled();
+  });
+
+  it("preserves a failed synchronization write without replay or selector admission", async () => {
+    const input = localeFixture();
+    const refused = failure("service_unavailable");
+    input.port.replaceLocale.mockReturnValueOnce({ result: Promise.resolve(refused) } as never);
+    const select = vi.fn();
+    await expect(
+      waitForReplacedLocalePublication(...input.pages, "original", input.recordPublication).then(
+        select,
+      ),
+    ).rejects.toThrow(JSON.stringify(refused));
+    expect(input.port.replaceLocale).toHaveBeenCalledOnce();
+    expect(select).not.toHaveBeenCalled();
+    expect(observeAttribute).not.toHaveBeenCalled();
+  });
+
+  it("preserves a renderer assertion failure without replaying the synchronization write", async () => {
+    const input = localeFixture();
+    const error = new Error("synthetic publication timeout");
+    observeAttribute.mockRejectedValueOnce(error);
+    const select = vi.fn();
+    await expect(
+      waitForReplacedLocalePublication(...input.pages, "original", input.recordPublication).then(
+        select,
+      ),
+    ).rejects.toBe(error);
+    expect(input.port.replaceLocale).toHaveBeenCalledOnce();
+    expect(select).not.toHaveBeenCalled();
+  });
+  it("retains a refused locale read in the failure without writing or recording success", async () => {
+    const input = localeFixture();
+    const refused = failure("service_unavailable");
+    input.port.readLocale.mockReturnValueOnce({ result: Promise.resolve(refused) } as never);
+    await expect(
+      waitForReplacedLocalePublication(...input.pages, "original", input.recordPublication),
+    ).rejects.toThrow(JSON.stringify(refused));
+    expect(input.port.replaceLocale).not.toHaveBeenCalled();
+    expect(input.recordPublication).not.toHaveBeenCalled();
+  });
+
+  it("persists completed publication evidence before a following selector failure", async () => {
+    const input = localeFixture();
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "ohtia-locale-recovery-"));
+    roots.push(root);
+    const file = path.join(root, "checkpoint.json");
+    input.recordPublication.mockImplementation((observed) =>
+      fs.writeFileSync(file, JSON.stringify(observed)),
+    );
+    input.publications.forEach((publication) => publication.publish());
+    const failure = new Error("synthetic subsequent selector failure");
+    await expect(
+      waitForReplacedLocalePublication(...input.pages, "original", input.recordPublication).then(
+        () => {
+          throw failure;
+        },
+      ),
+    ).rejects.toBe(failure);
+    expect(input.recordPublication).toHaveBeenCalledOnce();
+    expect(JSON.parse(fs.readFileSync(file, "utf8"))).toMatchObject({
+      serviceGeneration: "replacement",
+      choice: "ko-KR",
+      record: { revision: 8, value: "ko-KR" },
+    });
   });
 });

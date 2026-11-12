@@ -1,4 +1,5 @@
 import {
+  type ConnectionEvent,
   decodeAppearanceChange,
   decodePresentationChange,
   type PresentationSnapshot,
@@ -49,9 +50,12 @@ interface Pending {
 }
 interface Stream {
   readonly id: string;
-  readonly topic: "status" | "appearance" | "locale" | "presentation";
+  readonly connection?: string;
+  readonly topic: "status" | "appearance" | "locale" | "presentation" | "connection";
   readonly listener: (
-    notice: Outcome<FoundationStatus | AppearanceRecord | LocaleSnapshot | PresentationSnapshot>,
+    notice: Outcome<
+      FoundationStatus | AppearanceRecord | LocaleSnapshot | PresentationSnapshot | ConnectionEvent
+    >,
   ) => void;
   readonly queue: { readonly event: PortEvent; readonly bytes: number }[];
   bytes: number;
@@ -125,7 +129,8 @@ export function createFoundationPort(
     if (notify) {
       for (const entry of [...pending.values()]) {
         if (
-          (entry.request.operation === "status.subscribe" ||
+          (entry.request.operation === "connection.subscribe" ||
+            entry.request.operation === "status.subscribe" ||
             entry.request.operation === "appearance.subscribe" ||
             entry.request.operation === "locale.subscribe" ||
             entry.request.operation === "presentation.subscribe") &&
@@ -173,6 +178,7 @@ export function createFoundationPort(
     if (
       !stream.active ||
       stream.topic !== event.topic ||
+      (event.topic === "connection" && event.payload.connection !== stream.connection) ||
       event.sequence !== stream.sequence + 1 ||
       ((event.topic === "appearance" || event.topic === "locale") &&
         (event.topic === "locale" ? event.payload.record.revision : event.payload.revision) <=
@@ -249,6 +255,31 @@ export function createFoundationPort(
     }
     if (message.payload.ok) {
       if (
+        entry.request.operation.startsWith("connection.") &&
+        message.operation === entry.request.operation &&
+        entry.request.operation !== "connection.subscribe"
+      ) {
+        const value = message.payload.value as { connection: string };
+        const input = entry.request.payload as { connection: string };
+        if (value.connection !== input.connection) {
+          settle(entry, failure("invalid_service_result"));
+          return;
+        }
+      }
+      if (entry.request.operation === "connection.listModels") {
+        const value = message.payload.value as OperationOutputs["connection.listModels"];
+        const input = entry.request.payload;
+        if (
+          value.model_list_revision !== input.model_list_revision ||
+          value.models.length > input.count ||
+          value.nextCursor !== input.cursor + value.models.length ||
+          (value.hasMore && value.models.length === 0)
+        ) {
+          settle(entry, failure("invalid_service_result"));
+          return;
+        }
+      }
+      if (
         (entry.request.operation === "appearance.replace" ||
           entry.request.operation === "locale.replace" ||
           entry.request.operation === "character.replace" ||
@@ -270,6 +301,7 @@ export function createFoundationPort(
         return;
       }
       if (
+        entry.request.operation === "connection.subscribe" ||
         entry.request.operation === "status.subscribe" ||
         entry.request.operation === "appearance.subscribe" ||
         entry.request.operation === "locale.subscribe" ||
@@ -286,6 +318,7 @@ export function createFoundationPort(
         if (stream) stream.active = true;
       }
     } else if (
+      entry.request.operation === "connection.subscribe" ||
       entry.request.operation === "status.subscribe" ||
       entry.request.operation === "appearance.subscribe" ||
       entry.request.operation === "locale.subscribe" ||
@@ -346,6 +379,7 @@ export function createFoundationPort(
         );
         cancel(request);
         if (
+          operation === "connection.subscribe" ||
           operation === "status.subscribe" ||
           operation === "appearance.subscribe" ||
           operation === "locale.subscribe" ||
@@ -395,8 +429,9 @@ export function createFoundationPort(
     };
   }
   function subscribe(
-    topic: "status" | "appearance" | "locale" | "presentation",
+    topic: "status" | "appearance" | "locale" | "presentation" | "connection",
     listener: Stream["listener"],
+    connection?: string,
   ): Subscription {
     if (disposed || streams.size >= portLimits.subscriptions_per_window)
       return { ready: Promise.resolve(failure(disposed ? "disposed" : "busy")), dispose() {} };
@@ -405,6 +440,7 @@ export function createFoundationPort(
       return { ready: Promise.resolve(failure("invalid_message")), dispose() {} };
     const stream: Stream = {
       id,
+      ...(connection === undefined ? {} : { connection }),
       topic,
       listener,
       queue: [],
@@ -416,15 +452,18 @@ export function createFoundationPort(
     };
     streams.set(id, stream);
     const opening = call(
-      topic === "presentation"
-        ? "presentation.subscribe"
-        : topic === "status"
-          ? "status.subscribe"
-          : topic === "locale"
-            ? "locale.subscribe"
-            : "appearance.subscribe",
+      topic === "connection"
+        ? "connection.subscribe"
+        : topic === "presentation"
+          ? "presentation.subscribe"
+          : topic === "status"
+            ? "status.subscribe"
+            : topic === "locale"
+              ? "locale.subscribe"
+              : "appearance.subscribe",
       {
         subscriptionId: id,
+        ...(connection === undefined ? {} : { connection }),
       },
     );
     void opening.result.then((outcome) => {
@@ -439,6 +478,13 @@ export function createFoundationPort(
     };
   }
   const port: FoundationPort = Object.freeze<FoundationPort>({
+    readConnection: (connection) => call("connection.read", { connection }),
+    connectConnection: (connection) => call("connection.connect", { connection }),
+    disconnectConnection: (connection) => call("connection.disconnect", { connection }),
+    probeConnection: (connection) => call("connection.probe", { connection }),
+    listConnectionModels: (input) => call("connection.listModels", input),
+    subscribeConnection: (connection, listener) =>
+      subscribe("connection", listener as Stream["listener"], connection),
     readPresentation: () => call("presentation.read", {}),
     subscribePresentation: (listener) => subscribe("presentation", listener as Stream["listener"]),
     replaceCharacter: (change, expectedServiceGeneration) => {

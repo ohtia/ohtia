@@ -30,6 +30,7 @@
     "graphical-persisted-locale",
     "lost-response-reconciled-without-replay",
     "ipc-replay-preserves-subscription",
+    "utility-locale-recovery-publication",
     "utility-retry-preserves-input-and-document",
     "keyboard-reflow-accessibility",
     "packaged-native-storage-cases",

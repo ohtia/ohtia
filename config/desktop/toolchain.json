@@ -892,6 +892,85 @@
         "integrity": "sha512-ACJ3DWmniBWI4mppBd9ro4aHwF68ImxyZnh/2fgDJHsZesNSByOU2tC/E9uhHX2FPhxrdzfRGnA2REgiNeIwwA==",
         "inspection": "downloaded-integrity-checked"
       }
+    },
+    "@napi-rs/keyring": {
+      "version": "2.1.2",
+      "adr": "0048",
+      "source": "https://github.com/Brooooooklyn/keyring-node/tree/52184fbebffeef8a061234f60f313c479b954f9f",
+      "engines": {
+        "node": ">= 10"
+      },
+      "peers": {},
+      "license": "MIT",
+      "artifact": {
+        "url": "https://registry.npmjs.org/@napi-rs/keyring/-/keyring-2.1.2.tgz",
+        "sha256": "231aa58ea2aebc0b50bb1502a87a01d99d610dbea5c0e20889b405aa4b213bab",
+        "integrity": "sha512-9i1SR6tYeQ3o1beLeVMxhN6Fq513m9TZlTs+46+4JgvSNkaFoW9S4WrpV5MjzE+0CzVoC+dZ4RfZDIgW6+afnQ==",
+        "bytes": 8599,
+        "inspection": "downloaded-integrity-checked"
+      },
+      "artifacts": {
+        "linux-x64": {
+          "url": "https://registry.npmjs.org/@napi-rs/keyring-linux-x64-gnu/-/keyring-linux-x64-gnu-2.1.2.tgz",
+          "sha256": "d5fca7c075364cdb76f332fdb53274bd320e16aef2778f45ed300b42ab99532d",
+          "integrity": "sha512-Fj5TmTnl2oriuCT5DDEYlhgxYes20uGfgOg10LK9PyPVsI8/PQ1m8I4rq/4A5hkrMtY7wvFb70YmX/yPHDYWvQ==",
+          "bytes": 1422810,
+          "inspection": "downloaded-integrity-checked",
+          "package": "@napi-rs/keyring-linux-x64-gnu",
+          "path": "package/keyring.linux-x64-gnu.node",
+          "binding_sha256": "3a84e3eced01c09369f6d0143b9fed564db29fd2423ef3e9dba2c82256067b55"
+        },
+        "linux-arm64": {
+          "url": "https://registry.npmjs.org/@napi-rs/keyring-linux-arm64-gnu/-/keyring-linux-arm64-gnu-2.1.2.tgz",
+          "sha256": "d15365537f71e4e75b06f65d4d839cbc11d86dbdd547faa7d146124fff47080d",
+          "integrity": "sha512-PM+SAcl/yGzgGbeeCsKrnlG4T5DBIDjmDqtKm5an1bJz0o0gwSzR3BMiXf04JenkcqascZpdcIReoEvLj0cvCw==",
+          "bytes": 1340680,
+          "inspection": "downloaded-integrity-checked",
+          "package": "@napi-rs/keyring-linux-arm64-gnu",
+          "path": "package/keyring.linux-arm64-gnu.node",
+          "binding_sha256": "ffc7534f4c121ca739a80927b7942261859de42e740f2f9c2ea1fe60ae5d7183"
+        },
+        "win32-x64": {
+          "url": "https://registry.npmjs.org/@napi-rs/keyring-win32-x64-msvc/-/keyring-win32-x64-msvc-2.1.2.tgz",
+          "sha256": "ccd9151e914370c76eb83ff3104fdbc00e3ef3cc4ec6bd2c044362df9a9e0f7f",
+          "integrity": "sha512-yQtFdfuwqM0ezKlYO6r2n44in2LGzd4MC679Ddhvojip3t1hn+q/4I+gJU+cIJQVd5FAZSKNrK4tGfew3UTpAQ==",
+          "bytes": 773028,
+          "inspection": "downloaded-integrity-checked",
+          "package": "@napi-rs/keyring-win32-x64-msvc",
+          "path": "package/keyring.win32-x64-msvc.node",
+          "binding_sha256": "52b16658275b7848f8081a6542fee3448f1b1c5d3a36487107ae0e7cec95ac6f"
+        },
+        "win32-arm64": {
+          "url": "https://registry.npmjs.org/@napi-rs/keyring-win32-arm64-msvc/-/keyring-win32-arm64-msvc-2.1.2.tgz",
+          "sha256": "ddf5a1e7ac2928175d23530a813331958cf4682d9a078f864117cb3485db9835",
+          "integrity": "sha512-kBq80ZZfjXoa5wHG9kgAVhYYjaPOLgHh5ngt7r1ftwFXPXDPXKH7oM2r2j2Q64cs0pVtmodVtn5Q9e6xCwzQUQ==",
+          "bytes": 711940,
+          "inspection": "downloaded-integrity-checked",
+          "package": "@napi-rs/keyring-win32-arm64-msvc",
+          "path": "package/keyring.win32-arm64-msvc.node",
+          "binding_sha256": "873574791d0a41998706a8de1ebd821026b10846630586be4fa440c92f1ef608"
+        },
+        "darwin-x64": {
+          "url": "https://registry.npmjs.org/@napi-rs/keyring-darwin-x64/-/keyring-darwin-x64-2.1.2.tgz",
+          "sha256": "a8a7e5a96fc908aa4808e06a12662810a40029a70ec074c42939a88002e8bd81",
+          "integrity": "sha512-wQihYroaQ3r++R6u5c9Gj0TCw1l1F53LCb5aLOXfVvT4DsnDnpe7p7VGYo4/33bLe0iqVevtAj+ET3yKCtOlJQ==",
+          "bytes": 287340,
+          "inspection": "downloaded-integrity-checked",
+          "package": "@napi-rs/keyring-darwin-x64",
+          "path": "package/keyring.darwin-x64.node",
+          "binding_sha256": "637cf3b8f2f502176029464781ffee9ab1c80406a0392a3f29fdd1429f58d500"
+        },
+        "darwin-arm64": {
+          "url": "https://registry.npmjs.org/@napi-rs/keyring-darwin-arm64/-/keyring-darwin-arm64-2.1.2.tgz",
+          "sha256": "4541245a874c32ccd1f3838fe92debeb4d75283b287e08aed3595e561ebccab7",
+          "integrity": "sha512-vsInUWUzWS6/WzR/TFNwmdtmwKWjnnR8TOpvZ/pjjxDAkJB/waz37PWzp2b8AFcw1aCcq2aQ7k2vvbLQy8pTrw==",
+          "bytes": 266823,
+          "inspection": "downloaded-integrity-checked",
+          "package": "@napi-rs/keyring-darwin-arm64",
+          "path": "package/keyring.darwin-arm64.node",
+          "binding_sha256": "1bc4c418c70021050fc052a1f5f60e0da1526ff0b952840f25e691624a4c483e"
+        }
+      }
     }
   }
 }

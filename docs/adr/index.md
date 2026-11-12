@@ -63,6 +63,7 @@ The conventions for this register are defined in [Architecture decisions](../arc
 - [ADR-0027 — Scoped agent contexts with mediated research tools](adr-0027-scoped-agent-contexts.md) — Agents receive restricted per-attempt inputs and create proposals through application-controlled operations.
 - [ADR-0028 — Current authorization for mediated provider transfers](adr-0028-mediated-provider-transfers.md) — Authorize each Ohtia-controlled transfer against current restrictions and scope without holding database transactions over the network.
 - [ADR-0029 — Versioned operation profiles and bounded usage reporting](adr-0029-operation-profiles-and-usage-reports.md) — Select permitted model capabilities per operation and retain partial or late consumption without granting stale research authority.
+- [ADR-0048 — Provider access routes and credential store](adr-0048-provider-access-routes-and-credential-store.md) — Connect language-model services through Sign in with ChatGPT and Anthropic and OpenAI API keys, with every credential held by main in the operating-system credential store.
 
 ## Academic documents and research review
 

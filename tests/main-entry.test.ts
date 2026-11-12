@@ -9,7 +9,9 @@ afterEach(() => {
   cleanups.splice(0).forEach((cleanup) => cleanup());
   vi.useRealTimers();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   vi.doUnmock("electron");
+  vi.doUnmock("../packages/main/src/native-credentials.js");
   vi.doUnmock("node:fs");
   vi.doUnmock("../packages/main/src/profile.js");
   vi.doUnmock("../packages/main/src/locator.js");
@@ -36,12 +38,17 @@ async function launch(
     languagesUnavailable?: boolean;
     assetNames?: string[];
     mode?: "qualification" | "development" | "installed";
+    developmentBuild?: boolean;
     researchRootRefused?: boolean;
     nodeOptions?: string;
     platform?: NodeJS.Platform;
   } = {},
 ) {
   vi.resetModules();
+  vi.stubGlobal("__OHTIA_DEVELOPMENT_BUILD__", options.developmentBuild ?? false);
+  vi.doMock("../packages/main/src/native-credentials.js", () => ({
+    nativeCredentialStore: () => Promise.resolve({ drain: () => Promise.resolve() }),
+  }));
   if (options.platform) {
     const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
     Object.defineProperty(process, "platform", { ...platform, value: options.platform });
@@ -59,6 +66,7 @@ async function launch(
   cleanups.push(() => {
     Reflect.deleteProperty(globalThis, "__ohtiaLoadInitialDocument");
     Reflect.deleteProperty(globalThis, "__ohtiaAcceptance");
+    Reflect.deleteProperty(globalThis, "__ohtiaCredentialAcceptance");
   });
   const constants = await import("../packages/contracts/src/index.js");
   const nativeFs = await import("node:fs");
@@ -235,6 +243,7 @@ async function launch(
     available = true;
     ceased = false;
     dispatch = vi.fn();
+    reportConnections = vi.fn((manager: { ids(): readonly string[] }) => manager.ids());
     control = vi.fn();
     disposeWindow = vi.fn();
     activateStorage = vi.fn(() => true);
@@ -427,6 +436,7 @@ async function launch(
       for (const { name, listener } of added) process.removeListener(name, listener);
     });
   }
+  if (options.developmentBuild && options.mode === "development") await vi.dynamicImportSettled();
   await vi.advanceTimersByTimeAsync(0);
   cleanups.push(() => {
     vi.clearAllTimers();
@@ -1759,3 +1769,92 @@ it.each([
     expect(active.dispatch).toHaveBeenCalledOnce();
   },
 );
+
+it.each(["installed", "qualification"] as const)(
+  "does not declare a fake connection in %s mode even in development-built bytes",
+  async (mode) => {
+    const h = await launch({ mode, developmentBuild: true, instrumented: true });
+    expect(h.failure).toBeUndefined();
+    expect(Reflect.has(globalThis, "__ohtiaCredentialAcceptance")).toBe(false);
+    h.supervisors[0].stateChanged("ready");
+    expect(h.supervisors[0].reportConnections.mock.results.at(-1)?.value).toEqual([]);
+    const event = h.event();
+    h.ipcMain.emit(h.constants.desktopChannels.session, event);
+    const encoded = h.constants.encodeEnvelope({
+      protocol: 1,
+      policy: h.constants.policyId,
+      kind: "request",
+      ...event.returnValue,
+      requestId: "connection-read",
+      operationId: "connection-read",
+      operation: "connection.read",
+      payload: { connection: "fake" },
+    });
+    if (!encoded.ok) throw new Error("Invalid test request");
+    h.ipcMain.emit(h.constants.desktopChannels.port, event, encoded.value);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(
+      JSON.parse(h.window.webContents.mainFrame.send.mock.calls.at(-1)[1]).payload,
+    ).toMatchObject({ error: { code: "invalid_message" } });
+    expect(h.supervisors[0].dispatch).not.toHaveBeenCalled();
+  },
+);
+
+it("routes development connection calls and controls in main and reports every state to the service", async () => {
+  const h = await launch({ mode: "development", developmentBuild: true, instrumented: true });
+  expect(h.failure).toBeUndefined();
+  expect(typeof Reflect.get(globalThis, "__ohtiaCredentialAcceptance")).toBe("function");
+  h.supervisors[0].stateChanged("ready");
+  expect(h.supervisors[0].reportConnections.mock.results.at(-1)?.value).toEqual(["fake"]);
+  const event = h.event();
+  h.ipcMain.emit(h.constants.desktopChannels.session, event);
+  const send = (operation: string, payload: object, id: string) => {
+    const encoded = h.constants.encodeEnvelope({
+      protocol: 1,
+      policy: h.constants.policyId,
+      kind: "request",
+      ...event.returnValue,
+      requestId: id,
+      operationId: id,
+      operation,
+      payload,
+    });
+    if (!encoded.ok) throw new Error("Invalid test request");
+    h.ipcMain.emit(h.constants.desktopChannels.port, event, encoded.value);
+  };
+  send("connection.subscribe", { connection: "fake", subscriptionId: "conn-stream" }, "subscribe");
+  const before = h.supervisors[0].reportConnections.mock.calls.length;
+  send("connection.connect", { connection: "fake" }, "connect");
+  await vi.advanceTimersByTimeAsync(0);
+  expect(h.supervisors[0].reportConnections.mock.calls.length).toBeGreaterThan(before);
+  const replies = h.window.webContents.mainFrame.send.mock.calls.map(([, text]: [string, string]) =>
+    JSON.parse(text),
+  );
+  expect(replies).toContainEqual(
+    expect.objectContaining({
+      kind: "result",
+      requestId: "connect",
+      payload: expect.objectContaining({ value: expect.objectContaining({ state: "connecting" }) }),
+    }),
+  );
+  expect(replies).toContainEqual(
+    expect.objectContaining({
+      kind: "event",
+      topic: "connection",
+      payload: expect.objectContaining({ state: "connected" }),
+    }),
+  );
+  const encoded = h.constants.encodeEnvelope({
+    protocol: 1,
+    policy: h.constants.policyId,
+    kind: "unsubscribe",
+    ...event.returnValue,
+    subscriptionId: "conn-stream",
+  });
+  if (!encoded.ok) throw new Error("Invalid test control");
+  h.ipcMain.emit(h.constants.desktopChannels.port, event, encoded.value);
+  expect(h.supervisors[0].control).not.toHaveBeenCalled();
+  expect(h.supervisors[0].dispatch).not.toHaveBeenCalled();
+  h.app.emit("before-quit", { preventDefault: vi.fn() });
+  await vi.advanceTimersByTimeAsync(0);
+});

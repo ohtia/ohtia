@@ -15,6 +15,7 @@ import {
   isIdentifier,
   failure,
   portLimits,
+  type ConnectionEvent,
   type LocaleSnapshot,
   type PresentationSnapshot,
   type Outcome,
@@ -71,6 +72,46 @@ function connect() {
   };
 }
 let connection = connect();
+const connectionOwners = new Set<{
+  listener: (notice: Outcome<ConnectionEvent>) => void;
+  dispose(): void;
+}>();
+function subscribeConnection(
+  id: string,
+  listener: (notice: Outcome<ConnectionEvent>) => void,
+): Subscription {
+  if (connectionOwners.size >= portLimits.subscriptions_per_window)
+    return { ready: Promise.resolve(failure("busy")), dispose() {} };
+  const lifetime: { active: boolean; stream?: Subscription } = { active: true };
+  const owner = {
+    listener,
+    dispose() {
+      lifetime.active = false;
+      connectionOwners.delete(owner);
+      lifetime.stream?.dispose();
+    },
+  };
+  const stream = connection.client.port.subscribeConnection(id, (notice) => {
+    if (!notice.ok) owner.dispose();
+    try {
+      listener(notice);
+    } catch {
+      owner.dispose();
+    }
+  });
+  lifetime.stream = stream;
+  if (lifetime.active) connectionOwners.add(owner);
+  else stream.dispose();
+  void stream.ready.then((outcome) => {
+    if (!outcome.ok) owner.dispose();
+  });
+  return {
+    ready: stream.ready,
+    dispose: () => {
+      owner.dispose();
+    },
+  };
+}
 // Retain only bounded logical locale owners across private connection replacement.
 const localeOwners = new Set<{
   listener: (notice: Outcome<LocaleSnapshot> | Outcome<PresentationSnapshot>) => void;
@@ -238,6 +279,12 @@ const bridge: DesktopBridge = {
     },
   },
   foundation: {
+    readConnection: (id) => connection.client.port.readConnection(id),
+    connectConnection: (id) => connection.client.port.connectConnection(id),
+    disconnectConnection: (id) => connection.client.port.disconnectConnection(id),
+    probeConnection: (id) => connection.client.port.probeConnection(id),
+    listConnectionModels: (input) => connection.client.port.listConnectionModels(input),
+    subscribeConnection,
     readPresentation: () => connection.client.port.readPresentation(),
     subscribePresentation,
     replaceCharacter: (change, generation) =>
@@ -282,6 +329,14 @@ ipcRenderer.on(desktopChannels.ended, serviceEnded);
 const reconnect = () => {
   connection.client.dispose();
   connection = connect();
+  for (const owner of [...connectionOwners]) {
+    owner.dispose();
+    try {
+      owner.listener(failure("sequence_gap"));
+    } catch {
+      /* Consumer cannot interrupt reconnect. */
+    }
+  }
 };
 ipcRenderer.on(desktopChannels.reconnect, reconnect);
 window.addEventListener(
@@ -293,6 +348,8 @@ window.addEventListener(
     ipcRenderer.removeListener(desktopChannels.commandIntent, commandIntent);
     for (const owner of localeOwners) owner.stream.dispose();
     localeOwners.clear();
+    for (const owner of connectionOwners) owner.dispose();
+    connectionOwners.clear();
     connection.client.dispose();
     ipcRenderer.removeListener(desktopChannels.preferencesReady, preferencesReady);
     ipcRenderer.removeListener(desktopChannels.ended, serviceEnded);

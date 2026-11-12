@@ -1,5 +1,6 @@
 // Build unsigned development packages using the locked builder and the assembled runtime.
 import fs from "node:fs";
+import { inspectProviderArtifact } from "./product-graph.mjs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
@@ -39,7 +40,7 @@ const metadataFile = path.join(application, "package.json");
 const metadata = JSON.parse(fs.readFileSync(metadataFile, "utf8"));
 const tools = JSON.parse(fs.readFileSync(path.join(root, "config/desktop/toolchain.json"))).tools;
 metadata.dependencies = Object.fromEntries(
-  ["better-sqlite3", "kysely"].map((name) => [name, tools[name].version]),
+  ["better-sqlite3", "kysely", "@napi-rs/keyring"].map((name) => [name, tools[name].version]),
 );
 fs.writeFileSync(metadataFile, JSON.stringify({ ...metadata, ...config.extraMetadata }));
 // Retain the notices of dependencies actually bundled into the app, as well as native/runtime notices.
@@ -97,6 +98,7 @@ await build({
         process.platform === "darwin"
           ? path.join(appOutDir, "ohtia-quality.app/Contents/Resources/app")
           : path.join(appOutDir, "resources/app");
+      inspectProviderArtifact(app);
       refreshInventory(app);
       const files = fs.readdirSync(appOutDir, { recursive: true });
       for (const name of files) {
