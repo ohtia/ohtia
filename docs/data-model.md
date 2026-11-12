@@ -2,6 +2,8 @@
 type: Specification
 title: "Data model"
 description: "Source entities, research-project relationships, and versioned Markdown manuscripts in SQLite."
+generated:
+  by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
 sources:
@@ -45,7 +47,7 @@ erDiagram
         uuid id PK
         text title
         text project_type
-        text analysis_language
+        text document_language
     }
     PROJECT_SOURCES {
         uuid id PK
@@ -159,11 +161,11 @@ An original PDF, extraction, corrected extraction and later edition are not inte
 ### `projects`
 
 - `id`: stable research-project identity.
-- `title`, analysis language and observed creation/update metadata describe the investigation.
+- `title`, document language and observed creation/update metadata describe the investigation; the document language is the BCP 47 language of the document's text, confirmed by the researcher during setup, in which agents work and answer.
 - `project_type` classifies the research undertaking using a code-owned typed catalog. SQLite enforces the released catalog with a `CHECK` constraint; the application validates the same values. It is not a user-editable lookup table. Localized display names live in interface message catalogs, while stored values are stable English identifiers. Catalog changes require coordinated application/schema changes, and the feature contract defines the exact values before implementation.
 - The research profile, plan and workflow state belong to this project under their respective feature contracts.
 
-The diagram defines manuscript ownership and cardinality. A project title is not a storage path. Interface locale and manuscript language remain separate from project analysis language.
+The diagram defines manuscript ownership and cardinality. A project title is not a storage path. Interface locale remains separate from the project's document language, which is also the manuscript's language.
 
 ### `project_sources`
 
@@ -198,7 +200,7 @@ Do not add another authoritative `markdown` column here merely to duplicate the 
 - Action/producer attribution and content hash distinguish who wrote the content from which process recorded the save.
 - An optional restoration-origin revision identifies the old version being restored; it is distinct from the current predecessor in the revision chain.
 
-The initial manuscript language comes from the researcher's explicit choice or supported imported metadata, not an inferred equality with analysis language. A manuscript-language correction creates a new revision, even when Markdown bytes are unchanged. Changing the project analysis language or interface locale never relabels previous or current manuscript text. Restoration retains the restored revision's language alongside its text. Unknown language remains explicit in rendering and export rather than receiving a fabricated tag. This document-level value does not solve mixed-language passages: the draft profile's attribute restriction remains an accessibility blocker documented in the [design system](design-system.md#conformance-blockers).
+The initial manuscript language comes from the researcher's explicit choice or supported imported metadata, which starts as the project's document language. A manuscript-language correction creates a new revision, even when Markdown bytes are unchanged. Changing the project's document language or the interface locale never relabels previous or current manuscript text. Restoration retains the restored revision's language alongside its text. Unknown language remains explicit in rendering and export rather than receiving a fabricated tag. This document-level value does not solve mixed-language passages: the draft profile's attribute restriction remains an accessibility blocker documented in the [design system](design-system.md#conformance-blockers).
 
 The researcher edits only through Ohtia. A generated `draft.md` is an output, not a file watched for external changes. Editor JSON and ASTs are working representations; they are not the only stored manuscript. The first implementation preserves complete revision text rather than relying exclusively on patch-chain reconstruction. Diffs for comparison can be computed later.
 

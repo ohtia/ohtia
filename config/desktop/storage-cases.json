@@ -23,7 +23,8 @@
     "checkpoint-denied",
     "uuid-reference-constraints",
     "retry-intent-preserved",
-    "presentation-preferences"
+    "presentation-preferences",
+    "research-records"
   ],
   "graphical_cases": [
     "graphical-persisted-appearance",

@@ -157,7 +157,8 @@ EPIC-002 establishes the Settings shell, shared preference controls and global l
 | Inference and local-processing concurrency    | Application                   | EPIC-003           |
 | View/delete/share-preview diagnostics         | Application                   | EPIC-004           |
 | Managed storage location and recovery         | Application                   | EPIC-004           |
-| Analysis language and research profile        | Research project              | EPIC-004           |
+| Document language                             | Research project              | EPIC-003           |
+| Research profile                              | Research project              | EPIC-004           |
 | Source restrictions and project associations  | Material/project              | EPIC-005–EPIC-006  |
 | Manuscript language and delivery choices      | Manuscript/delivery           | EPIC-007, EPIC-014 |
 
@@ -225,7 +226,7 @@ Role definitions and conversation routing are available from EPIC-003. Research 
 
 **Experience and output:** create/open/recent-project actions lead into a revisable initial profile and one useful focus. Virgilio can guide the conversation when the researcher requests assistance; context can also be entered or corrected locally over several sessions.
 
-**Screens and first stories:** project entry using EPIC-001's application-store bootstrap; conversational/progressive onboarding; inspectable profile synthesis; Navigator's first stage/focus/actions view; simple researcher notes and an initial manuscript slice; Settings storage/recovery and Diagnostics. Record work/institution, supported requirements, citation/AI-use conditions, explicitly selected analysis language before assistance, academic support, deadlines, availability, experience/support needs and existing material with its actual attribution. Unknowns stay explicit. Add the initial canonical manuscript subset for title/paragraph writing and durable revision saving, then extend it in EPIC-007.
+**Screens and first stories:** project entry using EPIC-001's application-store bootstrap; conversational/progressive onboarding; inspectable profile synthesis; Navigator's first stage/focus/actions view; simple researcher notes and an initial manuscript slice; Settings storage/recovery and Diagnostics. Record work/institution, supported requirements, citation/AI-use conditions, the project's document language, confirmed at setup, academic support, deadlines, availability, experience/support needs and existing material with its actual attribution. Unknowns stay explicit. Add the initial canonical manuscript subset for title/paragraph writing and durable revision saving, then extend it in EPIC-007.
 
 **Done when:** the researcher can correct and review the exact profile version, confirm a first focus and reopen the project with notes, writing and decisions intact. No long questionnaire or model choice is required for local use. Deadline questions occur early; missing dates do not produce a pace metric. Implement transactional receipts, UUID constraints, expected versions, exclusive schema migrations and verified checkpoint recovery before their first persistent use. Failed saves preserve recoverable input. Integrate relevant character events through committed, current findings only: one animation per batch, at most one deferred Navigator presentation while a manuscript was visible, static recovery and immediate cancellation in nonanimated/reduced-motion modes. Verify workspace project/form/tab cases V04–V06 and V09, the project-switching/history cases V08 and V13, and V05's conversation actions with real project ownership and the integrated user-facing flows. Project switching rejects obsolete responses and disposes scoped subscriptions.
 

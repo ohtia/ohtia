@@ -134,7 +134,7 @@ async function run() {
       await store.close();
       const db = raw(root);
       db.exec(
-        "DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'",
+        "DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'",
       );
       db.pragma("user_version=1");
       db.close();
@@ -220,6 +220,131 @@ async function run() {
   };
   engine.close();
   fs.writeFileSync(path.join(output, "engine.json"), JSON.stringify(identity, null, 2) + "\n");
+  await test("research-records", async (root) => {
+    const store = new DurableStore(options(root));
+    const accepted = (result) => {
+      assert.equal(result.ok, true);
+      return result.value;
+    };
+    try {
+      await store.open();
+      const preference = await store.replaceAppearance({
+        operationId: "before-research",
+        expectedRevision: 0,
+        value: "dark",
+      });
+      accepted(preference);
+      await store.close();
+      const source = raw(root);
+      source.exec(
+        "DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; PRAGMA user_version=6",
+      );
+      const preferences = source
+        .prepare("SELECT * FROM application_preferences ORDER BY key")
+        .all();
+      source.close();
+      await store.open();
+      const create = { command: "project.create", operationId: "research-project", payload: {} };
+      const project = accepted(await store.executeResearchCommand(create));
+      assert.deepEqual(await store.executeResearchCommand(create), { ok: true, value: project });
+      const conversation = accepted(await store.readConversations(project.resultId))[0];
+      assert.equal(conversation.revision, 1);
+      const invalidLanguage = await store.executeResearchCommand({
+        command: "project.confirmSetup",
+        operationId: "research-invalid-language",
+        payload: {
+          projectId: project.resultId,
+          title: "Synthetic investigation",
+          documentLanguage: "sK",
+        },
+      });
+      assert.equal(invalidLanguage.error.code, "invalid_message");
+      const grammar = raw(root);
+      assert.throws(() =>
+        grammar
+          .prepare(
+            "UPDATE projects SET title='Synthetic investigation',document_language=?,setup_confirmed_at=created_at",
+          )
+          .run("en\0-x-test"),
+      );
+      grammar.close();
+      const start = {
+        command: "conversation.start",
+        operationId: "research-start",
+        payload: { projectId: project.resultId, content: "Synthetic first message" },
+      };
+      assert.equal((await store.executeResearchCommand(start)).error.code, "project_in_setup");
+      accepted(
+        await store.executeResearchCommand({
+          command: "project.confirmSetup",
+          operationId: "research-confirm",
+          payload: {
+            projectId: project.resultId,
+            title: "Synthetic investigation",
+            documentLanguage: "ES-ar",
+          },
+        }),
+      );
+      assert.equal(accepted(await store.readProjects())[0].documentLanguage, "es-AR");
+      const started = accepted(await store.executeResearchCommand(start));
+      const setupInvariant = raw(root);
+      assert.throws(() =>
+        setupInvariant.exec(
+          "UPDATE projects SET title=NULL,document_language=NULL,setup_confirmed_at=NULL",
+        ),
+      );
+      setupInvariant.close();
+      const rename = {
+        command: "conversation.rename",
+        operationId: "research-rename",
+        payload: {
+          conversationId: conversation.id,
+          expectedUpdatedAt: conversation.updatedAt,
+          title: "Synthetic name",
+        },
+      };
+      accepted(
+        await store.executeResearchCommand({
+          command: "message.append",
+          operationId: "research-append",
+          payload: { conversationId: conversation.id, content: "Synthetic setup message" },
+        }),
+      );
+      accepted(await store.executeResearchCommand(rename));
+      const stale = await store.executeResearchCommand({
+        ...rename,
+        operationId: "research-stale",
+      });
+      assert.equal(stale.error.code, "stale_revision");
+      assert.equal(stale.error.parameters.currentRevision, 3);
+      assert.equal(accepted(await store.readMessages(started.resultId))[0].position, 1);
+      await store.close();
+      await store.open();
+      assert.deepEqual(accepted(await store.executeResearchCommand(start)), started);
+      assert.deepEqual(await store.readAppearance(), preference);
+      const upgraded = raw(root);
+      assert.equal(upgraded.pragma("user_version", { simple: true }), schemaRevision);
+      assert.deepEqual(
+        upgraded.prepare("SELECT * FROM application_preferences ORDER BY key").all(),
+        preferences,
+      );
+      assert.equal(upgraded.prepare("SELECT count(*) FROM command_receipts").pluck().get(), 5);
+      upgraded.close();
+      const registry = path.join(app, "iana-language-subtag-registry.txt");
+      assert.equal(
+        sha256(registry),
+        "755fad43283be7b41ebe3c89ad054b6eaf928f404f9c0edb74799e0eab74beb1",
+      );
+      return {
+        sourceRevision: 6,
+        targetRevision: schemaRevision,
+        registrySha256: sha256(registry),
+        fileDate: "2026-09-17",
+      };
+    } finally {
+      await store.close();
+    }
+  });
   await test("presentation-preferences", async (root) => {
     const store = new DurableStore(options(root));
     try {
@@ -284,7 +409,7 @@ async function run() {
       await store.close();
       const db = raw(root);
       db.exec(
-        "DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'",
+        "DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'",
       );
       db.pragma("user_version=2");
       db.close();
@@ -368,7 +493,7 @@ async function run() {
       await store.close();
       const db = raw(root);
       db.exec(
-        "DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'; UPDATE application_preferences SET value='{\"max_concurrent_inference\":4,\"max_concurrent_local_processing\":2}' WHERE key='execution_limits'",
+        "DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'; UPDATE application_preferences SET value='{\"max_concurrent_inference\":4,\"max_concurrent_local_processing\":2}' WHERE key='execution_limits'",
       );
       db.pragma("user_version=1");
       db.close();
@@ -691,7 +816,7 @@ async function run() {
       const oldDigest = sha256(oldCheckpoint);
       const db = raw(root);
       db.exec(
-        "DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'",
+        "DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'",
       );
       db.pragma("user_version=1");
       db.close();

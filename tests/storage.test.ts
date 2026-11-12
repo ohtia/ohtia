@@ -1,9 +1,7 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { createRequire } from "node:module";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Migrator } from "../packages/utility/node_modules/kysely/dist/migration/index.js";
 import { Kysely } from "../packages/utility/node_modules/kysely/dist/index.js";
 import { failure } from "../packages/contracts/src/index.js";
@@ -17,86 +15,7 @@ import {
 } from "../packages/utility/dist/index.js";
 
 // These file-backed tests use the pinned addon under developer Node, not native Electron qualification.
-const require = createRequire(new URL("../packages/utility/package.json", import.meta.url));
-const Database = require("better-sqlite3") as typeof import("better-sqlite3");
-const roots: string[] = [];
-const stores: DurableStore[] = [];
-afterEach(async () => {
-  vi.restoreAllMocks();
-  for (const store of stores.splice(0)) await store.close();
-  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
-});
-function fixture() {
-  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "ohtia storage ñ ")));
-  roots.push(root);
-  const sourceBinding = fs.realpathSync.native(
-    path.join(
-      path.dirname(require.resolve("better-sqlite3/package.json")),
-      `prebuilds/${process.platform}-${process.arch}.node`,
-    ),
-  );
-  // Windows maps the addon until worker exit. Keep one verified, single-link copy
-  // in the checkout cache instead of pinning every disposable database directory.
-  const sourceHash = createHash("sha256").update(fs.readFileSync(sourceBinding)).digest("hex");
-  const cache = path.resolve(".cache", "storage-test-bindings");
-  fs.mkdirSync(cache, { recursive: true });
-  if (fs.realpathSync.native(cache) !== cache) throw new Error("Aliased native fixture cache.");
-  const binding = path.join(cache, `${sourceHash}.node`);
-  if (!fs.existsSync(binding)) {
-    const temporary = fs.mkdtempSync(path.join(cache, "pending-"));
-    try {
-      const copied = path.join(temporary, "binding.node");
-      fs.copyFileSync(sourceBinding, copied, fs.constants.COPYFILE_EXCL);
-      if (createHash("sha256").update(fs.readFileSync(copied)).digest("hex") !== sourceHash)
-        throw new Error("Native fixture copy changed before publication.");
-      try {
-        fs.renameSync(copied, binding);
-      } catch (error) {
-        // Another worker may already have published and loaded the same bytes.
-        if (!fs.existsSync(binding)) throw error;
-      }
-    } finally {
-      fs.rmSync(temporary, { recursive: true, force: true });
-    }
-  }
-  const stat = fs.lstatSync(binding);
-  if (
-    !stat.isFile() ||
-    stat.nlink !== 1 ||
-    fs.realpathSync.native(binding) !== binding ||
-    createHash("sha256").update(fs.readFileSync(binding)).digest("hex") !== sourceHash
-  )
-    throw new Error(
-      "Unsafe native fixture binding; stop Vitest workers, remove only .cache/storage-test-bindings/" +
-        sourceHash +
-        ".node and retry.",
-    );
-  const db = new Database(":memory:", { nativeBinding: binding });
-  const engine = {
-    version: db.prepare("SELECT sqlite_version()").pluck().get() as string,
-    sourceId: db.prepare("SELECT sqlite_source_id()").pluck().get() as string,
-    requiredOptions: (db.pragma("compile_options") as { compile_options: string }[])
-      .map((r) => r.compile_options)
-      .sort(),
-  };
-  db.close();
-  const migrationDirectory = path.join(root, "modules");
-  fs.cpSync("packages/utility/src/migrations", migrationDirectory, { recursive: true });
-  const options: StorageOptions = {
-    root,
-    binding,
-    bindingSha256: createHash("sha256").update(fs.readFileSync(binding)).digest("hex"),
-    engine,
-    migrationDirectory,
-    release: "synthetic-0",
-    allowCreate: true,
-    assertAdmission: () => {},
-  };
-  const store = new DurableStore(options);
-  stores.push(store);
-  const raw = () => new Database(path.join(root, "ohtia.db3"), { nativeBinding: binding });
-  return { root, options, store, raw };
-}
+import { Database, storageFixture as fixture, roots, stores } from "./fixtures/storage.js";
 function checkpoints(root: string) {
   return fs.readdirSync(path.join(root, "recovery/migrations")).filter((s) => !s.includes("."));
 }
@@ -115,13 +34,13 @@ describe("durable preference and migration recovery", () => {
     await store.close();
     expectClosed();
     const newer = raw();
-    newer.pragma("user_version=7");
+    newer.pragma("user_version=8");
     newer.close();
     close.mockClear();
     await expect(store.open()).rejects.toThrow(/Unsupported/);
     expectClosed();
     const current = raw();
-    current.pragma("user_version=6");
+    current.pragma("user_version=7");
     current.close();
     close.mockClear();
     await store.open();
@@ -451,7 +370,7 @@ describe("durable preference and migration recovery", () => {
     await store.close();
     const db = raw();
     db.exec(
-      "DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'; UPDATE application_preferences SET value='{\"max_concurrent_inference\":4,\"max_concurrent_local_processing\":2}' WHERE key='execution_limits'",
+      "DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'; UPDATE application_preferences SET value='{\"max_concurrent_inference\":4,\"max_concurrent_local_processing\":2}' WHERE key='execution_limits'",
     );
     db.pragma("user_version=1");
     db.close();
@@ -572,12 +491,12 @@ describe("durable preference and migration recovery", () => {
     await store.open();
     await store.close();
     const db = raw();
-    db.pragma("user_version=7");
+    db.pragma("user_version=8");
     db.close();
     await expect(store.open()).rejects.toThrow(/Unsupported/);
     expect(checkpoints(root)).toHaveLength(1);
     const again = raw();
-    again.pragma("user_version=6");
+    again.pragma("user_version=7");
     again.exec("UPDATE ohtia_migration_artifacts SET sha256='" + "a".repeat(64) + "'");
     again.close();
     await expect(store.open()).rejects.toThrow(/identity/);
@@ -976,7 +895,7 @@ it("upgrades a populated revision-two store while preserving appearance receipts
   await store.close();
   const db = raw();
   db.exec(
-    "DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; INSERT INTO application_preferences VALUES ('interface_locale',1,7,'\"ko-KR\"')",
+    "DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; INSERT INTO application_preferences VALUES ('interface_locale',1,7,'\"ko-KR\"')",
   );
   db.pragma("user_version=2");
   db.close();
@@ -1293,7 +1212,7 @@ describe("layout migration and uncertain commit boundary", () => {
     await store.close();
     const db = raw();
     db.exec(
-      "DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; PRAGMA user_version=3",
+      "DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; PRAGMA user_version=3",
     );
     const value = defaultWorkspaceLayout(1440);
     db.prepare("INSERT INTO application_preferences VALUES ('workspace_layout',1,8,?)").run(
@@ -1317,7 +1236,7 @@ describe("layout migration and uncertain commit boundary", () => {
       ),
     );
     expect(entries).toContainEqual(
-      expect.objectContaining({ sourceRevision: 3, targetRevision: 6 }),
+      expect.objectContaining({ sourceRevision: 3, targetRevision: 7 }),
     );
   });
   it("rolls back both rows before commit and reconciles a lost acknowledgement after a real commit", async () => {
@@ -1490,7 +1409,7 @@ describe("file-backed native window preferences", () => {
     await store.close();
     const db = raw();
     db.exec(
-      "DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; PRAGMA user_version=5",
+      "DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; PRAGMA user_version=5",
     );
     db.close();
     await store.open();
@@ -1516,7 +1435,7 @@ describe("file-backed native window preferences", () => {
           fs.readFileSync(path.join(root, "recovery/migrations", name, "manifest.json"), "utf8"),
         ),
       ),
-    ).toContainEqual(expect.objectContaining({ sourceRevision: 5, targetRevision: 6 }));
+    ).toContainEqual(expect.objectContaining({ sourceRevision: 5, targetRevision: 7 }));
   });
 });
 
