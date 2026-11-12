@@ -24,7 +24,7 @@ Keep each schema, contract and operating procedure in one canonical location. An
 
 ## Structure
 
-Each record uses `type: DecisionRecord`, a title naming `ADR-NNNN` and the concrete choice, and a one-sentence description. Follow the repository's generated/verified provenance and index rules in [AGENTS.md](../AGENTS.md#documentation-and-open-knowledge-format). No `status` field or body status inventory is introduced.
+Each record uses `type: DecisionRecord`, a title naming `ADR-NNNN` and the concrete choice, and a one-sentence description. Follow the repository's generated/verified provenance and index rules in [AGENTS.md](../AGENTS.md#documentation-and-open-knowledge-format). The optional native OKF `status` field describes document lifecycle: `draft`, `stable` or `deprecated`; absence means `stable`. A replaced record carries `status: deprecated` and names and links its replacement at the beginning of the body. Lifecycle does not imply human verification. Execution progress remains in GitHub rather than a body status inventory.
 
 - **Context:** the problem, linked requirements, constraints, meaningful alternatives and selection criteria. Distinguish measured facts from assumptions and evidence required later.
 - **Decision:** the selected mechanism, authority boundary, scope and explicit limits, in active voice.
