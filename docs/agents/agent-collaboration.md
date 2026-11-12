@@ -3,7 +3,7 @@ type: Specification
 title: "Agent collaboration"
 description: "Virgilio, research specialists, bounded collaboration, inspectable memory, and human-approved editorial proposals."
 generated:
-  by: claude-code/claude-opus-5-5
+  by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
 sources:
@@ -38,7 +38,7 @@ This document owns collaboration behavior, logical records and editorial proposa
 
 Virgilio is the usual conversational entry point. The Navigator remains the project surface for stage, focus, artifacts and pending reviews; it can show stored guidance without running a model. Opening a project, restoring a conversation, browsing findings, changing a selection or viewing the Navigator does not authorize inference.
 
-The researcher can start with a question, a source, selected sources or a manuscript passage. The action identifies its purpose, analysis language, input versions, destination and bounded work. Virgilio can answer directly when a specialist would add no useful capability, policy separation or critical perspective. Delegation is justified by the requested contribution, not by a need to activate the whole roster.
+The researcher can start with a question, a source, selected sources or a manuscript passage. The action identifies its purpose, document language, input versions, destination and bounded work. Virgilio can answer directly when a specialist would add no useful capability, policy separation or critical perspective. Delegation is justified by the requested contribution, not by a need to activate the whole roster.
 
 Specialists are directly accessible from the relevant source, manuscript or conversation. Show the active contributor and the requested review mode. Returning to Virgilio uses permitted project artifacts and selected conversation context; it does not automatically forward the entire specialist history or authorize another model call. The researcher can stop or redirect an intervention without managing a task board.
 
@@ -132,7 +132,7 @@ An **intervention** is one researcher-authorized research action that can includ
 
 The intervention retains:
 
-- Identity, project, research purpose, analysis language and originating human command receipt.
+- Identity, project, research purpose, document language and originating human command receipt.
 - Immutable input/version manifest, selected context and current restriction references.
 - Authorized role/operation set, destinations, policy versions and enforceable work envelope.
 - A versioned contribution graph, current response owner, cancellation intent and expected coordination version.

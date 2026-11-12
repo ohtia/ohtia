@@ -138,6 +138,10 @@ export async function buildDesktop(root, { development = false } = {}) {
   fs.cpSync(path.join(root, "packages/utility/src/migrations"), path.join(output, "migrations"), {
     recursive: true,
   });
+  fs.copyFileSync(
+    path.join(root, "config/localization/iana-language-subtag-registry.txt"),
+    path.join(output, "iana-language-subtag-registry.txt"),
+  );
   for (const name of ["better-sqlite3", "kysely"]) {
     const source = fs.realpathSync(path.join(root, "packages/utility/node_modules", name));
     fs.cpSync(source, path.join(output, "node_modules", name), {

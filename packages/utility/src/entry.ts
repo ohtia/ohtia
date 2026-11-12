@@ -187,6 +187,15 @@ async function start(): Promise<void> {
     )
       throw new Error("Storage runtime identity mismatch.");
     store = new DurableStore({
+      emitDiagnostic: (event) => {
+        parent.postMessage(
+          JSON.stringify({
+            kind: "diagnostic",
+            generation,
+            event: { ...event, timestamp: new Date().toISOString() },
+          }),
+        );
+      },
       root: researchRoot,
       binding: path.join(directory, "native/binding.node"),
       bindingSha256: record.bindingSha256,

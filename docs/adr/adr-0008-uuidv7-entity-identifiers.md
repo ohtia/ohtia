@@ -27,7 +27,7 @@ SQLite provides `TEXT` and `BLOB` storage classes rather than a native UUID type
 
 ## Decision
 
-Use UUIDv7 for internal entity primary keys and their foreign-key references. The trusted application data service generates new identities before insertion using an RFC 9562 conforming implementation. Do not depend on a SQLite extension or renderer/model-supplied identity generation. Select the actual library with its implementation and conformance checks rather than declaring an untested package here.
+Use UUIDv7 for internal entity primary keys and their foreign-key references. The trusted application data service generates new identities before insertion using Node's `crypto.randomUUIDv7()`. Do not depend on a SQLite extension or renderer/model-supplied identity generation.
 
 Store each UUID as exactly 16 bytes in RFC network byte order in a SQLite `BLOB`. Primary keys are explicitly non-null and unique. Physical schema constraints validate storage class, byte length, version 7 and the RFC variant; referenced columns use the same encoding. Do not assume that declaring a column `UUID` or `BLOB(16)` enforces these requirements.
 

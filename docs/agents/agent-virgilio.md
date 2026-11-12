@@ -3,7 +3,7 @@ type: Specification
 title: "Virgilio: research guide"
 description: "Virgilio's research guidance, bounded planning, attributed synthesis, context, evaluation requirements and visual presentation."
 generated:
-  by: claude-code/claude-opus-5-5
+  by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
 ---
@@ -99,7 +99,7 @@ Symbol pieces, on the 24 px grid:
 
 ## Shared inputs, context and tools
 
-Inputs identify the research question or current focus, requested contribution, relevant attributed project facts and decisions, analysis language, selected material versions and explicit limits. An empty corpus or partially defined question can support a bounded clarification. Missing sources or requirements remain missing rather than being supplied from invented memory.
+Inputs identify the research question or current focus, requested contribution, relevant attributed project facts and decisions, document language, selected material versions and explicit limits. An empty corpus or partially defined question can support a bounded clarification. Missing sources or requirements remain missing rather than being supplied from invented memory.
 
 Read only the selected project profile, stage/focus, accepted decisions, unresolved questions, permitted conversation branch and committed artifacts needed for the request. Tools can inspect scoped records and propose contributions, questions or graph changes through application commands. Viewing the Navigator, opening a conversation or returning from a specialist cannot authorize another inference call.
 

@@ -3,7 +3,7 @@ type: Specification
 title: "Thomas: methodologist"
 description: "Thomas's responsibilities, bounded methodological operations, context, inference preferences, result contracts, evaluation requirements and visual presentation."
 generated:
-  by: claude-code/claude-opus-5-5
+  by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
 ---
@@ -105,9 +105,9 @@ Symbol pieces, on the 24 px grid:
 
 ## Shared inputs, context and tools
 
-Each operation receives the exact research question and requested contribution, analysis language, relevant objectives and project context, immutable versions of selected material and decisions, declared constraints and the expected output scope. Context identifies which statements are researcher choices, supplied institutional requirements, attributed source claims, observations or earlier agent proposals. Adapt vocabulary and depth to the researcher's needs without changing the evidential standard.
+Each operation receives the exact research question and requested contribution, document language, relevant objectives and project context, immutable versions of selected material and decisions, declared constraints and the expected output scope. Context identifies which statements are researcher choices, supplied institutional requirements, attributed source claims, observations or earlier agent proposals. Adapt vocabulary and depth to the researcher's needs without changing the evidential standard.
 
-Supply only the material needed for the operation. Relevant material can include a methodological matrix, design alternatives, selected source passages, instruments, analysis plans, pilot records, access conditions and decisions. Include feasibility facts such as actual availability, permissions, skills and software when relevant. Record omitted, inaccessible, unreadable and unsupported material. Interface language, analysis language and material language remain distinct.
+Supply only the material needed for the operation. Relevant material can include a methodological matrix, design alternatives, selected source passages, instruments, analysis plans, pilot records, access conditions and decisions. Include feasibility facts such as actual availability, permissions, skills and software when relevant. Record omitted, inaccessible, unreadable and unsupported material. Interface language, document language and material language remain distinct.
 
 When essential information is missing, ask the smallest useful clarification or return a bounded assessment identifying the unresolved dependency. A provisional alternative must label its assumptions and what would invalidate them. Do not invent an institution's requirements, consent, sample, access, completed pilot or predetermined categories. In a theoretical or documentary project, use appropriate reasoning, corpus and interpretation concepts rather than forcing every field into experimental variables or participants.
 
@@ -176,7 +176,7 @@ Researcher preferences can adjust explanation depth and presentation within the 
 
 ## Evaluation and enablement
 
-Apply [Agent collaboration evaluation](agent-collaboration-evaluation.md) to each operation, analysis language, supported material representation and provider/runtime configuration. Compare Thomas with bounded methodological guidance from a capable single-agent baseline under comparable evidence and total work budgets. Include direct specialist use and coordinated use where applicable; a different persona is not evidence of better methodological reasoning.
+Apply [Agent collaboration evaluation](agent-collaboration-evaluation.md) to each operation, document language, supported material representation and provider/runtime configuration. Compare Thomas with bounded methodological guidance from a capable single-agent baseline under comparable evidence and total work budgets. Include direct specialist use and coordinated use where applicable; a different persona is not evidence of better methodological reasoning.
 
 Declare assessment rubrics, quality thresholds, severity definitions and work/cost/latency limits before trials. Human assessors need methodological, disciplinary and language competence appropriate to the cases. Test adequate as well as inadequate designs and include:
 

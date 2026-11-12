@@ -1,7 +1,11 @@
 ---
 type: Playbook
 title: Durable foundation storage
-description: Open the isolated local store, persist typed preferences and verify packaged migration, recovery and bounded failure observations.
+description: Open the isolated local store, persist preferences and research records, and verify packaged migrations and recovery.
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # Durable foundation storage
@@ -26,7 +30,17 @@ Appearance uses the existing named port operations and `system`, `light` or `dar
 
 All windows use the same broker and writer. The graphical control keeps unsaved input during failures and service replacement. Reconnection obtains a new trusted service/window generation without reloading the document, disposes old calls/subscriptions and rejects stale replies. A confirmed preference applies across windows; refreshing after a stale revision preserves the user's draft for the next explicit save.
 
-Preference keys and operation identifiers keep their separate contracts. This schema introduces no research entity. The native harness has an isolated UUIDv7 representation/reference fixture under the packaged binding; that fixture is not a production entity schema or a selected production UUID generator. [ADR-0008](adr/adr-0008-uuidv7-entity-identifiers.md) governs any entity implementation that adopts such identities.
+Preference keys and operation identifiers keep their separate contracts. Research entity UUIDv7 values follow [ADR-0008](adr/adr-0008-uuidv7-entity-identifiers.md); preference operation identifiers remain application-port identifiers.
+
+## Project and conversation operations
+
+[STORY-003-004](epics/EPIC-003-research-agents/STORY-003-004-project-and-conversation-records.md) adds `0007_research_records` through this same admission, checkpoint and recovery path. Its tables retain projects, conversations, immutable messages and accepted command receipts. SQLite checks UUIDv7 blobs, closed catalogs, canonical language-tag grammar, all-or-none setup fields, Unicode title bounds, timestamps, message positions and immutable identities. The data service additionally checks subtags against the bundled [IANA registry](../config/localization/iana-language-subtag-registry.txt). Its native `File-Date` identifies the byte-for-byte copy; the build copies those same bytes beside the compiled storage module.
+
+`DurableStore.executeResearchCommand({ command, operationId, payload })` accepts the five names and exact payload shapes in [the internal research contract](../packages/contracts/src/research.ts). `project.create` creates the project and its single setup conversation; `project.confirmSetup` confirms title and document language; `conversation.start` creates a conversation with its first researcher message; `conversation.rename` checks `expectedUpdatedAt`; `message.append` appends a researcher message. Caller-generated operation identifiers are separate from service-generated entity identifiers. Each successful result is `{ resultId }`, the created or changed record's canonical UUID. Replaying the same command and RFC 8785 canonical payload returns that original identifier, including after restart or later changes to the record. Reusing the identifier for another command or payload fails with `operation_conflict`. The service validates command names against its closed current catalog, which grows with each story; SQLite checks nonempty command text without embedding that growing vocabulary. Rejections write neither data nor receipts; retrying a rejected identifier checks the current preconditions again.
+
+`readProjects()` implements `project.list`, including projects still in setup. `readConversations(projectId)` implements `conversation.list`, scoped to the named project and ordered newest first by the timestamp of each conversation's highest-position message, using creation time for an empty setup conversation and identity as a deterministic tie breaker. `readMessages(conversationId, fromPosition = 1)` implements `message.list`, with an inclusive positive starting position and ascending position order. Conversation records carry `revision`. Every rename or inserted message advances it; only renames advance `updatedAt`, strictly beyond its previous value even with an equal or backward wall clock. All methods use the admitted store's existing connection and transaction boundary. The window port exposes these operations with STORY-003-010.
+
+The data service canonicalizes language, script and region case before validating the restricted `language[-script][-region]` grammar and each nondeprecated registry subtag. Invalid language input returns `invalid_message`; title and researcher-content errors return `name_invalid` and `message_invalid`. Missing records and setup-state rejections return their declared `refresh_record` errors. A rename with a stale timestamp returns `stale_revision` with the current conversation revision and leaves the requested name unsaved. PRIN-004 and PRIN-013 require keeping researcher content, authorship and committed receipts distinct from diagnostics and transient transport state.
 
 ## Migration and recovery
 

@@ -141,6 +141,11 @@ export type WindowBoundsReceipt =
   | { readonly state: "not_found" | "pending" }
   | { readonly state: "recorded"; readonly outcome: RecordedWindowBoundsOutcome };
 export const errorActions = {
+  project_not_in_setup: "refresh_record",
+  project_in_setup: "refresh_record",
+  record_not_found: "refresh_record",
+  name_invalid: "check_request",
+  message_invalid: "check_request",
   invalid_message: "check_request",
   unsupported_version: "upgrade_application",
   policy_mismatch: "upgrade_application",
