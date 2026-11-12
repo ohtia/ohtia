@@ -1,3 +1,13 @@
+import {
+  isConnectionId,
+  isConnectionSnapshot,
+  isConnectionEvent,
+  isModelPage,
+  type ConnectionSnapshot,
+  type ConnectionEvent,
+  type ModelPage,
+  type ModelPageInput,
+} from "./connections.js";
 import { isWindowBounds, type WindowBounds } from "./window-bounds.js";
 import {
   isCharacterPresentation,
@@ -195,6 +205,13 @@ export type AppearanceReceipt =
   | { readonly state: "not_found" | "pending" }
   | { readonly state: "recorded"; readonly outcome: RecordedAppearanceOutcome };
 export interface OperationInputs {
+  "connection.read": { readonly connection: string };
+  "connection.subscribe": { readonly connection: string; readonly subscriptionId: string };
+  "connection.probe": { readonly connection: string };
+  "connection.listModels": ModelPageInput;
+  "connection.connect": { readonly connection: string };
+  "connection.disconnect": { readonly connection: string };
+
   "bounds.read": Record<string, never>;
   "bounds.replace": { readonly expectedRevision: number; readonly value: WindowBounds };
   "bounds.receipt": { readonly targetOperationId: string };
@@ -228,6 +245,13 @@ export interface OperationInputs {
   "appearance.subscribe": { readonly subscriptionId: string };
 }
 export interface OperationOutputs {
+  "connection.read": ConnectionSnapshot;
+  "connection.subscribe": { readonly subscriptionId: string };
+  "connection.probe": ConnectionSnapshot;
+  "connection.listModels": ModelPage;
+  "connection.connect": ConnectionSnapshot;
+  "connection.disconnect": ConnectionSnapshot;
+
   "bounds.read": WindowBoundsRecord;
   "bounds.replace": SavedWindowBoundsRecord;
   "bounds.receipt": WindowBoundsReceipt;
@@ -312,6 +336,7 @@ export type PortEvent = {
   readonly subscriptionId: string;
   readonly sequence: number;
 } & (
+  | { readonly topic: "connection"; readonly payload: ConnectionEvent }
   | { readonly topic: "presentation"; readonly payload: PresentationSnapshot }
   | { readonly topic: "status"; readonly payload: FoundationStatus }
   | { readonly topic: "appearance"; readonly payload: AppearanceRecord }
@@ -327,6 +352,15 @@ export interface Subscription {
   dispose(): void;
 }
 export interface FoundationPort {
+  readConnection(connection: string): PortCall<ConnectionSnapshot>;
+  connectConnection(connection: string): PortCall<ConnectionSnapshot>;
+  disconnectConnection(connection: string): PortCall<ConnectionSnapshot>;
+  probeConnection(connection: string): PortCall<ConnectionSnapshot>;
+  listConnectionModels(input: ModelPageInput): PortCall<ModelPage>;
+  subscribeConnection(
+    connection: string,
+    listener: (notice: Outcome<ConnectionEvent>) => void,
+  ): Subscription;
   readPresentation(): PortCall<PresentationSnapshot>;
   subscribePresentation(listener: (notice: Outcome<PresentationSnapshot>) => void): Subscription;
   replaceCharacter(
@@ -583,6 +617,13 @@ const replaceErrors = [
   "storage_failed",
 ] as const;
 export const operationErrorCodes = Object.freeze({
+  "connection.read": readErrors,
+  "connection.subscribe": [...readErrors, "sequence_gap"],
+  "connection.probe": readErrors,
+  "connection.listModels": [...readErrors, "stale_revision"],
+  "connection.connect": readErrors,
+  "connection.disconnect": readErrors,
+
   "bounds.read": [...readErrors, "preference_invalid"],
   "bounds.replace": replaceErrors,
   "bounds.receipt": readErrors,
@@ -621,6 +662,28 @@ function operationOutcome(operation: Operation, value: Json | undefined): boolea
 
 function input(operation: Operation, value: Json | undefined): boolean {
   switch (operation) {
+    case "connection.read":
+    case "connection.connect":
+    case "connection.disconnect":
+    case "connection.probe":
+      return exact(value, ["connection"]) && isConnectionId(value.connection);
+    case "connection.subscribe":
+      return (
+        exact(value, ["connection", "subscriptionId"]) &&
+        isConnectionId(value.connection) &&
+        isIdentifier(value.subscriptionId)
+      );
+    case "connection.listModels":
+      return (
+        exact(value, ["connection", "model_list_revision", "cursor", "count"]) &&
+        isConnectionId(value.connection) &&
+        revision(value.model_list_revision) &&
+        value.model_list_revision > 0 &&
+        revision(value.cursor) &&
+        revision(value.count) &&
+        value.count > 0 &&
+        value.count <= 128
+      );
     case "presentation.read":
     case "zoom.apply":
     case "status.read":
@@ -694,6 +757,15 @@ function input(operation: Operation, value: Json | undefined): boolean {
 }
 function output(operation: Operation, value: Json | undefined): boolean {
   switch (operation) {
+    case "connection.read":
+    case "connection.connect":
+    case "connection.disconnect":
+    case "connection.probe":
+      return isConnectionSnapshot(value);
+    case "connection.listModels":
+      return isModelPage(value);
+    case "connection.subscribe":
+      return exact(value, ["subscriptionId"]) && isIdentifier(value.subscriptionId);
     case "bounds.read":
       return boundsRecord(value);
     case "bounds.replace":
@@ -832,6 +904,13 @@ const identityKeys = [
   "operation",
 ];
 const operations: readonly Operation[] = [
+  "connection.read",
+  "connection.subscribe",
+  "connection.probe",
+  "connection.listModels",
+  "connection.connect",
+  "connection.disconnect",
+
   "presentation.read",
   "presentation.subscribe",
   "character.replace",
@@ -896,13 +975,15 @@ export function decodeEnvelope(raw: unknown): Outcome<Envelope> {
       isIdentifier(value.subscriptionId) &&
       revision(value.sequence) &&
       value.sequence > 0 &&
-      (value.topic === "presentation"
-        ? presentationSnapshot(value.payload)
-        : value.topic === "status"
-          ? status(value.payload)
-          : value.topic === "locale"
-            ? localeSnapshot(value.payload)
-            : value.topic === "appearance" && appearance(value.payload));
+      (value.topic === "connection"
+        ? isConnectionEvent(value.payload)
+        : value.topic === "presentation"
+          ? presentationSnapshot(value.payload)
+          : value.topic === "status"
+            ? status(value.payload)
+            : value.topic === "locale"
+              ? localeSnapshot(value.payload)
+              : value.topic === "appearance" && appearance(value.payload));
   } else if (value.kind === "unsubscribe") {
     valid =
       exact(value, [

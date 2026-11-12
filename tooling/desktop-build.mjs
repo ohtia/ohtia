@@ -3,9 +3,9 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { build } from "vite";
-import { productGraph } from "./product-graph.mjs";
+import { inspectProviderArtifact, productGraph } from "./product-graph.mjs";
 
-export async function buildDesktop(root) {
+export async function buildDesktop(root, { development = false } = {}) {
   const output = path.join(root, "artifacts/desktop-app");
   fs.rmSync(output, { recursive: true, force: true });
   fs.mkdirSync(output, { recursive: true });
@@ -18,7 +18,21 @@ export async function buildDesktop(root) {
   ]) {
     await build({
       configFile: false,
-      plugins: [productGraph(root)],
+      plugins: [
+        {
+          name: "admit-development-provider",
+          resolveId(source) {
+            if (!development && source === "./fake-provider.js")
+              return "\0ohtia-no-development-provider";
+          },
+          load(id) {
+            if (id === "\0ohtia-no-development-provider")
+              return "export const createFakeProvider = () => undefined; export const credentialAcceptance = () => undefined;";
+          },
+        },
+        productGraph(root, { development }),
+      ],
+      define: { __OHTIA_DEVELOPMENT_BUILD__: JSON.stringify(development) },
       root,
       logLevel: "warn",
       build: {
@@ -41,6 +55,7 @@ export async function buildDesktop(root) {
           external: [
             "electron",
             "better-sqlite3",
+            "@napi-rs/keyring",
             "kysely",
             "kysely/migration",
             "./storage.js",
@@ -138,6 +153,24 @@ export async function buildDesktop(root) {
       },
     });
   }
+  const keyring = fs.realpathSync(path.join(root, "packages/main/node_modules/@napi-rs/keyring"));
+  fs.cpSync(keyring, path.join(output, "node_modules/@napi-rs/keyring"), {
+    recursive: true,
+    filter: (entry) => !path.relative(keyring, entry).split(path.sep).includes("node_modules"),
+  });
+  const mainRequire = createRequire(path.join(root, "packages/main/package.json"));
+  const nativeRecords = JSON.parse(
+    fs.readFileSync(path.join(root, "config/desktop/toolchain.json"), "utf8"),
+  ).tools["@napi-rs/keyring"].artifacts;
+  const keyringRequire = createRequire(mainRequire.resolve("@napi-rs/keyring/package.json"));
+  for (const record of Object.values(nativeRecords)) {
+    const source = path.dirname(keyringRequire.resolve(`${record.package}/package.json`));
+    fs.cpSync(source, path.join(output, "node_modules", record.package), {
+      recursive: true,
+      filter: (entry) => !path.relative(source, entry).split(path.sep).includes("node_modules"),
+    });
+  }
+  if (!development) inspectProviderArtifact(output);
   const licenses = path.join(output, "licenses");
   fs.mkdirSync(licenses);
   for (const name of fs.readdirSync(path.join(root, "packages/renderer/fonts")))
@@ -158,6 +191,7 @@ export async function buildDesktop(root) {
     "react-dom",
     "scheduler",
     "better-sqlite3",
+    "@napi-rs/keyring",
     "node-addon-api",
     "kysely",
     "electron",
@@ -174,16 +208,21 @@ export async function buildDesktop(root) {
             )
           : require;
     const source =
-      component === "electron"
-        ? fs.realpathSync(path.join(root, "packages/main/node_modules/electron"))
-        : ["better-sqlite3", "kysely"].includes(component)
-          ? fs.realpathSync(path.join(root, "packages/utility/node_modules", component))
-          : path.dirname(resolver.resolve(`${component}/package.json`));
+      component === "@napi-rs/keyring"
+        ? keyring
+        : component === "electron"
+          ? fs.realpathSync(path.join(root, "packages/main/node_modules/electron"))
+          : ["better-sqlite3", "kysely"].includes(component)
+            ? fs.realpathSync(path.join(root, "packages/utility/node_modules", component))
+            : path.dirname(resolver.resolve(`${component}/package.json`));
     const metadata = JSON.parse(fs.readFileSync(path.join(source, "package.json"), "utf8"));
     const name = ["LICENSE", "LICENSE.md"].find((name) => fs.existsSync(path.join(source, name)));
     if (!name || typeof metadata.license !== "string")
       throw new Error("Missing bundled dependency notice.");
-    fs.copyFileSync(path.join(source, name), path.join(licenses, `${component}-LICENSE`));
+    fs.copyFileSync(
+      path.join(source, name),
+      path.join(licenses, `${component.replaceAll("/", "-")}-LICENSE`),
+    );
     notices.push({ component, license: metadata.license });
   }
   const fonts = JSON.parse(

@@ -2,6 +2,10 @@
 type: Playbook
 title: Scaleway qualification access preflight
 description: Check protected GitHub Actions read access and ARM image compatibility without creating cloud resources or claiming native qualification.
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: instance-api
     resource: https://www.scaleway.com/en/developers/api/instance/v1/instances
@@ -18,10 +22,6 @@ sources:
   - id: storage-units
     resource: https://www.scaleway.com/en/docs/block-storage/how-to/mount-a-volume/
     title: Scaleway decimal storage capacity
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # Scaleway qualification access preflight
@@ -34,7 +34,7 @@ The checker contains only GET requests to the fixed Scaleway TLS origin. It does
 
 ## Configuration contract
 
-The [qualification configuration map](scaleway-qualification.md#configuration-placement) owns the placement of all Scaleway settings. This preflight consumes the following resource subset from repository variables and its credential from the protected creator environment secret. Neither source files nor reports contain credential values. The HTTP adapter injects only the secret required by its authenticated reads; it does not expose that value to a subprocess or accept a caller-supplied endpoint.
+The [qualification configuration map](scaleway-qualification.md#configuration-placement) owns the placement of all Scaleway settings. This preflight consumes the following resource subset from repository variables and its credential from the protected creator environment secret. Neither source files nor reports contain credential values. The HTTPS adapter injects only the secret required by its authenticated reads; it does not expose that value to a subprocess or accept a caller-supplied endpoint.
 
 - `SCW_PROJECT_ID`: canonical UUID of the dedicated project.
 - `SCW_ARM_ZONE`: selected provider availability zone.

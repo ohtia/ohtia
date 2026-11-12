@@ -173,7 +173,7 @@ describe("catalog build admission", () => {
     expect(
       fs
         .readFileSync("tooling/desktop-build.mjs", "utf8")
-        .match(/plugins: \[productGraph\(root\)\]/g),
+        .match(/productGraph\(root(?:, \{ development \})?\)/g),
     ).toHaveLength(2);
     expect(fs.readFileSync("tooling/vite.renderer.mjs", "utf8")).toContain(
       "productGraph(process.cwd())",

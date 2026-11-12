@@ -1,3 +1,4 @@
+import type { ConnectionManager } from "./connection-manager.js";
 import { RequestBudget } from "./port-admission.js";
 import { randomUUID } from "node:crypto";
 import {
@@ -169,7 +170,48 @@ export class ServiceSupervisor {
       });
     });
   }
+  reportConnections(manager: ConnectionManager): boolean {
+    if (!this.available) return false;
+    try {
+      for (const connection of manager.ids()) {
+        const snapshot = manager.snapshot(connection);
+        if (!snapshot) continue;
+        this.child.send(
+          JSON.stringify({ kind: "connection_state", generation: this.generation, snapshot }),
+        );
+        if (snapshot.model_list_revision === null) continue;
+        let cursor = 0;
+        for (;;) {
+          const page = manager.listModels({
+            connection,
+            model_list_revision: snapshot.model_list_revision,
+            cursor,
+            count: 128,
+          });
+          if (!page.ok) return false;
+          this.child.send(
+            JSON.stringify({
+              kind: "connection_models",
+              generation: this.generation,
+              page: page.value,
+            }),
+          );
+          cursor = page.value.nextCursor;
+          if (!page.value.hasMore) break;
+        }
+      }
+      return true;
+    } catch {
+      this.fault();
+      return false;
+    }
+  }
   dispatch(work: Work): void {
+    // Defense in depth: no future composition may forward a credential-bearing connection action.
+    if (work.request.operation.startsWith("connection.")) {
+      this.reject(work);
+      return;
+    }
     if (!this.available || this.storageAdmitting) {
       this.reject(work);
       return;

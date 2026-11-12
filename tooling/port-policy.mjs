@@ -23,6 +23,7 @@ export function generatePortPolicy(root) {
     "event_queue_items",
     "event_queue_bytes",
     "request_deadline_ms",
+    "connection_probe_ms",
     "initial_input_bytes",
     "initial_input_items",
     "initial_output_bytes",
