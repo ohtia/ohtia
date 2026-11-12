@@ -2,10 +2,6 @@
 type: Playbook
 title: Scaleway qualification access preflight
 description: Check protected GitHub Actions read access and ARM image compatibility without creating cloud resources or claiming native qualification.
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: instance-api
     resource: https://www.scaleway.com/en/developers/api/instance/v1/instances
@@ -28,7 +24,7 @@ sources:
 
 ## Purpose and authority
 
-The [access preflight workflow](../.github/workflows/scaleway-access.yml) checks authenticated project-filtered reads and configured ARM64 image/SKU combinations for the [installation qualification owner](epics/EPIC-001-desktop-foundation/STORY-001-013-qualify-signed-installation-and-update-mechanisms.md). It runs on a GitHub-hosted Linux x64 machine and reads provider metadata. The separate [hosted facility observations](installation-facilities.md) and [ephemeral qualification contract](scaleway-qualification.md) describe different evidence.
+The [access preflight workflow](../.github/workflows/scaleway-access.yml) checks authenticated project-filtered reads and configured ARM64 image/SKU combinations for the [installation qualification owner](epics/EPIC-001-desktop-foundation/STORY-001-013-qualify-signed-installation-and-update-mechanisms.md). It runs on a GitHub-hosted Linux x64 machine and reads provider metadata. The [ephemeral qualification contract](scaleway-qualification.md) describes the separate native execution and recovery boundary.
 
 The checker contains only GET requests to the fixed Scaleway TLS origin. It does not create, start, resize, contact or delete a VM, and success does not authorize a paid execution. Use a protected main-only deployment with maintainer approval; inspect the actual guards and provider permission scope separately. This checker does not inspect IAM policy or prove denied access to other projects.
 

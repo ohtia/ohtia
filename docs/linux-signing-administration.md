@@ -2,10 +2,6 @@
 type: Playbook
 title: Linux signing administration
 description: Prepare signing access and activation previews and collect bounded local native-probe resource observations.
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: linux-cgroup-memory
     resource: https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html
@@ -40,12 +36,6 @@ sources:
 ---
 
 # Linux signing administration
-
-## Package source selection
-
-Run **Installation signing qualification** from `main` in GitHub Actions. Leave `hash` empty to use the main commit captured at dispatch, or supply the full lowercase SHA of an older commit already integrated into main. Other workflow refs and commits outside that captured history are refused. The selected commit/tree and workflow main snapshot appear in the execution summary and remain fixed for all jobs. Choose the Linux selection and `provenance` to construct/verify an unsigned package, or `sign` to request the private package/catalog operations after their separate operational admission. The tracked caller is disabled until that admission is independently configured; source selection does not enable real-key use or publish a release.
-
-[ADR-0049](adr/adr-0049-main-source-selection-for-packages.md) owns the distinction between workflow and package source. Normal GitHub merges need no additional personal signature for packaging. When publishing new reusable recipes, retain full-SHA references in the caller and review their exact new builder/worker digests and qualify the resulting service image before separately approving its operational policy; the optional application hash never selects recipe code or a policy.
 
 ## Roles and operating locations
 
@@ -133,7 +123,7 @@ gh api --hostname github.com --paginate --slurp \
 
 This independent mode requires only the three caller Variables, so IAM preparation does not depend on an endpoint that has not been created. It produces `caller-fragment.json` and a manifest without IAM operations or authority. Repeat runtime assembly with the actual access fragment and public policy, supplying `--caller tmp/signing-caller-preview/caller-fragment.json` and a fresh output destination. Bucket values must match the runtime fragment exactly. The producer generates the commitment and disabled template together; never copy a hash into a GitHub Variable or manually synchronize it with another editable locator file.
 
-Review the generated caller snapshot against provider readback, the manifest and the public policy before proposing the template as `config/installation/signing-client.json`. Its literal locators stay null; the commitment constrains values injected from Variables before any invocation/OIDC credential is sent. A reviewed, qualified, separately authorized source change must admit the enabled template and update the calling workflow's reusable-worker pin to the complete immutable recipe SHA. Match that recipe to the independently approved signing policy and repeat the affected qualification. The current caller pin and disabled client are not activated by the generator or by this procedure. A bucket or endpoint change requires a replacement reviewed commitment and recipe, as a change of credential destination would for ARM.
+Review the generated caller snapshot against provider readback, the manifest and the public policy before proposing the template as `config/installation/signing-client.json`. Its literal locators stay null; the commitment constrains values injected from Variables before any invocation/OIDC credential is sent. A reviewed, qualified, separately authorized source change must admit an enabled template before a signing caller can use it. Any such caller must pin its reusable worker to the complete immutable recipe SHA. Match that recipe to the independently approved signing policy and repeat the affected qualification. The generator and this procedure grant no activation authority. A bucket or endpoint change requires a replacement reviewed commitment and recipe, as a change of credential destination would for ARM.
 
 ## Prepare activation or revocation
 

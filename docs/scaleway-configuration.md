@@ -52,7 +52,7 @@ Set these repository Variables from the corresponding Scaleway resources. Projec
 
 ## Signing caller metadata and credential
 
-The [signing workflow](../.github/workflows/signing-worker.yml) injects these repository Variables into its fixed worker:
+The [signing worker preparation script](../scripts/installation_signing_worker.py) consumes these values through its environment:
 
 - `SCW_SIGNING_SERVICE_ORIGIN`: exact approved HTTPS service origin ending in `.fnc.fr-par.scw.cloud`, without a path, credentials, query or port.
 - `SCW_SIGNING_INGRESS_BUCKET` and `SCW_SIGNING_RETAINED_BUCKET`: the same bucket variables used by administrative preparation.
