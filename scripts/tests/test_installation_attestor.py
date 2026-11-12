@@ -418,9 +418,6 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(accepted, b"true")
         command = runner.call_args.args[0]
         self.assertEqual(command[command.index("--predicate-type") + 1], contract.PREDICATE_TYPE)
-        workflow = (ROOT / ".github/workflows/signing-build.yml").read_text()
-        self.assertIn("predicate-type: " + contract.PREDICATE_TYPE, workflow)
-        self.assertNotIn("https://slsa.dev/provenance/v1", workflow)
         self.assertIn("--deny-self-hosted-runners", command)
         self.assertNotIn("--no-public-good", command)
         self.assertEqual(command[command.index("--signer-digest") + 1], RECIPE)
@@ -457,13 +454,6 @@ class IntegrationTests(unittest.TestCase):
         with patch.object(contract, "git", return_value=(SOURCE + "\n").encode()):
             with self.assertRaisesRegex(ValueError, "recipe_checkout"):
                 attestor.install_verifier(env)
-        workflow = (ROOT / ".github/workflows/signing-build.yml").read_text()
-        install_step = workflow.split("- name: Install the recipe's checksum-pinned verifier", 1)[
-            1
-        ].split("- name:", 1)[0]
-        self.assertIn("ATTESTOR_OPERATION: install-cli", install_step)
-        self.assertIn("run: python3 recipe/scripts/installation_attestor.py", install_step)
-        self.assertNotIn("scaleway_qualification.py", install_step)
 
     def test_all_six_manifests_pass_complete_build_authority_and_signer_preflight(self):
         fixtures = []

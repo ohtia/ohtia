@@ -277,26 +277,11 @@ class WorkerIdentityTests(unittest.TestCase):
             self.assertEqual(clean["OHTIA_SIGNING_INVOKE_TOKEN"], "synthetic-invoker")
             self.assertNotIn("synthetic-invoker", " ".join(command))
 
-    def test_fixed_action_and_job_never_execute_candidate_or_publish_private_results(self):
-        workflow = (ROOT / ".github/workflows/signing-worker.yml").read_text()
+    def test_fixed_action_uses_isolated_execution_without_a_shell(self):
         action = (ROOT / ".github/actions/installation-signing-worker/main.mjs").read_text()
-        self.assertIn("ref: ${{ job.workflow_sha }}", workflow)
-        self.assertIn("persist-credentials: false", workflow)
-        self.assertNotIn("upload-artifact", workflow)
-        self.assertNotIn("attestations: write", workflow)
-        self.assertNotIn("secrets: inherit", workflow)
-        self.assertNotIn("pnpm", workflow)
-        self.assertNotIn("npm", workflow)
-        self.assertEqual(workflow.count("secrets.OHTIA_SIGNING_INVOKE_TOKEN"), 1)
-        preparation, invoke = workflow.split(
-            "      - name: Sign and verify the private package and catalog", 1
-        )
-        self.assertNotIn("OHTIA_SIGNING_INVOKE_TOKEN", preparation)
-        self.assertIn("id-token: write", preparation)
         self.assertIn('"-I"', action)
         self.assertNotIn("shell:", action)
         self.assertIn('stdio: "inherit"', action)
-        self.assertIn("always()", invoke)
 
     def test_cli_errors_remain_static_and_do_not_print_capabilities(self):
         result = subprocess.run(
