@@ -3,7 +3,7 @@ type: Playbook
 title: "Change-note tooling"
 description: "Capture inert PR impact records, reconcile source scope and prepare immutable editorial note and correction evidence."
 generated:
-  by: codex/gpt-6.1-sol
+  by: claude-code/claude-fable-5-2
 verified:
   by: human:AdrianMastronardi
 ---
@@ -52,7 +52,7 @@ Every PR has exactly one fenced `ohtia-note` JSON object, as introduced by the [
 
 `change_id` is a stable capability key matching `[a-z][a-z0-9-]{0,79}`; related implementation PRs share it. `kind` is `capability`, `improvement`, `correction`, `deprecation/removal` or `security`. `availability` is `available` or `unfinished`; the trusted editor independently assesses actual candidate availability. PR and issue numbers are positive integers below 2⁵³, with no duplicates in an evidence list. Platforms are nonempty distinct text values. Each disclosure is either a concrete user action/consequence or `null`, explicitly assessing all seven categories. Claims have `text` and `evidence`, a list of HTTPS source URLs. Capture retains unsupported author claims for editorial correction; final copy requires evidence for any retained claim.
 
-Export PR bodies as `{"schema_version":1,"pull_requests":[{"number":101,"body":"…"}]}` from the actual repository through a trusted collection procedure. `collect` extracts exactly one fenced block, handles LF/CRLF, validates its identity against the wrapper and rejects duplicate PRs. Text outside the block is not interpreted. Retain the original capture with the resulting `{"schema_version":1,"notes":[…]}` document. A PR cannot select a workflow, helper, credential, candidate, publication channel or authority through an extra field.
+Export PR bodies as `{"schema_version":1,"pull_requests":[{"number":101,"body":"…"}]}` from the actual repository through a trusted collection procedure. `collect` extracts exactly one fenced block, handles LF/CRLF, validates its identity against the wrapper and rejects duplicate PRs. Text outside the block is not interpreted. Retain the original capture with the resulting `{"schema_version":1,"notes":[…]}` document. A PR cannot select a workflow, helper, credential, candidate, publication channel or authority through an extra field. The first notes text of an unpublished release is assembled from these collected blocks; the maintainer then edits that text on GitHub, as the [release policy](release-policy.md#change-note-capture-and-editorial-review) describes.
 
 ```bash
 mkdir -p tmp/change-notes-example
@@ -63,7 +63,7 @@ python3 scripts/change_notes.py collect scripts/tests/fixtures/change-notes/capt
 
 The operator supplies `history.json` independently of untrusted PR bodies. Its fields are `schema_version`, `repository` in `owner/name` form, selected `source` commit, `commits` and `releases`. `commits` is the complete selected source's ancestry in parent-before-child order. Each commit has `sha`, distinct `parents`, `pr` and `reason`. Set `pr` to its associated PR and `reason` to `null`; a genuinely non-PR integration/root commit instead needs `pr: null` and a reviewed nonempty `reason`. Excluded commits and their reasons remain in the result. Never label an unaccounted implementation commit as integration merely to pass reconciliation.
 
-`releases` lists actual published records in publication order, each with distinct `id`, final intended `version`, `channel` (`preview` or `stable`), `source` and cumulative `announced` capability IDs. Every baseline source must be an ancestor of the selected source. The trusted producer must verify the complete Git parent graph, PR-to-commit mapping, published-record order, prior announced scope and selected repository/source against actual Git and retained release evidence. The tool validates internal consistency, not remote provenance; a fabricated graph is not evidence of a real source difference. No commit message becomes release prose.
+`releases` lists actual published records in publication order, each with distinct `id`, final intended `version`, `channel` (`preview` or `stable`), `source` and cumulative `announced` capability IDs. Releases use `stable`, the one public channel; [ADR-0050](adr/adr-0050-signed-linux-repositories-and-update-notices.md) defers the preview channel, and the tool still accepts the `preview` value. Every baseline source must be an ancestor of the selected source. The trusted producer must verify the complete Git parent graph, PR-to-commit mapping, published-record order, prior announced scope and selected repository/source against actual Git and retained release evidence. The tool validates internal consistency, not remote provenance; a fabricated graph is not evidence of a real source difference. No commit message becomes release prose.
 
 Stable selects the last published stable baseline, including all intervening preview-only changes; first stable uses complete delivered scope. Preview selects the last preview for the same intended stable version, or complete scope when none exists, including when a different stable version was previously published; it does not invent a preceding-stable preview baseline. Source difference is ancestor-set subtraction, including side branches merged after the baseline. All ancestor PR notes remain inputs, even when their commit predates the delta, so a previously unfinished capability can first be announced when the editor confirms it is available. The output records the explicit baseline, changed commits/PRs, complete source PR inventory and excluded integration commits. The supplied history fixture illustrates the shape with synthetic hashes only.
 
@@ -86,6 +86,8 @@ The sealed note contains `schema_version`, `kind: "note"`, the reconciled `scope
 
 ## Candidate annotations and approvals
 
+The maintainer edits the release notes directly in the unpublished GitHub Release, and publication records the digest of the exact release body, following the [release policy](release-policy.md#change-note-capture-and-editorial-review). The `propose`, `approve` and `verify` commands seal optional editorial evidence; they do not gate the published release body.
+
 Package identity is a separate trusted document with `schema_version`, `id` (candidate digest), `source`, `application_version` and `packages_sha256` (digest of the immutable package manifest). It comes from the candidate owner; text in a PR cannot choose it. `propose` requires the candidate and note to name the same source/version and emits a sealed `kind: "annotation"` with separate `candidate` and `note` fields. The note identity remains independent of package identity, while the annotation digest binds both.
 
 ```bash
@@ -99,9 +101,11 @@ python3 scripts/change_notes.py approve tmp/change-notes-example/proposal.json t
 python3 scripts/change_notes.py verify tmp/change-notes-example/approved.json
 ```
 
-The decision file in these commands must be supplied after the actual review; it is not part of the example fixtures. Approved records have `schema_version`, the complete `proposal` and its `approval` receipt. Any change to bytes, source, baseline, channel, candidate or retained inputs changes the proposal digest and invalidates its prior receipt. The CLI checks internal consistency only: a claimed human login, HTTPS link and matching digest do not authenticate a person or confer publication authority. The future trusted candidate/publication consumer must verify the reviewer, explicit confirmation, provenance, current policy and exact externally authorized identities independently. A generic PR approval or model review is insufficient.
+The decision file in these commands must be supplied after the actual review; it is not part of the example fixtures. Approved records have `schema_version`, the complete `proposal` and its `approval` receipt. Any change to bytes, source, baseline, channel, candidate or retained inputs changes the proposal digest and invalidates its prior receipt. The CLI checks internal consistency only: a claimed human login, HTTPS link and matching digest do not authenticate a person or confer publication authority. A consumer that relies on an approved record must verify the reviewer, explicit confirmation, provenance, current policy and exact externally authorized identities independently. A generic PR approval or model review is insufficient.
 
 ## Channel promotion and prose correction
+
+A prose correction after publication is a maintainer edit of the GitHub release body whose new digest is recorded; `prose-correction` seals optional before/after evidence for it and does not gate that edit. No release uses `channel-promotion` while the preview channel is deferred.
 
 Build and review a new stable annotation when promoting preview bytes, selecting the stable baseline independently. `transition` requires approved before/after annotations, identical complete candidate/package identities and a concrete English reason. `channel-promotion` permits preview→stable only, with the same source, final application version and exact package manifest. `prose-correction` requires the same complete source/channel/baseline scope and changed body bytes. A prose correction may repair an omitted or misstated announcement for those same packages, so editorial `announced`/`retained` claims may change after independent reassessment of actual availability; it cannot represent newly delivered package behavior. Both operations retain complete before/after note bytes, digests, inputs and annotation receipts, and require a new explicit human receipt for the transition proposal itself.
 
@@ -111,7 +115,7 @@ python3 scripts/change_notes.py approve tmp/change-notes-example/promotion.json 
 python3 scripts/change_notes.py transition tmp/change-notes-example/approved.json tmp/change-notes-example/approved-correction.json prose-correction "Clarify the required user action." tmp/change-notes-example/correction.json
 ```
 
-These commands consume separately reviewed annotation and decision files; they do not create them implicitly. The sealed transition has `schema_version`, its operation as `kind`, complete `before`/`after` approved annotations, `reason` and `subject_sha256`. A publication owner may replace the canonical GitHub release body only after independently authorized use of the approved transition and exact identity readback. Retain the old preview note or corrected prose with its approvals outside GitHub edit history, alongside supported release evidence. Prose changes never conceal changed packages, and this tool never makes a GitHub write. Retention/publication mechanisms remain with their [release-policy owners](release-policy.md).
+These commands consume separately reviewed annotation and decision files; they do not create them implicitly. The sealed transition has `schema_version`, its operation as `kind`, complete `before`/`after` approved annotations, `reason` and `subject_sha256`. When a transition is sealed, retain the earlier and corrected prose with its approvals alongside supported release evidence. Prose changes never conceal changed packages, and this tool never makes a GitHub write. Retention/publication mechanisms remain with their [release-policy owners](release-policy.md).
 
 ## Verification and security evidence
 

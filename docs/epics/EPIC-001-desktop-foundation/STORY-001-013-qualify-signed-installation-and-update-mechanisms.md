@@ -3,11 +3,11 @@ type: Story
 title: "STORY-001-013 — Qualify signed installation and update mechanisms"
 description: "Deliver common signing/update foundations and Linux qualification with every native cell bound to its exact final package."
 generated:
-  by: codex/gpt-6.1-sol
+  by: claude-code/claude-fable-5-2
 verified:
   by: human:AdrianMastronardi
 tags: ["story", "comp:desktop", "comp:tooling"]
-status: stable
+status: deprecated
 resource: https://github.com/ohtia/ohtia/issues/27
 epic: "EPIC-001"
 epic_concept: ./epic.md
@@ -28,6 +28,8 @@ applicable_blocks:
 
 ## Description
 
+This story is deprecated and replaced: STORY-001-022 to STORY-001-037 deliver its remaining purpose under [SPEC-001-032](./epic.md#spec-001-032-release-redesign-and-replaced-scope).
+
 Deliver common Actions signing/update foundations and complete Linux signed qualification, retaining native macOS/Windows builds and verified provenance. This unit owns its complete result and verifies its delivered inputs; it does not wait for a returning output from its consumers. Detailed implementation decisions and their rationale are held once in the applicable specification below.
 
 ## Applicable specification
@@ -35,7 +37,7 @@ Deliver common Actions signing/update foundations and complete Linux signed qual
 - [SPEC-001-003: Qualify target, tooling and delivery contracts](./epic.md#spec-001-003-qualify-target-tooling-and-delivery-contracts)
 - [SPEC-001-007: Durable store and pre-migration recovery](./epic.md#spec-001-007-durable-store-and-pre-migration-recovery)
 - [SPEC-001-015: Quality builds and native packaged smoke tests](./epic.md#spec-001-015-quality-builds-and-native-packaged-smoke-tests)
-- [SPEC-001-016: Final signatures, installation and authenticated updates](./epic.md#spec-001-016-final-signatures-installation-and-authenticated-updates)
+- [SPEC-001-016: Final signatures and installation](./epic.md#spec-001-016-final-signatures-and-installation)
 - [SPEC-001-026: Delivery security applicability and evidence](./epic.md#spec-001-026-delivery-security-applicability-and-evidence)
 - [SPEC-001-027: Native feasibility and frozen workspace qualification](./epic.md#spec-001-027-native-feasibility-and-frozen-workspace-qualification)
 

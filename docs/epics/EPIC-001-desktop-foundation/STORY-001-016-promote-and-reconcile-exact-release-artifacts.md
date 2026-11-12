@@ -3,11 +3,11 @@ type: Story
 title: "STORY-001-016 — Promote and reconcile exact release artifacts"
 description: "Qualify exact-byte Linux publication from admitted package and native-cell evidence while denying unqualified platform distribution."
 generated:
-  by: claude-code/claude-opus-5-5
+  by: claude-code/claude-fable-5-2
 verified:
   by: human:AdrianMastronardi
 tags: ["story", "comp:tooling", "comp:desktop"]
-status: stable
+status: deprecated
 resource: https://github.com/ohtia/ohtia/issues/30
 epic: "EPIC-001"
 epic_concept: ./epic.md
@@ -20,11 +20,13 @@ applicable_blocks:
 
 ## Description
 
+This story is deprecated and replaced: STORY-001-028 to STORY-001-030 deliver publication under [SPEC-001-032](./epic.md#spec-001-032-release-redesign-and-replaced-scope).
+
 Qualify exact-byte Linux publication and common lifecycle controls while denying unqualified macOS/Windows distribution. This unit owns its complete result and verifies its delivered inputs; it does not wait for a returning output from its consumers. Detailed implementation decisions and their rationale are held once in the applicable specification below.
 
 ## Applicable specification
 
-- [SPEC-001-016: Final signatures, installation and authenticated updates](./epic.md#spec-001-016-final-signatures-installation-and-authenticated-updates)
+- [SPEC-001-016: Final signatures and installation](./epic.md#spec-001-016-final-signatures-and-installation)
 - [SPEC-001-017: Safe note capture and editorial assembly](./epic.md#spec-001-017-safe-note-capture-and-editorial-assembly)
 - [SPEC-001-018: Trusted candidate preparation and permanent version identity](./epic.md#spec-001-018-trusted-candidate-preparation-and-permanent-version-identity)
 - [SPEC-001-019: Authorized publication, reconciliation and lifecycle](./epic.md#spec-001-019-authorized-publication-reconciliation-and-lifecycle)

@@ -37,7 +37,7 @@ The conventions for this register are defined in [Architecture decisions](../arc
 - [ADR-0021 — Versioned immutable desktop artifacts](adr-0021-versioned-desktop-artifacts.md) — Trace each desktop release to final package bytes and their native qualification evidence without rebuilding during promotion.
 - [ADR-0040 — Input-addressed hosted producer for the Linux E2E image](adr-0040-hosted-linux-e2e-image-producer.md) — Identify the Linux E2E image by its declared recipe inputs, build it only on GitHub-hosted runners when no publication exists, and re-run waiting checks automatically.
 
-- [ADR-0041 — Independently administered Linux signing service](adr-0041-independent-linux-signing-service.md) — Separate Linux signing requests from key custody and policy administration using a bounded Debian-based Scaleway container service.
+- [ADR-0041 — Independently administered Linux signing service](adr-0041-independent-linux-signing-service.md) — Deprecated independent Linux signing service decision, replaced by ADR-0050 signing in a protected GitHub environment.
 
 - [ADR-0042 — Wayland-only Linux desktop support](adr-0042-wayland-only-linux-support.md) — Retire Ubuntu 24.04 and X11 from the required Linux desktop contract, leaving three distribution profiles per CPU on native GNOME Wayland.
 
@@ -84,6 +84,7 @@ The conventions for this register are defined in [Architecture decisions](../arc
 
 ## Native delivery mechanisms
 
-- [ADR-0038 — Native desktop packages with authenticated update admission](adr-0038-desktop-delivery-mechanisms.md) — Select native package profiles, shared display-session qualification and authenticated updates with independently gated platform distribution.
+- [ADR-0038 — Native desktop packages with independently gated platform distribution](adr-0038-desktop-delivery-mechanisms.md) — Select native package profiles, shared display-session qualification and package authenticity with independently gated platform distribution.
 
 - [ADR-0049 — Main source selection for package preparation](adr-0049-main-source-selection-for-packages.md) — Prepare packages from an exact commit integrated into main without auditing repository integration or commit signatures.
+- [ADR-0050 — Signed Linux repositories, protected GitHub signing and update notices](adr-0050-signed-linux-repositories-and-update-notices.md) — Distribute Linux through signed apt and dnf repositories, sign in a protected GitHub environment and limit the application to notifying about newer versions.

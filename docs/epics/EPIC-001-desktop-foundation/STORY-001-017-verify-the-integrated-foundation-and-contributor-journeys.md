@@ -3,7 +3,7 @@ type: Story
 title: "STORY-001-017 — Verify the integrated foundation and contributor journeys"
 description: "Verify integrated foundation and contributor journeys, Linux delivery and exact package identity across assigned native cells and promotion."
 generated:
-  by: claude-code/claude-opus-5-5
+  by: claude-code/claude-fable-5-2
 verified:
   by: human:AdrianMastronardi
 tags: ["story", "comp:desktop", "comp:tooling", "comp:storage", "comp:docs"]
@@ -28,6 +28,8 @@ applicable_blocks:
     "SPEC-001-025",
     "SPEC-001-026",
     "SPEC-001-028",
+    "SPEC-001-032",
+    "SPEC-001-042",
   ]
 ---
 
@@ -44,7 +46,7 @@ Demonstrate common foundation and native contributor paths on every required pla
 - [SPEC-001-009: Shared checks and complete result accounting](./epic.md#spec-001-009-shared-checks-and-complete-result-accounting)
 - [SPEC-001-011: First-day contributor experience and environment diagnosis](./epic.md#spec-001-011-first-day-contributor-experience-and-environment-diagnosis)
 - [SPEC-001-015: Quality builds and native packaged smoke tests](./epic.md#spec-001-015-quality-builds-and-native-packaged-smoke-tests)
-- [SPEC-001-016: Final signatures, installation and authenticated updates](./epic.md#spec-001-016-final-signatures-installation-and-authenticated-updates)
+- [SPEC-001-016: Final signatures and installation](./epic.md#spec-001-016-final-signatures-and-installation)
 - [SPEC-001-018: Trusted candidate preparation and permanent version identity](./epic.md#spec-001-018-trusted-candidate-preparation-and-permanent-version-identity)
 - [SPEC-001-019: Authorized publication, reconciliation and lifecycle](./epic.md#spec-001-019-authorized-publication-reconciliation-and-lifecycle)
 - [SPEC-001-021: Integrated acceptance and ownership](./epic.md#spec-001-021-integrated-acceptance-and-ownership)
@@ -54,6 +56,8 @@ Demonstrate common foundation and native contributor paths on every required pla
 - [SPEC-001-026: Delivery security applicability and evidence](./epic.md#spec-001-026-delivery-security-applicability-and-evidence)
 
 - [SPEC-001-028: Linux-first delivery and platform capability admission](./epic.md#spec-001-028-linux-first-delivery-and-platform-capability-admission)
+- [SPEC-001-032: Release redesign and replaced scope](./epic.md#spec-001-032-release-redesign-and-replaced-scope)
+- [SPEC-001-042: Release security inventory and output R37](./epic.md#spec-001-042-release-security-inventory-and-output-r37)
 
 ## Tasks
 
@@ -64,10 +68,10 @@ Demonstrate common foundation and native contributor paths on every required pla
 - [ ] Perform the required native manual screen-reader and assistive journeys on all required targets; record operators, tools, criteria and exact artifacts.
 - [ ] Verify delivered locale messages through catalog structure, contextual rendering and actual model-generation provenance. Record that human linguistic review has not occurred; a future voluntary review covers only its evidenced version and scope and is not a prerequisite for closure.
 - [ ] Observe consented unfamiliar contributors on all required native targets through clean setup, environment-doctor failure and remediation, launch, a representative source change, checks and unsigned packaging; retain actual host, executable and addon identities and measured conditions.
-- [ ] Rehearse the common candidate/publication lifecycle using signed Linux artifacts on authorized private surfaces, verify exact bytes/isolation/authority, deny unqualified macOS/Windows distribution and retain complete evidence and limitations.
+- [ ] Rehearse release preparation and publication with `prepare-release.yml` and `publish-release.yml` using signed Linux packages on authorized controlled surfaces and the `test` repository zone, verify exact bytes/isolation/authority, confirm that unsigned macOS/Windows packages stay recorded as unsigned under the testing-only heading of the unpublished release and are removed at publication and enter no repository, and retain complete evidence and limitations.
 
-- [ ] Produce V17 with complete common native/runtime/storage/locale/privacy/assistive/contributor evidence, phase-scoped I13/C15/F16 and honest per-target eligibility; neither M19 nor W20 is a completion prerequisite.
-- [ ] Record real signed macOS/Windows installation/update observations as 019/020 obligations while preserving all unrelated native human foundation/newcomer requirements here.
+- [ ] Produce V17 with complete common native/runtime/storage/locale/privacy/assistive/contributor evidence, R37 from STORY-001-037 and honest per-target eligibility; neither M19 nor W20 is a completion prerequisite.
+- [ ] Record real signed macOS/Windows installation and update-notice observations as 019/020 obligations while preserving all unrelated native human foundation/newcomer requirements here.
 
 - [ ] Reconcile the integrated candidate's artifact-to-cell assignments with actual native results and retained/published package digests; verify the sealed-package path and mixed-package refusal under SPEC-001-028.
 
@@ -77,10 +81,8 @@ Demonstrate common foundation and native contributor paths on every required pla
 - [ ] Completion gate: verify STORY-001-010 output U10 and its full release condition in the Dependencies output registry and SPEC-001-021.
 - [ ] Completion gate: verify STORY-001-011 output U11 and its full release condition in the Dependencies output registry and SPEC-001-021.
 - [ ] Completion gate: verify STORY-001-012 output B12 and its full release condition in the Dependencies output registry and SPEC-001-021.
-- [ ] Completion gate: verify STORY-001-013 output I13 and its full release condition in the Dependencies output registry and SPEC-001-021.
+- [ ] Completion gate: verify STORY-001-037 output R37 and its full release condition in the Dependencies output registry and SPEC-001-042.
 - [ ] Completion gate: verify STORY-001-014 output N14 and its full release condition in the Dependencies output registry and SPEC-001-021.
-- [ ] Completion gate: verify STORY-001-015 output C15 and its full release condition in the Dependencies output registry and SPEC-001-021.
-- [ ] Completion gate: verify STORY-001-016 output F16 and its full release condition in the Dependencies output registry and SPEC-001-021.
 - [ ] Completion gate: verify STORY-001-018 output D1b and its full release condition in the Dependencies output registry and SPEC-001-021.
 - [ ] Completion gate: verify Native facilities output NF and its full release condition in the Dependencies output registry and SPEC-001-021.
 - [ ] Completion gate: verify Native hosts output NH and its full release condition in the Dependencies output registry and SPEC-001-021.
@@ -91,11 +93,11 @@ Demonstrate common foundation and native contributor paths on every required pla
 - [ ] All required native targets satisfy integrated foundation and contributor acceptance; no emulation/cross-build-only evidence releases a gate.
 - [ ] The full actual renderer-to-SQLite save/reopen and boundary/failure/recovery scenarios pass on every declared native target.
 - [ ] Clean native newcomer journeys satisfy the agreed measured conditions with no undocumented fixes and actual independent participation.
-- [ ] Candidate/promotion/retry/withdrawal preserves exact final artifact identities and stable-store safety without exposing a public scaffold release.
+- [ ] Preparation/publication/retry/withdrawal preserves exact final artifact identities and stable-store safety without exposing a public scaffold release.
 - [ ] No accepted defect or missing mandatory check/facility is closed by a summary, green name, mock or undocumented waiver.
 - [ ] New contributors NC supplies the actual consented unfamiliar-person observations per required OS/CPU target; self-review is not substituted.
 
-- [ ] Integrated rehearsal proves that one final package digest is preserved across every assigned cell and promotion; mixed-digest evidence never qualifies a package and no required cell is hidden by grouping.
+- [ ] Integrated rehearsal proves that one final package digest is preserved across every assigned cell, the unpublished release, the repositories and publication; mixed-digest evidence never qualifies a package and no required cell is hidden by grouping.
 
 ## Quality checklist
 
@@ -103,5 +105,5 @@ Demonstrate common foundation and native contributor paths on every required pla
 - [ ] Reconcile the common/Linux EPIC criteria with concrete evidence, retaining 019/020 as separate full-EPIC obligations; preserve platform/authority/performance verification limits without waiting for those follow-ups to close this story.
 - [ ] Run applicable shared checks and configured repository hooks, committed-history secret scan, existing policy tests where affected and git diff --check; include new files explicitly.
 - [ ] Preserve issue-first scope, isolated worktree and unrelated changes; complete the mandated independent read-only code-review gate before any code commit, then verify signed content identity. Documentation-only work keeps its documentation checks.
-- [ ] Trace each assigned cell/scenario to its final package digest and actual test run, and compare controlled published bytes with the admitted candidate inventory.
+- [ ] Trace each assigned cell/scenario to its final package digest and actual test run, and compare controlled published bytes with the digest file of the prepared unpublished release.
 - [ ] Record real inputs, results, omissions and failures; a later commit, hosted CI result and human integration are separate evidence. State installed-user impact and the proposed change note or the reason none is required.
