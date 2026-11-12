@@ -2185,6 +2185,7 @@
     "test_installation_attestor.OriginTests.test_rejects_other_job_even_when_run_name_and_digest_match",
     "test_installation_attestor.OriginTests.test_rejects_replaced_expired_or_multiple_artifacts",
     "test_installation_attestor.SourceTests.test_inspects_source_as_data_and_rejects_modified_tracked_bytes",
+    "test_installation_caller.CallerContractTests.test_exact_resolved_source_is_shared_by_constructor_attestor_and_worker",
     "test_installation_caller.CallerContractTests.test_only_enumerated_selection_reaches_the_immutable_recipe",
     "test_installation_caller.CallerContractTests.test_write_permissions_belong_only_to_the_reusable_call_ceiling",
     "test_installation_caller.CallerGateTests.test_api_overrides_and_shell_syntax_are_refused_as_data",

@@ -4,6 +4,11 @@ run-name: Installation signing qualification · ${{ inputs.mode }} · ${{ inputs
 on:
   workflow_dispatch:
     inputs:
+      hash:
+        description: Full commit SHA already in main; empty uses main at dispatch
+        required: false
+        type: string
+        default: ""
       mode:
         description: Qualify build provenance or request private package and catalog signing
         required: true
@@ -35,6 +40,8 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+    outputs:
+      source-commit: ${{ steps.source.outputs.source-commit }}
     steps:
       - name: Refuse other execution identities modes and selections before construction
         shell: bash
@@ -68,6 +75,22 @@ jobs:
               ;;
           esac
 
+      - name: Check out the main workflow revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up the source resolver
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+      - name: Fix the exact package source from main
+        id: source
+        env:
+          SOURCE_HASH: ${{ inputs.hash }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/installation_source.py
+
   provenance:
     name: Qualify Linux build provenance
     needs: validate
@@ -78,9 +101,10 @@ jobs:
       checks: read
       id-token: write
       attestations: write
-    uses: ohtia/ohtia/.github/workflows/signing-build.yml@1464c956e7e8cb06a4606dd62d51cc220e67e302
+    uses: ohtia/ohtia/.github/workflows/signing-build.yml@c126422120996d39c976201d002d1ded8137913c
     with:
       selection: ${{ inputs.selection }}
+      source-commit: ${{ needs.validate.outputs.source-commit }}
 
   sign:
     name: Sign private package and catalog
@@ -91,7 +115,8 @@ jobs:
       actions: read
       checks: read
       id-token: write
-    uses: ohtia/ohtia/.github/workflows/signing-worker.yml@dd633f9782e510aad51fa960f2678fb7399bb03f
+    uses: ohtia/ohtia/.github/workflows/signing-worker.yml@c126422120996d39c976201d002d1ded8137913c
     with:
       selection: ${{ inputs.selection }}
+      source-commit: ${{ needs.validate.outputs.source-commit }}
       proof-artifact: ${{ needs.provenance.outputs.proof-artifact }}
