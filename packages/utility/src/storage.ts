@@ -1,3 +1,26 @@
+import {
+  applyResearchCommand,
+  LanguageRegistry,
+  listProjects,
+  listConversations,
+  listMessages,
+  type ResearchSchema,
+} from "./research.js";
+import {
+  type ResearchCommand,
+  type ResearchResult,
+  type ProjectRecord,
+  type ConversationRecord,
+  type MessageRecord,
+  type DiagnosticEvent,
+  type ErrorCode,
+  diagnosticCatalog,
+} from "@ohtia/contracts";
+import {
+  up as researchRecords,
+  tables as researchTables,
+  objects as researchObjects,
+} from "./migrations/0007_research_records.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
@@ -106,7 +129,7 @@ interface LocaleReceiptRow extends Omit<Receipt, "value"> {
 interface LayoutReceiptRow extends Omit<Receipt, "value"> {
   value: string;
 }
-interface Schema {
+interface Schema extends ResearchSchema {
   presentation_receipts: PresentationReceiptRow;
   locale_receipts: LocaleReceiptRow;
   layout_receipts: LayoutReceiptRow;
@@ -135,6 +158,9 @@ export interface StorageOptions {
   readonly release: string;
   readonly allowCreate?: boolean;
   readonly assertAdmission: () => void;
+  /** Trusted packaged resource; never supplied by a research command. */
+  readonly languageRegistry?: string;
+  readonly emitDiagnostic?: (event: DiagnosticEvent) => void;
 }
 interface Artifact {
   readonly name: string;
@@ -161,9 +187,10 @@ const names = [
   "0004_layout_receipts",
   "0005_presentation_receipts",
   "0006_window_bounds_receipts",
+  "0007_research_records",
 ] as const;
 const target = names.length;
-const targetName = names[5];
+const targetName = names[6];
 function digest(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -367,6 +394,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 4 ? ["layout_receipts"] : []),
     ...(revision >= 5 ? ["presentation_receipts"] : []),
     ...(revision >= 6 ? ["window_bounds_receipts"] : []),
+    ...(revision >= 7 ? Object.keys(researchTables) : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -460,6 +488,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 4 ? [["layout_receipts", layoutReceiptsSchema]] : []),
     ...(revision >= 5 ? [["presentation_receipts", presentationReceiptsSchema]] : []),
     ...(revision >= 6 ? [["window_bounds_receipts", boundsReceiptsSchema]] : []),
+    ...(revision >= 7 ? Object.entries(researchTables) : []),
   ]) {
     const row = db
       .prepare("SELECT sql FROM sqlite_schema WHERE name=? AND type='table'")
@@ -467,16 +496,23 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     if (!row || !expectedSql || normalize(row.sql) !== normalize(expectedSql))
       throw new Error("Altered source constraints.");
   }
+  const objects = db
+    .prepare(
+      "SELECT name,sql FROM sqlite_schema WHERE type IN ('trigger','view') OR (type='index' AND sql IS NOT NULL) ORDER BY name",
+    )
+    .all() as { name: string; sql: string }[];
+  const expectedObjects =
+    revision >= 7
+      ? Object.entries(researchObjects).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      : [];
   if (
-    (
-      db
-        .prepare(
-          "SELECT count(*) AS count FROM sqlite_schema WHERE type IN ('trigger','view') OR (type='index' AND sql IS NOT NULL)",
-        )
-        .get() as { count: number }
-    ).count !== 0
+    objects.length !== expectedObjects.length ||
+    objects.some((row, i) => {
+      const expected = expectedObjects.at(i);
+      return !expected || row.name !== expected[0] || normalize(row.sql) !== normalize(expected[1]);
+    })
   )
-    throw new Error("Unexpected source objects.");
+    throw new Error("Unexpected or altered source objects.");
   limits(db);
   return revision;
 }
@@ -486,6 +522,7 @@ export class DurableStore {
   private database: Kysely<Schema> | undefined;
   private native: Database.Database | undefined;
   private active = false;
+  private languageRegistry: LanguageRegistry | undefined;
   private admitted = false;
   private creationAllowed: boolean;
   private initializationAllowed: boolean;
@@ -744,6 +781,7 @@ export class DurableStore {
                 "0004_layout_receipts": { up: layoutReceipts },
                 "0005_presentation_receipts": { up: presentationReceipts },
                 "0006_window_bounds_receipts": { up: boundsReceipts },
+                "0007_research_records": { up: researchRecords },
               }),
           },
         });
@@ -1856,6 +1894,129 @@ export class DurableStore {
     } finally {
       this.active = false;
     }
+  }
+
+  private researchDiagnostic(event: DiagnosticEvent): void {
+    try {
+      this.options.emitDiagnostic?.(event);
+    } catch {
+      /* Diagnostic delivery cannot change a durable outcome. */
+    }
+  }
+  private researchFailure(code: ErrorCode): void {
+    if (code === "uncertain") {
+      this.researchDiagnostic({ event_name: "ohtia.research.uncertain", error_code: code });
+      return;
+    }
+    const error =
+      diagnosticCatalog["ohtia.research.failed"].errors.find((item) => item === code) ??
+      "storage_failed";
+    this.researchDiagnostic({ event_name: "ohtia.research.failed", error_code: error });
+  }
+  async executeResearchCommand(command: ResearchCommand): Promise<Outcome<ResearchResult>> {
+    if (!this.ready || !this.database) {
+      const code = this.active ? "busy" : "service_unavailable";
+      this.researchFailure(code);
+      return failure(code);
+    }
+    this.active = true;
+    let commitAttempted = false;
+    let outcome: Outcome<ResearchResult>;
+    const attempted = () => commitAttempted;
+    try {
+      this.assert();
+      outcome = await this.database.connection().execute(async (transaction) => {
+        await sql`BEGIN IMMEDIATE`.execute(transaction);
+        try {
+          const result = await applyResearchCommand(transaction, command, () => {
+            this.languageRegistry ??= new LanguageRegistry(
+              this.options.languageRegistry ??
+                new URL("./iana-language-subtag-registry.txt", import.meta.url),
+            );
+            return this.languageRegistry;
+          });
+          this.assert();
+          if (!result.ok) {
+            await sql`ROLLBACK`.execute(transaction);
+            return result;
+          }
+          commitAttempted = true;
+          await sql`COMMIT`.execute(transaction);
+          return result;
+        } catch (error) {
+          if (this.native?.inTransaction) {
+            try {
+              await sql`ROLLBACK`.execute(transaction);
+            } catch {
+              this.admitted = false;
+            }
+          }
+          throw error;
+        }
+      });
+    } catch {
+      try {
+        this.assert();
+      } catch {
+        this.admitted = false;
+      }
+      outcome = failure(attempted() ? "uncertain" : "storage_failed");
+    } finally {
+      this.active = false;
+    }
+    if (outcome.ok) {
+      const events = {
+        "project.create": "ohtia.project.created",
+        "project.confirmSetup": "ohtia.project.setup_confirmed",
+        "conversation.start": "ohtia.conversation.started",
+        "conversation.rename": "ohtia.conversation.renamed",
+        "message.append": "ohtia.message.appended",
+      } as const;
+      this.researchDiagnostic({ event_name: events[command.command] });
+    } else {
+      this.researchFailure(outcome.error.code);
+    }
+    return outcome;
+  }
+  private async researchRead<T>(
+    query: (db: Kysely<Schema>) => Promise<Outcome<T>>,
+    event: "ohtia.project.listed" | "ohtia.conversation.listed" | "ohtia.message.listed",
+  ): Promise<Outcome<T>> {
+    if (!this.ready || !this.database) {
+      const code = this.active ? "busy" : "service_unavailable";
+      this.researchFailure(code);
+      return failure(code);
+    }
+    this.active = true;
+    let outcome: Outcome<T>;
+    try {
+      this.assert();
+      // Keep existence and row reads in one snapshot, owned by the same data-service boundary.
+      outcome = await this.database.transaction().execute(query);
+      this.assert();
+    } catch {
+      outcome = failure("storage_failed");
+    } finally {
+      this.active = false;
+    }
+    if (outcome.ok) this.researchDiagnostic({ event_name: event });
+    else this.researchFailure(outcome.error.code);
+    return outcome;
+  }
+  readProjects(): Promise<Outcome<readonly ProjectRecord[]>> {
+    return this.researchRead(listProjects, "ohtia.project.listed");
+  }
+  readConversations(projectId: string): Promise<Outcome<readonly ConversationRecord[]>> {
+    return this.researchRead((db) => listConversations(db, projectId), "ohtia.conversation.listed");
+  }
+  readMessages(
+    conversationId: string,
+    fromPosition = 1,
+  ): Promise<Outcome<readonly MessageRecord[]>> {
+    return this.researchRead(
+      (db) => listMessages(db, conversationId, fromPosition),
+      "ohtia.message.listed",
+    );
   }
 
   private bounds(row: Preferences | undefined): Outcome<WindowBoundsRecord> {

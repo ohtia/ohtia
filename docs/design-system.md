@@ -2,12 +2,14 @@
 type: Specification
 title: Ohtia design system
 description: Visual identity, tokens, symbol and character, typography, composition, accessibility, localization, components and patterns of Ohtia's interface.
-verified:
-  by: human:AdrianMastronardi
 tags:
   - design
   - accessibility
   - localization
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: wcag22
     resource: https://www.w3.org/TR/WCAG22/
@@ -444,7 +446,7 @@ IBM Plex publishes only one Korean family, IBM Plex Sans KR; the examined commit
 
 Two fonts coexist on a single line: Latin, numerals and Latin punctuation come from Plex, and Hangul comes from the role's Korean font.
 
-- The `ko-KR` interface declares `lang="ko-KR"`. The manuscript declares the writing language retained with its revision, independently of the project's analysis language; generated content declares the language actually used by its analysis operation. Korean passages inside another context declare their language, according to the [accessibility](#language-of-parts) rules. This section's rules apply through the `:lang(ko)` selector, which matches any Korean tag.
+- The `ko-KR` interface declares `lang="ko-KR"`. The manuscript declares the writing language retained with its revision, independently of the project's document language; generated content declares the language actually used by its analysis operation. Korean passages inside another context declare their language, according to the [accessibility](#language-of-parts) rules. This section's rules apply through the `:lang(ko)` selector, which matches any Korean tag.
 - Korean text uses `word-break: keep-all` and `overflow-wrap: anywhere`. The former prevents breaks within a word; the latter contains URLs, DOIs and words longer than the column. The tradeoff is more lines and a more irregular margin.
 - Emphasis in Korean does not slant Hangul. `em` in a Korean passage uses `font-style: normal` and emphasis dots with `text-emphasis: filled dot`, positioned with `text-emphasis-position: over right`. Bold and underlining already have other meanings in Ohtia: `strong` and links.
 - Code containing Hangul does not maintain a grid of two Latin columns per syllable. Space-aligned columns become misaligned on lines containing Hangul, and Hangul is not enlarged to compensate.
@@ -1135,7 +1137,7 @@ General AAA conformance is not claimed. W3C does not recommend requiring Level A
 These issues prevent a page from being declared conformant until resolved. They arise from decisions or formats Ohtia controls, so a statement of partial conformance due to third-party content does not apply.
 
 - **Quotations in another language within the manuscript.** `ohtia-markdown-v1` admits only the `id` attribute and cannot declare the language of a quotation or passage. An editor page containing such a passage does not meet criterion 3.1.2 and therefore does not conform to Level AA. Resolution requires a new version of the [draft format](draft-format.md).
-- **Unknown or inaccurate manuscript language.** The editor must declare the writing language retained with the manuscript revision, as defined in the [data model](data-model.md#draft_revisions). An unknown or inaccurate value cannot establish correct language identification. Changing analysis language never changes this value; correcting the manuscript-language declaration creates a new revision and does not translate existing passages. A differing language within the manuscript remains subject to the preceding mixed-language blocker.
+- **Unknown or inaccurate manuscript language.** The editor must declare the writing language retained with the manuscript revision, as defined in the [data model](data-model.md#draft_revisions). An unknown or inaccurate value cannot establish correct language identification. Changing document language never changes this value; correcting the manuscript-language declaration creates a new revision and does not translate existing passages. A differing language within the manuscript remains subject to the preceding mixed-language blocker.
 - **Provider authentication.** Criterion 3.3.8 depends on the connected provider's authentication flow and its integration. That flow must be verified before a conformance declaration covers it.
 
 ### Rules by area
@@ -1159,8 +1161,8 @@ Saving, processing progress, completion of a review pass and conflicts are annou
 
 The interface declares its resolved locale with region, for example `lang="es-MX"`. Each piece of content declares its own language, not the current value of a setting that can change:
 
-- Generated content declares the language in which it was generated, retained as part of its provenance according to the [product definition](product-definition.md#languages-and-accessibility). A subsequent change to the project's analysis language does not relabel it.
-- The manuscript declares the writing language retained with its exact revision, with region when known, for example `lang="es-AR"`. It never derives that language from the current project analysis language or interface locale. An unknown or inaccurate declaration is a [conformance blocker](#conformance-blockers); the [data model](data-model.md#draft_revisions) defines immutable manuscript-language metadata and explicit corrections.
+- Generated content declares the language in which it was generated, retained as part of its provenance according to the [product definition](product-definition.md#languages-and-accessibility). A subsequent change to the project's document language does not relabel it.
+- The manuscript declares the writing language retained with its exact revision, with region when known, for example `lang="es-AR"`. It never derives that language from the current project document language or interface locale. An unknown or inaccurate declaration is a [conformance blocker](#conformance-blockers); the [data model](data-model.md#draft_revisions) defines immutable manuscript-language metadata and explicit corrections.
 
 Source content and passages in another language declare the most precise known tag: if metadata indicates only the language, for example `de`, declare it without a region rather than inventing one. The `lang` attribute also determines font fallback, Korean line breaking and hyphenation. Content that may be written right to left, such as an Arabic or Hebrew quotation, is isolated with `dir="auto"` even though no interface locale uses that direction.
 
@@ -1200,7 +1202,7 @@ Every report declares platform, tools, versions and results. An unexecuted check
 - No text has a fixed width. Buttons grow with their labels, and labels wrap to two lines before truncation. Truncation is allowed only when the complete text remains available in the accessible name and a tooltip. States, outcomes and notices are never truncated.
 - Pseudolocalization lengthens every string by at least 40% and replaces letters with accented variants. Tests also use the longest real translations.
 - Long compound words, common in German and Finnish, break with `hyphens: auto` when the element declares its language. `overflow-wrap: anywhere` is limited to containers with URLs, DOIs and identifiers, and to Korean text.
-- Dates, numbers and quantities use internationalization APIs, according to ADR-0024. The interface formats them using the resolved interface locale; generated content and values Ohtia inserts into it use the analysis language recorded for the operation. With an `es-ES` interface and an `es-MX` project, the interface writes `1234,5` and generated content writes `1,234.5`. They are not constructed by concatenating parts. Extended views spell out the month. Tests do not compare formatted strings across different environments because each ICU version produces different spacing and text.
+- Dates, numbers and quantities use internationalization APIs, according to ADR-0024. The interface formats them using the resolved interface locale; generated content and values Ohtia inserts into it use the document language recorded for the operation. With an `es-ES` interface and an `es-MX` project, the interface writes `1234,5` and generated content writes `1,234.5`. They are not constructed by concatenating parts. Extended views spell out the month. Tests do not compare formatted strings across different environments because each ICU version produces different spacing and text.
 - A locale change does not translate sources, researcher text or existing results, according to the [product definition](product-definition.md#languages-and-accessibility).
 - Korean typography and line breaks follow the [Korean](#korean) rules.
 - Text naming Ohtia follows the [name and gender](#name-and-gender) rules.
