@@ -19,6 +19,49 @@ class SigningImageTests(unittest.TestCase):
     def test_actual_manifest_binds_unique_https_debian_artifacts(self):
         image.validate_manifest(self.manifest)
 
+    def test_signer_image_excludes_retired_source_history_tools(self):
+        names = [item["file"] for item in self.manifest["packages"]]
+        self.assertFalse(
+            any(
+                name.startswith(
+                    (
+                        "git_",
+                        "git-man_",
+                        "openssh-client_",
+                        "liberror-perl_",
+                        "libbrotli1_",
+                        "libcbor0.10_",
+                        "libcom-err2_",
+                        "libcurl3t64-gnutls_",
+                        "libedit2_",
+                        "libexpat1_",
+                        "libfido2-1_",
+                        "libgdbm-compat4t64_",
+                        "libgdbm6t64_",
+                        "libgssapi-krb5-2_",
+                        "libk5crypto3_",
+                        "libkeyutils1_",
+                        "libkrb5-3_",
+                        "libkrb5support0_",
+                        "libnghttp2-14_",
+                        "libnghttp3-9_",
+                        "libngtcp2-16_",
+                        "libngtcp2-crypto-gnutls8_",
+                        "libperl5.40_",
+                        "libpsl5t64_",
+                        "librtmp1_",
+                        "libssh2-1t64_",
+                        "perl_",
+                        "perl-modules-5.40_",
+                    )
+                )
+                for name in names
+            )
+        )
+        recipe = (image.ROOT / "tools/installation-signer/Containerfile").read_text()
+        self.assertNotIn("/usr/bin/git", recipe)
+        self.assertNotIn("ssh-keygen", recipe)
+
     def test_refuses_escaping_package_paths(self):
         self.manifest["packages"][0]["file"] = "../outside_amd64.deb"
         with self.assertRaises(ValueError):

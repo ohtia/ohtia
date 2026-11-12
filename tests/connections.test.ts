@@ -1117,3 +1117,45 @@ it("rejects missing probe model lists and retains the last complete catalogue", 
     manager.dispose();
   }
 });
+
+it("retains failed deletion while cancelling an adapter without a cancellation hook", async () => {
+  let session: StoredSession | undefined = { credential: "synthetic-kept-session", reason: null };
+  let unavailable = true;
+  const deletion = vi.fn(async () => {
+    if (unavailable) return { status: "unavailable" as const };
+    session = undefined;
+    return { status: "stored" as const };
+  });
+  const manager = new ConnectionManager([
+    createFakeProvider({
+      connect: () => new Promise(() => {}),
+      credentials: {
+        read: () =>
+          Promise.resolve(session ? { status: "stored", value: session } : { status: "absent" }),
+        write: (value) => {
+          session = value;
+          return Promise.resolve({ status: "stored" });
+        },
+        delete: deletion,
+      },
+    }),
+  ]);
+  manager.connect("fake");
+  await flush();
+  expect(manager.snapshot("fake")?.state).toBe("connecting");
+  expect(await manager.disconnect("fake")).toMatchObject({
+    value: { state: "error", reason: "store_unavailable" },
+  });
+  unavailable = false;
+  expect(await manager.read("fake")).toMatchObject({
+    value: { state: "error", reason: "store_unavailable" },
+  });
+  expect(await manager.disconnect("fake")).toMatchObject({
+    value: { state: "disconnected", reason: null },
+  });
+  expect(await manager.read("fake")).toMatchObject({
+    value: { state: "disconnected", reason: null },
+  });
+  expect(deletion).toHaveBeenCalledTimes(2);
+  manager.dispose();
+});

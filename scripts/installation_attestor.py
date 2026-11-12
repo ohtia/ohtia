@@ -67,7 +67,13 @@ class Network:
         return json_value(raw)
 
     def api(self, endpoint):
-        contract.require(endpoint.startswith("/") and ".." not in endpoint, "api_path")
+        comparison = re.fullmatch(
+            r"/compare/[a-f0-9]{40}\.\.\.[a-f0-9]{40}\?per_page=1&page=2", endpoint
+        )
+        contract.require(
+            endpoint.startswith("/") and (".." not in endpoint or comparison is not None),
+            "api_path",
+        )
         return self.metadata(API + endpoint, token=self.env["GITHUB_TOKEN"])
 
     def results(self, operation, data):
@@ -156,7 +162,7 @@ def build_origin(network, context, token):
         contract.require(
             row["run_id"] == context["run"]
             and row["run_attempt"] == context["attempt"]
-            and row["head_sha"] == context["source"],
+            and row["head_sha"] == context["main"],
             "job_identity",
         )
     contract.require(
@@ -208,7 +214,7 @@ def build_origin(network, context, token):
         and rest["expired"] is False
         and rest["digest"] == checksum
         and rest["workflow_run"]["id"] == context["run"]
-        and rest["workflow_run"]["head_sha"] == context["source"],
+        and rest["workflow_run"]["head_sha"] == context["main"],
         "artifact_identity",
     )
     return {
@@ -375,7 +381,7 @@ def verify_bundle(env, runner=subprocess.run):
             "--signer-digest",
             context["recipe"],
             "--source-digest",
-            context["source"],
+            context["main"],
             "--source-ref",
             "refs/heads/main",
             "--deny-self-hosted-runners",
@@ -395,11 +401,11 @@ def verify_bundle(env, runner=subprocess.run):
         "sourceRepositoryURI": "https://github.com/ohtia/ohtia",
         "sourceRepositoryIdentifier": "1431132416",
         "sourceRepositoryOwnerIdentifier": "346940169",
-        "sourceRepositoryDigest": context["source"],
+        "sourceRepositoryDigest": context["main"],
         "sourceRepositoryRef": "refs/heads/main",
         "runnerEnvironment": "github-hosted",
         "buildTrigger": "workflow_dispatch",
-        "buildSignerURI": f"https://github.com/ohtia/ohtia/{contract.RECIPE}@{context['recipe']}",
+        "buildSignerURI": f"https://github.com/{env['RECIPE_REF']}",
         "buildSignerDigest": context["recipe"],
         "runInvocationURI": f"https://github.com/ohtia/ohtia/actions/runs/{context['run']}/attempts/{context['attempt']}",
     }

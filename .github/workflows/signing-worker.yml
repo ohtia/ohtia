@@ -2,6 +2,10 @@ name: Isolated Linux signing worker
 on:
   workflow_call:
     inputs:
+      source-commit:
+        description: Exact package source already resolved from main
+        required: true
+        type: string
       selection:
         description: One of the six Linux target/profile selections
         required: true
@@ -26,6 +30,7 @@ jobs:
       id-token: write
     env:
       SIGNING_SELECTION: ${{ inputs.selection }}
+      SOURCE_COMMIT: ${{ inputs.source-commit }}
       SIGNING_PROOF_ARTIFACT: ${{ inputs.proof-artifact }}
       SCW_SIGNING_SERVICE_ORIGIN: ${{ vars.SCW_SIGNING_SERVICE_ORIGIN }}
       SCW_SIGNING_INGRESS_BUCKET: ${{ vars.SCW_SIGNING_INGRESS_BUCKET }}

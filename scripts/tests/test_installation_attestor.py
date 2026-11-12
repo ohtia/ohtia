@@ -24,6 +24,7 @@ import workspace
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = "a" * 40
+MAIN = "f" * 40
 RECIPE = "b" * 40
 RUN_BACKEND = "11111111-1111-1111-1111-111111111111"
 BUILD_BACKEND = "22222222-2222-2222-2222-222222222222"
@@ -38,7 +39,8 @@ def environment():
         "GITHUB_REF": "refs/heads/main",
         "GITHUB_EVENT_NAME": "workflow_dispatch",
         "RUNNER_ENVIRONMENT": "github-hosted",
-        "GITHUB_SHA": SOURCE,
+        "GITHUB_SHA": MAIN,
+        "SOURCE_COMMIT": SOURCE,
         "RECIPE_SHA": RECIPE,
         "RECIPE_REF": f"ohtia/ohtia/{contract.RECIPE}@{RECIPE}",
         "GITHUB_RUN_ID": "100",
@@ -62,7 +64,7 @@ class FakeNetwork:
                 "id": identifier,
                 "run_id": 100,
                 "run_attempt": 2,
-                "head_sha": SOURCE,
+                "head_sha": MAIN,
                 "name": "qualification / " + name,
                 "status": status,
                 "conclusion": conclusion,
@@ -93,7 +95,7 @@ class FakeNetwork:
             "name": self.artifact["name"],
             "expired": False,
             "digest": self.artifact["digest"],
-            "workflow_run": {"id": 100, "head_sha": SOURCE},
+            "workflow_run": {"id": 100, "head_sha": MAIN},
         }
         self.artifacts = [self.artifact]
         self.calls = []
@@ -353,7 +355,7 @@ class IntegrationTests(unittest.TestCase):
                         "sourceRepositoryURI": "https://github.com/ohtia/ohtia",
                         "sourceRepositoryIdentifier": "1431132416",
                         "sourceRepositoryOwnerIdentifier": "346940169",
-                        "sourceRepositoryDigest": SOURCE,
+                        "sourceRepositoryDigest": MAIN,
                         "sourceRepositoryRef": "refs/heads/main",
                         "runnerEnvironment": "github-hosted",
                         "buildTrigger": "workflow_dispatch",
@@ -399,6 +401,7 @@ class IntegrationTests(unittest.TestCase):
                         "result": result["verificationResult"],
                         "request": {
                             "subject": {"source_commit": SOURCE},
+                            "execution": {"workflow_sha": MAIN},
                             "input": {"sha256": manifest["sha256"]},
                         },
                         "policy": {
@@ -484,14 +487,14 @@ import {canonical,hash,GitHubBuildAuthority} from "./tooling/installation-author
 import {SigningService,validateRequest} from "./tooling/installation-signer.mjs";
 const fixtures=JSON.parse(process.argv[1]);
 const publicKey=createPublicKey({key:Buffer.from("302a300506032b6570032100"+"01".repeat(32),"hex"),format:"der",type:"spki"}).export({format:"pem",type:"spki"}).toString();
-const policy={schema_version:1,enabled:false,repository_id:"1431132416",owner_id:"346940169",audience:"ohtia:installation-signing",environment:"installation-signing",caller_workflow:".github/workflows/installation-signing.yml",signing_workflow:{workflow:".github/workflows/signing-worker.yml",sha:"c".repeat(40)},build_workflow:{workflow:".github/workflows/signing-build.yml",sha:"b".repeat(40)},source_anchor:"e".repeat(40),source_signers:[{principal:"fixture@example.invalid",public_key:"ssh-ed25519 AAAA"}],catalog_public_key:publicKey,rpm_primary:"1".repeat(40),rpm_subkey:"2".repeat(40),deployment:{provider:"scaleway-serverless-containers",region:"fr-par",container_id:"12345678-1234-1234-1234-123456789abc",image_digest:"sha256:"+"f".repeat(64)}};
+const policy={schema_version:1,enabled:false,repository_id:"1431132416",owner_id:"346940169",audience:"ohtia:installation-signing",environment:"installation-signing",caller_workflow:".github/workflows/installation-signing.yml",signing_workflow:{workflow:".github/workflows/signing-worker.yml",sha:"c".repeat(40)},build_workflow:{workflow:".github/workflows/signing-build.yml",sha:"b".repeat(40)},catalog_public_key:publicKey,rpm_primary:"1".repeat(40),rpm_subkey:"2".repeat(40),deployment:{provider:"scaleway-serverless-containers",region:"fr-par",container_id:"12345678-1234-1234-1234-123456789abc",image_digest:"sha256:"+"f".repeat(64)}};
 for(const fixture of fixtures){
  const a=fixture.artifact;
  const proof={schema_version:1,artifact:a,bundle:"synthetic bundle; verifier mocked"};
  const proofBytes=canonical(proof);
- const request={schema_version:1,operation:a.format==="rpm"?"rpm-sign":"deb-bind",subject:{kind:"qualification",id:"synthetic-subject",repository:"ohtia/ohtia",application_version:"0.0.0-dev.100.2",source_commit:a.source_commit,source_tree:a.source_tree},execution:{workflow:policy.signing_workflow.workflow,workflow_sha:policy.signing_workflow.sha,run_id:100,attempt:2,job_id:303,invocation:"synthetic-signing"},artifact_id:a.id,input:{sha256:a.sha256,bytes:a.bytes},build_proof:{sha256:hash(proofBytes),bytes:proofBytes.length},catalog_bindings:[]};
+ const request={schema_version:1,operation:a.format==="rpm"?"rpm-sign":"deb-bind",subject:{kind:"qualification",id:"synthetic-subject",repository:"ohtia/ohtia",application_version:"0.0.0-dev.100.2",source_commit:a.source_commit,source_tree:a.source_tree},execution:{workflow:policy.signing_workflow.workflow,workflow_sha:fixture.result.verificationResult.signature.certificate.sourceRepositoryDigest,run_id:100,attempt:2,job_id:303,invocation:"synthetic-signing"},artifact_id:a.id,input:{sha256:a.sha256,bytes:a.bytes},build_proof:{sha256:hash(proofBytes),bytes:proofBytes.length},catalog_bindings:[]};
  validateRequest(canonical(request));
- const authority=new GitHubBuildAuthority(policy,{job:async(id)=>({id,run_id:100,run_attempt:2,head_sha:a.source_commit,status:"completed",conclusion:"success"}),runner:async()=>Buffer.from(JSON.stringify([fixture.result]))});
+ const authority=new GitHubBuildAuthority(policy,{job:async(id)=>({id,run_id:100,run_attempt:2,head_sha:request.execution.workflow_sha,status:"completed",conclusion:"success"}),runner:async()=>Buffer.from(JSON.stringify([fixture.result]))});
  assert.deepEqual(await authority.verify("synthetic-input-not-executed",proof,request),a);
  SigningService.prototype.checkArtifact.call({policy},request,a);
 }

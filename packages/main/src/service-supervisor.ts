@@ -174,8 +174,17 @@ export class ServiceSupervisor {
     if (!this.available) return false;
     try {
       for (const connection of manager.ids()) {
-        const snapshot = manager.snapshot(connection);
-        if (!snapshot) continue;
+        const full = manager.snapshot(connection);
+        if (!full) continue;
+        const snapshot = {
+          connection: full.connection,
+          state: full.state,
+          reason: full.reason,
+          probing: full.probing,
+          probe_id: full.probe_id,
+          model_list_revision: full.model_list_revision,
+          model_count: full.model_count,
+        };
         this.child.send(
           JSON.stringify({ kind: "connection_state", generation: this.generation, snapshot }),
         );

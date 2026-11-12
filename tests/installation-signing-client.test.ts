@@ -23,6 +23,7 @@ import {
   freshSigningToken,
   privateSigningCampaign,
   qualificationControl,
+  packageRequest,
   qualificationNotes,
   signingContext,
 } from "../tooling/installation-signing-worker.mjs";
@@ -49,8 +50,7 @@ function fixture() {
     caller_workflow: ".github/workflows/installation-signing.yml",
     signing_workflow: { workflow: ".github/workflows/signing-worker.yml", sha: "c".repeat(40) },
     build_workflow: { workflow: ".github/workflows/signing-build.yml", sha: "d".repeat(40) },
-    source_anchor: "e".repeat(40),
-    source_signers: [{ principal: "fixture", public_key: "ssh-ed25519 AAAA" }],
+
     catalog_public_key: keys.publicKey.export({ format: "pem", type: "spki" }).toString(),
     rpm_primary: "1".repeat(40),
     rpm_subkey: "2".repeat(40),
@@ -431,7 +431,8 @@ describe("private signing client", () => {
     );
     expect(loaded.origin).toBe(f.cfg.origin);
     expect(loaded.buckets).toEqual(f.cfg.buckets);
-    expect(loaded.policy.source_anchor).toBe(f.policy.source_anchor);
+    expect(loaded.policy).not.toHaveProperty("source_anchor");
+    expect(loaded.policy).not.toHaveProperty("source_signers");
     for (const changed of [
       { ...environment, SCW_SIGNING_SERVICE_ORIGIN: "https://other-tenant.fnc.fr-par.scw.cloud" },
       { ...environment, SCW_SIGNING_INGRESS_BUCKET: "another-valid-bucket" },
@@ -670,6 +671,7 @@ function workerFixture(target = "linux-x64", profile = "debian-13") {
     attempt: 1,
     job: 300,
     source: "a".repeat(40),
+    main: "a".repeat(40),
     worker: "c".repeat(40),
     selection: `${target}-${profile}`,
   };
@@ -748,6 +750,7 @@ function workerEnvironment() {
     GITHUB_REF: "refs/heads/main",
     GITHUB_EVENT_NAME: "workflow_dispatch",
     GITHUB_SHA: "a".repeat(40),
+    SOURCE_COMMIT: "a".repeat(40),
     SIGNING_RECIPE_SHA: "c".repeat(40),
     SIGNING_RECIPE_REF: `ohtia/ohtia/.github/workflows/signing-worker.yml@${"c".repeat(40)}`,
     GITHUB_RUN_ID: "100",
@@ -785,16 +788,33 @@ describe("fixed private signing worker", () => {
       ),
     ).toThrow();
   });
+  it("keeps historical package source separate from the main workflow and run", () => {
+    const env = workerEnvironment();
+    env.SOURCE_COMMIT = "f".repeat(40);
+    const context = signingContext(env);
+    expect(context.source).toBe("f".repeat(40));
+    expect(context.main).toBe(env.GITHUB_SHA);
+    const f = workerFixture();
+    f.context.source = context.source;
+    f.manifest.source_commit = context.source;
+    f.closure.inputs.source_sha = context.source;
+    const request = packageRequest(f.manifest, { sha256: "d".repeat(64), bytes: 100 }, f.context);
+    expect(request.subject.source_commit).toBe(context.source);
+    expect(request.execution.workflow_sha).toBe(context.main);
+    expect(qualificationControl(f.run, f.context, f.closure, NOW).version).toBe("0.0.0-dev.100.1");
+  });
   it("checks the actual job workflow identity and fresh directly issued OIDC claims", async () => {
     const f = workerFixture(),
-      env = workerEnvironment(),
-      context = signingContext(env);
+      env = workerEnvironment();
+    env.SOURCE_COMMIT = "f".repeat(40);
+    const context = signingContext(env);
+    expect(context.source).not.toBe(context.main);
     const claims = {
       iss: "https://token.actions.githubusercontent.com",
       aud: f.policy.audience,
       repository_id: f.policy.repository_id,
       repository_owner_id: f.policy.owner_id,
-      sha: context.source,
+      sha: context.main,
       ref: "refs/heads/main",
       event_name: "workflow_dispatch",
       runner_environment: "github-hosted",
@@ -802,7 +822,7 @@ describe("fixed private signing worker", () => {
       run_id: "100",
       run_attempt: "1",
       check_run_id: "300",
-      workflow_sha: context.source,
+      workflow_sha: context.main,
       workflow_ref: `ohtia/ohtia/${f.policy.caller_workflow}@refs/heads/main`,
       job_workflow_ref: env.SIGNING_RECIPE_REF,
       job_workflow_sha: context.worker,
@@ -818,7 +838,15 @@ describe("fixed private signing worker", () => {
       );
     };
     expect(await freshSigningToken(env, f.policy, context, { fetcher })).toMatch(/^synthetic/);
-    for (const key of ["check_run_id", "run_attempt", "job_workflow_sha", "environment", "aud"]) {
+    for (const key of [
+      "sha",
+      "workflow_sha",
+      "check_run_id",
+      "run_attempt",
+      "job_workflow_sha",
+      "environment",
+      "aud",
+    ]) {
       const old = (claims as any)[key];
       (claims as any)[key] = "wrong";
       await expect(freshSigningToken(env, f.policy, context, { fetcher })).rejects.toThrow(

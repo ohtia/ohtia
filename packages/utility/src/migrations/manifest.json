@@ -22,5 +22,9 @@
   {
     "name": "0006_window_bounds_receipts",
     "sha256": "c99cca99ddcdfed927b5ce36b9645b9e493f5e008309ed44bc2531791a2fc0a8"
+  },
+  {
+    "name": "0007_research_records",
+    "sha256": "a21462ab25e328f6e1c7fa42f4e9e40a71b26bcb6183a8a63f13d2b7f945a2b5"
   }
 ]

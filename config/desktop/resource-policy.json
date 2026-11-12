@@ -699,30 +699,6 @@
       "failure": "signing_refused",
       "rationale": "Bound the independently administered signing service without truncation or authority fallback"
     },
-    "signing_source_commits": {
-      "value": 256,
-      "unit": "commit",
-      "permitted": {
-        "minimum": 256,
-        "maximum": 256
-      },
-      "owner": "013",
-      "scope": "Uncached source graph expansion",
-      "failure": "signing_refused",
-      "rationale": "Bound the independently administered signing service without truncation or authority fallback"
-    },
-    "signing_source_bytes": {
-      "value": 536870912,
-      "unit": "byte",
-      "permitted": {
-        "minimum": 536870912,
-        "maximum": 536870912
-      },
-      "owner": "013",
-      "scope": "Downloaded Git objects in one source graph expansion",
-      "failure": "signing_refused",
-      "rationale": "Bound the independently administered signing service without truncation or authority fallback"
-    },
     "signing_subprocess_ms": {
       "value": 120000,
       "unit": "millisecond",
@@ -807,18 +783,6 @@
       "failure": "signing_refused",
       "rationale": "Bound authentication and transfer resources independently of producer metadata"
     },
-    "signing_source_objects": {
-      "value": 65536,
-      "unit": "object",
-      "permitted": {
-        "minimum": 65536,
-        "maximum": 65536
-      },
-      "owner": "013",
-      "scope": "Distinct newly admitted Git objects per graph expansion",
-      "failure": "signing_refused",
-      "rationale": "Bound identifier and object-size metadata independently of commit count and total bytes"
-    },
     "signing_rpm_header_bytes": {
       "value": 2097152,
       "unit": "byte",
@@ -842,30 +806,6 @@
       "scope": "One RSA OpenPGP header signature exported by the qualified native RPM library",
       "failure": "signing_refused",
       "rationale": "Refuse oversized or substituted signature material before independent full-fingerprint verification"
-    },
-    "signing_source_acquisition_bytes": {
-      "value": 536870912,
-      "unit": "byte",
-      "permitted": {
-        "minimum": 536870912,
-        "maximum": 536870912
-      },
-      "owner": "013",
-      "scope": "Cold Git acquisition pack bytes, cumulative inflation and reconstructed objects, independently of graph admission",
-      "failure": "signing_refused",
-      "rationale": "Bound temporary source acquisition without loosening independent post-anchor admission limits"
-    },
-    "signing_source_acquisition_objects": {
-      "value": 65536,
-      "unit": "object",
-      "permitted": {
-        "minimum": 65536,
-        "maximum": 65536
-      },
-      "owner": "013",
-      "scope": "All entries in one complete cold Git pack, independently of uncached graph expansion",
-      "failure": "signing_refused",
-      "rationale": "Bound temporary source acquisition without loosening independent post-anchor admission limits"
     },
     "signing_client_retry_attempts": {
       "value": 3,
@@ -950,6 +890,18 @@
       "scope": "One connection probe, from its request until its result event",
       "failure": "probe_unreachable",
       "rationale": "A model list arrives well within this time; a slower answer is reported as unreachable"
+    },
+    "sign_in_wait_ms": {
+      "value": 600000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 600000,
+        "maximum": 600000
+      },
+      "owner": "003",
+      "scope": "The browser sign-in of one connection, from connect until the sign-in returns",
+      "failure": "sign_in_timeout",
+      "rationale": "A researcher may need several minutes to sign in and authorize plan use"
     }
   }
 }

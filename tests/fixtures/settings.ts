@@ -47,6 +47,11 @@ export function harness() {
     return call({ ok: true as const, value });
   };
   const port = {
+    readConnection: () => call(failure("service_unavailable")),
+    subscribeConnection: () => ({
+      ready: Promise.resolve(failure("service_unavailable")),
+      dispose: vi.fn(),
+    }),
     readPresentation: vi.fn(() => call({ ok: true as const, value: current })),
     subscribePresentation: vi.fn((notify: typeof listener) => {
       listener = notify;

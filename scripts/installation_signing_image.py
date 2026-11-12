@@ -91,8 +91,6 @@ def isolated_runtime(context: Path, temporary: Path, tools: dict) -> str:
     names = (
         "installation-signing-container.mjs",
         "installation-signing-admission.mjs",
-        "installation-source.mjs",
-        "installation-source-pack.mjs",
         "installation-signing-image.mjs",
         "installation-signing-scaleway.mjs",
         "installation-authority.mjs",

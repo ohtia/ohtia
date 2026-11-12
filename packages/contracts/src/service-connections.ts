@@ -6,11 +6,31 @@ import {
   type ModelPage,
   type ProviderModel,
 } from "./connections.js";
+export type ServiceConnectionSnapshot = Omit<
+  ConnectionSnapshot,
+  "last_account_email" | "account_email" | "display_name"
+>;
+function serviceSnapshot(value: unknown): value is ServiceConnectionSnapshot {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    !Object.hasOwn(value, "last_account_email") &&
+    !Object.hasOwn(value, "account_email") &&
+    !Object.hasOwn(value, "display_name") &&
+    isConnectionSnapshot({
+      ...value,
+      display_name: "Service",
+      last_account_email: null,
+      account_email: null,
+    })
+  );
+}
 export type ConnectionReport =
   | {
       readonly kind: "connection_state";
       readonly generation: string;
-      readonly snapshot: ConnectionSnapshot;
+      readonly snapshot: ServiceConnectionSnapshot;
     }
   | { readonly kind: "connection_models"; readonly generation: string; readonly page: ModelPage };
 export function decodeConnectionReport(
@@ -28,7 +48,7 @@ export function decodeConnectionReport(
     if (
       record.kind === "connection_state" &&
       Object.keys(record).sort().join(",") === "generation,kind,snapshot" &&
-      isConnectionSnapshot(record.snapshot)
+      serviceSnapshot(record.snapshot)
     )
       return value as ConnectionReport;
     if (
@@ -47,7 +67,7 @@ export class ServiceConnections {
   private readonly records = new Map<
     string,
     {
-      snapshot: ConnectionSnapshot;
+      snapshot: ServiceConnectionSnapshot;
       models: readonly ProviderModel[] | null;
       pending: ProviderModel[];
     }

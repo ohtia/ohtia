@@ -15,7 +15,7 @@ import {
   trustedPolicy,
   githubReaders,
   OidcAuthority,
-  GitSourceAuthority,
+  MainSourceAuthority,
   GitHubBuildAuthority,
 } from "./installation-authority.mjs";
 import { SigningService, CryptoSigningWorker, validateRequest } from "./installation-signer.mjs";
@@ -29,8 +29,6 @@ import {
   signingConfigurationHash,
   signingDeploymentRequirements,
 } from "./installation-signing-admission.mjs";
-
-import { GitSourceAcquisition } from "./installation-source.mjs";
 
 const statuses = Object.freeze({
   authentication_refused: 403,
@@ -230,10 +228,7 @@ export function composeSigningContainer(configuration, { environment = process.e
   });
   const worker = new CryptoSigningWorker(policy, { keys });
   const readers = githubReaders();
-  const source = new GitSourceAuthority(policy, {
-    acquisition: new GitSourceAcquisition(),
-    cache: store.sourceCache(policy, worker),
-  });
+  const source = new MainSourceAuthority(readers);
   const build = new GitHubBuildAuthority(policy, {
     job: readers.job,
     environment: { HOME: "/tmp", GH_CONFIG_DIR: "/tmp/ohtia-gh" },

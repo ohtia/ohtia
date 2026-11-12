@@ -39,6 +39,7 @@ async function launch(
     assetNames?: string[];
     mode?: "qualification" | "development" | "installed";
     developmentBuild?: boolean;
+    credentialReadPending?: boolean;
     researchRootRefused?: boolean;
     nodeOptions?: string;
     platform?: NodeJS.Platform;
@@ -47,7 +48,18 @@ async function launch(
   vi.resetModules();
   vi.stubGlobal("__OHTIA_DEVELOPMENT_BUILD__", options.developmentBuild ?? false);
   vi.doMock("../packages/main/src/native-credentials.js", () => ({
-    nativeCredentialStore: () => Promise.resolve({ drain: () => Promise.resolve() }),
+    nativeCredentialStore: () =>
+      Promise.resolve({
+        drain: () => Promise.resolve(),
+        read: () =>
+          options.credentialReadPending
+            ? new Promise(() => {})
+            : Promise.resolve({ status: "absent" }),
+        readSession: () => Promise.resolve({ status: "absent" }),
+        write: () => Promise.resolve({ status: "stored" }),
+        writeSession: () => Promise.resolve({ status: "stored" }),
+        deleteSession: () => Promise.resolve({ status: "stored" }),
+      }),
   }));
   if (options.platform) {
     const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
@@ -1777,7 +1789,7 @@ it.each(["installed", "qualification"] as const)(
     expect(h.failure).toBeUndefined();
     expect(Reflect.has(globalThis, "__ohtiaCredentialAcceptance")).toBe(false);
     h.supervisors[0].stateChanged("ready");
-    expect(h.supervisors[0].reportConnections.mock.results.at(-1)?.value).toEqual([]);
+    expect(h.supervisors[0].reportConnections.mock.results.at(-1)?.value).toEqual(["chatgpt"]);
     const event = h.event();
     h.ipcMain.emit(h.constants.desktopChannels.session, event);
     const encoded = h.constants.encodeEnvelope({
@@ -1805,7 +1817,10 @@ it("routes development connection calls and controls in main and reports every s
   expect(h.failure).toBeUndefined();
   expect(typeof Reflect.get(globalThis, "__ohtiaCredentialAcceptance")).toBe("function");
   h.supervisors[0].stateChanged("ready");
-  expect(h.supervisors[0].reportConnections.mock.results.at(-1)?.value).toEqual(["fake"]);
+  expect(h.supervisors[0].reportConnections.mock.results.at(-1)?.value).toEqual([
+    "chatgpt",
+    "fake",
+  ]);
   const event = h.event();
   h.ipcMain.emit(h.constants.desktopChannels.session, event);
   const send = (operation: string, payload: object, id: string) => {
@@ -1857,4 +1872,11 @@ it("routes development connection calls and controls in main and reports every s
   expect(h.supervisors[0].dispatch).not.toHaveBeenCalled();
   h.app.emit("before-quit", { preventDefault: vi.fn() });
   await vi.advanceTimersByTimeAsync(0);
+});
+
+it("opens the local workspace while a native credential unlock is still pending", async () => {
+  const h = await launch({ credentialReadPending: true });
+  expect(h.failure).toBeUndefined();
+  expect(h.window).toBeDefined();
+  expect(h.window.webContents.mainFrame).toBeDefined();
 });

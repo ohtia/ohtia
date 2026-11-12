@@ -1,3 +1,4 @@
+import { ChatGPTProvider } from "./chatgpt-provider.js";
 import { ConnectionManager } from "./connection-manager.js";
 import { ConnectionBroker } from "./connection-broker.js";
 import { nativeCredentialStore } from "./native-credentials.js";
@@ -765,21 +766,35 @@ async function start(): Promise<void> {
     context.mode === "development"
       ? await import("./fake-provider.js")
       : undefined;
-  const adapters = developmentProvider ? [developmentProvider.createFakeProvider()] : [];
+  const connectionDiagnostic = (event: DiagnosticEvent) => {
+    void diagnostics?.append(event);
+  };
+  const adapters = [
+    new ChatGPTProvider({
+      store: credentials,
+      openBrowser: (url) => shell.openExternal(url),
+      completedText: () => message(locale, "connection.browserComplete"),
+      diagnostic: connectionDiagnostic,
+    }),
+    ...(developmentProvider ? [developmentProvider.createFakeProvider()] : []),
+  ];
   if (acceptance && developmentProvider)
     Object.defineProperty(globalThis, "__ohtiaCredentialAcceptance", {
       configurable: true,
       value: developmentProvider.credentialAcceptance(credentials),
     });
-  const connectionDiagnostic = (event: DiagnosticEvent) => {
-    void diagnostics?.append(event);
-  };
   connections = new ConnectionBroker(
     new ConnectionManager(adapters, connectionDiagnostic),
     connectionDiagnostic,
   );
   const manager = connections.manager;
-  await Promise.all(manager.ids().map((id) => manager.read(id)));
+  // Native unlock prompts must not delay the local research workspace or its startup deadline.
+  void Promise.all(manager.ids().map((id) => manager.read(id))).catch(() => {
+    connectionDiagnostic({
+      event_name: "ohtia.connection.failed",
+      error_code: "store_unavailable",
+    });
+  });
   manager.subscribe(() => {
     if (service?.available) service.reportConnections(manager);
   });

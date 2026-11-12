@@ -34,48 +34,6 @@ async function nativeSigningFixtureProbe(input) {
       { stdin: Buffer.concat([passphrase, Buffer.from("\n")]) },
     );
   try {
-    const sshKey = path.join(directory, "source-key");
-    const repository = path.join(directory, "source");
-    const allowed = path.join(directory, "allowed-signers");
-    await command("/usr/bin/ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", sshKey]);
-    fs.writeFileSync(
-      allowed,
-      "fixture@example.invalid " + fs.readFileSync(sshKey + ".pub", "utf8"),
-      { mode: 0o600 },
-    );
-    await command("/usr/bin/git", [
-      "-c",
-      "init.defaultBranch=fixture",
-      "init",
-      "--quiet",
-      repository,
-    ]);
-    await command("/usr/bin/git", [
-      "-C",
-      repository,
-      "-c",
-      "user.name=Disposable fixture",
-      "-c",
-      "user.email=fixture@example.invalid",
-      "-c",
-      "gpg.format=ssh",
-      "-c",
-      "user.signingkey=" + sshKey,
-      "commit",
-      "--allow-empty",
-      "--quiet",
-      "-S",
-      "-m",
-      "Disposable source signature fixture",
-    ]);
-    await command("/usr/bin/git", [
-      "-C",
-      repository,
-      "-c",
-      "gpg.ssh.allowedSignersFile=" + allowed,
-      "verify-commit",
-      "HEAD",
-    ]);
     await gpg(
       "--quick-generate-key",
       "Ohtia disposable signing fixture <fixture@example.invalid>",
@@ -95,15 +53,7 @@ async function nativeSigningFixtureProbe(input) {
       .filter((l) => l.startsWith("fpr:"))
       .map((l) => l.split(":")[9]);
     const secret = await gpg("--armor", "--export-secret-subkeys", primary);
-    const catalog = generateKeyPairSync("ed25519"),
-      source = generateKeyPairSync("ed25519");
-    const raw = source.publicKey.export({ format: "der", type: "spki" }).subarray(-32);
-    const ssh = Buffer.concat([
-      Buffer.from([0, 0, 0, 11]),
-      Buffer.from("ssh-ed25519"),
-      Buffer.from([0, 0, 0, 32]),
-      raw,
-    ]).toString("base64");
+    const catalog = generateKeyPairSync("ed25519");
     const policy = {
       schema_version: 1,
       enabled: true,
@@ -114,8 +64,7 @@ async function nativeSigningFixtureProbe(input) {
       caller_workflow: ".github/workflows/installation-signing.yml",
       signing_workflow: { workflow: ".github/workflows/signing-worker.yml", sha: "c".repeat(40) },
       build_workflow: { workflow: ".github/workflows/signing-build.yml", sha: "d".repeat(40) },
-      source_anchor: "e".repeat(40),
-      source_signers: [{ principal: "fixture@example.invalid", public_key: "ssh-ed25519 " + ssh }],
+
       catalog_public_key: catalog.publicKey.export({ format: "pem", type: "spki" }).toString(),
       rpm_primary: fingerprints[0].toLowerCase(),
       rpm_subkey: fingerprints[1].toLowerCase(),
@@ -285,7 +234,6 @@ async function nativeSigningFixtureProbe(input) {
       real_keys_used: false,
       input: original,
       checks: {
-        native_ssh_git_verification: true,
         subkey_only_import: true,
         usable_primary_secret_refused: true,
         rpm_body_preserved: true,

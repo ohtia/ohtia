@@ -2,6 +2,8 @@
 type: DecisionRecord
 title: ADR-0041 — Independently administered Linux signing service
 description: Separate Linux signing requests from key custody and policy administration using a bounded Debian-based Scaleway container service.
+generated:
+  by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
 sources:
@@ -91,7 +93,7 @@ The approved public policy, deployed image and external activation control remai
 
 ### Container image
 
-Use the Debian 13 runtime base, GnuPG `2.4.*`, RPM `4.20.*`, OpenSSH `10.0p*` and Tini `0.19.*` for the Linux signing image. Tini runs as PID 1 to forward signals and reap terminated descendants; the signing supervisor and GnuPG cleanup retain their separate responsibilities.[^tini][^debian-tini] [The image manifest](../../config/installation/signing-image.json) owns the exact base digest and native package artifacts. Node and pnpm follow [ADR-0004](adr-0004-javascript-development-toolchain.md); the GitHub CLI uses the existing [qualification tool artifact](../../config/installation/scaleway.json). Preserve the runtime dependency notices alongside the service bundle.
+Use the Debian 13 runtime base, GnuPG `2.4.*`, RPM `4.20.*` and Tini `0.19.*` for the Linux signing image. Tini runs as PID 1 to forward signals and reap terminated descendants; the signing supervisor and GnuPG cleanup retain their separate responsibilities.[^tini][^debian-tini] [The image manifest](../../config/installation/signing-image.json) owns the exact base digest and native package artifacts. Node and pnpm follow [ADR-0004](adr-0004-javascript-development-toolchain.md); the GitHub CLI uses the existing [qualification tool artifact](../../config/installation/scaleway.json). Preserve the runtime dependency notices alongside the service bundle.
 
 Debian's longer maintenance window reduces major-base transitions compared with Fedora's shorter release cycle. Debian publishes full support through August 2028 and LTS through June 2030; later architecture and package coverage must be checked explicitly.[^debian-lifecycle] Digest pinning preserves reviewed inputs, not security freshness: the signing administrator must review and rebuild OS packages, Node, CLI and locked dependencies for security updates, retain rollback evidence and qualify the resulting image before deployment. The signer base does not change the Fedora desktop qualification targets.
 
@@ -117,11 +119,11 @@ Do not cache successful admission, retry a refusal, follow a redirect or fall ba
 
 Verify current GitHub Actions OIDC claims with jose `6.2.*`, using the fixed GitHub issuer and bounded public JWKS retrieval. Pin immutable owner/repository IDs, audience, main ref, dispatch event, environment, hosted runner and immutable reusable workflow identity. Resolve the actual job/check-run/run/attempt/source relationship independently. The provider IAM check and application OIDC check are distinct controls.[^github-oidc][^jose]
 
-Use Git `2.47.*` for source verification. [ADR-0045](adr-0045-personally-signed-source-history.md) replaces the reproducible-merge exception with an independently approved initial baseline and mandatory authorized personal signatures on every subsequent commit, including merges. It owns baseline coverage, parent admission and versioned prefix-cache compatibility. Isolate Git configuration, hooks, attributes and replacement/graft mechanisms from the repository being examined; requests cannot insert cache records.
+[ADR-0049](adr-0049-main-source-selection-for-packages.md) owns package-source selection: one exact commit/tree integrated into the workflow execution's main snapshot, with no commit-signature or repository-governance audit. Keep the workflow execution identity distinct from the selected package source in caller authentication, authenticated build predicates and retained receipts.
 
 OIDC authenticates the requester, not the build output. Use the pinned GitHub CLI under [the qualification tool policy](../../config/installation/scaleway.json) to cryptographically verify GitHub artifact attestations and then check their authenticated certificate identity, builder revision, source and run/attempt. Require the declared input manifest in the authenticated pinned builder's predicate and verify its actual successful build job. Predicate data is workflow-controlled; a reusable builder whose caller can redefine privileged behavior is inadmissible. Check the actual package digest and length independently. Public repository provenance uses the Sigstore Public Good Instance; do not exclude that trust path while retaining exact repository, builder and source restrictions.[^gh-attestation][^sigstore]
 
-Use GnuPG `2.4.*` and RPM `4.20.*` for the selected RPM operation, with exact binaries and native helper inputs bound by the signer image manifest. OpenSSH retains its native upstream release identity in that manifest. [The developer Node decision](adr-0004-javascript-development-toolchain.md) owns the Node runtime line. The [toolchain manifest](../../config/desktop/toolchain.json) owns the exact JOSE patch and artifact integrity; the [numeric policy](../../config/desktop/resource-policy.json) owns signing, metadata, artifact and execution bounds.
+Use GnuPG `2.4.*` and RPM `4.20.*` for the selected RPM operation, with exact binaries and native helper inputs bound by the signer image manifest. [The developer Node decision](adr-0004-javascript-development-toolchain.md) owns the Node runtime line. The [toolchain manifest](../../config/desktop/toolchain.json) owns the exact JOSE patch and artifact integrity; the [numeric policy](../../config/desktop/resource-policy.json) owns signing, metadata, artifact and execution bounds.
 
 The immutable reusable builder is the build authority; another admitted-source top-level caller does not grant different builder code or permit caller-selected privileged helpers. Qualify that exact builder contract before accepting genuine attestations.
 
@@ -159,7 +161,7 @@ Errors expose only bounded machine codes. Authentication/policy refusal returns 
 
 ## Consequences
 
-The same owner can remain the human custodian, but the GitHub account cannot administer the signing service. Compromise of its independent administrative credentials, source-signing key, trusted signer dependencies or provider remains consequential. Owner absence and recovery therefore need an executable separate procedure rather than a second key held under the same exposed account.
+The same owner can remain the human custodian, but the GitHub account cannot administer the signing service. Compromise of its independent administrative credentials, package/catalog signing keys, trusted signer dependencies or provider remains consequential. Owner absence and recovery therefore need an executable separate procedure rather than a second key held under the same exposed account.
 
 Local test keys, fixture issuers and mocked provider responses establish contracts only. Actual private-container IAM, credential release, source/workflow admission, storage races, revocation, recovery and signed native installation require evidence at the deployed enforcing boundaries before the corresponding capability is enabled. Real publisher-signed internal artifacts remain private; this mechanism grants no publication authority or macOS/Windows publisher capability.
 

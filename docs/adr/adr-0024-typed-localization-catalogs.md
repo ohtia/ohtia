@@ -4,6 +4,8 @@ title: "ADR-0024 — Typed catalogs and operating-system locale selection"
 description: "Resolve interface language from user choice, ordered OS preferences and explicit regional fallbacks through one typed catalog service."
 generated:
   by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: electron-languages
     resource: "https://www.electronjs.org/docs/latest/api/app#appgetpreferredsystemlanguages"
@@ -23,7 +25,7 @@ Messages embedded in components or generated at runtime complicate consistency a
 
 ### Catalog and language boundaries
 
-Use versioned per-locale catalogs with stable keys, typed interpolation, plural/select forms and one shared locale service. The [product definition](../product-definition.md#languages-and-accessibility) owns the supported locale inventory. Source/manuscript language and project analysis language remain separate inputs; changing UI locale does not translate existing research.
+Use versioned per-locale catalogs with stable keys, typed interpolation, plural/select forms and one shared locale service. The [product definition](../product-definition.md#languages-and-accessibility) owns the supported locale inventory. Source language and the project's document language, which is also the manuscript's language, remain separate inputs; changing UI locale does not translate existing research.
 
 ### Interface locale resolution
 
@@ -71,7 +73,7 @@ Settings offers the supported locales and **Use system language**. A new unsuppo
 
 Resolve again at application startup and when returning to system mode. Applying an explicit language choice updates Ohtia's own interface messages, formats, menus and future notifications across its windows, including each document's `html.lang`, without losing unsaved editor/form state. Do not promise immediate detection of arbitrary OS-setting changes through a browser `languagechange` event. Text owned by the OS remains subject to that native surface's language behavior; Ohtia's language selection does not change OS settings.
 
-Locale fallback selects a complete interface catalog; it does not silently fill missing translation keys from another locale or establish linguistic quality. Developer diagnostics and machine protocol values retain their repository-defined language/representation. The interface locale never supplies an implicit manuscript or analysis language.
+Locale fallback selects a complete interface catalog; it does not silently fill missing translation keys from another locale or establish linguistic quality. Developer diagnostics and machine protocol values retain their repository-defined language/representation. The interface locale never supplies an implicit manuscript or document language.
 
 Cover forms, navigation, errors, progress, notifications and accessible labels. Return controlled error codes/parameters across IPC, not diagnostic prose to parse. Use the same locale service for dates/numbers, with storage/protocol values independent of visual formats.
 

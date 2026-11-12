@@ -1,7 +1,8 @@
 ---
 type: DecisionRecord
+status: deprecated
 title: ADR-0045 — Personally signed source history after an approved baseline
-description: Approve an initial source baseline independently and require authorized personal signatures on every subsequent commit, including merges.
+description: Deprecated source-history signature decision, replaced by ADR-0049 main source selection without historical signature checks.
 generated:
   by: codex/gpt-6.1-sol
 verified:
@@ -9,6 +10,8 @@ verified:
 ---
 
 # ADR-0045 — Personally signed source history after an approved baseline
+
+This decision is deprecated and replaced by [ADR-0049 — Main source selection for package preparation](adr-0049-main-source-selection-for-packages.md). Package preparation does not enforce commit-signature or repository-integration policy.
 
 ## Context
 

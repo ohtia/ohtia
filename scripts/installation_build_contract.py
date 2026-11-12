@@ -64,11 +64,13 @@ def identity(env):
         and env["RUNNER_ENVIRONMENT"] == "github-hosted"
         and re.fullmatch("[a-f0-9]{40}", env["GITHUB_SHA"])
         and re.fullmatch("[a-f0-9]{40}", env["RECIPE_SHA"])
-        and env["RECIPE_REF"] == f"{REPOSITORY}/{RECIPE}@{env['RECIPE_SHA']}",
+        and env["RECIPE_REF"] == f"{REPOSITORY}/{RECIPE}@{env['RECIPE_SHA']}"
+        and re.fullmatch("[a-f0-9]{40}", env.get("SOURCE_COMMIT", env["GITHUB_SHA"])),
         "recipe_identity",
     )
     return {
-        "source": env["GITHUB_SHA"],
+        "source": env.get("SOURCE_COMMIT", env["GITHUB_SHA"]),
+        "main": env["GITHUB_SHA"],
         "recipe": env["RECIPE_SHA"],
         "run": positive(env["GITHUB_RUN_ID"]),
         "attempt": positive(env["GITHUB_RUN_ATTEMPT"]),

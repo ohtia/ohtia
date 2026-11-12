@@ -41,9 +41,9 @@ okf_version: "0.2"
 - [Ephemeral ARM installation qualification](scaleway-qualification.md) — Define protected authority, bounded diagnostics and recovery for unsigned native ARM qualification on ephemeral Scaleway leases.
 - [Installation facility observations](installation-facilities.md) — Observe hosted Linux VM and non-elevated-account capabilities without granting native installation or distribution qualification.
 - [Isolated desktop runtime](desktop-runtime.md) — Admit native runtime contexts, manage the window lifecycle and verify supervised status and fixed-home bootstrap boundaries.
-- [Durable foundation storage](storage.md) — Open the isolated local store, persist typed preferences and verify packaged migration, recovery and bounded failure observations.
+- [Durable foundation storage](storage.md) — Open the isolated local store, persist preferences and research records, and verify packaged migrations and recovery.
 - [Desktop foundation contract](desktop-foundation-contract.md) — Native target and distribution qualification inputs, pinned candidate metadata, numeric resource policy and evidence ownership for the desktop foundation.
-- [Bounded foundation application port](application-port.md) — Versioned preference messages, named presentation commands, controlled outcomes and deterministic conformance for the desktop application boundary.
+- [Bounded foundation application port](application-port.md) — Versioned preference and provider-connection messages, named presentation commands, controlled outcomes and deterministic conformance for the desktop application boundary.
 - [Foundation security applicability](foundation-security.md) — Versioned security applicability, enforcing boundaries and reproducible evidence obligations for the desktop foundation.
 - [Content-free broker diagnostics](diagnostics.md) — Closed diagnostic events, broker-owned bounded files, native account protection and reproducible privacy and failure evidence.
 

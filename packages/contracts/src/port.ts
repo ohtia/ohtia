@@ -141,6 +141,11 @@ export type WindowBoundsReceipt =
   | { readonly state: "not_found" | "pending" }
   | { readonly state: "recorded"; readonly outcome: RecordedWindowBoundsOutcome };
 export const errorActions = {
+  project_not_in_setup: "refresh_record",
+  project_in_setup: "refresh_record",
+  record_not_found: "refresh_record",
+  name_invalid: "check_request",
+  message_invalid: "check_request",
   invalid_message: "check_request",
   unsupported_version: "upgrade_application",
   policy_mismatch: "upgrade_application",
@@ -209,7 +214,7 @@ export interface OperationInputs {
   "connection.subscribe": { readonly connection: string; readonly subscriptionId: string };
   "connection.probe": { readonly connection: string };
   "connection.listModels": ModelPageInput;
-  "connection.connect": { readonly connection: string };
+  "connection.connect": { readonly connection: string; readonly new_registration?: boolean };
   "connection.disconnect": { readonly connection: string };
 
   "bounds.read": Record<string, never>;
@@ -353,7 +358,10 @@ export interface Subscription {
 }
 export interface FoundationPort {
   readConnection(connection: string): PortCall<ConnectionSnapshot>;
-  connectConnection(connection: string): PortCall<ConnectionSnapshot>;
+  connectConnection(
+    connection: string,
+    options?: { readonly new_registration?: boolean },
+  ): PortCall<ConnectionSnapshot>;
   disconnectConnection(connection: string): PortCall<ConnectionSnapshot>;
   probeConnection(connection: string): PortCall<ConnectionSnapshot>;
   listConnectionModels(input: ModelPageInput): PortCall<ModelPage>;
@@ -662,8 +670,14 @@ function operationOutcome(operation: Operation, value: Json | undefined): boolea
 
 function input(operation: Operation, value: Json | undefined): boolean {
   switch (operation) {
-    case "connection.read":
     case "connection.connect":
+      return (
+        (exact(value, ["connection"]) ||
+          (exact(value, ["connection", "new_registration"]) &&
+            typeof value.new_registration === "boolean")) &&
+        isConnectionId(value.connection)
+      );
+    case "connection.read":
     case "connection.disconnect":
     case "connection.probe":
       return exact(value, ["connection"]) && isConnectionId(value.connection);

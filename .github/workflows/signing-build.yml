@@ -3,6 +3,10 @@ name: Isolated Linux signing build
 on:
   workflow_call:
     inputs:
+      source-commit:
+        description: Exact package source already resolved from main
+        required: true
+        type: string
       selection:
         description: One Linux target and native distribution profile from the target manifest
         required: true
@@ -26,6 +30,7 @@ jobs:
     env:
       BUILD_SELECTION: ${{ inputs.selection }}
       SOURCE_ROOT: ${{ github.workspace }}/source
+      SOURCE_COMMIT: ${{ inputs.source-commit }}
     steps:
       - name: Check out the immutable recipe
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,7 +43,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ohtia/ohtia
-          ref: ${{ github.sha }}
+          ref: ${{ inputs.source-commit }}
           path: source
           persist-credentials: false
       - name: Set up Python
@@ -87,6 +92,7 @@ jobs:
     env:
       BUILD_SELECTION: ${{ inputs.selection }}
       SOURCE_ROOT: ${{ github.workspace }}/source
+      SOURCE_COMMIT: ${{ inputs.source-commit }}
     steps:
       - name: Check out only the immutable recipe's helpers
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -99,7 +105,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ohtia/ohtia
-          ref: ${{ github.sha }}
+          ref: ${{ inputs.source-commit }}
           path: source
           persist-credentials: false
       - name: Set up Python without installing candidate dependencies

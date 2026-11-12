@@ -376,8 +376,9 @@ describe("signing container composition", () => {
   it("keeps admission disabled and makes no provider request", async () => {
     const provider = vi.spyOn(globalThis, "fetch");
     const composed = composeSigningContainer(configuration(), { environment });
-    expect(typeof composed.service.source.acquisition.open).toBe("function");
-    expect(composed.service.source.repository).toBeUndefined();
+    expect(typeof composed.service.source.commit).toBe("function");
+    expect(typeof composed.service.source.compare).toBe("function");
+    expect(composed.service.source.acquisition).toBeUndefined();
     try {
       const server = productionSigningServer(composed.service);
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

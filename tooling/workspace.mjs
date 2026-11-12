@@ -66,6 +66,10 @@ function compile(noEmit = false) {
     path.join(root, "packages/utility/dist/migrations"),
     { recursive: true },
   );
+  fs.copyFileSync(
+    path.join(root, "config/localization/iana-language-subtag-registry.txt"),
+    path.join(root, "packages/utility/dist/iana-language-subtag-registry.txt"),
+  );
   fs.rmSync(path.join(root, "tools/desktop-probes/dist"), { recursive: true, force: true });
   node("typescript/bin/tsc", ["-p", "tools/desktop-probes/tsconfig.json"]);
 }
