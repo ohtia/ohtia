@@ -4,6 +4,8 @@ title: "Product roadmap"
 description: "Desktop research capabilities, delivery sequence, dependencies and readiness conditions for Ohtia."
 generated:
   by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: electron-platforms
     resource: "https://github.com/electron/electron/blob/main/README.md#platform-support"

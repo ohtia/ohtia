@@ -4,6 +4,8 @@ title: Scaleway qualification access preflight
 description: Check protected GitHub Actions read access and ARM image compatibility without creating cloud resources or claiming native qualification.
 generated:
   by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: instance-api
     resource: https://www.scaleway.com/en/developers/api/instance/v1/instances

@@ -4,6 +4,8 @@ title: "ADR-0028 — Current authorization for mediated provider transfers"
 description: "Authorize each Ohtia-controlled transfer against current restrictions and scope without holding database transactions over the network."
 generated:
   by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # ADR-0028 — Current authorization for mediated provider transfers

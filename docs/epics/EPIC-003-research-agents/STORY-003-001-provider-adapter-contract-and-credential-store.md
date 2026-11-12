@@ -4,6 +4,8 @@ title: "STORY-003-001 — Provider adapter contract and credential store"
 description: "Define the shared provider adapter contract with its fake provider and conformance suite, the connection operations in main and the operating-system credential store."
 generated:
   by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 tags: [story, "comp:llm", "comp:desktop", "comp:docs", "security"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/203

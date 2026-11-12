@@ -4,6 +4,8 @@ title: Locked developer workspace
 description: Bootstrap isolated contributor tools, build the six package boundaries and verify the frozen workspace without changing research data.
 generated:
   by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: windows-tls
     resource: https://curl.se/docs/sslcerts.html

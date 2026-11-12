@@ -4,6 +4,8 @@ title: "EPIC-003 — Research agents and their conversation interface"
 description: "Let the researcher connect ChatGPT, Anthropic or OpenAI accounts, set up a project with Virgilio and work through bounded, durable, attributed conversations, consultations, plans and handoffs with Virgilio and Josefa."
 generated:
   by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 tags: [epic, "comp:llm", "comp:storage", "comp:app", "comp:desktop", "comp:tooling", "comp:docs"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/202

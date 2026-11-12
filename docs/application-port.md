@@ -4,6 +4,8 @@ title: Bounded foundation application port
 description: Versioned preference messages, named presentation commands, controlled outcomes and deterministic conformance for the desktop application boundary.
 generated:
   by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: chromium-keyboard-suppression
     resource: https://github.com/chromium/chromium/blob/156.0.8078.48/content/browser/renderer_host/render_widget_host_impl.cc

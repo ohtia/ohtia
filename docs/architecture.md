@@ -4,6 +4,8 @@ title: "System architecture"
 description: "Application data authority, execution boundaries, provider adapters, and schema-migration recovery."
 generated:
   by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: electron-security
     resource: "https://www.electronjs.org/docs/latest/tutorial/security"

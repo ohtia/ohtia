@@ -4,6 +4,8 @@ title: ADR-0048 — Provider access routes and credential store
 description: Connect language-model services through Sign in with ChatGPT and Anthropic and OpenAI API keys, with every credential held by main in the operating-system credential store.
 generated:
   by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: keyring
     resource: https://github.com/Brooooooklyn/keyring-node/tree/52184fbebffeef8a061234f60f313c479b954f9f

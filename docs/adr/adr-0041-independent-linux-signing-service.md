@@ -2,6 +2,8 @@
 type: DecisionRecord
 title: ADR-0041 — Independently administered Linux signing service
 description: Separate Linux signing requests from key custody and policy administration using a bounded Debian-based Scaleway container service.
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: scaleway-private
     resource: https://www.scaleway.com/en/docs/serverless-containers/how-to/secure-a-container/
