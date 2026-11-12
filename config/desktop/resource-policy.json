@@ -950,6 +950,18 @@
       "scope": "One connection probe, from its request until its result event",
       "failure": "probe_unreachable",
       "rationale": "A model list arrives well within this time; a slower answer is reported as unreachable"
+    },
+    "sign_in_wait_ms": {
+      "value": 600000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 600000,
+        "maximum": 600000
+      },
+      "owner": "003",
+      "scope": "The browser sign-in of one connection, from connect until the sign-in returns",
+      "failure": "sign_in_timeout",
+      "rationale": "A researcher may need several minutes to sign in and authorize plan use"
     }
   }
 }

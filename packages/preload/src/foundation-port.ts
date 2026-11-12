@@ -479,7 +479,8 @@ export function createFoundationPort(
   }
   const port: FoundationPort = Object.freeze<FoundationPort>({
     readConnection: (connection) => call("connection.read", { connection }),
-    connectConnection: (connection) => call("connection.connect", { connection }),
+    connectConnection: (connection, options) =>
+      call("connection.connect", { connection, ...options }),
     disconnectConnection: (connection) => call("connection.disconnect", { connection }),
     probeConnection: (connection) => call("connection.probe", { connection }),
     listConnectionModels: (input) => call("connection.listModels", input),

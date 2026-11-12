@@ -75,7 +75,7 @@ export class ConnectionBroker {
         break;
       }
       case "connection.connect":
-        finish(this.manager.connect(request.payload.connection));
+        finish(this.manager.connect(request.payload.connection, request.payload));
         break;
       case "connection.probe":
         finish(this.manager.probe(request.payload.connection));

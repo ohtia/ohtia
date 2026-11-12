@@ -72,6 +72,7 @@ BUDGET_UNITS = {
     "event_queue_bytes": "byte",
     "request_deadline_ms": "millisecond",
     "connection_probe_ms": "millisecond",
+    "sign_in_wait_ms": "millisecond",
     "service_start_ms": "millisecond",
     "application_start_ms": "millisecond",
     "shutdown_grace_ms": "millisecond",

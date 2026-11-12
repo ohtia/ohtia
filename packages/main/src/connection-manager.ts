@@ -30,6 +30,7 @@ interface Connection {
   probeWork: boolean;
   generation: number;
   action: AbortController | undefined;
+  signInTimer: ReturnType<typeof setTimeout> | undefined;
   probe:
     | {
         readonly id: string;
@@ -61,6 +62,7 @@ export class ConnectionManager {
   private readonly connections = new Map<string, Connection>();
   private readonly listeners = new Set<(event: ConnectionEvent) => void>();
   private disposed = false;
+  private readonly adapterStops: (() => void)[] = [];
   constructor(
     adapters: readonly ProviderAdapter[],
     private readonly diagnostic?: (event: DiagnosticEvent) => void,
@@ -80,11 +82,32 @@ export class ConnectionManager {
         probeWork: false,
         generation: 0,
         action: undefined,
+        signInTimer: undefined,
         probe: undefined,
         lastProbe: null,
         models: undefined,
         revision: 0,
       });
+      const stop = adapter.onStateChange?.((state, reason) => {
+        const c = this.connections.get(id);
+        if (!c || this.disposed || c.state === "connecting") return;
+        c.state = state;
+        c.reason = reason;
+        c.initialized = true;
+        c.storeUnavailable = reason === "store_unavailable";
+        this.diagnostic?.(
+          state === "connected"
+            ? { event_name: "ohtia.connection.renewed" }
+            : state === "expired"
+              ? { event_name: "ohtia.connection.expired" }
+              : {
+                  event_name: "ohtia.connection.failed",
+                  error_code: reason ?? "connection_failed",
+                },
+        );
+        this.emit(id);
+      });
+      if (stop) this.adapterStops.push(stop);
     }
   }
   /** Fake is deliberately absent from the graphical connection inventory. */
@@ -109,6 +132,12 @@ export class ConnectionManager {
           connection: id,
           state: c.storeUnavailable || c.deleteFailed ? "error" : c.state,
           reason: c.storeUnavailable || c.deleteFailed ? "store_unavailable" : c.reason,
+          display_name: c.adapter.declaration.connection.displayName,
+          account_email:
+            c.state === "connected" && !c.storeUnavailable
+              ? (c.adapter.accountEmail?.() ?? null)
+              : null,
+          last_account_email: c.storeUnavailable ? null : (c.adapter.lastAccountEmail?.() ?? null),
           probing: !!c.probe,
           probe_id: c.probe?.id ?? c.lastProbe,
           model_list_revision: c.models === undefined ? null : c.revision,
@@ -150,7 +179,7 @@ export class ConnectionManager {
     if (stored.status === "unavailable") c.storeUnavailable = true;
     else {
       c.storeUnavailable = false;
-      if (!c.initialized) {
+      if (!c.initialized || (c.state === "error" && c.reason === "store_unavailable")) {
         c.initialized = true;
         c.state =
           stored.status === "stored"
@@ -176,16 +205,44 @@ export class ConnectionManager {
       }
     }
   }
-  connect(id: string): Outcome<ConnectionSnapshot> {
+  connect(
+    id: string,
+    options?: { readonly new_registration?: boolean },
+  ): Outcome<ConnectionSnapshot> {
     const c = this.connections.get(id);
     if (!c || this.disposed) return failure("invalid_message");
     if (!c.storeUnavailable && (c.state === "connected" || c.state === "connecting"))
       return { ok: true, value: this.requireSnapshot(id) };
     this.cancelProbe(id, c);
+    this.clearSignIn(c);
     c.action?.abort();
     const action = new AbortController();
     c.action = action;
     const generation = ++c.generation;
+    if (c.adapter.declaration.connection.kind === "subscription") {
+      c.signInTimer = setTimeout(() => {
+        if (!this.current(c, generation)) return;
+        c.generation++;
+        c.action?.abort();
+        c.action = undefined;
+        c.signInTimer = undefined;
+        c.state = "disconnected";
+        c.reason = "sign_in_timeout";
+        c.storeUnavailable = false;
+        const cancelledGeneration = c.generation;
+        void c.adapter
+          .cancelSignIn?.()
+          .then((result) => {
+            if (this.current(c, cancelledGeneration) && result.status === "unavailable")
+              this.setUnavailable(id, c);
+          })
+          .catch(() => {
+            if (this.current(c, cancelledGeneration)) this.setUnavailable(id, c);
+          });
+        this.diagnostic?.({ event_name: "ohtia.connection.failed", error_code: "sign_in_timeout" });
+        this.emit(id);
+      }, portLimits.sign_in_wait_ms);
+    }
     c.deleteFailed = false;
     c.state = "connecting";
     c.reason = null;
@@ -204,7 +261,7 @@ export class ConnectionManager {
         }
         let result: SignInResult;
         try {
-          result = await c.adapter.connect(action.signal);
+          result = await c.adapter.connect(action.signal, options);
         } catch {
           result = { state: "error", reason: null };
         }
@@ -216,14 +273,21 @@ export class ConnectionManager {
             credential: session.credential,
             reason: result.state === "error" ? result.reason : null,
           };
-          const written = await c.adapter.credentials.write(kept);
+          const written = await (result.persist
+            ? result.persist()
+            : c.adapter.credentials.write(kept));
           if (!this.current(c, generation)) return;
           if (written.status === "unavailable") {
             this.setUnavailable(id, c, true);
             return;
           }
           c.storeUnavailable = false;
+          if (result.resetModels) {
+            c.models = undefined;
+            c.lastProbe = null;
+          }
         }
+        this.clearSignIn(c);
         c.state = result.state;
         c.reason = result.state === "connected" ? null : result.reason;
         c.action = undefined;
@@ -242,11 +306,17 @@ export class ConnectionManager {
       });
     return { ok: true, value: this.requireSnapshot(id) };
   }
+  private clearSignIn(c: Connection): void {
+    clearTimeout(c.signInTimer);
+    c.signInTimer = undefined;
+  }
   private current(c: Connection, generation: number): boolean {
     return !this.disposed && c.generation === generation;
   }
   private setUnavailable(id: string, c: Connection, connectFailed = false): void {
     if (connectFailed) {
+      this.clearSignIn(c);
+      c.action?.abort();
       c.state = "disconnected";
       c.reason = null;
       c.initialized = false;
@@ -267,6 +337,8 @@ export class ConnectionManager {
       c.reason === null
     )
       return { ok: true, value: this.requireSnapshot(id) };
+    const cancellingSignIn = c.state === "connecting" && c.adapter.cancelSignIn !== undefined;
+    this.clearSignIn(c);
     c.action?.abort();
     c.action = undefined;
     const generation = ++c.generation;
@@ -279,10 +351,12 @@ export class ConnectionManager {
     c.deleteFailed = false;
     this.cancelProbe(id, c);
     this.emit(id);
-    const deleted = await c.adapter.credentials.delete();
+    const deleted = await (cancellingSignIn && c.adapter.cancelSignIn
+      ? c.adapter.cancelSignIn()
+      : c.adapter.credentials.delete());
     if (!this.current(c, generation)) return { ok: true, value: this.requireSnapshot(id) };
     if (deleted.status === "unavailable") {
-      c.deleteFailed = true;
+      c.deleteFailed = !cancellingSignIn;
       this.setUnavailable(id, c);
     } else this.diagnostic?.({ event_name: "ohtia.connection.disconnect" });
     return { ok: true, value: this.requireSnapshot(id) };
@@ -401,7 +475,7 @@ export class ConnectionManager {
     )
       return failure("invalid_message");
     if (input.model_list_revision !== c.revision || c.models === undefined)
-      return staleRevision(c.revision);
+      return staleRevision(c.models === undefined ? 0 : c.revision);
     if (input.cursor > c.models.length) return failure("invalid_message");
     const models: ProviderModel[] = [];
     let next = input.cursor;
@@ -430,7 +504,10 @@ export class ConnectionManager {
   }
   dispose(): void {
     this.disposed = true;
+    for (const stop of this.adapterStops) stop();
     for (const c of this.connections.values()) {
+      this.clearSignIn(c);
+      c.adapter.dispose?.();
       c.action?.abort();
       if (c.probe) {
         clearTimeout(c.probe.timer);

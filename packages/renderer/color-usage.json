@@ -646,6 +646,24 @@
       "foreground": "content.secondary",
       "backgrounds": ["surface.page"],
       "minimum": 7
+    },
+    {
+      "selector": ".connection-attention",
+      "foreground": "attention.content",
+      "backgrounds": ["attention.surface"],
+      "minimum": 7
+    },
+    {
+      "selector": ".connection-info",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".connection-danger",
+      "foreground": "danger.content",
+      "backgrounds": ["danger.surface"],
+      "minimum": 7
     }
   ],
   "overlays": [

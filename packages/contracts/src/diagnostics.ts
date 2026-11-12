@@ -23,6 +23,9 @@ const event = <
   errors: E,
 ) => Object.freeze({ component, operation, severity, outcome, errors: Object.freeze(errors) });
 export const diagnosticCatalog = Object.freeze({
+  "ohtia.connection.renewal_started": event("broker", "connection.renew", "INFO", "accepted", []),
+  "ohtia.connection.renewed": event("broker", "connection.renew", "INFO", "connected", []),
+  "ohtia.connection.expired": event("broker", "connection.renew", "WARN", "expired", []),
   "ohtia.connection.connected": event("broker", "connection.connect", "INFO", "connected", []),
   "ohtia.connection.failed": event("broker", "connection.run", "WARN", "failure", [
     "store_unavailable",
