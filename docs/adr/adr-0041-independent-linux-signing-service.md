@@ -1,9 +1,9 @@
 ---
 type: DecisionRecord
 title: ADR-0041 — Independently administered Linux signing service
-description: Separate Linux signing requests from key custody and policy administration using a bounded Debian-based Scaleway container service.
+description: Deprecated independent Linux signing service decision, replaced by ADR-0050 signing in a protected GitHub environment.
 generated:
-  by: codex/gpt-6.1-sol
+  by: claude-code/claude-fable-5-2
 verified:
   by: human:AdrianMastronardi
 sources:
@@ -67,9 +67,12 @@ sources:
   - id: conditional-storage
     resource: https://www.scaleway.com/en/docs/object-storage/api-cli/using-conditional-writes/
     title: Conditional object creation and replacement
+status: deprecated
 ---
 
 # ADR-0041 — Independently administered Linux signing service
+
+This decision is deprecated and replaced by [ADR-0050 — Signed Linux repositories, protected GitHub signing and update notices](adr-0050-signed-linux-repositories-and-update-notices.md). The signing service was never deployed; Linux signing runs in a protected GitHub environment.
 
 ## Context
 
