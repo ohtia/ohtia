@@ -23,7 +23,7 @@ The [release policy](release-policy.md#candidate-preparation) owns candidate rea
    ```
 
 3. If every stage prints `verified` and the command exits with `0`, continue with the dispatch. The `tags` stage covers the tag ruleset that keeps reserved and version tags from being moved or deleted; it prints `differs` until that ruleset is first applied. Exit code `2` means the configuration could not be read or validated; correct the reported cause and run `verify` again.
-4. If a stage prints `differs`, plan that stage, review the printed differences, apply the plan with its SHA-256 and verify again, replacing `<stage>` with the stage name. [Repository policy](repository-policy.md#plan-apply-and-verify) describes the plan and its review. Do not dispatch until `verify` exits with `0`.
+4. If a stage prints `differs`, plan that stage, review the printed differences, apply the plan with its SHA-256 and verify again, replacing `<stage>` with the stage name that `verify` printed: `base`, `ruleset` or `tags`. [Repository policy](repository-policy.md#plan-apply-and-verify) describes the plan and its review. Do not dispatch until `verify` exits with `0`.
 
    ```bash
    python3 scripts/github_policy.py plan --stage <stage>
