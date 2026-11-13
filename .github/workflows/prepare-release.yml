@@ -1,0 +1,249 @@
+name: Prepare release
+
+on:
+  workflow_dispatch:
+    inputs:
+      hash:
+        description: Full lowercase commit SHA in the history of main to package; empty selects the dispatch commit
+        required: false
+        type: string
+        default: ""
+
+permissions: {}
+
+jobs:
+  reserve:
+    name: Reserve the version
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: write # Creates the reserved/v<version> tag.
+    outputs:
+      commit: ${{ steps.reserve.outputs.commit }}
+      tree: ${{ steps.reserve.outputs.tree }}
+      version: ${{ steps.reserve.outputs.version }}
+    steps:
+      - name: Check out the workflow revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: workflow
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+
+      - name: Admit the dispatch and select the source commit
+        id: select
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OHTIA_RELEASE_HASH: ${{ inputs.hash }}
+        run: python3 workflow/scripts/release_prepare.py select
+
+      - name: Check out the selected source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.select.outputs.commit }}
+          path: source
+          persist-credentials: false
+
+      - name: Reserve the root version on the selected commit
+        id: reserve
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OHTIA_RELEASE_COMMIT: ${{ steps.select.outputs.commit }}
+        run: python3 workflow/scripts/release_prepare.py reserve source
+
+  linux:
+    name: linux (${{ matrix.target }})
+    needs: reserve
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            runner: ubuntu-26.04
+          - target: linux-arm64
+            runner: ubuntu-26.04-arm
+    steps:
+      - name: Check out the selected source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.reserve.outputs.commit }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+
+      - name: Install the RPM construction tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y rpm
+
+      - name: Set up and build the frozen workspace
+        run: |
+          python3 scripts/workspace.py setup
+          python3 scripts/workspace.py run build
+
+      - name: Build the unsigned release packages
+        env:
+          OHTIA_RELEASE_TARGET: ${{ matrix.target }}
+        run: python3 scripts/release_build.py "$OHTIA_RELEASE_TARGET" artifacts/release-output
+
+      - name: Retain the release packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/release-output/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  windows:
+    name: windows (${{ matrix.target }})
+    needs: reserve
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: win32-x64
+            runner: windows-2025
+          - target: win32-arm64
+            runner: windows-11-arm
+    steps:
+      - name: Check out the selected source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.reserve.outputs.commit }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+
+      - name: Set up and build the frozen workspace
+        run: |
+          python scripts/workspace.py setup
+          python scripts/workspace.py run build
+
+      - name: Build the unsigned release packages
+        env:
+          OHTIA_RELEASE_TARGET: ${{ matrix.target }}
+        run: python scripts/release_build.py "$OHTIA_RELEASE_TARGET" artifacts/release-output
+
+      - name: Retain the release packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/release-output/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  macos:
+    name: macos (${{ matrix.target }})
+    needs: reserve
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-26
+    steps:
+      - name: Check out the selected source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.reserve.outputs.commit }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+
+      - name: Set up and build the frozen workspace
+        run: |
+          python scripts/workspace.py setup
+          python scripts/workspace.py run build
+
+      - name: Build the unsigned release packages
+        env:
+          OHTIA_RELEASE_TARGET: ${{ matrix.target }}
+        run: python scripts/release_build.py "$OHTIA_RELEASE_TARGET" artifacts/release-output
+
+      - name: Retain the release packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/release-output/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  release:
+    name: Create the unpublished release
+    needs: [reserve, linux, windows, macos]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: write # Creates the unpublished release and uploads its assets.
+      id-token: write # Requests the OIDC token that signs the build attestations.
+      attestations: write # Stores the build attestations.
+    steps:
+      - name: Check out the workflow revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+
+      - name: Download this attempt's release packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/release-inputs
+          digest-mismatch: error
+
+      - name: Check the packages against the declared platforms
+        env:
+          OHTIA_RELEASE_COMMIT: ${{ needs.reserve.outputs.commit }}
+          OHTIA_RELEASE_TREE: ${{ needs.reserve.outputs.tree }}
+          OHTIA_RELEASE_VERSION: ${{ needs.reserve.outputs.version }}
+        run: python3 scripts/release_prepare.py assemble artifacts/release-inputs artifacts/release
+
+      - name: Attest every package
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: artifacts/release/assets/*
+
+      - name: Create the unpublished release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OHTIA_RELEASE_COMMIT: ${{ needs.reserve.outputs.commit }}
+          OHTIA_RELEASE_VERSION: ${{ needs.reserve.outputs.version }}
+        run: python3 scripts/release_prepare.py publish artifacts/release
