@@ -1,3 +1,5 @@
+import { startChatGPTRequest, type ResponseTransport } from "./chatgpt-requests.js";
+import type { InferenceRequests } from "./provider-requests.js";
 import { randomUUID } from "node:crypto";
 import {
   type ConnectionReason,
@@ -119,16 +121,16 @@ export class ChatGPTProvider implements ProviderAdapter {
     version: "1.0.0",
     signInModes: ["provider_login"] as const,
     capabilities: {
-      text: false,
+      text: true,
       attachments: false,
       structuredOutput: false,
-      streaming: false,
+      streaming: true,
       tools: false,
-      interruption: false,
+      interruption: true,
       resumption: false,
       modelSelection: true,
       effortSelection: false,
-      usageReporting: false,
+      usageReporting: true,
     },
     connection: {
       id: "chatgpt",
@@ -159,6 +161,7 @@ export class ChatGPTProvider implements ProviderAdapter {
     | undefined;
   private renewalEnabled = true;
   private network = new AbortController();
+  private readonly requestLifetime = new AbortController();
   private readonly listeners = new Set<
     (state: "connected" | "expired" | "error", reason: ConnectionReason | null) => void
   >();
@@ -169,6 +172,7 @@ export class ChatGPTProvider implements ProviderAdapter {
       readonly openBrowser: (url: string) => Promise<void>;
       readonly completedText: () => string;
       readonly request?: ProviderFetch;
+      readonly transport?: ResponseTransport;
       readonly diagnostic?: (event: DiagnosticEvent) => void;
     },
   ) {
@@ -574,6 +578,54 @@ export class ChatGPTProvider implements ProviderAdapter {
     });
     return this.renewal;
   }
+  private requestReadiness(): "ready" | "connection_expired" | "provider_unavailable" {
+    if (!this.current || this.invalidated || this.sessionReason) return "connection_expired";
+    return this.current.expires <= Date.now() || this.dirty ? "provider_unavailable" : "ready";
+  }
+  readonly requests: InferenceRequests = {
+    prepare: async () => {
+      const read = await this.credentials.read();
+      if (read.status === "unavailable") return "provider_unavailable";
+      if (read.status !== "stored" || this.sessionReason || !this.current)
+        return "connection_expired";
+      if (this.current.expires <= Date.now()) await this.renew();
+      return this.requestReadiness();
+    },
+    start: (request, context) => {
+      const connection = this.network.signal;
+      const connectionEnded = () => connection.aborted;
+      return startChatGPTRequest(
+        request,
+        { ...context, signal: AbortSignal.any([context.signal, this.requestLifetime.signal]) },
+        {
+          connectionSignal: connection,
+          token: () =>
+            connectionEnded() ||
+            this.sessionReason ||
+            (this.current && this.current.expires <= Date.now())
+              ? undefined
+              : this.current?.access,
+          renew: () => (connectionEnded() ? Promise.resolve() : this.renew()),
+          outputRejected: (reason) =>
+            this.options.diagnostic?.({
+              event_name: "ohtia.provider.output_rejected",
+              error_code: reason,
+            }),
+          rejectPermission: () =>
+            this.serial(async () => {
+              if (connectionEnded() || !this.current) return;
+              this.sessionReason = "sign_in_rejected";
+              const saved = await this.options.store.writeSession(this.keptSession(this.current));
+              if (connectionEnded()) return;
+              this.dirty = saved.status !== "stored";
+              this.emit("error", this.dirty ? "store_unavailable" : "sign_in_rejected");
+            }),
+          ...(this.options.transport ? { transport: this.options.transport } : {}),
+        },
+      );
+    },
+    resume: () => "unsupported",
+  };
   async probe(_session: StoredSession, signal: AbortSignal): Promise<readonly ProviderModel[]> {
     if (this.current && this.current.expires <= Date.now()) await this.renew();
     const value = this.current;
@@ -604,6 +656,7 @@ export class ChatGPTProvider implements ProviderAdapter {
     this.disposed = true;
     this.generation++;
     this.network.abort();
+    this.requestLifetime.abort();
     clearTimeout(this.timer);
     this.listeners.clear();
   }

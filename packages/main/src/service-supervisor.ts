@@ -1,7 +1,12 @@
+import { ProviderRequests } from "./provider-requests.js";
+import type { ProviderAdapter } from "./provider-adapter.js";
 import type { ConnectionManager } from "./connection-manager.js";
 import { RequestBudget } from "./port-admission.js";
 import { randomUUID } from "node:crypto";
 import {
+  decodeProviderMessage,
+  type DevelopmentAction,
+  type DevelopmentMessage,
   decodeText,
   decodeEnvelope,
   decodeLocaleSnapshot,
@@ -54,6 +59,55 @@ function sameRequest(a: Request, b: Extract<Envelope, { kind: "result" }>): bool
 }
 /** One child, one generation. A signal never releases accepted capacity; an exit receipt does. */
 export class ServiceSupervisor {
+  private providers: ProviderRequests | undefined;
+  private developmentObserver: ((message: DevelopmentMessage) => void) | undefined;
+  attachProviders(manager: ConnectionManager, adapters: readonly ProviderAdapter[]): void {
+    if (this.providers) throw new Error("Provider owner already attached.");
+    this.providers = new ProviderRequests(
+      this.generation,
+      manager,
+      adapters,
+      (text) => {
+        try {
+          this.child.send(text);
+        } catch {
+          this.fault();
+        }
+      },
+      Date.now,
+      this.diagnostic,
+    );
+  }
+  invalidateProviderPermits(): void {
+    this.providers?.invalidatePermits();
+  }
+  observeDevelopment(listener: (message: DevelopmentMessage) => void): void {
+    this.developmentObserver = listener;
+  }
+  development(command: DevelopmentAction, operation_id: string): boolean {
+    if (!this.available || !this.developmentObserver) return false;
+    const text = JSON.stringify({
+      version: 1,
+      generation: this.generation,
+      kind: "development_command",
+      operation_id,
+      command,
+    });
+    if (!decodeProviderMessage(text)) return false;
+    try {
+      this.diagnostic?.({
+        event_name:
+          command.action === "request"
+            ? "ohtia.development.requested"
+            : "ohtia.development.interrupted",
+      });
+      this.child.send(text);
+      return true;
+    } catch {
+      this.fault();
+      return false;
+    }
+  }
   private readonly pending = new Map<string, Work>();
   private readonly correlations = new WeakMap<Work, string>();
   private readonly streams = new Map<string, Work>();
@@ -320,6 +374,23 @@ export class ServiceSupervisor {
   }
   private receive(input: unknown): void {
     if (this.stopped || this.faulted) return;
+    const provider = decodeProviderMessage(input);
+    if (provider) {
+      if (provider.generation !== this.generation) return;
+      if (!this.ready) {
+        this.fault();
+        return;
+      }
+      if (provider.kind === "provider_dispatch" || provider.kind === "provider_interrupt") {
+        if (!this.providers?.receive(input)) this.fault();
+      } else if (
+        (provider.kind === "development_result" || provider.kind === "development_event") &&
+        this.developmentObserver
+      )
+        this.developmentObserver(provider);
+      else this.fault();
+      return;
+    }
     // Private lifecycle acknowledgements are fixed-size and never forwarded to a renderer.
     if (
       typeof input === "string" &&
@@ -554,6 +625,7 @@ export class ServiceSupervisor {
   }
   private fault(): void {
     if (this.faulted || this.stopped) return;
+    this.providers?.end();
     this.faulted = true;
     this.ready = false;
     clearTimeout(this.startup);
@@ -566,6 +638,7 @@ export class ServiceSupervisor {
   }
   private didExit(): void {
     if (this.stopped) return;
+    this.providers?.end();
     this.stopped = true;
     this.ready = false;
     clearTimeout(this.startup);
@@ -606,6 +679,7 @@ export class ServiceSupervisor {
     if (this.stopped) return Promise.resolve(true);
     if (this.stopping) return this.stopping;
     this.ready = false;
+    this.providers?.end();
     this.faulted = true;
     this.requestedStop = true;
     clearTimeout(this.startup);

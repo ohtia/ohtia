@@ -5,6 +5,7 @@ import type { ProviderAdapter, SignInResult } from "./provider-adapter.js";
 export function createFakeProvider(
   options: {
     readonly models?: readonly ProviderModel[];
+    readonly requestOutcome?: "completed" | "refused" | "content_filtered";
     readonly connect?: (signal: AbortSignal) => Promise<SignInResult>;
     readonly probe?: (signal: AbortSignal) => Promise<readonly ProviderModel[]>;
     readonly credentials?: ProviderAdapter["credentials"];
@@ -49,6 +50,44 @@ export function createFakeProvider(
           state: "connected",
           session: { credential: "synthetic-session", reason: null },
         })),
+    requests: {
+      prepare: () => Promise.resolve(session ? "ready" : "connection_expired"),
+      start: (_request, context) => {
+        const abort = new AbortController();
+        let finished = false;
+        const done = Promise.resolve().then(() => {
+          if (context.signal.aborted || abort.signal.aborted)
+            context.emit({ kind: "final", result: { outcome: "cancelled", dispatched: false } });
+          else {
+            const reason = context.authorizeBody();
+            if (reason)
+              context.emit({
+                kind: "final",
+                result: { outcome: "failed", dispatched: false, reason },
+              });
+            else {
+              context.emit({ kind: "started" });
+              const outcome = options.requestOutcome ?? "completed";
+              context.emit(
+                outcome === "completed"
+                  ? { kind: "text", text: "Synthetic reply." }
+                  : { kind: "refusal", text: "Synthetic refusal." },
+              );
+              context.emit({ kind: "final", result: { outcome, dispatched: true } });
+            }
+          }
+          finished = true;
+        });
+        return {
+          done,
+          interrupt: () => {
+            abort.abort();
+          },
+          inspect: () => (finished ? "finished" : "running"),
+        };
+      },
+      resume: () => "unsupported",
+    },
     probe: (_session, signal) =>
       options.probe?.(signal) ??
       Promise.resolve(options.models ?? [{ id: "fake-model", name: "Fake model" }]),

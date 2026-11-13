@@ -39,7 +39,7 @@ okf_version: "0.2"
 - [Scaleway configuration](scaleway-configuration.md) — Place deployment metadata and workflow credentials consistently for ARM qualification.
 - [Scaleway qualification access preflight](scaleway-access.md) — Check protected GitHub Actions read access and ARM image compatibility without creating cloud resources or claiming native qualification.
 - [Ephemeral ARM installation qualification](scaleway-qualification.md) — Define protected authority, bounded diagnostics and recovery for unsigned native ARM qualification on ephemeral Scaleway leases.
-- [Isolated desktop runtime](desktop-runtime.md) — Admit native runtime contexts, manage the window lifecycle and verify supervised status and fixed-home bootstrap boundaries.
+- [Isolated desktop runtime](desktop-runtime.md) — Admit native runtime contexts, run isolated development requests and verify supervised storage and window lifecycles.
 - [Durable foundation storage](storage.md) — Open the isolated local store, persist preferences and research records, and verify packaged migrations and recovery.
 - [Desktop foundation contract](desktop-foundation-contract.md) — Native target and distribution qualification inputs, pinned candidate metadata, numeric resource policy and evidence ownership for the desktop foundation.
 - [Bounded foundation application port](application-port.md) — Versioned preference and provider-connection messages, named presentation commands, controlled outcomes and deterministic conformance for the desktop application boundary.

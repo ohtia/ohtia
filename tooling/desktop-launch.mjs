@@ -222,11 +222,11 @@ export async function waitForDesktop(child, directory, platform = process.platfo
   }
 }
 
-export async function launchDevelopment(directory, preparedDirectory) {
+export async function launchDevelopment(directory, preparedDirectory, args = []) {
   const scratch = shortTemporaryDirectory("ohtia-dev-");
   try {
     const launch = developmentLaunch(directory, preparedDirectory, scratch);
-    const child = spawn(launch.executable, [launch.app, ...launch.args], {
+    const child = spawn(launch.executable, [launch.app, ...launch.args, ...args], {
       env: launch.env,
       cwd: scratch,
       detached: process.platform !== "win32",

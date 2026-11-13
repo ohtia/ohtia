@@ -25,6 +25,7 @@ import {
   dialog,
   ipcMain,
   protocol,
+  powerMonitor,
   session,
   utilityProcess,
   type IpcMainEvent,
@@ -151,6 +152,7 @@ try {
     process.argv.slice(1),
     process.execArgv,
     process.env.OHTIA_RUNTIME_ACCEPTANCE === "1",
+    context.mode,
   );
   verifyStableSentinels(context);
 } catch {
@@ -191,6 +193,9 @@ const windows = new Map<
 >();
 let service: ServiceSupervisor | undefined;
 let connections: ConnectionBroker | undefined;
+let providerAdapters: readonly import("./provider-adapter.js").ProviderAdapter[] = [];
+let developmentCommand: import("./development-command.js").DevelopmentCommand | undefined;
+const earlyDevelopmentCommands: string[][] = [];
 let credentials: Awaited<ReturnType<typeof nativeCredentialStore>> | undefined;
 let pendingWindows = 0;
 // ADR-0047: Linux windows also receive the desktop portal's reduced-motion setting.
@@ -629,6 +634,7 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
       if (state === "ready") {
         void diagnostics?.append({ event_name: "ohtia.service.ready" });
         if (connections && service) service.reportConnections(connections.manager);
+        if (service) developmentCommand?.attach(service);
       } else if (!requestedStop && !failureReported) {
         failureReported = true;
         void diagnostics?.append({
@@ -716,6 +722,7 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
               state.boundsSaved = false;
             }
           bootstrapState = "storage_ready";
+          developmentCommand?.attach(active);
           updateWindowThemes();
           void windowPreferences.reconcilePending();
           for (const existing of windows.keys())
@@ -742,6 +749,8 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
     },
     requestBudget,
   );
+  if (connections) service.attachProviders(connections.manager, providerAdapters);
+  if (context.mode === "development") developmentCommand?.attach(service);
 }
 let desktopSession: Electron.Session;
 const ownsBroker = app.requestSingleInstanceLock();
@@ -749,7 +758,16 @@ if (!ownsBroker) {
   app.exit(0);
   throw new Error("The existing broker owns this native context.");
 }
-app.on("second-instance", () => {
+app.on("second-instance", (_event, argv) => {
+  try {
+    // Initial admission checks user overrides; Chromium appends internal flags before forwarding.
+    const switches = argv.filter((arg) => arg.startsWith("--ohtia-dev-"));
+    if (developmentCommand) developmentCommand.run(switches);
+    else if (context.mode === "development" && earlyDevelopmentCommands.length < 20)
+      earlyDevelopmentCommands.push(switches);
+  } catch {
+    return;
+  }
   const window = BrowserWindow.getAllWindows()[0];
   if (window) presentWindow(window, true);
 });
@@ -787,6 +805,31 @@ async function start(): Promise<void> {
     new ConnectionManager(adapters, connectionDiagnostic),
     connectionDiagnostic,
   );
+  providerAdapters = adapters;
+  if (
+    typeof __OHTIA_DEVELOPMENT_BUILD__ !== "undefined" &&
+    __OHTIA_DEVELOPMENT_BUILD__ &&
+    context.mode === "development"
+  ) {
+    const { DevelopmentCommand } = await import("./development-command.js");
+    developmentCommand = new DevelopmentCommand(
+      () => (bootstrapState === "storage_ready" ? service : undefined),
+      undefined,
+      async () => {
+        if (!connections) return;
+        await connections.manager.read("chatgpt");
+        if (service?.available) service.reportConnections(connections.manager);
+      },
+    );
+    developmentCommand.run(process.argv.slice(1));
+    for (const argv of earlyDevelopmentCommands.splice(0)) developmentCommand.run(argv);
+  }
+  powerMonitor.on("suspend", () => {
+    service?.invalidateProviderPermits();
+  });
+  powerMonitor.on("resume", () => {
+    service?.invalidateProviderPermits();
+  });
   const manager = connections.manager;
   // Native unlock prompts must not delay the local research workspace or its startup deadline.
   void Promise.all(manager.ids().map((id) => manager.read(id))).catch(() => {

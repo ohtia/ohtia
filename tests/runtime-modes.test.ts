@@ -436,7 +436,9 @@ describe("workspace entries", () => {
   it.each([["dev"], ["preview"]])("refuses arguments to %s", (name) => {
     const result = command(name, "/some/runtime-profile.json");
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("without arguments");
+    expect(result.stderr).toContain(
+      name === "dev" ? "development command switches only" : "without arguments",
+    );
   });
   it("exposes the qualification launch through a package script", () => {
     const manifest = JSON.parse(fs.readFileSync("package.json", "utf8")) as {

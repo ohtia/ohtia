@@ -1,3 +1,4 @@
+import { refuseDevelopmentCommand } from "./quality-startup-refusal.mjs";
 // Open the ordinary installed and development modes, which run without a qualification profile.
 import fs from "node:fs";
 import path from "node:path";
@@ -216,6 +217,16 @@ async function installedJourney(scratch) {
     configurationRoot: profile.configuration_root,
     scratch,
   });
+  // Execute the packaged startup admission itself, before any single-instance owner can hide it.
+  const beforeRefusal = inventory();
+  const refusal = await refuseDevelopmentCommand(
+    installedRuntime,
+    env,
+    scratch,
+    message("en-US", "title"),
+  );
+  expect(inventory()).toEqual(beforeRefusal);
+  record("installed-refuses-development-command", refusal);
   await retain("before");
   let { application, page } = await start(installedRuntime, env);
   await recordReadyNativeProcesses(application, output);

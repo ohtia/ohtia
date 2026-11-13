@@ -6,7 +6,7 @@
 
 - [STORY-003-001 — Provider adapter contract and credential store](STORY-003-001-provider-adapter-contract-and-credential-store.md) - Define the shared provider adapter contract with its fake provider and conformance suite, the connection operations in main and the operating-system credential store.
 - [STORY-003-002 — Sign in with ChatGPT](STORY-003-002-sign-in-with-chatgpt.md) - Connect a ChatGPT subscription through Sign in with ChatGPT and show every connection state in Settings › Connections.
-- [STORY-003-003 — ChatGPT requests](STORY-003-003-chatgpt-requests.md) - Send bounded, streamed ChatGPT requests through the adapter contract with dispatch control and honest usage.
+- [STORY-003-003 — ChatGPT requests](STORY-003-003-chatgpt-requests.md) - Send bounded, streamed ChatGPT requests with dispatch control, classified refusals and honest usage.
 - [STORY-003-004 — Project and conversation records](STORY-003-004-project-and-conversation-records.md) - Store projects, conversations, messages and idempotent command receipts with their data-service operations.
 - [STORY-003-005 — Durable AI tasks](STORY-003-005-durable-ai-tasks.md) - Run accepted AI requests as durable tasks and attempts in a multitask queue with per-conversation ordering and coalescing.
 - [STORY-003-006 — Blocked work and plan-limit pause](STORY-003-006-blocked-work-and-plan-limit-pause.md) - Block work while ChatGPT is unavailable or its plan is exhausted, and resume it in order.

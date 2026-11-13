@@ -22,10 +22,14 @@ export async function buildDesktop(root, { development = false } = {}) {
         {
           name: "admit-development-provider",
           resolveId(source) {
+            if (!development && source === "./development-command.js")
+              return "\0ohtia-no-development-command";
             if (!development && source === "./fake-provider.js")
               return "\0ohtia-no-development-provider";
           },
           load(id) {
+            if (id === "\0ohtia-no-development-command")
+              return "export class DevelopmentCommand {}";
             if (id === "\0ohtia-no-development-provider")
               return "export const createFakeProvider = () => undefined; export const credentialAcceptance = () => undefined;";
           },

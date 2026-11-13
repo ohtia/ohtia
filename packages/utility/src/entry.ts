@@ -1,3 +1,4 @@
+import { ServiceRequests } from "./provider-requests.js";
 import { initializeStorage } from "./storage-lifecycle.js";
 import fs from "node:fs";
 import os from "node:os";
@@ -217,6 +218,9 @@ async function start(): Promise<void> {
       process.exit(1);
     },
   );
+  const requests = new ServiceRequests(generation, selected.mode, service.connections, (text) => {
+    parent.postMessage(text);
+  });
   let stopping = false;
   const isStopping = () => stopping;
   let initialization: Promise<void> = Promise.resolve();
@@ -225,6 +229,7 @@ async function start(): Promise<void> {
       if (event.data === JSON.stringify({ kind: "shutdown", generation })) {
         if (isStopping()) return;
         stopping = true;
+        requests.dispose();
         service.dispose();
         void initialization
           .then(async () => {
@@ -255,7 +260,7 @@ async function start(): Promise<void> {
           }
         }
       }
-      service.receive(event.data);
+      if (!requests.receive(event.data)) service.receive(event.data);
     } catch {
       service.dispose();
       process.exit(1);

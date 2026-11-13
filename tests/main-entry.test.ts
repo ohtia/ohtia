@@ -12,6 +12,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.doUnmock("electron");
   vi.doUnmock("../packages/main/src/native-credentials.js");
+  vi.doUnmock("../packages/main/src/development-command.js");
   vi.doUnmock("node:fs");
   vi.doUnmock("../packages/main/src/profile.js");
   vi.doUnmock("../packages/main/src/locator.js");
@@ -40,6 +41,7 @@ async function launch(
     mode?: "qualification" | "development" | "installed";
     developmentBuild?: boolean;
     credentialReadPending?: boolean;
+    developmentCommands?: string[][];
     researchRootRefused?: boolean;
     nodeOptions?: string;
     platform?: NodeJS.Platform;
@@ -47,6 +49,15 @@ async function launch(
 ) {
   vi.resetModules();
   vi.stubGlobal("__OHTIA_DEVELOPMENT_BUILD__", options.developmentBuild ?? false);
+  if (options.developmentCommands)
+    vi.doMock("../packages/main/src/development-command.js", () => ({
+      DevelopmentCommand: class {
+        run(argv: readonly string[]) {
+          options.developmentCommands!.push([...argv]);
+        }
+        attach() {}
+      },
+    }));
   vi.doMock("../packages/main/src/native-credentials.js", () => ({
     nativeCredentialStore: () =>
       Promise.resolve({
@@ -252,6 +263,10 @@ async function launch(
   };
   const supervisors: Supervisor[] = [];
   class Supervisor {
+    attachProviders = vi.fn();
+    invalidateProviderPermits = vi.fn();
+    observeDevelopment = vi.fn();
+    development = vi.fn(() => true);
     available = true;
     ceased = false;
     dispatch = vi.fn();
@@ -307,9 +322,11 @@ async function launch(
     return state.recover;
   });
   const publish = vi.fn(async () => state.publish);
+  const powerMonitor = new EventEmitter();
   vi.doMock("electron", () => ({
     app,
     nativeTheme,
+    powerMonitor,
     screen: {
       getAllDisplays: () => [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }],
       getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }),
@@ -487,6 +504,7 @@ async function launch(
     action,
     command,
     recoverService,
+    powerMonitor,
     motion,
   };
 }
@@ -815,7 +833,7 @@ describe("broker composition with synthetic Electron adapters", () => {
   it("limits windows and defers second-instance activation until the native frame is ready", async () => {
     const h = await launch();
     h.window.minimized = true;
-    h.app.emit("second-instance");
+    h.app.emit("second-instance", {}, ["/synthetic-app"]);
     expect(h.window.restore).not.toHaveBeenCalled();
     h.window.emit("ready-to-show");
     expect(h.window.restore).toHaveBeenCalledOnce();
@@ -827,7 +845,7 @@ describe("broker composition with synthetic Electron adapters", () => {
       window.destroyed = true;
       window.emit("closed");
     }
-    h.app.emit("second-instance");
+    h.app.emit("second-instance", {}, ["/synthetic-app"]);
     await vi.advanceTimersByTimeAsync(0);
     expect(h.dialog.showErrorBox).not.toHaveBeenCalled();
     h.app.emit("window-all-closed");
@@ -1340,7 +1358,7 @@ it("keeps restored maximized windows hidden until ready, including New window", 
   );
   peer.storageChanged({ generation: peer.generation, state: "storage_ready" });
   for (let i = 0; i < 16; i++) await Promise.resolve();
-  h.app.emit("second-instance");
+  h.app.emit("second-instance", {}, ["/synthetic-app"]);
   expect(h.window.visible).toBe(false);
   expect(h.window.maximize).not.toHaveBeenCalled();
   expect(h.window.focus).not.toHaveBeenCalled();
@@ -1419,7 +1437,7 @@ it("does not publish workspace readiness when the admitted writer dies during pr
 it("permits Wayland reveal after admitted local load without requiring a hidden first frame", async () => {
   const h = await launch({ kdeWayland: true, loadPending: true });
   expect(h.window.show).not.toHaveBeenCalled();
-  h.app.emit("second-instance");
+  h.app.emit("second-instance", {}, ["/synthetic-app"]);
   expect(h.window.focus).not.toHaveBeenCalled();
   h.window.completeLoad();
   for (let i = 0; i < 6; i++) await Promise.resolve();
@@ -1621,7 +1639,7 @@ it.each([false, true])(
   async (rejectZoomPolicy) => {
     const h = await launch({ requireLiveZoomFrame: true, deferZoomPolicy: true, rejectZoomPolicy });
     h.window.minimized = true;
-    h.app.emit("second-instance");
+    h.app.emit("second-instance", {}, ["/synthetic-app"]);
     h.window.emit("ready-to-show");
     expect(h.window.restore).not.toHaveBeenCalled();
     expect(h.window.show).not.toHaveBeenCalled();
@@ -1657,7 +1675,7 @@ it.each(["throwing", "ineffective"] as const)(
       zoom: { schemaVersion: 1, revision: 1, value: 125, source: "saved" },
     });
     h.window.minimized = true;
-    h.app.emit("second-instance");
+    h.app.emit("second-instance", {}, ["/synthetic-app"]);
     h.window.emit("ready-to-show");
     h.acknowledgeZoom();
     await vi.advanceTimersByTimeAsync(0);
@@ -1879,4 +1897,70 @@ it("opens the local workspace while a native credential unlock is still pending"
   expect(h.failure).toBeUndefined();
   expect(h.window).toBeDefined();
   expect(h.window.webContents.mainFrame).toBeDefined();
+});
+
+it("forwards the closed development switches when Chromium appends native second-instance arguments", async () => {
+  const commands: string[][] = [];
+  const h = await launch({
+    mode: "development",
+    developmentBuild: true,
+    developmentCommands: commands,
+  });
+  h.app.emit("second-instance", {}, [
+    "/electron",
+    "/application",
+    "--original-process-start-time=123",
+    "--disable-features=WaylandWpColorManagerV1",
+    "--ohtia-dev-command=request",
+    "--ohtia-dev-model=gpt-6.1-sol",
+  ]);
+  expect(commands.at(-1)).toEqual(["--ohtia-dev-command=request", "--ohtia-dev-model=gpt-6.1-sol"]);
+});
+
+it("holds development inference until explicit local-data opening and suspends dispatch if storage becomes unavailable", async () => {
+  const h = await launch({ mode: "development", developmentBuild: true });
+  const argv = [
+    "/electron",
+    "/application",
+    "--ohtia-dev-command=request",
+    "--ohtia-dev-model=gpt-6.1-sol",
+  ];
+  h.app.emit("second-instance", {}, argv);
+  h.supervisors[0].stateChanged("ready");
+  await vi.advanceTimersByTimeAsync(0);
+  expect(h.supervisors[0].development).not.toHaveBeenCalled();
+  expect((await h.action("read")).state).toBe("pending_create");
+  await h.action("open_storage");
+  const active = h.supervisors.at(-1)!;
+  active.storageChanged({ generation: active.generation, state: "storage_ready" });
+  await vi.advanceTimersByTimeAsync(0);
+  expect((await h.action("read")).state).toBe("storage_ready");
+  expect(active.development).toHaveBeenCalledOnce();
+  expect(active.development.mock.calls[0]?.[0]).toEqual({
+    action: "request",
+    model: "gpt-6.1-sol",
+  });
+  active.storageChanged({ generation: active.generation, state: "retry_required" });
+  h.app.emit("second-instance", {}, argv);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(active.development).toHaveBeenCalledOnce();
+});
+
+it("invalidates permits on both power events and attaches providers to each replacement supervisor", async () => {
+  const h = await launch();
+  const first = h.supervisors[0]!;
+  expect(first.attachProviders).toHaveBeenCalledOnce();
+  const providers = first.attachProviders.mock.calls[0]!;
+  h.powerMonitor.emit("suspend");
+  h.powerMonitor.emit("resume");
+  expect(first.invalidateProviderPermits).toHaveBeenCalledTimes(2);
+  await h.action("open_storage");
+  const replacement = h.supervisors.at(-1)!;
+  expect(replacement).not.toBe(first);
+  expect(replacement.attachProviders).toHaveBeenCalledOnce();
+  expect(replacement.attachProviders.mock.calls[0]).toEqual(providers);
+  h.powerMonitor.emit("suspend");
+  h.powerMonitor.emit("resume");
+  expect(replacement.invalidateProviderPermits).toHaveBeenCalledTimes(2);
+  expect(first.invalidateProviderPermits).toHaveBeenCalledTimes(2);
 });

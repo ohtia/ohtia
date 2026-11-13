@@ -1,3 +1,4 @@
+import type { InferenceRequests } from "./provider-requests.js";
 import type { ProviderDeclaration, ProviderModel, ConnectionReason } from "@ohtia/contracts";
 import type { CredentialStore, StoredSession, CredentialWrite } from "./credential-store.js";
 export type SignInResult = {
@@ -17,6 +18,7 @@ export type SignInResult = {
 /** The adapter remains inside main. Neither sessions nor store access belong on the application port. */
 export interface ProviderAdapter {
   readonly declaration: ProviderDeclaration;
+  readonly requests?: InferenceRequests;
   /** Delegate to one CredentialStore serialization boundary; no adapter-owned persistence fallback. */
   readonly credentials: {
     read(): ReturnType<CredentialStore["readSession"]>;

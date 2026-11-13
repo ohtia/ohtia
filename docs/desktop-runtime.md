@@ -1,7 +1,11 @@
 ---
 type: Playbook
 title: Isolated desktop runtime
-description: Admit native runtime contexts, manage the window lifecycle and verify supervised status and fixed-home bootstrap boundaries.
+description: Admit native runtime contexts, run isolated development requests and verify supervised storage and window lifecycles.
+generated:
+  by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # Isolated desktop runtime
@@ -32,7 +36,7 @@ Renderer preference mutations remain unavailable until the broker publishes `sto
 
 [ADR-0043](adr/adr-0043-ordinary-startup-modes.md) selects one mode, independently in main and utility:
 
-- **`development`:** `python3 scripts/workspace.py run dev`, from your ordinary account and graphical session. It takes no arguments.
+- **`development`:** `python3 scripts/workspace.py run dev`, from your ordinary account and graphical session. It takes no arguments except the development command switches `--ohtia-dev-command=<action>` and `--ohtia-dev-<argument>=<value>`, which main admits only in this mode; while a window from the checkout is open, they reach that instance.
 - **`installed`:** an installed package opened normally. It needs no profile.
 - **`qualification`:** the procedures below, with an independent profile.
 
@@ -44,6 +48,17 @@ python3 scripts/workspace.py run dev
 ```
 
 `dev` builds the workspace, replaces `.ohtia-dev/runtime` and opens the application. State persists in `.ohtia-dev/configuration` and `.ohtia-dev/research`, and deleting `.ohtia-dev/` is the reset. There is no automatic reload, so run `dev` again after a change. While a window from the checkout is open, `dev` attaches to it and keeps its runtime, so close the window before running `dev` to see a change. Wait for the window before running `dev` again, because two builds in one checkout overwrite each other's output. Other checkouts and an installed application run alongside with separate state. A checkout inside `<home>/ohtia` is refused. Electron's output reaches the terminal, and a failure prints its exit code and diagnostics location.
+
+Open local data in the development window and connect ChatGPT in this checkout's Settings before using the development command to exercise the credential-free request route and the selected model. Commands received before local storage is ready wait for that explicit opening:
+
+```bash
+python3 scripts/workspace.py run dev --ohtia-dev-command=request --ohtia-dev-model=<slug>
+python3 scripts/workspace.py run dev --ohtia-dev-command=interrupt --ohtia-dev-attempt=<id>
+```
+
+The request uses the fixed thesis-structure question and [SPEC-003-008's versioned development instructions and bounds](epics/EPIC-003-research-agents/epic.md#spec-003-008-chatgpt-requests). The running instance's terminal prints JSON records with operation and attempt identifiers, sequenced text, separately classified refusal text, usage and final outcome. Final events include the references-only transfer manifest, elapsed duration and longest observed silence. These records are explicit development output, separate from managed diagnostics. The data service retains bounded in-memory development attempts until it exits; no research project or durable task is created. The provider result distinguishes `refused` from `content_filtered` using the structured terminal signals defined in SPEC-003-008, retaining explanations under the same output bound as ordinary text. Unknown usage remains unknown (PRIN-006 and PRIN-016). Interrupt closes the local response and reports cancellation without asserting that provider billing stopped. Requests are never retried automatically.
+
+The checkout uses its own admitted data root and credential namespace under [ADR-0048](adr/adr-0048-provider-access-routes-and-credential-store.md). Installed and qualification launches refuse these switches. The build and final-package inspection reject the development-command module in shipped artifacts.
 
 `dev` does not require a qualified desktop. On Ubuntu, the Chromium sandbox needs one administrator-reviewed allowance, printed by `python3 scripts/linux_contributor.py sandbox-policy --development`. It stays valid across rebuilds, until the Electron pin or the checkout path changes.
 

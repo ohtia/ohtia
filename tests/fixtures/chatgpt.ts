@@ -1,3 +1,4 @@
+import type { ResponseTransport } from "../../packages/main/src/chatgpt-requests.js";
 import { generateKeyPairSync, sign } from "node:crypto";
 import { vi, expect } from "vitest";
 import { ChatGPTProvider } from "../../packages/main/src/chatgpt-provider.js";
@@ -10,6 +11,7 @@ import { ConnectionManager } from "../../packages/main/src/connection-manager.js
 const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 export function fakeChatGPT(
   options: {
+    transport?: ResponseTransport;
     platform?: string;
     service?: string;
     userData?: string;
@@ -128,6 +130,7 @@ export function fakeChatGPT(
     request,
     openBrowser: browser,
     completedText: () => "You can close this tab and return to Ohtia.",
+    ...(options.transport ? { transport: options.transport } : {}),
   });
   const diagnostics: unknown[] = [];
   const manager = new ConnectionManager([adapter], (event) => {

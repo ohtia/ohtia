@@ -34,6 +34,8 @@
     "tests/presentation-broker.test.ts",
     "tests/primitives.test.ts",
     "tests/provider-artifact.test.ts",
+    "tests/provider-requests.test.ts",
+    "tests/provider-transport.test.ts",
     "tests/quality-gates.test.ts",
     "tests/renderer.test.ts",
     "tests/research-presentation.test.ts",

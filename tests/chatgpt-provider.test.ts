@@ -32,7 +32,7 @@ afterEach(() => {
 });
 
 providerConformance("ChatGPT", (options = {}) => {
-  const f = fixture();
+  const f = fixture(options.transport ? { transport: options.transport } : undefined);
   const open = f.browser.getMockImplementation()!;
   f.browser.mockImplementation(async (url) => {
     await open(url);

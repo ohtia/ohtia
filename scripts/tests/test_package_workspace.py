@@ -48,6 +48,22 @@ class PackageArchiveTests(unittest.TestCase):
         self.addCleanup(replacement.stop)
         self.archive = self.root / "artifacts/workspace-libraries.zip"
 
+    def test_development_command_outputs_are_excluded(self):
+        for name in ("fake-provider.js", "development-command.js", "development-command.d.ts"):
+            (self.root / "packages/contracts/dist" / name).write_text(
+                "export {};\n", encoding="utf-8"
+            )
+        destination = self.root / "libraries.zip"
+        with patch.object(package_workspace, "ROOT", self.root):
+            package_workspace.write_archive(destination)
+        with zipfile.ZipFile(destination) as archive:
+            self.assertFalse(
+                any(
+                    "development-command" in name or "fake-provider" in name
+                    for name in archive.namelist()
+                )
+            )
+
     def test_undeclared_package_outputs_are_excluded(self):
         package_workspace.main()
         with zipfile.ZipFile(self.archive) as archive:

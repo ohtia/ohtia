@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import {
+  parseDevelopmentSwitches,
   admitDevelopmentRoot,
   admitRuntimeProfile,
   portLimits,
@@ -109,9 +110,23 @@ export function admitRuntimeSwitches(
   argv: readonly string[],
   execArgv: readonly string[],
   instrumented: boolean,
+  mode: RuntimeContext["mode"] = "installed",
 ): void {
+  if (mode === "development") parseDevelopmentSwitches(argv);
   const allowed = new Set(instrumented ? ["--inspect=0", "--remote-debugging-port=0"] : []);
-  if ([...argv, ...execArgv].some((arg) => arg.startsWith("-") && !allowed.has(arg)))
+  if (
+    [...argv, ...execArgv].some(
+      (arg) =>
+        arg.startsWith("-") &&
+        !allowed.has(arg) &&
+        !(
+          mode === "development" &&
+          argv.includes(arg) &&
+          !execArgv.includes(arg) &&
+          arg.startsWith("--ohtia-dev-")
+        ),
+    )
+  )
     throw new Error("Runtime command-line overrides are not admitted.");
 }
 

@@ -23,7 +23,7 @@ The conventions for this register are defined in [Architecture decisions](../arc
 
 - [ADR-0011 — Persisted local task intent with bounded execution](adr-0011-bounded-durable-local-tasks.md) — Define durable task and attempt states, local scheduling limits, cancellation, application exit and recovery.
 - [ADR-0012 — Capabilities bound to one supervised attempt](adr-0012-attempt-bound-process-capabilities.md) — Bind worker effects to a random per-attempt capability and reject replay or stale scope through the trusted broker.
-- [ADR-0013 — Structured diagnostics without research content](adr-0013-private-content-free-structured-logging.md) — Define a versioned local JSONL diagnostic format mapped to OpenTelemetry, with privacy controls and bounded file retention.
+- [ADR-0013 — Structured diagnostics without research content](adr-0013-private-content-free-structured-logging.md) — Define a versioned local JSONL diagnostic format with controlled outcomes, OpenTelemetry mapping, privacy controls and bounded retention.
 - [ADR-0014 — Allowed document structures and restrictive CSP](adr-0014-restricted-rendering-and-csp.md) — Render untrusted content through the academic schema and enforce the packaged application content security policy.
 - [ADR-0015 — Restricted processes for untrusted content](adr-0015-isolated-content-processing.md) — Process imported content in disposable environments without database, credential or general filesystem authority.
 

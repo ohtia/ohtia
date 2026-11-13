@@ -17,6 +17,34 @@ import workspace
 
 
 class WorkspaceTests(unittest.TestCase):
+    def test_run_forwards_development_switches_without_an_extra_separator(self):
+        with (
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "workspace.py",
+                    "run",
+                    "dev",
+                    "--ohtia-dev-command=request",
+                    "--ohtia-dev-model=gpt-6.1-sol",
+                ],
+            ),
+            patch.object(workspace, "diagnose"),
+            patch.object(workspace, "diagnose_dependencies"),
+            patch.object(workspace, "pnpm") as pnpm,
+        ):
+            self.assertEqual(workspace.main(), 0)
+        pnpm.assert_called_once_with(
+            "run", "dev", "--ohtia-dev-command=request", "--ohtia-dev-model=gpt-6.1-sol"
+        )
+
+    def test_setup_refuses_command_switches_instead_of_ignoring_them(self):
+        with patch.object(sys, "argv", ["workspace.py", "setup", "--ohtia-dev-command=request"]):
+            with self.assertRaises(SystemExit) as raised:
+                workspace.main()
+        self.assertEqual(raised.exception.code, 2)
+
     def test_six_targets_and_aliases(self):
         for system, prefix in (("Linux", "linux"), ("Windows", "win32"), ("Darwin", "darwin")):
             for machine, arch in (

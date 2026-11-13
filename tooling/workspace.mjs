@@ -176,10 +176,11 @@ const commands = {
     node("vite/bin/vite.js", ["preview", "--config", "tooling/vite.catalog.mjs"]);
   },
   async dev() {
-    if (process.argv.length > 3)
-      throw new Error(
-        "Use dev without arguments. An inspected profile launch is desktop:launch <profile> <prepared>.",
-      );
+    const args = process.argv.slice(3);
+    if (args.some((arg) => !arg.startsWith("--ohtia-dev-")))
+      throw new Error("Use dev with development command switches only.");
+    // Compiled contracts may not exist in a fresh checkout; admission is repeated by main.
+
     // An open window keeps its runtime: this launch reaches it without replacing anything.
     const { developmentInstanceRunning } = await import("./development-instance.mjs");
     const attaching = developmentInstanceRunning(path.join(root, ".ohtia-dev"));
@@ -194,7 +195,7 @@ const commands = {
       fs.rmSync(runtime, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
       run(python, ["scripts/desktop_runtime.py", `${process.platform}-${process.arch}`, runtime]);
     }
-    await launchDevelopment(directory, runtime);
+    await launchDevelopment(directory, runtime, args);
   },
   async "desktop:launch"() {
     const [profile, prepared] = process.argv.slice(3);

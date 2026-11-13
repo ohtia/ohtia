@@ -30,7 +30,8 @@
       "node:url",
       "node:child_process",
       "node:net",
-      "node:http"
+      "node:http",
+      "node:https"
     ]
   },
   "utility": {
