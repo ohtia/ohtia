@@ -6,6 +6,7 @@ import copy
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -45,6 +46,7 @@ class FakeGitHub(policy.GitHub):
         self.fail_write = False
         self.discard_write = False
         self.writes = []
+        self.main_sha = "a" * 40
 
     def request(self, endpoint, method="GET", payload=None, allowed=(200,)):
         base = policy.REPO
@@ -53,6 +55,8 @@ class FakeGitHub(policy.GitHub):
                 raise policy.PolicyError("Simulated permission failure")
             if endpoint == base:
                 return 200, copy.deepcopy(self.repository)
+            if endpoint == f"{base}/branches/main":
+                return 200, {"name": "main", "commit": {"sha": self.main_sha}}
             if endpoint == "apps/github-actions":
                 return 200, {"id": self.app_id, "slug": "github-actions"}
             if endpoint == f"{base}/actions/workflows/ci.yml":
@@ -136,6 +140,14 @@ class FakeGitHub(policy.GitHub):
 class PolicyTests(unittest.TestCase):
     def setUp(self):
         self.github = FakeGitHub()
+        self.real_local_revision = policy.local_revision
+        revision = patch.object(
+            policy,
+            "local_revision",
+            return_value={"commit": "a" * 40, "branch": "main", "changed": False},
+        )
+        self.local_revision = revision.start()
+        self.addCleanup(revision.stop)
 
     def apply(self, stage):
         confirmation = policy.digest(policy.plan(self.github, CONFIG, stage))
@@ -283,10 +295,18 @@ class PolicyTests(unittest.TestCase):
 
     def test_non_object_api_response_is_read_error_not_drift(self):
         errors = io.StringIO()
+        output = io.StringIO()
+        main = f"{policy.REPO}/branches/main"
         with patch.object(policy, "GitHub", return_value=self.github):
-            with patch.object(self.github, "get", return_value=[]):
-                with patch.object(policy.sys, "stderr", errors):
+            with patch.object(self.github, "get") as get:
+                get.side_effect = lambda endpoint: (
+                    FakeGitHub.get(self.github, endpoint) if endpoint == main else []
+                )
+                with patch.object(policy.sys, "stderr", errors), redirect_stdout(output):
                     self.assertEqual(policy.main(["verify"]), 2)
+        self.assertIn(main, [call.args[0] for call in get.call_args_list])
+        self.assertIn(policy.REPO, [call.args[0] for call in get.call_args_list])
+        self.assertEqual(output.getvalue(), "Configuration: config/github/ at aaaaaaa (main)\n")
         self.assertNotIn("Traceback", errors.getvalue())
         self.assertEqual(self.github.writes, [])
 
@@ -490,9 +510,105 @@ class PolicyTests(unittest.TestCase):
                 self.github.repository["allow_squash_merge"] = True
                 self.assertEqual(policy.main(["verify", "--stage", "base"]), 1)
             self.github.fail_read = policy.REPO
-            with patch.object(policy.sys, "stderr", io.StringIO()):
+            with patch.object(policy.sys, "stderr", io.StringIO()), redirect_stdout(io.StringIO()):
                 self.assertEqual(policy.main(["verify"]), 2)
         self.assertEqual(self.github.writes, [])
+
+    def run_cli(self, *argv):
+        output = io.StringIO()
+        with patch.object(policy, "GitHub", return_value=self.github):
+            with redirect_stdout(output), patch.object(policy.sys, "stderr", io.StringIO()):
+                code = policy.main(list(argv))
+        return code, output.getvalue().splitlines()
+
+    def test_cli_names_the_compared_commit_before_any_result(self):
+        candidate = policy.plan(self.github, CONFIG, "tags")
+        for argv in (
+            ["verify"],
+            ["plan", "--stage", "tags"],
+            ["apply", "--stage", "tags", "--confirm", policy.digest(candidate)],
+        ):
+            code, lines = self.run_cli(*argv)
+            self.assertEqual(code, 0)
+            self.assertEqual(lines[0], "Configuration: config/github/ at aaaaaaa (main)")
+            self.assertFalse(any(line.startswith("Warning:") for line in lines))
+
+    def test_cli_warns_when_the_checkout_is_not_main_on_github(self):
+        self.local_revision.return_value = {
+            "commit": "b" * 40,
+            "branch": "chore/issue-1",
+            "changed": True,
+        }
+        code, lines = self.run_cli("verify")
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            lines[:2],
+            [
+                "Configuration: config/github/ at bbbbbbb (chore/issue-1) with uncommitted changes",
+                "Warning: main on GitHub is at aaaaaaa, not at this commit.",
+            ],
+        )
+        self.assertEqual(lines[2:], ["base: verified", "ruleset: verified", "tags: verified"])
+
+    def test_unknown_revisions_fail_before_any_write(self):
+        self.github.repository["allow_squash_merge"] = True
+        candidate = policy.plan(self.github, CONFIG, "base")
+        confirm = ["apply", "--stage", "base", "--confirm", policy.digest(candidate)]
+        self.local_revision.side_effect = policy.PolicyError("no commit")
+        for argv in (["verify"], confirm):
+            self.assertEqual(self.run_cli(*argv), (2, []))
+        self.local_revision.side_effect = None
+        for value in (None, {}, {"commit": {"sha": "A" * 40}}, {"commit": {"sha": "a" * 39}}):
+            with patch.object(self.github, "get", wraps=self.github.get) as get:
+                get.side_effect = lambda endpoint, value=value: (
+                    value
+                    if endpoint == f"{policy.REPO}/branches/main"
+                    else FakeGitHub.get(self.github, endpoint)
+                )
+                code, lines = self.run_cli(*confirm)
+            self.assertEqual(code, 2)
+            self.assertEqual(lines, ["Configuration: config/github/ at aaaaaaa (main)"])
+        self.assertEqual(self.github.writes, [])
+
+    def test_local_revision_reads_the_checkout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            isolated = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+            def git(*args):
+                subprocess.run(
+                    ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", *args],
+                    cwd=root,
+                    check=True,
+                    capture_output=True,
+                    env=isolated,
+                )
+
+            git("init", "--quiet", "--initial-branch=main")
+            (root / "config/github").mkdir(parents=True)
+            (root / "config/github/labels.json").write_text("[]\n", encoding="utf-8")
+            (root / "README.md").write_text("x\n", encoding="utf-8")
+            git("add", ".")
+            git("commit", "--quiet", "--no-gpg-sign", "-m", "initial")
+            commit = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                text=True,
+                env=isolated,
+            ).stdout.strip()
+            read = self.real_local_revision
+            self.assertEqual(read(root), {"commit": commit, "branch": "main", "changed": False})
+            (root / "README.md").write_text("y\n", encoding="utf-8")
+            self.assertFalse(read(root)["changed"])
+            (root / "config/github/new.json").write_text("{}\n", encoding="utf-8")
+            self.assertTrue(read(root)["changed"])
+            git("checkout", "--quiet", "--detach")
+            self.assertEqual(read(root)["branch"], "detached HEAD")
+            with self.assertRaisesRegex(policy.PolicyError, "Git commit"):
+                read(root / "missing")
 
     def test_pagination_keeps_every_label(self):
         github = policy.GitHub()

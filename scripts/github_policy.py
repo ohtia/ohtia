@@ -394,6 +394,50 @@ def plan(github: GitHub, config: dict, stage: str) -> dict:
     }
 
 
+def local_revision(root: Path = ROOT) -> dict:
+    """Identify the checkout whose config/github/ files are compared with GitHub."""
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        ).stdout.strip()
+
+    try:
+        commit = git("rev-parse", "--verify", "HEAD")
+        branch = git("branch", "--show-current") or "detached HEAD"
+        changed = bool(git("status", "--porcelain", "--untracked-files=all", "--", "config/github"))
+    except (OSError, subprocess.SubprocessError) as error:
+        raise PolicyError("Cannot identify the Git commit of config/github/") from error
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise PolicyError("Cannot identify the Git commit of config/github/")
+    return {"commit": commit, "branch": branch, "changed": changed}
+
+
+def main_commit(github: GitHub) -> str:
+    branch = github.get(f"{REPO}/branches/{EXPECTED_DEFAULT_BRANCH}")
+    commit = branch.get("commit") if isinstance(branch, dict) else None
+    sha = commit.get("sha") if isinstance(commit, dict) else None
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise PolicyError("Cannot read the main commit on GitHub")
+    return sha
+
+
+def describe_revision(github: GitHub) -> None:
+    local = local_revision()
+    line = f"Configuration: config/github/ at {local['commit'][:7]} ({local['branch']})"
+    if local["changed"]:
+        line += " with uncommitted changes"
+    print(line)
+    remote = main_commit(github)
+    if remote != local["commit"]:
+        print(f"Warning: main on GitHub is at {remote[:7]}, not at this commit.")
+
+
 def digest(value: dict) -> str:
     return hashlib.sha256(canonical(value).encode()).hexdigest()
 
@@ -454,6 +498,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         config = load_config(ROOT / "config/github")
         github = GitHub()
+        describe_revision(github)
         if args.command == "apply":
             apply(github, config, args.stage, args.confirm)
             return 0
