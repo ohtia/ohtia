@@ -56,6 +56,17 @@ const macDialog = String.raw`
 on run argv
   set ownerId to (item 1 of argv) as integer
   set expected to item 2 of argv
+  set nodeCount to 0
+  set staticCount to 0
+  set headingCount to 0
+  set roleErrors to 0
+  set valueErrors to 0
+  set valueReads to 0
+  set otherExact to 0
+  set containingExpected to 0
+  set roleErrorStatus to 0
+  set valueErrorStatus to 0
+  set defaultButtons to 0
   tell application "System Events"
     if not UI elements enabled then return "ui_scripting_unavailable"
     set owners to application processes whose unix id is ownerId
@@ -65,20 +76,49 @@ on run argv
       set frontmost to true
       if not frontmost then return "activation_pending"
       set stage to "window_absent_frontmost"
-      repeat with candidate in windows
+      repeat with candidateReference in windows
+        set candidate to contents of candidateReference
         set stage to "expected_text_absent"
         set matched to false
         set nameMatched to false
-        repeat with candidateElement in entire contents of candidate
+        repeat with elementReference in entire contents of candidate
+          set candidateElement to contents of elementReference
+          set nodeCount to nodeCount + 1
           try
-            if role of candidateElement is "AXStaticText" then
-              if (value of candidateElement as text) is expected then set matched to true
+            set candidateRole to role of candidateElement as text
+            if candidateRole is "AXStaticText" then set staticCount to staticCount + 1
+            if candidateRole is "AXHeading" then set headingCount to headingCount + 1
+            if candidateRole is "AXStaticText" or candidateRole is "AXHeading" or candidateRole is "AXTextArea" then
+              try
+                set candidateValue to value of candidateElement as text
+                set valueReads to valueReads + 1
+                if candidateValue contains expected then set containingExpected to containingExpected + 1
+                if candidateValue is expected then
+                  if candidateRole is "AXStaticText" then
+                    set matched to true
+                  else
+                    set otherExact to otherExact + 1
+                  end if
+                end if
+              on error number nativeStatus
+                set valueErrors to valueErrors + 1
+                if valueErrorStatus is 0 then set valueErrorStatus to nativeStatus
+              end try
             end if
-          end try
-          try
-            if role of candidateElement is "AXStaticText" and (name of candidateElement as text) is expected then set nameMatched to true
+            if candidateRole is "AXStaticText" then
+              try
+                if (name of candidateElement as text) is expected then set nameMatched to true
+              end try
+            end if
+          on error number nativeStatus
+            set roleErrors to roleErrors + 1
+            if roleErrorStatus is 0 then set roleErrorStatus to nativeStatus
           end try
         end repeat
+        try
+          set observedDefault to value of attribute "AXDefaultButton" of candidate
+          if role of observedDefault is "AXButton" and enabled of observedDefault then set defaultButtons to defaultButtons + 1
+        end try
         if nameMatched and not matched then set stage to "expected_text_name_only"
         if matched then
           set stage to "action_unavailable"
@@ -96,7 +136,7 @@ on run argv
       end repeat
     end tell
   end tell
-  return stage
+  return "tree:" & nodeCount & "," & staticCount & "," & headingCount & "," & roleErrors & "," & valueErrors & "," & valueReads & "," & otherExact & "," & containingExpected & "," & roleErrorStatus & "," & valueErrorStatus & "," & defaultButtons & linefeed & stage
 end run
 `;
 // Driver output is an allowlisted protocol, never native UI text or arbitrary diagnostics.
@@ -122,11 +162,68 @@ const dialogStages = new Set([
 ]);
 function dialogObservation(stdout) {
   if (typeof stdout !== "string") return null;
-  const value = stdout.trim().split(/\r?\n/).at(-1);
-  if (dialogStages.has(value)) return { stage: value, native_status: null };
+  const lines = stdout.trim().split(/\r?\n/);
+  const value = lines.at(-1);
+  const counts = lines
+    .map((line) =>
+      /^tree:(\d{1,4}),(\d{1,4}),(\d{1,4}),(\d{1,4}),(\d{1,4}),(\d{1,4}),(\d{1,4}),(\d{1,4}),(-?\d{1,6}),(-?\d{1,6}),(\d{1,4})$/.exec(
+        line,
+      ),
+    )
+    .find(Boolean)
+    ?.slice(1)
+    .map(Number);
+  let tree;
+  if (
+    counts &&
+    counts.filter((_, index) => index !== 8 && index !== 9).every((count) => count <= 4096)
+  ) {
+    const [
+      nodes,
+      static_text,
+      headings,
+      role_errors,
+      value_errors,
+      values_read,
+      other_exact,
+      containing_expected,
+      role_error_status,
+      value_error_status,
+      default_buttons,
+    ] = counts;
+    if (
+      static_text + headings <= nodes &&
+      role_errors <= nodes &&
+      value_errors + values_read <= nodes &&
+      other_exact <= values_read &&
+      containing_expected <= values_read &&
+      (role_errors > 0 || role_error_status === 0) &&
+      (value_errors > 0 || value_error_status === 0)
+    )
+      tree = {
+        nodes,
+        static_text,
+        headings,
+        role_errors,
+        value_errors,
+        values_read,
+        other_exact,
+        containing_expected,
+        role_error_status,
+        value_error_status,
+        default_buttons,
+      };
+  }
+  const observation = tree ? { tree } : {};
+  if (dialogStages.has(value)) return { stage: value, native_status: null, ...observation };
+  if (tree && value.startsWith("tree:"))
+    return { stage: "tree_observed", native_status: null, tree };
   const status = /^action_failed:(-?\d{1,6})$/.exec(value);
-  return status ? { stage: "action_failed", native_status: Number(status[1]) } : null;
+  return status
+    ? { stage: "action_failed", native_status: Number(status[1]), ...observation }
+    : null;
 }
+
 /** Acknowledge only the expected startup error owned by this test's child, never another window. */
 export async function acknowledgeStartupDialog(
   pid,
@@ -322,7 +419,7 @@ export async function refuseDevelopmentCommand(
   let timer;
   const exit = new Promise((resolve, reject) => {
     timer = setTimeout(() => {
-      child.kill();
+      child.kill("SIGKILL");
       reject(
         new Error(
           "Development-switch refusal did not exit; dialog_acknowledged=" +

@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import {
   acknowledgeStartupDialog,
@@ -77,6 +77,65 @@ it("acknowledges only an expected native startup error and refuses unrelated or 
   expect(
     await acknowledgeStartupDialog(123, "error", "win32", async () => ({ stdout: "unrelated" })),
   ).toBe(false);
+});
+it("retains bounded native tree counters without exposing accessibility text", async () => {
+  const report = vi.fn();
+  const tree = {
+    nodes: 8,
+    static_text: 2,
+    headings: 1,
+    role_errors: 0,
+    value_errors: 1,
+    values_read: 2,
+    other_exact: 1,
+    containing_expected: 1,
+    role_error_status: 0,
+    value_error_status: -1700,
+    default_buttons: 1,
+  };
+  expect(
+    await acknowledgeStartupDialog(
+      123,
+      "expected",
+      "darwin",
+      async () => ({
+        stdout: "Private text\ntree:8,2,1,0,1,2,1,1,0,-1700,1\nexpected_text_absent\n",
+      }),
+      report,
+    ),
+  ).toBe(false);
+  expect(report).toHaveBeenLastCalledWith({
+    kind: "automation_pending",
+    stage: "expected_text_absent",
+    native_status: null,
+    tree,
+  });
+  expect(JSON.stringify(report.mock.calls)).not.toContain("Private");
+  for (const malformed of [
+    "tree:9999,2,1,0,1,2,1,1,0,-1700,1",
+    "tree:1,2,1,0,0,1,1,1,0,0,1",
+    "tree:8,2,1,0,0,1,2,1,0,0,1",
+    "tree:Private text",
+    "tree:8,2,1,0,1,2,1,1,0,-1700,1,9",
+    "tree:8,2,1,0,1,2,1,1,0,-1000000,1",
+    "tree:8,2,1,0,0,2,1,1,0,-1700,1",
+  ]) {
+    report.mockClear();
+    expect(
+      await acknowledgeStartupDialog(
+        123,
+        "expected",
+        "darwin",
+        async () => ({ stdout: malformed + "\nexpected_text_absent\n" }),
+        report,
+      ),
+    ).toBe(false);
+    expect(report).toHaveBeenLastCalledWith({
+      kind: "automation_pending",
+      stage: "expected_text_absent",
+      native_status: null,
+    });
+  }
 });
 it("retains only controlled native automation failure metadata", async () => {
   const report = vi.fn();
@@ -237,7 +296,7 @@ it("loads the Windows dialog controller once within the existing refusal deadlin
     ),
   ).rejects.toThrow("dialog_acknowledged=false");
   expect(acknowledge).toHaveBeenCalledOnce();
-  expect(child.kill).toHaveBeenCalledOnce();
+  expect(child.kill).toHaveBeenCalledExactlyOnceWith("SIGKILL");
 });
 it("retains only bounded flags from the owned macOS startup process sample", async () => {
   const run = vi.fn(async () => ({
@@ -321,6 +380,48 @@ it("distinguishes an unacknowledged modal from an acknowledged child that remain
     expect(child.kill).toHaveBeenCalledOnce();
   }
 });
+it("terminates and reaps its owned refusal child when graceful termination is ignored", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ohtia-refusal-child-"));
+  roots.push(root);
+  const script = path.join(root, "child.cjs");
+  fs.writeFileSync(
+    script,
+    'process.on("SIGTERM", () => {}); process.stdout.write("ready\\n"); setInterval(() => {}, 1000);',
+  );
+  const child = spawn(process.execPath, [script], { stdio: ["ignore", "pipe", "ignore"] });
+  const exited = new Promise<void>((resolve) => {
+    child.once("exit", () => resolve());
+  });
+  const kill = vi.spyOn(child, "kill");
+  try {
+    await new Promise<void>((resolve, reject) => {
+      child.stdout.once("data", () => resolve());
+      child.once("error", reject);
+      child.once("exit", () => reject(new Error("Fixture exited before readiness.")));
+    });
+    await expect(
+      refuseDevelopmentCommand(
+        { executable: process.execPath, app: script, args: [] },
+        {},
+        root,
+        "expected",
+        {
+          platform: "linux",
+          spawnProcess: () => child,
+          deadline_ms: 25,
+        },
+      ),
+    ).rejects.toThrow("did not exit");
+    await vi.waitFor(
+      () => expect(child.exitCode !== null || child.signalCode !== null).toBe(true),
+      { timeout: 1000, interval: 10 },
+    );
+    expect(kill).toHaveBeenCalledExactlyOnceWith("SIGKILL");
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    await exited;
+  }
+});
 it("verifies the packaged startup refusal after acknowledging its native modal error", async () => {
   const child = Object.assign(new EventEmitter(), { pid: 123, kill: vi.fn() });
   const launch = vi.fn(() => child);
@@ -360,7 +461,7 @@ it("rejects a successful launch and bounds a stalled packaged refusal", async ()
       deadline_ms: 10,
     }),
   ).rejects.toThrow("did not exit");
-  expect(stalled.kill).toHaveBeenCalledOnce();
+  expect(stalled.kill).toHaveBeenCalledExactlyOnceWith("SIGKILL");
   const failed = Object.assign(new EventEmitter(), { kill: vi.fn() });
   const failure = refuseDevelopmentCommand(runtime, {}, "/scratch", "expected", {
     platform: "linux",
