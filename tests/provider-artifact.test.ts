@@ -1,7 +1,10 @@
 import { EventEmitter } from "node:events";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import {
   acknowledgeStartupDialog,
   refuseDevelopmentCommand,
+  sampleStartupProcess,
 } from "../tooling/quality-startup-refusal.mjs";
 import fs from "node:fs";
 import os from "node:os";
@@ -122,6 +125,14 @@ it("retains only controlled native automation failure metadata", async () => {
 it("reports allowlisted dialog stages without retaining native UI or driver text", async () => {
   const report = vi.fn();
   for (const [stdout, observation] of [
+    [
+      "element_unavailable\n",
+      { kind: "automation_pending", stage: "element_unavailable", native_status: null },
+    ],
+    [
+      "ui_scripting_unavailable\n",
+      { kind: "automation_pending", stage: "ui_scripting_unavailable", native_status: null },
+    ],
     ["owner_absent\n", { kind: "automation_pending", stage: "owner_absent", native_status: null }],
     [
       "activation_pending\n",
@@ -176,6 +187,84 @@ it("reports allowlisted dialog stages without retaining native UI or driver text
     });
     expect(JSON.stringify(report.mock.calls)).not.toContain("Private");
   }
+});
+it("observes controlled Windows initialization progress before its single controller completes", async () => {
+  const execute = promisify(execFile);
+  const report = vi.fn();
+  const run = vi.fn((_file, _args, options) =>
+    execute(
+      process.execPath,
+      [
+        "-e",
+        "console.log('Private native output'); console.log('driver_load'); console.log('acknowledged')",
+      ],
+      options,
+    ),
+  );
+  expect(await acknowledgeStartupDialog(123, "expected", "win32", run, report, 12000)).toBe(true);
+  expect(run).toHaveBeenCalledOnce();
+  expect(run.mock.calls[0]?.[2]).toMatchObject({
+    timeout: 12000,
+    maxBuffer: 65536,
+    env: { OHTIA_STARTUP_DRIVER_BUDGET_MS: "12000" },
+  });
+  expect(report).toHaveBeenCalledWith({
+    kind: "automation_pending",
+    stage: "driver_load",
+    native_status: null,
+  });
+  expect(JSON.stringify(report.mock.calls)).not.toContain("Private");
+  expect(await acknowledgeStartupDialog(123, "expected", "win32", run, report, 20001)).toBe(false);
+  expect(run).toHaveBeenCalledOnce();
+});
+it("loads the Windows dialog controller once within the existing refusal deadline", async () => {
+  const child = Object.assign(new EventEmitter(), { pid: 123, kill: vi.fn() });
+  const acknowledge = vi.fn(async () => false);
+  await expect(
+    refuseDevelopmentCommand(
+      { executable: "/application", app: "/app", args: [] },
+      {},
+      "/scratch",
+      "expected",
+      {
+        platform: "win32",
+        spawnProcess: () => child,
+        acknowledge,
+        deadline_ms: 20,
+        poll_ms: 1,
+      },
+    ),
+  ).rejects.toThrow("dialog_acknowledged=false");
+  expect(acknowledge).toHaveBeenCalledOnce();
+  expect(child.kill).toHaveBeenCalledOnce();
+});
+it("retains only bounded flags from the owned macOS startup process sample", async () => {
+  const run = vi.fn(async () => ({
+    stdout:
+      "Private path and stack details\n-[NSAlert runModal]\n-[NSApplication run]\nelectron::ShowErrorBox\n",
+  }));
+  const result = await sampleStartupProcess(123, run);
+  expect(result).toEqual({
+    kind: "sampled",
+    ns_alert_run_modal_frame_seen: true,
+    ns_application_run_frame_seen: true,
+    show_error_box_frame_seen: true,
+    module_loader_frame_seen: false,
+  });
+  expect(run.mock.calls[0]?.[0]).toBe("/usr/bin/sample");
+  expect(run.mock.calls[0]?.[1]).toEqual(["123", "1", "10", "-mayDie", "-file", "/dev/stdout"]);
+  expect(run.mock.calls[0]?.[2]).toEqual({ timeout: 4000, maxBuffer: 1048576 });
+  expect(JSON.stringify(result)).not.toContain("Private");
+  expect(await sampleStartupProcess(0, run)).toEqual({
+    kind: "sample_unavailable",
+    exit_code: null,
+  });
+  expect(run).toHaveBeenCalledOnce();
+  expect(
+    await sampleStartupProcess(123, async () => {
+      throw Object.assign(new Error("Private driver error"), { code: 7 });
+    }),
+  ).toEqual({ kind: "sample_unavailable", exit_code: 7 });
 });
 it("distinguishes an unacknowledged modal from an acknowledged child that remains running", async () => {
   for (const acknowledged of [false, true]) {

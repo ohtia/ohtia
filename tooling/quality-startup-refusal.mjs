@@ -1,6 +1,8 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
+import { createInterface } from "node:readline";
+import { performance } from "node:perf_hooks";
 const execute = promisify(execFile);
 
 const windowsDialog = String.raw`
@@ -11,33 +13,43 @@ function Report-Stage([string]$stage) {
   [Console]::Out.WriteLine($stage)
   [Console]::Out.Flush()
 }
+$budget = [int]$env:OHTIA_STARTUP_DRIVER_BUDGET_MS
+$clock = [System.Diagnostics.Stopwatch]::StartNew()
 Report-Stage 'driver_load'
 Add-Type -AssemblyName UIAutomationClient
 Report-Stage 'window_lookup'
-$condition = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $ownerId)
-$windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $condition)
-if ($windows.Count -eq 0) { Report-Stage 'window_absent'; exit 2 }
-$stage = 'dialog_absent'
-foreach ($window in $windows) {
-  Report-Stage 'dialog_lookup'
-  if ($window.Current.ClassName -cne '#32770') { continue }
-  $stage = 'expected_text_absent'
-  Report-Stage 'text_lookup'
-  $children = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
-  $matched = $false
-  foreach ($element in $children) { if ($element.Current.Name -ceq $expected) { $matched = $true } }
-  if (-not $matched) { continue }
-  $stage = 'action_unavailable'
-  Report-Stage 'action_lookup'
-  $pattern = $null
-  if (-not $window.TryGetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern, [ref]$pattern)) { continue }
-  # Electron's TaskDialog admits cancellation. Close only this PID/text-matched native dialog.
-  Report-Stage 'action_invoke'
-  ([System.Windows.Automation.WindowPattern]$pattern).Close()
-  Report-Stage 'acknowledged'
-  exit 0
+while ($clock.ElapsedMilliseconds -lt $budget) {
+  try {
+    $condition = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $ownerId)
+    $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $condition)
+    if ($windows.Count -eq 0) { $stage = 'window_absent' } else { $stage = 'dialog_absent' }
+    foreach ($window in $windows) {
+      Report-Stage 'dialog_lookup'
+      if ($window.Current.ClassName -cne '#32770') { continue }
+      $stage = 'expected_text_absent'
+      Report-Stage 'text_lookup'
+      $children = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+      $matched = $false
+      foreach ($element in $children) { if ($element.Current.Name -ceq $expected) { $matched = $true } }
+      if (-not $matched) { continue }
+      $stage = 'action_unavailable'
+      Report-Stage 'action_lookup'
+      $pattern = $null
+      if (-not $window.TryGetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern, [ref]$pattern)) { continue }
+      # Electron's TaskDialog admits cancellation. Close only this PID/text-matched native dialog.
+      Report-Stage 'action_invoke'
+      ([System.Windows.Automation.WindowPattern]$pattern).Close()
+      Report-Stage 'acknowledged'
+      exit 0
+    }
+  } catch [System.Windows.Automation.ElementNotAvailableException] {
+    # An owned window may disappear between enumeration and an element access.
+    $stage = 'element_unavailable'
+  }
+  Report-Stage $stage
+  Start-Sleep -Milliseconds 100
 }
-Report-Stage $stage
+
 exit 2
 `;
 const macDialog = String.raw`
@@ -45,6 +57,7 @@ on run argv
   set ownerId to (item 1 of argv) as integer
   set expected to item 2 of argv
   tell application "System Events"
+    if not UI elements enabled then return "ui_scripting_unavailable"
     set owners to application processes whose unix id is ownerId
     if (count of owners) is 0 then return "owner_absent"
     if (count of owners) is not 1 then return "owner_ambiguous"
@@ -89,8 +102,10 @@ end run
 // Driver output is an allowlisted protocol, never native UI text or arbitrary diagnostics.
 const dialogStages = new Set([
   "driver_load",
+  "ui_scripting_unavailable",
   "window_lookup",
   "window_absent",
+  "element_unavailable",
   "window_absent_frontmost",
   "activation_pending",
   "dialog_lookup",
@@ -119,10 +134,13 @@ export async function acknowledgeStartupDialog(
   platform = process.platform,
   run = execute,
   reportFailure = () => {},
+  budget_ms = 4000,
 ) {
   if (!Number.isSafeInteger(pid) || pid <= 0 || typeof expected !== "string" || !expected.length)
     return false;
+  if (!Number.isSafeInteger(budget_ms) || budget_ms < 1 || budget_ms > 20000) return false;
   let executable, args;
+  let progress;
   if (platform === "win32") {
     executable = path.win32.join(
       process.env.SystemRoot ?? "C:\\Windows",
@@ -137,9 +155,9 @@ export async function acknowledgeStartupDialog(
     args = ["-e", macDialog, String(pid), expected];
   } else return false;
   try {
-    const result = await run(executable, args, {
-      timeout: 4000,
-      maxBuffer: 16384,
+    const pending = run(executable, args, {
+      timeout: platform === "win32" ? budget_ms : 4000,
+      maxBuffer: platform === "win32" && budget_ms > 4000 ? 65536 : 16384,
       windowsHide: true,
       ...(platform === "win32"
         ? {
@@ -147,10 +165,21 @@ export async function acknowledgeStartupDialog(
               ...process.env,
               OHTIA_STARTUP_OWNER_PID: String(pid),
               OHTIA_STARTUP_EXPECTED_TEXT: expected,
+              OHTIA_STARTUP_DRIVER_BUDGET_MS: String(budget_ms),
             },
           }
         : {}),
     });
+    // execFile's public promise.child stream makes initialization progress observable before exit.
+    if (pending.child?.stdout) {
+      progress = createInterface({ input: pending.child.stdout });
+      progress.on("error", () => {});
+      progress.on("line", (line) => {
+        const observation = dialogObservation(line);
+        if (observation) reportFailure({ kind: "automation_pending", ...observation });
+      });
+    }
+    const result = await pending;
     if (result.stdout.trim().split(/\r?\n/).at(-1) === "acknowledged") return true;
     const observation = dialogObservation(result.stdout);
     reportFailure({
@@ -181,6 +210,40 @@ export async function acknowledgeStartupDialog(
       });
     }
     return false;
+  } finally {
+    progress?.close();
+  }
+}
+/** Read a short sample of this synthetic startup child; retain only known stack-frame flags. */
+export async function sampleStartupProcess(pid, run = execute) {
+  if (!Number.isSafeInteger(pid) || pid <= 0)
+    return { kind: "sample_unavailable", exit_code: null };
+  try {
+    const result = await run(
+      "/usr/bin/sample",
+      [String(pid), "1", "10", "-mayDie", "-file", "/dev/stdout"],
+      {
+        timeout: 4000,
+        maxBuffer: 1048576,
+      },
+    );
+    return {
+      kind: "sampled",
+      ns_alert_run_modal_frame_seen: /NSAlert[^\r\n]*runModal/.test(result.stdout),
+      ns_application_run_frame_seen: /NSApplication[^\r\n]*\brun\b/.test(result.stdout),
+      show_error_box_frame_seen: /\bShowErrorBox\b/.test(result.stdout),
+      module_loader_frame_seen: /\b(?:dlopen|uv_dlopen)\b/.test(result.stdout),
+    };
+  } catch (error) {
+    return {
+      kind:
+        error?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
+          ? "sample_output_limit"
+          : error?.killed
+            ? "sample_timeout"
+            : "sample_unavailable",
+      exit_code: Number.isInteger(error?.code) ? error.code : null,
+    };
   }
 }
 /** The shipped entry point retains its native modal admission error on Windows and macOS. */
@@ -200,6 +263,21 @@ export async function refuseDevelopmentCommand(
   let ended = false;
   let acknowledged = false;
   let lastFailure = null;
+  let processSample = null;
+  let sample = Promise.resolve();
+  const deadline_ms = options.deadline_ms ?? 20000;
+  const controllerDeadline = performance.now() + deadline_ms;
+  const sampleTimer =
+    platform === "darwin"
+      ? setTimeout(() => {
+          if (!ended) {
+            processSample = { kind: "sample_pending" };
+            sample = sampleStartupProcess(child.pid).then((value) => {
+              processSample = value;
+            });
+          }
+        }, 5000)
+      : undefined;
   let timer;
   const exit = new Promise((resolve, reject) => {
     timer = setTimeout(() => {
@@ -210,10 +288,12 @@ export async function refuseDevelopmentCommand(
             acknowledged +
             "; automation=" +
             JSON.stringify(lastFailure) +
+            "; process_sample=" +
+            JSON.stringify(processSample) +
             ".",
         ),
       );
-    }, options.deadline_ms ?? 20000);
+    }, deadline_ms);
     child.once("error", reject);
     child.once("exit", (code) => {
       resolve(code);
@@ -225,15 +305,26 @@ export async function refuseDevelopmentCommand(
         await (
           options.acknowledge ??
           ((pid, expected, selectedPlatform) =>
-            acknowledgeStartupDialog(pid, expected, selectedPlatform, execute, (failure) => {
-              lastFailure = failure;
-            }))
+            acknowledgeStartupDialog(
+              pid,
+              expected,
+              selectedPlatform,
+              execute,
+              (failure) => {
+                lastFailure = failure;
+              },
+              selectedPlatform === "win32"
+                ? Math.max(1, Math.min(20000, Math.floor(controllerDeadline - performance.now())))
+                : 4000,
+            ))
         )(child.pid, expectedMessage, platform)
       ) {
         acknowledged = true;
         lastFailure = null;
         break;
       }
+      // One Windows process owns loading and polling within the existing overall deadline.
+      if (platform === "win32") break;
       if (!ended)
         await new Promise((resolve) => {
           setTimeout(resolve, options.poll_ms ?? 100);
@@ -246,7 +337,8 @@ export async function refuseDevelopmentCommand(
   } finally {
     ended = true;
     clearTimeout(timer);
-    await acknowledgement;
+    clearTimeout(sampleTimer);
+    await Promise.all([acknowledgement, sample]);
   }
   if (code !== 1)
     throw new Error(
