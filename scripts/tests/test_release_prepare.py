@@ -12,6 +12,7 @@ import sys
 import tempfile
 import unittest
 import urllib.error
+import urllib.request
 from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import patch
@@ -112,6 +113,9 @@ class FakeGitHub(prepare.GitHub):
             return 201, asset
         if method == "PATCH" and path.startswith("releases/"):
             release = self.release(int(path.split("/")[1]))
+            if release["draft"] and "tag_name" not in payload:
+                # Observed on GitHub: updating a draft without tag_name detaches its tag.
+                release["tag_name"] = "untagged-0123456789abcdef0123"
             release.update(payload)
             return 200, release
         if method == "GET" and path.startswith("releases/"):
@@ -495,6 +499,8 @@ class PublicationTests(unittest.TestCase):
         self.assertIn(("PATCH", "releases/9"), self.github.calls)
         release = self.github.releases[0]
         self.assertEqual(release["name"], "0.3.0")
+        self.assertEqual(release["tag_name"], "v0.3.0")
+        self.assertEqual(release["target_commitish"], "c" * 40)
         self.assertEqual(release["body"], (self.release / "body.md").read_text())
         self.github.calls.clear()
         with self.assertRaisesRegex(prepare.ReleaseError, "already holds assets"):
@@ -603,6 +609,59 @@ class TransportTests(unittest.TestCase):
         large = self.response(200, b" " * (prepare.MAXIMUM_RESPONSE + 1))
         with self.assertRaisesRegex(prepare.ReleaseError, "oversized"):
             prepare.GitHub("token", lambda *a, **k: large).api("GET", "releases")
+
+    def test_uploaded_files_are_sent_with_their_length_not_chunked(self):
+        sent = []
+        handler = urllib.request.HTTPSHandler()
+        handler.parent = urllib.request.build_opener()
+
+        def opener(request, data=None, timeout=None):
+            if data is not None:  # What OpenerDirector.open does with a late body.
+                request.data = data
+            prepared = handler.do_request_(request)
+            sent.append({key.lower(): value for key, value in prepared.header_items()})
+            return self.response(201, b"{}")
+
+        stream = io.BytesIO(b"12345")
+        prepare.GitHub("token", opener).request(
+            "POST",
+            f"{prepare.UPLOADS}/repos/ohtia/ohtia/releases/1/assets?name=a",
+            data=stream,
+            headers={"Content-Type": "application/octet-stream", "Content-Length": "5"},
+            allowed=(201,),
+        )
+        self.assertEqual(sent[0].get("content-length"), "5")
+        self.assertNotIn("transfer-encoding", sent[0])
+        prepare.GitHub("token", opener).api("POST", "git/refs", {"ref": "x"}, allowed=(201,))
+        self.assertEqual(sent[1]["content-length"], str(len(b'{"ref": "x"}')))
+        self.assertEqual(sent[1]["content-type"], "application/json")
+
+    def test_errors_name_only_githubs_sanitized_message(self):
+        def answer(body):
+            def failing(request, data=None, timeout=None):
+                raise urllib.error.HTTPError(request.full_url, 400, "x", {}, io.BytesIO(body))
+
+            return failing
+
+        cases = [
+            (b'{"message":"Bad Content-Length","request_id":"r"}', " (Bad Content-Length)"),
+            (b'{"message":"bad\u001b[31m\u00e9","token":"secret"}', " (bad[31m)"),
+            (json.dumps({"message": "m" * 300}).encode(), f" ({'m' * 200})"),
+            (b'{"message":7}', ""),
+            (b"not json", ""),
+            (b"", ""),
+            (b"[" * 4096, ""),
+            (b'{"message":"' + b"m" * 4096 + b'"}', ""),
+        ]
+        for body, suffix in cases:
+            with self.subTest(body=body[:40]):
+                with self.assertRaises(prepare.ReleaseError) as caught:
+                    prepare.GitHub("token", answer(body)).api("POST", "releases", {})
+                self.assertEqual(
+                    str(caught.exception),
+                    f"GitHub POST /repos/ohtia/ohtia/releases returned HTTP 400{suffix}.",
+                )
+                self.assertNotIn("secret", str(caught.exception))
 
     def test_requests_carry_the_token_only_to_github(self):
         seen = []

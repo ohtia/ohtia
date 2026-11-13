@@ -36,6 +36,7 @@ UPLOADS = "https://uploads.github.com"
 WORKFLOW = ".github/workflows/prepare-release.yml"
 SHA = re.compile(r"[0-9a-f]{40}")
 MAXIMUM_RESPONSE = 8 * 1024 * 1024
+MAXIMUM_ERROR = 4096
 MAXIMUM_RELEASE_PAGES = 10
 DIGESTS = "release-digests.json"
 UNSIGNED_HEADING = "## Unsigned testing packages"
@@ -74,26 +75,35 @@ class GitHub:
         allowed: tuple[int, ...] = (200,),
         timeout: int = 60,
     ) -> tuple[int, object]:
-        request = urllib.request.Request(url, method=method)
+        if payload is not None:
+            data = json.dumps(payload).encode()
+        # The body belongs to the request from its creation: assigning it later, as
+        # urlopen(request, data=...) does, drops Content-Length and makes urllib send a
+        # file chunked, which the GitHub upload API rejects with "Bad Content-Length".
+        request = urllib.request.Request(url, data=data, method=method)
         request.add_header("Accept", "application/vnd.github+json")
         request.add_header("Authorization", f"Bearer {self.token}")
         request.add_header("X-GitHub-Api-Version", "2026-03-10")
+        if payload is not None:
+            request.add_header("Content-Type", "application/json")
         for key, value in (headers or {}).items():
             request.add_header(key, value)
-        if payload is not None:
-            data = json.dumps(payload).encode()
-            request.add_header("Content-Type", "application/json")
+        reason = ""
         try:
-            with self.opener(request, data=data, timeout=timeout) as response:
+            with self.opener(request, timeout=timeout) as response:
                 status, body = response.status, response.read(MAXIMUM_RESPONSE + 1)
         except urllib.error.HTTPError as error:
-            status, body = error.code, b""
+            status, body, reason = error.code, b"", error_reason(error)
         except (OSError, ValueError) as error:
             raise ReleaseError(
                 f"GitHub {method} {urlparse_path(url)} could not complete."
             ) from error
-        # Never echo response bodies: they may carry data the log should not hold.
-        require(status in allowed, f"GitHub {method} {urlparse_path(url)} returned HTTP {status}.")
+        # Never echo response bodies: they may carry data the log should not hold. An error
+        # response contributes only GitHub's short, sanitized error message.
+        require(
+            status in allowed,
+            f"GitHub {method} {urlparse_path(url)} returned HTTP {status}{reason}.",
+        )
         require(len(body) <= MAXIMUM_RESPONSE, "GitHub returned an oversized response.")
         try:
             return status, json.loads(body) if body.strip() else None
@@ -102,6 +112,18 @@ class GitHub:
 
     def api(self, method: str, path: str, payload: dict | None = None, **kwargs):
         return self.request(method, f"{API}/repos/{REPOSITORY}/{path}", payload, **kwargs)
+
+
+def error_reason(error: urllib.error.HTTPError) -> str:
+    """Return GitHub's error message as a short printable suffix, or nothing."""
+    try:
+        message = json.loads(error.read(MAXIMUM_ERROR)).get("message")
+    except Exception:  # noqa: BLE001 - a suffix of an error message must never raise.
+        return ""
+    if not isinstance(message, str):
+        return ""
+    printable = "".join(c for c in message if c.isprintable() and c.isascii())[:200]
+    return f" ({printable})" if printable else ""
 
 
 def urlparse_path(url: str) -> str:
@@ -403,9 +425,19 @@ def publish(github: GitHub, env: dict, directory: Path) -> dict:
             not release.get("assets"),
             f"The unpublished release of {version} already holds assets; raise the version.",
         )
-        # The empty draft of an earlier attempt takes this attempt's title and body.
+        # The empty draft of an earlier attempt takes this attempt's title and body. GitHub
+        # detaches a draft from its tag when an update omits tag_name, so the update repeats
+        # the tag and its target.
         _, release = github.api(
-            "PATCH", f"releases/{release['id']}", {"name": version, "body": body, "draft": True}
+            "PATCH",
+            f"releases/{release['id']}",
+            {
+                "tag_name": tag,
+                "target_commitish": commit,
+                "name": version,
+                "body": body,
+                "draft": True,
+            },
         )
     require(isinstance(release, dict) and isinstance(release.get("id"), int), "Bad release.")
     files = [{**asset, "file": directory / "assets" / asset["name"]} for asset in record["assets"]]
