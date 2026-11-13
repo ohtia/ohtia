@@ -139,6 +139,32 @@ it("retains bounded native tree counters without exposing accessibility text", a
 });
 it("retains only controlled native automation failure metadata", async () => {
   const report = vi.fn();
+  for (const [position, expectedSpan] of [
+    ["7:19", { start: 7, end: 19 }],
+    ["19:7", undefined],
+    ["7:99999", undefined],
+    ["Private", undefined],
+  ] as const) {
+    report.mockClear();
+    expect(
+      await acknowledgeStartupDialog(
+        123,
+        "expected",
+        "darwin",
+        async () => {
+          throw Object.assign(new Error("Private error"), {
+            code: 1,
+            stderr: position + ": execution error: Private UI text (-1700).",
+          });
+        },
+        report,
+      ),
+    ).toBe(false);
+    expect(report.mock.calls.at(-1)?.[0].source_span).toEqual(expectedSpan);
+    expect(report.mock.calls.at(-1)?.[0].native_status).toBe(-1700);
+    expect(JSON.stringify(report.mock.calls)).not.toContain("Private");
+  }
+  report.mockClear();
   const error = Object.assign(new Error("Private driver text"), {
     code: 1,
     stderr: "Private native details (-1719)",

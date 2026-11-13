@@ -76,13 +76,11 @@ on run argv
       set frontmost to true
       if not frontmost then return "activation_pending"
       set stage to "window_absent_frontmost"
-      repeat with candidateReference in windows
-        set candidate to contents of candidateReference
+      repeat with candidate in windows
         set stage to "expected_text_absent"
         set matched to false
         set nameMatched to false
-        repeat with elementReference in entire contents of candidate
-          set candidateElement to contents of elementReference
+        repeat with candidateElement in entire contents of candidate
           set nodeCount to nodeCount + 1
           try
             set candidateRole to role of candidateElement as text
@@ -136,7 +134,7 @@ on run argv
       end repeat
     end tell
   end tell
-  return "tree:" & nodeCount & "," & staticCount & "," & headingCount & "," & roleErrors & "," & valueErrors & "," & valueReads & "," & otherExact & "," & containingExpected & "," & roleErrorStatus & "," & valueErrorStatus & "," & defaultButtons & linefeed & stage
+  return "tree:" & (nodeCount as text) & "," & (staticCount as text) & "," & (headingCount as text) & "," & (roleErrors as text) & "," & (valueErrors as text) & "," & (valueReads as text) & "," & (otherExact as text) & "," & (containingExpected as text) & "," & (roleErrorStatus as text) & "," & (valueErrorStatus as text) & "," & (defaultButtons as text) & linefeed & stage
 end run
 `;
 // Driver output is an allowlisted protocol, never native UI text or arbitrary diagnostics.
@@ -294,7 +292,16 @@ export async function acknowledgeStartupDialog(
         platform === "darwin" && typeof error?.stderr === "string"
           ? /\((-\d{3,6})\)/.exec(error.stderr)?.[1]
           : undefined;
+      const span =
+        platform === "darwin" && typeof error?.stderr === "string"
+          ? /^(\d{1,5}):(\d{1,5}): (?:execution|script) error:/m.exec(error.stderr)
+          : undefined;
+      const start = span && Number(span[1]);
+      const end = span && Number(span[2]);
+      const source_span =
+        span && start >= 0 && end >= start && end <= macDialog.length ? { start, end } : undefined;
       reportFailure({
+        ...(source_span ? { source_span } : {}),
         kind:
           error?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
             ? "automation_output_limit"
