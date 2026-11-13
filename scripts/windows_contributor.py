@@ -453,13 +453,19 @@ def package(profile, prepared, output):
         and not prepared.is_relative_to(output),
         "Choose a new absolute package --output with a canonical existing parent inside admitted scratch, disjoint from the immutable prepared runtime.",
     )
+    import application_version
     import quality_native
+
+    try:
+        version = application_version.development_version(1, 1)
+    except application_version.VersionError as error:
+        raise ContributorError(str(error)) from error
 
     config = quality_native.configuration(
         {"target": "win32-x64", "profile": "windows-11", "formats": ["nsis"]},
         prepared,
         output / "packages",
-        "0.0.0-dev.1.1",
+        version,
     )
     output.mkdir()
     configuration = output / "builder.json"

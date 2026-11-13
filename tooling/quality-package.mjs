@@ -12,8 +12,15 @@ const { build, Platform, Arch } = require("electron-builder");
 const validateOnly = process.argv[2] === "--validate";
 const [configuration] = process.argv.slice(validateOnly ? 3 : 2);
 const config = JSON.parse(fs.readFileSync(configuration, "utf8"));
-if (!/^0\.0\.0-dev\.[1-9][0-9]*\.[1-9][0-9]*$/.test(config.extraMetadata.version))
-  throw new Error("Quality packages require a run/attempt development version.");
+// A release package carries the exact root version; a development package adds its run and attempt.
+const version = config.extraMetadata.version;
+if (
+  typeof version !== "string" ||
+  !/^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-dev\.[1-9][0-9]*\.[1-9][0-9]*)?$/.test(
+    version,
+  )
+)
+  throw new Error("Packages require a final version or a run/attempt development version.");
 process.umask(0o022);
 const platform = { linux: Platform.LINUX, win32: Platform.WINDOWS, darwin: Platform.MAC }[
   process.platform

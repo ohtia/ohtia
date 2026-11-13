@@ -39,6 +39,28 @@ class MacosContributorTests(unittest.TestCase):
                 with self.assertRaises(mac.ContributorError):
                     mac.extract_python(archive, output)
 
+    def test_invalid_root_version_refused_before_package_configuration(self):
+        import application_version
+        import quality_native
+
+        with tempfile.TemporaryDirectory() as directory:
+            scratch = Path(directory).resolve()
+            (scratch / "package.json").write_text(json.dumps({"version": "0.03.0"}))
+            prepared = scratch / "prepared"
+            prepared.mkdir()
+            profile = scratch / "runtime-profile.json"
+            profile.write_text(json.dumps({"scratch_root": str(scratch)}))
+            output = scratch / "local-package"
+            with (
+                patch.object(application_version, "ROOT", scratch),
+                patch.object(mac, "admit"),
+                patch.object(quality_native, "configuration") as configure,
+            ):
+                with self.assertRaisesRegex(mac.ContributorError, "final major"):
+                    mac.package(profile, prepared, output)
+                configure.assert_not_called()
+            self.assertFalse(output.exists())
+
     def test_package_overlap_refused_before_prepared_bytes_change(self):
         import quality_native
 

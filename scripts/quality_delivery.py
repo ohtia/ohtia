@@ -11,6 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import application_version
 import linux_desktop
 import scaleway_bootstrap as package_inventory
 
@@ -376,7 +377,7 @@ def input_seal() -> dict:
 
 def version(record: dict) -> str:
     validate_identity(record)
-    return f"0.0.0-dev.{record['run_id']}.{record['run_attempt']}"
+    return application_version.development_version(record["run_id"], record["run_attempt"])
 
 
 def plan(record: dict) -> dict:

@@ -20,6 +20,7 @@ import tempfile
 import time
 from pathlib import Path, PurePosixPath
 
+import application_version
 import desktop_runtime
 import linux_desktop
 import quality_native
@@ -1434,6 +1435,9 @@ def main():
             return 0
         require(0 < args.run_id <= 2**53 - 1, "Use a finite positive unique run identity.")
         cell = native_profile(args.target, args.profile, args.backend, args.desktop)
+        versions = [
+            application_version.development_version(args.run_id, attempt) for attempt in (1, 2)
+        ]
         output = args.output.absolute()
         require(not output.exists(), "Use a new retained build destination.")
         output.mkdir(parents=True)
@@ -1443,7 +1447,6 @@ def main():
         (output / "inputs.json").write_text(json.dumps(inputs, indent=2) + "\n")
         (output / "cell.json").write_text(json.dumps(cell, indent=2) + "\n")
         (output / "native-ordering.json").write_text(json.dumps(native_ordering(), indent=2) + "\n")
-        versions = [f"0.0.0-dev.{args.run_id}.{attempt}" for attempt in (1, 2)]
         manifest_file = ROOT / "artifacts/desktop-app/migrations/manifest.json"
         migrations = json.loads(manifest_file.read_text())
         require(

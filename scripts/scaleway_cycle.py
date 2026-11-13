@@ -18,6 +18,7 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlencode
 
+import application_version
 import linux_desktop
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -935,8 +936,12 @@ def validate_build(value: dict, *, historical: bool = False) -> None:
     else:
         build_cell(value)
     identity = value["identity"]
+    observed = application_version.DEVELOPMENT.fullmatch(str(value["application_version"]))
+    # A retained record keeps the root version that was current when it was built.
     require(
-        value["application_version"] == f"0.0.0-dev.{identity['run_id']}.{identity['attempt']}",
+        observed is not None
+        and observed.group(2, 3) == (identity["run_id"], identity["attempt"])
+        and (historical or observed[1] == application_version.root_version()),
         "build_version",
     )
     sha(value["source_tree"], 40)

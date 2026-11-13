@@ -45,6 +45,7 @@ async function launch(
     researchRootRefused?: boolean;
     nodeOptions?: string;
     platform?: NodeJS.Platform;
+    version?: string;
   } = {},
 ) {
   vi.resetModules();
@@ -122,7 +123,7 @@ async function launch(
           : "ExistingFeature",
       ),
     },
-    getVersion: () => "0.0.0-test",
+    getVersion: () => options.version ?? "0.0.0-test",
     getPreferredSystemLanguages: () => {
       if (options.languagesUnavailable) throw new Error("Unavailable OS preferences");
       return ["es-CL", "en-GB"];
@@ -251,6 +252,7 @@ async function launch(
   const dialog = { showErrorBox: vi.fn(), showMessageBox: vi.fn(async () => ({})) };
   const protocol = { registerSchemesAsPrivileged: vi.fn() };
   const children: ReturnType<typeof child>[] = [];
+  const diagnosticWriters: { readonly version: string }[] = [];
   function child() {
     return Object.assign(new EventEmitter(), { postMessage: vi.fn(), kill: vi.fn() });
   }
@@ -417,6 +419,9 @@ async function launch(
   }));
   vi.doMock("../packages/main/src/diagnostic-writer.js", () => ({
     DiagnosticWriter: class {
+      constructor(options: { readonly version: string }) {
+        diagnosticWriters.push(options);
+      }
       reservedPermissionProcesses = 0;
       append = vi.fn(async () => undefined);
       close = vi.fn(async () => undefined);
@@ -497,6 +502,7 @@ async function launch(
     protocol,
     utilityProcess,
     children,
+    diagnosticWriters,
     supervisors,
     publish,
     failure,
@@ -596,6 +602,15 @@ describe("broker composition with synthetic Electron adapters", () => {
     expect(h.app.setPath).not.toHaveBeenCalled();
     expect(h.utilityProcess.fork.mock.calls[0][1][0]).toBe("installed");
     expect((await h.action("open_storage")).state).toBe("storage_opening");
+  });
+  it("gives About, diagnostics and the data service the same packaged version", async () => {
+    const h = await launch({ mode: "installed", version: "0.3.0-dev.7.2" });
+    expect(h.failure).toBeUndefined();
+    expect((await h.action("open_storage")).state).toBe("storage_opening");
+    expect(h.utilityProcess.fork).toHaveBeenCalled();
+    for (const call of h.utilityProcess.fork.mock.calls) expect(call[1][4]).toBe("0.3.0-dev.7.2");
+    expect(h.diagnosticWriters.map((options) => options.version)).toEqual(["0.3.0-dev.7.2"]);
+    expect(await h.command("about")).toMatchObject({ version: "0.3.0-dev.7.2" });
   });
   it("reports an aliased research root without starting the store", async () => {
     const h = await launch({ mode: "installed", researchRootRefused: true });

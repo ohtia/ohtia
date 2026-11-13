@@ -9,6 +9,7 @@ import stat
 import tarfile
 from pathlib import Path
 
+import application_version
 import quality_native
 import scaleway_cycle as cycle
 
@@ -19,6 +20,9 @@ def included(relative: Path) -> bool:
         p in {".git", ".cache", ".venv", "__pycache__"} or p.startswith(".env") for p in parts
     ):
         return False
+    # The guest validates the build against the root application version.
+    if parts == ("package.json",):
+        return True
     if parts[0] in {"scripts", "tooling", "config", "packages", "node_modules"}:
         return True
     if parts[0] == "tools":
@@ -96,7 +100,9 @@ def build(profile: str, desktop: str, output: Path) -> dict:
     selected = cycle.cell(profile, desktop)
     cycle.require(not output.exists(), "fresh_build_output")
     output.mkdir(parents=True)
-    version = f"0.0.0-dev.{identity['run_id']}.{identity['attempt']}"
+    version = application_version.development_version(
+        int(identity["run_id"]), int(identity["attempt"])
+    )
     work = cycle.ROOT / "artifacts" / "scaleway-package"
     packages = quality_native.construct_package(selected, work, version)
     found = list(packages.glob("*." + selected["formats"][0]))

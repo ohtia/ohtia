@@ -127,6 +127,7 @@ class WindowsContributorTests(unittest.TestCase):
     def test_successful_package_receipt_binds_prepared_and_installer_bytes(self):
         import hashlib
 
+        import application_version
         import quality_native
 
         with tempfile.TemporaryDirectory() as directory:
@@ -144,10 +145,13 @@ class WindowsContributorTests(unittest.TestCase):
 
             with (
                 patch.object(win, "admit"),
-                patch.object(quality_native, "configuration", return_value={}),
+                patch.object(quality_native, "configuration", return_value={}) as configure,
                 patch.object(win, "mutating_command", side_effect=build),
             ):
                 receipt = win.package(profile, prepared, output)
+            self.assertEqual(
+                configure.call_args.args[3], application_version.root_version() + "-dev.1.1"
+            )
             self.assertEqual(receipt, json.loads((output / "packages.json").read_text()))
             self.assertEqual(receipt["target"], "win32-x64")
             self.assertEqual(

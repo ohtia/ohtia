@@ -596,6 +596,7 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
       ].includes(bootstrapState)
         ? storageMode
         : "blocked",
+      app.getVersion(),
     ],
     {
       serviceName: "Ohtia data service",

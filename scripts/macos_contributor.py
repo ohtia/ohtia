@@ -498,8 +498,13 @@ def package(profile, prepared, output):
         output.is_relative_to(Path(record["scratch_root"])),
         "Package output must stay inside the admitted scratch root.",
     )
+    import application_version
     import quality_native
 
+    try:
+        version = application_version.development_version(1, 1)
+    except application_version.VersionError as error:
+        raise ContributorError(str(error)) from error
     require(
         not output.is_relative_to(prepared.resolve())
         and not prepared.resolve().is_relative_to(output),
@@ -513,7 +518,7 @@ def package(profile, prepared, output):
         },
         prepared,
         output / "packages",
-        "0.0.0-dev.1.1",
+        version,
     )
     output.mkdir()
     configuration = output / "builder.json"

@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import application_version
 import ci_linux_dependencies
 import linux_desktop
 import quality_delivery as delivery
@@ -596,6 +597,28 @@ class DeliveryTests(unittest.TestCase):
                     delivery.account(self.plan, self.output)
                 delivery.write(evidence_file, observed)
                 delivery.write(receipt_file, receipt)
+
+    def test_plan_derives_the_package_version_from_the_root_manifest(self):
+        self.assertEqual(
+            self.plan["application_version"],
+            application_version.root_version() + "-dev.100.2",
+        )
+        for version, expected in (
+            ("0.3.0", "0.3.0-dev.100.2"),
+            ("0.3", None),
+            ("0.03.0", None),
+            ("0.3.0-beta.1", None),
+        ):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as directory:
+                (Path(directory) / "package.json").write_text(json.dumps({"version": version}))
+                with patch.object(application_version, "ROOT", Path(directory)):
+                    if expected:
+                        self.assertEqual(
+                            delivery.plan(self.identity)["application_version"], expected
+                        )
+                    else:
+                        with self.assertRaises(application_version.VersionError):
+                            delivery.plan(self.identity)
 
     def test_boolean_version_and_foreign_backend_observation_fail(self):
         self.populate()

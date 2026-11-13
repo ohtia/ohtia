@@ -67,6 +67,19 @@ class LinuxContributorTests(unittest.TestCase):
         ):
             return linux.native_profile()
 
+    def test_local_package_version_derives_from_the_root_manifest(self):
+        import application_version
+
+        for version, expected in (("0.3.0", "0.3.0-dev.1.4"), ("0.3.0-beta.1", None)):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as directory:
+                (Path(directory) / "package.json").write_text(json.dumps({"version": version}))
+                with patch.object(application_version, "ROOT", Path(directory)):
+                    if expected:
+                        self.assertEqual(linux.contributor_version(4), expected)
+                    else:
+                        with self.assertRaisesRegex(linux.ContributorError, "final major"):
+                            linux.contributor_version(4)
+
     def test_every_declared_linux_profile_and_cpu_has_an_exact_route(self):
         targets = linux.read(linux.ROOT / "config/desktop/targets.json")["targets"]
         required = set()
