@@ -8,19 +8,32 @@ $ErrorActionPreference = 'Stop'
 $ownerId = [int]$env:OHTIA_STARTUP_OWNER_PID
 $expected = $env:OHTIA_STARTUP_EXPECTED_TEXT
 Add-Type -AssemblyName UIAutomationClient
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class OhtiaStartupDialog {
+  [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  public static extern int GetClassName(IntPtr window, StringBuilder name, int capacity);
+  [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", SetLastError = true)]
+  public static extern IntPtr SendMessageTimeout(IntPtr window, uint message, UIntPtr parameter, IntPtr data, uint flags, uint timeout, out UIntPtr result);
+}
+"@
 $condition = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $ownerId)
 $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $condition)
 foreach ($window in $windows) {
+  $handle = [IntPtr]$window.Current.NativeWindowHandle
+  $className = [System.Text.StringBuilder]::new(256)
+  if ([OhtiaStartupDialog]::GetClassName($handle, $className, 256) -eq 0 -or $className.ToString() -ne '#32770') { continue }
   $children = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
   $matched = $false
-  foreach ($element in $children) { if ($element.Current.Name.Contains($expected)) { $matched = $true } }
+  foreach ($element in $children) { if ($element.Current.Name -eq $expected) { $matched = $true } }
   if (-not $matched) { continue }
-  $buttons = @($children | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button })
-  if ($buttons.Count -ne 1) { continue }
-  $pattern = $buttons[0].GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-  $pattern.Invoke()
-  Write-Output 'acknowledged'
-  exit 0
+  # Electron ShowErrorBox is a TaskDialog with the implicit IDOK action.
+  # Window controls are not dialog actions and must not enter a button count.
+  $result = [UIntPtr]::Zero
+  $sent = [OhtiaStartupDialog]::SendMessageTimeout($handle, 0x466, [UIntPtr]::new([uint32]1), [IntPtr]::Zero, 2, 1000, [ref]$result)
+  if ($sent -ne [IntPtr]::Zero) { Write-Output 'acknowledged'; exit 0 }
 }
 exit 2
 `;
@@ -34,14 +47,19 @@ on run argv
     tell item 1 of owners
       repeat with candidate in windows
         set matched to false
-        repeat with element in entire contents of candidate
+        repeat with candidateElement in entire contents of candidate
           try
-            if role of element is "AXStaticText" and (value of element as text) contains expected then set matched to true
+            if role of candidateElement is "AXStaticText" and (value of candidateElement as text) is expected then set matched to true
           end try
         end repeat
-        if matched and (count of buttons of candidate) is 1 then
-          click button 1 of candidate
-          return "acknowledged"
+        if matched then
+          try
+            set defaultAction to value of attribute "AXDefaultButton" of candidate
+            if role of defaultAction is "AXButton" and enabled of defaultAction then
+              perform action "AXPress" of defaultAction
+              return "acknowledged"
+            end if
+          end try
         end if
       end repeat
     end tell
@@ -55,6 +73,7 @@ export async function acknowledgeStartupDialog(
   expected,
   platform = process.platform,
   run = execute,
+  reportFailure = () => {},
 ) {
   if (!Number.isSafeInteger(pid) || pid <= 0 || typeof expected !== "string" || !expected.length)
     return false;
@@ -88,7 +107,19 @@ export async function acknowledgeStartupDialog(
         : {}),
     });
     return result.stdout.trim() === "acknowledged";
-  } catch {
+  } catch (error) {
+    // An absent Windows dialog is an expected poll result, not an automation failure.
+    if (platform !== "win32" || error?.code !== 2) {
+      const nativeStatus =
+        platform === "darwin" && typeof error?.stderr === "string"
+          ? /\((-\d{3,6})\)/.exec(error.stderr)?.[1]
+          : undefined;
+      reportFailure({
+        kind: error?.killed ? "automation_timeout" : "automation_failed",
+        exit_code: Number.isInteger(error?.code) ? error.code : null,
+        native_status: nativeStatus ? Number(nativeStatus) : null,
+      });
+    }
     return false;
   }
 }
@@ -108,11 +139,20 @@ export async function refuseDevelopmentCommand(
   );
   let ended = false;
   let acknowledged = false;
+  let lastFailure = null;
   let timer;
   const exit = new Promise((resolve, reject) => {
     timer = setTimeout(() => {
       child.kill();
-      reject(new Error("Development-switch refusal did not exit after native acknowledgement."));
+      reject(
+        new Error(
+          "Development-switch refusal did not exit; dialog_acknowledged=" +
+            acknowledged +
+            "; automation=" +
+            JSON.stringify(lastFailure) +
+            ".",
+        ),
+      );
     }, options.deadline_ms ?? 20000);
     child.once("error", reject);
     child.once("exit", (code) => {
@@ -122,13 +162,16 @@ export async function refuseDevelopmentCommand(
   const acknowledgement = (async () => {
     while (!ended && ["win32", "darwin"].includes(platform)) {
       if (
-        await (options.acknowledge ?? acknowledgeStartupDialog)(
-          child.pid,
-          expectedMessage,
-          platform,
-        )
+        await (
+          options.acknowledge ??
+          ((pid, expected, selectedPlatform) =>
+            acknowledgeStartupDialog(pid, expected, selectedPlatform, execute, (failure) => {
+              lastFailure = failure;
+            }))
+        )(child.pid, expectedMessage, platform)
       ) {
         acknowledged = true;
+        lastFailure = null;
         break;
       }
       if (!ended)

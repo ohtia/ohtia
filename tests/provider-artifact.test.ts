@@ -74,6 +74,64 @@ it("acknowledges only an expected native startup error and refuses unrelated or 
     await acknowledgeStartupDialog(123, "error", "win32", async () => ({ stdout: "unrelated" })),
   ).toBe(false);
 });
+it("retains only controlled native automation failure metadata", async () => {
+  const report = vi.fn();
+  const error = Object.assign(new Error("Private driver text"), {
+    code: 1,
+    stderr: "Private native details (-1719)",
+  });
+  expect(
+    await acknowledgeStartupDialog(
+      123,
+      "expected",
+      "darwin",
+      async () => {
+        throw error;
+      },
+      report,
+    ),
+  ).toBe(false);
+  expect(report).toHaveBeenCalledWith({
+    kind: "automation_failed",
+    exit_code: 1,
+    native_status: -1719,
+  });
+  expect(JSON.stringify(report.mock.calls)).not.toContain("Private");
+  report.mockClear();
+  expect(
+    await acknowledgeStartupDialog(
+      123,
+      "expected",
+      "win32",
+      async () => {
+        throw Object.assign(new Error("No matching dialog"), { code: 2 });
+      },
+      report,
+    ),
+  ).toBe(false);
+  expect(report).not.toHaveBeenCalled();
+});
+it("distinguishes an unacknowledged modal from an acknowledged child that remains running", async () => {
+  for (const acknowledged of [false, true]) {
+    const child = Object.assign(new EventEmitter(), { pid: 123, kill: vi.fn() });
+    await expect(
+      refuseDevelopmentCommand(
+        { executable: "/application", app: "/app", args: [] },
+        {},
+        "/scratch",
+        "expected",
+        {
+          platform: "darwin",
+          spawnProcess: () => child,
+          acknowledge: async () => acknowledged,
+          deadline_ms: 10,
+          poll_ms: 1,
+        },
+      ),
+    ).rejects.toThrow("dialog_acknowledged=" + acknowledged);
+    expect(child.kill).toHaveBeenCalledOnce();
+  }
+});
 it("verifies the packaged startup refusal after acknowledging its native modal error", async () => {
   const child = Object.assign(new EventEmitter(), { pid: 123, kill: vi.fn() });
   const launch = vi.fn(() => child);
