@@ -297,7 +297,7 @@ def package_inventory(file, cell):
         result = PayloadInventory(values)
         result.set_contract(manifest)
         return result
-    prefix = PurePosixPath("opt/ohtia-quality")
+    prefix = PurePosixPath("opt/ohtia")
     result = PayloadInventory()
     if file.suffix in {".deb", ".rpm"}:
         # rpm2archive streams PAX without extracting files; hash actual bytes rather than legacy RPM MD5 tags.
@@ -590,7 +590,7 @@ def package_identity(file, cell, version):
             file, cell, sys.modules[__name__]
         )
         require(
-            metadata["name"] == "ohtia-quality" and metadata["version"] == version,
+            metadata["name"] == "ohtia" and metadata["version"] == version,
             "Wrong Windows package name/version.",
         )
         return
@@ -602,7 +602,7 @@ def package_identity(file, cell, version):
         require(
             values
             == {
-                "Package": "ohtia-quality",
+                "Package": "ohtia",
                 "Version": version.replace("-", "~", 1) + "-1",
                 "Architecture": {"x64": "amd64", "arm64": "arm64"}[arch],
             },
@@ -616,7 +616,7 @@ def package_identity(file, cell, version):
         require(
             output.splitlines()
             == [
-                "ohtia-quality",
+                "ohtia",
                 "0",
                 version.replace("-", "~", 1) + "-1",
                 {"x64": "x86_64", "arm64": "aarch64"}[arch],
@@ -651,14 +651,14 @@ def install_staged(
             administrator and os.getuid() == 0,
             "Linux installation requires the explicitly authorized external operator.",
         )
-        assert_quiescent(Path("/opt/ohtia-quality"))
+        assert_quiescent(Path("/opt/ohtia"))
     if file.suffix == ".deb":
         require(
             record["entry"]["native_version"] == record["version"].replace("-", "~", 1) + "-1",
             "Native DEB version differs from the selected artifact.",
         )
         current = subprocess.run(
-            ["dpkg-query", "-W", "-f=${Version}", "ohtia-quality"],
+            ["dpkg-query", "-W", "-f=${Version}", "ohtia"],
             capture_output=True,
             text=True,
             check=False,
@@ -693,8 +693,7 @@ def install_staged(
         for line in plan.splitlines():
             if line.startswith(("Inst ", "Conf ", "Remv ")):
                 require(
-                    not line.startswith("Remv ")
-                    and line.split()[1].split(":")[0] == "ohtia-quality",
+                    not line.startswith("Remv ") and line.split()[1].split(":")[0] == "ohtia",
                     "Missing dependency or unrelated package transition; leave the installation unchanged.",
                 )
         command(["dpkg", "--refuse-downgrade", "--simulate", "--install", file])
@@ -702,7 +701,7 @@ def install_staged(
         if before_transition is not None:
             before_transition()
         command(["dpkg", "--refuse-downgrade", "--install", file])
-        return Path("/opt/ohtia-quality")
+        return Path("/opt/ohtia")
     if file.suffix == ".rpm":
         require(
             rpm_keyring is not None
@@ -731,7 +730,7 @@ def install_staged(
             "RPM signature not verified against the expected key.",
         )
         installed = subprocess.run(
-            ["rpm", "-q", "--qf", "%{EPOCHNUM}\n%{VERSION}-%{RELEASE}\n", "ohtia-quality"],
+            ["rpm", "-q", "--qf", "%{EPOCHNUM}\n%{VERSION}-%{RELEASE}\n", "ohtia"],
             capture_output=True,
             text=True,
             check=False,
@@ -771,7 +770,7 @@ def install_staged(
         if before_transition is not None:
             before_transition()
         command(["rpm", operation, file])
-        return Path("/opt/ohtia-quality")
+        return Path("/opt/ohtia")
     require(
         sys.platform == "darwin" and file.suffix in {".zip", ".dmg"},
         "Unsupported internal installer.",
@@ -794,7 +793,7 @@ def install_staged(
     app = apps[0]
     info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
     require(
-        info.get("CFBundleIdentifier") == "org.ohtia.quality"
+        info.get("CFBundleIdentifier") == "org.ohtia.Ohtia"
         and info.get("CFBundleShortVersionString") == record["version"],
         "Wrong application identity.",
     )
@@ -1013,7 +1012,7 @@ def exercise(
     if installed:
         verify_staged(record)
         package_identity(Path(record["file"]), cell, record["version"])
-        payload = Path("/opt/ohtia-quality") if sys.platform == "linux" else destination
+        payload = Path("/opt/ohtia") if sys.platform == "linux" else destination
         if sys.platform in {"darwin", "win32"}:
             require(
                 payload.resolve() == payload
@@ -1126,7 +1125,7 @@ def inspect_baseline(profile_file, cell_file, archive, payload, output, expected
         payload.resolve() == payload
         and payload.is_dir()
         and (
-            payload == Path("/opt/ohtia-quality")
+            payload == Path("/opt/ohtia")
             if sys.platform == "linux"
             else payload.is_relative_to(scratch)
         ),

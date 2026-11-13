@@ -220,7 +220,7 @@ def file_tree(directory):
             # These are installer-generated controls, not application payload identity.
             if relative.casefold() in {
                 "prepared.json",
-                "uninstall ohtia-quality.exe",
+                "uninstall ohtia.exe",
                 "uninstallericon.ico",
             }:
                 continue
@@ -304,9 +304,7 @@ def expected(file, cell, native):
     with tempfile.TemporaryDirectory(prefix="ohtia-expected-") as temporary:
         root = Path(temporary).resolve() / "payload"
         archive_payload(file, root, native)
-        require(
-            desktop_runtime.architecture(root / "ohtia-quality.exe") == "x64", "Wrong NSIS CPU."
-        )
+        require(desktop_runtime.architecture(root / "Ohtia.exe") == "x64", "Wrong NSIS CPU.")
         require(
             desktop_runtime.architecture(root / "resources/app/native/binding.node") == "x64",
             "Wrong Windows addon CPU.",
@@ -343,7 +341,7 @@ def prepare(args, native):
     file = native.verify_staged(record)
     inventory, manifest, metadata = expected(file, cell, native)
     require(
-        metadata["name"] == "ohtia-quality" and metadata["version"] == record["version"],
+        metadata["name"] == "ohtia" and metadata["version"] == record["version"],
         "Wrong Windows package identity.",
     )
     require(
@@ -640,8 +638,8 @@ def registered_installations():
     import uuid
     import winreg
 
-    # The locked builder derives this registry identity from the quality app ID.
-    guid = str(uuid.uuid5(uuid.UUID("50e065bc-3134-11e6-9bab-38c9862bdaf3"), "org.ohtia.quality"))
+    # The locked builder derives this registry identity from the application ID.
+    guid = str(uuid.uuid5(uuid.UUID("50e065bc-3134-11e6-9bab-38c9862bdaf3"), "org.ohtia.Ohtia"))
     result = []
     for hive, scope in ((winreg.HKEY_CURRENT_USER, "user"), (winreg.HKEY_LOCAL_MACHINE, "machine")):
 
@@ -686,7 +684,6 @@ def check_registration(previous, destination):
             item["scope"] == "user"
             and location in permitted
             and location.resolve() == location
-            and item["uninstall"]
-            == '"' + str(location / "Uninstall ohtia-quality.exe") + '" /currentuser',
+            and item["uninstall"] == '"' + str(location / "Uninstall Ohtia.exe") + '" /currentuser',
             "Preserve an unrelated or ambiguous registered NSIS installation; inspect it explicitly before continuing.",
         )

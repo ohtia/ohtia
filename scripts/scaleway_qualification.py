@@ -29,8 +29,8 @@ from scaleway_ledger import (
 )
 
 INCOMING = "/var/lib/ohtia-qualification/incoming"
-GUEST_SOURCE = "/home/ohtia-quality/source"
-GUEST_OUTPUT = "/home/ohtia-quality/result"
+GUEST_SOURCE = "/home/ohtia/source"
+GUEST_OUTPUT = "/home/ohtia/result"
 
 
 def enabled(*, recovery: bool = False) -> None:
@@ -187,8 +187,8 @@ def cloud_config(intent: dict, resources: dict, public_key: str) -> bytes:
         "users": [
             {"name": "root", "lock_passwd": True, "ssh_authorized_keys": [public_key.strip()]},
             {
-                "name": "ohtia-quality",
-                "homedir": "/home/ohtia-quality",
+                "name": "ohtia",
+                "homedir": "/home/ohtia",
                 "shell": "/bin/bash",
                 "lock_passwd": True,
                 "groups": [],
@@ -655,7 +655,7 @@ def guest(
             progress.observe("installation-complete")
             progress.phase(phase, deadline=deadline)
         remote(
-            f"cd {GUEST_SOURCE} && runuser -u ohtia-quality -- .tooling/python/bin/python3 scripts/scaleway_guest.py display {GUEST_OUTPUT}",
+            f"cd {GUEST_SOURCE} && runuser -u ohtia -- .tooling/python/bin/python3 scripts/scaleway_guest.py display {GUEST_OUTPUT}",
             timeout=cycle.policy()["limits"]["test_seconds"],
             operation="smoke",
         )
@@ -718,7 +718,7 @@ def guest(
     for operation in ("display", "smoke"):
         try:
             detail = cycle.decode(
-                remote(f"runuser -u ohtia-quality -- cat {GUEST_OUTPUT}/{operation}-failure.json")
+                remote(f"runuser -u ohtia -- cat {GUEST_OUTPUT}/{operation}-failure.json")
             )
             safe = {
                 "version": 1,
@@ -752,7 +752,7 @@ def guest(
         else:
             inventory_unavailable()
     try:
-        data = remote(f"runuser -u ohtia-quality -- cat {GUEST_OUTPUT}/result.json")
+        data = remote(f"runuser -u ohtia -- cat {GUEST_OUTPUT}/result.json")
         value = cycle.decode(data)
         cycle.require(
             value["status"] in {"passed", "failed"}
@@ -776,7 +776,7 @@ def guest(
         if value is not None and value["status"] == "passed":
             try:
                 compressed = remote(
-                    f"runuser -u ohtia-quality -- cat {GUEST_OUTPUT}/{evidence_archive.FILENAME}"
+                    f"runuser -u ohtia -- cat {GUEST_OUTPUT}/{evidence_archive.FILENAME}"
                 )
                 evidence_archive.admit(compressed, value["native"])
                 with (output / evidence_archive.FILENAME).open("xb") as retained:
@@ -790,7 +790,7 @@ def guest(
         for suite in ("runtime", "storage", "diagnostics", "startup"):
             try:
                 report = remote(
-                    f"cd {GUEST_SOURCE} && runuser -u ohtia-quality -- .tooling/python/bin/python3 scripts/scaleway_guest.py collect {GUEST_OUTPUT} {suite}"
+                    f"cd {GUEST_SOURCE} && runuser -u ohtia -- .tooling/python/bin/python3 scripts/scaleway_guest.py collect {GUEST_OUTPUT} {suite}"
                 )
                 if value is not None and value["status"] == "passed":
                     record = value["suites"][suite]
@@ -810,7 +810,7 @@ def guest(
                     )
             try:
                 supervision = remote(
-                    f"cd {GUEST_SOURCE} && runuser -u ohtia-quality -- .tooling/python/bin/python3 scripts/scaleway_guest.py collect {GUEST_OUTPUT} {suite}-supervision"
+                    f"cd {GUEST_SOURCE} && runuser -u ohtia -- .tooling/python/bin/python3 scripts/scaleway_guest.py collect {GUEST_OUTPUT} {suite}-supervision"
                 )
                 cycle.decode(supervision)
                 with (output / f"{suite}-supervision.json").open("xb") as retained:
@@ -820,7 +820,7 @@ def guest(
     finally:
         try:
             log = remote(
-                f"cd {GUEST_SOURCE} && runuser -u ohtia-quality -- .tooling/python/bin/python3 scripts/scaleway_guest.py collect {GUEST_OUTPUT} compositor"
+                f"cd {GUEST_SOURCE} && runuser -u ohtia -- .tooling/python/bin/python3 scripts/scaleway_guest.py collect {GUEST_OUTPUT} compositor"
             )
             (output / "compositor.log").write_bytes(log)
         except (OSError, ValueError, subprocess.SubprocessError):

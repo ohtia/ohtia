@@ -150,12 +150,12 @@ class InstallationTests(unittest.TestCase):
             native.verify_staged(self.record)
 
     def test_package_metadata_rejects_wrong_cpu_name_epoch_and_version(self):
-        expected = "Package: ohtia-quality\nVersion: 0.0.0~dev.27.1-1\nArchitecture: amd64"
+        expected = "Package: ohtia\nVersion: 0.0.0~dev.27.1-1\nArchitecture: amd64"
         with patch.object(native, "command", return_value=expected):
             native.package_identity(self.file, self.cell, self.record["version"])
         for output in [
             expected.replace("amd64", "arm64"),
-            expected.replace("ohtia-quality", "other"),
+            expected.replace("ohtia", "other"),
             expected.replace("27.1", "27.2"),
         ]:
             with (
@@ -164,8 +164,8 @@ class InstallationTests(unittest.TestCase):
             ):
                 native.package_identity(self.file, self.cell, self.record["version"])
         for output in [
-            "ohtia-quality\n1\n0.0.0~dev.27.1-1\nx86_64",
-            "ohtia-quality\n0\n0.0.0~dev.27.1-1\naarch64",
+            "ohtia\n1\n0.0.0~dev.27.1-1\nx86_64",
+            "ohtia\n0\n0.0.0~dev.27.1-1\naarch64",
         ]:
             with (
                 patch.object(native, "command", return_value=output),
@@ -176,7 +176,7 @@ class InstallationTests(unittest.TestCase):
                 )
 
     def test_deb_dependency_plan_refuses_unrelated_install_removal_or_configuration(self):
-        for plan in ("Inst libexample (1.0)", "Remv ohtia-quality", "Conf unrelated (1.0)"):
+        for plan in ("Inst libexample (1.0)", "Remv ohtia", "Conf unrelated (1.0)"):
             with self.adapter(), patch.object(native, "command", return_value=plan) as execute:
                 with self.assertRaises(ValueError):
                     self.install()
@@ -211,7 +211,7 @@ class InstallationTests(unittest.TestCase):
     def test_deb_rechecks_lease_after_all_simulations_before_transition(self):
         with (
             self.adapter(),
-            patch.object(native, "command", return_value="Inst ohtia-quality (test)") as execute,
+            patch.object(native, "command", return_value="Inst ohtia (test)") as execute,
             patch.object(
                 native, "check_installation_admission", side_effect=[None, ValueError("stale")]
             ),
@@ -397,7 +397,7 @@ class InstallationTests(unittest.TestCase):
                 "resources/app/package.json": b'{"version":"0.1.0"}',
                 "resources/app/migrations/manifest.json": manifest,
             }.items():
-                member = tarfile.TarInfo("./opt/ohtia-quality/" + name)
+                member = tarfile.TarInfo("./opt/ohtia/" + name)
                 member.size, member.mode = len(data), 0o644
                 archive.addfile(member, io.BytesIO(data))
         payload = self.root / "installed"

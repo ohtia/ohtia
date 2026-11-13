@@ -7,5 +7,5 @@ export PATH
 [ "$ID" = debian ] && [ "$VERSION_ID" = 13 ]
 [ "$(cat /sys/module/apparmor/parameters/enabled)" = Y ]
 [ "$(cat /proc/sys/kernel/unprivileged_userns_clone)" = 1 ]
-[ ! -e /etc/apparmor.d/ohtia-quality ]
-[ ! -L /opt/ohtia-quality ]
+[ ! -e /etc/apparmor.d/ohtia ]
+[ ! -L /opt/ohtia ]

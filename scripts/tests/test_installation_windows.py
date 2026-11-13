@@ -111,7 +111,7 @@ class WindowsArchiveTests(unittest.TestCase):
             own = {
                 "scope": "user",
                 "location": str(old),
-                "uninstall": '"' + str(old / "Uninstall ohtia-quality.exe") + '" /currentuser',
+                "uninstall": '"' + str(old / "Uninstall Ohtia.exe") + '" /currentuser',
             }
             with patch.object(windows, "registered_installations", return_value=[own]):
                 windows.check_registration(old, destination)
@@ -214,7 +214,7 @@ class WindowsArchiveTests(unittest.TestCase):
                     return_value=(
                         {},
                         manifest,
-                        {"name": "ohtia-quality", "version": record["version"]},
+                        {"name": "ohtia", "version": record["version"]},
                     ),
                 ),
                 patch.object(windows.quality_native, "run_owned", new=Mock()) as installer,

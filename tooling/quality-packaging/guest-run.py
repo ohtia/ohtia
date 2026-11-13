@@ -7,7 +7,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-home = Path("/home/ohtia-quality")
+home = Path("/home/ohtia")
 env = {**os.environ, **json.loads((home / "environment.json").read_text())}
 source = home / "source"
 # The cell identifier ends with its desktop: <target>-<profile>-<desktop>.
@@ -236,7 +236,7 @@ with (home / "gnome.log").open("x+b") as log:
             [
                 "/usr/bin/systemd-run",
                 "--user",
-                "--unit=ohtia-quality-gnome",
+                "--unit=ohtia-gnome",
                 "--property=Type=notify",
                 "--property=TimeoutStartSec=60s",
                 "--property=TimeoutStopSec=10s",
@@ -260,7 +260,7 @@ with (home / "gnome.log").open("x+b") as log:
                 "show",
                 "--property=MainPID",
                 "--value",
-                "ohtia-quality-gnome.service",
+                "ohtia-gnome.service",
             ],
             env=env,
             text=True,
@@ -304,7 +304,7 @@ with (home / "gnome.log").open("x+b") as log:
             [
                 "/usr/bin/systemd-run",
                 "--user",
-                "--unit=ohtia-quality-session",
+                "--unit=ohtia-session",
                 "--property=Type=oneshot",
                 "--property=RemainAfterExit=yes",
                 "--property=BindsTo=graphical-session.target",
@@ -341,7 +341,7 @@ with (home / "gnome.log").open("x+b") as log:
                 "--user",
                 "is-active",
                 "--quiet",
-                "ohtia-quality-gnome.service",
+                "ohtia-gnome.service",
             ],
             env=env,
             check=True,
@@ -365,7 +365,7 @@ with (home / "gnome.log").open("x+b") as log:
         try:
             if session_attempted:
                 subprocess.run(
-                    ["/usr/bin/systemctl", "--user", "stop", "ohtia-quality-session.service"],
+                    ["/usr/bin/systemctl", "--user", "stop", "ohtia-session.service"],
                     env=env,
                     check=True,
                     timeout=10,
@@ -383,7 +383,7 @@ with (home / "gnome.log").open("x+b") as log:
                             "/usr/bin/systemctl",
                             "--user",
                             "stop",
-                            "ohtia-quality-gnome.service",
+                            "ohtia-gnome.service",
                         ],
                         env=env,
                         check=True,

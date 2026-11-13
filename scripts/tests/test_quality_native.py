@@ -194,6 +194,33 @@ for(const invalid of [undefined,'','%SystemDrive%',
                 timeout=60,
             )
 
+    def test_configuration_declares_the_final_application_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "prepared.json").write_text(json.dumps({"app": "runtime/resources/app"}))
+            for cell in delivery.cells(
+                delivery.read(delivery.ROOT / "config/desktop/targets.json")
+            ):
+                config = native.configuration(cell, root, root / "output", "0.0.0-dev.123.2")
+                linux = cell["target"].startswith("linux-")
+                self.assertEqual(config["appId"], "org.ohtia.Ohtia")
+                # The builder installs Linux under /opt/<productName> and names the Windows
+                # executable, uninstaller and macOS bundle after productName when no global
+                # executableName overrides it.
+                self.assertEqual(config["productName"], "ohtia" if linux else "Ohtia")
+                self.assertNotIn("executableName", config)
+                self.assertEqual(config["linux"]["executableName"], "ohtia")
+                self.assertEqual(config["linux"]["desktop"], {"entry": {"Name": "Ohtia"}})
+                self.assertEqual(config["extraMetadata"]["name"], "ohtia")
+                description = "Desktop workspace for academic research"
+                self.assertEqual(config["extraMetadata"]["description"], description)
+                self.assertEqual(config["linux"]["synopsis"], description)
+                for kind in ("deb", "rpm"):
+                    self.assertEqual(config[kind]["packageName"], "ohtia")
+                    self.assertEqual(
+                        config[kind]["maintainer"], "Adrian Mastronardi <adrian@ohtia.com>"
+                    )
+
     def test_declared_formats_use_unsigned_offline_configuration(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

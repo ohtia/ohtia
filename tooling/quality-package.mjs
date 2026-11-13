@@ -84,7 +84,7 @@ await build({
     asar: false,
     afterSign: async ({ appOutDir }) => {
       if (process.platform !== "darwin") return;
-      const bundle = path.join(appOutDir, "ohtia-quality.app");
+      const bundle = path.join(appOutDir, "Ohtia.app");
       const app = path.join(bundle, "Contents/Resources/app");
       const file = path.join(app, "storage.json");
       const descriptor = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -103,7 +103,7 @@ await build({
     afterPack: async ({ appOutDir }) => {
       const app =
         process.platform === "darwin"
-          ? path.join(appOutDir, "ohtia-quality.app/Contents/Resources/app")
+          ? path.join(appOutDir, "Ohtia.app/Contents/Resources/app")
           : path.join(appOutDir, "resources/app");
       inspectProviderArtifact(app);
       refreshInventory(app);
