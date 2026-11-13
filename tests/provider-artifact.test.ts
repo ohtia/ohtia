@@ -250,6 +250,8 @@ it("retains only bounded flags from the owned macOS startup process sample", asy
     ns_application_run_frame_seen: true,
     show_error_box_frame_seen: true,
     module_loader_frame_seen: false,
+    sampling_started_seen: false,
+    sampling_completed_seen: false,
   });
   expect(run.mock.calls[0]?.[0]).toBe("/usr/bin/sample");
   expect(run.mock.calls[0]?.[1]).toEqual(["123", "1", "10", "-mayDie", "-file", "/dev/stdout"]);
@@ -264,7 +266,34 @@ it("retains only bounded flags from the owned macOS startup process sample", asy
     await sampleStartupProcess(123, async () => {
       throw Object.assign(new Error("Private driver error"), { code: 7 });
     }),
-  ).toEqual({ kind: "sample_unavailable", exit_code: 7 });
+  ).toEqual({
+    kind: "sample_unavailable",
+    exit_code: 7,
+    ns_alert_run_modal_frame_seen: false,
+    ns_application_run_frame_seen: false,
+    show_error_box_frame_seen: false,
+    module_loader_frame_seen: false,
+    sampling_started_seen: false,
+    sampling_completed_seen: false,
+  });
+  const partial = await sampleStartupProcess(123, async () => {
+    throw Object.assign(new Error("Private diagnostic"), {
+      killed: true,
+      stdout: "Private stack details\n-[NSAlert runModal]\n",
+      stderr: "Sampling process 123\nSampling completed, processing symbols\nPrivate path",
+    });
+  });
+  expect(partial).toEqual({
+    kind: "sample_timeout",
+    exit_code: null,
+    ns_alert_run_modal_frame_seen: true,
+    ns_application_run_frame_seen: false,
+    show_error_box_frame_seen: false,
+    module_loader_frame_seen: false,
+    sampling_started_seen: true,
+    sampling_completed_seen: true,
+  });
+  expect(JSON.stringify(partial)).not.toContain("Private");
 });
 it("distinguishes an unacknowledged modal from an acknowledged child that remains running", async () => {
   for (const acknowledged of [false, true]) {

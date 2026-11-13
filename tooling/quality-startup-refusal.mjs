@@ -16,7 +16,7 @@ function Report-Stage([string]$stage) {
 $budget = [int]$env:OHTIA_STARTUP_DRIVER_BUDGET_MS
 $clock = [System.Diagnostics.Stopwatch]::StartNew()
 Report-Stage 'driver_load'
-Add-Type -AssemblyName UIAutomationClient
+[void][System.Reflection.Assembly]::Load('UIAutomationClient, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35')
 Report-Stage 'window_lookup'
 while ($clock.ElapsedMilliseconds -lt $budget) {
   try {
@@ -47,7 +47,7 @@ while ($clock.ElapsedMilliseconds -lt $budget) {
     $stage = 'element_unavailable'
   }
   Report-Stage $stage
-  Start-Sleep -Milliseconds 100
+  [System.Threading.Thread]::Sleep(100)
 }
 
 exit 2
@@ -214,7 +214,21 @@ export async function acknowledgeStartupDialog(
     progress?.close();
   }
 }
-/** Read a short sample of this synthetic startup child; retain only known stack-frame flags. */
+function sampleObservation(stdout, stderr) {
+  const stack = typeof stdout === "string" ? stdout : "";
+  const outputs = [stdout, stderr].filter((value) => typeof value === "string");
+  return {
+    ns_alert_run_modal_frame_seen: /NSAlert[^\r\n]*runModal/.test(stack),
+    ns_application_run_frame_seen: /NSApplication[^\r\n]*\brun\b/.test(stack),
+    show_error_box_frame_seen: /\bShowErrorBox\b/.test(stack),
+    module_loader_frame_seen: /\b(?:dlopen|uv_dlopen)\b/.test(stack),
+    sampling_started_seen: outputs.some((value) => /Sampling process\s+\d+/.test(value)),
+    sampling_completed_seen: outputs.some((value) =>
+      /Sampling completed, processing symbols/.test(value),
+    ),
+  };
+}
+/** Read one bounded sample of this synthetic child; retain only known frame/progress flags. */
 export async function sampleStartupProcess(pid, run = execute) {
   if (!Number.isSafeInteger(pid) || pid <= 0)
     return { kind: "sample_unavailable", exit_code: null };
@@ -222,18 +236,9 @@ export async function sampleStartupProcess(pid, run = execute) {
     const result = await run(
       "/usr/bin/sample",
       [String(pid), "1", "10", "-mayDie", "-file", "/dev/stdout"],
-      {
-        timeout: 4000,
-        maxBuffer: 1048576,
-      },
+      { timeout: 4000, maxBuffer: 1048576 },
     );
-    return {
-      kind: "sampled",
-      ns_alert_run_modal_frame_seen: /NSAlert[^\r\n]*runModal/.test(result.stdout),
-      ns_application_run_frame_seen: /NSApplication[^\r\n]*\brun\b/.test(result.stdout),
-      show_error_box_frame_seen: /\bShowErrorBox\b/.test(result.stdout),
-      module_loader_frame_seen: /\b(?:dlopen|uv_dlopen)\b/.test(result.stdout),
-    };
+    return { kind: "sampled", ...sampleObservation(result.stdout, result.stderr) };
   } catch (error) {
     return {
       kind:
@@ -243,6 +248,7 @@ export async function sampleStartupProcess(pid, run = execute) {
             ? "sample_timeout"
             : "sample_unavailable",
       exit_code: Number.isInteger(error?.code) ? error.code : null,
+      ...sampleObservation(error?.stdout, error?.stderr),
     };
   }
 }
