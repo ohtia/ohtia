@@ -121,19 +121,19 @@ def cloud_config(profile: str, public_key: str, *, desktop: str) -> str:
             [
                 "bash",
                 "-ceu",
-                'test "$(cat /sys/block/vdb/serial)" = ohtia-quality-home; mkdir /tmp/quality-home; cp -a /home/ohtia-quality/. /tmp/quality-home/; mkfs.btrfs -f /dev/vdb; mount /dev/vdb /home/ohtia-quality; cp -a /tmp/quality-home/. /home/ohtia-quality/; chown -R ohtia-quality:ohtia-quality /home/ohtia-quality; restorecon -RF /home/ohtia-quality; test "$(getenforce)" = Enforcing',
+                'test "$(cat /sys/block/vdb/serial)" = ohtia-home; mkdir /tmp/quality-home; cp -a /home/ohtia/. /tmp/quality-home/; mkfs.btrfs -f /dev/vdb; mount /dev/vdb /home/ohtia; cp -a /tmp/quality-home/. /home/ohtia/; chown -R ohtia:ohtia /home/ohtia; restorecon -RF /home/ohtia; test "$(getenforce)" = Enforcing',
             ],
         ]
     commands += [
-        ["loginctl", "enable-linger", "ohtia-quality"],
-        ["touch", "/var/lib/ohtia-quality-ready"],
+        ["loginctl", "enable-linger", "ohtia"],
+        ["touch", "/var/lib/ohtia-ready"],
     ]
     # JSON is YAML 1.2; cloud-init receives structured argv, not interpolated source text.
     value = {
         "users": [
             {
-                "name": "ohtia-quality",
-                "homedir": "/home/ohtia-quality",
+                "name": "ohtia",
+                "homedir": "/home/ohtia",
                 "shell": "/bin/bash",
                 "lock_passwd": True,
                 "sudo": "ALL=(ALL) NOPASSWD:ALL",
@@ -188,7 +188,7 @@ def ssh_arguments(key: Path, known: Path, port: int) -> list:
         "StrictHostKeyChecking=accept-new",
         "-o",
         f"UserKnownHostsFile={known}",
-        "ohtia-quality@127.0.0.1",
+        "ohtia@127.0.0.1",
     ]
 
 
@@ -197,7 +197,7 @@ def wait_guest_setup(ssh: list[str], child, deadline: float) -> None:
     while time.monotonic() < deadline:
         delivery.require(child.poll() is None, "Native guest stopped before readiness.")
         ready = subprocess.run(
-            ssh + ["test -f /var/lib/ohtia-quality-ready"],
+            ssh + ["test -f /var/lib/ohtia-ready"],
             capture_output=True,
             timeout=10,
         )
@@ -224,7 +224,7 @@ def home_disk_arguments(home: Path) -> list[str]:
         "-drive",
         f"file={home},format=qcow2,if=none,id=quality-home",
         "-device",
-        "virtio-blk-pci,drive=quality-home,serial=ohtia-quality-home",
+        "virtio-blk-pci,drive=quality-home,serial=ohtia-home",
     ]
 
 
@@ -366,7 +366,7 @@ def main() -> int:
         environment = {name: os.environ[name] for name in names}
         environment.update(
             {
-                "GITHUB_EVENT_PATH": "/home/ohtia-quality/event.json",
+                "GITHUB_EVENT_PATH": "/home/ohtia/event.json",
                 "GITHUB_ACTIONS": "true",
                 "RUNNER_ENVIRONMENT": "github-hosted",
                 "OHTIA_QUALITY_VM": args.cell,
@@ -445,12 +445,12 @@ def main() -> int:
                         attempt / "event.json",
                         attempt / "environment.json",
                         ROOT / "tooling/quality-packaging/guest-run.py",
-                        "ohtia-quality@127.0.0.1:/home/ohtia-quality/",
+                        "ohtia@127.0.0.1:/home/ohtia/",
                     ],
                     timeout=180,
                 )
                 result = subprocess.run(
-                    ssh + ["python3 /home/ohtia-quality/guest-run.py"],
+                    ssh + ["python3 /home/ohtia/guest-run.py"],
                     timeout=max(1, deadline - time.monotonic()),
                     check=False,
                 )
@@ -459,7 +459,7 @@ def main() -> int:
                     scp
                     + [
                         "-r",
-                        "ohtia-quality@127.0.0.1:/home/ohtia-quality/source/artifacts/quality-result/*",
+                        "ohtia@127.0.0.1:/home/ohtia/source/artifacts/quality-result/*",
                         str(args.output),
                     ],
                     timeout=180,

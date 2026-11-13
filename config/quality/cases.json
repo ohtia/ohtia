@@ -2368,6 +2368,7 @@
     "test_quality_kwin_focus.KWinFocusTests.test_script_selects_the_first_inactive_normal_window_of_the_process",
     "test_quality_native.NativeTests.test_atomic_ready_report_replacement_has_a_finite_retry_budget",
     "test_quality_native.NativeTests.test_build_and_product_children_inherit_no_authority_credentials",
+    "test_quality_native.NativeTests.test_configuration_declares_the_final_application_identity",
     "test_quality_native.NativeTests.test_declared_formats_use_unsigned_offline_configuration",
     "test_quality_native.NativeTests.test_development_allowance_covers_only_the_assembled_ubuntu_runtime",
     "test_quality_native.NativeTests.test_development_only_smoke_launches_and_validates_only_that_selection",

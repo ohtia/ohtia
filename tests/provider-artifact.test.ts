@@ -51,7 +51,7 @@ it("rejects a fake module before production tree shaking and admits it only to a
 
 it("acknowledges only an expected native startup error and refuses unrelated or unapproved automation", async () => {
   const expected = 'Expected "startup" error';
-  const run = vi.fn(async () => ({ stdout: "acknowledged\n" }));
+  const run = vi.fn(async () => ({ stdout: "window_lookup\naction_invoke\nacknowledged\n" }));
   for (const platform of ["win32", "darwin"]) {
     expect(await acknowledgeStartupDialog(123, expected, platform, run)).toBe(true);
     if (platform === "win32") {
@@ -124,6 +124,14 @@ it("reports allowlisted dialog stages without retaining native UI or driver text
   for (const [stdout, observation] of [
     ["owner_absent\n", { kind: "automation_pending", stage: "owner_absent", native_status: null }],
     [
+      "activation_pending\n",
+      { kind: "automation_pending", stage: "activation_pending", native_status: null },
+    ],
+    [
+      "window_absent_frontmost\n",
+      { kind: "automation_pending", stage: "window_absent_frontmost", native_status: null },
+    ],
+    [
       "expected_text_name_only\n",
       { kind: "automation_pending", stage: "expected_text_name_only", native_status: null },
     ],
@@ -154,7 +162,7 @@ it("reports allowlisted dialog stages without retaining native UI or driver text
           throw Object.assign(new Error("Private driver error"), {
             killed: true,
             code,
-            stdout: "Private prefix\ndriver_compile\n",
+            stdout: "Private prefix\ndriver_load\n",
           });
         },
         report,
@@ -164,7 +172,7 @@ it("reports allowlisted dialog stages without retaining native UI or driver text
       kind,
       exit_code: null,
       native_status: null,
-      stage: "driver_compile",
+      stage: "driver_load",
     });
     expect(JSON.stringify(report.mock.calls)).not.toContain("Private");
   }

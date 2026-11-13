@@ -7,45 +7,37 @@ const windowsDialog = String.raw`
 $ErrorActionPreference = 'Stop'
 $ownerId = [int]$env:OHTIA_STARTUP_OWNER_PID
 $expected = $env:OHTIA_STARTUP_EXPECTED_TEXT
-Write-Output 'driver_load'
-Add-Type -AssemblyName UIAutomationClient
-Write-Output 'driver_compile'
-Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-using System.Text;
-public static class OhtiaStartupDialog {
-  [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-  public static extern int GetClassName(IntPtr window, StringBuilder name, int capacity);
-  [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", SetLastError = true)]
-  public static extern IntPtr SendMessageTimeout(IntPtr window, uint message, UIntPtr parameter, IntPtr data, uint flags, uint timeout, out UIntPtr result);
+function Report-Stage([string]$stage) {
+  [Console]::Out.WriteLine($stage)
+  [Console]::Out.Flush()
 }
-"@
-Write-Output 'window_lookup'
+Report-Stage 'driver_load'
+Add-Type -AssemblyName UIAutomationClient
+Report-Stage 'window_lookup'
 $condition = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $ownerId)
 $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $condition)
-if ($windows.Count -eq 0) { Write-Output 'window_absent'; exit 2 }
+if ($windows.Count -eq 0) { Report-Stage 'window_absent'; exit 2 }
 $stage = 'dialog_absent'
 foreach ($window in $windows) {
-  Write-Output 'dialog_lookup'
-  $handle = [IntPtr]$window.Current.NativeWindowHandle
-  $className = [System.Text.StringBuilder]::new(256)
-  if ([OhtiaStartupDialog]::GetClassName($handle, $className, 256) -eq 0 -or $className.ToString() -ne '#32770') { continue }
+  Report-Stage 'dialog_lookup'
+  if ($window.Current.ClassName -cne '#32770') { continue }
   $stage = 'expected_text_absent'
-  Write-Output 'text_lookup'
+  Report-Stage 'text_lookup'
   $children = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
   $matched = $false
-  foreach ($element in $children) { if ($element.Current.Name -eq $expected) { $matched = $true } }
+  foreach ($element in $children) { if ($element.Current.Name -ceq $expected) { $matched = $true } }
   if (-not $matched) { continue }
-  # Electron ShowErrorBox is a TaskDialog with the implicit IDOK action.
-  # Window controls are not dialog actions and must not enter a button count.
-  $stage = 'action_failed'
-  Write-Output 'action_invoke'
-  $result = [UIntPtr]::Zero
-  $sent = [OhtiaStartupDialog]::SendMessageTimeout($handle, 0x466, [UIntPtr]::new([uint32]1), [IntPtr]::Zero, 2, 1000, [ref]$result)
-  if ($sent -ne [IntPtr]::Zero) { Write-Output 'acknowledged'; exit 0 }
+  $stage = 'action_unavailable'
+  Report-Stage 'action_lookup'
+  $pattern = $null
+  if (-not $window.TryGetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern, [ref]$pattern)) { continue }
+  # Electron's TaskDialog admits cancellation. Close only this PID/text-matched native dialog.
+  Report-Stage 'action_invoke'
+  ([System.Windows.Automation.WindowPattern]$pattern).Close()
+  Report-Stage 'acknowledged'
+  exit 0
 }
-Write-Output $stage
+Report-Stage $stage
 exit 2
 `;
 const macDialog = String.raw`
@@ -56,8 +48,10 @@ on run argv
     set owners to application processes whose unix id is ownerId
     if (count of owners) is 0 then return "owner_absent"
     if (count of owners) is not 1 then return "owner_ambiguous"
-    set stage to "window_absent"
     tell item 1 of owners
+      set frontmost to true
+      if not frontmost then return "activation_pending"
+      set stage to "window_absent_frontmost"
       repeat with candidate in windows
         set stage to "expected_text_absent"
         set matched to false
@@ -95,9 +89,10 @@ end run
 // Driver output is an allowlisted protocol, never native UI text or arbitrary diagnostics.
 const dialogStages = new Set([
   "driver_load",
-  "driver_compile",
   "window_lookup",
   "window_absent",
+  "window_absent_frontmost",
+  "activation_pending",
   "dialog_lookup",
   "dialog_absent",
   "text_lookup",
@@ -106,6 +101,7 @@ const dialogStages = new Set([
   "owner_absent",
   "owner_ambiguous",
   "action_unavailable",
+  "action_lookup",
   "action_invoke",
   "action_failed",
 ]);

@@ -1,5 +1,5 @@
 abi <abi/4.0>,
 include <tunables/global>
-profile ohtia-quality /opt/ohtia-quality/ohtia-quality flags=(unconfined) {
+profile ohtia /opt/ohtia/ohtia flags=(unconfined) {
   userns,
 }

@@ -34,6 +34,6 @@ All modes keep Electron sandboxing, context isolation, CSP, denied permissions, 
 
 A defect in the development path guard could reach an installed application's data on the same machine. The guard prevents accidents, not a deliberate actor.
 
-Internal candidates, previews and `ohtia-quality` packages no longer refuse to start in an ordinary account, where they use `~/ohtia`. The application cannot detect them without changing final bytes.
+Internal candidates, previews and CI packages no longer refuse to start in an ordinary account, where they use `~/ohtia`. The application cannot detect them without changing final bytes.
 
 Developers can run any desktop without a qualified route. That is not qualification, and an unqualified desktop is reported only when startup actually fails.

@@ -38,7 +38,7 @@ class VirtualMachineTests(unittest.TestCase):
             self.assertFalse(config["ssh_pwauth"])
             self.assertTrue(config["disable_root"])
             self.assertTrue(config["preserve_hostname"])
-            self.assertEqual(config["users"][0]["name"], "ohtia-quality")
+            self.assertEqual(config["users"][0]["name"], "ohtia")
             self.assertTrue(config["users"][0]["lock_passwd"])
             commands = json.dumps(config["runcmd"])
             self.assertNotIn("setenforce 0", commands)
@@ -79,7 +79,7 @@ class VirtualMachineTests(unittest.TestCase):
                 self.assertEqual(
                     calls,
                     [
-                        "test -f /var/lib/ohtia-quality-ready",
+                        "test -f /var/lib/ohtia-ready",
                         "sudo cloud-init status --wait --long",
                     ],
                 )
@@ -124,7 +124,7 @@ class VirtualMachineTests(unittest.TestCase):
 
     def test_ssh_identity_is_scoped_to_the_new_local_guest(self):
         args = vm.ssh_arguments(Path("/key"), Path("/known-hosts"), 2222)
-        self.assertIn("ohtia-quality@127.0.0.1", args)
+        self.assertIn("ohtia@127.0.0.1", args)
         self.assertIn(f"UserKnownHostsFile={Path('/known-hosts')}", args)
         self.assertIn("BatchMode=yes", args)
         self.assertNotIn("StrictHostKeyChecking=no", args)
@@ -180,7 +180,7 @@ class VirtualMachineTests(unittest.TestCase):
         self.assertIn(
             f"file={Path('/fixture/home.qcow2')},format=qcow2,if=none,id=quality-home", args
         )
-        self.assertIn("virtio-blk-pci,drive=quality-home,serial=ohtia-quality-home", args)
+        self.assertIn("virtio-blk-pci,drive=quality-home,serial=ohtia-home", args)
         self.assertNotIn("serial=", args[1])
         root_args = vm.root_disk_arguments(Path("/fixture/root.qcow2"))
         self.assertIn(
@@ -299,7 +299,7 @@ class VirtualMachineTests(unittest.TestCase):
                 runtime.__truediv__ = Mock(return_value=candidate)
 
                 def paths(value):
-                    if value == "/home/ohtia-quality":
+                    if value == "/home/ohtia":
                         return home
                     if value == f"/run/user/{os.getuid()}":
                         return runtime
@@ -398,7 +398,7 @@ class VirtualMachineTests(unittest.TestCase):
                     real_path = Path
 
                     def guest_path(value):
-                        if value == "/home/ohtia-quality":
+                        if value == "/home/ohtia":
                             return home
                         if value == f"/run/user/{os.getuid()}":
                             return runtime
@@ -485,7 +485,7 @@ class VirtualMachineTests(unittest.TestCase):
                             activated.append(has_wayland)
                         if arguments[0] == "/usr/bin/systemd-run":
                             self.assertTrue(options["check"])
-                            if "--unit=ohtia-quality-gnome" in arguments:
+                            if "--unit=ohtia-gnome" in arguments:
                                 self.assertEqual(bus_checked, [True])
                                 self.assertEqual(manager_ready, [True])
                                 self.assertEqual(activated, [False])
@@ -524,7 +524,7 @@ class VirtualMachineTests(unittest.TestCase):
                                     arguments[1:],
                                     [
                                         "--user",
-                                        "--unit=ohtia-quality-session",
+                                        "--unit=ohtia-session",
                                         "--property=Type=oneshot",
                                         "--property=RemainAfterExit=yes",
                                         "--property=BindsTo=graphical-session.target",
@@ -576,7 +576,7 @@ class VirtualMachineTests(unittest.TestCase):
                             "--property=MainPID",
                             "--value",
                         ]:
-                            self.assertEqual(arguments[-1], "ohtia-quality-gnome.service")
+                            self.assertEqual(arguments[-1], "ohtia-gnome.service")
                             return subprocess.CompletedProcess(arguments, 0, stdout="4242\n")
                         if arguments[0] == "/usr/bin/systemctl":
                             if arguments[1] == "--user" and arguments[2] in (
@@ -598,13 +598,13 @@ class VirtualMachineTests(unittest.TestCase):
                                 if arguments[2] == "is-active":
                                     self.assertEqual(
                                         arguments[2:],
-                                        ["is-active", "--quiet", "ohtia-quality-gnome.service"],
+                                        ["is-active", "--quiet", "ohtia-gnome.service"],
                                     )
                                     self.assertEqual(portal_ready, [True])
                                     self.assertEqual(options["timeout"], 10)
                                     if startup_failure == "compositor-ceased":
                                         raise subprocess.CalledProcessError(1, arguments)
-                                elif arguments[-1] == "ohtia-quality-gnome.service":
+                                elif arguments[-1] == "ohtia-gnome.service":
                                     self.assertEqual(arguments[2], "stop")
                                     self.assertEqual(options["timeout"], 15)
                                     compositor_calls.append("stop")
@@ -613,7 +613,7 @@ class VirtualMachineTests(unittest.TestCase):
                                 else:
                                     self.assertEqual(
                                         arguments[1:],
-                                        ["--user", "stop", "ohtia-quality-session.service"],
+                                        ["--user", "stop", "ohtia-session.service"],
                                     )
                                     self.assertEqual(options["timeout"], 10)
                                     session_calls.append("stop")
@@ -732,7 +732,7 @@ class VirtualMachineTests(unittest.TestCase):
                 real_path = Path
 
                 def guest_path(value):
-                    if value == "/home/ohtia-quality":
+                    if value == "/home/ohtia":
                         return home
                     if value == f"/run/user/{os.getuid()}":
                         return runtime

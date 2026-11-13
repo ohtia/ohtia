@@ -65,7 +65,7 @@ def fixtures(profile="fedora-44", desktop="gnome"):
         "event": "workflow_dispatch",
     }
     extension = cycle.policy()["profiles"][profile]["format"]
-    package = {"file": f"ohtia-quality.{extension}", "bytes": 10, "sha256": "b" * 64}
+    package = {"file": f"ohtia.{extension}", "bytes": 10, "sha256": "b" * 64}
     harness = {"file": "harness.tar.gz", "bytes": 10, "sha256": "c" * 64}
     manifest = {
         "version": 1,
@@ -531,7 +531,7 @@ class CycleTests(unittest.TestCase):
         value = json.loads(
             qualification.cloud_config(self.intent, resources, self.key).decode().split("\n", 1)[1]
         )
-        account = next(u for u in value["users"] if u["name"] == "ohtia-quality")
+        account = next(u for u in value["users"] if u["name"] == "ohtia")
         self.assertIsNone(account["sudo"])
         self.assertTrue(account["lock_passwd"])
         self.assertNotIn("ssh_authorized_keys", account)
@@ -606,7 +606,7 @@ class CycleTests(unittest.TestCase):
 
                 def run(*args):
                     if args[0] == "id":
-                        return "ohtia-quality"
+                        return "ohtia"
                     if args[0] == "lsblk":
                         return json.dumps({"blockdevices": devices})
                     if args[0] == "findmnt":
@@ -631,7 +631,7 @@ class CycleTests(unittest.TestCase):
                             "pwd": Mock(
                                 getpwnam=Mock(
                                     return_value=Mock(
-                                        pw_uid=1001, pw_gid=1001, pw_dir="/home/ohtia-quality"
+                                        pw_uid=1001, pw_gid=1001, pw_dir="/home/ohtia"
                                     )
                                 )
                             )
@@ -2698,7 +2698,7 @@ class EvidenceTests(unittest.TestCase):
             "renderer": True,
             "sandbox": True,
             "birth": "stable-process-identity",
-            "executable": "/opt/ohtia-quality/ohtia-quality",
+            "executable": "/opt/ohtia/ohtia",
         }
         value = {
             "samples": [sample] * 30000,
@@ -2848,7 +2848,7 @@ class EvidenceTests(unittest.TestCase):
 
         home = self.root / "guest-home"
         guest_output = home / "result"
-        scratch = home / ".ohtia-quality-fixture"
+        scratch = home / ".ohtia-fixture"
         if not bootstrap_failure:
             guest_output.mkdir(parents=True)
             (home / ".ohtia-qualification-gnome.log").write_bytes(
