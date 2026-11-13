@@ -58,7 +58,7 @@ python3 scripts/github_policy.py verify
 
 Before any result, `plan`, `apply` and `verify` print the commit and branch of the checkout whose `config/github/` files they compare, as `Configuration: config/github/ at <commit> (<branch>)`, adding `with uncommitted changes` when those files have local edits. When `main` on GitHub is at another commit, the next line is `Warning: main on GitHub is at <commit>, not at this commit.` The warning does not change the exit code.
 
-Run it from an up-to-date `main` checkout to check the integrated configuration; [release preparation](release-preparation.md#before-dispatching) runs it before every dispatch. When `verify` reports a stage as `differs`, or a pull request changes that stage's configuration in `config/github/`, plan and apply that stage and verify again, replacing `<stage>` with `base`, `ruleset` or `tags`:
+Run it from an up-to-date `main` checkout to check the integrated configuration; [release preparation](release-preparation.md#before-running-the-workflow) runs it before every run of `prepare-release.yml`. When `verify` reports a stage as `differs`, or a pull request changes that stage's configuration in `config/github/`, plan and apply that stage and verify again, replacing `<stage>` with `base`, `ruleset` or `tags`:
 
 ```bash
 python3 scripts/github_policy.py plan --stage <stage>
@@ -70,7 +70,7 @@ Apply a configuration change from `main` after it is integrated, or from the rev
 
 Review the printed differences before using their SHA-256 as confirmation. Apply recalculates the complete stage plan before writing and refuses a different hash. Each write is followed by a readback, and the complete stage is verified again at the end. Applying an already conforming plan performs no writes. Changes are not transactional: if a write or readback fails, earlier writes may have succeeded. Read the live state and prepare a new plan before retrying.
 
-Apply the `main` ruleset after the CI workflow has been published and verified. The tool refuses to apply a changed ruleset unless `.github/workflows/ci.yml` is registered and active; that precondition alone does not prove that its jobs passed. Apply the tag ruleset before the first `prepare-release.yml` dispatch.
+Apply the `main` ruleset after the CI workflow has been published and verified. The tool refuses to apply a changed ruleset unless `.github/workflows/ci.yml` is registered and active; that precondition alone does not prove that its jobs passed. Apply the tag ruleset before the first run of `prepare-release.yml`.
 
 Planning refuses to replace an inherited or ambiguous ruleset named `main` or `release-tags`, or to proceed when another active ruleset or classic branch protection affects the default branch. Resolve such conflicts explicitly; the tool does not remove other protections.
 
