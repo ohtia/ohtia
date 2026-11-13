@@ -22,6 +22,7 @@ import tomllib
 from contextlib import contextmanager
 from pathlib import Path
 
+import application_version
 import desktop_runtime
 import linux_desktop
 import plasma_session
@@ -41,6 +42,14 @@ STARTUP_LIMITATION = "Installed-mode startup cases need packaged bytes and are n
 
 class ContributorError(ValueError):
     """A controlled contributor prerequisite or command failed."""
+
+
+def contributor_version(attempt: int) -> str:
+    """Return the local package version for one attempt, as run 1 of the root version."""
+    try:
+        return application_version.development_version(1, attempt)
+    except application_version.VersionError as error:
+        raise ContributorError(str(error)) from error
 
 
 def require(condition: bool, message: str) -> None:
@@ -886,6 +895,7 @@ def package(profile: dict, destination: Path, attempt: int) -> None:
         "The package destination parent is not writable/searchable by this account. Fix only the owned directory's permissions or select another qualified destination; do not build as root.",
     )
     require(attempt > 0, "Use a positive local attempt number.")
+    version = contributor_version(attempt)
     inputs = input_hashes()
     destination.mkdir()
     built = subprocess.run(
@@ -905,9 +915,7 @@ def package(profile: dict, destination: Path, attempt: int) -> None:
         "profile": profile["id"],
         "formats": [profile["package"]],
     }
-    config = quality_native.configuration(
-        cell, assembled, destination / "packages", f"0.0.0-dev.1.{attempt}"
-    )
+    config = quality_native.configuration(cell, assembled, destination / "packages", version)
     config_file = destination / "builder.json"
     config_file.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     result = subprocess.run(
