@@ -56,6 +56,8 @@ Check every stage with `verify`. It prints one line per stage, `verified` or `di
 python3 scripts/github_policy.py verify
 ```
 
+Before any result, `plan`, `apply` and `verify` print the commit and branch of the checkout whose `config/github/` files they compare, as `Configuration: config/github/ at <commit> (<branch>)`, adding `with uncommitted changes` when those files have local edits. When `main` on GitHub is at another commit, the next line is `Warning: main on GitHub is at <commit>, not at this commit.` The warning does not change the exit code.
+
 Run it from an up-to-date `main` checkout to check the integrated configuration; [release preparation](release-preparation.md#before-dispatching) runs it before every dispatch. When `verify` reports a stage as `differs`, or a pull request changes that stage's configuration in `config/github/`, plan and apply that stage and verify again, replacing `<stage>` with `base`, `ruleset` or `tags`:
 
 ```bash
