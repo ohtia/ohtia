@@ -22,8 +22,13 @@ The [release policy](release-policy.md#candidate-preparation) owns candidate rea
    python3 scripts/github_policy.py verify
    ```
 
-3. If every stage prints `verified` and the command exits with `0`, continue with the dispatch. The `tags` stage covers the tag ruleset that keeps reserved and version tags from being moved or deleted; it prints `differs` until that ruleset is first applied. Exit code `2` means the configuration could not be read or validated; correct the reported cause and run `verify` again.
-4. If a stage prints `differs`, plan that stage, review the printed differences, apply the plan with its SHA-256 and verify again, replacing `<stage>` with the stage name that `verify` printed: `base`, `ruleset` or `tags`. [Repository policy](repository-policy.md#plan-apply-and-verify) describes the plan and its review. Do not dispatch until `verify` exits with `0`.
+   The `verify` command compares GitHub with the settings declared in `config/github/`. It checks them in three groups, called stages, and prints one line per stage, such as `tags: verified` or `tags: differs`:
+   - `base`: repository settings, GitHub Actions permissions, dependency security settings and issue labels.
+   - `ruleset`: the protection rules of the `main` branch.
+   - `tags`: the protection rules that keep the `reserved/v*` and `v*` tags from being moved or deleted.
+
+3. If all three stages print `verified` and the command exits with `0`, continue with the dispatch. Exit code `2` means the configuration could not be read or validated; correct the reported cause and run `verify` again.
+4. If a stage prints `differs`, GitHub no longer matches its declared settings. Plan that stage, review the printed differences, apply the plan with its SHA-256 and verify again, replacing `<stage>` with the name of the stage that printed `differs`. [Repository policy](repository-policy.md#plan-apply-and-verify) describes the plan and its review. Do not dispatch until `verify` exits with `0`.
 
    ```bash
    python3 scripts/github_policy.py plan --stage <stage>
