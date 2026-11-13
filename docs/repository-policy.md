@@ -3,9 +3,7 @@ type: Playbook
 title: Repository policy
 description: GitHub repository configuration, dependency updates, quality checks, and verification procedures.
 generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
+  by: claude-code/claude-opus-5-5
 sources:
   - id: github-pull-request-api
     resource: https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request
@@ -31,7 +29,7 @@ GitHub repository settings are declared in `config/github/`. The policy tool use
 ## Declared configuration
 
 - `repository.json` permits merge commits, disables squash, rebase, and auto-merge, permits updating a pull request branch, enables Discussions, and disables the wiki. Branch deletion remains part of the post-merge workflow.
-- `actions-permissions.json` permits only its explicitly listed checkout, Python setup, artifact transfer and artifact attestation actions, requires full commit SHAs, and gives workflow tokens read-only access without pull request approval privileges. [ADR-0041](adr/adr-0041-independent-linux-signing-service.md) defines the isolated build attestor; only that job requests OIDC and attestation-write permissions. The action patterns apply to this public repository.[^github-actions-permissions] It also requires `all_external_contributors` approval for fork workflows, including contributors with previously accepted changes. Approval authorizes workflow execution, not fork creation or PR integration.
+- `actions-permissions.json` permits only its explicitly listed checkout, Python setup, artifact transfer and artifact attestation actions, requires full commit SHAs, and gives workflow tokens read-only access without pull request approval privileges. No workflow currently requests OIDC or attestation-write permissions. The action patterns apply to this public repository.[^github-actions-permissions] It also requires `all_external_contributors` approval for fork workflows, including contributors with previously accepted changes. Approval authorizes workflow execution, not fork creation or PR integration.
 - `ci-verification.json` declares the expected workflow/event, mandatory jobs/steps, explicitly optional cleanup steps and the reduced set a documentation-only PR may omit, all used by the read-only pre-merge verifier. Review this inventory with workflow changes.
 - `security.json` enables dependency vulnerability alerts and automated security fixes.
 - `labels.json` defines managed label names, colors, and descriptions. Unmanaged labels are preserved.
