@@ -1,5 +1,0 @@
-name: Inspect isolated build artifact
-description: Run only the fixed recipe helper with the runner's Results service context
-runs:
-  using: node24
-  main: main.mjs
