@@ -9,6 +9,7 @@ import {
   admitDevelopmentRoot,
   admitRuntimeProfile,
   decodeStorageNotice,
+  isArtifactVersion,
   isDevelopmentExecutable,
   isIdentifier,
   isInterfaceLocale,
@@ -39,7 +40,7 @@ async function start(): Promise<void> {
       };
     }
   ).parentPort;
-  const [runtimeArgument, generation, locale, mode] = process.argv.slice(2);
+  const [runtimeArgument, generation, locale, mode, release] = process.argv.slice(2);
   const selected = parseRuntimeArgument(runtimeArgument);
   if (
     !parent ||
@@ -47,7 +48,8 @@ async function start(): Promise<void> {
     !generation ||
     !isIdentifier(generation) ||
     !isInterfaceLocale(locale) ||
-    !["create", "open", "retry", "restore", "blocked"].includes(mode ?? "")
+    !["create", "open", "retry", "restore", "blocked"].includes(mode ?? "") ||
+    !isArtifactVersion(release)
   )
     throw new Error("Invalid utility context.");
   const user = os.userInfo();
@@ -201,7 +203,8 @@ async function start(): Promise<void> {
       bindingSha256: record.bindingSha256,
       engine: record.engine,
       migrationDirectory: path.join(directory, "migrations"),
-      release: "0.0.0",
+      // The packaged application version, as About and diagnostics report it.
+      release,
       allowCreate: mode === "create",
       assertAdmission,
     });

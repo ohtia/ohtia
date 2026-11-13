@@ -93,6 +93,7 @@
     "sv-SE"
   ],
   "python": [
+    "scripts/tests/test_application_version.py",
     "scripts/tests/test_change_notes.py",
     "scripts/tests/test_ci_linux_dependencies.py",
     "scripts/tests/test_delivery_admission.py",

@@ -28,6 +28,7 @@ from unittest.mock import MagicMock, Mock, patch
 from urllib.parse import parse_qs, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import application_version
 import quality_native
 import scaleway_bootstrap as bootstrap
 import scaleway_build as build
@@ -71,7 +72,7 @@ def fixtures(profile="fedora-44", desktop="gnome"):
         "identity": identity,
         "profile": profile,
         "cell": cycle.cell(profile, desktop),
-        "application_version": "0.0.0-dev.101.1",
+        "application_version": application_version.development_version(101, 1),
         "source_tree": "d" * 40,
         "policy_sha256": cycle.digest(cycle.POLICY_PATH),
         "package": package,
@@ -450,7 +451,7 @@ class CycleTests(unittest.TestCase):
     def test_manifest_rejects_fake_attempts_wrong_arch_and_changed_bytes(self):
         original = self.intent["build"]
         for path, value in (
-            (("application_version",), "0.0.0-dev.101.2"),
+            (("application_version",), application_version.development_version(101, 2)),
             (("cell",), "linux-x64"),
             (("publisher_signed",), True),
             (("package", "bytes"), True),
@@ -754,6 +755,25 @@ class CycleTests(unittest.TestCase):
             cycle.validate_build(build, historical=True)
         _, current = fixtures("debian-13", "kde")
         cycle.validate_build(current["build"], historical=True)
+
+    def test_current_builds_use_the_root_version_and_historical_builds_keep_theirs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "package.json").write_text(json.dumps({"version": "0.3.0"}))
+            with patch.object(application_version, "ROOT", Path(directory)):
+                _, intent = fixtures("debian-13", "kde")
+                build = copy.deepcopy(intent["build"])
+                self.assertEqual(build["application_version"], "0.3.0-dev.101.1")
+                cycle.validate_build(build)
+                build["application_version"] = "0.0.0-dev.101.1"
+                cycle.validate_build(build, historical=True)
+                with self.assertRaises(cycle.CycleError):
+                    cycle.validate_build(build)
+                for version in ("0.3.0-dev.101.2", "0.3.0-dev.102.1", "0.3.0", "0.3.0-beta.1"):
+                    build["application_version"] = version
+                    with self.subTest(version=version):
+                        for historical in (False, True):
+                            with self.assertRaises(cycle.CycleError):
+                                cycle.validate_build(build, historical=historical)
 
     def test_guest_readiness_requires_each_desktop_session_command(self):
         import scaleway_bootstrap
@@ -1560,7 +1580,7 @@ class LedgerTests(unittest.TestCase):
         value = copy.deepcopy(self.intent)
         value["identity"]["attempt"] = "2"
         value["build"]["identity"]["attempt"] = "2"
-        value["build"]["application_version"] = "0.0.0-dev.101.2"
+        value["build"]["application_version"] = application_version.development_version(101, 2)
         with (
             patch.object(self.gh, "workflow", return_value=self.workflow),
             patch.object(self.gh, "pages", return_value=[self.run]),
@@ -2480,7 +2500,9 @@ class RestoreTests(unittest.TestCase):
             intent["identity"]["run_id"] = str(10000 + number)
             intent["identity"]["source_sha"] = hashlib.sha1(uuid.uuid4().bytes).hexdigest()
             intent["build"]["identity"] = copy.deepcopy(intent["identity"])
-            intent["build"]["application_version"] = f"0.0.0-dev.{10000 + number}.1"
+            intent["build"]["application_version"] = application_version.development_version(
+                10000 + number, 1
+            )
             intent["build"]["source_tree"] = hashlib.sha1(uuid.uuid4().bytes).hexdigest()
             for kind in ("package", "harness"):
                 intent["build"][kind]["sha256"] = hashlib.sha256(uuid.uuid4().bytes).hexdigest()
@@ -3463,6 +3485,12 @@ class PackageInventoryTests(unittest.TestCase):
 class HarnessTests(unittest.TestCase):
     def test_development_state_never_reaches_the_guest(self):
         self.assertFalse(build.included(Path(".ohtia-dev/research/ohtia.db3")))
+
+    def test_the_root_manifest_reaches_the_guest_without_other_root_files(self):
+        self.assertTrue(build.included(Path("package.json")))
+        for name in ("pnpm-lock.yaml", "README.md", "tmp/package.json", "docs/package.json"):
+            with self.subTest(name=name):
+                self.assertFalse(build.included(Path(name)))
 
     def test_every_module_the_packaged_suites_import_reaches_the_guest(self):
         root = Path(build.__file__).resolve().parents[1]

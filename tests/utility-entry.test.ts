@@ -25,9 +25,12 @@ afterEach(() => {
 });
 async function launch(
   options: {
-    mode?: string;
+    /** The storage mode argument; null omits it and every later argument. */
+    mode?: string | null;
     generation?: string;
     locale?: string;
+    /** The packaged application version argument; null omits it. */
+    release?: string | null;
     parent?: boolean;
     admission?: string;
     runtime?: (root: string) => string;
@@ -110,7 +113,12 @@ async function launch(
     options.runtime ? options.runtime(root) : `qualification:${file}`,
     options.generation ?? "generation-1",
     options.locale ?? "en-US",
-    options.mode ?? "create",
+    ...(options.mode === null
+      ? []
+      : [
+          options.mode ?? "create",
+          ...(options.release === null ? [] : [options.release ?? "0.3.0-dev.4.2"]),
+        ]),
   ];
   const exit = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
   const user = actualOs.userInfo();
@@ -313,6 +321,10 @@ describe("utility process composition with isolated synthetic files", () => {
     { generation: "bad generation" },
     { locale: "xx-XX" },
     { mode: "invalid" },
+    { mode: null },
+    { release: null },
+    { release: "0.3" },
+    { release: "v0.3.0" },
   ])("refuses an invalid parent context %j", async (options) => {
     const h = await launch(options);
     expect(h.exit).toHaveBeenCalledWith(1);
@@ -348,6 +360,7 @@ describe("utility process composition with isolated synthetic files", () => {
         expect(h.stores[0].options).toMatchObject({
           root: path.join(h.home, "ohtia"),
           allowCreate: mode === "create",
+          release: "0.3.0-dev.4.2",
         });
         expect(messages[1].state).toBe(
           mode === "restore" ? "checkpoint_restored" : "storage_ready",
