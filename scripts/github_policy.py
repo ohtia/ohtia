@@ -43,6 +43,7 @@ def load_config(directory: Path) -> dict:
         "security",
         "labels",
         "ruleset-main",
+        "ruleset-tags",
     ):
         result[name] = json.loads(
             (directory / f"{name}.json").read_text(encoding="utf-8"),
@@ -71,6 +72,16 @@ def load_config(directory: Path) -> dict:
         "automated_security_fixes": True,
     }:
         raise PolicyError("Dependency security controls must remain enabled")
+    tags = result["ruleset-tags"]
+    if (
+        tags.get("target") != "tag"
+        or tags.get("enforcement") != "active"
+        or tags.get("bypass_actors") != []
+        or tags.get("conditions")
+        != {"ref_name": {"include": ["refs/tags/reserved/v*", "refs/tags/v*"], "exclude": []}}
+        or {rule.get("type") for rule in tags.get("rules", [])} != {"deletion", "update"}
+    ):
+        raise PolicyError("Release tags must stay protected against deletion and update")
     approval = result["actions-permissions"].get("fork_pr_contributor_approval")
     if approval != {"approval_policy": "all_external_contributors"}:
         raise PolicyError("Fork workflows must require approval for all external contributors")
@@ -305,6 +316,26 @@ def plan(github: GitHub, config: dict, stage: str) -> dict:
             for label in labels
             if label["name"].casefold() not in {x["name"].casefold() for x in config["labels"]}
         )
+    elif stage == "tags":
+        desired = config["ruleset-tags"]
+        rulesets = github.listing(f"{REPO}/rulesets?includes_parents=true")
+        matching = [item for item in rulesets if item["name"] == desired["name"]]
+        if len(matching) > 1 or any(
+            item.get("source") != EXPECTED_REPOSITORY or item.get("source_type") != "Repository"
+            for item in matching
+        ):
+            raise PolicyError(
+                "Conflicting rulesets named release-tags; no ruleset will be replaced"
+            )
+        existing = github.get(f"{REPO}/rulesets/{matching[0]['id']}") if matching else None
+        add(
+            "ruleset.tags",
+            f"{REPO}/rulesets/{matching[0]['id']}" if existing else f"{REPO}/rulesets",
+            desired,
+            existing,
+            method="PUT" if existing else "POST",
+        )
+        extras = []
     else:
         desired = config["ruleset-main"]
         app = github.get("apps/github-actions")
@@ -400,7 +431,7 @@ def apply(github: GitHub, config: dict, stage: str, confirmation: str) -> None:
             actual = security_value(github, resource.split(".", 1)[1])
         else:
             endpoint = change["read_endpoint"]
-            if resource == "ruleset.main" and change["method"] == "POST":
+            if resource.startswith("ruleset.") and change["method"] == "POST":
                 endpoint = f"{REPO}/rulesets/{response['id']}"
             actual = github.get(endpoint)
         if normalized(project(actual, change["after"])) != normalized(change["after"]):
@@ -415,18 +446,18 @@ def apply(github: GitHub, config: dict, stage: str, confirmation: str) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("plan", "apply", "verify"))
-    parser.add_argument("--stage", choices=("base", "ruleset", "all"), default="all")
+    parser.add_argument("--stage", choices=("base", "ruleset", "tags", "all"), default="all")
     parser.add_argument("--confirm", help="SHA-256 printed by plan; required for apply")
     args = parser.parse_args(argv)
     if args.command == "apply" and (args.stage == "all" or not args.confirm):
-        parser.error("apply requires --stage base|ruleset and --confirm <sha256>")
+        parser.error("apply requires --stage base|ruleset|tags and --confirm <sha256>")
     try:
         config = load_config(ROOT / "config/github")
         github = GitHub()
         if args.command == "apply":
             apply(github, config, args.stage, args.confirm)
             return 0
-        stages = ("base", "ruleset") if args.stage == "all" else (args.stage,)
+        stages = ("base", "ruleset", "tags") if args.stage == "all" else (args.stage,)
         different = False
         for stage in stages:
             candidate = plan(github, config, stage)

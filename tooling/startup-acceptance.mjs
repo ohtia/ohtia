@@ -225,6 +225,8 @@ async function installedJourney(scratch) {
     scratch,
     message("en-US", "title"),
   );
+  if (process.platform === "darwin" || process.platform === "win32")
+    expect(refusal.dialog_acknowledged).toBe(true);
   expect(inventory()).toEqual(beforeRefusal);
   record("installed-refuses-development-command", refusal);
   await retain("before");

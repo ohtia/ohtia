@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "platforms": [
+    {
+      "id": "linux",
+      "signed": false,
+      "builds": [
+        {
+          "target": "linux-x64",
+          "runner": "ubuntu-26.04",
+          "packages": [
+            {
+              "profile": "ubuntu-26.04",
+              "format": "deb"
+            },
+            {
+              "profile": "debian-13",
+              "format": "deb"
+            },
+            {
+              "profile": "fedora-44",
+              "format": "rpm"
+            }
+          ]
+        },
+        {
+          "target": "linux-arm64",
+          "runner": "ubuntu-26.04-arm",
+          "packages": [
+            {
+              "profile": "ubuntu-26.04",
+              "format": "deb"
+            },
+            {
+              "profile": "debian-13",
+              "format": "deb"
+            },
+            {
+              "profile": "fedora-44",
+              "format": "rpm"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "windows",
+      "signed": false,
+      "builds": [
+        {
+          "target": "win32-x64",
+          "runner": "windows-2025",
+          "packages": [
+            {
+              "format": "nsis"
+            }
+          ]
+        },
+        {
+          "target": "win32-arm64",
+          "runner": "windows-11-arm",
+          "packages": [
+            {
+              "format": "nsis"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "macos",
+      "signed": false,
+      "builds": [
+        {
+          "target": "darwin-arm64",
+          "runner": "macos-26",
+          "packages": [
+            {
+              "format": "dmg"
+            },
+            {
+              "format": "zip"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

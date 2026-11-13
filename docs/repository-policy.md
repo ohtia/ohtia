@@ -26,18 +26,19 @@ sources:
 
 # Repository policy
 
-GitHub repository settings are declared in `config/github/`. The policy tool uses Python 3.12 or later and the GitHub CLI (`gh`), and runs from the task worktree. It does not need a Python application workspace or third-party Python packages. Planning, application, and verification require the public `ohtia/ohtia` repository with `main` as its default branch; resolve default-branch drift before proceeding.
+GitHub repository settings are declared in `config/github/`. The policy tool uses Python 3.12 or later and the GitHub CLI (`gh`), and compares GitHub with the `config/github/` files of the checkout it runs from. It does not need a Python application workspace or third-party Python packages. Planning, application, and verification require the public `ohtia/ohtia` repository with `main` as its default branch; resolve default-branch drift before proceeding.
 
 ## Declared configuration
 
 - `repository.json` permits merge commits, disables squash, rebase, and auto-merge, permits updating a pull request branch, enables Discussions, and disables the wiki. Branch deletion remains part of the post-merge workflow.
-- `actions-permissions.json` permits only its explicitly listed checkout, Python setup, artifact transfer and artifact attestation actions, requires full commit SHAs, and gives workflow tokens read-only access without pull request approval privileges. No workflow currently requests OIDC or attestation-write permissions. The action patterns apply to this public repository.[^github-actions-permissions] It also requires `all_external_contributors` approval for fork workflows, including contributors with previously accepted changes. Approval authorizes workflow execution, not fork creation or PR integration.
+- `actions-permissions.json` permits only its explicitly listed checkout, Python setup, artifact transfer and artifact attestation actions, requires full commit SHAs, and gives workflow tokens read-only access by default, without pull request approval privileges. Only `prepare-release.yml` requests more: contents write in its `reserve` job to create the reserved tag, and contents write, OIDC and attestation write in its `release` job to attest the packages and store them in an unpublished release. The action patterns apply to this public repository.[^github-actions-permissions] It also requires `all_external_contributors` approval for fork workflows, including contributors with previously accepted changes. Approval authorizes workflow execution, not fork creation or PR integration.
 - `ci-verification.json` declares the expected workflow/event, mandatory jobs/steps, explicitly optional cleanup steps and the reduced set a documentation-only PR may omit, all used by the read-only pre-merge verifier. Review this inventory with workflow changes.
 - `security.json` enables dependency vulnerability alerts and automated security fixes.
 - `labels.json` defines managed label names, colors, and descriptions. Unmanaged labels are preserved.
 - `ruleset-main.json` protects the default branch with pull requests, verified signatures, resolved conversations, merge commits only, and the `ci` check against an up-to-date base. No actor bypasses the rules. Zero approving reviews accommodates the single-maintainer workflow; the maintainer performs the human review and merge.[^github-repository-rules]
+- `ruleset-tags.json` protects the `reserved/v*` and `v*` tags against deletion and update, with no bypass actor. `prepare-release.yml` creates the reserved tag of a version, and publication creates its version tag; neither can later be moved or removed.
 
-The required check is bound to the GitHub Actions app. Its declared integration ID is checked against `GET /apps/github-actions` whenever the ruleset is planned or verified. Configuration files describe the intended policy; only successful live verification establishes conformity.
+The required check is bound to the GitHub Actions app. Its declared integration ID is checked against `GET /apps/github-actions` whenever the `main` ruleset is planned or verified. Configuration files describe the intended policy; only successful live verification establishes conformity.
 
 ## Authentication
 
@@ -47,27 +48,31 @@ The policy tool uses `gh api` with literal repository placeholders. It does not 
 
 ## Plan, apply, and verify
 
-The `base` stage manages repository settings, Actions permissions (including fork contributor approval), dependency security settings, and labels. The `ruleset` stage manages only the `main` ruleset. Planning and verification never write to GitHub.
+The `base` stage manages repository settings, Actions permissions (including fork contributor approval), dependency security settings, and labels. The `ruleset` stage manages only the `main` ruleset, and the `tags` stage only the `release-tags` ruleset. Planning and verification never write to GitHub.
+
+Check every stage with `verify`. It prints one line per stage, `verified` or `differs`, after a `Different:` line for each differing resource:
 
 ```bash
-python3 scripts/github_policy.py plan --stage base
-python3 scripts/github_policy.py apply --stage base --confirm <plan-sha256>
-python3 scripts/github_policy.py verify --stage base
-```
-
-Review the printed differences before using their SHA-256 as confirmation. Apply recalculates the complete stage plan before writing and refuses a different hash. Each write is followed by a readback, and the complete stage is verified again at the end. Applying an already conforming plan performs no writes. Changes are not transactional: if a write or readback fails, earlier writes may have succeeded. Read the live state and prepare a new plan before retrying.
-
-Apply the ruleset after the CI workflow has been published and verified. The tool refuses to apply a changed ruleset unless `.github/workflows/ci.yml` is registered and active; that precondition alone does not prove that its jobs passed.
-
-```bash
-python3 scripts/github_policy.py plan --stage ruleset
-python3 scripts/github_policy.py apply --stage ruleset --confirm <plan-sha256>
 python3 scripts/github_policy.py verify
 ```
 
-Planning refuses to replace an inherited or ambiguous ruleset named `main`, or to proceed when another active ruleset or classic branch protection affects the default branch. Resolve such conflicts explicitly; the tool does not remove other protections.
+Run it from an up-to-date `main` checkout to check the integrated configuration; [release preparation](release-preparation.md#before-dispatching) runs it before every dispatch. When `verify` reports a stage as `differs`, or a pull request changes that stage's configuration in `config/github/`, plan and apply that stage and verify again, replacing `<stage>` with `base`, `ruleset` or `tags`:
 
-Exit codes are `0` for conformity, `1` for declared differences, and `2` when a read, validation, write, or verification fails. A plan that proposes changes returns `1` and still prints its confirmation hash. Run `verify` without `--stage` to check both stages. Extra labels are reported by planning and do not count as drift.
+```bash
+python3 scripts/github_policy.py plan --stage <stage>
+python3 scripts/github_policy.py apply --stage <stage> --confirm <plan-sha256>
+python3 scripts/github_policy.py verify
+```
+
+Apply a configuration change from `main` after it is integrated, or from the reviewed task worktree when the pull request's own CI needs it, such as permission for a new action.
+
+Review the printed differences before using their SHA-256 as confirmation. Apply recalculates the complete stage plan before writing and refuses a different hash. Each write is followed by a readback, and the complete stage is verified again at the end. Applying an already conforming plan performs no writes. Changes are not transactional: if a write or readback fails, earlier writes may have succeeded. Read the live state and prepare a new plan before retrying.
+
+Apply the `main` ruleset after the CI workflow has been published and verified. The tool refuses to apply a changed ruleset unless `.github/workflows/ci.yml` is registered and active; that precondition alone does not prove that its jobs passed. Apply the tag ruleset before the first `prepare-release.yml` dispatch.
+
+Planning refuses to replace an inherited or ambiguous ruleset named `main` or `release-tags`, or to proceed when another active ruleset or classic branch protection affects the default branch. Resolve such conflicts explicitly; the tool does not remove other protections.
+
+Exit codes are `0` for conformity, `1` for declared differences, and `2` when a read, validation, write, or verification fails. A plan that proposes changes returns `1` and still prints its confirmation hash. `verify --stage <stage>` checks a single stage. Extra labels are reported by planning and do not count as drift.
 
 ## Repository checks
 
@@ -140,7 +145,7 @@ Dependency bots remain proposal producers under [issue-backed dependency adoptio
 1. Run the repository checks on the candidate, including new files. Before committing or pushing, respect the owner's review checkpoint and the code review requirements in [AGENTS.md](../AGENTS.md).
 2. Apply and verify the reviewed `base` configuration with an authorized administrator token.
 3. Publish the reviewed scaffolding through a pull request and verify its `ci` run. Inspect its workflow path, event, originating GitHub Actions app, tested SHA, job results, and correspondence to the current candidate. A check name alone is insufficient.
-4. After human integration, verify the run for the actual merge commit on `main`. Plan, apply, and verify the final ruleset after the workflow is registered and active.
+4. After human integration, verify the run for the actual merge commit on `main`. Plan, apply, and verify the `main` ruleset after the workflow is registered and active.
 5. Inspect the effective rules using `gh api 'repos/{owner}/{repo}/rules/branches/main'` and confirm the required `ci` check, its integration ID, and strict base policy.
 6. Check Dependabot update runs for both configured ecosystems and verify that they completed successfully. Dependency update runs can be listed with `gh api 'repos/{owner}/{repo}/actions/runs?event=dynamic'`; inspect the ecosystem in the logs rather than inferring it from a title.
 7. In a new clean clone, run `git switch --detach <integrated-sha>` to select the exact integrated commit, install the hooks, and run the repository checks above. Detached HEAD permits verification of the integrated content without triggering the local guard against commits on `main`. Record the commit, tool versions, results, and clean `git status --short` in the issue or pull request.

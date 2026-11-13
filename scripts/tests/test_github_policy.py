@@ -36,6 +36,7 @@ class FakeGitHub(policy.GitHub):
         self.alerts = True
         self.fixes = {"enabled": True, "paused": False}
         self.ruleset = {"id": 7, **copy.deepcopy(CONFIG["ruleset-main"])}
+        self.tag_ruleset = {"id": 8, **copy.deepcopy(CONFIG["ruleset-tags"])}
         self.other_rules = []
         self.classic = False
         self.app_id = 15368
@@ -74,20 +75,16 @@ class FakeGitHub(policy.GitHub):
                 name = unquote(endpoint.rsplit("/", 1)[1])
                 return 200, copy.deepcopy(next(x for x in self.labels if x["name"] == name))
             if endpoint.startswith(f"{base}/rulesets?"):
-                return 200, (
-                    [
-                        {
-                            "id": 7,
-                            "name": "main",
-                            "source": "ohtia/ohtia",
-                            "source_type": "Repository",
-                        }
-                    ]
-                    if self.ruleset
-                    else []
-                )
+                return 200, [
+                    {"id": item["id"], "source": "ohtia/ohtia", "source_type": "Repository"}
+                    | {"name": item["name"]}
+                    for item in (self.ruleset, self.tag_ruleset)
+                    if item
+                ]
             if endpoint == f"{base}/rulesets/7":
                 return 200, copy.deepcopy(self.ruleset)
+            if endpoint == f"{base}/rulesets/8":
+                return 200, copy.deepcopy(self.tag_ruleset)
             if endpoint.startswith(f"{base}/rules/branches/"):
                 rules = (
                     [{**x, "ruleset_id": 7} for x in self.ruleset["rules"]] if self.ruleset else []
@@ -126,6 +123,9 @@ class FakeGitHub(policy.GitHub):
                 description=payload["description"],
             )
         elif endpoint.startswith(f"{base}/rulesets"):
+            if payload["name"] == "release-tags":
+                self.tag_ruleset = {"id": 8, **copy.deepcopy(payload)}
+                return 201, {"id": 8}
             self.ruleset = {"id": 7, **copy.deepcopy(payload)}
             return 201, {"id": 7}
         else:
@@ -143,7 +143,7 @@ class PolicyTests(unittest.TestCase):
             policy.apply(self.github, CONFIG, stage, confirmation)
 
     def test_conformity_and_read_only_planning(self):
-        for stage in ("base", "ruleset"):
+        for stage in ("base", "ruleset", "tags"):
             self.assertEqual(policy.plan(self.github, CONFIG, stage)["changes"], [])
         self.assertEqual(self.github.writes, [])
 
@@ -340,6 +340,83 @@ class PolicyTests(unittest.TestCase):
         self.apply("ruleset")
         self.assertEqual(len(self.github.writes), 1)
         self.assertEqual(self.github.writes[0][1], "POST")
+
+    def test_tag_ruleset_is_created_with_readback_and_is_idempotent(self):
+        self.github.tag_ruleset = None
+        self.apply("tags")
+        self.apply("tags")
+        self.assertEqual(
+            self.github.writes, [(f"{policy.REPO}/rulesets", "POST", CONFIG["ruleset-tags"])]
+        )
+        self.assertEqual(
+            self.github.tag_ruleset["rules"], [{"type": "deletion"}, {"type": "update"}]
+        )
+        self.assertEqual(
+            self.github.tag_ruleset["conditions"]["ref_name"]["include"],
+            ["refs/tags/reserved/v*", "refs/tags/v*"],
+        )
+
+    def test_tag_ruleset_drift_is_replaced_and_stays_isolated(self):
+        self.github.tag_ruleset["rules"] = [{"type": "deletion"}]
+        self.github.tag_ruleset["bypass_actors"] = [{"actor_id": 5, "actor_type": "RepositoryRole"}]
+        self.github.repository["allow_squash_merge"] = True
+        self.github.ruleset = None
+        self.apply("tags")
+        self.assertEqual(self.github.writes[0][:2], (f"{policy.REPO}/rulesets/8", "PUT"))
+        self.assertEqual(policy.plan(self.github, CONFIG, "tags")["changes"], [])
+        self.assertTrue(self.github.repository["allow_squash_merge"])
+        self.assertIsNone(self.github.ruleset)
+
+    def test_tag_ruleset_never_replaces_an_inherited_or_duplicate_name(self):
+        original = self.github.listing
+
+        def listing(endpoint):
+            if "/rulesets?" in endpoint:
+                return [
+                    {
+                        "id": 99,
+                        "name": "release-tags",
+                        "source": "ohtia",
+                        "source_type": "Organization",
+                    }
+                ]
+            return original(endpoint)
+
+        with patch.object(self.github, "listing", side_effect=listing):
+            with self.assertRaisesRegex(policy.PolicyError, "Conflicting"):
+                self.apply("tags")
+        self.assertEqual(self.github.writes, [])
+
+    def test_tag_ruleset_readback_detects_ignored_writes(self):
+        self.github.tag_ruleset["rules"] = []
+        self.github.discard_write = True
+        with self.assertRaisesRegex(policy.PolicyError, "Readback differs"):
+            self.apply("tags")
+
+    def test_tag_protection_cannot_be_weakened_in_configuration(self):
+        for change in (
+            {"enforcement": "evaluate"},
+            {"target": "branch"},
+            {"bypass_actors": [{"actor_id": 5, "actor_type": "RepositoryRole"}]},
+            {"rules": [{"type": "deletion"}]},
+            {"conditions": {"ref_name": {"include": ["refs/tags/reserved/v*"], "exclude": []}}},
+            {
+                "conditions": {
+                    "ref_name": {
+                        "include": ["refs/tags/reserved/v*", "refs/tags/v*"],
+                        "exclude": ["refs/tags/v0*"],
+                    }
+                }
+            },
+        ):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                for file in (policy.ROOT / "config/github").glob("*.json"):
+                    (root / file.name).write_text(file.read_text())
+                tags = json.loads((root / "ruleset-tags.json").read_text()) | change
+                (root / "ruleset-tags.json").write_text(json.dumps(tags))
+                with self.assertRaisesRegex(policy.PolicyError, "Release tags"):
+                    policy.load_config(root)
 
     def test_ruleset_requires_published_active_workflow(self):
         self.github.ruleset = None

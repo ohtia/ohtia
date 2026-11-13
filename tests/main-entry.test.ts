@@ -59,19 +59,21 @@ async function launch(
         attach() {}
       },
     }));
+  const credentialStore = vi.fn(() =>
+    Promise.resolve({
+      drain: () => Promise.resolve(),
+      read: () =>
+        options.credentialReadPending
+          ? new Promise(() => {})
+          : Promise.resolve({ status: "absent" }),
+      readSession: () => Promise.resolve({ status: "absent" }),
+      write: () => Promise.resolve({ status: "stored" }),
+      writeSession: () => Promise.resolve({ status: "stored" }),
+      deleteSession: () => Promise.resolve({ status: "stored" }),
+    }),
+  );
   vi.doMock("../packages/main/src/native-credentials.js", () => ({
-    nativeCredentialStore: () =>
-      Promise.resolve({
-        drain: () => Promise.resolve(),
-        read: () =>
-          options.credentialReadPending
-            ? new Promise(() => {})
-            : Promise.resolve({ status: "absent" }),
-        readSession: () => Promise.resolve({ status: "absent" }),
-        write: () => Promise.resolve({ status: "stored" }),
-        writeSession: () => Promise.resolve({ status: "stored" }),
-        deleteSession: () => Promise.resolve({ status: "stored" }),
-      }),
+    nativeCredentialStore: credentialStore,
   }));
   if (options.platform) {
     const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
@@ -112,6 +114,14 @@ async function launch(
     admission: options.admission ?? true,
     throwRecover: false,
   };
+  let resolveReady!: () => void;
+  const readiness = new Promise<void>((resolve) => {
+    resolveReady = resolve;
+  });
+  const finishReady = () => {
+    state.ready = true;
+    resolveReady();
+  };
   const app = Object.assign(new EventEmitter(), {
     setName: vi.fn(),
     enableSandbox: vi.fn(),
@@ -139,7 +149,7 @@ async function launch(
     exit: vi.fn(),
     quit: vi.fn(),
     isReady: () => state.ready,
-    whenReady: vi.fn(() => (state.ready ? Promise.resolve() : new Promise<void>(() => {}))),
+    whenReady: vi.fn(() => (state.ready ? Promise.resolve() : readiness)),
     getAppMetrics: () => Array.from({ length: state.metrics }, () => ({})),
     requestSingleInstanceLock: () => options.ownsBroker !== false,
   });
@@ -490,6 +500,8 @@ async function launch(
     )![1](event(selected), action, payload);
   return {
     acknowledgeZoom,
+    finishReady,
+    credentialStore,
     constants,
     state,
     app,
@@ -634,6 +646,48 @@ describe("broker composition with synthetic Electron adapters", () => {
     const second = await launch({ ownsBroker: false });
     expect(second.app.exit).toHaveBeenCalledWith(0);
     expect(second.utilityProcess.fork).not.toHaveBeenCalled();
+  });
+  it("defers a refused macOS launch's dialog until ready without initializing runtime services", async () => {
+    const h = await launch({ platform: "darwin", admission: false, ready: false });
+    expect(h.failure).toBeUndefined();
+    expect(h.app.enableSandbox).toHaveBeenCalledOnce();
+    expect(h.dialog.showErrorBox).not.toHaveBeenCalled();
+    expect(h.app.exit).not.toHaveBeenCalled();
+    let exitedDuringPresentation = false;
+    h.dialog.showErrorBox.mockImplementation(() => {
+      // Native modal loops may dispatch timers reentrantly while presentation is active.
+      vi.advanceTimersByTime(h.constants.portLimits.application_start_ms);
+      exitedDuringPresentation = h.app.exit.mock.calls.length > 0;
+    });
+    h.finishReady();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.dialog.showErrorBox).toHaveBeenCalledOnce();
+    expect(exitedDuringPresentation).toBe(false);
+    expect(h.app.exit).toHaveBeenCalledExactlyOnceWith(1);
+    expect(h.Window.all).toHaveLength(0);
+    expect(h.utilityProcess.fork).not.toHaveBeenCalled();
+    expect(h.credentialStore).not.toHaveBeenCalled();
+    expect(h.ipcMain.handle).not.toHaveBeenCalled();
+    expect(h.diagnosticWriters).toHaveLength(0);
+  });
+  it("terminates a refused macOS launch when readiness stalls", async () => {
+    const stalled = await launch({ platform: "darwin", admission: false, ready: false });
+    await vi.advanceTimersByTimeAsync(stalled.constants.portLimits.application_start_ms);
+    expect(stalled.app.exit).toHaveBeenCalledExactlyOnceWith(1);
+    expect(stalled.dialog.showErrorBox).not.toHaveBeenCalled();
+    expect(stalled.credentialStore).not.toHaveBeenCalled();
+  });
+  it("terminates a refused macOS launch when native presentation fails", async () => {
+    const failed = await launch({ platform: "darwin", admission: false, ready: false });
+    failed.dialog.showErrorBox.mockImplementation(() => {
+      throw new Error("Synthetic native failure");
+    });
+    failed.finishReady();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(failed.app.exit).toHaveBeenCalledExactlyOnceWith(1);
+    expect(failed.credentialStore).not.toHaveBeenCalled();
+    expect(failed.Window.all).toHaveLength(0);
+    expect(failed.utilityProcess.fork).not.toHaveBeenCalled();
   });
   it.each(["invalid-root", "invalid-name", "missing-document", "bad-digest", "aliased"])(
     "refuses %s asset inventories before creating a renderer",
