@@ -31,10 +31,11 @@ GitHub repository settings are declared in `config/github/`. The policy tool use
 ## Declared configuration
 
 - `repository.json` permits merge commits, disables squash, rebase, and auto-merge, permits updating a pull request branch, enables Discussions, and disables the wiki. Branch deletion remains part of the post-merge workflow.
-- `actions-permissions.json` permits only its explicitly listed checkout, Python setup, artifact transfer and artifact attestation actions, requires full commit SHAs, and gives workflow tokens read-only access without pull request approval privileges. No workflow currently requests OIDC or attestation-write permissions. The action patterns apply to this public repository.[^github-actions-permissions] It also requires `all_external_contributors` approval for fork workflows, including contributors with previously accepted changes. Approval authorizes workflow execution, not fork creation or PR integration.
+- `actions-permissions.json` permits only its explicitly listed checkout, Python setup, artifact transfer and artifact attestation actions, requires full commit SHAs, and gives workflow tokens read-only access without pull request approval privileges. Only the release job of `prepare-release.yml` requests OIDC and attestation-write permissions, to attest the packages of an unpublished release. The action patterns apply to this public repository.[^github-actions-permissions] It also requires `all_external_contributors` approval for fork workflows, including contributors with previously accepted changes. Approval authorizes workflow execution, not fork creation or PR integration.
 - `ci-verification.json` declares the expected workflow/event, mandatory jobs/steps, explicitly optional cleanup steps and the reduced set a documentation-only PR may omit, all used by the read-only pre-merge verifier. Review this inventory with workflow changes.
 - `security.json` enables dependency vulnerability alerts and automated security fixes.
 - `labels.json` defines managed label names, colors, and descriptions. Unmanaged labels are preserved.
+- `ruleset-tags.json` protects the `reserved/v*` and `v*` tags against deletion and update, with no bypass actor. `prepare-release.yml` creates the reserved tag of a version, and publication creates its version tag; neither can later be moved or removed.
 - `ruleset-main.json` protects the default branch with pull requests, verified signatures, resolved conversations, merge commits only, and the `ci` check against an up-to-date base. No actor bypasses the rules. Zero approving reviews accommodates the single-maintainer workflow; the maintainer performs the human review and merge.[^github-repository-rules]
 
 The required check is bound to the GitHub Actions app. Its declared integration ID is checked against `GET /apps/github-actions` whenever the ruleset is planned or verified. Configuration files describe the intended policy; only successful live verification establishes conformity.
@@ -47,7 +48,7 @@ The policy tool uses `gh api` with literal repository placeholders. It does not 
 
 ## Plan, apply, and verify
 
-The `base` stage manages repository settings, Actions permissions (including fork contributor approval), dependency security settings, and labels. The `ruleset` stage manages only the `main` ruleset. Planning and verification never write to GitHub.
+The `base` stage manages repository settings, Actions permissions (including fork contributor approval), dependency security settings, and labels. The `ruleset` stage manages only the `main` ruleset, and the `tags` stage only the `release-tags` ruleset. Planning and verification never write to GitHub.
 
 ```bash
 python3 scripts/github_policy.py plan --stage base
@@ -65,9 +66,17 @@ python3 scripts/github_policy.py apply --stage ruleset --confirm <plan-sha256>
 python3 scripts/github_policy.py verify
 ```
 
-Planning refuses to replace an inherited or ambiguous ruleset named `main`, or to proceed when another active ruleset or classic branch protection affects the default branch. Resolve such conflicts explicitly; the tool does not remove other protections.
+Apply the tag ruleset with its own stage:
 
-Exit codes are `0` for conformity, `1` for declared differences, and `2` when a read, validation, write, or verification fails. A plan that proposes changes returns `1` and still prints its confirmation hash. Run `verify` without `--stage` to check both stages. Extra labels are reported by planning and do not count as drift.
+```bash
+python3 scripts/github_policy.py plan --stage tags
+python3 scripts/github_policy.py apply --stage tags --confirm <plan-sha256>
+python3 scripts/github_policy.py verify --stage tags
+```
+
+Planning refuses to replace an inherited or ambiguous ruleset named `main` or `release-tags`, or to proceed when another active ruleset or classic branch protection affects the default branch. Resolve such conflicts explicitly; the tool does not remove other protections.
+
+Exit codes are `0` for conformity, `1` for declared differences, and `2` when a read, validation, write, or verification fails. A plan that proposes changes returns `1` and still prints its confirmation hash. Run `verify` without `--stage` to check every stage. Extra labels are reported by planning and do not count as drift.
 
 ## Repository checks
 
