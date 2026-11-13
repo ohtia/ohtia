@@ -95,6 +95,7 @@ it("retains only controlled native automation failure metadata", async () => {
     kind: "automation_failed",
     exit_code: 1,
     native_status: -1719,
+    stage: null,
   });
   expect(JSON.stringify(report.mock.calls)).not.toContain("Private");
   report.mockClear();
@@ -104,12 +105,69 @@ it("retains only controlled native automation failure metadata", async () => {
       "expected",
       "win32",
       async () => {
-        throw Object.assign(new Error("No matching dialog"), { code: 2 });
+        throw Object.assign(new Error("No matching dialog"), {
+          code: 2,
+          stdout: "window_lookup\nwindow_absent\n",
+        });
       },
       report,
     ),
   ).toBe(false);
-  expect(report).not.toHaveBeenCalled();
+  expect(report).toHaveBeenCalledWith({
+    kind: "automation_pending",
+    stage: "window_absent",
+    native_status: null,
+  });
+});
+it("reports allowlisted dialog stages without retaining native UI or driver text", async () => {
+  const report = vi.fn();
+  for (const [stdout, observation] of [
+    ["owner_absent\n", { kind: "automation_pending", stage: "owner_absent", native_status: null }],
+    [
+      "expected_text_name_only\n",
+      { kind: "automation_pending", stage: "expected_text_name_only", native_status: null },
+    ],
+    [
+      "action_failed:-25211\n",
+      { kind: "automation_pending", stage: "action_failed", native_status: -25211 },
+    ],
+    ["Private UI value\n", { kind: "automation_protocol_error" }],
+  ] as const) {
+    report.mockClear();
+    expect(
+      await acknowledgeStartupDialog(123, "expected", "darwin", async () => ({ stdout }), report),
+    ).toBe(false);
+    expect(report).toHaveBeenCalledExactlyOnceWith(observation);
+    expect(JSON.stringify(report.mock.calls)).not.toContain("Private");
+  }
+  for (const [code, kind] of [
+    [null, "automation_timeout"],
+    ["ERR_CHILD_PROCESS_STDIO_MAXBUFFER", "automation_output_limit"],
+  ] as const) {
+    report.mockClear();
+    expect(
+      await acknowledgeStartupDialog(
+        123,
+        "expected",
+        "win32",
+        async () => {
+          throw Object.assign(new Error("Private driver error"), {
+            killed: true,
+            code,
+            stdout: "Private prefix\ndriver_compile\n",
+          });
+        },
+        report,
+      ),
+    ).toBe(false);
+    expect(report).toHaveBeenCalledExactlyOnceWith({
+      kind,
+      exit_code: null,
+      native_status: null,
+      stage: "driver_compile",
+    });
+    expect(JSON.stringify(report.mock.calls)).not.toContain("Private");
+  }
 });
 it("distinguishes an unacknowledged modal from an acknowledged child that remains running", async () => {
   for (const acknowledged of [false, true]) {
