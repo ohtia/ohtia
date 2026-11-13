@@ -254,17 +254,18 @@ def configuration(cell: dict, prepared: Path, output: Path, version: str) -> dic
     app = prepared / record["app"]
     tools = delivery.read(ROOT / "config/desktop/toolchain.json")["tools"]
     resources = ROOT / "tooling/quality-packaging"
+    linux = cell["target"].startswith("linux-")
     config = {
-        "appId": "org.ohtia.quality",
-        "productName": "ohtia-quality",
-        "executableName": "ohtia-quality",
+        "appId": "org.ohtia.Ohtia",
+        # Linux installs under /opt/<productName>; its menu entry keeps the visible name.
+        "productName": "ohtia" if linux else "Ohtia",
         "electronVersion": tools["electron"]["version"],
         "electronDist": str(prepared / "runtime"),
         "directories": {"app": str(app), "output": str(output), "buildResources": str(resources)},
         "extraMetadata": {
-            "name": "ohtia-quality",
+            "name": "ohtia",
             "version": version,
-            "description": "Ohtia unsigned quality build",
+            "description": "Desktop workspace for academic research",
             "author": "Ohtia",
             "homepage": "https://github.com/ohtia/ohtia",
             "license": "MIT",
@@ -273,13 +274,15 @@ def configuration(cell: dict, prepared: Path, output: Path, version: str) -> dic
         "files": ["**/*"],
         "buildNumber": "1",
         "linux": {
-            "target": cell["formats"] if cell["target"].startswith("linux-") else ["deb"],
+            "target": cell["formats"] if linux else ["deb"],
+            "executableName": "ohtia",
+            "desktop": {"entry": {"Name": "Ohtia"}},
             "category": "Development",
-            "synopsis": "Ohtia quality artifact",
+            "synopsis": "Desktop workspace for academic research",
         },
         "deb": {
-            "packageName": "ohtia-quality",
-            "maintainer": "Ohtia <quality@example.invalid>",
+            "packageName": "ohtia",
+            "maintainer": "Adrian Mastronardi <adrian@ohtia.com>",
             "afterInstall": str(resources / "after-install.sh"),
             "afterRemove": str(resources / "after-remove.sh"),
             "appArmorProfile": str(resources / "apparmor"),
@@ -332,8 +335,8 @@ def configuration(cell: dict, prepared: Path, output: Path, version: str) -> dic
             "1",
         ]
     config["rpm"] = {
-        "maintainer": "Ohtia <quality@example.invalid>",
-        "packageName": "ohtia-quality",
+        "maintainer": "Adrian Mastronardi <adrian@ohtia.com>",
+        "packageName": "ohtia",
         "afterInstall": str(resources / "after-fedora.sh"),
         "afterRemove": str(resources / "after-remove-native.sh"),
         "fpm": [
@@ -377,7 +380,7 @@ def prepared_record(directory: Path, cell: dict) -> dict:
         executable = app / "Contents/MacOS" / info["CFBundleExecutable"]
         resources = app / "Contents/Resources/app"
     else:
-        executable = directory / ("ohtia-quality.exe" if os.name == "nt" else "ohtia-quality")
+        executable = directory / ("Ohtia.exe" if os.name == "nt" else "ohtia")
         resources = directory / "resources/app"
     addon = resources / "native/binding.node"
     arch = cell["target"].split("-")[1]
@@ -412,10 +415,10 @@ def unpack_package(file: Path, kind: str, destination: Path) -> Path:
     destination.mkdir()
     if kind == "deb":
         command(["sudo", "dpkg", "--install", file])
-        return Path("/opt/ohtia-quality")
+        return Path("/opt/ohtia")
     if kind == "rpm":
         command(["sudo", "rpm", "--install", file])
-        return Path("/opt/ohtia-quality")
+        return Path("/opt/ohtia")
     if kind == "nsis":
         command([file, "/S", f"/D={destination}"])
         return destination
@@ -1091,9 +1094,9 @@ def main() -> int:
             delivery.write(output / "result.json", result)
             command([workspace.node_path(), "tooling/quality-profile.mjs", "retain", context])
             if kind == "deb":
-                command(["sudo", "dpkg", "--remove", "ohtia-quality"])
+                command(["sudo", "dpkg", "--remove", "ohtia"])
             elif kind == "rpm":
-                command(["sudo", "rpm", "--erase", "ohtia-quality"])
+                command(["sudo", "rpm", "--erase", "ohtia"])
         delivery.require(
             delivery.plan(delivery.identity()) == planned,
             "Build changed its source or locked inputs.",

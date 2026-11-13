@@ -6,4 +6,4 @@ export PATH
 . /etc/os-release
 [ "$ID" = fedora ] && [ "$VERSION_ID" = 44 ]
 [ "$(getenforce)" = Enforcing ]
-[ ! -L /opt/ohtia-quality ]
+[ ! -L /opt/ohtia ]

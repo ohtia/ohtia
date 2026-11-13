@@ -269,7 +269,7 @@ describe("utility process composition with isolated synthetic files", () => {
       return `development:${directory}`;
     };
     it("is refused from packaged bytes", async () => {
-      Object.defineProperty(process, "execPath", { value: "/opt/ohtia-quality/ohtia-quality" });
+      Object.defineProperty(process, "execPath", { value: "/opt/ohtia/ohtia" });
       const h = await launch({ runtime: (root) => developmentRoot(root), mode: "blocked" });
       expect(h.exit).toHaveBeenCalledWith(1);
       expect(h.parent.listenerCount("message")).toBe(0);

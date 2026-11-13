@@ -103,7 +103,7 @@ afterEach(() => {
     fs.rmSync(directory, { recursive: true, force: true });
 });
 function fixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ohtia-quality-ñ-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ohtia-ñ-"));
   temporary.push(root);
   return root;
 }

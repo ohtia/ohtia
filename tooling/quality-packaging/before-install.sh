@@ -8,5 +8,5 @@ export PATH
 [ "$VERSION_ID" = 26.04 ]
 [ "$(cat /sys/module/apparmor/parameters/enabled)" = Y ]
 command -v apparmor_parser >/dev/null
-[ ! -L /opt/ohtia-quality ]
-[ ! -e /opt/ohtia-quality ] || [ "$(stat -c %U /opt/ohtia-quality)" = root ]
+[ ! -L /opt/ohtia ]
+[ ! -e /opt/ohtia ] || [ "$(stat -c %U /opt/ohtia)" = root ]

@@ -30,7 +30,7 @@ if (cloud) {
     process.platform !== "linux" ||
     process.arch !== "arm64" ||
     process.getuid?.() === 0 ||
-    os.userInfo().username !== "ohtia-quality" ||
+    os.userInfo().username !== "ohtia" ||
     !guard.ready_at_epoch ||
     Date.parse(guard.intent.expires_at) <= Date.now() ||
     guard.intent.identity.run_id !== process.env.GITHUB_RUN_ID ||
@@ -51,7 +51,7 @@ if (operation === "prepare" || operation === "prepare-cloud") {
     throw new Error("Existing Ohtia state is never adopted, removed or replaced by CI.");
   fs.mkdirSync(host.configurationRoot, { recursive: true, mode: 0o700 });
   fs.mkdirSync(host.researchRoot, { mode: 0o700 });
-  const scratch = fs.mkdtempSync(path.join(host.home, ".ohtia-quality-"));
+  const scratch = fs.mkdtempSync(path.join(host.home, ".ohtia-"));
   const stableParent = selectStableTemporaryParent(host, [os.tmpdir(), process.env.RUNNER_TEMP]);
   const stable = fs.realpathSync.native(fs.mkdtempSync(path.join(stableParent, "ohtia-stable-")));
   const stable_roots = {};

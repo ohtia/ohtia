@@ -450,8 +450,8 @@ def prepare() -> None:
         raise ValueError("guest_guard_identity")
     guard = json.loads(GUARD.read_bytes())
     profile, volumes = guard["intent"]["profile"], guard["resources"]
-    account = pwd.getpwnam("ohtia-quality")
-    if account.pw_uid == 0 or run("id", "-nG", "ohtia-quality").split() != ["ohtia-quality"]:
+    account = pwd.getpwnam("ohtia")
+    if account.pw_uid == 0 or run("id", "-nG", "ohtia").split() != ["ohtia"]:
         raise ValueError("privileged_guest_account")
     # Scaleway SBS serials bind the guest device to the API volume UUID; no /dev/vdb assumption.
     devices = json.loads(
@@ -474,7 +474,7 @@ def prepare() -> None:
     if run("findmnt", "-n", "-o", "SOURCE", "/") == disk["path"]:
         raise ValueError("root_volume_refused")
     home = Path(account.pw_dir)
-    if home != Path("/home/ohtia-quality") or home.is_symlink():
+    if home != Path("/home/ohtia") or home.is_symlink():
         raise ValueError("guest_home_identity")
     if profile == "fedora-44":
         if run("getenforce") != "Enforcing":
@@ -491,7 +491,7 @@ def prepare() -> None:
     home.chmod(0o700)
     if profile == "fedora-44":
         run("restorecon", "-RF", str(home))
-    run("loginctl", "enable-linger", "ohtia-quality")
+    run("loginctl", "enable-linger", "ohtia")
     commands = required_commands(guard["intent"]["build"]["cell"].get("desktop"))
     if not all(shutil.which(command) for command in commands):
         raise ValueError("guest_required_command")
@@ -550,10 +550,10 @@ def artifact(file: Path, record: dict) -> None:
 def extract() -> None:
     import pwd
 
-    if os.getuid() == 0 or pwd.getpwuid(os.getuid()).pw_name != "ohtia-quality":
+    if os.getuid() == 0 or pwd.getpwuid(os.getuid()).pw_name != "ohtia":
         raise ValueError("ordinary_extractor_required")
     guard = json.loads(GUARD.read_bytes())
-    source = Path("/home/ohtia-quality/source")
+    source = Path("/home/ohtia/source")
     source.mkdir(mode=0o700)
     archive = (
         Path("/var/lib/ohtia-qualification/incoming") / guard["intent"]["build"]["harness"]["file"]
@@ -587,7 +587,7 @@ def install() -> None:
     run(
         "runuser",
         "-u",
-        "ohtia-quality",
+        "ohtia",
         "--",
         "/usr/bin/python3",
         "/usr/local/lib/ohtia-qualification/bootstrap.py",
@@ -598,7 +598,7 @@ def install() -> None:
         run("rpm", "--install", package)
     else:
         run("dpkg", "--install", package)
-    source = Path("/home/ohtia-quality/source")
+    source = Path("/home/ohtia/source")
     env = {"PATH": "/usr/bin:/usr/sbin:/bin:/sbin", "HOME": "/root", "LANG": "C.UTF-8"}
     subprocess.run(
         [

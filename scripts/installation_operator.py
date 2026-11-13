@@ -18,7 +18,7 @@ import quality_native
 import workspace
 
 PRIVATE = Path("/var/lib/ohtia-installation-qualification")
-PAYLOAD = Path("/opt/ohtia-quality")
+PAYLOAD = Path("/opt/ohtia")
 
 
 def read(file, maximum=65536):
@@ -292,10 +292,10 @@ def configured_package(cell, version):
     """Check native configuration independently of the unpacked payload bytes."""
     expected = version.replace("-", "~", 1) + "-1"
     if cell["profile"].startswith("fedora-"):
-        arguments = ["rpm", "-q", "--qf", "%{EPOCHNUM}\n%{VERSION}-%{RELEASE}\n", "ohtia-quality"]
+        arguments = ["rpm", "-q", "--qf", "%{EPOCHNUM}\n%{VERSION}-%{RELEASE}\n", "ohtia"]
         wanted = "0\n" + expected
     else:
-        arguments = ["dpkg-query", "-W", "-f=${Status}\n${Version}", "ohtia-quality"]
+        arguments = ["dpkg-query", "-W", "-f=${Status}\n${Version}", "ohtia"]
         wanted = "install ok installed\n" + expected
     result = subprocess.run(arguments, capture_output=True, text=True, check=False, timeout=30)
     native.require(
@@ -541,9 +541,9 @@ def main():
                     "Existing quality installation requires explicit byte-verified ownership admission; preserve other tasks.",
                 )
                 status = subprocess.run(
-                    ["dpkg-query", "-W", "ohtia-quality"]
+                    ["dpkg-query", "-W", "ohtia"]
                     if release["ID"] != "fedora"
-                    else ["rpm", "-q", "ohtia-quality"],
+                    else ["rpm", "-q", "ohtia"],
                     capture_output=True,
                     check=False,
                     timeout=30,

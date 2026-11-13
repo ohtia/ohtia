@@ -68,14 +68,14 @@ def admit_guest(selected: dict) -> dict:
     cycle.require(selected == cycle.intent_cell(value["intent"]), "guest_cell")
     account = pwd.getpwuid(os.getuid())
     cycle.require(
-        account.pw_name == "ohtia-quality"
+        account.pw_name == "ohtia"
         and os.getuid() != 0
         and os.getgid() == account.pw_gid
         and os.getgroups() == [account.pw_gid],
         "guest_account",
     )
     cycle.require(
-        Path.home() == Path("/home/ohtia-quality") and Path.home().stat().st_uid == os.getuid(),
+        Path.home() == Path("/home/ohtia") and Path.home().stat().st_uid == os.getuid(),
         "guest_home",
     )
     status = dict(
@@ -123,7 +123,7 @@ def seal() -> None:
     cycle.require(os.getuid() == 0, "package_seal_requires_root")
     value = guard()
     selected = cycle.intent_cell(value["intent"])
-    payload = Path("/opt/ohtia-quality")
+    payload = Path("/opt/ohtia")
     cycle.require(payload.is_dir() and not payload.is_symlink(), "package_install_missing")
     delivery.write(payload / "prepared.json", native.prepared_record(payload, selected))
 
@@ -151,7 +151,7 @@ def collect(output: Path, record: str) -> bytes:
         and profile.resolve() == profile
         and profile.name == "runtime-profile.json"
         and profile.parent.parent == Path.home()
-        and profile.parent.name.startswith(".ohtia-quality-"),
+        and profile.parent.name.startswith(".ohtia-"),
         "guest_collection_profile",
     )
     data = cycle.read(profile)
@@ -200,7 +200,7 @@ def smoke(output: Path) -> None:
     context = output / "context.json"
     native.command([workspace.node_path(), "tooling/quality-profile.mjs", "prepare-cloud", context])
     profile = Path(delivery.read(context)["profile"])
-    prepared = Path("/opt/ohtia-quality")
+    prepared = Path("/opt/ohtia")
     original = cycle.digest(prepared / "prepared.json")
     host = native.host_matches(selected, external_guard=value)
     evidence = Path(delivery.read(profile)["scratch_root"]) / "evidence"
