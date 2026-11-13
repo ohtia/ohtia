@@ -36,7 +36,7 @@ okf_version: "0.2"
 ## Desktop foundation
 
 - [Shared desktop delivery admission](delivery-admission.md) — Reconcile immutable package assignments and independently verified evidence across required native desktop cells.
-- [Scaleway configuration](scaleway-configuration.md) — Place deployment metadata, workflow credentials and independently approved policy consistently across ARM qualification and Linux signing.
+- [Scaleway configuration](scaleway-configuration.md) — Place deployment metadata and workflow credentials consistently for ARM qualification.
 - [Scaleway qualification access preflight](scaleway-access.md) — Check protected GitHub Actions read access and ARM image compatibility without creating cloud resources or claiming native qualification.
 - [Ephemeral ARM installation qualification](scaleway-qualification.md) — Define protected authority, bounded diagnostics and recovery for unsigned native ARM qualification on ephemeral Scaleway leases.
 - [Isolated desktop runtime](desktop-runtime.md) — Admit native runtime contexts, manage the window lifecycle and verify supervised status and fixed-home bootstrap boundaries.
@@ -59,7 +59,6 @@ okf_version: "0.2"
 - [Locked developer workspace](developer-workspace.md) — Bootstrap isolated contributor tools, build the six package boundaries and verify the frozen workspace without changing research data.
 - [Native foundation qualification](native-qualification.md) — Assemble non-shipping native probes, admit independent profiles and retain complete target evidence without claiming partial native qualification, including owned headless GNOME and Plasma activation and browser-side shortcut checks.
 - [Native foundation qualification report](native-foundation-report.md) — Observed native desktop feasibility, source compatibility, packaging consequences and evidence limits for the required foundation platforms.
-- [Linux signing administration](linux-signing-administration.md) — Prepare signing access and activation previews and collect bounded local native-probe resource observations.
 - [Repository policy](repository-policy.md) — GitHub repository configuration, dependency updates, quality checks, and verification procedures.
 - [Change-note tooling](change-notes.md) — Capture inert PR impact records, reconcile source scope and prepare immutable editorial note and correction evidence.
 - [Desktop builds, releases and change notes](release-policy.md) — Quality-build triggers, artifact-bound candidate readiness, immutable promotion, public versioning and user-facing change communication.

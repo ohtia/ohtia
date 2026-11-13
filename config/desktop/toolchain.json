@@ -844,55 +844,6 @@
         "inspection": "downloaded-hash-computed"
       }
     },
-    "jose": {
-      "version": "6.2.12",
-      "adr": "0041",
-      "source": "https://registry.npmjs.org/jose/6.2.12",
-      "engines": {},
-      "peers": {},
-      "license": "MIT",
-      "artifact": {
-        "url": "https://registry.npmjs.org/jose/-/jose-6.2.12.tgz",
-        "sha256": "32d9da2aaa0e110cacef2ae21e8dae866201f1428424f839001085fe7351ebfe",
-        "bytes": 48946,
-        "integrity": "sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw==",
-        "inspection": "downloaded-integrity-checked"
-      }
-    },
-    "@aws-sdk/client-s3": {
-      "version": "3.1161.0",
-      "adr": "0041",
-      "source": "https://registry.npmjs.org/@aws-sdk/client-s3/3.1161.0",
-      "engines": {
-        "node": ">=20.0.0"
-      },
-      "peers": {},
-      "license": "Apache-2.0",
-      "artifact": {
-        "url": "https://registry.npmjs.org/@aws-sdk/client-s3/-/client-s3-3.1161.0.tgz",
-        "sha256": "c5054f949ae09b9be0a31939a7d4143595776e9323a004d4ad2cb1dc2e480a79",
-        "bytes": 412090,
-        "integrity": "sha512-iRZGMsJnYRrI98O+U6o5fHeLPQTP+Dc/w0mWLcBLQcEQ10DA06+XQj0WmdRiCM7vIso7QEtN1fsj9Vzo5/R3LQ==",
-        "inspection": "downloaded-integrity-checked"
-      }
-    },
-    "@aws-sdk/s3-request-presigner": {
-      "version": "3.1161.0",
-      "adr": "0041",
-      "source": "https://registry.npmjs.org/@aws-sdk/s3-request-presigner/3.1161.0",
-      "engines": {
-        "node": ">=20.0.0"
-      },
-      "peers": {},
-      "license": "Apache-2.0",
-      "artifact": {
-        "url": "https://registry.npmjs.org/@aws-sdk/s3-request-presigner/-/s3-request-presigner-3.1161.0.tgz",
-        "sha256": "46267860f16d4b9bd87a87488b1cca7cabfccde040a22abd8b2d652a5d195b12",
-        "bytes": 8731,
-        "integrity": "sha512-ACJ3DWmniBWI4mppBd9ro4aHwF68ImxyZnh/2fgDJHsZesNSByOU2tC/E9uhHX2FPhxrdzfRGnA2REgiNeIwwA==",
-        "inspection": "downloaded-integrity-checked"
-      }
-    },
     "@napi-rs/keyring": {
       "version": "2.1.2",
       "adr": "0048",

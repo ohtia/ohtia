@@ -1,5 +1,0 @@
-name: Inspect current signing proof
-description: Download only the exact current-run attestor proof using the runner's private Results context
-runs:
-  using: node24
-  main: main.mjs
