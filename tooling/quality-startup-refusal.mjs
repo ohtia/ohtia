@@ -229,15 +229,20 @@ function sampleObservation(stdout, stderr) {
   };
 }
 /** Read one bounded sample of this synthetic child; retain only known frame/progress flags. */
-export async function sampleStartupProcess(pid, run = execute) {
-  if (!Number.isSafeInteger(pid) || pid <= 0)
+export async function sampleStartupProcess(pid, run = execute, budget_ms = 10000) {
+  if (
+    !Number.isSafeInteger(pid) ||
+    pid <= 0 ||
+    !Number.isSafeInteger(budget_ms) ||
+    budget_ms < 1 ||
+    budget_ms > 10000
+  )
     return { kind: "sample_unavailable", exit_code: null };
   try {
-    const result = await run(
-      "/usr/bin/sample",
-      [String(pid), "1", "10", "-mayDie", "-file", "/dev/stdout"],
-      { timeout: 4000, maxBuffer: 1048576 },
-    );
+    const result = await run("/usr/bin/sample", [String(pid), "1", "10", "-file", "/dev/stdout"], {
+      timeout: budget_ms,
+      maxBuffer: 1048576,
+    });
     return { kind: "sampled", ...sampleObservation(result.stdout, result.stderr) };
   } catch (error) {
     return {
@@ -250,6 +255,26 @@ export async function sampleStartupProcess(pid, run = execute) {
       exit_code: Number.isInteger(error?.code) ? error.code : null,
       ...sampleObservation(error?.stdout, error?.stderr),
     };
+  }
+}
+/** Read this automation client's trust state without requesting or granting access. */
+export async function observeMacAccessibility(run = execute, platform = process.platform) {
+  if (platform !== "darwin") return { state: "unsupported" };
+  try {
+    const result = await run(
+      "/usr/bin/osascript",
+      [
+        "-l",
+        "JavaScript",
+        "-e",
+        'ObjC.import("ApplicationServices"); if (typeof $.AXIsProcessTrusted !== "function") ObjC.bindFunction("AXIsProcessTrusted", ["bool", []]); $.AXIsProcessTrusted() ? "trusted" : "untrusted"',
+      ],
+      { timeout: 2000, maxBuffer: 4096 },
+    );
+    const state = result.stdout.trim();
+    return { state: state === "trusted" || state === "untrusted" ? state : "unavailable" };
+  } catch (error) {
+    return { state: error?.killed ? "timeout" : "unavailable" };
   }
 }
 /** The shipped entry point retains its native modal admission error on Windows and macOS. */
@@ -273,14 +298,24 @@ export async function refuseDevelopmentCommand(
   let sample = Promise.resolve();
   const deadline_ms = options.deadline_ms ?? 20000;
   const controllerDeadline = performance.now() + deadline_ms;
+  let automationClientTrust = null;
+  const trustObservation =
+    platform === "darwin"
+      ? observeMacAccessibility().then((value) => {
+          automationClientTrust = value;
+        })
+      : Promise.resolve();
   const sampleTimer =
     platform === "darwin"
       ? setTimeout(() => {
           if (!ended) {
             processSample = { kind: "sample_pending" };
-            sample = sampleStartupProcess(child.pid).then((value) => {
-              processSample = value;
-            });
+            const remaining = Math.max(1, Math.floor(controllerDeadline - performance.now()));
+            sample = sampleStartupProcess(child.pid, execute, Math.min(10000, remaining)).then(
+              (value) => {
+                processSample = value;
+              },
+            );
           }
         }, 5000)
       : undefined;
@@ -296,6 +331,8 @@ export async function refuseDevelopmentCommand(
             JSON.stringify(lastFailure) +
             "; process_sample=" +
             JSON.stringify(processSample) +
+            "; automation_client_trust=" +
+            JSON.stringify(automationClientTrust) +
             ".",
         ),
       );
@@ -344,7 +381,7 @@ export async function refuseDevelopmentCommand(
     ended = true;
     clearTimeout(timer);
     clearTimeout(sampleTimer);
-    await Promise.all([acknowledgement, sample]);
+    await Promise.all([acknowledgement, sample, trustObservation]);
   }
   if (code !== 1)
     throw new Error(

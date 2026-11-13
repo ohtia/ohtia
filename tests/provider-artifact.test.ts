@@ -5,6 +5,7 @@ import {
   acknowledgeStartupDialog,
   refuseDevelopmentCommand,
   sampleStartupProcess,
+  observeMacAccessibility,
 } from "../tooling/quality-startup-refusal.mjs";
 import fs from "node:fs";
 import os from "node:os";
@@ -254,10 +255,14 @@ it("retains only bounded flags from the owned macOS startup process sample", asy
     sampling_completed_seen: false,
   });
   expect(run.mock.calls[0]?.[0]).toBe("/usr/bin/sample");
-  expect(run.mock.calls[0]?.[1]).toEqual(["123", "1", "10", "-mayDie", "-file", "/dev/stdout"]);
-  expect(run.mock.calls[0]?.[2]).toEqual({ timeout: 4000, maxBuffer: 1048576 });
+  expect(run.mock.calls[0]?.[1]).toEqual(["123", "1", "10", "-file", "/dev/stdout"]);
+  expect(run.mock.calls[0]?.[2]).toEqual({ timeout: 10000, maxBuffer: 1048576 });
   expect(JSON.stringify(result)).not.toContain("Private");
   expect(await sampleStartupProcess(0, run)).toEqual({
+    kind: "sample_unavailable",
+    exit_code: null,
+  });
+  expect(await sampleStartupProcess(123, run, 10001)).toEqual({
     kind: "sample_unavailable",
     exit_code: null,
   });
@@ -363,4 +368,29 @@ it("rejects a successful launch and bounds a stalled packaged refusal", async ()
   });
   failed.emit("error", new Error("Synthetic launch failure."));
   await expect(failure).rejects.toThrow("launch failure");
+});
+
+it("observes macOS accessibility trust without prompting or retaining native diagnostics", async () => {
+  for (const [stdout, state] of [
+    ["trusted\n", "trusted"],
+    ["untrusted\n", "untrusted"],
+    ["Private native diagnostic", "unavailable"],
+  ]) {
+    const run = vi.fn(async () => ({ stdout }));
+    const result = await observeMacAccessibility(run, "darwin");
+    expect(result).toEqual({ state });
+    expect(run).toHaveBeenCalledOnce();
+    expect(run.mock.calls[0]?.[0]).toBe("/usr/bin/osascript");
+    expect(run.mock.calls[0]?.[1].slice(0, 3)).toEqual(["-l", "JavaScript", "-e"]);
+    expect(run.mock.calls[0]?.[1][3]).toContain("$.AXIsProcessTrusted()");
+    expect(run.mock.calls[0]?.[1][3]).not.toMatch(/AXMakeProcessTrusted|WithOptions|Prompt/);
+    expect(run.mock.calls[0]?.[2]).toEqual({ timeout: 2000, maxBuffer: 4096 });
+    expect(JSON.stringify(result)).not.toContain("Private");
+  }
+  const run = vi.fn(async () => {
+    throw Object.assign(new Error("Private error"), { killed: true });
+  });
+  expect(await observeMacAccessibility(run, "darwin")).toEqual({ state: "timeout" });
+  expect(await observeMacAccessibility(run, "linux")).toEqual({ state: "unsupported" });
+  expect(run).toHaveBeenCalledOnce();
 });

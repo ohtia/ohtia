@@ -1015,6 +1015,7 @@
     "tests/provider-artifact.test.ts::distinguishes an unacknowledged modal from an acknowledged child that remains running::case-0",
     "tests/provider-artifact.test.ts::loads the Windows dialog controller once within the existing refusal deadline::case-0",
     "tests/provider-artifact.test.ts::observes controlled Windows initialization progress before its single controller completes::case-0",
+    "tests/provider-artifact.test.ts::observes macOS accessibility trust without prompting or retaining native diagnostics::case-0",
     "tests/provider-artifact.test.ts::rejects a fake module before production tree shaking and admits it only to a development graph::case-0",
     "tests/provider-artifact.test.ts::rejects a successful launch and bounds a stalled packaged refusal::case-0",
     "tests/provider-artifact.test.ts::rejects fake provider source, compiled modules and inlined bytes in final package inspections::case-0",
