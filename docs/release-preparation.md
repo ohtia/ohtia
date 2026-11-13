@@ -14,8 +14,22 @@ The [release policy](release-policy.md#candidate-preparation) owns candidate rea
 
 ## Before dispatching
 
-- Integrate the pull request that raises the version in the root `package.json`. The workflow has no version input; it reads the version of the selected commit.
-- Verify that the [tag ruleset](repository-policy.md#plan-apply-and-verify) is applied, so reserved and version tags cannot be moved or deleted.
+1. Integrate the pull request that raises the version in the root `package.json`. The workflow has no version input; it reads the version of the selected commit.
+2. Check the GitHub configuration from an up-to-date `main` checkout, with `gh` authenticated as described in [Repository policy](repository-policy.md#authentication). These commands only read:
+
+   ```bash
+   git pull --ff-only
+   python3 scripts/github_policy.py verify
+   ```
+
+3. If every stage prints `verified` and the command exits with `0`, continue with the dispatch. The `tags` stage covers the tag ruleset that keeps reserved and version tags from being moved or deleted; it prints `differs` until that ruleset is first applied. Exit code `2` means the configuration could not be read or validated; correct the reported cause and run `verify` again.
+4. If a stage prints `differs`, plan that stage, review the printed differences, apply the plan with its SHA-256 and verify again, replacing `<stage>` with the stage name. [Repository policy](repository-policy.md#plan-apply-and-verify) describes the plan and its review. Do not dispatch until `verify` exits with `0`.
+
+   ```bash
+   python3 scripts/github_policy.py plan --stage <stage>
+   python3 scripts/github_policy.py apply --stage <stage> --confirm <plan-sha256>
+   python3 scripts/github_policy.py verify
+   ```
 
 ## Dispatch
 
