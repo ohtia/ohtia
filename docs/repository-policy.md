@@ -4,6 +4,8 @@ title: Repository policy
 description: GitHub repository configuration, dependency updates, quality checks, and verification procedures.
 generated:
   by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: github-pull-request-api
     resource: https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request
