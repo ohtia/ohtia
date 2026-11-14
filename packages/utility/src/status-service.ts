@@ -402,8 +402,15 @@ export function createStatusService(
       if (disposed) return;
       const report = decodeConnectionReport(text, generation);
       if (report) {
-        if (!connections.receive(report)) throw new Error("Invalid connection report.");
-        if (durable) enqueueProvider(() => durable.pump());
+        // Without storage there is no task transaction to serialize with these reports.
+        if (!durable) {
+          if (!connections.receive(report)) throw new Error("Invalid connection report.");
+          return;
+        }
+        enqueueProvider(async () => {
+          if (!connections.receive(report)) throw new Error("Invalid connection report.");
+          if (enabled) await durable.pump();
+        });
         return;
       }
       const providerEvent = decodeProviderEvent(text, generation);

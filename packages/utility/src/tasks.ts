@@ -93,7 +93,16 @@ export interface AttemptRow extends ProviderUsage {
   started_at: string | null;
   finished_at: string | null;
 }
+export interface UsagePauseRow {
+  id: Uint8Array;
+  connection: "chatgpt";
+  source_attempt_id: Uint8Array;
+  paused_at: string;
+  resumed_at: string | null;
+  resumed_by_operation_id: string | null;
+}
 export interface TaskSchema {
+  usage_limit_pauses: UsagePauseRow;
   tasks: TaskRow;
   attempts: AttemptRow;
   application_preferences: { key: string; schema_version: number; revision: number; value: string };
@@ -194,6 +203,7 @@ export class TaskTransaction {
     const policy = operationPolicy("development_test", 1, this.context.mode);
     if (!policy) throw new Error("Task policy unavailable.");
     const old = await this.waiting(conversationId);
+    const reason = old?.blocking_reason ?? (await this.connectionBlock("chatgpt"));
     if (old) await this.change(old, { state: "cancelled", blocking_reason: null });
     await this.db
       .insertInto("tasks")
@@ -210,8 +220,8 @@ export class TaskTransaction {
         document_language: project.document_language,
         accepted_by_operation_id: operationId,
         replaces_task_id: old?.id ?? null,
-        state: "queued",
-        blocking_reason: null,
+        state: reason ? "blocked" : "queued",
+        blocking_reason: reason,
         state_revision: 1,
         created_at: this.now,
         updated_at: this.now,
@@ -221,11 +231,14 @@ export class TaskTransaction {
   private async replaceWaiting(conversation: Uint8Array): Promise<void> {
     const old = await this.waiting(conversation);
     if (!old) return;
+    const reason = old.blocking_reason ?? (await this.connectionBlock(old.connection));
     await this.change(old, { state: "cancelled", blocking_reason: null });
     await this.db
       .insertInto("tasks")
       .values({
         ...old,
+        state: reason ? "blocked" : "queued",
+        blocking_reason: reason,
         id: newId(),
         replaces_task_id: old.id,
         reply_position: null,
@@ -235,6 +248,147 @@ export class TaskTransaction {
       })
       .execute();
     this.touch(conversation);
+  }
+  private async usagePause(connection: string) {
+    return this.db
+      .selectFrom("usage_limit_pauses")
+      .selectAll()
+      .where("connection", "=", connection as "chatgpt")
+      .where("resumed_at", "is", null)
+      .executeTakeFirst();
+  }
+  private async connectionBlock(connection: string): Promise<BlockingReason | null> {
+    if (!this.context.connections.available(connection)) return "connection_disabled";
+    return (await this.usagePause(connection)) ? "usage_limit_reached" : null;
+  }
+  /** Revalidate the released operation's authority and immutable inputs without changing its scope. */
+  private async valid(task: TaskRow): Promise<boolean> {
+    const policy = operationPolicy(task.operation, task.policy_version, this.context.mode);
+    if (
+      !policy ||
+      policy.instruction_version !== task.instruction_version ||
+      task.connection !== "chatgpt"
+    )
+      return false;
+    const project = await this.db
+      .selectFrom("projects")
+      .selectAll()
+      .where("id", "=", task.project_id)
+      .executeTakeFirst();
+    const receipt = await this.db
+      .selectFrom("command_receipts")
+      .selectAll()
+      .where("operation_id", "=", task.accepted_by_operation_id)
+      .executeTakeFirst();
+    const message = await this.db
+      .selectFrom("messages")
+      .select("id")
+      .where("conversation_id", "=", task.conversation_id)
+      .where("position", "=", task.input_through_position)
+      .executeTakeFirst();
+    return (
+      !!project?.is_development &&
+      !!message &&
+      !!receipt &&
+      ["conversation.start", "message.append"].includes(receipt.command)
+    );
+  }
+  private pending() {
+    return this.db
+      .selectFrom("tasks")
+      .selectAll()
+      .where("state", "in", ["queued", "blocked"])
+      .orderBy("created_at")
+      .orderBy("id")
+      .execute();
+  }
+  /** Preserve unrelated and restart holds; connection reports cannot consent to recovery. */
+  async reconcileConnections(): Promise<void> {
+    for (const task of await this.pending()) {
+      if (
+        task.blocking_reason &&
+        !["connection_disabled", "usage_limit_reached"].includes(task.blocking_reason)
+      )
+        continue;
+      let reason = await this.connectionBlock(task.connection);
+      if (!reason && task.state === "blocked" && !(await this.valid(task)))
+        reason = "connection_disabled";
+      if (reason !== task.blocking_reason) {
+        await this.change(task, { state: reason ? "blocked" : "queued", blocking_reason: reason });
+        this.diagnostics.push({
+          event_name: reason ? "ohtia.task.blocked" : "ohtia.task.readmitted",
+        });
+      }
+    }
+  }
+  async resumeUsage(connection: "chatgpt", operationId: string): Promise<void> {
+    const pause = await this.usagePause(connection);
+    if (!pause) return;
+    await this.db
+      .updateTable("usage_limit_pauses")
+      .set({ resumed_at: this.now, resumed_by_operation_id: operationId })
+      .where("id", "=", pause.id)
+      .execute();
+    await this.reconcileConnections();
+    this.diagnostics.push({ event_name: "ohtia.usage_pause.resumed" });
+  }
+  async continueAll(): Promise<void> {
+    for (const task of await this.pending()) {
+      if (task.blocking_reason !== "restart_paused") continue;
+      // Explicit recovery continuation preserves the connection's plan pause across projects.
+      const reason = (await this.usagePause(task.connection))
+        ? "usage_limit_reached"
+        : ((await this.connectionBlock(task.connection)) ??
+          ((await this.valid(task)) ? null : "connection_disabled"));
+      await this.change(task, { state: reason ? "blocked" : "queued", blocking_reason: reason });
+    }
+    this.diagnostics.push({ event_name: "ohtia.task.continued" });
+  }
+  /** Reserved storage admission transaction, after restoration and schema validation, before gate removal. */
+  async recoverMigration(): Promise<void> {
+    for (const task of await this.pending()) {
+      if (task.blocking_reason !== "restart_paused")
+        await this.change(task, { state: "blocked", blocking_reason: "restart_paused" });
+    }
+    const unfinished = await this.db
+      .selectFrom("tasks")
+      .selectAll()
+      .where("state", "in", ["running", "cancelling"])
+      .execute();
+    for (const task of unfinished) {
+      const attempt = await this.db
+        .selectFrom("attempts")
+        .selectAll()
+        .where("task_id", "=", task.id)
+        .where("state", "in", ["prepared", "running", "waiting_user", "stopping"])
+        .executeTakeFirstOrThrow();
+      const cancelling = task.state === "cancelling";
+      const dispatched = attempt.dispatch_permitted_at !== null;
+      await this.db
+        .updateTable("attempts")
+        .set({
+          state: cancelling || !dispatched ? "cancelled" : "uncertain",
+          outcome_reason: cancelling ? "cancelled_by_researcher" : "service_restarted",
+          finished_at: this.now,
+        })
+        .where("id", "=", attempt.id)
+        .execute();
+      const policy = operationPolicy(task.operation, task.policy_version, this.context.mode);
+      const state = cancelling
+        ? "cancelled"
+        : dispatched
+          ? "uncertain"
+          : (await this.waiting(task.conversation_id))
+            ? "cancelled"
+            : attempt.attempt_number >= (policy?.max_attempts ?? 2)
+              ? "failed"
+              : "blocked";
+      await this.change(task, {
+        state,
+        blocking_reason: state === "blocked" ? "restart_paused" : null,
+      });
+    }
+    this.diagnostics.push({ event_name: "ohtia.task.recovery_paused" });
   }
   /** Claim capacity and persist dispatch evidence. The caller sends only after COMMIT succeeds. */
   async prepareNext(): Promise<PreparedTask | null> {
@@ -248,6 +402,23 @@ export class TaskTransaction {
       .selectFrom("tasks")
       .selectAll()
       .where("state", "in", ["running", "cancelling", "uncertain"])
+      // Recovery starts only after main closed the prior generation's provider streams.
+      // Its uncertain outcomes preserve remote uncertainty without quarantining local capacity.
+      .where((eb) =>
+        eb.or([
+          eb("tasks.state", "!=", "uncertain"),
+          eb.not(
+            eb.exists(
+              eb
+                .selectFrom("attempts")
+                .select("id")
+                .whereRef("task_id", "=", "tasks.id")
+                .where("state", "=", "uncertain")
+                .where("outcome_reason", "=", "service_restarted"),
+            ),
+          ),
+        ]),
+      )
       .execute();
     if (occupied.length >= limits.max_concurrent_inference) return null;
     const candidates = await this.db
@@ -452,7 +623,8 @@ export class TaskTransaction {
         : result.status === "cancelled"
           ? "cancelled_by_researcher"
           : null;
-    if (notDispatched && result.reason === "permit_expired") state = "cancelled";
+    if (notDispatched && ["permit_expired", "connection_expired"].includes(result.reason))
+      state = "cancelled";
     if (result.status === "completed" && !text) {
       state = "failed";
       reason = "empty_reply";
@@ -482,6 +654,31 @@ export class TaskTransaction {
         : policy && attempt.attempt_number < policy.max_attempts
           ? "queued"
           : "failed";
+    let blockingReason: BlockingReason | null = null;
+    if (notDispatched && result.reason === "connection_expired") {
+      taskState = (await this.waiting(task.conversation_id))
+        ? "cancelled"
+        : policy && attempt.attempt_number < policy.max_attempts
+          ? "blocked"
+          : "failed";
+      if (taskState === "blocked") blockingReason = "connection_disabled";
+    }
+    if (reason === "usage_limit_reached" && task.connection === "chatgpt") {
+      if (!(await this.usagePause(task.connection))) {
+        await this.db
+          .insertInto("usage_limit_pauses")
+          .values({
+            id: newId(),
+            connection: "chatgpt",
+            source_attempt_id: attempt.id,
+            paused_at: this.now,
+            resumed_at: null,
+            resumed_by_operation_id: null,
+          })
+          .execute();
+        this.diagnostics.push({ event_name: "ohtia.usage_pause.opened" });
+      }
+    }
     if (text && !notDispatched && task.state === "running" && taskState !== "uncertain") {
       if (task.reply_position === null) throw new Error("Running task lacks a reply reservation.");
       await this.db
@@ -499,18 +696,22 @@ export class TaskTransaction {
         .execute();
       await this.replaceWaiting(task.conversation_id);
     }
-    await this.change(task, { state: taskState });
+    await this.change(task, { state: taskState, blocking_reason: blockingReason });
+    if (reason === "usage_limit_reached" && task.connection === "chatgpt")
+      await this.reconcileConnections();
     this.diagnostics.push({
       event_name:
         taskState === "completed"
           ? "ohtia.task.completed"
           : taskState === "uncertain"
             ? "ohtia.task.uncertain"
-            : taskState === "queued"
-              ? "ohtia.task.readmitted"
-              : taskState === "cancelled"
-                ? "ohtia.task.cancelled"
-                : "ohtia.task.failed",
+            : taskState === "blocked"
+              ? "ohtia.task.blocked"
+              : taskState === "queued"
+                ? "ohtia.task.readmitted"
+                : taskState === "cancelled"
+                  ? "ohtia.task.cancelled"
+                  : "ohtia.task.failed",
     });
     return true;
   }

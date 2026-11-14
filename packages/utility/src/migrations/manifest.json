@@ -30,5 +30,9 @@
   {
     "name": "0008_durable_ai_tasks",
     "sha256": "9828722765ea05ea3366f2d0f7608505aed17959b432d8208198f53ec1d710ff"
+  },
+  {
+    "name": "0009_usage_limit_pauses",
+    "sha256": "9670a9ff577cba4fd98262b5f4b7866a0de9efd0b1d896cf29657b0113e5f1cc"
   }
 ]

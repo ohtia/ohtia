@@ -2,6 +2,7 @@
   "version": 1,
   "vitest": [
     "tests/application-root.test.ts",
+    "tests/blocked-tasks.test.ts",
     "tests/catalog-build.test.ts",
     "tests/character-catalog.test.ts",
     "tests/character-controller.test.ts",

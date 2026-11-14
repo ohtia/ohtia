@@ -334,6 +334,12 @@ export function providerTextPieces(text: string): string[] {
 /** The development command's actions and the data service's reports, development mode only. */
 export type DevelopmentAction =
   | {
+      readonly name: "resume-requests";
+      readonly operation_id: string;
+      readonly connection: "chatgpt";
+    }
+  | { readonly name: "continue-all"; readonly operation_id: string }
+  | {
       readonly name: "request";
       readonly operation_id: string;
       readonly model: string;
@@ -384,7 +390,7 @@ export const developmentRefusals = [
 export type DevelopmentReport =
   | {
       readonly type: "record";
-      readonly record: "project" | "conversation" | "message";
+      readonly record: "project" | "conversation" | "message" | "receipt";
       readonly id: string;
     }
   | { readonly type: "refused"; readonly reason: (typeof developmentRefusals)[number] }
@@ -434,7 +440,7 @@ function isDevelopmentReport(value: unknown): value is DevelopmentReport {
     case "record":
       return (
         exact(value, ["type", "record", "id"]) &&
-        ["project", "conversation", "message"].includes(value.record as string) &&
+        ["project", "conversation", "message", "receipt"].includes(value.record as string) &&
         isIdentifier(value.id)
       );
     case "refused":
@@ -498,7 +504,16 @@ export function decodeDevelopmentAction(
     return;
   const action = value.action;
   if (!isIdentifier(action.operation_id)) return;
-  if (action.name === "create-development-project" && exact(action, ["name", "operation_id"]))
+  if (
+    action.name === "resume-requests" &&
+    exact(action, ["name", "operation_id", "connection"]) &&
+    action.connection === "chatgpt"
+  )
+    return value as unknown as DevelopmentActionMessage;
+  if (
+    (action.name === "create-development-project" || action.name === "continue-all") &&
+    exact(action, ["name", "operation_id"])
+  )
     return value as unknown as DevelopmentActionMessage;
   if (
     (action.name === "start-conversation" || action.name === "send") &&
