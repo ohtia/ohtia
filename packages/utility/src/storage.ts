@@ -1,8 +1,13 @@
 import {
+  up as usagePauses,
+  tables as usageTables,
+  objects as usageObjects,
+} from "./migrations/0009_usage_limit_pauses.mjs";
+import {
   up as replyControl,
   columns as replyColumns,
   objects as replyObjects,
-} from "./migrations/0009_reply_control.mjs";
+} from "./migrations/0010_reply_control.mjs";
 import {
   TaskTransaction,
   type TaskContext,
@@ -206,10 +211,11 @@ const names = [
   "0006_window_bounds_receipts",
   "0007_research_records",
   "0008_durable_ai_tasks",
-  "0009_reply_control",
+  "0009_usage_limit_pauses",
+  "0010_reply_control",
 ] as const;
 const target = names.length;
-const targetName = names[8];
+const targetName = names[9];
 function digest(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -415,6 +421,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 6 ? ["window_bounds_receipts"] : []),
     ...(revision >= 7 ? Object.keys(researchTables) : []),
     ...(revision >= 8 ? Object.keys(taskTables) : []),
+    ...(revision >= 9 ? Object.keys(usageTables) : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -514,7 +521,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
           revision >= 8 && name === "messages"
             ? definition.replace(
                 ",\n    UNIQUE (conversation_id,position)",
-                `, task_id BLOB REFERENCES tasks(id)${revision >= 9 ? `, ${replyColumns.ending}` : ""},\n    UNIQUE (conversation_id,position)`,
+                `, task_id BLOB REFERENCES tasks(id)${revision >= 10 ? `, ${replyColumns.ending}` : ""},\n    UNIQUE (conversation_id,position)`,
               )
             : definition,
         ])
@@ -522,7 +529,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 8
       ? Object.entries(taskTables).map(([name, definition]) => [
           name,
-          revision >= 9 && name === "tasks"
+          revision >= 10 && name === "tasks"
             ? definition.replace(
                 ",\n    CHECK ((state=",
                 `, ${replyColumns.charge},\n    CHECK ((state=`,
@@ -530,6 +537,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
             : definition,
         ])
       : []),
+    ...(revision >= 9 ? Object.entries(usageTables) : []),
   ]) {
     const row = db
       .prepare("SELECT sql FROM sqlite_schema WHERE name=? AND type='table'")
@@ -551,7 +559,8 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                   Object.entries(researchObjects).filter(([name]) => name !== "messages_revision"),
                 ),
                 ...taskObjects,
-                ...(revision >= 9 ? replyObjects : {}),
+                ...(revision >= 9 ? usageObjects : {}),
+                ...(revision >= 10 ? replyObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -689,6 +698,15 @@ export class DurableStore {
         db.pragma("foreign_keys", { simple: true }) !== 1
       )
         throw new Error("Storage admission failed.");
+      if (retrySource) await this.holdRecoveredTasks();
+      if (exists(this.gate)) {
+        try {
+          fs.unlinkSync(this.gate);
+          syncDirectory(this.options.root);
+        } catch (error) {
+          throw new Error("Migration requires explicit recovery.", { cause: error });
+        }
+      }
       this.initializationAllowed = false;
       this.admitted = true;
     } catch (error) {
@@ -697,6 +715,24 @@ export class DurableStore {
     } finally {
       this.active = false;
     }
+  }
+  private async holdRecoveredTasks(): Promise<void> {
+    if (!this.database) throw new Error("Missing recovery connection.");
+    await this.database.connection().execute(async (transaction) => {
+      await sql`BEGIN IMMEDIATE`.execute(transaction);
+      try {
+        this.assert();
+        const tasks = new TaskTransaction(transaction, this.taskContext);
+        await tasks.recoverMigration();
+        await tasks.flush();
+        this.assert();
+        await sql`COMMIT`.execute(transaction);
+      } catch (error) {
+        if (this.native?.inTransaction) await sql`ROLLBACK`.execute(transaction);
+        throw error;
+      }
+    });
+    this.researchDiagnostic({ event_name: "ohtia.task.recovery_paused" });
   }
   private async checkpoint(
     db: Database.Database,
@@ -842,7 +878,8 @@ export class DurableStore {
                 "0006_window_bounds_receipts": { up: boundsReceipts },
                 "0007_research_records": { up: researchRecords },
                 "0008_durable_ai_tasks": { up: durableTasks },
-                "0009_reply_control": { up: replyControl },
+                "0009_usage_limit_pauses": { up: usagePauses },
+                "0010_reply_control": { up: replyControl },
               }),
           },
         });
@@ -866,10 +903,7 @@ export class DurableStore {
         this.assert();
         if (db.inTransaction || compatibility(db, this.artifacts) !== target)
           throw new Error("Commit not confirmed.");
-        if (retrySource) await this.restartReview(connection);
         this.cleanupResolved();
-        fs.unlinkSync(this.gate);
-        syncDirectory(this.options.root);
       } catch (error) {
         if (begun && !committed && db.inTransaction) {
           await sql`ROLLBACK`.execute(connection);
@@ -880,21 +914,6 @@ export class DurableStore {
         throw new Error(`Migration requires explicit recovery (${operation}).`, { cause: error });
       }
     });
-  }
-  private async restartReview(db: Kysely<Schema>): Promise<void> {
-    await sql`BEGIN IMMEDIATE`.execute(db);
-    const tasks = new TaskTransaction(db, this.taskContext);
-    try {
-      this.assert();
-      await tasks.recoverMigration();
-      await tasks.flush();
-      this.assert();
-      await sql`COMMIT`.execute(db);
-    } catch (error) {
-      if (this.native?.inTransaction) await sql`ROLLBACK`.execute(db);
-      throw error;
-    }
-    for (const event of tasks.diagnostics) this.researchDiagnostic(event);
   }
   private cleanupResolved(): void {
     if (exists(this.restoration)) throw new Error("Recovery materialization remains pending.");
@@ -958,24 +977,9 @@ export class DurableStore {
     } finally {
       db.close();
     }
-    if (revision === target) {
-      // The validated gate remains authoritative until the separate hold transaction commits.
-      this.openConnection();
-      try {
-        if (!this.database) throw new Error("Missing recovery connection.");
-        await this.restartReview(this.database);
-        this.cleanupResolved();
-        fs.unlinkSync(this.gate);
-        syncDirectory(this.options.root);
-      } finally {
-        await this.close();
-      }
-      await this.open();
-    } else {
-      if (revision === 0) this.initializationAllowed = true;
-      // The verified prior intent remains until upgrade atomically publishes the next complete intent.
-      await this.openDatabase(true);
-    }
+    if (revision === 0) this.initializationAllowed = true;
+    // The validated pre-existing gate remains durable until the recovery holds commit.
+    await this.openDatabase(true);
   }
   recoveryState(): "storage_failed" | "recovery_required" | "retry_required" {
     this.assert();
@@ -2069,7 +2073,8 @@ export class DurableStore {
         "message.append": "ohtia.message.appended",
         "task.stop": "ohtia.task.stop_requested",
         "task.startAgain": "ohtia.task.replaced",
-        "task.continueAll": "ohtia.task.continued",
+        "task.continueAll": "ohtia.task.continue_requested",
+        "usagePause.resume": "ohtia.usage_pause.resume_requested",
       } as const;
       this.researchDiagnostic({ event_name: events[command.command] });
     } else {
@@ -2115,7 +2120,13 @@ export class DurableStore {
   stoppingAttempts(): Promise<Outcome<readonly string[]>> {
     return this.taskTransaction((tasks) => tasks.stoppingAttempts());
   }
-  prepareTask(): Promise<Outcome<PreparedTask | null>> {
+  reconcileTaskConnections(): Promise<Outcome<void>> {
+    return this.taskTransaction((tasks) => tasks.reconcileConnections());
+  }
+  async prepareTask(): Promise<Outcome<PreparedTask | null>> {
+    // Readmission and dispatch are separate commits: each advances its task revision once.
+    const reconciled = await this.reconcileTaskConnections();
+    if (!reconciled.ok) return reconciled;
     return this.taskTransaction((tasks) => tasks.prepareNext());
   }
   recordTaskEvent(

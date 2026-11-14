@@ -95,6 +95,9 @@ function name(value: unknown): value is string {
     !value.includes("\0")
   );
 }
+function isUsageConnection(value: unknown): value is "chatgpt" {
+  return value === "chatgpt";
+}
 function object(value: unknown): value is Record<string, unknown> {
   return (
     value !== null &&
@@ -240,9 +243,10 @@ function message(row: MessageRow): MessageRecord {
 const payloadKeys = {
   "task.stop": ["taskId"],
   "task.startAgain": ["taskId"],
-  "task.continueAll": [],
   "development.createProject": [],
   "project.create": [],
+  "usagePause.resume": ["connection"],
+  "task.continueAll": [],
   "project.confirmSetup": ["projectId", "title", "documentLanguage"],
   "conversation.start": ["projectId", "content"],
   "conversation.rename": ["conversationId", "title", "expectedUpdatedAt"],
@@ -300,9 +304,15 @@ export async function applyResearchCommand(
       result = outcome.value;
       break;
     }
-    case "task.continueAll": {
-      await tasks.continueAll();
+    case "usagePause.resume": {
+      if (!isUsageConnection(input.payload.connection)) return failure("invalid_message");
       result = newId();
+      await tasks.resumeUsage(input.payload.connection, input.operationId);
+      break;
+    }
+    case "task.continueAll": {
+      result = newId();
+      await tasks.continueAll();
       break;
     }
     case "development.createProject":

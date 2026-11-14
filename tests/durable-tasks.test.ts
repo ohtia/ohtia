@@ -591,7 +591,7 @@ describe("durable task migration preservation", () => {
       const db = fixture.raw();
       db.pragma("foreign_keys=OFF");
       db.exec(
-        "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DELETE FROM kysely_migration WHERE name='0009_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_reply_control'; DROP INDEX messages_task; DROP TRIGGER messages_reservation; DROP TRIGGER messages_position; DROP TABLE attempts; DROP TABLE tasks; ALTER TABLE messages DROP COLUMN task_id",
+        "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; DROP INDEX messages_task; DROP TRIGGER messages_reservation; DROP TRIGGER messages_position; DROP TABLE attempts; DROP TABLE tasks; ALTER TABLE messages DROP COLUMN task_id",
       );
       db.exec(researchObjects.messages_position);
       db.exec(researchObjects.messages_revision);
@@ -615,7 +615,7 @@ describe("durable task migration preservation", () => {
         max_concurrent_inference: expectedInference,
         max_concurrent_local_processing: 1,
       });
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(9);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(10);
       upgraded.close();
     },
   );
@@ -1163,11 +1163,11 @@ describe("reply control and partial provenance", () => {
 });
 
 /** Build the exact prior schema, retaining its task/attempt data, without altering published modules. */
-async function sourceEight(f: Awaited<ReturnType<typeof setup>>): Promise<void> {
+async function sourceNine(f: Awaited<ReturnType<typeof setup>>): Promise<void> {
   await f.store.close();
   const db = f.raw();
   db.exec(
-    "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DELETE FROM kysely_migration WHERE name='0009_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_reply_control'; PRAGMA user_version=8",
+    "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; PRAGMA user_version=9",
   );
   db.close();
 }
@@ -1175,7 +1175,7 @@ function recoveryGate(f: Awaited<ReturnType<typeof setup>>): string {
   const gate = path.join(f.root, "migration-pending.json");
   fs.writeFileSync(
     gate,
-    JSON.stringify({ version: 1, operation: "synthetic-recovery", source: 8, target: 9 }),
+    JSON.stringify({ version: 1, operation: "synthetic-recovery", source: 9, target: 10 }),
   );
   return gate;
 }
@@ -1199,7 +1199,7 @@ describe("reply-control migration and shared recovery handoff", () => {
         "Partial",
       ),
     );
-    await sourceEight(f);
+    await sourceNine(f);
     await f.store.open();
     const db = f.raw();
     expect(db.prepare("SELECT ending FROM messages ORDER BY position").all()).toEqual([
@@ -1221,7 +1221,7 @@ describe("reply-control migration and shared recovery handoff", () => {
   it("does not pause eligible tasks for a healthy upgrade's fresh gate", async () => {
     const f = await setup();
     value(await f.append("Pending"));
-    await sourceEight(f);
+    await sourceNine(f);
     await f.store.open();
     const db = f.raw();
     expect(db.prepare("SELECT state,blocking_reason FROM tasks").get()).toEqual({
@@ -1236,7 +1236,7 @@ describe("reply-control migration and shared recovery handoff", () => {
     async (kind) => {
       const f = await setup();
       value(await f.append("Pending"));
-      if (kind === "source") await sourceEight(f);
+      if (kind === "source") await sourceNine(f);
       else await f.store.close();
       const gate = recoveryGate(f);
       await f.store.retry();
@@ -1302,7 +1302,7 @@ describe("reply-control migration and shared recovery handoff", () => {
           }),
         );
       db.close();
-      await sourceEight(f);
+      await sourceNine(f);
       recoveryGate(f);
       await f.store.retry();
       const after = f.raw();
@@ -1331,12 +1331,12 @@ describe("reply-control migration and shared recovery handoff", () => {
   it("retains the gate on a pre-commit recovery failure and durable holds on a post-commit failure", async () => {
     const f = await setup();
     value(await f.append("Pending"));
-    await sourceEight(f);
+    await sourceNine(f);
     const gate = recoveryGate(f);
     const review = vi
       .spyOn(
-        f.store as unknown as { restartReview: (db: unknown) => Promise<void> },
-        "restartReview",
+        f.store as unknown as { holdRecoveredTasks: () => Promise<void> },
+        "holdRecoveredTasks",
       )
       .mockRejectedValueOnce(new Error("Synthetic crash before hold commit"));
     await expect(f.store.retry()).rejects.toThrow();
@@ -1360,7 +1360,7 @@ describe("reply-control migration and shared recovery handoff", () => {
   it("keeps restoration gated across exit and pauses the restored tasks only after Retry", async () => {
     const f = await setup();
     value(await f.append("Pending"));
-    await sourceEight(f);
+    await sourceNine(f);
     const unlink = fs.unlinkSync;
     const fail = vi.spyOn(fs, "unlinkSync").mockImplementation((file) => {
       if (String(file).endsWith("migration-pending.json"))
@@ -1376,7 +1376,7 @@ describe("reply-control migration and shared recovery handoff", () => {
       const m = JSON.parse(
         fs.readFileSync(path.join(f.root, "recovery/migrations", name, "manifest.json"), "utf8"),
       ) as { sourceRevision: number };
-      return m.sourceRevision === 8;
+      return m.sourceRevision === 9;
     })!;
     await f.store.restore(operation);
     await f.store.close();

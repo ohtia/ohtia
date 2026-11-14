@@ -159,12 +159,13 @@ describe("provider message contracts", () => {
           "g",
         ),
       ).toBeUndefined();
-    expect(
-      decodeDevelopmentReport(
-        JSON.stringify({ ...record, report: { ...record.report, record: "credential" } }),
-        "g",
-      ),
-    ).toBeUndefined();
+    for (const unsupported of ["credential", "continuation"])
+      expect(
+        decodeDevelopmentReport(
+          JSON.stringify({ ...record, report: { ...record.report, record: unsupported } }),
+          "g",
+        ),
+      ).toBeUndefined();
   });
   it("admits only the specified results and sequenced events", () => {
     for (const result of [

@@ -60,6 +60,28 @@ export class DurableProvider {
     if (this.options.context.mode !== "development" || this.disposed) return;
     this.options.storage.setTaskContext(this.options.context);
     const action = message.action;
+    if (action.name === "resume-requests" || action.name === "continue-all") {
+      const result = await this.options.storage.executeResearchCommand(
+        action.name === "resume-requests"
+          ? {
+              command: "usagePause.resume",
+              operationId: action.operation_id,
+              payload: { connection: action.connection },
+            }
+          : { command: "task.continueAll", operationId: action.operation_id, payload: {} },
+      );
+      this.report(
+        action.operation_id,
+        result.ok
+          ? { type: "record", record: "receipt", id: result.value.resultId }
+          : {
+              type: "refused",
+              reason: result.error.code === "uncertain" ? "uncertain" : "invalid_action",
+            },
+      );
+      await this.pump();
+      return;
+    }
     if (action.name === "interrupt") {
       if (this.streams.has(action.attempt)) {
         this.interrupt(action.attempt);
@@ -106,25 +128,23 @@ export class DurableProvider {
             operationId: action.operation_id,
             payload: { taskId: action.task },
           }
-        : action.name === "continue-all"
-          ? { command: "task.continueAll" as const, operationId: action.operation_id, payload: {} }
-          : action.name === "create-development-project"
+        : action.name === "create-development-project"
+          ? {
+              command: "development.createProject" as const,
+              operationId: action.operation_id,
+              payload: {},
+            }
+          : action.name === "start-conversation"
             ? {
-                command: "development.createProject" as const,
+                command: "conversation.start" as const,
                 operationId: action.operation_id,
-                payload: {},
+                payload: { projectId: action.project, content: action.text },
               }
-            : action.name === "start-conversation"
-              ? {
-                  command: "conversation.start" as const,
-                  operationId: action.operation_id,
-                  payload: { projectId: action.project, content: action.text },
-                }
-              : {
-                  command: "message.append" as const,
-                  operationId: action.operation_id,
-                  payload: { conversationId: action.conversation, content: action.text },
-                };
+            : {
+                command: "message.append" as const,
+                operationId: action.operation_id,
+                payload: { conversationId: action.conversation, content: action.text },
+              };
     const result = await this.options.storage.executeResearchCommand(command);
     if (!result.ok) {
       this.report(action.operation_id, {
@@ -153,9 +173,7 @@ export class DurableProvider {
             ? "conversation"
             : action.name === "stop" || action.name === "start-again"
               ? "task"
-              : action.name === "continue-all"
-                ? "continuation"
-                : "message",
+              : "message",
       id: result.value.resultId,
     });
     await this.pump();

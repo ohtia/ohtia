@@ -27,6 +27,7 @@ const actions: Readonly<Record<string, readonly string[]>> = Object.freeze({
   interrupt: ["attempt"],
   stop: ["task"],
   "start-again": ["task"],
+  "resume-requests": ["connection"],
   "continue-all": [],
 });
 export type DevelopmentInvocation =
@@ -59,6 +60,14 @@ export function parseDevelopmentSwitches(
   for (const name of expected)
     if (!values.has(name))
       return { ok: false, error: `The ${command} action needs --ohtia-dev-${name}=<value>.` };
+  if (command === "resume-requests") {
+    if (values.get("connection") !== "chatgpt")
+      return { ok: false, error: "Use --ohtia-dev-connection=chatgpt." };
+    return {
+      ok: true,
+      action: { name: command, operation_id: operationId, connection: "chatgpt" },
+    };
+  }
   if (command === "create-development-project" || command === "continue-all")
     return { ok: true, action: { name: command, operation_id: operationId } };
   if (command === "start-conversation" || command === "send") {

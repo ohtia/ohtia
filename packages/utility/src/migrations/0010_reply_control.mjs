@@ -20,7 +20,7 @@ export const objects = {
     WHEN NEW.charge_warning_accepted_at IS NOT OLD.charge_warning_accepted_at
     BEGIN SELECT RAISE(ABORT,'Immutable charge warning'); END`,
   receipts_commands: `CREATE TRIGGER receipts_commands BEFORE INSERT ON command_receipts
-    WHEN NEW.command NOT IN ('development.createProject','project.create','project.confirmSetup','conversation.start','conversation.rename','message.append','task.stop','task.startAgain','task.continueAll')
+    WHEN NEW.command NOT IN ('development.createProject','project.create','project.confirmSetup','conversation.start','conversation.rename','message.append','task.stop','task.startAgain','task.continueAll','usagePause.resume')
       OR (NEW.command='task.startAgain' AND NOT EXISTS (SELECT 1 FROM tasks
         WHERE id=NEW.result_id AND accepted_by_operation_id=NEW.operation_id AND charge_warning_accepted_at=created_at))
       OR (NEW.command<>'task.startAgain' AND EXISTS (SELECT 1 FROM tasks

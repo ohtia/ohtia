@@ -32,6 +32,7 @@ export interface ResearchPayloads {
   readonly "task.stop": { readonly taskId: string };
   /** Invoking this human command acknowledges possible duplicate charges. */
   readonly "task.startAgain": { readonly taskId: string };
+  readonly "usagePause.resume": { readonly connection: "chatgpt" };
   readonly "task.continueAll": Record<string, never>;
   readonly "development.createProject": Record<string, never>;
   readonly "project.create": Record<string, never>;
@@ -63,6 +64,7 @@ export interface ResearchResult {
 export const researchCommands = [
   "task.stop",
   "task.startAgain",
+  "usagePause.resume",
   "task.continueAll",
   "development.createProject",
   "project.create",

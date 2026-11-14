@@ -32,7 +32,11 @@
     "sha256": "9828722765ea05ea3366f2d0f7608505aed17959b432d8208198f53ec1d710ff"
   },
   {
-    "name": "0009_reply_control",
-    "sha256": "d3497ecebcd9c9636889a3efd92aefeb7ccb9b15ac730d92ebd95d40bd448f7f"
+    "name": "0009_usage_limit_pauses",
+    "sha256": "9670a9ff577cba4fd98262b5f4b7866a0de9efd0b1d896cf29657b0113e5f1cc"
+  },
+  {
+    "name": "0010_reply_control",
+    "sha256": "817001bc13665ab19fd827e43656b1293dd4e2e08d7717422cbb136d59a4b1f4"
   }
 ]
