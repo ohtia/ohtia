@@ -201,6 +201,48 @@ async function boundaries(application, page) {
   expect(violation).toBe("connect-src");
   return { preferences, violation };
 }
+/**
+ * A package launched with the development command's switch is refused at startup, before it takes
+ * the single-instance lock (STORY-003-003). Linux prints the refusal and exits with 1; Windows and
+ * macOS show it in a modal error box that keeps the refused process waiting, so there the case
+ * observes the absent lock and research root for the startup budget, then ends the process.
+ */
+async function refusedDevelopmentCommand(env) {
+  const lock = path.join(
+    applicationRoot,
+    process.platform === "win32" ? "lockfile" : "SingletonLock",
+  );
+  const child = spawn(
+    installedRuntime.executable,
+    [
+      installedRuntime.app,
+      ...installedRuntime.args,
+      "--ohtia-dev-command=request",
+      "--ohtia-dev-model=first",
+    ],
+    { env, stdio: "ignore" },
+  );
+  const exited = new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code, signal) => resolve({ code, signal }));
+  });
+  const deadline = Date.now() + portLimits.application_start_ms;
+  let outcome;
+  while (!outcome && Date.now() < deadline) {
+    expect(fs.lstatSync(lock, { throwIfNoEntry: false })).toBeUndefined();
+    expect(fs.existsSync(profile.research_root)).toBe(false);
+    outcome = await Promise.race([exited, delay(100).then(() => undefined)]);
+  }
+  if (!outcome) {
+    expect(process.platform).not.toBe("linux");
+    child.kill();
+    await exited;
+    return { exit: "error_box", lock_taken: false };
+  }
+  expect(outcome).toEqual({ code: 1, signal: null });
+  expect(fs.lstatSync(lock, { throwIfNoEntry: false })).toBeUndefined();
+  return { exit: outcome.code, lock_taken: false };
+}
 async function installedCases() {
   const scratch = shortTemporaryDirectory("ohtia-st-");
   try {
@@ -217,6 +259,8 @@ async function installedJourney(scratch) {
     scratch,
   });
   await retain("before");
+  record("installed-refuses-development-command", await refusedDevelopmentCommand(env));
+  await retain("refused-command");
   let { application, page } = await start(installedRuntime, env);
   await recordReadyNativeProcesses(application, output);
   expect(fs.existsSync(profile.research_root)).toBe(false);

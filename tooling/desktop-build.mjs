@@ -24,10 +24,14 @@ export async function buildDesktop(root, { development = false } = {}) {
           resolveId(source) {
             if (!development && source === "./fake-provider.js")
               return "\0ohtia-no-development-provider";
+            if (!development && source === "./development-command.js")
+              return "\0ohtia-absent-command-module";
           },
           load(id) {
             if (id === "\0ohtia-no-development-provider")
               return "export const createFakeProvider = () => undefined; export const credentialAcceptance = () => undefined;";
+            if (id === "\0ohtia-absent-command-module")
+              return "export const createDevelopmentCommand = () => undefined;";
           },
         },
         productGraph(root, { development }),

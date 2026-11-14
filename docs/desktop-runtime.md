@@ -2,6 +2,10 @@
 type: Playbook
 title: Isolated desktop runtime
 description: Admit native runtime contexts, manage the window lifecycle and verify supervised status and fixed-home bootstrap boundaries.
+generated:
+  by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # Isolated desktop runtime
@@ -32,7 +36,7 @@ Renderer preference mutations remain unavailable until the broker publishes `sto
 
 [ADR-0043](adr/adr-0043-ordinary-startup-modes.md) selects one mode, independently in main and utility:
 
-- **`development`:** `python3 scripts/workspace.py run dev`, from your ordinary account and graphical session. It takes no arguments.
+- **`development`:** `python3 scripts/workspace.py run dev`, from your ordinary account and graphical session. It takes no arguments except the development command switches `--ohtia-dev-command=<action>` and `--ohtia-dev-<argument>=<value>`, which main admits only in this mode; while a window from the checkout is open, they reach that instance.
 - **`installed`:** an installed package opened normally. It needs no profile.
 - **`qualification`:** the procedures below, with an independent profile.
 

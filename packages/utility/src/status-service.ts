@@ -1,5 +1,7 @@
 import {
   decodeConnectionReport,
+  decodeDevelopmentAction,
+  decodeProviderEvent,
   ServiceConnections,
   decodeText,
   encodeEnvelope,
@@ -17,6 +19,7 @@ import {
 } from "@ohtia/contracts";
 
 import type { DurableStore } from "./storage.js";
+import { ProviderAttempts, type RuntimeMode } from "./provider-attempts.js";
 
 /** Bounded service peer. Storage remains unavailable until the broker confirms locator activation. */
 export function createStatusService(
@@ -25,9 +28,19 @@ export function createStatusService(
   send: (text: string) => void,
   storage?: DurableStore,
   admissionLost?: () => void,
+  mode: RuntimeMode = "installed",
 ) {
   if (!isInterfaceLocale(locale)) throw new Error("Unsupported trusted service locale.");
   const connections = new ServiceConnections();
+  // The service generation identifies every provider message; main discards the rest.
+  const attempts = new ProviderAttempts({
+    generation,
+    mode,
+    connections,
+    send: (text) => {
+      if (!disposed) send(text);
+    },
+  });
   const streams = new Map<
     string,
     {
@@ -375,6 +388,16 @@ export function createStatusService(
         if (!connections.receive(report)) throw new Error("Invalid connection report.");
         return;
       }
+      const providerEvent = decodeProviderEvent(text, generation);
+      if (providerEvent) {
+        if (!attempts.receive(providerEvent)) throw new Error("Invalid provider event order.");
+        return;
+      }
+      const action = decodeDevelopmentAction(text, generation);
+      if (action) {
+        attempts.developmentAction(action);
+        return;
+      }
       const decoded = decodeText(text);
       if (!decoded.ok) throw new Error("Invalid broker message.");
       const value = decoded.value;
@@ -500,6 +523,7 @@ export function createStatusService(
       disposed = true;
       enabled = false;
       streams.clear();
+      attempts.dispose();
     },
   };
 }

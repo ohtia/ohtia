@@ -438,8 +438,12 @@ def setup_lock() -> Generator[None, None, None]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("bootstrap", "setup", "doctor", "run"))
-    parser.add_argument("arguments", nargs="*")
+    # REMAINDER keeps run's switches, such as dev's --ohtia-dev-command=<action>, for the command.
+    parser.add_argument("arguments", nargs=argparse.REMAINDER)
     args = parser.parse_args()
+    # As before REMAINDER: the first `--` only separates arguments and is not passed on.
+    if "--" in args.arguments:
+        args.arguments.remove("--")
     try:
         if args.command in ("bootstrap", "setup"):
             with setup_lock():

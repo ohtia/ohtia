@@ -3,7 +3,7 @@ type: EPIC
 title: "EPIC-003 — Research agents and their conversation interface"
 description: "Let the researcher connect ChatGPT, Anthropic or OpenAI accounts, set up a project with Virgilio and work through bounded, durable, attributed conversations, consultations, plans and handoffs with Virgilio and Josefa."
 generated:
-  by: codex/gpt-6.1-sol
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 tags: [epic, "comp:llm", "comp:storage", "comp:app", "comp:desktop", "comp:tooling", "comp:docs"]
@@ -637,7 +637,7 @@ ChatGPT:
   - `subscription_sharing_invalid_user` (401) is handled as a 401 before the stream: `connection_expired` and one renewal.
   - `chatpass_v2_scope_not_authorized` and `chatpass_v2_invalid_authorization_context` (403) fail with `request_rejected`, and the connection becomes `error` with the reason `sign_in_rejected`, stored with the kept session, so its queued tasks block until the researcher signs in again and a new grant replaces the old one.
   - Any other 4xx fails with `request_rejected`; any other 429 and any other 5xx fail with `provider_unavailable`.
-  - In the stream, `response.completed` completes the reply. `response.failed`, `response.incomplete` or an `error` event fails with `provider_error`, keeping the text already received as partial (STORY-003-007). An event or output that Ohtia cannot parse fails with `invalid_output`; main closes the response, and the text already received is kept as partial (STORY-003-007).
+  - In the stream, `response.completed` completes the reply. A `response.failed` or `error` event whose `error.code` is one of the codes above fails with that code's result and has the same effect on the connection as before the stream, because OpenAI also reports the plan limit after a stream has begun;[^siwc-models] any other `response.failed`, `response.incomplete` or `error` event fails with `provider_error`. Either way, the text already received is kept as partial (STORY-003-007). An event or output that Ohtia cannot parse fails with `invalid_output`; main closes the response, and the text already received is kept as partial (STORY-003-007).
   - A stream that ends without `response.completed`, `response.failed` or `response.incomplete`, or a connection that drops after the request left, is uncertain with `connection_lost`. A connection that could not be opened at all (name resolution, refused connection or TLS failure), so no request byte left, fails with `provider_unavailable`.
 - **Session renewal.** Main renews an expired session once before dispatch, between the two permit checks above. If OpenAI rejects the renewal with an unusable-token code or `invalid_client` (STORY-003-002), the connection becomes `expired` or `error` as that story states and nothing is sent: main returns the attempt as not dispatched with `connection_expired`, and STORY-003-006 turns that into a block. If the renewal fails temporarily (no network or a 5xx response), the connection stays `connected` and nothing is sent: main returns the attempt as not dispatched with `provider_unavailable`, and the task fails with that reason (STORY-003-006).
 

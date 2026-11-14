@@ -40,6 +40,8 @@ async function launch(
     mode?: "qualification" | "development" | "installed";
     developmentBuild?: boolean;
     credentialReadPending?: boolean;
+    /** Holds main's startup at the credential store until it settles. */
+    credentialGate?: Promise<void>;
     researchRootRefused?: boolean;
     nodeOptions?: string;
     platform?: NodeJS.Platform;
@@ -49,8 +51,9 @@ async function launch(
   vi.resetModules();
   vi.stubGlobal("__OHTIA_DEVELOPMENT_BUILD__", options.developmentBuild ?? false);
   vi.doMock("../packages/main/src/native-credentials.js", () => ({
-    nativeCredentialStore: () =>
-      Promise.resolve({
+    nativeCredentialStore: async () => {
+      await options.credentialGate;
+      return {
         drain: () => Promise.resolve(),
         read: () =>
           options.credentialReadPending
@@ -60,7 +63,8 @@ async function launch(
         write: () => Promise.resolve({ status: "stored" }),
         writeSession: () => Promise.resolve({ status: "stored" }),
         deleteSession: () => Promise.resolve({ status: "stored" }),
-      }),
+      };
+    },
   }));
   if (options.platform) {
     const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
@@ -130,7 +134,7 @@ async function launch(
     isReady: () => state.ready,
     whenReady: vi.fn(() => (state.ready ? Promise.resolve() : new Promise<void>(() => {}))),
     getAppMetrics: () => Array.from({ length: state.metrics }, () => ({})),
-    requestSingleInstanceLock: () => options.ownsBroker !== false,
+    requestSingleInstanceLock: vi.fn(() => options.ownsBroker !== false),
   });
   const nativeTheme = new (class extends EventEmitter {
     private source: "system" | "light" | "dark" = "system";
@@ -258,6 +262,8 @@ async function launch(
     ceased = false;
     dispatch = vi.fn();
     reportConnections = vi.fn((manager: { ids(): readonly string[] }) => manager.ids());
+    connectProvider = vi.fn();
+    postProvider = vi.fn(() => true);
     control = vi.fn();
     disposeWindow = vi.fn();
     activateStorage = vi.fn(() => true);
@@ -336,6 +342,7 @@ async function launch(
     },
     canonicalProspective: (value: string) => value,
     admitRuntimeSwitches: vi.fn(),
+    isDevelopmentSwitch: (value: string) => value.startsWith("--ohtia-dev-"),
     verifyStableSentinels: () => {
       if (!state.verify) throw new Error("Synthetic changed sentinel");
     },
@@ -1894,4 +1901,121 @@ it("opens the local workspace while a native credential unlock is still pending"
   expect(h.failure).toBeUndefined();
   expect(h.window).toBeDefined();
   expect(h.window.webContents.mainFrame).toBeDefined();
+});
+
+it("hands development switches to the open development instance and runs them on its data service", async () => {
+  const argv = process.argv;
+  const switches = ["--ohtia-dev-command=request", "--ohtia-dev-model=first"];
+  process.argv = [...argv, ...switches];
+  const written: string[] = [];
+  const fs = (await import("node:fs")).default;
+  const write = vi.spyOn(fs, "writeSync").mockImplementation((_fd, text) => {
+    written.push(String(text));
+    return String(text).length;
+  });
+  try {
+    const h = await launch({ mode: "development", developmentBuild: true, instrumented: true });
+    expect(h.failure).toBeUndefined();
+    expect(h.app.requestSingleInstanceLock).toHaveBeenCalledWith({
+      development_switches: switches,
+    });
+    const supervisor = h.supervisors[0];
+    expect(supervisor.connectProvider).toHaveBeenCalledOnce();
+    supervisor.stateChanged("ready");
+    await vi.waitFor(() => {
+      expect(supervisor.postProvider).toHaveBeenCalled();
+    });
+    const posted = JSON.parse(supervisor.postProvider.mock.calls[0][0] as string);
+    expect(posted).toMatchObject({
+      kind: "development_action",
+      generation: supervisor.generation,
+      action: { name: "request", model: "first" },
+    });
+    const channel = supervisor.connectProvider.mock.calls[0][0];
+    channel.report({
+      kind: "development_report",
+      version: 1,
+      generation: supervisor.generation,
+      operation_id: posted.action.operation_id,
+      report: { type: "attempt", attempt: "development-1" },
+    });
+    expect(written.join("")).toContain("attempt development-1");
+    // A later launch's switches reach this instance without presenting its window.
+    const focus = h.window.focus.mock.calls.length;
+    h.app.emit("second-instance", {}, [], "", {
+      development_switches: ["--ohtia-dev-command=interrupt", "--ohtia-dev-attempt=development-1"],
+    });
+    expect(JSON.parse(supervisor.postProvider.mock.calls.at(-1)[0] as string)).toMatchObject({
+      action: { name: "interrupt", attempt: "development-1" },
+    });
+    expect(h.window.focus.mock.calls.length).toBe(focus);
+    // Provider dispatches from the data service reach main's dispatcher and its guards.
+    channel.dispatch({
+      kind: "provider_dispatch",
+      version: 1,
+      generation: supervisor.generation,
+      request: {
+        attempt: "development-2",
+        operation: "development_test",
+        connection: "chatgpt",
+        model: "first",
+        instructions: "Synthetic.",
+        input: [{ role: "user", text: "Synthetic." }],
+        limits: { max_output_bytes: 1, max_attempt_duration_ms: 1, max_inactivity_ms: 1 },
+      },
+      permit: { id: "permit-2", attempt: "development-2", issued_at: 0 },
+    });
+    await vi.waitFor(() => {
+      expect(
+        supervisor.postProvider.mock.calls.some(([text]: [string]) =>
+          text.includes('"permit_expired"'),
+        ),
+      ).toBe(true);
+    });
+    channel.interrupt({
+      kind: "provider_interrupt",
+      version: 1,
+      generation: supervisor.generation,
+      attempt: "development-2",
+    });
+  } finally {
+    process.argv = argv;
+    write.mockRestore();
+  }
+});
+
+it("offers no development switches to the single-instance lock in the installed mode", async () => {
+  const h = await launch({ mode: "installed" });
+  expect(h.failure).toBeUndefined();
+  expect(h.app.requestSingleInstanceLock).toHaveBeenCalledWith(undefined);
+});
+
+it("keeps a development command handed over while the instance is still starting", async () => {
+  let open!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  const h = await launch({
+    mode: "development",
+    developmentBuild: true,
+    instrumented: true,
+    credentialGate: gate,
+  });
+  expect(h.failure).toBeUndefined();
+  h.app.emit("second-instance", {}, [], "", {
+    development_switches: ["--ohtia-dev-command=interrupt", "--ohtia-dev-attempt=development-9"],
+  });
+  open();
+  await vi.dynamicImportSettled();
+  await vi.waitFor(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.supervisors[0]).toBeDefined();
+  });
+  h.supervisors[0].stateChanged("ready");
+  await vi.waitFor(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(
+      h.supervisors[0].postProvider.mock.calls.map(([text]: [string]) => JSON.parse(text).action),
+    ).toContainEqual(expect.objectContaining({ name: "interrupt", attempt: "development-9" }));
+  });
 });

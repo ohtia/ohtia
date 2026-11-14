@@ -4,6 +4,12 @@ import { randomUUID } from "node:crypto";
 import {
   decodeText,
   decodeEnvelope,
+  decodeDevelopmentReport,
+  decodeProviderDispatch,
+  decodeProviderInterrupt,
+  type DevelopmentReportMessage,
+  type ProviderDispatchMessage,
+  type ProviderInterruptMessage,
   decodeLocaleSnapshot,
   decodePresentationSnapshot,
   type PresentationSnapshot,
@@ -33,6 +39,12 @@ export interface SupervisedChild {
   kill(): void;
   messages(listener: (message: unknown) => void): void;
   exited(listener: () => void): void;
+}
+/** Main's receivers for the provider messages of this generation's data service. */
+export interface ProviderChannel {
+  dispatch(message: ProviderDispatchMessage): void;
+  interrupt(message: ProviderInterruptMessage): void;
+  report?(message: DevelopmentReportMessage): void;
 }
 interface Work {
   readonly request: Request;
@@ -66,6 +78,7 @@ export class ServiceSupervisor {
   private readonly startup: ReturnType<typeof setTimeout>;
   private readonly terminationTimers = new Set<ReturnType<typeof setTimeout>>();
   private stopping: Promise<boolean> | undefined;
+  private provider: ProviderChannel | undefined;
   private readonly exitWaiters = new Set<(ceased: boolean) => void>();
   constructor(
     private readonly child: SupervisedChild,
@@ -111,6 +124,20 @@ export class ServiceSupervisor {
       this.child.send(
         JSON.stringify({ kind: "system_locale", generation: this.generation, locale }),
       );
+      return true;
+    } catch {
+      this.fault();
+      return false;
+    }
+  }
+  connectProvider(channel: ProviderChannel): void {
+    this.provider = channel;
+  }
+  /** Post a provider event or development action; a channel failure ends this generation. */
+  postProvider(text: string): boolean {
+    if (!this.available) return false;
+    try {
+      this.child.send(text);
       return true;
     } catch {
       this.fault();
@@ -333,6 +360,23 @@ export class ServiceSupervisor {
       this.ready = true;
       this.changed("ready");
       return;
+    }
+    if (typeof input === "string" && input.length <= portLimits.message_bytes) {
+      // Versioned provider messages; a malformed one falls through to the peer decoder's fault.
+      const dispatch = decodeProviderDispatch(input, this.generation);
+      const interrupt = dispatch ? undefined : decodeProviderInterrupt(input, this.generation);
+      const report =
+        dispatch || interrupt ? undefined : decodeDevelopmentReport(input, this.generation);
+      if (dispatch || interrupt || report) {
+        if (!this.ready) {
+          this.fault();
+          return;
+        }
+        if (dispatch) this.provider?.dispatch(dispatch);
+        else if (interrupt) this.provider?.interrupt(interrupt);
+        else if (report) this.provider?.report?.(report);
+        return;
+      }
     }
     if (typeof input === "string" && input.length < portLimits.message_bytes) {
       try {

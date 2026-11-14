@@ -104,14 +104,29 @@ export function verifyStableSentinels(profile: Pick<RuntimeProfile, "stable_root
   }
 }
 
-/** The default runtime admits no command-line feature overrides. */
+/** `--ohtia-dev-command=<action>` and its `--ohtia-dev-<argument>=<value>` switches. */
+export function isDevelopmentSwitch(arg: string): boolean {
+  return arg.length <= 8192 && /^--ohtia-dev-[a-z]+(?:-[a-z]+)*=[^\0]*$/.test(arg);
+}
+/**
+ * The default runtime admits no command-line feature overrides. Only the `development` mode of
+ * ADR-0043 admits the development command's switches; `installed` and `qualification` refuse them.
+ */
 export function admitRuntimeSwitches(
   argv: readonly string[],
   execArgv: readonly string[],
   instrumented: boolean,
+  development = false,
 ): void {
   const allowed = new Set(instrumented ? ["--inspect=0", "--remote-debugging-port=0"] : []);
-  if ([...argv, ...execArgv].some((arg) => arg.startsWith("-") && !allowed.has(arg)))
+  if (
+    [...argv, ...execArgv].some(
+      (arg) =>
+        arg.startsWith("-") &&
+        !allowed.has(arg) &&
+        !(development && argv.includes(arg) && isDevelopmentSwitch(arg)),
+    )
+  )
     throw new Error("Runtime command-line overrides are not admitted.");
 }
 

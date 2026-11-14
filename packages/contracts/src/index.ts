@@ -19,4 +19,6 @@ export * from "./connections.js";
 
 export * from "./service-connections.js";
 
+export * from "./provider-requests.js";
+
 export * from "./research.js";

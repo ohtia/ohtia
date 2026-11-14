@@ -219,6 +219,8 @@ async function start(): Promise<void> {
     () => {
       process.exit(1);
     },
+    // Determined here, independently of main, under ADR-0043.
+    selected.mode,
   );
   let stopping = false;
   const isStopping = () => stopping;

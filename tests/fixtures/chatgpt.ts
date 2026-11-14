@@ -3,6 +3,74 @@ import { vi, expect } from "vitest";
 import { ChatGPTProvider } from "../../packages/main/src/chatgpt-provider.js";
 import { chatGPTEndpoints } from "../../packages/main/src/chatgpt-sign-in.js";
 import {
+  forbiddenResponseFields,
+  responsesEndpoint,
+  transportFailure,
+  type ResponsesTransport,
+} from "../../packages/main/src/chatgpt-responses.js";
+/** One server-sent event of the Responses stream. */
+export function sse(event: Record<string, unknown>): string {
+  return `event: ${String(event.type)}\ndata: ${JSON.stringify(event)}\n\n`;
+}
+export const completedUsage = {
+  input_tokens: 41,
+  input_tokens_details: { cached_tokens: 0 },
+  output_tokens: 7,
+  output_tokens_details: { reasoning_tokens: 3 },
+  total_tokens: 48,
+};
+/** A synthetic streamed reply that ends with `response.completed`. */
+export const syntheticReply = [
+  sse({ type: "response.created", response: { id: "resp_synthetic", model: "first" } }),
+  sse({ type: "response.output_text.delta", delta: "Synthetic " }),
+  sse({ type: "response.output_text.delta", delta: "reply." }),
+  sse({ type: "response.completed", response: { model: "first", usage: completedUsage } }),
+];
+/**
+ * A stream body: each piece is enqueued in order; `open` keeps it running until the request's
+ * signal aborts, and `drop` errors it after the pieces, as a connection lost mid-reply.
+ */
+export function streamResponse(
+  pieces: readonly string[],
+  options: {
+    readonly open?: boolean;
+    readonly drop?: boolean;
+    readonly signal?: AbortSignal | null;
+    readonly status?: number;
+    readonly headers?: Record<string, string>;
+  } = {},
+): Response {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    // An error discards queued chunks, so a drop happens only once they have been read.
+    pull(controller) {
+      if (options.drop) controller.error(new Error("synthetic socket reset"));
+    },
+    start(controller) {
+      for (const piece of pieces) controller.enqueue(encoder.encode(piece));
+      if (options.drop) return;
+      if (!options.open) controller.close();
+      else
+        options.signal?.addEventListener("abort", () => {
+          try {
+            controller.error(new DOMException("aborted", "AbortError"));
+          } catch {
+            /* Already cancelled by the reader. */
+          }
+        });
+    },
+  });
+  return new Response(body, {
+    status: options.status ?? 200,
+    headers: { "Content-Type": "text/event-stream", ...options.headers },
+  });
+}
+export interface RecordedResponseRequest {
+  readonly body: Record<string, unknown>;
+  readonly headers: Record<string, string>;
+  readonly signal: AbortSignal | null | undefined;
+}
+import {
   CredentialStore,
   type CredentialEntryFactory,
 } from "../../packages/main/src/credential-store.js";
@@ -68,6 +136,9 @@ export function fakeChatGPT(
   };
   let revision = 0;
   let delayRefresh: Promise<void> | undefined;
+  const responseRequests: RecordedResponseRequest[] = [];
+  let responses: (request: RecordedResponseRequest) => Response | Promise<Response> = (request) =>
+    streamResponse(syntheticReply, { signal: request.signal });
   const requests: { url: string; body?: URLSearchParams; headers?: HeadersInit }[] = [];
   const request = vi.fn(
     async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
@@ -120,12 +191,38 @@ export function fakeChatGPT(
       });
     },
   );
+  let connecting: Promise<void> | undefined;
+  let connectFailure: string | undefined;
+  /** The synthetic transport: connection setup, then the release guard, then the request. */
+  const transport: ResponsesTransport = async (request, release) => {
+    expect(request.url).toBe(responsesEndpoint);
+    await connecting;
+    if (connectFailure)
+      throw transportFailure(false, Object.assign(new Error("x"), { code: connectFailure }));
+    if (!release()) throw transportFailure(false);
+    const recorded = {
+      body: JSON.parse(request.body) as Record<string, unknown>,
+      headers: { ...request.headers },
+      signal: request.signal,
+    };
+    // Every request any test sends: only Ohtia's own fields, never a provider-kept state.
+    for (const field of [...forbiddenResponseFields, "tools"])
+      expect(recorded.body).not.toHaveProperty(field);
+    expect(recorded.body).toMatchObject({ store: false, stream: true });
+    responseRequests.push(recorded);
+    try {
+      return await responses(recorded);
+    } catch (error) {
+      throw transportFailure(true, error);
+    }
+  };
   const browser = vi.fn(async (url: string) => {
     authorization = new URL(url);
   });
   const adapter = new ChatGPTProvider({
     store,
     request,
+    responses: transport,
     openBrowser: browser,
     completedText: () => "You can close this tab and return to Ohtia.",
   });
@@ -213,6 +310,16 @@ export function fakeChatGPT(
     },
     set delayRefresh(v: Promise<void>) {
       delayRefresh = v;
+    },
+    responseRequests,
+    set connecting(v: Promise<void>) {
+      connecting = v;
+    },
+    set connectFailure(v: string | undefined) {
+      connectFailure = v;
+    },
+    set responses(v: (request: RecordedResponseRequest) => Response | Promise<Response>) {
+      responses = v;
     },
     get registration() {
       return entries.get(`${service}/chatgpt-registration`);

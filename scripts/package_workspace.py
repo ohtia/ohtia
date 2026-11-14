@@ -31,7 +31,9 @@ def write_archive(destination: Path) -> None:
                 if not (manifest_path.parent / entry).is_file():
                     raise SystemExit("Missing public build output; run the workspace build first.")
             for path in [manifest_path, *sorted((manifest_path.parent / "dist").rglob("*"))]:
-                if path.is_file() and not path.name.startswith("fake-provider."):
+                if path.is_file() and not path.name.startswith(
+                    ("fake-provider.", "development-command.")
+                ):
                     archive.write(path, path.relative_to(ROOT))
         for name in (
             "pnpm-lock.yaml",

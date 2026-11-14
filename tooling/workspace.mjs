@@ -176,14 +176,20 @@ const commands = {
     node("vite/bin/vite.js", ["preview", "--config", "tooling/vite.catalog.mjs"]);
   },
   async dev() {
-    if (process.argv.length > 3)
+    // Only the development command's switches pass through; the runtime admits them in this mode.
+    const switches = process.argv.slice(3);
+    if (switches.some((item) => !/^--ohtia-dev-[a-z]+(?:-[a-z]+)*=/.test(item)))
       throw new Error(
-        "Use dev without arguments. An inspected profile launch is desktop:launch <profile> <prepared>.",
+        "Use dev without arguments, or with --ohtia-dev-command=<action> and its --ohtia-dev-<argument>=<value> switches. An inspected profile launch is desktop:launch <profile> <prepared>.",
       );
     // An open window keeps its runtime: this launch reaches it without replacing anything.
     const { developmentInstanceRunning } = await import("./development-instance.mjs");
     const attaching = developmentInstanceRunning(path.join(root, ".ohtia-dev"));
-    if (attaching)
+    if (attaching && switches.length)
+      console.log(
+        "A window from this checkout is open. Its terminal prints the command's results.",
+      );
+    else if (attaching)
       console.log("A window from this checkout is open. Close it and run dev to see a change.");
     if (!attaching) await commands.build(true);
     else if (!fs.existsSync(path.join(root, "packages/main/dist/index.js"))) compile();
@@ -194,7 +200,7 @@ const commands = {
       fs.rmSync(runtime, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
       run(python, ["scripts/desktop_runtime.py", `${process.platform}-${process.arch}`, runtime]);
     }
-    await launchDevelopment(directory, runtime);
+    await launchDevelopment(directory, runtime, switches);
   },
   async "desktop:launch"() {
     const [profile, prepared] = process.argv.slice(3);
