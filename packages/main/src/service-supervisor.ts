@@ -7,6 +7,8 @@ import {
   decodeDevelopmentReport,
   decodeProviderDispatch,
   decodeProviderInterrupt,
+  decodeModelListRefresh,
+  type ModelListRefreshMessage,
   type DevelopmentReportMessage,
   type ProviderDispatchMessage,
   type ProviderInterruptMessage,
@@ -24,6 +26,7 @@ import {
   failure,
   isIdentifier,
   portLimits,
+  providerMessageBytes,
   policyId,
   type Operation,
   type OperationInputs,
@@ -42,6 +45,7 @@ export interface SupervisedChild {
 }
 /** Main's receivers for the provider messages of this generation's data service. */
 export interface ProviderChannel {
+  refreshModels?(message: ModelListRefreshMessage): void;
   dispatch(message: ProviderDispatchMessage): void;
   interrupt(message: ProviderInterruptMessage): void;
   report?(message: DevelopmentReportMessage): void;
@@ -361,13 +365,17 @@ export class ServiceSupervisor {
       this.changed("ready");
       return;
     }
-    if (typeof input === "string" && input.length <= portLimits.message_bytes) {
+    if (typeof input === "string" && input.length <= providerMessageBytes) {
       // Versioned provider messages; a malformed one falls through to the peer decoder's fault.
       const dispatch = decodeProviderDispatch(input, this.generation);
       const interrupt = dispatch ? undefined : decodeProviderInterrupt(input, this.generation);
       const report =
         dispatch || interrupt ? undefined : decodeDevelopmentReport(input, this.generation);
-      if (dispatch || interrupt || report) {
+      const refresh =
+        dispatch || interrupt || report
+          ? undefined
+          : decodeModelListRefresh(input, this.generation);
+      if (dispatch || interrupt || report || refresh) {
         if (!this.ready) {
           this.fault();
           return;
@@ -375,6 +383,7 @@ export class ServiceSupervisor {
         if (dispatch) this.provider?.dispatch(dispatch);
         else if (interrupt) this.provider?.interrupt(interrupt);
         else if (report) this.provider?.report?.(report);
+        else if (refresh) this.provider?.refreshModels?.(refresh);
         return;
       }
     }

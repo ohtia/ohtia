@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import {
   isIdentifier,
   isProviderModelSlug,
+  isDevelopmentText,
+  portLimits,
   providerMessageVersion,
   type DevelopmentAction,
   type DevelopmentReportMessage,
@@ -19,6 +21,9 @@ export const developmentPrefix = "[ohtia dev]";
 export const developmentRequestText = "Describe the usual parts of a thesis in about 300 words.";
 const actions: Readonly<Record<string, readonly string[]>> = Object.freeze({
   request: ["model"],
+  "create-development-project": [],
+  "start-conversation": ["project", "text"],
+  send: ["conversation", "text"],
   interrupt: ["attempt"],
 });
 export type DevelopmentInvocation =
@@ -51,6 +56,24 @@ export function parseDevelopmentSwitches(
   for (const name of expected)
     if (!values.has(name))
       return { ok: false, error: `The ${command} action needs --ohtia-dev-${name}=<value>.` };
+  if (command === "create-development-project")
+    return { ok: true, action: { name: command, operation_id: operationId } };
+  if (command === "start-conversation" || command === "send") {
+    const id = values.get(command === "send" ? "conversation" : "project");
+    const text = values.get("text");
+    if (!isIdentifier(id) || !isDevelopmentText(text))
+      return {
+        ok: false,
+        error: `Use the record identifier and nonempty Unicode text of at most ${String(portLimits.message_bytes)} UTF-8 bytes.`,
+      };
+    return {
+      ok: true,
+      action:
+        command === "send"
+          ? { name: command, operation_id: operationId, conversation: id, text }
+          : { name: command, operation_id: operationId, project: id, text },
+    };
+  }
   if (command === "request") {
     const model = values.get("model");
     if (!isProviderModelSlug(model))
@@ -173,6 +196,9 @@ export function createDevelopmentCommand(host: DevelopmentHost, output = termina
       const id = message.operation_id;
       const report = message.report;
       switch (report.type) {
+        case "record":
+          line(`${id}: ${report.record} ${report.id}`);
+          return;
         case "refused":
           line(`${id}: refused (${report.reason})`);
           return;

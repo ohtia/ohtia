@@ -6,9 +6,12 @@ generated:
   by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
+status: deprecated
 ---
 
 # ADR-0028 — Current authorization for mediated provider transfers
+
+Superseded by [ADR-0052 — Current authorization for provider dispatch](adr-0052-current-provider-dispatch-authorization.md).
 
 ## Context
 

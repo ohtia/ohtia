@@ -22,6 +22,7 @@ The conventions for this register are defined in [Architecture decisions](../arc
 ## Execution and containment
 
 - [ADR-0011 — Persisted local task intent with bounded execution](adr-0011-bounded-durable-local-tasks.md) — Define durable task and attempt states, local scheduling limits, cancellation, application exit and recovery.
+- [ADR-0051 — Research-agent task execution](adr-0051-research-agent-task-execution.md) — Persist accepted work as bounded tasks and attempts with current admission, ordered replies, durable receipts and explicit recovery.
 - [ADR-0012 — Capabilities bound to one supervised attempt](adr-0012-attempt-bound-process-capabilities.md) — Bind worker effects to a random per-attempt capability and reject replay or stale scope through the trusted broker.
 - [ADR-0013 — Structured diagnostics without research content](adr-0013-private-content-free-structured-logging.md) — Define a versioned local JSONL diagnostic format mapped to OpenTelemetry, with privacy controls and bounded file retention.
 - [ADR-0014 — Allowed document structures and restrictive CSP](adr-0014-restricted-rendering-and-csp.md) — Render untrusted content through the academic schema and enforce the packaged application content security policy.
@@ -62,6 +63,7 @@ The conventions for this register are defined in [Architecture decisions](../arc
 - [ADR-0026 — Capability-declared adapters with explicit access modes](adr-0026-capability-declared-adapters.md) — Keep inference and search integrations behind distinct contracts with verified capabilities and account access.
 - [ADR-0027 — Scoped agent contexts with mediated research tools](adr-0027-scoped-agent-contexts.md) — Agents receive restricted per-attempt inputs and create proposals through application-controlled operations.
 - [ADR-0028 — Current authorization for mediated provider transfers](adr-0028-mediated-provider-transfers.md) — Authorize each Ohtia-controlled transfer against current restrictions and scope without holding database transactions over the network.
+- [ADR-0052 — Current authorization for provider dispatch](adr-0052-current-provider-dispatch-authorization.md) — Authorize every application-controlled provider transfer with current scope, committed single-use permits and bounded zero-dispatch readmission.
 - [ADR-0029 — Versioned operation profiles and bounded usage reporting](adr-0029-operation-profiles-and-usage-reports.md) — Select permitted model capabilities per operation and retain partial or late consumption without granting stale research authority.
 - [ADR-0048 — Provider access routes and credential store](adr-0048-provider-access-routes-and-credential-store.md) — Connect language-model services through Sign in with ChatGPT and Anthropic and OpenAI API keys, with every credential held by main in the operating-system credential store.
 
@@ -81,6 +83,7 @@ The conventions for this register are defined in [Architecture decisions](../arc
 ## Research-agent collaboration
 
 - [ADR-0037 — Application-mediated collaboration among specialist agents](adr-0037-application-mediated-agent-collaboration.md) — Coordinate bounded specialist contributions through durable application records while preserving direct interaction and human authority.
+- [ADR-0053 — Researcher-approved specialist collaboration](adr-0053-researcher-approved-specialist-collaboration.md) — Coordinate bounded specialist contributions through durable application records, with planning inside direct guidance and explicit researcher approval.
 
 ## Native delivery mechanisms
 

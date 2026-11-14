@@ -3,7 +3,7 @@ type: Specification
 title: "Product roadmap"
 description: "Desktop research capabilities, delivery sequence, dependencies and readiness conditions for Ohtia."
 generated:
-  by: claude-code/claude-fable-5-2
+  by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
 sources:
@@ -218,7 +218,7 @@ Role definitions and conversation routing are available from EPIC-003. Research 
 
 **Boundary:** deterministic module conformance uses persisted synthetic project identities before onboarding; actual project entry, switching and material use the same trusted scope at EPIC-004 integration. Later role operations require their own inputs and evaluated quality. Missing provider access disables its operation without blocking local project use. Native delegation is enabled only with complete equivalent scope/budget/lifecycle evidence.
 
-**Enabling contracts:** agent collaboration, evaluation playbook, ADR-0011–0012, ADR-0015, ADR-0026–0029 and ADR-0037, with ADR-0036 preference admission. This is the early reusable agent capability; specialized research value grows with the following product epics.
+**Enabling contracts:** agent collaboration, evaluation playbook, ADR-0051 and ADR-0012, ADR-0015, ADR-0026–0027, ADR-0052 and ADR-0029 and ADR-0053, with ADR-0036 preference admission. This is the early reusable agent capability; specialized research value grows with the following product epics.
 
 ### EPIC-004 — Onboarding and the first research focus: A
 
@@ -246,7 +246,7 @@ Role definitions and conversation routing are available from EPIC-003. Research 
 
 **Review milestone:** the researcher explains coherence and feasibility against their circumstances and confirms the bounded formulation. An existing approved topic can be examined without replacing it. External supervisor approval remains separate.
 
-**Enabling contracts:** workflow B, the [initial search selection](#initial-ai-and-search-connections), source/discovery contracts, ADR-0009, ADR-0014–0015, ADR-0026 and ADR-0028. Neither a title/DOI match nor identical bytes automatically merges source identity, rights or review.
+**Enabling contracts:** workflow B, the [initial search selection](#initial-ai-and-search-connections), source/discovery contracts, ADR-0009, ADR-0014–0015, ADR-0026 and ADR-0052. Neither a title/DOI match nor identical bytes automatically merges source identity, rights or review.
 
 ### EPIC-006 — Develop the bibliography through examined source work
 
@@ -260,7 +260,7 @@ Role definitions and conversation routing are available from EPIC-003. Research 
 
 **Review milestone:** the researcher examines pertinence and coverage, identifies gaps and reading priorities and revises the strategy. Source counts do not establish sufficiency. Reading/critical operations need operation/language quality evidence and an honest insufficient-evidence outcome.
 
-**Enabling contracts:** workflow C search/source work, data model, ADR-0026–0029 and ADR-0035. EPIC-003's collaboration is exercised with real versioned artifacts, independent-review exposure records and bounded librarian/reader/reviewer contributions.
+**Enabling contracts:** workflow C search/source work, data model, ADR-0026–0027, ADR-0052 and ADR-0029 and ADR-0035. EPIC-003's collaboration is exercised with real versioned artifacts, independent-review exposure records and bounded librarian/reader/reviewer contributions.
 
 ### EPIC-007 — Write with sources in the academic editor
 
@@ -434,7 +434,7 @@ Parallel implementation follows agreed output contracts. Shared migrations, AST 
 - **Product completion:** review the screen/interaction design, implement the actual journey and verify it with its data and permissions. Include first-use, empty, filtered-empty, loading, unavailable, partial, conflicting, failed and uncertain states where applicable. Explain safety of existing work and the available next action. A refresh error after a successful command does not repeat that mutation.
 - **Human authority and provenance:** distinguish evidence, author statements, researcher reasoning, agent proposals and external comments. Human confirmation checks exact versions and scope through a separate trusted action. Corrections retain history and mark dependent work; no inferred review, automatic truth badge or agent-issued human approval.
 - **Durability:** one application store with explicitly scoped projects/library associations; immutable retained evidence and manuscript revisions; transactional receipts/version predicates; safe object-before-reference installation; complete migration metadata/checkpoints; checkpoint/failed-state purge and qualified database/journal sanitization before any promised destructive erasure; previous confirmed state and recoverable input on I/O failure. Removal respects all projects, history and retained recovery references.
-- **Bounded execution:** producers define every required input/output/work/time/pending cap before enablement. Global inference/local-processing concurrency defaults to one each and respects adapter limits. Capacity admission/settings changes serialize; lower limits preserve admitted work and uncertainty quarantines persist. One cumulative retry budget covers all layers. Prove process/descendant cessation; unknown external dispatch/cessation remains uncertain. Exit/restart/suspension follow the canonical state machine and explicit continuation.
+- **Bounded execution:** producers define every required input/output/work/time/pending cap before enablement. Global inference concurrency defaults to ten and local-processing concurrency to one, and both respect adapter limits. Capacity admission/settings changes serialize; lower limits preserve admitted work and uncertainty quarantines persist. One cumulative retry budget covers all layers. Prove process/descendant cessation; unknown external dispatch/cessation remains uncertain. Exit/restart/suspension follow the canonical state machine and explicit continuation.
 - **Security/privacy:** ADR-0000 applicability and evidence accompany each affected capability. Validate real boundaries, current restrictions and all outbound material, including queries/tool returns/derived content. Restrict source rendering, resources, parsers and agents. Logs follow the typed versioned content-free JSONL profile, OpenTelemetry mapping and retention bounds under ADR-0013, with graphical View/Delete and explicit sharing preview supplied in EPIC-004. Bootstrap failures stay graphical until a validated log root exists. No default private-project telemetry or diagnostic content capture.
 - **Languages and accessibility:** each delivered surface uses the common locale service and complete typed catalogs for the product's locale inventory. Test ordered OS fallback/override, actual long translations, Korean/mixed scripts, packaged fonts, themes, forced colors, reduced motion, reflow and native IME. Apply WCAG 2.2 AA, ADR-0023's eleven selected AAA criteria and ATAG Part B guidance. Manual assistive claims identify actual artifact/platform/journey; automated checks do not establish conformance or linguistic fluency.
 - **Verification:** apply [ADR-0016][adr-0016] for independent per-product-package line, branch and changed-executable-line coverage gates, denominator/exclusion rules and mandatory behavior checks, including own unimported code. Missing/invalid reports and incomplete mandatory inventories fail. Use common local/CI entries, real file-backed SQLite, IPC, confined processes and packaged artifacts. Mocks, provider conformance, model quality and native input/assistive evidence have separate scopes.
@@ -449,7 +449,7 @@ Canonical specifications and adopting ADRs retain authority over behavior and te
 
 - **EPIC-001 — Native support and development:** qualify the required OS/CPU combinations and select their supported OS versions, Linux distribution/libc baselines, package formats and storage filesystems; qualify native SQLite artifacts, atomic file publication, bootstrap recovery, installers, signing/notarization and update mechanisms. Set modest hardware and numeric startup/process-tree budgets with measured evidence, and define the contributor onboarding budget before clean-environment trials. Product consumers establish editing, parsing and export bounds before enablement.
 - **EPIC-001 — Release authority:** qualify the independently enforced workflow-ref/policy/signing/publication controls, required credentials/facilities, target evidence and retention/retirement procedures under the release policy before enabling privileged execution or public distribution. A synthetic success is not a signed, installable release.
-- **EPIC-003 — Connections and bounded work:** verify current permitted provider access, exact runtime protocols, native confinement, inherited configuration, credentials in the operating-system credential store and supported graphical setup. Set operation/intervention bounds and quality thresholds before trials, using [the collaboration evaluation playbook][evaluation]. The persisted late-report clock is owned by ADR-0029; task/attempt authority is owned by ADR-0011–0012. No provider-native delegation is enabled without equivalent descendant accounting.
+- **EPIC-003 — Connections and bounded work:** verify current permitted provider access, exact runtime protocols, native confinement, inherited configuration, credentials in the operating-system credential store and supported graphical setup. Set operation/intervention bounds and quality thresholds before trials, using [the collaboration evaluation playbook][evaluation]. The persisted late-report clock is owned by ADR-0029; task/attempt authority is owned by ADR-0051 and ADR-0012. No provider-native delegation is enabled without equivalent descendant accounting.
 - **EPIC-002–004 — Identity and attention:** define product-event bindings only for the screens using an animation, with the design system's required frequency rule for Falling apart before use. Preserve geometry, human/AI attribution, manuscript-safe placement, relevant-event batching and reduced-motion/hidden behavior. Expanded specialist artwork requires recognition/accessibility evidence; the character catalog does not itself authorize inference or certify scientific completion.
 - **EPIC-005–006 — Discovery and imported material:** qualify the selected OpenAlex and DOAJ adapters and their permitted modes, and select supported source/OCR formats and bibliography parser behavior with bounded acquisition/processing and fidelity checks. Wider media/dataset/software/object locators do not imply executable analysis or original-media interpretation.
 - **EPIC-004, EPIC-007 and EPIC-014 — Manuscript language and fidelity:** preserve the current grammar and exact revision-language authority. The [design system's conformance blockers][design-blockers] require correct manuscript language and a reviewed new draft-profile version for language-of-parts support before affected mixed-language pages can claim AA conformance. Preserve historical revisions through any format migration. Resolve Hangul inside mathematics, Korean emphasis in outputs, save announcements, scroll-container focus and actual native IME/input with their first consuming editor/export delivery. Provider authentication also needs its own accessibility verification.
@@ -566,7 +566,7 @@ All 38 ADRs in the [register][register] have a delivery owner below. The table c
 | [ADR-0008][adr-0008] | EPIC-001, EPIC-003–004           | Trusted UUIDv7 and constrained BLOB relationships          |
 | [ADR-0009][adr-0009] | EPIC-005                         | Durable exact-hash retained files                          |
 | [ADR-0010][adr-0010] | EPIC-001, EPIC-004               | Verified pre-migration snapshot and recovery UI            |
-| [ADR-0011][adr-0011] | EPIC-003                         | Durable tasks, bounds, exit and restart                    |
+| [ADR-0051][adr-0051] | EPIC-003                         | Durable tasks, bounds, exit and restart                    |
 | [ADR-0012][adr-0012] | EPIC-003                         | Attempt capabilities and stale-effect rejection            |
 | [ADR-0013][adr-0013] | EPIC-001, EPIC-003–004           | Private-content-free logs, rotation and viewer             |
 | [ADR-0014][adr-0014] | EPIC-001, EPIC-005, EPIC-007     | Packaged CSP and restricted content/resources              |
@@ -583,7 +583,7 @@ All 38 ADRs in the [register][register] have a delivery owner below. The table c
 | [ADR-0025][adr-0025] | EPIC-002, EPIC-007, EPIC-014     | Bundled fonts, glyphs, math and output fidelity            |
 | [ADR-0026][adr-0026] | EPIC-003, EPIC-005, EPIC-006     | Distinct inference/search capability/access contracts      |
 | [ADR-0027][adr-0027] | EPIC-003                         | Scoped context, tools and inherited configuration          |
-| [ADR-0028][adr-0028] | EPIC-003, EPIC-005               | Current transfer admission and explicit destinations       |
+| [ADR-0052][adr-0052] | EPIC-003, EPIC-005               | Current transfer admission and explicit destinations       |
 | [ADR-0029][adr-0029] | EPIC-003                         | Operation profiles, one budget and late usage              |
 | [ADR-0030][adr-0030] | EPIC-004, EPIC-007               | One canonical academic Markdown profile                    |
 | [ADR-0031][adr-0031] | EPIC-004, EPIC-007               | Trusted versioned TypeScript AST/parser/serializer         |
@@ -592,7 +592,7 @@ All 38 ADRs in the [register][register] have a delivery owner below. The table c
 | [ADR-0034][adr-0034] | EPIC-014                         | Isolated AST-based Pandoc/Typst and fidelity reports       |
 | [ADR-0035][adr-0035] | EPIC-004–EPIC-006; later reviews | Exact-version human decisions and dependency review        |
 | [ADR-0036][adr-0036] | EPIC-001; EPIC-002–004           | Typed preferences, bootstrap and feature-specific updates  |
-| [ADR-0037][adr-0037] | EPIC-003; role consumers         | Bounded collaboration, direct access and human authority   |
+| [ADR-0053][adr-0053] | EPIC-003; role consumers         | Bounded collaboration, direct access and human authority   |
 
 [product]: product-definition.md
 [workflow]: thesis-workflow.md
@@ -624,7 +624,7 @@ All 38 ADRs in the [register][register] have a delivery owner below. The table c
 [adr-0008]: adr/adr-0008-uuidv7-entity-identifiers.md
 [adr-0009]: adr/adr-0009-managed-imported-files.md
 [adr-0010]: adr/adr-0010-pre-migration-recovery.md
-[adr-0011]: adr/adr-0011-bounded-durable-local-tasks.md
+[adr-0051]: adr/adr-0051-research-agent-task-execution.md
 [adr-0012]: adr/adr-0012-attempt-bound-process-capabilities.md
 [adr-0013]: adr/adr-0013-private-content-free-structured-logging.md
 [adr-0014]: adr/adr-0014-restricted-rendering-and-csp.md
@@ -641,7 +641,7 @@ All 38 ADRs in the [register][register] have a delivery owner below. The table c
 [adr-0025]: adr/adr-0025-bundled-plex-and-noto-fonts.md
 [adr-0026]: adr/adr-0026-capability-declared-adapters.md
 [adr-0027]: adr/adr-0027-scoped-agent-contexts.md
-[adr-0028]: adr/adr-0028-mediated-provider-transfers.md
+[adr-0052]: adr/adr-0052-current-provider-dispatch-authorization.md
 [adr-0029]: adr/adr-0029-operation-profiles-and-usage-reports.md
 [adr-0030]: adr/adr-0030-academic-markdown-boundary.md
 [adr-0031]: adr/adr-0031-canonical-typescript-draft-ast.md
@@ -650,7 +650,7 @@ All 38 ADRs in the [register][register] have a delivery owner below. The table c
 [adr-0034]: adr/adr-0034-pandoc-typst-manuscript-delivery.md
 [adr-0035]: adr/adr-0035-version-bound-research-review.md
 [adr-0036]: adr/adr-0036-application-preferences-and-bootstrap.md
-[adr-0037]: adr/adr-0037-application-mediated-agent-collaboration.md
+[adr-0053]: adr/adr-0053-researcher-approved-specialist-collaboration.md
 
 [^electron-platforms]: Electron's platform-support inventory lists Intel/x64 and ARM64 binaries for macOS, Windows and Linux; Ohtia qualifies its selected release and native dependencies separately.
 

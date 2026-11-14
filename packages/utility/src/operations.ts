@@ -4,6 +4,7 @@ import { utf8Size, type ProviderOperation, type TransferEntry } from "@ohtia/con
 export interface OperationPolicy {
   readonly operation: ProviderOperation;
   readonly version: number;
+  readonly instruction_version: number;
   readonly max_pending_tasks: number;
   readonly max_input_bytes: number;
   readonly max_input_items: number;
@@ -31,6 +32,7 @@ const policies: readonly OperationPolicy[] = Object.freeze([
   Object.freeze({
     operation: "development_test",
     version: 1,
+    instruction_version: 1,
     max_pending_tasks: 20,
     max_input_bytes: 16 * 1024,
     max_input_items: 20,
@@ -78,6 +80,7 @@ export interface BuiltInput {
 export function buildInput(
   policy: OperationPolicy,
   messages: readonly InputMessage[],
+  context: { readonly reference: string; readonly revision: number },
 ): BuiltInput | undefined {
   const chosen: InputMessage[] = [];
   let bytes = 0;
@@ -96,8 +99,10 @@ export function buildInput(
       ...chosen.map((message) => ({ role: message.role, text: message.text })),
     ],
     transfer: [
-      { kind: "instructions", operation: policy.operation, version: policy.version },
-      ...(omitted ? [{ kind: "note" as const, note: "earlier_messages_omitted" as const }] : []),
+      { kind: "instructions", operation: policy.operation, version: policy.instruction_version },
+      ...(omitted
+        ? [{ kind: "note" as const, note: "earlier_messages_omitted" as const, ...context }]
+        : []),
       ...chosen.map((message) => ({ kind: "message" as const, reference: message.reference })),
     ],
   };

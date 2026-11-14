@@ -3,7 +3,7 @@ type: Story
 title: "STORY-003-009 — Application exit"
 description: "Ask before quitting with running work and let the researcher keep working, wait or cancel."
 generated:
-  by: claude-code/claude-opus-5-5
+  by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
 tags: [story, "comp:desktop", "comp:app", "comp:docs"]
@@ -36,7 +36,7 @@ Show the three-choice exit dialog only when tasks are running, wait or cancel ac
 - [ ] Change the existing `dialog.close` catalog text from "Close" to "Close dialog" in every supported locale catalog, so the header button and the safe option of every confirmation dialog read the same; "Close dialog" is already the close icon's name in `design-system.md`. That text names the header close button of every dialog and the footer close buttons of the About and Help dialogs in `packages/renderer/src/command-surfaces.tsx`, which all close their dialog. Move the one other use, the button that closes the "layout could not be remembered" notice in `packages/renderer/src/settings-surfaces.tsx`, which closes only that notice, to the new catalog key `settings.closeLayoutNotice`, "Close notice", in every supported locale catalog. The `dialogs.close` shortcut entry in `packages/contracts/src/commands.ts` keeps `dialog.close`, so the shortcut list reads "Close dialog".
 - [ ] Hold queued tasks in memory while waiting to exit, never using `shutdown_paused`, and run the wait before `stopBrokerServices` starts.
 - [ ] Exit without a dialog and without writing `clean_stop_at` on operating-system shutdown or logout: main still runs `stopBrokerServices`, as for any quit, but sends the data service the shutdown message with `orderly` set to `false` (STORY-003-008), so the data service drains and closes the store without writing `clean_stop_at`. Detect the shutdown or logout on Windows through the window events `query-session-end` and `session-end` (shutdown, restart and log-off), on macOS through `powerMonitor` `shutdown` (Electron emits it on `NSWorkspaceWillPowerOffNotification`, which macOS posts for a logout or a power-off), and on Linux through `powerMonitor` `shutdown` (reboot and shutdown) and main's own `process.on("SIGTERM")` listener, which treats that signal as a shutdown or logout because Electron reports no logout there and would turn the signal into an ordinary quit.
-- [ ] Apply the documentation amendment of SPEC-003-014 to `docs/frontend-architecture.md`: "Quit with unresolved remote work requires its distinct acknowledgement after local cessation is proved." becomes "Uncertain tasks do not open the exit dialog, and an operating-system shutdown or logout exits without it, so the next start applies the crash rules."; ADR-0011's exit choices are already replaced by the ADR written in STORY-003-005.
+- [ ] Apply the documentation amendment of SPEC-003-014 to `docs/frontend-architecture.md`: "Quit with unresolved remote work requires its distinct acknowledgement after local cessation is proved." becomes "Uncertain tasks do not open the exit dialog, and an operating-system shutdown or logout exits without it, so the next start applies the crash rules."; ADR-0051 owns the complete exit choices.
 
 ## Acceptance criteria
 

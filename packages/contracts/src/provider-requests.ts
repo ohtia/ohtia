@@ -6,6 +6,8 @@ import { isConnectionId } from "./connections.js";
  * and main, which checks the dispatch permit, attaches the credential and sends them (ADR-0028).
  */
 export const providerMessageVersion = 1;
+/** Internal envelopes allow JSON's six-byte escaping of bounded raw input and metadata. */
+export const providerMessageBytes = 512 * 1024;
 /** ADR-0028's versioned permit validity: not a response deadline. Real-account checks measure it. */
 export const dispatchPermitPolicy = Object.freeze({ version: 1, validity_ms: 2000 });
 export const providerOperations = ["development_test"] as const;
@@ -18,6 +20,8 @@ export const providerFailureReasons = [
   "request_rejected",
   "provider_error",
   "invalid_output",
+  "output_limit_exceeded",
+  "empty_reply",
   "connection_lost",
   "permit_expired",
 ] as const;
@@ -69,6 +73,10 @@ export interface ProviderRequestLimits {
 export interface ProviderRequestData {
   readonly attempt: string;
   readonly operation: ProviderOperation;
+  readonly project: string;
+  readonly policy_version: number;
+  readonly instruction_version: number;
+  readonly document_language: string | null;
   readonly connection: string;
   readonly model: string;
   readonly instructions: string;
@@ -202,6 +210,10 @@ export function isProviderRequestData(value: unknown): value is ProviderRequestD
     exact(value, [
       "attempt",
       "operation",
+      "project",
+      "policy_version",
+      "instruction_version",
+      "document_language",
       "connection",
       "model",
       "instructions",
@@ -209,6 +221,12 @@ export function isProviderRequestData(value: unknown): value is ProviderRequestD
       "limits",
     ]) &&
     isIdentifier(value.attempt) &&
+    isIdentifier(value.project) &&
+    count(value.policy_version) &&
+    value.policy_version > 0 &&
+    count(value.instruction_version) &&
+    value.instruction_version > 0 &&
+    (value.document_language === null || boundedText(value.document_language, 32)) &&
     providerOperations.includes(value.operation as ProviderOperation) &&
     isConnectionId(value.connection) &&
     isProviderModelSlug(value.model) &&
@@ -234,9 +252,9 @@ function isPermit(value: unknown): value is DispatchPermit {
   );
 }
 function parse(text: unknown): Record<string, unknown> | undefined {
-  if (typeof text !== "string" || text.length > portLimits.message_bytes) return;
+  if (typeof text !== "string" || text.length > providerMessageBytes) return;
   try {
-    if (utf8Size(text) > portLimits.message_bytes) return;
+    if (utf8Size(text) > providerMessageBytes) return;
     const value: unknown = JSON.parse(text);
     return record(value) ? value : undefined;
   } catch {
@@ -321,7 +339,20 @@ export type DevelopmentAction =
       readonly model: string;
       readonly text: string;
     }
-  | { readonly name: "interrupt"; readonly operation_id: string; readonly attempt: string };
+  | { readonly name: "interrupt"; readonly operation_id: string; readonly attempt: string }
+  | { readonly name: "create-development-project"; readonly operation_id: string }
+  | {
+      readonly name: "start-conversation";
+      readonly operation_id: string;
+      readonly project: string;
+      readonly text: string;
+    }
+  | {
+      readonly name: "send";
+      readonly operation_id: string;
+      readonly conversation: string;
+      readonly text: string;
+    };
 export interface DevelopmentActionMessage {
   readonly kind: "development_action";
   readonly version: typeof providerMessageVersion;
@@ -335,14 +366,27 @@ export type TransferEntry =
       readonly version: number;
     }
   | { readonly kind: "message"; readonly reference: string }
-  | { readonly kind: "note"; readonly note: "earlier_messages_omitted" };
+  | {
+      readonly kind: "note";
+      readonly note: "earlier_messages_omitted";
+      readonly reference: string;
+      readonly revision: number;
+    };
 export const developmentRefusals = [
   "connection_unavailable",
   "unknown_attempt",
   "busy",
   "invalid_action",
+  "input_too_large",
+  "pending_limit_reached",
+  "record_not_found",
 ] as const;
 export type DevelopmentReport =
+  | {
+      readonly type: "record";
+      readonly record: "project" | "conversation" | "message";
+      readonly id: string;
+    }
   | { readonly type: "refused"; readonly reason: (typeof developmentRefusals)[number] }
   | { readonly type: "attempt"; readonly attempt: string }
   | { readonly type: "text"; readonly attempt: string; readonly text: string }
@@ -377,13 +421,22 @@ function isTransferEntry(value: unknown): value is TransferEntry {
     return exact(value, ["kind", "reference"]) && isIdentifier(value.reference);
   return (
     value.kind === "note" &&
-    exact(value, ["kind", "note"]) &&
+    exact(value, ["kind", "note", "reference", "revision"]) &&
+    isIdentifier(value.reference) &&
+    count(value.revision) &&
+    value.revision > 0 &&
     value.note === "earlier_messages_omitted"
   );
 }
 function isDevelopmentReport(value: unknown): value is DevelopmentReport {
   if (!record(value)) return false;
   switch (value.type) {
+    case "record":
+      return (
+        exact(value, ["type", "record", "id"]) &&
+        ["project", "conversation", "message"].includes(value.record as string) &&
+        isIdentifier(value.id)
+      );
     case "refused":
       return (
         exact(value, ["type", "reason"]) &&
@@ -426,6 +479,12 @@ function isDevelopmentReport(value: unknown): value is DevelopmentReport {
       return false;
   }
 }
+/** Raw development text must fit its field bound before crossing the private channel. */
+export function isDevelopmentText(value: unknown): value is string {
+  return (
+    typeof value === "string" && value.length > 0 && boundedText(value, portLimits.message_bytes)
+  );
+}
 export function decodeDevelopmentAction(
   text: unknown,
   generation: string,
@@ -438,6 +497,21 @@ export function decodeDevelopmentAction(
   )
     return;
   const action = value.action;
+  if (!isIdentifier(action.operation_id)) return;
+  if (action.name === "create-development-project" && exact(action, ["name", "operation_id"]))
+    return value as unknown as DevelopmentActionMessage;
+  if (
+    (action.name === "start-conversation" || action.name === "send") &&
+    exact(action, [
+      "name",
+      "operation_id",
+      action.name === "send" ? "conversation" : "project",
+      "text",
+    ]) &&
+    isIdentifier(action.name === "send" ? action.conversation : action.project) &&
+    isDevelopmentText(action.text)
+  )
+    return value as unknown as DevelopmentActionMessage;
   if (
     action.name === "request" &&
     exact(action, ["name", "operation_id", "model", "text"]) &&
@@ -469,5 +543,26 @@ export function decodeDevelopmentReport(
     isDevelopmentReport(value.report)
   )
     return value as unknown as DevelopmentReportMessage;
+  return;
+}
+
+/** Data service asks main to refresh an account catalog before a human-requested new task. */
+export interface ModelListRefreshMessage {
+  readonly kind: "model_list_refresh";
+  readonly version: typeof providerMessageVersion;
+  readonly generation: string;
+  readonly connection: string;
+}
+export function decodeModelListRefresh(
+  text: unknown,
+  generation: string,
+): ModelListRefreshMessage | undefined {
+  const value = parse(text);
+  if (
+    header(value, "model_list_refresh", generation) &&
+    exact(value, ["kind", "version", "generation", "connection"]) &&
+    isConnectionId(value.connection)
+  )
+    return value as unknown as ModelListRefreshMessage;
   return;
 }

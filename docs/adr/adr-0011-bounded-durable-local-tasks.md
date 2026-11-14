@@ -6,9 +6,12 @@ generated:
   by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
+status: deprecated
 ---
 
 # ADR-0011 — Persisted local task intent with bounded execution
+
+Superseded by [ADR-0051 — Research-agent task execution](adr-0051-research-agent-task-execution.md).
 
 ## Context
 

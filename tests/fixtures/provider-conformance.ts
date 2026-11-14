@@ -20,6 +20,10 @@ export function conformanceRequest(connection: string, attempt = "attempt-1"): P
   return {
     attempt,
     operation: "development_test",
+    project: "00000000-0000-7000-8000-000000000000",
+    policy_version: 1,
+    instruction_version: 1,
+    document_language: null,
     connection,
     model: "first",
     instructions: "Synthetic conformance instructions.",
