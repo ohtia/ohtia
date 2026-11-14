@@ -1092,6 +1092,7 @@
     "tests/provider-requests.test.ts::main's dispatch guards > sends nothing when the renewal before dispatch is temporary::case-0",
     "tests/provider-requests.test.ts::main's dispatch guards > sends nothing when the renewal before dispatch is throws::case-0",
     "tests/provider-requests.test.ts::prints every result kind, notes and replies without streamed text::case-0",
+    "tests/provider-requests.test.ts::prints no control or format character but newline and tab from a reply or a switch::case-0",
     "tests/provider-requests.test.ts::provider message contracts > admits only the specified results and sequenced events::case-0",
     "tests/provider-requests.test.ts::provider message contracts > decodes development actions and reports only in their closed shapes::case-0",
     "tests/provider-requests.test.ts::provider message contracts > decodes exactly the versioned fields and nothing that could carry a credential::case-0",
