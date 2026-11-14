@@ -28,6 +28,8 @@ export interface MessageRecord {
   readonly createdAt: string;
 }
 export interface ResearchPayloads {
+  readonly "usagePause.resume": { readonly connection: "chatgpt" };
+  readonly "task.continueAll": Record<string, never>;
   readonly "development.createProject": Record<string, never>;
   readonly "project.create": Record<string, never>;
   readonly "project.confirmSetup": {
@@ -56,6 +58,8 @@ export interface ResearchResult {
   readonly resultId: string;
 }
 export const researchCommands = [
+  "usagePause.resume",
+  "task.continueAll",
   "development.createProject",
   "project.create",
   "project.confirmSetup",

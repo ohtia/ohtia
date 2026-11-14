@@ -1,3 +1,8 @@
+import {
+  up as usagePauses,
+  tables as usageTables,
+  objects as usageObjects,
+} from "./migrations/0009_usage_limit_pauses.mjs";
 import { TaskTransaction, type TaskContext, type PreparedTask } from "./tasks.js";
 import { ServiceConnections, type ProviderEvent } from "@ohtia/contracts";
 import {
@@ -196,9 +201,10 @@ const names = [
   "0006_window_bounds_receipts",
   "0007_research_records",
   "0008_durable_ai_tasks",
+  "0009_usage_limit_pauses",
 ] as const;
 const target = names.length;
-const targetName = names[7];
+const targetName = names[8];
 function digest(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -404,6 +410,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 6 ? ["window_bounds_receipts"] : []),
     ...(revision >= 7 ? Object.keys(researchTables) : []),
     ...(revision >= 8 ? Object.keys(taskTables) : []),
+    ...(revision >= 9 ? Object.keys(usageTables) : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -509,6 +516,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
         ])
       : []),
     ...(revision >= 8 ? Object.entries(taskTables) : []),
+    ...(revision >= 9 ? Object.entries(usageTables) : []),
   ]) {
     const row = db
       .prepare("SELECT sql FROM sqlite_schema WHERE name=? AND type='table'")
@@ -530,6 +538,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                   Object.entries(researchObjects).filter(([name]) => name !== "messages_revision"),
                 ),
                 ...taskObjects,
+                ...(revision >= 9 ? usageObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -667,6 +676,15 @@ export class DurableStore {
         db.pragma("foreign_keys", { simple: true }) !== 1
       )
         throw new Error("Storage admission failed.");
+      if (retrySource) await this.holdRecoveredTasks();
+      if (exists(this.gate)) {
+        try {
+          fs.unlinkSync(this.gate);
+          syncDirectory(this.options.root);
+        } catch (error) {
+          throw new Error("Migration requires explicit recovery.", { cause: error });
+        }
+      }
       this.initializationAllowed = false;
       this.admitted = true;
     } catch (error) {
@@ -675,6 +693,24 @@ export class DurableStore {
     } finally {
       this.active = false;
     }
+  }
+  private async holdRecoveredTasks(): Promise<void> {
+    if (!this.database) throw new Error("Missing recovery connection.");
+    await this.database.connection().execute(async (transaction) => {
+      await sql`BEGIN IMMEDIATE`.execute(transaction);
+      try {
+        this.assert();
+        const tasks = new TaskTransaction(transaction, this.taskContext);
+        await tasks.recoverMigration();
+        await tasks.flush();
+        this.assert();
+        await sql`COMMIT`.execute(transaction);
+      } catch (error) {
+        if (this.native?.inTransaction) await sql`ROLLBACK`.execute(transaction);
+        throw error;
+      }
+    });
+    this.researchDiagnostic({ event_name: "ohtia.task.recovery_paused" });
   }
   private async checkpoint(
     db: Database.Database,
@@ -820,6 +856,7 @@ export class DurableStore {
                 "0006_window_bounds_receipts": { up: boundsReceipts },
                 "0007_research_records": { up: researchRecords },
                 "0008_durable_ai_tasks": { up: durableTasks },
+                "0009_usage_limit_pauses": { up: usagePauses },
               }),
           },
         });
@@ -844,8 +881,6 @@ export class DurableStore {
         if (db.inTransaction || compatibility(db, this.artifacts) !== target)
           throw new Error("Commit not confirmed.");
         this.cleanupResolved();
-        fs.unlinkSync(this.gate);
-        syncDirectory(this.options.root);
       } catch (error) {
         if (begun && !committed && db.inTransaction) {
           await sql`ROLLBACK`.execute(connection);
@@ -919,16 +954,9 @@ export class DurableStore {
     } finally {
       db.close();
     }
-    if (revision === target) {
-      this.cleanupResolved();
-      fs.unlinkSync(this.gate);
-      syncDirectory(this.options.root);
-      await this.open();
-    } else {
-      if (revision === 0) this.initializationAllowed = true;
-      // The verified prior intent remains until upgrade atomically publishes the next complete intent.
-      await this.openDatabase(true);
-    }
+    if (revision === 0) this.initializationAllowed = true;
+    // The validated pre-existing gate remains durable until the recovery holds commit.
+    await this.openDatabase(true);
   }
   recoveryState(): "storage_failed" | "recovery_required" | "retry_required" {
     this.assert();
@@ -2014,6 +2042,8 @@ export class DurableStore {
     if (outcome.ok) {
       for (const event of diagnostics) this.researchDiagnostic(event);
       const events = {
+        "usagePause.resume": "ohtia.usage_pause.resume_requested",
+        "task.continueAll": "ohtia.task.continue_requested",
         "development.createProject": "ohtia.project.created",
         "project.create": "ohtia.project.created",
         "project.confirmSetup": "ohtia.project.setup_confirmed",
@@ -2062,7 +2092,13 @@ export class DurableStore {
       this.active = false;
     }
   }
-  prepareTask(): Promise<Outcome<PreparedTask | null>> {
+  reconcileTaskConnections(): Promise<Outcome<void>> {
+    return this.taskTransaction((tasks) => tasks.reconcileConnections());
+  }
+  async prepareTask(): Promise<Outcome<PreparedTask | null>> {
+    // Readmission and dispatch are separate commits: each advances its task revision once.
+    const reconciled = await this.reconcileTaskConnections();
+    if (!reconciled.ok) return reconciled;
     return this.taskTransaction((tasks) => tasks.prepareNext());
   }
   recordTaskEvent(attempt: string, event: ProviderEvent, text: string): Promise<Outcome<boolean>> {

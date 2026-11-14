@@ -554,7 +554,7 @@ describe("durable task migration preservation", () => {
       const db = fixture.raw();
       db.pragma("foreign_keys=OFF");
       db.exec(
-        "DROP INDEX messages_task; DROP TRIGGER messages_reservation; DROP TRIGGER messages_position; DROP TABLE attempts; DROP TABLE tasks; ALTER TABLE messages DROP COLUMN task_id",
+        "DROP INDEX messages_task; DROP TRIGGER messages_reservation; DROP TRIGGER messages_position; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; DROP TABLE attempts; DROP TABLE tasks; ALTER TABLE messages DROP COLUMN task_id",
       );
       db.exec(researchObjects.messages_position);
       db.exec(researchObjects.messages_revision);
@@ -578,7 +578,7 @@ describe("durable task migration preservation", () => {
         max_concurrent_inference: expectedInference,
         max_concurrent_local_processing: 1,
       });
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(8);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(9);
       upgraded.close();
     },
   );

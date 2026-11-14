@@ -59,7 +59,7 @@ function append(
 }
 function dropResearch(db: InstanceType<typeof Database>) {
   db.exec(
-    "DROP TABLE attempts; DROP TABLE tasks; DELETE FROM kysely_migration WHERE name='0008_durable_ai_tasks'; DELETE FROM ohtia_migration_artifacts WHERE name='0008_durable_ai_tasks'; DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; PRAGMA user_version=6",
+    "DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; DROP TABLE attempts; DROP TABLE tasks; DELETE FROM kysely_migration WHERE name='0008_durable_ai_tasks'; DELETE FROM ohtia_migration_artifacts WHERE name='0008_durable_ai_tasks'; DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; PRAGMA user_version=6",
   );
 }
 
@@ -506,7 +506,7 @@ describe("migration 0007 and database-owned rules", () => {
     db.close();
     await store.open();
     const upgraded = raw();
-    expect(upgraded.pragma("user_version", { simple: true })).toBe(8);
+    expect(upgraded.pragma("user_version", { simple: true })).toBe(9);
     expect(upgraded.prepare("SELECT * FROM application_preferences ORDER BY key").all()).toEqual(
       before,
     );
@@ -519,7 +519,7 @@ describe("migration 0007 and database-owned rules", () => {
           fs.readFileSync(path.join(root, "recovery/migrations", s, "manifest.json"), "utf8"),
         ),
       ),
-    ).toContainEqual(expect.objectContaining({ sourceRevision: 6, targetRevision: 8 }));
+    ).toContainEqual(expect.objectContaining({ sourceRevision: 6, targetRevision: 9 }));
     expect(value(await store.readProjects())).toEqual([]);
     upgraded.close();
   });

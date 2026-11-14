@@ -55,6 +55,25 @@ export class DurableProvider {
     if (this.options.context.mode !== "development" || this.disposed) return;
     this.options.storage.setTaskContext(this.options.context);
     const action = message.action;
+    if (action.name === "resume-requests" || action.name === "continue-all") {
+      const result = await this.options.storage.executeResearchCommand(
+        action.name === "resume-requests"
+          ? {
+              command: "usagePause.resume",
+              operationId: action.operation_id,
+              payload: { connection: action.connection },
+            }
+          : { command: "task.continueAll", operationId: action.operation_id, payload: {} },
+      );
+      this.report(
+        action.operation_id,
+        result.ok
+          ? { type: "record", record: "receipt", id: result.value.resultId }
+          : { type: "refused", reason: "invalid_action" },
+      );
+      await this.pump();
+      return;
+    }
     if (action.name === "interrupt") {
       if (this.streams.has(action.attempt)) {
         this.interrupt(action.attempt);
