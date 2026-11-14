@@ -1,5 +1,7 @@
 import { ChatGPTProvider } from "./chatgpt-provider.js";
 import { ConnectionManager } from "./connection-manager.js";
+import { ProviderDispatch } from "./provider-dispatch.js";
+import type { DevelopmentCommand } from "./development-command.js";
 import { ConnectionBroker } from "./connection-broker.js";
 import { nativeCredentialStore } from "./native-credentials.js";
 declare const __OHTIA_DEVELOPMENT_BUILD__: boolean;
@@ -61,6 +63,7 @@ import {
 import { rendererWebPreferences } from "./index.js";
 import {
   admitRuntimeSwitches,
+  isDevelopmentSwitch,
   ensureResearchRoot,
   resolveRuntimeContext,
   verifyStableSentinels,
@@ -151,6 +154,7 @@ try {
     process.argv.slice(1),
     process.execArgv,
     process.env.OHTIA_RUNTIME_ACCEPTANCE === "1",
+    context.mode === "development",
   );
   verifyStableSentinels(context);
 } catch {
@@ -192,6 +196,13 @@ const windows = new Map<
 let service: ServiceSupervisor | undefined;
 let connections: ConnectionBroker | undefined;
 let credentials: Awaited<ReturnType<typeof nativeCredentialStore>> | undefined;
+let providerDispatch: ProviderDispatch | undefined;
+let developmentCommand: DevelopmentCommand | undefined;
+// Switches a later launch hands over before this instance has loaded its development command.
+const earlyDevelopmentSwitches: unknown[] = [];
+let connectionsRead = false;
+// The development command's switches of this launch; only the development mode admits any.
+const developmentSwitches = process.argv.slice(1).filter(isDevelopmentSwitch);
 let pendingWindows = 0;
 // ADR-0047: Linux windows also receive the desktop portal's reduced-motion setting.
 let systemMotion: SystemMotionNotice = { sequence: 0, value: "unknown" };
@@ -610,6 +621,8 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
     },
   );
   let failureReported = false;
+  const serviceGeneration = generation;
+  providerDispatch?.begin(serviceGeneration);
   service = new ServiceSupervisor(
     {
       send: (text) => {
@@ -630,6 +643,7 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
       if (state === "ready") {
         void diagnostics?.append({ event_name: "ohtia.service.ready" });
         if (connections && service) service.reportConnections(connections.manager);
+        developmentCommand?.flush();
       } else if (!requestedStop && !failureReported) {
         failureReported = true;
         void diagnostics?.append({
@@ -638,6 +652,8 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
         });
       }
       if (state === "unavailable") {
+        // Close every provider request of the ending generation before another service starts.
+        providerDispatch?.end(serviceGeneration);
         if (storageRequested && !storageActionPending)
           bootstrapState = storageInterruptionState(
             bootstrapState === "storage_opening" ? admissionFallback : bootstrapState,
@@ -743,14 +759,40 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
     },
     requestBudget,
   );
+  const active = service;
+  active.connectProvider({
+    dispatch: (message) => {
+      void providerDispatch?.receive(message);
+    },
+    interrupt: (message) => {
+      providerDispatch?.interrupt(message);
+    },
+    report: (message) => {
+      developmentCommand?.report(message);
+    },
+  });
 }
 let desktopSession: Electron.Session;
-const ownsBroker = app.requestSingleInstanceLock();
+// A later development launch hands its switches to this instance through `second-instance`.
+const ownsBroker = app.requestSingleInstanceLock(
+  context.mode === "development" ? { development_switches: developmentSwitches } : undefined,
+);
 if (!ownsBroker) {
   app.exit(0);
   throw new Error("The existing broker owns this native context.");
 }
-app.on("second-instance", () => {
+app.on("second-instance", (_event, _argv, _directory, data) => {
+  const switches =
+    data && typeof data === "object" && "development_switches" in data
+      ? data.development_switches
+      : undefined;
+  if (Array.isArray(switches) && switches.length) {
+    // A development command reaches the open instance without taking the researcher's focus.
+    if (developmentCommand) developmentCommand.run(switches);
+    else if (context.mode === "development" && earlyDevelopmentSwitches.length < 16)
+      earlyDevelopmentSwitches.push(switches);
+    return;
+  }
   const window = BrowserWindow.getAllWindows()[0];
   if (window) presentWindow(window, true);
 });
@@ -789,13 +831,39 @@ async function start(): Promise<void> {
     connectionDiagnostic,
   );
   const manager = connections.manager;
-  // Native unlock prompts must not delay the local research workspace or its startup deadline.
-  void Promise.all(manager.ids().map((id) => manager.read(id))).catch(() => {
-    connectionDiagnostic({
-      event_name: "ohtia.connection.failed",
-      error_code: "store_unavailable",
-    });
+  providerDispatch = new ProviderDispatch(adapters, {
+    state: (connection) => manager.snapshot(connection)?.state,
+    send: (target, text) => {
+      if (service?.generation === target) service.postProvider(text);
+    },
+    diagnostic: connectionDiagnostic,
   });
+  if (
+    typeof __OHTIA_DEVELOPMENT_BUILD__ !== "undefined" &&
+    __OHTIA_DEVELOPMENT_BUILD__ &&
+    context.mode === "development"
+  ) {
+    const development = await import("./development-command.js");
+    developmentCommand = development.createDevelopmentCommand({
+      ready: () => (connectionsRead && service?.available ? service.generation : undefined),
+      post: (text, target) => (service?.generation === target ? service.postProvider(text) : false),
+    });
+    developmentCommand.run(developmentSwitches);
+    for (const early of earlyDevelopmentSwitches.splice(0)) developmentCommand.run(early);
+  }
+  // Native unlock prompts must not delay the local research workspace or its startup deadline.
+  void Promise.all(manager.ids().map((id) => manager.read(id)))
+    .catch(() => {
+      connectionDiagnostic({
+        event_name: "ohtia.connection.failed",
+        error_code: "store_unavailable",
+      });
+    })
+    .finally(() => {
+      connectionsRead = true;
+      if (service?.available) service.reportConnections(manager);
+      developmentCommand?.flush();
+    });
   manager.subscribe(() => {
     if (service?.available) service.reportConnections(manager);
   });
@@ -1210,6 +1278,7 @@ app.on("before-quit", (event) => {
       void reportError("startup_failed");
       return;
     }
+    providerDispatch?.dispose();
     connections?.dispose();
     cleanExit = true;
     motionObserver?.dispose();

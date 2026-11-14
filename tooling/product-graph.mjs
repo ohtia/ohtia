@@ -15,7 +15,8 @@ export function productGraph(root, { development = false } = {}) {
       // This is the controlled product localization module, not a development catalog.
       if (/^packages\/contracts\/(?:src\/catalogs\.ts|dist\/catalogs\.js)$/.test(relative)) return;
       if (
-        (!development && /(?:^|\/)fake-provider\.(?:ts|js)$/.test(relative)) ||
+        (!development &&
+          /(?:^|\/)(?:fake-provider|development-command)\.(?:ts|js)$/.test(relative)) ||
         /^(?:tools|tests)\//.test(relative) ||
         relative
           .split("/")
@@ -27,19 +28,24 @@ export function productGraph(root, { development = false } = {}) {
   };
 }
 
-/** Inspect assembled and final package bytes in every native CI cell. */
+/**
+ * Inspect assembled and final package bytes in every native CI cell. No package contains the fake
+ * provider or the development command (STORY-003-001 and STORY-003-003): neither their modules
+ * nor their bytes, recognized by the texts only those modules carry.
+ */
 export function inspectProviderArtifact(directory) {
   for (const name of fs.readdirSync(directory, { recursive: true })) {
     const file = path.join(directory, name);
     if (!fs.lstatSync(file).isFile()) continue;
     if (/fake-provider\.(?:ts|js|mjs|cjs|map|d\.ts)$/.test(path.basename(name)))
       throw new Error("Fake provider module in installed artifact.");
-    if (
-      /\.(?:js|mjs|cjs)$/.test(name) &&
-      /fake-provider|synthetic-session|__ohtiaCredentialAcceptance/.test(
-        fs.readFileSync(file, "utf8"),
-      )
-    )
+    if (/development-command\.(?:ts|js|mjs|cjs|map|d\.ts)$/.test(path.basename(name)))
+      throw new Error("Development command module in installed artifact.");
+    if (!/\.(?:js|mjs|cjs)$/.test(name)) continue;
+    const text = fs.readFileSync(file, "utf8");
+    if (/fake-provider|synthetic-session|__ohtiaCredentialAcceptance/.test(text))
       throw new Error("Fake provider bytes in installed artifact.");
+    if (/development-command|\[ohtia dev\]|Describe the usual parts of a thesis/.test(text))
+      throw new Error("Development command bytes in installed artifact.");
   }
 }

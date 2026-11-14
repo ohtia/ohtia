@@ -1,6 +1,6 @@
 import type { ProviderModel } from "@ohtia/contracts";
 import type { CredentialStore, StoredSession } from "./credential-store.js";
-import type { ProviderAdapter, SignInResult } from "./provider-adapter.js";
+import type { ProviderAdapter, ProviderRequests, SignInResult } from "./provider-adapter.js";
 /** Synthetic only. This module must never enter an installed/qualification artifact. */
 export function createFakeProvider(
   options: {
@@ -8,6 +8,10 @@ export function createFakeProvider(
     readonly connect?: (signal: AbortSignal) => Promise<SignInResult>;
     readonly probe?: (signal: AbortSignal) => Promise<readonly ProviderModel[]>;
     readonly credentials?: ProviderAdapter["credentials"];
+    readonly prepare?: ProviderRequests["prepare"];
+    readonly send?: ProviderRequests["send"];
+    /** Send the first text and hold the reply open until the request's signal aborts. */
+    readonly holdReply?: boolean;
   } = {},
 ): ProviderAdapter {
   let session: StoredSession | undefined;
@@ -20,9 +24,9 @@ export function createFakeProvider(
         text: true,
         attachments: false,
         structuredOutput: false,
-        streaming: false,
+        streaming: true,
         tools: false,
-        interruption: false,
+        interruption: true,
         resumption: false,
         modelSelection: true,
         effortSelection: false,
@@ -49,6 +53,26 @@ export function createFakeProvider(
           state: "connected",
           session: { credential: "synthetic-session", reason: null },
         })),
+    requests: {
+      prepare: options.prepare ?? (() => Promise.resolve("ready")),
+      send:
+        options.send ??
+        ((_request, control) => {
+          if (!control.release()) return Promise.resolve();
+          control.emit({ type: "started", provider_request_id: null, model: null });
+          if (options.holdReply) {
+            control.emit({ type: "text", text: "Synthetic " });
+            return new Promise<void>((resolve) => {
+              control.signal.addEventListener("abort", () => {
+                resolve();
+              });
+            });
+          }
+          control.emit({ type: "text", text: "Synthetic reply." });
+          control.emit({ type: "result", result: { status: "completed" } });
+          return Promise.resolve();
+        }),
+    },
     probe: (_session, signal) =>
       options.probe?.(signal) ??
       Promise.resolve(options.models ?? [{ id: "fake-model", name: "Fake model" }]),

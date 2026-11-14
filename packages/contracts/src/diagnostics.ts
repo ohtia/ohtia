@@ -79,6 +79,27 @@ export const diagnosticCatalog = Object.freeze({
   "ohtia.connection.probe_unreachable": event("broker", "connection.probe", "WARN", "unreachable", [
     "probe_unreachable",
   ]),
+  "ohtia.provider.dispatched": event("broker", "provider.dispatch", "INFO", "dispatched", []),
+  "ohtia.provider.not_dispatched": event("broker", "provider.dispatch", "WARN", "not_dispatched", [
+    "connection_expired",
+    "provider_unavailable",
+    "permit_expired",
+  ]),
+  "ohtia.provider.discarded": event("broker", "provider.dispatch", "DEBUG", "discarded", []),
+  "ohtia.provider.completed": event("broker", "provider.request", "INFO", "completed", []),
+  "ohtia.provider.failed": event("broker", "provider.request", "WARN", "failure", [
+    "usage_limit_reached",
+    "not_eligible",
+    "connection_expired",
+    "provider_unavailable",
+    "request_rejected",
+    "provider_error",
+    "invalid_output",
+  ]),
+  "ohtia.provider.cancelled": event("broker", "provider.request", "INFO", "cancelled", []),
+  "ohtia.provider.uncertain": event("broker", "provider.request", "WARN", "uncertain", [
+    "connection_lost",
+  ]),
   "ohtia.window.bounds_failed": event("broker", "bounds.replace", "WARN", "failure", [
     "storage_failed",
   ]),

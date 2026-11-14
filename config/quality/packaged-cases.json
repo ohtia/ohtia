@@ -28,6 +28,7 @@
   ],
   "runtime_observations": ["navigation-observation", "native-process-metrics"],
   "startup_installed": [
+    "installed-refuses-development-command",
     "installed-first-launch-without-profile",
     "installed-sandbox-and-csp",
     "installed-explicit-opening-creates-research-root",

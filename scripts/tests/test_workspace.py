@@ -279,6 +279,17 @@ class WorkspaceTests(unittest.TestCase):
                 with self.assertRaisesRegex(workspace.WorkspaceError, "changed a lockfile"):
                     workspace.pnpm("run", "doctor")
 
+    def test_run_passes_the_development_command_switches_to_the_package_command(self):
+        arguments = ["dev", "--ohtia-dev-command=request", "--ohtia-dev-model=first"]
+        with (
+            patch.object(workspace.sys, "argv", ["workspace.py", "run", *arguments]),
+            patch.object(workspace, "diagnose"),
+            patch.object(workspace, "diagnose_dependencies"),
+            patch.object(workspace, "pnpm") as pnpm,
+        ):
+            self.assertEqual(workspace.main(), 0)
+        pnpm.assert_called_once_with("run", *arguments)
+
     def test_missing_executable_names_the_repair(self):
         with patch.object(workspace.subprocess, "run", side_effect=FileNotFoundError()):
             with self.assertRaisesRegex(workspace.WorkspaceError, "missing-tool.*bootstrap/setup"):

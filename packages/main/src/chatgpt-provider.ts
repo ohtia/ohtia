@@ -11,7 +11,17 @@ import type {
   CredentialWrite,
   StoredSession,
 } from "./credential-store.js";
-import type { ProviderAdapter, SignInResult } from "./provider-adapter.js";
+import type { ProviderAdapter, ProviderRequests, SignInResult } from "./provider-adapter.js";
+import {
+  classifyStatus,
+  errorCode,
+  nodeResponsesTransport,
+  readResponseStream,
+  responsesBody,
+  responsesEndpoint,
+  isTransportFailure,
+  type ResponsesTransport,
+} from "./chatgpt-responses.js";
 import {
   browserSignIn,
   chatGPTEndpoints,
@@ -29,6 +39,7 @@ interface Registration {
   readonly sub: string;
   readonly email: string;
 }
+export type RenewalOutcome = "renewed" | "rejected" | "temporary" | "skipped";
 interface Session {
   readonly client: string;
   readonly sub: string;
@@ -119,16 +130,17 @@ export class ChatGPTProvider implements ProviderAdapter {
     version: "1.0.0",
     signInModes: ["provider_login"] as const,
     capabilities: {
-      text: false,
+      text: true,
       attachments: false,
       structuredOutput: false,
-      streaming: false,
+      streaming: true,
       tools: false,
-      interruption: false,
+      interruption: true,
+      // Sign in with ChatGPT stores no response: every request carries all its context.
       resumption: false,
       modelSelection: true,
       effortSelection: false,
-      usageReporting: false,
+      usageReporting: true,
     },
     connection: {
       id: "chatgpt",
@@ -143,7 +155,7 @@ export class ChatGPTProvider implements ProviderAdapter {
   private sessionReason: StoredSession["reason"] = null;
   private host = `urn:uuid:${randomUUID()}`;
   private queue: Promise<unknown> = Promise.resolve();
-  private renewal: Promise<void> | undefined;
+  private renewal: Promise<RenewalOutcome> | undefined;
   private publication: Promise<CredentialWrite> | undefined;
   private reading: Promise<CredentialRead<StoredSession>> | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -163,16 +175,19 @@ export class ChatGPTProvider implements ProviderAdapter {
     (state: "connected" | "expired" | "error", reason: ConnectionReason | null) => void
   >();
   private readonly request: ProviderFetch;
+  private readonly responses: ResponsesTransport;
   constructor(
     private readonly options: {
       readonly store: CredentialStore;
       readonly openBrowser: (url: string) => Promise<void>;
       readonly completedText: () => string;
       readonly request?: ProviderFetch;
+      readonly responses?: ResponsesTransport;
       readonly diagnostic?: (event: DiagnosticEvent) => void;
     },
   ) {
     this.request = options.request ?? fetch;
+    this.responses = options.responses ?? nodeResponsesTransport();
   }
   private active(generation: number): boolean {
     return !this.disposed && generation === this.generation;
@@ -493,17 +508,17 @@ export class ChatGPTProvider implements ProviderAdapter {
     this.timer.unref();
   }
   /** All consumers share this renewal, using only main's current replacement token. */
-  renew(): Promise<void> {
+  renew(): Promise<RenewalOutcome> {
     if (this.renewal) return this.renewal;
     const generation = this.generation;
     const value = this.current;
-    if (!value || !this.renewalEnabled || this.disposed) return Promise.resolve();
+    if (!value || !this.renewalEnabled || this.disposed) return Promise.resolve("skipped");
     const signal = AbortSignal.any([
       this.network.signal,
       AbortSignal.timeout(portLimits.connection_probe_ms),
     ]);
     this.options.diagnostic?.({ event_name: "ohtia.connection.renewal_started" });
-    const work = async () => {
+    const work = async (): Promise<RenewalOutcome> => {
       try {
         const response = await this.request(chatGPTEndpoints.token, {
           method: "POST",
@@ -519,10 +534,10 @@ export class ChatGPTProvider implements ProviderAdapter {
         });
         if (response.status >= 500) {
           this.schedule(30000);
-          return;
+          return "temporary";
         }
         const body = await providerJSON(response);
-        if (!this.active(generation)) return;
+        if (!this.active(generation)) return "skipped";
         if (!response.ok) {
           const code = object(body) ? body.error : undefined;
           if (typeof code === "string" && (revoked.has(code) || code === "invalid_client")) {
@@ -541,19 +556,21 @@ export class ChatGPTProvider implements ProviderAdapter {
               this.invalidated = code === "invalid_client" ? "sign_in_rejected" : "expired";
               await this.clearInvalidated();
             });
-          } else this.schedule(30000);
-          return;
+            return "rejected";
+          }
+          this.schedule(30000);
+          return "temporary";
         }
         const next = tokens(body, value, value);
-        await this.serial(async () => {
-          if (!this.active(generation)) return;
+        return await this.serial(async (): Promise<RenewalOutcome> => {
+          if (!this.active(generation)) return "skipped";
           const replacement = this.keptSession(next);
           if (this.pendingRestore)
             this.pendingRestore = { ...this.pendingRestore, session: replacement };
           const saved = this.pendingRestore
             ? await this.restorePending()
             : await this.options.store.writeSession(replacement);
-          if (!this.active(generation)) return;
+          if (!this.active(generation)) return "skipped";
           // Retain the latest rotated token even if the keyring fails; never reuse its predecessor.
           this.current = next;
           this.sessionReason = replacement.reason;
@@ -564,9 +581,11 @@ export class ChatGPTProvider implements ProviderAdapter {
             this.emit(reason ? "error" : "connected", reason);
           }
           this.schedule();
+          return "renewed";
         });
       } catch {
         if (this.active(generation)) this.schedule(30000);
+        return "temporary";
       }
     };
     this.renewal = work().finally(() => {
@@ -574,6 +593,100 @@ export class ChatGPTProvider implements ProviderAdapter {
     });
     return this.renewal;
   }
+  /**
+   * OpenAI rejected the grant behind this session: keep the session with `sign_in_rejected`, so it
+   * survives a restart and blocks requests until a new sign-in replaces it.
+   */
+  private rejectGrant(generation: number): Promise<void> {
+    // The sign-in generation, not the rotating token: a renewal keeps the same grant.
+    return this.serial(async () => {
+      const current = this.current;
+      if (!this.active(generation) || !current) return;
+      this.sessionReason = "sign_in_rejected";
+      const kept = this.keptSession(current);
+      if (this.pendingRestore) this.pendingRestore = { ...this.pendingRestore, session: kept };
+      const saved = this.pendingRestore
+        ? await this.restorePending()
+        : await this.options.store.writeSession(kept);
+      if (!this.active(generation)) return;
+      this.dirty = saved.status !== "stored";
+      this.emit("error", saved.status === "stored" ? "sign_in_rejected" : "store_unavailable");
+    });
+  }
+  readonly requests: ProviderRequests = {
+    prepare: async () => {
+      const value = this.current;
+      if (!value || value.expires > Date.now()) return "ready";
+      const outcome = await this.renew();
+      return outcome === "rejected" ? "rejected" : outcome === "temporary" ? "temporary" : "ready";
+    },
+    send: async (request, control) => {
+      const value = this.current;
+      if (
+        !value ||
+        this.sessionReason !== null ||
+        value.expires <= Date.now() ||
+        !value.scopes.split(/\s+/).includes("chatgpt.tokens.use.direct")
+      ) {
+        control.emit({
+          type: "result",
+          result: { status: "failed", reason: "connection_expired", dispatched: false },
+        });
+        return;
+      }
+      const generation = this.generation;
+      let response: Response;
+      try {
+        response = await this.responses(
+          {
+            url: responsesEndpoint,
+            signal: control.signal,
+            headers: {
+              Authorization: `Bearer ${value.access}`,
+              "Content-Type": "application/json",
+              Accept: "text/event-stream",
+            },
+            body: JSON.stringify(responsesBody(request)),
+          },
+          () => {
+            // A sign-out or another sign-in since this request began withdraws its credential.
+            if (this.active(generation)) return control.release();
+            control.emit({
+              type: "result",
+              result: { status: "failed", reason: "connection_expired", dispatched: false },
+            });
+            return false;
+          },
+        );
+      } catch (error) {
+        if (control.signal.aborted) return;
+        // A connection that never opened left no request byte: nothing was dispatched.
+        const sent = !isTransportFailure(error) || error.sent;
+        control.emit({
+          type: "result",
+          result: sent
+            ? { status: "uncertain", reason: "connection_lost" }
+            : { status: "failed", reason: "provider_unavailable", dispatched: false },
+        });
+        return;
+      }
+      const classified = async (outcome: ReturnType<typeof classifyStatus>) => {
+        // Never a repeat of this request: only the session's own renewal or recorded rejection.
+        if (outcome.renew) void this.renew();
+        if (outcome.rejectGrant) await this.rejectGrant(generation);
+      };
+      if (!response.ok) {
+        const outcome = classifyStatus(response.status, await errorCode(response));
+        await classified(outcome);
+        control.emit({
+          type: "result",
+          result: { status: "failed", reason: outcome.reason, dispatched: true },
+        });
+        return;
+      }
+      await readResponseStream(response, control, { classified });
+    },
+  };
   async probe(_session: StoredSession, signal: AbortSignal): Promise<readonly ProviderModel[]> {
     if (this.current && this.current.expires <= Date.now()) await this.renew();
     const value = this.current;

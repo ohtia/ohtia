@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fakeChatGPT } from "./fixtures/chatgpt.js";
+import { fakeChatGPT, sse, streamResponse } from "./fixtures/chatgpt.js";
 import { chatGPTEndpoints, providerJSON } from "../packages/main/src/chatgpt-sign-in.js";
 import { ChatGPTProvider } from "../packages/main/src/chatgpt-provider.js";
 import { ConnectionManager } from "../packages/main/src/connection-manager.js";
@@ -31,25 +31,42 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-providerConformance("ChatGPT", (options = {}) => {
-  const f = fixture();
-  const open = f.browser.getMockImplementation()!;
-  f.browser.mockImplementation(async (url) => {
-    await open(url);
-    await f.callback();
-  });
-  if (options.connect)
-    Object.assign(f.adapter, {
-      connect: options.connect,
-      credentials: createFakeProvider().credentials,
+let conformanceBodies: () => readonly Record<string, unknown>[] = () => [];
+providerConformance(
+  "ChatGPT",
+  (options = {}) => {
+    const f = fixture();
+    const open = f.browser.getMockImplementation()!;
+    f.browser.mockImplementation(async (url) => {
+      await open(url);
+      await f.callback();
     });
-  if (options.probe)
-    Object.assign(f.adapter, {
-      probe: (_session: unknown, signal: AbortSignal) => options.probe!(signal),
-    });
-  if (options.credentials) Object.assign(f.adapter, { credentials: options.credentials });
-  return f.adapter;
-});
+    if (options.connect)
+      Object.assign(f.adapter, {
+        connect: options.connect,
+        credentials: createFakeProvider().credentials,
+      });
+    if (options.probe)
+      Object.assign(f.adapter, {
+        probe: (_session: unknown, signal: AbortSignal) => options.probe!(signal),
+      });
+    if (options.credentials) Object.assign(f.adapter, { credentials: options.credentials });
+    if (options.holdReply)
+      f.responses = (request) =>
+        streamResponse(
+          [
+            sse({ type: "response.created", response: { model: "first" } }),
+            sse({ type: "response.output_text.delta", delta: "Synthetic " }),
+          ],
+          { open: true, signal: request.signal },
+        );
+    conformanceBodies = () => f.responseRequests.map((request) => request.body);
+    return f.adapter;
+  },
+  {
+    bodies: () => conformanceBodies(),
+  },
+);
 
 describe("ChatGPT sign-in", () => {
   it("declares subscription metadata and stores validated registration separately from restartable session", async () => {
