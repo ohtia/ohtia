@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 import {
   ServiceConnections,
   type Outcome,
@@ -9,7 +11,7 @@ import {
 } from "../packages/contracts/src/index.js";
 import { DurableProvider, utf8Beginning } from "../packages/utility/src/durable-provider.js";
 import { objects as researchObjects } from "../packages/utility/src/migrations/0007_research_records.mjs";
-import { storageFixture, stores } from "./fixtures/storage.js";
+import { Database, storageFixture, stores } from "./fixtures/storage.js";
 import { DurableStore } from "../packages/utility/dist/index.js";
 
 function value<T>(outcome: Outcome<T>): T {
@@ -191,7 +193,7 @@ describe("durable provider tasks on real SQLite", () => {
     db.close();
   });
 
-  it("runs three conversations while a fourth waits and an uncertain attempt retains its slot", async () => {
+  it("runs three conversations while a fourth waits and a closed uncertain attempt frees its slot", async () => {
     const { store, start, prepare, raw } = await setup();
     for (let n = 0; n < 4; n++) value(await start(`Question ${n}`));
     const first = (await prepare())!;
@@ -205,9 +207,9 @@ describe("durable provider tasks on real SQLite", () => {
         "",
       ),
     );
-    expect(await prepare()).toBeNull();
+    expect(await prepare()).not.toBeNull();
     const db = raw();
-    expect(db.prepare("SELECT count(*) FROM tasks WHERE state='running'").pluck().get()).toBe(2);
+    expect(db.prepare("SELECT count(*) FROM tasks WHERE state='running'").pluck().get()).toBe(3);
     expect(db.prepare("SELECT count(*) FROM tasks WHERE state='uncertain'").pluck().get()).toBe(1);
     db.close();
   });
@@ -361,57 +363,92 @@ describe("durable task admission and streaming limits", () => {
     expect(conversation.id).toBeTruthy();
   });
 
-  it("interrupts output over the shared byte budget and saves only a whole-code-point prefix", async () => {
-    const { store, append, raw, connections, generation, conversation } = await setup();
-    value(await append("Question"));
-    const sent: Record<string, unknown>[] = [];
-    const provider = new DurableProvider({
-      storage: store,
-      context: { generation, mode: "development", connections },
-      send: (text) => sent.push(JSON.parse(text) as Record<string, unknown>),
-    });
-    await provider.pump();
-    const dispatch = sent.find(
-      (message) => message.kind === "provider_dispatch",
-    ) as unknown as ProviderDispatchMessage;
-    for (let n = 1; n <= 4; n++)
-      expect(
-        await provider.receive({
-          kind: "provider_event",
+  it.each([false, true])(
+    "interrupts output over the shared byte budget with researcher Stop=%s",
+    async (researcherStop) => {
+      const { store, append, raw, connections, generation, conversation } = await setup();
+      value(await append("Question"));
+      const sent: Record<string, unknown>[] = [];
+      const provider = new DurableProvider({
+        storage: store,
+        context: { generation, mode: "development", connections },
+        send: (text) => sent.push(JSON.parse(text) as Record<string, unknown>),
+      });
+      await provider.pump();
+      const dispatch = sent.find(
+        (message) => message.kind === "provider_dispatch",
+      ) as unknown as ProviderDispatchMessage;
+      for (let n = 1; n <= 4; n++)
+        expect(
+          await provider.receive({
+            kind: "provider_event",
+            version: 1,
+            generation,
+            attempt: dispatch.request.attempt,
+            event: { type: "text", sequence: n, text: "x".repeat(4095) },
+          }),
+        ).toBe(true);
+      await provider.receive({
+        kind: "provider_event",
+        version: 1,
+        generation,
+        attempt: dispatch.request.attempt,
+        event: { type: "text", sequence: 5, text: "🐈🐈" },
+      });
+      expect(sent.some((message) => message.kind === "provider_interrupt")).toBe(true);
+      if (researcherStop) {
+        const db = raw();
+        const task = taskId(db);
+        db.close();
+        await provider.developmentAction({
+          kind: "development_action",
           version: 1,
           generation,
-          attempt: dispatch.request.attempt,
-          event: { type: "text", sequence: n, text: "x".repeat(4095) },
+          action: { name: "stop", operation_id: "stop-after-output-limit", task },
+        });
+      }
+      // The output budget requests closure, but does not release the slot before its receipt.
+      expect(value(await store.readMessages(conversation.id))).toHaveLength(1);
+      await provider.receive({
+        kind: "provider_event",
+        version: 1,
+        generation,
+        attempt: dispatch.request.attempt,
+        event: { type: "result", sequence: 6, result: { status: "cancelled" } },
+      });
+      const messages = value(await store.readMessages(conversation.id));
+      expect(messages[1]!.ending).toBe("partial");
+      expect(messages[1]!.content).toBe("x".repeat(16380) + "🐈");
+      const db = raw();
+      expect(db.prepare("SELECT state,outcome_reason FROM attempts").get()).toEqual({
+        state: researcherStop ? "cancelled" : "failed",
+        outcome_reason: researcherStop ? "cancelled_by_researcher" : "output_limit_exceeded",
+      });
+      expect(sent).toContainEqual(
+        expect.objectContaining({
+          kind: "development_report",
+          report: expect.objectContaining({
+            type: "finished",
+            result: researcherStop
+              ? { status: "cancelled" }
+              : { status: "failed", reason: "output_limit_exceeded", dispatched: true },
+          }),
         }),
-      ).toBe(true);
-    await provider.receive({
-      kind: "provider_event",
-      version: 1,
-      generation,
-      attempt: dispatch.request.attempt,
-      event: { type: "text", sequence: 5, text: "🐈🐈" },
-    });
-    expect(sent.some((message) => message.kind === "provider_interrupt")).toBe(true);
-    const messages = value(await store.readMessages(conversation.id));
-    expect(messages[1]!.content).toBe("x".repeat(16380) + "🐈");
-    const db = raw();
-    expect(db.prepare("SELECT state,outcome_reason FROM attempts").get()).toEqual({
-      state: "failed",
-      outcome_reason: "output_limit_exceeded",
-    });
-    const before = db.prepare("SELECT state_revision FROM tasks").pluck().get();
-    await provider.receive({
-      kind: "provider_event",
-      version: 1,
-      generation,
-      attempt: dispatch.request.attempt,
-      event: { type: "result", sequence: 6, result: { status: "completed" } },
-    });
-    expect(db.prepare("SELECT state_revision FROM tasks").pluck().get()).toBe(before);
-    expect(utf8Beginning("a🐈b", 4)).toBe("a");
-    db.close();
-    provider.dispose();
-  });
+      );
+      const before = db.prepare("SELECT state_revision FROM tasks").pluck().get();
+      await provider.receive({
+        kind: "provider_event",
+        version: 1,
+        generation,
+        attempt: dispatch.request.attempt,
+        event: { type: "result", sequence: 6, result: { status: "completed" } },
+      });
+      expect(db.prepare("SELECT state_revision FROM tasks").pluck().get()).toBe(before);
+      expect(utf8Beginning("a🐈b", 4)).toBe("a");
+      db.close();
+      provider.dispose();
+    },
+  );
 });
 
 describe("database task and attempt invariants", () => {
@@ -532,7 +569,7 @@ describe("database task and attempt invariants", () => {
           "Stale result",
         ),
       ),
-    ).toBe(false);
+    ).toEqual({ recorded: false });
     expect(db.prepare("SELECT state_revision FROM tasks").pluck().get()).toBe(before);
     expect(db.prepare("SELECT count(*) FROM messages").pluck().get()).toBe(1);
     expect(db.prepare("SELECT dispatch_permitted_at FROM attempts").pluck().get()).not.toBeNull();
@@ -554,7 +591,7 @@ describe("durable task migration preservation", () => {
       const db = fixture.raw();
       db.pragma("foreign_keys=OFF");
       db.exec(
-        "DROP INDEX messages_task; DROP TRIGGER messages_reservation; DROP TRIGGER messages_position; DROP TABLE attempts; DROP TABLE tasks; ALTER TABLE messages DROP COLUMN task_id",
+        "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DELETE FROM kysely_migration WHERE name='0009_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_reply_control'; DROP INDEX messages_task; DROP TRIGGER messages_reservation; DROP TRIGGER messages_position; DROP TABLE attempts; DROP TABLE tasks; ALTER TABLE messages DROP COLUMN task_id",
       );
       db.exec(researchObjects.messages_position);
       db.exec(researchObjects.messages_revision);
@@ -578,7 +615,7 @@ describe("durable task migration preservation", () => {
         max_concurrent_inference: expectedInference,
         max_concurrent_local_processing: 1,
       });
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(8);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(9);
       upgraded.close();
     },
   );
@@ -804,9 +841,9 @@ it("stores observed identity and usage with the reply and handles main's output-
     requested_model: "first-model",
     observed_model: "observed-model",
     provider_request_id: "request-reported",
-    input_tokens: 10,
-    cached_input_tokens: 0,
-    output_tokens: 4,
+    input_tokens: null,
+    cached_input_tokens: null,
+    output_tokens: null,
     reasoning_tokens: null,
     state: "failed",
     outcome_reason: "output_limit_exceeded",
@@ -859,5 +896,708 @@ it("records no document language when a task is accepted for a project still in 
   expect(
     db.prepare("SELECT document_language FROM tasks WHERE operation='project_setup'").pluck().get(),
   ).toBeNull();
+  db.close();
+});
+
+function taskId(db: ReturnType<ReturnType<typeof storageFixture>["raw"]>, state?: string): string {
+  const row = db
+    .prepare(`SELECT id FROM tasks ${state ? "WHERE state=?" : ""} ORDER BY rowid DESC LIMIT 1`)
+    .get(...(state ? [state] : [])) as { id: Buffer };
+  const h = row.id.toString("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+describe("reply control and partial provenance", () => {
+  it.each(["queued", "blocked"] as const)(
+    "stops a %s task without creating an attempt and replays its receipt",
+    async (state) => {
+      const f = await setup();
+      value(await f.append("Question"));
+      const db = f.raw();
+      if (state === "blocked")
+        db.exec(
+          "UPDATE tasks SET state='blocked',blocking_reason='restart_paused',state_revision=state_revision+1",
+        );
+      const id = taskId(db);
+      const command = {
+        command: "task.stop" as const,
+        operationId: "stop",
+        payload: { taskId: id },
+      };
+      expect(value(await f.store.executeResearchCommand(command)).resultId).toBe(id);
+      const revision = db.prepare("SELECT state_revision FROM tasks").pluck().get();
+      value(await f.store.executeResearchCommand(command));
+      expect(
+        db.prepare("SELECT state,state_revision,charge_warning_accepted_at FROM tasks").get(),
+      ).toEqual({ state: "cancelled", state_revision: revision, charge_warning_accepted_at: null });
+      expect(db.prepare("SELECT count(*) FROM attempts").pluck().get()).toBe(0);
+      expect(await f.prepare()).toBeNull();
+      db.close();
+    },
+  );
+  it.each([true, false])(
+    "serializes Stop and completion with completionFirst=%s",
+    async (completionFirst) => {
+      const f = await setup();
+      value(await f.append("Question"));
+      const dispatch = (await f.prepare())!;
+      const db = f.raw();
+      const id = taskId(db);
+      const stop = () =>
+        f.store.executeResearchCommand({
+          command: "task.stop",
+          operationId: "stop-race",
+          payload: { taskId: id },
+        });
+      if (completionFirst) {
+        value(await f.result(dispatch, "Reply"));
+        value(await stop());
+      } else {
+        value(await stop());
+        expect(db.prepare("SELECT state FROM tasks").pluck().get()).toBe("cancelling");
+        expect(db.prepare("SELECT state FROM attempts").pluck().get()).toBe("stopping");
+        value(await f.result(dispatch, "Reply"));
+      }
+      const messages = value(await f.store.readMessages(f.conversation.id));
+      expect(messages).toHaveLength(2);
+      expect(messages[1]!.ending).toBe(completionFirst ? "complete" : "partial");
+      expect(db.prepare("SELECT state FROM tasks").pluck().get()).toBe(
+        completionFirst ? "completed" : "cancelled",
+      );
+      expect(db.prepare("SELECT outcome_reason FROM attempts").pluck().get()).toBe(
+        completionFirst ? null : "cancelled_by_researcher",
+      );
+      const before = db.prepare("SELECT state_revision FROM tasks").pluck().get();
+      expect(value(await f.result(dispatch, "Late reply"))).toEqual({ recorded: false });
+      expect(db.prepare("SELECT state_revision FROM tasks").pluck().get()).toBe(before);
+      db.close();
+    },
+  );
+  it("starts the latest uncertain reply again once, preserving its cutoff and accepted warning", async () => {
+    const f = await setup();
+    value(await f.append("Question"));
+    const first = (await f.prepare())!;
+    const db = f.raw();
+    const old = taskId(db);
+    value(
+      await f.store.recordTaskEvent(
+        first.request.attempt,
+        { type: "result", sequence: 1, result: { status: "uncertain", reason: "connection_lost" } },
+        "Partial",
+      ),
+    );
+    const command = {
+      command: "task.startAgain" as const,
+      operationId: "again",
+      payload: { taskId: old },
+    };
+    const replacement = value(await f.store.executeResearchCommand(command));
+    expect(value(await f.store.executeResearchCommand(command))).toEqual(replacement);
+    const records = db
+      .prepare(
+        "SELECT state,input_through_position,charge_warning_accepted_at,created_at FROM tasks ORDER BY rowid",
+      )
+      .all() as {
+      state: string;
+      input_through_position: number;
+      charge_warning_accepted_at: string | null;
+      created_at: string;
+    }[];
+    expect(records.map((t) => t.state)).toEqual(["uncertain", "queued"]);
+    expect(records[1]!.input_through_position).toBe(1);
+    expect(records[1]!.charge_warning_accepted_at).toBe(records[1]!.created_at);
+    expect(records[1]!.charge_warning_accepted_at).toMatch(
+      /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/,
+    );
+    expect((await f.prepare())!.request.input).toEqual([{ role: "user", text: "Question" }]);
+    expect(value(await f.store.readMessages(f.conversation.id))[1]!.ending).toBe("partial");
+    db.close();
+  });
+  it("rejects non-retryable, superseded and over-cap replacements without changing any record", async () => {
+    const f = await setup();
+    value(await f.append("Question"));
+    const db = f.raw();
+    const old = taskId(db);
+    const again = (op: string) =>
+      f.store.executeResearchCommand({
+        command: "task.startAgain",
+        operationId: op,
+        payload: { taskId: old },
+      });
+    const snapshot = () =>
+      JSON.stringify([
+        db.prepare("SELECT * FROM tasks").all(),
+        db.prepare("SELECT * FROM attempts").all(),
+        db.prepare("SELECT * FROM command_receipts").all(),
+        db.prepare("SELECT revision FROM conversations").all(),
+      ]);
+    let before = snapshot();
+    expect(await again("not-uncertain")).toMatchObject({
+      error: { code: "task_not_retryable", nextAction: "check_request" },
+    });
+    expect(snapshot()).toBe(before);
+    const first = (await f.prepare())!;
+    value(
+      await f.store.recordTaskEvent(
+        first.request.attempt,
+        { type: "result", sequence: 1, result: { status: "uncertain", reason: "connection_lost" } },
+        "",
+      ),
+    );
+    for (let n = 0; n < 20; n++) value(await f.start(`Pending ${n}`));
+    before = snapshot();
+    expect(await again("at-cap")).toMatchObject({ error: { code: "pending_limit_reached" } });
+    expect(snapshot()).toBe(before);
+    value(
+      await f.store.executeResearchCommand({
+        command: "task.stop",
+        operationId: "free-pending",
+        payload: { taskId: taskId(db, "queued") },
+      }),
+    );
+    value(await f.append("Newer question"));
+    before = snapshot();
+    expect(await again("superseded")).toMatchObject({
+      error: { code: "newer_task_exists", nextAction: "refresh_record" },
+    });
+    expect(snapshot()).toBe(before);
+    db.close();
+  });
+  it.each([
+    ["cancelled_by_researcher", "The researcher stopped it before it finished."],
+    ["deadline_exceeded", "It was cut off because it took longer than Ohtia allows for one reply."],
+    ["inactivity_timeout", "It was cut off because the service sent nothing for too long."],
+    [
+      "output_limit_exceeded",
+      "It was cut off because it was longer than Ohtia allows for one reply.",
+    ],
+    ["provider_error", "It was cut off because the service reported an error."],
+    ["provider_unavailable", "It was cut off because the service reported an error."],
+    [
+      "invalid_output",
+      "It was cut off because Ohtia couldn't read the rest of the service's reply.",
+    ],
+    ["connection_lost", "It was cut off because the connection to the service was lost."],
+    ["request_rejected", ""],
+  ] as const)(
+    "adds the exact %s note immediately after the immutable partial message",
+    async (reason, ending) => {
+      const f = await setup();
+      value(await f.append("Question"));
+      const first = (await f.prepare())!;
+      const result =
+        reason === "connection_lost"
+          ? { status: "uncertain" as const, reason }
+          : reason === "cancelled_by_researcher"
+            ? { status: "cancelled" as const }
+            : { status: "failed" as const, reason, dispatched: true as const };
+      value(
+        await f.store.recordTaskEvent(
+          first.request.attempt,
+          { type: "result", sequence: 1, result },
+          "Partial",
+        ),
+      );
+      value(await f.append("Continue"));
+      const next = (await f.prepare())!;
+      expect(next.request.input).toEqual([
+        { role: "user", text: "Question" },
+        { role: "assistant", text: "Partial" },
+        {
+          role: "user",
+          text: `Note from Ohtia: Virgilio's reply above is incomplete.${ending ? ` ${ending}` : ""}`,
+        },
+        { role: "user", text: "Continue" },
+      ]);
+      const db = f.raw();
+      const manifest = JSON.parse(
+        db
+          .prepare("SELECT transfer_manifest FROM attempts ORDER BY rowid DESC LIMIT 1")
+          .pluck()
+          .get() as string,
+      ) as unknown[];
+      expect(manifest).toContainEqual({
+        kind: "note",
+        note: "partial_reply",
+        reference: value(await f.store.readMessages(f.conversation.id))[1]!.id,
+        revision: 1,
+      });
+      expect(db.prepare("SELECT ending FROM messages ORDER BY position").all()).toEqual([
+        { ending: null },
+        { ending: "partial" },
+        { ending: null },
+      ]);
+      db.close();
+    },
+  );
+  it("keeps unknown usage after a cut and saves no empty partial", async () => {
+    const f = await setup();
+    value(await f.append("Question"));
+    const first = (await f.prepare())!;
+    value(
+      await f.store.recordTaskEvent(
+        first.request.attempt,
+        {
+          type: "usage",
+          sequence: 1,
+          usage: { input_tokens: 3, cached_input_tokens: 0, output_tokens: 2, reasoning_tokens: 0 },
+        },
+        "",
+      ),
+    );
+    value(
+      await f.store.recordTaskEvent(
+        first.request.attempt,
+        { type: "result", sequence: 2, result: { status: "cancelled" } },
+        "",
+      ),
+    );
+    const db = f.raw();
+    expect(db.prepare("SELECT input_tokens,output_tokens FROM attempts").get()).toEqual({
+      input_tokens: null,
+      output_tokens: null,
+    });
+    expect(value(await f.store.readMessages(f.conversation.id))).toHaveLength(1);
+    db.close();
+  });
+});
+
+/** Build the exact prior schema, retaining its task/attempt data, without altering published modules. */
+async function sourceEight(f: Awaited<ReturnType<typeof setup>>): Promise<void> {
+  await f.store.close();
+  const db = f.raw();
+  db.exec(
+    "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DELETE FROM kysely_migration WHERE name='0009_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_reply_control'; PRAGMA user_version=8",
+  );
+  db.close();
+}
+function recoveryGate(f: Awaited<ReturnType<typeof setup>>): string {
+  const gate = path.join(f.root, "migration-pending.json");
+  fs.writeFileSync(
+    gate,
+    JSON.stringify({ version: 1, operation: "synthetic-recovery", source: 8, target: 9 }),
+  );
+  return gate;
+}
+
+describe("reply-control migration and shared recovery handoff", () => {
+  it("backfills complete and partial agent endings and enforces the author contract", async () => {
+    const f = await setup();
+    value(await f.append("First"));
+    const first = (await f.prepare())!;
+    value(await f.result(first, "Complete"));
+    value(await f.append("Second"));
+    const second = (await f.prepare())!;
+    value(
+      await f.store.recordTaskEvent(
+        second.request.attempt,
+        {
+          type: "result",
+          sequence: 1,
+          result: { status: "failed", reason: "provider_error", dispatched: true },
+        },
+        "Partial",
+      ),
+    );
+    await sourceEight(f);
+    await f.store.open();
+    const db = f.raw();
+    expect(db.prepare("SELECT ending FROM messages ORDER BY position").all()).toEqual([
+      { ending: null },
+      { ending: "complete" },
+      { ending: null },
+      { ending: "partial" },
+    ]);
+    // Endings are not an unconstrained presentation annotation.
+    const insert = db.prepare(
+      "INSERT INTO messages(id,conversation_id,position,author_kind,agent_id,task_id,content,created_at,ending) SELECT ?,conversation_id,position+10,author_kind,agent_id,task_id,content,created_at,? FROM messages WHERE author_kind='researcher' LIMIT 1",
+    );
+    expect(() =>
+      insert.run(Buffer.from("0000000000007000800000000000000f", "hex"), "complete"),
+    ).toThrow(/ending/);
+    expect(() => db.exec("UPDATE messages SET ending=NULL WHERE author_kind='agent'")).toThrow();
+    db.close();
+  });
+  it("does not pause eligible tasks for a healthy upgrade's fresh gate", async () => {
+    const f = await setup();
+    value(await f.append("Pending"));
+    await sourceEight(f);
+    await f.store.open();
+    const db = f.raw();
+    expect(db.prepare("SELECT state,blocking_reason FROM tasks").get()).toEqual({
+      state: "queued",
+      blocking_reason: null,
+    });
+    expect(await f.prepare()).not.toBeNull();
+    db.close();
+  });
+  it.each(["source", "target"] as const)(
+    "holds %s recovery work across startup, reconnection and coalescing until Continue all",
+    async (kind) => {
+      const f = await setup();
+      value(await f.append("Pending"));
+      if (kind === "source") await sourceEight(f);
+      else await f.store.close();
+      const gate = recoveryGate(f);
+      await f.store.retry();
+      expect(fs.existsSync(gate)).toBe(false);
+      expect(await f.prepare()).toBeNull();
+      await f.store.close();
+      await f.store.open();
+      expect(await f.prepare()).toBeNull();
+      value(await f.append("Newer pending"));
+      expect(await f.prepare()).toBeNull();
+      const db = f.raw();
+      expect(
+        db.prepare("SELECT blocking_reason FROM tasks WHERE state='blocked'").pluck().get(),
+      ).toBe("restart_paused");
+      const command = {
+        command: "task.continueAll" as const,
+        operationId: "continue",
+        payload: {},
+      };
+      value(await f.store.executeResearchCommand(command));
+      value(await f.store.executeResearchCommand(command));
+      expect(await f.prepare()).not.toBeNull();
+      value(
+        await f.store.executeResearchCommand({
+          command: "task.continueAll",
+          operationId: "continue-empty",
+          payload: {},
+        }),
+      );
+      expect(
+        db
+          .prepare("SELECT count(*) FROM command_receipts WHERE command='task.continueAll'")
+          .pluck()
+          .get(),
+      ).toBe(2);
+      db.close();
+    },
+  );
+  it.each(["undispatched", "dispatched", "cancelling"] as const)(
+    "classifies an unfinished %s attempt during migration recovery",
+    async (kind) => {
+      const f = await setup();
+      value(await f.append("Pending"));
+      await f.prepare();
+      const db = f.raw();
+      if (kind === "undispatched") {
+        const trigger = (
+          db.prepare("SELECT sql FROM sqlite_schema WHERE name='attempts_changes'").get() as {
+            sql: string;
+          }
+        ).sql;
+        db.exec(
+          "DROP TRIGGER attempts_changes; UPDATE attempts SET state='prepared',dispatch_permitted_at=NULL,transfer_manifest=NULL,requested_model=NULL,started_at=NULL",
+        );
+        db.exec(trigger);
+      }
+      if (kind === "cancelling")
+        value(
+          await f.store.executeResearchCommand({
+            command: "task.stop",
+            operationId: "stop-before-recovery",
+            payload: { taskId: taskId(db) },
+          }),
+        );
+      db.close();
+      await sourceEight(f);
+      recoveryGate(f);
+      await f.store.retry();
+      const after = f.raw();
+      expect(after.prepare("SELECT state FROM tasks").pluck().get()).toBe(
+        kind === "dispatched" ? "uncertain" : kind === "cancelling" ? "cancelled" : "blocked",
+      );
+      expect(after.prepare("SELECT state,outcome_reason FROM attempts").get()).toEqual({
+        state: kind === "dispatched" ? "uncertain" : "cancelled",
+        outcome_reason: kind === "cancelling" ? "cancelled_by_researcher" : "service_restarted",
+      });
+      expect(await f.prepare()).toBeNull();
+      if (kind === "undispatched") {
+        value(
+          await f.store.executeResearchCommand({
+            command: "task.continueAll",
+            operationId: "continue-unsent",
+            payload: {},
+          }),
+        );
+        expect(await f.prepare()).not.toBeNull();
+        expect(after.prepare("SELECT count(*) FROM attempts").pluck().get()).toBe(2);
+      }
+      after.close();
+    },
+  );
+  it("retains the gate on a pre-commit recovery failure and durable holds on a post-commit failure", async () => {
+    const f = await setup();
+    value(await f.append("Pending"));
+    await sourceEight(f);
+    const gate = recoveryGate(f);
+    const review = vi
+      .spyOn(
+        f.store as unknown as { restartReview: (db: unknown) => Promise<void> },
+        "restartReview",
+      )
+      .mockRejectedValueOnce(new Error("Synthetic crash before hold commit"));
+    await expect(f.store.retry()).rejects.toThrow();
+    expect(fs.existsSync(gate)).toBe(true);
+    review.mockRestore();
+    const unlink = fs.unlinkSync;
+    const fail = vi.spyOn(fs, "unlinkSync").mockImplementation((file) => {
+      if (String(file) === gate) throw new Error("Synthetic crash after hold commit");
+      unlink(file);
+    });
+    await expect(f.store.retry()).rejects.toThrow();
+    expect(fs.existsSync(gate)).toBe(true);
+    const db = f.raw();
+    expect(db.prepare("SELECT blocking_reason FROM tasks").pluck().get()).toBe("restart_paused");
+    db.close();
+    fail.mockRestore();
+    await f.store.retry();
+    expect(fs.existsSync(gate)).toBe(false);
+    expect(await f.prepare()).toBeNull();
+  });
+  it("keeps restoration gated across exit and pauses the restored tasks only after Retry", async () => {
+    const f = await setup();
+    value(await f.append("Pending"));
+    await sourceEight(f);
+    const unlink = fs.unlinkSync;
+    const fail = vi.spyOn(fs, "unlinkSync").mockImplementation((file) => {
+      if (String(file).endsWith("migration-pending.json"))
+        throw new Error("Synthetic lost acknowledgement");
+      unlink(file);
+    });
+    await expect(f.store.open()).rejects.toThrow();
+    fail.mockRestore();
+    const operations = fs
+      .readdirSync(path.join(f.root, "recovery/migrations"))
+      .filter((name) => !name.includes("."));
+    const operation = operations.find((name) => {
+      const m = JSON.parse(
+        fs.readFileSync(path.join(f.root, "recovery/migrations", name, "manifest.json"), "utf8"),
+      ) as { sourceRevision: number };
+      return m.sourceRevision === 8;
+    })!;
+    await f.store.restore(operation);
+    await f.store.close();
+    await expect(f.store.open()).rejects.toThrow(/recovery/);
+    await f.store.retry();
+    expect(await f.prepare()).toBeNull();
+    value(
+      await f.store.executeResearchCommand({
+        command: "task.continueAll",
+        operationId: "continue-restored",
+        payload: {},
+      }),
+    );
+    expect(await f.prepare()).not.toBeNull();
+  });
+});
+
+it.each(["stop", "start-again", "continue-all"] as const)(
+  "routes the development %s action through the same durable command boundary",
+  async (name) => {
+    const f = await setup();
+    value(await f.append("Question"));
+    const sent: Record<string, unknown>[] = [];
+    const provider = new DurableProvider({
+      storage: f.store,
+      context: { generation: f.generation, mode: "development", connections: f.connections },
+      send: (text) => sent.push(JSON.parse(text) as Record<string, unknown>),
+    });
+    const db = f.raw();
+    const id = taskId(db);
+    if (name === "continue-all")
+      db.exec(
+        "UPDATE tasks SET state='blocked',blocking_reason='restart_paused',state_revision=state_revision+1",
+      );
+    else {
+      await provider.pump();
+      const dispatch = sent.find(
+        (m) => m.kind === "provider_dispatch",
+      ) as unknown as ProviderDispatchMessage;
+      await provider.receive({
+        kind: "provider_event",
+        version: 1,
+        generation: f.generation,
+        attempt: dispatch.request.attempt,
+        event: { type: "text", sequence: 1, text: "Partial" },
+      });
+      if (name === "start-again")
+        await provider.receive({
+          kind: "provider_event",
+          version: 1,
+          generation: f.generation,
+          attempt: dispatch.request.attempt,
+          event: {
+            type: "result",
+            sequence: 2,
+            result: { status: "uncertain", reason: "connection_lost" },
+          },
+        });
+    }
+    await provider.developmentAction({
+      kind: "development_action",
+      version: 1,
+      generation: f.generation,
+      action:
+        name === "continue-all"
+          ? { name, operation_id: "development-control" }
+          : { name, operation_id: "development-control", task: id },
+    });
+    expect(
+      db
+        .prepare("SELECT command FROM command_receipts WHERE operation_id='development-control'")
+        .pluck()
+        .get(),
+    ).toBe(
+      name === "stop"
+        ? "task.stop"
+        : name === "start-again"
+          ? "task.startAgain"
+          : "task.continueAll",
+    );
+    if (name === "stop") {
+      expect(sent.some((m) => m.kind === "provider_interrupt")).toBe(true);
+      const first = sent.find(
+        (m) => m.kind === "provider_dispatch",
+      ) as unknown as ProviderDispatchMessage;
+      await provider.receive({
+        kind: "provider_event",
+        version: 1,
+        generation: f.generation,
+        attempt: first.request.attempt,
+        event: { type: "result", sequence: 2, result: { status: "cancelled" } },
+      });
+      expect(value(await f.store.readMessages(f.conversation.id))[1]!.ending).toBe("partial");
+    } else
+      expect(db.prepare("SELECT state FROM tasks ORDER BY rowid DESC LIMIT 1").pluck().get()).toBe(
+        "running",
+      );
+    db.close();
+    provider.dispose();
+  },
+);
+
+it("interrupts a committed Stop even when its commit acknowledgement was lost", async () => {
+  const f = await setup();
+  value(await f.append("Question"));
+  const sent: Record<string, unknown>[] = [];
+  const provider = new DurableProvider({
+    storage: f.store,
+    context: { generation: f.generation, mode: "development", connections: f.connections },
+    send: (text) => sent.push(JSON.parse(text) as Record<string, unknown>),
+  });
+  await provider.pump();
+  const db = f.raw();
+  const id = taskId(db);
+  const original = Database.prototype.prepare;
+  let fail = true;
+  const spy = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (query, ...args) {
+    const statement = original.call(this, query, ...args);
+    if (query === "COMMIT") {
+      const run = statement.run.bind(statement);
+      statement.run = (...bindings: unknown[]) => {
+        const result = run(...bindings);
+        if (fail) {
+          fail = false;
+          throw new Error("Synthetic lost Stop acknowledgement");
+        }
+        return result;
+      };
+    }
+    return statement;
+  });
+  try {
+    await provider.developmentAction({
+      kind: "development_action",
+      version: 1,
+      generation: f.generation,
+      action: { name: "stop", operation_id: "lost-stop", task: id },
+    });
+  } finally {
+    spy.mockRestore();
+  }
+  expect(db.prepare("SELECT state FROM tasks").pluck().get()).toBe("cancelling");
+  expect(sent.some((m) => m.kind === "provider_interrupt")).toBe(true);
+  expect(sent).toContainEqual(
+    expect.objectContaining({
+      kind: "development_report",
+      report: { type: "refused", reason: "uncertain" },
+    }),
+  );
+  db.close();
+  provider.dispose();
+});
+
+it.each(["running", "cancelling"] as const)(
+  "stops a persisted %s task whose previous generation already closed its connection",
+  async (state) => {
+    const f = await setup();
+    value(await f.append("Question"));
+    await f.prepare();
+    const db = f.raw();
+    const id = taskId(db);
+    if (state === "cancelling")
+      value(
+        await f.store.executeResearchCommand({
+          command: "task.stop",
+          operationId: "old-stop",
+          payload: { taskId: id },
+        }),
+      );
+    const before = db.prepare("SELECT state_revision FROM tasks").pluck().get() as number;
+    f.store.setTaskContext({
+      generation: "replacement-generation",
+      mode: "development",
+      connections: f.connections,
+    });
+    value(
+      await f.store.executeResearchCommand({
+        command: "task.stop",
+        operationId: "stop-closed-generation",
+        payload: { taskId: id },
+      }),
+    );
+    expect(db.prepare("SELECT state,state_revision FROM tasks").get()).toEqual({
+      state: "cancelled",
+      state_revision: before + 1,
+    });
+    expect(db.prepare("SELECT state,outcome_reason FROM attempts").get()).toEqual({
+      state: "cancelled",
+      outcome_reason: "cancelled_by_researcher",
+    });
+    value(await f.append("New question"));
+    expect(await f.prepare()).not.toBeNull();
+    db.close();
+  },
+);
+
+it("captures the project's current language when an uncertain reply is accepted again", async () => {
+  const f = await setup();
+  value(await f.append("Question"));
+  const first = (await f.prepare())!;
+  const db = f.raw();
+  const id = taskId(db);
+  value(
+    await f.store.recordTaskEvent(
+      first.request.attempt,
+      { type: "result", sequence: 1, result: { status: "uncertain", reason: "connection_lost" } },
+      "Partial",
+    ),
+  );
+  db.exec("UPDATE projects SET document_language='es'");
+  value(
+    await f.store.executeResearchCommand({
+      command: "task.startAgain",
+      operationId: "again-language",
+      payload: { taskId: id },
+    }),
+  );
+  expect((await f.prepare())!.request.document_language).toBe("es");
+  expect(db.prepare("SELECT document_language FROM tasks ORDER BY rowid").all()).toEqual([
+    { document_language: "en" },
+    { document_language: "es" },
+  ]);
   db.close();
 });

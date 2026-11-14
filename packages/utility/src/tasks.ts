@@ -4,6 +4,7 @@ import {
   type Outcome,
   type ProviderDispatchMessage,
   type ProviderEvent,
+  type ProviderResult,
   type ProviderUsage,
   type TransferEntry,
   type ServiceConnections,
@@ -71,6 +72,7 @@ export interface TaskRow {
   document_language: string | null;
   accepted_by_operation_id: string;
   replaces_task_id: Uint8Array | null;
+  charge_warning_accepted_at: string | null;
   state: TaskState;
   blocking_reason: BlockingReason | null;
   state_revision: number;
@@ -93,6 +95,10 @@ export interface AttemptRow extends ProviderUsage {
   started_at: string | null;
   finished_at: string | null;
 }
+/** The committed terminal decision is returned to the stream reporter, including a winning Stop. */
+export type RecordedTaskEvent =
+  { readonly recorded: false } | { readonly recorded: true; readonly result?: ProviderResult };
+
 export interface TaskSchema {
   tasks: TaskRow;
   attempts: AttemptRow;
@@ -108,6 +114,7 @@ export interface PreparedTask {
   readonly dispatch: ProviderDispatchMessage;
   readonly transfer: readonly TransferEntry[];
   readonly acceptedByOperationId: string;
+  readonly taskId: string;
 }
 export interface TaskContext {
   readonly mode: RuntimeMode;
@@ -135,11 +142,13 @@ export class TaskTransaction {
         .execute();
   }
   private async change(task: TaskRow, change: Partial<TaskRow>): Promise<void> {
-    await this.db
+    const changed = await this.db
       .updateTable("tasks")
       .set({ ...change, state_revision: task.state_revision + 1, updated_at: this.now })
       .where("id", "=", task.id)
-      .execute();
+      .where("state_revision", "=", task.state_revision)
+      .executeTakeFirstOrThrow();
+    if (changed.numUpdatedRows !== 1n) throw new Error("Task revision changed.");
     this.touch(task.conversation_id);
   }
   /** Later operation stories extend routing when their policies become available. */
@@ -210,8 +219,9 @@ export class TaskTransaction {
         document_language: project.document_language,
         accepted_by_operation_id: operationId,
         replaces_task_id: old?.id ?? null,
-        state: "queued",
-        blocking_reason: null,
+        charge_warning_accepted_at: null,
+        state: old?.blocking_reason === "restart_paused" ? "blocked" : "queued",
+        blocking_reason: old?.blocking_reason === "restart_paused" ? "restart_paused" : null,
         state_revision: 1,
         created_at: this.now,
         updated_at: this.now,
@@ -228,6 +238,7 @@ export class TaskTransaction {
         ...old,
         id: newId(),
         replaces_task_id: old.id,
+        charge_warning_accepted_at: null,
         reply_position: null,
         state_revision: 1,
         created_at: this.now,
@@ -235,6 +246,189 @@ export class TaskTransaction {
       })
       .execute();
     this.touch(conversation);
+  }
+  async control(
+    command: "task.stop" | "task.startAgain",
+    id: Uint8Array,
+    operationId: string,
+  ): Promise<Outcome<Uint8Array>> {
+    const task = await this.db
+      .selectFrom("tasks")
+      .selectAll()
+      .where("id", "=", id)
+      .executeTakeFirst();
+    if (!task) return failure("record_not_found");
+    if (command === "task.stop") {
+      if (task.state === "queued" || task.state === "blocked") {
+        await this.change(task, { state: "cancelled", blocking_reason: null });
+        this.diagnostics.push({ event_name: "ohtia.task.cancelled" });
+      } else if (task.state === "running" || task.state === "cancelling") {
+        const attempt = await this.db
+          .selectFrom("attempts")
+          .selectAll()
+          .where("task_id", "=", task.id)
+          .where("state", "in", ["prepared", "running", "waiting_user", "stopping"])
+          .executeTakeFirstOrThrow();
+        if (
+          task.connection === "chatgpt" &&
+          attempt.service_generation !== this.context.generation
+        ) {
+          // Main drains the previous generation before starting this service. Explicit Stop
+          // can therefore use its closed connection, without an interrupt to a vanished stream.
+          await this.db
+            .updateTable("attempts")
+            .set({
+              state: "cancelled",
+              outcome_reason: "cancelled_by_researcher",
+              finished_at: this.now,
+              ...unknownUsage,
+            })
+            .where("id", "=", attempt.id)
+            .execute();
+          await this.change(task, { state: "cancelled" });
+          this.diagnostics.push({ event_name: "ohtia.task.cancelled" });
+        } else if (task.state === "running") {
+          await this.db
+            .updateTable("attempts")
+            .set({ state: "stopping" })
+            .where("id", "=", attempt.id)
+            .execute();
+          await this.change(task, { state: "cancelling" });
+        }
+      }
+      return { ok: true, value: task.id };
+    }
+    if (task.state !== "uncertain") return failure("task_not_retryable");
+    // rowid expresses actual acceptance order even if the wall clock moves backwards.
+    const newer = await this.db
+      .selectFrom("tasks")
+      .select("id")
+      .where("conversation_id", "=", task.conversation_id)
+      .where(sql<boolean>`rowid > (SELECT rowid FROM tasks WHERE id=${task.id})`)
+      .executeTakeFirst();
+    if (newer) return failure("newer_task_exists");
+    const policy = operationPolicy(task.operation, task.policy_version, this.context.mode);
+    if (!policy) return failure("service_unavailable");
+    const pending = await this.db
+      .selectFrom("tasks")
+      .select(({ fn }) => fn.countAll<number>().as("count"))
+      .where("operation", "=", task.operation)
+      .where("state", "in", ["queued", "blocked"])
+      .executeTakeFirstOrThrow();
+    if (pending.count >= policy.max_pending_tasks) return failure("pending_limit_reached");
+    const project = await this.db
+      .selectFrom("projects")
+      .select("document_language")
+      .where("id", "=", task.project_id)
+      .executeTakeFirstOrThrow();
+    const replacement = newId();
+    await this.db
+      .insertInto("tasks")
+      .values({
+        ...task,
+        id: replacement,
+        reply_position: null,
+        replaces_task_id: task.id,
+        accepted_by_operation_id: operationId,
+        document_language: project.document_language,
+        charge_warning_accepted_at: this.now,
+        state: "queued",
+        blocking_reason: null,
+        state_revision: 1,
+        created_at: this.now,
+        updated_at: this.now,
+      })
+      .execute();
+    this.touch(task.conversation_id);
+    return { ok: true, value: replacement };
+  }
+  async stoppingAttempts(): Promise<readonly string[]> {
+    const rows = await this.db
+      .selectFrom("attempts")
+      .select("id")
+      .where("state", "=", "stopping")
+      .where("service_generation", "=", this.context.generation)
+      .execute();
+    return rows.map((row) => identifier(row.id));
+  }
+  /** Recovery Retry never resumes provider work. The caller still owns the durable gate. */
+  async recoverMigration(): Promise<void> {
+    const tasks = await this.db
+      .selectFrom("tasks")
+      .selectAll()
+      .where("state", "in", ["queued", "blocked", "running", "cancelling"])
+      .orderBy("created_at")
+      .orderBy("id")
+      .execute();
+    for (const task of tasks) {
+      if (task.state === "queued" || task.state === "blocked") {
+        if (task.blocking_reason !== "restart_paused")
+          await this.change(task, { state: "blocked", blocking_reason: "restart_paused" });
+        continue;
+      }
+      const attempt = await this.db
+        .selectFrom("attempts")
+        .selectAll()
+        .where("task_id", "=", task.id)
+        .where("state", "in", ["prepared", "running", "waiting_user", "stopping"])
+        .executeTakeFirstOrThrow();
+      const cancelled = task.state === "cancelling";
+      const dispatched = attempt.dispatch_permitted_at !== null;
+      await this.db
+        .updateTable("attempts")
+        .set({
+          state: cancelled || !dispatched ? "cancelled" : "uncertain",
+          outcome_reason: cancelled ? "cancelled_by_researcher" : "service_restarted",
+          finished_at: this.now,
+          ...unknownUsage,
+        })
+        .where("id", "=", attempt.id)
+        .execute();
+      const project = await this.db
+        .selectFrom("projects")
+        .select("is_development")
+        .where("id", "=", task.project_id)
+        .executeTakeFirstOrThrow();
+      const policy = operationPolicy(
+        task.operation,
+        task.policy_version,
+        project.is_development ? "development" : "installed",
+      );
+      const state: TaskState = cancelled
+        ? "cancelled"
+        : dispatched
+          ? "uncertain"
+          : (await this.waiting(task.conversation_id))
+            ? "cancelled"
+            : policy && attempt.attempt_number >= policy.max_attempts
+              ? "failed"
+              : "blocked";
+      await this.change(task, {
+        state,
+        blocking_reason: state === "blocked" ? "restart_paused" : null,
+      });
+    }
+    if (tasks.length) this.diagnostics.push({ event_name: "ohtia.task.recovery_paused" });
+  }
+  /** Shared continuation; later policies extend this revalidation without a second resume path. */
+  async continueAll(): Promise<void> {
+    const tasks = await this.db
+      .selectFrom("tasks")
+      .selectAll()
+      .where("state", "=", "blocked")
+      .where("blocking_reason", "=", "restart_paused")
+      .orderBy("created_at")
+      .orderBy("id")
+      .execute();
+    for (const task of tasks) {
+      const policy = operationPolicy(task.operation, task.policy_version, this.context.mode);
+      const reason = !policy
+        ? "configuration_unavailable"
+        : !this.context.connections.available(task.connection)
+          ? "connection_disabled"
+          : null;
+      await this.change(task, { state: reason ? "blocked" : "queued", blocking_reason: reason });
+    }
   }
   /** Claim capacity and persist dispatch evidence. The caller sends only after COMMIT succeeds. */
   async prepareNext(): Promise<PreparedTask | null> {
@@ -248,6 +442,9 @@ export class TaskTransaction {
       .selectFrom("tasks")
       .selectAll()
       .where("state", "in", ["running", "cancelling", "uncertain"])
+      // ChatGPT has no background execution or cancellation endpoint. Every final event is
+      // delivered after main has closed the connection; restart recovery closes old generations.
+      .where((eb) => eb.or([eb("state", "!=", "uncertain"), eb("connection", "!=", "chatgpt")]))
       .execute();
     if (occupied.length >= limits.max_concurrent_inference) return null;
     const candidates = await this.db
@@ -304,15 +501,35 @@ export class TaskTransaction {
         .where("position", "<=", task.input_through_position)
         .orderBy("position")
         .execute();
-      const built = buildInput(
-        policy,
-        messages.map((message) => ({
+      const inputMessages = [];
+      for (const message of messages) {
+        const outcome =
+          message.ending === "partial" && message.task_id
+            ? await this.db
+                .selectFrom("attempts")
+                .selectAll()
+                .where("task_id", "=", message.task_id)
+                .orderBy("attempt_number", "desc")
+                .executeTakeFirst()
+            : undefined;
+        inputMessages.push({
           reference: identifier(message.id),
-          role: message.author_kind === "researcher" ? "user" : "assistant",
+          role: message.author_kind === "researcher" ? ("user" as const) : ("assistant" as const),
           text: message.content,
-        })),
-        { reference: identifier(conversation.id), revision: conversation.revision },
-      );
+          ...(message.ending === "partial"
+            ? {
+                partial: {
+                  agent: agentName(message.agent_id),
+                  reason: outcome?.outcome_reason ?? null,
+                },
+              }
+            : {}),
+        });
+      }
+      const built = buildInput(policy, inputMessages, {
+        reference: identifier(conversation.id),
+        revision: conversation.revision,
+      });
       if (previous.length >= policy.max_attempts) {
         this.diagnostics.push({ event_name: "ohtia.task.failed" });
         await this.change(task, { state: "failed" });
@@ -376,6 +593,7 @@ export class TaskTransaction {
       return {
         transfer: built.transfer,
         acceptedByOperationId: task.accepted_by_operation_id,
+        taskId: identifier(task.id),
         dispatch: {
           kind: "provider_dispatch",
           version: providerMessageVersion,
@@ -407,7 +625,7 @@ export class TaskTransaction {
     }
     return null;
   }
-  async event(attemptId: string, event: ProviderEvent, text: string): Promise<boolean> {
+  async event(attemptId: string, event: ProviderEvent, text: string): Promise<RecordedTaskEvent> {
     const attempt = await this.db
       .selectFrom("attempts")
       .selectAll()
@@ -418,14 +636,15 @@ export class TaskTransaction {
       attempt.service_generation !== this.context.generation ||
       !["prepared", "running", "waiting_user", "stopping"].includes(attempt.state)
     )
-      return false;
+      return { recorded: false };
     const task = await this.db
       .selectFrom("tasks")
       .selectAll()
       .where("id", "=", attempt.task_id)
       .executeTakeFirstOrThrow();
-    if (task.state !== "running" && task.state !== "cancelling") return false;
-    if (event.type === "text") return true;
+    if (task.state !== "running" && task.state !== "cancelling") return { recorded: false };
+    if (event.type === "text" || event.type === "activity")
+      return { recorded: task.state === "running" };
     if (event.type === "started") {
       await this.db
         .updateTable("attempts")
@@ -436,27 +655,30 @@ export class TaskTransaction {
         .where("id", "=", attempt.id)
         .execute();
       await this.change(task, {});
-      return true;
+      return { recorded: true };
     }
     if (event.type === "usage") {
       await this.db.updateTable("attempts").set(event.usage).where("id", "=", attempt.id).execute();
       await this.change(task, {});
-      return true;
+      return { recorded: true };
     }
-    const result = event.result;
+    // Stop won the committed revision: even an already queued successful result can only
+    // acknowledge cessation. Keep received partial text, never publish it as a complete reply.
+    const result: ProviderResult =
+      task.state === "cancelling"
+        ? { status: "cancelled" }
+        : event.result.status === "completed" && !text
+          ? { status: "failed", reason: "empty_reply", dispatched: true }
+          : event.result;
     const notDispatched = result.status === "failed" && !result.dispatched;
     let state: AttemptState = result.status;
-    let reason: AttemptReason | null =
+    const reason: AttemptReason | null =
       result.status === "failed" || result.status === "uncertain"
         ? result.reason
         : result.status === "cancelled"
           ? "cancelled_by_researcher"
           : null;
     if (notDispatched && result.reason === "permit_expired") state = "cancelled";
-    if (result.status === "completed" && !text) {
-      state = "failed";
-      reason = "empty_reply";
-    }
     await this.db
       .updateTable("attempts")
       .set({
@@ -464,6 +686,13 @@ export class TaskTransaction {
         outcome_reason: reason,
         finished_at: this.now,
         ...(notDispatched ? { dispatch_permitted_at: null } : {}),
+        ...(state === "cancelled" ||
+        state === "uncertain" ||
+        reason === "deadline_exceeded" ||
+        reason === "inactivity_timeout" ||
+        reason === "output_limit_exceeded"
+          ? unknownUsage
+          : {}),
       })
       .where("id", "=", attempt.id)
       .execute();
@@ -482,7 +711,7 @@ export class TaskTransaction {
         : policy && attempt.attempt_number < policy.max_attempts
           ? "queued"
           : "failed";
-    if (text && !notDispatched && task.state === "running" && taskState !== "uncertain") {
+    if (text && !notDispatched) {
       if (task.reply_position === null) throw new Error("Running task lacks a reply reservation.");
       await this.db
         .insertInto("messages")
@@ -494,6 +723,7 @@ export class TaskTransaction {
           agent_id: "virgilio",
           content: text,
           task_id: task.id,
+          ending: state === "completed" ? "complete" : "partial",
           created_at: this.now,
         })
         .execute();
@@ -512,7 +742,7 @@ export class TaskTransaction {
                 ? "ohtia.task.cancelled"
                 : "ohtia.task.failed",
     });
-    return true;
+    return { recorded: true, result };
   }
 }
 
@@ -529,4 +759,19 @@ export async function nextPosition(
   if (position === undefined) throw new Error("Message positions unavailable.");
   if (!Number.isSafeInteger(position)) throw new Error("Message positions exhausted.");
   return position;
+}
+
+function agentName(id: string | null): string {
+  const names: Readonly<Record<string, string>> = {
+    virgilio: "Virgilio",
+    josefa: "Josefa",
+    "jorge-luis": "Jorge Luis",
+    erasmus: "Erasmus",
+    boris: "Boris",
+    maria: "María",
+    thomas: "Thomas",
+  };
+  const name = id && Object.hasOwn(names, id) ? names[id] : undefined;
+  if (!name) throw new Error("Unknown message agent.");
+  return name;
 }

@@ -14,6 +14,7 @@ import {
   errorCode,
   forbiddenResponseFields,
   nodeResponsesTransport,
+  closeResponseTransport,
   isTransportFailure,
   reportedUsage,
   responsesEndpoint,
@@ -104,14 +105,15 @@ describe("ChatGPT requests over the Responses API", () => {
     expect(sent!.headers.Authorization).toMatch(/^Bearer access-one-/);
     expect(events).toEqual([
       { sequence: 1, type: "started", provider_request_id: "req_synthetic-1", model: "first" },
-      { sequence: 2, type: "text", text: "Synthetic " },
-      { sequence: 3, type: "text", text: "reply." },
+      { sequence: 2, type: "activity" },
+      { sequence: 3, type: "text", text: "Synthetic " },
+      { sequence: 4, type: "text", text: "reply." },
       {
-        sequence: 4,
+        sequence: 5,
         type: "usage",
         usage: { input_tokens: 41, cached_input_tokens: 0, output_tokens: 7, reasoning_tokens: 3 },
       },
-      { sequence: 5, type: "result", result: { status: "completed" } },
+      { sequence: 6, type: "result", result: { status: "completed" } },
     ]);
     // Nothing main forwards to the data service carries the credential.
     expect(JSON.stringify(events)).not.toMatch(/access-one|refresh-one/);
@@ -741,4 +743,48 @@ it("sends nothing when the researcher signs out while the connection is opening"
     dispatched: false,
   });
   expect(f.responseRequests).toHaveLength(0);
+});
+
+it("awaits the real socket close receipt before acknowledging a cut response", async () => {
+  let clientClosed = false;
+  const server = http.createServer((_request, response) => {
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    response.write(": open\n\n");
+  });
+  server.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) =>
+    server.once("listening", () => {
+      resolve();
+    }),
+  );
+  const transport = nodeResponsesTransport((url, options) => {
+    const request = http.request(url, options);
+    request.once("socket", (socket) =>
+      socket.once("close", () => {
+        clientClosed = true;
+      }),
+    );
+    return request;
+  });
+  try {
+    const response = await transport(
+      {
+        url: `http://127.0.0.1:${String((server.address() as net.AddressInfo).port)}/responses`,
+        headers: {},
+        body: "{}",
+        signal: new AbortController().signal,
+      },
+      () => true,
+    );
+    expect(clientClosed).toBe(false);
+    await closeResponseTransport(response);
+    expect(clientClosed).toBe(true);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) =>
+      server.close(() => {
+        resolve();
+      }),
+    );
+  }
 });

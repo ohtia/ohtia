@@ -4,8 +4,6 @@ title: "Agent collaboration evaluation"
 description: "Evaluate research usefulness, evidence fidelity, human review, and bounded execution against a single-agent baseline."
 generated:
   by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # Agent collaboration evaluation
@@ -58,10 +56,10 @@ Use synthetic provider/process implementations and controlled transaction orderi
 4. Reject a cycle, exhausted graph/turn budget, unsupported specialist, changed input, disallowed destination and allocation exceeding the aggregate remaining envelope before child work is accepted.
 5. Deliver a completion event repeatedly, out of order and after a stream gap. One ready state produces at most one continuation; scoped requery recovers missing state without repeated inference.
 6. Crash after artifact commit but before notification. Durable recovery discovers the receipt. Crash near dispatch follows ADR-0051's uncertainty rules and does not silently rerun the provider call.
-7. Cancel before activation, during execution and concurrently with completion. The winning transaction determines effects; unresolved cessation remains uncertain and quarantined. No child starts from a late coordination event.
+7. Cancel before activation, during execution and concurrently with completion. The winning transaction determines effects; unresolved cessation remains uncertain, and quarantined unless its adapter has no background execution or cancellation endpoint, whose closed connection frees the slot ([ADR-0051](../adr/adr-0051-research-agent-task-execution.md)). No child starts from a late coordination event.
 8. Finish a parent while a delegated operation remains active or uncertain. Intervention completion cannot hide the unresolved child. Disable an untracked runtime delegation route.
 9. Restart with queued tasks and unactivated intent. Neither project opening nor provider reconnection resumes work without the required human continuation.
-10. Change concurrency during competing admissions. Respect both configured application capacity and effective adapter/connection limits, including quarantined slots.
+10. Change concurrency during competing admissions. Respect both configured application capacity and effective adapter/connection limits, including quarantined slots and the slots that closed connections free under [ADR-0051](../adr/adr-0051-research-agent-task-execution.md).
 11. Attempt a cross-project read, restricted derived-content transfer, human confirmation through an agent tool and stale-capability write. Reject each at the trusted boundary.
 12. Edit or withdraw retained memory and source content. Preserve earlier attribution and identify dependent findings; old results cannot acquire new coverage or confirmation.
 13. Approve a versioned editorial proposal, repeat the command and simulate saving failure. Exactly one accepted application produces its revision/approval receipt; failure preserves the previous manuscript.

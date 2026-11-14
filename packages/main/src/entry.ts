@@ -576,6 +576,13 @@ function constructWindow(
 }
 function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"): void {
   if (quitting || (service && !service.ceased)) return;
+  if (providerDispatch && !providerDispatch.ceased) {
+    // Recovery classifies old attempts only after every ended-generation transport has closed.
+    void providerDispatch.drain().then(() => {
+      startService(mode);
+    });
+    return;
+  }
   const locator = readLocator(settings, context);
   bootstrapState = refreshLocatorState(bootstrapState, locator.state);
   const storageMode = mode === "open" && locator.state === "missing" ? "create" : mode;

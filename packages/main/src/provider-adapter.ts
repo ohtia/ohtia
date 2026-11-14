@@ -40,7 +40,8 @@ export interface ProviderRequestControl {
 export interface ProviderRequests {
   /** Renew an expired session once, never sending a request. */
   prepare(signal: AbortSignal): Promise<"ready" | "rejected" | "temporary">;
-  /** Attach the credential, call `release`, send and emit events ending with one result. */
+  /** Attach the credential, call `release`, send and emit one result. Resolve only after the
+   * connection has closed, including interruption and transport-error paths. */
   send(request: ProviderRequestData, control: ProviderRequestControl): Promise<void>;
 }
 /** The adapter remains inside main. Neither sessions nor store access belong on the application port. */

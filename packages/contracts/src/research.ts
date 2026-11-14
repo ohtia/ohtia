@@ -25,9 +25,14 @@ export interface MessageRecord {
   readonly agentId: string | null;
   readonly taskId: string | null;
   readonly content: string;
+  readonly ending: "complete" | "partial" | null;
   readonly createdAt: string;
 }
 export interface ResearchPayloads {
+  readonly "task.stop": { readonly taskId: string };
+  /** Invoking this human command acknowledges possible duplicate charges. */
+  readonly "task.startAgain": { readonly taskId: string };
+  readonly "task.continueAll": Record<string, never>;
   readonly "development.createProject": Record<string, never>;
   readonly "project.create": Record<string, never>;
   readonly "project.confirmSetup": {
@@ -56,6 +61,9 @@ export interface ResearchResult {
   readonly resultId: string;
 }
 export const researchCommands = [
+  "task.stop",
+  "task.startAgain",
+  "task.continueAll",
   "development.createProject",
   "project.create",
   "project.confirmSetup",

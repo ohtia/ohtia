@@ -4,8 +4,6 @@ title: "Agent collaboration"
 description: "Virgilio, research specialists, bounded collaboration, inspectable memory, and human-approved editorial proposals."
 generated:
   by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: openai-orchestration
     resource: "https://developers.openai.com/api/docs/guides/agents/orchestration"
@@ -122,7 +120,7 @@ Record the selection grounds, required capabilities and permitted definition/pol
 
 A proposed handoff identifies its conversation branch, current and proposed response owner, target definition/operation, reason, selected context manifest and expected intervention/branch versions. It passes the same role, restriction, capability and aggregate-budget checks as other work. The application commits the owner change and its receipt atomically with accepted continuation intent. A rejection or an unresolved authorization request leaves the current response owner unchanged; show the proposed transfer as pending rather than claiming that the target already took over. Repeated or conflicting requests follow the graph's idempotency and version rules.
 
-A handoff schedules a separate bounded contribution after any active sending turn has ended and released capacity safely. It cannot move an in-flight attempt, give the recipient the sender's capability or bypass an uncertain attempt's quarantine. Show the owner whose contribution is actually producing each response; a selector preview or unsatisfied handoff does not relabel existing messages. Returning to Virgilio changes the selected conversational owner through the same checks and starts inference only when a research action is authorized.
+A handoff schedules a separate bounded contribution after any active sending turn has ended and released capacity safely. It cannot move an in-flight attempt, give the recipient the sender's capability or bypass the quarantine that an uncertain attempt keeps; under [ADR-0051](../adr/adr-0051-research-agent-task-execution.md), an uncertain attempt of an adapter without background execution or a cancellation endpoint keeps none once its connection closes. Show the owner whose contribution is actually producing each response; a selector preview or unsatisfied handoff does not relabel existing messages. Returning to Virgilio changes the selected conversational owner through the same checks and starts inference only when a research action is authorized.
 
 A researcher redirection records a new version of the intended question/plan. It may alter only unactivated intent within the accepted envelope. Already accepted tasks keep their immutable input manifests; superseded work is explicitly cancelled through ADR-0051 before its result can be represented as addressing the new request. New material, destinations, capabilities or work beyond the envelope require a newly authorized intervention linked to the previous one. A late result retains its original question and versions, even when it remains useful as historical material.
 
@@ -151,7 +149,7 @@ A Virgilio planning turn runs as an ordinary bounded inference task. Its termina
 
 Once the coordinator task has validly completed and its local/provider execution has ended under ADR-0051, its capacity is released. Waiting for contributions is represented by the intervention and graph, not by an inference attempt holding a slot. The application later accepts a new, budgeted coordinator task with the exact completed artifact manifest when synthesis is useful and authorized. This is a new contribution turn, not a retry that resets the old task's attempt allowance.
 
-This sequence must work with the application and connection concurrency limits set to one. Higher configured limits can admit independent eligible contributions through the same broker; the graph does not override saved limits, adapter limits or FIFO admission. An uncertain attempt retains its quarantine. Asking a researcher a tool-approval question during an active attempt continues to hold capacity under ADR-0051; before-dispatch research questions can instead wait as intervention intent without an active attempt.
+This sequence must work with the application and connection concurrency limits set to one. Higher configured limits can admit independent eligible contributions through the same broker; the graph does not override saved limits, adapter limits or FIFO admission. An uncertain attempt retains its quarantine, except that an adapter without background execution or a cancellation endpoint frees the slot once its connection closes ([ADR-0051](../adr/adr-0051-research-agent-task-execution.md)). Asking a researcher a tool-approval question during an active attempt continues to hold capacity under ADR-0051; before-dispatch research questions can instead wait as intervention intent without an active attempt.
 
 ```mermaid
 flowchart LR

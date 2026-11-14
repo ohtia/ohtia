@@ -1,4 +1,14 @@
-import { TaskTransaction, type TaskContext, type PreparedTask } from "./tasks.js";
+import {
+  up as replyControl,
+  columns as replyColumns,
+  objects as replyObjects,
+} from "./migrations/0009_reply_control.mjs";
+import {
+  TaskTransaction,
+  type TaskContext,
+  type PreparedTask,
+  type RecordedTaskEvent,
+} from "./tasks.js";
 import { ServiceConnections, type ProviderEvent } from "@ohtia/contracts";
 import {
   up as durableTasks,
@@ -196,9 +206,10 @@ const names = [
   "0006_window_bounds_receipts",
   "0007_research_records",
   "0008_durable_ai_tasks",
+  "0009_reply_control",
 ] as const;
 const target = names.length;
-const targetName = names[7];
+const targetName = names[8];
 function digest(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -503,12 +514,22 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
           revision >= 8 && name === "messages"
             ? definition.replace(
                 ",\n    UNIQUE (conversation_id,position)",
-                ", task_id BLOB REFERENCES tasks(id),\n    UNIQUE (conversation_id,position)",
+                `, task_id BLOB REFERENCES tasks(id)${revision >= 9 ? `, ${replyColumns.ending}` : ""},\n    UNIQUE (conversation_id,position)`,
               )
             : definition,
         ])
       : []),
-    ...(revision >= 8 ? Object.entries(taskTables) : []),
+    ...(revision >= 8
+      ? Object.entries(taskTables).map(([name, definition]) => [
+          name,
+          revision >= 9 && name === "tasks"
+            ? definition.replace(
+                ",\n    CHECK ((state=",
+                `, ${replyColumns.charge},\n    CHECK ((state=`,
+              )
+            : definition,
+        ])
+      : []),
   ]) {
     const row = db
       .prepare("SELECT sql FROM sqlite_schema WHERE name=? AND type='table'")
@@ -530,6 +551,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                   Object.entries(researchObjects).filter(([name]) => name !== "messages_revision"),
                 ),
                 ...taskObjects,
+                ...(revision >= 9 ? replyObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -820,6 +842,7 @@ export class DurableStore {
                 "0006_window_bounds_receipts": { up: boundsReceipts },
                 "0007_research_records": { up: researchRecords },
                 "0008_durable_ai_tasks": { up: durableTasks },
+                "0009_reply_control": { up: replyControl },
               }),
           },
         });
@@ -843,6 +866,7 @@ export class DurableStore {
         this.assert();
         if (db.inTransaction || compatibility(db, this.artifacts) !== target)
           throw new Error("Commit not confirmed.");
+        if (retrySource) await this.restartReview(connection);
         this.cleanupResolved();
         fs.unlinkSync(this.gate);
         syncDirectory(this.options.root);
@@ -856,6 +880,21 @@ export class DurableStore {
         throw new Error(`Migration requires explicit recovery (${operation}).`, { cause: error });
       }
     });
+  }
+  private async restartReview(db: Kysely<Schema>): Promise<void> {
+    await sql`BEGIN IMMEDIATE`.execute(db);
+    const tasks = new TaskTransaction(db, this.taskContext);
+    try {
+      this.assert();
+      await tasks.recoverMigration();
+      await tasks.flush();
+      this.assert();
+      await sql`COMMIT`.execute(db);
+    } catch (error) {
+      if (this.native?.inTransaction) await sql`ROLLBACK`.execute(db);
+      throw error;
+    }
+    for (const event of tasks.diagnostics) this.researchDiagnostic(event);
   }
   private cleanupResolved(): void {
     if (exists(this.restoration)) throw new Error("Recovery materialization remains pending.");
@@ -920,9 +959,17 @@ export class DurableStore {
       db.close();
     }
     if (revision === target) {
-      this.cleanupResolved();
-      fs.unlinkSync(this.gate);
-      syncDirectory(this.options.root);
+      // The validated gate remains authoritative until the separate hold transaction commits.
+      this.openConnection();
+      try {
+        if (!this.database) throw new Error("Missing recovery connection.");
+        await this.restartReview(this.database);
+        this.cleanupResolved();
+        fs.unlinkSync(this.gate);
+        syncDirectory(this.options.root);
+      } finally {
+        await this.close();
+      }
       await this.open();
     } else {
       if (revision === 0) this.initializationAllowed = true;
@@ -2020,6 +2067,9 @@ export class DurableStore {
         "conversation.start": "ohtia.conversation.started",
         "conversation.rename": "ohtia.conversation.renamed",
         "message.append": "ohtia.message.appended",
+        "task.stop": "ohtia.task.stop_requested",
+        "task.startAgain": "ohtia.task.replaced",
+        "task.continueAll": "ohtia.task.continued",
       } as const;
       this.researchDiagnostic({ event_name: events[command.command] });
     } else {
@@ -2062,10 +2112,17 @@ export class DurableStore {
       this.active = false;
     }
   }
+  stoppingAttempts(): Promise<Outcome<readonly string[]>> {
+    return this.taskTransaction((tasks) => tasks.stoppingAttempts());
+  }
   prepareTask(): Promise<Outcome<PreparedTask | null>> {
     return this.taskTransaction((tasks) => tasks.prepareNext());
   }
-  recordTaskEvent(attempt: string, event: ProviderEvent, text: string): Promise<Outcome<boolean>> {
+  recordTaskEvent(
+    attempt: string,
+    event: ProviderEvent,
+    text: string,
+  ): Promise<Outcome<RecordedTaskEvent>> {
     return this.taskTransaction((tasks) => tasks.event(attempt, event, text));
   }
 

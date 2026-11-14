@@ -4,8 +4,6 @@ title: "System architecture"
 description: "Application data authority, execution boundaries, provider adapters, and schema-migration recovery."
 generated:
   by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: electron-security
     resource: "https://www.electronjs.org/docs/latest/tutorial/security"
@@ -206,7 +204,7 @@ SQLite records task intent with the domain command that requires it. [ADR-0051](
 
 Cache analysis by exact input versions, operation/prompt policy, language, adapter/runtime version and effective model settings where known. An unknown setting limits safe reuse and reproducibility. Reusing a result preserves its original producer and coverage and never refreshes a human confirmation. Do not deduplicate solely by a prompt string.
 
-Recovery reconciles persisted attempts and object-install receipts before new dispatch. Uncertain attempts retain quarantined capacity and cannot publish research effects. Reopening Ohtia does not automatically repeat potentially dispatched work; the ADR defines the evidence and human actions required for continuation or replacement.
+Recovery reconciles persisted attempts and object-install receipts before new dispatch. Uncertain attempts cannot publish research effects. They retain quarantined capacity, except that an attempt of an adapter without background execution or a cancellation endpoint frees its slot once its connection closes, as [ADR-0051](adr/adr-0051-research-agent-task-execution.md) records. Reopening Ohtia does not automatically repeat potentially dispatched work; the ADR defines the evidence and human actions required for continuation or replacement.
 
 ## Untrusted files and exports
 

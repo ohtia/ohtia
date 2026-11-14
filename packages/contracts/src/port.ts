@@ -147,6 +147,8 @@ export const errorActions = {
   name_invalid: "check_request",
   input_too_large: "check_request",
   pending_limit_reached: "retry_later",
+  newer_task_exists: "refresh_record",
+  task_not_retryable: "check_request",
   message_invalid: "check_request",
   invalid_message: "check_request",
   unsupported_version: "upgrade_application",

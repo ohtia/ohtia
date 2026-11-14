@@ -42,6 +42,7 @@ export interface MessageRow {
   agent_id: string | null;
   task_id: Uint8Array | null;
   content: string;
+  ending: "complete" | "partial" | null;
   created_at: string;
 }
 export interface ResearchSchema extends TaskSchema {
@@ -232,10 +233,14 @@ function message(row: MessageRow): MessageRecord {
     agentId: row.agent_id,
     taskId: row.task_id ? identifier(row.task_id) : null,
     content: row.content,
+    ending: row.ending,
     createdAt: row.created_at,
   };
 }
 const payloadKeys = {
+  "task.stop": ["taskId"],
+  "task.startAgain": ["taskId"],
+  "task.continueAll": [],
   "development.createProject": [],
   "project.create": [],
   "project.confirmSetup": ["projectId", "title", "documentLanguage"],
@@ -283,6 +288,23 @@ export async function applyResearchCommand(
   const now = new Date().toISOString();
   let result: Uint8Array;
   switch (input.command) {
+    case "task.stop":
+    case "task.startAgain": {
+      if (!isEntityId(input.payload.taskId)) return failure("invalid_message");
+      const outcome = await tasks.control(
+        input.command,
+        bytes(input.payload.taskId),
+        input.operationId,
+      );
+      if (!outcome.ok) return outcome;
+      result = outcome.value;
+      break;
+    }
+    case "task.continueAll": {
+      await tasks.continueAll();
+      result = newId();
+      break;
+    }
     case "development.createProject":
     case "project.create": {
       const development = input.command === "development.createProject";
@@ -443,6 +465,7 @@ async function append(
       author_kind: "researcher",
       agent_id: null,
       task_id: null,
+      ending: null,
       content,
       created_at: now,
     })

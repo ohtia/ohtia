@@ -149,6 +149,16 @@ describe("provider message contracts", () => {
       report: { type: "record", record: "project", id: "project-id" },
     };
     expect(decodeDevelopmentReport(JSON.stringify(record), "g")).toEqual(record);
+    for (const sequence of [1, "invalid", null])
+      expect(
+        decodeDevelopmentReport(
+          JSON.stringify({
+            ...record,
+            report: { type: "activity", sequence },
+          }),
+          "g",
+        ),
+      ).toBeUndefined();
     expect(
       decodeDevelopmentReport(
         JSON.stringify({ ...record, report: { ...record.report, record: "credential" } }),
@@ -1387,4 +1397,182 @@ it("prints no control or format character but newline and tab from a reply or a 
   expect(output).toContain("first\nsecond\uFFFDthird");
   expect(output).toContain("Unrecognized switch: \uFFFD]0;title\uFFFD");
   for (const code of unsafe) expect(output).not.toContain(String.fromCodePoint(code));
+});
+
+describe("bounded connection cessation", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  it("retains the request until interruption has an actual closure receipt", async () => {
+    let control!: import("../packages/main/src/provider-adapter.js").ProviderRequestControl;
+    let closed!: () => void;
+    const h = dispatcher(
+      createFakeProvider({
+        send: (_request, given) => {
+          control = given;
+          expect(given.release()).toBe(true);
+          given.emit({ type: "text", text: "Partial" });
+          return new Promise<void>((resolve) => {
+            closed = resolve;
+          });
+        },
+      }),
+    );
+    const pending = h.dispatch.receive(h.message());
+    await Promise.resolve();
+    await Promise.resolve();
+    h.dispatch.interrupt({
+      kind: "provider_interrupt",
+      version: 1,
+      generation: "g1",
+      attempt: "a1",
+    });
+    expect(control.signal.aborted).toBe(true);
+    expect(h.results()).toHaveLength(0);
+    expect(h.dispatch.query("a1")).toBe("running");
+    control.emit({ type: "text", text: "Late" });
+    control.emit({ type: "result", result: { status: "completed" } });
+    expect(h.dispatch.ceased).toBe(false);
+    let drained = false;
+    const cessation = h.dispatch.drain().then(() => {
+      drained = true;
+    });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+    closed();
+    await pending;
+    await cessation;
+    expect(h.dispatch.ceased).toBe(true);
+    expect(h.results()).toEqual([{ type: "result", sequence: 2, result: { status: "cancelled" } }]);
+    expect(h.dispatch.query("a1")).toBe("unknown");
+    h.dispatch.dispose();
+  });
+  it.each(["deadline_exceeded", "inactivity_timeout"] as const)(
+    "closes the fake provider with %s and one terminal result",
+    async (reason) => {
+      vi.useFakeTimers();
+      const h = dispatcher(createFakeProvider({ holdReply: true }));
+      const m = h.message();
+      const pending = h.dispatch.receive({
+        ...m,
+        request: {
+          ...m.request,
+          limits: {
+            ...m.request.limits,
+            max_attempt_duration_ms: reason === "deadline_exceeded" ? 20 : 100,
+            max_inactivity_ms: reason === "inactivity_timeout" ? 20 : 100,
+          },
+        },
+      });
+      await vi.advanceTimersByTimeAsync(20);
+      await pending;
+      expect(h.results()).toEqual([
+        { type: "result", sequence: 3, result: { status: "failed", reason, dispatched: true } },
+      ]);
+      expect(h.dispatch.query("a1")).toBe("unknown");
+      h.dispatch.dispose();
+    },
+  );
+  it("resets inactivity on any provider event and counts a forward wall-clock jump before accepting output", async () => {
+    vi.useFakeTimers();
+    let control!: import("../packages/main/src/provider-adapter.js").ProviderRequestControl;
+    const h = dispatcher(
+      createFakeProvider({
+        send: (_request, given) => {
+          control = given;
+          given.release();
+          return new Promise<void>((resolve) =>
+            given.signal.addEventListener("abort", () => {
+              resolve();
+            }),
+          );
+        },
+      }),
+    );
+    const m = h.message();
+    const pending = h.dispatch.receive({
+      ...m,
+      request: {
+        ...m.request,
+        limits: { ...m.request.limits, max_attempt_duration_ms: 100, max_inactivity_ms: 20 },
+      },
+    });
+    await vi.advanceTimersByTimeAsync(15);
+    control.emit({ type: "activity" });
+    await vi.advanceTimersByTimeAsync(15);
+    expect(h.results()).toHaveLength(0);
+    vi.setSystemTime(Date.now() + 101);
+    control.emit({ type: "text", text: "Expired output" });
+    await pending;
+    expect(h.sent.map((m) => m.event.type)).toEqual(["activity", "result"]);
+    expect(h.results()[0]).toMatchObject({
+      result: { status: "failed", reason: "deadline_exceeded" },
+    });
+    h.dispatch.dispose();
+  });
+  it("validates development stop, replacement and continuation commands in their closed shapes", () => {
+    for (const name of ["stop", "start-again"] as const) {
+      const switches = [`--ohtia-dev-command=${name}`, "--ohtia-dev-task=task-1"];
+      expect(parseDevelopmentSwitches(switches, "op")).toEqual({
+        ok: true,
+        action: { name, operation_id: "op", task: "task-1" },
+      });
+      const body = {
+        kind: "development_action",
+        version: 1,
+        generation: "g",
+        action: { name, operation_id: "op", task: "task-1" },
+      };
+      expect(decodeDevelopmentAction(JSON.stringify(body), "g")).toEqual(body);
+      expect(
+        decodeDevelopmentAction(
+          JSON.stringify({ ...body, action: { ...body.action, extra: true } }),
+          "g",
+        ),
+      ).toBeUndefined();
+    }
+    expect(parseDevelopmentSwitches(["--ohtia-dev-command=continue-all"], "op")).toEqual({
+      ok: true,
+      action: { name: "continue-all", operation_id: "op" },
+    });
+  });
+});
+
+it("preserves storage admission when a connection report arrives during the checkpoint", async () => {
+  const fixture = storageFixture();
+  const admissionLost = vi.fn();
+  const service = createStatusService(
+    "opening-generation",
+    "en-US",
+    () => {},
+    fixture.store,
+    admissionLost,
+    "development",
+  );
+  try {
+    const opening = fixture.store.open();
+    expect(fixture.store.ready).toBe(false);
+    service.receive(
+      JSON.stringify({
+        kind: "connection_state",
+        generation: "opening-generation",
+        snapshot: {
+          connection: "chatgpt",
+          state: "disconnected",
+          reason: null,
+          probing: false,
+          probe_id: null,
+          model_list_revision: null,
+          model_count: 0,
+        },
+      }),
+    );
+    await service.drain();
+    expect(admissionLost).not.toHaveBeenCalled();
+    await opening;
+    expect(fixture.store.ready).toBe(true);
+    service.activate("en-US");
+  } finally {
+    service.dispose();
+  }
 });

@@ -23,6 +23,10 @@ const event = <
   errors: E,
 ) => Object.freeze({ component, operation, severity, outcome, errors: Object.freeze(errors) });
 export const diagnosticCatalog = Object.freeze({
+  "ohtia.task.stop_requested": event("data_service", "task.stop", "INFO", "accepted", []),
+  "ohtia.task.replaced": event("data_service", "task.startAgain", "INFO", "accepted", []),
+  "ohtia.task.continued": event("data_service", "task.continueAll", "INFO", "accepted", []),
+  "ohtia.task.recovery_paused": event("data_service", "task.recover", "INFO", "paused", []),
   "ohtia.task.accepted": event("data_service", "task.accept", "INFO", "accepted", []),
   "ohtia.task.dispatch_permitted": event("data_service", "task.dispatch", "INFO", "permitted", []),
   "ohtia.task.completed": event("data_service", "task.finish", "INFO", "completed", []),
@@ -58,6 +62,8 @@ export const diagnosticCatalog = Object.freeze({
     "message_invalid",
     "input_too_large",
     "pending_limit_reached",
+    "newer_task_exists",
+    "task_not_retryable",
     "stale_revision",
     "operation_conflict",
     "storage_failed",
@@ -106,6 +112,8 @@ export const diagnosticCatalog = Object.freeze({
     "invalid_output",
     "output_limit_exceeded",
     "empty_reply",
+    "deadline_exceeded",
+    "inactivity_timeout",
   ]),
   "ohtia.provider.cancelled": event("broker", "provider.request", "INFO", "cancelled", []),
   "ohtia.provider.uncertain": event("broker", "provider.request", "WARN", "uncertain", [
