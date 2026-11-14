@@ -1,4 +1,4 @@
-"""Exercise release selection, reservation, assembly and publication without network access."""
+"""Exercise release selection, checks, assembly, reservation and publication without network access."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -194,7 +195,7 @@ class SelectionTests(unittest.TestCase):
                 prepare.select(self.github, dispatch_env(OHTIA_RELEASE_HASH=ANCESTOR))
 
 
-class ReservationTests(unittest.TestCase):
+class CheckTests(unittest.TestCase):
     def setUp(self):
         self.github = FakeGitHub()
         self.directory = tempfile.TemporaryDirectory()
@@ -207,22 +208,29 @@ class ReservationTests(unittest.TestCase):
     def env(self, **overrides):
         return {**dispatch_env(OHTIA_RELEASE_COMMIT=self.commit), **overrides}
 
-    def test_reservation_creates_an_annotated_tag_on_the_selected_commit(self):
-        reserved = prepare.reserve(self.github, self.env(), self.source)
-        self.assertEqual(reserved["version"], "0.3.0")
-        self.assertEqual(reserved["commit"], self.commit)
-        self.assertEqual(reserved["tree"], git(self.source, "rev-parse", "HEAD^{tree}"))
-        tag = self.github.tags[self.github.refs["refs/tags/reserved/v0.3.0"]]
-        self.assertEqual(tag["object"], {"sha": self.commit, "type": "commit"})
-        self.assertIn("run 500", tag["message"])
+    def reserve(self, **overrides):
+        prepare.reserve(self.github, self.env(OHTIA_RELEASE_VERSION="0.3.0", **overrides))
 
-    def test_an_existing_version_tag_is_refused_before_reserving(self):
+    def test_the_check_reads_the_version_and_tree_without_reserving(self):
+        checked = prepare.check(self.github, self.env(), self.source)
+        self.assertEqual(
+            checked,
+            {
+                "commit": self.commit,
+                "tree": git(self.source, "rev-parse", "HEAD^{tree}"),
+                "version": "0.3.0",
+            },
+        )
+        self.assertEqual(self.github.writes(), [])
+        self.assertEqual(self.github.refs, {})
+
+    def test_an_existing_version_tag_is_refused_before_building(self):
         self.github.refs["refs/tags/v0.3.0"] = self.commit
         with self.assertRaisesRegex(prepare.ReleaseError, "version tag v0.3.0 already exists"):
-            prepare.reserve(self.github, self.env(), self.source)
+            prepare.check(self.github, self.env(), self.source)
         self.assertEqual(self.github.writes(), [])
 
-    def test_a_selected_commit_with_other_platforms_is_refused_before_reserving(self):
+    def test_a_selected_commit_with_other_platforms_is_refused_before_building(self):
         declaration = json.loads((ROOT / release_platforms.DECLARATION).read_text())
         declaration["platforms"][2]["builds"][0]["packages"].pop()
         other = Path(self.directory.name) / "other"
@@ -231,33 +239,34 @@ class ReservationTests(unittest.TestCase):
         git(other, "commit", "-q", "-am", "other platforms")
         commit = git(other, "rev-parse", "HEAD")
         with self.assertRaisesRegex(prepare.ReleaseError, "other release platforms"):
-            prepare.reserve(self.github, self.env(OHTIA_RELEASE_COMMIT=commit), other)
+            prepare.check(self.github, self.env(OHTIA_RELEASE_COMMIT=commit), other)
         self.assertEqual(self.github.calls, [])
 
-    def test_an_existing_reservation_refuses_another_run(self):
-        prepare.reserve(self.github, self.env(), self.source)
+    def test_a_reservation_of_another_run_is_refused_before_building(self):
+        self.reserve()
         writes = len(self.github.writes())
         for env in (
             self.env(GITHUB_RUN_ID="501"),
             self.env(GITHUB_RUN_ID="501", GITHUB_RUN_ATTEMPT="2"),
+            self.env(),
         ):
             with self.assertRaisesRegex(prepare.ReleaseError, "already reserved"):
-                prepare.reserve(self.github, env, self.source)
+                prepare.check(self.github, env, self.source)
         self.assertEqual(len(self.github.writes()), writes)
 
     def test_a_rerun_of_the_reserving_run_continues_on_the_same_commit(self):
-        prepare.reserve(self.github, self.env(), self.source)
+        self.reserve()
         writes = len(self.github.writes())
-        reserved = prepare.reserve(self.github, self.env(GITHUB_RUN_ATTEMPT="2"), self.source)
-        self.assertEqual(reserved["version"], "0.3.0")
+        checked = prepare.check(self.github, self.env(GITHUB_RUN_ATTEMPT="2"), self.source)
+        self.assertEqual(checked["version"], "0.3.0")
         self.assertEqual(len(self.github.writes()), writes)
 
     def test_a_rerun_refuses_a_reservation_moved_to_another_commit(self):
-        prepare.reserve(self.github, self.env(), self.source)
+        self.reserve()
         tag = self.github.refs["refs/tags/reserved/v0.3.0"]
         self.github.tags[tag]["object"]["sha"] = "d" * 40
         with self.assertRaisesRegex(prepare.ReleaseError, "already reserved"):
-            prepare.reserve(self.github, self.env(GITHUB_RUN_ATTEMPT="2"), self.source)
+            prepare.check(self.github, self.env(GITHUB_RUN_ATTEMPT="2"), self.source)
 
     def test_a_lightweight_reservation_is_never_adopted(self):
         self.github.refs["refs/tags/reserved/v0.3.0"] = self.commit
@@ -270,33 +279,87 @@ class ReservationTests(unittest.TestCase):
 
         with patch.object(self.github, "respond", side_effect=respond):
             with self.assertRaisesRegex(prepare.ReleaseError, "already reserved"):
-                prepare.reserve(self.github, self.env(GITHUB_RUN_ATTEMPT="2"), self.source)
+                prepare.check(self.github, self.env(GITHUB_RUN_ATTEMPT="2"), self.source)
 
-    def test_concurrent_runs_produce_exactly_one_reservation(self):
-        # Both runs found no reservation; the reference creation decides the winner.
-        prepare.reserve(self.github, self.env(), self.source)
-        loser = FakeGitHub()
-        loser.race = True
-        with self.assertRaisesRegex(prepare.ReleaseError, "Another run reserved"):
-            prepare.reserve(loser, self.env(GITHUB_RUN_ID="501"), self.source)
-        self.assertEqual(list(self.github.refs), ["refs/tags/reserved/v0.3.0"])
-        self.assertEqual(loser.refs, {})
-
-    def test_a_different_checkout_or_missing_entry_point_is_refused_before_reserving(self):
+    def test_a_different_checkout_or_missing_entry_point_is_refused_before_building(self):
         with self.assertRaisesRegex(prepare.ReleaseError, "differs from the selected"):
-            prepare.reserve(self.github, self.env(OHTIA_RELEASE_COMMIT="e" * 40), self.source)
+            prepare.check(self.github, self.env(OHTIA_RELEASE_COMMIT="e" * 40), self.source)
         old = Path(self.directory.name) / "old"
         commit = source_checkout(old, entry_points=False)
         with self.assertRaisesRegex(prepare.ReleaseError, "predates"):
-            prepare.reserve(self.github, self.env(OHTIA_RELEASE_COMMIT=commit), old)
+            prepare.check(self.github, self.env(OHTIA_RELEASE_COMMIT=commit), old)
         self.assertEqual(self.github.calls, [])
 
-    def test_an_invalid_root_version_is_refused_before_reserving(self):
+    def test_an_invalid_root_version_is_refused_before_building(self):
         for index, version in enumerate(("0.3", "01.2.3", "0.3.0-rc.1")):
             source = Path(self.directory.name) / f"invalid-{index}"
             commit = source_checkout(source, version=version)
             with self.assertRaisesRegex(prepare.ReleaseError, "major.minor.patch"):
-                prepare.reserve(self.github, self.env(OHTIA_RELEASE_COMMIT=commit), source)
+                prepare.check(self.github, self.env(OHTIA_RELEASE_COMMIT=commit), source)
+        self.assertEqual(self.github.calls, [])
+
+
+class ReservationTests(unittest.TestCase):
+    def setUp(self):
+        self.github = FakeGitHub()
+        self.commit = "c" * 40
+
+    def env(self, **overrides):
+        return dispatch_env(
+            **{"OHTIA_RELEASE_COMMIT": self.commit, "OHTIA_RELEASE_VERSION": "0.3.0", **overrides}
+        )
+
+    def test_reservation_creates_an_annotated_tag_on_the_selected_commit(self):
+        prepare.reserve(self.github, self.env())
+        tag = self.github.tags[self.github.refs["refs/tags/reserved/v0.3.0"]]
+        self.assertEqual(tag["object"], {"sha": self.commit, "type": "commit"})
+        self.assertEqual(
+            tag["message"], f"Reserved by prepare-release run 500 for {self.commit}.\n"
+        )
+
+    def test_an_existing_version_tag_is_refused_before_reserving(self):
+        self.github.refs["refs/tags/v0.3.0"] = self.commit
+        with self.assertRaisesRegex(prepare.ReleaseError, "version tag v0.3.0 already exists"):
+            prepare.reserve(self.github, self.env())
+        self.assertEqual(self.github.writes(), [])
+
+    def test_an_existing_reservation_refuses_another_run(self):
+        prepare.reserve(self.github, self.env())
+        writes = len(self.github.writes())
+        for env in (
+            self.env(GITHUB_RUN_ID="501"),
+            self.env(GITHUB_RUN_ID="501", GITHUB_RUN_ATTEMPT="2"),
+            self.env(),
+        ):
+            with self.assertRaisesRegex(prepare.ReleaseError, "already reserved"):
+                prepare.reserve(self.github, env)
+        self.assertEqual(len(self.github.writes()), writes)
+
+    def test_a_rerun_of_the_reserving_run_keeps_its_reservation(self):
+        prepare.reserve(self.github, self.env())
+        writes = len(self.github.writes())
+        prepare.reserve(self.github, self.env(GITHUB_RUN_ATTEMPT="2"))
+        self.assertEqual(len(self.github.writes()), writes)
+
+    def test_concurrent_runs_produce_exactly_one_reservation(self):
+        # Both runs found no reservation; the reference creation decides the winner.
+        prepare.reserve(self.github, self.env())
+        loser = FakeGitHub()
+        loser.race = True
+        with self.assertRaisesRegex(prepare.ReleaseError, "Another run reserved"):
+            prepare.reserve(loser, self.env(GITHUB_RUN_ID="501"))
+        self.assertEqual(list(self.github.refs), ["refs/tags/reserved/v0.3.0"])
+        self.assertEqual(loser.refs, {})
+
+    def test_an_invalid_commit_or_version_is_refused_before_any_lookup(self):
+        for env in (
+            self.env(OHTIA_RELEASE_COMMIT="C" * 40),
+            self.env(OHTIA_RELEASE_VERSION="0.3"),
+            self.env(OHTIA_RELEASE_VERSION="v0.3.0"),
+            self.env(OHTIA_RELEASE_VERSION=""),
+        ):
+            with self.assertRaises(prepare.ReleaseError):
+                prepare.reserve(self.github, env)
         self.assertEqual(self.github.calls, [])
 
 
@@ -335,12 +398,58 @@ def build_inputs(directory: Path, version: str, commit: str, tree: str) -> Path:
 
 
 NOTES = "<!-- Summary -->\n\n## Corrections\n\n- Task: Result. (#7)\n"
+FINGERPRINT = "A" * 40
 
 
 def notes_file(root):
     file = Path(root) / "notes.md"
     file.write_text(NOTES, encoding="utf-8")
     return file
+
+
+def release_root(directory: Path, declaration: dict | None = None) -> Path:
+    """Model a workflow revision: the platform declaration and the signing record."""
+    root = directory / "release-root"
+    (root / "config/release").mkdir(parents=True)
+    if declaration is None:
+        shutil.copyfile(ROOT / release_platforms.DECLARATION, root / release_platforms.DECLARATION)
+    else:
+        (root / release_platforms.DECLARATION).write_text(json.dumps(declaration))
+    (root / prepare.SIGNING).write_text(
+        json.dumps({"schema_version": 1, "fingerprint": FINGERPRINT})
+    )
+    return root
+
+
+def signed_inputs(directory: Path, inputs: Path) -> Path:
+    """Model the signing job: a signed copy of each built RPM and the signing record."""
+    signed = directory / "signed"
+    signed.mkdir()
+    packages = []
+    for record_file in sorted(inputs.glob("*/build.json")):
+        for asset in json.loads(record_file.read_text())["assets"]:
+            if asset["format"] == "rpm" and "unsigned" not in asset["name"]:
+                content = b"signed " + (record_file.parent / asset["name"]).read_bytes()
+                (signed / asset["name"]).write_bytes(content)
+                packages.append(
+                    {
+                        "name": asset["name"],
+                        "unsigned_sha256": asset["sha256"],
+                        "bytes": len(content),
+                        "sha256": hashlib.sha256(content).hexdigest(),
+                    }
+                )
+    record = {"schema_version": 1, "fingerprint": FINGERPRINT, "packages": packages}
+    (signed / prepare.SIGNED_RECORD).write_text(json.dumps(record))
+    return signed
+
+
+UNSIGNED = [
+    "ohtia-0.3.0-win32-x64-unsigned.exe",
+    "ohtia-0.3.0-win32-arm64-unsigned.exe",
+    "ohtia-0.3.0-darwin-arm64-unsigned.dmg",
+    "ohtia-0.3.0-darwin-arm64-unsigned.zip",
+]
 
 
 class AssemblyTests(unittest.TestCase):
@@ -353,39 +462,62 @@ class AssemblyTests(unittest.TestCase):
             OHTIA_RELEASE_VERSION="0.3.0",
         )
         self.inputs = build_inputs(self.root, "0.3.0", "c" * 40, "d" * 40)
+        self.signed = signed_inputs(self.root, self.inputs)
         self.notes = notes_file(self.root)
+        self.release_root = release_root(self.root)
 
     def tearDown(self):
         self.directory.cleanup()
 
+    def assemble(self, destination, inputs=None, signed=None, notes=None, root=None):
+        return prepare.assemble(
+            self.env,
+            inputs or self.inputs,
+            signed or self.signed,
+            notes or self.notes,
+            destination,
+            root or self.release_root,
+        )
+
     def test_complete_builds_produce_the_digest_file_and_testing_heading(self):
-        record = prepare.assemble(self.env, self.inputs, self.notes, self.root / "release")
+        record = self.assemble(self.root / "release")
         names = [asset["name"] for asset in record["assets"]]
         self.assertEqual(len(names), 10)
-        self.assertIn("ohtia-0.3.0-linux-x64-ubuntu-26.04-unsigned.deb", names)
-        self.assertIn("ohtia-0.3.0-linux-arm64-fedora-44-unsigned.rpm", names)
-        self.assertIn("ohtia-0.3.0-win32-arm64-unsigned.exe", names)
-        self.assertIn("ohtia-0.3.0-darwin-arm64-unsigned.zip", names)
-        self.assertTrue(
-            all(
-                "unsigned" in name and not asset["signed"]
-                for name, asset in zip(names, record["assets"])
-            )
+        self.assertEqual(
+            {asset["name"]: asset["authentication"] for asset in record["assets"][:6]},
+            {
+                "ohtia-0.3.0-linux-x64-ubuntu-26.04.deb": "repository",
+                "ohtia-0.3.0-linux-x64-debian-13.deb": "repository",
+                "ohtia-0.3.0-linux-x64-fedora-44.rpm": "embedded",
+                "ohtia-0.3.0-linux-arm64-ubuntu-26.04.deb": "repository",
+                "ohtia-0.3.0-linux-arm64-debian-13.deb": "repository",
+                "ohtia-0.3.0-linux-arm64-fedora-44.rpm": "embedded",
+            },
         )
+        self.assertEqual(names[6:], UNSIGNED)
+        self.assertEqual({asset["authentication"] for asset in record["assets"][6:]}, {"unsigned"})
         written = json.loads((self.root / "release" / prepare.DIGESTS).read_text())
         self.assertEqual(written, record)
         self.assertEqual(record["source"], {"commit": "c" * 40, "tree": "d" * 40})
         self.assertEqual(record["workflow"]["path"], ".github/workflows/prepare-release.yml")
+        signed = json.loads((self.signed / prepare.SIGNED_RECORD).read_text())["packages"]
         for asset in record["assets"]:
             file = self.root / "release/assets" / asset["name"]
             self.assertEqual(hashlib.sha256(file.read_bytes()).hexdigest(), asset["sha256"])
             self.assertEqual(file.stat().st_size, asset["bytes"])
+            # The release holds the signed RPM bytes, and the digest file records them.
+            self.assertEqual(file.read_bytes().startswith(b"signed "), asset["format"] == "rpm")
+        self.assertEqual(
+            {p["name"]: p["sha256"] for p in signed},
+            {a["name"]: a["sha256"] for a in record["assets"] if a["format"] == "rpm"},
+        )
         body = (self.root / "release/body.md").read_text()
         self.assertTrue(body.startswith(NOTES + "\n" + prepare.UNSIGNED_HEADING + "\n"))
         self.assertNotIn("c" * 40, body)
         heading = body.index(prepare.UNSIGNED_HEADING + "\n\n" + prepare.UNSIGNED_STATEMENT)
-        for name in names:
+        for name in UNSIGNED:
             self.assertGreater(body.index(f"- `{name}`"), heading)
+        self.assertNotIn("linux", body)
 
     def test_a_missing_platform_build_fails_without_a_partial_release(self):
         for folder in self.inputs.glob("release-win32-x64-*"):
@@ -393,28 +525,27 @@ class AssemblyTests(unittest.TestCase):
                 file.unlink()
             folder.rmdir()
         with self.assertRaisesRegex(prepare.ReleaseError, "Every declared target"):
-            prepare.assemble(self.env, self.inputs, self.notes, self.root / "release")
+            self.assemble(self.root / "release")
         self.assertFalse((self.root / "release").exists())
 
     def test_missing_extra_or_altered_assets_are_refused(self):
         def change(mutate):
-            inputs = build_inputs(
-                Path(tempfile.mkdtemp(dir=self.root)), "0.3.0", "c" * 40, "d" * 40
-            )
+            directory = Path(tempfile.mkdtemp(dir=self.root))
+            inputs = build_inputs(directory, "0.3.0", "c" * 40, "d" * 40)
             record_file = next(inputs.glob("release-linux-x64-*/build.json"))
             record = json.loads(record_file.read_text())
             mutate(record_file.parent, record)
             record_file.write_text(json.dumps(record))
-            return inputs
+            return inputs, signed_inputs(directory, inputs)
 
         def drop(folder, record):
             record["assets"].pop()
 
         def extra(folder, record):
-            (folder / "ohtia-0.3.0-linux-x64-unsigned.deb").write_bytes(b"x")
+            (folder / "ohtia-0.3.0-linux-x64.deb").write_bytes(b"x")
             record["assets"].append(
                 {
-                    "name": "ohtia-0.3.0-linux-x64-unsigned.deb",
+                    "name": "ohtia-0.3.0-linux-x64.deb",
                     "profile": None,
                     "format": "deb",
                     "bytes": 1,
@@ -435,27 +566,112 @@ class AssemblyTests(unittest.TestCase):
             (drop, "differ from the declared"),
             (extra, "differ from the declared"),
             (alter, "does not match its build record"),
-            (other_source, "reserved version and source"),
-            (other_version, "reserved version and source"),
+            (other_source, "checked version and source"),
+            (other_version, "checked version and source"),
         ):
             with self.subTest(mutate.__name__):
                 destination = self.root / f"release-{mutate.__name__}"
+                inputs, signed = change(mutate)
                 with self.assertRaisesRegex(prepare.ReleaseError, message):
-                    prepare.assemble(self.env, change(mutate), self.notes, destination)
+                    self.assemble(destination, inputs, signed)
                 self.assertFalse(destination.exists())
+
+    def test_signed_packages_must_be_the_signed_build_bytes(self):
+        rpm = "ohtia-0.3.0-linux-arm64-fedora-44.rpm"
+        original = json.loads((self.signed / prepare.SIGNED_RECORD).read_text())
+
+        def package(record):
+            return next(item for item in record["packages"] if item["name"] == rpm)
+
+        def other_build(record, signed):
+            package(record)["unsigned_sha256"] = "0" * 64
+
+        def altered_file(record, signed):
+            (signed / rpm).write_bytes(b"signed and altered")
+
+        def unchanged_bytes(record, signed):
+            built = next(self.inputs.glob("release-linux-arm64-*")) / rpm
+            (signed / rpm).write_bytes(built.read_bytes())
+            package(record).update(
+                bytes=built.stat().st_size, sha256=package(record)["unsigned_sha256"]
+            )
+
+        def missing(record, signed):
+            record["packages"] = [item for item in record["packages"] if item["name"] != rpm]
+
+        def extra(record, signed):
+            record["packages"].append({**package(record), "name": "ohtia-0.3.0-linux-x64.rpm"})
+
+        def other_key(record, signed):
+            record["fingerprint"] = "B" * 40
+
+        def unknown_field(record, signed):
+            record["subkey"] = "C" * 40
+
+        for mutate, message in (
+            (other_build, "does not match its build record and signing record"),
+            (altered_file, "does not match its build record and signing record"),
+            (unchanged_bytes, "does not match its build record and signing record"),
+            (missing, "signed packages differ from the declared RPM packages"),
+            (extra, "signed packages differ from the declared RPM packages"),
+            (other_key, "does not match the committed signing key"),
+            (unknown_field, "does not match the committed signing key"),
+        ):
+            with self.subTest(mutate.__name__):
+                signed = Path(tempfile.mkdtemp(dir=self.root))
+                for file in self.signed.iterdir():
+                    shutil.copyfile(file, signed / file.name)
+                record = copy.deepcopy(original)
+                mutate(record, signed)
+                (signed / prepare.SIGNED_RECORD).write_text(json.dumps(record))
+                destination = self.root / f"release-{mutate.__name__}"
+                with self.assertRaisesRegex(prepare.ReleaseError, message):
+                    self.assemble(destination, signed=signed)
+                self.assertFalse(destination.exists())
+        (self.signed / prepare.SIGNED_RECORD).unlink()
+        with self.assertRaisesRegex(prepare.ReleaseError, "signing record cannot be read"):
+            self.assemble(self.root / "release-without-record")
+
+    def test_an_invalid_committed_signing_record_is_refused(self):
+        for value in (
+            {"schema_version": 1, "fingerprint": "a" * 40},
+            {"schema_version": 1, "fingerprint": "A" * 39},
+            {"schema_version": 2, "fingerprint": FINGERPRINT},
+            {"schema_version": 1, "fingerprint": FINGERPRINT, "subkey": FINGERPRINT},
+            [],
+        ):
+            with self.subTest(value=value):
+                (self.release_root / prepare.SIGNING).write_text(json.dumps(value))
+                with self.assertRaisesRegex(prepare.ReleaseError, "Unsupported release signing"):
+                    self.assemble(self.root / "release")
+        (self.release_root / prepare.SIGNING).write_text("{")
+        with self.assertRaisesRegex(prepare.ReleaseError, "cannot be read as JSON"):
+            self.assemble(self.root / "release")
+        self.assertFalse((self.root / "release").exists())
 
     def test_a_signed_platform_carries_no_unsigned_marker_or_heading(self):
         declaration = json.loads((ROOT / release_platforms.DECLARATION).read_text())
         for platform in declaration["platforms"]:
             platform["signed"] = True
-        root = self.root / "signed-root"
-        (root / "config/release").mkdir(parents=True)
-        (root / release_platforms.DECLARATION).write_text(json.dumps(declaration))
+        directory = self.root / "all-signed"
+        directory.mkdir()
+        root = release_root(directory, declaration)
         with patch.object(release_platforms, "ROOT", root):
-            inputs = build_inputs(self.root / "signed", "0.3.0", "c" * 40, "d" * 40)
-        record = prepare.assemble(self.env, inputs, self.notes, self.root / "signed-release", root)
+            inputs = build_inputs(directory, "0.3.0", "c" * 40, "d" * 40)
+        signed = signed_inputs(directory, inputs)
+        record = self.assemble(directory / "release", inputs, signed, root=root)
         self.assertFalse(any("unsigned" in asset["name"] for asset in record["assets"]))
-        self.assertEqual((self.root / "signed-release/body.md").read_text(), NOTES)
+        self.assertEqual(
+            {asset["format"]: asset["authentication"] for asset in record["assets"]},
+            {
+                "deb": "repository",
+                "rpm": "embedded",
+                "nsis": "embedded",
+                "dmg": "embedded",
+                "zip": "embedded",
+            },
+        )
+        self.assertEqual((directory / "release/body.md").read_text(), NOTES)
 
     def test_the_body_may_reach_but_not_exceed_githubs_limit(self):
         expected = release_platforms.expected_assets(release_platforms.load(), "0.3.0")
@@ -466,12 +682,12 @@ class AssemblyTests(unittest.TestCase):
                 notes.write_text("x" * (prepare.MAXIMUM_BODY_CHARACTERS - overhead + extra))
                 destination = self.root / f"release-limit-{extra}"
                 if accepted:
-                    prepare.assemble(self.env, self.inputs, notes, destination)
+                    self.assemble(destination, notes=notes)
                     body = (destination / "body.md").read_text()
                     self.assertEqual(len(body), prepare.MAXIMUM_BODY_CHARACTERS)
                 else:
                     with self.assertRaisesRegex(prepare.ReleaseError, "exceeds GitHub's 125000"):
-                        prepare.assemble(self.env, self.inputs, notes, destination)
+                        self.assemble(destination, notes=notes)
                     self.assertFalse(destination.exists())
 
     def test_missing_or_oversized_notes_fail_without_a_release(self):
@@ -482,7 +698,7 @@ class AssemblyTests(unittest.TestCase):
                     notes.write_text(content)
                 destination = self.root / f"release-{name}"
                 with self.assertRaisesRegex(prepare.ReleaseError, "notes are missing or too large"):
-                    prepare.assemble(self.env, self.inputs, notes, destination)
+                    self.assemble(destination, notes=notes)
                 self.assertFalse(destination.exists())
 
 
@@ -497,7 +713,14 @@ class PublicationTests(unittest.TestCase):
         )
         inputs = build_inputs(self.root, "0.3.0", "c" * 40, "d" * 40)
         self.release = self.root / "release"
-        self.record = prepare.assemble(self.env, inputs, notes_file(self.root), self.release)
+        self.record = prepare.assemble(
+            self.env,
+            inputs,
+            signed_inputs(self.root, inputs),
+            notes_file(self.root),
+            self.release,
+            release_root(self.root),
+        )
         self.github = FakeGitHub()
 
     def tearDown(self):
@@ -752,18 +975,18 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(re.findall(r"^      ([a-z-]+):\n", head, re.MULTILINE), ["hash"])
         self.assertIn("\npermissions: {}\n", head)
         self.assertNotIn("concurrency", WORKFLOW)
-        self.assertNotIn("secrets.", WORKFLOW)
-        self.assertNotIn("environment:", WORKFLOW)
         self.assertNotIn(
             "${{ inputs.", WORKFLOW.replace("OHTIA_RELEASE_HASH: ${{ inputs.hash }}", "")
         )
 
     def test_each_platform_builds_in_its_own_read_only_job_from_the_declaration(self):
         jobs = job_blocks(WORKFLOW)
-        self.assertEqual(list(jobs), ["reserve", "notes", "linux", "windows", "macos", "release"])
+        self.assertEqual(
+            list(jobs), ["check", "notes", "linux", "windows", "macos", "sign", "release"]
+        )
         for platform in release_platforms.load():
             block = jobs[platform["id"]]
-            self.assertIn("    needs: reserve\n", block)
+            self.assertIn("    needs: check\n", block)
             self.assertEqual(
                 re.findall(r"^    permissions:\n((?:      .+\n)+)", block, re.MULTILINE),
                 ["      contents: read\n"],
@@ -774,42 +997,110 @@ class WorkflowTests(unittest.TestCase):
                 re.MULTILINE,
             )
             self.assertEqual(matrix, [(b["target"], b["runner"]) for b in platform["builds"]])
-            self.assertIn("ref: ${{ needs.reserve.outputs.commit }}", block)
+            self.assertIn("ref: ${{ needs.check.outputs.commit }}", block)
             self.assertIn("scripts/release_build.py", block)
             self.assertNotIn("token", block)
 
-    def test_only_the_reservation_and_release_jobs_can_write(self):
+    def test_only_the_release_job_can_write_and_it_reserves_after_assembling(self):
         jobs = job_blocks(WORKFLOW)
-        self.assertIn("    permissions:\n      contents: write\n    outputs:", jobs["reserve"])
+        self.assertIn("    permissions:\n      contents: read\n    outputs:", jobs["check"])
+        self.assertIn("release_prepare.py check source", jobs["check"])
         self.assertIn(
             "    permissions:\n      contents: write\n      id-token: write\n      attestations: write\n    steps:",
             jobs["release"],
         )
-        # The release waits for the notes and every platform; a failed job skips it.
-        self.assertIn("    needs: [reserve, notes, linux, windows, macos]\n", jobs["release"])
+        self.assertEqual(WORKFLOW.count("contents: write"), 1)
+        # The release waits for the notes, every platform and the signing; a failure skips it.
+        self.assertIn("    needs: [check, notes, linux, windows, macos, sign]\n", jobs["release"])
         self.assertNotIn("if:", jobs["release"])
-        self.assertLess(
-            jobs["release"].index("actions/attest@"),
-            jobs["release"].index("release_prepare.py publish"),
+        steps = [
+            "release_prepare.py assemble artifacts/release-inputs artifacts/release-signed",
+            "release_prepare.py reserve",
+            "actions/attest@",
+            "release_prepare.py publish",
+        ]
+        positions = [jobs["release"].index(step) for step in steps]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn(
+            "name: signed-${{ github.run_id }}-${{ github.run_attempt }}", jobs["release"]
         )
-        for name in ("reserve", "notes", "release"):
+        for name in ("check", "notes", "sign", "release"):
             self.assertNotIn("workspace.py", jobs[name])
             self.assertNotIn("release_build.py", jobs[name])
 
+    def test_only_the_protected_signing_job_receives_the_signing_secrets(self):
+        jobs = job_blocks(WORKFLOW)
+        block = jobs["sign"]
+        self.assertIn("    needs: [check, linux]\n", block)
+        self.assertIn("    environment: release-signing\n", block)
+        self.assertEqual(WORKFLOW.count("environment:"), 1)
+        self.assertEqual(
+            re.findall(r"^    permissions:\n((?:      .+\n)+)", block, re.MULTILINE),
+            ["      contents: read\n"],
+        )
+        steps = block.split("\n      - name: ")[1:]
+        self.assertEqual(
+            [step.split("\n", 1)[0] for step in steps],
+            [
+                "Check out the committed signing key",
+                "Download this attempt's Linux packages",
+                "Check the RPM packages against their build records",
+                "Sign the RPM packages with the release subkey",
+                "Verify the signatures against the committed key",
+                "Retain the signed RPM packages",
+            ],
+        )
+        self.assertIn("sparse-checkout: config/release\n", steps[0])
+        self.assertNotIn("ref:", steps[0])
+        self.assertIn("pattern: release-linux-*-${{ github.run_id }}", steps[1])
+        secrets = re.findall(r"\$\{\{ secrets\.([A-Z_]+) \}\}", WORKFLOW)
+        self.assertEqual(secrets, ["SIGNING_SUBKEY", "SIGNING_PASSPHRASE"])
+        self.assertEqual(
+            [step.split("\n", 1)[0] for step in steps if "secrets." in step],
+            ["Sign the RPM packages with the release subkey"],
+        )
+        # The job installs nothing and runs no project code: only runner tools and its own steps.
+        uses = re.findall(r"uses: (actions/[a-z-]+)@", block)
+        self.assertEqual(
+            uses,
+            [
+                "actions/checkout",
+                "actions/download-artifact",
+                "actions/upload-artifact",
+            ],
+        )
+        for forbidden in (
+            r"python",
+            r"scripts/",
+            r"apt",
+            r"\bnpm\b",
+            r"\bpip3?\b",
+            r"workspace",
+            r"curl",
+        ):
+            self.assertNotRegex(block, forbidden)
+        self.assertIn("--resign", block)
+        self.assertIn('rpmkeys --dbpath "$keyring" --import config/release/signing-key.asc', block)
+        self.assertIn("name: signed-${{ github.run_id }}-${{ github.run_attempt }}", block)
+
     def test_pull_request_notes_are_read_in_a_read_only_job(self):
         block = job_blocks(WORKFLOW)["notes"]
-        self.assertIn("    needs: reserve\n", block)
+        self.assertIn("    needs: check\n", block)
         self.assertEqual(
             re.findall(r"^    permissions:\n((?:      .+\n)+)", block, re.MULTILINE),
             ["      contents: read\n      pull-requests: read\n"],
         )
-        self.assertIn("ref: ${{ needs.reserve.outputs.commit }}", block)
+        self.assertIn("ref: ${{ needs.check.outputs.commit }}", block)
         self.assertIn("fetch-depth: 0", block)
         self.assertIn("python3 workflow/scripts/release_notes.py source", block)
         self.assertIn("name: notes-${{ github.run_id }}-${{ github.run_attempt }}", block)
         release = job_blocks(WORKFLOW)["release"]
         self.assertIn("name: notes-${{ github.run_id }}-${{ github.run_attempt }}", release)
-        self.assertIn("assemble artifacts/release-inputs artifacts/release-notes/notes.md", release)
+        self.assertIn(
+            "assemble artifacts/release-inputs artifacts/release-signed "
+            "artifacts/release-notes/notes.md",
+            release,
+        )
         self.assertNotIn("pulls", release)
 
     def test_actions_are_pinned_by_full_commit_sha(self):
@@ -823,26 +1114,32 @@ class WorkflowTests(unittest.TestCase):
 
 
 class DeclarationTests(unittest.TestCase):
-    def test_the_declaration_names_ten_unsigned_packages(self):
-        names = [
-            a["name"] for a in release_platforms.expected_assets(release_platforms.load(), "0.3.0")
-        ]
+    def test_the_declaration_signs_linux_and_marks_the_other_packages_unsigned(self):
+        assets = release_platforms.expected_assets(release_platforms.load(), "0.3.0")
+        names = [asset["name"] for asset in assets]
         self.assertEqual(len(names), len(set(names)))
         self.assertEqual(
-            names,
+            [(asset["name"], asset["authentication"]) for asset in assets],
             [
-                "ohtia-0.3.0-linux-x64-ubuntu-26.04-unsigned.deb",
-                "ohtia-0.3.0-linux-x64-debian-13-unsigned.deb",
-                "ohtia-0.3.0-linux-x64-fedora-44-unsigned.rpm",
-                "ohtia-0.3.0-linux-arm64-ubuntu-26.04-unsigned.deb",
-                "ohtia-0.3.0-linux-arm64-debian-13-unsigned.deb",
-                "ohtia-0.3.0-linux-arm64-fedora-44-unsigned.rpm",
-                "ohtia-0.3.0-win32-x64-unsigned.exe",
-                "ohtia-0.3.0-win32-arm64-unsigned.exe",
-                "ohtia-0.3.0-darwin-arm64-unsigned.dmg",
-                "ohtia-0.3.0-darwin-arm64-unsigned.zip",
+                ("ohtia-0.3.0-linux-x64-ubuntu-26.04.deb", "repository"),
+                ("ohtia-0.3.0-linux-x64-debian-13.deb", "repository"),
+                ("ohtia-0.3.0-linux-x64-fedora-44.rpm", "embedded"),
+                ("ohtia-0.3.0-linux-arm64-ubuntu-26.04.deb", "repository"),
+                ("ohtia-0.3.0-linux-arm64-debian-13.deb", "repository"),
+                ("ohtia-0.3.0-linux-arm64-fedora-44.rpm", "embedded"),
+                ("ohtia-0.3.0-win32-x64-unsigned.exe", "unsigned"),
+                ("ohtia-0.3.0-win32-arm64-unsigned.exe", "unsigned"),
+                ("ohtia-0.3.0-darwin-arm64-unsigned.dmg", "unsigned"),
+                ("ohtia-0.3.0-darwin-arm64-unsigned.zip", "unsigned"),
             ],
         )
+
+    def test_the_committed_signing_record_and_public_key_are_valid(self):
+        self.assertRegex(prepare.signing_fingerprint(), r"^[0-9A-F]{40}$")
+        public = (ROOT / "config/release/signing-key.asc").read_text(encoding="utf-8")
+        self.assertTrue(public.startswith("-----BEGIN PGP PUBLIC KEY BLOCK-----\n"))
+        self.assertTrue(public.endswith("-----END PGP PUBLIC KEY BLOCK-----\n"))
+        self.assertNotIn("PRIVATE", public)
 
     def test_invalid_declarations_are_refused(self):
         original = json.loads((ROOT / release_platforms.DECLARATION).read_text())
@@ -919,9 +1216,9 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(
             [asset["name"] for asset in record["assets"]],
             [
-                "ohtia-0.3.0-linux-arm64-ubuntu-26.04-unsigned.deb",
-                "ohtia-0.3.0-linux-arm64-debian-13-unsigned.deb",
-                "ohtia-0.3.0-linux-arm64-fedora-44-unsigned.rpm",
+                "ohtia-0.3.0-linux-arm64-ubuntu-26.04.deb",
+                "ohtia-0.3.0-linux-arm64-debian-13.deb",
+                "ohtia-0.3.0-linux-arm64-fedora-44.rpm",
             ],
         )
 

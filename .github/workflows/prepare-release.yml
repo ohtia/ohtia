@@ -12,16 +12,16 @@ on:
 permissions: {}
 
 jobs:
-  reserve:
-    name: Reserve the version
+  check:
+    name: Check the release source
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
-      contents: write # Creates the reserved/v<version> tag.
+      contents: read
     outputs:
-      commit: ${{ steps.reserve.outputs.commit }}
-      tree: ${{ steps.reserve.outputs.tree }}
-      version: ${{ steps.reserve.outputs.version }}
+      commit: ${{ steps.check.outputs.commit }}
+      tree: ${{ steps.check.outputs.tree }}
+      version: ${{ steps.check.outputs.version }}
     steps:
       - name: Check out the workflow revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -48,16 +48,16 @@ jobs:
           path: source
           persist-credentials: false
 
-      - name: Reserve the root version on the selected commit
-        id: reserve
+      - name: Check the root version of the selected commit
+        id: check
         env:
           GITHUB_TOKEN: ${{ github.token }}
           OHTIA_RELEASE_COMMIT: ${{ steps.select.outputs.commit }}
-        run: python3 workflow/scripts/release_prepare.py reserve source
+        run: python3 workflow/scripts/release_prepare.py check source
 
   notes:
     name: Write the first release notes
-    needs: reserve
+    needs: check
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
@@ -73,7 +73,7 @@ jobs:
       - name: Check out the selected source history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.reserve.outputs.commit }}
+          ref: ${{ needs.check.outputs.commit }}
           path: source
           fetch-depth: 0
           persist-credentials: false
@@ -86,7 +86,7 @@ jobs:
       - name: Collect the notes of the included pull requests
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          OHTIA_RELEASE_COMMIT: ${{ needs.reserve.outputs.commit }}
+          OHTIA_RELEASE_COMMIT: ${{ needs.check.outputs.commit }}
         run: python3 workflow/scripts/release_notes.py source artifacts/release-notes
 
       - name: Retain the release notes
@@ -99,7 +99,7 @@ jobs:
 
   linux:
     name: linux (${{ matrix.target }})
-    needs: reserve
+    needs: check
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     permissions:
@@ -116,7 +116,7 @@ jobs:
       - name: Check out the selected source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.reserve.outputs.commit }}
+          ref: ${{ needs.check.outputs.commit }}
           persist-credentials: false
 
       - name: Set up Python
@@ -150,7 +150,7 @@ jobs:
 
   windows:
     name: windows (${{ matrix.target }})
-    needs: reserve
+    needs: check
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     permissions:
@@ -170,7 +170,7 @@ jobs:
       - name: Check out the selected source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.reserve.outputs.commit }}
+          ref: ${{ needs.check.outputs.commit }}
           persist-credentials: false
 
       - name: Set up Python
@@ -199,7 +199,7 @@ jobs:
 
   macos:
     name: macos (${{ matrix.target }})
-    needs: reserve
+    needs: check
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     permissions:
@@ -217,7 +217,7 @@ jobs:
       - name: Check out the selected source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.reserve.outputs.commit }}
+          ref: ${{ needs.check.outputs.commit }}
           persist-credentials: false
 
       - name: Set up Python
@@ -244,13 +244,143 @@ jobs:
           retention-days: 14
           compression-level: 0
 
+  sign:
+    name: Sign the RPM packages
+    needs: [check, linux]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    # The environment admits only main and waits for the maintainer's approval of every run.
+    environment: release-signing
+    permissions:
+      contents: read # Reads the committed public key and its fingerprint record.
+    # This job holds the signing subkey: it installs nothing and runs no project code; its
+    # tools, gpg, rpmsign, rpmkeys and jq, come from the runner image.
+    steps:
+      - name: Check out the committed signing key
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: config/release
+          persist-credentials: false
+
+      - name: Download this attempt's Linux packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-linux-*-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/release-inputs
+          digest-mismatch: error
+
+      - name: Check the RPM packages against their build records
+        env:
+          OHTIA_RELEASE_COMMIT: ${{ needs.check.outputs.commit }}
+          OHTIA_RELEASE_VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          refuse() { echo "Signing refused: $1" >&2; exit 1; }
+          work="$RUNNER_TEMP/rpm-signing"
+          mkdir -m 700 "$work" "$work/unsigned"
+          : > "$work/packages.tsv"
+          for record in artifacts/release-inputs/release-linux-*/build.json; do
+            jq -e --arg version "$OHTIA_RELEASE_VERSION" --arg commit "$OHTIA_RELEASE_COMMIT" \
+              '.schema_version == 1 and .version == $version and .source.commit == $commit' \
+              "$record" > /dev/null || refuse "$record does not match the checked version and commit."
+            rows=$(jq -r '.assets[] | select(.format == "rpm") | [.name, .sha256, (.bytes | tostring)] | @tsv' "$record")
+            [[ -n "$rows" ]] || continue
+            while IFS=$'\t' read -r name sha256 bytes; do
+              [[ "$name" =~ ^ohtia-[A-Za-z0-9._-]+\.rpm$ ]] || refuse "A build record names an invalid package."
+              file="$(dirname "$record")/$name"
+              if [[ -L "$file" || ! -f "$file" || -e "$work/unsigned/$name" ]] \
+                || [[ "$(stat -c %s "$file")" != "$bytes" ]] \
+                || [[ "$(sha256sum "$file" | cut -d ' ' -f 1)" != "$sha256" ]]; then
+                refuse "$name differs from its build record."
+              fi
+              cp "$file" "$work/unsigned/$name"
+              printf '%s\t%s\n' "$name" "$sha256" >> "$work/packages.tsv"
+            done <<< "$rows"
+          done
+          expected=$(jq '[.platforms[] | select(.id == "linux") | .builds[].packages[] | select(.format == "rpm")] | length' config/release/platforms.json)
+          [[ "$(wc -l < "$work/packages.tsv")" -eq "$expected" ]] || refuse "The build records do not list every declared RPM package."
+
+      - name: Sign the RPM packages with the release subkey
+        env:
+          SIGNING_SUBKEY: ${{ secrets.SIGNING_SUBKEY }}
+          SIGNING_PASSPHRASE: ${{ secrets.SIGNING_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          refuse() { echo "Signing refused: $1" >&2; exit 1; }
+          work="$RUNNER_TEMP/rpm-signing"
+          # Lists "kind:validity:capabilities:secret:fingerprint" for each key of a colon listing.
+          keys() { awk -F: '$1 ~ /^(pub|sub|sec|ssb)$/ { line = $1 ":" $2 ":" $12 ":" $15; next } $1 == "fpr" && line != "" { print line ":" $10; line = "" }'; }
+          fingerprint=$(jq -r 'select(.schema_version == 1) | .fingerprint' config/release/signing.json) \
+            || refuse "The signing record cannot be read."
+          [[ "$fingerprint" =~ ^[0-9A-F]{40}$ ]] || refuse "The signing record holds no primary fingerprint."
+          committed=$(gpg --batch --with-colons --show-keys config/release/signing-key.asc | keys) \
+            || refuse "The committed public key cannot be read."
+          [[ "$(grep -c '^pub:' <<< "$committed")" -eq 1 && "$(grep '^pub:' <<< "$committed" | cut -d : -f 5)" == "$fingerprint" ]] \
+            || refuse "The committed public key is not the recorded primary key."
+          export GNUPGHOME="$work/gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          passphrase="$work/passphrase"
+          # The imported subkey and its passphrase leave the runner before any later step runs.
+          trap 'rm -f "$passphrase"; gpgconf --kill all; rm -rf "$GNUPGHOME"' EXIT
+          printf '%s\n' "$SIGNING_SUBKEY" | gpg --batch --quiet --import 2> /dev/null || refuse "The signing subkey cannot be imported."
+          imported=$(gpg --batch --with-colons --list-secret-keys | keys)
+          [[ "$(grep -c '^sec:' <<< "$imported")" -eq 1 && "$(grep '^sec:' <<< "$imported" | cut -d : -f 5)" == "$fingerprint" ]] \
+            || refuse "The signing subkey does not belong to the recorded primary key."
+          [[ "$(grep '^sec:' <<< "$imported" | cut -d : -f 4)" == "#" ]] \
+            || refuse "The import holds the secret primary key; export only the signing subkey."
+          usable=$(grep -E '^ssb:[^erid:]?:[^:]*s[^:]*:\+:' <<< "$imported" | cut -d : -f 5 || true)
+          [[ "$(grep -c . <<< "$usable")" -eq 1 ]] || refuse "The import holds no single valid signing subkey."
+          grep -Eq "^sub:[^erid:]?:[^:]*s[^:]*:[^:]*:$usable$" <<< "$committed" \
+            || refuse "The signing subkey is not a valid signing subkey of the committed public key."
+          (umask 077 && printf '%s' "$SIGNING_PASSPHRASE" > "$passphrase")
+          mkdir "$work/signed"
+          while IFS=$'\t' read -r name _; do
+            cp "$work/unsigned/$name" "$work/signed/$name"
+            rpmsign --define "_gpg_name $usable!" \
+              --define "_gpg_sign_cmd_extra_args --batch --pinentry-mode loopback --passphrase-file $passphrase" \
+              --resign "$work/signed/$name" > /dev/null || refuse "rpmsign could not sign $name."
+          done < "$work/packages.tsv"
+
+      - name: Verify the signatures against the committed key
+        run: |
+          set -euo pipefail
+          refuse() { echo "Signing refused: $1" >&2; exit 1; }
+          work="$RUNNER_TEMP/rpm-signing"
+          # A key ring that holds only the committed public key.
+          keyring="$work/keyring"
+          mkdir -m 700 "$keyring"
+          rpmkeys --dbpath "$keyring" --import config/release/signing-key.asc
+          mkdir -p artifacts/signed
+          : > "$work/signed.jsonl"
+          while IFS=$'\t' read -r name unsigned; do
+            file="$work/signed/$name"
+            result=$(rpmkeys --dbpath "$keyring" --checksig "$file" 2>&1) || refuse "${result//"$work/signed/"/}"
+            [[ "$result" == "$file: digests signatures OK" ]] || refuse "${result//"$work/signed/"/}"
+            cp "$file" "artifacts/signed/$name"
+            jq -cn --arg name "$name" --arg unsigned "$unsigned" \
+              --arg sha256 "$(sha256sum "$file" | cut -d ' ' -f 1)" --argjson bytes "$(stat -c %s "$file")" \
+              '{name: $name, unsigned_sha256: $unsigned, bytes: $bytes, sha256: $sha256}' >> "$work/signed.jsonl"
+          done < "$work/packages.tsv"
+          jq -s --slurpfile record config/release/signing.json \
+            '{schema_version: 1, fingerprint: $record[0].fingerprint, packages: .}' \
+            "$work/signed.jsonl" > artifacts/signed/signing.json
+
+      - name: Retain the signed RPM packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signed-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/signed/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
   release:
     name: Create the unpublished release
-    needs: [reserve, notes, linux, windows, macos]
+    needs: [check, notes, linux, windows, macos, sign]
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
-      contents: write # Creates the unpublished release and uploads its assets.
+      contents: write # Creates the reserved/v<version> tag and the unpublished release with its assets.
       id-token: write # Requests the OIDC token that signs the build attestations.
       attestations: write # Stores the build attestations.
     steps:
@@ -271,6 +401,13 @@ jobs:
           path: artifacts/release-inputs
           digest-mismatch: error
 
+      - name: Download this attempt's signed RPM packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: signed-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/release-signed
+          digest-mismatch: error
+
       - name: Download this attempt's release notes
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -280,10 +417,17 @@ jobs:
 
       - name: Check the packages against the declared platforms
         env:
-          OHTIA_RELEASE_COMMIT: ${{ needs.reserve.outputs.commit }}
-          OHTIA_RELEASE_TREE: ${{ needs.reserve.outputs.tree }}
-          OHTIA_RELEASE_VERSION: ${{ needs.reserve.outputs.version }}
-        run: python3 scripts/release_prepare.py assemble artifacts/release-inputs artifacts/release-notes/notes.md artifacts/release
+          OHTIA_RELEASE_COMMIT: ${{ needs.check.outputs.commit }}
+          OHTIA_RELEASE_TREE: ${{ needs.check.outputs.tree }}
+          OHTIA_RELEASE_VERSION: ${{ needs.check.outputs.version }}
+        run: python3 scripts/release_prepare.py assemble artifacts/release-inputs artifacts/release-signed artifacts/release-notes/notes.md artifacts/release
+
+      - name: Reserve the version on the selected commit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OHTIA_RELEASE_COMMIT: ${{ needs.check.outputs.commit }}
+          OHTIA_RELEASE_VERSION: ${{ needs.check.outputs.version }}
+        run: python3 scripts/release_prepare.py reserve
 
       - name: Attest every package
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
@@ -293,6 +437,6 @@ jobs:
       - name: Create the unpublished release
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          OHTIA_RELEASE_COMMIT: ${{ needs.reserve.outputs.commit }}
-          OHTIA_RELEASE_VERSION: ${{ needs.reserve.outputs.version }}
+          OHTIA_RELEASE_COMMIT: ${{ needs.check.outputs.commit }}
+          OHTIA_RELEASE_VERSION: ${{ needs.check.outputs.version }}
         run: python3 scripts/release_prepare.py publish artifacts/release

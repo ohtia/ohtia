@@ -62,7 +62,8 @@ okf_version: "0.2"
 - [Repository policy](repository-policy.md) — GitHub repository configuration, dependency updates, quality checks, and verification procedures.
 - [Change-note tooling](change-notes.md) — Capture inert PR impact records, reconcile source scope and prepare immutable editorial note and correction evidence.
 - [Desktop builds, releases and change notes](release-policy.md) — Quality-build triggers, artifact-bound candidate readiness, immutable promotion, public versioning and user-facing change communication.
-- [Release preparation](release-preparation.md) — Reserve a version, build its packages for every declared platform and store them with attestations in an unpublished GitHub Release.
+- [Release preparation](release-preparation.md) — Build and sign the packages of a version for every declared platform, reserve the version and store the packages with attestations in an unpublished GitHub Release.
+- [Release signing key](release-signing.md) — Choose or add the signing-only subkey, publish the public key, create the protected release-signing environment, export the subkey to it, and renew, revoke and recover the subkey without changing the primary identity.
 - [EPICs](epics/index.md) — Published delivery specifications and their native GitHub story sub-issues.
 - [Command discovery](command-discovery.md) — Discover available window commands with IME-safe activation and inspect platform and component shortcuts.
 - [Shared interface localization](localization.md) — Author complete typed catalogs and use the durable application-wide language preference without changing research content.

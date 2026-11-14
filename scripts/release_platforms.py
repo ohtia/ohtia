@@ -97,6 +97,18 @@ def asset_name(version: str, target: str, package: dict, signed: bool) -> str:
     return "-".join(parts) + "." + EXTENSIONS[package["format"]]
 
 
+def authentication(package: dict, signed: bool) -> str:
+    """Name how a package is authenticated.
+
+    ``embedded``: the package carries its own signature. ``repository``: a signed platform's DEB
+    carries none, because apt authenticates it through the signed repository index.
+    ``unsigned``: the package is for testing only.
+    """
+    if not signed:
+        return "unsigned"
+    return "repository" if package["format"] == "deb" else "embedded"
+
+
 def expected_assets(platforms: list[dict], version: str) -> list[dict]:
     """List every asset the declaration requires for one version, in declaration order."""
     return [
@@ -106,7 +118,7 @@ def expected_assets(platforms: list[dict], version: str) -> list[dict]:
             "target": build["target"],
             "profile": package.get("profile"),
             "format": package["format"],
-            "signed": platform["signed"],
+            "authentication": authentication(package, platform["signed"]),
         }
         for platform in platforms
         for build in platform["builds"]

@@ -24,7 +24,10 @@
         "xdg-utils",
         "unzip",
         "zip",
-        "python3-gi"
+        "python3-gi",
+        "gnupg",
+        "jq",
+        "rpm"
       ],
       "desktops": {
         "gnome": ["gnome-shell", "gnome-session"],
@@ -64,7 +67,10 @@
         "xdg-utils",
         "unzip",
         "zip",
-        "python3-gi"
+        "python3-gi",
+        "gnupg",
+        "jq",
+        "rpm"
       ],
       "desktops": {
         "gnome": ["gnome-shell", "gnome-session"],
@@ -108,7 +114,10 @@
         "unzip",
         "zip",
         "libxcrypt-compat",
-        "python3-gobject"
+        "python3-gobject",
+        "gnupg2",
+        "jq",
+        "rpm-sign"
       ],
       "desktops": {
         "gnome": ["gnome-shell", "gnome-session"],
