@@ -3,7 +3,7 @@
   "platforms": [
     {
       "id": "linux",
-      "signed": false,
+      "signed": true,
       "builds": [
         {
           "target": "linux-x64",

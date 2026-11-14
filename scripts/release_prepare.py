@@ -1,14 +1,16 @@
-"""Select, reserve and assemble an unpublished release in the prepare-release workflow.
+"""Select, check, assemble and reserve an unpublished release in the prepare-release workflow.
 
 Every operation runs from the workflow revision, never from the selected source:
 
 - ``select`` admits a dispatch from protected ``main`` and resolves the optional
   ``hash`` input to one commit of the dispatch commit's history;
-- ``reserve`` reads the root version of the selected source and atomically creates
-  the annotated ``reserved/v<version>`` tag on it;
-- ``assemble`` checks the packages built by every platform job against the
-  declaration and writes the digest file and the release body, which opens with the
-  first notes text of ``scripts/release_notes.py``;
+- ``check`` reads the root version of the selected source and refuses a version that
+  is published or reserved by another run, before any build;
+- ``assemble`` checks the packages built by every platform job and the RPM packages
+  signed by the signing job against the declaration, and writes the digest file and
+  the release body, which opens with the first notes text of ``scripts/release_notes.py``;
+- ``reserve`` atomically creates the annotated ``reserved/v<version>`` tag on the
+  selected commit, after every package is built, signed and assembled;
 - ``publish`` creates the unpublished release and uploads its assets without
   replacing any asset already there.
 """
@@ -36,6 +38,10 @@ API = "https://api.github.com"
 UPLOADS = "https://uploads.github.com"
 WORKFLOW = ".github/workflows/prepare-release.yml"
 SHA = re.compile(r"[0-9a-f]{40}")
+VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
+FINGERPRINT = re.compile(r"[0-9A-F]{40}")
+SIGNING = Path("config/release/signing.json")
+SIGNED_RECORD = "signing.json"
 MAXIMUM_RESPONSE = 8 * 1024 * 1024
 MAXIMUM_ERROR = 4096
 MAXIMUM_NOTES = 1024 * 1024
@@ -178,11 +184,9 @@ def tag_message(run_id: str, commit: str) -> str:
     return f"Reserved by prepare-release run {run_id} for {commit}."
 
 
-def reserve(github: GitHub, env: dict, source: Path) -> dict:
-    """Reserve the root version of the checked-out selected source on that commit."""
-    commit, run_id, attempt = environment(
-        env, "OHTIA_RELEASE_COMMIT", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT"
-    )
+def check(github: GitHub, env: dict, source: Path) -> dict:
+    """Read the root version of the checked-out selected source and admit it before building."""
+    commit = environment(env, "OHTIA_RELEASE_COMMIT")[0]
     require(SHA.fullmatch(commit) is not None, "Invalid selected commit.")
     head = (source / ".git").exists() and git_revision(source, "HEAD")
     require(head == commit, "The checked-out source differs from the selected commit.")
@@ -201,26 +205,49 @@ def reserve(github: GitHub, env: dict, source: Path) -> dict:
     except application_version.VersionError as error:
         raise ReleaseError(str(error)) from error
     require_unpublished(github, version)
+    own_reservation(github, env, version, commit)
+    return {"commit": commit, "tree": tree, "version": version}
+
+
+def own_reservation(github: GitHub, env: dict, version: str, commit: str) -> bool:
+    """Return whether this run already reserved the version; refuse another run's reservation.
+
+    Only a rerun of the reserving run, on the same commit, may continue past a reservation.
+    """
+    run_id, attempt = environment(env, "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT")
+    tag = f"reserved/v{version}"
+    status, ref = github.api("GET", f"git/ref/tags/{urllib.parse.quote(tag)}", allowed=(200, 404))
+    if status == 404:
+        return False
+    target = (ref or {}).get("object") or {}
+    require(
+        target.get("type") == "tag" and SHA.fullmatch(str(target.get("sha"))) is not None,
+        f"The version {version} is already reserved; raise the version in source.",
+    )
+    _, existing = github.api("GET", f"git/tags/{target['sha']}")
+    require(
+        int(attempt) > 1
+        and isinstance(existing, dict)
+        and (existing.get("object") or {}).get("sha") == commit
+        and (existing.get("object") or {}).get("type") == "commit"
+        and str(existing.get("message", "")).strip() == tag_message(run_id, commit),
+        f"The version {version} is already reserved; raise the version in source.",
+    )
+    return True
+
+
+def reserve(github: GitHub, env: dict) -> None:
+    """Reserve the checked version on the selected commit, after every package is assembled."""
+    commit, version, run_id = environment(
+        env, "OHTIA_RELEASE_COMMIT", "OHTIA_RELEASE_VERSION", "GITHUB_RUN_ID"
+    )
+    require(SHA.fullmatch(commit) is not None, "Invalid selected commit.")
+    require(VERSION.fullmatch(version) is not None, "Invalid release version.")
+    require_unpublished(github, version)
+    if own_reservation(github, env, version, commit):
+        return
     tag = f"reserved/v{version}"
     message = tag_message(run_id, commit)
-    status, ref = github.api("GET", f"git/ref/tags/{urllib.parse.quote(tag)}", allowed=(200, 404))
-    if status == 200:
-        # Only a rerun of the reserving run may continue past an existing reservation.
-        target = (ref or {}).get("object") or {}
-        require(
-            target.get("type") == "tag" and SHA.fullmatch(str(target.get("sha"))) is not None,
-            f"The version {version} is already reserved; raise the version in source.",
-        )
-        _, existing = github.api("GET", f"git/tags/{target['sha']}")
-        require(
-            int(attempt) > 1
-            and isinstance(existing, dict)
-            and (existing.get("object") or {}).get("sha") == commit
-            and (existing.get("object") or {}).get("type") == "commit"
-            and str(existing.get("message", "")).strip() == message,
-            f"The version {version} is already reserved; raise the version in source.",
-        )
-        return {"commit": commit, "tree": tree, "version": version}
     _, created = github.api(
         "POST",
         "git/tags",
@@ -239,7 +266,6 @@ def reserve(github: GitHub, env: dict, source: Path) -> dict:
         allowed=(201, 422),
     )
     require(status == 201, f"Another run reserved {version} first; raise the version in source.")
-    return {"commit": commit, "tree": tree, "version": version}
 
 
 def require_unpublished(github: GitHub, version: str) -> None:
@@ -264,12 +290,74 @@ def digest(file: Path) -> str:
     return hashed.hexdigest()
 
 
-def assemble(
-    env: dict, inputs: Path, notes: Path, destination: Path, root: Path | None = None
-) -> dict:
-    """Check every platform's build against the declaration and write the release files.
+def signing_fingerprint(root: Path | None = None) -> str:
+    """Return the primary fingerprint recorded for the committed release signing key."""
+    try:
+        value = json.loads(
+            (root or release_platforms.ROOT).joinpath(SIGNING).read_text(encoding="utf-8")
+        )
+    except (OSError, UnicodeError, ValueError) as error:
+        raise ReleaseError("The release signing record cannot be read as JSON.") from error
+    require(
+        isinstance(value, dict)
+        and set(value) == {"schema_version", "fingerprint"}
+        and value["schema_version"] == 1
+        and isinstance(value["fingerprint"], str)
+        and FINGERPRINT.fullmatch(value["fingerprint"]) is not None,
+        "Unsupported release signing record.",
+    )
+    return value["fingerprint"]
 
-    ``notes`` is the ``notes.md`` file of the read-only notes job; it opens the release body.
+
+def signed_by_job(item: dict) -> bool:
+    """The signing job signs the RPM packages of a signed platform after they are built."""
+    return item["format"] == "rpm" and item["authentication"] == "embedded"
+
+
+def signed_packages(signed: Path, expected: list[dict], root: Path | None) -> dict[str, dict]:
+    """Read the signing job's record of the packages it signed, keyed by asset name."""
+    try:
+        record = json.loads((signed / SIGNED_RECORD).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError) as error:
+        raise ReleaseError("The signing record cannot be read as JSON.") from error
+    require(
+        isinstance(record, dict)
+        and set(record) == {"schema_version", "fingerprint", "packages"}
+        and record["schema_version"] == 1
+        and record["fingerprint"] == signing_fingerprint(root)
+        and isinstance(record["packages"], list),
+        "The signing record does not match the committed signing key.",
+    )
+    packages = {}
+    for package in record["packages"]:
+        require(
+            isinstance(package, dict)
+            and set(package) == {"name", "unsigned_sha256", "bytes", "sha256"}
+            and isinstance(package["name"], str)
+            and package["name"] not in packages,
+            "Duplicate or invalid signed package.",
+        )
+        packages[package["name"]] = package
+    require(
+        sorted(packages) == sorted(item["name"] for item in expected if signed_by_job(item)),
+        "The signed packages differ from the declared RPM packages.",
+    )
+    return packages
+
+
+def assemble(
+    env: dict,
+    inputs: Path,
+    signed: Path,
+    notes: Path,
+    destination: Path,
+    root: Path | None = None,
+) -> dict:
+    """Check every platform's build and the signed packages, then write the release files.
+
+    ``signed`` holds the signing job's RPM packages and their record; each one must come from
+    the build record's bytes. ``notes`` is the ``notes.md`` file of the read-only notes job; it
+    opens the release body.
     """
     commit, tree, version, run_id, attempt, workflow_sha = environment(
         env,
@@ -295,7 +383,7 @@ def assemble(
             and record.get("version") == version
             and record.get("source") == {"commit": commit, "tree": tree}
             and record.get("target") in targets,
-            "A build record does not match the reserved version and source.",
+            "A build record does not match the checked version and source.",
         )
         for asset in record.get("assets", []):
             name = asset.get("name")
@@ -316,6 +404,20 @@ def assemble(
         sorted(built) == sorted(item["name"] for item in expected),
         "The built assets differ from the declared release platforms.",
     )
+    for name, package in signed_packages(signed, expected, root).items():
+        file = signed / name
+        require(
+            package["unsigned_sha256"] == built[name]["asset"]["sha256"]
+            and package["sha256"] != package["unsigned_sha256"]
+            and file.is_file()
+            and not file.is_symlink()
+            and file.stat().st_size == package["bytes"]
+            and digest(file) == package["sha256"],
+            f"The signed package {name} does not match its build record and signing record.",
+        )
+        # The release holds the signed bytes; the digest file records their digest.
+        built[name]["file"] = file
+        built[name]["final"] = {"bytes": package["bytes"], "sha256": package["sha256"]}
     require(
         notes.is_file() and not notes.is_symlink() and notes.stat().st_size <= MAXIMUM_NOTES,
         "The release notes are missing or too large.",
@@ -323,7 +425,12 @@ def assemble(
     first_notes = notes.read_text(encoding="utf-8")
     # The body depends only on the declared assets, so its length is checked before writing.
     body = release_body(
-        {"assets": [{"name": item["name"], "signed": item["signed"]} for item in expected]},
+        {
+            "assets": [
+                {"name": item["name"], "authentication": item["authentication"]}
+                for item in expected
+            ]
+        },
         first_notes,
     )
     require(
@@ -341,6 +448,7 @@ def assemble(
             and entry["asset"].get("profile") == item["profile"],
             "A built asset is attributed to the wrong platform.",
         )
+        final = entry.get("final", entry["asset"])
         shutil.copyfile(entry["file"], destination / "assets" / item["name"])
         assets.append(
             {
@@ -349,9 +457,9 @@ def assemble(
                 "target": item["target"],
                 "profile": item["profile"],
                 "format": item["format"],
-                "bytes": entry["asset"]["bytes"],
-                "sha256": entry["asset"]["sha256"],
-                "signed": item["signed"],
+                "bytes": final["bytes"],
+                "sha256": final["sha256"],
+                "authentication": item["authentication"],
             }
         )
     record = {
@@ -374,7 +482,9 @@ def assemble(
 def release_body(record: dict, notes: str) -> str:
     """Open with the first notes text and list unsigned assets under the testing heading."""
     lines = [notes.rstrip("\n"), ""]
-    unsigned = [asset["name"] for asset in record["assets"] if not asset["signed"]]
+    unsigned = [
+        asset["name"] for asset in record["assets"] if asset["authentication"] == "unsigned"
+    ]
     if unsigned:
         lines += [UNSIGNED_HEADING, "", UNSIGNED_STATEMENT, ""]
         lines += [f"- `{name}`" for name in unsigned]
@@ -524,29 +634,44 @@ def main(argv: list[str] | None = None, env: dict | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("select")
-    commands.add_parser("reserve").add_argument("source", type=Path)
+    commands.add_parser("check").add_argument("source", type=Path)
     command = commands.add_parser("assemble")
     command.add_argument("inputs", type=Path)
+    command.add_argument("signed", type=Path)
     command.add_argument("notes", type=Path)
     command.add_argument("destination", type=Path)
+    commands.add_parser("reserve")
     commands.add_parser("publish").add_argument("directory", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.command == "select":
             output(env, {"commit": select(GitHub(env.get("GITHUB_TOKEN", "")), env)})
-        elif args.command == "reserve":
-            reserved = reserve(GitHub(env.get("GITHUB_TOKEN", "")), env, args.source.absolute())
-            output(env, reserved)
+        elif args.command == "check":
+            checked = check(GitHub(env.get("GITHUB_TOKEN", "")), env, args.source.absolute())
+            output(env, checked)
             summary(
                 env,
                 [
-                    f"Reserved `reserved/v{reserved['version']}` on `{reserved['commit']}`.",
-                    f"Source tree: `{reserved['tree']}`.",
+                    f"Preparing `{checked['version']}` from `{checked['commit']}`.",
+                    f"Source tree: `{checked['tree']}`.",
                 ],
             )
         elif args.command == "assemble":
             assemble(
-                env, args.inputs.absolute(), args.notes.absolute(), args.destination.absolute()
+                env,
+                args.inputs.absolute(),
+                args.signed.absolute(),
+                args.notes.absolute(),
+                args.destination.absolute(),
+            )
+        elif args.command == "reserve":
+            reserve(GitHub(env.get("GITHUB_TOKEN", "")), env)
+            summary(
+                env,
+                [
+                    f"Reserved `reserved/v{env['OHTIA_RELEASE_VERSION']}` on "
+                    f"`{env['OHTIA_RELEASE_COMMIT']}`."
+                ],
             )
         else:
             published = publish(GitHub(env.get("GITHUB_TOKEN", "")), env, args.directory)

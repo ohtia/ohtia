@@ -1,4 +1,4 @@
-"""Build the unsigned release packages of one target with the exact root version.
+"""Build the release packages of one target with the exact root version, before signing.
 
 The prepare-release workflow runs this entry point from the selected source,
 without secrets, after ``scripts/workspace.py run build``. It reuses the package

@@ -129,6 +129,7 @@
     "scripts/tests/test_quality_wayland_input.py",
     "scripts/tests/test_release_notes.py",
     "scripts/tests/test_release_prepare.py",
+    "scripts/tests/test_release_signing.py",
     "scripts/tests/test_scaleway_cycle.py",
     "scripts/tests/test_scaleway_preflight.py",
     "scripts/tests/test_scaleway_progress.py",
@@ -136,6 +137,71 @@
     "scripts/tests/test_workspace.py"
   ],
   "python_inapplicable": [
+    {
+      "id": "test_release_signing.SigningJobTests.test_a_committed_file_with_more_than_one_key_is_refused",
+      "platforms": ["win32", "darwin"],
+      "reason": "The signing job runs on the Ubuntu runner with its GnuPG, jq and RPM signing tools; macOS and Windows provide no rpmsign or rpmkeys."
+    },
+    {
+      "id": "test_release_signing.SigningJobTests.test_a_subkey_revoked_in_the_committed_public_key_is_refused",
+      "platforms": ["win32", "darwin"],
+      "reason": "The signing job runs on the Ubuntu runner with its GnuPG, jq and RPM signing tools; macOS and Windows provide no rpmsign or rpmkeys."
+    },
+    {
+      "id": "test_release_signing.SigningJobTests.test_the_committed_public_key_is_the_recorded_primary_key_with_a_signing_subkey",
+      "platforms": ["win32", "darwin"],
+      "reason": "The signing job runs on the Ubuntu runner with its GnuPG, jq and RPM signing tools; macOS and Windows provide no rpmsign or rpmkeys."
+    },
+    {
+      "id": "test_release_signing.SigningJobTests.test_a_committed_key_other_than_the_recorded_fingerprint_is_refused",
+      "platforms": ["win32", "darwin"],
+      "reason": "The signing job runs on the Ubuntu runner with its GnuPG, jq and RPM signing tools; macOS and Windows provide no rpmsign or rpmkeys."
+    },
+    {
+      "id": "test_release_signing.SigningJobTests.test_a_package_that_differs_from_its_build_record_is_refused_before_signing",
+      "platforms": ["win32", "darwin"],
+      "reason": "The signing job runs on the Ubuntu runner with its GnuPG, jq and RPM signing tools; macOS and Windows provide no rpmsign or rpmkeys."
+    },
+    {
+      "id": "test_release_signing.SigningJobTests.test_a_subkey_missing_from_the_committed_public_key_is_refused",
+      "platforms": ["win32", "darwin"],
+      "reason": "The signing job runs on the Ubuntu runner with its GnuPG, jq and RPM signing tools; macOS and Windows provide no rpmsign or rpmkeys."
+    },
+    {
+      "id": "test_release_signing.SigningJobTests.test_a_subkey_of_another_primary_key_is_refused_before_signing",
+      "platforms": ["win32", "darwin"],
+      "reason": "The signing job runs on the Ubuntu runner with its GnuPG, jq and RPM signing tools; macOS and Windows provide no rpmsign or rpmkeys."
+    },
+    {
+      "id": "test_release_signing.SigningJobTests.test_a_wrong_passphrase_signs_nothing",
+      "platforms": ["win32", "darwin"],
+      "reason": "The signing job runs on the Ubuntu runner with its GnuPG, jq and RPM signing tools; macOS and Windows provide no rpmsign or rpmkeys."
+    },
+    {
+      "id": "test_release_signing.SigningJobTests.test_an_expired_subkey_is_refused",
+      "platforms": ["win32", "darwin"],
+      "reason": "The signing job runs on the Ubuntu runner with its GnuPG, jq and RPM signing tools; macOS and Windows provide no rpmsign or rpmkeys."
+    },
+    {
+      "id": "test_release_signing.SigningJobTests.test_an_export_holding_the_secret_primary_key_is_refused",
+      "platforms": ["win32", "darwin"],
+      "reason": "The signing job runs on the Ubuntu runner with its GnuPG, jq and RPM signing tools; macOS and Windows provide no rpmsign or rpmkeys."
+    },
+    {
+      "id": "test_release_signing.SigningJobTests.test_build_records_of_another_version_or_without_every_rpm_are_refused",
+      "platforms": ["win32", "darwin"],
+      "reason": "The signing job runs on the Ubuntu runner with its GnuPG, jq and RPM signing tools; macOS and Windows provide no rpmsign or rpmkeys."
+    },
+    {
+      "id": "test_release_signing.SigningJobTests.test_every_rpm_is_signed_with_the_subkey_and_recorded_after_signing",
+      "platforms": ["win32", "darwin"],
+      "reason": "The signing job runs on the Ubuntu runner with its GnuPG, jq and RPM signing tools; macOS and Windows provide no rpmsign or rpmkeys."
+    },
+    {
+      "id": "test_release_signing.SigningJobTests.test_unsigned_and_unknown_key_results_are_refused",
+      "platforms": ["win32", "darwin"],
+      "reason": "The signing job runs on the Ubuntu runner with its GnuPG, jq and RPM signing tools; macOS and Windows provide no rpmsign or rpmkeys."
+    },
     {
       "id": "test_desktop_delivery.DeliveryTests.test_security_hooks_refuse_failed_empty_find_observations_before_policy_changes",
       "platforms": ["win32"],
