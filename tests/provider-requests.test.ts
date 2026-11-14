@@ -30,6 +30,7 @@ import {
   createDevelopmentCommand,
   developmentRequestText,
   parseDevelopmentSwitches,
+  terminalSafe,
 } from "../packages/main/src/development-command.js";
 import type { ProviderRequests } from "../packages/main/src/provider-adapter.js";
 import { fakeChatGPT, sse, streamResponse } from "./fixtures/chatgpt.js";
@@ -1070,3 +1071,76 @@ it.each([
     ]);
   },
 );
+
+it("prints no control or format character but newline and tab from a reply or a switch", () => {
+  // An independent list: C0 but newline and tab, DEL, C1, and the format and separator characters.
+  const unsafe = [
+    ...Array.from({ length: 0x20 }, (_, code) => code).filter(
+      (code) => code !== 0x0a && code !== 0x09,
+    ),
+    ...Array.from({ length: 0x21 }, (_, offset) => 0x7f + offset),
+    0x00ad,
+    0x061c,
+    0x180e,
+    0x200b,
+    0x200c,
+    0x200d,
+    0x200e,
+    0x200f,
+    0x2028,
+    0x2029,
+    0x202a,
+    0x202b,
+    0x202c,
+    0x202d,
+    0x202e,
+    0x2060,
+    0x2061,
+    0x2062,
+    0x2063,
+    0x2064,
+    0x2066,
+    0x2067,
+    0x2068,
+    0x2069,
+    0xfeff,
+    0xfff9,
+    0xfffa,
+    0xfffb,
+    0xe0001,
+    0xe0020,
+    0xe0061,
+    0xe007f,
+  ];
+  for (const code of unsafe)
+    expect(terminalSafe(`a${String.fromCodePoint(code)}b`), code.toString(16)).toBe("a\uFFFDb");
+  // Ordinary multilingual text survives, including decomposed accents and Korean jamo.
+  for (const text of ["e\u0301 n\u0303", "\u1100\u1161\u11a8", "한국어 und Ümlaut", "a\tb\nc"])
+    expect(terminalSafe(text)).toBe(text);
+  expect(terminalSafe("line\r\nnext\rover")).toBe("line\nnext\uFFFDover");
+  const lines: string[] = [];
+  const command = createDevelopmentCommand({ ready: () => undefined, post: () => false }, (text) =>
+    lines.push(text),
+  );
+  const text = (value: string) => {
+    command.report({
+      kind: "development_report",
+      version: 1,
+      generation: "g",
+      operation_id: "op",
+      report: { type: "text", attempt: "a", text: value },
+    });
+  };
+  text("\u001b[2Jcleared abc\u202Etxt.exe");
+  // A CRLF pair split across two streamed pieces is one newline.
+  text("first\r");
+  text("\nsecond\r");
+  text("third");
+  // A switch outside the admitted pattern is echoed back, as a later launch can hand any string.
+  command.run(["\u001b]0;title\u0007"]);
+  const output = lines.join("");
+  expect(output).toContain("\uFFFD[2Jcleared abc\uFFFDtxt.exe");
+  expect(output).toContain("first\nsecond\uFFFDthird");
+  expect(output).toContain("Unrecognized switch: \uFFFD]0;title\uFFFD");
+  for (const code of unsafe) expect(output).not.toContain(String.fromCodePoint(code));
+});

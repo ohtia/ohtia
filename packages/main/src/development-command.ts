@@ -92,6 +92,19 @@ function describeTransfer(transfer: readonly TransferEntry[]): string {
     )
     .join(", ");
 }
+/**
+ * Provider text and switch values reach a terminal. Replace every Unicode control (Cc), format
+ * (Cf), line-separator and paragraph-separator character except newline and tab, so no reply can
+ * carry an escape sequence or disguise what the terminal shows; a CRLF pair is a newline.
+ */
+const terminalUnsafe = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
+export function terminalSafe(text: string): string {
+  return text
+    .replaceAll("\r\n", "\n")
+    .replace(terminalUnsafe, (character) =>
+      character === "\n" || character === "\t" ? character : "\uFFFD",
+    );
+}
 /** Main's stdout is suppressed for diagnostics; the command writes to the terminal directly. */
 function terminal(text: string): void {
   try {
@@ -107,7 +120,15 @@ export interface DevelopmentHost {
   ready(): string | undefined;
 }
 /** Runs actions in the running instance and prints their identifiers and results. */
-export function createDevelopmentCommand(host: DevelopmentHost, write = terminal) {
+export function createDevelopmentCommand(host: DevelopmentHost, output = terminal) {
+  // A CRLF pair can arrive split across two streamed pieces: hold a final CR for the next write.
+  let carriageReturn = false;
+  const write = (text: string) => {
+    let next = carriageReturn ? `\r${text}` : text;
+    carriageReturn = next.endsWith("\r");
+    if (carriageReturn) next = next.slice(0, -1);
+    if (next) output(terminalSafe(next));
+  };
   const queued: DevelopmentAction[] = [];
   const streaming = new Set<string>();
   const line = (text: string) => {
