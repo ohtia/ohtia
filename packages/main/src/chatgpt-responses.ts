@@ -104,6 +104,11 @@ export type ResponsesTransport = (
   release: () => boolean,
 ) => Promise<Response>;
 const nullBodyStatuses = new Set([204, 205, 304]);
+const transportClosures = new WeakMap<Response, () => Promise<void>>();
+/** A real transport waits for its unpooled socket to close; injected test Responses have no socket. */
+export async function closeResponseTransport(response: Response): Promise<void> {
+  await transportClosures.get(response)?.();
+}
 /**
  * `fetch` reads a request body before its connection opens, so it cannot hold the body back for a
  * guard. Node's client writes nothing, not even headers, until `end()`, which follows the guard on
@@ -129,6 +134,7 @@ export function nodeResponsesTransport(
         signal: request.signal,
         headers: { ...request.headers, "Content-Length": String(body.byteLength) },
       });
+      let socketClosed: Promise<void> = Promise.resolve();
       outgoing.once("response", (incoming) => {
         if (settled) return;
         settled = true;
@@ -139,25 +145,45 @@ export function nodeResponsesTransport(
           const headers = new Headers();
           for (const [name, value] of Object.entries(incoming.headers))
             if (typeof value === "string") headers.set(name, value);
-          resolve(
-            new Response(empty ? null : (Readable.toWeb(incoming) as ReadableStream<Uint8Array>), {
-              status,
-              headers,
-            }),
+          const response = new Response(
+            empty ? null : (Readable.toWeb(incoming) as ReadableStream<Uint8Array>),
+            { status, headers },
           );
+          transportClosures.set(response, async () => {
+            incoming.destroy();
+            outgoing.destroy();
+            await socketClosed;
+          });
+          resolve(response);
         } catch (error) {
           // A status the Fetch API cannot represent: the request had left.
           incoming.destroy();
-          reject(transportFailure(true, error));
+          outgoing.destroy();
+          void socketClosed.then(() => {
+            reject(transportFailure(true, error));
+          });
         }
       });
-      outgoing.on("error", fail);
+      outgoing.on("error", (error) => {
+        // Before headers there is no Response to carry the receipt. Reject only after closure.
+        outgoing.destroy();
+        void socketClosed.then(() => {
+          fail(error);
+        });
+      });
       outgoing.once("socket", (socket) => {
+        socketClosed = new Promise<void>((resolve) => {
+          socket.once("close", () => {
+            resolve();
+          });
+        });
         const ready = () => {
           if (settled) return;
           if (!release()) {
             outgoing.destroy();
-            fail(undefined);
+            void socketClosed.then(() => {
+              fail(undefined);
+            });
             return;
           }
           sent = true;
@@ -298,6 +324,7 @@ export async function readResponseStream(
         );
         return true;
       default:
+        control.emit({ type: "activity" });
         return false;
     }
   };

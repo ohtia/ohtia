@@ -3,7 +3,17 @@ import {
   tables as usageTables,
   objects as usageObjects,
 } from "./migrations/0009_usage_limit_pauses.mjs";
-import { TaskTransaction, type TaskContext, type PreparedTask } from "./tasks.js";
+import {
+  up as replyControl,
+  columns as replyColumns,
+  objects as replyObjects,
+} from "./migrations/0010_reply_control.mjs";
+import {
+  TaskTransaction,
+  type TaskContext,
+  type PreparedTask,
+  type RecordedTaskEvent,
+} from "./tasks.js";
 import { ServiceConnections, type ProviderEvent } from "@ohtia/contracts";
 import {
   up as durableTasks,
@@ -202,9 +212,10 @@ const names = [
   "0007_research_records",
   "0008_durable_ai_tasks",
   "0009_usage_limit_pauses",
+  "0010_reply_control",
 ] as const;
 const target = names.length;
-const targetName = names[8];
+const targetName = names[9];
 function digest(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -510,12 +521,22 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
           revision >= 8 && name === "messages"
             ? definition.replace(
                 ",\n    UNIQUE (conversation_id,position)",
-                ", task_id BLOB REFERENCES tasks(id),\n    UNIQUE (conversation_id,position)",
+                `, task_id BLOB REFERENCES tasks(id)${revision >= 10 ? `, ${replyColumns.ending}` : ""},\n    UNIQUE (conversation_id,position)`,
               )
             : definition,
         ])
       : []),
-    ...(revision >= 8 ? Object.entries(taskTables) : []),
+    ...(revision >= 8
+      ? Object.entries(taskTables).map(([name, definition]) => [
+          name,
+          revision >= 10 && name === "tasks"
+            ? definition.replace(
+                ",\n    CHECK ((state=",
+                `, ${replyColumns.charge},\n    CHECK ((state=`,
+              )
+            : definition,
+        ])
+      : []),
     ...(revision >= 9 ? Object.entries(usageTables) : []),
   ]) {
     const row = db
@@ -539,6 +560,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ),
                 ...taskObjects,
                 ...(revision >= 9 ? usageObjects : {}),
+                ...(revision >= 10 ? replyObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -857,6 +879,7 @@ export class DurableStore {
                 "0007_research_records": { up: researchRecords },
                 "0008_durable_ai_tasks": { up: durableTasks },
                 "0009_usage_limit_pauses": { up: usagePauses },
+                "0010_reply_control": { up: replyControl },
               }),
           },
         });
@@ -2042,14 +2065,16 @@ export class DurableStore {
     if (outcome.ok) {
       for (const event of diagnostics) this.researchDiagnostic(event);
       const events = {
-        "usagePause.resume": "ohtia.usage_pause.resume_requested",
-        "task.continueAll": "ohtia.task.continue_requested",
         "development.createProject": "ohtia.project.created",
         "project.create": "ohtia.project.created",
         "project.confirmSetup": "ohtia.project.setup_confirmed",
         "conversation.start": "ohtia.conversation.started",
         "conversation.rename": "ohtia.conversation.renamed",
         "message.append": "ohtia.message.appended",
+        "task.stop": "ohtia.task.stop_requested",
+        "task.startAgain": "ohtia.task.replaced",
+        "task.continueAll": "ohtia.task.continue_requested",
+        "usagePause.resume": "ohtia.usage_pause.resume_requested",
       } as const;
       this.researchDiagnostic({ event_name: events[command.command] });
     } else {
@@ -2092,6 +2117,9 @@ export class DurableStore {
       this.active = false;
     }
   }
+  stoppingAttempts(): Promise<Outcome<readonly string[]>> {
+    return this.taskTransaction((tasks) => tasks.stoppingAttempts());
+  }
   reconcileTaskConnections(): Promise<Outcome<void>> {
     return this.taskTransaction((tasks) => tasks.reconcileConnections());
   }
@@ -2101,7 +2129,11 @@ export class DurableStore {
     if (!reconciled.ok) return reconciled;
     return this.taskTransaction((tasks) => tasks.prepareNext());
   }
-  recordTaskEvent(attempt: string, event: ProviderEvent, text: string): Promise<Outcome<boolean>> {
+  recordTaskEvent(
+    attempt: string,
+    event: ProviderEvent,
+    text: string,
+  ): Promise<Outcome<RecordedTaskEvent>> {
     return this.taskTransaction((tasks) => tasks.event(attempt, event, text));
   }
 

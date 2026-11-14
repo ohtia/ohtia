@@ -1,11 +1,9 @@
 ---
 type: Playbook
 title: Durable foundation storage
-description: Open the isolated local store, persist preferences and research records, and verify packaged migrations and recovery.
+description: Persist local preferences and research records, control durable reply tasks, and recover verified migrations.
 generated:
   by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # Durable foundation storage
@@ -49,6 +47,16 @@ The data service canonicalizes language, script and region case before validatin
 The development-only `development.createProject` command creates a confirmed “Development project” in English and one empty conversation. In development projects, `conversation.start` and `message.append` accept a `development_test` task with the message and command receipt in the same transaction. Admission rejects oversized input and excess pending work before saving anything. A not-started replacement adds no pending work. Other operation stories extend the same routing boundary when their policies are admitted.
 
 The data service selects the first visible model in main's latest complete catalog and commits the immutable transfer manifest and dispatch timestamp before sending a permit to main. Streaming buffers hold text without granting execution authority. Finalization stores an attributed agent message at the task's reserved position and the attempt outcome in one transaction. A task that ends without text leaves its reservation unused; an empty successful provider result fails with `empty_reply`. Proved non-dispatch clears the dispatch timestamp; only an expired permit can automatically readmit the task here, within its original attempt and work budgets. A possibly dispatched request is never repeated automatically.
+
+Migration `0009_usage_limit_pauses` preserves connection-wide plan pauses and their explicit resumption receipts. Recovery continuation revalidates both connection availability and open plan pauses.
+
+Migration `0010_reply_control` adds `messages.ending` and `tasks.charge_warning_accepted_at`. Existing agent messages become `complete` when their task completed, and `partial` otherwise; researcher messages keep an empty ending. Database rules enforce author-specific endings and immutable replacement warnings. `task.stop` commits cancellation intent before requesting interruption. Main acknowledges final outcomes only after its transport closes; a closed ChatGPT connection releases capacity even when its remote outcome remains uncertain. PRIN-006 and PRIN-016 require keeping remote generation and charges unknown after interruption.
+
+`task.startAgain` is a human acknowledgement of possible duplicate charges. It creates one linked task only for the conversation's latest uncertain reply, retaining the original input cutoff and excluding that task's partial reply. Partial messages included by later tasks receive the English reason-specific note defined in [SPEC-003-012](epics/EPIC-003-research-agents/epic.md#spec-003-012-stop-time-limits-and-uncertain-replacement), immediately after the message; its immutable message identity and revision 1 identify the note in the transfer manifest. Notes consume neither input-message nor input-byte budgets.
+
+The development command accepts `--ohtia-dev-command=stop --ohtia-dev-task=<id>` and `--ohtia-dev-command=start-again --ohtia-dev-task=<id>`; invoking `start-again` acknowledges the duplicate-charge warning. Task identifiers are printed alongside attempt identifiers. `--ohtia-dev-command=continue-all` invokes `task.continueAll` for recovery-paused work across projects, after checking the admitted operation policy, task authority, current connection and open plan pauses. These commands use the existing serialized data-service command and receipt boundary.
+
+A validated migration gate present before Retry invokes the shared recovery review after target validation and restoration activation, before the gate is removed or task readiness is published. Its reserved transaction pauses queued and blocked tasks, cancels unfinished undispatched attempts with `service_restarted` and holds their tasks, makes dispatched attempts uncertain with capacity released for ChatGPT, and finalizes an already cancelling task as cancelled. Exhausted tasks fail and a returning reply with a newer waiting reply is cancelled. Subsequent starts and coalescing preserve the pause until `task.continueAll`; a healthy upgrade's fresh gate alone adds no pause. This recovery-only boundary is extended by [SPEC-003-013](epics/EPIC-003-research-agents/epic.md#spec-003-013-restart-and-suspension).
 
 ## Migration and recovery
 

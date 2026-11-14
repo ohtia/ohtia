@@ -24,6 +24,8 @@ export const providerFailureReasons = [
   "empty_reply",
   "connection_lost",
   "permit_expired",
+  "deadline_exceeded",
+  "inactivity_timeout",
 ] as const;
 export type ProviderFailureReason = (typeof providerFailureReasons)[number];
 /** Only these reasons mark an attempt that main never sent. */
@@ -56,6 +58,7 @@ export type ProviderEventBody =
       readonly provider_request_id: string | null;
       readonly model: string | null;
     }
+  | { readonly type: "activity" }
   | { readonly type: "text"; readonly text: string }
   | { readonly type: "usage"; readonly usage: ProviderUsage }
   | { readonly type: "result"; readonly result: ProviderResult };
@@ -179,6 +182,8 @@ export function isProviderEvent(value: unknown): value is ProviderEvent {
           (boundedText(value.provider_request_id, 256) && value.provider_request_id.length > 0)) &&
         (value.model === null || isProviderModelSlug(value.model))
       );
+    case "activity":
+      return exact(value, ["sequence", "type"]);
     case "text":
       return (
         exact(value, ["sequence", "type", "text"]) &&
@@ -338,7 +343,6 @@ export type DevelopmentAction =
       readonly operation_id: string;
       readonly connection: "chatgpt";
     }
-  | { readonly name: "continue-all"; readonly operation_id: string }
   | {
       readonly name: "request";
       readonly operation_id: string;
@@ -347,6 +351,9 @@ export type DevelopmentAction =
     }
   | { readonly name: "interrupt"; readonly operation_id: string; readonly attempt: string }
   | { readonly name: "create-development-project"; readonly operation_id: string }
+  | { readonly name: "continue-all"; readonly operation_id: string }
+  | { readonly name: "stop"; readonly operation_id: string; readonly task: string }
+  | { readonly name: "start-again"; readonly operation_id: string; readonly task: string }
   | {
       readonly name: "start-conversation";
       readonly operation_id: string;
@@ -374,23 +381,26 @@ export type TransferEntry =
   | { readonly kind: "message"; readonly reference: string }
   | {
       readonly kind: "note";
-      readonly note: "earlier_messages_omitted";
+      readonly note: "earlier_messages_omitted" | "partial_reply";
       readonly reference: string;
       readonly revision: number;
     };
 export const developmentRefusals = [
   "connection_unavailable",
   "unknown_attempt",
+  "uncertain",
   "busy",
   "invalid_action",
   "input_too_large",
   "pending_limit_reached",
   "record_not_found",
+  "newer_task_exists",
+  "task_not_retryable",
 ] as const;
 export type DevelopmentReport =
   | {
       readonly type: "record";
-      readonly record: "project" | "conversation" | "message" | "receipt";
+      readonly record: "project" | "conversation" | "message" | "task" | "receipt";
       readonly id: string;
     }
   | { readonly type: "refused"; readonly reason: (typeof developmentRefusals)[number] }
@@ -431,7 +441,7 @@ function isTransferEntry(value: unknown): value is TransferEntry {
     isIdentifier(value.reference) &&
     count(value.revision) &&
     value.revision > 0 &&
-    value.note === "earlier_messages_omitted"
+    (value.note === "earlier_messages_omitted" || value.note === "partial_reply")
   );
 }
 function isDevelopmentReport(value: unknown): value is DevelopmentReport {
@@ -440,7 +450,9 @@ function isDevelopmentReport(value: unknown): value is DevelopmentReport {
     case "record":
       return (
         exact(value, ["type", "record", "id"]) &&
-        ["project", "conversation", "message", "receipt"].includes(value.record as string) &&
+        ["project", "conversation", "message", "task", "receipt"].includes(
+          value.record as string,
+        ) &&
         isIdentifier(value.id)
       );
     case "refused":
@@ -535,6 +547,12 @@ export function decodeDevelopmentAction(
     typeof action.text === "string" &&
     action.text.length > 0 &&
     boundedText(action.text, portLimits.string_bytes)
+  )
+    return value as unknown as DevelopmentActionMessage;
+  if (
+    (action.name === "stop" || action.name === "start-again") &&
+    exact(action, ["name", "operation_id", "task"]) &&
+    isIdentifier(action.task)
   )
     return value as unknown as DevelopmentActionMessage;
   if (

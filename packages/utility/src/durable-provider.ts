@@ -22,6 +22,8 @@ interface Stream {
   longestSilence: number;
   usage: ProviderUsage;
   readonly maxOutput: number;
+  interrupted?: boolean;
+  cut?: "output_limit_exceeded";
 }
 /** Streaming buffers carry no execution authority: the committed task and attempt do. */
 export class DurableProvider {
@@ -37,6 +39,9 @@ export class DurableProvider {
   ) {}
   private now(): number {
     return (this.options.monotonic ?? (() => performance.now()))();
+  }
+  private canPump(): boolean {
+    return !this.disposed && this.options.storage.ready;
   }
   private send(message: unknown): void {
     if (!this.disposed) this.options.send(JSON.stringify(message));
@@ -69,7 +74,10 @@ export class DurableProvider {
         action.operation_id,
         result.ok
           ? { type: "record", record: "receipt", id: result.value.resultId }
-          : { type: "refused", reason: "invalid_action" },
+          : {
+              type: "refused",
+              reason: result.error.code === "uncertain" ? "uncertain" : "invalid_action",
+            },
       );
       await this.pump();
       return;
@@ -114,23 +122,29 @@ export class DurableProvider {
       return;
     }
     const command =
-      action.name === "create-development-project"
+      action.name === "stop" || action.name === "start-again"
         ? {
-            command: "development.createProject" as const,
+            command: action.name === "stop" ? ("task.stop" as const) : ("task.startAgain" as const),
             operationId: action.operation_id,
-            payload: {},
+            payload: { taskId: action.task },
           }
-        : action.name === "start-conversation"
+        : action.name === "create-development-project"
           ? {
-              command: "conversation.start" as const,
+              command: "development.createProject" as const,
               operationId: action.operation_id,
-              payload: { projectId: action.project, content: action.text },
+              payload: {},
             }
-          : {
-              command: "message.append" as const,
-              operationId: action.operation_id,
-              payload: { conversationId: action.conversation, content: action.text },
-            };
+          : action.name === "start-conversation"
+            ? {
+                command: "conversation.start" as const,
+                operationId: action.operation_id,
+                payload: { projectId: action.project, content: action.text },
+              }
+            : {
+                command: "message.append" as const,
+                operationId: action.operation_id,
+                payload: { conversationId: action.conversation, content: action.text },
+              };
     const result = await this.options.storage.executeResearchCommand(command);
     if (!result.ok) {
       this.report(action.operation_id, {
@@ -138,10 +152,16 @@ export class DurableProvider {
         reason:
           result.error.code === "input_too_large" ||
           result.error.code === "pending_limit_reached" ||
-          result.error.code === "record_not_found"
+          result.error.code === "record_not_found" ||
+          result.error.code === "newer_task_exists" ||
+          result.error.code === "task_not_retryable" ||
+          result.error.code === "uncertain"
             ? result.error.code
             : "invalid_action",
       });
+      // A lost acknowledgement may have committed Stop. Read the durable stopping intents
+      // before returning, so that uncertainty cannot leave that connection streaming.
+      if (action.name === "stop" && result.error.code === "uncertain") await this.pump();
       return;
     }
     this.report(action.operation_id, {
@@ -151,15 +171,23 @@ export class DurableProvider {
           ? "project"
           : action.name === "start-conversation"
             ? "conversation"
-            : "message",
+            : action.name === "stop" || action.name === "start-again"
+              ? "task"
+              : "message",
       id: result.value.resultId,
     });
     await this.pump();
   }
   /** Each returned permit is already committed. No network or IPC runs while the write lock is held. */
   async pump(): Promise<void> {
+    // Connection reports also arrive during storage admission. They cannot read task state
+    // or turn an in-progress migration into a provider/service failure.
+    if (!this.canPump()) return;
     this.options.storage.setTaskContext(this.options.context);
-    while (!this.disposed && this.options.storage.ready) {
+    const stopping = await this.options.storage.stoppingAttempts();
+    if (!stopping.ok) throw new Error("Stopping attempts could not be read.");
+    for (const attempt of stopping.value) this.interrupt(attempt);
+    while (this.canPump()) {
       const prepared = await this.options.storage.prepareTask();
       if (!prepared.ok || !prepared.value) return;
       const message = prepared.value.dispatch;
@@ -182,6 +210,11 @@ export class DurableProvider {
         maxOutput: policy.max_output_bytes,
       });
       this.report(prepared.value.acceptedByOperationId, {
+        type: "record",
+        record: "task",
+        id: prepared.value.taskId,
+      });
+      this.report(prepared.value.acceptedByOperationId, {
         type: "attempt",
         attempt: message.request.attempt,
       });
@@ -189,7 +222,9 @@ export class DurableProvider {
     }
   }
   interrupt(attempt: string): void {
-    if (!this.streams.has(attempt)) return;
+    const stream = this.streams.get(attempt);
+    if (!stream || stream.interrupted) return;
+    stream.interrupted = true;
     this.send({
       kind: "provider_interrupt",
       version: providerMessageVersion,
@@ -208,31 +243,42 @@ export class DurableProvider {
     stream.sequence = message.event.sequence;
     let event = message.event;
     if (event.type === "text") {
+      if (stream.cut) return true;
       const remaining = stream.maxOutput - Buffer.byteLength(stream.text, "utf8");
       const kept = utf8Beginning(event.text, remaining);
       const saved = await this.options.storage.recordTaskEvent(message.attempt, event, "");
       if (!saved.ok) throw new Error("Provider event could not be stored.");
-      if (!saved.value) return true;
+      if (!saved.value.recorded) return true;
       stream.text += kept;
       if (kept)
         this.report(stream.operationId, { type: "text", attempt: message.attempt, text: kept });
       if (kept === event.text) return true;
+      stream.cut = "output_limit_exceeded";
       this.interrupt(message.attempt);
-      event = {
-        type: "result",
-        sequence: event.sequence,
-        result: { status: "failed", reason: "output_limit_exceeded", dispatched: true },
-      };
+      return true;
     }
+    if (event.type === "result" && stream.cut)
+      event = { ...event, result: { status: "failed", reason: stream.cut, dispatched: true } };
     if (event.type === "result" && event.result.status === "completed" && !stream.text)
       event = { ...event, result: { status: "failed", reason: "empty_reply", dispatched: true } };
     const saved = await this.options.storage.recordTaskEvent(message.attempt, event, stream.text);
     if (!saved.ok) throw new Error("Provider event could not be stored.");
-    if (!saved.value) return true;
+    if (!saved.value.recorded) return true;
     if (event.type === "usage") stream.usage = event.usage;
     if (event.type === "result") {
       this.streams.delete(message.attempt);
-      this.finished(message.attempt, stream, event.result, now);
+      const result = saved.value.result;
+      if (!result) throw new Error("Terminal provider outcome was not recorded.");
+      if (
+        result.status === "cancelled" ||
+        result.status === "uncertain" ||
+        (result.status === "failed" &&
+          ["deadline_exceeded", "inactivity_timeout", "output_limit_exceeded"].includes(
+            result.reason,
+          ))
+      )
+        stream.usage = unknownUsage;
+      this.finished(message.attempt, stream, result, now);
       await this.pump();
     }
     return true;

@@ -25,6 +25,8 @@ const actions: Readonly<Record<string, readonly string[]>> = Object.freeze({
   "start-conversation": ["project", "text"],
   send: ["conversation", "text"],
   interrupt: ["attempt"],
+  stop: ["task"],
+  "start-again": ["task"],
   "resume-requests": ["connection"],
   "continue-all": [],
 });
@@ -92,6 +94,11 @@ export function parseDevelopmentSwitches(
       ok: true,
       action: { name: "request", operation_id: operationId, model, text: developmentRequestText },
     };
+  }
+  if (command === "stop" || command === "start-again") {
+    const task = values.get("task");
+    if (!isIdentifier(task)) return { ok: false, error: "Use a task identifier." };
+    return { ok: true, action: { name: command, operation_id: operationId, task } };
   }
   const attempt = values.get("attempt");
   if (!isIdentifier(attempt)) return { ok: false, error: "Use an attempt identifier it printed." };
@@ -210,7 +217,11 @@ export function createDevelopmentCommand(host: DevelopmentHost, output = termina
           line(`${id}: ${report.record} ${report.id}`);
           return;
         case "refused":
-          line(`${id}: refused (${report.reason})`);
+          line(
+            report.reason === "uncertain"
+              ? `${id}: outcome uncertain; check the command receipt before repeating it.`
+              : `${id}: refused (${report.reason})`,
+          );
           return;
         case "attempt":
           line(`${id}: attempt ${report.attempt}`);
@@ -230,6 +241,15 @@ export function createDevelopmentCommand(host: DevelopmentHost, output = termina
           line(
             `attempt ${report.attempt}: ${describeResult(report.result)}; duration ${String(report.duration_ms)} ms; longest silence between events ${String(report.longest_silence_ms)} ms; ${String(report.events)} events; usage ${describeUsage(report.usage)}; sent ${describeTransfer(report.transfer)}`,
           );
+          if (
+            report.result.status === "cancelled" ||
+            report.result.status === "uncertain" ||
+            (report.result.status === "failed" &&
+              ["deadline_exceeded", "inactivity_timeout", "output_limit_exceeded"].includes(
+                report.result.reason,
+              ))
+          )
+            line("Usage is unknown. The service does not confirm whether generation stopped.");
           return;
       }
     },

@@ -67,6 +67,7 @@ export interface InputMessage {
   readonly reference: string;
   readonly role: "user" | "assistant";
   readonly text: string;
+  readonly partial?: { readonly agent: string; readonly reason: string | null };
 }
 export interface BuiltInput {
   readonly input: readonly { readonly role: "user" | "assistant"; readonly text: string }[];
@@ -96,14 +97,52 @@ export function buildInput(
   return {
     input: [
       ...(omitted ? [{ role: "user" as const, text: omittedMessagesNote }] : []),
-      ...chosen.map((message) => ({ role: message.role, text: message.text })),
+      ...chosen.flatMap((message) => [
+        { role: message.role, text: message.text },
+        ...(message.partial
+          ? [
+              {
+                role: "user" as const,
+                text: partialReplyNote(message.partial.agent, message.partial.reason),
+              },
+            ]
+          : []),
+      ]),
     ],
     transfer: [
       { kind: "instructions", operation: policy.operation, version: policy.instruction_version },
       ...(omitted
         ? [{ kind: "note" as const, note: "earlier_messages_omitted" as const, ...context }]
         : []),
-      ...chosen.map((message) => ({ kind: "message" as const, reference: message.reference })),
+      ...chosen.flatMap((message): TransferEntry[] => [
+        { kind: "message", reference: message.reference },
+        ...(message.partial
+          ? [
+              {
+                kind: "note" as const,
+                note: "partial_reply" as const,
+                reference: message.reference,
+                revision: 1,
+              },
+            ]
+          : []),
+      ]),
     ],
   };
+}
+
+/** SPEC-003-012: English model notes are separate input items and consume no message budget. */
+export function partialReplyNote(agent: string, reason: string | null): string {
+  const endings: Readonly<Record<string, string>> = {
+    cancelled_by_researcher: "The researcher stopped it before it finished.",
+    deadline_exceeded: "It was cut off because it took longer than Ohtia allows for one reply.",
+    inactivity_timeout: "It was cut off because the service sent nothing for too long.",
+    output_limit_exceeded: "It was cut off because it was longer than Ohtia allows for one reply.",
+    provider_error: "It was cut off because the service reported an error.",
+    provider_unavailable: "It was cut off because the service reported an error.",
+    invalid_output: "It was cut off because Ohtia couldn't read the rest of the service's reply.",
+    connection_lost: "It was cut off because the connection to the service was lost.",
+  };
+  const ending = reason && Object.hasOwn(endings, reason) ? endings[reason] : undefined;
+  return `Note from Ohtia: ${agent}'s reply above is incomplete.${ending ? ` ${ending}` : ""}`;
 }

@@ -34,13 +34,13 @@ describe("durable preference and migration recovery", () => {
     await store.close();
     expectClosed();
     const newer = raw();
-    newer.pragma("user_version=10");
+    newer.pragma("user_version=11");
     newer.close();
     close.mockClear();
     await expect(store.open()).rejects.toThrow(/Unsupported/);
     expectClosed();
     const current = raw();
-    current.pragma("user_version=9");
+    current.pragma("user_version=10");
     current.close();
     close.mockClear();
     await store.open();
@@ -370,7 +370,7 @@ describe("durable preference and migration recovery", () => {
     await store.close();
     const db = raw();
     db.exec(
-      "DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; DROP TABLE attempts; DROP TABLE tasks; DELETE FROM kysely_migration WHERE name='0008_durable_ai_tasks'; DELETE FROM ohtia_migration_artifacts WHERE name='0008_durable_ai_tasks'; DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'; UPDATE application_preferences SET value='{\"max_concurrent_inference\":4,\"max_concurrent_local_processing\":2}' WHERE key='execution_limits'",
+      "DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; DROP TABLE attempts; DROP TABLE tasks; DELETE FROM kysely_migration WHERE name='0008_durable_ai_tasks'; DELETE FROM ohtia_migration_artifacts WHERE name='0008_durable_ai_tasks'; DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; DROP TABLE appearance_receipts; DELETE FROM kysely_migration WHERE name='0002_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0002_receipts'; UPDATE application_preferences SET value='{\"max_concurrent_inference\":4,\"max_concurrent_local_processing\":2}' WHERE key='execution_limits'",
     );
     db.pragma("user_version=1");
     db.close();
@@ -491,12 +491,12 @@ describe("durable preference and migration recovery", () => {
     await store.open();
     await store.close();
     const db = raw();
-    db.pragma("user_version=10");
+    db.pragma("user_version=11");
     db.close();
     await expect(store.open()).rejects.toThrow(/Unsupported/);
     expect(checkpoints(root)).toHaveLength(1);
     const again = raw();
-    again.pragma("user_version=9");
+    again.pragma("user_version=10");
     again.exec("UPDATE ohtia_migration_artifacts SET sha256='" + "a".repeat(64) + "'");
     again.close();
     await expect(store.open()).rejects.toThrow(/identity/);
@@ -895,7 +895,7 @@ it("upgrades a populated revision-two store while preserving appearance receipts
   await store.close();
   const db = raw();
   db.exec(
-    "DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; DROP TABLE attempts; DROP TABLE tasks; DELETE FROM kysely_migration WHERE name='0008_durable_ai_tasks'; DELETE FROM ohtia_migration_artifacts WHERE name='0008_durable_ai_tasks'; DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; INSERT INTO application_preferences VALUES ('interface_locale',1,7,'\"ko-KR\"')",
+    "DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; DROP TABLE attempts; DROP TABLE tasks; DELETE FROM kysely_migration WHERE name='0008_durable_ai_tasks'; DELETE FROM ohtia_migration_artifacts WHERE name='0008_durable_ai_tasks'; DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; DROP TABLE locale_receipts; DELETE FROM kysely_migration WHERE name='0003_locale_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0003_locale_receipts'; INSERT INTO application_preferences VALUES ('interface_locale',1,7,'\"ko-KR\"')",
   );
   db.pragma("user_version=2");
   db.close();
@@ -1212,7 +1212,7 @@ describe("layout migration and uncertain commit boundary", () => {
     await store.close();
     const db = raw();
     db.exec(
-      "DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; DROP TABLE attempts; DROP TABLE tasks; DELETE FROM kysely_migration WHERE name='0008_durable_ai_tasks'; DELETE FROM ohtia_migration_artifacts WHERE name='0008_durable_ai_tasks'; DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; PRAGMA user_version=3",
+      "DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; DROP TABLE attempts; DROP TABLE tasks; DELETE FROM kysely_migration WHERE name='0008_durable_ai_tasks'; DELETE FROM ohtia_migration_artifacts WHERE name='0008_durable_ai_tasks'; DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; DROP TABLE presentation_receipts; DELETE FROM kysely_migration WHERE name='0005_presentation_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0005_presentation_receipts'; DROP TABLE layout_receipts; DELETE FROM kysely_migration WHERE name='0004_layout_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0004_layout_receipts'; PRAGMA user_version=3",
     );
     const value = defaultWorkspaceLayout(1440);
     db.prepare("INSERT INTO application_preferences VALUES ('workspace_layout',1,8,?)").run(
@@ -1236,7 +1236,7 @@ describe("layout migration and uncertain commit boundary", () => {
       ),
     );
     expect(entries).toContainEqual(
-      expect.objectContaining({ sourceRevision: 3, targetRevision: 9 }),
+      expect.objectContaining({ sourceRevision: 3, targetRevision: 10 }),
     );
   });
   it("rolls back both rows before commit and reconciles a lost acknowledgement after a real commit", async () => {
@@ -1409,7 +1409,7 @@ describe("file-backed native window preferences", () => {
     await store.close();
     const db = raw();
     db.exec(
-      "DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; DROP TABLE attempts; DROP TABLE tasks; DELETE FROM kysely_migration WHERE name='0008_durable_ai_tasks'; DELETE FROM ohtia_migration_artifacts WHERE name='0008_durable_ai_tasks'; DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; PRAGMA user_version=5",
+      "DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; DROP TABLE attempts; DROP TABLE tasks; DELETE FROM kysely_migration WHERE name='0008_durable_ai_tasks'; DELETE FROM ohtia_migration_artifacts WHERE name='0008_durable_ai_tasks'; DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; DROP TABLE window_bounds_receipts; DELETE FROM kysely_migration WHERE name='0006_window_bounds_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0006_window_bounds_receipts'; PRAGMA user_version=5",
     );
     db.close();
     await store.open();
@@ -1435,7 +1435,7 @@ describe("file-backed native window preferences", () => {
           fs.readFileSync(path.join(root, "recovery/migrations", name, "manifest.json"), "utf8"),
         ),
       ),
-    ).toContainEqual(expect.objectContaining({ sourceRevision: 5, targetRevision: 9 }));
+    ).toContainEqual(expect.objectContaining({ sourceRevision: 5, targetRevision: 10 }));
   });
 });
 

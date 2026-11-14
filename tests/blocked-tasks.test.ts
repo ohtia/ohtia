@@ -511,7 +511,7 @@ describe("migration recovery task handoff", () => {
     await f.store.close();
     const old = f.raw();
     old.exec(
-      "DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; PRAGMA user_version=8",
+      "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; PRAGMA user_version=8",
     );
     old.close();
     return { ...f, dispatched, unsent };
@@ -626,7 +626,7 @@ describe("migration recovery task handoff", () => {
     await f.store.close();
     fs.writeFileSync(
       path.join(f.root, "migration-pending.json"),
-      JSON.stringify({ version: 1, operation: "edge-recovery", source: 8, target: 9 }),
+      JSON.stringify({ version: 1, operation: "edge-recovery", source: 8, target: 10 }),
     );
     await f.store.retry();
     expect(f.rows().map((t) => t.state)).toEqual(["cancelled", "cancelled", "blocked", "blocked"]);
@@ -659,7 +659,7 @@ describe("migration recovery task handoff", () => {
     raw.close();
     fs.writeFileSync(
       path.join(exhausted.root, "migration-pending.json"),
-      JSON.stringify({ version: 1, operation: "exhausted-recovery", source: 8, target: 9 }),
+      JSON.stringify({ version: 1, operation: "exhausted-recovery", source: 8, target: 10 }),
     );
     await exhausted.store.retry();
     expect(exhausted.rows()[1]!.state).toBe("failed");
@@ -673,7 +673,7 @@ describe("migration recovery task handoff", () => {
     await f.store.close();
     fs.writeFileSync(
       path.join(f.root, "migration-pending.json"),
-      JSON.stringify({ version: 1, operation: "synthetic-recovery", source: 8, target: 9 }),
+      JSON.stringify({ version: 1, operation: "synthetic-recovery", source: 8, target: 10 }),
     );
     await f.store.retry();
     value(await f.append(id));
@@ -748,3 +748,292 @@ describe("pause development commands and diagnostics", () => {
     }
   });
 });
+
+describe("reply control composed with connection and usage pauses", () => {
+  type Fixture = Awaited<ReturnType<typeof setup>>;
+  const entity = (id: string) => Buffer.from(id.replaceAll("-", ""), "hex");
+  const identifier = (id: Buffer) => {
+    const h = id.toString("hex");
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  };
+  const task = (f: Fixture, id: string) => {
+    const db = f.raw();
+    try {
+      return db.prepare("SELECT * FROM tasks WHERE id=?").get(entity(id)) as {
+        id: Buffer;
+        state: string;
+        blocking_reason: string | null;
+        input_through_position: number;
+        charge_warning_accepted_at: string | null;
+        created_at: string;
+      };
+    } finally {
+      db.close();
+    }
+  };
+  async function uncertainWithBlock(kind: "connection" | "usage") {
+    const f = await setup();
+    const conversation = await f.start();
+    const dispatch = (await f.prepare())!;
+    value(
+      await f.store.recordTaskEvent(
+        dispatch.request.attempt,
+        {
+          type: "result",
+          sequence: 1,
+          result: { status: "uncertain", reason: "connection_lost" },
+        },
+        "Retained fragment",
+      ),
+    );
+    const db = f.raw();
+    const old = identifier(
+      (
+        db
+          .prepare("SELECT task_id FROM attempts WHERE id=?")
+          .get(entity(dispatch.request.attempt)) as { task_id: Buffer }
+      ).task_id,
+    );
+    db.close();
+    if (kind === "connection") f.state("disconnected");
+    else {
+      await f.start();
+      value(await f.result((await f.prepare())!, exhausted));
+    }
+    const command = {
+      command: "task.startAgain" as const,
+      operationId: "replacement",
+      payload: { taskId: old },
+    };
+    const replacement = value(await f.store.executeResearchCommand(command));
+    expect(value(await f.store.executeResearchCommand(command))).toEqual(replacement);
+    return {
+      f,
+      conversation,
+      old,
+      replacement: replacement.resultId,
+      reason: kind === "connection" ? "connection_disabled" : "usage_limit_reached",
+    };
+  }
+  async function unblock(f: Fixture, kind: "connection" | "usage") {
+    if (kind === "connection") f.state("connected");
+    else value(await f.resume("resume-composed-pause"));
+  }
+  it.each(["connection", "usage"] as const)(
+    "readmits an acknowledged replacement after its %s block",
+    async (kind) => {
+      const { f, replacement, reason } = await uncertainWithBlock(kind);
+      const accepted = task(f, replacement);
+      expect(accepted).toMatchObject({
+        state: "blocked",
+        blocking_reason: reason,
+        input_through_position: 1,
+        charge_warning_accepted_at: accepted.created_at,
+      });
+      expect(await f.prepare()).toBeNull();
+      await unblock(f, kind);
+      const next = (await f.prepare())!;
+      expect(next.request.input).toHaveLength(1);
+      expect(next.request.input.some((item) => item.text.includes("Retained fragment"))).toBe(
+        false,
+      );
+      expect(task(f, replacement)).toMatchObject({
+        state: "running",
+        charge_warning_accepted_at: accepted.created_at,
+      });
+    },
+  );
+  it.each(["connection", "usage"] as const)(
+    "coalesces a %s-blocked replacement without copying its charge warning",
+    async (kind) => {
+      const { f, conversation, replacement, reason } = await uncertainWithBlock(kind);
+      const accepted = task(f, replacement);
+      value(await f.append(conversation));
+      const db = f.raw();
+      const pending = db
+        .prepare(
+          "SELECT id,charge_warning_accepted_at,blocking_reason FROM tasks WHERE state='blocked'",
+        )
+        .get() as {
+        id: Buffer;
+        charge_warning_accepted_at: string | null;
+        blocking_reason: string;
+      };
+      expect(pending.charge_warning_accepted_at).toBeNull();
+      expect(pending.blocking_reason).toBe(reason);
+      expect(task(f, replacement)).toMatchObject({
+        state: "cancelled",
+        charge_warning_accepted_at: accepted.created_at,
+      });
+      db.close();
+      await unblock(f, kind);
+      const next = (await f.prepare())!;
+      expect(next.request.input.some((item) => item.text === "Retained fragment")).toBe(true);
+      expect(
+        next.request.input.some((item) => item.text.includes("reply above is incomplete")),
+      ).toBe(true);
+    },
+  );
+  it.each(["connection", "usage"] as const)(
+    "stops a %s-blocked replacement without an attempt or later reactivation",
+    async (kind) => {
+      const { f, replacement } = await uncertainWithBlock(kind);
+      value(
+        await f.store.executeResearchCommand({
+          command: "task.stop",
+          operationId: "stop-blocked-replacement",
+          payload: { taskId: replacement },
+        }),
+      );
+      await unblock(f, kind);
+      expect(await f.prepare()).toBeNull();
+      expect(task(f, replacement).state).toBe("cancelled");
+      const db = f.raw();
+      expect(
+        db
+          .prepare("SELECT count(*) FROM attempts WHERE task_id=?")
+          .pluck()
+          .get(entity(replacement)),
+      ).toBe(0);
+      db.close();
+    },
+  );
+  it.each([false, true])(
+    "preserves the integrated revision-nine plan pause and receipts with recovery=%s",
+    async (recovery) => {
+      const f = await setup();
+      await f.start();
+      value(await f.result((await f.prepare())!, exhausted));
+      await f.start();
+      await f.store.close();
+      const db = f.raw();
+      db.exec(
+        "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; PRAGMA user_version=9",
+      );
+      db.close();
+      if (recovery) {
+        fs.writeFileSync(
+          path.join(f.root, "migration-pending.json"),
+          JSON.stringify({ version: 1, operation: "composed-recovery", source: 9, target: 10 }),
+        );
+        await f.store.retry();
+        expect(f.rows().find((row) => row.state === "blocked")!.blocking_reason).toBe(
+          "restart_paused",
+        );
+        value(await f.continueAll());
+      } else await f.store.open();
+      expect(f.rows().find((row) => row.state === "blocked")!.blocking_reason).toBe(
+        "usage_limit_reached",
+      );
+      expect(await f.prepare()).toBeNull();
+      const resumed = value(await f.resume("resume-after-reply-migration"));
+      expect(value(await f.resume("resume-after-reply-migration"))).toEqual(resumed);
+      expect(await f.prepare()).not.toBeNull();
+      const upgraded = f.raw();
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(10);
+      expect(
+        upgraded
+          .prepare("SELECT name FROM kysely_migration ORDER BY name DESC LIMIT 2")
+          .pluck()
+          .all(),
+      ).toEqual(["0010_reply_control", "0009_usage_limit_pauses"]);
+      expect(
+        upgraded
+          .prepare("SELECT count(*) FROM usage_limit_pauses WHERE resumed_at IS NOT NULL")
+          .pluck()
+          .get(),
+      ).toBe(1);
+      upgraded.close();
+    },
+  );
+});
+
+it.each(["continue-all", "resume-requests"] as const)(
+  "reports a lost %s commit acknowledgement as uncertain and replays its receipt",
+  async (name) => {
+    const f = await setup();
+    await f.start();
+    if (name === "resume-requests") {
+      value(await f.result((await f.prepare())!, exhausted));
+      await f.start();
+    } else {
+      await f.store.close();
+      fs.writeFileSync(
+        path.join(f.root, "migration-pending.json"),
+        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 10 }),
+      );
+      await f.store.retry();
+    }
+    const sent: Record<string, unknown>[] = [];
+    const provider = new DurableProvider({
+      storage: f.store,
+      context: f.context,
+      send: (text) => sent.push(JSON.parse(text) as Record<string, unknown>),
+    });
+    const action =
+      name === "continue-all"
+        ? { name, operation_id: "lost-control-acknowledgement" }
+        : { name, operation_id: "lost-control-acknowledgement", connection: "chatgpt" as const };
+    const original = Database.prototype.prepare;
+    let fail = true;
+    const spy = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+      query,
+      ...args
+    ) {
+      const statement = original.call(this, query, ...args);
+      if (query === "COMMIT") {
+        const run = statement.run.bind(statement);
+        statement.run = (...bindings: unknown[]) => {
+          const result = run(...bindings);
+          if (fail) {
+            fail = false;
+            throw new Error("Synthetic lost control acknowledgement");
+          }
+          return result;
+        };
+      }
+      return statement;
+    });
+    const invoke = () =>
+      provider.developmentAction({
+        kind: "development_action",
+        version: 1,
+        generation: f.generation,
+        action,
+      });
+    try {
+      await invoke();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        kind: "development_report",
+        report: { type: "refused", reason: "uncertain" },
+      }),
+    );
+    const db = f.raw();
+    const receipt = db
+      .prepare("SELECT command,result_id FROM command_receipts WHERE operation_id=?")
+      .get(action.operation_id) as { command: string; result_id: Buffer };
+    expect(receipt.command).toBe(
+      name === "continue-all" ? "task.continueAll" : "usagePause.resume",
+    );
+    const attempts = db.prepare("SELECT count(*) FROM attempts").pluck().get();
+    await invoke();
+    expect(db.prepare("SELECT count(*) FROM attempts").pluck().get()).toBe(attempts);
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        kind: "development_report",
+        report: { type: "record", record: "receipt", id: identifierForReceipt(receipt.result_id) },
+      }),
+    );
+    expect(f.rows().at(-1)!.state).toBe("running");
+    db.close();
+    provider.dispose();
+  },
+);
+function identifierForReceipt(id: Buffer): string {
+  const h = id.toString("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}

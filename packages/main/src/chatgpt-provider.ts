@@ -17,6 +17,7 @@ import {
   errorCode,
   nodeResponsesTransport,
   readResponseStream,
+  closeResponseTransport,
   responsesBody,
   responsesEndpoint,
   isTransportFailure,
@@ -670,21 +671,25 @@ export class ChatGPTProvider implements ProviderAdapter {
         });
         return;
       }
-      const classified = async (outcome: ReturnType<typeof classifyStatus>) => {
-        // Never a repeat of this request: only the session's own renewal or recorded rejection.
-        if (outcome.renew) void this.renew();
-        if (outcome.rejectGrant) await this.rejectGrant(generation);
-      };
-      if (!response.ok) {
-        const outcome = classifyStatus(response.status, await errorCode(response));
-        await classified(outcome);
-        control.emit({
-          type: "result",
-          result: { status: "failed", reason: outcome.reason, dispatched: true },
-        });
-        return;
+      try {
+        const classified = async (outcome: ReturnType<typeof classifyStatus>) => {
+          // Never a repeat of this request: only the session's own renewal or recorded rejection.
+          if (outcome.renew) void this.renew();
+          if (outcome.rejectGrant) await this.rejectGrant(generation);
+        };
+        if (!response.ok) {
+          const outcome = classifyStatus(response.status, await errorCode(response));
+          await classified(outcome);
+          control.emit({
+            type: "result",
+            result: { status: "failed", reason: outcome.reason, dispatched: true },
+          });
+          return;
+        }
+        await readResponseStream(response, control, { classified });
+      } finally {
+        await closeResponseTransport(response);
       }
-      await readResponseStream(response, control, { classified });
     },
   };
   async probe(_session: StoredSession, signal: AbortSignal): Promise<readonly ProviderModel[]> {
