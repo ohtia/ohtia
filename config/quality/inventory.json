@@ -127,6 +127,7 @@
     "scripts/tests/test_quality_tests.py",
     "scripts/tests/test_quality_vm.py",
     "scripts/tests/test_quality_wayland_input.py",
+    "scripts/tests/test_release_notes.py",
     "scripts/tests/test_release_prepare.py",
     "scripts/tests/test_scaleway_cycle.py",
     "scripts/tests/test_scaleway_preflight.py",

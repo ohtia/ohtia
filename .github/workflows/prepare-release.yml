@@ -55,6 +55,48 @@ jobs:
           OHTIA_RELEASE_COMMIT: ${{ steps.select.outputs.commit }}
         run: python3 workflow/scripts/release_prepare.py reserve source
 
+  notes:
+    name: Write the first release notes
+    needs: reserve
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read # Reads the merged pull requests' ohtia-note blocks.
+    steps:
+      - name: Check out the workflow revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: workflow
+          persist-credentials: false
+
+      - name: Check out the selected source history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.reserve.outputs.commit }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+
+      - name: Collect the notes of the included pull requests
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OHTIA_RELEASE_COMMIT: ${{ needs.reserve.outputs.commit }}
+        run: python3 workflow/scripts/release_notes.py source artifacts/release-notes
+
+      - name: Retain the release notes
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: notes-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/release-notes/
+          if-no-files-found: error
+          retention-days: 14
+
   linux:
     name: linux (${{ matrix.target }})
     needs: reserve
@@ -204,7 +246,7 @@ jobs:
 
   release:
     name: Create the unpublished release
-    needs: [reserve, linux, windows, macos]
+    needs: [reserve, notes, linux, windows, macos]
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
@@ -229,12 +271,19 @@ jobs:
           path: artifacts/release-inputs
           digest-mismatch: error
 
+      - name: Download this attempt's release notes
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: notes-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/release-notes
+          digest-mismatch: error
+
       - name: Check the packages against the declared platforms
         env:
           OHTIA_RELEASE_COMMIT: ${{ needs.reserve.outputs.commit }}
           OHTIA_RELEASE_TREE: ${{ needs.reserve.outputs.tree }}
           OHTIA_RELEASE_VERSION: ${{ needs.reserve.outputs.version }}
-        run: python3 scripts/release_prepare.py assemble artifacts/release-inputs artifacts/release
+        run: python3 scripts/release_prepare.py assemble artifacts/release-inputs artifacts/release-notes/notes.md artifacts/release
 
       - name: Attest every package
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
