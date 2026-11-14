@@ -334,6 +334,15 @@ def build_inputs(directory: Path, version: str, commit: str, tree: str) -> Path:
     return inputs
 
 
+NOTES = "<!-- Summary -->\n\n## Corrections\n\n- Task: Result. (#7)\n"
+
+
+def notes_file(root):
+    file = Path(root) / "notes.md"
+    file.write_text(NOTES, encoding="utf-8")
+    return file
+
+
 class AssemblyTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -344,12 +353,13 @@ class AssemblyTests(unittest.TestCase):
             OHTIA_RELEASE_VERSION="0.3.0",
         )
         self.inputs = build_inputs(self.root, "0.3.0", "c" * 40, "d" * 40)
+        self.notes = notes_file(self.root)
 
     def tearDown(self):
         self.directory.cleanup()
 
     def test_complete_builds_produce_the_digest_file_and_testing_heading(self):
-        record = prepare.assemble(self.env, self.inputs, self.root / "release")
+        record = prepare.assemble(self.env, self.inputs, self.notes, self.root / "release")
         names = [asset["name"] for asset in record["assets"]]
         self.assertEqual(len(names), 10)
         self.assertIn("ohtia-0.3.0-linux-x64-ubuntu-26.04-unsigned.deb", names)
@@ -371,6 +381,8 @@ class AssemblyTests(unittest.TestCase):
             self.assertEqual(hashlib.sha256(file.read_bytes()).hexdigest(), asset["sha256"])
             self.assertEqual(file.stat().st_size, asset["bytes"])
         body = (self.root / "release/body.md").read_text()
+        self.assertTrue(body.startswith(NOTES + "\n" + prepare.UNSIGNED_HEADING + "\n"))
+        self.assertNotIn("c" * 40, body)
         heading = body.index(prepare.UNSIGNED_HEADING + "\n\n" + prepare.UNSIGNED_STATEMENT)
         for name in names:
             self.assertGreater(body.index(f"- `{name}`"), heading)
@@ -381,7 +393,7 @@ class AssemblyTests(unittest.TestCase):
                 file.unlink()
             folder.rmdir()
         with self.assertRaisesRegex(prepare.ReleaseError, "Every declared target"):
-            prepare.assemble(self.env, self.inputs, self.root / "release")
+            prepare.assemble(self.env, self.inputs, self.notes, self.root / "release")
         self.assertFalse((self.root / "release").exists())
 
     def test_missing_extra_or_altered_assets_are_refused(self):
@@ -429,7 +441,7 @@ class AssemblyTests(unittest.TestCase):
             with self.subTest(mutate.__name__):
                 destination = self.root / f"release-{mutate.__name__}"
                 with self.assertRaisesRegex(prepare.ReleaseError, message):
-                    prepare.assemble(self.env, change(mutate), destination)
+                    prepare.assemble(self.env, change(mutate), self.notes, destination)
                 self.assertFalse(destination.exists())
 
     def test_a_signed_platform_carries_no_unsigned_marker_or_heading(self):
@@ -441,11 +453,37 @@ class AssemblyTests(unittest.TestCase):
         (root / release_platforms.DECLARATION).write_text(json.dumps(declaration))
         with patch.object(release_platforms, "ROOT", root):
             inputs = build_inputs(self.root / "signed", "0.3.0", "c" * 40, "d" * 40)
-        record = prepare.assemble(self.env, inputs, self.root / "signed-release", root)
+        record = prepare.assemble(self.env, inputs, self.notes, self.root / "signed-release", root)
         self.assertFalse(any("unsigned" in asset["name"] for asset in record["assets"]))
-        self.assertNotIn(
-            prepare.UNSIGNED_HEADING, (self.root / "signed-release/body.md").read_text()
-        )
+        self.assertEqual((self.root / "signed-release/body.md").read_text(), NOTES)
+
+    def test_the_body_may_reach_but_not_exceed_githubs_limit(self):
+        expected = release_platforms.expected_assets(release_platforms.load(), "0.3.0")
+        overhead = len(prepare.release_body({"assets": expected}, "x")) - 1
+        for extra, accepted in ((0, True), (1, False)):
+            with self.subTest(extra=extra):
+                notes = self.root / f"limit-{extra}.md"
+                notes.write_text("x" * (prepare.MAXIMUM_BODY_CHARACTERS - overhead + extra))
+                destination = self.root / f"release-limit-{extra}"
+                if accepted:
+                    prepare.assemble(self.env, self.inputs, notes, destination)
+                    body = (destination / "body.md").read_text()
+                    self.assertEqual(len(body), prepare.MAXIMUM_BODY_CHARACTERS)
+                else:
+                    with self.assertRaisesRegex(prepare.ReleaseError, "exceeds GitHub's 125000"):
+                        prepare.assemble(self.env, self.inputs, notes, destination)
+                    self.assertFalse(destination.exists())
+
+    def test_missing_or_oversized_notes_fail_without_a_release(self):
+        for name, content in (("absent.md", None), ("large.md", "x" * (prepare.MAXIMUM_NOTES + 1))):
+            with self.subTest(name):
+                notes = self.root / name
+                if content is not None:
+                    notes.write_text(content)
+                destination = self.root / f"release-{name}"
+                with self.assertRaisesRegex(prepare.ReleaseError, "notes are missing or too large"):
+                    prepare.assemble(self.env, self.inputs, notes, destination)
+                self.assertFalse(destination.exists())
 
 
 class PublicationTests(unittest.TestCase):
@@ -459,7 +497,7 @@ class PublicationTests(unittest.TestCase):
         )
         inputs = build_inputs(self.root, "0.3.0", "c" * 40, "d" * 40)
         self.release = self.root / "release"
-        self.record = prepare.assemble(self.env, inputs, self.release)
+        self.record = prepare.assemble(self.env, inputs, notes_file(self.root), self.release)
         self.github = FakeGitHub()
 
     def tearDown(self):
@@ -645,7 +683,7 @@ class TransportTests(unittest.TestCase):
 
         cases = [
             (b'{"message":"Bad Content-Length","request_id":"r"}', " (Bad Content-Length)"),
-            (b'{"message":"bad\u001b[31m\u00e9","token":"secret"}', " (bad[31m)"),
+            (b'{"message":"bad\\u001b[31m\\u00e9","token":"secret"}', " (bad[31m)"),
             (json.dumps({"message": "m" * 300}).encode(), f" ({'m' * 200})"),
             (b'{"message":7}', ""),
             (b"not json", ""),
@@ -722,7 +760,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_each_platform_builds_in_its_own_read_only_job_from_the_declaration(self):
         jobs = job_blocks(WORKFLOW)
-        self.assertEqual(list(jobs), ["reserve", "linux", "windows", "macos", "release"])
+        self.assertEqual(list(jobs), ["reserve", "notes", "linux", "windows", "macos", "release"])
         for platform in release_platforms.load():
             block = jobs[platform["id"]]
             self.assertIn("    needs: reserve\n", block)
@@ -747,16 +785,32 @@ class WorkflowTests(unittest.TestCase):
             "    permissions:\n      contents: write\n      id-token: write\n      attestations: write\n    steps:",
             jobs["release"],
         )
-        # The release waits for every platform; a failed platform job skips it.
-        self.assertIn("    needs: [reserve, linux, windows, macos]\n", jobs["release"])
+        # The release waits for the notes and every platform; a failed job skips it.
+        self.assertIn("    needs: [reserve, notes, linux, windows, macos]\n", jobs["release"])
         self.assertNotIn("if:", jobs["release"])
         self.assertLess(
             jobs["release"].index("actions/attest@"),
             jobs["release"].index("release_prepare.py publish"),
         )
-        for name in ("reserve", "release"):
+        for name in ("reserve", "notes", "release"):
             self.assertNotIn("workspace.py", jobs[name])
             self.assertNotIn("release_build.py", jobs[name])
+
+    def test_pull_request_notes_are_read_in_a_read_only_job(self):
+        block = job_blocks(WORKFLOW)["notes"]
+        self.assertIn("    needs: reserve\n", block)
+        self.assertEqual(
+            re.findall(r"^    permissions:\n((?:      .+\n)+)", block, re.MULTILINE),
+            ["      contents: read\n      pull-requests: read\n"],
+        )
+        self.assertIn("ref: ${{ needs.reserve.outputs.commit }}", block)
+        self.assertIn("fetch-depth: 0", block)
+        self.assertIn("python3 workflow/scripts/release_notes.py source", block)
+        self.assertIn("name: notes-${{ github.run_id }}-${{ github.run_attempt }}", block)
+        release = job_blocks(WORKFLOW)["release"]
+        self.assertIn("name: notes-${{ github.run_id }}-${{ github.run_attempt }}", release)
+        self.assertIn("assemble artifacts/release-inputs artifacts/release-notes/notes.md", release)
+        self.assertNotIn("pulls", release)
 
     def test_actions_are_pinned_by_full_commit_sha(self):
         uses = re.findall(r"uses: (\S+)", WORKFLOW)

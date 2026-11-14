@@ -3,7 +3,7 @@ type: Story
 title: "STORY-001-026 — Write the first release notes into the unpublished release"
 description: "Assemble the first release-notes text from the included pull requests' ohtia-note blocks and write it as the unpublished release body."
 generated:
-  by: claude-code/claude-fable-5-2
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 tags: ["story", "comp:tooling"]
@@ -38,6 +38,7 @@ Give the maintainer a first notes text in the unpublished release, built from th
 - [ ] A pull request without a valid `ohtia-note` is reported by number in the run summary and does not stop preparation.
 - [ ] A note containing shell, Markdown link and mention syntax appears as literal text in the body.
 - [ ] With no previous `v*` tag the text covers the whole history up to the selected commit.
+- [ ] A version reserved but never published does not become the baseline: with a `reserved/v<version>` tag and no `v<version>` tag, the next prepared version's body includes the user-impact notes of every pull request integrated since the last published `v*` tag, including those prepared for the unpublished version, and a test shows it.
 
 ## Quality checklist
 

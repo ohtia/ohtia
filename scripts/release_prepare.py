@@ -7,7 +7,8 @@ Every operation runs from the workflow revision, never from the selected source:
 - ``reserve`` reads the root version of the selected source and atomically creates
   the annotated ``reserved/v<version>`` tag on it;
 - ``assemble`` checks the packages built by every platform job against the
-  declaration and writes the digest file and the release body;
+  declaration and writes the digest file and the release body, which opens with the
+  first notes text of ``scripts/release_notes.py``;
 - ``publish`` creates the unpublished release and uploads its assets without
   replacing any asset already there.
 """
@@ -37,6 +38,9 @@ WORKFLOW = ".github/workflows/prepare-release.yml"
 SHA = re.compile(r"[0-9a-f]{40}")
 MAXIMUM_RESPONSE = 8 * 1024 * 1024
 MAXIMUM_ERROR = 4096
+MAXIMUM_NOTES = 1024 * 1024
+# GitHub refuses a longer release body: "body is too long (maximum is 125000 characters)".
+MAXIMUM_BODY_CHARACTERS = 125_000
 MAXIMUM_RELEASE_PAGES = 10
 DIGESTS = "release-digests.json"
 UNSIGNED_HEADING = "## Unsigned testing packages"
@@ -93,7 +97,8 @@ class GitHub:
             with self.opener(request, timeout=timeout) as response:
                 status, body = response.status, response.read(MAXIMUM_RESPONSE + 1)
         except urllib.error.HTTPError as error:
-            status, body, reason = error.code, b"", error_reason(error)
+            with error:  # An HTTP error holds the response; release it after reading.
+                status, body, reason = error.code, b"", error_reason(error)
         except (OSError, ValueError) as error:
             raise ReleaseError(
                 f"GitHub {method} {urlparse_path(url)} could not complete."
@@ -259,8 +264,13 @@ def digest(file: Path) -> str:
     return hashed.hexdigest()
 
 
-def assemble(env: dict, inputs: Path, destination: Path, root: Path | None = None) -> dict:
-    """Check every platform's build against the declaration and write the release files."""
+def assemble(
+    env: dict, inputs: Path, notes: Path, destination: Path, root: Path | None = None
+) -> dict:
+    """Check every platform's build against the declaration and write the release files.
+
+    ``notes`` is the ``notes.md`` file of the read-only notes job; it opens the release body.
+    """
     commit, tree, version, run_id, attempt, workflow_sha = environment(
         env,
         "OHTIA_RELEASE_COMMIT",
@@ -306,6 +316,20 @@ def assemble(env: dict, inputs: Path, destination: Path, root: Path | None = Non
         sorted(built) == sorted(item["name"] for item in expected),
         "The built assets differ from the declared release platforms.",
     )
+    require(
+        notes.is_file() and not notes.is_symlink() and notes.stat().st_size <= MAXIMUM_NOTES,
+        "The release notes are missing or too large.",
+    )
+    first_notes = notes.read_text(encoding="utf-8")
+    # The body depends only on the declared assets, so its length is checked before writing.
+    body = release_body(
+        {"assets": [{"name": item["name"], "signed": item["signed"]} for item in expected]},
+        first_notes,
+    )
+    require(
+        len(body) <= MAXIMUM_BODY_CHARACTERS,
+        f"The release body exceeds GitHub's {MAXIMUM_BODY_CHARACTERS} characters.",
+    )
     require(not destination.exists(), "Use a fresh release directory.")
     (destination / "assets").mkdir(parents=True)
     assets = []
@@ -343,15 +367,13 @@ def assemble(env: dict, inputs: Path, destination: Path, root: Path | None = Non
         "assets": assets,
     }
     (destination / DIGESTS).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
-    (destination / "body.md").write_text(release_body(record), encoding="utf-8")
+    (destination / "body.md").write_text(body, encoding="utf-8")
     return record
 
 
-def release_body(record: dict) -> str:
-    lines = [
-        f"Ohtia {record['version']}, prepared from {record['source']['commit']}.",
-        "",
-    ]
+def release_body(record: dict, notes: str) -> str:
+    """Open with the first notes text and list unsigned assets under the testing heading."""
+    lines = [notes.rstrip("\n"), ""]
     unsigned = [asset["name"] for asset in record["assets"] if not asset["signed"]]
     if unsigned:
         lines += [UNSIGNED_HEADING, "", UNSIGNED_STATEMENT, ""]
@@ -505,6 +527,7 @@ def main(argv: list[str] | None = None, env: dict | None = None) -> int:
     commands.add_parser("reserve").add_argument("source", type=Path)
     command = commands.add_parser("assemble")
     command.add_argument("inputs", type=Path)
+    command.add_argument("notes", type=Path)
     command.add_argument("destination", type=Path)
     commands.add_parser("publish").add_argument("directory", type=Path)
     args = parser.parse_args(argv)
@@ -522,7 +545,9 @@ def main(argv: list[str] | None = None, env: dict | None = None) -> int:
                 ],
             )
         elif args.command == "assemble":
-            assemble(env, args.inputs.absolute(), args.destination.absolute())
+            assemble(
+                env, args.inputs.absolute(), args.notes.absolute(), args.destination.absolute()
+            )
         else:
             published = publish(GitHub(env.get("GITHUB_TOKEN", "")), env, args.directory)
             summary(env, [f"Unpublished release: {published['url']}"])
