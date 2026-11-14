@@ -213,3 +213,9 @@ export function isProviderDeclaration(value: unknown): value is ProviderDeclarat
       (typeof c.usageUrl === "string" && /^https:\/\/[^\s]+$/.test(c.usageUrl)))
   );
 }
+
+/** Declared inference slots; undeclared connections retain ADR-0011's limit of one. */
+export const connectionInferenceLimits: Readonly<Record<string, number>> = Object.freeze({
+  chatgpt: 3,
+  fake: 1,
+});

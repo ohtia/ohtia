@@ -1,3 +1,10 @@
+import { TaskTransaction, type TaskContext, type PreparedTask } from "./tasks.js";
+import { ServiceConnections, type ProviderEvent } from "@ohtia/contracts";
+import {
+  up as durableTasks,
+  tables as taskTables,
+  objects as taskObjects,
+} from "./migrations/0008_durable_ai_tasks.mjs";
 import {
   applyResearchCommand,
   LanguageRegistry,
@@ -188,9 +195,10 @@ const names = [
   "0005_presentation_receipts",
   "0006_window_bounds_receipts",
   "0007_research_records",
+  "0008_durable_ai_tasks",
 ] as const;
 const target = names.length;
-const targetName = names[6];
+const targetName = names[7];
 function digest(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -395,6 +403,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 5 ? ["presentation_receipts"] : []),
     ...(revision >= 6 ? ["window_bounds_receipts"] : []),
     ...(revision >= 7 ? Object.keys(researchTables) : []),
+    ...(revision >= 8 ? Object.keys(taskTables) : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -488,7 +497,18 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 4 ? [["layout_receipts", layoutReceiptsSchema]] : []),
     ...(revision >= 5 ? [["presentation_receipts", presentationReceiptsSchema]] : []),
     ...(revision >= 6 ? [["window_bounds_receipts", boundsReceiptsSchema]] : []),
-    ...(revision >= 7 ? Object.entries(researchTables) : []),
+    ...(revision >= 7
+      ? Object.entries(researchTables).map(([name, definition]) => [
+          name,
+          revision >= 8 && name === "messages"
+            ? definition.replace(
+                ",\n    UNIQUE (conversation_id,position)",
+                ", task_id BLOB REFERENCES tasks(id),\n    UNIQUE (conversation_id,position)",
+              )
+            : definition,
+        ])
+      : []),
+    ...(revision >= 8 ? Object.entries(taskTables) : []),
   ]) {
     const row = db
       .prepare("SELECT sql FROM sqlite_schema WHERE name=? AND type='table'")
@@ -503,7 +523,16 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     .all() as { name: string; sql: string }[];
   const expectedObjects =
     revision >= 7
-      ? Object.entries(researchObjects).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      ? Object.entries(
+          revision >= 8
+            ? {
+                ...Object.fromEntries(
+                  Object.entries(researchObjects).filter(([name]) => name !== "messages_revision"),
+                ),
+                ...taskObjects,
+              }
+            : researchObjects,
+        ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       : [];
   if (
     objects.length !== expectedObjects.length ||
@@ -522,6 +551,14 @@ export class DurableStore {
   private database: Kysely<Schema> | undefined;
   private native: Database.Database | undefined;
   private active = false;
+  private taskContext: TaskContext = {
+    mode: "installed",
+    generation: "not-started",
+    connections: new ServiceConnections(),
+  };
+  setTaskContext(context: TaskContext): void {
+    this.taskContext = context;
+  }
   private languageRegistry: LanguageRegistry | undefined;
   private admitted = false;
   private creationAllowed: boolean;
@@ -782,6 +819,7 @@ export class DurableStore {
                 "0005_presentation_receipts": { up: presentationReceipts },
                 "0006_window_bounds_receipts": { up: boundsReceipts },
                 "0007_research_records": { up: researchRecords },
+                "0008_durable_ai_tasks": { up: durableTasks },
               }),
           },
         });
@@ -1921,6 +1959,7 @@ export class DurableStore {
     }
     this.active = true;
     let commitAttempted = false;
+    const diagnostics: DiagnosticEvent[] = [];
     let outcome: Outcome<ResearchResult>;
     const attempted = () => commitAttempted;
     try {
@@ -1928,18 +1967,26 @@ export class DurableStore {
       outcome = await this.database.connection().execute(async (transaction) => {
         await sql`BEGIN IMMEDIATE`.execute(transaction);
         try {
-          const result = await applyResearchCommand(transaction, command, () => {
-            this.languageRegistry ??= new LanguageRegistry(
-              this.options.languageRegistry ??
-                new URL("./iana-language-subtag-registry.txt", import.meta.url),
-            );
-            return this.languageRegistry;
-          });
+          const tasks = new TaskTransaction(transaction, this.taskContext);
+          const result = await applyResearchCommand(
+            transaction,
+            command,
+            () => {
+              this.languageRegistry ??= new LanguageRegistry(
+                this.options.languageRegistry ??
+                  new URL("./iana-language-subtag-registry.txt", import.meta.url),
+              );
+              return this.languageRegistry;
+            },
+            tasks,
+          );
           this.assert();
           if (!result.ok) {
             await sql`ROLLBACK`.execute(transaction);
             return result;
           }
+          await tasks.flush();
+          diagnostics.push(...tasks.diagnostics);
           commitAttempted = true;
           await sql`COMMIT`.execute(transaction);
           return result;
@@ -1965,7 +2012,9 @@ export class DurableStore {
       this.active = false;
     }
     if (outcome.ok) {
+      for (const event of diagnostics) this.researchDiagnostic(event);
       const events = {
+        "development.createProject": "ohtia.project.created",
         "project.create": "ohtia.project.created",
         "project.confirmSetup": "ohtia.project.setup_confirmed",
         "conversation.start": "ohtia.conversation.started",
@@ -1978,6 +2027,48 @@ export class DurableStore {
     }
     return outcome;
   }
+  private async taskTransaction<T>(
+    operation: (tasks: TaskTransaction) => Promise<T>,
+  ): Promise<Outcome<T>> {
+    if (!this.ready || !this.database) return failure(this.active ? "busy" : "service_unavailable");
+    this.active = true;
+    let commitAttempted = false;
+    const attempted = () => commitAttempted;
+    const diagnostics: DiagnosticEvent[] = [];
+    try {
+      this.assert();
+      const value = await this.database.connection().execute(async (transaction) => {
+        await sql`BEGIN IMMEDIATE`.execute(transaction);
+        try {
+          const tasks = new TaskTransaction(transaction, this.taskContext);
+          const result = await operation(tasks);
+          await tasks.flush();
+          diagnostics.push(...tasks.diagnostics);
+          this.assert();
+          commitAttempted = true;
+          await sql`COMMIT`.execute(transaction);
+          return result;
+        } catch (error) {
+          if (this.native?.inTransaction) await sql`ROLLBACK`.execute(transaction);
+          throw error;
+        }
+      });
+      for (const event of diagnostics) this.researchDiagnostic(event);
+      return { ok: true, value };
+    } catch {
+      if (attempted()) this.admitted = false;
+      return failure(attempted() ? "uncertain" : "storage_failed");
+    } finally {
+      this.active = false;
+    }
+  }
+  prepareTask(): Promise<Outcome<PreparedTask | null>> {
+    return this.taskTransaction((tasks) => tasks.prepareNext());
+  }
+  recordTaskEvent(attempt: string, event: ProviderEvent, text: string): Promise<Outcome<boolean>> {
+    return this.taskTransaction((tasks) => tasks.event(attempt, event, text));
+  }
+
   private async researchRead<T>(
     query: (db: Kysely<Schema>) => Promise<Outcome<T>>,
     event: "ohtia.project.listed" | "ohtia.conversation.listed" | "ohtia.message.listed",

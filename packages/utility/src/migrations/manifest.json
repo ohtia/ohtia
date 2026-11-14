@@ -26,5 +26,9 @@
   {
     "name": "0007_research_records",
     "sha256": "a21462ab25e328f6e1c7fa42f4e9e40a71b26bcb6183a8a63f13d2b7f945a2b5"
+  },
+  {
+    "name": "0008_durable_ai_tasks",
+    "sha256": "9828722765ea05ea3366f2d0f7608505aed17959b432d8208198f53ec1d710ff"
   }
 ]

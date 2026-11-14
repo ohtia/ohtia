@@ -3,7 +3,7 @@ type: Story
 title: "STORY-003-006 — Blocked work and plan-limit pause"
 description: "Block work while ChatGPT is unavailable or its plan is exhausted, and resume it in order."
 generated:
-  by: claude-code/claude-opus-5-5
+  by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
 tags: [story, "comp:storage", "comp:llm"]
@@ -12,7 +12,7 @@ resource: https://github.com/ohtia/ohtia/issues/208
 epic: "EPIC-003"
 epic_concept: ./epic.md
 components: ["comp:storage", "comp:llm"]
-applicable_blocks: ["SPEC-003-011"]
+applicable_blocks: ["SPEC-003-011", "SPEC-003-013"]
 ---
 
 # STORY-003-006 — Blocked work and plan-limit pause
@@ -25,6 +25,8 @@ Block queued and new tasks while ChatGPT is disconnected, connecting, expired or
 
 - [SPEC-003-011: Blocked work and plan-limit pause](./epic.md#spec-003-011-blocked-work-and-plan-limit-pause)
 
+- [SPEC-003-013: Restart and suspension](./epic.md#spec-003-013-restart-and-suspension), recovery-only delivery, classification, handoff, explicit continuation and verification; complete non-recovery restart and suspension remain STORY-003-008.
+
 ## Tasks
 
 - [ ] Start after STORY-003-005 is merged and its output is on the base branch: Tasks, attempts and the multitask queue.
@@ -36,7 +38,9 @@ Block queued and new tasks while ChatGPT is disconnected, connecting, expired or
 - [ ] Open the pause in the transaction that records `usage_limit_reached`, block waiting and new tasks, and never retry.
 - [ ] Implement `usagePause.resume`, with the connection and its operation identifier, as a command recorded in `command_receipts` that closes that connection's open pause and requeues in order every task it blocked, in every project, and that, with no open pause for that connection, as when another window resumed it first, succeeds without change and records its receipt; add the development command's `resume-requests` action, with `--ohtia-dev-connection=chatgpt`, which runs it until the button exists.
 - [ ] Handle a disconnection during a pause and apply coalescing to blocked tasks.
-- [ ] Implement the blocking reason and the `queued` to `blocked` transition as the ADR written in STORY-003-005 records them; this story amends no document.
+- [ ] Implement the blocking reason and the `queued` to `blocked` transition as ADR-0051 records them; this story amends no document.
+
+- [ ] Deliver or reuse SPEC-003-013’s recovery-only boundary before enabling this story’s migration, including development stores with accepted tasks. The first of STORY-003-006/007 to integrate supplies the shared gate-to-pause handoff, unfinished-attempt recovery, `task.continueAll`, development `continue-all` action and synthetic tests; later stories update their base and reuse the same boundary, command and tests. Whichever integrates second extends the same revalidation with its newly introduced prerequisites and preserves the earlier checks. Do not wait for STORY-003-008 or add a second continuation path.
 
 ## Acceptance criteria
 
@@ -50,6 +54,10 @@ Block queued and new tasks while ChatGPT is disconnected, connecting, expired or
 - [ ] While a sign-in is `connecting`, queued and new tasks are blocked with `connection_disabled`.
 - [ ] With the researcher's account, signing out with queued tasks blocks them and signing in again resumes them.
 - [ ] A connection never has two open pauses.
+
+- [ ] The shared recovery suite passes against this story’s migration from a synthetic source with queued and unfinished tasks: rollback retry and checkpoint restoration hold pending work, even across another startup or reconnection, until `task.continueAll`; a proven undispatched attempt is cancelled and held rather than automatically requeued, dispatched work stays uncertain, crash windows preserve the gate or committed holds, and a healthy upgrade’s fresh gate alone adds no recovery pause.
+
+- [ ] In either STORY-003-006/007 integration order, `task.continueAll` after recovery keeps a task `usage_limit_reached` while its connection has an open usage pause; with no open usage pause and an unavailable connection it keeps `connection_disabled`. Reuse the command delivered by STORY-003-007 when it integrated first and test both checks with that base.
 
 ## Quality checklist
 

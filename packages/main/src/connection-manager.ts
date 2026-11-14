@@ -62,6 +62,7 @@ export class ConnectionManager {
   private readonly connections = new Map<string, Connection>();
   private readonly listeners = new Set<(event: ConnectionEvent) => void>();
   private disposed = false;
+  private readonly modelReads = new Map<string, number>();
   private readonly adapterStops: (() => void)[] = [];
   constructor(
     adapters: readonly ProviderAdapter[],
@@ -361,6 +362,16 @@ export class ConnectionManager {
     } else this.diagnostic?.({ event_name: "ohtia.connection.disconnect" });
     return { ok: true, value: this.requireSnapshot(id) };
   }
+  refreshModels(id: string, force = false, now = Date.now()): void {
+    const connection = this.connections.get(id);
+    if (!connection || this.disposed || connection.state !== "connected" || connection.probe)
+      return;
+    const last = this.modelReads.get(id);
+    if (!force && last !== undefined && now - last <= 24 * 60 * 60 * 1000) return;
+    // Only storeModels marks a successful read fresh. An active probe prevents overlap, and
+    // main's periodic check bounds retries of a stale catalog after a temporary failure.
+    this.probe(id);
+  }
   probe(id: string): Outcome<ConnectionSnapshot> {
     const c = this.connections.get(id);
     if (!c || this.disposed) return failure("invalid_message");
@@ -459,6 +470,7 @@ export class ConnectionManager {
       return false;
     }
     c.models = Object.freeze(models);
+    this.modelReads.set(id, Date.now());
     c.revision = revision;
     return true;
   }

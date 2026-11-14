@@ -145,6 +145,8 @@ export const errorActions = {
   project_in_setup: "refresh_record",
   record_not_found: "refresh_record",
   name_invalid: "check_request",
+  input_too_large: "check_request",
+  pending_limit_reached: "retry_later",
   message_invalid: "check_request",
   invalid_message: "check_request",
   unsupported_version: "upgrade_application",

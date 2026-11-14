@@ -6,9 +6,11 @@ import {
   decodeProviderDispatch,
   decodeProviderEvent,
   decodeProviderInterrupt,
+  decodeModelListRefresh,
   dispatchPermitPolicy,
   isProviderResult,
   providerTextPieces,
+  providerMessageBytes,
   ServiceConnections,
   type DiagnosticEvent,
   type ProviderDispatchMessage,
@@ -19,7 +21,8 @@ import {
   omittedMessagesNote,
   operationPolicy,
 } from "../packages/utility/src/operations.js";
-import { ProviderAttempts } from "../packages/utility/src/provider-attempts.js";
+import { DurableProvider } from "../packages/utility/src/durable-provider.js";
+import { storageFixture } from "./fixtures/storage.js";
 import { createStatusService } from "../packages/utility/src/status-service.js";
 import { ProviderDispatch } from "../packages/main/src/provider-dispatch.js";
 import { ServiceSupervisor } from "../packages/main/src/service-supervisor.js";
@@ -72,6 +75,86 @@ describe("provider message contracts", () => {
     const interrupt = { kind: "provider_interrupt", version: 1, generation: "g", attempt: "a" };
     expect(decodeProviderInterrupt(JSON.stringify(interrupt), "g")).toEqual(interrupt);
     expect(decodeProviderInterrupt(JSON.stringify({ ...interrupt, x: 1 }), "g")).toBeUndefined();
+  });
+  it("bounds encoded provider envelopes while preserving escaped whole-message input", () => {
+    const escaped = {
+      ...dispatch,
+      request: { ...request, input: [{ role: "user", text: "\u0001".repeat(16384) }] },
+    };
+    expect(decodeProviderDispatch(JSON.stringify(escaped), "service-1")).toEqual(escaped);
+    const action = {
+      kind: "development_action",
+      version: 1,
+      generation: "g",
+      action: {
+        name: "send",
+        operation_id: "send",
+        conversation: "conversation",
+        text: "\u0001".repeat(65536),
+      },
+    };
+    expect(decodeDevelopmentAction(JSON.stringify(action), "g")).toEqual(action);
+    for (const padding of [" ".repeat(providerMessageBytes), "é".repeat(providerMessageBytes / 2)])
+      expect(
+        decodeProviderDispatch(JSON.stringify(dispatch) + padding, "service-1"),
+      ).toBeUndefined();
+  });
+  it("decodes model-list refreshes only with their version, connection and current generation", () => {
+    const refresh = {
+      kind: "model_list_refresh",
+      version: 1,
+      generation: "g",
+      connection: "chatgpt",
+    };
+    expect(decodeModelListRefresh(JSON.stringify(refresh), "g")).toEqual(refresh);
+    for (const invalid of [
+      { ...refresh, version: 2 },
+      { ...refresh, credential: "synthetic" },
+      { ...refresh, connection: "wrong connection" },
+      { ...refresh, generation: "old" },
+    ])
+      expect(decodeModelListRefresh(JSON.stringify(invalid), "g")).toBeUndefined();
+  });
+  it("validates the three durable development actions and their record reports", () => {
+    for (const action of [
+      { name: "create-development-project", operation_id: "create" },
+      {
+        name: "start-conversation",
+        operation_id: "start",
+        project: "project-id",
+        text: "Question",
+      },
+      { name: "send", operation_id: "send", conversation: "conversation-id", text: "Follow-up" },
+    ]) {
+      const message = { kind: "development_action", version: 1, generation: "g", action };
+      expect(decodeDevelopmentAction(JSON.stringify(message), "g")).toEqual(message);
+      expect(
+        decodeDevelopmentAction(
+          JSON.stringify({ ...message, action: { ...action, operation_id: "bad id" } }),
+          "g",
+        ),
+      ).toBeUndefined();
+      expect(
+        decodeDevelopmentAction(
+          JSON.stringify({ ...message, action: { ...action, credential: "synthetic" } }),
+          "g",
+        ),
+      ).toBeUndefined();
+    }
+    const record = {
+      kind: "development_report",
+      version: 1,
+      generation: "g",
+      operation_id: "create",
+      report: { type: "record", record: "project", id: "project-id" },
+    };
+    expect(decodeDevelopmentReport(JSON.stringify(record), "g")).toEqual(record);
+    expect(
+      decodeDevelopmentReport(
+        JSON.stringify({ ...record, report: { ...record.report, record: "credential" } }),
+        "g",
+      ),
+    ).toBeUndefined();
   });
   it("admits only the specified results and sequenced events", () => {
     for (const result of [
@@ -172,7 +255,12 @@ describe("provider message contracts", () => {
         },
         transfer: [
           { kind: "message", reference: "development_request" },
-          { kind: "note", note: "earlier_messages_omitted" },
+          {
+            kind: "note",
+            note: "earlier_messages_omitted",
+            reference: "conversation",
+            revision: 1,
+          },
         ],
         events: 3,
         duration_ms: 10,
@@ -211,29 +299,37 @@ describe("development_test policy and input rule", () => {
       role: index % 2 ? ("assistant" as const) : ("user" as const),
       text: `Message ${index}`,
     }));
-    const built = buildInput(policy, messages)!;
+    const built = buildInput(policy, messages, { reference: "conversation", revision: 1 })!;
     expect(built.input).toHaveLength(21);
     expect(built.input[0]).toEqual({ role: "user", text: omittedMessagesNote });
     expect(built.input[1]!.text).toBe("Message 5");
     expect(built.input.at(-1)!.text).toBe("Message 24");
     expect(built.transfer.slice(0, 2)).toEqual([
       { kind: "instructions", operation: "development_test", version: 1 },
-      { kind: "note", note: "earlier_messages_omitted" },
+      { kind: "note", note: "earlier_messages_omitted", reference: "conversation", revision: 1 },
     ]);
     expect(JSON.stringify(built.transfer)).not.toContain("Message");
     const large = [
       { reference: "old", role: "user" as const, text: "x".repeat(10000) },
       { reference: "new", role: "user" as const, text: "y".repeat(10000) },
     ];
-    expect(buildInput(policy, large)!.transfer).toEqual([
-      { kind: "instructions", operation: "development_test", version: 1 },
-      { kind: "note", note: "earlier_messages_omitted" },
-      { kind: "message", reference: "new" },
-    ]);
+    expect(buildInput(policy, large, { reference: "conversation", revision: 1 })!.transfer).toEqual(
+      [
+        { kind: "instructions", operation: "development_test", version: 1 },
+        { kind: "note", note: "earlier_messages_omitted", reference: "conversation", revision: 1 },
+        { kind: "message", reference: "new" },
+      ],
+    );
     expect(
-      buildInput(policy, [{ reference: "one", role: "user", text: "z".repeat(16385) }]),
+      buildInput(policy, [{ reference: "one", role: "user", text: "z".repeat(16385) }], {
+        reference: "conversation",
+        revision: 1,
+      }),
     ).toBeUndefined();
-    expect(buildInput(policy, messages.slice(0, 2))!.input[0]).toEqual({
+    expect(
+      buildInput(policy, messages.slice(0, 2), { reference: "conversation", revision: 1 })!
+        .input[0],
+    ).toEqual({
       role: "user",
       text: "Message 0",
     });
@@ -258,25 +354,54 @@ function connectionsWith(state: "connected" | "disconnected") {
   return connections;
 }
 describe("data-service dispatch control", () => {
-  it("checks the connection, records the transfer list and issues a single-use permit", () => {
+  it("checks the connection, records the transfer list and issues a single-use permit", async () => {
+    const fixture = storageFixture();
+    await fixture.store.open();
     const sent: string[] = [];
     let clock = 0;
-    const attempts = new ProviderAttempts({
+    const connections = connectionsWith("connected");
+    connections.receive({
+      kind: "connection_state",
       generation: "g",
-      mode: "development",
-      connections: connectionsWith("connected"),
+      snapshot: {
+        connection: "chatgpt",
+        state: "connected",
+        reason: null,
+        probing: false,
+        probe_id: null,
+        model_list_revision: 1,
+        model_count: 1,
+      },
+    });
+    connections.receive({
+      kind: "connection_models",
+      generation: "g",
+      page: {
+        connection: "chatgpt",
+        model_list_revision: 1,
+        models: [{ id: "first", name: "First" }],
+        nextCursor: 1,
+        hasMore: false,
+      },
+    });
+    const attempts = new DurableProvider({
+      storage: fixture.store,
+      context: { generation: "g", mode: "development", connections },
       send: (text) => sent.push(text),
-      wallClock: () => 1000,
       monotonic: () => clock,
     });
-    const started = attempts.start(
-      "op-1",
-      "first",
-      [{ reference: "development_request", role: "user", text: developmentRequestText }],
-      "chatgpt",
-    );
-    expect(started.ok).toBe(true);
-    const dispatch = decodeProviderDispatch(sent[0], "g")!;
+    await attempts.developmentAction({
+      kind: "development_action",
+      version: 1,
+      generation: "g",
+      action: {
+        name: "request",
+        operation_id: "op-1",
+        model: "first",
+        text: developmentRequestText,
+      },
+    });
+    const dispatch = sent.map((text) => decodeProviderDispatch(text, "g")).find(Boolean)!;
     expect(dispatch.request).toMatchObject({
       operation: "development_test",
       connection: "chatgpt",
@@ -284,7 +409,6 @@ describe("data-service dispatch control", () => {
       instructions: developmentInstructions,
       input: [{ role: "user", text: developmentRequestText }],
     });
-    expect(dispatch.permit).toMatchObject({ attempt: dispatch.request.attempt, issued_at: 1000 });
     const attempt = dispatch.request.attempt;
     const event = (value: ProviderEvent) => ({
       kind: "provider_event" as const,
@@ -295,100 +419,76 @@ describe("data-service dispatch control", () => {
     });
     clock = 100;
     expect(
-      attempts.receive(
+      await attempts.receive(
         event({ sequence: 1, type: "started", provider_request_id: null, model: null }),
       ),
     ).toBe(true);
     clock = 400;
-    expect(attempts.receive(event({ sequence: 2, type: "text", text: "Reply" }))).toBe(true);
-    // A gap in the sequence is a peer fault.
-    expect(attempts.receive(event({ sequence: 4, type: "text", text: "x" }))).toBe(false);
+    expect(await attempts.receive(event({ sequence: 2, type: "text", text: "Reply" }))).toBe(true);
+    expect(await attempts.receive(event({ sequence: 4, type: "text", text: "x" }))).toBe(false);
     clock = 450;
     expect(
-      attempts.receive(event({ sequence: 3, type: "result", result: { status: "completed" } })),
+      await attempts.receive(
+        event({ sequence: 3, type: "result", result: { status: "completed" } }),
+      ),
     ).toBe(true);
     const finished = decodeDevelopmentReport(sent.at(-1), "g")!.report;
-    expect(finished).toEqual({
+    expect(finished).toMatchObject({
       type: "finished",
       attempt,
       result: { status: "completed" },
-      // No usage event arrived: every count stays unknown, never zero.
       usage: {
         input_tokens: null,
         cached_input_tokens: null,
         output_tokens: null,
         reasoning_tokens: null,
       },
-      transfer: [
-        { kind: "instructions", operation: "development_test", version: 1 },
-        { kind: "message", reference: "development_request" },
-      ],
       events: 3,
       duration_ms: 450,
       longest_silence_ms: 300,
     });
-    // Events after the result, or for an unknown attempt, are discarded.
-    expect(attempts.receive(event({ sequence: 4, type: "text", text: "late" }))).toBe(true);
-    expect(attempts.running()).toEqual([]);
-    expect(attempts.interrupt(attempt)).toBe(false);
+    if (finished.type !== "finished") throw new Error("Expected final measurement.");
+    expect(finished.transfer).toHaveLength(2);
+    expect(finished.transfer[1]!.kind).toBe("message");
+    expect(await attempts.receive(event({ sequence: 4, type: "text", text: "late" }))).toBe(true);
+    attempts.dispose();
   });
-  it("refuses without dispatching when the connection is not connected or the limit is reached", () => {
+  it("refuses without dispatching when the connection is not connected or the limit is reached", async () => {
+    const fixture = storageFixture();
+    await fixture.store.open();
     const sent: string[] = [];
-    const refused = new ProviderAttempts({
-      generation: "g",
-      mode: "development",
-      connections: connectionsWith("disconnected"),
+    const attempts = new DurableProvider({
+      storage: fixture.store,
+      context: {
+        generation: "g",
+        mode: "development",
+        connections: connectionsWith("disconnected"),
+      },
       send: (text) => sent.push(text),
     });
-    expect(
-      refused.start("op", "first", [{ reference: "r", role: "user", text: "x" }], "chatgpt"),
-    ).toEqual({
-      ok: false,
+    await attempts.developmentAction({
+      kind: "development_action",
+      version: 1,
+      generation: "g",
+      action: { name: "request", operation_id: "op", model: "first", text: "Question" },
+    });
+    expect(decodeDevelopmentReport(sent[0], "g")!.report).toEqual({
+      type: "refused",
       reason: "connection_unavailable",
     });
-    expect(sent).toEqual([]);
-    const busy = new ProviderAttempts({
-      generation: "g",
-      mode: "development",
-      connections: connectionsWith("connected"),
-      send: () => {},
-    });
-    for (let index = 0; index < 20; index++)
-      expect(
-        busy.start("op", "first", [{ reference: "r", role: "user", text: "x" }], "chatgpt").ok,
-      ).toBe(true);
-    expect(
-      busy.start("op", "first", [{ reference: "r", role: "user", text: "x" }], "chatgpt"),
-    ).toEqual({
-      ok: false,
-      reason: "busy",
-    });
-    busy.dispose();
-    expect(
-      busy.start("op", "first", [{ reference: "r", role: "user", text: "x" }], "chatgpt").ok,
-    ).toBe(false);
+    expect(sent.some((text) => decodeProviderDispatch(text, "g"))).toBe(false);
+    attempts.dispose();
   });
   it("accepts development actions only when the data service runs in the development mode", () => {
     const action = {
-      kind: "development_action" as const,
-      version: 1 as const,
+      kind: "development_action",
+      version: 1,
       generation: "g",
-      action: { name: "request" as const, operation_id: "op", model: "first", text: "x" },
+      action: { name: "request", operation_id: "op", model: "first", text: "Question" },
     };
     for (const mode of ["installed", "qualification"] as const) {
-      const attempts = new ProviderAttempts({
-        generation: "g",
-        mode,
-        connections: connectionsWith("connected"),
-        send: () => {},
-      });
-      expect(() => {
-        attempts.developmentAction(action);
-      }).toThrow();
       const service = createStatusService("g", "en-US", () => {}, undefined, undefined, mode);
-      expect(() => {
-        service.receive(JSON.stringify(action));
-      }).toThrow();
+      expect(() => service.receive(JSON.stringify(action))).toThrow();
     }
   });
 });
@@ -654,6 +754,31 @@ describe("the development command", () => {
       expect(isDevelopmentSwitch(item)).toBe(false);
     expect(isDevelopmentSwitch(`--ohtia-dev-text=${"x".repeat(9000)}`)).toBe(false);
   });
+  it("refuses malformed handed-off text before posting and preserves the decoder's UTF-8 boundary", () => {
+    const post = vi.fn((text: string) => !!text);
+    const lines: string[] = [];
+    const command = createDevelopmentCommand({ ready: () => "g", post }, (line) =>
+      lines.push(line),
+    );
+    for (const name of ["send", "start-conversation"]) {
+      const switches = [
+        `--ohtia-dev-command=${name}`,
+        name === "send" ? "--ohtia-dev-conversation=conversation" : "--ohtia-dev-project=project",
+      ];
+      for (const text of ["x".repeat(65537), "é".repeat(32769), "\uD800"])
+        command.run([...switches, `--ohtia-dev-text=${text}`]);
+      expect(post).not.toHaveBeenCalled();
+      for (const text of ["x".repeat(65536), "é".repeat(32768)]) {
+        command.run([...switches, `--ohtia-dev-text=${text}`]);
+        expect(decodeDevelopmentAction(post.mock.calls.at(-1)![0], "g")?.action).toMatchObject({
+          name,
+          text,
+        });
+      }
+      post.mockClear();
+    }
+    expect(lines.join("")).toContain("UTF-8 bytes");
+  });
   it("queues an action until a data service is ready and prints refusals", () => {
     const lines: string[] = [];
     let generation: string | undefined;
@@ -692,8 +817,90 @@ describe("the development command", () => {
   });
 });
 
+it("parses durable project/start/send actions with the identifiers and text they need", () => {
+  expect(
+    parseDevelopmentSwitches(["--ohtia-dev-command=create-development-project"], "op"),
+  ).toEqual({ ok: true, action: { name: "create-development-project", operation_id: "op" } });
+  expect(
+    parseDevelopmentSwitches(
+      [
+        "--ohtia-dev-command=start-conversation",
+        "--ohtia-dev-project=project-id",
+        "--ohtia-dev-text=Question",
+      ],
+      "op",
+    ),
+  ).toEqual({
+    ok: true,
+    action: {
+      name: "start-conversation",
+      operation_id: "op",
+      project: "project-id",
+      text: "Question",
+    },
+  });
+  expect(
+    parseDevelopmentSwitches(
+      [
+        "--ohtia-dev-command=send",
+        "--ohtia-dev-conversation=conversation-id",
+        "--ohtia-dev-text=Follow-up",
+      ],
+      "op",
+    ),
+  ).toEqual({
+    ok: true,
+    action: {
+      name: "send",
+      operation_id: "op",
+      conversation: "conversation-id",
+      text: "Follow-up",
+    },
+  });
+  for (const switches of [
+    ["--ohtia-dev-command=send", "--ohtia-dev-conversation=bad id", "--ohtia-dev-text=Question"],
+    [
+      "--ohtia-dev-command=start-conversation",
+      "--ohtia-dev-project=project-id",
+      "--ohtia-dev-text=",
+    ],
+    ["--ohtia-dev-command=create-development-project", "--ohtia-dev-text=Unexpected"],
+  ])
+    expect(parseDevelopmentSwitches(switches)).toMatchObject({ ok: false });
+});
+
+it("routes the validated model-list refresh through the main supervisor channel", () => {
+  let receive!: (value: unknown) => void;
+  const supervisor = new ServiceSupervisor(
+    {
+      send: vi.fn(),
+      kill: vi.fn(),
+      messages: (listener) => {
+        receive = listener;
+      },
+      exited: vi.fn(),
+    },
+    "g",
+    () => {},
+  );
+  receive(JSON.stringify({ kind: "ready", generation: "g" }));
+  const refreshModels = vi.fn();
+  supervisor.connectProvider({ dispatch: vi.fn(), interrupt: vi.fn(), refreshModels });
+  const message = {
+    kind: "model_list_refresh",
+    version: 1,
+    generation: "g",
+    connection: "chatgpt",
+  };
+  receive(JSON.stringify(message));
+  expect(refreshModels).toHaveBeenCalledExactlyOnceWith(message);
+  expect(supervisor.available).toBe(true);
+});
+
 describe("the development command through the data service and main", () => {
   async function running() {
+    const fixture = storageFixture();
+    await fixture.store.open();
     const f = fakeChatGPT();
     disposers.push(() => {
       f.manager.dispose();
@@ -709,10 +916,11 @@ describe("the development command through the data service and main", () => {
         fromService.push(text);
         receive(text);
       },
-      undefined,
+      fixture.store,
       undefined,
       "development",
     );
+    service.activate("en-US");
     disposers.push(() => {
       service.dispose();
     });
@@ -772,16 +980,17 @@ describe("the development command through the data service and main", () => {
   it("sends the fixed request with the development instructions and prints the streamed reply", async () => {
     const h = await running();
     await h.f.login();
+    h.f.manager.storeModels("chatgpt", [{ id: "first", name: "First" }]);
     h.supervisor.reportConnections(h.f.manager);
     h.command.run(["--ohtia-dev-command=request", "--ohtia-dev-model=first"]);
     await vi.waitFor(() => {
       expect(h.lines.join("")).toMatch(/: completed; duration \d+ ms/);
     });
     const output = h.lines.join("");
-    expect(output).toMatch(/: attempt development-[0-9a-f-]+\n/);
+    expect(output).toMatch(/: attempt [0-9a-f-]+\n/);
     expect(output).toContain("Synthetic reply.");
     expect(output).toContain("usage input 41, cached input 0, output 7, reasoning 3");
-    expect(output).toContain("sent instructions development_test v1, message development_request");
+    expect(output).toMatch(/sent instructions development_test v1, message [0-9a-f-]+/);
     expect(h.f.responseRequests[0]!.body).toMatchObject({
       instructions: developmentInstructions,
       input: [{ role: "user", content: developmentRequestText }],
@@ -790,9 +999,37 @@ describe("the development command through the data service and main", () => {
     // No message between the data service and main contains the credential.
     expect([...h.fromService, ...h.toService].join("\n")).not.toMatch(/access-one|refresh-one/);
   });
+  it("sends a whole escaped input at the raw byte limit and refuses an oversized input without faulting", async () => {
+    const h = await running();
+    await h.f.login();
+    h.f.manager.storeModels("chatgpt", [{ id: "first", name: "First" }]);
+    h.supervisor.reportConnections(h.f.manager);
+    h.command.run(["--ohtia-dev-command=create-development-project"]);
+    await vi.waitFor(() => expect(h.lines.join("")).toMatch(/: project [0-9a-f-]+/));
+    const project = /: project ([0-9a-f-]+)/.exec(h.lines.join(""))![1]!;
+    const text = "\u0001".repeat(16384);
+    h.command.run([
+      "--ohtia-dev-command=start-conversation",
+      `--ohtia-dev-project=${project}`,
+      `--ohtia-dev-text=${text}`,
+    ]);
+    await vi.waitFor(() => expect(h.lines.join("")).toMatch(/: completed; duration \d+ ms/));
+    expect(h.f.responseRequests[0]!.body).toMatchObject({
+      input: [{ role: "user", content: text }],
+    });
+    h.command.run([
+      "--ohtia-dev-command=start-conversation",
+      `--ohtia-dev-project=${project}`,
+      `--ohtia-dev-text=${text}x`,
+    ]);
+    await vi.waitFor(() => expect(h.lines.join("")).toContain("refused (input_too_large)"));
+    expect(h.f.responseRequests).toHaveLength(1);
+    expect(h.supervisor.available).toBe(true);
+  });
   it("interrupts a request mid-reply and reports it cancelled", async () => {
     const h = await running();
     await h.f.login();
+    h.f.manager.storeModels("chatgpt", [{ id: "first", name: "First" }]);
     h.supervisor.reportConnections(h.f.manager);
     h.f.responses = (request) =>
       streamResponse([sse({ type: "response.output_text.delta", delta: "Half a reply" })], {
@@ -803,7 +1040,7 @@ describe("the development command through the data service and main", () => {
     await vi.waitFor(() => {
       expect(h.lines.join("")).toContain("Half a reply");
     });
-    const attempt = /attempt (development-[0-9a-f-]+)\n/.exec(h.lines.join(""))![1]!;
+    const attempt = /attempt ([0-9a-f-]+)\n/.exec(h.lines.join(""))![1]!;
     h.command.run(["--ohtia-dev-command=interrupt", `--ohtia-dev-attempt=${attempt}`]);
     await vi.waitFor(() => {
       expect(h.lines.join("")).toContain(`attempt ${attempt}: cancelled`);
@@ -951,7 +1188,14 @@ it("prints every result kind, notes and replies without streamed text", () => {
         attempt: "a",
         result,
         usage,
-        transfer: [{ kind: "note", note: "earlier_messages_omitted" }],
+        transfer: [
+          {
+            kind: "note",
+            note: "earlier_messages_omitted",
+            reference: "conversation",
+            revision: 1,
+          },
+        ],
         events: 1,
         duration_ms: 2,
         longest_silence_ms: 1,

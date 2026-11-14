@@ -2,11 +2,16 @@
 type: DecisionRecord
 title: "ADR-0037 — Application-mediated collaboration among specialist agents"
 description: "Coordinate bounded specialist contributions through durable application records while preserving direct interaction and human authority."
+generated:
+  by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
+status: deprecated
 ---
 
 # ADR-0037 — Application-mediated collaboration among specialist agents
+
+Superseded by [ADR-0053 — Researcher-approved specialist collaboration](adr-0053-researcher-approved-specialist-collaboration.md).
 
 ## Context
 

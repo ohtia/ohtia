@@ -113,6 +113,15 @@ export class ServiceConnections {
     const record = this.records.get(connection);
     return record ? { state: record.snapshot.state, models: record.models } : undefined;
   }
+  /** Wait for an in-flight catalog read or its remaining pages, not forever after a failed read. */
+  awaitingModels(connection: string): boolean {
+    const record = this.records.get(connection);
+    return (
+      !!record &&
+      record.models === null &&
+      (record.snapshot.probing || record.snapshot.model_list_revision !== null)
+    );
+  }
   available(connection: string): boolean {
     return this.records.get(connection)?.snapshot.state === "connected";
   }

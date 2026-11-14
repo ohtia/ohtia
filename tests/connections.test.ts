@@ -1159,3 +1159,44 @@ it("retains failed deletion while cancelling an adapter without a cancellation h
   expect(deletion).toHaveBeenCalledTimes(2);
   manager.dispose();
 });
+
+it("refreshes a connected model catalog when older than one day and preserves it on failure", async () => {
+  const adapter = createFakeProvider({
+    probe: () => Promise.reject(new Error("synthetic-private-error")),
+  });
+  const manager = new ConnectionManager([adapter]);
+  try {
+    manager.connect("fake");
+    await vi.waitFor(() => {
+      expect(manager.snapshot("fake")?.state).toBe("connected");
+    });
+    manager.storeModels("fake", [{ id: "cached", name: "Cached" }]);
+    const probe = vi.spyOn(manager, "probe");
+    const now = Date.now();
+    manager.refreshModels("fake", false, now);
+    expect(probe).not.toHaveBeenCalled();
+    manager.refreshModels("fake", false, now + 24 * 60 * 60 * 1000 + 1);
+    expect(probe).toHaveBeenCalledOnce();
+    await vi.waitFor(() => {
+      expect(manager.snapshot("fake")?.probing).toBe(false);
+    });
+    const snapshot = manager.snapshot("fake")!;
+    expect(
+      manager.listModels({
+        connection: "fake",
+        model_list_revision: snapshot.model_list_revision!,
+        cursor: 0,
+        count: 10,
+      }),
+    ).toMatchObject({ ok: true, value: { models: [{ id: "cached", name: "Cached" }] } });
+    manager.refreshModels("fake", false, now + 24 * 60 * 60 * 1000 + 60_001);
+    expect(probe).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => {
+      expect(manager.snapshot("fake")?.probing).toBe(false);
+    });
+    manager.refreshModels("fake", true, now + 24 * 60 * 60 * 1000 + 60_002);
+    expect(probe).toHaveBeenCalledTimes(3);
+  } finally {
+    manager.dispose();
+  }
+});

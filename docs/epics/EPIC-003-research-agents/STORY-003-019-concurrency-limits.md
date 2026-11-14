@@ -3,7 +3,7 @@ type: Story
 title: "STORY-003-019 — Concurrency limits"
 description: "Let the researcher set how many AI replies run at once, from 1 to 50, without cutting running work."
 generated:
-  by: claude-code/claude-opus-5-5
+  by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
 tags: [story, "comp:app", "comp:storage", "comp:desktop", "comp:docs"]
@@ -12,18 +12,20 @@ resource: https://github.com/ohtia/ohtia/issues/221
 epic: "EPIC-003"
 epic_concept: ./epic.md
 components: ["comp:app", "comp:storage", "comp:desktop", "comp:docs"]
-applicable_blocks: ["SPEC-003-024"]
+applicable_blocks: ["SPEC-003-024", "SPEC-003-013"]
 ---
 
 # STORY-003-019 — Concurrency limits
 
 ## Description
 
-Add the "Simultaneous work" Settings section with the "AI replies at the same time" field bound to `max_concurrent_inference`, its range and help texts, the ADR-0011 rules for changing limits, and the port operations `limits.read`, `limits.replace` and `limits.receipt` with their own receipt table.
+Add the "Simultaneous work" Settings section with the "AI replies at the same time" field bound to `max_concurrent_inference`, its range and help texts, the ADR-0051 rules for changing limits, and the port operations `limits.read`, `limits.replace` and `limits.receipt` with their own receipt table.
 
 ## Applicable specification
 
 - [SPEC-003-024: Concurrency limits](./epic.md#spec-003-024-concurrency-limits)
+
+- [SPEC-003-013: Restart and suspension](./epic.md#spec-003-013-restart-and-suspension), recovery-only delivery, classification, handoff, explicit continuation and verification; complete non-recovery restart and suspension remain STORY-003-008.
 
 ## Tasks
 
@@ -37,7 +39,9 @@ Add the "Simultaneous work" Settings section with the "AI replies at the same ti
 - [ ] Write the migration for `execution_limits_receipts` (`operation_id`, `value`, `result_revision`), written in the same transaction as each accepted change, like `appearance_receipts`; a rejected value leaves no row.
 - [ ] Serialize saving and admission so no task starts under a superseded limit; lowering cuts nothing and raising does not resume paused or uncertain tasks.
 - [ ] Propagate the change to every window, including a window with no open project, which holds `research.subscribe` for the records shared by every project, through a `research.subscribe` notice, after which each window reads the record again and ignores a revision it already has; a window that shows the field also reads it again after a `sequence_gap`.
-- [ ] Apply the documentation amendments of SPEC-003-024 to `docs/frontend-architecture.md` ("Application Settings provides separate concurrency limits for inference, defaulting to 10, and for local processing, defaulting to 1." becomes "Application Settings provides the inference concurrency control, from 1 to 50 with a default of 10; local processing has no control until a feature uses it.") to the `docs/product-roadmap.md` Settings inventory (the row "Inference and local-processing concurrency" becomes "Inference concurrency") and to `docs/application-port.md` (after the `bounds.*` bullet of "Envelopes and named operations", the `limits.read`, `limits.replace` and `limits.receipt` bullet of SPEC-003-024) and to `docs/settings.md`, "Ownership" (after "Settings groups Language, Appearance and Workspace layout in one Accessibility and appearance section." add "Simultaneous work holds the AI replies at the same time control."); the range in ADR-0011 is already replaced by the ADR written in STORY-003-005.
+- [ ] Apply the documentation amendments of SPEC-003-024 to `docs/frontend-architecture.md` ("Application Settings provides separate concurrency limits for inference, defaulting to 10, and for local processing, defaulting to 1." becomes "Application Settings provides the inference concurrency control, from 1 to 50 with a default of 10; local processing has no control until a feature uses it.") to the `docs/product-roadmap.md` Settings inventory (the row "Inference and local-processing concurrency" becomes "Inference concurrency") and to `docs/application-port.md` (after the `bounds.*` bullet of "Envelopes and named operations", the `limits.read`, `limits.replace` and `limits.receipt` bullet of SPEC-003-024) and to `docs/settings.md`, "Ownership" (after "Settings groups Language, Appearance and Workspace layout in one Accessibility and appearance section." add "Simultaneous work holds the AI replies at the same time control."); ADR-0051 already defines the range and the single Settings control.
+
+- [ ] Reuse SPEC-003-013’s recovery-only boundary before enabling this story’s migration, including development stores with accepted tasks. The first of STORY-003-006/007 to integrate supplies the shared gate-to-pause handoff, unfinished-attempt recovery, `task.continueAll`, development `continue-all` action and synthetic tests; later stories update their base and reuse the same boundary, command and tests. Do not wait for STORY-003-008 or add a second continuation path.
 
 ## Acceptance criteria
 
@@ -51,6 +55,8 @@ Add the "Simultaneous work" Settings section with the "AI replies at the same ti
 - [ ] Scenario 10 of `agent-collaboration-evaluation.md`, as STORY-003-007 amends it, passes: changing the limit during competing admissions respects the application limit and the connection's limit, and an uncertain attempt holds no slot once its connection closes.
 - [ ] Two windows both see the change, including a window with no open project that shows Settings.
 - [ ] With the researcher's account and the limit at 1, a second conversation waits for the first.
+
+- [ ] The shared recovery suite passes against this story’s migration from a synthetic source with queued and unfinished tasks: rollback retry and checkpoint restoration hold pending work, even across another startup or reconnection, until `task.continueAll`; a proven undispatched attempt is cancelled and held rather than automatically requeued, dispatched work stays uncertain, crash windows preserve the gate or committed holds, and a healthy upgrade’s fresh gate alone adds no recovery pause.
 
 ## Quality checklist
 
