@@ -52,6 +52,37 @@ function refreshes(f: ReturnType<typeof fakeChatGPT>): number {
 }
 
 describe("ChatGPT requests over the Responses API", () => {
+  it("keeps server order while selecting visible models after an earlier hidden entry", async () => {
+    const f = await signedIn();
+    f.models = {
+      models: [
+        { slug: "hidden-first", display_name: "Hidden", visibility: "hide" },
+        { slug: "visible-first", display_name: "Visible first", visibility: "list" },
+        { slug: "visible-second", display_name: "Visible second", visibility: "list" },
+      ],
+    };
+    f.manager.refreshModels("chatgpt", true);
+    await vi.waitFor(() => {
+      expect(f.manager.snapshot("chatgpt")?.probing).toBe(false);
+    });
+    const snapshot = f.manager.snapshot("chatgpt")!;
+    expect(
+      f.manager.listModels({
+        connection: "chatgpt",
+        model_list_revision: snapshot.model_list_revision!,
+        cursor: 0,
+        count: 20,
+      }),
+    ).toMatchObject({
+      ok: true,
+      value: {
+        models: [
+          { id: "visible-first", name: "Visible first" },
+          { id: "visible-second", name: "Visible second" },
+        ],
+      },
+    });
+  });
   it("sends only Ohtia's instructions and input with store false and stream true", async () => {
     const f = await signedIn();
     f.responses = (request) =>
@@ -320,6 +351,34 @@ describe("ChatGPT session renewal before dispatch", () => {
     if (options.refreshStatus) f.refreshStatus = options.refreshStatus;
     return f;
   }
+  it("shares one renewal across three concurrent requests without losing their session", async () => {
+    const f = await expiredSession({});
+    let release!: () => void;
+    f.delayRefresh = new Promise((resolve) => {
+      release = resolve;
+    });
+    const before = refreshes(f);
+    const requests = [1, 2, 3].map((index) =>
+      dispatchThrough(f.manager, f.adapter, conformanceRequest("chatgpt", `parallel-${index}`)),
+    );
+    await vi.waitFor(() => {
+      expect(refreshes(f) - before).toBe(1);
+    });
+    release();
+    const outcomes = await Promise.all(requests);
+    expect(outcomes.map(result)).toEqual([
+      { status: "completed" },
+      { status: "completed" },
+      { status: "completed" },
+    ]);
+    expect(refreshes(f) - before).toBe(1);
+    expect(f.responseRequests).toHaveLength(3);
+    expect(f.responseRequests.map((request) => request.headers.Authorization)).toEqual([
+      "Bearer access-one-2",
+      "Bearer access-one-2",
+      "Bearer access-one-2",
+    ]);
+  });
   it("renews an expired session once and sends with the replacement", async () => {
     const f = await expiredSession({});
     const before = refreshes(f);

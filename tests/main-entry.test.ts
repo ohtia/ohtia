@@ -1922,6 +1922,9 @@ it("hands development switches to the open development instance and runs them on
     const supervisor = h.supervisors[0];
     expect(supervisor.connectProvider).toHaveBeenCalledOnce();
     supervisor.stateChanged("ready");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(supervisor.postProvider).not.toHaveBeenCalled();
+    supervisor.storageChanged({ generation: supervisor.generation, state: "storage_ready" });
     await vi.waitFor(() => {
       expect(supervisor.postProvider).toHaveBeenCalled();
     });
@@ -1932,6 +1935,16 @@ it("hands development switches to the open development instance and runs them on
       action: { name: "request", model: "first" },
     });
     const channel = supervisor.connectProvider.mock.calls[0][0];
+    channel.refreshModels({
+      kind: "model_list_refresh",
+      version: 1,
+      generation: supervisor.generation,
+      connection: "chatgpt",
+    });
+    const reportedBeforeRefresh = supervisor.reportConnections.mock.calls.length;
+    expect(reportedBeforeRefresh).toBeGreaterThan(0);
+    await vi.advanceTimersByTimeAsync(60_000);
+    h.app.emit("will-quit");
     channel.report({
       kind: "development_report",
       version: 1,
@@ -2012,6 +2025,11 @@ it("keeps a development command handed over while the instance is still starting
     expect(h.supervisors[0]).toBeDefined();
   });
   h.supervisors[0].stateChanged("ready");
+  expect(h.supervisors[0].postProvider).not.toHaveBeenCalled();
+  h.supervisors[0].storageChanged({
+    generation: h.supervisors[0].generation,
+    state: "storage_ready",
+  });
   await vi.waitFor(async () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(

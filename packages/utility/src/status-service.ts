@@ -1,3 +1,4 @@
+import { DurableProvider } from "./durable-provider.js";
 import {
   decodeConnectionReport,
   decodeDevelopmentAction,
@@ -19,7 +20,7 @@ import {
 } from "@ohtia/contracts";
 
 import type { DurableStore } from "./storage.js";
-import { ProviderAttempts, type RuntimeMode } from "./provider-attempts.js";
+import type { RuntimeMode } from "./tasks.js";
 
 /** Bounded service peer. Storage remains unavailable until the broker confirms locator activation. */
 export function createStatusService(
@@ -33,14 +34,9 @@ export function createStatusService(
   if (!isInterfaceLocale(locale)) throw new Error("Unsupported trusted service locale.");
   const connections = new ServiceConnections();
   // The service generation identifies every provider message; main discards the rest.
-  const attempts = new ProviderAttempts({
-    generation,
-    mode,
-    connections,
-    send: (text) => {
-      if (!disposed) send(text);
-    },
-  });
+  const durable = storage
+    ? new DurableProvider({ storage, context: { generation, mode, connections }, send })
+    : undefined;
   const streams = new Map<
     string,
     {
@@ -56,6 +52,7 @@ export function createStatusService(
   let systemLocale = locale;
   let enabled = false;
   let disposed = false;
+  let providerFailed = false;
   const isDisposed = () => disposed;
   let pending = 0;
   let queue = Promise.resolve();
@@ -69,6 +66,26 @@ export function createStatusService(
     const encoded = encodeEnvelope(value);
     if (!encoded.ok) throw new Error("Invalid service output.");
     if (!disposed) send(encoded.value);
+  };
+  // Provider failures own their catch before joining unrelated window commands. In production the
+  // admission-lost callback ends the generation, so main closes all of its provider requests.
+  const enqueueProvider = (operation: () => Promise<unknown>): void => {
+    queue = queue
+      .then(async () => {
+        if (!disposed && !providerFailed) await operation();
+      })
+      .catch(() => {
+        if (disposed || providerFailed) return;
+        providerFailed = true;
+        enabled = false;
+        durable?.dispose();
+        status = { ...status, service: "unavailable", engine: "unavailable" };
+        try {
+          admissionLost?.();
+        } catch {
+          // A returning or throwing observer cannot restore this generation's execution authority.
+        }
+      });
   };
   const appearanceEvent = (record: Outcome<AppearanceRecord>) => {
     if (!record.ok) return;
@@ -363,7 +380,7 @@ export function createStatusService(
       systemLocale = value;
     },
     activate(resolvedLocale: InterfaceLocale): void {
-      if (!isInterfaceLocale(resolvedLocale) || !storage?.ready || disposed)
+      if (!isInterfaceLocale(resolvedLocale) || !storage?.ready || disposed || providerFailed)
         throw new Error("Invalid storage activation.");
       enabled = true;
       status = { ...status, engine: "verified", interfaceLocale: resolvedLocale };
@@ -386,16 +403,25 @@ export function createStatusService(
       const report = decodeConnectionReport(text, generation);
       if (report) {
         if (!connections.receive(report)) throw new Error("Invalid connection report.");
+        if (durable) enqueueProvider(() => durable.pump());
         return;
       }
       const providerEvent = decodeProviderEvent(text, generation);
       if (providerEvent) {
-        if (!attempts.receive(providerEvent)) throw new Error("Invalid provider event order.");
+        if (durable)
+          enqueueProvider(async () => {
+            if (!(await durable.receive(providerEvent)))
+              throw new Error("Invalid provider event order.");
+          });
+
         return;
       }
       const action = decodeDevelopmentAction(text, generation);
       if (action) {
-        attempts.developmentAction(action);
+        if (mode !== "development")
+          throw new Error("Development actions require the development mode.");
+        if (!durable || !enabled) throw new Error("Development actions require admitted storage.");
+        enqueueProvider(() => durable.developmentAction(action));
         return;
       }
       const decoded = decodeText(text);
@@ -510,7 +536,7 @@ export function createStatusService(
           });
         })
         .finally(() => {
-          if (!storage.admissionReady && !disposed) admissionLost?.();
+          if (!storage.admissionReady && !disposed && !providerFailed) admissionLost?.();
           pending--;
           if (subscriptionKey) queuedSubscriptions.delete(subscriptionKey);
         });
@@ -523,7 +549,7 @@ export function createStatusService(
       disposed = true;
       enabled = false;
       streams.clear();
-      attempts.dispose();
+      durable?.dispose();
     },
   };
 }

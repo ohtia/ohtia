@@ -24,6 +24,7 @@
     "tests/desktop-runtime.test.ts",
     "tests/diagnostics.test.ts",
     "tests/dialog-safe-area.test.ts",
+    "tests/durable-tasks.test.ts",
     "tests/graphics-compatibility.test.ts",
     "tests/language-panel.test.ts",
     "tests/linux-e2e.test.ts",

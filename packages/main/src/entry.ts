@@ -733,6 +733,7 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
               state.boundsSaved = false;
             }
           bootstrapState = "storage_ready";
+          developmentCommand?.flush();
           updateWindowThemes();
           void windowPreferences.reconcilePending();
           for (const existing of windows.keys())
@@ -761,6 +762,10 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
   );
   const active = service;
   active.connectProvider({
+    refreshModels: (message) => {
+      connections?.manager.refreshModels(message.connection, true);
+      if (connections && service) service.reportConnections(connections.manager);
+    },
     dispatch: (message) => {
       void providerDispatch?.receive(message);
     },
@@ -845,7 +850,10 @@ async function start(): Promise<void> {
   ) {
     const development = await import("./development-command.js");
     developmentCommand = development.createDevelopmentCommand({
-      ready: () => (connectionsRead && service?.available ? service.generation : undefined),
+      ready: () =>
+        connectionsRead && service?.available && bootstrapState === "storage_ready"
+          ? service.generation
+          : undefined,
       post: (text, target) => (service?.generation === target ? service.postProvider(text) : false),
     });
     developmentCommand.run(developmentSwitches);
@@ -864,8 +872,20 @@ async function start(): Promise<void> {
       if (service?.available) service.reportConnections(manager);
       developmentCommand?.flush();
     });
-  manager.subscribe(() => {
+  const connectionStates = new Map<string, string>();
+  manager.subscribe((event) => {
+    const before = connectionStates.get(event.connection);
+    connectionStates.set(event.connection, event.state);
+    if (event.state === "connected" && before !== "connected")
+      manager.refreshModels(event.connection, true);
     if (service?.available) service.reportConnections(manager);
+  });
+  const refreshModels = setInterval(() => {
+    for (const connection of manager.ids()) manager.refreshModels(connection);
+  }, 60_000);
+  refreshModels.unref();
+  app.once("will-quit", () => {
+    clearInterval(refreshModels);
   });
   nativeTheme.on("updated", updateWindowThemes);
   locale = resolveInterfaceLocale(preferredSystemLanguages());

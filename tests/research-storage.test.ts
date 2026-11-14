@@ -59,7 +59,7 @@ function append(
 }
 function dropResearch(db: InstanceType<typeof Database>) {
   db.exec(
-    "DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; PRAGMA user_version=6",
+    "DROP TABLE attempts; DROP TABLE tasks; DELETE FROM kysely_migration WHERE name='0008_durable_ai_tasks'; DELETE FROM ohtia_migration_artifacts WHERE name='0008_durable_ai_tasks'; DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; PRAGMA user_version=6",
   );
 }
 
@@ -320,24 +320,26 @@ describe("project and conversation aggregates on real SQLite", () => {
       }),
     ).resultId;
     const db = raw();
-    const insert = db.prepare("INSERT INTO messages VALUES (?,?,?,?,?,?,?)");
-    insert.run(
-      toBytes("00000000-0000-7000-8000-000000000001"),
-      toBytes(conversation.id),
-      9,
-      "agent",
-      "virgilio",
-      "Later position",
-      "2025-01-01T00:00:00.000Z",
+    const insert = db.prepare(
+      "INSERT INTO messages (id,conversation_id,position,author_kind,agent_id,content,created_at) VALUES (?,?,?,?,?,?,?)",
     );
     insert.run(
       toBytes("00000000-0000-7000-8000-000000000002"),
       toBytes(conversation.id),
       4,
-      "agent",
-      "josefa",
-      "Earlier reserved position, later save",
+      "researcher",
+      null,
+      "Earlier position",
       "2030-01-01T00:00:00.000Z",
+    );
+    insert.run(
+      toBytes("00000000-0000-7000-8000-000000000001"),
+      toBytes(conversation.id),
+      9,
+      "researcher",
+      null,
+      "Later position",
+      "2025-01-01T00:00:00.000Z",
     );
     expect(value(await store.readConversations(projectId))[0]?.id).toBe(other);
     value(await store.executeResearchCommand(append(conversation.id)));
@@ -504,7 +506,7 @@ describe("migration 0007 and database-owned rules", () => {
     db.close();
     await store.open();
     const upgraded = raw();
-    expect(upgraded.pragma("user_version", { simple: true })).toBe(7);
+    expect(upgraded.pragma("user_version", { simple: true })).toBe(8);
     expect(upgraded.prepare("SELECT * FROM application_preferences ORDER BY key").all()).toEqual(
       before,
     );
@@ -517,7 +519,7 @@ describe("migration 0007 and database-owned rules", () => {
           fs.readFileSync(path.join(root, "recovery/migrations", s, "manifest.json"), "utf8"),
         ),
       ),
-    ).toContainEqual(expect.objectContaining({ sourceRevision: 6, targetRevision: 7 }));
+    ).toContainEqual(expect.objectContaining({ sourceRevision: 6, targetRevision: 8 }));
     expect(value(await store.readProjects())).toEqual([]);
     upgraded.close();
   });
@@ -647,7 +649,9 @@ describe("migration 0007 and database-owned rules", () => {
       "DELETE FROM command_receipts",
     ])
       expect(() => db.exec(statement)).toThrow();
-    const insert = db.prepare("INSERT INTO messages VALUES (?,?,?,?,?,?,?)");
+    const insert = db.prepare(
+      "INSERT INTO messages (id,conversation_id,position,author_kind,agent_id,content,created_at) VALUES (?,?,?,?,?,?,?)",
+    );
     const id = toBytes("00000000-0000-7000-8000-000000000003");
     const created = "2026-11-01T00:00:00.000Z";
     for (const [position, kind, agent, content, conv, time] of [

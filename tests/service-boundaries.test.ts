@@ -1,3 +1,4 @@
+import { DurableProvider } from "../packages/utility/src/durable-provider.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ServiceSupervisor } from "../packages/main/src/service-supervisor.js";
 import { createStatusService } from "../packages/utility/src/status-service.js";
@@ -230,7 +231,7 @@ describe("supervised stream authority and cessation", () => {
   });
 });
 
-function serviceFixture() {
+function serviceFixture(mode: "installed" | "development" = "installed") {
   const sent: unknown[] = [];
   let value = appearance;
   const store = {
@@ -249,6 +250,7 @@ function serviceFixture() {
     },
     store as unknown as DurableStore,
     lost,
+    mode,
   );
   return {
     service,
@@ -556,4 +558,137 @@ it("quarantines a locale event delivered on a presentation subscription", () => 
   expect(stream.releaseSubscription).not.toHaveBeenCalled();
   h.exited();
   expect(stream.releaseSubscription).toHaveBeenCalled();
+});
+
+it.each(["provider_event", "connection_state", "development_action"] as const)(
+  "owns an asynchronous %s fault before any queued window command can consume it",
+  async (kind) => {
+    const h = serviceFixture("development");
+    h.service.activate("en-US");
+    const method =
+      kind === "provider_event"
+        ? "receive"
+        : kind === "connection_state"
+          ? "pump"
+          : "developmentAction";
+    const fault = vi
+      .spyOn(DurableProvider.prototype, method)
+      .mockRejectedValueOnce(new Error("Synthetic provider peer failure."));
+    try {
+      const message =
+        kind === "provider_event"
+          ? {
+              kind,
+              version: 1,
+              generation: "service-1",
+              attempt: "attempt-1",
+              event: { type: "result", sequence: 1, result: { status: "completed" } },
+            }
+          : kind === "connection_state"
+            ? {
+                kind,
+                generation: "service-1",
+                snapshot: {
+                  connection: "chatgpt",
+                  state: "connected",
+                  reason: null,
+                  probing: false,
+                  probe_id: null,
+                  model_list_revision: null,
+                  model_count: 0,
+                },
+              }
+            : {
+                kind,
+                version: 1,
+                generation: "service-1",
+                action: { name: "create-development-project", operation_id: "create" },
+              };
+      h.service.receive(JSON.stringify(message));
+      h.receive({
+        operation: "appearance.replace",
+        payload: { expectedRevision: 0, value: "dark" },
+      });
+      await h.service.drain();
+      expect(h.lost).toHaveBeenCalledOnce();
+      expect(h.store.replaceAppearance).not.toHaveBeenCalled();
+      expect(h.sent.at(-1)).toMatchObject({
+        kind: "result",
+        payload: { ok: false, error: { code: "service_unavailable" } },
+      });
+      h.receive({ operation: "appearance.read", payload: {}, requestId: "later-read" });
+      await h.service.drain();
+      expect(h.store.readAppearance).not.toHaveBeenCalled();
+      expect(h.sent.at(-1)).toMatchObject({ payload: { error: { code: "service_unavailable" } } });
+      expect(() => h.service.activate("en-US")).toThrow();
+    } finally {
+      fault.mockRestore();
+      h.service.dispose();
+    }
+  },
+);
+
+it("owns a provider fault without a queued window command and keeps a throwing observer unavailable", async () => {
+  const h = serviceFixture();
+  h.service.activate("en-US");
+  h.lost.mockImplementation(() => {
+    throw new Error("Synthetic observer failure.");
+  });
+  const failed = vi
+    .spyOn(DurableProvider.prototype, "receive")
+    .mockRejectedValueOnce(new Error("Synthetic storage failure."));
+  try {
+    h.service.receive(
+      JSON.stringify({
+        kind: "provider_event",
+        version: 1,
+        generation: "service-1",
+        attempt: "a",
+        event: { type: "result", sequence: 1, result: { status: "completed" } },
+      }),
+    );
+    await expect(h.service.drain()).resolves.toBeUndefined();
+    expect(h.lost).toHaveBeenCalledOnce();
+    h.receive();
+    expect(h.sent.at(-1)).toMatchObject({
+      payload: { ok: true, value: { service: "unavailable", engine: "unavailable" } },
+    });
+    h.receive({ operation: "appearance.read", payload: {} });
+    await h.service.drain();
+    expect(h.store.readAppearance).not.toHaveBeenCalled();
+  } finally {
+    failed.mockRestore();
+    h.service.dispose();
+  }
+});
+
+it("does not announce a late asynchronous provider fault after the service was disposed", async () => {
+  const h = serviceFixture();
+  h.service.activate("en-US");
+  let reject!: (error: Error) => void;
+  const pending = vi.spyOn(DurableProvider.prototype, "receive").mockImplementationOnce(
+    () =>
+      new Promise((_resolve, fail) => {
+        reject = fail;
+      }),
+  );
+  try {
+    h.service.receive(
+      JSON.stringify({
+        kind: "provider_event",
+        version: 1,
+        generation: "service-1",
+        attempt: "a",
+        event: { type: "result", sequence: 1, result: { status: "completed" } },
+      }),
+    );
+    await Promise.resolve();
+    h.service.dispose();
+    reject(new Error("Synthetic late storage failure."));
+    await expect(h.service.drain()).resolves.toBeUndefined();
+    expect(h.lost).not.toHaveBeenCalled();
+  } finally {
+    pending.mockRestore();
+    h.service.dispose();
+  }
 });

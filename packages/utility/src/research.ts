@@ -1,3 +1,4 @@
+import { nextPosition, type TaskSchema, type TaskTransaction } from "./tasks.js";
 import fs from "node:fs";
 import * as crypto from "node:crypto";
 import { type Kysely, sql } from "kysely";
@@ -39,10 +40,11 @@ export interface MessageRow {
   position: number;
   author_kind: "researcher" | "agent";
   agent_id: string | null;
+  task_id: Uint8Array | null;
   content: string;
   created_at: string;
 }
-export interface ResearchSchema {
+export interface ResearchSchema extends TaskSchema {
   projects: ProjectRow;
   conversations: ConversationRow;
   messages: MessageRow;
@@ -60,16 +62,16 @@ export function isEntityId(value: unknown): value is string {
     /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value)
   );
 }
-function bytes(id: string): Buffer {
+export function bytes(id: string): Buffer {
   return Buffer.from(id.replaceAll("-", ""), "hex");
 }
-function identifier(value: Uint8Array): string {
+export function identifier(value: Uint8Array): string {
   const hex = Buffer.from(value).toString("hex");
   const id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   if (!isEntityId(id)) throw new Error("Invalid stored entity identity.");
   return id;
 }
-function newId(): Buffer {
+export function newId(): Buffer {
   // The pinned runtimes expose this API before the current @types/node declaration line.
   const id = (crypto as typeof crypto & { randomUUIDv7(): string }).randomUUIDv7();
   if (!isEntityId(id)) throw new Error("UUIDv7 generation unavailable.");
@@ -228,11 +230,13 @@ function message(row: MessageRow): MessageRecord {
     position: row.position,
     authorKind: row.author_kind,
     agentId: row.agent_id,
+    taskId: row.task_id ? identifier(row.task_id) : null,
     content: row.content,
     createdAt: row.created_at,
   };
 }
 const payloadKeys = {
+  "development.createProject": [],
   "project.create": [],
   "project.confirmSetup": ["projectId", "title", "documentLanguage"],
   "conversation.start": ["projectId", "content"],
@@ -245,6 +249,7 @@ export async function applyResearchCommand(
   db: Kysely<ResearchSchema>,
   input: ResearchCommand,
   registry: () => LanguageRegistry,
+  tasks: TaskTransaction,
 ): Promise<Outcome<ResearchResult>> {
   if (
     !object(input) ||
@@ -278,17 +283,20 @@ export async function applyResearchCommand(
   const now = new Date().toISOString();
   let result: Uint8Array;
   switch (input.command) {
+    case "development.createProject":
     case "project.create": {
+      const development = input.command === "development.createProject";
+      if (development && tasks.context.mode !== "development") return failure("invalid_message");
       result = newId();
       await db
         .insertInto("projects")
         .values({
           id: result,
           project_type: "thesis",
-          title: null,
-          document_language: null,
-          is_development: 0,
-          setup_confirmed_at: null,
+          title: development ? "Development project" : null,
+          document_language: development ? "en" : null,
+          is_development: development ? 1 : 0,
+          setup_confirmed_at: development ? now : null,
           created_at: now,
           updated_at: now,
         })
@@ -343,6 +351,8 @@ export async function applyResearchCommand(
       if (!current) return failure("record_not_found");
       if (current.setup_confirmed_at === null) return failure("project_in_setup");
       if (!text(p.content) || p.content.length === 0) return failure("message_invalid");
+      const admission = await tasks.admission(current.id, null, p.content);
+      if (!admission.ok) return admission;
       result = newId();
       await db
         .insertInto("conversations")
@@ -356,6 +366,7 @@ export async function applyResearchCommand(
         })
         .execute();
       await append(db, result, p.content, now);
+      await tasks.accept(current.id, result, 1, input.operationId);
       break;
     }
     case "conversation.rename": {
@@ -391,7 +402,15 @@ export async function applyResearchCommand(
         .executeTakeFirst();
       if (!current) return failure("record_not_found");
       if (!text(p.content) || p.content.length === 0) return failure("message_invalid");
+      const admission = await tasks.admission(current.project_id, current.id, p.content);
+      if (!admission.ok) return admission;
       result = await append(db, current.id, p.content, now);
+      const saved = await db
+        .selectFrom("messages")
+        .select("position")
+        .where("id", "=", result)
+        .executeTakeFirstOrThrow();
+      await tasks.accept(current.project_id, current.id, saved.position, input.operationId);
       break;
     }
   }
@@ -413,13 +432,7 @@ async function append(
   content: string,
   now: string,
 ): Promise<Uint8Array> {
-  const row = await db
-    .selectFrom("messages")
-    .select(({ fn }) => fn.max<number | null>("position").as("last"))
-    .where("conversation_id", "=", conversationId)
-    .executeTakeFirstOrThrow();
-  const position = (row.last ?? 0) + 1;
-  if (!Number.isSafeInteger(position)) throw new Error("Message positions exhausted.");
+  const position = await nextPosition(db, conversationId);
   const id = newId();
   await db
     .insertInto("messages")
@@ -429,6 +442,7 @@ async function append(
       position,
       author_kind: "researcher",
       agent_id: null,
+      task_id: null,
       content,
       created_at: now,
     })

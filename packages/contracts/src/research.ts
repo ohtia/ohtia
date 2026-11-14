@@ -23,10 +23,12 @@ export interface MessageRecord {
   readonly position: number;
   readonly authorKind: "researcher" | "agent";
   readonly agentId: string | null;
+  readonly taskId: string | null;
   readonly content: string;
   readonly createdAt: string;
 }
 export interface ResearchPayloads {
+  readonly "development.createProject": Record<string, never>;
   readonly "project.create": Record<string, never>;
   readonly "project.confirmSetup": {
     readonly projectId: string;
@@ -54,6 +56,7 @@ export interface ResearchResult {
   readonly resultId: string;
 }
 export const researchCommands = [
+  "development.createProject",
   "project.create",
   "project.confirmSetup",
   "conversation.start",

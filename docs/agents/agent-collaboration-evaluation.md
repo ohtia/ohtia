@@ -3,7 +3,7 @@ type: Playbook
 title: "Agent collaboration evaluation"
 description: "Evaluate research usefulness, evidence fidelity, human review, and bounded execution against a single-agent baseline."
 generated:
-  by: claude-code/claude-opus-5-5
+  by: codex/gpt-6.1-sol
 verified:
   by: human:AdrianMastronardi
 ---
@@ -57,7 +57,7 @@ Use synthetic provider/process implementations and controlled transaction orderi
 3. Two equivalent delegation requests race. Exactly one accepted contribution is created; replay returns its receipt and conflicting payload reuse fails.
 4. Reject a cycle, exhausted graph/turn budget, unsupported specialist, changed input, disallowed destination and allocation exceeding the aggregate remaining envelope before child work is accepted.
 5. Deliver a completion event repeatedly, out of order and after a stream gap. One ready state produces at most one continuation; scoped requery recovers missing state without repeated inference.
-6. Crash after artifact commit but before notification. Durable recovery discovers the receipt. Crash near dispatch follows ADR-0011's uncertainty rules and does not silently rerun the provider call.
+6. Crash after artifact commit but before notification. Durable recovery discovers the receipt. Crash near dispatch follows ADR-0051's uncertainty rules and does not silently rerun the provider call.
 7. Cancel before activation, during execution and concurrently with completion. The winning transaction determines effects; unresolved cessation remains uncertain and quarantined. No child starts from a late coordination event.
 8. Finish a parent while a delegated operation remains active or uncertain. Intervention completion cannot hide the unresolved child. Disable an untracked runtime delegation route.
 9. Restart with queued tasks and unactivated intent. Neither project opening nor provider reconnection resumes work without the required human continuation.
