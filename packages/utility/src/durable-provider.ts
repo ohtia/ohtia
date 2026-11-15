@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 import {
   providerMessageVersion,
   type ApplicationExitControl,
+  splitText,
+  type ReplyPart,
+  type ReplyParts,
   type DevelopmentActionMessage,
   type DevelopmentReport,
   type ProviderEventMessage,
@@ -15,6 +18,8 @@ import { operationPolicy } from "./operations.js";
 import { unknownUsage, type TaskContext } from "./tasks.js";
 
 interface Stream {
+  readonly taskId: string;
+  readonly parts: ReplyPart[];
   readonly operationId: string;
   text: string;
   sequence: number;
@@ -83,6 +88,7 @@ export class DurableProvider {
       readonly storage: DurableStore;
       readonly context: TaskContext;
       readonly send: (text: string) => void;
+      readonly reply?: (taskId: string, sequence: number, text: string) => void;
       readonly monotonic?: () => number;
       readonly wallClock?: () => number;
     },
@@ -146,6 +152,26 @@ export class DurableProvider {
     if (this.options.context.mode !== "development" || this.disposed) return;
     this.options.storage.setTaskContext(this.options.context);
     const action = message.action;
+    if (action.name === "open-conversation") {
+      const projects = await this.options.storage.readProjects();
+      if (projects.ok)
+        for (const project of projects.value) {
+          const conversations = await this.options.storage.readConversations(project.id);
+          if (
+            conversations.ok &&
+            conversations.value.some((row) => row.id === action.conversation)
+          ) {
+            this.report(action.operation_id, {
+              type: "conversation_opened",
+              projectId: project.id,
+              conversationId: action.conversation,
+            });
+            return;
+          }
+        }
+      this.report(action.operation_id, { type: "refused", reason: "record_not_found" });
+      return;
+    }
     if (action.name === "resume-requests" || action.name === "continue-all") {
       const result = await this.options.storage.executeResearchCommand(
         action.name === "resume-requests"
@@ -286,6 +312,8 @@ export class DurableProvider {
         if (!policy) throw new Error("Dispatched operation policy unavailable.");
         const now = this.now();
         this.streams.set(message.request.attempt, {
+          taskId: prepared.value.taskId,
+          parts: [],
           operationId: prepared.value.acceptedByOperationId,
           text: "",
           sequence: 0,
@@ -344,6 +372,11 @@ export class DurableProvider {
       if (!saved.ok) throw new Error("Provider event could not be stored.");
       if (!saved.value.recorded) return true;
       stream.text += kept;
+      for (const text of kept ? splitText(kept) : []) {
+        const sequence = stream.parts.length + 1;
+        stream.parts.push({ sequence, text });
+        this.options.reply?.(stream.taskId, sequence, text);
+      }
       if (kept)
         this.report(stream.operationId, { type: "text", attempt: message.attempt, text: kept });
       if (kept === event.text) return true;
@@ -394,6 +427,13 @@ export class DurableProvider {
       duration_ms: Math.round(now),
       longest_silence_ms: Math.round(stream.longestSilence),
     });
+  }
+  replyParts(taskId: string, fromSequence: number): ReplyParts {
+    const stream = [...this.streams.values()].find((value) => value.taskId === taskId);
+    return {
+      parts: stream?.parts.filter((part) => part.sequence >= fromSequence) ?? [],
+      latestSequence: stream?.parts.length ?? 0,
+    };
   }
   dispose(): void {
     this.disposed = true;

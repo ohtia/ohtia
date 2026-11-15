@@ -1,3 +1,8 @@
+import { TextStaging, digest } from "../packages/utility/src/research-text.js";
+import { ConversationController } from "../packages/renderer/src/conversation-controller.js";
+import { PortAdmission } from "../packages/main/src/port-admission.js";
+import { createFoundationPort } from "../packages/preload/src/foundation-port.js";
+import { storageFixture } from "./fixtures/storage.js";
 import { DurableProvider } from "../packages/utility/src/durable-provider.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { stopBrokerServices } from "../packages/main/src/shutdown.js";
@@ -5,6 +10,10 @@ import { ServiceSupervisor } from "../packages/main/src/service-supervisor.js";
 import { createStatusService } from "../packages/utility/src/status-service.js";
 import {
   encodeEnvelope,
+  splitText,
+  failure,
+  desktopDocument,
+  type Outcome,
   policyId,
   portLimits,
   type Envelope,
@@ -142,7 +151,10 @@ describe("supervised stream authority and cessation", () => {
     h.service.control(cancel as Envelope);
     expect(h.child.send).toHaveBeenCalledTimes(2);
     h.service.disposeWindow("window-1");
-    expect(h.child.send).toHaveBeenCalledTimes(3);
+    expect(h.child.send).toHaveBeenCalledTimes(4);
+    expect(
+      h.child.send.mock.calls.some(([text]) => JSON.parse(text).kind === "research_window_closed"),
+    ).toBe(true);
     h.service.control({
       protocol: 1,
       policy: policyId,
@@ -151,7 +163,7 @@ describe("supervised stream authority and cessation", () => {
       serviceGeneration: "service-1",
       subscriptionId: "absent",
     });
-    expect(h.child.send).toHaveBeenCalledTimes(3);
+    expect(h.child.send).toHaveBeenCalledTimes(4);
   });
   it.each(["wrong-result", "wrong-topic", "missing-stream", "duplicate-ready", "malformed"])(
     "quarantines %s without releasing accepted work until exit",
@@ -1028,4 +1040,284 @@ it("admits only this generation's content-free exit counts on the private provid
   h.exited();
   expect(await stopped).toBe(true);
   h.service.markSystemShutdown();
+});
+
+async function integratedResearch() {
+  const fixture = storageFixture();
+  await fixture.store.open();
+  const h = supervisor();
+  vi.useRealTimers();
+  const pool = new PortAdmission();
+  const sender = { frame: {}, url: desktopDocument };
+  expect(
+    pool.attach({ ...sender, windowGeneration: "window-1", serviceGeneration: "service-1" }).ok,
+  ).toBe(true);
+  let receive: (text: unknown) => void = () => {};
+  let counter = 0;
+  const held: string[] = [];
+  let hold = false;
+  const peer = createStatusService(
+    "service-1",
+    "en-US",
+    (text) => h.receive(text),
+    fixture.store,
+    undefined,
+    "development",
+  );
+  peer.activate("en-US");
+  h.child.send.mockImplementation((text: string) => {
+    if (hold && JSON.parse(text).kind === "unsubscribe") held.push(text);
+    else peer.receive(text);
+  });
+  const client = createFoundationPort(
+    { contextIsolated: true, sandboxed: true },
+    {
+      listen: (fn) => {
+        receive = fn;
+        return () => {};
+      },
+      send: (text) => {
+        const authority = pool.authorize(sender, text);
+        if (!authority.ok) throw new Error(authority.error.code);
+        if (authority.value.kind !== "request") {
+          h.service.control(authority.value);
+          return;
+        }
+        const admitted = pool.admit(sender, text);
+        if (!admitted.ok) {
+          receive(wire({ ...authority.value, kind: "result", payload: admitted }));
+          return;
+        }
+        h.service.dispatch({ ...admitted.value, deliver: (raw) => receive(raw) });
+      },
+    },
+    {
+      after: (ms, fn) => {
+        const t = setTimeout(fn, ms);
+        return () => clearTimeout(t);
+      },
+    },
+    {
+      windowGeneration: "window-1",
+      serviceGeneration: "service-1",
+      nextId: () => `integration-${++counter}`,
+    },
+  );
+  const unwrap = <T>(r: Outcome<T>): T => {
+    if (!r.ok) throw new Error(r.error.code);
+    return r.value;
+  };
+  const project = unwrap(await client.port.createProject("integration-project").result);
+  const conversation = unwrap(
+    await client.port.listConversations({ projectId: project.resultId, cursor: null, count: 50 })
+      .result,
+  ).items[0]!;
+  return {
+    ...h,
+    ...fixture,
+    peer,
+    port: client.port,
+    scope: { projectId: project.resultId, conversationId: conversation.id },
+    conversation,
+    unwrap,
+    holdDisposal() {
+      hold = true;
+    },
+    heldDisposals() {
+      return held.length;
+    },
+    releaseDisposal() {
+      hold = false;
+      for (const text of held.splice(0)) peer.receive(text);
+    },
+    dispose() {
+      client.dispose();
+      peer.dispose();
+      h.exited();
+    },
+  };
+}
+it.each(["unsubscribe", "window-close"] as const)(
+  "fences in-flight research publication before %s acknowledges disposal to main",
+  async (mode) => {
+    const h = await integratedResearch();
+    try {
+      const stream = h.port.subscribeResearch(h.scope, () => {});
+      h.unwrap(await stream.ready);
+      const original = h.store.researchRevisions.bind(h.store);
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const revisions = vi
+        .spyOn(h.store, "researchRevisions")
+        .mockImplementationOnce(async (scope) => {
+          await gate;
+          return original(scope);
+        });
+      h.unwrap(
+        await h.port.renameConversation("integration-rename", {
+          conversationId: h.conversation.id,
+          title: "Synthetic updated title",
+          expectedUpdatedAt: h.conversation.updatedAt,
+        }).result,
+      );
+      await vi.waitFor(() => expect(revisions).toHaveBeenCalled());
+      if (mode === "unsubscribe") stream.dispose();
+      else h.service.disposeWindow("window-1");
+      release();
+      await h.peer.drain();
+      expect(h.child.kill).not.toHaveBeenCalled();
+      if (mode === "unsubscribe") expect((await h.port.readStatus().result).ok).toBe(true);
+    } finally {
+      h.dispose();
+    }
+  },
+);
+it("keeps all four main subscription reservations until disposal and then admits the fresh research identity", async () => {
+  const h = await integratedResearch();
+  try {
+    const research = h.port.subscribeResearch(h.scope, () => {});
+    h.unwrap(await research.ready);
+    const others = Array.from({ length: 3 }, () => h.port.subscribeStatus(() => {}));
+    for (const stream of others) h.unwrap(await stream.ready);
+    h.holdDisposal();
+    research.dispose();
+    const rejected = h.port.subscribeResearch(h.scope, () => {});
+    expect(await rejected.ready).toEqual(failure("busy"));
+    h.releaseDisposal();
+    const next = h.port.subscribeResearch(h.scope, () => {});
+    expect((await next.ready).ok).toBe(true);
+    expect(h.child.kill).not.toHaveBeenCalled();
+    next.dispose();
+    for (const stream of others) stream.dispose();
+  } finally {
+    h.dispose();
+  }
+});
+it("returns timeout for a slow research read while retaining accepted capacity until generation cessation", async () => {
+  const h = supervisor();
+  const pending = work({ operation: "project.list", payload: { cursor: null, count: 50 } });
+  h.service.dispatch(pending);
+  await vi.advanceTimersByTimeAsync(portLimits.request_deadline_ms);
+  expect(pending.deliver).toHaveBeenCalledWith(expect.stringContaining('"code":"timeout"'));
+  expect(pending.release).not.toHaveBeenCalled();
+  expect(h.child.kill).toHaveBeenCalledOnce();
+  h.exited();
+  expect(pending.release).toHaveBeenCalledOnce();
+});
+
+it("recovers a conversation replacement through main while all four subscription slots are occupied", async () => {
+  const h = await integratedResearch();
+  const controller = new ConversationController(h.port);
+  try {
+    const others = Array.from({ length: 3 }, () => h.port.subscribeStatus(() => {}));
+    for (const stream of others) h.unwrap(await stream.ready);
+    const reads = vi.spyOn(h.store, "readResearch");
+    controller.open(h.scope);
+    await vi.waitFor(() => expect(controller.snapshot().status).toBe("ready"));
+    const pages = () =>
+      reads.mock.calls.filter(([request]) => request.operation === "timeline.listBefore").length;
+    expect(pages()).toBe(1);
+    h.holdDisposal();
+    controller.reload();
+    await vi.waitFor(() => expect(h.heldDisposals()).toBe(1));
+    expect(pages()).toBe(1);
+    expect(controller.snapshot().status).toBe("ready");
+    h.releaseDisposal();
+    await vi.waitFor(() => expect(pages()).toBe(2));
+    expect(controller.snapshot().status).toBe("ready");
+    expect(h.child.kill).not.toHaveBeenCalled();
+    controller.dispose();
+    for (const stream of others) stream.dispose();
+  } finally {
+    controller.dispose();
+    h.dispose();
+  }
+});
+
+async function suspendResearchRead(h: Awaited<ReturnType<typeof integratedResearch>>) {
+  const original = h.store.readResearch.bind(h.store);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const read = vi.spyOn(h.store, "readResearch").mockImplementationOnce(async (request) => {
+    await gate;
+    return original(request);
+  });
+  const call = h.port.listProjects({ cursor: null, count: 50 });
+  await vi.waitFor(() => expect(read).toHaveBeenCalled());
+  return { release, call };
+}
+it("discards queued parts after window closure without recreating an abandoned upload", async () => {
+  const h = await integratedResearch();
+  const part = vi.spyOn(TextStaging.prototype, "part");
+  try {
+    const blocked = await suspendResearchRead(h);
+    const text = "x".repeat(5000);
+    const parts = splitText(text);
+    const descriptor = { parts: parts.length, bytes: 5000, sha256: digest(text) };
+    const upload = h.port.sendTextPart("queued-upload", {
+      index: 1,
+      count: parts.length,
+      bytes: 5000,
+      sha256: descriptor.sha256,
+      text: parts[0]!,
+    });
+    h.service.disposeWindow("window-1");
+    blocked.release();
+    await blocked.call.result;
+    await upload.result;
+    await h.peer.drain();
+    const staging = part.mock.contexts[0] as TextStaging;
+    expect(
+      staging.part("window-1", "queued-upload", {
+        index: 2,
+        count: parts.length,
+        bytes: 5000,
+        sha256: descriptor.sha256,
+        text: parts[1]!,
+      }).ok,
+    ).toBe(true);
+    expect(staging.take("window-1", "queued-upload", descriptor)).toEqual(
+      failure("parts_incomplete"),
+    );
+    expect(h.child.kill).not.toHaveBeenCalled();
+  } finally {
+    part.mockRestore();
+    h.dispose();
+  }
+});
+it("preserves parts for an already-accepted multipart command before cleaning the closed window", async () => {
+  const h = await integratedResearch();
+  try {
+    const text = "한".repeat(2000);
+    const parts = splitText(text);
+    const descriptor = { parts: parts.length, bytes: 6000, sha256: digest(text) };
+    for (let index = 0; index < parts.length; index++)
+      h.unwrap(
+        await h.port.sendTextPart("closing-append", {
+          index: index + 1,
+          count: parts.length,
+          bytes: 6000,
+          sha256: descriptor.sha256,
+          text: parts[index]!,
+        }).result,
+      );
+    const blocked = await suspendResearchRead(h);
+    const append = h.port.appendMessage("closing-append", {
+      conversationId: h.conversation.id,
+      content: descriptor,
+    });
+    h.service.disposeWindow("window-1");
+    blocked.release();
+    await blocked.call.result;
+    h.unwrap(await append.result);
+    await h.peer.drain();
+    expect(h.unwrap(await h.store.readMessages(h.conversation.id))[0]?.content).toBe(text);
+    expect(h.child.kill).not.toHaveBeenCalled();
+  } finally {
+    h.dispose();
+  }
 });

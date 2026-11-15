@@ -270,6 +270,18 @@
     "exit.cancelling": "Ohtia is cancelling the work and saving replies.",
     "exit.body": "{running, plural, one {# reply is still running. Replies that haven’t started are kept for the next time you open Ohtia, unless you cancel the work.} other {# replies are still running. Replies that haven’t started are kept for the next time you open Ohtia, unless you cancel the work.}}",
     "exit.waiting": "{running, plural, one {Ohtia will quit when the running replies finish. # still running.} other {Ohtia will quit when the running replies finish. # still running.}}",
-    "exit.queued": "Replies that haven’t started are kept for the next time you open Ohtia, unless you cancel the work."
+    "exit.queued": "Replies that haven’t started are kept for the next time you open Ohtia, unless you cancel the work.",
+    "conversation.loading": "Loading conversation…",
+    "conversation.empty": "This conversation has no messages yet.",
+    "conversation.failed": "Ohtia couldn’t load this conversation. Its messages are still saved.",
+    "conversation.reload": "Reload conversation",
+    "conversation.unavailable": "Conversations are unavailable until local data and the local service are ready.",
+    "conversation.earlier": "Load earlier messages",
+    "conversation.earlierLoading": "Loading earlier messages…",
+    "conversation.earlierFailed": "Ohtia couldn’t load earlier messages. They’re still saved.",
+    "conversation.latest": "Jump to latest message",
+    "conversation.you": "You",
+    "conversation.writing": "{agent} is writing…",
+    "conversation.replied": "{agent} replied"
   }
 }

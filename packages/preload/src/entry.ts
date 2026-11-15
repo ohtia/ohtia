@@ -19,6 +19,8 @@ import {
   failure,
   portLimits,
   type ConnectionEvent,
+  type ResearchScope,
+  type ResearchEvent,
   type LocaleSnapshot,
   type PresentationSnapshot,
   type Outcome,
@@ -105,6 +107,33 @@ function subscribeConnection(
   lifetime.stream = stream;
   if (lifetime.active) connectionOwners.add(owner);
   else stream.dispose();
+  void stream.ready.then((outcome) => {
+    if (!outcome.ok) owner.dispose();
+  });
+  return {
+    ready: stream.ready,
+    dispose: () => {
+      owner.dispose();
+    },
+  };
+}
+const researchOwners = new Set<{
+  listener: (notice: Outcome<ResearchEvent>) => void;
+  dispose(): void;
+}>();
+function subscribeResearch(
+  scope: ResearchScope,
+  listener: (notice: Outcome<ResearchEvent>) => void,
+): Subscription {
+  const stream = connection.client.port.subscribeResearch(scope, listener);
+  const owner = {
+    listener,
+    dispose() {
+      researchOwners.delete(owner);
+      stream.dispose();
+    },
+  };
+  researchOwners.add(owner);
   void stream.ready.then((outcome) => {
     if (!outcome.ok) owner.dispose();
   });
@@ -314,6 +343,21 @@ const bridge: DesktopBridge = {
     },
   },
   foundation: {
+    createProject: (id) => connection.client.port.createProject(id),
+    confirmProjectSetup: (id, input) => connection.client.port.confirmProjectSetup(id, input),
+    startConversation: (id, input) => connection.client.port.startConversation(id, input),
+    renameConversation: (id, input) => connection.client.port.renameConversation(id, input),
+    appendMessage: (id, input) => connection.client.port.appendMessage(id, input),
+    listProjects: (input) => connection.client.port.listProjects(input),
+    listConversations: (input) => connection.client.port.listConversations(input),
+    readConversations: (input) => connection.client.port.readConversations(input),
+    listTimelineBefore: (input) => connection.client.port.listTimelineBefore(input),
+    readTimeline: (input) => connection.client.port.readTimeline(input),
+    sendTextPart: (id, input) => connection.client.port.sendTextPart(id, input),
+    readTextPart: (input) => connection.client.port.readTextPart(input),
+    readReplyParts: (input) => connection.client.port.readReplyParts(input),
+    subscribeResearch,
+
     readConnection: (id) => connection.client.port.readConnection(id),
     connectConnection: (id, options) => connection.client.port.connectConnection(id, options),
     disconnectConnection: (id) => connection.client.port.disconnectConnection(id),
@@ -364,6 +408,14 @@ ipcRenderer.on(desktopChannels.ended, serviceEnded);
 const reconnect = () => {
   connection.client.dispose();
   connection = connect();
+  for (const owner of [...researchOwners]) {
+    owner.dispose();
+    try {
+      owner.listener(failure("sequence_gap"));
+    } catch {
+      /* A consumer cannot interrupt reconnection. */
+    }
+  }
   for (const owner of [...connectionOwners]) {
     owner.dispose();
     try {
@@ -385,6 +437,8 @@ window.addEventListener(
     localeOwners.clear();
     for (const owner of connectionOwners) owner.dispose();
     connectionOwners.clear();
+    for (const owner of researchOwners) owner.dispose();
+    researchOwners.clear();
     connection.client.dispose();
     ipcRenderer.removeListener(desktopChannels.preferencesReady, preferencesReady);
     ipcRenderer.removeListener(desktopChannels.ended, serviceEnded);

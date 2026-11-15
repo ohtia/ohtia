@@ -189,6 +189,7 @@ describe("review regression contracts", () => {
           "workspace-chrome.css",
           "character.css",
           "research.css",
+          "conversation.css",
         ].map((name) => `packages/renderer/src/${name}`),
       ]) {
         fs.mkdirSync(path.dirname(path.join(temporary, file)), { recursive: true });

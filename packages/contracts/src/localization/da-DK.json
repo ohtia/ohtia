@@ -270,6 +270,18 @@
     "exit.cancelling": "Ohtia annullerer arbejdet og gemmer svarene.",
     "exit.body": "{running, plural, one {# svar er stadig i gang. Svar, der ikke er startet, gemmes til næste gang du åbner Ohtia, medmindre du annullerer arbejdet.} other {# svar er stadig i gang. Svar, der ikke er startet, gemmes til næste gang du åbner Ohtia, medmindre du annullerer arbejdet.}}",
     "exit.waiting": "{running, plural, one {Ohtia afsluttes, når de igangværende svar er færdige. # er stadig i gang.} other {Ohtia afsluttes, når de igangværende svar er færdige. # er stadig i gang.}}",
-    "exit.queued": "Svar, der ikke er startet, gemmes til næste gang du åbner Ohtia, medmindre du annullerer arbejdet."
+    "exit.queued": "Svar, der ikke er startet, gemmes til næste gang du åbner Ohtia, medmindre du annullerer arbejdet.",
+    "conversation.loading": "Indlæser samtale…",
+    "conversation.empty": "Denne samtale har endnu ingen beskeder.",
+    "conversation.failed": "Ohtia kunne ikke indlæse samtalen. Beskederne er stadig gemt.",
+    "conversation.reload": "Genindlæs samtale",
+    "conversation.unavailable": "Samtaler er utilgængelige, indtil lokale data og den lokale tjeneste er klar.",
+    "conversation.earlier": "Indlæs tidligere beskeder",
+    "conversation.earlierLoading": "Indlæser tidligere beskeder…",
+    "conversation.earlierFailed": "Ohtia kunne ikke indlæse tidligere beskeder. De er stadig gemt.",
+    "conversation.latest": "Gå til seneste besked",
+    "conversation.you": "Du",
+    "conversation.writing": "{agent} skriver…",
+    "conversation.replied": "{agent} svarede"
   }
 }

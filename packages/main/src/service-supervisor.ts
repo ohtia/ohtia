@@ -1,3 +1,4 @@
+import { isResearchMutation } from "@ohtia/contracts";
 import type { ConnectionManager } from "./connection-manager.js";
 import { RequestBudget } from "./port-admission.js";
 import { randomUUID } from "node:crypto";
@@ -292,6 +293,12 @@ export class ServiceSupervisor {
     this.deadlines.set(
       id,
       setTimeout(() => {
+        const encoded = encodeEnvelope({
+          ...work.request,
+          kind: "result",
+          payload: failure(isResearchMutation(work.request.operation) ? "uncertain" : "timeout"),
+        });
+        if (encoded.ok) work.deliver(encoded.value);
         this.fault();
       }, portLimits.request_deadline_ms),
     );
@@ -299,6 +306,7 @@ export class ServiceSupervisor {
       work.request.operation === "status.subscribe" ||
       work.request.operation === "appearance.subscribe" ||
       work.request.operation === "locale.subscribe" ||
+      work.request.operation === "research.subscribe" ||
       work.request.operation === "presentation.subscribe"
     )
       this.streams.set(
@@ -322,12 +330,26 @@ export class ServiceSupervisor {
     if (!this.send(envelope)) this.fault();
   }
   disposeWindow(windowGeneration: string): void {
+    if (!this.stopped) {
+      try {
+        this.child.send(
+          JSON.stringify({
+            kind: "research_window_closed",
+            generation: this.generation,
+            windowGeneration,
+          }),
+        );
+      } catch {
+        this.fault();
+      }
+    }
     for (const work of this.streams.values()) {
       if (
         work.request.windowGeneration !== windowGeneration ||
         (work.request.operation !== "status.subscribe" &&
           work.request.operation !== "appearance.subscribe" &&
           work.request.operation !== "locale.subscribe" &&
+          work.request.operation !== "research.subscribe" &&
           work.request.operation !== "presentation.subscribe")
       )
         continue;
@@ -636,6 +658,7 @@ export class ServiceSupervisor {
           work.request.operation === "status.subscribe" ||
           work.request.operation === "appearance.subscribe" ||
           work.request.operation === "locale.subscribe" ||
+          work.request.operation === "research.subscribe" ||
           work.request.operation === "presentation.subscribe"
         )
           this.streams.delete(
@@ -650,13 +673,15 @@ export class ServiceSupervisor {
       const work = this.streams.get(key(value.windowGeneration, value.subscriptionId));
       if (
         !work ||
-        (value.topic === "presentation"
-          ? work.request.operation !== "presentation.subscribe"
-          : value.topic === "status"
-            ? work.request.operation !== "status.subscribe"
-            : value.topic === "locale"
-              ? work.request.operation !== "locale.subscribe"
-              : work.request.operation !== "appearance.subscribe")
+        (value.topic === "research"
+          ? work.request.operation !== "research.subscribe"
+          : value.topic === "presentation"
+            ? work.request.operation !== "presentation.subscribe"
+            : value.topic === "status"
+              ? work.request.operation !== "status.subscribe"
+              : value.topic === "locale"
+                ? work.request.operation !== "locale.subscribe"
+                : work.request.operation !== "appearance.subscribe")
       ) {
         this.fault();
         return;
@@ -692,7 +717,8 @@ export class ServiceSupervisor {
         ...work.request,
         kind: "result",
         payload: failure(
-          work.request.operation === "appearance.replace" ||
+          isResearchMutation(work.request.operation) ||
+            work.request.operation === "appearance.replace" ||
             work.request.operation === "locale.replace" ||
             work.request.operation === "layout.replace" ||
             work.request.operation === "bounds.replace" ||

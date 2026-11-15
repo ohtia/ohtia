@@ -270,6 +270,18 @@
     "exit.cancelling": "Ohtia sta annullando il lavoro e salvando le risposte.",
     "exit.body": "{running, plural, one {# risposta è ancora in corso. Le risposte non ancora iniziate vengono conservate per la prossima apertura di Ohtia, a meno che non annulli il lavoro.} many {# risposte sono ancora in corso. Le risposte non ancora iniziate vengono conservate per la prossima apertura di Ohtia, a meno che non annulli il lavoro.} other {# risposte sono ancora in corso. Le risposte non ancora iniziate vengono conservate per la prossima apertura di Ohtia, a meno che non annulli il lavoro.}}",
     "exit.waiting": "{running, plural, one {Ohtia si chiuderà al termine delle risposte in corso. Ne rimane #.} many {Ohtia si chiuderà al termine delle risposte in corso. Ne rimangono #.} other {Ohtia si chiuderà al termine delle risposte in corso. Ne rimangono #.}}",
-    "exit.queued": "Le risposte non ancora iniziate vengono conservate per la prossima apertura di Ohtia, a meno che non annulli il lavoro."
+    "exit.queued": "Le risposte non ancora iniziate vengono conservate per la prossima apertura di Ohtia, a meno che non annulli il lavoro.",
+    "conversation.loading": "Caricamento della conversazione…",
+    "conversation.empty": "Questa conversazione non contiene ancora messaggi.",
+    "conversation.failed": "Ohtia non ha potuto caricare questa conversazione. I messaggi sono ancora salvati.",
+    "conversation.reload": "Ricarica conversazione",
+    "conversation.unavailable": "Le conversazioni non sono disponibili finché i dati e il servizio locali non sono pronti.",
+    "conversation.earlier": "Carica messaggi precedenti",
+    "conversation.earlierLoading": "Caricamento dei messaggi precedenti…",
+    "conversation.earlierFailed": "Ohtia non ha potuto caricare i messaggi precedenti. Sono ancora salvati.",
+    "conversation.latest": "Vai al messaggio più recente",
+    "conversation.you": "Tu",
+    "conversation.writing": "{agent} sta scrivendo…",
+    "conversation.replied": "{agent} ha risposto"
   }
 }

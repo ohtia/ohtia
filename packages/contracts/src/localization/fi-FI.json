@@ -270,6 +270,18 @@
     "exit.cancelling": "Ohtia peruuttaa työn ja tallentaa vastaukset.",
     "exit.body": "{running, plural, one {# vastaus on vielä kesken. Aloittamattomat vastaukset säilytetään Ohtian seuraavaa avaamista varten, ellet peruuta työtä.} other {# vastausta on vielä kesken. Aloittamattomat vastaukset säilytetään Ohtian seuraavaa avaamista varten, ellet peruuta työtä.}}",
     "exit.waiting": "{running, plural, one {Ohtia lopetetaan, kun keskeneräiset vastaukset valmistuvat. # vastaus on vielä kesken.} other {Ohtia lopetetaan, kun keskeneräiset vastaukset valmistuvat. # vastausta on vielä kesken.}}",
-    "exit.queued": "Aloittamattomat vastaukset säilytetään Ohtian seuraavaa avaamista varten, ellet peruuta työtä."
+    "exit.queued": "Aloittamattomat vastaukset säilytetään Ohtian seuraavaa avaamista varten, ellet peruuta työtä.",
+    "conversation.loading": "Ladataan keskustelua…",
+    "conversation.empty": "Tässä keskustelussa ei ole vielä viestejä.",
+    "conversation.failed": "Ohtia ei voinut ladata tätä keskustelua. Sen viestit ovat edelleen tallessa.",
+    "conversation.reload": "Lataa keskustelu uudelleen",
+    "conversation.unavailable": "Keskustelut eivät ole käytettävissä ennen kuin paikalliset tiedot ja paikallinen palvelu ovat valmiita.",
+    "conversation.earlier": "Lataa aiemmat viestit",
+    "conversation.earlierLoading": "Ladataan aiempia viestejä…",
+    "conversation.earlierFailed": "Ohtia ei voinut ladata aiempia viestejä. Ne ovat edelleen tallessa.",
+    "conversation.latest": "Siirry uusimpaan viestiin",
+    "conversation.you": "Sinä",
+    "conversation.writing": "{agent} kirjoittaa…",
+    "conversation.replied": "{agent} vastasi"
   }
 }

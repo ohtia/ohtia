@@ -18,6 +18,12 @@
       "sha256": "fa4d29ffc1a860725ccfac32af5af5b965c8a5432f61e19dad21877c2e62df48"
     },
     {
+      "name": "arrow-down",
+      "file": "arrow-down.svg",
+      "archive_member": "package/icons/arrow-down.svg",
+      "sha256": "c2d517ceeb7f2edc142f081563cb2ec0962209efe3b06be909dc1b4846298ff2"
+    },
+    {
       "name": "arrow-left",
       "file": "arrow-left.svg",
       "archive_member": "package/icons/arrow-left.svg",
@@ -220,6 +226,12 @@
       "file": "panel-right.svg",
       "archive_member": "package/icons/panel-right.svg",
       "sha256": "0b81e6983e7e08d5b02eb194ca66a304fc910b23c72a2d02baf761bcd09e994e"
+    },
+    {
+      "name": "pen-line",
+      "file": "pen-line.svg",
+      "archive_member": "package/icons/pen-line.svg",
+      "sha256": "feb39ae75388ca2d4a69159403e4a4ac875d8f1ce9b3cdbe641b35d32208f974"
     },
     {
       "name": "plus",

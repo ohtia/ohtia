@@ -270,6 +270,18 @@
     "exit.cancelling": "Ohtia annuleert het werk en slaat de antwoorden op.",
     "exit.body": "{running, plural, one {Er loopt nog # antwoord. Antwoorden die nog niet zijn gestart, blijven bewaard tot je Ohtia opnieuw opent, tenzij je het werk annuleert.} other {Er lopen nog # antwoorden. Antwoorden die nog niet zijn gestart, blijven bewaard tot je Ohtia opnieuw opent, tenzij je het werk annuleert.}}",
     "exit.waiting": "{running, plural, one {Ohtia sluit af zodra de lopende antwoorden klaar zijn. Er loopt nog # antwoord.} other {Ohtia sluit af zodra de lopende antwoorden klaar zijn. Er lopen nog # antwoorden.}}",
-    "exit.queued": "Antwoorden die nog niet zijn gestart, blijven bewaard tot je Ohtia opnieuw opent, tenzij je het werk annuleert."
+    "exit.queued": "Antwoorden die nog niet zijn gestart, blijven bewaard tot je Ohtia opnieuw opent, tenzij je het werk annuleert.",
+    "conversation.loading": "Gesprek laden…",
+    "conversation.empty": "Dit gesprek bevat nog geen berichten.",
+    "conversation.failed": "Ohtia kon dit gesprek niet laden. De berichten zijn nog steeds opgeslagen.",
+    "conversation.reload": "Gesprek opnieuw laden",
+    "conversation.unavailable": "Gesprekken zijn niet beschikbaar totdat de lokale gegevens en de lokale dienst gereed zijn.",
+    "conversation.earlier": "Eerdere berichten laden",
+    "conversation.earlierLoading": "Eerdere berichten laden…",
+    "conversation.earlierFailed": "Ohtia kon eerdere berichten niet laden. Ze zijn nog steeds opgeslagen.",
+    "conversation.latest": "Naar het nieuwste bericht",
+    "conversation.you": "U",
+    "conversation.writing": "{agent} schrijft…",
+    "conversation.replied": "{agent} heeft geantwoord"
   }
 }

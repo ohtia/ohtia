@@ -270,6 +270,18 @@
     "exit.cancelling": "Ohtia está a cancelar o trabalho e a guardar as respostas.",
     "exit.body": "{running, plural, one {# resposta ainda está em curso. As respostas que não começaram ficam guardadas para a próxima vez que abrir o Ohtia, a menos que cancele o trabalho.} many {# respostas ainda estão em curso. As respostas que não começaram ficam guardadas para a próxima vez que abrir o Ohtia, a menos que cancele o trabalho.} other {# respostas ainda estão em curso. As respostas que não começaram ficam guardadas para a próxima vez que abrir o Ohtia, a menos que cancele o trabalho.}}",
     "exit.waiting": "{running, plural, one {Ohtia sairá quando as respostas em curso terminarem. Ainda resta #.} many {Ohtia sairá quando as respostas em curso terminarem. Ainda restam #.} other {Ohtia sairá quando as respostas em curso terminarem. Ainda restam #.}}",
-    "exit.queued": "As respostas que não começaram ficam guardadas para a próxima vez que abrir o Ohtia, a menos que cancele o trabalho."
+    "exit.queued": "As respostas que não começaram ficam guardadas para a próxima vez que abrir o Ohtia, a menos que cancele o trabalho.",
+    "conversation.loading": "A carregar a conversa…",
+    "conversation.empty": "Esta conversa ainda não tem mensagens.",
+    "conversation.failed": "O Ohtia não conseguiu carregar esta conversa. As mensagens continuam guardadas.",
+    "conversation.reload": "Recarregar conversa",
+    "conversation.unavailable": "As conversas não estão disponíveis até os dados e o serviço locais estarem prontos.",
+    "conversation.earlier": "Carregar mensagens anteriores",
+    "conversation.earlierLoading": "A carregar mensagens anteriores…",
+    "conversation.earlierFailed": "O Ohtia não conseguiu carregar as mensagens anteriores. Continuam guardadas.",
+    "conversation.latest": "Ir para a mensagem mais recente",
+    "conversation.you": "Você",
+    "conversation.writing": "{agent} está a escrever…",
+    "conversation.replied": "{agent} respondeu"
   }
 }

@@ -992,6 +992,7 @@ describe("reply control and partial provenance", () => {
       payload: { taskId: old },
     };
     const replacement = value(await f.store.executeResearchCommand(command));
+    expect(replacement.resultId).not.toBe(old);
     expect(value(await f.store.executeResearchCommand(command))).toEqual(replacement);
     const records = db
       .prepare(
@@ -1608,4 +1609,30 @@ it("captures the project's current language when an uncertain reply is accepted 
     { document_language: "es" },
   ]);
   db.close();
+});
+
+it("opens only an existing persisted conversation through the development action", async () => {
+  const { store, connections, generation, projectId, conversation } = await setup();
+  const sent: Record<string, unknown>[] = [];
+  const provider = new DurableProvider({
+    storage: store,
+    context: { generation, mode: "development", connections },
+    send: (text) => sent.push(JSON.parse(text)),
+  });
+  const action = (id: string) =>
+    provider.developmentAction({
+      kind: "development_action",
+      version: 1,
+      generation,
+      action: { name: "open-conversation", operation_id: "open-conversation", conversation: id },
+    });
+  await action(conversation.id);
+  expect(sent.at(-1)).toMatchObject({
+    report: { type: "conversation_opened", projectId, conversationId: conversation.id },
+  });
+  await action("019a8000-0000-7000-8000-999999999999");
+  expect(sent.at(-1)).toMatchObject({ report: { type: "refused", reason: "record_not_found" } });
+  expect(value(await store.readMessages(conversation.id))).toEqual([]);
+  expect(provider.replyParts("missing", 1)).toEqual({ parts: [], latestSequence: 0 });
+  provider.dispose();
 });

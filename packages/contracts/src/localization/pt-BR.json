@@ -270,6 +270,18 @@
     "exit.cancelling": "Ohtia está cancelando o trabalho e salvando as respostas.",
     "exit.body": "{running, plural, one {# resposta ainda está em andamento. As respostas que não começaram ficam guardadas para a próxima vez que abrir o Ohtia, a menos que cancele o trabalho.} many {# respostas ainda estão em andamento. As respostas que não começaram ficam guardadas para a próxima vez que abrir o Ohtia, a menos que cancele o trabalho.} other {# respostas ainda estão em andamento. As respostas que não começaram ficam guardadas para a próxima vez que abrir o Ohtia, a menos que cancele o trabalho.}}",
     "exit.waiting": "{running, plural, one {Ohtia sairá quando as respostas em andamento terminarem. Ainda resta #.} many {Ohtia sairá quando as respostas em andamento terminarem. Ainda restam #.} other {Ohtia sairá quando as respostas em andamento terminarem. Ainda restam #.}}",
-    "exit.queued": "As respostas que não começaram ficam guardadas para a próxima vez que abrir o Ohtia, a menos que cancele o trabalho."
+    "exit.queued": "As respostas que não começaram ficam guardadas para a próxima vez que abrir o Ohtia, a menos que cancele o trabalho.",
+    "conversation.loading": "Carregando conversa…",
+    "conversation.empty": "Esta conversa ainda não tem mensagens.",
+    "conversation.failed": "Ohtia não conseguiu carregar esta conversa. As mensagens continuam guardadas.",
+    "conversation.reload": "Recarregar conversa",
+    "conversation.unavailable": "As conversas estão indisponíveis até que os dados e o serviço locais estejam prontos.",
+    "conversation.earlier": "Carregar mensagens anteriores",
+    "conversation.earlierLoading": "Carregando mensagens anteriores…",
+    "conversation.earlierFailed": "Ohtia não conseguiu carregar as mensagens anteriores. Continuam guardadas.",
+    "conversation.latest": "Ir para a mensagem mais recente",
+    "conversation.you": "Você",
+    "conversation.writing": "{agent} está escrevendo…",
+    "conversation.replied": "{agent} respondeu"
   }
 }

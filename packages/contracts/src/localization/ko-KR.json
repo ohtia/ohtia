@@ -270,6 +270,18 @@
     "exit.cancelling": "Ohtia가 작업을 취소하고 답변을 저장하고 있습니다.",
     "exit.body": "{running, plural, other {답변 #개가 아직 생성 중입니다. 작업을 취소하지 않으면 아직 시작되지 않은 답변은 다음에 Ohtia를 열 때까지 보관됩니다.}}",
     "exit.waiting": "{running, plural, other {진행 중인 답변이 완료되면 Ohtia가 종료됩니다. 아직 #개가 생성 중입니다.}}",
-    "exit.queued": "작업을 취소하지 않으면 아직 시작되지 않은 답변은 다음에 Ohtia를 열 때까지 보관됩니다."
+    "exit.queued": "작업을 취소하지 않으면 아직 시작되지 않은 답변은 다음에 Ohtia를 열 때까지 보관됩니다.",
+    "conversation.loading": "대화를 불러오는 중…",
+    "conversation.empty": "이 대화에는 아직 메시지가 없습니다.",
+    "conversation.failed": "Ohtia가 이 대화를 불러오지 못했습니다. 메시지는 계속 저장되어 있습니다.",
+    "conversation.reload": "대화 다시 불러오기",
+    "conversation.unavailable": "로컬 데이터와 로컬 서비스가 준비될 때까지 대화를 사용할 수 없습니다.",
+    "conversation.earlier": "이전 메시지 불러오기",
+    "conversation.earlierLoading": "이전 메시지를 불러오는 중…",
+    "conversation.earlierFailed": "Ohtia가 이전 메시지를 불러오지 못했습니다. 메시지는 계속 저장되어 있습니다.",
+    "conversation.latest": "최신 메시지로 이동",
+    "conversation.you": "나",
+    "conversation.writing": "{agent} 작성 중…",
+    "conversation.replied": "{agent} 응답 완료"
   }
 }

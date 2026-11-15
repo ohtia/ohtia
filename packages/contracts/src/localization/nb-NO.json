@@ -270,6 +270,18 @@
     "exit.cancelling": "Ohtia avbryter arbeidet og lagrer svarene.",
     "exit.body": "{running, plural, one {# svar pågår fortsatt. Svar som ikke har startet, lagres til neste gang du åpner Ohtia, med mindre du avbryter arbeidet.} other {# svar pågår fortsatt. Svar som ikke har startet, lagres til neste gang du åpner Ohtia, med mindre du avbryter arbeidet.}}",
     "exit.waiting": "{running, plural, one {Ohtia avsluttes når de pågående svarene er ferdige. # pågår fortsatt.} other {Ohtia avsluttes når de pågående svarene er ferdige. # pågår fortsatt.}}",
-    "exit.queued": "Svar som ikke har startet, lagres til neste gang du åpner Ohtia, med mindre du avbryter arbeidet."
+    "exit.queued": "Svar som ikke har startet, lagres til neste gang du åpner Ohtia, med mindre du avbryter arbeidet.",
+    "conversation.loading": "Laster inn samtale…",
+    "conversation.empty": "Denne samtalen har ingen meldinger ennå.",
+    "conversation.failed": "Ohtia kunne ikke laste inn samtalen. Meldingene er fortsatt lagret.",
+    "conversation.reload": "Last inn samtalen på nytt",
+    "conversation.unavailable": "Samtaler er utilgjengelige til lokale data og den lokale tjenesten er klare.",
+    "conversation.earlier": "Last inn tidligere meldinger",
+    "conversation.earlierLoading": "Laster inn tidligere meldinger…",
+    "conversation.earlierFailed": "Ohtia kunne ikke laste inn tidligere meldinger. De er fortsatt lagret.",
+    "conversation.latest": "Gå til nyeste melding",
+    "conversation.you": "Du",
+    "conversation.writing": "{agent} skriver…",
+    "conversation.replied": "{agent} svarte"
   }
 }
