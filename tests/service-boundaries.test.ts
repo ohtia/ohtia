@@ -977,3 +977,55 @@ it.each(["requested", "unexpected"])(
     expect(diagnostic).toHaveBeenCalledOnce();
   },
 );
+
+it("sends a non-orderly shutdown through the existing broker stop boundary", async () => {
+  const h = supervisor();
+  const stopped = stopBrokerServices(h.service, undefined, undefined, () => false);
+  await Promise.resolve();
+  expect(h.child.send).toHaveBeenCalledWith(
+    JSON.stringify({ kind: "shutdown", generation: "service-1", orderly: false }),
+  );
+  h.exited();
+  expect(await stopped).toBe(true);
+});
+
+it("downgrades an already sent orderly shutdown when the operating system starts shutdown", async () => {
+  const h = supervisor();
+  const stopped = h.service.stop();
+  expect(h.child.send).toHaveBeenLastCalledWith(
+    JSON.stringify({ kind: "shutdown", generation: "service-1", orderly: true }),
+  );
+  h.service.markSystemShutdown();
+  expect(h.child.send).toHaveBeenLastCalledWith(
+    JSON.stringify({ kind: "shutdown", generation: "service-1", orderly: false }),
+  );
+  h.exited();
+  expect(await stopped).toBe(true);
+});
+
+it("admits only this generation's content-free exit counts on the private provider channel", async () => {
+  const h = supervisor();
+  const exitState = vi.fn();
+  h.service.connectProvider({ dispatch: vi.fn(), interrupt: vi.fn(), exitState });
+  const state = {
+    kind: "application_exit_state",
+    generation: "service-1",
+    operationId: "exit-1",
+    running: 2,
+    held: true,
+    cancelled: false,
+    failed: false,
+  };
+  h.receive(JSON.stringify(state));
+  expect(exitState).toHaveBeenCalledExactlyOnceWith(state);
+  h.receive(JSON.stringify({ ...state, generation: "old" }));
+  expect(exitState).toHaveBeenCalledExactlyOnceWith(state);
+  h.service.markSystemShutdown();
+  const stopped = h.service.stop();
+  expect(h.child.send).toHaveBeenLastCalledWith(
+    JSON.stringify({ kind: "shutdown", generation: "service-1", orderly: false }),
+  );
+  h.exited();
+  expect(await stopped).toBe(true);
+  h.service.markSystemShutdown();
+});

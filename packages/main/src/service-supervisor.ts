@@ -3,6 +3,8 @@ import { RequestBudget } from "./port-admission.js";
 import { randomUUID } from "node:crypto";
 import {
   decodeText,
+  decodeApplicationExit,
+  type ApplicationExitState,
   decodeEnvelope,
   decodeDevelopmentReport,
   decodeProviderDispatch,
@@ -47,6 +49,7 @@ export interface SupervisedChild {
 }
 /** Main's receivers for the provider messages of this generation's data service. */
 export interface ProviderChannel {
+  exitState?(state: ApplicationExitState): void;
   wakeReviewed?(message: ServiceWakeMessage): void;
   refreshModels?(message: ModelListRefreshMessage): void;
   dispatch(message: ProviderDispatchMessage): void;
@@ -89,6 +92,8 @@ export class ServiceSupervisor {
   private cancelStopping: (() => void) | undefined;
   private shutdownDrain: Promise<void> | undefined;
   private shutdownDrained = false;
+  private shutdownSent = false;
+  private systemShutdown = false;
   private stopDiagnosticForwarded = false;
   private provider: ProviderChannel | undefined;
   private readonly pendingWakes: { text: string; message: ServiceWakeMessage }[] = [];
@@ -381,6 +386,11 @@ export class ServiceSupervisor {
           this.diagnostic?.(event);
         }
       }
+      return;
+    }
+    const exit = decodeApplicationExit(input);
+    if (exit?.kind === "application_exit_state" && exit.generation === this.generation) {
+      this.provider?.exitState?.(exit);
       return;
     }
     // Private lifecycle acknowledgements are fixed-size and never forwarded to a renderer.
@@ -707,8 +717,23 @@ export class ServiceSupervisor {
     for (const waiter of this.exitWaiters) waiter(true);
     this.exitWaiters.clear();
   }
+  /** An OS shutdown can supersede an ordinary quit while the data-service queue drains. */
+  markSystemShutdown(): void {
+    this.systemShutdown = true;
+    if (!this.shutdownSent || this.stopped) return;
+    try {
+      this.child.send(
+        JSON.stringify({ kind: "shutdown", generation: this.generation, orderly: false }),
+      );
+    } catch {
+      /* The existing stop deadline still owns cessation. */
+    }
+  }
   /** Deny new work, prove owned transport closure, then request the store's final write. */
-  stop(admitted: () => boolean = () => true): Promise<boolean> {
+  stop(
+    admitted: () => boolean = () => true,
+    orderly: () => boolean = () => true,
+  ): Promise<boolean> {
     if (!admitted()) return Promise.resolve(false);
     if (this.stopped && (!this.beforeShutdown || this.shutdownDrained))
       return Promise.resolve(true);
@@ -778,8 +803,13 @@ export class ServiceSupervisor {
         this.terminationTimers.add(grace);
         try {
           this.child.send(
-            JSON.stringify({ kind: "shutdown", generation: this.generation, orderly: true }),
+            JSON.stringify({
+              kind: "shutdown",
+              generation: this.generation,
+              orderly: orderly() && !this.systemShutdown,
+            }),
           );
+          this.shutdownSent = true;
         } catch {
           /* The bounded grace timer still attempts termination. */
         }

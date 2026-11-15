@@ -98,6 +98,8 @@ function harness(platform: "linux" | "win32" | "darwin" = "linux") {
   let listener: ((intent: CommandIntent) => void) | undefined;
   let sequence = 0;
   const dispose = vi.fn();
+  let exitListener:
+    ((state: import("@ohtia/contracts").ExitDialogState | null) => void) | undefined;
   const snapshots: CommandSnapshot[] = [];
   const bridge: CommandBridge = {
     context: vi.fn(async () => ({ windowGeneration: "window-1", platform })),
@@ -105,6 +107,14 @@ function harness(platform: "linux" | "win32" | "darwin" = "linux") {
       snapshots.push(snapshot);
       return true;
     }),
+    readExitState: async () => null,
+    onExitState: (listener) => {
+      exitListener = listener;
+      return () => {
+        exitListener = undefined;
+      };
+    },
+    chooseExit: vi.fn(async () => true),
     onIntent: vi.fn((next) => {
       listener = next;
       return dispose;
@@ -117,6 +127,7 @@ function harness(platform: "linux" | "win32" | "darwin" = "linux") {
   };
   return {
     bridge,
+    pushExit: (state: import("@ohtia/contracts").ExitDialogState | null) => exitListener?.(state),
     snapshots,
     dispose,
     send: (command: CommandIntent["command"]) =>
@@ -148,7 +159,7 @@ describe("local Help and About composition", () => {
     expect(test.bridge.copyVersionInformation).toHaveBeenCalledWith("en-US");
     expect(dialog.querySelector(".about-copied")!.textContent).toBe("Copied");
     expect(document.activeElement).toBe(dialog.querySelector("[data-close]"));
-    await click(button("Close", dialog));
+    await click(button("Close dialog", dialog));
     expect(document.activeElement).toBe(about);
     await act(async () => test.send("help.open"));
     dialog = container.querySelector(".help-dialog")!;
@@ -158,7 +169,7 @@ describe("local Help and About composition", () => {
     expect(shortcuts.getAttribute("aria-disabled")).not.toBe("true");
     await click(dialog.querySelector('a[href*="docs/index"]')!);
     expect(test.bridge.openLink).toHaveBeenCalledWith("documentation");
-    await click(button("Close", dialog));
+    await click(button("Close dialog", dialog));
     await render(h(CommandSurfaces, { bridge: test.bridge, locale: "ko-KR" }));
     await act(async () => test.send("about.open"));
     expect(container.querySelector(".about-dialog")!.textContent).toContain("시스템");
@@ -182,7 +193,7 @@ describe("local Help and About composition", () => {
     expect(dialog.querySelector('[role="alert"]')!.textContent).toContain("copy it manually");
     expect(dialog.hasAttribute("open")).toBe(true);
     await click(button("Copy version information", dialog));
-    await click(button("Close", dialog));
+    await click(button("Close dialog", dialog));
     await click(button("About Ohtia"));
     await act(async () => finish(true));
     expect(container.querySelector(".about-dialog")!.textContent).not.toContain("Copied");
@@ -200,7 +211,7 @@ describe("local Help and About composition", () => {
     );
     await render(h(CommandSurfaces, { bridge: test.bridge, locale: "en-US" }));
     await click(button("About Ohtia"));
-    await click(button("Close", container.querySelector(".about-dialog")!));
+    await click(button("Close dialog", container.querySelector(".about-dialog")!));
     await act(async () => finish(info));
     expect(container.querySelector("dialog[open]")).toBeNull();
     vi.mocked(test.bridge.about).mockRejectedValueOnce(new Error("synthetic private detail"));
@@ -209,7 +220,7 @@ describe("local Help and About composition", () => {
       message("en-US", "about.loadFailed"),
     );
     expect(container.textContent).not.toContain("synthetic private detail");
-    await click(button("Close", container.querySelector(".about-dialog")!));
+    await click(button("Close dialog", container.querySelector(".about-dialog")!));
     vi.mocked(test.bridge.openLink).mockResolvedValueOnce(false);
     await click(button("Ohtia help"));
     await click(container.querySelector(".help-dialog a")!);
@@ -377,7 +388,7 @@ it("announces native version-copy outcomes in Help and the workspace without cha
     message("en-US", "about.copyOutsideFailed"),
   );
   expect(document.activeElement).toBe(before);
-  await click(button("Close", help));
+  await click(button("Close dialog", help));
   vi.mocked(test.bridge.copyVersionInformation).mockResolvedValueOnce(false);
   await act(async () => test.send("version.copy"));
   expect(container.querySelector(":scope > .command-danger")!.textContent).toContain(
@@ -1208,3 +1219,141 @@ describe("macOS command-wheel routing", () => {
     });
   });
 });
+
+it("opens the running-replies confirmation over an existing dialog with safe focus, polite counts and Esc", async () => {
+  const test = harness();
+  await render(h(CommandSurfaces, { bridge: test.bridge, locale: "en-US" }));
+  await click(button("About Ohtia"));
+  await act(async () =>
+    test.pushExit({ operationId: "exit-1", running: 2, phase: "confirm", failed: false }),
+  );
+  const dialog = container.querySelector<HTMLDialogElement>("dialog[open]")!;
+  expect(dialog.textContent).toContain("Quit Ohtia while replies are running?");
+  expect(dialog.textContent).toContain("2 replies are still running.");
+  expect(document.activeElement).toBe(dialog.querySelector("[data-close]"));
+  expect(dialog.querySelector('[role="status"]')?.getAttribute("aria-live")).toBe("polite");
+  await click(button("Wait for replies, then quit", dialog));
+  expect(test.bridge.chooseExit).toHaveBeenLastCalledWith("exit-1", "wait");
+  await act(async () =>
+    test.pushExit({ operationId: "exit-1", running: 1, phase: "waiting", failed: false }),
+  );
+  expect(dialog.textContent).toContain(
+    "Ohtia will quit when the running replies finish. 1 still running.",
+  );
+  expect(dialog.textContent).toContain("Replies that haven’t started are kept");
+  await act(async () =>
+    dialog.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    ),
+  );
+  expect(test.bridge.chooseExit).toHaveBeenLastCalledWith("exit-1", "close");
+  await act(async () => test.pushExit(null));
+  expect(container.querySelector("dialog[open]")).toBeNull();
+});
+it("keeps cancellation and its failure in the exit dialog and permits an explicit retry", async () => {
+  const test = harness();
+  await render(h(CommandSurfaces, { bridge: test.bridge, locale: "de-DE" }));
+  await act(async () =>
+    test.pushExit({ operationId: "exit-1", running: 1, phase: "confirm", failed: false }),
+  );
+  const dialog = container.querySelector<HTMLDialogElement>("dialog[open]")!;
+  const { message } = await import("../packages/contracts/src/index.js");
+  await click(button(message("de-DE", "exit.cancel"), dialog));
+  expect(test.bridge.chooseExit).toHaveBeenLastCalledWith("exit-1", "cancel");
+  await act(async () =>
+    test.pushExit({ operationId: "exit-1", running: 1, phase: "cancelling", failed: true }),
+  );
+  expect(dialog.querySelector('[role="alert"]')).not.toBeNull();
+  await click(button(message("de-DE", "exit.cancel"), dialog));
+  expect(test.bridge.chooseExit).toHaveBeenLastCalledWith("exit-1", "cancel");
+});
+
+it("keeps an unsuccessful exit choice inspectable, disables actions during cancellation and offers safe dismissal after failure", async () => {
+  const test = harness();
+  await render(h(CommandSurfaces, { bridge: test.bridge, locale: "en-US" }));
+  await act(async () =>
+    test.pushExit({ operationId: "exit-1", running: 1, phase: "confirm", failed: false }),
+  );
+  let dialog = container.querySelector<HTMLDialogElement>("dialog[open]")!;
+  vi.mocked(test.bridge.chooseExit).mockResolvedValueOnce(false);
+  await click(button("Wait for replies, then quit", dialog));
+  expect(dialog.querySelector('[role="alert"]')).not.toBeNull();
+  vi.mocked(test.bridge.chooseExit).mockRejectedValueOnce(
+    new Error("Synthetic unavailable bridge"),
+  );
+  await click(button("Wait for replies, then quit", dialog));
+  expect(dialog.querySelector('[role="alert"]')).not.toBeNull();
+  await act(async () =>
+    test.pushExit({ operationId: "exit-1", running: 1, phase: "cancelling", failed: false }),
+  );
+  const before = vi.mocked(test.bridge.chooseExit).mock.calls.length;
+  await click(dialog.querySelector("[data-close]")!);
+  await click(button("Close dialog", dialog.querySelector(".command-dialog-footer")!));
+  await act(async () =>
+    dialog.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    ),
+  );
+  expect(vi.mocked(test.bridge.chooseExit).mock.calls).toHaveLength(before);
+  expect(dialog.querySelector("[data-close]")?.getAttribute("aria-disabled")).toBe("true");
+  await act(async () =>
+    test.pushExit({ operationId: "exit-1", running: 1, phase: "cancelling", failed: true }),
+  );
+  await click(button("Close dialog", dialog.querySelector(".command-dialog-footer")!));
+  expect(test.bridge.chooseExit).toHaveBeenLastCalledWith("exit-1", "close");
+  await act(async () => test.pushExit(null));
+  await act(async () =>
+    test.pushExit({ operationId: "exit-2", running: 1, phase: "confirm", failed: false }),
+  );
+  dialog = container.querySelector<HTMLDialogElement>("dialog[open]")!;
+  let release!: (ok: boolean) => void;
+  vi.mocked(test.bridge.chooseExit).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  await click(button("Wait for replies, then quit", dialog));
+  await act(async () => {
+    test.pushExit(null);
+    test.pushExit({ operationId: "exit-3", running: 2, phase: "confirm", failed: false });
+  });
+  await act(async () => release(false));
+  expect(dialog.querySelector('[role="alert"]')).toBeNull();
+});
+
+it.each(["confirm", "waiting", "cancelling"] as const)(
+  "keeps native surface commands blocked during exit phase %s",
+  async (phase) => {
+    const test = harness();
+    await render(
+      h(CommandSurfaces, { bridge: test.bridge, locale: "en-US", renderSettings: () => null }),
+    );
+    await act(async () => {
+      test.pushExit({ operationId: "exit-1", running: 1, phase, failed: false });
+      // Admission must already hold before React has mounted the dialog.
+      test.send("help.open");
+    });
+    for (const command of [
+      "help.open",
+      "about.open",
+      "settings.open",
+      "palette.open",
+      "shortcuts.open",
+      "menu.open",
+    ] as const) {
+      expect(test.snapshots.at(-1)?.entries.find((e) => e.id === command)?.reason).toBe(
+        "modal_open",
+      );
+      await act(async () => test.send(command));
+      expect(container.querySelector<HTMLDialogElement>(".exit-dialog")?.open).toBe(true);
+      expect(container.querySelector(".help-dialog[open], .about-dialog[open]")).toBeNull();
+    }
+    expect(test.bridge.chooseExit).not.toHaveBeenCalled();
+    await act(async () => {
+      test.pushExit(null);
+      test.send("help.open");
+    });
+    expect(container.querySelector<HTMLDialogElement>(".help-dialog")?.open).toBe(true);
+  },
+);

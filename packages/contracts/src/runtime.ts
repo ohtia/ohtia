@@ -14,6 +14,7 @@ export const desktopChannels = {
   bootstrap: "ohtia:bootstrap",
   commands: "ohtia:commands",
   commandIntent: "ohtia:command-intent",
+  exitState: "ohtia:exit-state",
   systemMotion: "ohtia:system-motion",
 } as const;
 /** ADR-0047: a native reduced-motion observation beside Chromium's own media query. */

@@ -98,7 +98,7 @@
     "menu.hide": "Nascondi Ohtia",
     "menu.hideOthers": "Nascondi altre",
     "menu.showAll": "Mostra tutte",
-    "dialog.close": "Chiudi",
+    "dialog.close": "Chiudi finestra di dialogo",
     "about.version": "Versione",
     "about.build": "Build",
     "about.system": "Sistema",
@@ -262,6 +262,14 @@
     "connection.unknownPlan": "{service} non indica in anticipo se il tuo piano può essere usato in Ohtia. La prima risposta lo mostrerà.",
     "connection.unreachable": "Ohtia non ha potuto contattare {service}. La sessione è conservata; controlla la connessione internet e riprova.",
     "connection.browserIcon": "si apre nel browser",
-    "connection.browserComplete": "Puoi chiudere questa scheda e tornare a Ohtia."
+    "connection.browserComplete": "Puoi chiudere questa scheda e tornare a Ohtia.",
+    "settings.closeLayoutNotice": "Chiudi avviso",
+    "exit.title": "Uscire da Ohtia mentre le risposte sono in corso?",
+    "exit.wait": "Attendi le risposte, poi esci",
+    "exit.cancel": "Annulla il lavoro ed esci",
+    "exit.cancelling": "Ohtia sta annullando il lavoro e salvando le risposte.",
+    "exit.body": "{running, plural, one {# risposta è ancora in corso. Le risposte non ancora iniziate vengono conservate per la prossima apertura di Ohtia, a meno che non annulli il lavoro.} many {# risposte sono ancora in corso. Le risposte non ancora iniziate vengono conservate per la prossima apertura di Ohtia, a meno che non annulli il lavoro.} other {# risposte sono ancora in corso. Le risposte non ancora iniziate vengono conservate per la prossima apertura di Ohtia, a meno che non annulli il lavoro.}}",
+    "exit.waiting": "{running, plural, one {Ohtia si chiuderà al termine delle risposte in corso. Ne rimane #.} many {Ohtia si chiuderà al termine delle risposte in corso. Ne rimangono #.} other {Ohtia si chiuderà al termine delle risposte in corso. Ne rimangono #.}}",
+    "exit.queued": "Le risposte non ancora iniziate vengono conservate per la prossima apertura di Ohtia, a meno che non annulli il lavoro."
   }
 }

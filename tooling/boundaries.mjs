@@ -106,6 +106,7 @@ export function inspectWorkspace(root) {
             "migrations/0008_durable_ai_tasks.mjs",
             "migrations/0010_reply_control.mjs",
             "migrations/0011_service_runs.mjs",
+            "migrations/0012_application_exit.mjs",
             "migrations/0009_usage_limit_pauses.mjs",
             "migrations/0005_presentation_receipts.mjs",
           ].includes(file.replaceAll(path.sep, "/"))

@@ -247,6 +247,7 @@ const payloadKeys = {
   "project.create": [],
   "usagePause.resume": ["connection"],
   "task.continueAll": [],
+  "task.cancelAll": [],
   "project.confirmSetup": ["projectId", "title", "documentLanguage"],
   "conversation.start": ["projectId", "content"],
   "conversation.rename": ["conversationId", "title", "expectedUpdatedAt"],
@@ -308,6 +309,11 @@ export async function applyResearchCommand(
       if (!isUsageConnection(input.payload.connection)) return failure("invalid_message");
       result = newId();
       await tasks.resumeUsage(input.payload.connection, input.operationId);
+      break;
+    }
+    case "task.cancelAll": {
+      result = newId();
+      await tasks.cancelAll();
       break;
     }
     case "task.continueAll": {

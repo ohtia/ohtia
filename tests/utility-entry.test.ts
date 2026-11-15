@@ -459,3 +459,23 @@ describe("utility process composition with isolated synthetic files", () => {
     expect(h.stores[0].close).not.toHaveBeenCalled();
   });
 });
+
+it("uses crash recovery when OS shutdown supersedes an ordinary quit during queue drainage", async () => {
+  const h = await launch();
+  let release!: () => void;
+  const draining = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  h.service.drain.mockImplementation(() => draining);
+  h.parent.emit("message", {
+    data: JSON.stringify({ kind: "shutdown", generation: h.generation, orderly: true }),
+  });
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  h.parent.emit("message", {
+    data: JSON.stringify({ kind: "shutdown", generation: h.generation, orderly: false }),
+  });
+  release();
+  for (let i = 0; i < 15; i++) await Promise.resolve();
+  expect(h.stores[0].close).toHaveBeenCalledWith(false);
+  expect(h.exit).toHaveBeenCalledWith(0);
+});

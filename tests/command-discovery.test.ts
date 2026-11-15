@@ -81,6 +81,9 @@ function harness(platform: CommandPlatform = "linux") {
       snapshots.push(snapshot);
       return true;
     },
+    readExitState: async () => null,
+    onExitState: () => () => {},
+    chooseExit: async () => true,
     onIntent: (listener) => {
       send = listener;
       return dispose;

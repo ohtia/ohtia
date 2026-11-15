@@ -1,3 +1,4 @@
+import type { ExitDialogState, ExitChoice } from "./application-exit.js";
 import { isIdentifier, validateJsonBounds } from "./port.js";
 import { isInterfaceLocale } from "./locale.js";
 import type { InterfaceLocale } from "./port.js";
@@ -369,6 +370,9 @@ export function isWindowCommandResult(value: unknown): value is WindowCommandRes
   );
 }
 export interface CommandBridge {
+  readExitState(): Promise<ExitDialogState | null>;
+  onExitState(listener: (state: ExitDialogState | null) => void): () => void;
+  chooseExit(operationId: string, choice: ExitChoice): Promise<boolean>;
   context(): Promise<CommandContext>;
   publish(snapshot: CommandSnapshot): Promise<boolean>;
   onIntent(listener: (intent: CommandIntent) => void): () => void;

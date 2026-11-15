@@ -373,6 +373,9 @@ describe("Settings command composition", () => {
         published.push(snapshot);
         return true;
       },
+      readExitState: async () => null,
+      onExitState: () => () => {},
+      chooseExit: async () => true,
       onIntent: (listener: typeof receive) => {
         receive = listener;
         return vi.fn();

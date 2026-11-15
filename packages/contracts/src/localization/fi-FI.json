@@ -98,7 +98,7 @@
     "menu.hide": "Kätke Ohtia",
     "menu.hideOthers": "Kätke muut",
     "menu.showAll": "Näytä kaikki",
-    "dialog.close": "Sulje",
+    "dialog.close": "Sulje valintaikkuna",
     "about.version": "Versio",
     "about.build": "Kooste",
     "about.system": "Järjestelmä",
@@ -262,6 +262,14 @@
     "connection.unknownPlan": "{service} ei ilmoita etukäteen, voiko tilaustasi käyttää Ohtiassa. Ensimmäinen vastaus osoittaa sen.",
     "connection.unreachable": "Ohtia ei tavoittanut palvelua {service}. Kirjautumisesi säilytetään; tarkista internetyhteytesi ja testaa uudelleen.",
     "connection.browserIcon": "avautuu selaimessasi",
-    "connection.browserComplete": "Voit sulkea tämän välilehden ja palata Ohtiaan."
+    "connection.browserComplete": "Voit sulkea tämän välilehden ja palata Ohtiaan.",
+    "settings.closeLayoutNotice": "Sulje ilmoitus",
+    "exit.title": "Lopetetaanko Ohtia vastausten ollessa kesken?",
+    "exit.wait": "Odota vastaukset ja lopeta",
+    "exit.cancel": "Peruuta työ ja lopeta",
+    "exit.cancelling": "Ohtia peruuttaa työn ja tallentaa vastaukset.",
+    "exit.body": "{running, plural, one {# vastaus on vielä kesken. Aloittamattomat vastaukset säilytetään Ohtian seuraavaa avaamista varten, ellet peruuta työtä.} other {# vastausta on vielä kesken. Aloittamattomat vastaukset säilytetään Ohtian seuraavaa avaamista varten, ellet peruuta työtä.}}",
+    "exit.waiting": "{running, plural, one {Ohtia lopetetaan, kun keskeneräiset vastaukset valmistuvat. # vastaus on vielä kesken.} other {Ohtia lopetetaan, kun keskeneräiset vastaukset valmistuvat. # vastausta on vielä kesken.}}",
+    "exit.queued": "Aloittamattomat vastaukset säilytetään Ohtian seuraavaa avaamista varten, ellet peruuta työtä."
   }
 }

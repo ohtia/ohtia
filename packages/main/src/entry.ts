@@ -1,5 +1,6 @@
 import { ChatGPTProvider } from "./chatgpt-provider.js";
 import { ConnectionManager } from "./connection-manager.js";
+import { ApplicationExit } from "./application-exit.js";
 import { observeServicePower } from "./service-power.js";
 import { ProviderDispatch } from "./provider-dispatch.js";
 import type { DevelopmentCommand } from "./development-command.js";
@@ -56,6 +57,9 @@ import {
   type RuntimeContext,
   type SystemMotionNotice,
   isNativeCommand,
+  isExitChoice,
+  isIdentifier,
+  type ExitDialogState,
   isWindowCommandRequest,
   isInterfaceLocale,
   isCommandPlatform,
@@ -112,7 +116,10 @@ let locale = resolveInterfaceLocale(preferredSystemLanguages());
 if (!isCommandPlatform(process.platform)) throw new Error("Unsupported command platform.");
 const commandLifecycle = {
   quit: () => {
-    if (!quitting) app.quit();
+    if (!quitting) {
+      if (!applicationExit.pending) exitWindow = undefined;
+      app.quit();
+    }
   },
   close: (window: BrowserWindow) => {
     if (!quitting && !window.isDestroyed()) window.close();
@@ -313,6 +320,51 @@ let bootstrapState: BootstrapState = "missing";
 let quitting = false;
 const isQuitting = () => quitting;
 let cleanExit = false;
+let exitApproved = false;
+let systemShutdown = false;
+let exitWindow: BrowserWindow | undefined;
+let lastFocusedWindow: BrowserWindow | undefined;
+let presentedExitOperation: string | undefined;
+function publishExit(state: ExitDialogState | undefined): void {
+  if (exitWindow?.isDestroyed()) exitWindow = undefined;
+  if (!exitWindow)
+    exitWindow =
+      lastFocusedWindow && !lastFocusedWindow.isDestroyed()
+        ? lastFocusedWindow
+        : [...windows.keys()].find((window) => !window.isDestroyed());
+  if (exitWindow) {
+    exitWindow.webContents.send(desktopChannels.exitState, state ?? null);
+    if (state && presentedExitOperation !== state.operationId) {
+      presentedExitOperation = state.operationId;
+      presentWindow(exitWindow, true);
+    } else if (!state) {
+      exitWindow = undefined;
+      presentedExitOperation = undefined;
+    }
+  }
+}
+const applicationExit = new ApplicationExit({
+  identity: randomUUID,
+  send: (control) =>
+    service?.generation === control.generation && service.postProvider(JSON.stringify(control)),
+  changed: publishExit,
+  finish: () => {
+    exitApproved = true;
+    app.quit();
+  },
+  failed: () => {
+    void reportError("command.failed");
+  },
+});
+function operatingSystemExit(): void {
+  systemShutdown = true;
+  service?.markSystemShutdown();
+  if (!quitting && !cleanExit) applicationExit.systemShutdown();
+}
+app.on("browser-window-focus", (_event, window) => {
+  if (windows.has(window)) lastFocusedWindow = window;
+});
+if (process.platform === "linux") process.on("SIGTERM", operatingSystemExit);
 let resourceFailureReported = false;
 const notices = new RuntimeNotices(
   (key) => {
@@ -332,6 +384,8 @@ const notices = new RuntimeNotices(
       .then(() => {});
   },
   () => {
+    // Fatal notices already require shutdown after acknowledgement.
+    exitApproved = true;
     app.quit();
   },
 );
@@ -503,12 +557,22 @@ function constructWindow(
     saveWindowBounds(window);
     if (!cleanExit && windows.size === 1) {
       event.preventDefault();
+      exitWindow = window;
       app.quit();
     }
   });
+  if (process.platform === "win32") {
+    window.on("query-session-end", operatingSystemExit);
+    window.on("session-end", operatingSystemExit);
+  }
   window.on("closed", () => {
     detach(window);
     windows.delete(window);
+    if (exitWindow === window) {
+      exitWindow = undefined;
+      presentedExitOperation = undefined;
+      publishExit(applicationExit.state);
+    }
   });
   const permitPresentation = () => {
     const state = windows.get(window);
@@ -654,6 +718,7 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
         if (connections && service) service.reportConnections(connections.manager);
         developmentCommand?.flush();
       } else if (!requestedStop && !failureReported) {
+        applicationExit.abort(false);
         failureReported = true;
         void diagnostics?.append({
           event_name: "ohtia.service.unavailable",
@@ -772,6 +837,9 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
   );
   const active = service;
   active.connectProvider({
+    exitState: (state) => {
+      applicationExit.receive(state);
+    },
     wakeReviewed: (message) => {
       providerDispatch?.wakeReviewed(message);
     },
@@ -820,6 +888,7 @@ const startup = setTimeout(() => {
 async function start(): Promise<void> {
   motionObserver?.start();
   await app.whenReady();
+  if (process.platform !== "win32") powerMonitor.on("shutdown", operatingSystemExit);
   observeServicePower(powerMonitor, {
     generation: () => generation,
     suspend: () => providerDispatch?.suspend(),
@@ -1087,6 +1156,21 @@ async function start(): Promise<void> {
   ipcMain.handle(desktopChannels.commands, async (event, action: unknown, payload: unknown) => {
     const window = trusted(event);
     if (!window) throw new Error("Command sender admission refused.");
+    if (action === "exit_state" && payload === undefined)
+      return window === exitWindow ? (applicationExit.state ?? null) : null;
+    if (
+      action === "exit_choice" &&
+      payload &&
+      typeof payload === "object" &&
+      Object.keys(payload).sort().join(",") === "choice,operationId"
+    ) {
+      const request = payload as Record<string, unknown>;
+      return window === exitWindow &&
+        isIdentifier(request.operationId) &&
+        isExitChoice(request.choice)
+        ? applicationExit.choose(request.operationId, request.choice)
+        : false;
+    }
     // Session and snapshot controls complete synchronously, like the existing port handshake.
     if (action === "context" && payload === undefined) return commandMenus.connect(window);
     if (action === "publish") return commandMenus.publish(window, payload);
@@ -1285,17 +1369,50 @@ app.on("before-quit", (event) => {
   if (cleanExit) return;
   event.preventDefault();
   if (quitting) return;
+  if (
+    !exitApproved &&
+    !systemShutdown &&
+    bootstrapState === "storage_ready" &&
+    service?.available
+  ) {
+    if (!applicationExit.pending) {
+      exitWindow ??=
+        lastFocusedWindow && !lastFocusedWindow.isDestroyed() ? lastFocusedWindow : undefined;
+      applicationExit.request(service.generation);
+    } else {
+      const focused = lastFocusedWindow;
+      if (focused && windows.has(focused) && !focused.isDestroyed() && focused !== exitWindow) {
+        if (exitWindow && !exitWindow.isDestroyed())
+          exitWindow.webContents.send(desktopChannels.exitState, null);
+        exitWindow = focused;
+        presentedExitOperation = undefined;
+      }
+      publishExit(applicationExit.state);
+      if (exitWindow && applicationExit.state) presentWindow(exitWindow, true);
+    }
+    return;
+  }
   for (const window of windows.keys()) saveWindowBounds(window);
   quitting = true;
   clearTimeout(startup);
   for (const window of windows.keys()) detach(window);
   void (async () => {
-    const ceased = await stopBrokerServices(service, diagnostics, async () => {
-      await windowPreferences.drain();
-      await credentials?.drain();
-    });
+    const ceased = await stopBrokerServices(
+      service,
+      diagnostics,
+      async () => {
+        await windowPreferences.drain();
+        await credentials?.drain();
+      },
+      () => !systemShutdown,
+    );
     if (!ceased) {
+      if (systemShutdown) {
+        app.exit(0);
+        return;
+      }
       quitting = false;
+      exitApproved = false;
       for (const [window, state] of windows) {
         state.boundsSaved = false;
         presentWindow(window);
@@ -1310,7 +1427,12 @@ app.on("before-quit", (event) => {
     try {
       verifyStableSentinels(context);
     } catch {
+      if (systemShutdown) {
+        app.exit(0);
+        return;
+      }
       quitting = false;
+      exitApproved = false;
       for (const [window, state] of windows) {
         state.boundsSaved = false;
         presentWindow(window);

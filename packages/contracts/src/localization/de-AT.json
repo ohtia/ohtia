@@ -98,7 +98,7 @@
     "menu.hide": "Ohtia ausblenden",
     "menu.hideOthers": "Andere ausblenden",
     "menu.showAll": "Alle einblenden",
-    "dialog.close": "Schließen",
+    "dialog.close": "Dialog schließen",
     "about.version": "Version",
     "about.build": "Build",
     "about.system": "System",
@@ -262,6 +262,14 @@
     "connection.unknownPlan": "{service} gibt nicht im Voraus an, ob Ihr Abo in Ohtia genutzt werden kann. Die erste Antwort wird es zeigen.",
     "connection.unreachable": "Ohtia konnte {service} nicht erreichen. Ihre Anmeldung bleibt erhalten; prüfen Sie Ihre Internetverbindung und testen Sie erneut.",
     "connection.browserIcon": "wird in Ihrem Browser geöffnet",
-    "connection.browserComplete": "Sie können diesen Tab schließen und zu Ohtia zurückkehren."
+    "connection.browserComplete": "Sie können diesen Tab schließen und zu Ohtia zurückkehren.",
+    "settings.closeLayoutNotice": "Hinweis schließen",
+    "exit.title": "Ohtia beenden, während Antworten noch laufen?",
+    "exit.wait": "Auf Antworten warten, dann beenden",
+    "exit.cancel": "Arbeit abbrechen und beenden",
+    "exit.cancelling": "Ohtia bricht die Arbeit ab und speichert die Antworten.",
+    "exit.body": "{running, plural, one {# Antwort läuft noch. Noch nicht begonnene Antworten bleiben bis zum nächsten Öffnen von Ohtia gespeichert, sofern Sie die Arbeit nicht abbrechen.} other {# Antworten laufen noch. Noch nicht begonnene Antworten bleiben bis zum nächsten Öffnen von Ohtia gespeichert, sofern Sie die Arbeit nicht abbrechen.}}",
+    "exit.waiting": "{running, plural, one {Ohtia wird beendet, sobald die laufenden Antworten fertig sind. # läuft noch.} other {Ohtia wird beendet, sobald die laufenden Antworten fertig sind. # laufen noch.}}",
+    "exit.queued": "Noch nicht begonnene Antworten bleiben bis zum nächsten Öffnen von Ohtia gespeichert, sofern Sie die Arbeit nicht abbrechen."
   }
 }

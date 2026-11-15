@@ -16,6 +16,7 @@ import {
   projectLinks,
   rendererCancelsCommandKeys,
   type AboutInformation,
+  type ExitDialogState,
   type CommandBridge,
   type CommandId,
   type CommandSnapshot,
@@ -28,6 +29,7 @@ import {
   type SimpleMessageKey,
 } from "@ohtia/contracts";
 import { CommandController, presentationReason } from "./command-controller.js";
+import { ExitDialog } from "./exit-dialog.js";
 import { Dialog } from "./layers.js";
 import { CommandPalette, KeyboardShortcutsDialog } from "./command-discovery.js";
 import { Button } from "./controls.js";
@@ -390,6 +392,7 @@ export function CommandSurfaces({
   const [loadFailed, setLoadFailed] = useState(false);
   const [copy, setCopy] = useState<CopyState>({ phase: "idle", attempt: 0 });
   const [failure, setFailure] = useState(false);
+  const [exit, setExit] = useState<ExitDialogState | null>(null);
   const [unavailable, setUnavailable] = useState<{ command: CommandId; reason: CommandReason }>();
   const pendingHandoff = useRef<CommandId | undefined>(undefined);
   const actionBar = useRef<HTMLDivElement>(null);
@@ -416,6 +419,7 @@ export function CommandSurfaces({
     localeEpoch: 0,
     surface: undefined as "about" | "help" | "settings" | "palette" | "shortcuts" | undefined,
     locale,
+    exitOpen: false,
     composing: false,
     composingTarget: undefined as Node | undefined,
     copyBusy: false,
@@ -514,6 +518,7 @@ export function CommandSurfaces({
         const reason = (id: CommandId) =>
           presentationReason(id, {
             modal:
+              current.current.exitOpen ||
               !!document.querySelector("dialog[open]:not(.command-dialog)") ||
               (!!current.current.surface && !inspectingOrigin.current),
             composing: !inspectingOrigin.current && current.current.composing,
@@ -899,6 +904,34 @@ export function CommandSurfaces({
     };
   }, [bridge, registerHandlers, settingsAvailable]);
   useEffect(() => {
+    let live = true;
+    let pushed = false;
+    const accept = (state: ExitDialogState | null) => {
+      if (!live) return;
+      current.current.exitOpen = state !== null;
+      if (state) {
+        pendingHandoff.current = undefined;
+        current.current.surface = undefined;
+        setSurface(undefined);
+      }
+      setExit(state);
+    };
+    const off = bridge.onExitState((state) => {
+      pushed = true;
+      accept(state);
+    });
+    void bridge
+      .readExitState()
+      .then((state) => {
+        if (!pushed) accept(state);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+      off();
+    };
+  }, [bridge]);
+  useEffect(() => {
     if (surface || !pendingHandoff.current || !controller) return;
     const command = pendingHandoff.current;
     pendingHandoff.current = undefined;
@@ -1090,6 +1123,30 @@ export function CommandSurfaces({
         }}
         onClose={close}
         onOpenLink={openLink}
+      />
+      <ExitDialog
+        state={surface ? null : exit}
+        locale={locale}
+        onChoose={(choice) => {
+          if (!exit) return;
+          void bridge
+            .chooseExit(exit.operationId, choice)
+            .then((ok) => {
+              if (!ok)
+                setExit((previous) =>
+                  previous?.operationId === exit.operationId
+                    ? { ...previous, failed: true }
+                    : previous,
+                );
+            })
+            .catch(() => {
+              setExit((previous) =>
+                previous?.operationId === exit.operationId
+                  ? { ...previous, failed: true }
+                  : previous,
+              );
+            });
+        }}
       />
       <AboutDialog
         returnFocusRef={modalReturnFocus}

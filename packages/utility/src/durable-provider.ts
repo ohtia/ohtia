@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   providerMessageVersion,
+  type ApplicationExitControl,
   type DevelopmentActionMessage,
   type DevelopmentReport,
   type ProviderEventMessage,
@@ -34,6 +35,48 @@ interface Stream {
 export class DurableProvider {
   private readonly streams = new Map<string, Stream>();
   private disposed = false;
+  private exitControl: ApplicationExitControl | undefined;
+  private exitCancelledFor: string | undefined;
+  private exitFailedFor: string | undefined;
+  /** Synchronous admission barrier also stops an already queued pump between transactions. */
+  holdExit(control: ApplicationExitControl): void {
+    if (control.action !== "resume") this.exitControl = control;
+  }
+  /** Execute in the serialized service queue after holdExit has observed the control. */
+  async applicationExit(control: ApplicationExitControl): Promise<void> {
+    if (control.action === "resume") {
+      if (this.exitControl?.operationId !== control.operationId) return;
+      this.exitControl = undefined;
+      this.exitCancelledFor = undefined;
+      this.exitFailedFor = undefined;
+    } else {
+      if (this.exitFailedFor === control.operationId) this.exitFailedFor = undefined;
+      if (control.action === "cancel") {
+        const result = await this.options.storage.executeResearchCommand({
+          command: "task.cancelAll",
+          operationId: control.operationId,
+          payload: {},
+        });
+        if (result.ok) this.exitCancelledFor = control.operationId;
+        else this.exitFailedFor = control.operationId;
+      }
+    }
+    await this.pump();
+    if (!this.canPump()) await this.publishExit();
+  }
+  private async publishExit(): Promise<void> {
+    if (!this.exitControl || this.disposed) return;
+    const result = await this.options.storage.runningTaskCount();
+    this.send({
+      kind: "application_exit_state",
+      generation: this.options.context.generation,
+      operationId: this.exitControl.operationId,
+      running: result.ok ? result.value : 0,
+      held: true,
+      cancelled: this.exitCancelledFor === this.exitControl.operationId,
+      failed: this.exitFailedFor === this.exitControl.operationId || !result.ok,
+    });
+  }
   private lastWake: string | undefined;
   constructor(
     private readonly options: {
@@ -227,45 +270,49 @@ export class DurableProvider {
     // or turn an in-progress migration into a provider/service failure.
     if (!this.canPump()) return;
     this.options.storage.setTaskContext(this.options.context);
-    const stopping = await this.options.storage.stoppingAttempts();
-    if (!stopping.ok) throw new Error("Stopping attempts could not be read.");
-    for (const attempt of stopping.value) this.interrupt(attempt);
-    while (this.canPump()) {
-      const prepared = await this.options.storage.prepareTask();
-      if (!prepared.ok || !prepared.value) return;
-      const message = prepared.value.dispatch;
-      const policy = operationPolicy(
-        message.request.operation,
-        message.request.policy_version,
-        this.options.context.mode,
-      );
-      if (!policy) throw new Error("Dispatched operation policy unavailable.");
-      const now = this.now();
-      this.streams.set(message.request.attempt, {
-        operationId: prepared.value.acceptedByOperationId,
-        text: "",
-        sequence: 0,
-        transfer: prepared.value.transfer,
-        sampledMono: now,
-        sampledWall: this.wall(),
-        elapsed: 0,
-        last: 0,
-        maxDuration: policy.max_attempt_duration_ms,
-        maxInactivity: policy.max_inactivity_ms,
-        longestSilence: 0,
-        usage: unknownUsage,
-        maxOutput: policy.max_output_bytes,
-      });
-      this.report(prepared.value.acceptedByOperationId, {
-        type: "record",
-        record: "task",
-        id: prepared.value.taskId,
-      });
-      this.report(prepared.value.acceptedByOperationId, {
-        type: "attempt",
-        attempt: message.request.attempt,
-      });
-      this.send(message);
+    try {
+      const stopping = await this.options.storage.stoppingAttempts();
+      if (!stopping.ok) throw new Error("Stopping attempts could not be read.");
+      for (const attempt of stopping.value) this.interrupt(attempt);
+      while (this.canPump() && !this.exitControl) {
+        const prepared = await this.options.storage.prepareTask();
+        if (!prepared.ok || !prepared.value) return;
+        const message = prepared.value.dispatch;
+        const policy = operationPolicy(
+          message.request.operation,
+          message.request.policy_version,
+          this.options.context.mode,
+        );
+        if (!policy) throw new Error("Dispatched operation policy unavailable.");
+        const now = this.now();
+        this.streams.set(message.request.attempt, {
+          operationId: prepared.value.acceptedByOperationId,
+          text: "",
+          sequence: 0,
+          transfer: prepared.value.transfer,
+          sampledMono: now,
+          sampledWall: this.wall(),
+          elapsed: 0,
+          last: 0,
+          maxDuration: policy.max_attempt_duration_ms,
+          maxInactivity: policy.max_inactivity_ms,
+          longestSilence: 0,
+          usage: unknownUsage,
+          maxOutput: policy.max_output_bytes,
+        });
+        this.report(prepared.value.acceptedByOperationId, {
+          type: "record",
+          record: "task",
+          id: prepared.value.taskId,
+        });
+        this.report(prepared.value.acceptedByOperationId, {
+          type: "attempt",
+          attempt: message.request.attempt,
+        });
+        this.send(message);
+      }
+    } finally {
+      await this.publishExit();
     }
   }
   interrupt(attempt: string): void {

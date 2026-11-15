@@ -59,6 +59,9 @@ export function WorkspaceSpecimen() {
         platform: params.get("platform") === "darwin" ? "darwin" : "linux",
       }),
       publish: async () => !params.has("publishFails"),
+      readExitState: async () => null,
+      onExitState: () => () => {},
+      chooseExit: async () => true,
       onIntent: () => () => {},
       about: async () => {
         throw new Error("Synthetic unavailable About metadata");

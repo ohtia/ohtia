@@ -225,19 +225,21 @@ async function start(): Promise<void> {
     selected.mode,
   );
   let stopping = false;
+  let shutdownOrderly = true;
   const isStopping = () => stopping;
   let initialization: Promise<void> = Promise.resolve();
   parent.on("message", (event) => {
     try {
       const shutdown = decodeServiceShutdown(event.data, generation);
       if (shutdown) {
+        shutdownOrderly &&= shutdown.orderly;
         if (isStopping()) return;
         stopping = true;
         service.dispose();
         void initialization
           .then(async () => {
             await service.drain();
-            await store?.close(shutdown.orderly);
+            await store?.close(shutdownOrderly);
             assertAdmission();
             process.exit(0);
           })

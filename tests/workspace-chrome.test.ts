@@ -634,6 +634,9 @@ it("composes real registry surfaces and announces failed layout persistence once
   const bridge = {
     context: async () => ({ windowGeneration: "window-composition", platform: "linux" as const }),
     publish: async () => true,
+    readExitState: async () => null,
+    onExitState: () => () => {},
+    chooseExit: async () => true,
     onIntent: () => stop,
     about: async () => {
       throw new Error("Synthetic unavailable metadata");

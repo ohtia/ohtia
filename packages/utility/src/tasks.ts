@@ -440,6 +440,26 @@ export class TaskTransaction {
     this.touch(task.conversation_id);
     return { ok: true, value: replacement };
   }
+  async runningCount(): Promise<number> {
+    const row = await this.db
+      .selectFrom("tasks")
+      .select(({ fn }) => fn.countAll<number>().as("count"))
+      .where("state", "in", ["running", "cancelling"])
+      .executeTakeFirstOrThrow();
+    return row.count;
+  }
+  /** One transaction cancels pending work and records the same stopping intent as Stop. */
+  async cancelAll(): Promise<void> {
+    const tasks = await this.db
+      .selectFrom("tasks")
+      .select("id")
+      .where("state", "in", ["queued", "blocked", "running", "cancelling"])
+      .execute();
+    for (const task of tasks) {
+      const result = await this.control("task.stop", task.id, "cancel-all");
+      if (!result.ok) throw new Error("Task cancellation failed.");
+    }
+  }
   async stoppingAttempts(): Promise<readonly string[]> {
     const rows = await this.db
       .selectFrom("attempts")

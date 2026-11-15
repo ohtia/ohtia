@@ -98,7 +98,7 @@
     "menu.hide": "Hide Ohtia",
     "menu.hideOthers": "Hide Others",
     "menu.showAll": "Show All",
-    "dialog.close": "Close",
+    "dialog.close": "Close dialog",
     "about.version": "Version",
     "about.build": "Build",
     "about.system": "System",
@@ -262,6 +262,14 @@
     "connection.unknownPlan": "{service} doesn’t say in advance whether your plan can be used in Ohtia. The first reply will show it.",
     "connection.unreachable": "Ohtia couldn’t reach {service}. Your sign-in is kept; check your internet connection and test again.",
     "connection.browserIcon": "opens in your browser",
-    "connection.browserComplete": "You can close this tab and return to Ohtia."
+    "connection.browserComplete": "You can close this tab and return to Ohtia.",
+    "settings.closeLayoutNotice": "Close notice",
+    "exit.title": "Quit Ohtia while replies are running?",
+    "exit.wait": "Wait for replies, then quit",
+    "exit.cancel": "Cancel work and quit",
+    "exit.cancelling": "Ohtia is cancelling the work and saving replies.",
+    "exit.body": "{running, plural, one {# reply is still running. Replies that haven’t started are kept for the next time you open Ohtia, unless you cancel the work.} other {# replies are still running. Replies that haven’t started are kept for the next time you open Ohtia, unless you cancel the work.}}",
+    "exit.waiting": "{running, plural, one {Ohtia will quit when the running replies finish. # still running.} other {Ohtia will quit when the running replies finish. # still running.}}",
+    "exit.queued": "Replies that haven’t started are kept for the next time you open Ohtia, unless you cancel the work."
   }
 }

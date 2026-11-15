@@ -31,6 +31,13 @@ export const diagnosticCatalog = Object.freeze({
   "ohtia.service.woke": event("data_service", "service.wake", "INFO", "reviewed", []),
   "ohtia.task.recovery_paused": event("data_service", "task.recover", "INFO", "paused", []),
   "ohtia.task.continued": event("data_service", "task.continue", "INFO", "continued", []),
+  "ohtia.task.cancel_all_requested": event(
+    "data_service",
+    "task.cancelAll",
+    "INFO",
+    "accepted",
+    [],
+  ),
   "ohtia.task.continue_requested": event("data_service", "task.continue", "INFO", "accepted", []),
   "ohtia.usage_pause.opened": event("data_service", "usage_pause.open", "WARN", "paused", []),
   "ohtia.usage_pause.resumed": event("data_service", "usage_pause.resume", "INFO", "resumed", []),

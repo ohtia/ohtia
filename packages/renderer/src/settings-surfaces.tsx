@@ -314,7 +314,7 @@ export function SettingsSurfaces({
                 setLayoutFailure(false);
               }}
             >
-              {message(locale, "dialog.close")}
+              {message(locale, "settings.closeLayoutNotice")}
             </button>
           </p>
         )}

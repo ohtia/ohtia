@@ -1,4 +1,5 @@
-export type RuntimeError = "startup_failed" | "shutdown_uncertain" | "resource_failure";
+export type RuntimeError =
+  "startup_failed" | "shutdown_uncertain" | "resource_failure" | "command.failed";
 
 /** Deduplicate notices while keeping every pending acknowledgement ahead of fatal quit. */
 export class RuntimeNotices {

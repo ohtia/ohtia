@@ -40,6 +40,7 @@ async function launch(
     mode?: "qualification" | "development" | "installed";
     developmentBuild?: boolean;
     credentialReadPending?: boolean;
+    exitRunning?: number;
     /** Holds main's startup at the credential store until it settles. */
     credentialGate?: Promise<void>;
     researchRootRefused?: boolean;
@@ -263,8 +264,27 @@ async function launch(
     dispatch = vi.fn();
     reportConnections = vi.fn((manager: { ids(): readonly string[] }) => manager.ids());
     connectProvider = vi.fn();
-    postProvider = vi.fn(() => true);
+    postProvider = vi.fn((text: string) => {
+      const control = JSON.parse(text);
+      if (control.kind === "application_exit" && control.action === "hold") {
+        queueMicrotask(() => {
+          const channel = this.connectProvider.mock.calls[0]?.[0];
+          channel?.exitState?.({
+            kind: "application_exit_state",
+            generation: this.generation,
+            operationId: control.operationId,
+            running: options.exitRunning ?? 0,
+            held: true,
+            cancelled: false,
+            failed: false,
+          });
+          if (!options.exitRunning) app.emit("before-quit", { preventDefault: vi.fn() });
+        });
+      }
+      return true;
+    });
     postWake = vi.fn(() => true);
+    markSystemShutdown = vi.fn();
     control = vi.fn();
     disposeWindow = vi.fn();
     activateStorage = vi.fn(() => true);
@@ -446,9 +466,13 @@ async function launch(
   const stdout = process.stdout.write,
     stderr = process.stderr.write;
   const listeners = new Map(
-    ["uncaughtException", "unhandledRejection"].map((name) => [name, process.listeners(name)]),
+    ["uncaughtException", "unhandledRejection", "SIGTERM"].map((name) => [
+      name,
+      process.listeners(name),
+    ]),
   );
   let failure: unknown;
+  let mainSigterm: (() => void) | undefined;
   try {
     await import("../packages/main/src/entry.js");
   } catch (error) {
@@ -462,6 +486,7 @@ async function launch(
         .filter((listener) => !before.includes(listener))
         .map((listener) => ({ name, listener })),
     );
+    mainSigterm = added.find(({ name }) => name === "SIGTERM")?.listener;
     cleanups.push(() => {
       for (const { name, listener } of added) process.removeListener(name, listener);
     });
@@ -487,6 +512,10 @@ async function launch(
   return {
     acknowledgeZoom,
     powerMonitor,
+    signalMain: () => {
+      if (!mainSigterm) throw new Error("Main did not install its SIGTERM listener.");
+      mainSigterm();
+    },
     constants,
     state,
     app,
@@ -2087,4 +2116,170 @@ it("keeps a development command handed over while the instance is still starting
       h.supervisors[0].postProvider.mock.calls.map(([text]: [string]) => JSON.parse(text).action),
     ).toContainEqual(expect.objectContaining({ name: "interrupt", attempt: "development-9" }));
   });
+});
+
+it.each([
+  ["win32", "session-end"],
+  ["win32", "query-session-end"],
+  ["darwin", "shutdown"],
+  ["linux", "shutdown"],
+  ["linux", "SIGTERM"],
+] as const)(
+  "bypasses exit confirmation for %s %s and passes non-orderly shutdown",
+  async (platform, event) => {
+    const h = await launch({ locator: "located", platform, exitRunning: 2 });
+    const peer = h.supervisors[0];
+    peer.storageChanged({ generation: peer.generation, state: "storage_ready" });
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    h.app.emit("before-quit", { preventDefault: vi.fn() });
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(await h.command("exit_state")).toMatchObject({ running: 2 });
+    if (event === "SIGTERM") h.signalMain();
+    else if (platform === "win32") h.window.emit(event);
+    else h.powerMonitor.emit(event);
+    h.app.emit("before-quit", { preventDefault: vi.fn() });
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+    expect(peer.stop).toHaveBeenCalledOnce();
+    const orderly = peer.stop.mock.calls[0][1];
+    expect(orderly()).toBe(false);
+    expect(
+      h.window.webContents.send.mock.calls
+        .filter(([channel]: [string]) => channel === h.constants.desktopChannels.exitState)
+        .at(-1)?.[1],
+    ).toBeNull();
+  },
+);
+it("uses the most recently focused window for a Dock quit even when no window has focus", async () => {
+  const h = await launch({ locator: "located", platform: "darwin", exitRunning: 2 });
+  const peer = h.supervisors[0];
+  peer.storageChanged({ generation: peer.generation, state: "storage_ready" });
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  await h.action("new_window");
+  const second = h.Window.all.at(-1)!;
+  h.app.emit("browser-window-focus", {}, second);
+  second.isFocused = () => false;
+  h.app.emit("before-quit", { preventDefault: vi.fn() });
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  expect(await h.command("exit_state", undefined, second)).toMatchObject({ running: 2 });
+  expect(await h.command("exit_state", undefined, h.window)).toBeNull();
+  expect(peer.stop).not.toHaveBeenCalled();
+});
+
+it("binds exit choices to the intercepted window and current main-owned operation", async () => {
+  const h = await launch({ locator: "located", exitRunning: 2 });
+  const peer = h.supervisors[0];
+  peer.storageChanged({ generation: peer.generation, state: "storage_ready" });
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  h.window.emit("close", { preventDefault: vi.fn() });
+  h.app.emit("before-quit", { preventDefault: vi.fn() });
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  const state = await h.command("exit_state");
+  expect(await h.command("exit_choice", { operationId: "foreign", choice: "cancel" })).toBe(false);
+  expect(
+    await h.command("exit_choice", { operationId: state.operationId, choice: "invalid" }),
+  ).toBe(false);
+  expect(await h.command("exit_choice", { operationId: state.operationId, choice: "wait" })).toBe(
+    true,
+  );
+  expect(await h.command("exit_state")).toMatchObject({ phase: "waiting" });
+  expect(await h.command("exit_choice", { operationId: state.operationId, choice: "close" })).toBe(
+    true,
+  );
+  expect(await h.command("exit_state")).toBeNull();
+  expect(peer.stop).not.toHaveBeenCalled();
+  expect(JSON.parse(peer.postProvider.mock.calls.at(-1)![0])).toMatchObject({ action: "resume" });
+});
+
+it("lets OS shutdown proceed without an error dialog when broker cessation cannot be confirmed", async () => {
+  const h = await launch({ locator: "located", platform: "linux" });
+  h.state.stop = false;
+  h.powerMonitor.emit("shutdown");
+  h.app.emit("before-quit", { preventDefault: vi.fn() });
+  for (let i = 0; i < 40; i++) await Promise.resolve();
+  expect(h.app.exit).toHaveBeenCalledWith(0);
+  expect(h.dialog.showMessageBox).not.toHaveBeenCalled();
+});
+
+it("moves an open exit confirmation to a surviving window without losing its count", async () => {
+  const h = await launch({ locator: "located", exitRunning: 2 });
+  const peer = h.supervisors[0];
+  peer.storageChanged({ generation: peer.generation, state: "storage_ready" });
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  await h.action("new_window");
+  const second = h.Window.all.at(-1)!;
+  h.app.emit("browser-window-focus", {}, second);
+  h.app.emit("before-quit", { preventDefault: vi.fn() });
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  expect(await h.command("exit_state", undefined, second)).toMatchObject({ running: 2 });
+  second.destroyed = true;
+  second.emit("closed");
+  expect(await h.command("exit_state", undefined, h.window)).toMatchObject({ running: 2 });
+  h.app.emit("before-quit", { preventDefault: vi.fn() });
+  expect(peer.stop).not.toHaveBeenCalled();
+});
+
+it("retargets an explicit repeated Quit to the most recently focused window", async () => {
+  const h = await launch({ locator: "located", exitRunning: 2 });
+  const peer = h.supervisors[0];
+  peer.storageChanged({ generation: peer.generation, state: "storage_ready" });
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  await h.action("new_window");
+  const second = h.Window.all.at(-1)!;
+  h.app.emit("browser-window-focus", {}, h.window);
+  h.app.emit("before-quit", { preventDefault: vi.fn() });
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  expect(await h.command("exit_state", undefined, h.window)).toMatchObject({ running: 2 });
+  h.app.emit("browser-window-focus", {}, second);
+  h.app.emit("before-quit", { preventDefault: vi.fn() });
+  expect(await h.command("exit_state", undefined, second)).toMatchObject({ running: 2 });
+  expect(await h.command("exit_state", undefined, h.window)).toBeNull();
+  expect(h.window.webContents.send).toHaveBeenCalledWith(
+    h.constants.desktopChannels.exitState,
+    null,
+  );
+  expect(
+    peer.postProvider.mock.calls.filter(
+      ([text]: [string]) => JSON.parse(text).kind === "application_exit",
+    ),
+  ).toHaveLength(1);
+});
+it.each([false, true])(
+  "keeps fatal resource shutdown mandatory with running replies and a pending exit %s",
+  async (pending) => {
+    const h = await launch({ locator: "located", exitRunning: 2 });
+    const peer = h.supervisors[0];
+    peer.storageChanged({ generation: peer.generation, state: "storage_ready" });
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    h.window.emit("ready-to-show");
+    if (pending) {
+      h.app.emit("before-quit", { preventDefault: vi.fn() });
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      expect(await h.command("exit_state")).toMatchObject({ running: 2 });
+    }
+    const holds = peer.postProvider.mock.calls.length;
+    h.state.metrics = h.constants.portLimits.process_tree_count + 1;
+    await vi.advanceTimersByTimeAsync(500);
+    expect(h.dialog.showMessageBox).toHaveBeenCalledOnce();
+    expect(h.app.quit).toHaveBeenCalled();
+    h.app.emit("before-quit", { preventDefault: vi.fn() });
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+    expect(peer.stop).toHaveBeenCalledOnce();
+    expect(peer.postProvider.mock.calls).toHaveLength(holds);
+  },
+);
+it("reports a failed exit handshake as an action failure without claiming unproven cessation", async () => {
+  const h = await launch({ locator: "located", exitRunning: 2 });
+  const peer = h.supervisors[0];
+  peer.storageChanged({ generation: peer.generation, state: "storage_ready" });
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  h.window.emit("ready-to-show");
+  peer.postProvider.mockReturnValueOnce(false);
+  h.app.emit("before-quit", { preventDefault: vi.fn() });
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  const locale = (await h.action("read")).locale;
+  expect(h.dialog.showMessageBox).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({ message: h.constants.message(locale, "command.failed") }),
+  );
+  expect(peer.stop).not.toHaveBeenCalled();
 });

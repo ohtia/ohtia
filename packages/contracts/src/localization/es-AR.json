@@ -98,7 +98,7 @@
     "menu.hide": "Ocultar Ohtia",
     "menu.hideOthers": "Ocultar los demás",
     "menu.showAll": "Mostrar todo",
-    "dialog.close": "Cerrar",
+    "dialog.close": "Cerrar diálogo",
     "about.version": "Versión",
     "about.build": "Compilación",
     "about.system": "Sistema",
@@ -262,6 +262,14 @@
     "connection.unknownPlan": "{service} no indica de antemano si tu plan se puede usar en Ohtia. La primera respuesta lo mostrará.",
     "connection.unreachable": "Ohtia no pudo contactar con {service}. Se conserva tu sesión; comprueba tu conexión a internet y vuelve a probar.",
     "connection.browserIcon": "se abre en tu navegador",
-    "connection.browserComplete": "Puedes cerrar esta pestaña y volver a Ohtia."
+    "connection.browserComplete": "Puedes cerrar esta pestaña y volver a Ohtia.",
+    "settings.closeLayoutNotice": "Cerrar aviso",
+    "exit.title": "¿Salir de Ohtia mientras hay respuestas en curso?",
+    "exit.wait": "Esperar las respuestas y salir",
+    "exit.cancel": "Cancelar el trabajo y salir",
+    "exit.cancelling": "Ohtia está cancelando el trabajo y guardando las respuestas.",
+    "exit.body": "{running, plural, one {Queda # respuesta en curso. Las respuestas que aún no han empezado se conservan para la próxima vez que abras Ohtia, salvo que canceles el trabajo.} many {Quedan # respuestas en curso. Las respuestas que aún no han empezado se conservan para la próxima vez que abras Ohtia, salvo que canceles el trabajo.} other {Quedan # respuestas en curso. Las respuestas que aún no han empezado se conservan para la próxima vez que abras Ohtia, salvo que canceles el trabajo.}}",
+    "exit.waiting": "{running, plural, one {Ohtia saldrá cuando terminen las respuestas en curso. Queda #.} many {Ohtia saldrá cuando terminen las respuestas en curso. Quedan #.} other {Ohtia saldrá cuando terminen las respuestas en curso. Quedan #.}}",
+    "exit.queued": "Las respuestas que aún no han empezado se conservan para la próxima vez que abras Ohtia, salvo que canceles el trabajo."
   }
 }

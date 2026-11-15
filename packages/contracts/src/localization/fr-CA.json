@@ -98,7 +98,7 @@
     "menu.hide": "Masquer Ohtia",
     "menu.hideOthers": "Masquer les autres",
     "menu.showAll": "Tout afficher",
-    "dialog.close": "Fermer",
+    "dialog.close": "Fermer la boîte de dialogue",
     "about.version": "Version",
     "about.build": "Compilation",
     "about.system": "Système",
@@ -262,6 +262,14 @@
     "connection.unknownPlan": "{service} n’indique pas à l’avance si votre forfait peut être utilisé dans Ohtia. La première réponse le montrera.",
     "connection.unreachable": "Ohtia n’a pas pu joindre {service}. Votre session est conservée ; vérifiez votre connexion internet et réessayez.",
     "connection.browserIcon": "s’ouvre dans votre navigateur",
-    "connection.browserComplete": "Vous pouvez fermer cet onglet et revenir à Ohtia."
+    "connection.browserComplete": "Vous pouvez fermer cet onglet et revenir à Ohtia.",
+    "settings.closeLayoutNotice": "Fermer l’avis",
+    "exit.title": "Quitter Ohtia pendant que des réponses sont en cours ?",
+    "exit.wait": "Attendre les réponses, puis quitter",
+    "exit.cancel": "Annuler le travail et quitter",
+    "exit.cancelling": "Ohtia annule le travail et enregistre les réponses.",
+    "exit.body": "{running, plural, one {# réponse est encore en cours. Les réponses qui n’ont pas commencé sont conservées pour la prochaine ouverture d’Ohtia, sauf si vous annulez le travail.} many {# réponses sont encore en cours. Les réponses qui n’ont pas commencé sont conservées pour la prochaine ouverture d’Ohtia, sauf si vous annulez le travail.} other {# réponses sont encore en cours. Les réponses qui n’ont pas commencé sont conservées pour la prochaine ouverture d’Ohtia, sauf si vous annulez le travail.}}",
+    "exit.waiting": "{running, plural, one {Ohtia quittera lorsque les réponses en cours seront terminées. Il en reste #.} many {Ohtia quittera lorsque les réponses en cours seront terminées. Il en reste #.} other {Ohtia quittera lorsque les réponses en cours seront terminées. Il en reste #.}}",
+    "exit.queued": "Les réponses qui n’ont pas commencé sont conservées pour la prochaine ouverture d’Ohtia, sauf si vous annulez le travail."
   }
 }

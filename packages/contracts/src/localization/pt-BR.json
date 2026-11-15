@@ -98,7 +98,7 @@
     "menu.hide": "Ocultar Ohtia",
     "menu.hideOthers": "Ocultar outras",
     "menu.showAll": "Mostrar tudo",
-    "dialog.close": "Fechar",
+    "dialog.close": "Fechar diálogo",
     "about.version": "Versão",
     "about.build": "Compilação",
     "about.system": "Sistema",
@@ -262,6 +262,14 @@
     "connection.unknownPlan": "{service} não informa com antecedência se seu plano pode ser usado no Ohtia. A primeira resposta mostrará isso.",
     "connection.unreachable": "Ohtia não conseguiu se conectar ao {service}. Seu login foi mantido; verifique a conexão com a internet e teste novamente.",
     "connection.browserIcon": "abre no navegador",
-    "connection.browserComplete": "Você pode fechar esta aba e voltar ao Ohtia."
+    "connection.browserComplete": "Você pode fechar esta aba e voltar ao Ohtia.",
+    "settings.closeLayoutNotice": "Fechar aviso",
+    "exit.title": "Sair do Ohtia com respostas em andamento?",
+    "exit.wait": "Esperar pelas respostas e sair",
+    "exit.cancel": "Cancelar o trabalho e sair",
+    "exit.cancelling": "Ohtia está cancelando o trabalho e salvando as respostas.",
+    "exit.body": "{running, plural, one {# resposta ainda está em andamento. As respostas que não começaram ficam guardadas para a próxima vez que abrir o Ohtia, a menos que cancele o trabalho.} many {# respostas ainda estão em andamento. As respostas que não começaram ficam guardadas para a próxima vez que abrir o Ohtia, a menos que cancele o trabalho.} other {# respostas ainda estão em andamento. As respostas que não começaram ficam guardadas para a próxima vez que abrir o Ohtia, a menos que cancele o trabalho.}}",
+    "exit.waiting": "{running, plural, one {Ohtia sairá quando as respostas em andamento terminarem. Ainda resta #.} many {Ohtia sairá quando as respostas em andamento terminarem. Ainda restam #.} other {Ohtia sairá quando as respostas em andamento terminarem. Ainda restam #.}}",
+    "exit.queued": "As respostas que não começaram ficam guardadas para a próxima vez que abrir o Ohtia, a menos que cancele o trabalho."
   }
 }

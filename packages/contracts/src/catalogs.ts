@@ -26,6 +26,14 @@ import caES from "./localization/ca-ES.json" with { type: "json" };
 import koKR from "./localization/ko-KR.json" with { type: "json" };
 
 export const messageContracts = {
+  "exit.title": { params: {} },
+  "exit.body": { params: { running: "number" }, forms: { running: { kind: "plural" } } },
+  "exit.waiting": { params: { running: "number" }, forms: { running: { kind: "plural" } } },
+  "exit.queued": { params: {} },
+  "exit.wait": { params: {} },
+  "exit.cancel": { params: {} },
+  "exit.cancelling": { params: {} },
+  "settings.closeLayoutNotice": { params: {} },
   "connection.title": { params: {} },
   "connection.notConnected": { params: {} },
   "connection.lastAccount": { params: { email: "string" } },
@@ -416,7 +424,9 @@ export type SimpleMessageKey = {
   [K in MessageKey]: keyof (typeof messageContracts)[K]["params"] extends never ? K : never;
 }[MessageKey];
 export type MessageParameters<K extends MessageKey> = {
-  readonly [P in keyof (typeof messageContracts)[K]["params"]]: string;
+  readonly [
+    P in keyof (typeof messageContracts)[K]["params"]
+  ]: (typeof messageContracts)[K]["params"][P] extends "number" ? number : string;
 };
 export const messageKeys = Object.keys(messageContracts) as MessageKey[];
 export const catalogs = {
@@ -463,13 +473,22 @@ export function message<K extends MessageKey>(
 ): string {
   const template = catalogs[locale].messages[key];
   if (!template) throw new Error("Missing catalog message.");
-  const parameters: Record<string, string> = args.length ? args[0] : {};
+  const parameters: Record<string, string | number> = args.length ? args[0] : {};
   const expected = Object.keys(messageContracts[key].params);
   if (
     Object.keys(parameters).length !== expected.length ||
-    expected.some((name) => typeof parameters[name] !== "string")
+    expected.some(
+      (name) =>
+        typeof parameters[name] !== (messageContracts[key].params as Record<string, string>)[name],
+    )
   )
     throw new Error("Invalid message parameters.");
+  if ("forms" in messageContracts[key]) {
+    const count = parameters.running;
+    if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0)
+      throw new Error("Invalid plural parameters.");
+    return cardinalMessage(locale, template, count);
+  }
   return template.replace(/\{([A-Za-z][A-Za-z0-9]*)\}/g, (_match, name: string) => {
     const value = parameters[name];
     if (typeof value !== "string") throw new Error("Missing message parameter.");
@@ -489,4 +508,26 @@ export function formatDate(
   options?: Intl.DateTimeFormatOptions,
 ): string {
   return new Intl.DateTimeFormat(locale, options).format(value);
+}
+
+/** One cardinal selector, no offsets, nesting, tags or rich text. Catalogs use # for its value. */
+function cardinalMessage(locale: InterfaceLocale, template: string, count: number): string {
+  const outer =
+    /^\{running, plural,\s*((?:(?:zero|one|two|few|many|other|=\d+)\s*\{[^{}]*\}\s*)+)\}$/.exec(
+      template,
+    );
+  if (!outer?.[1]) throw new Error("Unsupported plural message.");
+  const forms = new Map<string, string>();
+  for (const part of outer[1].matchAll(/(zero|one|two|few|many|other|=\d+)\s*\{([^{}]*)\}/g)) {
+    const [, name, body] = part;
+    if (name === undefined || body === undefined) throw new Error("Invalid plural form.");
+    if (forms.has(name)) throw new Error("Duplicate plural form.");
+    forms.set(name, body);
+  }
+  const selected =
+    forms.get(`=${String(count)}`) ??
+    forms.get(new Intl.PluralRules(locale).select(count)) ??
+    forms.get("other");
+  if (selected === undefined) throw new Error("Missing plural form.");
+  return selected.replaceAll("#", formatNumber(locale, count));
 }

@@ -34,6 +34,7 @@ export interface ResearchPayloads {
   readonly "task.startAgain": { readonly taskId: string };
   readonly "usagePause.resume": { readonly connection: "chatgpt" };
   readonly "task.continueAll": Record<string, never>;
+  readonly "task.cancelAll": Record<string, never>;
   readonly "development.createProject": Record<string, never>;
   readonly "project.create": Record<string, never>;
   readonly "project.confirmSetup": {
@@ -66,6 +67,7 @@ export const researchCommands = [
   "task.startAgain",
   "usagePause.resume",
   "task.continueAll",
+  "task.cancelAll",
   "development.createProject",
   "project.create",
   "project.confirmSetup",
