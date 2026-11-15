@@ -1,3 +1,6 @@
+import { useSyncExternalStore } from "react";
+import { ConversationController } from "./conversation-controller.js";
+import { ConversationView } from "./conversation-view.js";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import {
@@ -42,7 +45,26 @@ export function ApplicationRoot({ bridge }: { readonly bridge: DesktopBridge }) 
   );
 }
 function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
+  const conversation = useMemo(
+    () => new ConversationController(bridge.foundation),
+    [bridge.foundation],
+  );
+  const conversationState = useSyncExternalStore(conversation.subscribe, conversation.snapshot);
   const [bootstrap, setBootstrap] = useState<BootstrapSnapshot>();
+  useEffect(() => {
+    conversation.open(bootstrap?.openConversation ?? { projectId: null, conversationId: null });
+  }, [
+    conversation,
+    bootstrap?.state,
+    bootstrap?.openConversation?.projectId,
+    bootstrap?.openConversation?.conversationId,
+  ]);
+  useEffect(
+    () => () => {
+      conversation.dispose();
+    },
+    [conversation],
+  );
   const [status, setStatus] = useState<FoundationStatus["service"]>("starting");
   const [busy, setBusy] = useState(false);
   const commandReturn = useRef<HTMLButtonElement | null>(null);
@@ -194,6 +216,24 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
               >
                 <WorkspaceChrome
                   {...binding}
+                  chat={
+                    conversationState.scope.conversationId ? (
+                      <ConversationView
+                        state={conversationState}
+                        controller={conversation}
+                        locale={bootstrap.locale}
+                      />
+                    ) : undefined
+                  }
+                  chatTitle={
+                    conversationState.conversation
+                      ? (conversationState.conversation.title ??
+                        new Intl.DateTimeFormat(bootstrap.locale, {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        }).format(new Date(conversationState.conversation.createdAt)))
+                      : undefined
+                  }
                   commands={commands}
                   available={workspaceReady}
                   locale={bootstrap.locale}

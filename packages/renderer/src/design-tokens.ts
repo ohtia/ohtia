@@ -150,6 +150,8 @@ export const iconMappings = {
   "Keyboard shortcuts": "keyboard",
   "Ohtia help": "circle-question-mark",
   "Separator grip": "grip-vertical",
+  "Jump to latest message": "arrow-down",
+  "Agent writing": "pen-line",
   "Supported by examined content": "circle-dot",
   "Partially supported": "contrast",
   "Ambiguous": "circle-question-mark",

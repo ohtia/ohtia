@@ -664,6 +664,54 @@
       "foreground": "danger.content",
       "backgrounds": ["danger.surface"],
       "minimum": 7
+    },
+    {
+      "selector": ".conversation-message.researcher .conversation-text",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".conversation-actions",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.panel", "surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".conversation-writing",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7
+    },
+    {
+      "selector": ".conversation-jump",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
+      "selector": ".conversation-notice",
+      "foreground": "content.primary",
+      "backgrounds": ["attention.surface"],
+      "minimum": 7
+    },
+    {
+      "selector": ".conversation-notice.danger",
+      "foreground": "content.primary",
+      "backgrounds": ["danger.surface"],
+      "minimum": 7
+    },
+    {
+      "selector": ".conversation-empty",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7
+    },
+    {
+      "selector": ".conversation-skeleton span",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.emphasis"],
+      "minimum": 7
     }
   ],
   "overlays": [

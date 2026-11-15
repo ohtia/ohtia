@@ -113,6 +113,7 @@ export class PortAdmission {
       request.operation === "status.subscribe" ||
       request.operation === "appearance.subscribe" ||
       request.operation === "locale.subscribe" ||
+      request.operation === "research.subscribe" ||
       request.operation === "presentation.subscribe"
         ? request.payload.subscriptionId
         : undefined;

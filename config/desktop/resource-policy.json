@@ -155,7 +155,7 @@
         "maximum": 5000
       },
       "owner": "003",
-      "scope": "Status, preference and connection requests from admission to reply; includes queues",
+      "scope": "Every port request from admission to reply; includes queues",
       "failure": "timeout_or_uncertain",
       "rationale": "Short local operations must return control promptly"
     },
@@ -299,7 +299,7 @@
         "maximum": 32768
       },
       "owner": "003",
-      "scope": "Payload only for each initial or connection operation result or event",
+      "scope": "Payload only for each operation result or event",
       "failure": "invalid_service_result",
       "rationale": "Allows bounded component identities and controlled codes"
     },
@@ -674,6 +674,78 @@
       "scope": "The browser sign-in of one connection, from connect until the sign-in returns",
       "failure": "sign_in_timeout",
       "rationale": "A researcher may need several minutes to sign in and authorize plan use"
+    },
+    "research_input_bytes": {
+      "value": 32768,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 32768,
+        "maximum": 32768
+      },
+      "owner": "003",
+      "scope": "Payload of each research request, including one text part",
+      "failure": "invalid_message",
+      "rationale": "One 4,096-byte part fits even when every character needs a JSON escape"
+    },
+    "text_part_bytes": {
+      "value": 4096,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 4096,
+        "maximum": 4096
+      },
+      "owner": "003",
+      "scope": "Each part of a text longer than one port string",
+      "failure": "invalid_message",
+      "rationale": "Equal to the string bound"
+    },
+    "text_parts": {
+      "value": 64,
+      "unit": "part",
+      "permitted": {
+        "minimum": 64,
+        "maximum": 64
+      },
+      "owner": "003",
+      "scope": "Parts of one text",
+      "failure": "invalid_message",
+      "rationale": "Holds a 192 KiB agent reply with margin"
+    },
+    "staged_texts_per_window": {
+      "value": 4,
+      "unit": "text",
+      "permitted": {
+        "minimum": 4,
+        "maximum": 4
+      },
+      "owner": "003",
+      "scope": "Texts whose parts one window has sent and no command has used yet",
+      "failure": "busy_before_acceptance",
+      "rationale": "Bounds memory held for unfinished uploads"
+    },
+    "staged_text_bytes_per_window": {
+      "value": 524288,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 524288,
+        "maximum": 524288
+      },
+      "owner": "003",
+      "scope": "Bytes of those parts in one window",
+      "failure": "busy_before_acceptance",
+      "rationale": "Holds four researcher messages of 20,000 code points"
+    },
+    "staged_text_idle_ms": {
+      "value": 60000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 60000,
+        "maximum": 60000
+      },
+      "owner": "003",
+      "scope": "Time after the last part before unused parts are discarded",
+      "failure": "discard_unused_parts",
+      "rationale": "An interrupted upload leaves nothing behind"
     }
   }
 }

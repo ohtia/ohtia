@@ -270,6 +270,18 @@
     "exit.cancelling": "Ohtia bricht die Arbeit ab und speichert die Antworten.",
     "exit.body": "{running, plural, one {# Antwort läuft noch. Noch nicht begonnene Antworten bleiben bis zum nächsten Öffnen von Ohtia gespeichert, sofern Sie die Arbeit nicht abbrechen.} other {# Antworten laufen noch. Noch nicht begonnene Antworten bleiben bis zum nächsten Öffnen von Ohtia gespeichert, sofern Sie die Arbeit nicht abbrechen.}}",
     "exit.waiting": "{running, plural, one {Ohtia wird beendet, sobald die laufenden Antworten fertig sind. # läuft noch.} other {Ohtia wird beendet, sobald die laufenden Antworten fertig sind. # laufen noch.}}",
-    "exit.queued": "Noch nicht begonnene Antworten bleiben bis zum nächsten Öffnen von Ohtia gespeichert, sofern Sie die Arbeit nicht abbrechen."
+    "exit.queued": "Noch nicht begonnene Antworten bleiben bis zum nächsten Öffnen von Ohtia gespeichert, sofern Sie die Arbeit nicht abbrechen.",
+    "conversation.loading": "Unterhaltung wird geladen…",
+    "conversation.empty": "Diese Unterhaltung enthält noch keine Nachrichten.",
+    "conversation.failed": "Ohtia konnte diese Unterhaltung nicht laden. Ihre Nachrichten sind weiterhin gespeichert.",
+    "conversation.reload": "Unterhaltung neu laden",
+    "conversation.unavailable": "Unterhaltungen sind erst verfügbar, wenn die lokalen Daten und der lokale Dienst bereit sind.",
+    "conversation.earlier": "Frühere Nachrichten laden",
+    "conversation.earlierLoading": "Frühere Nachrichten werden geladen…",
+    "conversation.earlierFailed": "Ohtia konnte frühere Nachrichten nicht laden. Sie sind weiterhin gespeichert.",
+    "conversation.latest": "Zur neuesten Nachricht springen",
+    "conversation.you": "Sie",
+    "conversation.writing": "{agent} schreibt…",
+    "conversation.replied": "{agent} hat geantwortet"
   }
 }

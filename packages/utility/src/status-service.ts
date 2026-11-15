@@ -1,7 +1,11 @@
+import { ResearchService } from "./research-service.js";
 import { DurableProvider } from "./durable-provider.js";
 import {
   decodeConnectionReport,
   decodeApplicationExit,
+  isIdentifier,
+  isResearchOperation,
+  isResearchMutation,
   decodeServiceWake,
   decodeDevelopmentAction,
   decodeProviderEvent,
@@ -37,8 +41,14 @@ export function createStatusService(
   const connections = new ServiceConnections();
   storage?.setTaskContext({ generation, mode, connections });
   // The service generation identifies every provider message; main discards the rest.
+  let research: ResearchService | undefined;
   const durable = storage
-    ? new DurableProvider({ storage, context: { generation, mode, connections }, send })
+    ? new DurableProvider({
+        storage,
+        context: { generation, mode, connections },
+        send,
+        reply: (task, sequence, text) => research?.reply(task, sequence, text),
+      })
     : undefined;
   const streams = new Map<
     string,
@@ -70,25 +80,30 @@ export function createStatusService(
     if (!encoded.ok) throw new Error("Invalid service output.");
     if (!disposed) send(encoded.value);
   };
-  // Provider failures own their catch before joining unrelated window commands. In production the
-  // admission-lost callback ends the generation, so main closes all of its provider requests.
-  const enqueueProvider = (operation: () => Promise<unknown>): void => {
+  function loseProvider(): void {
+    if (disposed || providerFailed) return;
+    providerFailed = true;
+    enabled = false;
+    durable?.dispose();
+    status = { ...status, service: "unavailable", engine: "unavailable" };
+    try {
+      admissionLost?.();
+    } catch {
+      // An observer cannot restore this generation's execution authority.
+    }
+  }
+  if (storage && durable)
+    research = new ResearchService(storage, generation, emit, durable, loseProvider);
+  // Provider failures end this generation's admission, including failures after a window command commits.
+  const enqueueProvider = (operation: () => unknown, publish = true): void => {
     queue = queue
       .then(async () => {
-        if (!disposed && !providerFailed) await operation();
-      })
-      .catch(() => {
-        if (disposed || providerFailed) return;
-        providerFailed = true;
-        enabled = false;
-        durable?.dispose();
-        status = { ...status, service: "unavailable", engine: "unavailable" };
-        try {
-          admissionLost?.();
-        } catch {
-          // A returning or throwing observer cannot restore this generation's execution authority.
+        if (!disposed && !providerFailed) {
+          await operation();
+          if (publish) await research?.publish();
         }
-      });
+      })
+      .catch(loseProvider);
   };
   const appearanceEvent = (record: Outcome<AppearanceRecord>) => {
     if (!record.ok) return;
@@ -207,6 +222,10 @@ export function createStatusService(
     }
     if (!enabled || !storage?.ready) {
       emit({ ...value, kind: "result", payload: failure("service_unavailable") });
+      return;
+    }
+    if (isResearchOperation(value.operation)) {
+      await research?.dispatch(value, () => !!subscription?.cancelled);
       return;
     }
     if (value.operation === "bounds.read")
@@ -425,6 +444,34 @@ export function createStatusService(
         enqueueProvider(() => durable.applicationExit(exit));
         return;
       }
+      if (typeof text === "string" && text.length < 512) {
+        try {
+          const control: unknown = JSON.parse(text);
+          if (
+            control &&
+            typeof control === "object" &&
+            "kind" in control &&
+            control.kind === "research_window_closed"
+          ) {
+            const value = control as Record<string, unknown>;
+            if (
+              Object.keys(value).sort().join(",") !== "generation,kind,windowGeneration" ||
+              value.generation !== generation ||
+              !isIdentifier(value.windowGeneration)
+            )
+              throw new Error("Invalid window disposal.");
+            const window = value.windowGeneration;
+            research?.revokeWindow(window);
+            for (const [key, subscription] of queuedSubscriptions)
+              if (key.startsWith(`${window}/`)) subscription.cancelled = true;
+            // Accepted commands retain their uploaded parts; cleanup follows all work already queued.
+            queue = queue.then(() => research?.closeWindow(window)).catch(loseProvider);
+            return;
+          }
+        } catch {
+          // The ordinary envelope decoder below reports malformed broker messages.
+        }
+      }
       const wake = decodeServiceWake(text);
       if (wake) {
         if (wake.generation === generation)
@@ -455,7 +502,7 @@ export function createStatusService(
           enqueueProvider(async () => {
             if (!(await durable.receive(providerEvent)))
               throw new Error("Invalid provider event order.");
-          });
+          }, providerEvent.event.type !== "text");
 
         return;
       }
@@ -477,6 +524,7 @@ export function createStatusService(
         const queued = queuedSubscriptions.get(id);
         if (queued) queued.cancelled = true;
         streams.delete(id);
+        research?.unsubscribe(value.windowGeneration, value.subscriptionId);
         send(
           JSON.stringify({
             kind: "stream_disposed",
@@ -542,13 +590,15 @@ export function createStatusService(
       const subscription =
         value.operation === "appearance.subscribe" ||
         value.operation === "locale.subscribe" ||
-        value.operation === "presentation.subscribe"
+        value.operation === "presentation.subscribe" ||
+        value.operation === "research.subscribe"
           ? { cancelled: false }
           : undefined;
       const subscriptionKey =
         value.operation === "appearance.subscribe" ||
         value.operation === "locale.subscribe" ||
-        value.operation === "presentation.subscribe"
+        value.operation === "presentation.subscribe" ||
+        value.operation === "research.subscribe"
           ? `${value.windowGeneration}/${value.payload.subscriptionId}`
           : undefined;
       if (subscriptionKey && subscription) {
@@ -562,21 +612,21 @@ export function createStatusService(
       queue = queue
         .then(() => dispatch(value, subscription))
         .catch(() => {
-          emit({
-            ...value,
-            kind: "result",
-            payload: failure(
+          const outcome = failure(
+            isResearchMutation(value.operation) ||
               value.operation === "appearance.replace" ||
-                value.operation === "locale.replace" ||
-                value.operation === "layout.replace" ||
-                value.operation === "bounds.replace" ||
-                value.operation === "character.replace" ||
-                value.operation === "zoom.replace" ||
-                value.operation === "zoom.commit"
-                ? "uncertain"
-                : "storage_failed",
-            ),
-          });
+              value.operation === "locale.replace" ||
+              value.operation === "layout.replace" ||
+              value.operation === "bounds.replace" ||
+              value.operation === "character.replace" ||
+              value.operation === "zoom.replace" ||
+              value.operation === "zoom.commit"
+              ? "uncertain"
+              : "storage_failed",
+          );
+          if (isResearchOperation(value.operation))
+            storage.reportResearchPort(value.operation, outcome);
+          emit({ ...value, kind: "result", payload: outcome });
         })
         .finally(() => {
           if (!storage.admissionReady && !disposed && !providerFailed) admissionLost?.();
@@ -589,6 +639,7 @@ export function createStatusService(
     },
     connections,
     dispose(): void {
+      research?.dispose();
       disposed = true;
       enabled = false;
       streams.clear();

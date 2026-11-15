@@ -158,6 +158,9 @@ async function launch(
   });
   class Window extends EventEmitter {
     static all: Window[] = [];
+    static getFocusedWindow() {
+      return Window.all.find((window) => !window.destroyed);
+    }
     static getAllWindows() {
       return Window.all.filter((window) => !window.destroyed);
     }
@@ -2033,6 +2036,22 @@ it("hands development switches to the open development instance and runs them on
       report: { type: "attempt", attempt: "development-1" },
     });
     expect(written.join("")).toContain("attempt development-1");
+    const projectId = "019a8000-0000-7000-8000-000000000501";
+    const conversationId = "019a8000-0000-7000-8000-000000000502";
+    channel.report({
+      kind: "development_report",
+      version: 1,
+      generation: supervisor.generation,
+      operation_id: posted.action.operation_id,
+      report: { type: "conversation_opened", projectId, conversationId },
+    });
+    expect(await h.action("read")).toMatchObject({
+      openConversation: { projectId, conversationId },
+    });
+    expect(written.join("")).toContain(`opened conversation ${conversationId}`);
+    await h.action("new_window");
+    expect(await h.action("read", h.Window.all.at(-1))).not.toHaveProperty("openConversation");
+
     // A later launch's switches reach this instance without presenting its window.
     const focus = h.window.focus.mock.calls.length;
     h.app.emit("second-instance", {}, [], "", {

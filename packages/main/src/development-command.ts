@@ -22,6 +22,7 @@ export const developmentRequestText = "Describe the usual parts of a thesis in a
 const actions: Readonly<Record<string, readonly string[]>> = Object.freeze({
   request: ["model"],
   "create-development-project": [],
+  "open-conversation": ["conversation"],
   "start-conversation": ["project", "text"],
   send: ["conversation", "text"],
   interrupt: ["attempt"],
@@ -60,6 +61,11 @@ export function parseDevelopmentSwitches(
   for (const name of expected)
     if (!values.has(name))
       return { ok: false, error: `The ${command} action needs --ohtia-dev-${name}=<value>.` };
+  if (command === "open-conversation") {
+    const conversation = values.get("conversation");
+    if (!isIdentifier(conversation)) return { ok: false, error: "Use a conversation identifier." };
+    return { ok: true, action: { name: command, operation_id: operationId, conversation } };
+  }
   if (command === "resume-requests") {
     if (values.get("connection") !== "chatgpt")
       return { ok: false, error: "Use --ohtia-dev-connection=chatgpt." };
@@ -154,6 +160,7 @@ function terminal(text: string): void {
   }
 }
 export interface DevelopmentHost {
+  openConversation?(projectId: string, conversationId: string): void;
   /** Post one development action to the current data service; false when none is available. */
   post(text: string, generation: string): boolean;
   /** The current data service's generation once it and the connection state are ready. */
@@ -213,6 +220,10 @@ export function createDevelopmentCommand(host: DevelopmentHost, output = termina
       const id = message.operation_id;
       const report = message.report;
       switch (report.type) {
+        case "conversation_opened":
+          host.openConversation?.(report.projectId, report.conversationId);
+          line(`${id}: opened conversation ${report.conversationId}`);
+          return;
         case "record":
           line(`${id}: ${report.record} ${report.id}`);
           return;

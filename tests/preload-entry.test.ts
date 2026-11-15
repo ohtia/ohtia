@@ -779,3 +779,110 @@ it("exposes only validated exit state and fixed choices on the command bridge", 
   });
   expect(await h.bridge.commands.chooseExit("bad space", "cancel")).toBe(false);
 });
+
+it("carries persisted research through the sandbox entry and revokes scoped streams on reconnect", async () => {
+  const h = await load();
+  vi.useRealTimers();
+  const { storageFixture } = await import("./fixtures/storage.js");
+  const { createStatusService } = await import("../packages/utility/src/status-service.js");
+  const { splitText } = await import("../packages/contracts/src/index.js");
+  const { digest } = await import("../packages/utility/src/research-text.js");
+  const fixture = storageFixture();
+  await fixture.store.open();
+  const service = createStatusService(
+    "service-1",
+    "en-US",
+    (text) => h.ipcRenderer.emit(desktopChannels.reply, {}, text),
+    fixture.store,
+    undefined,
+    "development",
+  );
+  service.activate("en-US");
+  h.ipcRenderer.send.mockImplementation((channel: string, text: string) => {
+    if (channel === desktopChannels.port) service.receive(text);
+  });
+  const port = h.bridge.foundation;
+  const expectValue = async <T>(call: {
+    result: Promise<import("../packages/contracts/src/index.js").Outcome<T>>;
+  }): Promise<T> => {
+    const result = await call.result;
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error.code);
+    return result.value;
+  };
+  try {
+    const project = await expectValue(port.createProject("entry-create"));
+    const projectId = project.resultId;
+    expect((await expectValue(port.listProjects({ cursor: null, count: 50 }))).items[0]?.id).toBe(
+      projectId,
+    );
+    await expectValue(
+      port.confirmProjectSetup("entry-confirm", {
+        projectId,
+        title: "Synthetic project",
+        documentLanguage: "en",
+      }),
+    );
+    const started = await expectValue(
+      port.startConversation("entry-start", { projectId, content: "Synthetic question" }),
+    );
+    const conversationId = started.resultId;
+    const listed = await expectValue(
+      port.listConversations({ projectId, cursor: null, count: 50 }),
+    );
+    expect(listed.items.some((item) => item.id === conversationId)).toBe(true);
+    const summary = (
+      await expectValue(port.readConversations({ projectId, ids: [conversationId] }))
+    ).items[0]!;
+    await expectValue(
+      port.renameConversation("entry-rename", {
+        conversationId,
+        title: "Synthetic title",
+        expectedUpdatedAt: summary.updatedAt,
+      }),
+    );
+    const text = "한".repeat(2000);
+    const parts = splitText(text);
+    const descriptor = { parts: parts.length, bytes: 6000, sha256: digest(text) };
+    for (let index = 0; index < parts.length; index++)
+      await expectValue(
+        port.sendTextPart("entry-append", {
+          index: index + 1,
+          count: parts.length,
+          bytes: 6000,
+          sha256: descriptor.sha256,
+          text: parts[index]!,
+        }),
+      );
+    const appended = await expectValue(
+      port.appendMessage("entry-append", { conversationId, content: descriptor }),
+    );
+    const timeline = await expectValue(
+      port.listTimelineBefore({ conversationId, cursor: null, count: 50 }),
+    );
+    const saved = timeline.items.find((item) => item.id === appended.resultId)!;
+    expect(
+      (await expectValue(port.readTimeline({ conversationId, ids: [saved.id] }))).items[0],
+    ).toEqual(saved);
+    if (saved.kind !== "message" || typeof saved.content === "string")
+      throw new Error("Expected text reference.");
+    expect(
+      (await expectValue(port.readTextPart({ source: saved.content.source, index: 1 }))).text,
+    ).toBe(parts[0]);
+    expect(await port.readReplyParts({ taskId: saved.id, fromSequence: 1 }).result).toEqual(
+      failure("record_not_found"),
+    );
+    const listener = vi.fn();
+    const subscription = port.subscribeResearch({ projectId, conversationId }, listener);
+    expect((await subscription.ready).ok).toBe(true);
+    h.ipcRenderer.emit(desktopChannels.reconnect, {});
+    expect(listener).toHaveBeenCalledWith(failure("sequence_gap"));
+    const current = port.subscribeResearch({ projectId, conversationId }, () => {});
+    expect((await current.ready).ok).toBe(true);
+    h.window.dispatchEvent(new Event("unload"));
+    expect(h.ipcRenderer.listenerCount(desktopChannels.reply)).toBe(0);
+  } finally {
+    h.window.dispatchEvent(new Event("unload"));
+    service.dispose();
+  }
+});

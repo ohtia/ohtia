@@ -274,6 +274,11 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
     this.removeAttribute("open");
   };
   const foundation = {
+    subscribeResearch: () => ({
+      ready: Promise.resolve({ ok: true, value: { subscriptionId: "research-test" } }),
+      dispose() {},
+    }),
+    listProjects: () => call({ ok: true, value: { items: [], next: null, hasMore: false } }),
     readConnection: () => call({ ok: false, error: { code: "service_unavailable" } }),
     subscribeConnection: () => ({
       ready: Promise.resolve({ ok: false, error: { code: "service_unavailable" } }),

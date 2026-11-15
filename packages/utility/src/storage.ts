@@ -1,3 +1,5 @@
+import { readResearch, researchRevisions } from "./research-reads.js";
+import type { Request, ResearchScope, ResearchEvent, ResearchOperation } from "@ohtia/contracts";
 import {
   up as applicationExit,
   objects as exitObjects,
@@ -33,6 +35,8 @@ import {
   applyResearchCommand,
   LanguageRegistry,
   listProjects,
+  identifier,
+  bytes,
   listConversations,
   listMessages,
   type ResearchSchema,
@@ -2067,6 +2071,29 @@ export class DurableStore {
       /* Diagnostic delivery cannot change a durable outcome. */
     }
   }
+  reportResearchPort(
+    operation: ResearchOperation,
+    outcome: Outcome<unknown>,
+    failureRecorded = false,
+  ): void {
+    if (!outcome.ok) {
+      if (!failureRecorded) this.researchFailure(outcome.error.code);
+      return;
+    }
+    const events = {
+      "project.list": "ohtia.project.listed",
+      "conversation.list": "ohtia.conversation.listed",
+      "research.subscribe": "ohtia.research.subscribed",
+      "text.part": "ohtia.text.staged",
+      "text.readPart": "ohtia.text.read",
+      "reply.readParts": "ohtia.reply.read",
+      "timeline.listBefore": "ohtia.timeline.listed",
+      "timeline.read": "ohtia.timeline.read",
+      "conversation.read": "ohtia.conversation.read",
+    } as const;
+    if (Object.hasOwn(events, operation))
+      this.researchDiagnostic({ event_name: events[operation as keyof typeof events] });
+  }
   private researchFailure(code: ErrorCode): void {
     if (code === "uncertain") {
       this.researchDiagnostic({ event_name: "ohtia.research.uncertain", error_code: code });
@@ -2077,7 +2104,10 @@ export class DurableStore {
       "storage_failed";
     this.researchDiagnostic({ event_name: "ohtia.research.failed", error_code: error });
   }
-  async executeResearchCommand(command: ResearchCommand): Promise<Outcome<ResearchResult>> {
+  async executeResearchCommand(
+    command: ResearchCommand,
+    payloadHash?: string,
+  ): Promise<Outcome<ResearchResult>> {
     if (!this.ready || !this.database) {
       const code = this.active ? "busy" : "service_unavailable";
       this.researchFailure(code);
@@ -2105,6 +2135,7 @@ export class DurableStore {
               return this.languageRegistry;
             },
             tasks,
+            payloadHash,
           );
           this.assert();
           if (!result.ok) {
@@ -2218,11 +2249,12 @@ export class DurableStore {
 
   private async researchRead<T>(
     query: (db: Kysely<Schema>) => Promise<Outcome<T>>,
-    event: "ohtia.project.listed" | "ohtia.conversation.listed" | "ohtia.message.listed",
+    event?: "ohtia.project.listed" | "ohtia.conversation.listed" | "ohtia.message.listed",
+    diagnoseFailure = true,
   ): Promise<Outcome<T>> {
     if (!this.ready || !this.database) {
       const code = this.active ? "busy" : "service_unavailable";
-      this.researchFailure(code);
+      if (diagnoseFailure) this.researchFailure(code);
       return failure(code);
     }
     this.active = true;
@@ -2237,9 +2269,79 @@ export class DurableStore {
     } finally {
       this.active = false;
     }
-    if (outcome.ok) this.researchDiagnostic({ event_name: event });
-    else this.researchFailure(outcome.error.code);
+    if (outcome.ok) {
+      if (event) this.researchDiagnostic({ event_name: event });
+    } else if (diagnoseFailure) this.researchFailure(outcome.error.code);
     return outcome;
+  }
+  readResearch(request: Request): Promise<Outcome<unknown>> {
+    return this.researchRead((db) => readResearch(db, request), undefined, false);
+  }
+  researchRevisions(
+    scope: ResearchScope,
+    diagnoseFailure = true,
+  ): Promise<Outcome<readonly Extract<ResearchEvent, { kind: "changed" }>[]>> {
+    return this.researchRead(
+      async (db) => {
+        if (
+          scope.projectId &&
+          !(await db
+            .selectFrom("projects")
+            .select("id")
+            .where("id", "=", bytes(scope.projectId))
+            .executeTakeFirst())
+        )
+          return failure("record_not_found");
+        if (scope.conversationId) {
+          const row = await db
+            .selectFrom("conversations")
+            .select("project_id")
+            .where("id", "=", bytes(scope.conversationId))
+            .executeTakeFirst();
+          if (!row || identifier(row.project_id) !== scope.projectId)
+            return failure("record_not_found");
+        }
+        return { ok: true, value: await researchRevisions(db, scope) };
+      },
+      undefined,
+      diagnoseFailure,
+    );
+  }
+  researchTaskExists(taskId: string): Promise<Outcome<boolean>> {
+    return this.researchRead(
+      async (db) => ({
+        ok: true,
+        value: !!(await db
+          .selectFrom("tasks")
+          .select("id")
+          .where("id", "=", bytes(taskId))
+          .executeTakeFirst()),
+      }),
+      undefined,
+      false,
+    );
+  }
+  async readResearchReceipt(
+    operationId: string,
+    command: string,
+    payloadHash: string,
+  ): Promise<Outcome<{ resultId: string } | null>> {
+    return this.researchRead(
+      async (db) => {
+        const row = await db
+          .selectFrom("command_receipts")
+          .selectAll()
+          .where("operation_id", "=", operationId)
+          .executeTakeFirst();
+        if (!row) return { ok: true, value: null };
+        return row.command === command &&
+          Buffer.from(row.payload_sha256).toString("hex") === payloadHash
+          ? { ok: true, value: { resultId: identifier(row.result_id) } }
+          : failure("operation_conflict");
+      },
+      undefined,
+      false,
+    );
   }
   readProjects(): Promise<Outcome<readonly ProjectRecord[]>> {
     return this.researchRead(listProjects, "ohtia.project.listed");

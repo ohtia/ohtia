@@ -1,4 +1,15 @@
 import {
+  researchOperations,
+  isResearchOperation,
+  researchInput,
+  researchOutput,
+  isResearchEvent,
+  type ResearchInputs,
+  type ResearchOutputs,
+  type ResearchEvent,
+  type ResearchPort,
+} from "./research-port.js";
+import {
   isConnectionId,
   isConnectionSnapshot,
   isConnectionEvent,
@@ -141,6 +152,7 @@ export type WindowBoundsReceipt =
   | { readonly state: "not_found" | "pending" }
   | { readonly state: "recorded"; readonly outcome: RecordedWindowBoundsOutcome };
 export const errorActions = {
+  parts_incomplete: "resend_parts",
   project_not_in_setup: "refresh_record",
   project_in_setup: "refresh_record",
   record_not_found: "refresh_record",
@@ -213,7 +225,7 @@ export type RecordedAppearanceOutcome =
 export type AppearanceReceipt =
   | { readonly state: "not_found" | "pending" }
   | { readonly state: "recorded"; readonly outcome: RecordedAppearanceOutcome };
-export interface OperationInputs {
+export interface OperationInputs extends ResearchInputs {
   "connection.read": { readonly connection: string };
   "connection.subscribe": { readonly connection: string; readonly subscriptionId: string };
   "connection.probe": { readonly connection: string };
@@ -253,7 +265,7 @@ export interface OperationInputs {
   "status.subscribe": { readonly subscriptionId: string };
   "appearance.subscribe": { readonly subscriptionId: string };
 }
-export interface OperationOutputs {
+export interface OperationOutputs extends ResearchOutputs {
   "connection.read": ConnectionSnapshot;
   "connection.subscribe": { readonly subscriptionId: string };
   "connection.probe": ConnectionSnapshot;
@@ -345,6 +357,7 @@ export type PortEvent = {
   readonly subscriptionId: string;
   readonly sequence: number;
 } & (
+  | { readonly topic: "research"; readonly payload: ResearchEvent }
   | { readonly topic: "connection"; readonly payload: ConnectionEvent }
   | { readonly topic: "presentation"; readonly payload: PresentationSnapshot }
   | { readonly topic: "status"; readonly payload: FoundationStatus }
@@ -360,7 +373,7 @@ export interface Subscription {
   readonly ready: Promise<Outcome<{ readonly subscriptionId: string }>>;
   dispose(): void;
 }
-export interface FoundationPort {
+export interface FoundationPort extends ResearchPort {
   readConnection(connection: string): PortCall<ConnectionSnapshot>;
   connectConnection(
     connection: string,
@@ -628,7 +641,58 @@ const replaceErrors = [
   "preference_invalid",
   "storage_failed",
 ] as const;
+const researchMutationErrors = readErrors.filter(
+  (code) => !["timeout", "cancelled", "disposed", "invalid_service_result"].includes(code),
+);
 export const operationErrorCodes = Object.freeze({
+  "project.create": [...researchMutationErrors, "uncertain", "operation_conflict"],
+  "project.confirmSetup": [
+    ...researchMutationErrors,
+    "record_not_found",
+    "name_invalid",
+    "project_not_in_setup",
+    "uncertain",
+    "operation_conflict",
+  ],
+  "conversation.start": [
+    ...researchMutationErrors,
+    "record_not_found",
+    "project_in_setup",
+    "parts_incomplete",
+    "message_invalid",
+    "input_too_large",
+    "pending_limit_reached",
+    "uncertain",
+    "operation_conflict",
+  ],
+  "conversation.rename": [
+    ...researchMutationErrors,
+    "record_not_found",
+    "name_invalid",
+    "stale_revision",
+    "uncertain",
+    "operation_conflict",
+  ],
+  "message.append": [
+    ...researchMutationErrors,
+    "record_not_found",
+    "parts_incomplete",
+    "message_invalid",
+    "input_too_large",
+    "pending_limit_reached",
+    "uncertain",
+    "operation_conflict",
+  ],
+  "project.list": [...readErrors, "record_not_found"],
+  "conversation.list": [...readErrors, "record_not_found"],
+  "conversation.read": [...readErrors, "record_not_found"],
+  "timeline.listBefore": [...readErrors, "record_not_found"],
+  "timeline.read": [...readErrors, "record_not_found"],
+  "research.subscribe": [...readErrors, "record_not_found", "sequence_gap"],
+  "text.part": [...readErrors],
+  "text.readPart": [...readErrors, "record_not_found"],
+  "reply.readParts": [...readErrors, "record_not_found"],
+
   "connection.read": readErrors,
   "connection.subscribe": [...readErrors, "sequence_gap"],
   "connection.probe": readErrors,
@@ -673,6 +737,7 @@ function operationOutcome(operation: Operation, value: Json | undefined): boolea
 }
 
 function input(operation: Operation, value: Json | undefined): boolean {
+  if (isResearchOperation(operation)) return researchInput(operation, value);
   switch (operation) {
     case "connection.connect":
       return (
@@ -774,6 +839,7 @@ function input(operation: Operation, value: Json | undefined): boolean {
   }
 }
 function output(operation: Operation, value: Json | undefined): boolean {
+  if (isResearchOperation(operation)) return researchOutput(operation, value);
   switch (operation) {
     case "connection.read":
     case "connection.connect":
@@ -922,6 +988,7 @@ const identityKeys = [
   "operation",
 ];
 const operations: readonly Operation[] = [
+  ...researchOperations,
   "connection.read",
   "connection.subscribe",
   "connection.probe",
@@ -993,15 +1060,17 @@ export function decodeEnvelope(raw: unknown): Outcome<Envelope> {
       isIdentifier(value.subscriptionId) &&
       revision(value.sequence) &&
       value.sequence > 0 &&
-      (value.topic === "connection"
-        ? isConnectionEvent(value.payload)
-        : value.topic === "presentation"
-          ? presentationSnapshot(value.payload)
-          : value.topic === "status"
-            ? status(value.payload)
-            : value.topic === "locale"
-              ? localeSnapshot(value.payload)
-              : value.topic === "appearance" && appearance(value.payload));
+      (value.topic === "research"
+        ? isResearchEvent(value.payload)
+        : value.topic === "connection"
+          ? isConnectionEvent(value.payload)
+          : value.topic === "presentation"
+            ? presentationSnapshot(value.payload)
+            : value.topic === "status"
+              ? status(value.payload)
+              : value.topic === "locale"
+                ? localeSnapshot(value.payload)
+                : value.topic === "appearance" && appearance(value.payload));
   } else if (value.kind === "unsubscribe") {
     valid =
       exact(value, [
@@ -1023,7 +1092,10 @@ export function decodeEnvelope(raw: unknown): Outcome<Envelope> {
       if (value.kind === "request")
         valid =
           input(op, value.payload) &&
-          utf8Size(JSON.stringify(value.payload)) <= portLimits.initial_input_bytes &&
+          utf8Size(JSON.stringify(value.payload)) <=
+            (isResearchOperation(op)
+              ? portLimits.research_input_bytes
+              : portLimits.initial_input_bytes) &&
           object(value.payload) &&
           Object.keys(value.payload).length <= portLimits.initial_input_items;
       else if (value.kind === "result") valid = operationOutcome(op, value.payload);

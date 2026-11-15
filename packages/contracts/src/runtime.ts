@@ -1,3 +1,4 @@
+import { isResearchId, type ResearchScope } from "./research-port.js";
 import type { CommandBridge } from "./commands.js";
 import { isInterfaceLocale } from "./locale.js";
 import type { FoundationPort, InterfaceLocale } from "./port.js";
@@ -61,6 +62,7 @@ export const bootstrapStates = [
 export type BootstrapState = (typeof bootstrapStates)[number];
 export type BootstrapNotice = "shutdown_uncertain" | "resource_failure" | "locale_fallback";
 export interface BootstrapSnapshot {
+  readonly openConversation?: ResearchScope;
   readonly version: 1;
   readonly locale: InterfaceLocale;
   readonly state: BootstrapState;
@@ -84,19 +86,31 @@ export function decodeBootstrapSnapshot(value: unknown): BootstrapSnapshot | und
     return;
   const record = value as Record<string, unknown>;
   if (
-    !["locale,state,version", "locale,notice,state,version"].includes(
-      Object.keys(record).sort().join(","),
-    ) ||
+    ![
+      "locale,state,version",
+      "locale,notice,state,version",
+      "locale,openConversation,state,version",
+      "locale,notice,openConversation,state,version",
+    ].includes(Object.keys(record).sort().join(",")) ||
     ("notice" in record &&
       record.notice !== "shutdown_uncertain" &&
       record.notice !== "resource_failure" &&
       record.notice !== "locale_fallback") ||
+    ("openConversation" in record &&
+      (!record.openConversation ||
+        typeof record.openConversation !== "object" ||
+        Object.keys(record.openConversation).sort().join(",") !== "conversationId,projectId" ||
+        !isResearchId((record.openConversation as ResearchScope).projectId) ||
+        !isResearchId((record.openConversation as ResearchScope).conversationId))) ||
     record.version !== 1 ||
     !isInterfaceLocale(record.locale) ||
     !bootstrapStates.some((state) => state === record.state)
   )
     return;
   return {
+    ...(record.openConversation
+      ? { openConversation: record.openConversation as ResearchScope }
+      : {}),
     version: 1,
     locale: record.locale,
     state: record.state as BootstrapState,

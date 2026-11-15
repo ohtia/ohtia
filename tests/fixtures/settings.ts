@@ -47,6 +47,12 @@ export function harness() {
     return call({ ok: true as const, value });
   };
   const port = {
+    subscribeResearch: () => ({
+      ready: Promise.resolve({ ok: true as const, value: { subscriptionId: "research" } }),
+      dispose() {},
+    }),
+    listProjects: () =>
+      call({ ok: true as const, value: { items: [], next: null, hasMore: false } }),
     readConnection: () => call(failure("service_unavailable")),
     subscribeConnection: () => ({
       ready: Promise.resolve(failure("service_unavailable")),

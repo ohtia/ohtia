@@ -1,5 +1,10 @@
 import {
   type ConnectionEvent,
+  type ResearchEvent,
+  type ResearchScope,
+  isResearchMutation,
+  isResearchOperation,
+  researchResultMatches,
   decodeAppearanceChange,
   decodePresentationChange,
   type PresentationSnapshot,
@@ -51,10 +56,15 @@ interface Pending {
 interface Stream {
   readonly id: string;
   readonly connection?: string;
-  readonly topic: "status" | "appearance" | "locale" | "presentation" | "connection";
+  readonly topic: "status" | "appearance" | "locale" | "presentation" | "connection" | "research";
   readonly listener: (
     notice: Outcome<
-      FoundationStatus | AppearanceRecord | LocaleSnapshot | PresentationSnapshot | ConnectionEvent
+      | FoundationStatus
+      | AppearanceRecord
+      | LocaleSnapshot
+      | PresentationSnapshot
+      | ConnectionEvent
+      | ResearchEvent
     >,
   ) => void;
   readonly queue: { readonly event: PortEvent; readonly bytes: number }[];
@@ -133,6 +143,7 @@ export function createFoundationPort(
             entry.request.operation === "status.subscribe" ||
             entry.request.operation === "appearance.subscribe" ||
             entry.request.operation === "locale.subscribe" ||
+            entry.request.operation === "research.subscribe" ||
             entry.request.operation === "presentation.subscribe") &&
           entry.request.payload.subscriptionId === stream.id
         )
@@ -160,7 +171,8 @@ export function createFoundationPort(
       settle(
         entry,
         failure(
-          entry.request.operation === "appearance.replace" ||
+          isResearchMutation(entry.request.operation) ||
+            entry.request.operation === "appearance.replace" ||
             entry.request.operation === "locale.replace" ||
             entry.request.operation === "layout.replace" ||
             entry.request.operation === "character.replace" ||
@@ -241,7 +253,8 @@ export function createFoundationPort(
       settle(
         entry,
         failure(
-          entry.request.operation === "appearance.replace" ||
+          isResearchMutation(entry.request.operation) ||
+            entry.request.operation === "appearance.replace" ||
             entry.request.operation === "locale.replace" ||
             entry.request.operation === "layout.replace" ||
             entry.request.operation === "character.replace" ||
@@ -254,6 +267,17 @@ export function createFoundationPort(
       return;
     }
     if (message.payload.ok) {
+      if (
+        isResearchOperation(entry.request.operation) &&
+        !researchResultMatches(
+          entry.request.operation,
+          entry.request.payload,
+          message.payload.value,
+        )
+      ) {
+        settle(entry, failure("invalid_service_result"));
+        return;
+      }
       if (
         entry.request.operation.startsWith("connection.") &&
         message.operation === entry.request.operation &&
@@ -305,6 +329,7 @@ export function createFoundationPort(
         entry.request.operation === "status.subscribe" ||
         entry.request.operation === "appearance.subscribe" ||
         entry.request.operation === "locale.subscribe" ||
+        entry.request.operation === "research.subscribe" ||
         entry.request.operation === "presentation.subscribe"
       ) {
         const id = entry.request.payload.subscriptionId;
@@ -322,6 +347,7 @@ export function createFoundationPort(
       entry.request.operation === "status.subscribe" ||
       entry.request.operation === "appearance.subscribe" ||
       entry.request.operation === "locale.subscribe" ||
+      entry.request.operation === "research.subscribe" ||
       entry.request.operation === "presentation.subscribe"
     ) {
       const stream = streams.get(entry.request.payload.subscriptionId);
@@ -367,7 +393,8 @@ export function createFoundationPort(
         settle(
           entry,
           failure(
-            operation === "appearance.replace" ||
+            isResearchMutation(operation) ||
+              operation === "appearance.replace" ||
               operation === "locale.replace" ||
               operation === "layout.replace" ||
               operation === "character.replace" ||
@@ -383,6 +410,7 @@ export function createFoundationPort(
           operation === "status.subscribe" ||
           operation === "appearance.subscribe" ||
           operation === "locale.subscribe" ||
+          operation === "research.subscribe" ||
           operation === "presentation.subscribe"
         ) {
           const stream = streams.get((payload as { subscriptionId: string }).subscriptionId);
@@ -395,7 +423,8 @@ export function createFoundationPort(
         settle(
           entry,
           failure(
-            operation === "appearance.replace" ||
+            isResearchMutation(operation) ||
+              operation === "appearance.replace" ||
               operation === "locale.replace" ||
               operation === "layout.replace" ||
               operation === "character.replace" ||
@@ -414,7 +443,8 @@ export function createFoundationPort(
         settle(
           entry,
           failure(
-            operation === "appearance.replace" ||
+            isResearchMutation(operation) ||
+              operation === "appearance.replace" ||
               operation === "locale.replace" ||
               operation === "layout.replace" ||
               operation === "character.replace" ||
@@ -429,9 +459,10 @@ export function createFoundationPort(
     };
   }
   function subscribe(
-    topic: "status" | "appearance" | "locale" | "presentation" | "connection",
+    topic: "status" | "appearance" | "locale" | "presentation" | "connection" | "research",
     listener: Stream["listener"],
     connection?: string,
+    scope?: ResearchScope,
   ): Subscription {
     if (disposed || streams.size >= portLimits.subscriptions_per_window)
       return { ready: Promise.resolve(failure(disposed ? "disposed" : "busy")), dispose() {} };
@@ -452,17 +483,20 @@ export function createFoundationPort(
     };
     streams.set(id, stream);
     const opening = call(
-      topic === "connection"
-        ? "connection.subscribe"
-        : topic === "presentation"
-          ? "presentation.subscribe"
-          : topic === "status"
-            ? "status.subscribe"
-            : topic === "locale"
-              ? "locale.subscribe"
-              : "appearance.subscribe",
+      topic === "research"
+        ? "research.subscribe"
+        : topic === "connection"
+          ? "connection.subscribe"
+          : topic === "presentation"
+            ? "presentation.subscribe"
+            : topic === "status"
+              ? "status.subscribe"
+              : topic === "locale"
+                ? "locale.subscribe"
+                : "appearance.subscribe",
       {
         subscriptionId: id,
+        ...scope,
         ...(connection === undefined ? {} : { connection }),
       },
     );
@@ -478,6 +512,22 @@ export function createFoundationPort(
     };
   }
   const port: FoundationPort = Object.freeze<FoundationPort>({
+    createProject: (id) => call("project.create", {}, id),
+    confirmProjectSetup: (id, input) => call("project.confirmSetup", input, id),
+    startConversation: (id, input) => call("conversation.start", input, id),
+    renameConversation: (id, input) => call("conversation.rename", input, id),
+    appendMessage: (id, input) => call("message.append", input, id),
+    listProjects: (input) => call("project.list", input),
+    listConversations: (input) => call("conversation.list", input),
+    readConversations: (input) => call("conversation.read", input),
+    listTimelineBefore: (input) => call("timeline.listBefore", input),
+    readTimeline: (input) => call("timeline.read", input),
+    sendTextPart: (id, input) => call("text.part", input, id),
+    readTextPart: (input) => call("text.readPart", input),
+    readReplyParts: (input) => call("reply.readParts", input),
+    subscribeResearch: (scope, listener) =>
+      subscribe("research", listener as Stream["listener"], undefined, scope),
+
     readConnection: (connection) => call("connection.read", { connection }),
     connectConnection: (connection, options) =>
       call("connection.connect", { connection, ...options }),
@@ -589,7 +639,8 @@ export function createFoundationPort(
         settle(
           entry,
           failure(
-            entry.request.operation === "appearance.replace" ||
+            isResearchMutation(entry.request.operation) ||
+              entry.request.operation === "appearance.replace" ||
               entry.request.operation === "locale.replace" ||
               entry.request.operation === "layout.replace" ||
               entry.request.operation === "character.replace" ||

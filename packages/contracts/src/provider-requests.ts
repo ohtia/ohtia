@@ -389,6 +389,11 @@ export function providerTextPieces(text: string): string[] {
 /** The development command's actions and the data service's reports, development mode only. */
 export type DevelopmentAction =
   | {
+      readonly name: "open-conversation";
+      readonly operation_id: string;
+      readonly conversation: string;
+    }
+  | {
       readonly name: "resume-requests";
       readonly operation_id: string;
       readonly connection: "chatgpt";
@@ -449,6 +454,11 @@ export const developmentRefusals = [
 ] as const;
 export type DevelopmentReport =
   | {
+      readonly type: "conversation_opened";
+      readonly projectId: string;
+      readonly conversationId: string;
+    }
+  | {
       readonly type: "record";
       readonly record: "project" | "conversation" | "message" | "task" | "receipt";
       readonly id: string;
@@ -497,6 +507,13 @@ function isTransferEntry(value: unknown): value is TransferEntry {
 function isDevelopmentReport(value: unknown): value is DevelopmentReport {
   if (!record(value)) return false;
   switch (value.type) {
+    case "conversation_opened":
+      return (
+        exact(value, ["type", "projectId", "conversationId"]) &&
+        isIdentifier(value.projectId) &&
+        isIdentifier(value.conversationId)
+      );
+
     case "record":
       return (
         exact(value, ["type", "record", "id"]) &&
@@ -565,6 +582,13 @@ export function decodeDevelopmentAction(
   )
     return;
   const action = value.action;
+  if (!isIdentifier(action.operation_id)) return;
+  if (
+    action.name === "open-conversation" &&
+    exact(action, ["name", "operation_id", "conversation"]) &&
+    isIdentifier(action.conversation)
+  )
+    return value as unknown as DevelopmentActionMessage;
   if (!isIdentifier(action.operation_id)) return;
   if (
     action.name === "resume-requests" &&

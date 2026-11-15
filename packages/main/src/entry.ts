@@ -190,6 +190,7 @@ const windows = new Map<
   BrowserWindow,
   {
     generation: string;
+    openConversation?: { projectId: string; conversationId: string };
     workspace: boolean;
     boundsSaved: boolean;
     presentable: boolean;
@@ -407,12 +408,16 @@ if (acceptance)
     configurable: true,
   });
 let metricTimer: ReturnType<typeof setInterval> | undefined;
-const snapshot = (): BootstrapSnapshot => ({
-  version: 1,
-  locale,
-  state: bootstrapState === "missing" ? "pending_create" : bootstrapState,
-  ...(localeFallback && bootstrapState === "storage_ready" ? { notice: "locale_fallback" } : {}),
-});
+const snapshot = (window?: BrowserWindow): BootstrapSnapshot => {
+  const openConversation = window ? windows.get(window)?.openConversation : undefined;
+  return {
+    ...(openConversation ? { openConversation } : {}),
+    version: 1,
+    locale,
+    state: bootstrapState === "missing" ? "pending_create" : bootstrapState,
+    ...(localeFallback && bootstrapState === "storage_ready" ? { notice: "locale_fallback" } : {}),
+  };
+};
 function trusted(event: IpcMainEvent | IpcMainInvokeEvent): BrowserWindow | undefined {
   const window = BrowserWindow.fromWebContents(event.sender);
   if (
@@ -940,6 +945,13 @@ async function start(): Promise<void> {
   ) {
     const development = await import("./development-command.js");
     developmentCommand = development.createDevelopmentCommand({
+      openConversation: (projectId, conversationId) => {
+        const window =
+          BrowserWindow.getFocusedWindow() ??
+          [...windows.keys()].find((window) => !window.isDestroyed());
+        const state = window && windows.get(window);
+        if (state) state.openConversation = { projectId, conversationId };
+      },
       ready: () =>
         connectionsRead && service?.available && bootstrapState === "storage_ready"
           ? service.generation
@@ -1251,19 +1263,19 @@ async function start(): Promise<void> {
       if (!window || !isBootstrapAction(action)) throw new Error("Bootstrap admission refused.");
       if (action === "exit") {
         app.quit();
-        return snapshot();
+        return snapshot(window);
       }
       if (action === "new_window") {
         return (await createWindow(window)).status === "completed"
-          ? snapshot()
-          : { ...snapshot(), notice: "resource_failure" };
+          ? snapshot(window)
+          : { ...snapshot(window), notice: "resource_failure" };
       }
       if (
         action === "retry_service" ||
         action === "restore_checkpoint" ||
         action === "open_storage"
       ) {
-        if (storageActionPending || bootstrapState === "storage_opening") return snapshot();
+        if (storageActionPending || bootstrapState === "storage_opening") return snapshot(window);
         if (
           action === "open_storage" &&
           ![
@@ -1274,15 +1286,15 @@ async function start(): Promise<void> {
             "publication_uncertain",
           ].includes(bootstrapState)
         )
-          return snapshot();
+          return snapshot(window);
         if (action === "restore_checkpoint" && bootstrapState !== "recovery_required")
-          return snapshot();
+          return snapshot(window);
         if (action === "open_storage" && context.mode !== "qualification") {
           try {
             ensureResearchRoot(context.research_root);
           } catch {
             bootstrapState = "path_rejected";
-            return snapshot();
+            return snapshot(window);
           }
           diagnostics ??= openDiagnostics();
         }
@@ -1308,7 +1320,7 @@ async function start(): Promise<void> {
           if (current) {
             if (!current.ceased && !(await current.stop())) {
               bootstrapState = restoreStoppedBootstrap(previousState);
-              return { ...snapshot(), notice: "shutdown_uncertain" };
+              return { ...snapshot(window), notice: "shutdown_uncertain" };
             }
             const outcome = await recoverService(
               current,
@@ -1329,26 +1341,26 @@ async function start(): Promise<void> {
             );
             if (outcome === "uncertain") {
               bootstrapState = restoreStoppedBootstrap(previousState);
-              return { ...snapshot(), notice: "shutdown_uncertain" };
+              return { ...snapshot(window), notice: "shutdown_uncertain" };
             }
             if (outcome === "cancelled") {
               bootstrapState = restoreStoppedBootstrap(previousState);
-              return snapshot();
+              return snapshot(window);
             }
           }
-          if (quitting) return snapshot();
-          return snapshot();
+          if (quitting) return snapshot(window);
+          return snapshot(window);
         } catch {
           bootstrapState =
             mode === "blocked"
               ? restoreStoppedBootstrap(previousState)
               : storageInterruptionState(previousState);
-          return snapshot();
+          return snapshot(window);
         } finally {
           storageActionPending = false;
         }
       }
-      return snapshot();
+      return snapshot(window);
     },
   );
   startService();

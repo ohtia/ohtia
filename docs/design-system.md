@@ -6,10 +6,6 @@ tags:
   - design
   - accessibility
   - localization
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: wcag22
     resource: https://www.w3.org/TR/WCAG22/
@@ -579,6 +575,8 @@ Fixed mappings:
 | Keyboard shortcuts            | `keyboard`             |
 | Ohtia help                    | `circle-question-mark` |
 | Separator grip                | `grip-vertical`        |
+| Jump to latest message        | `arrow-down`           |
+| Agent writing                 | `pen-line`             |
 
 Icons for comparison outcomes are defined in [domain components](#comparison-outcomes).
 

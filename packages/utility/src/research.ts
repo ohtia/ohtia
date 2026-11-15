@@ -260,6 +260,7 @@ export async function applyResearchCommand(
   input: ResearchCommand,
   registry: () => LanguageRegistry,
   tasks: TaskTransaction,
+  payloadHash?: string,
 ): Promise<Outcome<ResearchResult>> {
   if (
     !object(input) ||
@@ -271,7 +272,9 @@ export async function applyResearchCommand(
     return failure("invalid_message");
   let hash: Buffer;
   try {
-    hash = crypto.createHash("sha256").update(canonicalJson(input.payload)).digest();
+    hash = payloadHash
+      ? Buffer.from(payloadHash, "hex")
+      : crypto.createHash("sha256").update(canonicalJson(input.payload)).digest();
   } catch {
     return failure("invalid_message");
   }

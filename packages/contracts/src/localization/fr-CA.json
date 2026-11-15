@@ -270,6 +270,18 @@
     "exit.cancelling": "Ohtia annule le travail et enregistre les réponses.",
     "exit.body": "{running, plural, one {# réponse est encore en cours. Les réponses qui n’ont pas commencé sont conservées pour la prochaine ouverture d’Ohtia, sauf si vous annulez le travail.} many {# réponses sont encore en cours. Les réponses qui n’ont pas commencé sont conservées pour la prochaine ouverture d’Ohtia, sauf si vous annulez le travail.} other {# réponses sont encore en cours. Les réponses qui n’ont pas commencé sont conservées pour la prochaine ouverture d’Ohtia, sauf si vous annulez le travail.}}",
     "exit.waiting": "{running, plural, one {Ohtia quittera lorsque les réponses en cours seront terminées. Il en reste #.} many {Ohtia quittera lorsque les réponses en cours seront terminées. Il en reste #.} other {Ohtia quittera lorsque les réponses en cours seront terminées. Il en reste #.}}",
-    "exit.queued": "Les réponses qui n’ont pas commencé sont conservées pour la prochaine ouverture d’Ohtia, sauf si vous annulez le travail."
+    "exit.queued": "Les réponses qui n’ont pas commencé sont conservées pour la prochaine ouverture d’Ohtia, sauf si vous annulez le travail.",
+    "conversation.loading": "Chargement de la conversation…",
+    "conversation.empty": "Cette conversation ne contient pas encore de messages.",
+    "conversation.failed": "Ohtia n’a pas pu charger cette conversation. Ses messages sont toujours enregistrés.",
+    "conversation.reload": "Recharger la conversation",
+    "conversation.unavailable": "Les conversations sont indisponibles tant que les données et le service locaux ne sont pas prêts.",
+    "conversation.earlier": "Charger les messages précédents",
+    "conversation.earlierLoading": "Chargement des messages précédents…",
+    "conversation.earlierFailed": "Ohtia n’a pas pu charger les messages précédents. Ils sont toujours enregistrés.",
+    "conversation.latest": "Aller au dernier message",
+    "conversation.you": "Vous",
+    "conversation.writing": "{agent} écrit…",
+    "conversation.replied": "{agent} a répondu"
   }
 }

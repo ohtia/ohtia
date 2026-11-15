@@ -270,6 +270,18 @@
     "exit.cancelling": "Ohtia está cancelando el trabajo y guardando las respuestas.",
     "exit.body": "{running, plural, one {Queda # respuesta en curso. Las respuestas que aún no han empezado se conservan para la próxima vez que abras Ohtia, salvo que canceles el trabajo.} many {Quedan # respuestas en curso. Las respuestas que aún no han empezado se conservan para la próxima vez que abras Ohtia, salvo que canceles el trabajo.} other {Quedan # respuestas en curso. Las respuestas que aún no han empezado se conservan para la próxima vez que abras Ohtia, salvo que canceles el trabajo.}}",
     "exit.waiting": "{running, plural, one {Ohtia saldrá cuando terminen las respuestas en curso. Queda #.} many {Ohtia saldrá cuando terminen las respuestas en curso. Quedan #.} other {Ohtia saldrá cuando terminen las respuestas en curso. Quedan #.}}",
-    "exit.queued": "Las respuestas que aún no han empezado se conservan para la próxima vez que abras Ohtia, salvo que canceles el trabajo."
+    "exit.queued": "Las respuestas que aún no han empezado se conservan para la próxima vez que abras Ohtia, salvo que canceles el trabajo.",
+    "conversation.loading": "Cargando conversación…",
+    "conversation.empty": "Esta conversación aún no tiene mensajes.",
+    "conversation.failed": "Ohtia no pudo cargar esta conversación. Sus mensajes siguen guardados.",
+    "conversation.reload": "Volver a cargar la conversación",
+    "conversation.unavailable": "Las conversaciones no están disponibles hasta que los datos y el servicio locales estén listos.",
+    "conversation.earlier": "Cargar mensajes anteriores",
+    "conversation.earlierLoading": "Cargando mensajes anteriores…",
+    "conversation.earlierFailed": "Ohtia no pudo cargar los mensajes anteriores. Siguen guardados.",
+    "conversation.latest": "Ir al último mensaje",
+    "conversation.you": "Tú",
+    "conversation.writing": "{agent} está escribiendo…",
+    "conversation.replied": "{agent} respondió"
   }
 }

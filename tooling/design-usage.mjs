@@ -27,6 +27,9 @@ const layout = new Set([
   "aspect-ratio",
   "flex",
   "inset-inline-end",
+  "inset-inline",
+  "inset-block-end",
+  "place-items",
   "justify-content",
   "object-fit",
   "margin-inline",
@@ -238,6 +241,8 @@ export function checkColorUsage(model, sources, usage) {
           const neutral =
             (property === "app-region" && /^(drag|no-drag)$/.test(value)) ||
             (property === "touch-action" && value === "none") ||
+            (property === "overflow-anchor" && value === "none") ||
+            (property === "pointer-events" && /^(auto|none)$/.test(value)) ||
             (property === "text-overflow" && value === "ellipsis") ||
             (property === "transform" && /^translate[XY]\((?:-?[0-9]+%|0)\)$/.test(value)) ||
             (property === "text-emphasis" && value === "filled dot") ||

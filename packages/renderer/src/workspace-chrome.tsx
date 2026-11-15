@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   Fragment,
   useEffect,
@@ -54,6 +55,8 @@ export interface WorkspaceWindowInsets {
   readonly end: number;
 }
 export interface WorkspaceChromeProps {
+  readonly chat?: ReactNode;
+  readonly chatTitle?: string | undefined;
   readonly fallbackFocusRef?: RefObject<HTMLAnchorElement | null>;
   readonly preferences: LayoutPreferences;
   readonly commands: CommandController;
@@ -165,6 +168,8 @@ export function ShortcutControl({
 
 /** Real chrome; storage, command ownership and confirmed presentation inputs stay with composition. */
 export function WorkspaceChrome({
+  chat,
+  chatTitle,
   preferences,
   commands,
   fallbackFocusRef,
@@ -669,7 +674,7 @@ export function WorkspaceChrome({
                     panel === "documents" ? "primitive-announcement" : "workspace-panel-heading"
                   }
                 >
-                  {text(panelKeys[panel])}
+                  {panel === "chat" && chatTitle ? chatTitle : text(panelKeys[panel])}
                 </h2>
                 {panel === "documents" && (
                   <div
@@ -723,6 +728,8 @@ export function WorkspaceChrome({
                         <ShortcutControl id="about.open" commands={commands} locale={locale} text />
                       </div>
                     </div>
+                  ) : panel === "chat" && chat ? (
+                    chat
                   ) : (
                     <p className="workspace-empty">
                       <LucideGlyph name={panelIcons[panel]} size={20} />
@@ -749,7 +756,7 @@ export function WorkspaceChrome({
                   <div
                     className="workspace-sizing"
                     role="group"
-                    aria-label={text(panelKeys[panel])}
+                    aria-label={panel === "chat" && chatTitle ? chatTitle : text(panelKeys[panel])}
                   >
                     {[false, true].map((increase) => (
                       <Tooltip

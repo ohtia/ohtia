@@ -270,6 +270,18 @@
     "exit.cancelling": "Ohtia està cancel·lant la feina i desant les respostes.",
     "exit.body": "{running, plural, one {Encara hi ha # resposta en curs. Les respostes que no han començat es conserven per a la propera vegada que obris Ohtia, tret que cancel·lis la feina.} many {Encara hi ha # respostes en curs. Les respostes que no han començat es conserven per a la propera vegada que obris Ohtia, tret que cancel·lis la feina.} other {Encara hi ha # respostes en curs. Les respostes que no han començat es conserven per a la propera vegada que obris Ohtia, tret que cancel·lis la feina.}}",
     "exit.waiting": "{running, plural, one {Ohtia sortirà quan acabin les respostes en curs. Encara en queda #.} many {Ohtia sortirà quan acabin les respostes en curs. Encara en queden #.} other {Ohtia sortirà quan acabin les respostes en curs. Encara en queden #.}}",
-    "exit.queued": "Les respostes que no han començat es conserven per a la propera vegada que obris Ohtia, tret que cancel·lis la feina."
+    "exit.queued": "Les respostes que no han començat es conserven per a la propera vegada que obris Ohtia, tret que cancel·lis la feina.",
+    "conversation.loading": "S’està carregant la conversa…",
+    "conversation.empty": "Aquesta conversa encara no té missatges.",
+    "conversation.failed": "Ohtia no ha pogut carregar aquesta conversa. Els missatges continuen desats.",
+    "conversation.reload": "Torna a carregar la conversa",
+    "conversation.unavailable": "Les converses no estan disponibles fins que les dades i el servei locals estiguin a punt.",
+    "conversation.earlier": "Carrega els missatges anteriors",
+    "conversation.earlierLoading": "S’estan carregant els missatges anteriors…",
+    "conversation.earlierFailed": "Ohtia no ha pogut carregar els missatges anteriors. Continuen desats.",
+    "conversation.latest": "Ves al missatge més recent",
+    "conversation.you": "Tu",
+    "conversation.writing": "{agent} està escrivint…",
+    "conversation.replied": "{agent} ha respost"
   }
 }
