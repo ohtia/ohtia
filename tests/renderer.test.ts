@@ -331,6 +331,9 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
   const commands = {
     context: vi.fn(async () => ({ windowGeneration: "renderer-window", platform: "linux" })),
     publish: vi.fn(async () => true),
+    readExitState: async () => null,
+    onExitState: () => () => {},
+    chooseExit: async () => true,
     onIntent: vi.fn(
       (_listener: (intent: import("@ohtia/contracts").CommandIntent) => void) => () => {},
     ),

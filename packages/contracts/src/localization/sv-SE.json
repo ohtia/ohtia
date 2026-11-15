@@ -98,7 +98,7 @@
     "menu.hide": "Göm Ohtia",
     "menu.hideOthers": "Göm övriga",
     "menu.showAll": "Visa alla",
-    "dialog.close": "Stäng",
+    "dialog.close": "Stäng dialogrutan",
     "about.version": "Version",
     "about.build": "Bygge",
     "about.system": "System",
@@ -262,6 +262,14 @@
     "connection.unknownPlan": "{service} anger inte i förväg om ditt abonnemang kan användas i Ohtia. Det första svaret visar det.",
     "connection.unreachable": "Ohtia kunde inte nå {service}. Din inloggning sparas; kontrollera internetanslutningen och testa igen.",
     "connection.browserIcon": "öppnas i din webbläsare",
-    "connection.browserComplete": "Du kan stänga den här fliken och återgå till Ohtia."
+    "connection.browserComplete": "Du kan stänga den här fliken och återgå till Ohtia.",
+    "settings.closeLayoutNotice": "Stäng meddelandet",
+    "exit.title": "Avsluta Ohtia medan svar pågår?",
+    "exit.wait": "Vänta på svaren och avsluta",
+    "exit.cancel": "Avbryt arbetet och avsluta",
+    "exit.cancelling": "Ohtia avbryter arbetet och sparar svaren.",
+    "exit.body": "{running, plural, one {# svar pågår fortfarande. Svar som inte har startat sparas tills du öppnar Ohtia igen, om du inte avbryter arbetet.} other {# svar pågår fortfarande. Svar som inte har startat sparas tills du öppnar Ohtia igen, om du inte avbryter arbetet.}}",
+    "exit.waiting": "{running, plural, one {Ohtia avslutas när de pågående svaren är klara. # pågår fortfarande.} other {Ohtia avslutas när de pågående svaren är klara. # pågår fortfarande.}}",
+    "exit.queued": "Svar som inte har startat sparas tills du öppnar Ohtia igen, om du inte avbryter arbetet."
   }
 }

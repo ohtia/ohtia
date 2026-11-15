@@ -591,7 +591,7 @@ describe("durable task migration preservation", () => {
       const db = fixture.raw();
       db.pragma("foreign_keys=OFF");
       db.exec(
-        "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DROP TABLE service_runs; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; DROP INDEX messages_task; DROP TRIGGER messages_reservation; DROP TRIGGER messages_position; DROP TABLE attempts; DROP TABLE tasks; ALTER TABLE messages DROP COLUMN task_id",
+        "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DROP TABLE service_runs; DELETE FROM kysely_migration WHERE name='0012_application_exit'; DELETE FROM ohtia_migration_artifacts WHERE name='0012_application_exit'; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; DROP INDEX messages_task; DROP TRIGGER messages_reservation; DROP TRIGGER messages_position; DROP TABLE attempts; DROP TABLE tasks; ALTER TABLE messages DROP COLUMN task_id",
       );
       db.exec(researchObjects.messages_position);
       db.exec(researchObjects.messages_revision);
@@ -615,7 +615,7 @@ describe("durable task migration preservation", () => {
         max_concurrent_inference: expectedInference,
         max_concurrent_local_processing: 1,
       });
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(11);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(12);
       upgraded.close();
     },
   );
@@ -1167,7 +1167,7 @@ async function sourceNine(f: Awaited<ReturnType<typeof setup>>): Promise<void> {
   await f.store.close();
   const db = f.raw();
   db.exec(
-    "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DROP TABLE service_runs; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; PRAGMA user_version=9",
+    "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DROP TABLE service_runs; DELETE FROM kysely_migration WHERE name='0012_application_exit'; DELETE FROM ohtia_migration_artifacts WHERE name='0012_application_exit'; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; PRAGMA user_version=9",
   );
   db.close();
 }
@@ -1175,7 +1175,7 @@ function recoveryGate(f: Awaited<ReturnType<typeof setup>>): string {
   const gate = path.join(f.root, "migration-pending.json");
   fs.writeFileSync(
     gate,
-    JSON.stringify({ version: 1, operation: "synthetic-recovery", source: 9, target: 11 }),
+    JSON.stringify({ version: 1, operation: "synthetic-recovery", source: 9, target: 12 }),
   );
   return gate;
 }

@@ -98,7 +98,7 @@
     "menu.hide": "Ohtia 가리기",
     "menu.hideOthers": "다른 앱 가리기",
     "menu.showAll": "모두 보기",
-    "dialog.close": "닫기",
+    "dialog.close": "대화 상자 닫기",
     "about.version": "버전",
     "about.build": "빌드",
     "about.system": "시스템",
@@ -262,6 +262,14 @@
     "connection.unknownPlan": "{service}는 Ohtia에서 요금제를 사용할 수 있는지 미리 알려주지 않습니다. 첫 번째 응답에서 확인할 수 있습니다.",
     "connection.unreachable": "Ohtia가 {service}에 연결하지 못했습니다. 로그인은 유지됩니다. 인터넷 연결을 확인하고 다시 테스트하세요.",
     "connection.browserIcon": "브라우저에서 열림",
-    "connection.browserComplete": "이 탭을 닫고 Ohtia로 돌아갈 수 있습니다."
+    "connection.browserComplete": "이 탭을 닫고 Ohtia로 돌아갈 수 있습니다.",
+    "settings.closeLayoutNotice": "알림 닫기",
+    "exit.title": "답변이 생성 중인 상태에서 Ohtia를 종료할까요?",
+    "exit.wait": "답변을 기다린 후 종료",
+    "exit.cancel": "작업 취소 후 종료",
+    "exit.cancelling": "Ohtia가 작업을 취소하고 답변을 저장하고 있습니다.",
+    "exit.body": "{running, plural, other {답변 #개가 아직 생성 중입니다. 작업을 취소하지 않으면 아직 시작되지 않은 답변은 다음에 Ohtia를 열 때까지 보관됩니다.}}",
+    "exit.waiting": "{running, plural, other {진행 중인 답변이 완료되면 Ohtia가 종료됩니다. 아직 #개가 생성 중입니다.}}",
+    "exit.queued": "작업을 취소하지 않으면 아직 시작되지 않은 답변은 다음에 Ohtia를 열 때까지 보관됩니다."
   }
 }

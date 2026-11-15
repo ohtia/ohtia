@@ -1,4 +1,8 @@
 import {
+  up as applicationExit,
+  objects as exitObjects,
+} from "./migrations/0012_application_exit.mjs";
+import {
   up as serviceRuns,
   tables as runTables,
   objects as runObjects,
@@ -221,9 +225,15 @@ const names = [
   "0009_usage_limit_pauses",
   "0010_reply_control",
   "0011_service_runs",
+  "0012_application_exit",
 ] as const;
 const target = names.length;
-const targetName = names[10];
+const targetName = migrationTarget();
+function migrationTarget(): string {
+  const name = names.at(-1);
+  if (!name) throw new Error("A target migration is required.");
+  return name;
+}
 function digest(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -572,6 +582,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 9 ? usageObjects : {}),
                 ...(revision >= 10 ? replyObjects : {}),
                 ...(revision >= 11 ? runObjects : {}),
+                ...(revision >= 12 ? exitObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -940,6 +951,7 @@ export class DurableStore {
                 "0009_usage_limit_pauses": { up: usagePauses },
                 "0010_reply_control": { up: replyControl },
                 "0011_service_runs": { up: serviceRuns },
+                "0012_application_exit": { up: applicationExit },
               }),
           },
         });
@@ -2137,6 +2149,7 @@ export class DurableStore {
         "task.stop": "ohtia.task.stop_requested",
         "task.startAgain": "ohtia.task.replaced",
         "task.continueAll": "ohtia.task.continue_requested",
+        "task.cancelAll": "ohtia.task.cancel_all_requested",
         "usagePause.resume": "ohtia.usage_pause.resume_requested",
       } as const;
       this.researchDiagnostic({ event_name: events[command.command] });
@@ -2179,6 +2192,9 @@ export class DurableStore {
     } finally {
       this.active = false;
     }
+  }
+  runningTaskCount(): Promise<Outcome<number>> {
+    return this.taskTransaction((tasks) => tasks.runningCount());
   }
   stoppingAttempts(): Promise<Outcome<readonly string[]>> {
     return this.taskTransaction((tasks) => tasks.stoppingAttempts());

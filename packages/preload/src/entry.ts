@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer } from "electron";
 import {
   decodeBootstrapSnapshot,
+  isExitChoice,
+  isExitDialogState,
+  type ExitDialogState,
   decodeSystemMotionNotice,
   isCommandContext,
   isCommandIntent,
@@ -215,8 +218,40 @@ async function commandBoolean(action: string, payload: unknown): Promise<boolean
   const value: unknown = await ipcRenderer.invoke(desktopChannels.commands, action, payload);
   return value === true;
 }
+const exitListeners = new Set<(state: ExitDialogState | null) => void>();
+ipcRenderer.on(desktopChannels.exitState, (_event, input: unknown) => {
+  if (input !== null && !isExitDialogState(input)) return;
+  for (const listener of [...exitListeners]) {
+    try {
+      listener(input);
+    } catch {
+      exitListeners.delete(listener);
+    }
+  }
+});
 const bridge: DesktopBridge = {
   commands: {
+    async readExitState() {
+      const value: unknown = await ipcRenderer.invoke(
+        desktopChannels.commands,
+        "exit_state",
+        undefined,
+      );
+      if (value !== null && !isExitDialogState(value)) throw new Error("Invalid exit state.");
+      return value;
+    },
+    onExitState(listener) {
+      if (exitListeners.size >= portLimits.subscriptions_per_window)
+        throw new Error("Exit listener limit reached.");
+      exitListeners.add(listener);
+      return () => {
+        exitListeners.delete(listener);
+      };
+    },
+    chooseExit: (operationId, choice) =>
+      isIdentifier(operationId) && isExitChoice(choice)
+        ? commandBoolean("exit_choice", { operationId, choice })
+        : Promise.resolve(false),
     async windowAction(request) {
       if (
         !isWindowCommandRequest(request) ||

@@ -98,7 +98,7 @@
     "menu.hide": "Ohtia verbergen",
     "menu.hideOthers": "Andere verbergen",
     "menu.showAll": "Alles tonen",
-    "dialog.close": "Sluiten",
+    "dialog.close": "Dialoogvenster sluiten",
     "about.version": "Versie",
     "about.build": "Build",
     "about.system": "Systeem",
@@ -262,6 +262,14 @@
     "connection.unknownPlan": "{service} geeft niet vooraf aan of uw abonnement in Ohtia kan worden gebruikt. Het eerste antwoord zal dit laten zien.",
     "connection.unreachable": "Ohtia kon {service} niet bereiken. Uw sessie blijft bewaard; controleer uw internetverbinding en test opnieuw.",
     "connection.browserIcon": "opent in uw browser",
-    "connection.browserComplete": "U kunt dit tabblad sluiten en terugkeren naar Ohtia."
+    "connection.browserComplete": "U kunt dit tabblad sluiten en terugkeren naar Ohtia.",
+    "settings.closeLayoutNotice": "Melding sluiten",
+    "exit.title": "Ohtia afsluiten terwijl er antwoorden lopen?",
+    "exit.wait": "Wachten op antwoorden en afsluiten",
+    "exit.cancel": "Werk annuleren en afsluiten",
+    "exit.cancelling": "Ohtia annuleert het werk en slaat de antwoorden op.",
+    "exit.body": "{running, plural, one {Er loopt nog # antwoord. Antwoorden die nog niet zijn gestart, blijven bewaard tot je Ohtia opnieuw opent, tenzij je het werk annuleert.} other {Er lopen nog # antwoorden. Antwoorden die nog niet zijn gestart, blijven bewaard tot je Ohtia opnieuw opent, tenzij je het werk annuleert.}}",
+    "exit.waiting": "{running, plural, one {Ohtia sluit af zodra de lopende antwoorden klaar zijn. Er loopt nog # antwoord.} other {Ohtia sluit af zodra de lopende antwoorden klaar zijn. Er lopen nog # antwoorden.}}",
+    "exit.queued": "Antwoorden die nog niet zijn gestart, blijven bewaard tot je Ohtia opnieuw opent, tenzij je het werk annuleert."
   }
 }

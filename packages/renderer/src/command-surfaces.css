@@ -447,3 +447,12 @@
 .discovery-feedback-scroll > p {
   margin-block: var(--space-0);
 }
+
+/* Exit choices remain readable at narrow viewports and with expanded translations. */
+.exit-dialog .command-dialog-footer {
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.exit-dialog .command-dialog-footer button {
+  inline-size: 100%;
+}

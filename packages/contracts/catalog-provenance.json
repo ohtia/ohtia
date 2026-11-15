@@ -70,6 +70,15 @@
       },
       "effective_model_evidence": "The implementation runtime identifies the GPT-6 family but does not expose a confirmed effective model identifier.",
       "human_linguistic_review": null
+    },
+    {
+      "scope": "exit.*, dialog.close and settings.closeLayoutNotice for STORY-003-009 in every supported locale",
+      "producer": {
+        "agent": "codex",
+        "effective_model": "gpt-6.1-sol"
+      },
+      "effective_model_evidence": "The active implementation rollout, matched by its runtime thread identifier, records gpt-6.1-sol with effort high in turn_context.",
+      "human_linguistic_review": null
     }
   ]
 }

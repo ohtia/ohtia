@@ -149,6 +149,9 @@ function fixture() {
         published = snapshot;
         return true;
       }),
+      readExitState: async () => null,
+      onExitState: () => () => {},
+      chooseExit: async () => true,
       onIntent: vi.fn((listener: typeof receive) => {
         receive = listener;
         return unsubscribe;

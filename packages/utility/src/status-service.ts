@@ -1,6 +1,7 @@
 import { DurableProvider } from "./durable-provider.js";
 import {
   decodeConnectionReport,
+  decodeApplicationExit,
   decodeServiceWake,
   decodeDevelopmentAction,
   decodeProviderEvent,
@@ -403,6 +404,27 @@ export function createStatusService(
     },
     receive(text: unknown): void {
       if (disposed) return;
+      const exit = decodeApplicationExit(text);
+      if (exit?.kind === "application_exit") {
+        if (exit.generation !== generation) return;
+        if (!durable || !enabled) {
+          send(
+            JSON.stringify({
+              kind: "application_exit_state",
+              generation,
+              operationId: exit.operationId,
+              running: 0,
+              held: true,
+              cancelled: false,
+              failed: !!storage,
+            }),
+          );
+          return;
+        }
+        durable.holdExit(exit);
+        enqueueProvider(() => durable.applicationExit(exit));
+        return;
+      }
       const wake = decodeServiceWake(text);
       if (wake) {
         if (wake.generation === generation)

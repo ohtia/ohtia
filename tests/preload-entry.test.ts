@@ -752,3 +752,30 @@ it("reclaims connection capacity after rejected openings, sequence gaps and cons
   h.window.dispatchEvent(new Event("unload"));
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it("exposes only validated exit state and fixed choices on the command bridge", async () => {
+  const h = await load();
+  h.ipcRenderer.invoke.mockResolvedValue(null);
+  expect(await h.bridge.commands.readExitState()).toBeNull();
+  const state = { operationId: "exit-1", running: 2, phase: "waiting", failed: false };
+  h.ipcRenderer.invoke.mockResolvedValue(state);
+  expect(await h.bridge.commands.readExitState()).toEqual(state);
+  h.ipcRenderer.invoke.mockResolvedValue({ ...state, content: "private" });
+  await expect(h.bridge.commands.readExitState()).rejects.toThrow("Invalid exit state");
+  const listener = vi.fn();
+  const off = h.bridge.commands.onExitState(listener);
+  h.ipcRenderer.emit(desktopChannels.exitState, {}, { ...state, running: -1 });
+  expect(listener).not.toHaveBeenCalled();
+  h.ipcRenderer.emit(desktopChannels.exitState, {}, state);
+  expect(listener).toHaveBeenLastCalledWith(state);
+  h.ipcRenderer.emit(desktopChannels.exitState, {}, null);
+  expect(listener).toHaveBeenLastCalledWith(null);
+  off();
+  h.ipcRenderer.invoke.mockResolvedValue(true);
+  expect(await h.bridge.commands.chooseExit("exit-1", "cancel")).toBe(true);
+  expect(h.ipcRenderer.invoke).toHaveBeenLastCalledWith(desktopChannels.commands, "exit_choice", {
+    operationId: "exit-1",
+    choice: "cancel",
+  });
+  expect(await h.bridge.commands.chooseExit("bad space", "cancel")).toBe(false);
+});

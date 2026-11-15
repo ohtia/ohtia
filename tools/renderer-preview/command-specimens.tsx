@@ -14,6 +14,9 @@ export function CommandSpecimens() {
     () => ({
       context: async () => ({ windowGeneration: "catalog-command-window", platform }),
       publish: async () => true,
+      readExitState: async () => null,
+      onExitState: () => () => {},
+      chooseExit: async () => true,
       onIntent: () => () => {},
       about: async () => ({
         product: "Ohtia",

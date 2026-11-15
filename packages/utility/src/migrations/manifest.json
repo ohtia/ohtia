@@ -42,5 +42,9 @@
   {
     "name": "0011_service_runs",
     "sha256": "285b8f5ea65f0685c6d2348962c7914bdb2785b8d7e1d3dfc684459d5f233038"
+  },
+  {
+    "name": "0012_application_exit",
+    "sha256": "23c9cdb97ff9ef75db9c8a1cb93184efdd4d6dabd1b6464949f70805d1a51315"
   }
 ]

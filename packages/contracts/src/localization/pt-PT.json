@@ -98,7 +98,7 @@
     "menu.hide": "Ocultar Ohtia",
     "menu.hideOthers": "Ocultar outras",
     "menu.showAll": "Mostrar tudo",
-    "dialog.close": "Fechar",
+    "dialog.close": "Fechar diálogo",
     "about.version": "Versão",
     "about.build": "Compilação",
     "about.system": "Sistema",
@@ -262,6 +262,14 @@
     "connection.unknownPlan": "O {service} não indica antecipadamente se o seu plano pode ser usado no Ohtia. A primeira resposta irá demonstrá-lo.",
     "connection.unreachable": "O Ohtia não conseguiu contactar o {service}. A sessão foi mantida; verifique a ligação à internet e teste novamente.",
     "connection.browserIcon": "abre no navegador",
-    "connection.browserComplete": "Pode fechar este separador e voltar ao Ohtia."
+    "connection.browserComplete": "Pode fechar este separador e voltar ao Ohtia.",
+    "settings.closeLayoutNotice": "Fechar aviso",
+    "exit.title": "Sair do Ohtia com respostas em curso?",
+    "exit.wait": "Esperar pelas respostas e sair",
+    "exit.cancel": "Cancelar o trabalho e sair",
+    "exit.cancelling": "Ohtia está a cancelar o trabalho e a guardar as respostas.",
+    "exit.body": "{running, plural, one {# resposta ainda está em curso. As respostas que não começaram ficam guardadas para a próxima vez que abrir o Ohtia, a menos que cancele o trabalho.} many {# respostas ainda estão em curso. As respostas que não começaram ficam guardadas para a próxima vez que abrir o Ohtia, a menos que cancele o trabalho.} other {# respostas ainda estão em curso. As respostas que não começaram ficam guardadas para a próxima vez que abrir o Ohtia, a menos que cancele o trabalho.}}",
+    "exit.waiting": "{running, plural, one {Ohtia sairá quando as respostas em curso terminarem. Ainda resta #.} many {Ohtia sairá quando as respostas em curso terminarem. Ainda restam #.} other {Ohtia sairá quando as respostas em curso terminarem. Ainda restam #.}}",
+    "exit.queued": "As respostas que não começaram ficam guardadas para a próxima vez que abrir o Ohtia, a menos que cancele o trabalho."
   }
 }

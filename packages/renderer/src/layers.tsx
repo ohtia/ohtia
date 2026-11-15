@@ -27,6 +27,7 @@ export function Dialog({
   headingPrefix,
   footer,
   closeContent,
+  closeDisabled = false,
 }: {
   open: boolean;
   title: string;
@@ -35,6 +36,7 @@ export function Dialog({
   headingPrefix?: ReactNode;
   footer?: ReactNode;
   closeContent?: ReactNode;
+  closeDisabled?: boolean;
   headingLevel?: 1 | 2;
   className?: string;
   closeLabel: string;
@@ -143,8 +145,10 @@ export function Dialog({
     <button
       type="button"
       data-close
+      aria-disabled={closeDisabled}
       aria-label={closeContent ? closeLabel : undefined}
       onClick={() => {
+        if (closeDisabled) return;
         onClose();
       }}
     >

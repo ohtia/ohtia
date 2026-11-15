@@ -22,3 +22,4 @@ export * from "./service-connections.js";
 export * from "./provider-requests.js";
 
 export * from "./research.js";
+export * from "./application-exit.js";

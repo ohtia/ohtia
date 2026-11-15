@@ -98,7 +98,7 @@
     "menu.hide": "Skjul Ohtia",
     "menu.hideOthers": "Skjul andre",
     "menu.showAll": "Vis alle",
-    "dialog.close": "Lukk",
+    "dialog.close": "Lukk dialogboksen",
     "about.version": "Versjon",
     "about.build": "Bygg",
     "about.system": "System",
@@ -262,6 +262,14 @@
     "connection.unknownPlan": "{service} opplyser ikke på forhånd om abonnementet ditt kan brukes i Ohtia. Det første svaret vil vise det.",
     "connection.unreachable": "Ohtia kunne ikke nå {service}. Innloggingen beholdes; sjekk internettforbindelsen og test igjen.",
     "connection.browserIcon": "åpnes i nettleseren",
-    "connection.browserComplete": "Du kan lukke denne fanen og gå tilbake til Ohtia."
+    "connection.browserComplete": "Du kan lukke denne fanen og gå tilbake til Ohtia.",
+    "settings.closeLayoutNotice": "Lukk meldingen",
+    "exit.title": "Avslutte Ohtia mens svar pågår?",
+    "exit.wait": "Vent på svarene og avslutt",
+    "exit.cancel": "Avbryt arbeidet og avslutt",
+    "exit.cancelling": "Ohtia avbryter arbeidet og lagrer svarene.",
+    "exit.body": "{running, plural, one {# svar pågår fortsatt. Svar som ikke har startet, lagres til neste gang du åpner Ohtia, med mindre du avbryter arbeidet.} other {# svar pågår fortsatt. Svar som ikke har startet, lagres til neste gang du åpner Ohtia, med mindre du avbryter arbeidet.}}",
+    "exit.waiting": "{running, plural, one {Ohtia avsluttes når de pågående svarene er ferdige. # pågår fortsatt.} other {Ohtia avsluttes når de pågående svarene er ferdige. # pågår fortsatt.}}",
+    "exit.queued": "Svar som ikke har startet, lagres til neste gang du åpner Ohtia, med mindre du avbryter arbeidet."
   }
 }

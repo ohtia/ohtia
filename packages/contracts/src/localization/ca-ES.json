@@ -98,7 +98,7 @@
     "menu.hide": "Amaga l’Ohtia",
     "menu.hideOthers": "Amaga la resta",
     "menu.showAll": "Mostra-ho tot",
-    "dialog.close": "Tanca",
+    "dialog.close": "Tanca el diàleg",
     "about.version": "Versió",
     "about.build": "Compilació",
     "about.system": "Sistema",
@@ -262,6 +262,14 @@
     "connection.unknownPlan": "{service} no indica per endavant si el teu pla es pot utilitzar a Ohtia. La primera resposta ho mostrarà.",
     "connection.unreachable": "Ohtia no ha pogut contactar amb {service}. Es conserva la sessió; comprova la connexió a internet i torna-ho a provar.",
     "connection.browserIcon": "s’obre al navegador",
-    "connection.browserComplete": "Pots tancar aquesta pestanya i tornar a Ohtia."
+    "connection.browserComplete": "Pots tancar aquesta pestanya i tornar a Ohtia.",
+    "settings.closeLayoutNotice": "Tanca l’avís",
+    "exit.title": "Vols sortir d’Ohtia mentre hi ha respostes en curs?",
+    "exit.wait": "Espera les respostes i surt",
+    "exit.cancel": "Cancel·la la feina i surt",
+    "exit.cancelling": "Ohtia està cancel·lant la feina i desant les respostes.",
+    "exit.body": "{running, plural, one {Encara hi ha # resposta en curs. Les respostes que no han començat es conserven per a la propera vegada que obris Ohtia, tret que cancel·lis la feina.} many {Encara hi ha # respostes en curs. Les respostes que no han començat es conserven per a la propera vegada que obris Ohtia, tret que cancel·lis la feina.} other {Encara hi ha # respostes en curs. Les respostes que no han començat es conserven per a la propera vegada que obris Ohtia, tret que cancel·lis la feina.}}",
+    "exit.waiting": "{running, plural, one {Ohtia sortirà quan acabin les respostes en curs. Encara en queda #.} many {Ohtia sortirà quan acabin les respostes en curs. Encara en queden #.} other {Ohtia sortirà quan acabin les respostes en curs. Encara en queden #.}}",
+    "exit.queued": "Les respostes que no han començat es conserven per a la propera vegada que obris Ohtia, tret que cancel·lis la feina."
   }
 }
