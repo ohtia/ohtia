@@ -108,6 +108,7 @@ export interface UsagePauseRow {
   resumed_by_operation_id: string | null;
 }
 export interface TaskSchema {
+  service_runs: { generation: string; started_at: string; clean_stop_at: string | null };
   usage_limit_pauses: UsagePauseRow;
   tasks: TaskRow;
   attempts: AttemptRow;
@@ -450,6 +451,10 @@ export class TaskTransaction {
   }
   /** Recovery Retry never resumes provider work. The caller still owns the durable gate. */
   async recoverMigration(): Promise<void> {
+    await this.recoverRestart(false);
+  }
+  /** Main has closed the old generation before admission. A permit is possible dispatch. */
+  async recoverRestart(orderly: boolean): Promise<void> {
     const tasks = await this.db
       .selectFrom("tasks")
       .selectAll()
@@ -459,7 +464,7 @@ export class TaskTransaction {
       .execute();
     for (const task of tasks) {
       if (task.state === "queued" || task.state === "blocked") {
-        if (task.blocking_reason !== "restart_paused")
+        if (!orderly && task.blocking_reason !== "restart_paused")
           await this.change(task, { state: "blocked", blocking_reason: "restart_paused" });
         continue;
       }
@@ -499,13 +504,16 @@ export class TaskTransaction {
             ? "cancelled"
             : policy && attempt.attempt_number >= policy.max_attempts
               ? "failed"
-              : "blocked";
+              : orderly
+                ? "queued"
+                : "blocked";
       await this.change(task, {
         state,
         blocking_reason: state === "blocked" ? "restart_paused" : null,
       });
     }
-    if (tasks.length) this.diagnostics.push({ event_name: "ohtia.task.recovery_paused" });
+    if (!orderly && tasks.length)
+      this.diagnostics.push({ event_name: "ohtia.task.recovery_paused" });
   }
   /** Continue the shared recovery hold only after all current prerequisites are revalidated. */
   async continueAll(): Promise<void> {

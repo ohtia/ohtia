@@ -1,4 +1,9 @@
 import {
+  up as serviceRuns,
+  tables as runTables,
+  objects as runObjects,
+} from "./migrations/0011_service_runs.mjs";
+import {
   up as usagePauses,
   tables as usageTables,
   objects as usageObjects,
@@ -167,6 +172,8 @@ export interface EngineIdentity {
   readonly compileOptions: readonly string[];
 }
 export interface StorageOptions {
+  /** Main supplies the data-service generation; standalone store admissions get fresh identities. */
+  readonly serviceGeneration?: string;
   /** Supplied only by the independently admitted utility context, never by a port request. */
   readonly root: string;
   readonly binding: string;
@@ -213,9 +220,10 @@ const names = [
   "0008_durable_ai_tasks",
   "0009_usage_limit_pauses",
   "0010_reply_control",
+  "0011_service_runs",
 ] as const;
 const target = names.length;
-const targetName = names[9];
+const targetName = names[10];
 function digest(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -422,6 +430,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 7 ? Object.keys(researchTables) : []),
     ...(revision >= 8 ? Object.keys(taskTables) : []),
     ...(revision >= 9 ? Object.keys(usageTables) : []),
+    ...(revision >= 11 ? Object.keys(runTables) : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -538,6 +547,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
         ])
       : []),
     ...(revision >= 9 ? Object.entries(usageTables) : []),
+    ...(revision >= 11 ? Object.entries(runTables) : []),
   ]) {
     const row = db
       .prepare("SELECT sql FROM sqlite_schema WHERE name=? AND type='table'")
@@ -561,6 +571,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...taskObjects,
                 ...(revision >= 9 ? usageObjects : {}),
                 ...(revision >= 10 ? replyObjects : {}),
+                ...(revision >= 11 ? runObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -584,12 +595,13 @@ export class DurableStore {
   private active = false;
   private taskContext: TaskContext = {
     mode: "installed",
-    generation: "not-started",
+    generation: randomUUID(),
     connections: new ServiceConnections(),
   };
   setTaskContext(context: TaskContext): void {
     this.taskContext = context;
   }
+  private runGeneration: string | undefined;
   private languageRegistry: LanguageRegistry | undefined;
   private admitted = false;
   private creationAllowed: boolean;
@@ -663,18 +675,37 @@ export class DurableStore {
     this.assert();
     return db;
   }
-  async close(): Promise<void> {
+  async close(orderly = false): Promise<void> {
+    // Called only after the service queue drains. This is the last write before store closure.
+    // Capture admission first: a failed migration/review can never manufacture a clean stop.
+    const clean = orderly && this.ready && this.runGeneration !== undefined;
     this.admitted = false;
     const db = this.database;
     const native = this.native;
-    this.database = undefined;
-    this.native = undefined;
-    this.openedFile = undefined;
+    const generation = this.runGeneration;
+    this.runGeneration = undefined;
     try {
-      if (db) await db.destroy();
+      if (clean && db && generation) {
+        this.assert();
+        const result = await db
+          .updateTable("service_runs")
+          .set({ clean_stop_at: new Date().toISOString() })
+          .where("generation", "=", generation)
+          .where("clean_stop_at", "is", null)
+          .execute();
+        if (result[0]?.numUpdatedRows !== 1n) throw new Error("Service run stop was not recorded.");
+        this.researchDiagnostic({ event_name: "ohtia.service.stopped" });
+      }
     } finally {
-      // Kysely does not destroy a driver that never initialized through a query.
-      if (native?.open) native.close();
+      this.database = undefined;
+      this.native = undefined;
+      this.openedFile = undefined;
+      try {
+        if (db) await db.destroy();
+      } finally {
+        // Kysely does not destroy a driver that never initialized through a query.
+        if (native?.open) native.close();
+      }
     }
   }
   async open(): Promise<void> {
@@ -698,7 +729,11 @@ export class DurableStore {
         db.pragma("foreign_keys", { simple: true }) !== 1
       )
         throw new Error("Storage admission failed.");
+      // Both recovery retry branches and ordinary admission use the same reserved review.
+      // The old gate is retained until this transaction commits; healthy new upgrade intents
+      // do not change the classification captured by retrySource.
       if (retrySource) await this.holdRecoveredTasks();
+      else await this.reviewServiceRun(false);
       if (exists(this.gate)) {
         try {
           fs.unlinkSync(this.gate);
@@ -717,14 +752,36 @@ export class DurableStore {
     }
   }
   private async holdRecoveredTasks(): Promise<void> {
+    await this.reviewServiceRun(true);
+  }
+  private async reviewServiceRun(recovery: boolean): Promise<void> {
     if (!this.database) throw new Error("Missing recovery connection.");
+    const generation = this.options.serviceGeneration ?? randomUUID();
+    const diagnostics: DiagnosticEvent[] = [];
     await this.database.connection().execute(async (transaction) => {
       await sql`BEGIN IMMEDIATE`.execute(transaction);
       try {
         this.assert();
         const tasks = new TaskTransaction(transaction, this.taskContext);
-        await tasks.recoverMigration();
+        const previous = await transaction
+          .selectFrom("service_runs")
+          .selectAll()
+          .orderBy(sql`rowid`, "desc")
+          .executeTakeFirst();
+        if (recovery) await tasks.recoverMigration();
+        // Missing history cannot prove an orderly stop. This is distinct from the
+        // fresh migration intent, which is not itself a pre-existing recovery gate.
+        else await tasks.recoverRestart(!!previous?.clean_stop_at);
+        await transaction
+          .insertInto("service_runs")
+          .values({
+            generation,
+            started_at: new Date().toISOString(),
+            clean_stop_at: null,
+          })
+          .execute();
         await tasks.flush();
+        diagnostics.push(...tasks.diagnostics);
         this.assert();
         await sql`COMMIT`.execute(transaction);
       } catch (error) {
@@ -732,7 +789,9 @@ export class DurableStore {
         throw error;
       }
     });
-    this.researchDiagnostic({ event_name: "ohtia.task.recovery_paused" });
+    this.runGeneration = generation;
+    for (const event of diagnostics) this.researchDiagnostic(event);
+    this.researchDiagnostic({ event_name: "ohtia.service.started" });
   }
   private async checkpoint(
     db: Database.Database,
@@ -880,6 +939,7 @@ export class DurableStore {
                 "0008_durable_ai_tasks": { up: durableTasks },
                 "0009_usage_limit_pauses": { up: usagePauses },
                 "0010_reply_control": { up: replyControl },
+                "0011_service_runs": { up: serviceRuns },
               }),
           },
         });
@@ -1985,6 +2045,9 @@ export class DurableStore {
     }
   }
 
+  emitWakeDiagnostic(): void {
+    this.researchDiagnostic({ event_name: "ohtia.service.woke" });
+  }
   private researchDiagnostic(event: DiagnosticEvent): void {
     try {
       this.options.emitDiagnostic?.(event);

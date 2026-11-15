@@ -1,7 +1,7 @@
 import { portLimits, type DiagnosticEvent } from "@ohtia/contracts";
 
 interface StoppableService {
-  stop(): Promise<boolean>;
+  stop(admitted?: () => boolean): Promise<boolean>;
 }
 interface DiagnosticDrain {
   append(event: DiagnosticEvent): Promise<unknown>;
@@ -28,7 +28,7 @@ export async function stopBrokerServices(
   const finish = (async () => {
     await drain?.();
     if (!isActive()) return false;
-    if (service && !(await service.stop())) return false;
+    if (service && !(await service.stop(isActive))) return false;
     if (!isActive()) return false;
     if (diagnostics) {
       await diagnostics.append({

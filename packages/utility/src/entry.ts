@@ -9,6 +9,7 @@ import {
   admitDevelopmentRoot,
   admitRuntimeProfile,
   decodeStorageNotice,
+  decodeServiceShutdown,
   isArtifactVersion,
   isDevelopmentExecutable,
   isIdentifier,
@@ -189,6 +190,7 @@ async function start(): Promise<void> {
     )
       throw new Error("Storage runtime identity mismatch.");
     store = new DurableStore({
+      serviceGeneration: generation,
       emitDiagnostic: (event) => {
         parent.postMessage(
           JSON.stringify({
@@ -227,14 +229,15 @@ async function start(): Promise<void> {
   let initialization: Promise<void> = Promise.resolve();
   parent.on("message", (event) => {
     try {
-      if (event.data === JSON.stringify({ kind: "shutdown", generation })) {
+      const shutdown = decodeServiceShutdown(event.data, generation);
+      if (shutdown) {
         if (isStopping()) return;
         stopping = true;
         service.dispose();
         void initialization
           .then(async () => {
             await service.drain();
-            await store?.close();
+            await store?.close(shutdown.orderly);
             assertAdmission();
             process.exit(0);
           })

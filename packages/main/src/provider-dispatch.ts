@@ -11,6 +11,7 @@ import {
   type ProviderInterruptMessage,
   type ProviderResult,
   type ProviderRequestLimits,
+  type ServiceWakeMessage,
 } from "@ohtia/contracts";
 import type { ProviderAdapter, ProviderRequestControl } from "./provider-adapter.js";
 
@@ -24,8 +25,9 @@ interface Dispatched {
   closing?: ProviderResult;
   timer?: ReturnType<typeof setTimeout>;
   readonly limits: ProviderRequestLimits;
-  readonly startedWall: number;
-  readonly startedMono: number;
+  sampledWall: number;
+  sampledMono: number;
+  suspendedElapsed?: number;
   elapsed: number;
   lastEvent: number;
   readonly closed: Promise<void>;
@@ -53,6 +55,8 @@ function resultDiagnostic(result: ProviderResult): DiagnosticEvent {
  */
 export class ProviderDispatch {
   private active: string | undefined;
+  private resumedAt = -Infinity;
+  private pendingWake: ServiceWakeMessage | undefined;
   private readonly closingRequests = new Set<Promise<void>>();
   get ceased(): boolean {
     return this.closingRequests.size === 0;
@@ -82,6 +86,38 @@ export class ProviderDispatch {
   private monotonic(): number {
     return (this.options.monotonic ?? (() => performance.now()))();
   }
+  suspend(): void {
+    for (const record of this.records.values()) record.suspendedElapsed = this.elapsed(record);
+  }
+  wake(message: ServiceWakeMessage): void {
+    if (message.generation !== this.active) return;
+    this.resumedAt = Date.parse(message.resumedAt);
+    this.pendingWake = message;
+    for (const record of this.records.values()) {
+      const suspended = record.suspendedElapsed;
+      const elapsed = this.elapsed(record);
+      // A request admitted after suspend has no snapshot. Its sampled clocks may
+      // already include sleep; do not add that interval to the observed elapsed time twice.
+      record.elapsed = Math.max(elapsed, (suspended ?? 0) + message.asleepMs);
+      delete record.suspendedElapsed;
+      // Every pending request here predates this wake, even if the wall clock went backwards.
+      if (!record.released)
+        this.finish(record, { status: "failed", reason: "permit_expired", dispatched: false });
+      else if (!this.expired(record)) this.arm(record);
+    }
+  }
+  /** The ordered peer echoes the exact observation after review and before fresh permits. */
+  wakeReviewed(message: ServiceWakeMessage): void {
+    const pending = this.pendingWake;
+    if (
+      pending &&
+      message.generation === this.active &&
+      message.suspendedAt === pending.suspendedAt &&
+      message.resumedAt === pending.resumedAt &&
+      message.asleepMs === pending.asleepMs
+    )
+      this.pendingWake = undefined;
+  }
   /** A new data service takes over; nothing of an earlier generation is sent or forwarded again. */
   begin(generation: string): void {
     this.end();
@@ -98,6 +134,8 @@ export class ProviderDispatch {
     this.records.clear();
     this.used.clear();
     this.active = undefined;
+    this.pendingWake = undefined;
+    this.resumedAt = -Infinity;
   }
   /** The architecture's `inspect`: whether main still has this attempt's request open. */
   query(attempt: string): "running" | "unknown" {
@@ -136,9 +174,9 @@ export class ProviderDispatch {
       released: false,
       done: false,
       limits: request.limits,
-      startedWall: Math.min(this.wall(), permit.issued_at),
-      startedMono: this.monotonic(),
-      elapsed: 0,
+      sampledWall: this.wall(),
+      sampledMono: this.monotonic(),
+      elapsed: Math.max(0, this.wall() - permit.issued_at),
       lastEvent: 0,
     };
     this.records.set(request.attempt, record);
@@ -148,11 +186,18 @@ export class ProviderDispatch {
       // monotonic time main itself has held it; a permit from the future is refused.
       const receivedAge = this.wall() - permit.issued_at;
       const received = this.monotonic();
-      const fresh = () =>
-        permit.attempt === request.attempt &&
-        receivedAge >= 0 &&
-        Math.max(this.wall() - permit.issued_at, receivedAge + this.monotonic() - received) <
-          dispatchPermitPolicy.validity_ms;
+      const fresh = () => {
+        const age = this.wall() - permit.issued_at;
+        return (
+          !this.pendingWake &&
+          permit.attempt === request.attempt &&
+          permit.issued_at >= this.resumedAt &&
+          receivedAge >= 0 &&
+          age >= 0 &&
+          Math.max(age, receivedAge + this.monotonic() - received) <
+            dispatchPermitPolicy.validity_ms
+        );
+      };
       const refuse = (reason: NotDispatchedReason) => {
         // Proven zero-dispatch refusals keep their reason, even if this old permit's age
         // also exceeds a response limit. No provider request began under that permit.
@@ -255,11 +300,11 @@ export class ProviderDispatch {
     }
   }
   private elapsed(record: Dispatched): number {
-    record.elapsed = Math.max(
-      record.elapsed,
-      this.wall() - record.startedWall,
-      this.monotonic() - record.startedMono,
-    );
+    const wall = this.wall();
+    const mono = this.monotonic();
+    record.elapsed += Math.max(0, wall - record.sampledWall, mono - record.sampledMono);
+    record.sampledWall = wall;
+    record.sampledMono = mono;
     return record.elapsed;
   }
   private expired(record: Dispatched): boolean {
@@ -272,7 +317,12 @@ export class ProviderDispatch {
           ? "inactivity_timeout"
           : null;
     if (!reason) return false;
-    this.finish(record, { status: "failed", reason, dispatched: true });
+    this.finish(
+      record,
+      record.released
+        ? { status: "failed", reason, dispatched: true }
+        : { status: "failed", reason: "permit_expired", dispatched: false },
+    );
     return true;
   }
   private arm(record: Dispatched): void {

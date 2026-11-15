@@ -1,5 +1,6 @@
 import { ChatGPTProvider } from "./chatgpt-provider.js";
 import { ConnectionManager } from "./connection-manager.js";
+import { observeServicePower } from "./service-power.js";
 import { ProviderDispatch } from "./provider-dispatch.js";
 import type { DevelopmentCommand } from "./development-command.js";
 import { ConnectionBroker } from "./connection-broker.js";
@@ -21,6 +22,7 @@ import {
   app,
   clipboard,
   nativeTheme,
+  powerMonitor,
   screen,
   shell,
   BrowserWindow,
@@ -766,9 +768,13 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
       if (windowTheme.confirm(record)) updateWindowThemes();
     },
     requestBudget,
+    () => providerDispatch?.drain() ?? Promise.resolve(),
   );
   const active = service;
   active.connectProvider({
+    wakeReviewed: (message) => {
+      providerDispatch?.wakeReviewed(message);
+    },
     refreshModels: (message) => {
       connections?.manager.refreshModels(message.connection, true);
       if (connections && service) service.reportConnections(connections.manager);
@@ -814,6 +820,14 @@ const startup = setTimeout(() => {
 async function start(): Promise<void> {
   motionObserver?.start();
   await app.whenReady();
+  observeServicePower(powerMonitor, {
+    generation: () => generation,
+    suspend: () => providerDispatch?.suspend(),
+    wake: (message) => providerDispatch?.wake(message),
+    post: (text) => {
+      service?.postWake(text);
+    },
+  });
   credentials = await nativeCredentialStore(context, app.getPath("userData"));
   const developmentProvider =
     typeof __OHTIA_DEVELOPMENT_BUILD__ !== "undefined" &&

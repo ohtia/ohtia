@@ -384,10 +384,10 @@ describe("utility process composition with isolated synthetic files", () => {
       h.parent.emit("message", { data: { arbitrary: true } });
       expect(h.service.receive).toHaveBeenCalledTimes(2);
       h.parent.emit("message", {
-        data: JSON.stringify({ kind: "shutdown", generation: h.generation }),
+        data: JSON.stringify({ kind: "shutdown", generation: h.generation, orderly: true }),
       });
       h.parent.emit("message", {
-        data: JSON.stringify({ kind: "shutdown", generation: h.generation }),
+        data: JSON.stringify({ kind: "shutdown", generation: h.generation, orderly: true }),
       });
       h.parent.emit("message", { data: "post-stop" });
       for (let i = 0; i < 15; i++) await Promise.resolve();
@@ -431,10 +431,31 @@ describe("utility process composition with isolated synthetic files", () => {
     const h = await launch({ closeFailure: failure === "close" });
     if (failure === "sentinel") h.changeSentinel();
     h.parent.emit("message", {
-      data: JSON.stringify({ kind: "shutdown", generation: h.generation }),
+      data: JSON.stringify({ kind: "shutdown", generation: h.generation, orderly: true }),
     });
     for (let i = 0; i < 15; i++) await Promise.resolve();
     expect(h.exit).toHaveBeenCalledWith(1);
     expect(h.exit).not.toHaveBeenCalledWith(0);
+  });
+  it.each([true, false])(
+    "drains and forwards the required orderly=%s flag to store closure",
+    async (orderly) => {
+      const h = await launch();
+      h.parent.emit("message", {
+        data: JSON.stringify({ kind: "shutdown", generation: h.generation, orderly }),
+      });
+      for (let i = 0; i < 15; i++) await Promise.resolve();
+      expect(h.service.drain).toHaveBeenCalledOnce();
+      expect(h.stores[0].close).toHaveBeenCalledWith(orderly);
+      expect(h.exit).toHaveBeenCalledWith(0);
+    },
+  );
+  it("does not accept a shutdown message without the orderly flag", async () => {
+    const h = await launch();
+    const text = JSON.stringify({ kind: "shutdown", generation: h.generation });
+    h.parent.emit("message", { data: text });
+    expect(h.service.receive).toHaveBeenCalledWith(text);
+    expect(h.service.drain).not.toHaveBeenCalled();
+    expect(h.stores[0].close).not.toHaveBeenCalled();
   });
 });

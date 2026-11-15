@@ -7,6 +7,8 @@ import {
   decodeDevelopmentReport,
   decodeProviderDispatch,
   decodeProviderInterrupt,
+  decodeServiceWake,
+  type ServiceWakeMessage,
   decodeModelListRefresh,
   type ModelListRefreshMessage,
   type DevelopmentReportMessage,
@@ -45,6 +47,7 @@ export interface SupervisedChild {
 }
 /** Main's receivers for the provider messages of this generation's data service. */
 export interface ProviderChannel {
+  wakeReviewed?(message: ServiceWakeMessage): void;
   refreshModels?(message: ModelListRefreshMessage): void;
   dispatch(message: ProviderDispatchMessage): void;
   interrupt(message: ProviderInterruptMessage): void;
@@ -82,7 +85,13 @@ export class ServiceSupervisor {
   private readonly startup: ReturnType<typeof setTimeout>;
   private readonly terminationTimers = new Set<ReturnType<typeof setTimeout>>();
   private stopping: Promise<boolean> | undefined;
+  private stoppingAdmitted: (() => boolean) | undefined;
+  private cancelStopping: (() => void) | undefined;
+  private shutdownDrain: Promise<void> | undefined;
+  private shutdownDrained = false;
+  private stopDiagnosticForwarded = false;
   private provider: ProviderChannel | undefined;
+  private readonly pendingWakes: { text: string; message: ServiceWakeMessage }[] = [];
   private readonly exitWaiters = new Set<(ceased: boolean) => void>();
   constructor(
     private readonly child: SupervisedChild,
@@ -98,6 +107,7 @@ export class ServiceSupervisor {
     private readonly presentationChanged?: (snapshot: PresentationSnapshot) => void,
     private readonly appearanceChanged?: (record: AppearanceRecord) => void,
     private readonly requestBudget = new RequestBudget(),
+    private readonly beforeShutdown?: () => Promise<void>,
   ) {
     if (!isIdentifier(generation)) throw new Error("Invalid service generation.");
     child.messages((message) => {
@@ -136,6 +146,17 @@ export class ServiceSupervisor {
   }
   connectProvider(channel: ProviderChannel): void {
     this.provider = channel;
+  }
+  /** Keep ordered wake reviews within the shared channel's pending bound, including startup. */
+  postWake(text: string): boolean {
+    const wake = decodeServiceWake(text);
+    if (!wake || wake.generation !== this.generation || this.stopped || this.faulted) return false;
+    if (this.pendingWakes.length >= portLimits.pending_global) {
+      this.fault();
+      return false;
+    }
+    this.pendingWakes.push({ text, message: wake });
+    return !this.ready || this.postProvider(text);
   }
   /** Post a provider event or development action; a channel failure ends this generation. */
   postProvider(text: string): boolean {
@@ -350,7 +371,18 @@ export class ServiceSupervisor {
     work.releaseSubscription();
   }
   private receive(input: unknown): void {
-    if (this.stopped || this.faulted) return;
+    if (this.stopped) return;
+    if (this.faulted) {
+      // Shutdown denies work first; only its final catalog event may cross that boundary.
+      if (this.requestedStop && this.shutdownDrained && !this.stopDiagnosticForwarded) {
+        const event = decodeChildDiagnostic(input, this.generation);
+        if (event?.event_name === "ohtia.service.stopped") {
+          this.stopDiagnosticForwarded = true;
+          this.diagnostic?.(event);
+        }
+      }
+      return;
+    }
     // Private lifecycle acknowledgements are fixed-size and never forwarded to a renderer.
     if (
       typeof input === "string" &&
@@ -362,7 +394,28 @@ export class ServiceSupervisor {
       }
       clearTimeout(this.startup);
       this.ready = true;
+      for (const wake of [...this.pendingWakes]) if (!this.postProvider(wake.text)) return;
       this.changed("ready");
+      return;
+    }
+    const wake = decodeServiceWake(input);
+    if (wake) {
+      if (wake.generation !== this.generation) return;
+      if (!this.ready) {
+        this.fault();
+        return;
+      }
+      const expected = this.pendingWakes[0]?.message;
+      if (
+        !expected ||
+        wake.suspendedAt !== expected.suspendedAt ||
+        wake.resumedAt !== expected.resumedAt ||
+        wake.asleepMs !== expected.asleepMs
+      )
+        return;
+      this.pendingWakes.shift();
+      // Even identical timestamp pairs represent two observations when posted twice.
+      if (this.pendingWakes.length === 0) this.provider?.wakeReviewed?.(wake);
       return;
     }
     if (typeof input === "string" && input.length <= providerMessageBytes) {
@@ -654,46 +707,105 @@ export class ServiceSupervisor {
     for (const waiter of this.exitWaiters) waiter(true);
     this.exitWaiters.clear();
   }
-  /** The child creates no descendants; native acceptance separately observes Electron's complete tree. */
-  stop(): Promise<boolean> {
-    if (this.stopped) return Promise.resolve(true);
-    if (this.stopping) return this.stopping;
-    this.ready = false;
-    this.faulted = true;
-    this.requestedStop = true;
-    clearTimeout(this.startup);
-    this.changed("unavailable", true);
+  /** Deny new work, prove owned transport closure, then request the store's final write. */
+  stop(admitted: () => boolean = () => true): Promise<boolean> {
+    if (!admitted()) return Promise.resolve(false);
+    if (this.stopped && (!this.beforeShutdown || this.shutdownDrained))
+      return Promise.resolve(true);
+    if (this.stopping) {
+      if (this.stoppingAdmitted?.()) return this.stopping;
+      // A new quit owns its own budget; retain closure evidence, not the expired caller.
+      this.cancelStopping?.();
+    }
+    this.stoppingAdmitted = admitted;
+    if (!this.stopped) {
+      this.ready = false;
+      this.faulted = true;
+      this.requestedStop = true;
+      clearTimeout(this.startup);
+      // Main closes this generation's transports here. No later permit can enter receive().
+      this.changed("unavailable", true);
+    }
     const attempt = new Promise<boolean>((resolve) => {
+      let finished = false;
+      let childExited = this.stopped;
+      let terminationRequested = false;
+      let grace: ReturnType<typeof setTimeout> | undefined;
       const finish = (ceased: boolean) => {
-        clearTimeout(grace);
+        if (finished) return;
+        if (ceased && !this.shutdownDrained) {
+          childExited = true;
+          return;
+        }
+        finished = true;
+        if (grace) {
+          clearTimeout(grace);
+          this.terminationTimers.delete(grace);
+        }
         clearTimeout(total);
-        this.terminationTimers.delete(grace);
-        this.terminationTimers.delete(total);
         this.exitWaiters.delete(finish);
         resolve(ceased);
       };
-      const grace = setTimeout(() => {
+      this.cancelStopping = () => {
+        finish(false);
+      };
+      const terminate = () => {
+        if (this.stopped || terminationRequested) return;
         try {
           this.child.kill();
+          terminationRequested = true;
         } catch {
           /* Keep waiting for cessation. */
         }
-      }, portLimits.shutdown_grace_ms);
+      };
+      // A child exit must not cancel the deadline for still-unproven provider closure.
       const total = setTimeout(() => {
+        terminate();
         finish(false);
       }, portLimits.shutdown_total_ms);
-      this.terminationTimers.add(grace);
-      this.terminationTimers.add(total);
-      this.exitWaiters.add(finish);
-      try {
-        this.child.send(JSON.stringify({ kind: "shutdown", generation: this.generation }));
-      } catch {
-        // The bounded grace timer still attempts termination; uncertainty retains capacity.
+      if (!childExited) this.exitWaiters.add(finish);
+      const sendShutdown = () => {
+        if (finished) return;
+        if (!admitted()) {
+          finish(false);
+          return;
+        }
+        if (childExited || this.stopped) {
+          finish(true);
+          return;
+        }
+        grace = setTimeout(terminate, portLimits.shutdown_grace_ms);
+        this.terminationTimers.add(grace);
+        try {
+          this.child.send(
+            JSON.stringify({ kind: "shutdown", generation: this.generation, orderly: true }),
+          );
+        } catch {
+          /* The bounded grace timer still attempts termination. */
+        }
+      };
+      const drain = this.beforeShutdown;
+      if (drain && !this.shutdownDrained) {
+        this.shutdownDrain ??= Promise.resolve()
+          .then(drain)
+          .then(() => {
+            this.shutdownDrained = true;
+          });
+        void this.shutdownDrain.then(sendShutdown, () => {
+          finish(false);
+        });
+      } else {
+        this.shutdownDrained = true;
+        sendShutdown();
       }
     });
     this.stopping = attempt;
     void attempt.then(() => {
-      if (this.stopping === attempt) this.stopping = undefined;
+      if (this.stopping === attempt) {
+        this.stopping = undefined;
+        this.stoppingAdmitted = undefined;
+        this.cancelStopping = undefined;
+      }
     });
     return attempt;
   }
