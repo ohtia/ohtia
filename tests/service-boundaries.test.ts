@@ -1,5 +1,6 @@
 import { DurableProvider } from "../packages/utility/src/durable-provider.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { stopBrokerServices } from "../packages/main/src/shutdown.js";
 import { ServiceSupervisor } from "../packages/main/src/service-supervisor.js";
 import { createStatusService } from "../packages/utility/src/status-service.js";
 import {
@@ -237,6 +238,9 @@ function serviceFixture(mode: "installed" | "development" = "installed") {
   const store = {
     ready: true,
     admissionReady: true,
+    setTaskContext: vi.fn(),
+    stoppingAttempts: vi.fn(async () => ({ ok: true, value: [] })),
+    prepareTask: vi.fn(async () => ({ ok: true, value: null })),
     readAppearance: vi.fn(async () => ({ ok: true, value })),
     replaceAppearance: vi.fn(async () => ({ ok: true, value })),
     readReceipt: vi.fn(async () => ({ ok: true, value: { state: "absent" } })),
@@ -337,6 +341,7 @@ describe("service admission and queued subscription failures", () => {
     async (kind) => {
       const h = serviceFixture();
       h.service.activate("en-US");
+      await h.service.drain();
       let resolve: (value: unknown) => void = () => {};
       h.store.readAppearance.mockImplementationOnce(
         () =>
@@ -665,6 +670,7 @@ it("owns a provider fault without a queued window command and keeps a throwing o
 it("does not announce a late asynchronous provider fault after the service was disposed", async () => {
   const h = serviceFixture();
   h.service.activate("en-US");
+  await h.service.drain();
   let reject!: (error: Error) => void;
   const pending = vi.spyOn(DurableProvider.prototype, "receive").mockImplementationOnce(
     () =>
@@ -692,3 +698,282 @@ it("does not announce a late asynchronous provider fault after the service was d
     h.service.dispose();
   }
 });
+
+it("queues wake reviews before ready and releases only after every ordered echo", () => {
+  let receive!: (text: unknown) => void;
+  let exit!: () => void;
+  const child = {
+    send: vi.fn(),
+    kill: vi.fn(),
+    messages: (listener: typeof receive) => {
+      receive = listener;
+    },
+    exited: (listener: typeof exit) => {
+      exit = listener;
+    },
+  };
+  const changed = vi.fn();
+  const service = new ServiceSupervisor(child, "service-1", changed);
+  const reviewed = vi.fn();
+  service.connectProvider({ dispatch: vi.fn(), interrupt: vi.fn(), wakeReviewed: reviewed });
+  const wake = {
+    kind: "service_wake",
+    version: 1,
+    generation: "service-1",
+    suspendedAt: "2026-11-14T20:00:00.000Z",
+    resumedAt: "2026-11-14T20:01:00.000Z",
+    asleepMs: 60000,
+  };
+  expect(service.postWake(JSON.stringify({ ...wake, generation: "old" }))).toBe(false);
+  expect(service.postWake(JSON.stringify({ ...wake, credential: "synthetic" }))).toBe(false);
+  expect(service.postWake(JSON.stringify(wake))).toBe(true);
+  const latest = { ...wake, resumedAt: "2026-11-14T20:02:00.000Z", asleepMs: 120000 };
+  expect(service.postWake(JSON.stringify(latest))).toBe(true);
+  expect(child.send).not.toHaveBeenCalled();
+  receive(JSON.stringify({ kind: "ready", generation: "service-1" }));
+  expect(child.send).toHaveBeenNthCalledWith(1, JSON.stringify(wake));
+  expect(child.send).toHaveBeenNthCalledWith(2, JSON.stringify(latest));
+  receive(JSON.stringify({ ...latest, generation: "old" }));
+  expect(reviewed).not.toHaveBeenCalled();
+  receive(JSON.stringify(wake));
+  expect(reviewed).not.toHaveBeenCalled();
+  receive(JSON.stringify(latest));
+  expect(reviewed).toHaveBeenCalledExactlyOnceWith(latest);
+  expect(service.postWake(JSON.stringify(wake))).toBe(true);
+  expect(service.postWake(JSON.stringify(wake))).toBe(true);
+  receive(JSON.stringify(wake));
+  expect(reviewed).toHaveBeenCalledTimes(1);
+  receive(JSON.stringify(wake));
+  expect(reviewed).toHaveBeenCalledTimes(2);
+  exit();
+  expect(service.postWake(JSON.stringify(latest))).toBe(false);
+});
+
+it("bounds outstanding native wake reviews with the existing channel pending limit", () => {
+  const h = supervisor();
+  const text = JSON.stringify({
+    kind: "service_wake",
+    version: 1,
+    generation: "service-1",
+    suspendedAt: "2026-11-14T20:00:00.000Z",
+    resumedAt: "2026-11-14T20:01:00.000Z",
+    asleepMs: 60000,
+  });
+  for (let i = 0; i < portLimits.pending_global; i++) expect(h.service.postWake(text)).toBe(true);
+  expect(h.service.postWake(text)).toBe(false);
+  expect(h.service.recoveryRequired).toBe(true);
+  h.exited();
+});
+
+it.each([
+  "normal",
+  "slow-provider",
+  "slow-provider-total",
+  "parent-expired",
+  "parent-retry",
+  "early-child-exit",
+  "unproven-closure",
+  "live-unproven-closure",
+])("gates the orderly shutdown on provider closure: %s", async (ending) => {
+  vi.useFakeTimers();
+  let receive!: (text: unknown) => void;
+  let exit!: () => void;
+  let release!: () => void;
+  const closed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const child = {
+    send: vi.fn(),
+    kill: vi.fn(),
+    messages: (listener: typeof receive) => {
+      receive = listener;
+    },
+    exited: (listener: typeof exit) => {
+      exit = listener;
+    },
+  };
+  const changed = vi.fn();
+  const drain = vi.fn(() => closed);
+  const service = new ServiceSupervisor(
+    child,
+    "service-1",
+    changed,
+    undefined,
+    false,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    drain,
+  );
+  receive(JSON.stringify({ kind: "ready", generation: "service-1" }));
+  changed.mockClear();
+  const stopped = ending.startsWith("parent-")
+    ? stopBrokerServices(
+        service,
+        undefined,
+        () => new Promise<void>((resolve) => setTimeout(resolve, 6000)),
+      )
+    : service.stop();
+  if (ending.startsWith("parent-")) await vi.advanceTimersByTimeAsync(6000);
+  if (ending === "normal") expect(service.stop()).toBe(stopped);
+  let settled = false;
+  void stopped.then(() => {
+    settled = true;
+  });
+  expect(service.available).toBe(false);
+  expect(changed).toHaveBeenCalledWith("unavailable", true);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(drain).toHaveBeenCalledOnce();
+  expect(child.send).not.toHaveBeenCalled();
+  if (ending === "early-child-exit" || ending === "unproven-closure") exit();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(settled).toBe(false);
+  if (ending.startsWith("parent-")) {
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(await stopped).toBe(false);
+    expect(child.send).not.toHaveBeenCalled();
+    if (ending === "parent-retry") {
+      await vi.advanceTimersByTimeAsync(1000);
+      const retry = stopBrokerServices(service);
+      await vi.advanceTimersByTimeAsync(1000);
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(drain).toHaveBeenCalledOnce();
+      expect(child.send).toHaveBeenCalledExactlyOnceWith(
+        JSON.stringify({ kind: "shutdown", generation: "service-1", orderly: true }),
+      );
+      exit();
+      expect(await retry).toBe(true);
+    } else {
+      await vi.advanceTimersByTimeAsync(500);
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(child.send).not.toHaveBeenCalled();
+      exit();
+    }
+  } else if (ending === "unproven-closure" || ending === "live-unproven-closure") {
+    await vi.advanceTimersByTimeAsync(portLimits.shutdown_total_ms);
+    expect(await stopped).toBe(false);
+    expect(child.send).not.toHaveBeenCalled();
+    if (ending === "live-unproven-closure") {
+      expect(child.kill).toHaveBeenCalledOnce();
+      exit();
+    }
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(child.send).not.toHaveBeenCalled();
+    expect(await service.stop()).toBe(true);
+  } else {
+    if (ending === "slow-provider" || ending === "slow-provider-total") {
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(child.kill).not.toHaveBeenCalled();
+    }
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    if (ending === "normal" || ending === "slow-provider" || ending === "slow-provider-total") {
+      expect(child.send).toHaveBeenCalledExactlyOnceWith(
+        JSON.stringify({ kind: "shutdown", generation: "service-1", orderly: true }),
+      );
+      if (ending === "slow-provider-total") {
+        await vi.advanceTimersByTimeAsync(4000);
+        expect(await stopped).toBe(false);
+        expect(child.kill).toHaveBeenCalledOnce();
+        exit();
+        return;
+      }
+      if (ending === "slow-provider") {
+        await vi.advanceTimersByTimeAsync(500);
+        expect(child.kill).not.toHaveBeenCalled();
+      }
+      exit();
+    } else expect(child.send).not.toHaveBeenCalled();
+    expect(await stopped).toBe(true);
+  }
+});
+
+it("does not start a shutdown whose parent has already cancelled admission", async () => {
+  const h = supervisor();
+  expect(await h.service.stop(() => false)).toBe(false);
+  expect(h.service.available).toBe(true);
+  expect(h.child.send).not.toHaveBeenCalled();
+  h.exited();
+});
+
+it.each(["requested", "unexpected"])(
+  "bounds the closing diagnostic after %s service termination",
+  async (termination) => {
+    vi.useFakeTimers();
+    let receive!: (text: unknown) => void;
+    let exit!: () => void;
+    let release!: () => void;
+    const closed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const child = {
+      send: vi.fn(),
+      kill: vi.fn(),
+      messages: (listener: typeof receive) => {
+        receive = listener;
+      },
+      exited: (listener: typeof exit) => {
+        exit = listener;
+      },
+    };
+    const diagnostic = vi.fn();
+    const service = new ServiceSupervisor(
+      child,
+      "service-1",
+      vi.fn(),
+      undefined,
+      false,
+      diagnostic,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => closed,
+    );
+    receive(JSON.stringify({ kind: "ready", generation: "service-1" }));
+    const stopEvent = {
+      kind: "diagnostic",
+      generation: "service-1",
+      event: { event_name: "ohtia.service.stopped" },
+    };
+    if (termination === "unexpected") {
+      receive("invalid peer input");
+      receive(JSON.stringify(stopEvent));
+      expect(diagnostic).not.toHaveBeenCalled();
+      exit();
+      return;
+    }
+    const stopping = service.stop();
+    receive(JSON.stringify(stopEvent));
+    expect(diagnostic).not.toHaveBeenCalled();
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(child.send).toHaveBeenCalledExactlyOnceWith(
+      JSON.stringify({ kind: "shutdown", generation: "service-1", orderly: true }),
+    );
+    receive(JSON.stringify({ ...stopEvent, generation: "old" }));
+    receive(JSON.stringify({ ...stopEvent, event: { event_name: "ohtia.service.started" } }));
+    receive(
+      JSON.stringify({
+        ...stopEvent,
+        event: { ...stopEvent.event, content: "must not be admitted" },
+      }),
+    );
+    receive(JSON.stringify({ kind: "ready", generation: "service-1" }));
+    expect(diagnostic).not.toHaveBeenCalled();
+    receive(JSON.stringify(stopEvent));
+    expect(diagnostic).toHaveBeenCalledExactlyOnceWith(stopEvent.event);
+    receive(JSON.stringify(stopEvent));
+    expect(diagnostic).toHaveBeenCalledOnce();
+    expect(child.kill).not.toHaveBeenCalled();
+    exit();
+    expect(await stopping).toBe(true);
+    receive(JSON.stringify(stopEvent));
+    expect(diagnostic).toHaveBeenCalledOnce();
+  },
+);

@@ -112,6 +112,20 @@ export interface ProviderInterruptMessage {
   readonly generation: string;
   readonly attempt: string;
 }
+/** Main's observation, echoed by the service after serialized review and before fresh permits. */
+export interface ServiceWakeMessage {
+  readonly kind: "service_wake";
+  readonly version: typeof providerMessageVersion;
+  readonly generation: string;
+  readonly suspendedAt: string;
+  readonly resumedAt: string;
+  readonly asleepMs: number;
+}
+export interface ServiceShutdownMessage {
+  readonly kind: "shutdown";
+  readonly generation: string;
+  readonly orderly: boolean;
+}
 /** Partial text crosses the channel in pieces that each fit the port's string bound. */
 export const providerTextChunk = 1024;
 export const providerModelBytes = 256;
@@ -319,6 +333,42 @@ export function decodeProviderInterrupt(
     isIdentifier(value.attempt)
   )
     return value as unknown as ProviderInterruptMessage;
+  return;
+}
+/** Wake decoding validates another generation too, allowing the receiver to discard it. */
+export function decodeServiceWake(text: unknown): ServiceWakeMessage | undefined {
+  const value = parse(text);
+  const utc = (time: unknown): time is string =>
+    typeof time === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(time) &&
+    Number.isFinite(Date.parse(time)) &&
+    new Date(time).toISOString() === time;
+  if (
+    value &&
+    header(value, "service_wake", value.generation as string) &&
+    exact(value, ["kind", "version", "generation", "suspendedAt", "resumedAt", "asleepMs"]) &&
+    utc(value.suspendedAt) &&
+    utc(value.resumedAt) &&
+    count(value.asleepMs) &&
+    value.asleepMs === Math.max(0, Date.parse(value.resumedAt) - Date.parse(value.suspendedAt))
+  )
+    return value as unknown as ServiceWakeMessage;
+  return;
+}
+export function decodeServiceShutdown(
+  text: unknown,
+  generation: string,
+): ServiceShutdownMessage | undefined {
+  const value = parse(text);
+  if (
+    value &&
+    exact(value, ["kind", "generation", "orderly"]) &&
+    value.kind === "shutdown" &&
+    value.generation === generation &&
+    isIdentifier(value.generation) &&
+    typeof value.orderly === "boolean"
+  )
+    return value as unknown as ServiceShutdownMessage;
   return;
 }
 /** Split partial text into channel-sized pieces without breaking a code point. */

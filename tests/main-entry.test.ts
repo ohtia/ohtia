@@ -264,11 +264,13 @@ async function launch(
     reportConnections = vi.fn((manager: { ids(): readonly string[] }) => manager.ids());
     connectProvider = vi.fn();
     postProvider = vi.fn(() => true);
+    postWake = vi.fn(() => true);
     control = vi.fn();
     disposeWindow = vi.fn();
     activateStorage = vi.fn(() => true);
     setSystemLocale = vi.fn(() => true);
     stop = vi.fn(async () => {
+      await this.beforeShutdown?.();
       this.ceased = state.stop;
       return state.stop;
     });
@@ -302,6 +304,8 @@ async function launch(
         snapshot: import("@ohtia/contracts").PresentationSnapshot,
       ) => void,
       readonly appearanceChanged?: (record: import("@ohtia/contracts").AppearanceRecord) => void,
+      _requestBudget?: unknown,
+      readonly beforeShutdown?: () => Promise<void>,
     ) {
       supervisors.push(this);
       childPort.messages(() => {});
@@ -315,8 +319,10 @@ async function launch(
     return state.recover;
   });
   const publish = vi.fn(async () => state.publish);
+  const powerMonitor = new EventEmitter();
   vi.doMock("electron", () => ({
     app,
+    powerMonitor,
     nativeTheme,
     screen: {
       getAllDisplays: () => [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }],
@@ -480,6 +486,7 @@ async function launch(
     )![1](event(selected), action, payload);
   return {
     acknowledgeZoom,
+    powerMonitor,
     constants,
     state,
     app,
@@ -505,6 +512,50 @@ async function launch(
 }
 
 describe("broker composition with synthetic Electron adapters", () => {
+  it("waits for provider transport closure before confirming an orderly quit", async () => {
+    const h = await launch();
+    const { ProviderDispatch } = await import("../packages/main/src/provider-dispatch.js");
+    let release!: () => void;
+    const closed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const drain = vi.spyOn(ProviderDispatch.prototype, "drain").mockReturnValueOnce(closed);
+    try {
+      h.app.emit("before-quit", { preventDefault: vi.fn() });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(drain).toHaveBeenCalledOnce();
+      expect(h.supervisors[0]!.stop).toHaveBeenCalledOnce();
+      expect(h.app.quit).not.toHaveBeenCalled();
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.supervisors[0]!.stop).toHaveBeenCalledOnce();
+      expect(h.app.quit).toHaveBeenCalledOnce();
+    } finally {
+      release();
+      drain.mockRestore();
+    }
+  });
+
+  it("posts the current service generation's versioned wake after Electron resumes", async () => {
+    const h = await launch();
+    vi.setSystemTime(new Date("2026-11-14T20:00:00.000Z"));
+    h.powerMonitor.emit("suspend");
+    vi.setSystemTime(new Date("2026-11-14T20:02:00.000Z"));
+    h.powerMonitor.emit("resume");
+    const service = h.supervisors[0]!;
+    const wake = service.postWake.mock.calls
+      .map(([text]: [string]) => JSON.parse(text))
+      .find((message) => message.kind === "service_wake");
+    expect(wake).toEqual({
+      kind: "service_wake",
+      version: 1,
+      generation: service.generation,
+      suspendedAt: "2026-11-14T20:00:00.000Z",
+      resumedAt: "2026-11-14T20:02:00.000Z",
+      asleepMs: 120000,
+    });
+  });
+
   it("claims the layout failure announcement once across windows in the same application", async () => {
     const h = await launch();
     const claim = (window: any, id: string) => {

@@ -4,6 +4,8 @@ title: "Agent collaboration"
 description: "Virgilio, research specialists, bounded collaboration, inspectable memory, and human-approved editorial proposals."
 generated:
   by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: openai-orchestration
     resource: "https://developers.openai.com/api/docs/guides/agents/orchestration"
@@ -190,7 +192,7 @@ Cancellation records intervention intent and revokes future activation before st
 
 A contributor finishing does not prove its delegated work ended. Hidden runtime subagents are disabled unless the adapter can prove their identity, scope, capacity/budget inclusion and terminal/cancellation evidence through these same controls. Otherwise the capability is unavailable. Do not combine application orchestration with an untracked second orchestration layer.
 
-Application exit and startup use ADR-0051. On restart, recover the intervention ledger, event receipts and task outcomes before admitting work. Reconcile possible child dispatch before any replacement. Accepted not-started tasks remain paused; unactivated contribution intents are also held for explicit continuation. Reopening a project, receiving a notification or reconnecting a provider does not clear restart/cancellation holds. Late results retain their old inputs and may not publish through revoked authority; bounded usage settlement remains separate.
+Application exit and startup use ADR-0051. On restart, recover the intervention ledger, event receipts and task outcomes before admitting work. Reconcile possible child dispatch before any replacement. After an orderly exit, accepted not-started tasks continue by themselves; after a crash, power loss or forced quit they remain paused until "Continue all"; unactivated contribution intents are also held for explicit continuation. Reopening a project, receiving a notification or reconnecting a provider does not clear restart/cancellation holds. Late results retain their old inputs and may not publish through revoked authority; bounded usage settlement remains separate.
 
 ## Context, memory and disagreement
 

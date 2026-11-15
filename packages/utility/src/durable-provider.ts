@@ -7,6 +7,7 @@ import {
   type ProviderResult,
   type ProviderUsage,
   type TransferEntry,
+  type ServiceWakeMessage,
 } from "@ohtia/contracts";
 import type { DurableStore } from "./storage.js";
 import { operationPolicy } from "./operations.js";
@@ -17,28 +18,70 @@ interface Stream {
   text: string;
   sequence: number;
   readonly transfer: readonly TransferEntry[];
-  readonly started: number;
+  sampledMono: number;
+  sampledWall: number;
+  elapsed: number;
   last: number;
+  readonly maxDuration: number;
+  readonly maxInactivity: number;
   longestSilence: number;
   usage: ProviderUsage;
   readonly maxOutput: number;
   interrupted?: boolean;
-  cut?: "output_limit_exceeded";
+  cut?: "output_limit_exceeded" | "deadline_exceeded" | "inactivity_timeout";
 }
 /** Streaming buffers carry no execution authority: the committed task and attempt do. */
 export class DurableProvider {
   private readonly streams = new Map<string, Stream>();
   private disposed = false;
+  private lastWake: string | undefined;
   constructor(
     private readonly options: {
       readonly storage: DurableStore;
       readonly context: TaskContext;
       readonly send: (text: string) => void;
       readonly monotonic?: () => number;
+      readonly wallClock?: () => number;
     },
   ) {}
   private now(): number {
     return (this.options.monotonic ?? (() => performance.now()))();
+  }
+  private wall(): number {
+    return (this.options.wallClock ?? Date.now)();
+  }
+  private elapsed(stream: Stream): number {
+    const mono = this.now();
+    const wall = this.wall();
+    stream.elapsed += Math.max(0, mono - stream.sampledMono, wall - stream.sampledWall);
+    stream.sampledMono = mono;
+    stream.sampledWall = wall;
+    return stream.elapsed;
+  }
+  /** Review every active stream before admitting post-wake effects; closure still owns release. */
+  wake(message: ServiceWakeMessage): void {
+    if (!this.canPump() || message.generation !== this.options.context.generation) return;
+    const key = JSON.stringify(message);
+    if (key === this.lastWake) return;
+    this.lastWake = key;
+    for (const [attempt, stream] of this.streams) {
+      // A queued event or a newly prepared stream may already have sampled resume.
+      // Add only time through that endpoint which the previous sample did not observe.
+      const throughSleep =
+        stream.elapsed +
+        (message.asleepMs === 0
+          ? 0
+          : Math.max(0, Date.parse(message.resumedAt) - stream.sampledWall));
+      const elapsed = Math.max(this.elapsed(stream), throughSleep);
+      stream.elapsed = elapsed;
+      stream.longestSilence = Math.max(stream.longestSilence, elapsed - stream.last);
+      if (!stream.cut) {
+        if (elapsed >= stream.maxDuration) stream.cut = "deadline_exceeded";
+        else if (elapsed - stream.last >= stream.maxInactivity) stream.cut = "inactivity_timeout";
+      }
+      if (stream.cut) this.interrupt(attempt);
+    }
+    this.options.storage.emitWakeDiagnostic();
   }
   private canPump(): boolean {
     return !this.disposed && this.options.storage.ready;
@@ -203,8 +246,12 @@ export class DurableProvider {
         text: "",
         sequence: 0,
         transfer: prepared.value.transfer,
-        started: now,
-        last: now,
+        sampledMono: now,
+        sampledWall: this.wall(),
+        elapsed: 0,
+        last: 0,
+        maxDuration: policy.max_attempt_duration_ms,
+        maxInactivity: policy.max_inactivity_ms,
         longestSilence: 0,
         usage: unknownUsage,
         maxOutput: policy.max_output_bytes,
@@ -237,7 +284,7 @@ export class DurableProvider {
     if (this.disposed || message.generation !== this.options.context.generation || !stream)
       return true;
     if (message.event.sequence !== stream.sequence + 1) return false;
-    const now = this.now();
+    const now = this.elapsed(stream);
     stream.longestSilence = Math.max(stream.longestSilence, now - stream.last);
     stream.last = now;
     stream.sequence = message.event.sequence;
@@ -257,7 +304,13 @@ export class DurableProvider {
       this.interrupt(message.attempt);
       return true;
     }
-    if (event.type === "result" && stream.cut)
+    // A wake timeout cannot overwrite main's proof that no request was dispatched.
+    // Preserve its reason and the task's remaining readmission budget.
+    if (
+      event.type === "result" &&
+      stream.cut &&
+      !(event.result.status === "failed" && !event.result.dispatched)
+    )
       event = { ...event, result: { status: "failed", reason: stream.cut, dispatched: true } };
     if (event.type === "result" && event.result.status === "completed" && !stream.text)
       event = { ...event, result: { status: "failed", reason: "empty_reply", dispatched: true } };
@@ -291,7 +344,7 @@ export class DurableProvider {
       usage: stream.usage,
       transfer: stream.transfer,
       events: stream.sequence,
-      duration_ms: Math.round(now - stream.started),
+      duration_ms: Math.round(now),
       longest_silence_ms: Math.round(stream.longestSilence),
     });
   }

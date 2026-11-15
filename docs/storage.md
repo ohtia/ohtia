@@ -1,9 +1,11 @@
 ---
 type: Playbook
 title: Durable foundation storage
-description: Persist local preferences and research records, control durable reply tasks, and recover verified migrations.
+description: Persist local preferences and research records, resume durable reply tasks after restart, and recover verified migrations.
 generated:
   by: codex/gpt-6.1-sol
+verified:
+  by: human:AdrianMastronardi
 ---
 
 # Durable foundation storage
@@ -56,7 +58,11 @@ Migration `0010_reply_control` adds `messages.ending` and `tasks.charge_warning_
 
 The development command accepts `--ohtia-dev-command=stop --ohtia-dev-task=<id>` and `--ohtia-dev-command=start-again --ohtia-dev-task=<id>`; invoking `start-again` acknowledges the duplicate-charge warning. Task identifiers are printed alongside attempt identifiers. `--ohtia-dev-command=continue-all` invokes `task.continueAll` for recovery-paused work across projects, after checking the admitted operation policy, task authority, current connection and open plan pauses. These commands use the existing serialized data-service command and receipt boundary.
 
-A validated migration gate present before Retry invokes the shared recovery review after target validation and restoration activation, before the gate is removed or task readiness is published. Its reserved transaction pauses queued and blocked tasks, cancels unfinished undispatched attempts with `service_restarted` and holds their tasks, makes dispatched attempts uncertain with capacity released for ChatGPT, and finalizes an already cancelling task as cancelled. Exhausted tasks fail and a returning reply with a newer waiting reply is cancelled. Subsequent starts and coalescing preserve the pause until `task.continueAll`; a healthy upgrade's fresh gate alone adds no pause. This recovery-only boundary is extended by [SPEC-003-013](epics/EPIC-003-research-agents/epic.md#spec-003-013-restart-and-suspension).
+A validated migration gate present before Retry invokes the shared recovery review after target validation and restoration activation, before the gate is removed or task readiness is published. Its reserved transaction pauses queued and blocked tasks, cancels unfinished undispatched attempts with `service_restarted` and holds their tasks, makes dispatched attempts uncertain with capacity released for ChatGPT, and finalizes an already cancelling task as cancelled. Exhausted tasks fail and a returning reply with a newer waiting reply is cancelled. Subsequent starts and coalescing preserve the pause until `task.continueAll`; a healthy upgrade's fresh gate alone adds no pause. The complete restart review follows [SPEC-003-013](epics/EPIC-003-research-agents/epic.md#spec-003-013-restart-and-suspension).
+
+Migration `0011_service_runs` adds append-only service history keyed by main’s generation, with `started_at` and an initially empty `clean_stop_at`. Each admitted start reviews tasks and registers its run in one reserved transaction before readiness. The existing supervisor first denies further dispatch and ends the generation’s provider transports, then waits for their closure within its total shutdown deadline before sending the orderly shutdown message; an expired deadline keeps the application open and prevents a later deferred shutdown request. An orderly shutdown request sent before expiry can still complete and record its clean stop. A successful orderly shutdown drains the existing service queue and writes `clean_stop_at` as the store’s final write; an unorderly shutdown leaves it empty. Ordinary startup with a recorded clean stop continues queued tasks and preserves blocking reasons. Other starts apply the shared crash review. A legacy store without service-run history requires one explicit continuation for its pending development tasks; its first upgrade cannot prove an orderly stop from a missing record. Main closes the preceding generation’s provider transports before starting its replacement; a committed dispatch permit therefore becomes uncertain even if it never reached main, with no saved partial text or automatic second attempt.
+
+Main observes Electron’s suspend/resume events and sends the versioned, runtime-validated `service_wake` with wall-clock timestamps and the measured nonnegative sleep interval. The service rechecks running attempts against their original duration and inactivity budgets, requests interruption on expiry and waits for the existing transport-closure receipt. Main also rechecks those budgets and refuses permits issued before the latest resume. The [provider-transfer contract](adr/adr-0052-current-provider-dispatch-authorization.md) fences late permits until the data service’s ordered wake-review echo; storage activation still gates its next scheduler pump. Sleep does not reset an attempt or enlarge its retry budget. Service start, orderly stop and wake diagnostics contain only catalog event identities; no research content, credentials or provider error text is included.
 
 ## Migration and recovery
 

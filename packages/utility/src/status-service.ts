@@ -1,6 +1,7 @@
 import { DurableProvider } from "./durable-provider.js";
 import {
   decodeConnectionReport,
+  decodeServiceWake,
   decodeDevelopmentAction,
   decodeProviderEvent,
   ServiceConnections,
@@ -33,6 +34,7 @@ export function createStatusService(
 ) {
   if (!isInterfaceLocale(locale)) throw new Error("Unsupported trusted service locale.");
   const connections = new ServiceConnections();
+  storage?.setTaskContext({ generation, mode, connections });
   // The service generation identifies every provider message; main discards the rest.
   const durable = storage
     ? new DurableProvider({ storage, context: { generation, mode, connections }, send })
@@ -383,6 +385,7 @@ export function createStatusService(
       if (!isInterfaceLocale(resolvedLocale) || !storage?.ready || disposed || providerFailed)
         throw new Error("Invalid storage activation.");
       enabled = true;
+      if (durable) enqueueProvider(() => durable.pump());
       status = { ...status, engine: "verified", interfaceLocale: resolvedLocale };
       for (const stream of streams.values())
         if (stream.topic === "status")
@@ -400,6 +403,17 @@ export function createStatusService(
     },
     receive(text: unknown): void {
       if (disposed) return;
+      const wake = decodeServiceWake(text);
+      if (wake) {
+        if (wake.generation === generation)
+          enqueueProvider(async () => {
+            if (enabled && durable) durable.wake(wake);
+            // This exact echo is ordered after every old permit and before the next pump.
+            send(JSON.stringify(wake));
+            if (enabled && durable) await durable.pump();
+          });
+        return;
+      }
       const report = decodeConnectionReport(text, generation);
       if (report) {
         // Without storage there is no task transaction to serialize with these reports.

@@ -379,7 +379,7 @@ describe("blocked work and connection usage pauses", () => {
     f.state("disconnected");
     value(await f.store.reconcileTaskConnections());
     expect(f.rows().at(-1)!.blocking_reason).toBe("connection_disabled");
-    await f.store.close();
+    await f.store.close(true);
     await f.store.open();
     f.state("connected");
     value(await f.store.reconcileTaskConnections());
@@ -496,7 +496,7 @@ describe("blocked work and connection usage pauses", () => {
 });
 
 describe("migration recovery task handoff", () => {
-  async function source() {
+  async function source(edge = false) {
     const f = await setup();
     await f.start();
     const dispatched = (await f.prepare())!;
@@ -508,18 +508,28 @@ describe("migration recovery task handoff", () => {
       UPDATE tasks SET state='running',reply_position=input_through_position+1,state_revision=state_revision+1 WHERE state='queued';`);
     db.close();
     await f.start();
+    if (edge) {
+      value(await f.append(unsent));
+      const edgeDb = f.raw();
+      edgeDb.exec(
+        "UPDATE tasks SET state='cancelling',state_revision=state_revision+1 WHERE id=(SELECT task_id FROM attempts WHERE dispatch_permitted_at IS NOT NULL)",
+      );
+      edgeDb.close();
+    }
     await f.store.close();
     const old = f.raw();
     old.exec(
-      "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; PRAGMA user_version=8",
+      "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DROP TABLE service_runs; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; PRAGMA user_version=8",
     );
     old.close();
     return { ...f, dispatched, unsent };
   }
-  it("does not treat a healthy upgrade's new gate as migration recovery", async () => {
+  it("holds legacy work without service-run proof during its first upgrade", async () => {
     const f = await source();
     await f.store.open();
-    expect(f.rows().map((t) => t.state)).toEqual(["running", "running", "queued"]);
+    expect(f.rows().map((t) => t.state)).toEqual(["uncertain", "blocked", "blocked"]);
+    value(await f.continueAll());
+    expect(f.rows().map((t) => t.state)).toEqual(["uncertain", "queued", "queued"]);
     expect(fs.existsSync(path.join(f.root, "migration-pending.json"))).toBe(false);
   });
   it.each(["rollback", "restoration", "committed-target", "hold-rollback", "hold-committed"])(
@@ -614,19 +624,10 @@ describe("migration recovery task handoff", () => {
     },
   );
   it("cancels returning replies behind later work, fails exhausted preparations and honors cancellation during recovery", async () => {
-    const f = await source();
-    await f.store.open();
-    // A returning unsent reply must not collide with the newer waiting reply in its conversation.
-    value(await f.append(f.unsent));
-    const db = f.raw();
-    db.exec(
-      "UPDATE tasks SET state='cancelling',state_revision=state_revision+1 WHERE id=(SELECT task_id FROM attempts WHERE dispatch_permitted_at IS NOT NULL)",
-    );
-    db.close();
-    await f.store.close();
+    const f = await source(true);
     fs.writeFileSync(
       path.join(f.root, "migration-pending.json"),
-      JSON.stringify({ version: 1, operation: "edge-recovery", source: 8, target: 10 }),
+      JSON.stringify({ version: 1, operation: "edge-recovery", source: 8, target: 11 }),
     );
     await f.store.retry();
     expect(f.rows().map((t) => t.state)).toEqual(["cancelled", "cancelled", "blocked", "blocked"]);
@@ -659,7 +660,7 @@ describe("migration recovery task handoff", () => {
     raw.close();
     fs.writeFileSync(
       path.join(exhausted.root, "migration-pending.json"),
-      JSON.stringify({ version: 1, operation: "exhausted-recovery", source: 8, target: 10 }),
+      JSON.stringify({ version: 1, operation: "exhausted-recovery", source: 8, target: 11 }),
     );
     await exhausted.store.retry();
     expect(exhausted.rows()[1]!.state).toBe("failed");
@@ -673,7 +674,7 @@ describe("migration recovery task handoff", () => {
     await f.store.close();
     fs.writeFileSync(
       path.join(f.root, "migration-pending.json"),
-      JSON.stringify({ version: 1, operation: "synthetic-recovery", source: 8, target: 10 }),
+      JSON.stringify({ version: 1, operation: "synthetic-recovery", source: 8, target: 11 }),
     );
     await f.store.retry();
     value(await f.append(id));
@@ -908,20 +909,20 @@ describe("reply control composed with connection and usage pauses", () => {
       await f.store.close();
       const db = f.raw();
       db.exec(
-        "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; PRAGMA user_version=9",
+        "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DROP TABLE service_runs; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; PRAGMA user_version=9",
       );
       db.close();
       if (recovery) {
         fs.writeFileSync(
           path.join(f.root, "migration-pending.json"),
-          JSON.stringify({ version: 1, operation: "composed-recovery", source: 9, target: 10 }),
+          JSON.stringify({ version: 1, operation: "composed-recovery", source: 9, target: 11 }),
         );
         await f.store.retry();
-        expect(f.rows().find((row) => row.state === "blocked")!.blocking_reason).toBe(
-          "restart_paused",
-        );
-        value(await f.continueAll());
       } else await f.store.open();
+      expect(f.rows().find((row) => row.state === "blocked")!.blocking_reason).toBe(
+        "restart_paused",
+      );
+      value(await f.continueAll());
       expect(f.rows().find((row) => row.state === "blocked")!.blocking_reason).toBe(
         "usage_limit_reached",
       );
@@ -930,13 +931,13 @@ describe("reply control composed with connection and usage pauses", () => {
       expect(value(await f.resume("resume-after-reply-migration"))).toEqual(resumed);
       expect(await f.prepare()).not.toBeNull();
       const upgraded = f.raw();
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(10);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(11);
       expect(
         upgraded
           .prepare("SELECT name FROM kysely_migration ORDER BY name DESC LIMIT 2")
           .pluck()
           .all(),
-      ).toEqual(["0010_reply_control", "0009_usage_limit_pauses"]);
+      ).toEqual(["0011_service_runs", "0010_reply_control"]);
       expect(
         upgraded
           .prepare("SELECT count(*) FROM usage_limit_pauses WHERE resumed_at IS NOT NULL")
@@ -960,7 +961,7 @@ it.each(["continue-all", "resume-requests"] as const)(
       await f.store.close();
       fs.writeFileSync(
         path.join(f.root, "migration-pending.json"),
-        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 10 }),
+        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 11 }),
       );
       await f.store.retry();
     }
