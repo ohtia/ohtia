@@ -59,7 +59,7 @@ function append(
 }
 function dropResearch(db: InstanceType<typeof Database>) {
   db.exec(
-    "DROP TABLE service_runs; DROP TABLE execution_limits_receipts; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; DELETE FROM kysely_migration WHERE name='0012_application_exit'; DELETE FROM ohtia_migration_artifacts WHERE name='0012_application_exit'; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; DROP TABLE attempts; DROP TABLE tasks; DELETE FROM kysely_migration WHERE name='0008_durable_ai_tasks'; DELETE FROM ohtia_migration_artifacts WHERE name='0008_durable_ai_tasks'; DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; PRAGMA user_version=6",
+    "DROP TABLE service_runs; DROP TABLE execution_limits_receipts; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; DELETE FROM kysely_migration WHERE name='0012_application_exit'; DELETE FROM ohtia_migration_artifacts WHERE name='0012_application_exit'; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; DROP TABLE attempts; DROP TABLE tasks; DELETE FROM kysely_migration WHERE name='0008_durable_ai_tasks'; DELETE FROM ohtia_migration_artifacts WHERE name='0008_durable_ai_tasks'; DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; PRAGMA user_version=6",
   );
 }
 
@@ -506,7 +506,7 @@ describe("migration 0007 and database-owned rules", () => {
     db.close();
     await store.open();
     const upgraded = raw();
-    expect(upgraded.pragma("user_version", { simple: true })).toBe(13);
+    expect(upgraded.pragma("user_version", { simple: true })).toBe(14);
     expect(upgraded.prepare("SELECT * FROM application_preferences ORDER BY key").all()).toEqual(
       before,
     );
@@ -519,7 +519,7 @@ describe("migration 0007 and database-owned rules", () => {
           fs.readFileSync(path.join(root, "recovery/migrations", s, "manifest.json"), "utf8"),
         ),
       ),
-    ).toContainEqual(expect.objectContaining({ sourceRevision: 6, targetRevision: 13 }));
+    ).toContainEqual(expect.objectContaining({ sourceRevision: 6, targetRevision: 14 }));
     expect(value(await store.readProjects())).toEqual([]);
     upgraded.close();
   });
@@ -667,11 +667,15 @@ describe("migration 0007 and database-owned rules", () => {
       [2, "researcher", null, "text", conversation.id, "bad"],
     ] as const)
       expect(() => insert.run(id, toBytes(conv), position, kind, agent, content, time)).toThrow();
-    // Content has no database length limit and may contain NUL; it is preserved as immutable text.
-    value(
-      await store.executeResearchCommand(
-        append(conversation.id, "large", "a".repeat(100_000) + "\0end"),
-      ),
+    // Legacy content remains readable; the current composer limit is a domain precondition.
+    insert.run(
+      id,
+      toBytes(conversation.id),
+      2,
+      "researcher",
+      null,
+      "a".repeat(100_000) + "\0end",
+      created,
     );
     expect(value(await store.readMessages(conversation.id)).at(-1)?.content).toHaveLength(100004);
     expect(() =>

@@ -191,6 +191,11 @@ function controllerHarness(start = true) {
   const items = Array.from({ length: 120 }, (_, n) => message(n + 1));
   let failedEarlier = false;
   const port = {
+    readDestination: vi.fn(() => ok({ destination: null })),
+    readConnection: vi.fn(() =>
+      ok({ account_email: "researcher@example.org", last_account_email: null }),
+    ),
+    appendMessage: vi.fn(() => ok({ resultId: id(300) })),
     subscribeResearch: vi.fn((_scope, receive) => {
       listener = receive;
       subscriptions++;
@@ -336,10 +341,14 @@ describe("conversation read and event recovery", () => {
       expect(h.controller.snapshot().status).toBe(
         stage === "projects" || stage === "subscription" ? "unavailable" : "failed",
       );
+      expect(h.controller.composer.snapshot().destinationStatus).toBe(
+        stage === "projects" || stage === "subscription" ? "failed" : "ready",
+      );
       h.controller.reload();
       expect(h.controller.snapshot().status).toBe("loading");
       await settle();
       expect(h.controller.snapshot().status).toBe("ready");
+      expect(h.controller.composer.snapshot().destinationStatus).toBe("ready");
       h.controller.dispose();
     },
   );
@@ -836,3 +845,210 @@ it.each(["navigation", "gap"] as const)(
     h.controller.dispose();
   },
 );
+
+it("wires the second researcher action to reuse exact saved text in the composer", async () => {
+  const f = controllerHarness();
+  await settle();
+  await render(state([message(1, "  reused\n한글 text  ")]), f.controller);
+  const buttons = container.querySelectorAll<HTMLButtonElement>(".conversation-actions button");
+  expect(buttons[1]?.getAttribute("aria-label")).toBe("Reuse message");
+  await act(async () => buttons[1]!.click());
+  expect(container.querySelector("textarea")?.value).toBe("  reused\n한글 text  ");
+  f.controller.dispose();
+});
+
+it("loads the timeline and processes replies independently of a stalled destination read", async () => {
+  vi.useFakeTimers();
+  const h = controllerHarness(false);
+  const cancel = vi.fn();
+  vi.mocked(h.port.readDestination).mockReturnValue({ result: new Promise(() => {}), cancel });
+  h.controller.open(scope);
+  await settle();
+  expect(h.controller.snapshot().status).toBe("ready");
+  expect(h.controller.snapshot().items).toHaveLength(50);
+  expect(h.controller.composer.snapshot().destinationStatus).toBe("loading");
+  h.emit({
+    ok: true,
+    value: { kind: "reply", taskId: id(900), sequence: 1, text: "Independent reply" },
+  });
+  await settle();
+  await vi.advanceTimersByTimeAsync(100);
+  expect(h.controller.snapshot().replies.get(id(900))?.text).toBe("Independent reply");
+  h.controller.dispose();
+  expect(cancel).toHaveBeenCalledOnce();
+});
+
+it("retains confirmed destination disclosure across an independent timeline-event failure", async () => {
+  const h = controllerHarness();
+  await settle();
+  expect(h.controller.composer.snapshot().destinationStatus).toBe("ready");
+  vi.mocked(h.port.readTimeline).mockReturnValueOnce(call(failure("storage_failed")) as never);
+  h.emit({ ok: true, value: { kind: "changed", record: "timeline", id: id(50), revision: 2 } });
+  await settle();
+  expect(h.controller.snapshot().status).toBe("failed");
+  expect(h.controller.composer.snapshot().destinationStatus).toBe("ready");
+  h.controller.dispose();
+});
+it("rereads the project destination even when a subsequent project-list refresh fails", async () => {
+  const h = controllerHarness();
+  await settle();
+  vi.mocked(h.port.readDestination).mockClear();
+  vi.mocked(h.port.listProjects).mockReturnValueOnce(call(failure("storage_failed")) as never);
+  h.emit({
+    ok: true,
+    value: { kind: "changed", record: "project", id: scope.projectId, revision: 2 },
+  });
+  await settle();
+  expect(h.port.readDestination).toHaveBeenCalledOnce();
+  expect(h.controller.composer.snapshot().destinationStatus).toBe("ready");
+  expect(h.controller.snapshot().status).toBe("failed");
+  h.controller.dispose();
+});
+
+it.each(["subscription", "projects"])(
+  "blocks stale disclosure after a gap when recovery fails at %s",
+  async (stage) => {
+    const h = controllerHarness();
+    await settle();
+    h.controller.composer.edit("Retain through gap");
+    expect(h.controller.composer.snapshot().destinationStatus).toBe("ready");
+    if (stage === "subscription")
+      vi.mocked(h.port.subscribeResearch).mockImplementationOnce(() => ({
+        ready: Promise.resolve(failure("service_unavailable")),
+        dispose() {},
+      }));
+    else
+      vi.mocked(h.port.listProjects).mockReturnValueOnce(call(failure("storage_failed")) as never);
+    h.emit(failure("sequence_gap"));
+    expect(h.controller.composer.snapshot().destinationStatus).toBe("loading");
+    h.controller.composer.send();
+    expect(h.port.appendMessage).not.toHaveBeenCalled();
+    await settle();
+    expect(h.controller.composer.snapshot().destinationStatus).toBe("failed");
+    h.controller.composer.send();
+    expect(h.port.appendMessage).not.toHaveBeenCalled();
+    expect(h.controller.composer.snapshot().text).toBe("Retain through gap");
+    await h.controller.composer.refreshDestination();
+    await settle();
+    expect(h.port.subscribeResearch).toHaveBeenCalledTimes(stage === "subscription" ? 3 : 2);
+    expect(h.controller.composer.snapshot().destinationStatus).toBe("ready");
+    h.controller.composer.send();
+    await settle();
+    expect(h.port.appendMessage).toHaveBeenCalledOnce();
+    h.controller.dispose();
+  },
+);
+it("reconnects lost observation before a destination refresh can authorize another send", async () => {
+  const h = controllerHarness();
+  await settle();
+  h.controller.composer.edit("Retained after subscription loss");
+  h.emit(failure("service_unavailable"));
+  await settle();
+  expect(h.controller.composer.snapshot().destinationStatus).toBe("failed");
+  h.controller.composer.send();
+  expect(h.port.appendMessage).not.toHaveBeenCalled();
+  vi.mocked(h.port.readDestination).mockClear();
+  await h.controller.composer.refreshDestination();
+  expect(h.port.subscribeResearch).toHaveBeenCalledTimes(2);
+  expect(h.controller.composer.snapshot().destinationStatus).toBe("loading");
+  expect(h.port.readDestination).not.toHaveBeenCalled();
+  h.controller.composer.send();
+  expect(h.port.appendMessage).not.toHaveBeenCalled();
+  await settle();
+  expect(h.controller.composer.snapshot().destinationStatus).toBe("ready");
+  expect(h.controller.composer.snapshot().text).toBe("Retained after subscription loss");
+  h.controller.composer.send();
+  await settle();
+  expect(h.port.appendMessage).toHaveBeenCalledOnce();
+  h.controller.dispose();
+});
+it("keeps a non-null destination unresolved when project failure interrupts its delayed account read", async () => {
+  const h = controllerHarness();
+  await settle();
+  let resolve!: (value: Outcome<never>) => void;
+  const cancel = vi.fn();
+  vi.mocked(h.port.readDestination).mockReturnValueOnce(
+    ok({
+      destination: {
+        operation: "development_test",
+        maxAttemptDurationMs: 600_000,
+        connection: "chatgpt",
+      },
+    }) as never,
+  );
+  vi.mocked(h.port.readConnection).mockReturnValueOnce({
+    result: new Promise<Outcome<never>>((done) => {
+      resolve = done;
+    }),
+    cancel,
+  });
+  vi.mocked(h.port.listProjects).mockReturnValueOnce(call(failure("storage_failed")) as never);
+  h.controller.composer.edit("Draft with unresolved identity");
+  h.emit({
+    ok: true,
+    value: { kind: "changed", record: "project", id: scope.projectId, revision: 2 },
+  });
+  await settle();
+  expect(h.port.readConnection).toHaveBeenCalledOnce();
+  expect(cancel).toHaveBeenCalledOnce();
+  expect(h.controller.composer.snapshot().destinationStatus).toBe("failed");
+  h.controller.composer.send();
+  expect(h.port.appendMessage).not.toHaveBeenCalled();
+  resolve({
+    ok: true,
+    value: { account_email: "late@example.org", last_account_email: null },
+  } as never);
+  await settle();
+  expect(h.controller.composer.snapshot().destinationStatus).toBe("failed");
+  expect(h.controller.composer.snapshot().destination).toBeNull();
+  await h.controller.composer.refreshDestination();
+  expect(h.controller.composer.snapshot().destinationStatus).toBe("ready");
+  expect(h.port.subscribeResearch).toHaveBeenCalledOnce();
+  expect(h.controller.composer.snapshot().text).toBe("Draft with unresolved identity");
+  h.controller.dispose();
+});
+
+it("does not accept a late ready result after the subscription has reported failure", async () => {
+  const h = controllerHarness(false);
+  let receive!: (notice: Outcome<ResearchEvent>) => void;
+  let resolve!: (notice: Outcome<{ subscriptionId: string }>) => void;
+  const dispose = vi.fn();
+  vi.mocked(h.port.subscribeResearch).mockImplementationOnce((_scope, listener) => {
+    receive = listener;
+    return {
+      ready: new Promise((done) => {
+        resolve = done;
+      }),
+      dispose,
+    };
+  });
+  h.controller.open(scope);
+  receive(failure("service_unavailable"));
+  expect(dispose).toHaveBeenCalledOnce();
+  resolve({ ok: true, value: { subscriptionId: "late-retired-subscription" } });
+  await settle();
+  expect(h.controller.composer.snapshot().destinationStatus).toBe("failed");
+  expect(h.port.readDestination).not.toHaveBeenCalled();
+  await h.controller.composer.refreshDestination();
+  await settle();
+  expect(h.controller.composer.snapshot().destinationStatus).toBe("ready");
+  h.controller.dispose();
+});
+it("does not let a retiring observer failure invalidate a reentrantly reopened scope", async () => {
+  const h = controllerHarness();
+  await settle();
+  let reopened = false;
+  const release = h.controller.observe((notice) => {
+    if (notice !== "ready" && !notice.ok && !reopened) {
+      reopened = true;
+      h.controller.reload();
+    }
+  });
+  h.emit(failure("service_unavailable"));
+  await settle();
+  expect(reopened).toBe(true);
+  expect(h.controller.snapshot().status).toBe("ready");
+  expect(h.controller.composer.snapshot().destinationStatus).toBe("ready");
+  release();
+  h.controller.dispose();
+});

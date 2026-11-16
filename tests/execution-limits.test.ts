@@ -1,3 +1,4 @@
+import { objects as exitReceiptObjects } from "../packages/utility/src/migrations/0012_application_exit.mjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ServiceConnections,
@@ -284,12 +285,14 @@ describe("execution limit contract and storage", () => {
     await f.store.close(true);
     const source = f.raw();
     source.exec(
-      "DROP TABLE execution_limits_receipts; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; PRAGMA user_version=12",
+      "DROP TABLE execution_limits_receipts; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; PRAGMA user_version=12",
     );
+    source.exec("DROP TRIGGER receipts_commands");
+    source.exec(exitReceiptObjects.receipts_commands);
     source.close();
     await f.store.open();
     const db = f.raw();
-    expect(db.pragma("user_version", { simple: true })).toBe(13);
+    expect(db.pragma("user_version", { simple: true })).toBe(14);
     expect(db.prepare("SELECT state,blocking_reason FROM tasks").all()).toEqual([
       { state: "queued", blocking_reason: null },
     ]);

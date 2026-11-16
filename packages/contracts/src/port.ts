@@ -680,6 +680,14 @@ export const operationErrorCodes = Object.freeze({
   "limits.read": [...readErrors, "preference_invalid"],
   "limits.replace": replaceErrors.filter((code) => code !== "stale_revision"),
   "limits.receipt": readErrors,
+  "conversation.stop": [
+    ...researchMutationErrors,
+    "record_not_found",
+    "uncertain",
+    "operation_conflict",
+  ],
+  "task.stop": [...researchMutationErrors, "record_not_found", "uncertain", "operation_conflict"],
+  "destination.read": [...readErrors, "record_not_found"],
   "project.create": [...researchMutationErrors, "uncertain", "operation_conflict"],
   "project.confirmSetup": [
     ...researchMutationErrors,

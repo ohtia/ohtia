@@ -219,3 +219,11 @@ export const connectionInferenceLimits: Readonly<Record<string, number>> = Objec
   chatgpt: 3,
   fake: 1,
 });
+
+/** Connection metadata shared by the adapter declaration and its destination presentation. */
+export const chatgptConnection = Object.freeze({
+  id: "chatgpt",
+  displayName: "ChatGPT",
+  kind: "subscription",
+  usageUrl: "https://chatgpt.com/settings/usage",
+} as const satisfies ProviderDeclaration["connection"]);

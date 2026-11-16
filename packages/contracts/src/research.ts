@@ -29,6 +29,7 @@ export interface MessageRecord {
   readonly createdAt: string;
 }
 export interface ResearchPayloads {
+  readonly "conversation.stop": { readonly conversationId: string };
   readonly "task.stop": { readonly taskId: string };
   /** Invoking this human command acknowledges possible duplicate charges. */
   readonly "task.startAgain": { readonly taskId: string };
@@ -63,6 +64,7 @@ export interface ResearchResult {
   readonly resultId: string;
 }
 export const researchCommands = [
+  "conversation.stop",
   "task.stop",
   "task.startAgain",
   "usagePause.resume",

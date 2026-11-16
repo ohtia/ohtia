@@ -560,7 +560,10 @@ Fixed mappings:
 | Requires review               | `refresh-cw`           |
 | Restricted use                | `lock`                 |
 | Saved                         | `check`                |
+| Send message                  | `arrow-up`             |
+| Stop replies                  | `square`               |
 | Copy message                  | `copy`                 |
+| Reuse message                 | `text-cursor-input`    |
 | Copied                        | `clipboard-check`      |
 | External link                 | `external-link`        |
 | Close dialog                  | `x`                    |
@@ -1216,10 +1219,10 @@ Each component is specified with its purpose, anatomy, variants, states, consume
 
 ### Base components
 
-- **Button.** Variants `primary`, in `action.primary.*`; `secondary`, with `border.control`; `quiet`, as underlined text; and `destructive`, in `danger.*`. The label is a verb with its object, for example “Confirm claim.” While loading, it retains its label and announces the state. Prefer allowing the action and explaining the error over disabling it; if disabled, the reason is visible.
+- **Button.** Variants `primary`, in `action.primary.*`; `secondary`, with `border.control`; `quiet`, as underlined text; and `destructive`, in `danger.*`. The label is a verb with its object, for example “Confirm claim.” While loading, it retains its label and announces the state. Prefer allowing the action and explaining the error over disabling it; if disabled, the reason is visible. The conversation composer’s send button is the one exception: while the box is empty it is disabled without a separate visible reason, because the empty box shows it, and its tooltip and accessible description state it.
 - **Icon button.** Has an accessible name and tooltip, and its target meets pointer measurements.
 - **Link.** Always underlined. An external link indicates that in its text or an icon with an accessible name.
-- **Text field.** Visible label above, help below and error below in `attention.*`, with an icon and text explaining how to correct it. Optional fields are marked, not required ones.
+- **Text field.** Visible label above, help below and error below in `attention.*`, with an icon and text explaining how to correct it. Optional fields are marked, not required ones. The conversation composer is an exception to the visible label above: its placeholder, “Message {agent}”, is also its accessible name, as in ChatGPT and Claude.
 - **Selector.** A native `select`, or an APG combobox when the list is long or searchable.
 - **Checkbox, radio button and switch.** A switch is used only for settings applied immediately.
 - **Tabs.** Activation is manual: arrows move focus and Enter or Space activates a tab.

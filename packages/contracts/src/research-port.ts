@@ -4,6 +4,7 @@ import type {
   ResearchPayloads,
   ResearchResult,
 } from "./research.js";
+import { isConnectionId } from "./connections.js";
 import type { PortCall, Subscription, Outcome } from "./port.js";
 
 export const researchOperations = [
@@ -12,6 +13,9 @@ export const researchOperations = [
   "conversation.start",
   "conversation.rename",
   "message.append",
+  "conversation.stop",
+  "task.stop",
+  "destination.read",
   "project.list",
   "conversation.list",
   "conversation.read",
@@ -110,7 +114,21 @@ export type ResearchEvent =
       readonly sequence: number;
       readonly text: string;
     };
+export interface MessageDestination {
+  readonly operation: string;
+  readonly maxAttemptDurationMs: number;
+  readonly connection: string;
+}
+export const researcherMessageLimit = 20_000;
+export function validResearcherMessage(text: string): boolean {
+  return text.trim().length > 0 && Array.from(text).length <= researcherMessageLimit;
+}
 export interface ResearchInputs {
+  "conversation.stop": ResearchPayloads["conversation.stop"];
+  "task.stop": ResearchPayloads["task.stop"];
+  "destination.read": { readonly projectId: string } & (
+    { readonly conversationId: string } | { readonly agentId: "virgilio" }
+  );
   "project.create": ResearchPayloads["project.create"];
   "project.confirmSetup": ResearchPayloads["project.confirmSetup"];
   "conversation.start": { readonly projectId: string; readonly content: string | TextDescriptor };
@@ -135,6 +153,9 @@ export interface ResearchInputs {
   "reply.readParts": { readonly taskId: string; readonly fromSequence: number };
 }
 export interface ResearchOutputs {
+  "conversation.stop": ResearchResult;
+  "task.stop": ResearchResult;
+  "destination.read": { readonly destination: MessageDestination | null };
   "project.create": ResearchResult;
   "project.confirmSetup": ResearchResult;
   "conversation.start": ResearchResult;
@@ -151,6 +172,14 @@ export interface ResearchOutputs {
   "reply.readParts": ReplyParts;
 }
 export interface ResearchPort {
+  stopConversation(
+    operationId: string,
+    input: ResearchInputs["conversation.stop"],
+  ): PortCall<ResearchResult>;
+  stopTask(operationId: string, input: ResearchInputs["task.stop"]): PortCall<ResearchResult>;
+  readDestination(
+    input: ResearchInputs["destination.read"],
+  ): PortCall<ResearchOutputs["destination.read"]>;
   createProject(operationId: string): PortCall<ResearchResult>;
   confirmProjectSetup(
     operationId: string,
@@ -197,6 +226,8 @@ export function isResearchMutation(value: string): value is WindowResearchComman
     "conversation.start",
     "conversation.rename",
     "message.append",
+    "conversation.stop",
+    "task.stop",
   ].includes(value);
 }
 export function compareTimeline(a: TimelineCursor, b: TimelineCursor): number {
@@ -298,6 +329,17 @@ function cursor(value: unknown): boolean {
 }
 export function researchInput(operation: ResearchOperation, value: unknown): boolean {
   switch (operation) {
+    case "conversation.stop":
+      return exact(value, ["conversationId"]) && isResearchId(value.conversationId);
+    case "task.stop":
+      return exact(value, ["taskId"]) && isResearchId(value.taskId);
+    case "destination.read":
+      return (
+        obj(value) &&
+        isResearchId(value.projectId) &&
+        ((exact(value, ["projectId", "conversationId"]) && isResearchId(value.conversationId)) ||
+          (exact(value, ["projectId", "agentId"]) && value.agentId === "virgilio"))
+      );
     case "project.create":
       return exact(value, []);
     case "project.confirmSetup":
@@ -472,6 +514,18 @@ function item(value: unknown): boolean {
   );
 }
 export function researchOutput(operation: ResearchOperation, value: unknown): boolean {
+  if (operation === "destination.read")
+    return (
+      exact(value, ["destination"]) &&
+      nullable(
+        value.destination,
+        (d) =>
+          exact(d, ["operation", "maxAttemptDurationMs", "connection"]) &&
+          opaque(d.operation) &&
+          integer(d.maxAttemptDurationMs) &&
+          isConnectionId(d.connection),
+      )
+    );
   if (isResearchMutation(operation))
     return exact(value, ["resultId"]) && isResearchId(value.resultId);
   if (operation === "research.subscribe")

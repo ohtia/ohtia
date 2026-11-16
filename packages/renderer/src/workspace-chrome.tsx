@@ -525,6 +525,55 @@ export function WorkspaceChrome({
       hint={!compact}
     />
   );
+  const sizingControls = (panel: WorkspacePanel) =>
+    !narrow && geometry && geometry.pairs.length > 0 ? (
+      <div
+        className="workspace-sizing"
+        role="group"
+        aria-label={panel === "chat" && chatTitle ? chatTitle : text(panelKeys[panel])}
+      >
+        {[false, true].map((increase) => (
+          <Tooltip
+            key={String(increase)}
+            label={[
+              message(locale, increase ? "workspace.increase" : "workspace.reduce", {
+                panel: text(panelKeys[panel]),
+              }),
+              state.initializing || preferences.busy ? text("command.reason.busy") : undefined,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          >
+            <button
+              type="button"
+              data-workspace-size={panel}
+              aria-label={message(locale, increase ? "workspace.increase" : "workspace.reduce", {
+                panel: text(panelKeys[panel]),
+              })}
+              aria-disabled={state.initializing || preferences.busy}
+              aria-describedby={
+                state.initializing || preferences.busy
+                  ? `${id}-size-${panel}-${String(increase)}`
+                  : undefined
+              }
+              onClick={() => {
+                layout?.size(panel, increase);
+              }}
+            >
+              {increase ? "+" : "−"}
+              {(state.initializing || preferences.busy) && (
+                <span
+                  className="primitive-announcement"
+                  id={`${id}-size-${panel}-${String(increase)}`}
+                >
+                  {text("command.reason.busy")}
+                </span>
+              )}
+            </button>
+          </Tooltip>
+        ))}
+      </div>
+    ) : null;
   return (
     <div
       ref={root}
@@ -652,6 +701,21 @@ export function WorkspaceChrome({
         )}
         {workspacePanels.map((panel) => {
           const pair = geometry?.pairs.find(([left]) => left === panel);
+          const heading = (
+            <h2
+              id={`${panelId(panel)}-heading`}
+              ref={(element) => {
+                if (element) headings.current[panel] = element;
+                else headings.current[panel] = undefined;
+              }}
+              tabIndex={-1}
+              className={
+                panel === "documents" ? "primitive-announcement" : "workspace-panel-heading"
+              }
+            >
+              {panel === "chat" && chatTitle ? chatTitle : text(panelKeys[panel])}
+            </h2>
+          );
           return (
             <Fragment key={panel}>
               <section
@@ -663,19 +727,14 @@ export function WorkspaceChrome({
                 aria-labelledby={`${panelId(panel)}-heading`}
                 style={{ inlineSize: geometry?.widths[panel] }}
               >
-                <h2
-                  id={`${panelId(panel)}-heading`}
-                  ref={(element) => {
-                    if (element) headings.current[panel] = element;
-                    else headings.current[panel] = undefined;
-                  }}
-                  tabIndex={-1}
-                  className={
-                    panel === "documents" ? "primitive-announcement" : "workspace-panel-heading"
-                  }
-                >
-                  {panel === "chat" && chatTitle ? chatTitle : text(panelKeys[panel])}
-                </h2>
+                {panel === "chat" ? (
+                  <div className="workspace-chat-heading">
+                    {heading}
+                    {sizingControls(panel)}
+                  </div>
+                ) : (
+                  heading
+                )}
                 {panel === "documents" && (
                   <div
                     className="workspace-tabs"
@@ -752,58 +811,7 @@ export function WorkspaceChrome({
                     />
                   </footer>
                 )}
-                {!narrow && geometry && geometry.pairs.length > 0 && (
-                  <div
-                    className="workspace-sizing"
-                    role="group"
-                    aria-label={panel === "chat" && chatTitle ? chatTitle : text(panelKeys[panel])}
-                  >
-                    {[false, true].map((increase) => (
-                      <Tooltip
-                        key={String(increase)}
-                        label={[
-                          message(locale, increase ? "workspace.increase" : "workspace.reduce", {
-                            panel: text(panelKeys[panel]),
-                          }),
-                          state.initializing || preferences.busy
-                            ? text("command.reason.busy")
-                            : undefined,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      >
-                        <button
-                          type="button"
-                          data-workspace-size={panel}
-                          aria-label={message(
-                            locale,
-                            increase ? "workspace.increase" : "workspace.reduce",
-                            { panel: text(panelKeys[panel]) },
-                          )}
-                          aria-disabled={state.initializing || preferences.busy}
-                          aria-describedby={
-                            state.initializing || preferences.busy
-                              ? `${id}-size-${panel}-${String(increase)}`
-                              : undefined
-                          }
-                          onClick={() => {
-                            layout?.size(panel, increase);
-                          }}
-                        >
-                          {increase ? "+" : "−"}
-                          {(state.initializing || preferences.busy) && (
-                            <span
-                              className="primitive-announcement"
-                              id={`${id}-size-${panel}-${String(increase)}`}
-                            >
-                              {text("command.reason.busy")}
-                            </span>
-                          )}
-                        </button>
-                      </Tooltip>
-                    ))}
-                  </div>
-                )}
+                {panel !== "chat" && sizingControls(panel)}
               </section>
               {pair && layout && state && (
                 <WorkspaceSplitter

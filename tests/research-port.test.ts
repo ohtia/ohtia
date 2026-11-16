@@ -139,7 +139,7 @@ describe("research text transport", () => {
     expect(staging.part("two", "fifth", first)).toEqual(failure("busy"));
     expect(staging.part("three", "independent", first).ok).toBe(true);
   });
-  it.each(["😀".repeat(20_000), "x".repeat(192 * 1024)])(
+  it.each(["😀".repeat(20_000), "x".repeat(20_000)])(
     "uses one durable receipt for a resend and replays without uploading parts again %#",
     async (text) => {
       const h = await harness();
@@ -348,7 +348,6 @@ describe("research timeline and bounded reads", () => {
     for (const operation of [
       "development.createProject",
       "task.cancelAll",
-      "task.stop",
       "task.startAgain",
       "usagePause.resume",
       "task.continueAll",
@@ -617,6 +616,8 @@ it("rejects missing records and cross-project scopes with controlled errors and 
   const h = await harness();
   const missing = entity(9999);
   const calls = [
+    h.port.readDestination({ projectId: missing, agentId: "virgilio" }),
+    h.port.stopConversation("stop-missing-conversation", { conversationId: missing }),
     h.port.listProjects({ cursor: missing, count: 50 }),
     h.port.listConversations({ projectId: missing, cursor: null, count: 50 }),
     h.port.listConversations({ projectId: h.projectId, cursor: missing, count: 50 }),
@@ -876,4 +877,122 @@ it("copies a saved long message through real scoped reads and refuses another co
     false,
   );
   expect(clipboard.writeText).not.toHaveBeenCalled();
+});
+
+it("routes destination reads through the service for existing and new conversations independently of connection state", async () => {
+  const h = await harness();
+  expect(
+    value(
+      await h.port.readDestination({ projectId: h.projectId, conversationId: h.conversationId })
+        .result,
+    ),
+  ).toEqual({ destination: null });
+  const projectId = value(
+    await h.store.executeResearchCommand({
+      command: "development.createProject",
+      operationId: "dev-project",
+      payload: {},
+    }),
+  ).resultId;
+  const conversationId = value(await h.store.readConversations(projectId))[0]!.id;
+  for (const input of [
+    { projectId, conversationId },
+    { projectId, agentId: "virgilio" as const },
+  ])
+    expect(value(await h.port.readDestination(input).result)).toEqual({
+      destination: {
+        operation: "development_test",
+        maxAttemptDurationMs: 600_000,
+        connection: "chatgpt",
+      },
+    });
+  expect(await h.port.readDestination({ projectId: h.projectId, conversationId }).result).toEqual(
+    failure("record_not_found"),
+  );
+});
+it("rechecks whitespace and Unicode limits in the data service without the composer", async () => {
+  const h = await harness();
+  value(
+    await h.port.confirmProjectSetup("confirm-limits", {
+      projectId: h.projectId,
+      title: "Research",
+      documentLanguage: "en",
+    }).result,
+  );
+  await h.service.drain();
+  for (const [index, content] of [
+    "",
+    " \t\n",
+    "\u2003",
+    "x".repeat(20_001),
+    "😀".repeat(20_001),
+  ].entries()) {
+    expect(
+      await h.store.executeResearchCommand({
+        command: "message.append",
+        operationId: `invalid-append-more-${index}`,
+        payload: { conversationId: h.conversationId, content },
+      }),
+    ).toEqual(failure("message_invalid"));
+    expect(
+      await h.store.executeResearchCommand({
+        command: "conversation.start",
+        operationId: `invalid-start-more-${index}`,
+        payload: { projectId: h.projectId, content },
+      }),
+    ).toEqual(failure("message_invalid"));
+  }
+  expect(value(await h.store.readMessages(h.conversationId))).toHaveLength(0);
+});
+it("stops every unfinished conversation task with one receipt, preserves messages and never stops later work on replay", async () => {
+  const h = await harness();
+  const projectId = value(
+    await h.store.executeResearchCommand({
+      command: "development.createProject",
+      operationId: "dev-project-stop",
+      payload: {},
+    }),
+  ).resultId;
+  const conversationId = value(await h.store.readConversations(projectId))[0]!.id;
+  value(
+    await h.port.appendMessage("blocked-message", { conversationId, content: "Kept message" })
+      .result,
+  );
+  const db = h.raw();
+  const before = db.prepare("SELECT id FROM tasks ORDER BY created_at").all() as {
+    id: Uint8Array;
+  }[];
+  db.close();
+  const stopped = value(
+    await h.port.stopConversation("stop-conversation", { conversationId }).result,
+  );
+  expect(stopped.resultId).toBe(conversationId);
+  await h.service.drain();
+  expect(value(await h.store.readMessages(conversationId))[0]?.content).toBe("Kept message");
+  const inspect = h.raw();
+  expect(inspect.prepare("SELECT state FROM tasks").all()).toEqual([{ state: "cancelled" }]);
+  expect(
+    inspect
+      .prepare("SELECT command FROM command_receipts WHERE operation_id='stop-conversation'")
+      .get(),
+  ).toEqual({ command: "conversation.stop" });
+  inspect.close();
+  value(
+    await h.port.appendMessage("later-message", { conversationId, content: "Next message" }).result,
+  );
+  expect(
+    value(await h.port.stopConversation("stop-conversation", { conversationId }).result),
+  ).toEqual(stopped);
+  const later = h.raw();
+  const waiting = later.prepare("SELECT id FROM tasks WHERE state='blocked'").get() as {
+    id: Uint8Array;
+  };
+  expect(waiting).toBeTruthy();
+  later.close();
+  const { identifier } = await import("../packages/utility/src/research.js");
+  value(await h.port.stopTask("stop-one", { taskId: identifier(waiting.id) }).result);
+  expect(await h.port.stopTask("missing-stop", { taskId: entity(99999) }).result).toEqual(
+    failure("record_not_found"),
+  );
+  expect(before).toHaveLength(1);
 });

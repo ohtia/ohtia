@@ -939,3 +939,23 @@ it("exposes execution-limit methods and preserves mutation uncertainty across se
   h.window.dispatchEvent(new Event("unload"));
   expect(h.ipcRenderer.listenerCount(desktopChannels.reply)).toBe(0);
 });
+
+it("forwards composer operations across the sandbox bridge and preserves uncertain Stops on unload", async () => {
+  const h = await load();
+  const projectId = "019a8000-0000-7000-8000-000000000001";
+  const conversationId = "019a8000-0000-7000-8000-000000000002";
+  const calls = [
+    h.bridge.foundation.stopConversation("stop-conversation", { conversationId }),
+    h.bridge.foundation.stopTask("stop-task", { taskId: conversationId }),
+    h.bridge.foundation.readDestination({ projectId, conversationId }),
+  ];
+  expect(h.ipcRenderer.send.mock.calls.map(([, text]) => JSON.parse(text).operation)).toEqual([
+    "conversation.stop",
+    "task.stop",
+    "destination.read",
+  ]);
+  h.window.dispatchEvent(new Event("unload"));
+  expect(await calls[0]!.result).toMatchObject({ error: { code: "uncertain" } });
+  expect(await calls[1]!.result).toMatchObject({ error: { code: "uncertain" } });
+  expect(await calls[2]!.result).toMatchObject({ error: { code: "disposed" } });
+});

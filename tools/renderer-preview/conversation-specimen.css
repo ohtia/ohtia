@@ -20,3 +20,7 @@
 .conversation-specimen-panel.width-960 {
   inline-size: 960px;
 }
+
+.composer-specimen-panel {
+  block-size: 800px;
+}

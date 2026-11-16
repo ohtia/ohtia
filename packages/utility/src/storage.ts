@@ -9,6 +9,7 @@ import {
   type ExecutionLimitsRecord,
   type ExecutionLimitsReceipt,
 } from "@ohtia/contracts";
+import { up as composer, objects as composerObjects } from "./migrations/0014_message_composer.mjs";
 import { readResearch, researchRevisions } from "./research-reads.js";
 import type { Request, ResearchScope, ResearchEvent, ResearchOperation } from "@ohtia/contracts";
 import {
@@ -243,6 +244,7 @@ const names = [
   "0011_service_runs",
   "0012_application_exit",
   "0013_execution_limits_receipts",
+  "0014_message_composer",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -605,6 +607,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 10 ? replyObjects : {}),
                 ...(revision >= 11 ? runObjects : {}),
                 ...(revision >= 12 ? exitObjects : {}),
+                ...(revision >= 14 ? composerObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -975,6 +978,7 @@ export class DurableStore {
                 "0011_service_runs": { up: serviceRuns },
                 "0012_application_exit": { up: applicationExit },
                 "0013_execution_limits_receipts": { up: executionLimitsReceipts },
+                "0014_message_composer": { up: composer },
               }),
           },
         });
@@ -2290,6 +2294,7 @@ export class DurableStore {
       "timeline.listBefore": "ohtia.timeline.listed",
       "timeline.read": "ohtia.timeline.read",
       "conversation.read": "ohtia.conversation.read",
+      "destination.read": "ohtia.destination.read",
     } as const;
     if (Object.hasOwn(events, operation))
       this.researchDiagnostic({ event_name: events[operation as keyof typeof events] });
@@ -2378,6 +2383,7 @@ export class DurableStore {
         "conversation.rename": "ohtia.conversation.renamed",
         "message.append": "ohtia.message.appended",
         "task.stop": "ohtia.task.stop_requested",
+        "conversation.stop": "ohtia.conversation.stop_requested",
         "task.startAgain": "ohtia.task.replaced",
         "task.continueAll": "ohtia.task.continue_requested",
         "task.cancelAll": "ohtia.task.cancel_all_requested",
@@ -2475,7 +2481,7 @@ export class DurableStore {
     return outcome;
   }
   readResearch(request: Request): Promise<Outcome<unknown>> {
-    return this.researchRead((db) => readResearch(db, request), undefined, false);
+    return this.researchRead((db) => readResearch(db, request, this.taskContext), undefined, false);
   }
   researchRevisions(
     scope: ResearchScope,

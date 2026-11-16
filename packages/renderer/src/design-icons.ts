@@ -108,6 +108,20 @@ export const iconNodes = {
       }
     ]
   ],
+  "arrow-up": [
+    [
+      "path",
+      {
+        "d": "m5 12 7-7 7 7"
+      }
+    ],
+    [
+      "path",
+      {
+        "d": "M12 19V5"
+      }
+    ]
+  ],
   "ban": [
     [
       "circle",
@@ -1097,6 +1111,18 @@ export const iconNodes = {
       }
     ]
   ],
+  "square": [
+    [
+      "rect",
+      {
+        "width": "18",
+        "height": "18",
+        "x": "3",
+        "y": "3",
+        "rx": "2"
+      }
+    ]
+  ],
   "sun": [
     [
       "circle",
@@ -1152,6 +1178,38 @@ export const iconNodes = {
       "path",
       {
         "d": "m19.07 4.93-1.41 1.41"
+      }
+    ]
+  ],
+  "text-cursor-input": [
+    [
+      "path",
+      {
+        "d": "M12 20h-1a2 2 0 0 1-2-2 2 2 0 0 1-2 2H6"
+      }
+    ],
+    [
+      "path",
+      {
+        "d": "M13 8h7a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-7"
+      }
+    ],
+    [
+      "path",
+      {
+        "d": "M5 16H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h1"
+      }
+    ],
+    [
+      "path",
+      {
+        "d": "M6 4h1a2 2 0 0 1 2 2 2 2 0 0 1 2-2h1"
+      }
+    ],
+    [
+      "path",
+      {
+        "d": "M9 6v12"
       }
     ]
   ],

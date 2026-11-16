@@ -749,6 +749,65 @@
       "foreground": "content.primary",
       "backgrounds": ["surface.panel"],
       "minimum": 7
+    },
+    {
+      "selector": ".message-composer",
+      "backgrounds": ["surface.panel"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".composer-box",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
+      "selector": ".composer-box:focus-within",
+      "backgrounds": ["surface.page", "surface.panel"],
+      "minimum": 3
+    },
+    {
+      "selector": ".composer-box textarea",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
+      "selector": ".composer-box textarea::placeholder",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
+      "selector": ".composer-action",
+      "foreground": "action.primary.content",
+      "backgrounds": ["action.primary.surface"],
+      "minimum": 7
+    },
+    {
+      "selector": ".composer-action:hover",
+      "backgrounds": ["action.primary.surface-hover"],
+      "foreground": "action.primary.content",
+      "minimum": 7
+    },
+    {
+      "selector": ".composer-action[aria-disabled=\"true\"]",
+      "foreground": "content.disabled",
+      "backgrounds": ["surface.page"],
+      "minimum": 3
+    },
+    {
+      "selector": ".composer-counter, .composer-reason, .composer-destination",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7
+    },
+    {
+      "selector": ".workspace-chat-heading",
+      "backgrounds": ["surface.panel"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
     }
   ],
   "overlays": [

@@ -528,3 +528,20 @@
     border-width: var(--space-0);
   }
 }
+
+.workspace-chat-heading {
+  display: flex;
+  align-items: center;
+  flex: none;
+  min-inline-size: 0;
+  border-block-end: var(--border-width-default) solid var(--border-subtle);
+}
+.workspace-chat-heading > .workspace-panel-heading {
+  flex: 1;
+  min-inline-size: 0;
+  border: 0;
+}
+.workspace-chat-heading > .workspace-sizing {
+  flex: none;
+  padding: calc(var(--focus-width) + var(--focus-offset)) var(--space-2);
+}

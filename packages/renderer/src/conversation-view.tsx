@@ -1,3 +1,4 @@
+import { MessageComposer } from "./message-composer.js";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { message, type CommandBridge, type InterfaceLocale } from "@ohtia/contracts";
 import { MessageMarkdown } from "./research-presentation.js";
@@ -14,7 +15,8 @@ export function ConversationView({
   commands,
 }: {
   readonly state: ConversationState;
-  readonly controller: Pick<ConversationController, "reload" | "loadEarlier">;
+  readonly controller: Pick<ConversationController, "reload" | "loadEarlier"> &
+    Partial<Pick<ConversationController, "composer">>;
   readonly locale: InterfaceLocale;
   readonly commands: Pick<CommandBridge, "copyMessage" | "openExternalLink">;
 }) {
@@ -109,26 +111,35 @@ export function ConversationView({
   );
   return (
     <div className="conversation-view">
-      {state.status === "unavailable" ? (
-        notice(message(locale, "conversation.unavailable"))
-      ) : state.status === "failed" ? (
-        <div className="conversation-state">
-          {notice(message(locale, "conversation.failed"), true)}
-          <button type="button" className="primitive-button" onClick={controller.reload}>
-            {message(locale, "conversation.reload")}
-          </button>
-        </div>
-      ) : state.status === "loading" ? (
-        <div className="conversation-state" aria-busy="true">
-          <p role="status">{message(locale, "conversation.loading")}</p>
-          <div className="conversation-skeleton" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-          </div>
+      {state.status !== "ready" ? (
+        <div
+          className="conversation-status-scroll"
+          role="region"
+          tabIndex={0}
+          aria-label={message(locale, "command.panels.chat")}
+        >
+          {state.status === "unavailable" ? (
+            notice(message(locale, "conversation.unavailable"))
+          ) : state.status === "failed" ? (
+            <div className="conversation-state">
+              {notice(message(locale, "conversation.failed"), true)}
+              <button type="button" className="primitive-button" onClick={controller.reload}>
+                {message(locale, "conversation.reload")}
+              </button>
+            </div>
+          ) : (
+            <div className="conversation-state" aria-busy="true">
+              <p role="status">{message(locale, "conversation.loading")}</p>
+              <div className="conversation-skeleton" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
+            </div>
+          )}
         </div>
       ) : (
-        <>
+        <div className="conversation-content">
           <div
             className="conversation-timeline"
             ref={viewport}
@@ -210,6 +221,12 @@ export function ConversationView({
                       messageId={item.id}
                       locale={locale}
                       commands={commands}
+                      {...(researcher && controller.composer
+                        ? {
+                            onReuse: () =>
+                              controller.composer?.reuse(state.texts.get(item.id) ?? ""),
+                          }
+                        : {})}
                     />
                   )}
                 </article>
@@ -236,8 +253,9 @@ export function ConversationView({
               </Tooltip>
             )}
           </div>
-        </>
+        </div>
       )}
+      {controller.composer && <MessageComposer controller={controller.composer} locale={locale} />}
       <p className="primitive-announcement" role="status" aria-live="polite" aria-atomic="true">
         <span key={announcement.count}>{announcement.text}</span>
       </p>
@@ -249,7 +267,9 @@ function SavedMessageActions({
   messageId,
   locale,
   commands,
+  onReuse,
 }: {
+  readonly onReuse?: () => void;
   readonly messageId: string;
   readonly locale: InterfaceLocale;
   readonly commands: Pick<CommandBridge, "copyMessage">;
@@ -302,6 +322,18 @@ function SavedMessageActions({
             <LucideGlyph name="copy" size={16} />
           </button>
         </Tooltip>
+        {onReuse && (
+          <Tooltip label={message(locale, "composer.reuse")}>
+            <button
+              type="button"
+              className="primitive-button primitive-quiet"
+              aria-label={message(locale, "composer.reuse")}
+              onClick={onReuse}
+            >
+              <LucideGlyph name="text-cursor-input" size={16} />
+            </button>
+          </Tooltip>
+        )}
         <span className="conversation-copy-status" role="status" aria-atomic="true">
           {status === "copied" && (
             <>

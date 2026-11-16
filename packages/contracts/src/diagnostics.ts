@@ -93,6 +93,14 @@ export const diagnosticCatalog = Object.freeze({
   "ohtia.reply.read": event("data_service", "reply.readParts", "DEBUG", "success", []),
   "ohtia.timeline.listed": event("data_service", "timeline.listBefore", "DEBUG", "success", []),
   "ohtia.timeline.read": event("data_service", "timeline.read", "DEBUG", "success", []),
+  "ohtia.destination.read": event("data_service", "destination.read", "DEBUG", "success", []),
+  "ohtia.conversation.stop_requested": event(
+    "data_service",
+    "conversation.stop",
+    "INFO",
+    "success",
+    [],
+  ),
   "ohtia.conversation.read": event("data_service", "conversation.read", "DEBUG", "success", []),
   "ohtia.message.listed": event("data_service", "message.list", "DEBUG", "success", []),
   "ohtia.research.failed": event("data_service", "research.run", "WARN", "failure", [
