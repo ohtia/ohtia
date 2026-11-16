@@ -233,6 +233,39 @@ export async function buildDesktop(root, { development = false } = {}) {
     );
     notices.push({ component, license: metadata.license });
   }
+  // Follow only the installed parser runtime graph; type-only packages ship no executable code.
+  const markdownSeen = new Set();
+  function markdownNotice(component, resolver) {
+    if (markdownSeen.has(component) || component.startsWith("@types/")) return;
+    markdownSeen.add(component);
+    let source = path.dirname(resolver.resolve(component));
+    while (!fs.existsSync(path.join(source, "package.json"))) {
+      const parent = path.dirname(source);
+      if (source === parent) throw new Error("Missing Markdown dependency metadata.");
+      source = parent;
+    }
+    const metadata = JSON.parse(fs.readFileSync(path.join(source, "package.json"), "utf8"));
+    if (metadata.name !== component || typeof metadata.license !== "string")
+      throw new Error("Invalid Markdown dependency notice.");
+    const license = ["license", "license.md", "LICENSE", "LICENSE.md"].find((name) =>
+      fs.existsSync(path.join(source, name)),
+    );
+    if (!license) throw new Error("Missing Markdown dependency license.");
+    fs.copyFileSync(
+      path.join(source, license),
+      path.join(licenses, `${component.replaceAll("/", "-")}-LICENSE`),
+    );
+    notices.push({ component, license: metadata.license });
+    const next = createRequire(path.join(source, "package.json"));
+    for (const name of Object.keys(metadata.dependencies ?? {})) markdownNotice(name, next);
+  }
+  const rendererResolver = createRequire(path.join(root, "packages/renderer/package.json"));
+  for (const component of [
+    "mdast-util-from-markdown",
+    "micromark-extension-gfm-table",
+    "mdast-util-gfm-table",
+  ])
+    markdownNotice(component, rendererResolver);
   const fonts = JSON.parse(
     fs.readFileSync(path.join(root, "packages/renderer/fonts/manifest.json"), "utf8"),
   );

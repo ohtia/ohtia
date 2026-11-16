@@ -68,6 +68,7 @@ describe("catalog build admission", () => {
       "catalog-workspace.mjs",
       "catalog-character.mjs",
       "catalog-research.mjs",
+      "catalog-conversation.mjs",
       "command-presentation.mjs",
       "command-discovery.mjs",
     ])

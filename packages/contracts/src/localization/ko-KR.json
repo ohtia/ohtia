@@ -282,6 +282,12 @@
     "conversation.latest": "최신 메시지로 이동",
     "conversation.you": "나",
     "conversation.writing": "{agent} 작성 중…",
-    "conversation.replied": "{agent} 응답 완료"
+    "conversation.replied": "{agent} 응답 완료",
+    "conversation.copyMessage": "메시지 복사",
+    "conversation.copied": "복사됨",
+    "conversation.copyFailed": "Ohtia가 이 메시지를 복사하지 못했습니다. 텍스트를 선택하여 직접 복사하세요.",
+    "conversation.opensInBrowser": "브라우저에서 열림",
+    "conversation.codeBlock": "코드 블록",
+    "conversation.table": "표"
   }
 }

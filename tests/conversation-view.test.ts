@@ -73,12 +73,19 @@ function state(items: readonly TimelineItem[] = []): ConversationState {
 }
 async function render(next: ConversationState, controller = {} as ConversationController) {
   await act(async () =>
-    root.render(h(ConversationView, { state: next, controller, locale: "en-US" })),
+    root.render(
+      h(ConversationView, {
+        state: next,
+        controller,
+        locale: "en-US",
+        commands: { copyMessage: async () => true, openExternalLink: async () => true },
+      }),
+    ),
   );
 }
 
 describe("conversation presentation", () => {
-  it("renders hostile text literally, retains whitespace and marks researcher and agent languages", async () => {
+  it("renders hostile markup literally and marks researcher and agent languages", async () => {
     const text = '<script>alert("unsafe")</script>\n<img src=x onerror=alert(1)> javascript:evil()';
     const agent: TimelineItem = {
       kind: "message",
@@ -95,7 +102,8 @@ describe("conversation presentation", () => {
     };
     await render(state([message(1, text), agent]));
     expect(container.querySelector("script,img,a")).toBeNull();
-    expect(container.querySelector(".conversation-text")?.textContent).toBe(text);
+    for (const line of text.split("\n"))
+      expect(container.querySelector(".conversation-text")?.textContent).toContain(line);
     expect(
       container.querySelector('article[aria-label="You"] .conversation-text')?.getAttribute("lang"),
     ).toBe("");

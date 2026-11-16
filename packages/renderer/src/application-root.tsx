@@ -221,6 +221,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                       <ConversationView
                         state={conversationState}
                         controller={conversation}
+                        commands={bridge.commands}
                         locale={bootstrap.locale}
                       />
                     ) : undefined

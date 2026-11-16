@@ -108,6 +108,12 @@
       "sha256": "e5cf98b0916fc323ef832ca28e8cd2f6366d8e09efe41d001b2391f2dc5baf28"
     },
     {
+      "name": "copy",
+      "file": "copy.svg",
+      "archive_member": "package/icons/copy.svg",
+      "sha256": "36a37a38292a9078aedfa5a11666d48cd5a057802fa9f85792421e8c619eb39c"
+    },
+    {
       "name": "database",
       "file": "database.svg",
       "archive_member": "package/icons/database.svg",

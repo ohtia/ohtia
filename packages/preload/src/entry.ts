@@ -1,3 +1,4 @@
+import { isExternalMessageLink } from "@ohtia/contracts";
 import { contextBridge, ipcRenderer } from "electron";
 import {
   decodeBootstrapSnapshot,
@@ -325,6 +326,12 @@ const bridge: DesktopBridge = {
       isInterfaceLocale(locale) ? commandBoolean("copy_version", locale) : Promise.resolve(false),
     perform: (command) =>
       isNativeCommand(command) ? commandBoolean("perform", command) : Promise.resolve(false),
+    openExternalLink: (url) =>
+      isExternalMessageLink(url)
+        ? commandBoolean("open_external_link", url)
+        : Promise.resolve(false),
+    copyMessage: (messageId) =>
+      isIdentifier(messageId) ? commandBoolean("copy_message", messageId) : Promise.resolve(false),
     openLink: (link) =>
       typeof link === "string" && Object.hasOwn(projectLinks, link)
         ? commandBoolean("open_link", link)

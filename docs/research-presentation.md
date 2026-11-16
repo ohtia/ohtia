@@ -1,9 +1,9 @@
 ---
 type: Reference
 title: Research presentation API
-description: Compose controlled voice, trust, comparison, coverage, source, Navigator and saving components without research, storage or provider authority.
+description: Compose controlled research components and restricted conversation Markdown without storage or provider authority.
 generated:
-  by: claude-code/claude-opus-5-5
+  by: codex/gpt-6.1-sol
 ---
 
 # Research presentation API
@@ -39,6 +39,12 @@ Supplied research content uses `RecordedText`: its text and the language recorde
 `WeeklyActions` labels the week's actions as Ohtia proposals and rejects more than five. Each action states what, why now and done when as recorded text in the language it was generated in, and an estimate or Unknown. `StageStatus` keeps stage name, stage state, the single current focus and a pending proposal as separate facts; more than one focus is rejected. `PaceIndicator` shows explanatory text without an agreed plan, and otherwise the plan's pace, deadline and completion.
 
 `SaveStatus` distinguishes saving, saved with its version, unsaved changes with the pending local count, failure with text-safety guidance and retry, and conflict. Provider-offline text is a separate indication and does not change local saving. A newly saved version and each new conflict are announced as status, and each new failure as alert. Saving is announced through its outcome; the first snapshot, repeated identical snapshots, the saving phase and typing-driven unsaved counts are silent. Announcements never move focus. `VersionConflict` preserves the researcher's local text and offers only the consumer's comparison and recovery callbacks.
+
+## Conversation Markdown
+
+`MessageMarkdown` receives the original `text`, optional recorded `language`, interface `locale` and `openExternalLink(url)` callback. An omitted language stays unknown. Source content keeps that recorded language, while scroll-region names and the external-link icon use the interface locale. It renders a closed syntax-tree mapping through React elements and text, with the parser choice owned by [ADR-0054](adr/adr-0054-restricted-message-markdown.md). Paragraphs, emphasis, strong text, code, quotations, lists, thematic breaks, tables and resolved links are supported; headings become bold paragraphs. Images and HTML remain literal text, and formulas, footnotes and strikethrough retain their notation. This conversation profile does not interpret or serialize the [manuscript format](draft-format.md).
+
+Conversation widths follow the [design system’s workspace rule](design-system.md#workspace): agent prose, code and tables share the selected chat width, while researcher messages remain bounded at the timeline’s end. Code and tables have named, focusable scroll regions. Links retain their full address in the shared hover/focus tooltip and call only the supplied broker action. Conversation message actions send the saved identifier through `CommandBridge.copyMessage`; success is shown only after main confirms the clipboard readback. The neutral “Copied” confirmation disappears after five seconds; another copy restarts the interval after confirmation. Starting another copy or leaving the message cancels the previous interval. A failure remains visible for manual selection until another copy attempt, without moving focus. Streaming messages reuse the conversation controller’s bounded redraw schedule and have no copy action until saved. Recorded content language stays on the enclosing message; controls and notices use the interface locale. These boundaries preserve authorship and provenance (PRIN-002 and PRIN-004) while keeping the external action explicit (PRIN-011).
 
 ## Color and accessibility
 

@@ -40,6 +40,8 @@ sources:
   - id: lucide
     resource: https://github.com/lucide-icons/lucide/tree/1ef60af944de207e0d5176905a0759ba12e6ee8d
     title: Lucide — Repository at the examined commit
+generated:
+  by: codex/gpt-6.1-sol
 ---
 
 # Ohtia design system
@@ -558,6 +560,7 @@ Fixed mappings:
 | Requires review               | `refresh-cw`           |
 | Restricted use                | `lock`                 |
 | Saved                         | `check`                |
+| Copy message                  | `copy`                 |
 | Copied                        | `clipboard-check`      |
 | External link                 | `external-link`        |
 | Close dialog                  | `x`                    |
@@ -1074,7 +1077,7 @@ The context bar contains the active-project selector, the Plus button for creati
 
 - The Navigator is the center's first tab, fixed and without a close action, with the `signpost` icon; the explorer offers it as the first row, above material groups. Opening a project activates its tab. Its integration follows the [frontend architecture](frontend-architecture.md).
 - All three panels can be resized and hidden independently under the [workspace visibility contract](workspace-layout.md#visibility-focus-mode-and-narrow-layout); the last visible region cannot be hidden. The top bar remains available. The workspace contract defines the hidden explorer rail and the other hidden regions.
-- The [workspace geometry contract](workspace-layout.md#deterministic-wide-geometry) owns initial/minimum panel widths, separator allocation, space yielding, rounding, reopening and behavior for pairs or a single region. No fixed `layout.panel.width` or drawer applies to `expanded`. Text retains the `measure.reading` maximum.
+- The [workspace geometry contract](workspace-layout.md#deterministic-wide-geometry) owns initial/minimum panel widths, separator allocation, space yielding, rounding, reopening and behavior for pairs or a single region. No fixed `layout.panel.width` or drawer applies to `expanded`. Document and long-interface text retain the `measure.reading` maximum except agent conversation replies, which fill the chosen chat width together with their code and table boxes. Researcher message bubbles stay aligned to the timeline’s end, at most 85% of its content width and at most `measure.reading` plus their two `space.3` inline paddings. Accessible panel and window resizing provide a narrower reading width when requested; this user-controlled reflow supports the visual-presentation mechanism rather than requiring every agent reply to remain narrow (PRIN-015).[^wcag-visual-presentation]
 - Accessible separators, dragging, arrows, Shift, Home/End and Minus/Plus buttons allow resizing. The gesture is canceled by Esc, `pointercancel`, focus loss, unmounting or a geometry change; it leaves neither capture nor cursor locked. Targets meet 24 px and 44 with a coarse pointer.
 - Expanding a document retains the layout so it can be restored; a manual change exits that focus mode. Reset layout restores initial sizes and visibility without deleting content or changing the theme.
 - In the workspace contract's narrow layout, there is one full-width region and selectors remain available in the bar. Switching preserves its state. There is no modal overlay, rail, separator or sizing control; returning to a wide layout restores its preferences. Extensive mobile editing remains outside scope; reflow does not add it.
@@ -1104,7 +1107,7 @@ General AAA conformance is not claimed. W3C does not recommend requiring Level A
 ### Adopted AAA criteria
 
 - **1.4.6 Contrast (Enhanced).** All text, including secondary text, reaches 7:1 against the backgrounds on which it appears, according to the [verified pairs](#verified-contrast-pairs).
-- **1.4.8 Visual Presentation.** The reader, editor and long interface text apply `measure.reading`, start alignment, line height and paragraph spacing defined in typography. Text can be enlarged to 200% without horizontal scrolling. Colors are chosen through themes, system forced colors and rendering settings.
+- **1.4.8 Visual Presentation.** The reader, editor and long interface text apply `measure.reading`, start alignment, line height and paragraph spacing defined in typography, with the user-controlled conversation-width exception in [Workspace](#workspace). Text can be enlarged to 200% without horizontal scrolling. Colors are chosen through themes, system forced colors and rendering settings.
 - **2.1.3 Keyboard (No Exception).** All functions can be operated using the keyboard, including selecting passages, regions and intervals to anchor evidence and reordering the outline.
 - **2.2.4 Interruptions.** No new observations, notices or suggestions appear during writing. They accumulate for the review pass, according to the [timing of criticism](product-definition.md#manuscript-and-feedback). The researcher can defer any notice except a risk of data loss.
 - **2.2.5 Re-authenticating.** If a connected provider's session expires, the researcher authenticates again and continues without losing writing or form input.

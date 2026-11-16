@@ -36,6 +36,8 @@ export function CommandSpecimens() {
       windowAction: async () => ({ status: "unavailable", reason: "handler_missing" }),
       perform: async () => true,
       copyVersionInformation: async () => !copyFails,
+      openExternalLink: async () => false,
+      copyMessage: async () => false,
       openLink: async () => false,
     }),
     [copyFails, platform],

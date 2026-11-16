@@ -282,6 +282,12 @@
     "conversation.latest": "Naar het nieuwste bericht",
     "conversation.you": "U",
     "conversation.writing": "{agent} schrijft…",
-    "conversation.replied": "{agent} heeft geantwoord"
+    "conversation.replied": "{agent} heeft geantwoord",
+    "conversation.copyMessage": "Bericht kopiëren",
+    "conversation.copied": "Gekopieerd",
+    "conversation.copyFailed": "Ohtia kon dit bericht niet kopiëren. Selecteer de tekst en kopieer deze handmatig.",
+    "conversation.opensInBrowser": "opent in uw browser",
+    "conversation.codeBlock": "Codeblok",
+    "conversation.table": "Tabel"
   }
 }

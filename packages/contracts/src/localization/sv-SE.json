@@ -282,6 +282,12 @@
     "conversation.latest": "Gå till senaste meddelandet",
     "conversation.you": "Du",
     "conversation.writing": "{agent} skriver…",
-    "conversation.replied": "{agent} svarade"
+    "conversation.replied": "{agent} svarade",
+    "conversation.copyMessage": "Kopiera meddelande",
+    "conversation.copied": "Kopierat",
+    "conversation.copyFailed": "Ohtia kunde inte kopiera det här meddelandet. Markera texten och kopiera den manuellt.",
+    "conversation.opensInBrowser": "öppnas i din webbläsare",
+    "conversation.codeBlock": "Kodblock",
+    "conversation.table": "Tabell"
   }
 }

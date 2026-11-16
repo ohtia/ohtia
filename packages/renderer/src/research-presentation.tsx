@@ -1021,3 +1021,5 @@ export function VersionConflict({
     </section>
   );
 }
+
+export { MessageMarkdown } from "./message-markdown.js";

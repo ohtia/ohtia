@@ -133,6 +133,7 @@ export const iconMappings = {
   "Requires review": "refresh-cw",
   "Restricted use": "lock",
   "Saved": "check",
+  "Copy message": "copy",
   "Copied": "clipboard-check",
   "External link": "external-link",
   "Close dialog": "x",

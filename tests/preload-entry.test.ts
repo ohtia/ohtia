@@ -886,3 +886,32 @@ it("carries persisted research through the sandbox entry and revokes scoped stre
     service.dispose();
   }
 });
+
+it("admits message actions as named boolean commands without accepting message text or unsafe links", async () => {
+  const h = await load();
+  const id = "019a8000-0000-7000-8000-000000000001";
+  h.ipcRenderer.invoke.mockResolvedValue(true as never);
+  expect(await h.bridge.commands.copyMessage(id)).toBe(true);
+  expect(h.ipcRenderer.invoke).toHaveBeenLastCalledWith(
+    desktopChannels.commands,
+    "copy_message",
+    id,
+  );
+  expect(await h.bridge.commands.openExternalLink("https://example.org")).toBe(true);
+  expect(h.ipcRenderer.invoke).toHaveBeenLastCalledWith(
+    desktopChannels.commands,
+    "open_external_link",
+    "https://example.org",
+  );
+  const calls = h.ipcRenderer.invoke.mock.calls.length;
+  expect(await h.bridge.commands.copyMessage("private message text")).toBe(false);
+  for (const url of [
+    "javascript:evil()",
+    "file:///private",
+    "https://example.org/" + "a".repeat(4096),
+  ])
+    expect(await h.bridge.commands.openExternalLink(url)).toBe(false);
+  expect(h.ipcRenderer.invoke).toHaveBeenCalledTimes(calls);
+  h.ipcRenderer.invoke.mockResolvedValue({ success: true } as never);
+  expect(await h.bridge.commands.copyMessage(id)).toBe(false);
+});

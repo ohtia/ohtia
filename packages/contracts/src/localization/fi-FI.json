@@ -282,6 +282,12 @@
     "conversation.latest": "Siirry uusimpaan viestiin",
     "conversation.you": "Sinä",
     "conversation.writing": "{agent} kirjoittaa…",
-    "conversation.replied": "{agent} vastasi"
+    "conversation.replied": "{agent} vastasi",
+    "conversation.copyMessage": "Kopioi viesti",
+    "conversation.copied": "Kopioitu",
+    "conversation.copyFailed": "Ohtia ei voinut kopioida tätä viestiä. Valitse teksti ja kopioi se manuaalisesti.",
+    "conversation.opensInBrowser": "avautuu selaimessasi",
+    "conversation.codeBlock": "Koodilohko",
+    "conversation.table": "Taulukko"
   }
 }

@@ -1,0 +1,112 @@
+.message-markdown p,
+.message-markdown pre,
+.message-markdown blockquote,
+.message-markdown ul,
+.message-markdown ol {
+  margin-block-end: 0;
+  margin-block-start: 0;
+}
+.message-markdown > :not(:first-child),
+.message-markdown blockquote > :not(:first-child),
+.message-markdown li > :not(:first-child) {
+  margin-block-start: var(--space-2);
+}
+.message-literal,
+.message-markdown p {
+  white-space: pre-wrap;
+}
+.message-markdown ul,
+.message-markdown ol {
+  padding-inline: var(--space-6) 0;
+}
+.message-markdown li + li {
+  margin-block-start: var(--space-1);
+}
+.message-markdown blockquote {
+  border-inline-start: var(--border-width-default) solid var(--border-subtle);
+  padding-inline: var(--space-3);
+  margin-inline: 0;
+}
+.message-heading strong {
+  font-weight: 600;
+}
+.message-markdown code {
+  font-family: var(--type-ui-code-family);
+  font-size: var(--type-ui-code-size);
+  font-weight: var(--type-ui-code-weight);
+  line-height: var(--type-ui-code-height);
+}
+.message-markdown :not(pre) > code {
+  background: var(--surface-emphasis);
+  color: var(--content-primary);
+  border-radius: var(--radius-small);
+  padding-inline: var(--space-1);
+}
+.message-code-box,
+.message-table-box {
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  overflow: auto;
+  background: var(--surface-page);
+  color: var(--content-primary);
+  border: var(--border-width-default) solid var(--border-subtle);
+  border-radius: var(--radius-medium);
+}
+.message-code-box {
+  padding: var(--space-2) var(--space-3);
+}
+.message-code-box pre {
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.message-table-box table {
+  border-collapse: collapse;
+  inline-size: max-content;
+  min-inline-size: 100%;
+}
+.message-table-box th,
+.message-table-box td {
+  padding: var(--space-1) var(--space-2);
+  white-space: pre;
+}
+.message-number,
+.message-align-right {
+  text-align: end;
+}
+.message-align-left {
+  text-align: start;
+}
+.message-align-center {
+  text-align: center;
+}
+.message-markdown a {
+  color: var(--content-primary);
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+.message-link-tooltip {
+  display: inline;
+}
+.message-external-icon {
+  display: inline;
+  margin-inline: var(--space-1) 0;
+  white-space: nowrap;
+}
+.message-external-icon svg {
+  vertical-align: text-bottom;
+}
+@media (forced-colors: active) {
+  .message-markdown a {
+    color: LinkText;
+  }
+  .message-code-box,
+  .message-table-box {
+    border-color: CanvasText;
+  }
+}
+
+.message-markdown hr {
+  margin: 0;
+  border-width: var(--space-0);
+  border-block-start: var(--border-width-default) solid var(--border-subtle);
+}

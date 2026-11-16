@@ -9,13 +9,22 @@ const selectorKey = (selector) =>
     .map((part) => trimCss(part))
     .sort()
     .join(",");
-const systems = new Set(["canvas", "canvastext", "buttontext", "highlight", "currentcolor"]);
+const systems = new Set([
+  "canvas",
+  "canvastext",
+  "buttontext",
+  "highlight",
+  "currentcolor",
+  "linktext",
+]);
 const isLineShorthand = (property) =>
   /^(?:border(?:-(?:top|right|bottom|left|block|inline)(?:-(?:start|end))?)?|outline|column-rule)$/.test(
     property,
   );
 // This vocabulary is intentionally explicit. New CSS features require a checked contract.
 const layout = new Set([
+  "border-collapse",
+  "vertical-align",
   "align-items",
   "align-content",
   "justify-items",

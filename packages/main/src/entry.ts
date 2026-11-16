@@ -1,3 +1,4 @@
+import { copyMessage, openExternalMessageLink } from "./message-actions.js";
 import { ChatGPTProvider } from "./chatgpt-provider.js";
 import { ConnectionManager } from "./connection-manager.js";
 import { ApplicationExit } from "./application-exit.js";
@@ -41,6 +42,7 @@ import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import {
   suppressDiagnosticCapture,
+  type DiagnosticEventName,
   diagnosticLimits,
   desktopChannels,
   desktopDocument,
@@ -1214,6 +1216,39 @@ async function start(): Promise<void> {
         });
       }
       if (action === "about" && payload === undefined) return aboutInformation();
+      const messageDiagnostic = (event_name: DiagnosticEventName) => {
+        void diagnostics?.append({ event_name });
+      };
+      if (action === "open_external_link")
+        return await openExternalMessageLink(
+          payload,
+          (url) => shell.openExternal(url),
+          messageDiagnostic,
+        );
+      if (action === "copy_message") {
+        const owner = service;
+        const scope = windows.get(window)?.openConversation;
+        if (!owner || bootstrapState !== "storage_ready" || !scope) {
+          messageDiagnostic("ohtia.message.copy_failed");
+          return false;
+        }
+        const generation = windows.get(window)?.generation;
+        return await copyMessage(
+          payload,
+          scope.conversationId,
+          owner,
+          clipboard,
+          () =>
+            trusted(event) === window &&
+            windows.get(window)?.frame === frame &&
+            windows.get(window)?.generation === generation &&
+            windows.get(window)?.openConversation === scope &&
+            service === owner &&
+            owner.available &&
+            bootstrapState === "storage_ready",
+          messageDiagnostic,
+        );
+      }
       if (
         action === "open_link" &&
         typeof payload === "string" &&

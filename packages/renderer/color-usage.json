@@ -712,6 +712,37 @@
       "foreground": "content.primary",
       "backgrounds": ["surface.emphasis"],
       "minimum": 7
+    },
+    {
+      "selector": ".message-markdown :not(pre) > code",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".message-code-box, .message-table-box",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".message-markdown a",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.panel", "surface.emphasis", "surface.page"],
+      "minimum": 7
+    },
+    {
+      "selector": ".message-markdown blockquote",
+      "backgrounds": ["surface.panel", "surface.emphasis"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".message-markdown hr",
+      "backgrounds": ["surface.panel", "surface.emphasis"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
     }
   ],
   "overlays": [

@@ -1,3 +1,4 @@
+import { verifyConversationSpecimen } from "./catalog-conversation.mjs";
 /* global document, window, getComputedStyle */
 import fs from "node:fs";
 import path from "node:path";
@@ -151,6 +152,18 @@ export async function verifyCatalog(page, url, engine, output) {
       research = await verifyResearchSpecimen(researchPage, url, engine, output);
     } finally {
       await researchContext.close();
+    }
+    const conversationContext = await browser.newContext();
+    let conversation;
+    try {
+      conversation = await verifyConversationSpecimen(
+        await conversationContext.newPage(),
+        url,
+        engine,
+        output,
+      );
+    } finally {
+      await conversationContext.close();
     }
     await verifyWorkspaceSpecimen(page, url, engine, output);
     await verifyCommandSpecimens(page, url, engine);
@@ -411,6 +424,7 @@ export async function verifyCatalog(page, url, engine, output) {
       tabFocusVisibility: true,
       stickyTableHeader: true,
       research,
+      conversation,
       commandDiscovery,
       limitations: [
         "Portable catalog only; native IME, packaged zoom and manual assistive qualification are separate.",
