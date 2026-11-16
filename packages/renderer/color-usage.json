@@ -743,6 +743,12 @@
       "backgrounds": ["surface.panel", "surface.emphasis"],
       "minimum": 3,
       "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".limits-panel input",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7
     }
   ],
   "overlays": [

@@ -915,3 +915,27 @@ it("admits message actions as named boolean commands without accepting message t
   h.ipcRenderer.invoke.mockResolvedValue({ success: true } as never);
   expect(await h.bridge.commands.copyMessage(id)).toBe(false);
 });
+
+it("exposes execution-limit methods and preserves mutation uncertainty across service cessation", async () => {
+  const h = await load();
+  const calls = [
+    h.bridge.foundation.readExecutionLimits(),
+    h.bridge.foundation.replaceExecutionLimits(
+      { operationId: "limit-change", value: 2 },
+      "service-1",
+    ),
+    h.bridge.foundation.readExecutionLimitsReceipt("limit-change"),
+  ];
+  expect(h.ipcRenderer.send.mock.calls.map(([, text]) => JSON.parse(text).operation)).toEqual([
+    "limits.read",
+    "limits.replace",
+    "limits.receipt",
+  ]);
+  h.ipcRenderer.emit(desktopChannels.ended, {}, "service-1");
+  for (const [index, call] of calls.entries())
+    expect(await call.result).toMatchObject({
+      error: { code: index === 1 ? "uncertain" : "disposed" },
+    });
+  h.window.dispatchEvent(new Event("unload"));
+  expect(h.ipcRenderer.listenerCount(desktopChannels.reply)).toBe(0);
+});

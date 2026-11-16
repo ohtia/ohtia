@@ -1,3 +1,6 @@
+import { LimitsFeedback } from "./limits-panel.js";
+import { LimitsController } from "./limits-controller.js";
+import { ConversationController } from "./conversation-controller.js";
 import type { ComponentProps, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
@@ -43,12 +46,14 @@ export function SettingsSurfaces({
   children,
   returnFocusRef,
   composeWorkspace = false,
+  research,
 }: {
   readonly children?: (
     commands: CommandController | undefined,
     binding: WorkspaceSettingsBinding,
   ) => ReactNode;
   readonly composeWorkspace?: boolean;
+  readonly research?: ConversationController;
   readonly returnFocusRef?: ComponentProps<typeof CommandSurfaces>["returnFocusRef"];
   readonly port: FoundationPort;
   readonly bridge: CommandBridge;
@@ -56,6 +61,29 @@ export function SettingsSurfaces({
   readonly available: boolean;
   readonly onLocale: (snapshot: LocaleSnapshot) => void;
 }) {
+  const limits = useMemo(() => new LimitsController(port, () => crypto.randomUUID()), [port]);
+  const ownResearch = useMemo(
+    () => (research ? undefined : new ConversationController(port)),
+    [port, research],
+  );
+  useEffect(() => {
+    const source = research ?? ownResearch;
+    const stop = source?.observe(limits.observed);
+    if (available) {
+      void limits.refresh();
+      ownResearch?.open({ projectId: null, conversationId: null });
+    }
+    return () => {
+      stop?.();
+    };
+  }, [research, ownResearch, limits, available]);
+  useEffect(
+    () => () => {
+      limits.dispose();
+      ownResearch?.dispose();
+    },
+    [limits, ownResearch],
+  );
   const applyLocale = useRef(onLocale);
   applyLocale.current = onLocale;
   const [layoutState, setLayoutState] = useState<WorkspaceState>();
@@ -256,17 +284,27 @@ export function SettingsSurfaces({
         decoration={decoration}
         registerHandlers={register}
         renderFeedback={(openSettings, inDialog) => (
-          <SettingsFeedback
-            controller={controller}
-            state={state}
-            locale={locale}
-            inDialog={inDialog}
-            onOpenSettings={openSettings}
-            onChooseAgain={(feature) => {
-              setRequestedFocus(feature);
-              openSettings();
-            }}
-          />
+          <>
+            <SettingsFeedback
+              controller={controller}
+              state={state}
+              locale={locale}
+              inDialog={inDialog}
+              onOpenSettings={openSettings}
+              onChooseAgain={(feature) => {
+                setRequestedFocus(feature);
+                openSettings();
+              }}
+            />
+            <LimitsFeedback
+              {...(returnFocusRef ? { returnFocusRef } : {})}
+              controller={limits}
+              locale={locale}
+              available={available}
+              inDialog={inDialog}
+              onOpenSettings={openSettings}
+            />
+          </>
         )}
         renderSettings={(open, close, platform, feedback, returnFocusRef) => (
           <>
@@ -285,6 +323,7 @@ export function SettingsSurfaces({
                 available={available}
                 language={language}
                 controller={controller}
+                limits={limits}
                 workspace={workspace}
                 workspaceState={layoutState ?? workspace.state}
                 platform={platform}

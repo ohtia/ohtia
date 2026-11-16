@@ -19,11 +19,15 @@ export function ConnectionsPanel({
   port,
   locale,
   available,
+  onConnection,
 }: {
+  readonly onConnection?: (snapshot: ConnectionSnapshot | undefined) => void;
   readonly port: FoundationPort;
   readonly locale: InterfaceLocale;
   readonly available: boolean;
 }) {
+  const connectionObserver = useRef(onConnection);
+  connectionObserver.current = onConnection;
   const id = useId();
   const [snapshot, setSnapshot] = useState<ConnectionSnapshot>();
   const [probe, setProbe] = useState<ProbeResult>();
@@ -42,6 +46,7 @@ export function ConnectionsPanel({
     retryFocus.current = null;
     if (latest.current?.state !== value.state && focused && actions.current?.contains(focused))
       restore.current = true;
+    connectionObserver.current?.(value);
     latest.current = value;
     setSnapshot(value);
     setFailed(false);
@@ -109,16 +114,19 @@ export function ConnectionsPanel({
       }
     };
     setPending(false);
-    if (!available)
+    if (!available) {
+      connectionObserver.current?.(undefined);
       return () => {
         stopped = true;
       };
+    }
     const stream = port.subscribeConnection("chatgpt", (notice) => {
       if (!active()) return;
       eventVersion++;
       if (!notice.ok) {
         generation.current++;
         probeVersion++;
+        connectionObserver.current?.(undefined);
         setFailed(true);
         setPending(false);
         return;
@@ -142,6 +150,7 @@ export function ConnectionsPanel({
       if (!active()) return;
       if (!result.ok) {
         generation.current++;
+        connectionObserver.current?.(undefined);
         setFailed(true);
         setPending(false);
         return;

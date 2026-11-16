@@ -225,7 +225,30 @@ export type RecordedAppearanceOutcome =
 export type AppearanceReceipt =
   | { readonly state: "not_found" | "pending" }
   | { readonly state: "recorded"; readonly outcome: RecordedAppearanceOutcome };
+/** Application-wide inference preference; running is live and is never stored in a receipt. */
+export interface ExecutionLimitsRecord {
+  readonly serviceGeneration: string;
+  readonly revision: number;
+  readonly max_concurrent_inference: number;
+  readonly running: number;
+}
+export interface ExecutionLimitsChange {
+  readonly operationId: string;
+  readonly value: number;
+}
+export type ExecutionLimitsReceipt =
+  | { readonly state: "not_found" | "pending" }
+  | {
+      readonly state: "recorded";
+      readonly outcome: { readonly ok: true; readonly value: ExecutionLimitsRecord };
+    };
+export function isInferenceLimit(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= 50;
+}
 export interface OperationInputs extends ResearchInputs {
+  "limits.read": Record<string, never>;
+  "limits.replace": { readonly value: number };
+  "limits.receipt": { readonly targetOperationId: string };
   "connection.read": { readonly connection: string };
   "connection.subscribe": { readonly connection: string; readonly subscriptionId: string };
   "connection.probe": { readonly connection: string };
@@ -266,6 +289,9 @@ export interface OperationInputs extends ResearchInputs {
   "appearance.subscribe": { readonly subscriptionId: string };
 }
 export interface OperationOutputs extends ResearchOutputs {
+  "limits.read": ExecutionLimitsRecord;
+  "limits.replace": ExecutionLimitsRecord;
+  "limits.receipt": ExecutionLimitsReceipt;
   "connection.read": ConnectionSnapshot;
   "connection.subscribe": { readonly subscriptionId: string };
   "connection.probe": ConnectionSnapshot;
@@ -374,6 +400,12 @@ export interface Subscription {
   dispose(): void;
 }
 export interface FoundationPort extends ResearchPort {
+  readExecutionLimits(): PortCall<ExecutionLimitsRecord>;
+  replaceExecutionLimits(
+    change: ExecutionLimitsChange,
+    expectedServiceGeneration?: string,
+  ): PortCall<ExecutionLimitsRecord>;
+  readExecutionLimitsReceipt(operationId: string): PortCall<ExecutionLimitsReceipt>;
   readConnection(connection: string): PortCall<ConnectionSnapshot>;
   connectConnection(
     connection: string,
@@ -645,6 +677,9 @@ const researchMutationErrors = readErrors.filter(
   (code) => !["timeout", "cancelled", "disposed", "invalid_service_result"].includes(code),
 );
 export const operationErrorCodes = Object.freeze({
+  "limits.read": [...readErrors, "preference_invalid"],
+  "limits.replace": replaceErrors.filter((code) => code !== "stale_revision"),
+  "limits.receipt": readErrors,
   "project.create": [...researchMutationErrors, "uncertain", "operation_conflict"],
   "project.confirmSetup": [
     ...researchMutationErrors,
@@ -736,6 +771,16 @@ function operationOutcome(operation: Operation, value: Json | undefined): boolea
   );
 }
 
+function executionLimits(value: Json | undefined): boolean {
+  return (
+    exact(value, ["serviceGeneration", "revision", "max_concurrent_inference", "running"]) &&
+    isIdentifier(value.serviceGeneration) &&
+    revision(value.revision) &&
+    value.revision > 0 &&
+    isInferenceLimit(value.max_concurrent_inference) &&
+    revision(value.running)
+  );
+}
 function input(operation: Operation, value: Json | undefined): boolean {
   if (isResearchOperation(operation)) return researchInput(operation, value);
   switch (operation) {
@@ -767,6 +812,7 @@ function input(operation: Operation, value: Json | undefined): boolean {
         value.count > 0 &&
         value.count <= 128
       );
+    case "limits.read":
     case "presentation.read":
     case "zoom.apply":
     case "status.read":
@@ -776,6 +822,8 @@ function input(operation: Operation, value: Json | undefined): boolean {
     case "bounds.read":
     case "layout.failureNotice":
       return exact(value, []);
+    case "limits.replace":
+      return exact(value, ["value"]) && isInferenceLimit(value.value);
     case "character.replace":
     case "zoom.replace":
       return (
@@ -824,6 +872,7 @@ function input(operation: Operation, value: Json | undefined): boolean {
         value.expectedRevision < Number.MAX_SAFE_INTEGER &&
         (value.value === "system" || oneOf(value.value, supportedLocales))
       );
+    case "limits.receipt":
     case "character.receipt":
     case "zoom.receipt":
     case "locale.receipt":
@@ -839,6 +888,8 @@ function input(operation: Operation, value: Json | undefined): boolean {
   }
 }
 function output(operation: Operation, value: Json | undefined): boolean {
+  if (operation === "limits.read" || operation === "limits.replace") return executionLimits(value);
+  if (operation === "limits.receipt") return receipt(value, executionLimits, []);
   if (isResearchOperation(operation)) return researchOutput(operation, value);
   switch (operation) {
     case "connection.read":
@@ -988,6 +1039,9 @@ const identityKeys = [
   "operation",
 ];
 const operations: readonly Operation[] = [
+  "limits.read",
+  "limits.replace",
+  "limits.receipt",
   ...researchOperations,
   "connection.read",
   "connection.subscribe",
@@ -1118,11 +1172,27 @@ export function decodeEnvelope(raw: unknown): Outcome<Envelope> {
   if (
     valid &&
     value.kind === "result" &&
-    (value.operation === "locale.read" || value.operation === "presentation.read") &&
+    (value.operation === "locale.read" ||
+      value.operation === "presentation.read" ||
+      value.operation === "limits.read" ||
+      value.operation === "limits.replace") &&
     object(value.payload) &&
     value.payload.ok === true &&
     object(value.payload.value) &&
     value.payload.value.serviceGeneration !== value.serviceGeneration
+  )
+    valid = false;
+  if (
+    valid &&
+    value.kind === "result" &&
+    value.operation === "limits.receipt" &&
+    object(value.payload) &&
+    value.payload.ok === true &&
+    object(value.payload.value) &&
+    value.payload.value.state === "recorded" &&
+    object(value.payload.value.outcome) &&
+    object(value.payload.value.outcome.value) &&
+    value.payload.value.outcome.value.serviceGeneration !== value.serviceGeneration
   )
     valid = false;
   // Shape validation above is the runtime proof of this discriminated union.
@@ -1296,4 +1366,19 @@ export function decodePresentationSnapshot(raw: unknown): PresentationSnapshot |
     /* Controlled rejection. */
   }
   return undefined;
+}
+
+export function decodeExecutionLimitsChange(raw: unknown): Outcome<ExecutionLimitsChange> {
+  try {
+    const value = boundedJson(raw);
+    if (
+      exact(value, ["operationId", "value"]) &&
+      isIdentifier(value.operationId) &&
+      isInferenceLimit(value.value)
+    )
+      return { ok: true, value: value as unknown as ExecutionLimitsChange };
+  } catch {
+    /* Reject without exposing caller data. */
+  }
+  return failure("invalid_message");
 }

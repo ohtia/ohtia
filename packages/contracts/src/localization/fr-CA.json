@@ -288,6 +288,13 @@
     "conversation.copyFailed": "Ohtia n’a pas pu copier ce message. Sélectionnez son texte et copiez-le manuellement.",
     "conversation.opensInBrowser": "s’ouvre dans votre navigateur",
     "conversation.codeBlock": "Bloc de code",
-    "conversation.table": "Tableau"
+    "conversation.table": "Tableau",
+    "limits.section": "Travail simultané",
+    "limits.field": "Réponses de l’IA en même temps",
+    "limits.range": "Saisissez un nombre entier de {min} à {max}. La valeur enregistrée, {value}, est conservée.",
+    "limits.subscription": "Plus de réponses simultanées peuvent consommer davantage de votre forfait {service} en même temps.",
+    "limits.apiKey": "Plus de réponses simultanées peuvent dépenser plus vite le crédit de votre clé {service}.",
+    "limits.connectionLimit": "{service} autorise au maximum {connection_limit, plural, one {# réponse à la fois.} many {# réponses à la fois.} other {# réponses à la fois.}}",
+    "limits.running": "{running, plural, one {# réponse est en cours. } many {# réponses sont en cours. } other {# réponses sont en cours. }}{value, plural, =1 {Les nouvelles attendront qu’aucune ne soit en cours.} one {Les nouvelles attendront qu’aucune ne soit en cours.} many {Les nouvelles attendront que moins de # réponses soient en cours.} other {Les nouvelles attendront que moins de # réponses soient en cours.}}"
   }
 }

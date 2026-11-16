@@ -288,6 +288,13 @@
     "conversation.copyFailed": "Ohtia konnte diese Nachricht nicht kopieren. Wählen Sie den Text aus und kopieren Sie ihn manuell.",
     "conversation.opensInBrowser": "wird in Ihrem Browser geöffnet",
     "conversation.codeBlock": "Codeblock",
-    "conversation.table": "Tabelle"
+    "conversation.table": "Tabelle",
+    "limits.section": "Gleichzeitiges Arbeiten",
+    "limits.field": "Gleichzeitige KI-Antworten",
+    "limits.range": "Geben Sie eine ganze Zahl von {min} bis {max} ein. Der gespeicherte Wert {value} bleibt erhalten.",
+    "limits.subscription": "Mehr gleichzeitige Antworten können Ihren {service}-Tarif stärker gleichzeitig beanspruchen.",
+    "limits.apiKey": "Mehr gleichzeitige Antworten können das Guthaben Ihres {service}-Schlüssels schneller aufbrauchen.",
+    "limits.connectionLimit": "{service} erlaubt höchstens {connection_limit, plural, one {# Antwort gleichzeitig.} other {# Antworten gleichzeitig.}}",
+    "limits.running": "{running, plural, one {# Antwort läuft. } other {# Antworten laufen. }}{value, plural, =1 {Neue Antworten warten, bis keine mehr läuft.} one {Neue Antworten warten, bis keine mehr läuft.} other {Neue Antworten warten, bis weniger als # Antworten laufen.}}"
   }
 }

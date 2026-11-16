@@ -4,8 +4,6 @@ title: "Frontend architecture"
 description: "Graphical research workflows, Electron interface boundaries, state ownership, editing, localization, and verification."
 generated:
   by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: context-isolation
     resource: "https://www.electronjs.org/docs/latest/tutorial/context-isolation"
@@ -91,7 +89,7 @@ IME composition, keyboard editing, clipboard behavior, focus and assistive seman
 
 Connection settings expose enabled state, supported access mode, effective account/runtime and readiness for the selected operation. API-key and provider-login flows have distinct labels; never imply that purchasing any subscription makes all adapters available.
 
-Application Settings provides separate concurrency limits for inference, defaulting to 10, and for local processing, defaulting to 1. These preferences apply across projects and windows. Explain that higher concurrency can increase resource use and overlapping provider usage; show when an adapter imposes a lower limit. Apply changes using [ADR-0051](adr/adr-0051-research-agent-task-execution.md#scheduling-and-required-limits): reducing a limit leaves admitted work running, and increasing it never resumes paused work or clears uncertain outcomes.
+Application Settings provides the inference concurrency control, from 1 to 50 with a default of 10; local processing has no control until a feature uses it. These preferences apply across projects and windows. Explain that higher concurrency can increase resource use and overlapping provider usage; show when an adapter imposes a lower limit. Apply changes using [ADR-0051](adr/adr-0051-research-agent-task-execution.md#scheduling-and-required-limits): reducing a limit leaves admitted work running, and increasing it never resumes paused work or clears uncertain outcomes.
 
 Before an external research action, present the destination, input scope and enforceable work limits in research language. For a bounded batch, summarize selected sources, operation and stop conditions. Show progress, pending approvals, partial results, quota failures, cancellation requested and confirmed cessation as distinct conditions. Keep the project usable while processing runs.
 

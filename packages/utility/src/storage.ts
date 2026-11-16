@@ -1,3 +1,14 @@
+import {
+  up as executionLimitsReceipts,
+  schema as executionLimitsReceiptsSchema,
+} from "./migrations/0013_execution_limits_receipts.mjs";
+import {
+  decodeExecutionLimitsChange,
+  isInferenceLimit,
+  type ExecutionLimitsChange,
+  type ExecutionLimitsRecord,
+  type ExecutionLimitsReceipt,
+} from "@ohtia/contracts";
 import { readResearch, researchRevisions } from "./research-reads.js";
 import type { Request, ResearchScope, ResearchEvent, ResearchOperation } from "@ohtia/contracts";
 import {
@@ -165,6 +176,7 @@ interface LayoutReceiptRow extends Omit<Receipt, "value"> {
   value: string;
 }
 interface Schema extends ResearchSchema {
+  execution_limits_receipts: { operation_id: string; value: number; result_revision: number };
   presentation_receipts: PresentationReceiptRow;
   locale_receipts: LocaleReceiptRow;
   layout_receipts: LayoutReceiptRow;
@@ -230,6 +242,7 @@ const names = [
   "0010_reply_control",
   "0011_service_runs",
   "0012_application_exit",
+  "0013_execution_limits_receipts",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -445,6 +458,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 8 ? Object.keys(taskTables) : []),
     ...(revision >= 9 ? Object.keys(usageTables) : []),
     ...(revision >= 11 ? Object.keys(runTables) : []),
+    ...(revision >= 13 ? ["execution_limits_receipts"] : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -476,6 +490,9 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
             "result_revision",
           ],
         }
+      : {}),
+    ...(revision >= 13
+      ? { execution_limits_receipts: ["operation_id", "value", "result_revision"] }
       : {}),
     application_preferences: ["key", "schema_version", "revision", "value"],
     kysely_migration: ["name", "timestamp"],
@@ -562,6 +579,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
       : []),
     ...(revision >= 9 ? Object.entries(usageTables) : []),
     ...(revision >= 11 ? Object.entries(runTables) : []),
+    ...(revision >= 13 ? [["execution_limits_receipts", executionLimitsReceiptsSchema]] : []),
   ]) {
     const row = db
       .prepare("SELECT sql FROM sqlite_schema WHERE name=? AND type='table'")
@@ -956,6 +974,7 @@ export class DurableStore {
                 "0010_reply_control": { up: replyControl },
                 "0011_service_runs": { up: serviceRuns },
                 "0012_application_exit": { up: applicationExit },
+                "0013_execution_limits_receipts": { up: executionLimitsReceipts },
               }),
           },
         });
@@ -1173,6 +1192,187 @@ export class DurableStore {
       this.active = false;
     }
   }
+  private async limitsRecord(db: Kysely<Schema>): Promise<ExecutionLimitsRecord> {
+    const row = await db
+      .selectFrom("application_preferences")
+      .selectAll()
+      .where("key", "=", "execution_limits")
+      .executeTakeFirstOrThrow();
+    const value = JSON.parse(row.value) as { max_concurrent_inference?: unknown };
+    if (
+      row.schema_version !== 1 ||
+      !Number.isSafeInteger(row.revision) ||
+      row.revision < 1 ||
+      !isInferenceLimit(value.max_concurrent_inference)
+    )
+      throw new Error("Invalid execution limits preference.");
+    const running = await new TaskTransaction(db, this.taskContext).runningCount();
+    return {
+      serviceGeneration: this.taskContext.generation,
+      revision: row.revision,
+      max_concurrent_inference: value.max_concurrent_inference,
+      running,
+    };
+  }
+  private limitsDiagnostic(
+    operation: "read" | "replace" | "receipt",
+    outcome: Outcome<unknown>,
+  ): void {
+    this.researchDiagnostic(
+      outcome.ok
+        ? {
+            event_name:
+              operation === "read"
+                ? "ohtia.limits.read"
+                : operation === "replace"
+                  ? "ohtia.limits.replaced"
+                  : "ohtia.limits.receipt_read",
+          }
+        : {
+            event_name: "ohtia.limits.failed",
+            error_code:
+              diagnosticCatalog["ohtia.limits.failed"].errors.find(
+                (code) => code === outcome.error.code,
+              ) ?? "storage_failed",
+          },
+    );
+  }
+  async readExecutionLimits(): Promise<Outcome<ExecutionLimitsRecord>> {
+    const result = await this.researchRead(
+      async (db) => ({ ok: true, value: await this.limitsRecord(db) }),
+      undefined,
+      false,
+    );
+    this.limitsDiagnostic("read", result);
+    return result;
+  }
+  async readExecutionLimitsReceipt(operationId: string): Promise<Outcome<ExecutionLimitsReceipt>> {
+    const result = !isIdentifier(operationId)
+      ? failure("invalid_message")
+      : await this.researchRead<ExecutionLimitsReceipt>(
+          async (db) => {
+            const row = await db
+              .selectFrom("execution_limits_receipts")
+              .selectAll()
+              .where("operation_id", "=", operationId)
+              .executeTakeFirst();
+            if (!row) return { ok: true, value: { state: "not_found" } };
+            const current = await this.limitsRecord(db);
+            return {
+              ok: true,
+              value: {
+                state: "recorded",
+                outcome: {
+                  ok: true,
+                  value: {
+                    ...current,
+                    revision: row.result_revision,
+                    max_concurrent_inference: row.value,
+                  },
+                },
+              },
+            };
+          },
+          undefined,
+          false,
+        );
+    this.limitsDiagnostic("receipt", result);
+    return result;
+  }
+  async replaceExecutionLimits(
+    raw: ExecutionLimitsChange,
+  ): Promise<Outcome<ExecutionLimitsRecord>> {
+    const decoded = decodeExecutionLimitsChange(raw);
+    if (!decoded.ok) {
+      this.limitsDiagnostic("replace", decoded);
+      return decoded;
+    }
+    if (!this.ready || !this.database) {
+      const result = failure(this.active ? "busy" : "service_unavailable");
+      this.limitsDiagnostic("replace", result);
+      return result;
+    }
+    this.active = true;
+    let commitAttempted = false;
+    const attempted = () => commitAttempted;
+    let outcome: Outcome<ExecutionLimitsRecord>;
+    try {
+      this.assert();
+      const value = await this.database.connection().execute(async (db) => {
+        await sql`BEGIN IMMEDIATE`.execute(db);
+        try {
+          const command = decoded.value;
+          const receipt = await db
+            .selectFrom("execution_limits_receipts")
+            .selectAll()
+            .where("operation_id", "=", command.operationId)
+            .executeTakeFirst();
+          const current = await this.limitsRecord(db);
+          if (receipt) {
+            await sql`ROLLBACK`.execute(db);
+            return receipt.value === command.value
+              ? {
+                  ok: true as const,
+                  value: {
+                    ...current,
+                    revision: receipt.result_revision,
+                    max_concurrent_inference: receipt.value,
+                  },
+                }
+              : failure("operation_conflict");
+          }
+          if (current.revision >= Number.MAX_SAFE_INTEGER) {
+            await sql`ROLLBACK`.execute(db);
+            return failure("preference_invalid");
+          }
+          const next = {
+            ...current,
+            revision: current.revision + 1,
+            max_concurrent_inference: command.value,
+          };
+          // Update only inference; preserve the local-processing value and all other preference records.
+          await sql`UPDATE application_preferences SET value=json_set(value,'$.max_concurrent_inference',${command.value}), revision=${next.revision} WHERE key='execution_limits'`.execute(
+            db,
+          );
+          await db
+            .insertInto("execution_limits_receipts")
+            .values({
+              operation_id: command.operationId,
+              value: command.value,
+              result_revision: next.revision,
+            })
+            .execute();
+          this.assert();
+          commitAttempted = true;
+          await sql`COMMIT`.execute(db);
+          return { ok: true as const, value: next };
+        } catch (error) {
+          if (this.native?.inTransaction) {
+            try {
+              await sql`ROLLBACK`.execute(db);
+            } catch {
+              this.admitted = false;
+            }
+          }
+          throw error;
+        }
+      });
+      outcome = value;
+    } catch {
+      try {
+        this.assert();
+      } catch {
+        this.admitted = false;
+      }
+      if (attempted()) this.admitted = false;
+      outcome = failure(attempted() ? "uncertain" : "storage_failed");
+    } finally {
+      this.active = false;
+    }
+    this.limitsDiagnostic("replace", outcome);
+    return outcome;
+  }
+
   async readAppearance(): Promise<Outcome<AppearanceRecord>> {
     if (!this.ready || !this.database) return failure("service_unavailable");
     try {

@@ -1,14 +1,16 @@
 ---
 type: Reference
 title: "Settings and presentation preferences"
-description: "Compose the compact Settings dialog with named preference operations, durable receipts and window-owned layout."
+description: "Compose Settings with presentation and inference controls, durable receipts and window-owned layout."
+generated:
+  by: codex/gpt-6.1-sol
 ---
 
 # Settings and presentation preferences
 
 ## Ownership
 
-Settings groups Language, Appearance and Workspace layout in one Accessibility and appearance section. Appearance contains the interface zoom and character controls. Changes save immediately; the dialog has a close action and no Save or Cancel action. The [Settings specification](epics/EPIC-002-basic-interface/epic.md#spec-002-010-extensible-settings-with-real-application-preferences) owns the product contract and the [save-state specification](epics/EPIC-002-basic-interface/epic.md#spec-002-025-settings-presentation-and-preference-save-states) owns the presentation treatments.
+Settings groups Language, Appearance and Workspace layout in one Accessibility and appearance section. Simultaneous work holds the AI replies at the same time control. Appearance contains the interface zoom and character controls. Changes save immediately; the dialog has a close action and no Save or Cancel action. The [Settings specification](epics/EPIC-002-basic-interface/epic.md#spec-002-010-extensible-settings-with-real-application-preferences) owns the product contract and the [save-state specification](epics/EPIC-002-basic-interface/epic.md#spec-002-025-settings-presentation-and-preference-save-states) owns the presentation treatments.
 
 The renderer's [SettingsController](../packages/renderer/src/settings-controller.ts) owns appearance, character and zoom interaction state for one window. Keep it alive across dialog close/reopen so an unresolved write retains its identity. The existing [LanguageController](../packages/renderer/src/language-controller.ts) owns language. The originating [WorkspaceController](../packages/renderer/src/workspace-controller.ts) owns layout; Settings receives that controller and its state rather than loading a second layout record. [The installed composition](application-composition.md#installed-application) connects this authority to workspace chrome. Passive viewport changes, including zoom, do not save layout.
 
@@ -23,6 +25,14 @@ The [storage owner](../packages/utility/src/storage.ts) commits each character o
 The [trusted presentation broker](../packages/main/src/presentation-broker.ts) admits at most one unresolved zoom mutation application-wide. It converts a relative zoom intent using the latest confirmed percentage and revision, then sends the broker-only `zoom.commit` operation to the service. Renderer admission rejects that internal operation. A fresh relative acknowledgement must match the requested percentage and next revision. An older duplicate result must match the original durable receipt and never rewinds a newer confirmed factor. Endpoint refusals use the controlled `zoom_minimum`, `zoom_maximum` and `actual_size` outcomes, separately from a pending mutation’s `busy` result. A failed or uncertain mutation never previews a new factor. An uncertain operation retains its identity until its receipt resolves; a receipt absence in the same service generation does not release admission. The broker can query its retained original identity during service initialization, a window’s rendering application or a later blocked intent, so closing the originating view cannot strand the global lock.
 
 Main owns the effective appearance source through the native theme, background and overlay, so new and recovering windows share the same CSS media preference before display; renderer Settings retains draft and receipt state without a competing document theme override. Main applies confirmed zoom through the owned renderer's zoom factor and verifies the reported factor. `zoom.apply` retries rendering and reports the applied percentage and revision without writing a preference. Its result is separate from the durable receipt. Language, appearance, characters and zoom publish across windows; each existing window retains its own layout. These boundaries preserve uncertainty and coverage under PRIN-006, PRIN-007 and PRIN-016, and grant no inference, external-transfer or human-confirmation authority.
+
+## Inference concurrency
+
+The window-owned [LimitsController](../packages/renderer/src/limits-controller.ts) keeps the saved record and original operation identity across dialog closure. [The number field](../packages/renderer/src/limits-panel.tsx) accepts whole numbers from 1 to 50 on blur or Enter, preserving IME composition and exposing the range notice through its accessible description. Each connected service has the help variant for its connection kind, and a declared lower connection cap stays visible without overriding that cap. Running-reply help uses the saved limit and the current count, including the special one-reply case.
+
+`limits.read`, `limits.replace` and `limits.receipt` use the existing named preference boundary. The last accepted write wins across windows, advances the execution-limit revision once and atomically records `operation_id`, `value` and `result_revision` in `execution_limits_receipts`. Replays and recorded receipts return that historical value and revision with the current running count; rejected values have no receipt. Local-processing policy stays unchanged. The service serializes replacement with task admission: lowering leaves running replies alone, and raising pumps only eligible queued work, preserving plan pauses, restart pauses and uncertain outcomes under [ADR-0051](adr/adr-0051-research-agent-task-execution.md#scheduling-and-required-limits).
+
+Settings observes the window’s single `research.subscribe` stream, including windows with no project. Limit changes and inference-activity notices trigger a reread; a sequence gap also rereads and recovers through the existing conversation subscription owner. The controller ignores older preference revisions while refreshing the live running count, and compares revisions only within their admitted service generation. Failure and uncertainty use the existing Settings messages; recovery actions sit outside notice boxes. These controls preserve explicit researcher choice and uncertainty (PRIN-001, PRIN-006 and PRIN-016).
 
 ## Rendering and interaction
 

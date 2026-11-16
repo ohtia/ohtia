@@ -4,8 +4,6 @@ title: "Product roadmap"
 description: "Desktop research capabilities, delivery sequence, dependencies and readiness conditions for Ohtia."
 generated:
   by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: electron-platforms
     resource: "https://github.com/electron/electron/blob/main/README.md#platform-support"
@@ -154,7 +152,7 @@ EPIC-002 establishes the Settings shell, shared preference controls and global l
 | Animated/static/hidden character presentation | Application                   | EPIC-002           |
 | Connections and credential actions            | Application                   | EPIC-003           |
 | Allowed agent/model operation preferences     | Application; operation policy | EPIC-003           |
-| Inference and local-processing concurrency    | Application                   | EPIC-003           |
+| Inference concurrency                         | Application                   | EPIC-003           |
 | View/delete/share-preview diagnostics         | Application                   | EPIC-004           |
 | Managed storage location and recovery         | Application                   | EPIC-004           |
 | Document language                             | Research project              | EPIC-003           |

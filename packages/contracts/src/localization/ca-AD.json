@@ -288,6 +288,13 @@
     "conversation.copyFailed": "Ohtia no ha pogut copiar aquest missatge. Selecciona’n el text i copia’l manualment.",
     "conversation.opensInBrowser": "s’obre al navegador",
     "conversation.codeBlock": "Bloc de codi",
-    "conversation.table": "Taula"
+    "conversation.table": "Taula",
+    "limits.section": "Treball simultani",
+    "limits.field": "Respostes d’IA alhora",
+    "limits.range": "Introdueix un nombre enter entre {min} i {max}. Es conserva el valor desat, {value}.",
+    "limits.subscription": "Més respostes alhora poden consumir més del teu pla de {service} al mateix temps.",
+    "limits.apiKey": "Més respostes alhora poden gastar més de pressa el crèdit de la teva clau de {service}.",
+    "limits.connectionLimit": "{service} permet com a màxim {connection_limit, plural, one {# resposta alhora.} many {# respostes alhora.} other {# respostes alhora.}}",
+    "limits.running": "{running, plural, one {# resposta en curs. } many {# respostes en curs. } other {# respostes en curs. }}{value, plural, =1 {Les noves esperaran fins que no n’hi hagi cap en curs.} one {Les noves esperaran fins que no n’hi hagi cap en curs.} many {Les noves esperaran fins que hi hagi menys de # respostes en curs.} other {Les noves esperaran fins que hi hagi menys de # respostes en curs.}}"
   }
 }

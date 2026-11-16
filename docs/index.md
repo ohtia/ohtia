@@ -40,7 +40,7 @@ okf_version: "0.2"
 - [Scaleway qualification access preflight](scaleway-access.md) — Check protected GitHub Actions read access and ARM image compatibility without creating cloud resources or claiming native qualification.
 - [Ephemeral ARM installation qualification](scaleway-qualification.md) — Define protected authority, bounded diagnostics and recovery for unsigned native ARM qualification on ephemeral Scaleway leases.
 - [Isolated desktop runtime](desktop-runtime.md) — Admit native runtime contexts, manage the window lifecycle and verify supervised status and fixed-home bootstrap boundaries.
-- [Durable foundation storage](storage.md) — Persist local preferences and research records, resume durable reply tasks after restart, and recover verified migrations.
+- [Durable foundation storage](storage.md) — Persist preferences, inference-limit receipts and research records, resume durable tasks and recover verified migrations.
 - [Desktop foundation contract](desktop-foundation-contract.md) — Native target and distribution qualification inputs, pinned candidate metadata, numeric resource policy and evidence ownership for the desktop foundation.
 - [Bounded foundation application port](application-port.md) — Versioned application configuration, provider connections and bounded research operations with scoped events and text parts across the desktop boundary.
 - [Foundation security applicability](foundation-security.md) — Versioned security applicability, enforcing boundaries and reproducible evidence obligations for the desktop foundation.
@@ -67,4 +67,4 @@ okf_version: "0.2"
 - [EPICs](epics/index.md) — Published delivery specifications and their native GitHub story sub-issues.
 - [Command discovery](command-discovery.md) — Discover available window commands with IME-safe activation and inspect platform and component shortcuts.
 - [Shared interface localization](localization.md) — Author complete typed catalogs and use the durable application-wide language preference without changing research content.
-- [Settings and presentation preferences](settings.md) — Compose the compact Settings dialog with named preference operations, durable receipts and window-owned layout.
+- [Settings and presentation preferences](settings.md) — Compose Settings with presentation and inference controls, durable receipts and window-owned layout.

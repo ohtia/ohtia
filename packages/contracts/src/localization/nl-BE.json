@@ -288,6 +288,13 @@
     "conversation.copyFailed": "Ohtia kon dit bericht niet kopiëren. Selecteer de tekst en kopieer deze handmatig.",
     "conversation.opensInBrowser": "opent in uw browser",
     "conversation.codeBlock": "Codeblok",
-    "conversation.table": "Tabel"
+    "conversation.table": "Tabel",
+    "limits.section": "Gelijktijdig werk",
+    "limits.field": "Gelijktijdige AI-antwoorden",
+    "limits.range": "Voer een geheel getal van {min} tot {max} in. De opgeslagen waarde, {value}, blijft behouden.",
+    "limits.subscription": "Meer gelijktijdige antwoorden kunnen meer van uw {service}-abonnement tegelijk verbruiken.",
+    "limits.apiKey": "Meer gelijktijdige antwoorden kunnen het tegoed van uw {service}-sleutel sneller verbruiken.",
+    "limits.connectionLimit": "{service} staat maximaal {connection_limit, plural, one {# antwoord tegelijk toe.} other {# antwoorden tegelijk toe.}}",
+    "limits.running": "{running, plural, one {# antwoord wordt uitgevoerd. } other {# antwoorden worden uitgevoerd. }}{value, plural, =1 {Nieuwe antwoorden wachten totdat er geen meer worden uitgevoerd.} one {Nieuwe antwoorden wachten totdat er geen meer worden uitgevoerd.} other {Nieuwe antwoorden wachten totdat er minder dan # antwoorden worden uitgevoerd.}}"
   }
 }

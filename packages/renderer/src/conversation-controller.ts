@@ -41,6 +41,14 @@ export class ConversationController {
   private state: ConversationState = empty({ projectId: null, conversationId: null });
   private readonly listeners = new Set<() => void>();
   private stream: Subscription | undefined;
+  private readonly observers = new Set<(notice: Outcome<ResearchEvent> | "ready") => void>();
+  observe = (listener: (notice: Outcome<ResearchEvent> | "ready") => void): (() => void) => {
+    this.observers.add(listener);
+    return () => this.observers.delete(listener);
+  };
+  private observed(notice: Outcome<ResearchEvent> | "ready"): void {
+    for (const listener of this.observers) listener(notice);
+  }
   private epoch = 0;
   private disposed = false;
   private queue = Promise.resolve();
@@ -109,6 +117,7 @@ export class ConversationController {
     this.stream?.dispose();
     const stream = this.port.subscribeResearch(this.state.scope, (notice) => {
       if (!this.live(epoch)) return;
+      this.observed(notice);
       if (!notice.ok) {
         if (notice.error.code === "sequence_gap") {
           // A fresh subscription identity precedes all reads so changes during recovery remain observable.
@@ -148,6 +157,7 @@ export class ConversationController {
         this.failure(epoch, ready.error);
         return;
       }
+      this.observed("ready");
       this.queue = this.queue
         .then(async () => {
           if (!this.live(epoch) || this.stream !== stream) return;
@@ -364,6 +374,7 @@ export class ConversationController {
     });
   };
   private async event(event: ResearchEvent, epoch: number): Promise<void> {
+    if (event.kind === "inferenceActivity") return;
     if (event.kind === "reply") {
       const saved = this.state.items.some(
         (item) => item.kind === "message" && item.taskId === event.taskId,
@@ -406,5 +417,6 @@ export class ConversationController {
     this.cache.clear();
     this.establishedRanges.clear();
     this.listeners.clear();
+    this.observers.clear();
   }
 }

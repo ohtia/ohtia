@@ -288,6 +288,13 @@
     "conversation.copyFailed": "Ohtia ei voinut kopioida tätä viestiä. Valitse teksti ja kopioi se manuaalisesti.",
     "conversation.opensInBrowser": "avautuu selaimessasi",
     "conversation.codeBlock": "Koodilohko",
-    "conversation.table": "Taulukko"
+    "conversation.table": "Taulukko",
+    "limits.section": "Samanaikainen työ",
+    "limits.field": "Samanaikaiset tekoälyvastaukset",
+    "limits.range": "Anna kokonaisluku väliltä {min}–{max}. Tallennettu arvo {value} säilytetään.",
+    "limits.subscription": "Useampi samanaikainen vastaus voi kuluttaa enemmän {service}-tilauksestasi kerralla.",
+    "limits.apiKey": "Useampi samanaikainen vastaus voi kuluttaa {service}-avaimesi saldoa nopeammin.",
+    "limits.connectionLimit": "{service} sallii enintään {connection_limit, plural, one {# vastauksen kerrallaan.} other {# vastausta kerrallaan.}}",
+    "limits.running": "{running, plural, one {# vastaus on käynnissä. } other {# vastausta on käynnissä. }}{value, plural, =1 {Uudet vastaukset odottavat, kunnes yhtään vastausta ei ole käynnissä.} one {Uudet vastaukset odottavat, kunnes yhtään vastausta ei ole käynnissä.} other {Uudet vastaukset odottavat, kunnes käynnissä on alle # vastausta.}}"
   }
 }

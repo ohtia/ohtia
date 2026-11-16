@@ -198,6 +198,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
   return (
     <div className="workspace-window foundation-window">
       <SettingsSurfaces
+        research={conversation}
         composeWorkspace={workspaceMounted.current}
         bridge={bridge.commands}
         port={bridge.foundation}

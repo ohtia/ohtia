@@ -1,11 +1,9 @@
 ---
 type: Playbook
 title: Durable foundation storage
-description: Persist local preferences and research records, resume durable reply tasks after restart, and recover verified migrations.
+description: Persist preferences, inference-limit receipts and research records, resume durable tasks and recover verified migrations.
 generated:
   by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # Durable foundation storage
@@ -63,6 +61,10 @@ A validated migration gate present before Retry invokes the shared recovery revi
 Migration `0011_service_runs` adds append-only service history keyed by main’s generation, with `started_at` and an initially empty `clean_stop_at`. Each admitted start reviews tasks and registers its run in one reserved transaction before readiness. The existing supervisor first denies further dispatch and ends the generation’s provider transports, then waits for their closure within its total shutdown deadline before sending the orderly shutdown message; an expired deadline keeps the application open and prevents a later deferred shutdown request. An orderly shutdown request sent before expiry can still complete and record its clean stop. A successful orderly shutdown drains the existing service queue and writes `clean_stop_at` as the store’s final write; an unorderly shutdown leaves it empty. Ordinary startup with a recorded clean stop continues queued tasks and preserves blocking reasons. Other starts apply the shared crash review. A legacy store without service-run history requires one explicit continuation for its pending development tasks; its first upgrade cannot prove an orderly stop from a missing record. Main closes the preceding generation’s provider transports before starting its replacement; a committed dispatch permit therefore becomes uncertain even if it never reached main, with no saved partial text or automatic second attempt.
 
 Main observes Electron’s suspend/resume events and sends the versioned, runtime-validated `service_wake` with wall-clock timestamps and the measured nonnegative sleep interval. The service rechecks running attempts against their original duration and inactivity budgets, requests interruption on expiry and waits for the existing transport-closure receipt. Main also rechecks those budgets and refuses permits issued before the latest resume. The [provider-transfer contract](adr/adr-0052-current-provider-dispatch-authorization.md) fences late permits until the data service’s ordered wake-review echo; storage activation still gates its next scheduler pump. Sleep does not reset an attempt or enlarge its retry budget. Service start, orderly stop and wake diagnostics contain only catalog event identities; no research content, credentials or provider error text is included.
+
+## Execution-limit receipts
+
+Migration `0013_execution_limits_receipts` adds the inference preference’s receipt table through the same checkpoint, recovery gate and explicit continuation path as the preceding task migrations. The ordered storage registry and artifact manifest admit source revisions 0 through 13 and target revision 13. Each accepted replacement writes the preference revision and its receipt in one immediate transaction; an insert failure rolls both back. The table stores only `operation_id`, the whole-number `value` from 1 to 50, and `result_revision`. Running counts are read from tasks and never persisted in receipts. [Settings](settings.md#inference-concurrency) owns the control and [the application port](application-port.md#envelopes-and-named-operations) owns its named operations.
 
 ## Migration and recovery
 

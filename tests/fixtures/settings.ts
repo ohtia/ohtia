@@ -47,6 +47,19 @@ export function harness() {
     return call({ ok: true as const, value });
   };
   const port = {
+    readExecutionLimits: () =>
+      call({
+        ok: true as const,
+        value: {
+          serviceGeneration: "service-1",
+          revision: 2,
+          max_concurrent_inference: 10,
+          running: 0,
+        },
+      }),
+    replaceExecutionLimits: () => call(failure("service_unavailable")),
+    readExecutionLimitsReceipt: () =>
+      call({ ok: true as const, value: { state: "not_found" as const } }),
     subscribeResearch: () => ({
       ready: Promise.resolve({ ok: true as const, value: { subscriptionId: "research" } }),
       dispose() {},

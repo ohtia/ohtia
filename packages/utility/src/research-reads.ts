@@ -230,7 +230,7 @@ export async function researchRevisions(
   for (const row of await db
     .selectFrom("application_preferences")
     .select(["key", "revision"])
-    .where("key", "in", ["inference_concurrency", "local_processing_concurrency"])
+    .where("key", "=", "execution_limits")
     .execute())
     result.push({
       kind: "changed",
