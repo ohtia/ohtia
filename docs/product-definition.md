@@ -4,8 +4,6 @@ title: "Product definition"
 description: "Purpose, academic workflows, trust, and scope of the local Ohtia desktop workspace."
 generated:
   by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # Product definition
@@ -180,7 +178,7 @@ The repository's English documentation is independent of interface and manuscrip
 
 Interface translation, the project's document language and source language are separate settings; the document language is also the manuscript's language. Changing a setting does not translate existing research or relabel its original language. A catalog's structural completeness does not establish linguistic quality. Model-generated translations may be delivered without human linguistic review; disclose the actual producer and unreviewed state. Human review is an optional future improvement and is recorded only for the version and scope actually reviewed.
 
-The interface targets WCAG 2.2 AA with keyboard-operable research workflows, readable focus, scalable text and meaningful announcements; the [frontend architecture](frontend-architecture.md) defines verification. Model output quality must be evaluated for each enabled operation and language; translated labels do not establish model competence.
+The interface targets WCAG 2.2 AA with keyboard-operable research workflows, readable focus, scalable text and meaningful announcements; the [frontend architecture](frontend-architecture.md) defines verification. Ohtia does not grade model output quality; translated labels do not establish model competence.
 
 ## Evaluation
 
@@ -194,4 +192,4 @@ Success is a useful examined result and an informed next step, including rejecti
 
 Ohtia does not ghostwrite manuscripts, operate a shared literature corpus, bypass provider access controls or guarantee exhaustive systematic-review search. Collaborative cloud editing and mobile delivery are separate future scope decisions. The first desktop product must preserve independent local use rather than require hosted Ohtia infrastructure.
 
-Validate the minimal source-to-draft-comparison-to-human-decision route with users. Define manuscript import fidelity, bibliography-manager integration, operation/language quality thresholds, launch OS/CPU/version matrix and achievable adapter access methods before the corresponding delivery commitments. The [architecture](architecture.md) identifies the technical boundaries; concrete component choices require evidence before implementation.
+Validate the minimal source-to-draft-comparison-to-human-decision route with users. Define manuscript import fidelity, bibliography-manager integration, launch OS/CPU/version matrix and achievable adapter access methods before the corresponding delivery commitments. The [architecture](architecture.md) identifies the technical boundaries; concrete component choices require evidence before implementation.

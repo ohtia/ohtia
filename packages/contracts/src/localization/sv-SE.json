@@ -318,6 +318,7 @@
     "composer.replace": "Ersätt text",
     "composer.destinationLoading": "Läser meddelandets destination…",
     "composer.destinationFailed": "Ohtia kunde inte läsa vart meddelandet skulle skickas. Uppdatera innan du skickar det.",
-    "composer.refreshDestination": "Uppdatera destination"
+    "composer.refreshDestination": "Uppdatera destination",
+    "project.type.thesis": "Avhandling"
   }
 }

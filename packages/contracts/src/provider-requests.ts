@@ -6,11 +6,11 @@ import { isConnectionId } from "./connections.js";
  * and main, which checks the dispatch permit, attaches the credential and sends them (ADR-0028).
  */
 export const providerMessageVersion = 1;
-/** Internal envelopes allow JSON's six-byte escaping of bounded raw input and metadata. */
-export const providerMessageBytes = 512 * 1024;
+/** Six-byte JSON escaping of 64 KiB of messages plus setup/cut notes fits this private envelope. */
+export const providerMessageBytes = 1024 * 1024;
 /** ADR-0028's versioned permit validity: not a response deadline. Real-account checks measure it. */
 export const dispatchPermitPolicy = Object.freeze({ version: 1, validity_ms: 2000 });
-export const providerOperations = ["development_test"] as const;
+export const providerOperations = ["development_test", "project_setup"] as const;
 export type ProviderOperation = (typeof providerOperations)[number];
 export const providerFailureReasons = [
   "usage_limit_reached",
@@ -60,6 +60,7 @@ export type ProviderEventBody =
     }
   | { readonly type: "activity" }
   | { readonly type: "text"; readonly text: string }
+  | ({ readonly type: "tool_call" } & ProviderToolCall)
   | { readonly type: "usage"; readonly usage: ProviderUsage }
   | { readonly type: "result"; readonly result: ProviderResult };
 export type ProviderEvent = ProviderEventBody & { readonly sequence: number };
@@ -73,6 +74,28 @@ export interface ProviderRequestLimits {
   readonly max_inactivity_ms: number;
 }
 /** Everything main needs to send one attempt, never a credential. */
+/** Strict string-object schemas used by application-owned proposal tools. */
+export interface ProviderTool {
+  readonly namespace: string;
+  readonly name: string;
+  readonly description: string;
+  readonly strict: true;
+  readonly parameters: {
+    readonly type: "object";
+    readonly properties: Readonly<
+      Record<string, { readonly type: "string"; readonly description: string }>
+    >;
+    readonly required: readonly string[];
+    readonly additionalProperties: false;
+  };
+}
+export interface ProviderToolCall {
+  /** Null is an unnamespaced provider call; it cannot match a namespaced permitted tool. */
+  readonly namespace: string | null;
+  readonly name: string;
+  /** Complete JSON arguments, kept exactly as received. */
+  readonly arguments: string;
+}
 export interface ProviderRequestData {
   readonly attempt: string;
   readonly operation: ProviderOperation;
@@ -84,6 +107,7 @@ export interface ProviderRequestData {
   readonly model: string;
   readonly instructions: string;
   readonly input: readonly ProviderInputItem[];
+  readonly tools: readonly ProviderTool[];
   readonly limits: ProviderRequestLimits;
 }
 export interface DispatchPermit {
@@ -149,6 +173,10 @@ function boundedText(value: unknown, maximum: number): value is string {
     return false;
   }
 }
+/** Foreign provider labels stay opaque; only exact permitted-tool matches have effects. */
+export function isProviderToolLabel(value: unknown): value is string {
+  return boundedText(value, portLimits.identifier_bytes) && value.length > 0;
+}
 export function isProviderModelSlug(value: unknown): value is string {
   return (
     typeof value === "string" &&
@@ -205,6 +233,13 @@ export function isProviderEvent(value: unknown): value is ProviderEvent {
         value.text.length > 0 &&
         boundedText(value.text, portLimits.string_bytes)
       );
+    case "tool_call":
+      return (
+        exact(value, ["sequence", "type", "namespace", "name", "arguments"]) &&
+        (value.namespace === null || isProviderToolLabel(value.namespace)) &&
+        isProviderToolLabel(value.name) &&
+        boundedText(value.arguments, providerMessageBytes / 2)
+      );
     case "usage":
       return exact(value, ["sequence", "type", "usage"]) && isUsage(value.usage);
     case "result":
@@ -223,6 +258,40 @@ function isInput(value: unknown): value is ProviderInputItem {
     boundedText(value.text, portLimits.message_bytes)
   );
 }
+function isTool(value: unknown): value is ProviderTool {
+  if (
+    !record(value) ||
+    !exact(value, ["namespace", "name", "description", "strict", "parameters"]) ||
+    !isIdentifier(value.namespace) ||
+    !isIdentifier(value.name) ||
+    !boundedText(value.description, 4096) ||
+    value.strict !== true
+  )
+    return false;
+  const p = value.parameters;
+  return (
+    record(p) &&
+    exact(p, ["type", "properties", "required", "additionalProperties"]) &&
+    p.type === "object" &&
+    p.additionalProperties === false &&
+    record(p.properties) &&
+    Object.keys(p.properties).length <= 32 &&
+    Array.isArray(p.required) &&
+    p.required.length === Object.keys(p.properties).length &&
+    new Set(p.required).size === p.required.length &&
+    p.required.every(
+      (key) => typeof key === "string" && Object.hasOwn(p.properties as object, key),
+    ) &&
+    Object.entries(p.properties).every(
+      ([key, field]) =>
+        isIdentifier(key) &&
+        record(field) &&
+        exact(field, ["type", "description"]) &&
+        field.type === "string" &&
+        boundedText(field.description, 4096),
+    )
+  );
+}
 export function isProviderRequestData(value: unknown): value is ProviderRequestData {
   return (
     record(value) &&
@@ -237,6 +306,7 @@ export function isProviderRequestData(value: unknown): value is ProviderRequestD
       "model",
       "instructions",
       "input",
+      "tools",
       "limits",
     ]) &&
     isIdentifier(value.attempt) &&
@@ -254,8 +324,11 @@ export function isProviderRequestData(value: unknown): value is ProviderRequestD
     boundedText(value.instructions, portLimits.string_bytes) &&
     Array.isArray(value.input) &&
     value.input.length > 0 &&
-    value.input.length <= portLimits.container_items &&
+    value.input.length <= 601 &&
     value.input.every(isInput) &&
+    Array.isArray(value.tools) &&
+    value.tools.length <= 32 &&
+    value.tools.every(isTool) &&
     record(value.limits) &&
     exact(value.limits, ["max_output_bytes", "max_attempt_duration_ms", "max_inactivity_ms"]) &&
     Object.values(value.limits).every((item) => count(item) && item > 0)
@@ -406,6 +479,9 @@ export type DevelopmentAction =
     }
   | { readonly name: "interrupt"; readonly operation_id: string; readonly attempt: string }
   | { readonly name: "create-development-project"; readonly operation_id: string }
+  | { readonly name: "create-project"; readonly operation_id: string }
+  | { readonly name: "confirm-setup"; readonly operation_id: string; readonly proposal: string }
+  | { readonly name: "reject-setup"; readonly operation_id: string; readonly proposal: string }
   | { readonly name: "continue-all"; readonly operation_id: string }
   | { readonly name: "stop"; readonly operation_id: string; readonly task: string }
   | { readonly name: "start-again"; readonly operation_id: string; readonly task: string }
@@ -436,7 +512,7 @@ export type TransferEntry =
   | { readonly kind: "message"; readonly reference: string }
   | {
       readonly kind: "note";
-      readonly note: "earlier_messages_omitted" | "partial_reply";
+      readonly note: "earlier_messages_omitted" | "partial_reply" | "setup_proposal";
       readonly reference: string;
       readonly revision: number;
     };
@@ -451,6 +527,8 @@ export const developmentRefusals = [
   "record_not_found",
   "newer_task_exists",
   "task_not_retryable",
+  "proposal_not_waiting",
+  "setup_reply_active",
 ] as const;
 export type DevelopmentReport =
   | {
@@ -460,7 +538,7 @@ export type DevelopmentReport =
     }
   | {
       readonly type: "record";
-      readonly record: "project" | "conversation" | "message" | "task" | "receipt";
+      readonly record: "project" | "conversation" | "message" | "task" | "receipt" | "proposal";
       readonly id: string;
     }
   | { readonly type: "refused"; readonly reason: (typeof developmentRefusals)[number] }
@@ -501,7 +579,9 @@ function isTransferEntry(value: unknown): value is TransferEntry {
     isIdentifier(value.reference) &&
     count(value.revision) &&
     value.revision > 0 &&
-    (value.note === "earlier_messages_omitted" || value.note === "partial_reply")
+    (value.note === "earlier_messages_omitted" ||
+      value.note === "partial_reply" ||
+      value.note === "setup_proposal")
   );
 }
 function isDevelopmentReport(value: unknown): value is DevelopmentReport {
@@ -517,7 +597,7 @@ function isDevelopmentReport(value: unknown): value is DevelopmentReport {
     case "record":
       return (
         exact(value, ["type", "record", "id"]) &&
-        ["project", "conversation", "message", "task", "receipt"].includes(
+        ["project", "conversation", "message", "task", "receipt", "proposal"].includes(
           value.record as string,
         ) &&
         isIdentifier(value.id)
@@ -554,7 +634,7 @@ function isDevelopmentReport(value: unknown): value is DevelopmentReport {
         isProviderResult(value.result) &&
         isUsage(value.usage) &&
         Array.isArray(value.transfer) &&
-        value.transfer.length <= portLimits.container_items &&
+        value.transfer.length <= 601 &&
         value.transfer.every(isTransferEntry) &&
         count(value.events) &&
         count(value.duration_ms) &&
@@ -584,12 +664,17 @@ export function decodeDevelopmentAction(
   const action = value.action;
   if (!isIdentifier(action.operation_id)) return;
   if (
+    (action.name === "confirm-setup" || action.name === "reject-setup") &&
+    exact(action, ["name", "operation_id", "proposal"]) &&
+    isIdentifier(action.proposal)
+  )
+    return value as unknown as DevelopmentActionMessage;
+  if (
     action.name === "open-conversation" &&
     exact(action, ["name", "operation_id", "conversation"]) &&
     isIdentifier(action.conversation)
   )
     return value as unknown as DevelopmentActionMessage;
-  if (!isIdentifier(action.operation_id)) return;
   if (
     action.name === "resume-requests" &&
     exact(action, ["name", "operation_id", "connection"]) &&
@@ -597,7 +682,9 @@ export function decodeDevelopmentAction(
   )
     return value as unknown as DevelopmentActionMessage;
   if (
-    (action.name === "create-development-project" || action.name === "continue-all") &&
+    (action.name === "create-development-project" ||
+      action.name === "create-project" ||
+      action.name === "continue-all") &&
     exact(action, ["name", "operation_id"])
   )
     return value as unknown as DevelopmentActionMessage;

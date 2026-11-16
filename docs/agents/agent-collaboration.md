@@ -2,10 +2,6 @@
 type: Specification
 title: "Agent collaboration"
 description: "Virgilio, research specialists, bounded collaboration, inspectable memory, and human-approved editorial proposals."
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: openai-orchestration
     resource: "https://developers.openai.com/api/docs/guides/agents/orchestration"
@@ -22,6 +18,8 @@ sources:
   - id: anthropic-access
     resource: "https://code.claude.com/docs/en/agent-sdk/overview"
     title: "Anthropic — Agent SDK overview"
+generated:
+  by: codex/gpt-6.1-sol
 ---
 
 # Agent collaboration
@@ -98,7 +96,7 @@ A contributor has no separate orchestration loop or retry allowance. Consultatio
 
 Virgilio and the reader/reviewer provide bounded methodological guidance from the first useful experience. Distinguish established project requirements, researcher choices and suggestions. Examine whether the question, material, design and claimed conclusion fit, across quantitative, qualitative, documentary and theoretical work where capabilities permit.
 
-Route a request needing sustained methodological specialization to the separately evaluated [Thomas, the methodologist](agent-thomas.md), or explain that the required capability is unavailable. Thomas's profile owns its role-specific operations and evaluation cases; the shared collaboration and execution contracts remain here. Do not relabel a general agent as a qualified specialist without its operation contract and quality evidence. Guidance cannot certify ethics approval, institutional compliance or the validity of unexamined data.
+Route a request needing sustained methodological specialization to the separately evaluated [Thomas, the methodologist](agent-thomas.md), or explain that the required capability is unavailable. Thomas's profile owns its role-specific operations and evaluation cases; the shared collaboration and execution contracts remain here. Do not relabel a general agent as a specialist without its operation contract. Guidance cannot certify ethics approval, institutional compliance or the validity of unexamined data.
 
 A statistical/data-analysis specialist extends these contracts only after reproducible execution is separately defined: immutable data inputs, restrictions, transformations, analysis code and environment, parameters/seeds where relevant, output identities and actual execution coverage. The present collaboration boundary grants no arbitrary shell, SQL or code-execution tool. A proposed method is distinguishable from an executed analysis and from a validated interpretation.
 

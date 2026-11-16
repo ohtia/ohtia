@@ -1,3 +1,13 @@
+import {
+  acceptedSetupCalls,
+  setupInvalidReason,
+  setupNote,
+  setupRevision,
+  setupTool,
+  setupTextProjection,
+} from "./project-setup.js";
+import type { ProviderToolCall } from "@ohtia/contracts";
+import type { LanguageRegistry } from "./research.js";
 import { randomUUID } from "node:crypto";
 import { type Kysely, sql } from "kysely";
 import {
@@ -97,7 +107,8 @@ export interface AttemptRow extends ProviderUsage {
 }
 /** The committed terminal decision is returned to the stream reporter, including a winning Stop. */
 export type RecordedTaskEvent =
-  { readonly recorded: false } | { readonly recorded: true; readonly result?: ProviderResult };
+  | { readonly recorded: false }
+  | { readonly recorded: true; readonly result?: ProviderResult; readonly proposalId?: string };
 
 export interface UsagePauseRow {
   id: Uint8Array;
@@ -168,8 +179,12 @@ export class TaskTransaction {
       .selectAll()
       .where("id", "=", projectId)
       .executeTakeFirstOrThrow();
-    if (!project.is_development) return null;
-    const policy = operationPolicy("development_test", 1, this.context.mode);
+    if (!project.is_development && project.setup_confirmed_at !== null) return null;
+    const policy = operationPolicy(
+      project.is_development ? "development_test" : "project_setup",
+      1,
+      this.context.mode,
+    );
     return policy ? { policy, connection: "chatgpt" } : null;
   }
   async stopConversation(id: Uint8Array, operationId: string): Promise<Outcome<Uint8Array>> {
@@ -202,7 +217,8 @@ export class TaskTransaction {
       .selectAll()
       .where("id", "=", projectId)
       .executeTakeFirstOrThrow();
-    if (!project.is_development) return { ok: true, value: null };
+    if (!project.is_development && project.setup_confirmed_at !== null)
+      return { ok: true, value: null };
     const destination = await this.destination(projectId);
     if (!destination) return failure("service_unavailable");
     const { policy } = destination;
@@ -239,7 +255,7 @@ export class TaskTransaction {
       .where("id", "=", projectId)
       .executeTakeFirstOrThrow();
     this.touch(conversationId);
-    if (!project.is_development) return;
+    if (!project.is_development && project.setup_confirmed_at !== null) return;
     this.diagnostics.push({ event_name: "ohtia.task.accepted" });
     const destination = await this.destination(projectId);
     if (!destination) throw new Error("Task policy unavailable.");
@@ -331,7 +347,10 @@ export class TaskTransaction {
       .where("position", "=", task.input_through_position)
       .executeTakeFirst();
     return (
-      !!project?.is_development &&
+      !!project &&
+      (project.is_development
+        ? task.operation === "development_test"
+        : project.setup_confirmed_at === null && task.operation === "project_setup") &&
       !!message &&
       !!receipt &&
       ["conversation.start", "message.append", "task.startAgain"].includes(receipt.command)
@@ -428,6 +447,14 @@ export class TaskTransaction {
       return { ok: true, value: task.id };
     }
     if (task.state !== "uncertain") return failure("task_not_retryable");
+    if (task.operation === "project_setup") {
+      const project = await this.db
+        .selectFrom("projects")
+        .select("setup_confirmed_at")
+        .where("id", "=", task.project_id)
+        .executeTakeFirstOrThrow();
+      if (project.setup_confirmed_at !== null) return failure("task_not_retryable");
+    }
     // rowid expresses actual acceptance order even if the wall clock moves backwards.
     const newer = await this.db
       .selectFrom("tasks")
@@ -666,6 +693,7 @@ export class TaskTransaction {
             : undefined;
         inputMessages.push({
           reference: identifier(message.id),
+          position: message.position,
           role: message.author_kind === "researcher" ? ("user" as const) : ("assistant" as const),
           text: message.content,
           ...(message.ending === "partial"
@@ -678,10 +706,39 @@ export class TaskTransaction {
             : {}),
         });
       }
-      const built = buildInput(policy, inputMessages, {
-        reference: identifier(conversation.id),
-        revision: conversation.revision,
+      const proposals =
+        task.operation === "project_setup"
+          ? await this.db
+              .selectFrom("project_setup_proposals as p")
+              .innerJoin("tasks as t", "t.id", "p.task_id")
+              .selectAll("p")
+              .select("t.reply_position")
+              .where("t.conversation_id", "=", task.conversation_id)
+              .orderBy("t.reply_position")
+              .execute()
+          : [];
+      const notes = proposals.flatMap((proposal) => {
+        const text = setupNote(proposal);
+        return text && proposal.reply_position !== null
+          ? [
+              {
+                position: proposal.reply_position,
+                reference: identifier(proposal.id),
+                revision: setupRevision(proposal),
+                text,
+              },
+            ]
+          : [];
       });
+      const built = buildInput(
+        policy,
+        inputMessages,
+        {
+          reference: identifier(conversation.id),
+          revision: conversation.revision,
+        },
+        notes,
+      );
       if (previous.length >= policy.max_attempts) {
         this.diagnostics.push({ event_name: "ohtia.task.failed" });
         await this.change(task, { state: "failed" });
@@ -757,6 +814,7 @@ export class TaskTransaction {
             model,
             instructions: policy.instructions,
             input: built.input,
+            tools: task.operation === "project_setup" ? [setupTool] : [],
             project: identifier(task.project_id),
             policy_version: task.policy_version,
             instruction_version: task.instruction_version,
@@ -777,7 +835,13 @@ export class TaskTransaction {
     }
     return null;
   }
-  async event(attemptId: string, event: ProviderEvent, text: string): Promise<RecordedTaskEvent> {
+  async event(
+    attemptId: string,
+    event: ProviderEvent,
+    text: string,
+    calls: readonly ProviderToolCall[] = [],
+    registry?: () => LanguageRegistry,
+  ): Promise<RecordedTaskEvent> {
     const attempt = await this.db
       .selectFrom("attempts")
       .selectAll()
@@ -795,7 +859,7 @@ export class TaskTransaction {
       .where("id", "=", attempt.task_id)
       .executeTakeFirstOrThrow();
     if (task.state !== "running" && task.state !== "cancelling") return { recorded: false };
-    if (event.type === "text" || event.type === "activity")
+    if (event.type === "text" || event.type === "activity" || event.type === "tool_call")
       return { recorded: task.state === "running" };
     if (event.type === "started") {
       await this.db
@@ -816,10 +880,11 @@ export class TaskTransaction {
     }
     // Stop won the committed revision: even an already queued successful result can only
     // acknowledge cessation. Keep received partial text, never publish it as a complete reply.
+    const accepted = task.operation === "project_setup" ? acceptedSetupCalls(calls) : [];
     const result: ProviderResult =
       task.state === "cancelling"
         ? { status: "cancelled" }
-        : event.result.status === "completed" && !text
+        : event.result.status === "completed" && !text && !accepted.length
           ? { status: "failed", reason: "empty_reply", dispatched: true }
           : event.result;
     const notDispatched = result.status === "failed" && !result.dispatched;
@@ -907,6 +972,41 @@ export class TaskTransaction {
         .execute();
       await this.replaceWaiting(task.conversation_id);
     }
+    let proposalId: string | undefined;
+    if (state === "completed" && accepted[0]) {
+      if (!registry) throw new Error("Setup registry unavailable.");
+      const values = accepted[0];
+      const invalid = accepted.length > 1 ? "multiple_calls" : setupInvalidReason(values, registry);
+      if (!invalid)
+        await this.db
+          .updateTable("project_setup_proposals")
+          .set({ state: "replaced", decided_at: this.now, decided_by_operation_id: null })
+          .where("project_id", "=", task.project_id)
+          .where("state", "=", "proposed")
+          .execute();
+      const proposalIdentity = newId();
+      proposalId = identifier(proposalIdentity);
+      await this.db
+        .insertInto("project_setup_proposals")
+        .values({
+          id: proposalIdentity,
+          project_id: task.project_id,
+          task_id: task.id,
+          attempt_id: attempt.id,
+          ...values,
+          title: setupTextProjection(values.title),
+          document_language: setupTextProjection(values.document_language),
+          state: invalid ? "invalid" : "proposed",
+          invalid_reason: invalid,
+          created_at: this.now,
+          decided_at: null,
+          decided_by_operation_id: null,
+        })
+        .execute();
+      this.diagnostics.push({ event_name: "ohtia.project.setup_proposed" });
+      // A tool-only reply changes the next queued task's input as well as a textual reply.
+      if (!text) await this.replaceWaiting(task.conversation_id);
+    }
     await this.change(task, { state: taskState, blocking_reason: blockingReason });
     if (reason === "usage_limit_reached" && task.connection === "chatgpt")
       await this.reconcileConnections();
@@ -924,7 +1024,7 @@ export class TaskTransaction {
                   ? "ohtia.task.cancelled"
                   : "ohtia.task.failed",
     });
-    return { recorded: true, result };
+    return { recorded: true, result, ...(proposalId ? { proposalId } : {}) };
   }
 }
 

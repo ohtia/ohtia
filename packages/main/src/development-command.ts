@@ -22,6 +22,9 @@ export const developmentRequestText = "Describe the usual parts of a thesis in a
 const actions: Readonly<Record<string, readonly string[]>> = Object.freeze({
   request: ["model"],
   "create-development-project": [],
+  "create-project": [],
+  "confirm-setup": ["proposal"],
+  "reject-setup": ["proposal"],
   "open-conversation": ["conversation"],
   "start-conversation": ["project", "text"],
   send: ["conversation", "text"],
@@ -61,6 +64,11 @@ export function parseDevelopmentSwitches(
   for (const name of expected)
     if (!values.has(name))
       return { ok: false, error: `The ${command} action needs --ohtia-dev-${name}=<value>.` };
+  if (command === "confirm-setup" || command === "reject-setup") {
+    const proposal = values.get("proposal");
+    if (!isIdentifier(proposal)) return { ok: false, error: "Use a proposal identifier." };
+    return { ok: true, action: { name: command, operation_id: operationId, proposal } };
+  }
   if (command === "open-conversation") {
     const conversation = values.get("conversation");
     if (!isIdentifier(conversation)) return { ok: false, error: "Use a conversation identifier." };
@@ -74,7 +82,11 @@ export function parseDevelopmentSwitches(
       action: { name: command, operation_id: operationId, connection: "chatgpt" },
     };
   }
-  if (command === "create-development-project" || command === "continue-all")
+  if (
+    command === "create-development-project" ||
+    command === "create-project" ||
+    command === "continue-all"
+  )
     return { ok: true, action: { name: command, operation_id: operationId } };
   if (command === "start-conversation" || command === "send") {
     const id = values.get(command === "send" ? "conversation" : "project");

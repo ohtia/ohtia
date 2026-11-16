@@ -178,6 +178,8 @@ export function ConversationView({
               <p className="conversation-empty">{message(locale, "conversation.empty")}</p>
             )}
             {state.items.map((item) => {
+              // Proposal cards are supplied by the new-project flow (STORY-003-015).
+              if (item.kind === "setupProposal") return null;
               const streaming =
                 item.kind === "task" &&
                 (item.state === "running" || item.state === "cancelling") &&

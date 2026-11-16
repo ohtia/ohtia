@@ -115,6 +115,15 @@
       },
       "effective_model_evidence": "The active implementation thread rollout, matched by CODEX_THREAD_ID to the issue request, records gpt-6.1-sol with effort high in turn_context.",
       "human_linguistic_review": null
+    },
+    {
+      "scope": "project.type.thesis for STORY-003-014",
+      "producer": {
+        "agent": "codex",
+        "effective_model": "gpt-6.1-sol"
+      },
+      "effective_model_evidence": "The active implementation thread rollout, matched by CODEX_THREAD_ID, records gpt-6.1-sol in its latest turn_context.",
+      "human_linguistic_review": null
     }
   ]
 }

@@ -4,8 +4,6 @@ title: "ADR-0029 — Versioned operation profiles and bounded usage reporting"
 description: "Select permitted model capabilities per operation and retain partial or late consumption without granting stale research authority."
 generated:
   by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # ADR-0029 — Versioned operation profiles and bounded usage reporting
@@ -26,4 +24,4 @@ For agent-owned usage that cannot be observed or reliably attributed, declare th
 
 ## Consequences
 
-Operations become auditable without promising exact cost control over opaque runtimes. Evaluate selected operations/languages before enabling them; transport conformance does not establish research quality. Test missing usage, partial streams, disabled/revoked connections, stale attempts, late reports, conflict/replay and unauthorized fallback. Usage reports are adapter assertions, not signed provider invoices.
+Operations become auditable without promising exact cost control over opaque runtimes. Transport conformance does not establish research quality, and Ohtia does not grade it. Test missing usage, partial streams, disabled/revoked connections, stale attempts, late reports, conflict/replay and unauthorized fallback. Usage reports are adapter assertions, not signed provider invoices.

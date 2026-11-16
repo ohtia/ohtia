@@ -318,6 +318,7 @@
     "composer.replace": "Substitueix el text",
     "composer.destinationLoading": "Consultant la destinació del missatge…",
     "composer.destinationFailed": "Ohtia no ha pogut consultar on s’enviaria aquest missatge. Actualitza abans d’enviar-lo.",
-    "composer.refreshDestination": "Actualitza la destinació"
+    "composer.refreshDestination": "Actualitza la destinació",
+    "project.type.thesis": "Tesi"
   }
 }

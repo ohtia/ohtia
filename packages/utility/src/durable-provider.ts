@@ -8,6 +8,7 @@ import {
   type DevelopmentActionMessage,
   type DevelopmentReport,
   type ProviderEventMessage,
+  type ProviderToolCall,
   type ProviderResult,
   type ProviderUsage,
   type TransferEntry,
@@ -22,6 +23,8 @@ interface Stream {
   readonly parts: ReplyPart[];
   readonly operationId: string;
   text: string;
+  readonly calls: ProviderToolCall[];
+  outputBytes: number;
   sequence: number;
   readonly transfer: readonly TransferEntry[];
   sampledMono: number;
@@ -234,29 +237,41 @@ export class DurableProvider {
       return;
     }
     const command =
-      action.name === "stop" || action.name === "start-again"
+      action.name === "confirm-setup" || action.name === "reject-setup"
         ? {
-            command: action.name === "stop" ? ("task.stop" as const) : ("task.startAgain" as const),
+            command:
+              action.name === "confirm-setup"
+                ? ("project.confirmSetup" as const)
+                : ("project.rejectSetup" as const),
             operationId: action.operation_id,
-            payload: { taskId: action.task },
+            payload: { proposalId: action.proposal },
           }
-        : action.name === "create-development-project"
-          ? {
-              command: "development.createProject" as const,
-              operationId: action.operation_id,
-              payload: {},
-            }
-          : action.name === "start-conversation"
+        : action.name === "create-project"
+          ? { command: "project.create" as const, operationId: action.operation_id, payload: {} }
+          : action.name === "stop" || action.name === "start-again"
             ? {
-                command: "conversation.start" as const,
+                command:
+                  action.name === "stop" ? ("task.stop" as const) : ("task.startAgain" as const),
                 operationId: action.operation_id,
-                payload: { projectId: action.project, content: action.text },
+                payload: { taskId: action.task },
               }
-            : {
-                command: "message.append" as const,
-                operationId: action.operation_id,
-                payload: { conversationId: action.conversation, content: action.text },
-              };
+            : action.name === "create-development-project"
+              ? {
+                  command: "development.createProject" as const,
+                  operationId: action.operation_id,
+                  payload: {},
+                }
+              : action.name === "start-conversation"
+                ? {
+                    command: "conversation.start" as const,
+                    operationId: action.operation_id,
+                    payload: { projectId: action.project, content: action.text },
+                  }
+                : {
+                    command: "message.append" as const,
+                    operationId: action.operation_id,
+                    payload: { conversationId: action.conversation, content: action.text },
+                  };
     const result = await this.options.storage.executeResearchCommand(command);
     if (!result.ok) {
       this.report(action.operation_id, {
@@ -267,6 +282,8 @@ export class DurableProvider {
           result.error.code === "record_not_found" ||
           result.error.code === "newer_task_exists" ||
           result.error.code === "task_not_retryable" ||
+          result.error.code === "proposal_not_waiting" ||
+          result.error.code === "setup_reply_active" ||
           result.error.code === "uncertain"
             ? result.error.code
             : "invalid_action",
@@ -279,15 +296,26 @@ export class DurableProvider {
     this.report(action.operation_id, {
       type: "record",
       record:
-        action.name === "create-development-project"
+        action.name === "create-development-project" || action.name === "create-project"
           ? "project"
-          : action.name === "start-conversation"
-            ? "conversation"
-            : action.name === "stop" || action.name === "start-again"
-              ? "task"
-              : "message",
+          : action.name === "confirm-setup" || action.name === "reject-setup"
+            ? "receipt"
+            : action.name === "start-conversation"
+              ? "conversation"
+              : action.name === "stop" || action.name === "start-again"
+                ? "task"
+                : "message",
       id: result.value.resultId,
     });
+    if (action.name === "create-project") {
+      const conversations = await this.options.storage.readConversations(result.value.resultId);
+      if (conversations.ok && conversations.value[0])
+        this.report(action.operation_id, {
+          type: "record",
+          record: "conversation",
+          id: conversations.value[0].id,
+        });
+    }
     await this.pump();
   }
   /** Each returned permit is already committed. No network or IPC runs while the write lock is held. */
@@ -316,6 +344,8 @@ export class DurableProvider {
           parts: [],
           operationId: prepared.value.acceptedByOperationId,
           text: "",
+          calls: [],
+          outputBytes: 0,
           sequence: 0,
           transfer: prepared.value.transfer,
           sampledMono: now,
@@ -366,12 +396,13 @@ export class DurableProvider {
     let event = message.event;
     if (event.type === "text") {
       if (stream.cut) return true;
-      const remaining = stream.maxOutput - Buffer.byteLength(stream.text, "utf8");
+      const remaining = stream.maxOutput - stream.outputBytes;
       const kept = utf8Beginning(event.text, remaining);
       const saved = await this.options.storage.recordTaskEvent(message.attempt, event, "");
       if (!saved.ok) throw new Error("Provider event could not be stored.");
       if (!saved.value.recorded) return true;
       stream.text += kept;
+      stream.outputBytes += Buffer.byteLength(kept, "utf8");
       for (const text of kept ? splitText(kept) : []) {
         const sequence = stream.parts.length + 1;
         stream.parts.push({ sequence, text });
@@ -384,6 +415,23 @@ export class DurableProvider {
       this.interrupt(message.attempt);
       return true;
     }
+    if (event.type === "tool_call") {
+      if (stream.cut) return true;
+      const size = Buffer.byteLength(event.arguments, "utf8");
+      if (stream.outputBytes + size > stream.maxOutput) {
+        stream.cut = "output_limit_exceeded";
+        stream.calls.length = 0;
+        this.interrupt(message.attempt);
+        return true;
+      }
+      stream.outputBytes += size;
+      stream.calls.push({
+        namespace: event.namespace,
+        name: event.name,
+        arguments: event.arguments,
+      });
+      return true;
+    }
     // A wake timeout cannot overwrite main's proof that no request was dispatched.
     // Preserve its reason and the task's remaining readmission budget.
     if (
@@ -392,14 +440,23 @@ export class DurableProvider {
       !(event.result.status === "failed" && !event.result.dispatched)
     )
       event = { ...event, result: { status: "failed", reason: stream.cut, dispatched: true } };
-    if (event.type === "result" && event.result.status === "completed" && !stream.text)
-      event = { ...event, result: { status: "failed", reason: "empty_reply", dispatched: true } };
-    const saved = await this.options.storage.recordTaskEvent(message.attempt, event, stream.text);
+    const saved = await this.options.storage.recordTaskEvent(
+      message.attempt,
+      event,
+      stream.text,
+      stream.calls,
+    );
     if (!saved.ok) throw new Error("Provider event could not be stored.");
     if (!saved.value.recorded) return true;
     if (event.type === "usage") stream.usage = event.usage;
     if (event.type === "result") {
       this.streams.delete(message.attempt);
+      if (saved.value.proposalId)
+        this.report(stream.operationId, {
+          type: "record",
+          record: "proposal",
+          id: saved.value.proposalId,
+        });
       const result = saved.value.result;
       if (!result) throw new Error("Terminal provider outcome was not recorded.");
       if (

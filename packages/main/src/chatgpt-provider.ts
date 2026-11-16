@@ -136,7 +136,7 @@ export class ChatGPTProvider implements ProviderAdapter {
       attachments: false,
       structuredOutput: false,
       streaming: true,
-      tools: false,
+      tools: true,
       interruption: true,
       // Sign in with ChatGPT stores no response: every request carries all its context.
       resumption: false,
@@ -180,6 +180,7 @@ export class ChatGPTProvider implements ProviderAdapter {
       readonly completedText: () => string;
       readonly request?: ProviderFetch;
       readonly responses?: ResponsesTransport;
+      readonly toolRoute?: "tools" | "additional_tools";
       readonly diagnostic?: (event: DiagnosticEvent) => void;
     },
   ) {
@@ -643,7 +644,7 @@ export class ChatGPTProvider implements ProviderAdapter {
               "Content-Type": "application/json",
               Accept: "text/event-stream",
             },
-            body: JSON.stringify(responsesBody(request)),
+            body: JSON.stringify(responsesBody(request, this.options.toolRoute)),
           },
           () => {
             // A sign-out or another sign-in since this request began withdraws its credential.

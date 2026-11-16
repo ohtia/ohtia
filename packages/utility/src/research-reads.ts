@@ -17,6 +17,7 @@ import {
   type ResearchSchema,
 } from "./research.js";
 import { TaskTransaction, type TaskContext } from "./tasks.js";
+import { setupRevision } from "./project-setup.js";
 import { storedText } from "./research-text.js";
 
 /** Test the actual envelope as well as its payload: containers, node count, strings and bytes compose. */
@@ -57,6 +58,27 @@ async function timelineItem(
       content: storedText(row.content, `message_${id}`),
       language: row.author_kind === "agent" ? row.language : null,
       ending: row.ending,
+    };
+  const proposal = await db
+    .selectFrom("project_setup_proposals as p")
+    .innerJoin("tasks as t", "t.id", "p.task_id")
+    .selectAll("p")
+    .select("t.reply_position")
+    .where("t.conversation_id", "=", bytes(conversationId))
+    .where("p.id", "=", bytes(id))
+    .executeTakeFirst();
+  if (proposal && proposal.reply_position !== null)
+    return {
+      id,
+      kind: "setupProposal",
+      rank: 2,
+      position: proposal.reply_position,
+      revision: setupRevision(proposal),
+      taskId: identifier(proposal.task_id),
+      title: storedText(proposal.title, `setup_title_${id}`),
+      documentLanguage: storedText(proposal.document_language, `setup_language_${id}`),
+      state: proposal.state,
+      invalidReason: proposal.invalid_reason,
     };
   const task = await db
     .selectFrom("tasks")
@@ -181,6 +203,7 @@ export async function readResearch(
         SELECT id, position, rank FROM (
           SELECT id, position, 1 AS rank FROM messages WHERE conversation_id = ${bytes(p.conversationId)}
           UNION ALL SELECT id, coalesce(reply_position,input_through_position) AS position, 3 AS rank FROM tasks WHERE conversation_id = ${bytes(p.conversationId)}
+          UNION ALL SELECT p.id, t.reply_position AS position, 2 AS rank FROM project_setup_proposals p JOIN tasks t ON t.id=p.task_id WHERE t.conversation_id = ${bytes(p.conversationId)}
         ) ${before} ORDER BY position DESC, rank DESC, id DESC LIMIT ${p.count + 1}`.execute(db);
       const items: TimelineItem[] = [];
       for (const row of rows.rows.slice(0, p.count)) {
@@ -224,6 +247,22 @@ export async function readResearch(
       return { ok: true, value: { items, remaining: p.ids.slice(consumed) } };
     }
     case "text.readPart": {
+      const setup = /^setup_(title|language)_([0-9a-f-]+)$/.exec(request.payload.source);
+      if (setup?.[2]) {
+        const row = await db
+          .selectFrom("project_setup_proposals")
+          .select(["title", "document_language"])
+          .where("id", "=", bytes(setup[2]))
+          .executeTakeFirst();
+        const text =
+          row &&
+          splitText(setup[1] === "title" ? row.title : row.document_language)[
+            request.payload.index - 1
+          ];
+        return typeof text === "string"
+          ? { ok: true, value: { text } }
+          : failure("record_not_found");
+      }
       const match = /^message_([0-9a-f-]+)$/.exec(request.payload.source);
       if (!match?.[1]) return failure("record_not_found");
       const row = await db
@@ -298,6 +337,18 @@ export async function researchRevisions(
       .where("conversation_id", "=", bytes(scope.conversationId))
       .execute())
       result.push({ kind: "changed", record: "timeline", id: identifier(row.id), revision: 1 });
+    for (const row of await db
+      .selectFrom("project_setup_proposals as p")
+      .innerJoin("tasks as t", "t.id", "p.task_id")
+      .select(["p.id", "p.state"])
+      .where("t.conversation_id", "=", bytes(scope.conversationId))
+      .execute())
+      result.push({
+        kind: "changed",
+        record: "timeline",
+        id: identifier(row.id),
+        revision: setupRevision(row),
+      });
     for (const row of await db
       .selectFrom("tasks")
       .select(["id", "state_revision"])

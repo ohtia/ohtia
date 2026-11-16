@@ -318,6 +318,7 @@
     "composer.replace": "Replace text",
     "composer.destinationLoading": "Reading the message destination…",
     "composer.destinationFailed": "Ohtia couldn’t read where this message would go. Refresh before sending it.",
-    "composer.refreshDestination": "Refresh destination"
+    "composer.refreshDestination": "Refresh destination",
+    "project.type.thesis": "Thesis"
   }
 }

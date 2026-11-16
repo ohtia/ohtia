@@ -318,6 +318,7 @@
     "composer.replace": "Text ersetzen",
     "composer.destinationLoading": "Das Ziel der Nachricht wird gelesen…",
     "composer.destinationFailed": "Ohtia konnte das Ziel dieser Nachricht nicht lesen. Vor dem Senden aktualisieren.",
-    "composer.refreshDestination": "Nachrichtenziel aktualisieren"
+    "composer.refreshDestination": "Nachrichtenziel aktualisieren",
+    "project.type.thesis": "Abschlussarbeit"
   }
 }

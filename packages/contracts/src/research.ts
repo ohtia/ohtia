@@ -38,11 +38,8 @@ export interface ResearchPayloads {
   readonly "task.cancelAll": Record<string, never>;
   readonly "development.createProject": Record<string, never>;
   readonly "project.create": Record<string, never>;
-  readonly "project.confirmSetup": {
-    readonly projectId: string;
-    readonly title: string;
-    readonly documentLanguage: string;
-  };
+  readonly "project.confirmSetup": { readonly proposalId: string };
+  readonly "project.rejectSetup": { readonly proposalId: string };
   readonly "conversation.start": { readonly projectId: string; readonly content: string };
   readonly "conversation.rename": {
     readonly conversationId: string;
@@ -73,6 +70,7 @@ export const researchCommands = [
   "development.createProject",
   "project.create",
   "project.confirmSetup",
+  "project.rejectSetup",
   "conversation.start",
   "conversation.rename",
   "message.append",

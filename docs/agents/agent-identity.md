@@ -2,10 +2,6 @@
 type: Specification
 title: "Ohtia and agent identity"
 description: "Product character, fixed contributor names and historical inspirations, human attribution, and accessible event-driven presentation."
-generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: virgil-guide
     resource: "https://dante.princeton.edu/cgi-bin/dante/DispToynbeeByTitOrId.pl?INP_TITLE=Virgilio"
@@ -31,6 +27,8 @@ sources:
   - id: kuhn-methodology
     resource: "https://news.mit.edu/1996/kuhn-0724"
     title: "MIT News — Fall memorial planned for Professor T.S. Kuhn"
+generated:
+  by: codex/gpt-6.1-sol
 ---
 
 # Ohtia and agent identity
@@ -133,7 +131,7 @@ Thomas is the methodologist, with he/him pronouns. The name honors Thomas Kuhn, 
 
 The choice emphasizes making assumptions explicit and examining the fit between the research question, objectives, material, design and analysis. Thomas helps the researcher compare and justify methodological choices, understand their limitations and revise a design when the grounds for doing so change. The homage does not require adherence to Kuhn's philosophy or privilege one methodological school; guidance accommodates quantitative, qualitative, documentary and theoretical research within evaluated capabilities.
 
-[Thomas's specialist profile](agent-thomas.md) defines the dedicated methodological specialization described under [Methodological guidance and analysis extension](agent-collaboration.md#methodological-guidance-and-analysis-extension). Enabling this contributor requires its operation contract and quality evidence. The name alone does not add an enabled specialist to the initial selector, certify institutional or ethics approval, or authorize statistical/data execution.
+[Thomas's specialist profile](agent-thomas.md) defines the dedicated methodological specialization described under [Methodological guidance and analysis extension](agent-collaboration.md#methodological-guidance-and-analysis-extension). Enabling this contributor requires its operation contract and the operational checks of its profile; Ohtia does not grade the quality of the models researchers connect. The name alone does not add an enabled specialist to the initial selector, certify institutional or ethics approval, or authorize statistical/data execution.
 
 ## Visual family and attribution
 

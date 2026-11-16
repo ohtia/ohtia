@@ -25,7 +25,7 @@ export function createFakeProvider(
         attachments: false,
         structuredOutput: false,
         streaming: true,
-        tools: false,
+        tools: true,
         interruption: true,
         resumption: false,
         modelSelection: true,

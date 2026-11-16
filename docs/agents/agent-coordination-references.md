@@ -2,10 +2,6 @@
 type: Analysis
 title: "Agent coordination implementation references"
 description: "Source-backed lessons from provider documentation, Paperclip, and Multica for Ohtia's agent collaboration boundary."
-generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: paperclip-budget
     resource: "https://github.com/paperclipai/paperclip/blob/ec2e0d64079e6ba127401098eaadfd4ba6eb3074/server/src/services/budget-reservations.ts"
@@ -46,6 +42,8 @@ sources:
   - id: human-ai-guidelines
     resource: "https://www.microsoft.com/en-us/research/blog/guidelines-for-human-ai-interaction-design/"
     title: "Microsoft Research — Guidelines for human–AI interaction design"
+generated:
+  by: codex/gpt-6.1-sol
 ---
 
 # Agent coordination implementation references
@@ -128,7 +126,7 @@ Microsoft's human–AI interaction guidance addresses timing assistance in conte
 
 ## Architectural inference
 
-The evidence supports separating specialist research responsibility from execution ownership, and keeping budgets, event handling, cancellation and project authority in the application. It does not establish that a particular framework, model combination or number of specialists improves academic quality. That benefit remains a comparison against the single-agent baseline under declared evaluation conditions.
+The evidence supports separating specialist research responsibility from execution ownership, and keeping budgets, event handling, cancellation and project authority in the application. It does not establish that a particular framework, model combination or number of specialists improves academic quality. Ohtia does not measure that benefit: it does not grade the models researchers connect, so it runs no comparison against a single-agent baseline.
 
 A central coordinator can work with narrowly defined specialist contracts without requiring a virtual organization. Ohtia's initial design combines bounded consultation and explicit conversational handoffs, while keeping research results and disagreement in versioned artifacts. Event delivery is an internal mechanism and does not require decentralized choreography, a user-managed task board or recurring inference.
 

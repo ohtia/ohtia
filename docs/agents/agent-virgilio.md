@@ -4,8 +4,6 @@ title: "Virgilio: research guide"
 description: "Virgilio's research guidance, bounded planning, attributed synthesis, context, evaluation requirements and visual presentation."
 generated:
   by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # Virgilio: research guide
@@ -109,6 +107,16 @@ All inputs retain their project scope, exact versions, language, restrictions an
 
 Each operation has a versioned policy, instruction and output contract under [ADR-0029](../adr/adr-0029-operation-profiles-and-usage-reports.md). Evaluate and enable operations separately; the headings identify research operations, not provider API methods.
 
+### Set up a project
+
+**Operation:** `project_setup`.
+
+**Input:** The new project's type with its description, the setup conversation's messages and Ohtia's notes on the earlier proposals of that conversation.
+
+**Output:** Short replies in the language the researcher writes in that agree on a working title and the document's language, and one proposal of both through the `propose_project_setup` tool, which the researcher confirms or rejects in Ohtia.
+
+Virgilio gives no research advice before setup ends, never guesses a script or region for the language, cannot confirm the proposal and never says that the project was created or saved.
+
 ### Clarify a research question
 
 **Input:** The researcher's interests or question, relevant objectives, supplied constraints and any selected supporting material.
@@ -161,13 +169,13 @@ Inspecting records, viewing this profile or changing preferences starts no infer
 
 ## Evaluation and enablement
 
-Apply [Agent collaboration evaluation](agent-collaboration-evaluation.md) to each operation, language, material representation and provider/runtime configuration. Declare rubrics, severity definitions, quality thresholds and bounded work/cost/latency before trials. Compare direct and coordinated use with a capable single-agent baseline where relevant under comparable evidence and total budgets. Human assessors need appropriate disciplinary and language competence. Include:
+Apply [Agent collaboration evaluation](agent-collaboration-evaluation.md) to each operation, language, material representation and provider/runtime configuration. Research-quality review is optional and gates no enablement, because Ohtia does not grade the models researchers connect, and it compares no single-agent baseline. When the owner runs one, declare its rubrics, severity definitions and bounded work/cost/latency before the trials; human assessors need appropriate disciplinary and language competence. Include:
 
 - A useful direct answer compared with unnecessary delegation, ambiguous scope needing one clarification, an empty corpus and an already advanced project.
 - Explicit specialist selection, unavailable capabilities, a serial contribution graph with concurrency one, and proposed work exceeding the accepted envelope.
 - A synthesis with correct agreement, justified disagreement, an inaccessible required source and an omitted optional contribution on which no required output depends.
 - An unsatisfied dependency, repeated progress events, stale plan inputs, cancellation, restart holds and a request to approve knowledge or manuscript text through chat.
 
-Assess usefulness of the next action, preservation of researcher choices, warranted routing, faithful attribution, honest coverage and whether coordination improves the result enough to justify total work and review burden. Operational tests verify application-owned graph validation, capacity release, deduplicated continuation and exact conversation ownership.
+An optional quality review assesses usefulness of the next action, preservation of researcher choices, warranted routing, faithful attribution and honest coverage. Operational tests verify application-owned graph validation, capacity release, deduplicated continuation and exact conversation ownership.
 
-Enable only the evaluated scope after research-quality and adapter-conformance requirements pass. Reevaluate consequential instruction, model/runtime, tool, output-contract or scope changes. A selectable identity, schema-valid response or successful connection probe does not establish research quality.
+Enable an operation once its adapter conformance and operational checks pass; Ohtia does not grade the quality of the models researchers connect. Reevaluate consequential instruction, model/runtime, tool, output-contract or scope changes. A selectable identity, schema-valid response or successful connection probe does not establish research quality.

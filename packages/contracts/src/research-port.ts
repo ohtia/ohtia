@@ -10,6 +10,7 @@ import type { PortCall, Subscription, Outcome } from "./port.js";
 export const researchOperations = [
   "project.create",
   "project.confirmSetup",
+  "project.rejectSetup",
   "conversation.start",
   "conversation.rename",
   "message.append",
@@ -77,7 +78,24 @@ export interface TimelineTask extends TimelineIdentity {
     | "cancelled"
     | "uncertain";
 }
-export type TimelineItem = TimelineMessage | TimelineTask;
+export interface TimelineSetupProposal extends TimelineIdentity {
+  readonly kind: "setupProposal";
+  readonly rank: 2;
+  readonly taskId: string;
+  readonly title: PortText;
+  readonly documentLanguage: PortText;
+  readonly state: "proposed" | "invalid" | "replaced" | "rejected" | "confirmed";
+  readonly invalidReason:
+    | "title_empty"
+    | "title_whitespace"
+    | "title_too_long"
+    | "title_invalid"
+    | "language_malformed"
+    | "language_unknown"
+    | "multiple_calls"
+    | null;
+}
+export type TimelineItem = TimelineMessage | TimelineTask | TimelineSetupProposal;
 export type ConversationSummary = ConversationRecord & { readonly agentId: "virgilio" };
 export interface ResearchScope {
   readonly projectId: string | null;
@@ -131,6 +149,7 @@ export interface ResearchInputs {
   );
   "project.create": ResearchPayloads["project.create"];
   "project.confirmSetup": ResearchPayloads["project.confirmSetup"];
+  "project.rejectSetup": ResearchPayloads["project.rejectSetup"];
   "conversation.start": { readonly projectId: string; readonly content: string | TextDescriptor };
   "conversation.rename": ResearchPayloads["conversation.rename"];
   "message.append": { readonly conversationId: string; readonly content: string | TextDescriptor };
@@ -158,6 +177,7 @@ export interface ResearchOutputs {
   "destination.read": { readonly destination: MessageDestination | null };
   "project.create": ResearchResult;
   "project.confirmSetup": ResearchResult;
+  "project.rejectSetup": ResearchResult;
   "conversation.start": ResearchResult;
   "conversation.rename": ResearchResult;
   "message.append": ResearchResult;
@@ -184,6 +204,10 @@ export interface ResearchPort {
   confirmProjectSetup(
     operationId: string,
     input: ResearchInputs["project.confirmSetup"],
+  ): PortCall<ResearchResult>;
+  rejectProjectSetup(
+    operationId: string,
+    input: ResearchInputs["project.rejectSetup"],
   ): PortCall<ResearchResult>;
   startConversation(
     operationId: string,
@@ -223,6 +247,7 @@ export function isResearchMutation(value: string): value is WindowResearchComman
   return [
     "project.create",
     "project.confirmSetup",
+    "project.rejectSetup",
     "conversation.start",
     "conversation.rename",
     "message.append",
@@ -343,12 +368,8 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
     case "project.create":
       return exact(value, []);
     case "project.confirmSetup":
-      return (
-        exact(value, ["projectId", "title", "documentLanguage"]) &&
-        isResearchId(value.projectId) &&
-        typeof value.title === "string" &&
-        typeof value.documentLanguage === "string"
-      );
+    case "project.rejectSetup":
+      return exact(value, ["proposalId"]) && isResearchId(value.proposalId);
     case "conversation.start":
       return (
         exact(value, ["projectId", "content"]) &&
@@ -463,10 +484,44 @@ function item(value: unknown): boolean {
   if (
     !obj(value) ||
     !cursor({ position: value.position, rank: value.rank, id: value.id }) ||
-    !integer(value.revision) ||
-    !nullable(value.language, (x) => typeof x === "string")
+    !integer(value.revision)
   )
     return false;
+  if (value.kind === "setupProposal")
+    return (
+      exact(value, [
+        "id",
+        "position",
+        "rank",
+        "revision",
+        "kind",
+        "taskId",
+        "title",
+        "documentLanguage",
+        "state",
+        "invalidReason",
+      ]) &&
+      value.rank === 2 &&
+      isResearchId(value.taskId) &&
+      (typeof value.title === "string" || isTextReference(value.title)) &&
+      (typeof value.documentLanguage === "string" || isTextReference(value.documentLanguage)) &&
+      ["proposed", "invalid", "replaced", "rejected", "confirmed"].includes(
+        value.state as string,
+      ) &&
+      value.revision === (["proposed", "invalid"].includes(value.state as string) ? 1 : 2) &&
+      (value.state === "invalid"
+        ? [
+            "title_empty",
+            "title_whitespace",
+            "title_too_long",
+            "title_invalid",
+            "language_malformed",
+            "language_unknown",
+            "multiple_calls",
+          ].includes(value.invalidReason as string)
+        : value.invalidReason === null)
+    );
+  if (!nullable(value.language, (x) => typeof x === "string")) return false;
   if (value.kind === "message")
     return (
       exact(value, [

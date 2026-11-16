@@ -1,24 +1,22 @@
 ---
 type: Playbook
 title: "Agent collaboration evaluation"
-description: "Evaluate research usefulness, evidence fidelity, human review, and bounded execution against a single-agent baseline."
+description: "Verify bounded execution and collaboration scenarios, and review research usefulness, evidence fidelity and human review as optional material that gates no enablement."
 generated:
   by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # Agent collaboration evaluation
 
 ## Purpose and evaluation unit
 
-Evaluate whether [agent collaboration](agent-collaboration.md) improves research work enough to justify its coordination cost. The unit is a versioned intervention policy on a declared operation, language, source representation and provider/runtime configuration. A protocol-conformant adapter is not evidence that a specialist produces adequate academic work.
+Verify that [agent collaboration](agent-collaboration.md) stays within its bounds and preserves evidence, attribution and human review; research-quality review is optional and gates no enablement. The unit is a versioned intervention policy on a declared operation, language, source representation and provider/runtime configuration. A protocol-conformant adapter is not evidence that a specialist produces adequate academic work.
 
 Use synthetic or permitted public material with recorded versions, anchors, restrictions and an examinable assessment rubric. Keep private research and credentials out of fixtures, logs and external evaluation. This playbook defines verification work; it records no completed experiment or release approval.
 
 ## Baselines and comparison
 
-Compare a capable single agent with the specialist configuration on the same research questions, authorized evidence, tool capabilities and comparable total work budgets. Include planning, context preparation, reviewer calls and synthesis in the collaboration cost. Keep any additional evidence retrieval visible. Do not give the specialist team an unreported larger budget or score missing usage as zero.
+An optional quality review runs the specialist configuration on declared research questions, authorized evidence, tool capabilities and total work budgets; it compares no single-agent baseline, because Ohtia does not grade the models researchers connect. Include planning, context preparation, reviewer calls and synthesis in the collaboration cost. Keep any additional evidence retrieval visible. Do not give the specialist team an unreported larger budget or score missing usage as zero.
 
 Use a fixed preregistered set of representative cases and repeated trials sufficient for the declared evaluation question. Record requested and observed model settings, runtime/adapter versions, instruction/output schema versions, supplied context, trial order and any unavailable controls. Where identifiers are mutable or unknown, disclose the reproducibility limit. Vary presentation order for human assessments and conceal the producing configuration where practical.
 
@@ -27,6 +25,8 @@ Assess each role separately before relying on the combined output. Compare coord
 Before running a chargeable evaluation, the owner authorizes the bounded calls and destination. Record quality thresholds, severity categories, evaluation languages, maximum cost/latency and allowed omissions before inspecting the results. Do not invent universal precision targets or claim language coverage from catalog completeness.
 
 ## Research-quality cases
+
+These cases are optional review material for the owner and gate no enablement, because Ohtia does not grade the models researchers connect.
 
 ### Reference discovery
 
@@ -113,4 +113,4 @@ Run drawing and in-context animation checks on the actual assets and surface bef
 
 Keep actual trial records, actor identities, input manifests, rubric versions, decisions and verification limits in the task's ignored review evidence. Keep supported product guarantees in canonical specifications. Automated checks and model assessments do not populate human document verification fields.
 
-Enable only the evaluated operation/language/runtime scope after its operational guarantees and owner-defined quality thresholds are satisfied. A failure may justify revised context, a narrower role, a simpler single-agent route or leaving the operation unavailable. Reevaluate after consequential changes to prompts, models, tools, delegation controls, formats or provider permissions. Transport compatibility alone does not carry forward research-quality evidence.
+Enable an operation/language/runtime scope after its operational guarantees are satisfied. A failure may justify revised context, a narrower role, a simpler single-agent route or leaving the operation unavailable. Reevaluate after consequential changes to prompts, models, tools, delegation controls, formats or provider permissions. Transport compatibility alone does not carry forward research-quality evidence.
