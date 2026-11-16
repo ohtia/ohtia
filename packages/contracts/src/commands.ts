@@ -1,5 +1,5 @@
 import type { ExitDialogState, ExitChoice } from "./application-exit.js";
-import { isIdentifier, validateJsonBounds } from "./port.js";
+import { isIdentifier, utf8Size, validateJsonBounds } from "./port.js";
 import { isInterfaceLocale } from "./locale.js";
 import type { InterfaceLocale } from "./port.js";
 import type { SimpleMessageKey } from "./catalogs.js";
@@ -381,6 +381,8 @@ export interface CommandBridge {
   windowAction(request: WindowCommandRequest): Promise<WindowCommandResult>;
   copyVersionInformation(locale: InterfaceLocale): Promise<boolean>;
   openLink(link: ProjectLink): Promise<boolean>;
+  openExternalLink(url: string): Promise<boolean>;
+  copyMessage(messageId: string): Promise<boolean>;
 }
 function plain(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype;
@@ -460,4 +462,14 @@ export function isAboutInformation(value: unknown): value is AboutInformation {
         (text) => typeof text === "string" && text.length > 0 && text.length <= 65536,
       ),
   );
+}
+
+/** Cheap renderer/preload admission; main independently applies the WHATWG URL parser. */
+export function isExternalMessageLink(value: unknown): value is string {
+  if (typeof value !== "string" || !/^(?:https?:|mailto:)/i.test(value)) return false;
+  try {
+    return utf8Size(value) <= 4096;
+  } catch {
+    return false;
+  }
 }

@@ -282,6 +282,12 @@
     "conversation.latest": "Ir para a mensagem mais recente",
     "conversation.you": "Você",
     "conversation.writing": "{agent} está escrevendo…",
-    "conversation.replied": "{agent} respondeu"
+    "conversation.replied": "{agent} respondeu",
+    "conversation.copyMessage": "Copiar mensagem",
+    "conversation.copied": "Copiado",
+    "conversation.copyFailed": "Ohtia não conseguiu copiar esta mensagem. Selecione o texto e copie-o manualmente.",
+    "conversation.opensInBrowser": "abre no seu navegador",
+    "conversation.codeBlock": "Bloco de código",
+    "conversation.table": "Tabela"
   }
 }

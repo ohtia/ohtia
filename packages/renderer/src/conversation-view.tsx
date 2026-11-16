@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { message, type InterfaceLocale } from "@ohtia/contracts";
+import { message, type CommandBridge, type InterfaceLocale } from "@ohtia/contracts";
+import { MessageMarkdown } from "./research-presentation.js";
 import { VoiceLabel } from "./contributor-identity.js";
 import { LucideGlyph } from "./iconography.js";
 import { Tooltip } from "./layers.js";
@@ -10,10 +11,12 @@ export function ConversationView({
   state,
   controller,
   locale,
+  commands,
 }: {
   readonly state: ConversationState;
-  readonly controller: ConversationController;
+  readonly controller: Pick<ConversationController, "reload" | "loadEarlier">;
   readonly locale: InterfaceLocale;
+  readonly commands: Pick<CommandBridge, "copyMessage" | "openExternalLink">;
 }) {
   const viewport = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
@@ -185,9 +188,16 @@ export function ConversationView({
                     />
                   )}
                   <div className="conversation-text" lang={item.language ?? ""} dir="auto">
-                    {item.kind === "message"
-                      ? (state.texts.get(item.id) ?? "")
-                      : (state.replies.get(item.id)?.text ?? "")}
+                    <MessageMarkdown
+                      text={
+                        item.kind === "message"
+                          ? (state.texts.get(item.id) ?? "")
+                          : (state.replies.get(item.id)?.text ?? "")
+                      }
+                      locale={locale}
+                      language={item.language ?? undefined}
+                      openExternalLink={commands.openExternalLink}
+                    />
                   </div>
                   {streaming ? (
                     <div className="conversation-writing" aria-hidden="true">
@@ -195,7 +205,12 @@ export function ConversationView({
                       {message(locale, "conversation.writing", { agent: "Virgilio" })}
                     </div>
                   ) : (
-                    <div className="conversation-actions" />
+                    <SavedMessageActions
+                      key={`${id ?? ""}/${item.id}`}
+                      messageId={item.id}
+                      locale={locale}
+                      commands={commands}
+                    />
                   )}
                 </article>
               );
@@ -226,6 +241,82 @@ export function ConversationView({
       <p className="primitive-announcement" role="status" aria-live="polite" aria-atomic="true">
         <span key={announcement.count}>{announcement.text}</span>
       </p>
+    </div>
+  );
+}
+
+function SavedMessageActions({
+  messageId,
+  locale,
+  commands,
+}: {
+  readonly messageId: string;
+  readonly locale: InterfaceLocale;
+  readonly commands: Pick<CommandBridge, "copyMessage">;
+}) {
+  const [status, setStatus] = useState<"idle" | "copying" | "copied" | "failed">("idle");
+  const pending = useRef(false);
+  const alive = useRef(true);
+  const feedbackTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      if (feedbackTimer.current !== undefined) clearTimeout(feedbackTimer.current);
+    };
+  }, []);
+  async function copy() {
+    if (pending.current) return;
+    pending.current = true;
+    if (feedbackTimer.current !== undefined) clearTimeout(feedbackTimer.current);
+    feedbackTimer.current = undefined;
+    setStatus("copying");
+    let copied = false;
+    try {
+      copied = await commands.copyMessage(messageId);
+    } catch {
+      /* The failure notice offers manual copying. */
+    }
+    pending.current = false;
+    if (!alive.current) return;
+    setStatus(copied ? "copied" : "failed");
+    if (copied)
+      feedbackTimer.current = setTimeout(() => {
+        feedbackTimer.current = undefined;
+        setStatus("idle");
+      }, 5000);
+  }
+  return (
+    <div className="conversation-saved-actions" lang={locale} dir="auto">
+      <div className="conversation-actions">
+        <Tooltip label={message(locale, "conversation.copyMessage")}>
+          <button
+            type="button"
+            className="primitive-button primitive-quiet"
+            aria-label={message(locale, "conversation.copyMessage")}
+            aria-disabled={status === "copying" || undefined}
+            onClick={() => {
+              void copy();
+            }}
+          >
+            <LucideGlyph name="copy" size={16} />
+          </button>
+        </Tooltip>
+        <span className="conversation-copy-status" role="status" aria-atomic="true">
+          {status === "copied" && (
+            <>
+              <LucideGlyph name="clipboard-check" size={16} />
+              {message(locale, "conversation.copied")}
+            </>
+          )}
+        </span>
+      </div>
+      {status === "failed" && (
+        <div className="conversation-notice danger" role="alert">
+          <LucideGlyph name="octagon-alert" size={16} />
+          <span>{message(locale, "conversation.copyFailed")}</span>
+        </div>
+      )}
     </div>
   );
 }

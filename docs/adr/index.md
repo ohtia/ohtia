@@ -25,6 +25,7 @@ The conventions for this register are defined in [Architecture decisions](../arc
 - [ADR-0051 — Research-agent task execution](adr-0051-research-agent-task-execution.md) — Persist accepted work as bounded tasks and attempts with current admission, ordered replies, durable receipts and explicit recovery.
 - [ADR-0012 — Capabilities bound to one supervised attempt](adr-0012-attempt-bound-process-capabilities.md) — Bind worker effects to a random per-attempt capability and reject replay or stale scope through the trusted broker.
 - [ADR-0013 — Structured diagnostics without research content](adr-0013-private-content-free-structured-logging.md) — Define a versioned local JSONL diagnostic format mapped to OpenTelemetry, with privacy controls and bounded file retention.
+- [ADR-0054 — Restricted message Markdown from a syntax tree](adr-0054-restricted-message-markdown.md) — Parse conversation Markdown with table extensions and render a closed React mapping without inserting HTML.
 - [ADR-0014 — Allowed document structures and restrictive CSP](adr-0014-restricted-rendering-and-csp.md) — Render untrusted content through the academic schema and enforce the packaged application content security policy.
 - [ADR-0015 — Restricted processes for untrusted content](adr-0015-isolated-content-processing.md) — Process imported content in disposable environments without database, credential or general filesystem authority.
 

@@ -1,3 +1,4 @@
+import { ConversationSpecimen } from "./conversation-specimen.js";
 import { CharacterSpecimen } from "./character-specimen.js";
 import { ResearchSpecimen } from "./research-specimen.js";
 import { WorkspaceSpecimen, ScopedWorkspaceSpecimen } from "./workspace-specimen.js";
@@ -396,7 +397,9 @@ const root = document.getElementById("root");
 if (!root) throw new Error("Catalog root is missing.");
 const screen = new URLSearchParams(location.search).get("screen");
 createRoot(root).render(
-  screen === "characters" ? (
+  screen === "conversation" ? (
+    <ConversationSpecimen />
+  ) : screen === "characters" ? (
     <CharacterSpecimen />
   ) : screen === "research" ? (
     <ResearchSpecimen />

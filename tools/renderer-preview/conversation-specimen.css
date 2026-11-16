@@ -1,0 +1,22 @@
+.conversation-specimen {
+  padding: var(--space-4);
+}
+.conversation-specimen-panel {
+  block-size: 1200px;
+  max-inline-size: 100%;
+  background: var(--surface-panel);
+  color: var(--content-primary);
+}
+.conversation-specimen-panel.width-280 {
+  inline-size: 280px;
+}
+.conversation-specimen-panel.width-320 {
+  inline-size: 320px;
+}
+
+.conversation-specimen-panel.width-640 {
+  inline-size: 640px;
+}
+.conversation-specimen-panel.width-960 {
+  inline-size: 960px;
+}

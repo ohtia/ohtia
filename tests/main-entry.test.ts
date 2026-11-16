@@ -1096,6 +1096,69 @@ it("admits the closed command broker on the actual sender, confirms localized co
   ).rejects.toThrow(/sender admission/);
 });
 
+it("routes message effects through the admitted window and revokes a pending copy on navigation", async () => {
+  const h = await launch({ mode: "development", developmentBuild: true, locator: "located" });
+  const electron = await import("electron");
+  expect(await h.command("copy_message", "019a8000-0000-7000-8000-000000000503")).toBe(false);
+  expect(await h.command("open_external_link", "https://example.org/research")).toBe(true);
+  expect(electron.shell.openExternal).toHaveBeenLastCalledWith("https://example.org/research");
+  expect(await h.command("open_external_link", "javascript:alert(1)")).toBe(false);
+  const supervisor = h.supervisors[0];
+  supervisor.stateChanged("ready");
+  supervisor.storageChanged({ generation: supervisor.generation, state: "storage_ready" });
+  await vi.advanceTimersByTimeAsync(0);
+  const channel = supervisor.connectProvider.mock.calls[0][0];
+  const projectId = "019a8000-0000-7000-8000-000000000501";
+  const conversationId = "019a8000-0000-7000-8000-000000000502";
+  const id = "019a8000-0000-7000-8000-000000000503";
+  const open = () =>
+    channel.report({
+      kind: "development_report",
+      version: 1,
+      generation: supervisor.generation,
+      operation_id: "synthetic-message-check",
+      report: { type: "conversation_opened", projectId, conversationId },
+    });
+  open();
+  h.ipcMain.emit(h.constants.desktopChannels.session, h.event());
+  const result = {
+    ok: true,
+    value: {
+      items: [{ kind: "message", id, content: "Original **Markdown**" }],
+      remaining: [],
+    },
+  };
+  supervisor.request.mockResolvedValueOnce(result);
+  vi.mocked(electron.clipboard.readText).mockResolvedValueOnce("Original **Markdown**");
+  expect(await h.command("copy_message", id)).toBe(true);
+  expect(supervisor.request).toHaveBeenLastCalledWith("timeline.read", {
+    conversationId,
+    ids: [id],
+  });
+  expect(electron.clipboard.writeText).toHaveBeenLastCalledWith("Original **Markdown**");
+  await h.action("new_window");
+  expect(await h.command("copy_message", id, h.Window.all.at(-1))).toBe(false);
+  let release!: (value: unknown) => void;
+  supervisor.request.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  const pending = h.command("copy_message", id);
+  await Promise.resolve();
+  open();
+  release(result);
+  expect(await pending).toBe(false);
+  expect(electron.clipboard.writeText).toHaveBeenCalledOnce();
+  const handler = h.ipcMain.handle.mock.calls.find(
+    ([name]) => name === h.constants.desktopChannels.commands,
+  )![1];
+  await expect(
+    handler({ ...h.event(), senderFrame: { url: "https://example.org" } }, "copy_message", id),
+  ).rejects.toThrow(/sender admission/);
+});
+
 it("shares one admission budget between named broker requests and the service port", async () => {
   const h = await launch();
   const electron = await import("electron");

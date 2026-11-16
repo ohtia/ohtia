@@ -827,3 +827,53 @@ it("revokes admission when revision publication fails after a committed research
   ).toHaveLength(1);
   stream.dispose();
 });
+
+it("copies a saved long message through real scoped reads and refuses another conversation", async () => {
+  const { copyMessage } = await import("../packages/main/src/message-actions.js");
+  const h = await harness();
+  const text = "**original** 한🙂\n".repeat(800);
+  const parts = splitText(text);
+  const descriptor = { parts: parts.length, bytes: utf8Size(text), sha256: digest(text) };
+  for (const [index, part] of parts.entries())
+    value(
+      await h.port.sendTextPart("copy-long", {
+        index: index + 1,
+        count: parts.length,
+        bytes: descriptor.bytes,
+        sha256: descriptor.sha256,
+        text: part,
+      }).result,
+    );
+  const saved = value(
+    await h.port.appendMessage("copy-long", {
+      conversationId: h.conversationId,
+      content: descriptor,
+    }).result,
+  );
+  const request = vi.fn((operation: string, input: never) =>
+    operation === "timeline.read"
+      ? h.port.readTimeline(input).result
+      : h.port.readTextPart(input).result,
+  );
+  const service = { request } as unknown as Pick<
+    import("../packages/main/src/service-supervisor.js").ServiceSupervisor,
+    "request"
+  >;
+  const clipboard = { writeText: vi.fn(), readText: vi.fn(() => text) };
+  expect(await copyMessage(saved.resultId, h.conversationId, service, clipboard, () => true)).toBe(
+    true,
+  );
+  expect(clipboard.writeText).toHaveBeenCalledWith(text);
+  expect(request.mock.calls.filter(([operation]) => operation === "text.readPart")).toHaveLength(
+    parts.length,
+  );
+  clipboard.writeText.mockClear();
+  const other = value(await h.port.createProject("copy-other-project").result);
+  const otherConversation = value(
+    await h.port.listConversations({ projectId: other.resultId, cursor: null, count: 50 }).result,
+  ).items[0]!.id;
+  expect(await copyMessage(saved.resultId, otherConversation, service, clipboard, () => true)).toBe(
+    false,
+  );
+  expect(clipboard.writeText).not.toHaveBeenCalled();
+});

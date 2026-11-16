@@ -23,6 +23,10 @@ const event = <
   errors: E,
 ) => Object.freeze({ component, operation, severity, outcome, errors: Object.freeze(errors) });
 export const diagnosticCatalog = Object.freeze({
+  "ohtia.message.link_opened": event("broker", "openExternalLink", "INFO", "opened", []),
+  "ohtia.message.link_refused": event("broker", "openExternalLink", "WARN", "refused", []),
+  "ohtia.message.copied": event("broker", "copyMessage", "INFO", "copied", []),
+  "ohtia.message.copy_failed": event("broker", "copyMessage", "WARN", "failed", []),
   "ohtia.task.stop_requested": event("data_service", "task.stop", "INFO", "accepted", []),
   "ohtia.task.replaced": event("data_service", "task.startAgain", "INFO", "accepted", []),
   "ohtia.task.blocked": event("data_service", "task.block", "INFO", "blocked", []),

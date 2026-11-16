@@ -67,6 +67,8 @@ export function WorkspaceSpecimen() {
         throw new Error("Synthetic unavailable About metadata");
       },
       copyVersionInformation: async () => false,
+      openExternalLink: async () => false,
+      copyMessage: async () => false,
       openLink: async () => false,
       windowAction: async () => ({ status: "unavailable", reason: "handler_missing" }),
       perform: async () => false,

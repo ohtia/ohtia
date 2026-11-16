@@ -282,6 +282,12 @@
     "conversation.latest": "Ves al missatge més recent",
     "conversation.you": "Tu",
     "conversation.writing": "{agent} està escrivint…",
-    "conversation.replied": "{agent} ha respost"
+    "conversation.replied": "{agent} ha respost",
+    "conversation.copyMessage": "Copia el missatge",
+    "conversation.copied": "Copiat",
+    "conversation.copyFailed": "Ohtia no ha pogut copiar aquest missatge. Selecciona’n el text i copia’l manualment.",
+    "conversation.opensInBrowser": "s’obre al navegador",
+    "conversation.codeBlock": "Bloc de codi",
+    "conversation.table": "Taula"
   }
 }

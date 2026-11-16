@@ -33,6 +33,8 @@
     "tests/linux-e2e.test.ts",
     "tests/localization.test.ts",
     "tests/main-entry.test.ts",
+    "tests/message-actions.test.ts",
+    "tests/message-markdown.test.ts",
     "tests/native-failure-observation.test.ts",
     "tests/port.test.ts",
     "tests/preload-entry.test.ts",
