@@ -1,3 +1,4 @@
+import { objects as exitReceiptObjects } from "../packages/utility/src/migrations/0012_application_exit.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -495,220 +496,234 @@ describe("blocked work and connection usage pauses", () => {
   });
 });
 
-describe.each(["legacy", "limits"])("migration recovery task handoff from %s", (sourceKind) => {
-  async function source(edge = false) {
-    const f = await setup();
-    await f.start();
-    const dispatched = (await f.prepare())!;
-    const unsent = await f.start();
-    const db = f.raw();
-    // Synthetic accepted preparation interrupted before a dispatch transaction.
-    db.exec(`INSERT INTO attempts (id,task_id,attempt_number,service_generation,state,created_at)
+describe.each(["legacy", "limits", "composer"])(
+  "migration recovery task handoff from %s",
+  (sourceKind) => {
+    async function source(edge = false) {
+      const f = await setup();
+      await f.start();
+      const dispatched = (await f.prepare())!;
+      const unsent = await f.start();
+      const db = f.raw();
+      // Synthetic accepted preparation interrupted before a dispatch transaction.
+      db.exec(`INSERT INTO attempts (id,task_id,attempt_number,service_generation,state,created_at)
       SELECT id,id,1,'old-orderly-generation','prepared',created_at FROM tasks WHERE state='queued';
       UPDATE tasks SET state='running',reply_position=input_through_position+1,state_revision=state_revision+1 WHERE state='queued';`);
-    db.close();
-    await f.start();
-    if (edge) {
-      value(await f.append(unsent));
-      const edgeDb = f.raw();
-      edgeDb.exec(
-        "UPDATE tasks SET state='cancelling',state_revision=state_revision+1 WHERE id=(SELECT task_id FROM attempts WHERE dispatch_permitted_at IS NOT NULL)",
-      );
-      edgeDb.close();
-    }
-    await f.store.close();
-    const old = f.raw();
-    old.exec(
-      sourceKind === "limits"
-        ? "DROP TABLE execution_limits_receipts; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; PRAGMA user_version=12"
-        : "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DROP TABLE service_runs; DROP TABLE execution_limits_receipts; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; DELETE FROM kysely_migration WHERE name='0012_application_exit'; DELETE FROM ohtia_migration_artifacts WHERE name='0012_application_exit'; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; PRAGMA user_version=8",
-    );
-    old.close();
-    return { ...f, dispatched, unsent };
-  }
-  it("holds legacy work without service-run proof during its first upgrade", async () => {
-    const f = await source();
-    await f.store.open();
-    expect(f.rows().map((t) => t.state)).toEqual(["uncertain", "blocked", "blocked"]);
-    value(await f.continueAll());
-    expect(f.rows().map((t) => t.state)).toEqual(["uncertain", "queued", "queued"]);
-    expect(fs.existsSync(path.join(f.root, "migration-pending.json"))).toBe(false);
-  });
-  it.each(["rollback", "restoration", "committed-target", "hold-rollback", "hold-committed"])(
-    "holds pending and unfinished work across %s and later ordinary startup until explicit continuation",
-    async (mode) => {
-      const f = await source();
-      const gate = path.join(f.root, "migration-pending.json");
-      if (mode === "committed-target" || mode === "hold-committed") {
-        const unlink = fs.unlinkSync;
-        const spy = vi.spyOn(fs, "unlinkSync").mockImplementation((file) => {
-          if (file === gate) throw new Error("Synthetic gate removal crash");
-          return unlink(file);
-        });
-        await expect(f.store.open()).rejects.toThrow();
-        spy.mockRestore();
-      } else {
-        const migrate = Migrator.prototype.migrateTo;
-        const spy = vi
-          .spyOn(Migrator.prototype, "migrateTo")
-          .mockImplementation(async function (name) {
-            return {
-              ...(await migrate.call(this, name)),
-              error: new Error("Synthetic migration rollback"),
-            };
-          });
-        await expect(f.store.open()).rejects.toThrow();
-        spy.mockRestore();
-      }
-      expect(fs.existsSync(gate)).toBe(true);
-      if (mode === "restoration") {
-        await f.store.restorePending();
-        await f.store.close();
-        await expect(f.store.open()).rejects.toThrow(/recovery/);
-      }
-      if (mode === "hold-rollback") {
-        const recover = TaskTransaction.prototype.recoverMigration;
-        const failure = vi
-          .spyOn(TaskTransaction.prototype, "recoverMigration")
-          .mockImplementation(async function () {
-            await recover.call(this);
-            throw new Error("Synthetic crash before recovery commit");
-          });
-        await expect(f.store.retry()).rejects.toThrow();
-        failure.mockRestore();
-        expect(fs.existsSync(gate)).toBe(true);
-      }
-      if (mode === "hold-committed") {
-        const unlink = fs.unlinkSync;
-        const spy = vi.spyOn(fs, "unlinkSync").mockImplementation((file) => {
-          if (file === gate) throw new Error("Synthetic post-hold crash");
-          return unlink(file);
-        });
-        await expect(f.store.retry()).rejects.toThrow();
-        spy.mockRestore();
-        expect(f.rows().at(-1)!.blocking_reason).toBe("restart_paused");
-      }
-      await f.store.retry();
-      const limits = f.raw();
-      limits.exec(
-        "UPDATE application_preferences SET value=json_set(value,'$.max_concurrent_inference',1),revision=revision+1 WHERE key='execution_limits'",
-      );
-      limits.close();
-      expect(f.rows().map((t) => [t.state, t.blocking_reason])).toEqual([
-        ["uncertain", null],
-        ["blocked", "restart_paused"],
-        ["blocked", "restart_paused"],
-      ]);
-      expect(await f.prepare()).toBeNull();
-      await f.store.close();
-      await f.store.open();
-      f.state("disconnected");
-      value(await f.store.reconcileTaskConnections());
-      f.state("connected");
-      value(await f.store.reconcileTaskConnections());
-      expect(await f.prepare()).toBeNull();
-      const receipt = value(await f.continueAll("continue-once"));
-      expect(value(await f.continueAll("continue-once"))).toEqual(receipt);
-      expect(await f.prepare()).not.toBeNull();
-      const db = f.raw();
-      expect(
-        db
-          .prepare(
-            "SELECT state,outcome_reason,dispatch_permitted_at FROM attempts WHERE service_generation='old-orderly-generation'",
-          )
-          .get(),
-      ).toMatchObject({
-        state: "cancelled",
-        outcome_reason: "service_restarted",
-        dispatch_permitted_at: null,
-      });
       db.close();
-    },
-  );
-  it("cancels returning replies behind later work, fails exhausted preparations and honors cancellation during recovery", async () => {
-    const f = await source(true);
-    fs.writeFileSync(
-      path.join(f.root, "migration-pending.json"),
-      JSON.stringify({
-        version: 1,
-        operation: "edge-recovery",
-        source: sourceKind === "limits" ? 12 : 8,
-        target: 13,
-      }),
+      await f.start();
+      if (edge) {
+        value(await f.append(unsent));
+        const edgeDb = f.raw();
+        edgeDb.exec(
+          "UPDATE tasks SET state='cancelling',state_revision=state_revision+1 WHERE id=(SELECT task_id FROM attempts WHERE dispatch_permitted_at IS NOT NULL)",
+        );
+        edgeDb.close();
+      }
+      await f.store.close();
+      const old = f.raw();
+      old.exec(
+        sourceKind === "composer"
+          ? "DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; PRAGMA user_version=13"
+          : sourceKind === "limits"
+            ? "DROP TABLE execution_limits_receipts; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; PRAGMA user_version=12"
+            : "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DROP TABLE service_runs; DROP TABLE execution_limits_receipts; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; DELETE FROM kysely_migration WHERE name='0012_application_exit'; DELETE FROM ohtia_migration_artifacts WHERE name='0012_application_exit'; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; PRAGMA user_version=8",
+      );
+      if (sourceKind !== "legacy") {
+        old.exec("DROP TRIGGER receipts_commands");
+        old.exec(exitReceiptObjects.receipts_commands);
+      }
+      old.close();
+      return { ...f, dispatched, unsent };
+    }
+    it("holds unfinished work during its first upgrade", async () => {
+      const f = await source();
+      await f.store.open();
+      expect(f.rows().map((t) => t.state)).toEqual(["uncertain", "blocked", "blocked"]);
+      value(await f.continueAll());
+      expect(f.rows().map((t) => t.state)).toEqual(["uncertain", "queued", "queued"]);
+      expect(fs.existsSync(path.join(f.root, "migration-pending.json"))).toBe(false);
+    });
+    it.each(["rollback", "restoration", "committed-target", "hold-rollback", "hold-committed"])(
+      "holds pending and unfinished work across %s and later ordinary startup until explicit continuation",
+      async (mode) => {
+        const f = await source();
+        const gate = path.join(f.root, "migration-pending.json");
+        if (mode === "committed-target" || mode === "hold-committed") {
+          const unlink = fs.unlinkSync;
+          const spy = vi.spyOn(fs, "unlinkSync").mockImplementation((file) => {
+            if (file === gate) throw new Error("Synthetic gate removal crash");
+            return unlink(file);
+          });
+          await expect(f.store.open()).rejects.toThrow();
+          spy.mockRestore();
+        } else {
+          const migrate = Migrator.prototype.migrateTo;
+          const spy = vi
+            .spyOn(Migrator.prototype, "migrateTo")
+            .mockImplementation(async function (name) {
+              return {
+                ...(await migrate.call(this, name)),
+                error: new Error("Synthetic migration rollback"),
+              };
+            });
+          await expect(f.store.open()).rejects.toThrow();
+          spy.mockRestore();
+        }
+        expect(fs.existsSync(gate)).toBe(true);
+        if (mode === "restoration") {
+          await f.store.restorePending();
+          await f.store.close();
+          await expect(f.store.open()).rejects.toThrow(/recovery/);
+        }
+        if (mode === "hold-rollback") {
+          const recover = TaskTransaction.prototype.recoverMigration;
+          const failure = vi
+            .spyOn(TaskTransaction.prototype, "recoverMigration")
+            .mockImplementation(async function () {
+              await recover.call(this);
+              throw new Error("Synthetic crash before recovery commit");
+            });
+          await expect(f.store.retry()).rejects.toThrow();
+          failure.mockRestore();
+          expect(fs.existsSync(gate)).toBe(true);
+        }
+        if (mode === "hold-committed") {
+          const unlink = fs.unlinkSync;
+          const spy = vi.spyOn(fs, "unlinkSync").mockImplementation((file) => {
+            if (file === gate) throw new Error("Synthetic post-hold crash");
+            return unlink(file);
+          });
+          await expect(f.store.retry()).rejects.toThrow();
+          spy.mockRestore();
+          expect(f.rows().at(-1)!.blocking_reason).toBe("restart_paused");
+        }
+        await f.store.retry();
+        const limits = f.raw();
+        limits.exec(
+          "UPDATE application_preferences SET value=json_set(value,'$.max_concurrent_inference',1),revision=revision+1 WHERE key='execution_limits'",
+        );
+        limits.close();
+        expect(f.rows().map((t) => [t.state, t.blocking_reason])).toEqual([
+          ["uncertain", null],
+          ["blocked", "restart_paused"],
+          ["blocked", "restart_paused"],
+        ]);
+        expect(await f.prepare()).toBeNull();
+        await f.store.close();
+        await f.store.open();
+        f.state("disconnected");
+        value(await f.store.reconcileTaskConnections());
+        f.state("connected");
+        value(await f.store.reconcileTaskConnections());
+        expect(await f.prepare()).toBeNull();
+        const receipt = value(await f.continueAll("continue-once"));
+        expect(value(await f.continueAll("continue-once"))).toEqual(receipt);
+        expect(await f.prepare()).not.toBeNull();
+        const db = f.raw();
+        expect(
+          db
+            .prepare(
+              "SELECT state,outcome_reason,dispatch_permitted_at FROM attempts WHERE service_generation='old-orderly-generation'",
+            )
+            .get(),
+        ).toMatchObject({
+          state: "cancelled",
+          outcome_reason: "service_restarted",
+          dispatch_permitted_at: null,
+        });
+        db.close();
+      },
     );
-    await f.store.retry();
-    expect(f.rows().map((t) => t.state)).toEqual(["cancelled", "cancelled", "blocked", "blocked"]);
-    const after = f.raw();
-    expect(
-      after
-        .prepare("SELECT outcome_reason FROM attempts WHERE dispatch_permitted_at IS NOT NULL")
-        .pluck()
-        .get(),
-    ).toBe("cancelled_by_researcher");
-    after.close();
+    it("cancels returning replies behind later work, fails exhausted preparations and honors cancellation during recovery", async () => {
+      const f = await source(true);
+      fs.writeFileSync(
+        path.join(f.root, "migration-pending.json"),
+        JSON.stringify({
+          version: 1,
+          operation: "edge-recovery",
+          source: sourceKind === "composer" ? 13 : sourceKind === "limits" ? 12 : 8,
+          target: 14,
+        }),
+      );
+      await f.store.retry();
+      expect(f.rows().map((t) => t.state)).toEqual([
+        "cancelled",
+        "cancelled",
+        "blocked",
+        "blocked",
+      ]);
+      const after = f.raw();
+      expect(
+        after
+          .prepare("SELECT outcome_reason FROM attempts WHERE dispatch_permitted_at IS NOT NULL")
+          .pluck()
+          .get(),
+      ).toBe("cancelled_by_researcher");
+      after.close();
 
-    const exhausted = await source();
-    const raw = exhausted.raw();
-    raw.exec(
-      "UPDATE attempts SET state='cancelled',outcome_reason='permit_expired',finished_at=created_at WHERE service_generation='old-orderly-generation'",
-    );
-    // A second prepared attempt has no remaining readmission budget.
-    const id = raw
-      .prepare("SELECT task_id FROM attempts WHERE service_generation='old-orderly-generation'")
-      .pluck()
-      .get() as Buffer;
-    const attemptId = Buffer.from(id);
-    attemptId[15] = attemptId[15]! ^ 1;
-    raw
-      .prepare(
-        "INSERT INTO attempts (id,task_id,attempt_number,service_generation,state,created_at) SELECT ?,task_id,2,service_generation,'prepared',created_at FROM attempts WHERE service_generation='old-orderly-generation'",
-      )
-      .run(attemptId);
-    raw.close();
-    fs.writeFileSync(
-      path.join(exhausted.root, "migration-pending.json"),
-      JSON.stringify({
-        version: 1,
-        operation: "exhausted-recovery",
-        source: sourceKind === "limits" ? 12 : 8,
-        target: 13,
-      }),
-    );
-    await exhausted.store.retry();
-    expect(exhausted.rows()[1]!.state).toBe("failed");
-  });
-  it("keeps usage and connection prerequisites when continuing recovery and preserves restart holds during coalescing", async () => {
-    const f = await setup();
-    await f.start();
-    const a = (await f.prepare())!;
-    value(await f.result(a, exhausted));
-    const id = await f.start();
-    await f.store.close();
-    fs.writeFileSync(
-      path.join(f.root, "migration-pending.json"),
-      JSON.stringify({
-        version: 1,
-        operation: "synthetic-recovery",
-        source: sourceKind === "limits" ? 12 : 8,
-        target: 13,
-      }),
-    );
-    await f.store.retry();
-    value(await f.append(id));
-    expect(f.rows().at(-1)!.blocking_reason).toBe("restart_paused");
-    f.state("disconnected");
-    value(await f.continueAll());
-    expect(f.rows().at(-1)!.blocking_reason).toBe("usage_limit_reached");
-    value(await f.resume());
-    expect(f.rows().at(-1)!.blocking_reason).toBe("connection_disabled");
-    f.state("connected");
-    expect(await f.prepare()).not.toBeNull();
-    value(await f.continueAll("empty-continue"));
-    const before = f.rows();
-    value(await f.continueAll("another-empty-continue"));
-    expect(f.rows()).toEqual(before);
-  });
-});
+      const exhausted = await source();
+      const raw = exhausted.raw();
+      raw.exec(
+        "UPDATE attempts SET state='cancelled',outcome_reason='permit_expired',finished_at=created_at WHERE service_generation='old-orderly-generation'",
+      );
+      // A second prepared attempt has no remaining readmission budget.
+      const id = raw
+        .prepare("SELECT task_id FROM attempts WHERE service_generation='old-orderly-generation'")
+        .pluck()
+        .get() as Buffer;
+      const attemptId = Buffer.from(id);
+      attemptId[15] = attemptId[15]! ^ 1;
+      raw
+        .prepare(
+          "INSERT INTO attempts (id,task_id,attempt_number,service_generation,state,created_at) SELECT ?,task_id,2,service_generation,'prepared',created_at FROM attempts WHERE service_generation='old-orderly-generation'",
+        )
+        .run(attemptId);
+      raw.close();
+      fs.writeFileSync(
+        path.join(exhausted.root, "migration-pending.json"),
+        JSON.stringify({
+          version: 1,
+          operation: "exhausted-recovery",
+          source: sourceKind === "composer" ? 13 : sourceKind === "limits" ? 12 : 8,
+          target: 14,
+        }),
+      );
+      await exhausted.store.retry();
+      expect(exhausted.rows()[1]!.state).toBe("failed");
+    });
+    it("keeps usage and connection prerequisites when continuing recovery and preserves restart holds during coalescing", async () => {
+      const f = await setup();
+      await f.start();
+      const a = (await f.prepare())!;
+      value(await f.result(a, exhausted));
+      const id = await f.start();
+      await f.store.close();
+      fs.writeFileSync(
+        path.join(f.root, "migration-pending.json"),
+        JSON.stringify({
+          version: 1,
+          operation: "synthetic-recovery",
+          source: sourceKind === "composer" ? 13 : sourceKind === "limits" ? 12 : 8,
+          target: 14,
+        }),
+      );
+      await f.store.retry();
+      value(await f.append(id));
+      expect(f.rows().at(-1)!.blocking_reason).toBe("restart_paused");
+      f.state("disconnected");
+      value(await f.continueAll());
+      expect(f.rows().at(-1)!.blocking_reason).toBe("usage_limit_reached");
+      value(await f.resume());
+      expect(f.rows().at(-1)!.blocking_reason).toBe("connection_disabled");
+      f.state("connected");
+      expect(await f.prepare()).not.toBeNull();
+      value(await f.continueAll("empty-continue"));
+      const before = f.rows();
+      value(await f.continueAll("another-empty-continue"));
+      expect(f.rows()).toEqual(before);
+    });
+  },
+);
 
 describe("pause development commands and diagnostics", () => {
   it("validates and runs both commands through the durable receipt boundary with no content in diagnostics", async () => {
@@ -926,13 +941,13 @@ describe("reply control composed with connection and usage pauses", () => {
       await f.store.close();
       const db = f.raw();
       db.exec(
-        "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DROP TABLE service_runs; DROP TABLE execution_limits_receipts; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; DELETE FROM kysely_migration WHERE name='0012_application_exit'; DELETE FROM ohtia_migration_artifacts WHERE name='0012_application_exit'; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; PRAGMA user_version=9",
+        "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DROP TABLE service_runs; DROP TABLE execution_limits_receipts; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; DELETE FROM kysely_migration WHERE name='0012_application_exit'; DELETE FROM ohtia_migration_artifacts WHERE name='0012_application_exit'; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; PRAGMA user_version=9",
       );
       db.close();
       if (recovery) {
         fs.writeFileSync(
           path.join(f.root, "migration-pending.json"),
-          JSON.stringify({ version: 1, operation: "composed-recovery", source: 9, target: 13 }),
+          JSON.stringify({ version: 1, operation: "composed-recovery", source: 9, target: 14 }),
         );
         await f.store.retry();
       } else await f.store.open();
@@ -948,13 +963,19 @@ describe("reply control composed with connection and usage pauses", () => {
       expect(value(await f.resume("resume-after-reply-migration"))).toEqual(resumed);
       expect(await f.prepare()).not.toBeNull();
       const upgraded = f.raw();
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(13);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(14);
       expect(
         upgraded
-          .prepare("SELECT name FROM kysely_migration ORDER BY name DESC LIMIT 3")
+          .prepare("SELECT name FROM kysely_migration ORDER BY name DESC LIMIT 5")
           .pluck()
           .all(),
-      ).toEqual(["0013_execution_limits_receipts", "0012_application_exit", "0011_service_runs"]);
+      ).toEqual([
+        "0014_message_composer",
+        "0013_execution_limits_receipts",
+        "0012_application_exit",
+        "0011_service_runs",
+        "0010_reply_control",
+      ]);
       expect(
         upgraded
           .prepare("SELECT count(*) FROM usage_limit_pauses WHERE resumed_at IS NOT NULL")
@@ -978,7 +999,7 @@ it.each(["continue-all", "resume-requests"] as const)(
       await f.store.close();
       fs.writeFileSync(
         path.join(f.root, "migration-pending.json"),
-        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 13 }),
+        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 14 }),
       );
       await f.store.retry();
     }

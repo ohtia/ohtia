@@ -50,5 +50,9 @@
   {
     "name": "0013_execution_limits_receipts",
     "sha256": "aeed6f3da99696c8931da5703d5b41d9962f580609ff057982be798c10bd29e5"
+  },
+  {
+    "name": "0014_message_composer",
+    "sha256": "7fc97a91ceb785e09c24d49e27ea50065577c80fc336c60ce191e45ccb74b404"
   }
 ]

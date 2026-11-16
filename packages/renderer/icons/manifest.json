@@ -36,6 +36,12 @@
       "sha256": "fc7e1f6fe3359cd1f12764127355901dd4ae68d182328a8fcf3b1ef924fd1d24"
     },
     {
+      "name": "arrow-up",
+      "file": "arrow-up.svg",
+      "archive_member": "package/icons/arrow-up.svg",
+      "sha256": "f41766c0580cddc9205c6eac1ce935a052a0d0b44e5c6467a0d564d5a52590f0"
+    },
+    {
       "name": "ban",
       "file": "ban.svg",
       "archive_member": "package/icons/ban.svg",
@@ -288,10 +294,22 @@
       "sha256": "e92c4a4ca2cbdc7ae6d20a45cc4a4537e273ec447d041f66f61c602841fcc563"
     },
     {
+      "name": "square",
+      "file": "square.svg",
+      "archive_member": "package/icons/square.svg",
+      "sha256": "0e77cfe4f01b8fbaf36f05ba93b618b6bf93f00370ef5641d3a4522eeb8954e6"
+    },
+    {
       "name": "sun",
       "file": "sun.svg",
       "archive_member": "package/icons/sun.svg",
       "sha256": "456f85acc731d51ed1b2b550f76dca068dea504131ead46a4dbce90e79520c33"
+    },
+    {
+      "name": "text-cursor-input",
+      "file": "text-cursor-input.svg",
+      "archive_member": "package/icons/text-cursor-input.svg",
+      "sha256": "85d8e2a17432ee42d979fc06e66da2047c9f3de3a47762cbd86dd97d2cbf5f79"
     },
     {
       "name": "triangle-alert",

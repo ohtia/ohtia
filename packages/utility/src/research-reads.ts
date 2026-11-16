@@ -16,6 +16,7 @@ import {
   listConversations,
   type ResearchSchema,
 } from "./research.js";
+import { TaskTransaction, type TaskContext } from "./tasks.js";
 import { storedText } from "./research-text.js";
 
 /** Test the actual envelope as well as its payload: containers, node count, strings and bytes compose. */
@@ -79,8 +80,41 @@ async function timelineItem(
 export async function readResearch(
   db: Kysely<ResearchSchema>,
   request: Request,
+  context: TaskContext,
 ): Promise<Outcome<unknown>> {
   switch (request.operation) {
+    case "destination.read": {
+      const p = request.payload;
+      const project = await db
+        .selectFrom("projects")
+        .select("id")
+        .where("id", "=", bytes(p.projectId))
+        .executeTakeFirst();
+      if (!project) return failure("record_not_found");
+      if ("conversationId" in p) {
+        const conversation = await db
+          .selectFrom("conversations")
+          .select("id")
+          .where("id", "=", bytes(p.conversationId))
+          .where("project_id", "=", project.id)
+          .executeTakeFirst();
+        if (!conversation) return failure("record_not_found");
+      }
+      const destination = await new TaskTransaction(db, context).destination(project.id);
+      return {
+        ok: true,
+        value: {
+          destination: destination
+            ? {
+                operation: destination.policy.operation,
+                maxAttemptDurationMs: destination.policy.max_attempt_duration_ms,
+                connection: destination.connection,
+              }
+            : null,
+        },
+      };
+    }
+
     case "project.list":
     case "conversation.list": {
       const p = request.payload;

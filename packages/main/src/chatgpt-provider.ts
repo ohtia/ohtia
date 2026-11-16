@@ -1,3 +1,4 @@
+import { chatgptConnection } from "@ohtia/contracts";
 import { randomUUID } from "node:crypto";
 import {
   type ConnectionReason,
@@ -143,12 +144,7 @@ export class ChatGPTProvider implements ProviderAdapter {
       effortSelection: false,
       usageReporting: true,
     },
-    connection: {
-      id: "chatgpt",
-      displayName: "ChatGPT",
-      kind: "subscription" as const,
-      usageUrl: "https://chatgpt.com/settings/usage",
-    },
+    connection: chatgptConnection,
   };
   private registration: Registration | undefined;
   private current: Session | undefined;

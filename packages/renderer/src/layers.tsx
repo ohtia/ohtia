@@ -1,3 +1,4 @@
+import { LucideGlyph } from "./iconography.js";
 import {
   cloneElement,
   useEffect,
@@ -28,6 +29,9 @@ export function Dialog({
   footer,
   closeContent,
   closeDisabled = false,
+  closePlacement = "header",
+  footerClassName = "actions",
+  closeDisabledReason,
 }: {
   open: boolean;
   title: string;
@@ -37,6 +41,9 @@ export function Dialog({
   footer?: ReactNode;
   closeContent?: ReactNode;
   closeDisabled?: boolean;
+  closePlacement?: "header" | "footer";
+  footerClassName?: string;
+  closeDisabledReason?: string;
   headingLevel?: 1 | 2;
   className?: string;
   closeLabel: string;
@@ -145,13 +152,16 @@ export function Dialog({
     <button
       type="button"
       data-close
+      className={closePlacement === "footer" ? "primitive-button" : undefined}
       aria-disabled={closeDisabled}
+      aria-description={closeDisabled ? closeDisabledReason : undefined}
       aria-label={closeContent ? closeLabel : undefined}
       onClick={() => {
         if (closeDisabled) return;
         onClose();
       }}
     >
+      {closePlacement === "footer" && <LucideGlyph name="x" size={16} />}
       {closeContent ?? closeLabel}
     </button>
   );
@@ -210,11 +220,11 @@ export function Dialog({
       }}
     >
       {!bodyClassName && <Heading id={id}>{titleContent ?? title}</Heading>}
-      {!bodyClassName && closeButton}
+      {!bodyClassName && closePlacement === "header" && closeButton}
       {bodyClassName ? (
         <div className={bodyClassName}>
           <div className="primitive-dialog-header">
-            {closeButton}
+            {closePlacement === "header" && closeButton}
             {headingPrefix}
             <Heading id={id}>{titleContent ?? title}</Heading>
           </div>
@@ -223,7 +233,14 @@ export function Dialog({
       ) : (
         children
       )}
-      {footer}
+      {closePlacement === "footer" ? (
+        <div className={`primitive-dialog-footer ${footerClassName}`}>
+          {closeButton}
+          {footer}
+        </div>
+      ) : (
+        footer
+      )}
     </dialog>
   );
 }

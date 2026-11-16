@@ -63,7 +63,8 @@
 .about-dialog .primitive-dialog-header > h1 {
   margin-block: var(--space-4);
 }
-.command-dialog [data-close]:has(svg) {
+.command-dialog > [data-close]:has(svg),
+.command-dialog .primitive-dialog-header [data-close]:has(svg) {
   padding: var(--space-1);
   inline-size: var(--space-8);
   block-size: var(--space-8);
@@ -167,7 +168,8 @@
 }
 
 @media (pointer: coarse) {
-  .command-dialog [data-close]:has(svg) {
+  .command-dialog > [data-close]:has(svg),
+  .command-dialog .primitive-dialog-header [data-close]:has(svg) {
     inline-size: var(--component-target-coarse);
     block-size: var(--component-target-coarse);
   }

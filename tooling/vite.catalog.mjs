@@ -8,6 +8,15 @@ export const catalogCsp =
 export default defineConfig({
   root: path.join(root, "tools/renderer-preview"),
   base: "./",
+  // The isolated catalog consumes authored components and their adjacent styles.
+  resolve: {
+    alias: [
+      {
+        find: /^@ohtia\/renderer$/,
+        replacement: path.join(root, "packages/renderer/src/index.tsx"),
+      },
+    ],
+  },
   plugins: [
     {
       name: "catalog-brand-assets",

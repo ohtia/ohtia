@@ -13,6 +13,7 @@ const systems = new Set([
   "canvas",
   "canvastext",
   "buttontext",
+  "graytext",
   "highlight",
   "currentcolor",
   "linktext",
@@ -23,6 +24,7 @@ const isLineShorthand = (property) =>
   );
 // This vocabulary is intentionally explicit. New CSS features require a checked contract.
 const layout = new Set([
+  "resize",
   "border-collapse",
   "vertical-align",
   "align-items",
@@ -248,6 +250,7 @@ export function checkColorUsage(model, sources, usage) {
             throw new Error(`Unsupported variable expression: ${context}/${property}`);
           const custom = property.startsWith("--") && names.has(property);
           const neutral =
+            ((property === "border" || property === "outline") && /^(0|none)$/.test(value)) ||
             (property === "app-region" && /^(drag|no-drag)$/.test(value)) ||
             (property === "touch-action" && value === "none") ||
             (property === "overflow-anchor" && value === "none") ||
@@ -268,7 +271,11 @@ export function checkColorUsage(model, sources, usage) {
         }
         const properties = [...style.keys()];
         if (forced) continue;
-        const paint = properties.filter(isPaint);
+        const paint = properties.filter(
+          (property) =>
+            isPaint(property) &&
+            !(["border", "outline"].includes(property) && /^(0|none)$/.test(style.get(property))),
+        );
         if (!paint.length) continue;
         const overlayKey = selectorKey(rule.selector);
         if (overlays.has(overlayKey)) {
@@ -299,6 +306,12 @@ export function checkColorUsage(model, sources, usage) {
           const value = style.get(property);
           if (property === "color") continue;
           if (["background", "background-color"].includes(property)) {
+            if (value === "transparent" && declared.foreground) {
+              for (const background of declared.backgrounds)
+                assertPair(model, declared.foreground, background, declared.minimum);
+              checked++;
+              continue;
+            }
             const background = token(value, `${context}/${property}`);
             if (!declared.foreground || !declared.backgrounds.includes(background))
               throw new Error(`Background differs from declared color usage: ${context}`);

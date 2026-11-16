@@ -674,3 +674,23 @@ it("composes real registry surfaces and announces failed layout persistence once
   expect(stop).toHaveBeenCalledOnce();
   root = createRoot(container);
 });
+
+it("places chat width actions beside its heading before content and preserves resizing across narrow reflow", async () => {
+  const { preferences, saved } = store();
+  await render(preferences, { chat: h("p", null, "Synthetic conversation") });
+  const panel = container.querySelector<HTMLElement>(".workspace-chat")!;
+  const heading = panel.querySelector<HTMLElement>(".workspace-chat-heading")!;
+  const scroll = panel.querySelector<HTMLElement>(".workspace-panel-scroll")!;
+  expect(heading.querySelectorAll("[data-workspace-size=chat]")).toHaveLength(2);
+  expect(panel.querySelector(":scope > .workspace-sizing")).toBeNull();
+  expect(heading.compareDocumentPosition(scroll) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+  await click(
+    message("en-US", "workspace.increase", { panel: message("en-US", "command.panels.chat") }),
+  );
+  expect(widths()).toEqual([256, 640, 376]);
+  expect(saved).toHaveLength(1);
+  await viewport(320);
+  expect(panel.querySelectorAll("[data-workspace-size=chat]")).toHaveLength(0);
+  await viewport(1280);
+  expect(heading.querySelectorAll("[data-workspace-size=chat]")).toHaveLength(2);
+});

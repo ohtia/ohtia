@@ -106,6 +106,15 @@
       },
       "effective_model_evidence": "The active implementation rollout, matched by its runtime thread identifier, records gpt-6.1-sol with effort high in turn_context.",
       "human_linguistic_review": null
+    },
+    {
+      "scope": "composer.* messages for STORY-003-012",
+      "producer": {
+        "agent": "codex",
+        "effective_model": "gpt-6.1-sol"
+      },
+      "effective_model_evidence": "The active implementation thread rollout, matched by CODEX_THREAD_ID to the issue request, records gpt-6.1-sol with effort high in turn_context.",
+      "human_linguistic_review": null
     }
   ]
 }

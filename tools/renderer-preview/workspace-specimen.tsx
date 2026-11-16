@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Workspace, CommandController, Dialog, Tabs, TextField } from "@ohtia/renderer";
 import { catalogs, type InterfaceLocale } from "../../packages/contracts/dist/index.js";
 type Port = Parameters<typeof Workspace>[0]["port"];
@@ -6,7 +6,7 @@ type Bridge = Parameters<typeof Workspace>[0]["commandBridge"];
 const call = <T,>(value: T) => ({ result: Promise.resolve(value), cancel() {} });
 
 /** The separate catalog owns all synthetic transport/data. No product fixture switch exists. */
-export function WorkspaceSpecimen() {
+export function WorkspaceSpecimen({ chat }: { readonly chat?: ReactNode } = {}) {
   const params = new URLSearchParams(location.search);
   const locale = (params.get("locale") ?? "en-US") as InterfaceLocale;
   useMemo(() => {
@@ -110,6 +110,7 @@ export function WorkspaceSpecimen() {
   return (
     <>
       <Workspace
+        {...(chat !== undefined ? { chat } : {})}
         port={synthetic.port}
         commandBridge={synthetic.bridge}
         registerHandlers={register}

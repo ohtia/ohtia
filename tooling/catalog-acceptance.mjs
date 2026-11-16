@@ -1,3 +1,4 @@
+import { verifyComposerSpecimen } from "./catalog-composer.mjs";
 import { verifyConversationSpecimen } from "./catalog-conversation.mjs";
 /* global document, window, getComputedStyle */
 import fs from "node:fs";
@@ -164,6 +165,13 @@ export async function verifyCatalog(page, url, engine, output) {
       );
     } finally {
       await conversationContext.close();
+    }
+    const composerContext = await browser.newContext();
+    let composer;
+    try {
+      composer = await verifyComposerSpecimen(await composerContext.newPage(), url, engine, output);
+    } finally {
+      await composerContext.close();
     }
     await verifyWorkspaceSpecimen(page, url, engine, output);
     await verifyCommandSpecimens(page, url, engine);
@@ -425,6 +433,7 @@ export async function verifyCatalog(page, url, engine, output) {
       stickyTableHeader: true,
       research,
       conversation,
+      composer,
       commandDiscovery,
       limitations: [
         "Portable catalog only; native IME, packaged zoom and manual assistive qualification are separate.",

@@ -4,6 +4,7 @@ import * as crypto from "node:crypto";
 import { type Kysely, sql } from "kysely";
 import {
   failure,
+  validResearcherMessage,
   isIdentifier,
   isDiagnosticTime,
   researchCommands,
@@ -241,6 +242,7 @@ function message(row: MessageRow): MessageRecord {
   };
 }
 const payloadKeys = {
+  "conversation.stop": ["conversationId"],
   "task.stop": ["taskId"],
   "task.startAgain": ["taskId"],
   "development.createProject": [],
@@ -296,6 +298,16 @@ export async function applyResearchCommand(
   const now = new Date().toISOString();
   let result: Uint8Array;
   switch (input.command) {
+    case "conversation.stop": {
+      if (!isEntityId(input.payload.conversationId)) return failure("invalid_message");
+      const outcome = await tasks.stopConversation(
+        bytes(input.payload.conversationId),
+        input.operationId,
+      );
+      if (!outcome.ok) return outcome;
+      result = outcome.value;
+      break;
+    }
     case "task.stop":
     case "task.startAgain": {
       if (!isEntityId(input.payload.taskId)) return failure("invalid_message");
@@ -391,7 +403,7 @@ export async function applyResearchCommand(
         .executeTakeFirst();
       if (!current) return failure("record_not_found");
       if (current.setup_confirmed_at === null) return failure("project_in_setup");
-      if (!text(p.content) || p.content.length === 0) return failure("message_invalid");
+      if (!text(p.content) || !validResearcherMessage(p.content)) return failure("message_invalid");
       const admission = await tasks.admission(current.id, null, p.content);
       if (!admission.ok) return admission;
       result = newId();
@@ -442,7 +454,7 @@ export async function applyResearchCommand(
         .where("id", "=", bytes(p.conversationId))
         .executeTakeFirst();
       if (!current) return failure("record_not_found");
-      if (!text(p.content) || p.content.length === 0) return failure("message_invalid");
+      if (!text(p.content) || !validResearcherMessage(p.content)) return failure("message_invalid");
       const admission = await tasks.admission(current.project_id, current.id, p.content);
       if (!admission.ok) return admission;
       result = await append(db, current.id, p.content, now);

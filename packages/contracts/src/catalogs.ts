@@ -39,6 +39,33 @@ export const messageContracts = {
     params: { running: "number", value: "number" },
     forms: { running: { kind: "plural" }, value: { kind: "plural" } },
   },
+  "composer.destinationLoading": { params: {} },
+  "composer.destinationFailed": { params: {} },
+  "composer.refreshDestination": { params: {} },
+  "composer.placeholder": { params: { agent: "string" } },
+  "composer.counter": {
+    params: { used: "number", max: "number" },
+    forms: { used: { kind: "plural" }, max: { kind: "plural" } },
+  },
+  "composer.remove": { params: { excess: "number" }, forms: { excess: { kind: "plural" } } },
+  "composer.send": { params: {} },
+  "composer.stop": { params: {} },
+  "composer.empty": { params: {} },
+  "composer.stopping": { params: {} },
+  "composer.sending": { params: {} },
+  "composer.pendingLimit": { params: {} },
+  "composer.inputTooLarge": { params: { agent: "string" } },
+  "composer.uncertain": { params: {} },
+  "composer.failed": { params: {} },
+  "composer.stopFailed": { params: {} },
+  "composer.retryStop": { params: {} },
+  "composer.subscription": { params: { service: "string", email: "string" } },
+  "composer.apiKey": { params: { service: "string" } },
+  "composer.reuse": { params: {} },
+  "composer.replaceTitle": { params: {} },
+  "composer.replaceBody": { params: {} },
+  "composer.replace": { params: {} },
+
   "exit.title": { params: {} },
   "exit.body": { params: { running: "number" }, forms: { running: { kind: "plural" } } },
   "exit.waiting": { params: { running: "number" }, forms: { running: { kind: "plural" } } },
@@ -515,21 +542,15 @@ export function message<K extends MessageKey>(
     )
   )
     throw new Error("Invalid message parameters.");
-  const forms = (messageContracts[key] as { forms?: Readonly<Record<string, { kind: "plural" }>> })
-    .forms;
-  if (forms) {
-    for (const name of Object.keys(forms)) {
+  const contract = messageContracts[key];
+  if ("forms" in contract) {
+    for (const name of Object.keys(contract.forms)) {
       const count = parameters[name];
       if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0)
         throw new Error("Invalid plural parameters.");
     }
-    return cardinalMessage(locale, template, parameters);
   }
-  return template.replace(/\{([A-Za-z][A-Za-z0-9]*)\}/g, (_match, name: string) => {
-    const value = parameters[name];
-    if (typeof value !== "string") throw new Error("Missing message parameter.");
-    return value;
-  });
+  return renderMessage(locale, template, parameters, "forms" in contract ? contract.forms : {});
 }
 export function formatNumber(
   locale: InterfaceLocale,
@@ -546,40 +567,65 @@ export function formatDate(
   return new Intl.DateTimeFormat(locale, options).format(value);
 }
 
-/** Independent cardinal selectors and named arguments; no offsets, nesting, tags or rich text. */
-function cardinalMessage(
+/** Plain text, typed interpolation and named cardinal selectors, including nested counts. */
+function renderMessage(
   locale: InterfaceLocale,
   template: string,
-  parameters: Record<string, string | number>,
+  parameters: Readonly<Record<string, string | number>>,
+  forms: Readonly<Record<string, { readonly kind: "plural" }>>,
+  pound?: number,
 ): string {
-  const rendered = template.replace(
-    /\{([A-Za-z][A-Za-z0-9_]*), plural,\s*((?:(?:zero|one|two|few|many|other|=\d+)\s*\{[^{}]*\}\s*)+)\}/g,
-    (_match, parameter: string, options: string) => {
-      const count = parameters[parameter];
-      if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0)
-        throw new Error("Invalid plural parameters.");
-      const forms = new Map<string, string>();
-      for (const part of options.matchAll(/(zero|one|two|few|many|other|=\d+)\s*\{([^{}]*)\}/g)) {
-        const [, name, body] = part;
-        if (name === undefined || body === undefined || forms.has(name))
-          throw new Error("Invalid plural form.");
-        forms.set(name, body);
+  let result = "";
+  let offset = 0;
+  while (offset < template.length) {
+    const char = template[offset] ?? "";
+    if (char === "}") throw new Error("Unbalanced message.");
+    if (char !== "{") {
+      result += char === "#" && pound !== undefined ? formatNumber(locale, pound) : char;
+      offset++;
+      continue;
+    }
+    const start = offset;
+    let depth = 1;
+    while (++offset < template.length && depth) {
+      if (template[offset] === "{") depth++;
+      if (template[offset] === "}") depth--;
+    }
+    if (depth) throw new Error("Unbalanced message.");
+    const body = template.slice(start + 1, offset - 1);
+    if (/^[A-Za-z][A-Za-z0-9_]*$/.test(body)) {
+      const value = parameters[body];
+      if (value === undefined) throw new Error("Missing message parameter.");
+      result += typeof value === "number" ? formatNumber(locale, value) : value;
+      continue;
+    }
+    const selector = /^([A-Za-z][A-Za-z0-9_]*), plural,\s*/.exec(body);
+    if (!selector?.[1] || !forms[selector[1]]) throw new Error("Unsupported plural message.");
+    const count = parameters[selector[1]];
+    if (typeof count !== "number") throw new Error("Invalid plural parameters.");
+    const options = new Map<string, string>();
+    let cursor = selector[0].length;
+    while (cursor < body.length) {
+      const option = /^(zero|one|two|few|many|other|=\d+)\s*\{/.exec(body.slice(cursor));
+      if (!option?.[1]) throw new Error("Invalid plural form.");
+      cursor += option[0].length;
+      const content = cursor;
+      let nesting = 1;
+      while (cursor < body.length && nesting) {
+        if (body[cursor] === "{") nesting++;
+        if (body[cursor] === "}") nesting--;
+        cursor++;
       }
-      const selected =
-        forms.get(`=${String(count)}`) ??
-        forms.get(new Intl.PluralRules(locale).select(count)) ??
-        forms.get("other");
-      if (selected === undefined) throw new Error("Missing plural form.");
-      return selected.replaceAll("#", formatNumber(locale, count));
-    },
-  );
-  // Validate authored syntax before interpolating user-visible service names.
-  if (/[{}]/.test(rendered.replace(/\{[A-Za-z][A-Za-z0-9_]*\}/g, "")))
-    throw new Error("Unsupported plural message.");
-  return rendered.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (_match, name: string) => {
-    const value = parameters[name];
-    if (typeof value === "string") return value;
-    if (typeof value === "number") return formatNumber(locale, value);
-    throw new Error("Missing message parameter.");
-  });
+      if (nesting || options.has(option[1])) throw new Error("Invalid plural form.");
+      options.set(option[1], body.slice(content, cursor - 1));
+      while (/\s/.test(body[cursor] ?? "") && cursor < body.length) cursor++;
+    }
+    const selected =
+      options.get(`=${String(count)}`) ??
+      options.get(new Intl.PluralRules(locale).select(count)) ??
+      options.get("other");
+    if (selected === undefined) throw new Error("Missing plural form.");
+    result += renderMessage(locale, selected, parameters, forms, count);
+  }
+  return result;
 }

@@ -1,3 +1,4 @@
+import { ComposerController } from "./composer-controller.js";
 import {
   mergeTimeline,
   compareTimeline,
@@ -58,13 +59,25 @@ export class ConversationController {
   private readonly cache = new Map<string, ConversationState>();
   private readonly establishedRanges = new Map<string, TimelineCursor | null>();
   private readonly revisions = new Map<string, number>();
-  constructor(private readonly port: FoundationPort) {}
+  readonly composer: ComposerController;
+  constructor(private readonly port: FoundationPort) {
+    this.composer = new ComposerController(port, undefined, undefined, () => {
+      this.reload();
+    });
+  }
   snapshot = (): ConversationState => this.state;
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   };
   private publish(): void {
+    this.composer.running(
+      this.state.items.some(
+        (item) =>
+          item.kind === "task" &&
+          ["queued", "blocked", "running", "cancelling"].includes(item.state),
+      ),
+    );
     for (const listener of this.listeners) listener();
   }
   private live(epoch: number): boolean {
@@ -72,6 +85,7 @@ export class ConversationController {
   }
   private failure(epoch: number, error?: { code: string }): void {
     if (!this.live(epoch)) return;
+    this.composer.destinationUnavailable();
     this.state = {
       ...this.state,
       status:
@@ -81,10 +95,20 @@ export class ConversationController {
     };
     this.publish();
   }
+  private subscriptionFailure(epoch: number, error: { code: string }): void {
+    if (!this.live(epoch)) return;
+    const stream = this.stream;
+    this.composer.destinationObservationLost();
+    this.failure(epoch, error);
+    if (this.live(epoch)) this.epoch++;
+    stream?.dispose();
+  }
   open(scope: ResearchScope): void {
     if (this.disposed) return;
     if (this.state.scope.conversationId)
       this.cache.set(this.state.scope.conversationId, this.state);
+    this.composer.open(scope);
+    this.composer.destinationObservationPending();
     const epoch = ++this.epoch;
     if (this.subscriptionRetry) clearTimeout(this.subscriptionRetry);
     this.subscriptionRetry = undefined;
@@ -118,15 +142,19 @@ export class ConversationController {
     const stream = this.port.subscribeResearch(this.state.scope, (notice) => {
       if (!this.live(epoch)) return;
       this.observed(notice);
+      if (!this.live(epoch)) return;
       if (!notice.ok) {
         if (notice.error.code === "sequence_gap") {
           // A fresh subscription identity precedes all reads so changes during recovery remain observable.
+          this.composer.destinationObservationPending();
           const recovery = ++this.epoch;
           this.state = { ...this.state, loadingEarlier: false, failedEarlier: false };
           this.publish();
           this.revisions.clear();
           this.connect(recovery, true);
-        } else this.failure(epoch, notice.error);
+        } else {
+          this.subscriptionFailure(epoch, notice.error);
+        }
         return;
       }
       this.queue = this.queue
@@ -154,9 +182,10 @@ export class ConversationController {
           );
           return;
         }
-        this.failure(epoch, ready.error);
+        this.subscriptionFailure(epoch, ready.error);
         return;
       }
+      this.composer.destinationObservationReady();
       this.observed("ready");
       this.queue = this.queue
         .then(async () => {
@@ -317,6 +346,7 @@ export class ConversationController {
   private async refresh(epoch: number, recovering: boolean): Promise<void> {
     await this.projects(epoch);
     if (!this.live(epoch)) return;
+    void this.composer.refreshDestination();
     if (!this.state.scope.conversationId) {
       this.state = { ...this.state, status: "ready" };
       this.publish();
@@ -399,7 +429,13 @@ export class ConversationController {
     }
     const key = `${event.record}/${event.id}`;
     if ((this.revisions.get(key) ?? 0) >= event.revision) return;
+    if (
+      (event.record === "project" && event.id === this.state.scope.projectId) ||
+      (event.record === "conversation" && event.id === this.state.scope.conversationId)
+    )
+      void this.composer.refreshDestination();
     if (event.record === "project") await this.projects(epoch);
+    if (!this.live(epoch)) return;
     if (event.record === "conversation" && event.id === this.state.scope.conversationId)
       await this.header(epoch);
     if (event.record === "timeline" && this.state.scope.conversationId)
@@ -410,6 +446,7 @@ export class ConversationController {
   }
   dispose(): void {
     this.disposed = true;
+    this.composer.dispose();
     this.epoch++;
     this.stream?.dispose();
     if (this.timer) clearTimeout(this.timer);

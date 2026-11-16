@@ -6,13 +6,18 @@
   min-inline-size: 0;
   position: relative;
 }
+.conversation-status-scroll {
+  flex: 1;
+  min-block-size: min(var(--space-12), 20%);
+  overflow-y: auto;
+}
 .conversation-timeline {
   flex: 1;
   min-block-size: 0;
   overflow-y: auto;
   overflow-x: hidden;
   overflow-anchor: none;
-  padding: var(--space-4);
+  padding: var(--space-2);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -41,7 +46,7 @@
 }
 .conversation-message.agent {
   inline-size: 100%;
-  padding: var(--space-2);
+  padding: 0;
 }
 .conversation-text {
   overflow-wrap: anywhere;
@@ -56,12 +61,12 @@
   display: flex;
   gap: var(--space-1);
   min-block-size: 32px;
-  margin-inline-start: calc(-1 * var(--space-2));
+  margin-inline: 0;
   color: var(--content-secondary);
 }
 .conversation-message.researcher .conversation-actions {
   align-self: flex-end;
-  margin-inline: 0 calc(-1 * var(--space-2));
+  margin-inline: 0;
 }
 .conversation-actions button {
   inline-size: 32px;
@@ -199,4 +204,21 @@
 
 .conversation-message.agent .message-markdown p {
   max-inline-size: none;
+}
+
+.workspace-chat:has(.conversation-view) > .workspace-panel-scroll {
+  margin-inline: 0;
+}
+.workspace-chat:has(.conversation-view) > .workspace-panel-scroll:focus-visible {
+  outline-offset: calc(-1 * var(--focus-width));
+}
+.workspace:has(.workspace-splitter) .workspace-chat .conversation-timeline,
+.workspace:has(.workspace-splitter) .workspace-chat .message-composer {
+  padding-inline: var(--space-3);
+}
+@media (pointer: coarse) {
+  .workspace:has(.workspace-splitter) .workspace-chat .conversation-timeline,
+  .workspace:has(.workspace-splitter) .workspace-chat .message-composer {
+    padding-inline: var(--space-6);
+  }
 }

@@ -161,6 +161,36 @@ export class TaskTransaction {
     if (changed.numUpdatedRows !== 1n) throw new Error("Task revision changed.");
     this.touch(task.conversation_id);
   }
+  /** Shared routing for acceptance and destination preview, independent of connection state. */
+  async destination(projectId: Uint8Array) {
+    const project = await this.db
+      .selectFrom("projects")
+      .selectAll()
+      .where("id", "=", projectId)
+      .executeTakeFirstOrThrow();
+    if (!project.is_development) return null;
+    const policy = operationPolicy("development_test", 1, this.context.mode);
+    return policy ? { policy, connection: "chatgpt" } : null;
+  }
+  async stopConversation(id: Uint8Array, operationId: string): Promise<Outcome<Uint8Array>> {
+    const conversation = await this.db
+      .selectFrom("conversations")
+      .select("id")
+      .where("id", "=", id)
+      .executeTakeFirst();
+    if (!conversation) return failure("record_not_found");
+    const tasks = await this.db
+      .selectFrom("tasks")
+      .select("id")
+      .where("conversation_id", "=", id)
+      .where("state", "in", ["queued", "blocked", "running", "cancelling"])
+      .execute();
+    for (const task of tasks) {
+      const stopped = await this.control("task.stop", task.id, operationId);
+      if (!stopped.ok) return stopped;
+    }
+    return { ok: true, value: id };
+  }
   /** Later operation stories extend routing when their policies become available. */
   async admission(
     projectId: Uint8Array,
@@ -173,8 +203,9 @@ export class TaskTransaction {
       .where("id", "=", projectId)
       .executeTakeFirstOrThrow();
     if (!project.is_development) return { ok: true, value: null };
-    const policy = operationPolicy("development_test", 1, this.context.mode);
-    if (!policy) return failure("service_unavailable");
+    const destination = await this.destination(projectId);
+    if (!destination) return failure("service_unavailable");
+    const { policy } = destination;
     if (Buffer.byteLength(content, "utf8") > policy.max_input_bytes)
       return failure("input_too_large");
     const pending = conversationId ? await this.waiting(conversationId) : undefined;
@@ -210,10 +241,11 @@ export class TaskTransaction {
     this.touch(conversationId);
     if (!project.is_development) return;
     this.diagnostics.push({ event_name: "ohtia.task.accepted" });
-    const policy = operationPolicy("development_test", 1, this.context.mode);
-    if (!policy) throw new Error("Task policy unavailable.");
+    const destination = await this.destination(projectId);
+    if (!destination) throw new Error("Task policy unavailable.");
+    const { policy, connection } = destination;
     const old = await this.waiting(conversationId);
-    const reason = old?.blocking_reason ?? (await this.connectionBlock("chatgpt"));
+    const reason = old?.blocking_reason ?? (await this.connectionBlock(connection));
     if (old) await this.change(old, { state: "cancelled", blocking_reason: null });
     await this.db
       .insertInto("tasks")
@@ -226,7 +258,7 @@ export class TaskTransaction {
         operation: policy.operation,
         policy_version: policy.version,
         instruction_version: policy.instruction_version,
-        connection: "chatgpt",
+        connection,
         document_language: project.document_language,
         accepted_by_operation_id: operationId,
         replaces_task_id: old?.id ?? null,

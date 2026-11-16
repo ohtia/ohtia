@@ -8,6 +8,10 @@ generated:
 
 # Durable foundation storage
 
+## Conversation composition
+
+The [composer](epics/EPIC-003-research-agents/epic.md#spec-003-017-message-composer) keeps unsent text only in window memory. Confirmed saves remove only the submitted text while retaining newer input; an uncertain save preserves its operation identity until editing creates a new intent (PRIN-002 and PRIN-006). A Stop requested before the save result waits for that result, then stops the conversation even when the save failed or remains uncertain. The new immutable `0014_message_composer` migration admits `conversation.stop` receipts through the same checkpoint and recovery path, without changing earlier migrations. The command’s reserved transaction applies the existing task control to all unfinished tasks in the conversation and records one receipt. Replaying it returns its first result without affecting later tasks.
+
 ## Authority and opening
 
 The [persistent storage specification](epics/EPIC-001-desktop-foundation/STORY-001-005-persist-a-minimal-command-with-verified-migration-recovery.md) consumes the [bounded application port](application-port.md) and [isolated desktop runtime](desktop-runtime.md). The utility alone opens the operational database through the binding selected by [ADR-0007](adr/adr-0007-sqlite-repositories-and-migrations.md). Main owns the native profile, graphical admission and locator publication. PRIN-004, PRIN-006, PRIN-007, PRIN-013 and PRIN-016 require distinguishing confirmed commits, transport uncertainty, retained copies and the scope of native observations.

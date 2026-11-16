@@ -22,6 +22,9 @@ export function ExitDialog({
       open={!!state}
       title={message(locale, "exit.title")}
       closeDisabled={cancelling}
+      closePlacement="footer"
+      footerClassName="command-dialog-footer"
+      {...(cancelling ? { closeDisabledReason: message(locale, "exit.cancelling") } : {})}
       closeLabel={message(locale, "dialog.close")}
       onClose={() => {
         if (!cancelling) onChoose("close");
@@ -29,14 +32,7 @@ export function ExitDialog({
       className="command-dialog exit-dialog"
       bodyClassName="command-dialog-body"
       footer={
-        <div className="command-dialog-footer">
-          <Button
-            label={message(locale, "dialog.close")}
-            onPress={() => {
-              onChoose("close");
-            }}
-            {...(cancelling ? { disabledReason: message(locale, "exit.cancelling") } : {})}
-          />
+        <>
           <Button
             label={message(locale, "exit.wait")}
             onPress={() => {
@@ -51,7 +47,7 @@ export function ExitDialog({
             }}
             {...(cancelling ? { disabledReason: message(locale, "exit.cancelling") } : {})}
           />
-        </div>
+        </>
       }
     >
       <p role="status" aria-live="polite" aria-atomic="true">

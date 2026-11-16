@@ -191,6 +191,7 @@ describe("review regression contracts", () => {
           "research.css",
           "conversation.css",
           "message-markdown.css",
+          "message-composer.css",
         ].map((name) => `packages/renderer/src/${name}`),
       ]) {
         fs.mkdirSync(path.dirname(path.join(temporary, file)), { recursive: true });
