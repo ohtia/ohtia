@@ -51,6 +51,42 @@ export const presentationSnapshot = {
   zoom: { schemaVersion: 1, revision: 2, value: 125, source: "saved" },
 };
 export const acceptedEnvelopes: readonly unknown[] = [
+  request({ operation: "limits.read", payload: {} }),
+  request({ operation: "limits.replace", payload: { value: 1 } }),
+  request({ operation: "limits.replace", payload: { value: 50 } }),
+  request({ operation: "limits.receipt", payload: { targetOperationId: "operation-1" } }),
+  ...(["limits.read", "limits.replace"] as const).map((operation) => ({
+    ...request({ operation }),
+    kind: "result",
+    payload: {
+      ok: true,
+      value: {
+        serviceGeneration: "service-1",
+        revision: 3,
+        max_concurrent_inference: 2,
+        running: 4,
+      },
+    },
+  })),
+  {
+    ...request({ operation: "limits.receipt" }),
+    kind: "result",
+    payload: {
+      ok: true,
+      value: {
+        state: "recorded",
+        outcome: {
+          ok: true,
+          value: {
+            serviceGeneration: "service-1",
+            revision: 3,
+            max_concurrent_inference: 2,
+            running: 4,
+          },
+        },
+      },
+    },
+  },
   {
     ...request({ operation: "zoom.receipt" }),
     kind: "result",

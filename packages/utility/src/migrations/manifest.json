@@ -46,5 +46,9 @@
   {
     "name": "0012_application_exit",
     "sha256": "23c9cdb97ff9ef75db9c8a1cb93184efdd4d6dabd1b6464949f70805d1a51315"
+  },
+  {
+    "name": "0013_execution_limits_receipts",
+    "sha256": "aeed6f3da99696c8931da5703d5b41d9962f580609ff057982be798c10bd29e5"
   }
 ]

@@ -1,3 +1,4 @@
+import { decodeExecutionLimitsChange } from "@ohtia/contracts";
 import {
   type ConnectionEvent,
   type ResearchEvent,
@@ -173,6 +174,7 @@ export function createFoundationPort(
         failure(
           isResearchMutation(entry.request.operation) ||
             entry.request.operation === "appearance.replace" ||
+            entry.request.operation === "limits.replace" ||
             entry.request.operation === "locale.replace" ||
             entry.request.operation === "layout.replace" ||
             entry.request.operation === "character.replace" ||
@@ -255,6 +257,7 @@ export function createFoundationPort(
         failure(
           isResearchMutation(entry.request.operation) ||
             entry.request.operation === "appearance.replace" ||
+            entry.request.operation === "limits.replace" ||
             entry.request.operation === "locale.replace" ||
             entry.request.operation === "layout.replace" ||
             entry.request.operation === "character.replace" ||
@@ -302,6 +305,14 @@ export function createFoundationPort(
           settle(entry, failure("invalid_service_result"));
           return;
         }
+      }
+      if (
+        entry.request.operation === "limits.replace" &&
+        (message.operation !== "limits.replace" ||
+          message.payload.value.max_concurrent_inference !== entry.request.payload.value)
+      ) {
+        settle(entry, failure("uncertain"));
+        return;
       }
       if (
         (entry.request.operation === "appearance.replace" ||
@@ -395,6 +406,7 @@ export function createFoundationPort(
           failure(
             isResearchMutation(operation) ||
               operation === "appearance.replace" ||
+              operation === "limits.replace" ||
               operation === "locale.replace" ||
               operation === "layout.replace" ||
               operation === "character.replace" ||
@@ -425,6 +437,7 @@ export function createFoundationPort(
           failure(
             isResearchMutation(operation) ||
               operation === "appearance.replace" ||
+              operation === "limits.replace" ||
               operation === "locale.replace" ||
               operation === "layout.replace" ||
               operation === "character.replace" ||
@@ -445,6 +458,7 @@ export function createFoundationPort(
           failure(
             isResearchMutation(operation) ||
               operation === "appearance.replace" ||
+              operation === "limits.replace" ||
               operation === "locale.replace" ||
               operation === "layout.replace" ||
               operation === "character.replace" ||
@@ -607,6 +621,18 @@ export function createFoundationPort(
     },
     readLocaleReceipt: (operationId) => call("locale.receipt", { targetOperationId: operationId }),
     subscribeLocale: (listener) => subscribe("locale", listener as Stream["listener"]),
+    readExecutionLimits: () => call("limits.read", {}),
+    replaceExecutionLimits: (change, expectedServiceGeneration) => {
+      const decoded = decodeExecutionLimitsChange(change);
+      if (!decoded.ok) return { result: Promise.resolve(decoded), cancel() {} };
+      if (
+        expectedServiceGeneration !== undefined &&
+        expectedServiceGeneration !== generations.serviceGeneration
+      )
+        return { result: Promise.resolve(failure("service_unavailable")), cancel() {} };
+      return call("limits.replace", { value: decoded.value.value }, decoded.value.operationId);
+    },
+    readExecutionLimitsReceipt: (id) => call("limits.receipt", { targetOperationId: id }),
     readAppearance: () => call("appearance.read", {}),
     replaceAppearance: (change, expectedServiceGeneration) => {
       if (
@@ -641,6 +667,7 @@ export function createFoundationPort(
           failure(
             isResearchMutation(entry.request.operation) ||
               entry.request.operation === "appearance.replace" ||
+              entry.request.operation === "limits.replace" ||
               entry.request.operation === "locale.replace" ||
               entry.request.operation === "layout.replace" ||
               entry.request.operation === "character.replace" ||

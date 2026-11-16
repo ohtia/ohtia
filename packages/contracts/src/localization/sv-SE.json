@@ -288,6 +288,13 @@
     "conversation.copyFailed": "Ohtia kunde inte kopiera det här meddelandet. Markera texten och kopiera den manuellt.",
     "conversation.opensInBrowser": "öppnas i din webbläsare",
     "conversation.codeBlock": "Kodblock",
-    "conversation.table": "Tabell"
+    "conversation.table": "Tabell",
+    "limits.section": "Samtidigt arbete",
+    "limits.field": "AI-svar samtidigt",
+    "limits.range": "Ange ett heltal från {min} till {max}. Det sparade värdet, {value}, behålls.",
+    "limits.subscription": "Fler samtidiga svar kan förbruka mer av ditt {service}-abonnemang på samma gång.",
+    "limits.apiKey": "Fler samtidiga svar kan förbruka krediten för din {service}-nyckel snabbare.",
+    "limits.connectionLimit": "{service} tillåter högst {connection_limit, plural, one {# svar åt gången.} other {# svar åt gången.}}",
+    "limits.running": "{running, plural, one {# svar pågår. } other {# svar pågår. }}{value, plural, =1 {Nya svar väntar tills inga svar pågår.} one {Nya svar väntar tills inga svar pågår.} other {Nya svar väntar tills färre än # svar pågår.}}"
   }
 }

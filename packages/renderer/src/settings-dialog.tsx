@@ -1,3 +1,6 @@
+import { LimitsPanel } from "./limits-panel.js";
+import type { LimitsController } from "./limits-controller.js";
+import { connectionInferenceLimits, type ConnectionSnapshot } from "@ohtia/contracts";
 import { ConnectionsPanel } from "./connections-panel.js";
 import { useSystemReducedMotion } from "./system-motion.js";
 import {
@@ -78,6 +81,7 @@ export function SettingsDialog({
   available,
   language,
   controller,
+  limits,
   workspace,
   workspaceState,
   platform,
@@ -96,6 +100,7 @@ export function SettingsDialog({
   readonly available: boolean;
   readonly language: LanguageController;
   readonly controller: SettingsController;
+  readonly limits?: LimitsController;
   readonly workspace: WorkspaceController;
   readonly workspaceState: WorkspaceState;
   readonly platform: CommandPlatform;
@@ -116,6 +121,10 @@ export function SettingsDialog({
     if (open && workspaceState.persistence.save.state === "uncertain")
       void workspace.reconcilePreferences();
   }, [open, workspace, workspaceState.persistence.save.state]);
+  const [connection, setConnection] = useState<ConnectionSnapshot>();
+  useEffect(() => {
+    if (!open) setConnection(undefined);
+  }, [open]);
   const id = useId();
   useEffect(() => {
     if (open && requestedFocus) focusSetting(id, requestedFocus);
@@ -187,7 +196,12 @@ export function SettingsDialog({
     <Dialog
       open={open}
       {...(returnFocusRef ? { returnFocusRef } : {})}
-      onClose={onClose}
+      onClose={() => {
+        // Explicit blur preserves commit-on-leaving before Escape unmounts the field.
+        const focused = document.activeElement;
+        if (focused instanceof HTMLInputElement && focused.closest(".limits-panel")) focused.blur();
+        onClose();
+      }}
       title={text("settings.title")}
       headingLevel={1}
       closeLabel={text("dialog.close")}
@@ -546,7 +560,33 @@ export function SettingsDialog({
             if (open) focusSetting(id, "appearance");
           }}
         />
-        {open && <ConnectionsPanel port={port} locale={locale} available={available} />}
+        {open && (
+          <ConnectionsPanel
+            onConnection={setConnection}
+            port={port}
+            locale={locale}
+            available={available}
+          />
+        )}
+        {open && limits && (
+          <LimitsPanel
+            controller={limits}
+            locale={locale}
+            available={available}
+            connections={
+              connection?.state === "connected"
+                ? [
+                    {
+                      id: connection.connection,
+                      name: connection.display_name,
+                      kind: "subscription",
+                      limit: connectionInferenceLimits[connection.connection],
+                    },
+                  ]
+                : []
+            }
+          />
+        )}
         {sections.map((section) => (
           <section key={section.id} aria-labelledby={`${id}-${section.id}`}>
             <h3 id={`${id}-${section.id}`}>{section.title}</h3>

@@ -719,6 +719,7 @@ export class ServiceSupervisor {
         payload: failure(
           isResearchMutation(work.request.operation) ||
             work.request.operation === "appearance.replace" ||
+            work.request.operation === "limits.replace" ||
             work.request.operation === "locale.replace" ||
             work.request.operation === "layout.replace" ||
             work.request.operation === "bounds.replace" ||

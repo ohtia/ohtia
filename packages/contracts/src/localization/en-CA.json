@@ -288,6 +288,13 @@
     "conversation.copyFailed": "Ohtia couldn’t copy this message. Select its text and copy it manually.",
     "conversation.opensInBrowser": "opens in your browser",
     "conversation.codeBlock": "Code block",
-    "conversation.table": "Table"
+    "conversation.table": "Table",
+    "limits.section": "Simultaneous work",
+    "limits.field": "AI replies at the same time",
+    "limits.range": "Enter a whole number from {min} to {max}. The saved value, {value}, is kept.",
+    "limits.subscription": "More replies at once can use more of your {service} plan at the same time.",
+    "limits.apiKey": "More replies at once can spend your {service} key’s credit faster.",
+    "limits.connectionLimit": "{service} allows at most {connection_limit, plural, one {# reply at a time.} other {# replies at a time.}}",
+    "limits.running": "{running, plural, one {# reply is running. } other {# replies are running. }}{value, plural, =1 {New ones will wait until none are running.} one {New ones will wait until none are running.} other {New ones will wait until fewer than # replies are running.}}"
   }
 }

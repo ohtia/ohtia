@@ -97,6 +97,7 @@ export interface ReplyParts {
   readonly latestSequence: number;
 }
 export type ResearchEvent =
+  | { readonly kind: "inferenceActivity" }
   | {
       readonly kind: "changed";
       readonly record: "project" | "conversation" | "timeline" | "usagePause" | "executionLimits";
@@ -512,6 +513,7 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
 }
 export function isResearchEvent(value: unknown): value is ResearchEvent {
   if (!obj(value)) return false;
+  if (value.kind === "inferenceActivity") return exact(value, ["kind"]);
   if (value.kind === "reply")
     return (
       exact(value, ["kind", "taskId", "sequence", "text"]) &&

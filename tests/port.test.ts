@@ -249,6 +249,9 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
     const c = client();
     expect(Object.keys(c.port).sort()).toEqual(
       [
+        "readExecutionLimits",
+        "replaceExecutionLimits",
+        "readExecutionLimitsReceipt",
         "readConnection",
         "connectConnection",
         "disconnectConnection",

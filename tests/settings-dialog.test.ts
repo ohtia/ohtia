@@ -342,8 +342,48 @@ describe("Settings command composition", () => {
       effectiveLocale: "en-US",
       systemLocale: "en-US",
     };
+    let limitsCurrent = {
+      serviceGeneration: "service-1",
+      revision: 2,
+      max_concurrent_inference: 10,
+      running: 0,
+    };
+    const replaceLimits = vi.fn((change: { value: number }) => {
+      limitsCurrent = {
+        ...limitsCurrent,
+        revision: limitsCurrent.revision + 1,
+        max_concurrent_inference: change.value,
+      };
+      return call({ ok: true as const, value: limitsCurrent });
+    });
+    const limitsReceipt = vi.fn(() =>
+      call({ ok: true as const, value: { state: "not_found" as const } }),
+    );
     const port = {
       ...t.port,
+      readExecutionLimits: () => call({ ok: true as const, value: limitsCurrent }),
+      replaceExecutionLimits: replaceLimits,
+      readExecutionLimitsReceipt: limitsReceipt,
+      readConnection: () =>
+        call({
+          ok: true,
+          value: {
+            connection: "chatgpt",
+            state: "connected",
+            reason: null,
+            display_name: "ChatGPT",
+            account_email: "researcher@example.test",
+            last_account_email: null,
+            probing: false,
+            probe_id: null,
+            model_list_revision: null,
+            model_count: 0,
+          },
+        }),
+      subscribeConnection: () => ({
+        ready: Promise.resolve({ ok: true, value: { subscriptionId: "connected-service" } }),
+        dispose: vi.fn(),
+      }),
       readLocale: () => call({ ok: true, value: localeSnapshot }),
       subscribeLocale: () => ({
         ready: Promise.resolve({ ok: true, value: { subscriptionId: "language" } }),
@@ -719,6 +759,106 @@ describe("Settings command composition", () => {
     expect(dismissLayout.isConnected).toBe(false);
     expect(document.activeElement).toBe(container.querySelector(".command-entry-actions button"));
     expect(container.querySelector(".layout-memory-feedback p")).toBeNull();
+    // Escape explicitly leaves the field before it unmounts; late results stay recoverable.
+    const typeLimit = async (value: string) =>
+      act(async () => {
+        const field = container.querySelector<HTMLInputElement>(
+          "dialog[open] .limits-panel input",
+        )!;
+        field.focus();
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+          field,
+          value,
+        );
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    const escapeSettings = () =>
+      act(async () => {
+        container
+          .querySelector("dialog[open]")!
+          .dispatchEvent(new Event("cancel", { bubbles: false, cancelable: true }));
+      });
+    const recoveryButton = (label: string) =>
+      [
+        ...container.querySelectorAll<HTMLButtonElement>(
+          ".command-window-feedback .limits-feedback button",
+        ),
+      ].find((button) => button.textContent === label)!;
+    await intent("settings.open", 28);
+    const rejectedLimit = deferred<ReturnType<typeof failure>>();
+    replaceLimits.mockReturnValueOnce({ result: rejectedLimit.promise, cancel() {} } as never);
+    await typeLimit("2");
+    expect(replaceLimits).not.toHaveBeenCalled();
+    await escapeSettings();
+    expect(container.querySelector("dialog[open]")).toBeNull();
+    expect(replaceLimits).toHaveBeenLastCalledWith(
+      expect.objectContaining({ value: 2 }),
+      "service-1",
+    );
+    await act(async () => rejectedLimit.resolve(failure("storage_failed")));
+    expect(
+      container.querySelector(".command-window-feedback .limits-feedback")?.textContent,
+    ).toContain("AI replies at the same time could not be saved");
+    await act(async () => {
+      const retry = recoveryButton("Try again");
+      retry.focus();
+      retry.click();
+    });
+    expect(replaceLimits).toHaveBeenCalledTimes(2);
+    expect(limitsCurrent.max_concurrent_inference).toBe(2);
+    expect(document.activeElement).toBe(container.querySelector(".command-entry-actions button"));
+    await intent("settings.open", 29);
+    const uncertainLimit = deferred<ReturnType<typeof failure>>();
+    replaceLimits.mockReturnValueOnce({ result: uncertainLimit.promise, cancel() {} } as never);
+    await typeLimit("3");
+    await escapeSettings();
+    const uncertainOperation = replaceLimits.mock.calls.at(-1)![0];
+    await act(async () => uncertainLimit.resolve(failure("uncertain")));
+    expect(
+      container.querySelector(".command-window-feedback .limits-feedback")?.textContent,
+    ).toContain("It is not yet known whether AI replies at the same time was saved");
+    limitsCurrent = { ...limitsCurrent, revision: 4, max_concurrent_inference: 3 };
+    limitsReceipt.mockReturnValueOnce(
+      call({
+        ok: true,
+        value: {
+          state: "recorded",
+          serviceGeneration: "service-1",
+          outcome: { ok: true, value: limitsCurrent },
+        },
+      }) as never,
+    );
+    await act(async () => {
+      const check = recoveryButton("Check");
+      check.focus();
+      check.click();
+    });
+    expect(limitsReceipt).toHaveBeenLastCalledWith(
+      (uncertainOperation as { operationId?: string }).operationId,
+    );
+    expect(replaceLimits).toHaveBeenCalledTimes(3);
+    expect(document.activeElement).toBe(container.querySelector(".command-entry-actions button"));
+    await intent("settings.open", 30);
+    replaceLimits.mockReturnValueOnce(call(failure("storage_failed")) as never);
+    await typeLimit("4");
+    await escapeSettings();
+    await intent("help.open", 31);
+    const helpRetry = [
+      ...container.querySelectorAll<HTMLButtonElement>("dialog[open] .limits-feedback button"),
+    ].find((button) => button.textContent === "Try again")!;
+    const limitsAnchor = container.querySelector<HTMLButtonElement>(
+      "dialog[open] .limits-feedback > button",
+    )!;
+    await act(async () => {
+      helpRetry.focus();
+      helpRetry.click();
+    });
+    expect(document.activeElement).toBe(limitsAnchor);
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("dialog[open] [data-close]")!.focus(),
+    );
+    expect(container.querySelector("dialog[open] .limits-feedback > button")).toBeNull();
+    await click("dialog[open] [data-close]");
     disposals.push(() => t.controller.dispose());
   }, 60000);
 });

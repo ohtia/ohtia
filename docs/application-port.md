@@ -2,6 +2,8 @@
 type: Specification
 title: Bounded foundation application port
 description: Versioned application configuration, provider connections and bounded research operations with scoped events and text parts across the desktop boundary.
+generated:
+  by: codex/gpt-6.1-sol
 sources:
   - id: chromium-keyboard-suppression
     resource: https://github.com/chromium/chromium/blob/156.0.8078.48/content/browser/renderer_host/render_widget_host_impl.cc
@@ -9,8 +11,6 @@ sources:
   - id: chromium-ime-commit
     resource: https://github.com/chromium/chromium/blob/156.0.8078.48/ui/base/ime/linux/input_method_auralinux.cc
     title: Selected Chromium Linux input-method commit delivery
-generated:
-  by: codex/gpt-6.1-sol
 ---
 
 # Bounded foundation application port
@@ -33,7 +33,7 @@ Initial request payloads also enforce the policy's input byte and field bounds; 
 
 ## Envelopes and named operations
 
-Requests and results carry exact `protocol`, `policy`, `kind`, `requestId`, `operationId`, `windowGeneration`, `serviceGeneration`, `operation` and `payload` fields. Preload creates correlation IDs and captures admitted generations; renderer arguments cannot replace them. IDs identify work and do not authenticate a frame. A result must match every request identity field. Wrong-generation messages are discarded, and late or duplicate replies cannot revive a settled call. A replacement success additionally matches the requested value, saved source and exactly the next revision.
+Requests and results carry exact `protocol`, `policy`, `kind`, `requestId`, `operationId`, `windowGeneration`, `serviceGeneration`, `operation` and `payload` fields. Preload creates correlation IDs and captures admitted generations; renderer arguments cannot replace them. IDs identify work and do not authenticate a frame. A result must match every request identity field. Wrong-generation messages are discarded, and late or duplicate replies cannot revive a settled call. A revision-checked replacement success additionally matches the requested value, saved source and exactly the next revision. Execution-limit replacements use last-write-wins admission and match the requested inference value without an expected revision.
 
 - `locale.read`, `locale.replace`, `locale.receipt` and `locale.subscribe`: the [shared interface localization contract](localization.md#named-preference-operations) defines the validated choice, effective/system snapshot, durable receipts and bounded publication. They extend this same port and preference owner.
 - `status.read`: empty input, returning `FoundationStatus` with controlled artifact class, service readiness, engine readiness and the broker's resolved `interfaceLocale`. A verified engine requires a ready service. Status contains no filesystem paths or credential objects.
@@ -42,6 +42,7 @@ Requests and results carry exact `protocol`, `policy`, `kind`, `requestId`, `ope
 - `appearance.receipt`: input contains exactly `targetOperationId`. It returns `not_found`, `pending`, or `recorded` with the original saved success or stale-revision rejection. Other errors are not recorded terminal receipt outcomes in this initial contract. It reads operation history rather than inferring an outcome from the current preference.
 - `layout.read`, `layout.replace` and `layout.receipt`: the named layout preference and transactional receipt operations, with the same revision, correlation and uncertainty rules. [Workspace controller API](workspace-controller.md#persistence-and-recovery) describes their composition; [Workspace layout](workspace-layout.md#desktop-preference-boundary) owns the exact value and per-window propagation policy. Missing/invalid read records carry `null` with their source and known revision. No layout event subscription rearranges an existing window.
 - `bounds.read`, `bounds.replace` and `bounds.receipt`: main-owned operations for the [native window bounds contract](epics/EPIC-002-basic-interface/epic.md#spec-002-022-integrated-title-bar-and-native-window-state), using the same record sources, revision checks and atomic receipt discipline as layout. The broker calls the supervised peer directly with trusted correlation and generation identities; renderer port admission refuses these operations and the preload exposes no bounds methods.
+- `limits.read`, `limits.replace` and `limits.receipt`: the execution-limit preference operations. `limits.read` has empty input and returns the admitted service generation, the record’s revision, its `max_concurrent_inference` and the number of inference replies running. `limits.replace` input contains exactly `value`, a whole number from 1 to 50; the last accepted write wins, advances the revision by one and returns the saved record with the running count. `limits.receipt` input contains exactly `targetOperationId` and returns `not_found`, `pending` or `recorded`; a repeated `limits.replace` and a recorded receipt return the recorded value and revision with the current running count. Each accepted replacement records its receipt in the same transaction, and every window learns of it through `research.subscribe`. Local processing is unchanged. A metadata-only `inferenceActivity` notice on that same stream asks consumers to reread live counts when active work changes, including a window without an open project; it has no task identity or research content.
 - `layout.failureNotice`: empty input, returning exactly `{announce: boolean}`. The admitted main broker grants the first claim in its application lifetime and refuses subsequent claims across windows/service replacements. This transient announcement claim changes no saved preference.
 - `status.subscribe` and `appearance.subscribe`: input and successful result contain the same fresh `subscriptionId`. A stream becomes active after its acknowledged result; its first event is a snapshot with sequence one. The producer sends the acknowledgement before events. Appearance events carry confirmed/fallback snapshots, with strictly increasing revisions after the first snapshot.
 

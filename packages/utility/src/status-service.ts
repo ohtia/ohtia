@@ -228,7 +228,30 @@ export function createStatusService(
       await research?.dispatch(value, () => !!subscription?.cancelled);
       return;
     }
-    if (value.operation === "bounds.read")
+    if (value.operation === "limits.read")
+      emit({ ...value, kind: "result", payload: await storage.readExecutionLimits() });
+    else if (value.operation === "limits.receipt")
+      emit({
+        ...value,
+        kind: "result",
+        payload: await storage.readExecutionLimitsReceipt(value.payload.targetOperationId),
+      });
+    else if (value.operation === "limits.replace") {
+      const result = await storage.replaceExecutionLimits({
+        operationId: value.operationId,
+        ...value.payload,
+      });
+      emit({ ...value, kind: "result", payload: result });
+      if (result.ok) {
+        // This queue also owns provider admission; a new permit always reads the committed limit.
+        try {
+          await durable?.pump();
+          await research?.publish();
+        } catch {
+          loseProvider();
+        }
+      }
+    } else if (value.operation === "bounds.read")
       emit({ ...value, kind: "result", payload: await storage.readWindowBounds() });
     else if (value.operation === "bounds.receipt")
       emit({
@@ -615,6 +638,7 @@ export function createStatusService(
           const outcome = failure(
             isResearchMutation(value.operation) ||
               value.operation === "appearance.replace" ||
+              value.operation === "limits.replace" ||
               value.operation === "locale.replace" ||
               value.operation === "layout.replace" ||
               value.operation === "bounds.replace" ||

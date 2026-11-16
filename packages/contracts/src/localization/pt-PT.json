@@ -288,6 +288,13 @@
     "conversation.copyFailed": "Ohtia não conseguiu copiar esta mensagem. Selecione o texto e copie-o manualmente.",
     "conversation.opensInBrowser": "abre no seu navegador",
     "conversation.codeBlock": "Bloco de código",
-    "conversation.table": "Tabela"
+    "conversation.table": "Tabela",
+    "limits.section": "Trabalho simultâneo",
+    "limits.field": "Respostas de IA ao mesmo tempo",
+    "limits.range": "Insira um número inteiro de {min} a {max}. O valor guardado, {value}, é mantido.",
+    "limits.subscription": "Mais respostas em simultâneo podem consumir mais do seu plano {service} ao mesmo tempo.",
+    "limits.apiKey": "Mais respostas em simultâneo podem gastar mais depressa o crédito da sua chave {service}.",
+    "limits.connectionLimit": "{service} permite no máximo {connection_limit, plural, one {# resposta de cada vez.} many {# respostas de cada vez.} other {# respostas de cada vez.}}",
+    "limits.running": "{running, plural, one {# resposta em curso. } many {# respostas em curso. } other {# respostas em curso. }}{value, plural, =1 {As novas aguardarão até não haver nenhuma em curso.} one {As novas aguardarão até não haver nenhuma em curso.} many {As novas aguardarão até haver menos de # respostas em curso.} other {As novas aguardarão até haver menos de # respostas em curso.}}"
   }
 }

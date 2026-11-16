@@ -350,6 +350,10 @@ const bridge: DesktopBridge = {
     },
   },
   foundation: {
+    readExecutionLimits: () => connection.client.port.readExecutionLimits(),
+    replaceExecutionLimits: (change, generation) =>
+      connection.client.port.replaceExecutionLimits(change, generation),
+    readExecutionLimitsReceipt: (id) => connection.client.port.readExecutionLimitsReceipt(id),
     createProject: (id) => connection.client.port.createProject(id),
     confirmProjectSetup: (id, input) => connection.client.port.confirmProjectSetup(id, input),
     startConversation: (id, input) => connection.client.port.startConversation(id, input),

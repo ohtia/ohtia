@@ -251,6 +251,25 @@ function serviceFixture(mode: "installed" | "development" = "installed") {
     ready: true,
     admissionReady: true,
     setTaskContext: vi.fn(),
+    readExecutionLimits: vi.fn(async () => ({
+      ok: true,
+      value: {
+        serviceGeneration: "service-1",
+        revision: 2,
+        max_concurrent_inference: 10,
+        running: 0,
+      },
+    })),
+    replaceExecutionLimits: vi.fn(async () => ({
+      ok: true,
+      value: {
+        serviceGeneration: "service-1",
+        revision: 3,
+        max_concurrent_inference: 2,
+        running: 0,
+      },
+    })),
+    readExecutionLimitsReceipt: vi.fn(async () => ({ ok: true, value: { state: "not_found" } })),
     stoppingAttempts: vi.fn(async () => ({ ok: true, value: [] })),
     prepareTask: vi.fn(async () => ({ ok: true, value: null })),
     readAppearance: vi.fn(async () => ({ ok: true, value })),
@@ -388,26 +407,41 @@ describe("service admission and queued subscription failures", () => {
         });
     },
   );
-  it.each(["appearance.read", "appearance.replace"])(
-    "turns an asynchronous %s failure into a controlled result",
-    async (operation) => {
-      const h = serviceFixture();
-      h.service.activate("en-US");
-      h.store.readAppearance.mockRejectedValueOnce(new Error("Synthetic storage failure"));
-      h.store.replaceAppearance.mockRejectedValueOnce(new Error("Synthetic commit failure"));
-      h.receive({
-        operation,
-        payload: operation === "appearance.replace" ? { expectedRevision: 2, value: "light" } : {},
-      });
-      await h.service.drain();
-      expect(h.sent.at(-1)).toMatchObject({
-        payload: {
-          ok: false,
-          error: { code: operation === "appearance.replace" ? "uncertain" : "storage_failed" },
-        },
-      });
-    },
-  );
+  it.each([
+    "appearance.read",
+    "appearance.replace",
+    "limits.read",
+    "limits.replace",
+    "limits.receipt",
+  ])("turns an asynchronous %s failure into a controlled result", async (operation) => {
+    const h = serviceFixture();
+    h.service.activate("en-US");
+    h.store.readAppearance.mockRejectedValueOnce(new Error("Synthetic storage failure"));
+    h.store.replaceAppearance.mockRejectedValueOnce(new Error("Synthetic commit failure"));
+    h.store.readExecutionLimits.mockRejectedValueOnce(new Error("Synthetic read failure"));
+    h.store.replaceExecutionLimits.mockRejectedValueOnce(new Error("Synthetic commit failure"));
+    h.store.readExecutionLimitsReceipt.mockRejectedValueOnce(
+      new Error("Synthetic receipt failure"),
+    );
+    h.receive({
+      operation,
+      payload:
+        operation === "appearance.replace"
+          ? { expectedRevision: 2, value: "light" }
+          : operation === "limits.replace"
+            ? { value: 2 }
+            : operation === "limits.receipt"
+              ? { targetOperationId: "limit-change" }
+              : {},
+    });
+    await h.service.drain();
+    expect(h.sent.at(-1)).toMatchObject({
+      payload: {
+        ok: false,
+        error: { code: operation.endsWith(".replace") ? "uncertain" : "storage_failed" },
+      },
+    });
+  });
   it("bounds pending work independently of a successful process and restores admission after draining", async () => {
     const h = serviceFixture();
     h.service.activate("en-US");
@@ -1320,4 +1354,19 @@ it("preserves parts for an already-accepted multipart command before cleaning th
   } finally {
     h.dispose();
   }
+});
+
+it("retains an admitted execution-limit mutation as uncertain until its service exits", () => {
+  const h = supervisor();
+  const pending = work({ operation: "limits.replace", payload: { value: 2 } });
+  h.service.dispatch(pending);
+  expect(pending.deliver).not.toHaveBeenCalled();
+  h.exited();
+  expect(pending.deliver).toHaveBeenCalledOnce();
+  expect(JSON.parse(pending.deliver.mock.calls[0]![0])).toMatchObject({
+    payload: { ok: false, error: { code: "uncertain" } },
+  });
+  expect(pending.release).toHaveBeenCalledOnce();
+  h.exited();
+  expect(pending.release).toHaveBeenCalledOnce();
 });

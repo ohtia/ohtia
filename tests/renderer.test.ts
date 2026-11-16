@@ -274,6 +274,18 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
     this.removeAttribute("open");
   };
   const foundation = {
+    readExecutionLimits: () =>
+      call({
+        ok: true,
+        value: {
+          serviceGeneration: "service-1",
+          revision: 2,
+          max_concurrent_inference: 10,
+          running: 0,
+        },
+      }),
+    replaceExecutionLimits: () => call({ ok: false, error: { code: "service_unavailable" } }),
+    readExecutionLimitsReceipt: () => call({ ok: true, value: { state: "not_found" } }),
     subscribeResearch: () => ({
       ready: Promise.resolve({ ok: true, value: { subscriptionId: "research-test" } }),
       dispose() {},

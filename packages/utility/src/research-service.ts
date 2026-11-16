@@ -21,6 +21,7 @@ interface Stream {
   readonly scope: ResearchScope;
   revisions: Map<string, number>;
   sequence: number;
+  running: number;
 }
 /** Serialized by the existing status-service queue; no second execution or storage authority. */
 export class ResearchService {
@@ -53,10 +54,17 @@ export class ResearchService {
         this.event(stream, { kind: "reply", taskId, sequence, text });
   }
   async publish(): Promise<void> {
+    if (!this.streams.size) return;
+    const running = await this.storage.runningTaskCount();
+    if (!running.ok) throw new Error("Inference activity could not be refreshed.");
     for (const stream of this.streams.values()) {
       const result = await this.storage.researchRevisions(stream.scope);
       if (this.streams.get(`${stream.window}/${stream.id}`) !== stream) continue;
       if (!result.ok) throw new Error("Research revisions could not be refreshed.");
+      if (stream.running !== running.value) {
+        stream.running = running.value;
+        this.event(stream, { kind: "inferenceActivity" });
+      }
       for (const change of result.value) {
         const key = `${change.record}/${change.id}`;
         if ((stream.revisions.get(key) ?? 0) >= change.revision) continue;
@@ -109,11 +117,21 @@ export class ResearchService {
         respond(failure("cancelled"));
         return true;
       }
+      const running = await this.storage.runningTaskCount();
+      if (!running.ok) {
+        respond(running);
+        return true;
+      }
+      if (cancelled?.()) {
+        respond(failure("cancelled"));
+        return true;
+      }
       this.streams.set(key, {
         window: request.windowGeneration,
         id: p.subscriptionId,
         scope: { projectId: p.projectId, conversationId: p.conversationId },
         sequence: 0,
+        running: running.value,
         revisions: new Map(
           revisions.value.map((change) => [`${change.record}/${change.id}`, change.revision]),
         ),
