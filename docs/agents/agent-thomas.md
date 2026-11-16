@@ -4,8 +4,6 @@ title: "Thomas: methodologist"
 description: "Thomas's responsibilities, bounded methodological operations, context, inference preferences, result contracts, evaluation requirements and visual presentation."
 generated:
   by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 ---
 
 # Thomas: methodologist
@@ -176,9 +174,9 @@ Researcher preferences can adjust explanation depth and presentation within the 
 
 ## Evaluation and enablement
 
-Apply [Agent collaboration evaluation](agent-collaboration-evaluation.md) to each operation, document language, supported material representation and provider/runtime configuration. Compare Thomas with bounded methodological guidance from a capable single-agent baseline under comparable evidence and total work budgets. Include direct specialist use and coordinated use where applicable; a different persona is not evidence of better methodological reasoning.
+Apply [Agent collaboration evaluation](agent-collaboration-evaluation.md) to each operation, document language, supported material representation and provider/runtime configuration. Research-quality review is optional and gates no enablement, because Ohtia does not grade the models researchers connect, and it compares no single-agent baseline. Include direct specialist use and coordinated use where applicable; a different persona is not evidence of better methodological reasoning.
 
-Declare assessment rubrics, quality thresholds, severity definitions and work/cost/latency limits before trials. Human assessors need methodological, disciplinary and language competence appropriate to the cases. Test adequate as well as inadequate designs and include:
+When the owner runs a quality review, declare its assessment rubrics, severity definitions and work/cost/latency limits before the trials; human assessors need methodological, disciplinary and language competence appropriate to the cases. Test adequate as well as inadequate designs and include:
 
 - Objective–evidence–analysis mismatches, an adequate unconventional design, an incomplete but usable question, unavailable methodological references and genuinely insufficient information.
 - Quantitative, qualitative, mixed-method, documentary and theoretical cases, including vocabulary or fields that are inappropriate for a particular approach. Qualification of one family does not enable the others.
@@ -189,4 +187,4 @@ Declare assessment rubrics, quality thresholds, severity definitions and work/co
 
 Assess traceable grounds, accurate coverage, useful alternatives, appropriate recognition of adequate methods, warranted objections, false objections, invented requirements, preservation of researcher choice and the usefulness of the next action. Operational conformance additionally verifies immutable inputs/configuration, permission and scope enforcement, output validation, cancellation and the shared budget; mock results cannot establish provider/runtime guarantees.
 
-Enable only the operation/language/material/configuration scope supported by both quality evidence and adapter conformance. Reevaluate consequential changes to instructions, model/runtime, tools, result contracts or methodology scope. The specification is not evidence that an operation is implemented or qualified.
+Enable an operation/language/material/configuration scope once its adapter conformance and operational checks pass; Ohtia does not grade the quality of the models researchers connect. Reevaluate consequential changes to instructions, model/runtime, tools, result contracts or methodology scope. The specification is not evidence that an operation is implemented or qualified.

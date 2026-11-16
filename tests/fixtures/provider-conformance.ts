@@ -28,6 +28,7 @@ export function conformanceRequest(connection: string, attempt = "attempt-1"): P
     model: "first",
     instructions: "Synthetic conformance instructions.",
     input: [{ role: "user", text: "Synthetic conformance message." }],
+    tools: [],
     limits: { max_output_bytes: 16384, max_attempt_duration_ms: 600000, max_inactivity_ms: 120000 },
   };
 }

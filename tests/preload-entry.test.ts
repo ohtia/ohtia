@@ -1,3 +1,4 @@
+import { proposeSetup } from "./fixtures/project-setup.js";
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LanguageController } from "../packages/renderer/src/language-controller.js";
@@ -818,9 +819,7 @@ it("carries persisted research through the sandbox entry and revokes scoped stre
     );
     await expectValue(
       port.confirmProjectSetup("entry-confirm", {
-        projectId,
-        title: "Synthetic project",
-        documentLanguage: "en",
+        proposalId: await proposeSetup(fixture.store, fixture.raw, projectId),
       }),
     );
     const started = await expectValue(
@@ -872,6 +871,20 @@ it("carries persisted research through the sandbox entry and revokes scoped stre
     expect(await port.readReplyParts({ taskId: saved.id, fromSequence: 1 }).result).toEqual(
       failure("record_not_found"),
     );
+    const setupProject = await expectValue(port.createProject("entry-proposal-project"));
+    await service.drain();
+    const proposalId = await proposeSetup(fixture.store, fixture.raw, setupProject.resultId);
+    const setupConversation = await fixture.store.readConversations(setupProject.resultId);
+    if (!setupConversation.ok) throw new Error(setupConversation.error.code);
+    await expectValue(port.rejectProjectSetup("entry-reject", { proposalId }));
+    const rejected = await expectValue(
+      port.readTimeline({ conversationId: setupConversation.value[0]!.id, ids: [proposalId] }),
+    );
+    expect(rejected.items[0]).toMatchObject({
+      kind: "setupProposal",
+      state: "rejected",
+      revision: 2,
+    });
     const listener = vi.fn();
     const subscription = port.subscribeResearch({ projectId, conversationId }, listener);
     expect((await subscription.ready).ok).toBe(true);

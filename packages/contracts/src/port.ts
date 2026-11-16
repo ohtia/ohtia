@@ -154,6 +154,8 @@ export type WindowBoundsReceipt =
 export const errorActions = {
   parts_incomplete: "resend_parts",
   project_not_in_setup: "refresh_record",
+  proposal_not_waiting: "refresh_record",
+  setup_reply_active: "retry_later",
   project_in_setup: "refresh_record",
   record_not_found: "refresh_record",
   name_invalid: "check_request",
@@ -692,8 +694,15 @@ export const operationErrorCodes = Object.freeze({
   "project.confirmSetup": [
     ...researchMutationErrors,
     "record_not_found",
-    "name_invalid",
-    "project_not_in_setup",
+    "proposal_not_waiting",
+    "setup_reply_active",
+    "uncertain",
+    "operation_conflict",
+  ],
+  "project.rejectSetup": [
+    ...researchMutationErrors,
+    "record_not_found",
+    "proposal_not_waiting",
     "uncertain",
     "operation_conflict",
   ],

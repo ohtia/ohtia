@@ -1,3 +1,4 @@
+import { setupInstructions } from "./project-setup.js";
 import { utf8Size, type ProviderOperation, type TransferEntry } from "@ohtia/contracts";
 
 /** SPEC-003-004: every operation version fixes all of these values; the researcher cannot edit them. */
@@ -29,6 +30,24 @@ const developmentTestInstructions = [
 ].join("\n\n");
 
 const policies: readonly OperationPolicy[] = Object.freeze([
+  Object.freeze({
+    operation: "project_setup",
+    version: 1,
+    instruction_version: 1,
+    max_pending_tasks: 20,
+    max_input_bytes: 64 * 1024,
+    max_input_items: 200,
+    max_output_bytes: 32 * 1024,
+    max_work_units: 1,
+    max_attempt_duration_ms: 5 * 60 * 1000,
+    max_inactivity_ms: 120 * 1000,
+    stop_grace_ms: 5 * 1000,
+    max_attempts: 2,
+    max_auto_retries: 0,
+    retry_backoff_ms: 0,
+    instructions: setupInstructions,
+    modes: Object.freeze(["development", "installed", "qualification"] as const),
+  }),
   Object.freeze({
     operation: "development_test",
     version: 1,
@@ -65,6 +84,7 @@ export const omittedMessagesNote = "Earlier messages in this conversation are no
 export interface InputMessage {
   /** An identifier recorded in the transfer list, never the text. */
   readonly reference: string;
+  readonly position?: number;
   readonly role: "user" | "assistant";
   readonly text: string;
   readonly partial?: { readonly agent: string; readonly reason: string | null };
@@ -82,6 +102,12 @@ export function buildInput(
   policy: OperationPolicy,
   messages: readonly InputMessage[],
   context: { readonly reference: string; readonly revision: number },
+  notes: readonly {
+    readonly position: number;
+    readonly reference: string;
+    readonly revision: number;
+    readonly text: string;
+  }[] = [],
 ): BuiltInput | undefined {
   const chosen: InputMessage[] = [];
   let bytes = 0;
@@ -94,10 +120,19 @@ export function buildInput(
   // An input whose newest message alone exceeds the limits has nothing to answer.
   if (!chosen.length) return;
   const omitted = chosen.length < messages.length;
+  const first = chosen[0]?.position ?? 0;
+  const last = chosen.at(-1)?.position ?? Number.MAX_SAFE_INTEGER;
+  const includedNotes = notes.filter((note) => note.position >= first && note.position <= last);
+  const after = (message: InputMessage, index: number) =>
+    includedNotes.filter(
+      (note) =>
+        note.position >= (message.position ?? 0) &&
+        note.position < (chosen[index + 1]?.position ?? last + 1),
+    );
   return {
     input: [
       ...(omitted ? [{ role: "user" as const, text: omittedMessagesNote }] : []),
-      ...chosen.flatMap((message) => [
+      ...chosen.flatMap((message, index) => [
         { role: message.role, text: message.text },
         ...(message.partial
           ? [
@@ -107,6 +142,7 @@ export function buildInput(
               },
             ]
           : []),
+        ...after(message, index).map((note) => ({ role: "user" as const, text: note.text })),
       ]),
     ],
     transfer: [
@@ -114,7 +150,7 @@ export function buildInput(
       ...(omitted
         ? [{ kind: "note" as const, note: "earlier_messages_omitted" as const, ...context }]
         : []),
-      ...chosen.flatMap((message): TransferEntry[] => [
+      ...chosen.flatMap((message, index): TransferEntry[] => [
         { kind: "message", reference: message.reference },
         ...(message.partial
           ? [
@@ -126,6 +162,12 @@ export function buildInput(
               },
             ]
           : []),
+        ...after(message, index).map((note) => ({
+          kind: "note" as const,
+          note: "setup_proposal" as const,
+          reference: note.reference,
+          revision: note.revision,
+        })),
       ]),
     ],
   };

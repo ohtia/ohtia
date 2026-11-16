@@ -46,7 +46,9 @@ export interface MessageRow {
   ending: "complete" | "partial" | null;
   created_at: string;
 }
+import type { SetupProposalRow } from "./project-setup.js";
 export interface ResearchSchema extends TaskSchema {
+  project_setup_proposals: SetupProposalRow;
   projects: ProjectRow;
   conversations: ConversationRow;
   messages: MessageRow;
@@ -250,7 +252,8 @@ const payloadKeys = {
   "usagePause.resume": ["connection"],
   "task.continueAll": [],
   "task.cancelAll": [],
-  "project.confirmSetup": ["projectId", "title", "documentLanguage"],
+  "project.confirmSetup": ["proposalId"],
+  "project.rejectSetup": ["proposalId"],
   "conversation.start": ["projectId", "content"],
   "conversation.rename": ["conversationId", "title", "expectedUpdatedAt"],
   "message.append": ["conversationId", "content"],
@@ -367,30 +370,61 @@ export async function applyResearchCommand(
         .execute();
       break;
     }
-    case "project.confirmSetup": {
-      const p = input.payload;
-      if (!isEntityId(p.projectId)) return failure("invalid_message");
+    case "project.confirmSetup":
+    case "project.rejectSetup": {
+      if (!isEntityId(input.payload.proposalId)) return failure("invalid_message");
+      const proposal = await db
+        .selectFrom("project_setup_proposals")
+        .selectAll()
+        .where("id", "=", bytes(input.payload.proposalId))
+        .executeTakeFirst();
+      if (!proposal) return failure("record_not_found");
       const current = await db
         .selectFrom("projects")
         .selectAll()
-        .where("id", "=", bytes(p.projectId))
-        .executeTakeFirst();
-      if (!current) return failure("record_not_found");
-      if (current.setup_confirmed_at !== null) return failure("project_not_in_setup");
-      if (!name(p.title)) return failure("name_invalid");
-      const language = registry().canonical(p.documentLanguage);
-      if (!language) return failure("invalid_message");
-      result = current.id;
+        .where("id", "=", proposal.project_id)
+        .executeTakeFirstOrThrow();
+      if (proposal.state !== "proposed" || current.setup_confirmed_at !== null)
+        return failure("proposal_not_waiting");
+      const confirming = input.command === "project.confirmSetup";
+      if (confirming) {
+        const active = await db
+          .selectFrom("tasks")
+          .select("id")
+          .where("project_id", "=", proposal.project_id)
+          .where("operation", "=", "project_setup")
+          .where("state", "in", ["queued", "blocked", "running", "cancelling"])
+          .executeTakeFirst();
+        if (active) return failure("setup_reply_active");
+        const language = registry().canonical(proposal.document_language);
+        if (!language) return failure("invalid_message");
+        await db
+          .updateTable("projects")
+          .set({
+            title: proposal.title,
+            document_language: language,
+            setup_confirmed_at: now,
+            updated_at: now,
+          })
+          .where("id", "=", current.id)
+          .execute();
+      }
       await db
-        .updateTable("projects")
+        .updateTable("project_setup_proposals")
         .set({
-          title: p.title,
-          document_language: language,
-          setup_confirmed_at: now,
-          updated_at: now,
+          state: confirming ? "confirmed" : "rejected",
+          decided_at: now,
+          decided_by_operation_id: input.operationId,
         })
-        .where("id", "=", result)
+        .where("id", "=", proposal.id)
         .execute();
+      const task = await db
+        .selectFrom("tasks")
+        .select("conversation_id")
+        .where("id", "=", proposal.task_id)
+        .executeTakeFirstOrThrow();
+      tasks.touch(task.conversation_id);
+      result = confirming ? current.id : proposal.id;
       break;
     }
     case "conversation.start": {

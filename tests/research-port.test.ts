@@ -1,3 +1,4 @@
+import { proposeSetup } from "./fixtures/project-setup.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   decodeText,
@@ -71,6 +72,14 @@ async function harness() {
     service.dispose();
   });
   const project = value(await client.port.createProject("create-project").result);
+  // These transport cases use a confirmed project without introducing setup tasks.
+  const fixtureDb = fixture.raw();
+  fixtureDb
+    .prepare(
+      "UPDATE projects SET title='Research',document_language='en',setup_confirmed_at=created_at WHERE id=?",
+    )
+    .run(Buffer.from(project.resultId.replaceAll("-", ""), "hex"));
+  fixtureDb.close();
   const conversations = value(
     await client.port.listConversations({ projectId: project.resultId, cursor: null, count: 50 })
       .result,
@@ -245,13 +254,6 @@ describe("research timeline and bounded reads", () => {
   });
   it("returns whole conversations in requested order and remaining identifiers within the envelope bounds", async () => {
     const h = await harness();
-    value(
-      await h.port.confirmProjectSetup("confirm", {
-        projectId: h.projectId,
-        title: "Research",
-        documentLanguage: "en",
-      }).result,
-    );
     value(await h.port.listProjects({ cursor: null, count: 50 }).result);
     const db = h.raw();
     for (let n = 1; n <= 128; n++)
@@ -912,13 +914,6 @@ it("routes destination reads through the service for existing and new conversati
 });
 it("rechecks whitespace and Unicode limits in the data service without the composer", async () => {
   const h = await harness();
-  value(
-    await h.port.confirmProjectSetup("confirm-limits", {
-      projectId: h.projectId,
-      title: "Research",
-      documentLanguage: "en",
-    }).result,
-  );
   await h.service.drain();
   for (const [index, content] of [
     "",
@@ -995,4 +990,75 @@ it("stops every unfinished conversation task with one receipt, preserves message
     failure("record_not_found"),
   );
   expect(before).toHaveLength(1);
+});
+
+it("reads proposal-only reply positions and publishes each decision revision through the public port", async () => {
+  const h = await harness();
+  const project = value(await h.port.createProject("proposal-project").result).resultId;
+  await h.service.drain();
+  const conversation = value(await h.store.readConversations(project))[0]!.id;
+  const first = await proposeSetup(h.store, h.raw, project, {
+    title: "First",
+    document_language: "en",
+  });
+  await h.service.drain();
+  const page = value(
+    await h.port.listTimelineBefore({ conversationId: conversation, cursor: null, count: 50 })
+      .result,
+  );
+  const proposal = page.items.find((item) => item.id === first)!;
+  expect(proposal).toMatchObject({
+    kind: "setupProposal",
+    rank: 2,
+    revision: 1,
+    title: "First",
+    documentLanguage: "en",
+    state: "proposed",
+  });
+  const tasks = page.items.filter((item) => item.kind === "task");
+  expect(proposal.position).toBe(tasks[0]!.position);
+  const notices: unknown[] = [];
+  const subscription = h.port.subscribeResearch(
+    { projectId: project, conversationId: conversation },
+    (notice) => notices.push(notice),
+  );
+  value(await subscription.ready);
+  await h.service.drain();
+  const second = await proposeSetup(h.store, h.raw, project, {
+    title: "😀".repeat(1500),
+    document_language: "en",
+  });
+  await h.service.drain();
+  const invalid = value(
+    await h.port.readTimeline({ conversationId: conversation, ids: [second] }).result,
+  ).items[0]!;
+  expect(invalid).toMatchObject({
+    kind: "setupProposal",
+    state: "invalid",
+    invalidReason: "title_too_long",
+    revision: 1,
+  });
+  if (invalid.kind !== "setupProposal" || typeof invalid.title === "string")
+    throw new Error("Expected bounded proposal text.");
+  expect(
+    value(await h.port.readTextPart({ source: invalid.title.source, index: 1 }).result).text.length,
+  ).toBeGreaterThan(0);
+  value(await h.port.rejectProjectSetup("reject-proposal", { proposalId: first }).result);
+  await h.service.drain();
+  expect(
+    value(await h.port.readTimeline({ conversationId: conversation, ids: [first] }).result)
+      .items[0],
+  ).toMatchObject({ state: "rejected", revision: 2 });
+  await vi.waitFor(
+    () =>
+      expect(notices).toContainEqual({
+        ok: true,
+        value: { kind: "changed", record: "timeline", id: first, revision: 2 },
+      }),
+    { timeout: 3000 },
+  );
+  expect(
+    await h.port.confirmProjectSetup("stale-proposal", { proposalId: first }).result,
+  ).toMatchObject({ error: { code: "proposal_not_waiting" } });
+  subscription.dispose();
 });

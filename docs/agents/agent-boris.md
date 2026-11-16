@@ -3,9 +3,7 @@ type: Specification
 title: "Boris: academic editor"
 description: "Boris's structural review, argument clarity, wording proposals, revision review, evaluation requirements and visual presentation."
 generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
+  by: codex/gpt-6.1-sol
 ---
 
 # Boris: academic editor
@@ -158,7 +156,7 @@ Inspecting records, viewing this profile or changing preferences starts no infer
 
 ## Evaluation and enablement
 
-Apply [Agent collaboration evaluation](agent-collaboration-evaluation.md) to each operation, language, material representation and provider/runtime configuration. Declare rubrics, severity definitions, quality thresholds and bounded work/cost/latency before trials. Compare direct and coordinated use with a capable single-agent baseline where relevant under comparable evidence and total budgets. Human assessors need appropriate disciplinary and language competence. Include:
+Apply [Agent collaboration evaluation](agent-collaboration-evaluation.md) to each operation, language, material representation and provider/runtime configuration. Research-quality review is optional and gates no enablement, because Ohtia does not grade the models researchers connect, and it compares no single-agent baseline. When the owner runs one, declare its rubrics, severity definitions and bounded work/cost/latency before the trials; human assessors need appropriate disciplinary and language competence. Include:
 
 - An awkward but accurate passage, a coherent alternative structure, an adequate unconventional organization and a proposal that would strengthen an unsupported conclusion.
 - Quoted material, citations, formulae, disciplinary terms, an unsupplied institution rule and a stylistic preference presented as mandatory.
@@ -167,4 +165,4 @@ Apply [Agent collaboration evaluation](agent-collaboration-evaluation.md) to eac
 
 Assess useful editorial reasoning, faithful preservation of intended meaning where requested, visibility of substantive changes and researcher control. Verify proposal revision/anchor integrity and the shared approval, conflict, atomicity and replay contracts; fluent prose does not establish research correctness.
 
-Enable only the evaluated scope after research-quality and adapter-conformance requirements pass. Reevaluate consequential instruction, model/runtime, tool, output-contract or scope changes. A selectable identity, schema-valid response or successful connection probe does not establish research quality.
+Enable an operation once its adapter conformance and operational checks pass; Ohtia does not grade the quality of the models researchers connect. Reevaluate consequential instruction, model/runtime, tool, output-contract or scope changes. A selectable identity, schema-valid response or successful connection probe does not establish research quality.

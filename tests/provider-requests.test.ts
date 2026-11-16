@@ -65,7 +65,7 @@ describe("provider message contracts", () => {
       { ...dispatch, version: 2 },
       { ...dispatch, request: { ...request, authorization: "Bearer synthetic" } },
       { ...dispatch, request: { ...request, model: "has spaces" } },
-      { ...dispatch, request: { ...request, operation: "project_setup" } },
+      { ...dispatch, request: { ...request, operation: "unknown_operation" } },
       { ...dispatch, request: { ...request, input: [] } },
       { ...dispatch, request: { ...request, limits: { ...request.limits, max_output_bytes: 0 } } },
       { ...dispatch, permit: { ...dispatch.permit, issued_at: -1 } },

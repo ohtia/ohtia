@@ -1,6 +1,7 @@
 import {
   dispatchPermitPolicy,
   isProviderEvent,
+  isProviderToolLabel,
   providerMessageVersion,
   providerTextPieces,
   type ConnectionState,
@@ -13,7 +14,12 @@ import {
   type ProviderRequestLimits,
   type ServiceWakeMessage,
 } from "@ohtia/contracts";
-import type { ProviderAdapter, ProviderRequestControl } from "./provider-adapter.js";
+import type {
+  ProviderAdapter,
+  ProviderRequestControl,
+  AdapterEvent,
+  BufferedToolCall,
+} from "./provider-adapter.js";
 
 interface Dispatched {
   readonly generation: string;
@@ -25,6 +31,8 @@ interface Dispatched {
   closing?: ProviderResult;
   timer?: ReturnType<typeof setTimeout>;
   readonly limits: ProviderRequestLimits;
+  outputBytes: number;
+  readonly calls: Map<string | symbol, BufferedToolCall>;
   sampledWall: number;
   sampledMono: number;
   suspendedElapsed?: number;
@@ -51,7 +59,7 @@ function resultDiagnostic(result: ProviderResult): DiagnosticEvent {
 /**
  * Main's half of ADR-0028. Main holds the credential and sends the request only after its guards:
  * the permit's age, one renewal of an expired session, the connection state, and the permit's age
- * again just before the body leaves. It forwards every event without keeping a copy.
+ * again just before the body leaves. It streams text and buffers bounded tool calls until completion.
  */
 export class ProviderDispatch {
   private active: string | undefined;
@@ -174,6 +182,8 @@ export class ProviderDispatch {
       released: false,
       done: false,
       limits: request.limits,
+      outputBytes: 0,
+      calls: new Map(),
       sampledWall: this.wall(),
       sampledMono: this.monotonic(),
       elapsed: Math.max(0, this.wall() - permit.issued_at),
@@ -343,6 +353,22 @@ export class ProviderDispatch {
   }
   private finish(record: Dispatched, result: ProviderResult): void {
     if (record.done || record.closing) return;
+    if (
+      result.status === "completed" &&
+      [...record.calls.values()].some(
+        (call) =>
+          !call.complete ||
+          !isProviderEvent({
+            type: "tool_call",
+            sequence: 1,
+            namespace: call.namespace,
+            name: call.name,
+            arguments: call.arguments,
+          }),
+      )
+    )
+      result = { status: "failed", reason: "invalid_output", dispatched: true };
+    if (result.status !== "completed") record.calls.clear();
     record.closing = result;
     clearTimeout(record.timer);
     record.abort.abort();
@@ -353,6 +379,27 @@ export class ProviderDispatch {
     clearTimeout(record.timer);
     this.records.delete(record.attempt);
     this.options.diagnostic?.(resultDiagnostic(record.closing));
+    if (record.closing.status === "completed") {
+      for (const call of record.calls.values()) {
+        this.options.send(
+          record.generation,
+          JSON.stringify({
+            kind: "provider_event",
+            version: providerMessageVersion,
+            generation: record.generation,
+            attempt: record.attempt,
+            event: {
+              type: "tool_call",
+              sequence: ++record.sequence,
+              namespace: call.namespace,
+              name: call.name,
+              arguments: call.arguments,
+            },
+          }),
+        );
+      }
+    }
+    record.calls.clear();
     this.options.send(
       record.generation,
       JSON.stringify({
@@ -364,7 +411,106 @@ export class ProviderDispatch {
       }),
     );
   }
-  private emit(record: Dispatched, body: ProviderEventBody): void {
+  private emit(record: Dispatched, body: AdapterEvent): void {
+    if (this.expired(record)) return;
+    const invalid = () => {
+      this.finish(record, { status: "failed", reason: "invalid_output", dispatched: true });
+    };
+    const account = (text: string): string | undefined => {
+      const remaining = record.limits.max_output_bytes - record.outputBytes;
+      const size = Buffer.byteLength(text, "utf8");
+      if (size <= remaining) {
+        record.outputBytes += size;
+        return text;
+      }
+      // Count monotonically, retaining no overflowing argument bytes.
+      record.outputBytes = record.limits.max_output_bytes;
+      return undefined;
+    };
+    if (body.type === "tool_start") {
+      if (
+        !body.id ||
+        body.id.length > 256 ||
+        record.calls.has(body.id) ||
+        record.calls.size >= record.limits.max_output_bytes ||
+        (body.namespace !== null && !isProviderToolLabel(body.namespace)) ||
+        !isProviderToolLabel(body.name)
+      ) {
+        invalid();
+        return;
+      }
+      record.calls.set(body.id, {
+        namespace: body.namespace,
+        name: body.name,
+        arguments: "",
+        complete: false,
+      });
+    } else if (body.type === "tool_arguments") {
+      const call = record.calls.get(body.id);
+      if (!call || call.complete) {
+        invalid();
+        return;
+      }
+      if (account(body.text) === undefined) {
+        this.finish(record, {
+          status: "failed",
+          reason: "output_limit_exceeded",
+          dispatched: true,
+        });
+        return;
+      }
+      record.calls.set(body.id, { ...call, arguments: call.arguments + body.text });
+    } else if (body.type === "tool_end") {
+      const call = record.calls.get(body.id);
+      if (!call || call.complete) {
+        invalid();
+        return;
+      }
+      call.complete = true;
+    } else if (body.type === "tool_call") {
+      // Atomic calls from adapters follow exactly the same cumulative accounting.
+      if (record.calls.size >= record.limits.max_output_bytes) {
+        invalid();
+        return;
+      }
+      if (account(body.arguments) === undefined) {
+        this.finish(record, {
+          status: "failed",
+          reason: "output_limit_exceeded",
+          dispatched: true,
+        });
+        return;
+      }
+      if (!isProviderEvent({ ...body, sequence: 1 })) {
+        invalid();
+        return;
+      }
+      record.calls.set(Symbol("atomic"), { ...body, complete: true });
+    } else if (body.type === "text") {
+      const remaining = record.limits.max_output_bytes - record.outputBytes;
+      if (account(body.text) !== undefined) {
+        this.forward(record, body);
+        return;
+      }
+      let prefix = "";
+      let bytes = 0;
+      for (const point of body.text) {
+        const size = Buffer.byteLength(point, "utf8");
+        if (bytes + size > remaining) break;
+        prefix += point;
+        bytes += size;
+      }
+      if (prefix) this.forward(record, { type: "text", text: prefix });
+      this.finish(record, { status: "failed", reason: "output_limit_exceeded", dispatched: true });
+      return;
+    } else {
+      this.forward(record, body);
+      return;
+    }
+    // Arguments are withheld as research effects, but their receipt is still provider activity.
+    this.forward(record, { type: "activity" });
+  }
+  private forward(record: Dispatched, body: ProviderEventBody): void {
     if (this.expired(record)) return;
     const bodies: readonly ProviderEventBody[] =
       body.type === "text"

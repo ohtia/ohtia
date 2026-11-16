@@ -1052,3 +1052,22 @@ it("does not let a retiring observer failure invalidate a reentrantly reopened s
   release();
   h.controller.dispose();
 });
+
+it("does not misattribute setup proposals as agent messages before the setup-card flow", async () => {
+  const proposal: TimelineItem = {
+    kind: "setupProposal",
+    id: id(90),
+    position: 2,
+    rank: 2,
+    revision: 1,
+    taskId: id(91),
+    title: "Synthetic proposal",
+    documentLanguage: "en",
+    state: "proposed",
+    invalidReason: null,
+  };
+  await render(state([message(1, "Researcher's setup request"), proposal]));
+  expect(container.querySelectorAll(".conversation-message")).toHaveLength(1);
+  expect(container.querySelector('.conversation-message[aria-label="Virgilio"]')).toBeNull();
+  expect(container.textContent).not.toContain("Synthetic proposal");
+});

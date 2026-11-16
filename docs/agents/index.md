@@ -11,5 +11,5 @@ Agent identities, specialist contracts, collaboration, evaluation and implementa
 - [Boris: academic editor](agent-boris.md) — Boris's structural review, argument clarity, wording proposals, revision review, evaluation requirements and visual presentation.
 - [María: proofreader](agent-maria.md) — María's language corrections, terminology review, formal consistency, correction-impact review, evaluation requirements and visual presentation.
 - [Thomas: methodologist](agent-thomas.md) — Thomas's responsibilities, bounded methodological operations, context, inference preferences, result contracts, evaluation requirements and visual presentation.
-- [Agent collaboration evaluation](agent-collaboration-evaluation.md) — Evaluate research usefulness, evidence fidelity, human review, and bounded execution against a single-agent baseline.
+- [Agent collaboration evaluation](agent-collaboration-evaluation.md) — Verify bounded execution and collaboration scenarios, and review research usefulness, evidence fidelity and human review as optional material that gates no enablement.
 - [Agent coordination implementation references](agent-coordination-references.md) — Source-backed lessons from provider documentation, Paperclip, and Multica for Ohtia's agent collaboration boundary.

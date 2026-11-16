@@ -318,6 +318,7 @@
     "composer.replace": "텍스트 바꾸기",
     "composer.destinationLoading": "메시지 전송 대상을 확인하는 중…",
     "composer.destinationFailed": "Ohtia에서 이 메시지의 전송 대상을 확인하지 못했습니다. 보내기 전에 새로고침하세요.",
-    "composer.refreshDestination": "전송 대상 새로고침"
+    "composer.refreshDestination": "전송 대상 새로고침",
+    "project.type.thesis": "학위 논문"
   }
 }

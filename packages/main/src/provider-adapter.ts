@@ -4,6 +4,7 @@ import type {
   ConnectionReason,
   ProviderEventBody,
   ProviderRequestData,
+  ProviderToolCall,
 } from "@ohtia/contracts";
 import type { CredentialStore, StoredSession, CredentialWrite } from "./credential-store.js";
 export type SignInResult = {
@@ -20,6 +21,20 @@ export type SignInResult = {
       readonly session?: StoredSession;
     }
 );
+/** Raw streamed arguments stay inside main until successful completion. */
+export type AdapterEvent =
+  | ProviderEventBody
+  | {
+      readonly type: "tool_start";
+      readonly id: string;
+      readonly namespace: string | null;
+      readonly name: string;
+    }
+  | { readonly type: "tool_arguments"; readonly id: string; readonly text: string }
+  | { readonly type: "tool_end"; readonly id: string };
+export interface BufferedToolCall extends ProviderToolCall {
+  complete: boolean;
+}
 /** What the dispatcher lends an adapter for one attempt; sequencing and forwarding stay its own. */
 export interface ProviderRequestControl {
   /**
@@ -28,7 +43,7 @@ export interface ProviderRequestControl {
    */
   release(): boolean;
   /** Forward one provider event; the first `result` ends the attempt and later events are dropped. */
-  emit(event: ProviderEventBody): void;
+  emit(event: AdapterEvent): void;
   /** Aborted by an interrupt or by the end of the data-service generation that dispatched it. */
   readonly signal: AbortSignal;
 }

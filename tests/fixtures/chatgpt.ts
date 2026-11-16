@@ -206,8 +206,7 @@ export function fakeChatGPT(
       signal: request.signal,
     };
     // Every request any test sends: only Ohtia's own fields, never a provider-kept state.
-    for (const field of [...forbiddenResponseFields, "tools"])
-      expect(recorded.body).not.toHaveProperty(field);
+    for (const field of forbiddenResponseFields) expect(recorded.body).not.toHaveProperty(field);
     expect(recorded.body).toMatchObject({ store: false, stream: true });
     responseRequests.push(recorded);
     try {

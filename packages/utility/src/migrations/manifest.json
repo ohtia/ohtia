@@ -54,5 +54,9 @@
   {
     "name": "0014_message_composer",
     "sha256": "7fc97a91ceb785e09c24d49e27ea50065577c80fc336c60ce191e45ccb74b404"
+  },
+  {
+    "name": "0015_project_setup",
+    "sha256": "3afacce7386ce5cd06a83cceede22badb672a4daaa09343b82698951f6006a83"
   }
 ]

@@ -318,6 +318,7 @@
     "composer.replace": "Korvaa teksti",
     "composer.destinationLoading": "Luetaan viestin kohdetta…",
     "composer.destinationFailed": "Ohtia ei voinut lukea, minne viesti lähetettäisiin. Päivitä ennen lähettämistä.",
-    "composer.refreshDestination": "Päivitä kohde"
+    "composer.refreshDestination": "Päivitä kohde",
+    "project.type.thesis": "Opinnäytetyö"
   }
 }

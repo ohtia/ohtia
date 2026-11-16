@@ -26,6 +26,7 @@ import caES from "./localization/ca-ES.json" with { type: "json" };
 import koKR from "./localization/ko-KR.json" with { type: "json" };
 
 export const messageContracts = {
+  "project.type.thesis": { params: {} },
   "limits.section": { params: {} },
   "limits.field": { params: {} },
   "limits.range": { params: { min: "string", max: "string", value: "string" } },

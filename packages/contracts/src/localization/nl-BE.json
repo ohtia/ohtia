@@ -318,6 +318,7 @@
     "composer.replace": "Tekst vervangen",
     "composer.destinationLoading": "De bestemming van het bericht wordt gelezen…",
     "composer.destinationFailed": "Ohtia kon de bestemming van dit bericht niet lezen. Vernieuw voordat je het verstuurt.",
-    "composer.refreshDestination": "Bestemming vernieuwen"
+    "composer.refreshDestination": "Bestemming vernieuwen",
+    "project.type.thesis": "Scriptie"
   }
 }

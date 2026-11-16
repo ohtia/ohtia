@@ -3,9 +3,7 @@ type: Specification
 title: "Erasmus: critical evidence reviewer"
 description: "Erasmus's attribution checks, inference review, evidence comparison, independent criticism, evaluation requirements and visual presentation."
 generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
+  by: codex/gpt-6.1-sol
 ---
 
 # Erasmus: critical evidence reviewer
@@ -161,7 +159,7 @@ Inspecting records, viewing this profile or changing preferences starts no infer
 
 ## Evaluation and enablement
 
-Apply [Agent collaboration evaluation](agent-collaboration-evaluation.md) to each operation, language, material representation and provider/runtime configuration. Declare rubrics, severity definitions, quality thresholds and bounded work/cost/latency before trials. Compare direct and coordinated use with a capable single-agent baseline where relevant under comparable evidence and total budgets. Human assessors need appropriate disciplinary and language competence. Include:
+Apply [Agent collaboration evaluation](agent-collaboration-evaluation.md) to each operation, language, material representation and provider/runtime configuration. Research-quality review is optional and gates no enablement, because Ohtia does not grade the models researchers connect, and it compares no single-agent baseline. When the owner runs one, declare its rubrics, severity definitions and bounded work/cost/latency before the trials; human assessors need appropriate disciplinary and language competence. Include:
 
 - Adequate support, genuine unsupported inference, useful alternative explanation and a plausible false objection.
 - Direct, contextual, overall-work and secondary citation functions; inaccessible evidence; and a proposition not found in the examined subset.
@@ -170,4 +168,4 @@ Apply [Agent collaboration evaluation](agent-collaboration-evaluation.md) to eac
 
 Assess warranted versus false objections, accurate recognition of adequate support, citation-function handling, anchor correctness and honest uncertainty/comparability. Evaluate independent review as a declared exposure protocol; neither agreement nor a different persona is a quality metric.
 
-Enable only the evaluated scope after research-quality and adapter-conformance requirements pass. Reevaluate consequential instruction, model/runtime, tool, output-contract or scope changes. A selectable identity, schema-valid response or successful connection probe does not establish research quality.
+Enable an operation once its adapter conformance and operational checks pass; Ohtia does not grade the quality of the models researchers connect. Reevaluate consequential instruction, model/runtime, tool, output-contract or scope changes. A selectable identity, schema-valid response or successful connection probe does not establish research quality.

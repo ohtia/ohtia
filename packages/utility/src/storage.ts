@@ -9,6 +9,11 @@ import {
   type ExecutionLimitsRecord,
   type ExecutionLimitsReceipt,
 } from "@ohtia/contracts";
+import {
+  up as setup,
+  tables as setupTables,
+  objects as setupObjects,
+} from "./migrations/0015_project_setup.mjs";
 import { up as composer, objects as composerObjects } from "./migrations/0014_message_composer.mjs";
 import { readResearch, researchRevisions } from "./research-reads.js";
 import type { Request, ResearchScope, ResearchEvent, ResearchOperation } from "@ohtia/contracts";
@@ -245,6 +250,7 @@ const names = [
   "0012_application_exit",
   "0013_execution_limits_receipts",
   "0014_message_composer",
+  "0015_project_setup",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -461,6 +467,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 9 ? Object.keys(usageTables) : []),
     ...(revision >= 11 ? Object.keys(runTables) : []),
     ...(revision >= 13 ? ["execution_limits_receipts"] : []),
+    ...(revision >= 15 ? Object.keys(setupTables) : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -579,6 +586,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
             : definition,
         ])
       : []),
+    ...(revision >= 15 ? Object.entries(setupTables) : []),
     ...(revision >= 9 ? Object.entries(usageTables) : []),
     ...(revision >= 11 ? Object.entries(runTables) : []),
     ...(revision >= 13 ? [["execution_limits_receipts", executionLimitsReceiptsSchema]] : []),
@@ -608,6 +616,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 11 ? runObjects : {}),
                 ...(revision >= 12 ? exitObjects : {}),
                 ...(revision >= 14 ? composerObjects : {}),
+                ...(revision >= 15 ? setupObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -979,6 +988,7 @@ export class DurableStore {
                 "0012_application_exit": { up: applicationExit },
                 "0013_execution_limits_receipts": { up: executionLimitsReceipts },
                 "0014_message_composer": { up: composer },
+                "0015_project_setup": { up: setup },
               }),
           },
         });
@@ -2379,6 +2389,7 @@ export class DurableStore {
         "development.createProject": "ohtia.project.created",
         "project.create": "ohtia.project.created",
         "project.confirmSetup": "ohtia.project.setup_confirmed",
+        "project.rejectSetup": "ohtia.project.setup_rejected",
         "conversation.start": "ohtia.conversation.started",
         "conversation.rename": "ohtia.conversation.renamed",
         "message.append": "ohtia.message.appended",
@@ -2445,12 +2456,22 @@ export class DurableStore {
     if (!reconciled.ok) return reconciled;
     return this.taskTransaction((tasks) => tasks.prepareNext());
   }
+  private registry(): LanguageRegistry {
+    this.languageRegistry ??= new LanguageRegistry(
+      this.options.languageRegistry ??
+        new URL("./iana-language-subtag-registry.txt", import.meta.url),
+    );
+    return this.languageRegistry;
+  }
   recordTaskEvent(
     attempt: string,
     event: ProviderEvent,
     text: string,
+    calls: readonly import("@ohtia/contracts").ProviderToolCall[] = [],
   ): Promise<Outcome<RecordedTaskEvent>> {
-    return this.taskTransaction((tasks) => tasks.event(attempt, event, text));
+    return this.taskTransaction((tasks) =>
+      tasks.event(attempt, event, text, calls, () => this.registry()),
+    );
   }
 
   private async researchRead<T>(

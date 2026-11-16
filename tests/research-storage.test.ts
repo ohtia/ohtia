@@ -1,3 +1,4 @@
+import { proposeSetup } from "./fixtures/project-setup.js";
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -14,6 +15,8 @@ import { canonicalJson, LanguageRegistry } from "../packages/utility/src/researc
 import { DurableStore } from "../packages/utility/dist/index.js";
 import { storageFixture, stores, Database } from "./fixtures/storage.js";
 
+const fixturesByProject = new Map<string, ReturnType<typeof storageFixture>>();
+const proposalsByProject = new Map<string, string>();
 const registryFile = path.resolve("config/localization/iana-language-subtag-registry.txt");
 const unknownId = "00000000-0000-7000-8000-000000000000";
 const toBytes = (id: string) => Buffer.from(id.replaceAll("-", ""), "hex");
@@ -37,17 +40,27 @@ async function setup(emitDiagnostic?: (event: DiagnosticEvent) => void) {
     }),
   ).resultId;
   const conversation = value(await fixture.store.readConversations(projectId))[0]!;
+  fixturesByProject.set(projectId, fixture);
   return { ...fixture, projectId, conversation };
 }
-function confirm(
+async function confirm(
   projectId: string,
   documentLanguage = "en",
   operationId = "confirm",
-): ResearchCommand {
+): Promise<ResearchCommand> {
+  let proposalId = proposalsByProject.get(projectId);
+  const fixture = fixturesByProject.get(projectId);
+  if (!proposalId && fixture) {
+    proposalId = await proposeSetup(fixture.store, fixture.raw, projectId, {
+      title: "Synthetic investigation",
+      document_language: documentLanguage,
+    });
+    proposalsByProject.set(projectId, proposalId);
+  }
   return {
     command: "project.confirmSetup",
     operationId,
-    payload: { projectId, title: "Synthetic investigation", documentLanguage },
+    payload: { proposalId: proposalId ?? projectId },
   };
 }
 function append(
@@ -59,7 +72,7 @@ function append(
 }
 function dropResearch(db: InstanceType<typeof Database>) {
   db.exec(
-    "DROP TABLE service_runs; DROP TABLE execution_limits_receipts; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; DELETE FROM kysely_migration WHERE name='0012_application_exit'; DELETE FROM ohtia_migration_artifacts WHERE name='0012_application_exit'; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; DROP TABLE attempts; DROP TABLE tasks; DELETE FROM kysely_migration WHERE name='0008_durable_ai_tasks'; DELETE FROM ohtia_migration_artifacts WHERE name='0008_durable_ai_tasks'; DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; PRAGMA user_version=6",
+    "DROP TABLE service_runs; DROP TABLE execution_limits_receipts; DROP TABLE project_setup_proposals; DELETE FROM kysely_migration WHERE name='0015_project_setup'; DELETE FROM ohtia_migration_artifacts WHERE name='0015_project_setup'; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; DELETE FROM kysely_migration WHERE name='0012_application_exit'; DELETE FROM ohtia_migration_artifacts WHERE name='0012_application_exit'; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; DROP TABLE attempts; DROP TABLE tasks; DELETE FROM kysely_migration WHERE name='0008_durable_ai_tasks'; DELETE FROM ohtia_migration_artifacts WHERE name='0008_durable_ai_tasks'; DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; PRAGMA user_version=6",
   );
 }
 
@@ -93,7 +106,7 @@ describe("project and conversation aggregates on real SQLite", () => {
     expect(await store.executeResearchCommand(start)).toMatchObject({
       error: { code: "project_in_setup", nextAction: "refresh_record" },
     });
-    value(await store.executeResearchCommand(confirm(projectId, "ES-ar")));
+    value(await store.executeResearchCommand(await confirm(projectId, "ES-ar")));
     expect(value(await store.readProjects())[0]).toMatchObject({
       title: "Synthetic investigation",
       documentLanguage: "es-AR",
@@ -114,7 +127,7 @@ describe("project and conversation aggregates on real SQLite", () => {
     const { store, options, projectId, conversation, raw } = await setup();
     const commands: ResearchCommand[] = [
       { command: "project.create", operationId: "new-project", payload: {} },
-      confirm(projectId),
+      await confirm(projectId),
       {
         command: "conversation.start",
         operationId: "start",
@@ -154,13 +167,13 @@ describe("project and conversation aggregates on real SQLite", () => {
     const reordered = {
       command: "project.confirmSetup",
       operationId: "confirm",
-      payload: { documentLanguage: "en", title: "Synthetic investigation", projectId },
+      payload: { proposalId: proposalsByProject.get(projectId)! },
     } as const;
     expect(await store.executeResearchCommand(reordered)).toEqual(results[1]);
     expect(
       await store.executeResearchCommand({
         ...reordered,
-        payload: { ...reordered.payload, title: "Other" },
+        payload: { proposalId: unknownId },
       }),
     ).toMatchObject({ error: { code: "operation_conflict" } });
     expect(await store.executeResearchCommand(append(conversation.id, "confirm"))).toMatchObject({
@@ -173,7 +186,7 @@ describe("project and conversation aggregates on real SQLite", () => {
         .get() as { payload_sha256: Buffer }
     ).payload_sha256;
     expect(hash).toEqual(createHash("sha256").update(canonicalJson(reordered.payload)).digest());
-    expect(db.prepare("SELECT count(*) FROM messages").pluck().get()).toBe(2);
+    expect(db.prepare("SELECT count(*) FROM messages").pluck().get()).toBe(3);
     db.close();
     await store.close();
     const reopened = new DurableStore(options);
@@ -212,7 +225,7 @@ describe("project and conversation aggregates on real SQLite", () => {
         },
         "name_invalid",
       ],
-      [confirm(unknownId), "record_not_found"],
+      [await confirm(unknownId), "record_not_found"],
       [
         {
           command: "conversation.start",
@@ -250,11 +263,11 @@ describe("project and conversation aggregates on real SQLite", () => {
       await store.executeResearchCommand(append(conversation.id, "rejected-commit", "")),
     ).toMatchObject({ error: { code: "message_invalid" } });
     commitFailure.mockRestore();
-    value(await store.executeResearchCommand(confirm(projectId)));
+    value(await store.executeResearchCommand(await confirm(projectId)));
     expect(await store.executeResearchCommand(start)).toMatchObject({
       error: { code: "message_invalid" },
     });
-    expect(count()).toBe(2);
+    expect(count()).toBe(3);
     value(
       await store.executeResearchCommand({
         ...start,
@@ -262,11 +275,11 @@ describe("project and conversation aggregates on real SQLite", () => {
       }),
     );
     expect(
-      await store.executeResearchCommand(confirm(projectId, "fr", "second-confirm")),
-    ).toMatchObject({ error: { code: "project_not_in_setup" } });
-    expect(count()).toBe(3);
+      await store.executeResearchCommand(await confirm(projectId, "fr", "second-confirm")),
+    ).toMatchObject({ error: { code: "proposal_not_waiting" } });
+    expect(count()).toBe(4);
     expect(db.prepare("SELECT count(*) FROM conversations").pluck().get()).toBe(2);
-    expect(db.prepare("SELECT count(*) FROM messages").pluck().get()).toBe(1);
+    expect(db.prepare("SELECT count(*) FROM messages").pluck().get()).toBe(2);
     db.close();
   });
 
@@ -311,7 +324,7 @@ describe("project and conversation aggregates on real SQLite", () => {
 
   it("allocates increasing positions over gaps, reads from a position, scopes projects and sorts by the highest-position message", async () => {
     const { store, projectId, conversation, raw } = await setup();
-    value(await store.executeResearchCommand(confirm(projectId)));
+    value(await store.executeResearchCommand(await confirm(projectId)));
     const other = value(
       await store.executeResearchCommand({
         command: "conversation.start",
@@ -344,7 +357,7 @@ describe("project and conversation aggregates on real SQLite", () => {
     expect(value(await store.readConversations(projectId))[0]?.id).toBe(other);
     value(await store.executeResearchCommand(append(conversation.id)));
     const messages = value(await store.readMessages(conversation.id));
-    expect(messages.map((m) => m.position)).toEqual([4, 9, 10]);
+    expect(messages.map((m) => m.position)).toEqual([1, 4, 9, 10]);
     expect(value(await store.readMessages(conversation.id, 9)).map((m) => m.position)).toEqual([
       9, 10,
     ]);
@@ -370,7 +383,7 @@ describe("project and conversation aggregates on real SQLite", () => {
 
   it("rolls back project creation, conversation start and append when a later write fails", async () => {
     const { store, projectId, conversation, raw } = await setup();
-    value(await store.executeResearchCommand(confirm(projectId)));
+    value(await store.executeResearchCommand(await confirm(projectId)));
     const db = raw();
     db.exec(
       "CREATE TRIGGER synthetic_receipt_failure BEFORE INSERT ON command_receipts BEGIN SELECT RAISE(ABORT,'synthetic failure'); END",
@@ -389,9 +402,9 @@ describe("project and conversation aggregates on real SQLite", () => {
       });
     expect(db.prepare("SELECT count(*) FROM projects").pluck().get()).toBe(1);
     expect(db.prepare("SELECT count(*) FROM conversations").pluck().get()).toBe(1);
-    expect(db.prepare("SELECT count(*) FROM messages").pluck().get()).toBe(0);
-    expect(db.prepare("SELECT revision FROM conversations").pluck().get()).toBe(1);
-    expect(db.prepare("SELECT count(*) FROM command_receipts").pluck().get()).toBe(2);
+    expect(db.prepare("SELECT count(*) FROM messages").pluck().get()).toBe(1);
+    expect(db.prepare("SELECT revision FROM conversations").pluck().get()).toBe(5);
+    expect(db.prepare("SELECT count(*) FROM command_receipts").pluck().get()).toBe(3);
     db.exec("DROP TRIGGER synthetic_receipt_failure");
     db.close();
   });
@@ -414,7 +427,7 @@ describe("language registry and RFC 8785 receipt hashing", () => {
     "accepts %s and stores canonical case",
     async (language) => {
       const { store, projectId } = await setup();
-      value(await store.executeResearchCommand(confirm(projectId, language)));
+      value(await store.executeResearchCommand(await confirm(projectId, language)));
       expect(value(await store.readProjects())[0]?.documentLanguage).toBe(
         language === "ES-ar" ? "es-AR" : language,
       );
@@ -434,15 +447,8 @@ describe("language registry and RFC 8785 receipt hashing", () => {
     " en",
     "en-Latn-US-1901",
     "i-klingon",
-  ])("rejects %s without a receipt", async (language) => {
-    const { store, projectId, raw } = await setup();
-    expect(await store.executeResearchCommand(confirm(projectId, language))).toMatchObject({
-      error: { code: "invalid_message" },
-    });
-    expect(value(await store.readProjects())[0]?.setupConfirmedAt).toBeNull();
-    const db = raw();
-    expect(db.prepare("SELECT count(*) FROM command_receipts").pluck().get()).toBe(1);
-    db.close();
+  ])("rejects the language %s in the registry", (language) => {
+    expect(new LanguageRegistry(registryFile).canonical(language)).toBeUndefined();
   });
   it("uses each subtag's registry type, deprecated field and registered ranges", () => {
     const registry = new LanguageRegistry(registryFile);
@@ -506,7 +512,7 @@ describe("migration 0007 and database-owned rules", () => {
     db.close();
     await store.open();
     const upgraded = raw();
-    expect(upgraded.pragma("user_version", { simple: true })).toBe(14);
+    expect(upgraded.pragma("user_version", { simple: true })).toBe(15);
     expect(upgraded.prepare("SELECT * FROM application_preferences ORDER BY key").all()).toEqual(
       before,
     );
@@ -519,7 +525,7 @@ describe("migration 0007 and database-owned rules", () => {
           fs.readFileSync(path.join(root, "recovery/migrations", s, "manifest.json"), "utf8"),
         ),
       ),
-    ).toContainEqual(expect.objectContaining({ sourceRevision: 6, targetRevision: 14 }));
+    ).toContainEqual(expect.objectContaining({ sourceRevision: 6, targetRevision: 15 }));
     expect(value(await store.readProjects())).toEqual([]);
     upgraded.close();
   });
@@ -618,7 +624,7 @@ describe("migration 0007 and database-owned rules", () => {
           )
           .run(title),
       ).toThrow();
-    value(await store.executeResearchCommand(confirm(projectId)));
+    value(await store.executeResearchCommand(await confirm(projectId)));
     value(
       await store.executeResearchCommand({
         command: "conversation.start",
@@ -671,7 +677,7 @@ describe("migration 0007 and database-owned rules", () => {
     insert.run(
       id,
       toBytes(conversation.id),
-      2,
+      4,
       "researcher",
       null,
       "a".repeat(100_000) + "\0end",
@@ -721,7 +727,8 @@ it("emits only closed catalog events, with no private content or identifiers", a
       payload: {},
     }),
   ).resultId;
-  value(await store.executeResearchCommand(confirm(projectId)));
+  fixturesByProject.set(projectId, { ...fixture, store });
+  value(await store.executeResearchCommand(await confirm(projectId)));
   const conversation = value(await store.readConversations(projectId))[0]!;
   value(
     await store.executeResearchCommand(
@@ -819,8 +826,8 @@ it("rejects malformed command boundaries and Unicode whitespace titles without r
         command: "project.confirmSetup",
         operationId: "invalid-title",
         payload: { projectId, title, documentLanguage: "en" },
-      }),
-    ).toMatchObject({ error: { code: "name_invalid" } });
+      } as unknown as ResearchCommand),
+    ).toMatchObject({ error: { code: "invalid_message" } });
   }
   expect(await store.readConversations("bad")).toMatchObject({
     error: { code: "invalid_message" },
@@ -855,34 +862,56 @@ it("never evaluates accessors or custom array properties during canonical hashin
   expect(canonicalJson({ "2": "second", "10": "first" })).toBe('{"10":"first","2":"second"}');
 });
 
-it("preserves setup when its bundled registry cannot be read and permits an explicit retry", async () => {
-  const fixture = storageFixture();
-  const file = path.join(fixture.root, "registry.txt");
-  const store = new DurableStore({
-    ...fixture.options,
-    languageRegistry: file,
-    emitDiagnostic: () => {
-      throw new Error("Synthetic diagnostic delivery failure");
-    },
-  });
-  stores.push(store);
-  await store.open();
-  const projectId = value(
-    await store.executeResearchCommand({
-      command: "project.create",
-      operationId: "registry-project",
-      payload: {},
-    }),
-  ).resultId;
-  const command = confirm(projectId);
-  expect(await store.executeResearchCommand(command)).toMatchObject({
+it("preserves the proposal and retries confirmation when the registry cannot be read", async () => {
+  const f = await setup();
+  const command = await confirm(f.projectId);
+  await f.store.close();
+  const file = path.join(f.root, "missing-registry.txt");
+  const reopened = new DurableStore({ ...f.options, languageRegistry: file });
+  stores.push(reopened);
+  await reopened.open();
+  expect(await reopened.executeResearchCommand(command)).toMatchObject({
     error: { code: "storage_failed" },
   });
-  expect(value(await store.readProjects())[0]?.setupConfirmedAt).toBeNull();
+  expect(value(await reopened.readProjects())[0]?.setupConfirmedAt).toBeNull();
   fs.writeFileSync(file, "invalid registry");
-  expect(await store.executeResearchCommand(command)).toMatchObject({
+  expect(await reopened.executeResearchCommand(command)).toMatchObject({
     error: { code: "storage_failed" },
   });
   fs.copyFileSync(registryFile, file);
-  value(await store.executeResearchCommand(command));
+  value(await reopened.executeResearchCommand(command));
+});
+
+it("returns a declared confirmation failure when a readable registry deprecates a proposal language", async () => {
+  const f = await setup();
+  const command = await confirm(f.projectId);
+  await f.store.close();
+  const file = path.join(f.root, "updated-registry.txt");
+  fs.writeFileSync(
+    file,
+    "File-Date: 2026-11-16\n%%\nType: language\nSubtag: en\nDeprecated: 2026-11-16\n",
+  );
+  const reopened = new DurableStore({ ...f.options, languageRegistry: file });
+  stores.push(reopened);
+  await reopened.open();
+  expect(await reopened.executeResearchCommand(command)).toMatchObject({
+    error: { code: "invalid_message" },
+  });
+  expect(value(await reopened.readProjects())[0]?.setupConfirmedAt).toBeNull();
+  const db = f.raw();
+  expect(db.prepare("SELECT state FROM project_setup_proposals").pluck().get()).toBe("proposed");
+  expect(
+    db
+      .prepare("SELECT count(*) FROM command_receipts WHERE operation_id=?")
+      .pluck()
+      .get(command.operationId),
+  ).toBe(0);
+  db.close();
+  value(
+    await reopened.executeResearchCommand({
+      ...command,
+      command: "project.rejectSetup",
+      operationId: "reject-deprecated-proposal",
+    }),
+  );
 });

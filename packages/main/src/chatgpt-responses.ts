@@ -34,11 +34,34 @@ export const forbiddenResponseFields = Object.freeze([
   "user",
 ]);
 /** Only what Ohtia builds: instructions, input and, from STORY-003-014, Ohtia's own tools. */
-export function responsesBody(request: ProviderRequestData): Record<string, unknown> {
+export function responsesBody(
+  request: ProviderRequestData,
+  route: "tools" | "additional_tools" = "tools",
+): Record<string, unknown> {
+  const namespaces = [...new Set(request.tools.map((tool) => tool.namespace))].map((name) => ({
+    type: "namespace",
+    name,
+    description: "Actions that Ohtia shows to the researcher for confirmation.",
+    tools: request.tools
+      .filter((tool) => tool.namespace === name)
+      .map((tool) => ({
+        type: "function",
+        name: tool.name,
+        description: tool.description,
+        strict: tool.strict,
+        parameters: tool.parameters,
+      })),
+  }));
   return {
     model: request.model,
     instructions: request.instructions,
-    input: request.input.map((item) => ({ role: item.role, content: item.text })),
+    input: [
+      ...(route === "additional_tools" && namespaces.length
+        ? [{ type: "additional_tools", role: "developer", tools: namespaces }]
+        : []),
+      ...request.input.map((item) => ({ role: item.role, content: item.text })),
+    ],
+    ...(route === "tools" && namespaces.length ? { tools: namespaces } : {}),
     store: false,
     stream: true,
   };
@@ -249,6 +272,8 @@ export async function readResponseStream(
 ): Promise<void> {
   const requestId = response.headers.get("x-request-id");
   let started = false;
+  const calls = new Set<string>();
+  const ended = new Set<string>();
   const start = (model: unknown) => {
     if (started) return;
     started = true;
@@ -275,6 +300,7 @@ export async function readResponseStream(
   };
   /** Returns true once the stream has reached its final event. */
   const handle = async (block: string): Promise<boolean | "invalid"> => {
+    if (control.signal.aborted) return true;
     const data: string[] = [];
     for (const line of block.split("\n")) {
       if (line.startsWith("data:")) data.push(line.slice(line.startsWith("data: ") ? 6 : 5));
@@ -303,6 +329,52 @@ export async function readResponseStream(
       case "response.output_text.delta":
         if (typeof value.delta !== "string") return "invalid";
         if (value.delta) control.emit({ type: "text", text: value.delta });
+        return false;
+      case "response.output_item.added": {
+        const item = value.item;
+        if (!object(item) || item.type !== "function_call") {
+          control.emit({ type: "activity" });
+          return false;
+        }
+        if (
+          typeof item.id !== "string" ||
+          (item.namespace !== undefined &&
+            item.namespace !== null &&
+            typeof item.namespace !== "string") ||
+          typeof item.name !== "string" ||
+          calls.has(item.id)
+        )
+          return "invalid";
+        calls.add(item.id);
+        control.emit({
+          type: "tool_start",
+          id: item.id,
+          namespace: typeof item.namespace === "string" ? item.namespace : null,
+          name: item.name,
+        });
+        if (typeof item.arguments === "string" && item.arguments)
+          control.emit({ type: "tool_arguments", id: item.id, text: item.arguments });
+        return false;
+      }
+      case "response.function_call_arguments.delta":
+        if (
+          typeof value.item_id !== "string" ||
+          !calls.has(value.item_id) ||
+          ended.has(value.item_id) ||
+          typeof value.delta !== "string"
+        )
+          return "invalid";
+        control.emit({ type: "tool_arguments", id: value.item_id, text: value.delta });
+        return false;
+      case "response.function_call_arguments.done":
+        if (
+          typeof value.item_id !== "string" ||
+          !calls.has(value.item_id) ||
+          ended.has(value.item_id)
+        )
+          return "invalid";
+        ended.add(value.item_id);
+        control.emit({ type: "tool_end", id: value.item_id });
         return false;
       case "response.completed":
         if (!body) return "invalid";

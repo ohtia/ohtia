@@ -318,6 +318,7 @@
     "composer.replace": "Erstat tekst",
     "composer.destinationLoading": "Læser beskedens destination…",
     "composer.destinationFailed": "Ohtia kunne ikke læse, hvor beskeden ville blive sendt hen. Opdater, før du sender den.",
-    "composer.refreshDestination": "Opdater destination"
+    "composer.refreshDestination": "Opdater destination",
+    "project.type.thesis": "Afhandling"
   }
 }
