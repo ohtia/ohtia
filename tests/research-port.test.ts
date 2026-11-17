@@ -1330,18 +1330,33 @@ it("reads proposal-only reply positions and publishes each decision revision thr
   expect(
     value(await h.port.readTextPart({ source: invalid.title.source, index: 1 }).result).text.length,
   ).toBeGreaterThan(0);
-  value(await h.port.rejectProjectSetup("reject-proposal", { proposalId: first }).result);
+  expect(
+    await h.port.rejectProjectSetup("answered-proposal", { proposalId: first }).result,
+  ).toMatchObject({ error: { code: "proposal_not_waiting" } });
+  await h.service.drain();
+  const fresh = await proposeSetup(h.store, h.raw, project, {
+    title: "Updated title",
+    document_language: "en",
+  });
   await h.service.drain();
   expect(
     value(await h.port.readTimeline({ conversationId: conversation, ids: [first] }).result)
       .items[0],
+  ).toMatchObject({ state: "replaced", revision: 2 });
+  value(await h.port.rejectProjectSetup("reject-proposal", { proposalId: fresh }).result);
+  await h.service.drain();
+  expect(
+    value(await h.port.readTimeline({ conversationId: conversation, ids: [fresh] }).result)
+      .items[0],
   ).toMatchObject({ state: "rejected", revision: 2 });
   await vi.waitFor(
     () =>
-      expect(notices).toContainEqual({
-        ok: true,
-        value: { kind: "changed", record: "timeline", id: first, revision: 2 },
-      }),
+      expect(notices).toEqual(
+        expect.arrayContaining([
+          { ok: true, value: { kind: "changed", record: "timeline", id: first, revision: 2 } },
+          { ok: true, value: { kind: "changed", record: "timeline", id: fresh, revision: 2 } },
+        ]),
+      ),
     { timeout: 3000 },
   );
   expect(

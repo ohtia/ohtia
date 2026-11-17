@@ -385,6 +385,8 @@
     "setup.empty": "Tell Virgilio about your thesis: what it’s about, a working title if you have one, and the language you’ll write it in.",
     "setup.title": "Proposed thesis setup",
     "setup.waiting": "Waiting for your answer",
+    "setup.responded": "You replied in chat. This proposal can no longer be confirmed.",
+    "setup.notWaiting": "This proposal is no longer awaiting a decision.",
     "setup.type": "Type",
     "setup.proposedTitle": "Title",
     "setup.language": "Language",

@@ -45,9 +45,13 @@ The [task-notice specification](epic.md#spec-003-018-task-notices) also applies 
 
 ## Acceptance criteria
 
+- [ ] Sending a later researcher reply removes every action from the earlier setup card, preserves its title and language with the replied-in-chat state label, and keeps it inactive through text-only, invalid, failed or uncertain follow-ups; a fresh valid proposal restores actions on its new card. Failed saves and old receipt replays leave availability unchanged, and the service rejects stale confirmation or rejection under the same rule, including across windows and transaction-order races. A `proposal_not_waiting` result immediately removes actions and shows the neutral unavailable caption until the current state is known, without a misleading retry alert even if the reread fails.
+
+- [ ] New setup tasks use the title and document-language agreement instructions of `project_setup` version 2 in SPEC-003-020; the instructions require agreement on an English title before proposing it with `en-US` when a Spanish conversation selects American English, while existing version 1 tasks and explicit recovery retries retain their original versions and instructions; a new message superseding a queued version 1 reply uses version 2. Automated checks verify dispatch and exact instruction content; the researcher-account journey checks the provider’s actual proposal separately.
+
 - [ ] During correction entry, Correct setup has the card’s primary emphasis, Confirm setup is secondary, and the composer visibly labels its text box Tell Virgilio what to change even with retained text; sending successfully, leaving the open proposal or changing scope restores the normal emphasis and composer label without an implicit setup decision.
 
-- [ ] Confirming an earlier valid proposal while the latest setup task is failed or uncertain leaves that task’s notice readable without "Try again" or "Start reply again"; fresh commands follow [SPEC-003-018’s finality guard](epic.md#spec-003-018-task-notices), and recorded receipt replays retain their first result.
+- [ ] A confirmed project keeps historical failed or uncertain setup task notices readable without "Try again" or "Start reply again"; fresh commands follow [SPEC-003-018’s finality guard](epic.md#spec-003-018-task-notices), and recorded receipt replays retain their first result.
 
 - [ ] All five ways to start run `project.new` and create one project, a double click creates only one, and "New project" is the first item of File.
 - [ ] With no connection in the state `connected`, including one that is `expired` or `connecting`, nothing is created and the dialog appears, naming no service.

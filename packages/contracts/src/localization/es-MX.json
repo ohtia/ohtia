@@ -385,6 +385,8 @@
     "setup.empty": "Cuéntale a Virgilio sobre tu tesis: de qué trata, un título provisional si lo tienes y el idioma en que la escribirás.",
     "setup.title": "Propuesta de configuración de la tesis",
     "setup.waiting": "Esperando tu respuesta",
+    "setup.responded": "Respondiste en el chat. Esta propuesta ya no se puede confirmar.",
+    "setup.notWaiting": "Esta propuesta ya no está pendiente de una decisión.",
     "setup.type": "Tipo",
     "setup.proposedTitle": "Título",
     "setup.language": "Idioma",

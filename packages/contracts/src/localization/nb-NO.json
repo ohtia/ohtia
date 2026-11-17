@@ -385,6 +385,8 @@
     "setup.empty": "Fortell Virgilio om avhandlingen din: temaet, en arbeidstittel hvis du har en, og språket du vil skrive på.",
     "setup.title": "Foreslått oppsett av avhandling",
     "setup.waiting": "Venter på svaret ditt",
+    "setup.responded": "Du har svart i samtalen. Dette forslaget kan ikke lenger bekreftes.",
+    "setup.notWaiting": "Dette forslaget venter ikke lenger på en avgjørelse.",
     "setup.type": "Type",
     "setup.proposedTitle": "Tittel",
     "setup.language": "Språk",

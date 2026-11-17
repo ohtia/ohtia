@@ -3,6 +3,7 @@ import type { InterfaceLocale } from "@ohtia/contracts";
 import { Button } from "./controls.js";
 import { LucideGlyph, type LucideName } from "./iconography.js";
 import { VoiceLabel, type ContributorIdentity } from "./contributor-identity.js";
+import "./research.css";
 
 /**
  * Controlled research presentation. Every value, label and callback comes from the consumer;

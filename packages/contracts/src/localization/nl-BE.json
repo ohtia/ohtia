@@ -385,6 +385,8 @@
     "setup.empty": "Vertel Virgilio over je scriptie: het onderwerp, een werktitel als je die hebt en de taal waarin je gaat schrijven.",
     "setup.title": "Voorgestelde scriptie-instellingen",
     "setup.waiting": "Wacht op je antwoord",
+    "setup.responded": "Je hebt in de chat geantwoord. Dit voorstel kan niet meer worden bevestigd.",
+    "setup.notWaiting": "Dit voorstel wacht niet meer op een beslissing.",
     "setup.type": "Type",
     "setup.proposedTitle": "Titel",
     "setup.language": "Taal",

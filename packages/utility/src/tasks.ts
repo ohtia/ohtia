@@ -184,7 +184,7 @@ export class TaskTransaction {
     if (!project.is_development && project.setup_confirmed_at !== null) return null;
     const policy = operationPolicy(
       project.is_development ? "development_test" : "project_setup",
-      1,
+      project.is_development ? 1 : 2,
       this.context.mode,
     );
     return policy ? { policy, connection: "chatgpt" } : null;

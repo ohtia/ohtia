@@ -385,6 +385,8 @@
     "setup.empty": "Explica a Virgilio de què tracta la tesi, un títol provisional si en tens i la llengua en què l’escriuràs.",
     "setup.title": "Proposta de configuració de la tesi",
     "setup.waiting": "Esperant la teva resposta",
+    "setup.responded": "Has respost al xat. Aquesta proposta ja no es pot confirmar.",
+    "setup.notWaiting": "Aquesta proposta ja no està pendent d’una decisió.",
     "setup.type": "Tipus",
     "setup.proposedTitle": "Títol",
     "setup.language": "Llengua",

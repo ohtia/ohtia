@@ -42,6 +42,8 @@ export const messageContracts = {
   "setup.empty": { params: {} },
   "setup.title": { params: {} },
   "setup.waiting": { params: {} },
+  "setup.responded": { params: {} },
+  "setup.notWaiting": { params: {} },
   "setup.type": { params: {} },
   "setup.proposedTitle": { params: {} },
   "setup.language": { params: {} },

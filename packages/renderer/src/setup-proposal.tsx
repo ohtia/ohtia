@@ -3,7 +3,11 @@ import { message, type InterfaceLocale, type TimelineSetupProposal } from "@ohti
 import { ActionProposalCard } from "./research-presentation.js";
 import { VoiceLabel } from "./contributor-identity.js";
 import { LucideGlyph } from "./iconography.js";
-import type { ConversationController, ConversationState } from "./conversation-controller.js";
+import {
+  setupProposalResponded,
+  type ConversationController,
+  type ConversationState,
+} from "./conversation-controller.js";
 
 const identity = { kind: "ai", contributor: "virgilio", definitionVersion: "1" } as const;
 export function SetupProposal({
@@ -19,10 +23,19 @@ export function SetupProposal({
   readonly locale: InterfaceLocale;
   readonly hasText: boolean;
 }) {
+  const action = state.setupActions?.get(proposal.id);
+  const responded = setupProposalResponded(proposal, state.items);
+  const staleDecision =
+    proposal.state === "proposed" &&
+    (!!action?.unavailable || action?.error === "proposal_not_waiting");
+  const unavailable = responded || staleDecision;
   const correcting = useSyncExternalStore(controller.composer.subscribe, () => {
     const composer = controller.composer.snapshot();
     return (
-      proposal.state === "proposed" && !composer.setupFinal && composer.correction === proposal.id
+      proposal.state === "proposed" &&
+      !unavailable &&
+      !composer.setupFinal &&
+      composer.correction === proposal.id
     );
   });
   const title =
@@ -60,13 +73,12 @@ export function SetupProposal({
       </div>
     );
   }
-  const action = state.setupActions?.get(proposal.id);
   const error = action?.error;
   const uncertain =
     !!error &&
     ["uncertain", "timeout", "cancelled", "disposed", "invalid_service_result"].includes(error);
   const showFeedback =
-    proposal.state === "proposed" ||
+    (proposal.state === "proposed" && !unavailable) ||
     (proposal.state === "replaced" && error === "proposal_not_waiting");
   const feedback =
     error && showFeedback
@@ -97,7 +109,7 @@ export function SetupProposal({
       showVoice={!hasText}
       title={label("setup.title")}
       state={
-        proposal.state === "proposed"
+        proposal.state === "proposed" && !unavailable
           ? "open"
           : proposal.state === "confirmed"
             ? "accepted"
@@ -107,7 +119,11 @@ export function SetupProposal({
       }
       stateLabel={label(
         proposal.state === "proposed"
-          ? "setup.waiting"
+          ? responded
+            ? "setup.responded"
+            : staleDecision
+              ? "setup.notWaiting"
+              : "setup.waiting"
           : proposal.state === "confirmed"
             ? "setup.confirmed"
             : proposal.state === "rejected"

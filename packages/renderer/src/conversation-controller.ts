@@ -28,7 +28,12 @@ export interface ConversationState {
   readonly project?: ProjectRecord;
   readonly setupActions?: ReadonlyMap<
     string,
-    { readonly busy: boolean; readonly action: "confirm" | "reject"; readonly error?: string }
+    {
+      readonly busy: boolean;
+      readonly action: "confirm" | "reject";
+      readonly error?: string;
+      readonly unavailable?: boolean;
+    }
   >;
   readonly scope: ResearchScope;
   readonly status: "loading" | "ready" | "failed" | "unavailable";
@@ -52,6 +57,21 @@ const empty = (scope: ResearchScope): ConversationState => ({
   failedEarlier: false,
   completed: 0,
 });
+/** A saved researcher reply continues setup beyond the proposal's reserved reply position. */
+export function setupProposalResponded(
+  proposal: TimelineSetupProposal,
+  items: readonly TimelineItem[],
+): boolean {
+  return (
+    proposal.state === "proposed" &&
+    items.some(
+      (item) =>
+        item.kind === "message" &&
+        item.authorKind === "researcher" &&
+        item.position > proposal.position,
+    )
+  );
+}
 export class ConversationController {
   private state: ConversationState = empty({ projectId: null, conversationId: null });
   private readonly listeners = new Set<() => void>();
@@ -143,19 +163,33 @@ export class ConversationController {
   private setupIntents = new Map<string, string>();
   private setupActions = new Map<
     string,
-    { busy: boolean; action: "confirm" | "reject"; error?: string }
+    { busy: boolean; action: "confirm" | "reject"; error?: string; unavailable?: boolean }
   >();
   performSetupAction = async (
     proposal: TimelineSetupProposal,
     action: "confirm" | "reject",
   ): Promise<void> => {
-    if (this.disposed || this.setupActions.get(proposal.id)?.busy) return;
+    if (
+      this.disposed ||
+      this.setupActions.get(proposal.id)?.busy ||
+      setupProposalResponded(proposal, this.state.items)
+    )
+      return;
     const conversationId = this.state.scope.conversationId;
     const key = `${proposal.id}/${action}`;
     const operationId = this.setupIntents.get(key) ?? crypto.randomUUID();
     this.setupIntents.set(key, operationId);
-    const update = (busy: boolean, error?: string) => {
-      this.setupActions.set(proposal.id, { busy, action, ...(error ? { error } : {}) });
+    const update = (
+      busy: boolean,
+      error?: string,
+      unavailable = !!this.setupActions.get(proposal.id)?.unavailable,
+    ) => {
+      this.setupActions.set(proposal.id, {
+        busy,
+        action,
+        ...(error ? { error } : {}),
+        ...(unavailable ? { unavailable: true } : {}),
+      });
       if (!this.disposed && this.state.scope.conversationId === conversationId) {
         this.state = { ...this.state, setupActions: new Map(this.setupActions) };
         this.publish();
@@ -173,14 +207,26 @@ export class ConversationController {
       outcome = failure("invalid_service_result");
     }
     if (!this.live(this.epoch)) return;
-    update(false, outcome.ok ? undefined : outcome.error.code);
+    const notWaiting = !outcome.ok && outcome.error.code === "proposal_not_waiting";
+    update(
+      false,
+      outcome.ok || notWaiting ? undefined : outcome.error.code,
+      notWaiting || !!this.setupActions.get(proposal.id)?.unavailable,
+    );
     if (this.state.scope.conversationId !== conversationId) return;
     const epoch = this.epoch;
     if (outcome.ok || outcome.error.code === "proposal_not_waiting") {
       try {
         await this.readIds([proposal.id], epoch);
+        if (!this.live(epoch)) return;
+        const reread = this.state.items.find((item) => item.id === proposal.id);
+        if (notWaiting && reread && reread.kind === "setupProposal" && reread.state === "replaced")
+          update(false, "proposal_not_waiting", true);
         await this.projects(epoch);
-        if (this.live(epoch)) this.publish();
+        if (this.live(epoch)) {
+          this.publish();
+          if (!outcome.ok && outcome.error.code === "proposal_not_waiting") this.reload();
+        }
       } catch {
         this.failure(epoch);
       }
@@ -195,7 +241,13 @@ export class ConversationController {
     this.composer.setup(
       !!this.state.project?.setupConfirmedAt && !this.state.project.isDevelopment,
       this.state.items
-        .filter((item) => item.kind === "setupProposal" && item.state === "proposed")
+        .filter(
+          (item) =>
+            item.kind === "setupProposal" &&
+            item.state === "proposed" &&
+            !this.setupActions.get(item.id)?.unavailable &&
+            !setupProposalResponded(item, this.state.items),
+        )
         .map((item) => item.id),
     );
     this.composer.running(

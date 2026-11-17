@@ -23,6 +23,7 @@ export function NewProjectSpecimen() {
   const create = useCallback(() => {
     setCreated(true);
     setDecision("proposed");
+    setSent(false);
   }, []);
   const composer = useMemo(
     () =>
@@ -47,8 +48,11 @@ export function NewProjectSpecimen() {
     return () => composer.dispose();
   }, [composer]);
   useEffect(() => {
-    composer.setup(decision === "confirmed", decision === "proposed" ? ["proposal-1"] : []);
-  }, [composer, decision]);
+    composer.setup(
+      decision === "confirmed",
+      decision === "proposed" && !sent ? ["proposal-1"] : [],
+    );
+  }, [composer, decision, sent]);
   const project = {
     id: projectId,
     projectType: "thesis" as const,
@@ -92,8 +96,26 @@ export function NewProjectSpecimen() {
             content: "Te propongo este título y el español de Argentina para tu tesis.",
           },
           proposal,
+          ...(sent
+            ? [
+                {
+                  kind: "message" as const,
+                  id: "message-2",
+                  taskId: null,
+                  authorKind: "researcher" as const,
+                  agentId: null,
+                  position: 3,
+                  rank: 1 as const,
+                  revision: 1,
+                  language: null,
+                  ending: null,
+                  content: "Please revise the proposed setup.",
+                },
+              ]
+            : []),
         ],
     texts: new Map([
+      ["message-2", "Please revise the proposed setup."],
       ["message-1", "Te propongo este título y el español de Argentina para tu tesis."],
     ]),
     replies: new Map(),

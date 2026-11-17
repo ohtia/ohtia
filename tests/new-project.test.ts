@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, createElement as h } from "react";
+import { act, useSyncExternalStore, createElement as h } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -9,6 +9,10 @@ import {
   type FoundationPort,
   type TimelineSetupProposal,
   type ConnectionState,
+  type Outcome,
+  type ResearchEvent,
+  type TimelineItem,
+  type TimelineMessage,
 } from "@ohtia/contracts";
 import { NewProjectController } from "../packages/renderer/src/new-project-controller.js";
 import {
@@ -47,6 +51,7 @@ const project = {
   updatedAt: "2026-11-17T10:00:00Z",
 };
 function fixture(connection: ConnectionState = "connected") {
+  const listeners = new Set<(notice: Outcome<ResearchEvent>) => void>();
   const port = {
     readConnection: vi.fn(() => call({ ok: true, value: { state: connection } })),
     createProject: vi.fn(() => call({ ok: true, value: { resultId: projectId } })),
@@ -83,15 +88,28 @@ function fixture(connection: ConnectionState = "connected") {
     ),
     readTimeline: vi.fn(() => call({ ok: true, value: { items: [proposal], remaining: [] } })),
     readDestination: vi.fn(() => call({ ok: true, value: { destination: null } })),
-    subscribeResearch: vi.fn(() => ({
-      ready: Promise.resolve({ ok: true as const, value: { subscriptionId: "research-1" } }),
-      dispose() {},
-    })),
+    subscribeResearch: vi.fn(
+      (_scope: unknown, listener: (notice: Outcome<ResearchEvent>) => void) => {
+        listeners.add(listener);
+        return {
+          ready: Promise.resolve({ ok: true as const, value: { subscriptionId: "research-1" } }),
+          dispose() {
+            listeners.delete(listener);
+          },
+        };
+      },
+    ),
     confirmProjectSetup: vi.fn(() => call(failure("timeout"))),
     rejectProjectSetup: vi.fn(() => call(failure("storage_failed"))),
     appendMessage: vi.fn(() => call({ ok: true, value: { resultId: proposal.id } })),
   };
-  return { port, bridge: port as unknown as FoundationPort };
+  return {
+    port,
+    bridge: port as unknown as FoundationPort,
+    emit(notice: Outcome<ResearchEvent>) {
+      for (const listener of [...listeners]) listener(notice);
+    },
+  };
 }
 let root: Root, container: HTMLDivElement;
 beforeEach(() => {
@@ -1001,3 +1019,363 @@ it("shows the active correction path with retained text without sending or decid
   expect(container.querySelector("textarea")?.value).toBe("Unsent researcher corrections");
   c.dispose();
 });
+
+const researcherReply: TimelineMessage = {
+  kind: "message",
+  rank: 1,
+  revision: 1,
+  position: 3,
+  id: "019a8000-0000-7000-8000-000000000020",
+  authorKind: "researcher",
+  agentId: null,
+  taskId: null,
+  content: "Use American English and revise the working title.",
+  language: null,
+  ending: null,
+};
+
+it("withdraws old setup actions after a sent reply and waits for a fresh explicit proposal", async () => {
+  const f = fixture(),
+    c = new ConversationController(f.bridge);
+  let items: TimelineItem[] = [proposal];
+  f.port.readTimeline.mockImplementation(((request: { ids: string[] }) =>
+    call({
+      ok: true,
+      value: { items: items.filter((item) => request.ids.includes(item.id)), remaining: [] },
+    })) as never);
+  f.port.appendMessage.mockImplementation(() => {
+    items = [...items, researcherReply];
+    queueMicrotask(() =>
+      f.emit({
+        ok: true,
+        value: { kind: "changed", record: "timeline", id: researcherReply.id, revision: 1 },
+      }),
+    );
+    return call({ ok: true, value: { resultId: researcherReply.id } });
+  });
+  c.open({ projectId, conversationId });
+  await flush();
+  function Harness() {
+    const current = useSyncExternalStore(c.subscribe, c.snapshot);
+    return h(ConversationView, {
+      state: current,
+      controller: c,
+      locale: "en-US",
+      commands: { copyMessage: async () => false, openExternalLink: async () => false },
+    });
+  }
+  await act(async () => root.render(h(Harness)));
+  await act(async () =>
+    [...container.querySelectorAll<HTMLButtonElement>(".action-proposal button")]
+      .find((button) => button.textContent === "Correct setup")!
+      .click(),
+  );
+  await act(async () => c.composer.edit(researcherReply.content as string));
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>('button[aria-label="Send message"]')!.click();
+    await flush();
+  });
+  expect(f.port.appendMessage).toHaveBeenCalledOnce();
+  expect(container.querySelectorAll(".action-proposal button")).toHaveLength(0);
+  expect(container.textContent).toContain(
+    "You replied in chat. This proposal can no longer be confirmed.",
+  );
+  expect(container.textContent).toContain(proposal.title);
+  expect(c.composer.snapshot().correction).toBeNull();
+  expect(document.activeElement).toBe(container.querySelector("textarea"));
+  const followup: TimelineMessage = {
+    ...researcherReply,
+    id: "019a8000-0000-7000-8000-000000000021",
+    position: 4,
+    authorKind: "agent",
+    agentId: "virgilio",
+    taskId: proposal.taskId,
+    content: "Do you agree to the revised working title?",
+    ending: "complete",
+  };
+  items = [...items, followup];
+  await act(async () => {
+    f.emit({
+      ok: true,
+      value: { kind: "changed", record: "timeline", id: followup.id, revision: 1 },
+    });
+    await flush();
+  });
+  expect(container.textContent).toContain(followup.content);
+  expect(container.querySelectorAll(".action-proposal button")).toHaveLength(0);
+  await c.performSetupAction(proposal, "confirm");
+  await c.performSetupAction(proposal, "reject");
+  expect(f.port.confirmProjectSetup).not.toHaveBeenCalled();
+  expect(f.port.rejectProjectSetup).not.toHaveBeenCalled();
+  const fresh: TimelineSetupProposal = {
+    ...proposal,
+    id: "019a8000-0000-7000-8000-000000000022",
+    taskId: "019a8000-0000-7000-8000-000000000023",
+    position: 5,
+    title: "Updated English working title",
+    documentLanguage: "en-US",
+  };
+  items = [...items, fresh];
+  await act(async () => {
+    f.emit({ ok: true, value: { kind: "changed", record: "timeline", id: fresh.id, revision: 1 } });
+    await flush();
+  });
+  const cards = container.querySelectorAll(".action-proposal");
+  expect(cards).toHaveLength(2);
+  expect(cards[0]!.querySelectorAll("button")).toHaveLength(0);
+  expect(cards[1]!.querySelectorAll("button")).toHaveLength(3);
+  expect(cards[1]!.querySelector(".primitive-primary")?.textContent).toBe("Confirm setup");
+  c.dispose();
+});
+
+it("keeps setup actions and correction text when a reply fails to save", async () => {
+  const f = fixture(),
+    c = new ConversationController(f.bridge);
+  f.port.appendMessage.mockReturnValue(call(failure("pending_limit_reached")) as never);
+  c.open({ projectId, conversationId });
+  await flush();
+  c.composer.correct(proposal.id);
+  c.composer.edit("Unsent correction");
+  c.composer.send();
+  await flush();
+  await act(async () =>
+    root.render(
+      h(SetupProposal, {
+        proposal,
+        state: c.snapshot(),
+        controller: c,
+        locale: "en-US",
+        hasText: false,
+      }),
+    ),
+  );
+  expect(container.querySelectorAll(".action-proposal button")).toHaveLength(3);
+  expect(c.composer.snapshot()).toMatchObject({
+    correction: proposal.id,
+    text: "Unsent correction",
+    notice: "pendingLimit",
+  });
+  c.dispose();
+});
+
+it("refreshes the latest timeline after a stale decision learns of a reply from another window", async () => {
+  const f = fixture(),
+    c = new ConversationController(f.bridge);
+  c.open({ projectId, conversationId });
+  await flush();
+  c.composer.edit("Retained draft");
+  f.port.confirmProjectSetup.mockReturnValue(call(failure("proposal_not_waiting")) as never);
+  f.port.listTimelineBefore.mockReturnValue(
+    call({
+      ok: true,
+      value: { items: [researcherReply, proposal], next: null, hasMore: false },
+    }) as never,
+  );
+  await c.performSetupAction(proposal, "confirm");
+  await flush();
+  await act(async () =>
+    root.render(
+      h(SetupProposal, {
+        proposal,
+        state: c.snapshot(),
+        controller: c,
+        locale: "en-US",
+        hasText: false,
+      }),
+    ),
+  );
+  expect(f.port.listTimelineBefore).toHaveBeenCalledTimes(2);
+  expect(container.querySelectorAll(".action-proposal button")).toHaveLength(0);
+  expect(c.composer.snapshot().text).toBe("Retained draft");
+  c.dispose();
+});
+
+it.each(["confirm", "reject"] as const)(
+  "keeps an obsolete %s card unavailable while its reread is pending or fails",
+  async (action) => {
+    const f = fixture(),
+      c = new ConversationController(f.bridge);
+    c.open({ projectId, conversationId });
+    await flush();
+    c.composer.correct(proposal.id);
+    c.composer.edit("Retained correction draft");
+    const reread = deferred<ReturnType<typeof failure>>();
+    const command = action === "confirm" ? f.port.confirmProjectSetup : f.port.rejectProjectSetup;
+    command.mockReturnValue(call(failure("proposal_not_waiting")) as never);
+    f.port.readTimeline.mockReturnValueOnce({ result: reread.promise, cancel() {} } as never);
+    function Harness() {
+      const current = useSyncExternalStore(c.subscribe, c.snapshot);
+      return h(SetupProposal, {
+        proposal,
+        state: current,
+        controller: c,
+        locale: "en-US",
+        hasText: false,
+      });
+    }
+    await act(async () => root.render(h(Harness)));
+    let pending: Promise<void>;
+    await act(async () => {
+      pending = c.performSetupAction(proposal, action);
+      await flush();
+    });
+    expect(container.querySelectorAll(".action-proposal button")).toHaveLength(0);
+    expect(container.textContent).toContain("This proposal is no longer awaiting a decision.");
+    expect(container.querySelector('.action-proposal [role="alert"]')).toBeNull();
+    await act(async () => {
+      reread.resolve(failure("storage_failed"));
+      await pending;
+      await flush();
+    });
+    expect(c.snapshot().status).toBe("failed");
+    expect(container.querySelectorAll(".action-proposal button")).toHaveLength(0);
+    expect(container.querySelector('.action-proposal [role="alert"]')).toBeNull();
+    expect(c.composer.snapshot()).toMatchObject({
+      text: "Retained correction draft",
+      correction: null,
+    });
+    c.dispose();
+  },
+);
+
+it.each(["confirm", "reject"] as const)(
+  "keeps the refusal reason tied to the initial reread for %s",
+  async (action) => {
+    for (const initiallyReplaced of [false, true]) {
+      const f = fixture(),
+        c = new ConversationController(f.bridge);
+      c.open({ projectId, conversationId });
+      await flush();
+      let observed: TimelineSetupProposal = initiallyReplaced
+        ? { ...proposal, state: "replaced", revision: 2 }
+        : proposal;
+      f.port.readTimeline.mockImplementation(() =>
+        call({ ok: true, value: { items: [observed], remaining: [] } }),
+      );
+      f.port.listTimelineBefore.mockImplementation(
+        () =>
+          call({
+            ok: true,
+            value: { items: [observed, researcherReply], next: null, hasMore: false },
+          }) as never,
+      );
+      const command = action === "confirm" ? f.port.confirmProjectSetup : f.port.rejectProjectSetup;
+      command.mockReturnValue(call(failure("proposal_not_waiting")) as never);
+      function Harness() {
+        const current = useSyncExternalStore(c.subscribe, c.snapshot);
+        const currentProposal = current.items.find(
+          (item) => item.id === proposal.id,
+        ) as TimelineSetupProposal;
+        return h(SetupProposal, {
+          proposal: currentProposal,
+          state: current,
+          controller: c,
+          locale: "en-US",
+          hasText: false,
+        });
+      }
+      await act(async () => root.render(h(Harness)));
+      await act(async () => {
+        await c.performSetupAction(proposal, action);
+        await flush();
+      });
+      expect(container.querySelectorAll('.action-proposal [role="alert"]')).toHaveLength(
+        initiallyReplaced ? 1 : 0,
+      );
+      observed = { ...proposal, state: "replaced", revision: 2 };
+      await act(async () => {
+        f.emit({
+          ok: true,
+          value: { kind: "changed", record: "timeline", id: proposal.id, revision: 2 },
+        });
+        await flush();
+      });
+      expect(container.querySelectorAll('.action-proposal [role="alert"]')).toHaveLength(
+        initiallyReplaced ? 1 : 0,
+      );
+      expect(container.querySelectorAll(".action-proposal button")).toHaveLength(0);
+      if (initiallyReplaced)
+        expect(container.textContent).toContain(
+          message("en-US", action === "confirm" ? "setup.confirmReplaced" : "setup.rejectReplaced"),
+        );
+      c.dispose();
+    }
+  },
+);
+
+it.each(["confirm", "reject"] as const)(
+  "ignores an obsolete proposal reread after %s recovery",
+  async (action) => {
+    for (const recovery of ["reload", "sequenceGap"] as const) {
+      for (const fails of [false, true]) {
+        const f = fixture(),
+          c = new ConversationController(f.bridge);
+        c.open({ projectId, conversationId });
+        await flush();
+        c.composer.correct(proposal.id);
+        c.composer.edit("Draft retained through recovery");
+        const reread =
+          deferred<Outcome<{ items: readonly TimelineItem[]; remaining: readonly string[] }>>();
+        f.port.readTimeline.mockReturnValueOnce({ result: reread.promise, cancel() {} } as never);
+        const command =
+          action === "confirm" ? f.port.confirmProjectSetup : f.port.rejectProjectSetup;
+        command.mockReturnValue(call(failure("proposal_not_waiting")) as never);
+        function Harness() {
+          const current = useSyncExternalStore(c.subscribe, c.snapshot);
+          const currentProposal = current.items.find(
+            (item) => item.id === proposal.id,
+          ) as TimelineSetupProposal;
+          return h(SetupProposal, {
+            proposal: currentProposal,
+            state: current,
+            controller: c,
+            locale: "en-US",
+            hasText: false,
+          });
+        }
+        await act(async () => root.render(h(Harness)));
+        let pending: Promise<void>;
+        await act(async () => {
+          pending = c.performSetupAction(proposal, action);
+          await flush();
+        });
+        expect(container.querySelectorAll(".action-proposal button")).toHaveLength(0);
+        expect(container.querySelectorAll('.action-proposal [role="alert"]')).toHaveLength(0);
+        const replacement: TimelineSetupProposal = { ...proposal, state: "replaced", revision: 2 };
+        f.port.listTimelineBefore.mockReturnValue(
+          call({
+            ok: true,
+            value: { items: [replacement, researcherReply], next: null, hasMore: false },
+          }) as never,
+        );
+        await act(async () => {
+          if (recovery === "reload") c.reload();
+          else f.emit(failure("sequence_gap"));
+          await flush();
+        });
+        expect(c.snapshot().items.find((item) => item.id === proposal.id)).toMatchObject({
+          state: "replaced",
+        });
+        expect(container.querySelectorAll('.action-proposal [role="alert"]')).toHaveLength(0);
+        await act(async () => {
+          reread.resolve(
+            fails
+              ? failure("storage_failed")
+              : { ok: true, value: { items: [proposal], remaining: [] } },
+          );
+          await pending;
+          await flush();
+        });
+        expect(c.snapshot().status).toBe("ready");
+        expect(container.querySelectorAll('.action-proposal [role="alert"]')).toHaveLength(0);
+        expect(c.snapshot().setupActions?.get(proposal.id)).toMatchObject({ unavailable: true });
+        expect(c.snapshot().setupActions?.get(proposal.id)?.error).toBeUndefined();
+        expect(c.composer.snapshot()).toMatchObject({
+          text: "Draft retained through recovery",
+          correction: null,
+        });
+        c.dispose();
+      }
+    }
+  },
+);

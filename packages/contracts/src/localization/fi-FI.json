@@ -385,6 +385,8 @@
     "setup.empty": "Kerro Virgiliolle opinnäytteestäsi: sen aiheesta, työnimestä, jos sinulla on sellainen, ja kielestä, jolla kirjoitat.",
     "setup.title": "Ehdotettu opinnäytteen määritys",
     "setup.waiting": "Odottaa vastaustasi",
+    "setup.responded": "Vastasit keskustelussa. Tätä ehdotusta ei voi enää vahvistaa.",
+    "setup.notWaiting": "Tämä ehdotus ei enää odota päätöstä.",
     "setup.type": "Tyyppi",
     "setup.proposedTitle": "Otsikko",
     "setup.language": "Kieli",

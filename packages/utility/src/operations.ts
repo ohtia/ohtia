@@ -1,4 +1,4 @@
-import { setupInstructions } from "./project-setup.js";
+import { setupInstructions, setupInstructionsV2 } from "./project-setup.js";
 import { utf8Size, type ProviderOperation, type TransferEntry } from "@ohtia/contracts";
 
 /** SPEC-003-004: every operation version fixes all of these values; the researcher cannot edit them. */
@@ -29,24 +29,32 @@ const developmentTestInstructions = [
   "Reply in English to the last message. Keep replies short unless the message asks for a particular length.",
 ].join("\n\n");
 
+const projectSetupV1: OperationPolicy = Object.freeze({
+  operation: "project_setup",
+  version: 1,
+  instruction_version: 1,
+  max_pending_tasks: 20,
+  max_input_bytes: 64 * 1024,
+  max_input_items: 200,
+  max_output_bytes: 32 * 1024,
+  max_work_units: 1,
+  max_attempt_duration_ms: 5 * 60 * 1000,
+  max_inactivity_ms: 120 * 1000,
+  stop_grace_ms: 5 * 1000,
+  max_attempts: 2,
+  max_auto_retries: 0,
+  retry_backoff_ms: 0,
+  instructions: setupInstructions,
+  modes: Object.freeze(["development", "installed", "qualification"] as const),
+});
+
 const policies: readonly OperationPolicy[] = Object.freeze([
+  projectSetupV1,
   Object.freeze({
-    operation: "project_setup",
-    version: 1,
-    instruction_version: 1,
-    max_pending_tasks: 20,
-    max_input_bytes: 64 * 1024,
-    max_input_items: 200,
-    max_output_bytes: 32 * 1024,
-    max_work_units: 1,
-    max_attempt_duration_ms: 5 * 60 * 1000,
-    max_inactivity_ms: 120 * 1000,
-    stop_grace_ms: 5 * 1000,
-    max_attempts: 2,
-    max_auto_retries: 0,
-    retry_backoff_ms: 0,
-    instructions: setupInstructions,
-    modes: Object.freeze(["development", "installed", "qualification"] as const),
+    ...projectSetupV1,
+    version: 2,
+    instruction_version: 2,
+    instructions: setupInstructionsV2,
   }),
   Object.freeze({
     operation: "development_test",

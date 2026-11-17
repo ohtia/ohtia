@@ -385,6 +385,8 @@
     "setup.empty": "Virgilio에게 학위논문의 주제, 가제가 있다면 그 제목, 그리고 작성할 언어를 알려주세요.",
     "setup.title": "제안된 학위논문 설정",
     "setup.waiting": "답변을 기다리는 중",
+    "setup.responded": "채팅에서 답변했으므로 이 제안은 더 이상 확정할 수 없습니다.",
+    "setup.notWaiting": "이 제안은 더 이상 결정을 기다리지 않습니다.",
     "setup.type": "유형",
     "setup.proposedTitle": "제목",
     "setup.language": "언어",
