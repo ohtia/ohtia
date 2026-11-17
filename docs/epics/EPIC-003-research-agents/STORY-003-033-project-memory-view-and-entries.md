@@ -2,17 +2,13 @@
 type: Story
 title: "STORY-003-033 — Project memory view and entries"
 description: "Let the researcher read, add, edit and withdraw project memory entries and see their history."
-generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 tags: [story, "comp:storage", "comp:app", "comp:docs"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/235
 epic: "EPIC-003"
 epic_concept: ./epic.md
 components: ["comp:storage", "comp:app", "comp:docs"]
-applicable_blocks: ["SPEC-003-038"]
+applicable_blocks: ["SPEC-003-038", "SPEC-003-046"]
 ---
 
 # STORY-003-033 — Project memory view and entries
@@ -24,6 +20,8 @@ Add the explorer entry and the "Project memory" tab with its use line, entries g
 ## Applicable specification
 
 - [SPEC-003-038: Project memory view and entries](./epic.md#spec-003-038-project-memory-view-and-entries)
+
+- [SPEC-003-046: Agent outcomes, milestones and memory](./epic.md#spec-003-046-agent-outcomes-milestones-and-memory)
 
 ## Tasks
 
@@ -38,6 +36,8 @@ Add the explorer entry and the "Project memory" tab with its use line, entries g
 - [ ] Apply the documentation amendments of SPEC-003-038 to `docs/workspace-layout.md`: in "Regions and surfaces", "Its heading is Project contents; it contains the active project's materials, the Navigator entry and Settings." becomes "Its heading is Project contents; it contains the active project's materials, the Project memory entry, the Navigator entry and Settings."; and in "Presentation integration", after "Selecting material opens or activates one tab for its stable identity, reveals documents and preserves conversation selection." add "Selecting Project memory does the same: it opens or activates the one Project memory tab of the open project."; and to `docs/design-system.md`, "Iconography", fixed mappings: add the row "Project memory | `notebook-text`", and the row "Memory changes | `notebook-pen`" that STORY-003-032 adds becomes "Add memory entry, memory changes | `notebook-pen`".
 - [ ] Build the memory view and the entry form from the canonical tokens, with the notices of STORY-003-013, and compare them with `epic-003-memory-light.png`, `epic-003-memory-dark.png` and `epic-003-memory-states.png`; the EPIC text prevails over a capture.
 
+- [ ] Apply SPEC-003-046 while retaining the memory view’s existing source and author labels: memory edits confer no profile, workflow-state or academic-approval authority.
+
 ## Acceptance criteria
 
 - [ ] A goal or decision shows "From your message · worded by Virgilio" with the quoted start of its message and "Go to message".
@@ -51,6 +51,8 @@ Add the explorer entry and the "Project memory" tab with its use line, entries g
 - [ ] A researcher's edit marks a reply based on the old version (scenario 12); a memory change from another window, Virgilio or an undo raises the memory revision, and the open tab and histories read it again, also after a `sequence_gap`.
 - [ ] `docs/workspace-layout.md` lists the Project memory entry and tab, and `docs/design-system.md` maps `notebook-text` and `notebook-pen` as stated.
 - [ ] With the researcher's account, an entry added from a message is used by Virgilio in another conversation, and editing an entry marks the old reply.
+
+- [ ] Memory author/source labels and researcher edits remain inspectable and confer no canonical profile, stage-transition or academic-approval effect.
 
 ## Quality checklist
 

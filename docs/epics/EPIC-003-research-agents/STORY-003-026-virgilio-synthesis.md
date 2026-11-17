@@ -2,17 +2,13 @@
 type: Story
 title: "STORY-003-026 — Virgilio: synthesis"
 description: "Let Virgilio combine a plan's results into one attributed synthesis whose source line Ohtia builds from the actual input."
-generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 tags: [story, "comp:llm", "comp:app"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/228
 epic: "EPIC-003"
 epic_concept: ./epic.md
 components: ["comp:llm", "comp:app"]
-applicable_blocks: ["SPEC-003-031"]
+applicable_blocks: ["SPEC-003-031", "SPEC-003-044"]
 ---
 
 # STORY-003-026 — Virgilio: synthesis
@@ -25,6 +21,8 @@ Add the `contribution_synthesis` operation with its input, instructions and poli
 
 - [SPEC-003-031: Virgilio: synthesis](./epic.md#spec-003-031-virgilio-synthesis)
 
+- [SPEC-003-044: Thesis route in agent instructions](./epic.md#spec-003-044-thesis-route-in-agent-instructions)
+
 ## Tasks
 
 - [ ] Start after STORY-003-025 is merged and its output is on the base branch: Continuations that create synthesis tasks.
@@ -35,6 +33,8 @@ Add the `contribution_synthesis` operation with its input, instructions and poli
 - [ ] From the synthesis task's first run, show STORY-003-013's notice for its state or code at its reply position, as a timeline item of rank 3 whose revision is the task's `state_revision`, or "The plan's results were longer than Ohtia can send for a synthesis." for `input_too_large`, and make its "Try again", offered after any failure except `not_eligible` and `input_too_large`, the new command `synthesis.tryAgain`, recorded in `command_receipts`, which creates a new task for the same continuation with the same input, `replaces_task_id` the failed task and `accepted_by_operation_id` its own receipt, counted as a Virgilio turn within the plan limits. Show an uncertain synthesis with STORY-003-013's uncertain notice and "Start reply again", which asks with STORY-003-007's double-charge confirmation and runs the same `synthesis.tryAgain`, recording the accepted warning in the new task's `charge_warning_accepted_at`; offer neither for a synthesis stopped with its plan. Reject `synthesis.tryAgain`, changing nothing, with `limit_reached` without room, `newer_task_exists` for a task that is no longer its continuation's latest, `task_not_retryable` for a task that did not fail or become uncertain or that failed with `not_eligible` or `input_too_large`, and `pending_limit_reached` at the pending limit, listing these codes and `record_not_found` in its `operationErrorCodes`.
 - [ ] Add the development command's `run-plan` action, with `--ohtia-dev-project=<id>`, which runs the development-only command `development.runPlan` in that confirmed ordinary thesis: in one transaction, a new conversation answered by Virgilio whose first researcher message, "Development test: run Ohtia's fixed two-contribution plan.", creates no reply task, and the fixed plan, accepted by the command's own operation identifier with STORY-003-024's limits, authorized set and reservations: purpose "Prepare a search strategy for the project's working title, and a second one that extends it to neighboring disciplines."; shared context "This plan is a development test of Ohtia. Base each strategy only on the project's working title and document language."; `core-strategy`, Josefa, required, no prerequisites, request "Propose a search strategy for the central topic of the project's working title.", reason "The first strategy covers the central topic."; and `extended-strategy`, Josefa, required, depending on `core-strategy`, request "Using the strategy of contribution core-strategy, propose a second search strategy that extends it to neighboring disciplines and to sources in other languages.", reason "The second strategy shows how a contribution uses the result it depends on."; then run it to a real synthesis. Reject an unknown or development project with `record_not_found` and a project in setup with `project_in_setup`, creating nothing.
 - [ ] Build the synthesis message with STORY-003-010's timeline and STORY-003-011's Markdown and their measurements, and compare it with `epic-003-plan-synthesis.png`; the EPIC text prevails over a capture.
+
+- [ ] Compose the shared section of SPEC-003-044 with synthesis instructions, and preserve research limitations while proposing a next action with its reason, prerequisites and observable completion evidence.
 
 ## Acceptance criteria
 
@@ -48,6 +48,9 @@ Add the `contribution_synthesis` operation with its input, instructions and poli
 - [ ] "Try again" counts against the plan's limits, is not offered after `not_eligible` or `input_too_large`, and is rejected with `limit_reached`, `newer_task_exists` or `task_not_retryable` as specified, and "Start reply again" of an uncertain synthesis asks first and records the accepted warning.
 - [ ] Scenario 2 of `agent-collaboration-evaluation.md` passes with inference concurrency set to one.
 - [ ] With the researcher's account, the fixed two-contribution plan runs to a real synthesis.
+
+- [ ] Synthesis instructions contain the shared thesis route exactly once and require a justified next action with reason, prerequisites and completion evidence, or an explicit limitation or stopping point.
+- [ ] A technically complete plan with unresolved research work retains that limitation in the synthesis input; agent completion confers no academic stage completion.
 
 ## Quality checklist
 

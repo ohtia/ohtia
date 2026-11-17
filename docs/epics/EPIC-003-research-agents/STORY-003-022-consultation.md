@@ -2,17 +2,13 @@
 type: Story
 title: "STORY-003-022 — Consultation"
 description: "Let Virgilio propose one consultation of Josefa that runs only after the researcher accepts the exact request."
-generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 tags: [story, "comp:llm", "comp:storage", "comp:app", "comp:docs"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/224
 epic: "EPIC-003"
 epic_concept: ./epic.md
 components: ["comp:llm", "comp:storage", "comp:app", "comp:docs"]
-applicable_blocks: ["SPEC-003-027"]
+applicable_blocks: ["SPEC-003-027", "SPEC-003-045"]
 ---
 
 # STORY-003-022 — Consultation
@@ -24,6 +20,8 @@ Add `propose_consultation` to `direct_guidance` version 2, the consultation card
 ## Applicable specification
 
 - [SPEC-003-027: Consultation](./epic.md#spec-003-027-consultation)
+
+- [SPEC-003-045: Research context across coordination](./epic.md#spec-003-045-research-context-across-coordination)
 
 ## Tasks
 
@@ -44,6 +42,8 @@ Add `propose_consultation` to `direct_guidance` version 2, the consultation card
 - [ ] Apply the documentation amendment of SPEC-003-027 to `docs/agents/agent-virgilio.md`: in "Propose a next research action", after "Suggestions remain distinct from accepted decisions. Schedule pace does not measure intellectual quality, and advice cannot silently reschedule the project." add the paragraph "The next action can be a consultation: one contribution that another enabled agent prepares from a self-contained request, which Virgilio proposes in direct guidance and the researcher accepts or declines before anything is sent. The consulted agent does not see the conversation; its result appears there, and Virgilio sees it when the researcher writes next."; and in "Plan bounded collaboration", "A proposed contribution graph or bounded consultation/handoff request with role, question, immutable input requirements, artifact dependencies, required/optional coverage and allocations." becomes "A proposed contribution graph of two or more contributions, or a bounded handoff request, with role, question, immutable input requirements, artifact dependencies, required/optional coverage and allocations."
 - [ ] Build the consultation card with STORY-003-015's `ActionProposalCard` and its measurements, and Josefa's result with STORY-003-010's timeline and STORY-003-011's Markdown and their measurements, and compare them with `epic-003-consultation.png` and `epic-003-consultation-states.png`; the EPIC text prevails over a capture.
 
+- [ ] Implement SPEC-003-045 in consultation request construction and both agents’ instructions. Preserve the shared route when Josefa version 2 replaces the role-specific template, and permit an explicit insufficient-context result instead of requiring an unjustified complete plan.
+
 ## Acceptance criteria
 
 - [ ] Accepting creates Josefa's task with exactly the request and project data, without the conversation, under version 2's instructions and an input that starts with the consultation line.
@@ -63,6 +63,9 @@ Add `propose_consultation` to `direct_guidance` version 2, the consultation card
 - [ ] The card and the invalid-proposal notice are timeline items of rank 2 whose revision is the intervention's `revision`, an invalid proposal replaces no open one, and a consultation task's notice sits below the card before the task starts.
 - [ ] `docs/agents/agent-virgilio.md` places a single consultation under "Propose a next research action" and plans of two or more contributions under "Plan bounded collaboration".
 - [ ] With the researcher's account, Virgilio proposes a consultation, Josefa's plan appears after acceptance, states its assumptions and lists its open points without asking questions, and Virgilio answers a question about it.
+
+- [ ] Josefa version 2 retains the shared thesis route and permits a limitation with points for Virgilio to clarify when assumptions do not justify a plan; successful completion does not imply that the research purpose is resolved.
+- [ ] Approved consultation context preserves its research purpose, attributed choices, available inputs and explicit unknowns within the exact request sent to Josefa.
 
 ## Quality checklist
 

@@ -2,17 +2,13 @@
 type: Story
 title: "STORY-003-028 — Plan progress, stop and finish"
 description: "Show an accepted plan's progress on its card and let the researcher stop or finish it."
-generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 tags: [story, "comp:app", "comp:docs"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/230
 epic: "EPIC-003"
 epic_concept: ./epic.md
 components: ["comp:app", "comp:docs"]
-applicable_blocks: ["SPEC-003-033"]
+applicable_blocks: ["SPEC-003-033", "SPEC-003-046"]
 ---
 
 # STORY-003-028 — Plan progress, stop and finish
@@ -24,6 +20,8 @@ Turn STORY-003-027's accepted plan card into the plan's progress view: the plan 
 ## Applicable specification
 
 - [SPEC-003-033: Plan progress, stop and finish](./epic.md#spec-003-033-plan-progress-stop-and-finish)
+
+- [SPEC-003-046: Agent outcomes, milestones and memory](./epic.md#spec-003-046-agent-outcomes-milestones-and-memory)
 
 ## Tasks
 
@@ -40,6 +38,8 @@ Turn STORY-003-027's accepted plan card into the plan's progress view: the plan 
 - [ ] Apply the documentation amendment of SPEC-003-033: in `docs/design-system.md`, "Iconography", fixed mappings, add the rows "Agent writing or working | `pen-line`", "Running plan | `circle-ellipsis`", "Finished agent work (Done, Complete) | `check-check`", "Partial outcome of agent work | `chart-pie`", "Blocked by another contribution | `link-2-off`", "Cancelled or stopped agent work | `circle-stop`", "Agent work not written | `circle-minus`", "Paused agent work | `circle-pause`" and "Waiting for a disconnected service | `unplug`", and after the table add "A state label never uses an icon that this table or the domain components map to another meaning."
 - [ ] Build the rows' states, the counter and the row actions to the measurements in tokens of the "Measurements" list of this story's block, SPEC-003-033, beside STORY-003-027's row measurements: the request counter in `type.ui.caption`, plan keys in IBM Plex Mono at 14 px inside a state label, and row actions `space.2` apart in a row and `space.3` between rows of actions; build the dialogs from the canonical tokens; and compare them with `epic-003-plan-light.png`, `epic-003-plan-dark.png`, `epic-003-plan-stop.png`, `epic-003-plan-states.png`, `epic-003-narrow-plan.png` and the accepted card of `epic-003-plan-proposal.png`; the EPIC text prevails over a capture.
 
+- [ ] Apply SPEC-003-046 so the existing card states and Finish plan action describe the execution graph, without academic milestone or evidence-confirmation effects.
+
 ## Acceptance criteria
 
 - [ ] Right after "Run plan" the state label reads "Running · 0 of {total} done" in place of "You ran this plan."; "Waiting for {keys}" names only unfinished prerequisites; "Show request" reveals "Request:" and "Reason:"; every state label carries its icon; "Stop plan" and "Finish plan" are secondary.
@@ -52,6 +52,8 @@ Turn STORY-003-027's accepted plan card into the plan's progress view: the plan 
 - [ ] Each change of the plan state or of a row's state is announced once, politely.
 - [ ] `docs/design-system.md` maps the agent-work state icons and states that a state label never reuses an icon mapped to another meaning.
 - [ ] With the researcher's account, a plan's progress is followed to its synthesis and a second plan stops midway.
+
+- [ ] Complete, Partial and Finish plan retain their defined graph semantics and confer no academic milestone, evidence confirmation or institutional approval.
 
 ## Quality checklist
 

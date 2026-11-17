@@ -2,17 +2,13 @@
 type: Story
 title: "STORY-003-020 — Josefa: search plan"
 description: "Let Josefa propose an unverified, eight-part search strategy as a written plan in the document language."
-generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 tags: [story, "comp:llm", "comp:docs"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/222
 epic: "EPIC-003"
 epic_concept: ./epic.md
 components: ["comp:llm", "comp:docs"]
-applicable_blocks: ["SPEC-003-025"]
+applicable_blocks: ["SPEC-003-025", "SPEC-003-044"]
 ---
 
 # STORY-003-020 — Josefa: search plan
@@ -25,6 +21,8 @@ Add the `search_strategy_planning` operation with its instructions, the fixed "S
 
 - [SPEC-003-025: Josefa: search plan](./epic.md#spec-003-025-josefa-search-plan)
 
+- [SPEC-003-044: Thesis route in agent instructions](./epic.md#spec-003-044-thesis-route-in-agent-instructions)
+
 ## Tasks
 
 - [ ] Start after STORY-003-017 is merged and its output is on the base branch: Input assembly for agent replies.
@@ -34,6 +32,8 @@ Add the `search_strategy_planning` operation with its instructions, the fixed "S
 - [ ] Save replies as Josefa's messages, and add the development command's `send-to-josefa` action, with `--ohtia-dev-conversation=<id>` and `--ohtia-dev-text=<text>`, which appends a researcher message to that conversation of a confirmed ordinary project and creates a `search_strategy_planning` task instead of a `direct_guidance` one, through the development-only command `development.sendToJosefa`, recorded in `command_receipts` and accepted only in the `development` mode.
 - [ ] Apply the documentation amendment of SPEC-003-025 to `docs/thesis-workflow.md`, "Search strategy": "**Search locations:** pertinent and accessible databases, catalogs, repositories and reference/citation routes through enabled adapters." becomes "**Search locations:** pertinent and accessible databases, catalogs, repositories and reference/citation routes; a strategy marks those that enabled adapters can query as such and every other proposed location as unverified."; `docs/agents/agent-josefa.md` "Evaluation and enablement" is already amended by STORY-003-014.
 
+- [ ] Reuse SPEC-003-044’s shared instruction section for Josefa. Distinguish candidate-topic exploration from bibliography development and include known responsibilities and availability in planned work; unknown values remain unknown.
+
 ## Acceptance criteria
 
 - [ ] Josefa's reply is saved as her message with the project data and fixed section in its input.
@@ -41,6 +41,9 @@ Add the `search_strategy_planning` operation with its instructions, the fixed "S
 - [ ] The policy limits of `search_strategy_planning` version 1 apply: its pending, input, output, work-unit, duration and inactivity limits and its two attempts behave as their values state.
 - [ ] `docs/thesis-workflow.md` marks the locations that enabled adapters can query and marks every other proposed location as unverified.
 - [ ] With the researcher's account, a plan request in a Spanish thesis returns the eight parts, unverified marks, the open-versus-subscription separation and the institutional-access question, with no invented author or title.
+
+- [ ] Every search-planning request retains the shared thesis-route section, planning-only limits and the distinction between exploratory candidate comparison and bibliography development.
+- [ ] Instructions retain all eight search-strategy parts, include known responsibilities and time, and treat the five-to-ten initial-reference budget as a proposal for final candidate comparison, never a quota, executed search or sufficiency verdict.
 
 ## Quality checklist
 
