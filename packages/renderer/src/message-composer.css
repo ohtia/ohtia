@@ -14,6 +14,13 @@
 .message-composer > * {
   flex-shrink: 0;
 }
+.composer-correction {
+  color: var(--content-primary);
+  font-family: var(--type-ui-label-family);
+  font-size: var(--type-ui-label-size);
+  font-weight: var(--type-ui-label-weight);
+  line-height: var(--type-ui-label-height);
+}
 .composer-box {
   display: flex;
   align-items: flex-end;

@@ -1,7 +1,7 @@
 ---
 type: Story
 title: "STORY-003-015 — New project flow"
-description: "Let the researcher start a project from five places, confirm a proposal with Virgilio and keep setup final after confirmation."
+description: "Let the researcher start a project from five places, clearly correct or confirm Virgilio’s setup proposal and keep setup final after confirmation."
 generated:
   by: codex/gpt-6.1-sol
 tags: [story, "comp:app", "comp:docs"]
@@ -44,6 +44,8 @@ The [task-notice specification](epic.md#spec-003-018-task-notices) also applies 
 - [ ] Apply [SPEC-003-020’s after-confirmation rule](epic.md#spec-003-020-new-project-flow) to setup task replacement controls, using confirmed project state and retaining historical notices.
 
 ## Acceptance criteria
+
+- [ ] During correction entry, Correct setup has the card’s primary emphasis, Confirm setup is secondary, and the composer visibly labels its text box Tell Virgilio what to change even with retained text; sending successfully, leaving the open proposal or changing scope restores the normal emphasis and composer label without an implicit setup decision.
 
 - [ ] Confirming an earlier valid proposal while the latest setup task is failed or uncertain leaves that task’s notice readable without "Try again" or "Start reply again"; fresh commands follow [SPEC-003-018’s finality guard](epic.md#spec-003-018-task-notices), and recorded receipt replays retain their first result.
 

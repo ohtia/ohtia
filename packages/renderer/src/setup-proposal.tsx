@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import { message, type InterfaceLocale, type TimelineSetupProposal } from "@ohtia/contracts";
 import { ActionProposalCard } from "./research-presentation.js";
 import { VoiceLabel } from "./contributor-identity.js";
@@ -18,6 +19,12 @@ export function SetupProposal({
   readonly locale: InterfaceLocale;
   readonly hasText: boolean;
 }) {
+  const correcting = useSyncExternalStore(controller.composer.subscribe, () => {
+    const composer = controller.composer.snapshot();
+    return (
+      proposal.state === "proposed" && !composer.setupFinal && composer.correction === proposal.id
+    );
+  });
   const title =
     state.texts.get(`${proposal.id}/title`) ??
     (typeof proposal.title === "string" ? proposal.title : "");
@@ -122,7 +129,7 @@ export function SetupProposal({
       actions={[
         {
           label: label("setup.confirm"),
-          primary: true,
+          primary: !correcting,
           disabled: waiting || !!action?.busy,
           onPress: () => {
             void controller.performSetupAction(proposal, "confirm");
@@ -130,6 +137,7 @@ export function SetupProposal({
         },
         {
           label: label("setup.correct"),
+          primary: correcting,
           disabled: !!action?.busy,
           onPress: () => {
             controller.composer.correct(proposal.id);

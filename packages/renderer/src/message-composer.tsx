@@ -134,8 +134,14 @@ export function MessageComposer({
       className="message-composer"
       aria-label={message(locale, "composer.placeholder", { agent })}
     >
+      {state.correction && !state.setupFinal && (
+        <label className="composer-correction" htmlFor={`${id}-input`}>
+          {message(locale, "setup.correctPlaceholder")}
+        </label>
+      )}
       <div className="composer-box">
         <textarea
+          id={`${id}-input`}
           ref={input}
           rows={1}
           value={state.text}

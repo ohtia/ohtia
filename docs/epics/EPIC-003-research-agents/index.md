@@ -1,6 +1,6 @@
 # EPIC-003 — Research agents and their conversation interface
 
-- [EPIC-003 — Research agents and their conversation interface](epic.md) - Let the researcher connect ChatGPT, Anthropic or OpenAI accounts, set up a project with Virgilio and work through bounded, durable, attributed conversations, consultations, plans and handoffs with Virgilio and Josefa.
+- [EPIC-003 — Research agents and their conversation interface](epic.md) - Let the researcher connect ChatGPT, Anthropic or OpenAI accounts, review and correct a project setup proposal with Virgilio and work through bounded, durable, attributed conversations, consultations, plans and handoffs with Virgilio and Josefa.
 
 ## Stories
 
@@ -18,7 +18,7 @@
 - [STORY-003-012 — Message composer](STORY-003-012-message-composer.md) - Let the researcher write, send and stop from a growing composer with a 20,000-character limit and a destination line.
 - [STORY-003-013 — Task notices](STORY-003-013-task-notices.md) - Show task states, failures and cross-project pauses with accessible notices and durable recovery actions.
 - [STORY-003-014 — Project setup operation](STORY-003-014-project-setup-operation.md) - Let Virgilio agree a working title and document language through a proposal the researcher confirms.
-- [STORY-003-015 — New project flow](STORY-003-015-new-project-flow.md) - Let the researcher start a project from five places, confirm a proposal with Virgilio and keep setup final after confirmation.
+- [STORY-003-015 — New project flow](STORY-003-015-new-project-flow.md) - Let the researcher start a project from five places, clearly correct or confirm Virgilio’s setup proposal and keep setup final after confirmation.
 - [STORY-003-016 — Open and switch projects](STORY-003-016-open-and-switch-projects.md) - Let the researcher list, open and switch projects and reopen the last one at start.
 - [STORY-003-017 — Virgilio: clarify and next step](STORY-003-017-virgilio-clarify-and-next-step.md) - Let Virgilio guide the researcher in every confirmed project in the document language, within bounded input and output.
 - [STORY-003-018 — Conversation history](STORY-003-018-conversation-history.md) - Let the researcher list, start, rename and switch conversations within the open project.

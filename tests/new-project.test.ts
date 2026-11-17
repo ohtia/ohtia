@@ -405,6 +405,12 @@ describe("setup cards and decisions", () => {
       "Tell Virgilio what to change",
     );
     expect(document.activeElement).toBe(container.querySelector("textarea"));
+    const setupButtons = [...container.querySelectorAll(".action-proposal .actions button")];
+    expect(setupButtons[0]?.classList.contains("primitive-primary")).toBe(false);
+    expect(setupButtons[1]?.classList.contains("primitive-primary")).toBe(true);
+    expect(container.querySelector(".composer-correction")?.textContent).toBe(
+      "Tell Virgilio what to change",
+    );
     await act(async () => {
       c.composer.edit("Please change the title");
       c.composer.send();
@@ -413,6 +419,9 @@ describe("setup cards and decisions", () => {
     expect(container.querySelector("textarea")?.getAttribute("aria-label")).toBe(
       "Message Virgilio",
     );
+    expect(container.querySelector(".composer-correction")).toBeNull();
+    expect(setupButtons[0]?.classList.contains("primitive-primary")).toBe(true);
+    expect(setupButtons[1]?.classList.contains("primitive-primary")).toBe(false);
     await act(async () => {
       c.composer.setup(true, []);
     });
@@ -945,5 +954,50 @@ it("keeps a requested composer focus pending behind a modal and consumes it afte
   expect(document.activeElement).toBe(other);
   other.remove();
   dialog.remove();
+  c.dispose();
+});
+
+it("shows the active correction path with retained text without sending or deciding", async () => {
+  const f = fixture(),
+    c = new ConversationController(f.bridge);
+  c.open({ projectId, conversationId });
+  await flush();
+  c.composer.edit("Unsent researcher corrections");
+  await act(async () =>
+    root.render(
+      h(
+        "div",
+        null,
+        h(SetupProposal, {
+          proposal,
+          state: state(),
+          controller: c,
+          locale: "en-US",
+          hasText: true,
+        }),
+        h(MessageComposer, { controller: c.composer, locale: "en-US" }),
+      ),
+    ),
+  );
+  const correct = [
+    ...container.querySelectorAll<HTMLButtonElement>(".action-proposal button"),
+  ].find((button) => button.textContent === "Correct setup")!;
+  for (let i = 0; i < 2; i++) {
+    await act(async () => correct.click());
+    const input = container.querySelector("textarea")!;
+    const label = container.querySelector<HTMLLabelElement>(".composer-correction")!;
+    expect(input.value).toBe("Unsent researcher corrections");
+    expect(label.htmlFor).toBe(input.id);
+    expect(label.textContent).toBe("Tell Virgilio what to change");
+    expect(document.activeElement).toBe(input);
+    expect(correct.classList.contains("primitive-primary")).toBe(true);
+  }
+  expect(f.port.appendMessage).not.toHaveBeenCalled();
+  expect(f.port.confirmProjectSetup).not.toHaveBeenCalled();
+  expect(f.port.rejectProjectSetup).not.toHaveBeenCalled();
+  await act(async () => c.composer.setup(false, []));
+  expect(container.querySelector(".composer-correction")).toBeNull();
+  expect(correct.classList.contains("primitive-primary")).toBe(false);
+  expect(container.querySelector("textarea")?.value).toBe("Unsent researcher corrections");
   c.dispose();
 });

@@ -856,6 +856,12 @@
       "backgrounds": ["surface.page"],
       "minimum": 3,
       "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".composer-correction",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7
     }
   ],
   "overlays": [

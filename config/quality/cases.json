@@ -1568,6 +1568,7 @@
     "tests/new-project.test.ts::setup cards and decisions > retains reject's identifier after an unknown result and rereads proposal_not_waiting::case-0",
     "tests/new-project.test.ts::setup cards and decisions > shows each confirm error with the required role and clears it for concurrent decided state::case-0",
     "tests/new-project.test.ts::setup cards and decisions > shows each reject error with the required role and clears it for concurrent decided state::case-0",
+    "tests/new-project.test.ts::shows the active correction path with retained text without sending or deciding::case-0",
     "tests/port.test.ts::P3 bounded named bridge with deterministic transport peers > bounds subscriptions, detects sequence gaps/queue saturation, and disposes all listeners::case-0",
     "tests/port.test.ts::P3 bounded named bridge with deterministic transport peers > disposes a pending subscription and cannot activate it with a late acknowledgement::case-0",
     "tests/port.test.ts::P3 bounded named bridge with deterministic transport peers > exposes only named operations and checks input before dispatch::case-0",
