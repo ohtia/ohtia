@@ -66,11 +66,12 @@ function useSystemPreference(query: string, active: boolean): boolean {
   }, [query, active]);
   return matches;
 }
-function focusSetting(id: string, feature: SettingFeature | "layout"): void {
+function focusSetting(id: string, feature: SettingFeature | "layout" | "connections"): void {
   const group = document.getElementById(`${id}-${feature}-controls`);
   (
     group?.querySelector<HTMLElement>("input:checked") ??
-    group?.querySelector<HTMLElement>("input,button")
+    group?.querySelector<HTMLElement>("input,button") ??
+    group
   )?.focus();
 }
 export function SettingsDialog({
@@ -91,7 +92,7 @@ export function SettingsDialog({
   returnFocusRef,
 }: {
   readonly returnFocusRef?: Readonly<RefObject<HTMLElement | null>>;
-  readonly requestedFocus?: SettingFeature | undefined;
+  readonly requestedFocus?: SettingFeature | "connections" | undefined;
   readonly feedback?: ReactNode;
   readonly open: boolean;
   readonly onClose: () => void;
@@ -561,12 +562,19 @@ export function SettingsDialog({
           }}
         />
         {open && (
-          <ConnectionsPanel
-            onConnection={setConnection}
-            port={port}
-            locale={locale}
-            available={available}
-          />
+          <div
+            id={`${id}-connections-controls`}
+            role="region"
+            tabIndex={-1}
+            aria-label={message(locale, "connection.title")}
+          >
+            <ConnectionsPanel
+              onConnection={setConnection}
+              port={port}
+              locale={locale}
+              available={available}
+            />
+          </div>
         )}
         {open && limits && (
           <LimitsPanel

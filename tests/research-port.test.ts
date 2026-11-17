@@ -337,7 +337,7 @@ describe("research timeline and bounded reads", () => {
       ),
     ).toBe(true);
   });
-  it("admits exactly four subscriptions and never exposes development or later task commands", async () => {
+  it("admits exactly four subscriptions and never exposes development-only commands", async () => {
     const h = await harness();
     const listeners = () => {};
     value(await h.port.subscribePresentation(listeners).ready);
@@ -347,13 +347,7 @@ describe("research timeline and bounded reads", () => {
       await h.port.subscribeResearch({ projectId: null, conversationId: null }, listeners).ready,
     );
     expect(await h.port.subscribeStatus(listeners).ready).toEqual(failure("busy"));
-    for (const operation of [
-      "development.createProject",
-      "task.cancelAll",
-      "task.startAgain",
-      "usagePause.resume",
-      "task.continueAll",
-    ])
+    for (const operation of ["development.createProject", "task.cancelAll"])
       expect(
         encodeEnvelope({
           protocol: 1,
@@ -990,6 +984,299 @@ it("stops every unfinished conversation task with one receipt, preserves message
     failure("record_not_found"),
   );
   expect(before).toHaveLength(1);
+});
+
+it("carries pause reads, continuation, resume and guarded retry commands through the window port", async () => {
+  const h = await harness();
+  expect(value(await h.port.readPauses().result)).toEqual({ revision: 1, restart: 0, usage: [] });
+  const continued = value(await h.port.continueAllTasks("continue-first").result);
+  expect(value(await h.port.continueAllTasks("continue-first").result)).toEqual(continued);
+  value(await h.port.continueAllTasks("continue-second-window").result);
+  const resumed = value(
+    await h.port.resumeUsagePause("resume-first", { connection: "chatgpt" }).result,
+  );
+  expect(
+    value(await h.port.resumeUsagePause("resume-first", { connection: "chatgpt" }).result),
+  ).toEqual(resumed);
+  value(await h.port.resumeUsagePause("resume-second-window", { connection: "chatgpt" }).result);
+  expect(await h.port.tryAgainTask("try-missing", { taskId: entity(999) }).result).toEqual(
+    failure("record_not_found"),
+  );
+  expect(await h.port.startAgainTask("restart-missing", { taskId: entity(999) }).result).toEqual(
+    failure("record_not_found"),
+  );
+});
+
+it("refreshes an empty model catalog on Try again and holds the new task until main reports", async () => {
+  const h = await harness();
+  const projectId = value(
+    await h.store.executeResearchCommand({
+      command: "development.createProject",
+      operationId: "retry-model-project",
+      payload: {},
+    }),
+  ).resultId;
+  const conversation = value(await h.store.readConversations(projectId))[0]!;
+  const events: any[] = [];
+  value(
+    await h.port.subscribeResearch({ projectId, conversationId: conversation.id }, (event) =>
+      events.push(event),
+    ).ready,
+  );
+  const report = (
+    models: { id: string; name: string }[],
+    revision: number,
+    refresh_id?: string,
+  ) => {
+    h.service.receive(
+      JSON.stringify({
+        kind: "connection_state",
+        ...(refresh_id ? { refresh_id } : {}),
+        generation: "service",
+        snapshot: {
+          connection: "chatgpt",
+          state: "connected",
+          reason: null,
+          probing: false,
+          probe_id: null,
+          model_list_revision: revision,
+          model_count: models.length,
+        },
+      }),
+    );
+    h.service.receive(
+      JSON.stringify({
+        kind: "connection_models",
+        generation: "service",
+        page: {
+          connection: "chatgpt",
+          model_list_revision: revision,
+          models,
+          nextCursor: models.length,
+          hasMore: false,
+        },
+      }),
+    );
+  };
+  report([], 1);
+  value(
+    await h.port.appendMessage("empty-model-message", {
+      conversationId: conversation.id,
+      content: "Synthetic input",
+    }).result,
+  );
+  const timeline = () =>
+    h.port.listTimelineBefore({ conversationId: conversation.id, cursor: null, count: 50 }).result;
+  const failed = value(await timeline()).items.find((item) => item.kind === "task")!;
+  expect(failed).toMatchObject({ state: "failed", outcomeReason: "provider_unavailable" });
+  const retried = value(
+    await h.port.tryAgainTask("retry-empty-model", { taskId: failed.id }).result,
+  );
+  expect(
+    value(await h.port.tryAgainTask("retry-empty-model", { taskId: failed.id }).result),
+  ).toEqual(retried);
+  const refresh = h.sent
+    .map((text) => JSON.parse(text))
+    .find((message) => message.kind === "model_list_refresh");
+  expect(refresh).toEqual({
+    kind: "model_list_refresh",
+    refresh_id: expect.any(String),
+    version: 1,
+    generation: "service",
+    connection: "chatgpt",
+  });
+  expect(value(await timeline()).items.find((item) => item.id === retried.resultId)).toMatchObject({
+    state: "queued",
+  });
+  // Old in-flight reports cannot acknowledge this specific human-requested refresh.
+  report([], 1);
+  await h.service.drain();
+  expect(value(await timeline()).items.find((item) => item.id === retried.resultId)).toMatchObject({
+    state: "queued",
+    waitingForModels: true,
+  });
+  report([{ id: "new-model", name: "New model" }], 2, refresh.refresh_id);
+  await h.service.drain();
+  expect(value(await timeline()).items.find((item) => item.id === retried.resultId)).toMatchObject({
+    state: "running",
+  });
+  expect(await h.port.tryAgainTask("stale-retry", { taskId: failed.id }).result).toEqual(
+    failure("newer_task_exists"),
+  );
+  await vi.waitFor(() =>
+    expect(events.some((event) => event.value?.kind === "destinationChanged")).toBe(true),
+  );
+});
+
+it("notifies a window with another project when a usage pause holds and stops work", async () => {
+  const h = await harness();
+  const events: any[] = [];
+  value(
+    await h.port.subscribeResearch({ projectId: h.projectId, conversationId: null }, (event) =>
+      events.push(event),
+    ).ready,
+  );
+  const projectId = value(
+    await h.store.executeResearchCommand({
+      command: "development.createProject",
+      operationId: "cross-project",
+      payload: {},
+    }),
+  ).resultId;
+  const conversationId = value(await h.store.readConversations(projectId))[0]!.id;
+  h.service.receive(
+    JSON.stringify({
+      kind: "connection_state",
+      generation: "service",
+      snapshot: {
+        connection: "chatgpt",
+        state: "connected",
+        reason: null,
+        probing: false,
+        probe_id: null,
+        model_list_revision: 1,
+        model_count: 1,
+      },
+    }),
+  );
+  h.service.receive(
+    JSON.stringify({
+      kind: "connection_models",
+      generation: "service",
+      page: {
+        connection: "chatgpt",
+        model_list_revision: 1,
+        models: [{ id: "first-model", name: "First model" }],
+        nextCursor: 1,
+        hasMore: false,
+      },
+    }),
+  );
+  value(
+    await h.port.appendMessage("cross-first", { conversationId, content: "Synthetic question" })
+      .result,
+  );
+  value(
+    await h.port.appendMessage("cross-second", { conversationId, content: "Synthetic follow-up" })
+      .result,
+  );
+  const dispatch = h.sent
+    .map((text) => JSON.parse(text))
+    .find((message) => message.kind === "provider_dispatch");
+  h.service.receive(
+    JSON.stringify({
+      kind: "provider_event",
+      version: 1,
+      generation: "service",
+      attempt: dispatch.request.attempt,
+      event: { type: "started", sequence: 1, provider_request_id: null, model: null },
+    }),
+  );
+  h.service.receive(
+    JSON.stringify({
+      kind: "provider_event",
+      version: 1,
+      generation: "service",
+      attempt: dispatch.request.attempt,
+      event: {
+        type: "result",
+        sequence: 2,
+        result: { status: "failed", reason: "usage_limit_reached", dispatched: true },
+      },
+    }),
+  );
+  await h.service.drain();
+  expect(value(await h.port.readPauses().result).usage).toEqual([
+    { connection: "chatgpt", count: 1 },
+  ]);
+  await vi.waitFor(() =>
+    expect(events.some((event) => event.value?.kind === "pauseCounts")).toBe(true),
+  );
+  const before = events.filter((event) => event.value?.kind === "pauseCounts").length;
+  value(await h.port.stopConversation("cross-stop", { conversationId }).result);
+  expect(value(await h.port.readPauses().result).usage).toEqual([
+    { connection: "chatgpt", count: 0 },
+  ]);
+  await vi.waitFor(() =>
+    expect(events.filter((event) => event.value?.kind === "pauseCounts").length).toBeGreaterThan(
+      before,
+    ),
+  );
+  expect(events.some((event) => event.value?.record === "timeline")).toBe(false);
+});
+
+it("projects conversation activity and the saturated general or connection limit independently of loaded history", async () => {
+  const h = await harness();
+  h.service.receive(
+    JSON.stringify({
+      kind: "connection_state",
+      generation: "service",
+      snapshot: {
+        connection: "chatgpt",
+        state: "connected",
+        reason: null,
+        probing: false,
+        probe_id: null,
+        model_list_revision: 1,
+        model_count: 1,
+      },
+    }),
+  );
+  h.service.receive(
+    JSON.stringify({
+      kind: "connection_models",
+      generation: "service",
+      page: {
+        connection: "chatgpt",
+        model_list_revision: 1,
+        models: [{ id: "model", name: "Model" }],
+        nextCursor: 1,
+        hasMore: false,
+      },
+    }),
+  );
+  const conversations = [];
+  for (let n = 0; n < 4; n++) {
+    await h.service.drain();
+    const project = value(
+      await h.store.executeResearchCommand({
+        command: "development.createProject",
+        operationId: `capacity-project-${n}`,
+        payload: {},
+      }),
+    ).resultId;
+    const conversation = value(await h.store.readConversations(project))[0]!;
+    conversations.push({ project, conversation });
+    value(
+      await h.port.appendMessage(`capacity-message-${n}`, {
+        conversationId: conversation.id,
+        content: "Synthetic capacity input",
+      }).result,
+    );
+  }
+  const last = conversations[3]!;
+  const queued = () =>
+    h.port.listTimelineBefore({ conversationId: last.conversation.id, cursor: null, count: 50 })
+      .result;
+  expect(value(await queued()).items.find((item) => item.kind === "task")).toMatchObject({
+    state: "queued",
+    waitingLimit: 3,
+  });
+  const first = conversations[0]!;
+  expect(
+    value(
+      await h.port.readConversations({ projectId: first.project, ids: [first.conversation.id] })
+        .result,
+    ).items[0]?.runningTask,
+  ).toMatchObject({ state: "running", agentId: "virgilio" });
+  value(
+    await h.port.replaceExecutionLimits({ operationId: "capacity-limit-one", value: 1 }, "service")
+      .result,
+  );
+  expect(value(await queued()).items.find((item) => item.kind === "task")).toMatchObject({
+    state: "queued",
+    waitingLimit: 1,
+  });
 });
 
 it("reads proposal-only reply positions and publishes each decision revision through the public port", async () => {

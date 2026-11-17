@@ -1,6 +1,11 @@
 import { ComposerController } from "./composer-controller.js";
 import {
   mergeTimeline,
+  chatgptConnection,
+  type PauseCounts,
+  type ProviderDeclaration,
+  type TimelineTask,
+  failure,
   compareTimeline,
   portLimits,
   utf8Size,
@@ -15,7 +20,9 @@ import {
   type TimelineItem,
   type TextReference,
 } from "@ohtia/contracts";
+export type TaskAction = "resume" | "continue" | "retry" | "restart";
 export interface ConversationState {
+  readonly pauses?: PauseCounts;
   readonly scope: ResearchScope;
   readonly status: "loading" | "ready" | "failed" | "unavailable";
   readonly conversation?: ConversationSummary;
@@ -57,13 +64,74 @@ export class ConversationController {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private subscriptionRetry: ReturnType<typeof setTimeout> | undefined;
   private readonly cache = new Map<string, ConversationState>();
+  private baselineEstablished = false;
   private readonly establishedRanges = new Map<string, TimelineCursor | null>();
   private readonly revisions = new Map<string, number>();
+  private readonly noticeUpdates = new Map<string, number>();
+  private readonly introducedTasks = new Map<string, string>();
+  private readonly announcedNotices = new Map<string, string>();
+  /** Historical reads do not announce. Live transitions are announced once per window. */
+  claimTaskNotice(taskId: string, revision: number, signature: string): boolean {
+    const live = (this.noticeUpdates.get(taskId) ?? 0) >= revision;
+    const key = `${String(revision)}/${signature}`;
+    if (this.announcedNotices.get(taskId) === key) return false;
+    this.announcedNotices.set(taskId, key);
+    return live;
+  }
   readonly composer: ComposerController;
-  constructor(private readonly port: FoundationPort) {
-    this.composer = new ComposerController(port, undefined, undefined, () => {
+  constructor(
+    private readonly port: FoundationPort,
+    readonly connections: readonly ProviderDeclaration["connection"][] = [chatgptConnection],
+  ) {
+    this.composer = new ComposerController(port, undefined, connections, () => {
       this.reload();
     });
+  }
+  private pauseEpoch = -1;
+  async refreshPauses(): Promise<void> {
+    const epoch = this.epoch;
+    const result = await this.port.readPauses().result;
+    if (!this.live(epoch)) return;
+    if (!result.ok) throw new Error("Pause counts unavailable.");
+    if (this.pauseEpoch === epoch && (this.state.pauses?.revision ?? 0) > result.value.revision)
+      return;
+    this.pauseEpoch = epoch;
+    this.state = { ...this.state, pauses: result.value };
+    this.composer.pauses(result.value);
+    this.publish();
+  }
+  async performTaskAction(
+    operationId: string,
+    action: TaskAction,
+    task: TimelineTask,
+  ): Promise<Outcome<import("@ohtia/contracts").ResearchResult>> {
+    const conversationId = this.state.scope.conversationId;
+    let result: Outcome<import("@ohtia/contracts").ResearchResult>;
+    try {
+      result = await (
+        action === "resume"
+          ? this.port.resumeUsagePause(operationId, { connection: task.connection as "chatgpt" })
+          : action === "continue"
+            ? this.port.continueAllTasks(operationId)
+            : action === "retry"
+              ? this.port.tryAgainTask(operationId, { taskId: task.id })
+              : this.port.startAgainTask(operationId, { taskId: task.id })
+      ).result;
+    } catch {
+      result = failure("invalid_service_result");
+    }
+    if (result.ok && !this.disposed) {
+      if ((action === "retry" || action === "restart") && conversationId && result.value.resultId)
+        this.introducedTasks.set(result.value.resultId, conversationId);
+      // A failed reread cannot turn a confirmed save into another mutation.
+      try {
+        if (action === "resume" || action === "continue") await this.refreshPauses();
+      } catch {
+        this.failure(this.epoch);
+      }
+      this.reload();
+    }
+    return result;
   }
   snapshot = (): ConversationState => this.state;
   subscribe = (listener: () => void): (() => void) => {
@@ -72,11 +140,14 @@ export class ConversationController {
   };
   private publish(): void {
     this.composer.running(
-      this.state.items.some(
-        (item) =>
-          item.kind === "task" &&
-          ["queued", "blocked", "running", "cancelling"].includes(item.state),
-      ),
+      !!this.state.conversation?.runningTask ||
+        this.state.items.some(
+          (item) =>
+            item.kind === "task" &&
+            ["queued", "blocked", "running", "cancelling"].includes(item.state),
+        ),
+      this.state.conversation?.runningTask?.state === "cancelling" ||
+        this.state.items.some((item) => item.kind === "task" && item.state === "cancelling"),
     );
     for (const listener of this.listeners) listener();
   }
@@ -114,6 +185,7 @@ export class ConversationController {
     this.subscriptionRetry = undefined;
     this.stream?.dispose();
     this.revisions.clear();
+    this.baselineEstablished = false;
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
     const cached = scope.conversationId ? this.cache.get(scope.conversationId) : undefined;
@@ -251,6 +323,20 @@ export class ConversationController {
     epoch: number,
     announce = false,
   ): Promise<void> {
+    // A reserved reply can finish above the newest page while this window misses
+    // events. Recover its immutable message explicitly, rather than losing partial text.
+    const held = new Set(
+      [...this.state.items, ...items]
+        .filter((item) => item.kind === "message")
+        .map((item) => item.id),
+    );
+    const missing = items.flatMap((item) =>
+      item.kind === "task" && item.replyMessageId && !held.has(item.replyMessageId)
+        ? [item.replyMessageId]
+        : [],
+    );
+    if (missing.length) await this.readIds([...new Set(missing)], epoch, announce);
+    if (!this.live(epoch)) return;
     const texts = new Map(this.state.texts);
     for (const item of items)
       if (item.kind === "message")
@@ -260,12 +346,37 @@ export class ConversationController {
         );
     if (!this.live(epoch)) return;
     const previous = this.state.items;
+    const known = new Map(previous.map((item) => [item.id, item]));
+    const introduced = new Set<string>();
+    for (const item of items) {
+      if (item.kind !== "task") continue;
+      if (this.introducedTasks.get(item.id) === this.state.scope.conversationId) {
+        introduced.add(item.id);
+        this.introducedTasks.delete(item.id);
+      }
+      const old = known.get(item.id);
+      const recoveredChange =
+        old !== undefined &&
+        old.kind === "task" &&
+        (old.revision < item.revision ||
+          (old.revision === item.revision &&
+            (old.waitingForModels !== item.waitingForModels ||
+              old.waitingLimit !== item.waitingLimit)));
+      if (announce || recoveredChange || introduced.has(item.id))
+        this.noticeUpdates.set(
+          item.id,
+          Math.max(this.noticeUpdates.get(item.id) ?? 0, item.revision),
+        );
+    }
     let completed = this.state.completed;
     for (const item of items)
       if (
         item.kind === "message" &&
         item.authorKind === "agent" &&
-        (announce || this.pendingReplies.has(item.taskId ?? "")) &&
+        (announce ||
+          introduced.has(item.taskId ?? "") ||
+          this.introducedTasks.get(item.taskId ?? "") === this.state.scope.conversationId ||
+          this.pendingReplies.has(item.taskId ?? "")) &&
         !previous.some((old) => old.id === item.id)
       )
         completed++;
@@ -283,7 +394,11 @@ export class ConversationController {
       completed,
     };
   }
-  private async page(cursor: TimelineCursor | null, epoch: number): Promise<TimelineCursor | null> {
+  private async page(
+    cursor: TimelineCursor | null,
+    epoch: number,
+    announce = false,
+  ): Promise<TimelineCursor | null> {
     const conversationId = this.state.scope.conversationId;
     if (!conversationId) return null;
     let remaining = 50;
@@ -297,7 +412,7 @@ export class ConversationController {
       if (!result.ok)
         throw Object.assign(new Error("Timeline page unavailable."), { code: result.error.code });
       if (!this.live(epoch)) return null;
-      await this.accept(result.value.items, epoch);
+      await this.accept(result.value.items, epoch, announce);
       remaining -= result.value.items.length;
       next = result.value.next;
       if (result.value.hasMore && !result.value.items.length)
@@ -347,6 +462,8 @@ export class ConversationController {
     await this.projects(epoch);
     if (!this.live(epoch)) return;
     void this.composer.refreshDestination();
+    await this.refreshPauses();
+    if (!this.live(epoch)) return;
     if (!this.state.scope.conversationId) {
       this.state = { ...this.state, status: "ready" };
       this.publish();
@@ -360,7 +477,8 @@ export class ConversationController {
     const preserveRange = newestHeld !== undefined && newestHeld !== null;
     const previousNext = this.state.next;
     const held = this.state.items.map((item) => item.id);
-    let next = await this.page(null, epoch);
+    const announce = recovering && this.baselineEstablished;
+    let next = await this.page(null, epoch, announce);
     if (!this.live(epoch)) return;
     const latest = this.state.items.at(-1);
     const newestPage = latest
@@ -368,9 +486,14 @@ export class ConversationController {
       : null;
     // Rejoin the latest page to the cached range before retaining its older continuation.
     while (this.live(epoch) && next && newestHeld && compareTimeline(next, newestHeld) > 0)
-      next = await this.page(next, epoch);
+      next = await this.page(next, epoch, announce);
     if (!this.live(epoch)) return;
     if (recovering || held.length) await this.readIds(held, epoch);
+    if (!this.live(epoch)) return;
+    const introduced = [...this.introducedTasks]
+      .filter(([, id]) => id === conversationId)
+      .map(([id]) => id);
+    if (introduced.length) await this.readIds(introduced, epoch);
     if (!this.live(epoch)) return;
     for (const item of this.state.items)
       if (item.kind === "task" && ["running", "cancelling"].includes(item.state))
@@ -384,6 +507,7 @@ export class ConversationController {
       failedEarlier: false,
     };
     this.establishedRanges.set(conversationId, newestPage);
+    this.baselineEstablished = true;
     this.publish();
   }
   loadEarlier = (): void => {
@@ -404,7 +528,43 @@ export class ConversationController {
     });
   };
   private async event(event: ResearchEvent, epoch: number): Promise<void> {
-    if (event.kind === "inferenceActivity") return;
+    if (event.kind === "destinationChanged") {
+      void this.composer.refreshDestination();
+      await this.readIds(
+        this.state.items
+          .filter((item) => item.kind === "task" && item.state === "queued")
+          .map((item) => item.id),
+        epoch,
+        true,
+      );
+      if (this.live(epoch)) this.publish();
+      return;
+    }
+    if (event.kind === "inferenceActivity") {
+      await this.readIds(
+        this.state.items
+          .filter((item) => item.kind === "task" && item.state === "queued")
+          .map((item) => item.id),
+        epoch,
+        true,
+      );
+      if (this.live(epoch)) this.publish();
+      return;
+    }
+    if (event.kind === "pauseCounts") {
+      if ((this.state.pauses?.revision ?? 0) < event.revision) await this.refreshPauses();
+      return;
+    }
+    if (event.kind === "changed" && event.record === "executionLimits") {
+      await this.readIds(
+        this.state.items
+          .filter((item) => item.kind === "task" && item.state === "queued")
+          .map((item) => item.id),
+        epoch,
+        true,
+      );
+      if (!this.live(epoch)) return;
+    }
     if (event.kind === "reply") {
       const saved = this.state.items.some(
         (item) => item.kind === "message" && item.taskId === event.taskId,
@@ -455,5 +615,8 @@ export class ConversationController {
     this.establishedRanges.clear();
     this.listeners.clear();
     this.observers.clear();
+    this.noticeUpdates.clear();
+    this.announcedNotices.clear();
+    this.introducedTasks.clear();
   }
 }

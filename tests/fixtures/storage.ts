@@ -1,3 +1,5 @@
+import { objects as setupObjects } from "../../packages/utility/src/migrations/0015_project_setup.mjs";
+import { objects as initialTaskObjects } from "../../packages/utility/src/migrations/0008_durable_ai_tasks.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,6 +10,8 @@ import { DurableStore, type StorageOptions } from "../../packages/utility/dist/i
 
 const require = createRequire(new URL("../../packages/utility/package.json", import.meta.url));
 export const Database = require("better-sqlite3") as typeof import("better-sqlite3");
+export const legacyTaskInitialSql = `DROP TRIGGER tasks_initial; ${initialTaskObjects.tasks_initial}; `;
+export const preTaskNoticeSql = `${legacyTaskInitialSql} DROP TRIGGER receipts_commands; ${setupObjects.receipts_commands}; DELETE FROM kysely_migration WHERE name='0016_task_notices'; DELETE FROM ohtia_migration_artifacts WHERE name='0016_task_notices'; PRAGMA user_version=15;`;
 export const roots: string[] = [];
 export const stores: DurableStore[] = [];
 afterEach(async () => {

@@ -27,11 +27,12 @@ export function MessageComposer({
   const over = count > researcherMessageLimit;
   const counter = count >= 18_000;
   const hasText = state.text.trim().length > 0;
-  const stop = state.saving || state.stopping || (!hasText && state.running);
+  const stopping = state.stopping || state.cancelling;
+  const stop = state.saving || stopping || (!hasText && state.running);
   const destinationUnavailable = state.destinationStatus !== "ready";
-  const disabled = state.stopping || (!stop && (!hasText || over || destinationUnavailable));
+  const disabled = stopping || (!stop && (!hasText || over || destinationUnavailable));
   const destinationReason = !stop && hasText && !over && destinationUnavailable;
-  const reason = state.stopping
+  const reason = stopping
     ? message(locale, "composer.stopping")
     : !hasText && !stop
       ? message(locale, "composer.empty")
@@ -154,7 +155,7 @@ export function MessageComposer({
             aria-label={name}
             aria-disabled={disabled}
             aria-describedby={
-              state.stopping || (!hasText && !stop)
+              stopping || (!hasText && !stop)
                 ? `${id}-reason`
                 : !stop && over
                   ? `${id}-notice`
@@ -230,9 +231,7 @@ export function MessageComposer({
       {reason && !(destinationReason && state.destinationStatus === "failed") && (
         <p
           id={`${id}-reason`}
-          className={
-            state.stopping || destinationReason ? "composer-reason" : "primitive-announcement"
-          }
+          className={stopping || destinationReason ? "composer-reason" : "primitive-announcement"}
         >
           {reason}
         </p>
@@ -241,12 +240,20 @@ export function MessageComposer({
         <p className="composer-destination">
           {message(
             locale,
-            state.destination.declaration.kind === "subscription"
-              ? "composer.subscription"
-              : "composer.apiKey",
+            state.connectionState !== "connected"
+              ? "taskNotice.destinationDisconnected"
+              : state.usagePaused
+                ? state.destination.declaration.kind === "subscription"
+                  ? "taskNotice.destinationPaused.subscription"
+                  : "taskNotice.destinationPaused.apiKey"
+                : state.destination.declaration.kind === "subscription"
+                  ? "composer.subscription"
+                  : "composer.apiKey",
             {
               service: state.destination.declaration.displayName,
-              ...(state.destination.declaration.kind === "subscription"
+              ...(state.connectionState === "connected" &&
+              !state.usagePaused &&
+              state.destination.declaration.kind === "subscription"
                 ? { email: state.destination.email || message(locale, "identity.unknown") }
                 : {}),
             },

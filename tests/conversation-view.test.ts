@@ -2,6 +2,7 @@
 import { act, createElement as h } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { TaskNotice, taskNoticeContent } from "../packages/renderer/src/task-notice.js";
 import { ConversationView } from "../packages/renderer/src/conversation-view.js";
 import {
   ConversationController,
@@ -9,6 +10,9 @@ import {
 } from "../packages/renderer/src/conversation-controller.js";
 import {
   failure,
+  chatgptConnection,
+  type TimelineTask,
+  type InterfaceLocale,
   portLimits,
   type FoundationPort,
   type Outcome,
@@ -40,6 +44,8 @@ const summary: ConversationSummary = {
   updatedAt: "2026-11-15T10:12:00.000Z",
   revision: 1,
   agentId: "virgilio",
+  latestReplyTaskId: null,
+  runningTask: null,
 };
 const call = <T>(value: T) => ({ result: Promise.resolve(value), cancel() {} });
 const ok = <T>(value: T) => call({ ok: true as const, value });
@@ -48,6 +54,13 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+    this.dispatchEvent(new Event("close"));
+  };
 });
 afterEach(async () => {
   await act(async () => root.unmount());
@@ -76,7 +89,12 @@ async function render(next: ConversationState, controller = {} as ConversationCo
     root.render(
       h(ConversationView, {
         state: next,
-        controller,
+        controller: {
+          connections: [chatgptConnection],
+          ...controller,
+          claimTaskNotice: controller.claimTaskNotice?.bind(controller),
+          performTaskAction: controller.performTaskAction?.bind(controller),
+        },
         locale: "en-US",
         commands: { copyMessage: async () => true, openExternalLink: async () => true },
       }),
@@ -118,6 +136,16 @@ describe("conversation presentation", () => {
   it("keeps streaming parts out of live announcements and withholds the actions row", async () => {
     const task: TimelineItem = {
       kind: "task",
+      connection: "chatgpt",
+      blockingReason: null,
+      outcomeReason: null,
+      replyMessageId: null,
+      waitingForModels: false,
+      waitingLimit: 3,
+      dispatched: true,
+      superseded: false,
+      maxAttemptDurationMs: 600_000,
+      maxInactivityMs: 120_000,
       id: id(300),
       position: 2,
       rank: 3,
@@ -191,6 +219,13 @@ function controllerHarness(start = true) {
   const items = Array.from({ length: 120 }, (_, n) => message(n + 1));
   let failedEarlier = false;
   const port = {
+    readPauses: vi.fn(() => ok({ revision: 1, restart: 0, usage: [] })),
+    readExecutionLimits: () =>
+      ok({ serviceGeneration: "service", revision: 1, max_concurrent_inference: 10, running: 0 }),
+    subscribeConnection: () => ({
+      ready: Promise.resolve({ ok: true, value: { subscriptionId: "connection" } }),
+      dispose() {},
+    }),
     readDestination: vi.fn(() => ok({ destination: null })),
     readConnection: vi.fn(() =>
       ok({ account_email: "researcher@example.org", last_account_email: null }),
@@ -522,6 +557,16 @@ it("restores each conversation’s reading position and keeps its anchor through
 it("recovers an active reply over bounded part pages and rejects incomplete part sequences", async () => {
   const task: TimelineItem = {
     kind: "task",
+    connection: "chatgpt",
+    blockingReason: null,
+    outcomeReason: null,
+    replyMessageId: null,
+    waitingForModels: false,
+    waitingLimit: 3,
+    dispatched: true,
+    superseded: false,
+    maxAttemptDurationMs: 600_000,
+    maxInactivityMs: 120_000,
     id: id(900),
     position: 121,
     rank: 3,
@@ -1051,6 +1096,962 @@ it("does not let a retiring observer failure invalidate a reentrantly reopened s
   expect(h.controller.composer.snapshot().destinationStatus).toBe("ready");
   release();
   h.controller.dispose();
+});
+
+describe("task notices", () => {
+  const task = (change: Partial<TimelineTask> = {}): TimelineTask => ({
+    kind: "task",
+    id: id(991),
+    position: 2,
+    rank: 3,
+    revision: 1,
+    agentId: "virgilio",
+    language: "en",
+    state: "failed",
+    connection: "chatgpt",
+    blockingReason: null,
+    outcomeReason: "empty_reply",
+    replyMessageId: null,
+    waitingForModels: false,
+    waitingLimit: 3,
+    dispatched: true,
+    superseded: false,
+    maxAttemptDurationMs: 600_000,
+    maxInactivityMs: 120_000,
+    ...change,
+  });
+  const connection = {
+    ...chatgptConnection,
+    id: "fake",
+    displayName: "Synthetic service",
+    kind: "api_key" as const,
+  };
+  async function show(
+    t: TimelineTask,
+    extra = {},
+    perform = vi.fn(async () => ({ ok: true as const, value: { resultId: id(999) } })),
+  ) {
+    await act(async () =>
+      root.render(
+        h(TaskNotice, {
+          task: t,
+          locale: "en-US",
+          connection,
+          hasText: false,
+          latest: true,
+
+          pauses: { revision: 1, restart: 7, usage: [{ connection: "chatgpt", count: 12 }] },
+          controller: { performTaskAction: perform },
+          commands: { openLink: async () => true },
+          ...extra,
+        }),
+      ),
+    );
+    return perform;
+  }
+  it.each([
+    ["provider_unavailable", "Synthetic service isn’t available right now."],
+    ["provider_error", "Synthetic service reported an error."],
+    ["request_rejected", "Synthetic service rejected the request."],
+    ["invalid_output", "Ohtia couldn’t read Synthetic service’s reply."],
+    ["empty_reply", "Virgilio sent an empty reply."],
+    ["output_limit_exceeded", "The reply was longer than Ohtia allows."],
+    ["deadline_exceeded", "The reply took longer than 10 min."],
+    ["inactivity_timeout", "Synthetic service stopped sending text for 2 min."],
+    ["service_restarted", "This reply couldn’t start: both attempts ended before it was sent."],
+    ["permit_expired", "This reply couldn’t start: both attempts ended before it was sent."],
+  ])("renders controlled failure %s with its icon and external actions", async (reason, text) => {
+    await show(task({ outcomeReason: reason }));
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(text);
+    expect(container.querySelector(".conversation-notice.danger svg")).not.toBeNull();
+    expect(container.querySelector('[role="alert"] button')).toBeNull();
+    expect(container.querySelector("button")?.textContent).toBe("Try again");
+  });
+  it.each(["de-DE", "ko-KR", "en-US"] as InterfaceLocale[])(
+    "renders every terminal reason and connection kind in %s",
+    (locale) => {
+      for (const kind of ["subscription", "api_key"] as const)
+        for (const reason of [
+          "usage_limit_reached",
+          "not_eligible",
+          "connection_expired",
+          "provider_unavailable",
+          "provider_error",
+          "request_rejected",
+          "invalid_output",
+          "empty_reply",
+          "output_limit_exceeded",
+          "deadline_exceeded",
+          "inactivity_timeout",
+          "service_restarted",
+          "permit_expired",
+        ]) {
+          expect(
+            taskNoticeContent(
+              task({ outcomeReason: reason }),
+              locale,
+              { ...connection, kind },
+              false,
+              undefined,
+            )?.text.length,
+          ).toBeGreaterThan(5);
+        }
+    },
+  );
+  it("keeps stopped partial text's single notice, hides coalesced tasks and labels before-dispatch cancellation", async () => {
+    await show(task({ state: "cancelled", outcomeReason: "cancelled_by_researcher" }), {
+      hasText: true,
+    });
+    expect(container.querySelectorAll(".conversation-notice")).toHaveLength(1);
+    expect(container.querySelector(".conversation-notice")?.textContent).toContain(
+      "Incomplete — stopped by you",
+    );
+    expect(container.querySelector(".voice-label")).toBeNull();
+    expect(container.querySelector(".task-usage")?.textContent).toContain("full usage is unknown");
+    await show(task({ state: "cancelled", dispatched: false }));
+    expect(container.textContent).toContain("Stopped before it was sent.");
+    expect(container.querySelector(".task-usage")).toBeNull();
+    await show(task({ state: "cancelled", superseded: true }));
+    expect(container.textContent).toBe("");
+  });
+  it("reports invalid partial output and the general or connection waiting limit", () => {
+    expect(
+      taskNoticeContent(
+        task({ outcomeReason: "invalid_output" }),
+        "en-US",
+        connection,
+        true,
+        undefined,
+      )?.text,
+    ).toBe("Incomplete — Ohtia couldn’t read the rest of the reply");
+    expect(
+      taskNoticeContent(
+        task({ state: "queued", waitingLimit: 10 }),
+        "en-US",
+        chatgptConnection,
+        false,
+        undefined,
+      )?.text,
+    ).toContain("10 replies");
+    expect(
+      taskNoticeContent(task({ state: "queued" }), "en-US", chatgptConnection, false, undefined)
+        ?.text,
+    ).toContain("3 replies");
+    expect(
+      taskNoticeContent(task({ state: "queued" }), "en-US", connection, false, "Josefa")?.text,
+    ).toContain("Josefa");
+  });
+  it("shows buttons only for the latest usage failure and keeps Check usage outside", async () => {
+    await show(task({ outcomeReason: "usage_limit_reached" }));
+    expect(
+      [...container.querySelectorAll(".task-notice-actions button")].map((b) => b.textContent),
+    ).toEqual(["Resume Synthetic service requests (12)", "Try again"]);
+    expect(container.querySelector('a [role="img"]')?.getAttribute("aria-label")).toBe(
+      "opens in your browser",
+    );
+    await show(task({ outcomeReason: "usage_limit_reached" }), { latest: false });
+    expect(container.querySelectorAll(".task-notice-actions button")).toHaveLength(0);
+    expect(container.querySelector("a")).not.toBeNull();
+    expect(container.querySelector(".conversation-notice a")).toBeNull();
+  });
+  it.each(["resume", "continue", "retry", "restart"] as const)(
+    "replays an unconfirmed %s with the same identity and guards double clicks",
+    async (action) => {
+      let resolve!: (value: Outcome<{ resultId: string }>) => void;
+      const perform = vi.fn(
+        () =>
+          new Promise<Outcome<{ resultId: string }>>((r) => {
+            resolve = r;
+          }),
+      );
+      const t =
+        action === "resume"
+          ? task({ state: "blocked", blockingReason: "usage_limit_reached" })
+          : action === "continue"
+            ? task({ state: "blocked", blockingReason: "restart_paused" })
+            : action === "restart"
+              ? task({ state: "uncertain" })
+              : task();
+      await show(t, {}, perform);
+      let button = container.querySelector<HTMLButtonElement>(".task-notice-actions button")!;
+      await act(async () => {
+        button.click();
+        button.click();
+      });
+      if (action === "restart") {
+        expect(container.querySelector("dialog [data-close]")).toBe(document.activeElement);
+        await act(async () =>
+          container.querySelector<HTMLButtonElement>("dialog .primitive-primary")!.click(),
+        );
+      }
+      expect(perform).toHaveBeenCalledTimes(1);
+      expect(container.querySelector(".conversation-notice")).not.toBeNull();
+      await act(async () => resolve(failure("uncertain")));
+      expect(container.textContent).toContain("Use the button again to check");
+      button = container.querySelector<HTMLButtonElement>(".task-notice-actions button")!;
+      await act(async () => button.click());
+      expect(perform).toHaveBeenCalledTimes(2);
+      expect(perform.mock.calls[1]?.[0]).toBe(perform.mock.calls[0]?.[0]);
+      await act(async () => resolve({ ok: true, value: { resultId: id(999) } }));
+    },
+  );
+  it.each([
+    "newer_task_exists",
+    "pending_limit_reached",
+    "storage_failed",
+    "timeout",
+    "cancelled",
+    "disposed",
+    "invalid_service_result",
+  ] as const)("announces the %s action result", async (code) => {
+    const perform = vi.fn(async () => failure(code));
+    await show(task(), {}, perform);
+    await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+    expect(
+      container.querySelectorAll(code === "storage_failed" ? '[role="alert"]' : '[role="status"]'),
+    ).not.toHaveLength(0);
+    expect(container.textContent).toContain(
+      code === "newer_task_exists"
+        ? "A newer reply"
+        : code === "pending_limit_reached"
+          ? "Too many replies"
+          : code === "storage_failed"
+            ? "Nothing changed"
+            : "won’t run twice",
+    );
+  });
+  it("positions a textless failed task before messages written while it ran", async () => {
+    const t = task();
+    await render({
+      ...state([message(1), t, message(3)]),
+      conversation: { ...summary, latestReplyTaskId: t.id },
+    });
+    const entries = [...container.querySelectorAll("[data-timeline-id]")];
+    expect(entries.map((e) => e.getAttribute("data-timeline-id"))).toEqual([id(1), t.id, id(3)]);
+    expect(entries[1]?.textContent).toContain("Virgilio sent an empty reply");
+  });
+});
+
+it("rereads global pause counts on a new revision and after a sequence gap", async () => {
+  const h = controllerHarness();
+  await settle();
+  expect(h.port.readPauses).toHaveBeenCalledTimes(1);
+  h.emit({ ok: true, value: { kind: "pauseCounts", revision: 1 } });
+  await settle();
+  expect(h.port.readPauses).toHaveBeenCalledTimes(1);
+  vi.mocked(h.port.readPauses).mockReturnValueOnce(ok({ revision: 2, restart: 4, usage: [] }));
+  h.emit({ ok: true, value: { kind: "pauseCounts", revision: 2 } });
+  await settle();
+  expect(h.controller.snapshot().pauses?.restart).toBe(4);
+  h.emit({ ok: true, value: { kind: "pauseCounts", revision: 1 } });
+  await settle();
+  expect(h.port.readPauses).toHaveBeenCalledTimes(2);
+  h.emit(failure("sequence_gap"));
+  await settle();
+  expect(h.port.readPauses).toHaveBeenCalledTimes(3);
+  h.controller.dispose();
+});
+it("recovers a held task's saved partial reply above the latest page after a gap", async () => {
+  const h = controllerHarness(false);
+  const t: TimelineTask = {
+    id: id(500),
+    kind: "task",
+    position: 120,
+    rank: 3,
+    revision: 1,
+    agentId: "virgilio",
+    language: "en",
+    state: "running",
+    connection: "chatgpt",
+    blockingReason: null,
+    outcomeReason: null,
+    replyMessageId: null,
+    waitingForModels: false,
+    waitingLimit: 3,
+    dispatched: true,
+    superseded: false,
+    maxAttemptDurationMs: 600_000,
+    maxInactivityMs: 120_000,
+  };
+  h.items.push(t);
+  h.controller.open(scope);
+  await settle();
+  expect(h.controller.snapshot().items.some((item) => item.id === t.id)).toBe(true);
+  const saved: TimelineItem = {
+    ...message(600, "Saved partial after a gap"),
+    position: 120,
+    authorKind: "agent",
+    agentId: "virgilio",
+    taskId: t.id,
+    ending: "partial",
+  };
+  h.items[h.items.indexOf(t)] = {
+    ...t,
+    state: "failed",
+    revision: 2,
+    outcomeReason: "provider_error",
+    replyMessageId: saved.id,
+  };
+  h.items.push(saved, ...Array.from({ length: 80 }, (_, n) => message(n + 121)));
+  h.emit(failure("sequence_gap"));
+  await settle();
+  await settle();
+  expect(h.controller.snapshot().texts.get(saved.id)).toBe("Saved partial after a gap");
+  expect(h.controller.snapshot().items.find((item) => item.id === t.id)).toMatchObject({
+    state: "failed",
+  });
+  h.controller.dispose();
+});
+
+it("renders status and partial notices without relying on color", async () => {
+  const base: TimelineTask = {
+    id: id(900),
+    kind: "task",
+    position: 2,
+    rank: 3,
+    revision: 1,
+    agentId: "virgilio",
+    language: "en",
+    connection: "chatgpt",
+    state: "running",
+    blockingReason: null,
+    outcomeReason: null,
+    replyMessageId: null,
+    waitingForModels: false,
+    waitingLimit: 3,
+    dispatched: true,
+    superseded: false,
+    maxAttemptDurationMs: 600_000,
+    maxInactivityMs: 120_000,
+  };
+  for (const [change, text] of [
+    [{ state: "running" }, "Sent to ChatGPT. Waiting for the reply."],
+    [
+      { state: "blocked", blockingReason: "connection_disabled" },
+      "ChatGPT isn’t connected. Virgilio will reply when you connect.",
+    ],
+    [
+      { state: "blocked", blockingReason: "restart_paused" },
+      "Ohtia stopped before this reply started.",
+    ],
+    [{ state: "cancelling" }, "Stopping…"],
+    [{ state: "cancelled" }, "Stopped."],
+    [{ state: "failed", outcomeReason: "deadline_exceeded" }, "Incomplete — time limit reached"],
+    [
+      { state: "failed", outcomeReason: "inactivity_timeout" },
+      "Incomplete — no activity for 2 min",
+    ],
+    [
+      { state: "failed", outcomeReason: "output_limit_exceeded" },
+      "Incomplete — longer than Ohtia allows",
+    ],
+    [
+      { state: "failed", outcomeReason: "provider_unavailable" },
+      "Incomplete — ChatGPT reported an error",
+    ],
+    [{ state: "failed", outcomeReason: "connection_lost" }, "Incomplete — connection lost"],
+  ] as const) {
+    const task = { ...base, ...change };
+    const hasText = task.state === "failed";
+    await act(async () =>
+      root.render(
+        h(TaskNotice, {
+          task,
+          locale: "en-US",
+          connection: chatgptConnection,
+          hasText,
+          latest: false,
+
+          controller: { performTaskAction: async () => failure("storage_failed") },
+          commands: { openLink: async () => true },
+        }),
+      ),
+    );
+    expect(container.querySelector(".conversation-notice.status")?.textContent).toContain(text);
+    expect(container.querySelector(".conversation-notice.status svg")).not.toBeNull();
+    if (hasText) expect(container.querySelector(".voice-label")).toBeNull();
+  }
+  expect(
+    taskNoticeContent(
+      { ...base, state: "completed" },
+      "en-US",
+      chatgptConnection,
+      false,
+      undefined,
+    ),
+  ).toBeNull();
+  expect(taskNoticeContent(base, "en-US", chatgptConnection, true, undefined)).toBeNull();
+});
+
+it.each(["resume", "continue", "retry", "restart"] as const)(
+  "binds %s to its port command and reconciles a confirmed action without replaying it",
+  async (action) => {
+    const h = controllerHarness();
+    await settle();
+    const run = vi.fn(() => ok({ resultId: id(700) }));
+    Object.assign(h.port, {
+      resumeUsagePause: run,
+      continueAllTasks: run,
+      tryAgainTask: run,
+      startAgainTask: run,
+    });
+    const reload = vi.spyOn(h.controller, "reload").mockImplementation(() => {});
+    vi.mocked(h.port.readPauses).mockClear();
+    const task = { id: id(701), connection: "chatgpt" } as TimelineTask;
+    expect(await h.controller.performTaskAction("stable-operation", action, task)).toEqual({
+      ok: true,
+      value: { resultId: id(700) },
+    });
+    expect(run).toHaveBeenCalledWith(
+      "stable-operation",
+      ...(action === "continue"
+        ? []
+        : [action === "resume" ? { connection: "chatgpt" } : { taskId: task.id }]),
+    );
+    expect(h.port.readPauses).toHaveBeenCalledTimes(
+      action === "resume" || action === "continue" ? 1 : 0,
+    );
+    expect(reload).toHaveBeenCalledOnce();
+    run.mockImplementationOnce(() => {
+      throw new Error("Synthetic transport closure");
+    });
+    expect(await h.controller.performTaskAction("same-operation", action, task)).toEqual(
+      failure("invalid_service_result"),
+    );
+    expect(reload).toHaveBeenCalledTimes(1);
+    h.controller.dispose();
+  },
+);
+it("preserves a saved action when its independent pause reread fails", async () => {
+  const h = controllerHarness();
+  await settle();
+  const resume = vi.fn(() => ok({ resultId: id(700) }));
+  Object.assign(h.port, { resumeUsagePause: resume });
+  vi.mocked(h.port.readPauses).mockReturnValueOnce(call(failure("storage_failed")));
+  vi.spyOn(h.controller, "reload").mockImplementation(() => {});
+  expect(
+    await h.controller.performTaskAction("saved-resume", "resume", {
+      id: id(701),
+      connection: "chatgpt",
+    } as TimelineTask),
+  ).toEqual({ ok: true, value: { resultId: id(700) } });
+  expect(resume).toHaveBeenCalledOnce();
+  expect(h.controller.snapshot().status).toBe("failed");
+  h.controller.dispose();
+});
+it("rereads queued model readiness after a connection event even at the same durable task revision", async () => {
+  const h = controllerHarness(false);
+  const t: TimelineTask = {
+    id: id(700),
+    kind: "task",
+    position: 120,
+    rank: 3,
+    revision: 1,
+    state: "queued",
+    agentId: "virgilio",
+    language: "en",
+    connection: "chatgpt",
+    blockingReason: null,
+    outcomeReason: null,
+    replyMessageId: null,
+    waitingForModels: true,
+    waitingLimit: null,
+    dispatched: false,
+    superseded: false,
+    maxAttemptDurationMs: 600_000,
+    maxInactivityMs: 120_000,
+  };
+  h.items.push(t);
+  h.controller.open(scope);
+  await settle();
+  expect(taskNoticeContent(t, "en-US", chatgptConnection, false, undefined)?.text).toBe(
+    "Updating ChatGPT’s model list before starting the reply.",
+  );
+  h.items[h.items.indexOf(t)] = { ...t, waitingForModels: false };
+  h.emit({ ok: true, value: { kind: "destinationChanged", connection: "chatgpt" } });
+  await settle();
+  expect(h.controller.snapshot().items.find((item) => item.id === t.id)).toMatchObject({
+    revision: 1,
+    state: "queued",
+    waitingForModels: false,
+    waitingLimit: null,
+  });
+  h.controller.dispose();
+});
+
+function reviewTask(change: Partial<TimelineTask> = {}): TimelineTask {
+  return {
+    id: id(700),
+    kind: "task",
+    rank: 3,
+    position: 120,
+    revision: 1,
+    agentId: "virgilio",
+    language: "en",
+    state: "failed",
+    connection: "chatgpt",
+    blockingReason: null,
+    outcomeReason: "provider_error",
+    replyMessageId: null,
+    waitingForModels: false,
+    waitingLimit: null,
+    dispatched: true,
+    superseded: false,
+    maxAttemptDurationMs: 600_000,
+    maxInactivityMs: 120_000,
+    ...change,
+  };
+}
+it.each(["not_eligible", "connection_expired", "request_rejected"])(
+  "preserves the actual %s explanation after partial output",
+  async (outcomeReason) => {
+    const t = reviewTask({ outcomeReason });
+    const content = taskNoticeContent(t, "en-US", chatgptConnection, true, undefined)!;
+    expect(content).toMatchObject({ role: "alert", tone: "danger" });
+    expect(content.text).not.toContain("connection lost");
+    await act(async () =>
+      root.render(
+        h(TaskNotice, {
+          task: t,
+          locale: "en-US",
+          connection: chatgptConnection,
+          hasText: true,
+          latest: true,
+
+          controller: { performTaskAction: async () => failure("storage_failed") },
+          commands: { openLink: async () => true },
+        }),
+      ),
+    );
+    expect(container.querySelector(".voice-label")).toBeNull();
+    const buttons = [...container.querySelectorAll("button")].map((b) => b.textContent);
+    if (outcomeReason !== "request_rejected") expect(buttons).toContain("Open Connections");
+    expect(buttons.includes("Try again")).toBe(outcomeReason !== "not_eligible");
+  },
+);
+it("uses a confirmed saturated limit and a generic status while queued with capacity", () => {
+  expect(
+    taskNoticeContent(
+      reviewTask({ state: "queued", waitingLimit: null }),
+      "en-US",
+      chatgptConnection,
+      false,
+      undefined,
+    )?.text,
+  ).toBe("Waiting to start.");
+  expect(
+    taskNoticeContent(
+      reviewTask({ state: "queued", waitingLimit: 3 }),
+      "en-US",
+      chatgptConnection,
+      false,
+      undefined,
+    )?.text,
+  ).toContain("3 replies");
+});
+it("ignores an older pause read that resolves after a newer one, and accepts a new observation epoch", async () => {
+  const h = controllerHarness();
+  await settle();
+  let older!: (x: any) => void, newer!: (x: any) => void;
+  vi.mocked(h.port.readPauses)
+    .mockReturnValueOnce({ result: new Promise((resolve) => (older = resolve)), cancel() {} })
+    .mockReturnValueOnce({ result: new Promise((resolve) => (newer = resolve)), cancel() {} });
+  const a = h.controller.refreshPauses(),
+    b = h.controller.refreshPauses();
+  newer({
+    ok: true,
+    value: { revision: 3, restart: 2, usage: [{ connection: "chatgpt", count: 4 }] },
+  });
+  await b;
+  older({ ok: true, value: { revision: 2, restart: 0, usage: [] } });
+  await a;
+  expect(h.controller.snapshot().pauses).toMatchObject({ revision: 3, restart: 2 });
+  vi.mocked(h.port.readPauses).mockReturnValue(ok({ revision: 1, restart: 0, usage: [] }));
+  h.controller.open(scope);
+  await settle();
+  expect(h.controller.snapshot().pauses?.revision).toBe(1);
+  h.controller.dispose();
+});
+it("knows the conversation's running task even when its reserved position is outside the loaded history", async () => {
+  const h = controllerHarness(false);
+  const active = reviewTask({ id: id(701), state: "running", position: 1 }),
+    queued = reviewTask({ id: id(702), state: "queued", outcomeReason: null });
+  h.items.push(active, queued);
+  h.items.sort((a, b) => a.position - b.position || a.rank - b.rank);
+  vi.mocked(h.port.readConversations).mockReturnValue(
+    ok({
+      items: [
+        {
+          ...summary,
+          latestReplyTaskId: queued.id,
+          runningTask: { id: active.id, agentId: "virgilio", state: "running" },
+        },
+      ],
+      remaining: [],
+    }),
+  );
+  h.controller.open(scope);
+  await settle();
+  expect(h.controller.snapshot().items.some((t) => t.id === active.id)).toBe(false);
+  await render(h.controller.snapshot(), h.controller);
+  expect(container.querySelector(".conversation-notice")?.textContent).toBe(
+    "Waiting for Virgilio to finish the current reply.",
+  );
+  vi.mocked(h.port.readConversations).mockReturnValue(
+    ok({
+      items: [
+        {
+          ...summary,
+          revision: 2,
+          latestReplyTaskId: queued.id,
+          runningTask: { id: active.id, agentId: "virgilio", state: "cancelling" },
+        },
+      ],
+      remaining: [],
+    }),
+  );
+  await act(async () => {
+    h.emit({
+      ok: true,
+      value: { kind: "changed", record: "conversation", id: scope.conversationId, revision: 2 },
+    });
+    await settle();
+  });
+  expect(h.controller.composer.snapshot().cancelling).toBe(true);
+  h.controller.dispose();
+});
+it("announces a live notice transition once and stays silent for historical reads, navigation and locale changes", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const harness = controllerHarness(false);
+  const initial = reviewTask();
+  harness.items.push(initial);
+  harness.controller.open(scope);
+  await settle();
+  await render(harness.controller.snapshot(), harness.controller);
+  const announced = () =>
+    [...container.querySelectorAll("[data-task-notice-announcement]")]
+      .map((n) => n.textContent)
+      .filter(Boolean);
+  expect(announced()).toEqual([]);
+  harness.items[harness.items.indexOf(initial)] = {
+    ...initial,
+    revision: 2,
+    outcomeReason: "connection_expired",
+  };
+  await act(async () => {
+    harness.emit({
+      ok: true,
+      value: { kind: "changed", record: "timeline", id: initial.id, revision: 2 },
+    });
+    await settle();
+  });
+  await render(harness.controller.snapshot(), harness.controller);
+  expect(announced()).toEqual([
+    "Your ChatGPT session expired. Sign in again in Settings › Connections.",
+  ]);
+  harness.items[harness.items.findIndex((item) => item.id === initial.id)] = {
+    ...initial,
+    revision: 3,
+    outcomeReason: "provider_error",
+  };
+  harness.items.push(
+    reviewTask({ id: id(701), position: 121, state: "queued", outcomeReason: null }),
+  );
+  await act(async () => {
+    harness.emit(failure("sequence_gap"));
+    await settle();
+  });
+  await render(harness.controller.snapshot(), harness.controller);
+  expect(announced()).toEqual(["ChatGPT reported an error.", "Waiting to start."]);
+  await act(async () =>
+    root.render(
+      h(ConversationView, {
+        state: harness.controller.snapshot(),
+        controller: harness.controller,
+        locale: "de-DE",
+        commands: { copyMessage: async () => true, openExternalLink: async () => true },
+      }),
+    ),
+  );
+  expect(announced()).toEqual([]);
+  await act(async () => {
+    harness.controller.open({ projectId: null, conversationId: null });
+    await settle();
+  });
+  await render(harness.controller.snapshot(), harness.controller);
+  await act(async () => {
+    harness.controller.open(scope);
+    await settle();
+  });
+  await render(harness.controller.snapshot(), harness.controller);
+  expect(announced()).toEqual([]);
+  harness.controller.dispose();
+});
+it.each(["ready", "loading"] as const)(
+  "returns focus to the persistent chat reading region when an action disappears in %s state",
+  async (status) => {
+    const t = reviewTask();
+    const initial = { ...state([t]), conversation: { ...summary, latestReplyTaskId: t.id } };
+    await render(initial);
+    const button = container.querySelector<HTMLButtonElement>(".task-notice-actions button")!;
+    await act(async () => button.focus());
+    await render({ ...initial, status, conversation: { ...summary, latestReplyTaskId: id(701) } });
+    expect(document.activeElement).toBe(
+      container.querySelector(
+        status === "ready" ? ".conversation-timeline" : ".conversation-status-scroll",
+      ),
+    );
+  },
+);
+it("requires a new duplicate-charge confirmation after a definitive pending-limit rejection", async () => {
+  const perform = vi.fn(async () => failure("pending_limit_reached"));
+  await act(async () =>
+    root.render(
+      h(TaskNotice, {
+        task: reviewTask({ state: "uncertain" }),
+        locale: "en-US",
+        connection: chatgptConnection,
+        hasText: false,
+        latest: true,
+
+        controller: { performTaskAction: perform },
+        commands: { openLink: async () => true },
+      }),
+    ),
+  );
+  const press = async () =>
+    act(async () =>
+      container.querySelector<HTMLButtonElement>(".task-notice-actions button")!.click(),
+    );
+  await press();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>("dialog .primitive-primary")!.click(),
+  );
+  expect(perform).toHaveBeenCalledOnce();
+  const first = perform.mock.calls[0]?.[0];
+  await press();
+  expect(container.querySelector("dialog[open]")).not.toBeNull();
+  expect(perform).toHaveBeenCalledOnce();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>("dialog .primitive-primary")!.click(),
+  );
+  expect(perform).toHaveBeenCalledTimes(2);
+  expect(perform.mock.calls[1]?.[0]).not.toBe(first);
+});
+
+it.each(["retry", "restart"] as const)(
+  "announces the %s replacement first discovered in the acting window's new baseline",
+  async (action) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const harness = controllerHarness(false);
+    const original = reviewTask({ state: action === "retry" ? "failed" : "uncertain" });
+    harness.items.push(original);
+    let latest = original.id;
+    vi.mocked(harness.port.readConversations).mockImplementation(() =>
+      ok({ items: [{ ...summary, latestReplyTaskId: latest }], remaining: [] }),
+    );
+    vi.mocked(harness.port.readReplyParts).mockImplementation(() =>
+      ok({ parts: [], latestSequence: 0 }),
+    );
+    const invoke = vi.fn(() => {
+      const replacement = reviewTask({
+        id: id(701),
+        position: 121,
+        revision: 2,
+        state: "running",
+        outcomeReason: null,
+      });
+      harness.items.push(replacement);
+      latest = replacement.id;
+      return ok({ resultId: replacement.id });
+    });
+    Object.assign(harness.port, { tryAgainTask: invoke, startAgainTask: invoke });
+    harness.controller.open(scope);
+    await settle();
+    await render(harness.controller.snapshot(), harness.controller);
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>(".task-notice-actions button")!.click(),
+    );
+    if (action === "restart")
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>("dialog .primitive-primary")!.click(),
+      );
+    await settle();
+    await render(harness.controller.snapshot(), harness.controller);
+    expect(invoke).toHaveBeenCalledOnce();
+    expect(
+      [...container.querySelectorAll("[data-task-notice-announcement]")]
+        .map((e) => e.textContent)
+        .filter(Boolean),
+    ).toEqual(["Sent to ChatGPT. Waiting for the reply."]);
+    await act(async () => vi.advanceTimersByTimeAsync(2000));
+    expect(
+      [...container.querySelectorAll("[data-task-notice-announcement]")].some((e) => e.textContent),
+    ).toBe(false);
+    harness.controller.dispose();
+  },
+);
+it("expires announcement copies despite rerenders and clears stale-language text while retaining the visible notice", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const t = reviewTask();
+  const show = async (task: TimelineTask, locale: InterfaceLocale) =>
+    act(async () =>
+      root.render(
+        h(TaskNotice, {
+          task,
+          locale,
+          connection: chatgptConnection,
+          hasText: false,
+          latest: false,
+          announce: () => true,
+          controller: { performTaskAction: async () => failure("storage_failed") },
+          commands: { openLink: async () => true },
+        }),
+      ),
+    );
+  const spoken = () =>
+    [...container.querySelectorAll<HTMLElement>("[data-task-notice-announcement]")].filter(
+      (e) => e.textContent,
+    );
+  await show(t, "en-US");
+  expect(spoken()).toHaveLength(1);
+  expect(spoken()[0]?.lang).toBe("en-US");
+  expect(container.querySelector(".conversation-notice")?.getAttribute("aria-hidden")).toBe("true");
+  await act(async () => vi.advanceTimersByTimeAsync(500));
+  await show(t, "en-US");
+  await act(async () => vi.advanceTimersByTimeAsync(2000));
+  expect(spoken()).toHaveLength(0);
+  expect(container.querySelector(".conversation-notice")?.hasAttribute("aria-hidden")).toBe(false);
+  expect(container.querySelector(".conversation-notice")?.textContent).toBe(
+    "ChatGPT reported an error.",
+  );
+  const expired = { ...t, revision: 2, outcomeReason: "connection_expired" };
+  await show(expired, "en-US");
+  expect(spoken()).toHaveLength(1);
+  await show(expired, "de-DE");
+  expect(spoken()).toHaveLength(0);
+  expect(container.querySelector(".conversation-notice")?.hasAttribute("aria-hidden")).toBe(false);
+  await show({ ...expired, revision: 3, outcomeReason: "invalid_output" }, "de-DE");
+  expect(spoken()[0]?.lang).toBe("de-DE");
+  await act(async () => root.render(h("div")));
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it.each(["outside the newest page", "already completed"] as const)(
+  "recovers the explicitly introduced retry when it is %s",
+  async (phase) => {
+    const harness = controllerHarness(false);
+    const original = reviewTask();
+    harness.items.push(original);
+    harness.controller.open(scope);
+    await settle();
+    const replacement = reviewTask({
+      id: id(701),
+      position: phase === "outside the newest page" ? 1 : 121,
+      state: phase === "already completed" ? "completed" : "queued",
+      outcomeReason: null,
+      replyMessageId: phase === "already completed" ? id(702) : null,
+    });
+    Object.assign(harness.port, {
+      tryAgainTask: () => {
+        harness.items.push(replacement);
+        if (phase === "already completed")
+          harness.items.push({
+            ...message(702, "Finished before the new baseline"),
+            position: 121,
+            authorKind: "agent",
+            agentId: "virgilio",
+            taskId: replacement.id,
+            ending: "complete",
+          } as TimelineItem);
+        harness.items.sort((a, b) => a.position - b.position || a.rank - b.rank);
+        return ok({ resultId: replacement.id });
+      },
+    });
+    await harness.controller.performTaskAction("retry-introduction", "retry", original);
+    await settle();
+    expect(harness.controller.snapshot().items).toContainEqual(replacement);
+    if (phase === "already completed") {
+      expect(harness.controller.snapshot().completed).toBe(1);
+      expect(harness.controller.snapshot().texts.get(id(702))).toBe(
+        "Finished before the new baseline",
+      );
+    } else {
+      expect(harness.port.readTimeline).toHaveBeenCalledWith({
+        conversationId: scope.conversationId,
+        ids: [replacement.id],
+      });
+      expect(
+        harness.controller.claimTaskNotice(replacement.id, replacement.revision, "queued"),
+      ).toBe(true);
+      expect(
+        harness.controller.claimTaskNotice(replacement.id, replacement.revision, "queued"),
+      ).toBe(false);
+    }
+    harness.controller.reload();
+    await settle();
+    expect(harness.controller.snapshot().completed).toBe(phase === "already completed" ? 1 : 0);
+    harness.controller.dispose();
+  },
+);
+
+it("keeps history silent when a gap interrupts the baseline on return, then announces a later established gap", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const harness = controllerHarness(false);
+  harness.controller.open(scope);
+  await settle();
+  await render(harness.controller.snapshot(), harness.controller);
+  await act(async () => {
+    harness.controller.open({ projectId: null, conversationId: null });
+    await settle();
+  });
+  await render(harness.controller.snapshot(), harness.controller);
+  harness.items.push(
+    reviewTask({ id: id(701), position: 121, state: "queued", outcomeReason: null }),
+  );
+  harness.items.push({
+    ...message(702, "Finished while this conversation was closed"),
+    position: 122,
+    authorKind: "agent",
+    agentId: "virgilio",
+    taskId: id(703),
+    ending: "complete",
+  } as TimelineItem);
+  let release!: (value: unknown) => void;
+  vi.mocked(harness.port.readConversations).mockReturnValueOnce({
+    result: new Promise((resolve) => {
+      release = resolve;
+    }),
+    cancel() {},
+  } as any);
+  await act(async () => {
+    harness.controller.open(scope);
+    await settle();
+  });
+  expect(release).toBeTypeOf("function");
+  await act(async () => {
+    harness.emit(failure("sequence_gap"));
+    release({ ok: true, value: { items: [summary], remaining: [] } });
+    await settle();
+  });
+  await render(harness.controller.snapshot(), harness.controller);
+  const spoken = () =>
+    [...container.querySelectorAll("[data-task-notice-announcement]")]
+      .map((n) => n.textContent)
+      .filter(Boolean);
+  expect(harness.controller.snapshot().status).toBe("ready");
+  expect(harness.controller.snapshot().completed).toBe(0);
+  expect(spoken()).toEqual([]);
+  harness.items.push(
+    reviewTask({ id: id(704), position: 123, state: "queued", outcomeReason: null }),
+  );
+  await act(async () => {
+    harness.emit(failure("sequence_gap"));
+    await settle();
+  });
+  await render(harness.controller.snapshot(), harness.controller);
+  expect(spoken()).toEqual(["Waiting to start."]);
+  harness.controller.dispose();
 });
 
 it("does not misattribute setup proposals as agent messages before the setup-card flow", async () => {

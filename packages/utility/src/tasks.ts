@@ -141,10 +141,12 @@ export interface TaskContext {
   readonly mode: RuntimeMode;
   readonly generation: string;
   readonly connections: ServiceConnections;
+  readonly requestModelRefresh?: (connection: string) => void;
 }
 /** One instance belongs to one short database transaction. It never sends a provider request. */
 export class TaskTransaction {
   readonly diagnostics: DiagnosticEvent[] = [];
+  readonly modelRefreshes = new Set<string>();
   private readonly conversations = new Map<string, Uint8Array>();
   constructor(
     private readonly db: Kysely<ResearchSchema>,
@@ -353,7 +355,9 @@ export class TaskTransaction {
         : project.setup_confirmed_at === null && task.operation === "project_setup") &&
       !!message &&
       !!receipt &&
-      ["conversation.start", "message.append", "task.startAgain"].includes(receipt.command)
+      ["conversation.start", "message.append", "task.startAgain", "task.tryAgain"].includes(
+        receipt.command,
+      )
     );
   }
   private pending() {
@@ -396,7 +400,7 @@ export class TaskTransaction {
     this.diagnostics.push({ event_name: "ohtia.usage_pause.resumed" });
   }
   async control(
-    command: "task.stop" | "task.startAgain",
+    command: "task.stop" | "task.startAgain" | "task.tryAgain",
     id: Uint8Array,
     operationId: string,
   ): Promise<Outcome<Uint8Array>> {
@@ -446,7 +450,18 @@ export class TaskTransaction {
       }
       return { ok: true, value: task.id };
     }
-    if (task.state !== "uncertain") return failure("task_not_retryable");
+    const lastAttempt = await this.db
+      .selectFrom("attempts")
+      .selectAll()
+      .where("task_id", "=", task.id)
+      .orderBy("attempt_number", "desc")
+      .executeTakeFirst();
+    if (
+      command === "task.tryAgain"
+        ? task.state !== "failed" || lastAttempt?.outcome_reason === "not_eligible"
+        : task.state !== "uncertain"
+    )
+      return failure("task_not_retryable");
     if (task.operation === "project_setup") {
       const project = await this.db
         .selectFrom("projects")
@@ -478,6 +493,18 @@ export class TaskTransaction {
       .where("id", "=", task.project_id)
       .executeTakeFirstOrThrow();
     const reason = await this.connectionBlock(task.connection);
+    const partial = await this.db
+      .selectFrom("messages")
+      .select("id")
+      .where("task_id", "=", task.id)
+      .where("ending", "=", "partial")
+      .executeTakeFirst();
+    const latest = await this.db
+      .selectFrom("messages")
+      .select("position")
+      .where("conversation_id", "=", task.conversation_id)
+      .orderBy("position", "desc")
+      .executeTakeFirstOrThrow();
     const replacement = newId();
     await this.db
       .insertInto("tasks")
@@ -488,7 +515,8 @@ export class TaskTransaction {
         replaces_task_id: task.id,
         accepted_by_operation_id: operationId,
         document_language: project.document_language,
-        charge_warning_accepted_at: this.now,
+        input_through_position: partial ? task.input_through_position : latest.position,
+        charge_warning_accepted_at: command === "task.startAgain" ? this.now : null,
         state: reason ? "blocked" : "queued",
         blocking_reason: reason,
         state_revision: 1,
@@ -497,6 +525,11 @@ export class TaskTransaction {
       })
       .execute();
     this.touch(task.conversation_id);
+    if (
+      command === "task.tryAgain" &&
+      this.context.connections.read(task.connection)?.models?.length === 0
+    )
+      this.modelRefreshes.add(task.connection);
     return { ok: true, value: replacement };
   }
   async runningCount(): Promise<number> {
@@ -609,8 +642,8 @@ export class TaskTransaction {
     }
     this.diagnostics.push({ event_name: "ohtia.task.continued" });
   }
-  /** Claim capacity and persist dispatch evidence. The caller sends only after COMMIT succeeds. */
-  async prepareNext(): Promise<PreparedTask | null> {
+  /** Capacity is read in the caller's transaction, using the dispatch admission rules. */
+  private async capacity() {
     const preference = await this.db
       .selectFrom("application_preferences")
       .selectAll()
@@ -625,7 +658,22 @@ export class TaskTransaction {
       // delivered after main has closed the connection; restart recovery closes old generations.
       .where((eb) => eb.or([eb("state", "!=", "uncertain"), eb("connection", "!=", "chatgpt")]))
       .execute();
-    if (occupied.length >= limits.max_concurrent_inference) return null;
+    return { limit: limits.max_concurrent_inference, occupied };
+  }
+  async waitingLimit(connection: string): Promise<number | null> {
+    const { limit, occupied } = await this.capacity();
+    if (occupied.length >= limit) return limit;
+    const connectionLimit = Object.hasOwn(connectionInferenceLimits, connection)
+      ? (connectionInferenceLimits[connection] ?? 1)
+      : 1;
+    return occupied.filter((other) => other.connection === connection).length >= connectionLimit
+      ? connectionLimit
+      : null;
+  }
+  /** Claim capacity and persist dispatch evidence. The caller sends only after COMMIT succeeds. */
+  async prepareNext(): Promise<PreparedTask | null> {
+    const { limit, occupied } = await this.capacity();
+    if (occupied.length >= limit) return null;
     const candidates = await this.db
       .selectFrom("tasks")
       .selectAll()

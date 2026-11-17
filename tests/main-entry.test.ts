@@ -1065,6 +1065,17 @@ it("admits the closed command broker on the actual sender, confirms localized co
   expect(await h.command("copy_version", "en-US")).toBe(false);
   expect(await h.command("open_link", "repository")).toBe(true);
   expect(electron.shell.openExternal).toHaveBeenLastCalledWith(h.constants.projectLinks.repository);
+  expect(await h.command("open_link", "chatgptUsage")).toBe(true);
+  expect(electron.shell.openExternal).toHaveBeenLastCalledWith(
+    "https://chatgpt.com/settings/usage",
+  );
+  for (const id of [
+    "https://example.invalid",
+    "javascript:alert(1)",
+    "file:///tmp/usage",
+    "__proto__",
+  ])
+    expect(await h.command("open_link", id)).toBe(false);
   for (const id of ["link.documentation", "link.report"] as const)
     expect(await h.command("perform", id)).toBe(true);
   vi.mocked(electron.shell.openExternal).mockRejectedValueOnce(new Error("Browser unavailable"));
@@ -2083,6 +2094,7 @@ it("hands development switches to the open development instance and runs them on
     const channel = supervisor.connectProvider.mock.calls[0][0];
     channel.refreshModels({
       kind: "model_list_refresh",
+      refresh_id: "refresh-1",
       version: 1,
       generation: supervisor.generation,
       connection: "chatgpt",

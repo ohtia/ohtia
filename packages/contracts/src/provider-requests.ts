@@ -746,6 +746,7 @@ export interface ModelListRefreshMessage {
   readonly version: typeof providerMessageVersion;
   readonly generation: string;
   readonly connection: string;
+  readonly refresh_id: string;
 }
 export function decodeModelListRefresh(
   text: unknown,
@@ -754,8 +755,9 @@ export function decodeModelListRefresh(
   const value = parse(text);
   if (
     header(value, "model_list_refresh", generation) &&
-    exact(value, ["kind", "version", "generation", "connection"]) &&
-    isConnectionId(value.connection)
+    exact(value, ["kind", "version", "generation", "connection", "refresh_id"]) &&
+    isConnectionId(value.connection) &&
+    isIdentifier(value.refresh_id)
   )
     return value as unknown as ModelListRefreshMessage;
   return;

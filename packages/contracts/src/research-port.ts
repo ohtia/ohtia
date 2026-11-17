@@ -16,6 +16,11 @@ export const researchOperations = [
   "message.append",
   "conversation.stop",
   "task.stop",
+  "task.tryAgain",
+  "task.startAgain",
+  "usagePause.resume",
+  "task.continueAll",
+  "pause.read",
   "destination.read",
   "project.list",
   "conversation.list",
@@ -68,6 +73,18 @@ export interface TimelineTask extends TimelineIdentity {
   readonly rank: 3;
   readonly agentId: "virgilio";
   readonly language: string | null;
+  readonly connection: string;
+  readonly blockingReason: string | null;
+  readonly outcomeReason: string | null;
+  readonly replyMessageId: string | null;
+  /** Advisory connection readiness, refreshed independently of the durable task revision. */
+  readonly waitingForModels: boolean;
+  /** The currently saturated inference limit, or null when capacity is available. */
+  readonly waitingLimit: number | null;
+  readonly dispatched: boolean;
+  readonly superseded: boolean;
+  readonly maxAttemptDurationMs: number;
+  readonly maxInactivityMs: number;
   readonly state:
     | "queued"
     | "blocked"
@@ -96,7 +113,20 @@ export interface TimelineSetupProposal extends TimelineIdentity {
     | null;
 }
 export type TimelineItem = TimelineMessage | TimelineTask | TimelineSetupProposal;
-export type ConversationSummary = ConversationRecord & { readonly agentId: "virgilio" };
+export type ConversationSummary = ConversationRecord & {
+  readonly agentId: "virgilio";
+  readonly latestReplyTaskId: string | null;
+  readonly runningTask: {
+    readonly id: string;
+    readonly agentId: "virgilio";
+    readonly state: "running" | "cancelling";
+  } | null;
+};
+export interface PauseCounts {
+  readonly revision: number;
+  readonly restart: number;
+  readonly usage: readonly { readonly connection: string; readonly count: number }[];
+}
 export interface ResearchScope {
   readonly projectId: string | null;
   readonly conversationId: string | null;
@@ -120,6 +150,8 @@ export interface ReplyParts {
 }
 export type ResearchEvent =
   | { readonly kind: "inferenceActivity" }
+  | { readonly kind: "destinationChanged"; readonly connection: string }
+  | { readonly kind: "pauseCounts"; readonly revision: number }
   | {
       readonly kind: "changed";
       readonly record: "project" | "conversation" | "timeline" | "usagePause" | "executionLimits";
@@ -142,6 +174,11 @@ export function validResearcherMessage(text: string): boolean {
   return text.trim().length > 0 && Array.from(text).length <= researcherMessageLimit;
 }
 export interface ResearchInputs {
+  "pause.read": Record<string, never>;
+  "task.tryAgain": ResearchPayloads["task.tryAgain"];
+  "task.startAgain": ResearchPayloads["task.startAgain"];
+  "usagePause.resume": ResearchPayloads["usagePause.resume"];
+  "task.continueAll": ResearchPayloads["task.continueAll"];
   "conversation.stop": ResearchPayloads["conversation.stop"];
   "task.stop": ResearchPayloads["task.stop"];
   "destination.read": { readonly projectId: string } & (
@@ -172,6 +209,11 @@ export interface ResearchInputs {
   "reply.readParts": { readonly taskId: string; readonly fromSequence: number };
 }
 export interface ResearchOutputs {
+  "pause.read": PauseCounts;
+  "task.tryAgain": ResearchResult;
+  "task.startAgain": ResearchResult;
+  "usagePause.resume": ResearchResult;
+  "task.continueAll": ResearchResult;
   "conversation.stop": ResearchResult;
   "task.stop": ResearchResult;
   "destination.read": { readonly destination: MessageDestination | null };
@@ -192,6 +234,20 @@ export interface ResearchOutputs {
   "reply.readParts": ReplyParts;
 }
 export interface ResearchPort {
+  readPauses(): PortCall<PauseCounts>;
+  tryAgainTask(
+    operationId: string,
+    input: ResearchInputs["task.tryAgain"],
+  ): PortCall<ResearchResult>;
+  startAgainTask(
+    operationId: string,
+    input: ResearchInputs["task.startAgain"],
+  ): PortCall<ResearchResult>;
+  resumeUsagePause(
+    operationId: string,
+    input: ResearchInputs["usagePause.resume"],
+  ): PortCall<ResearchResult>;
+  continueAllTasks(operationId: string): PortCall<ResearchResult>;
   stopConversation(
     operationId: string,
     input: ResearchInputs["conversation.stop"],
@@ -253,6 +309,10 @@ export function isResearchMutation(value: string): value is WindowResearchComman
     "message.append",
     "conversation.stop",
     "task.stop",
+    "task.tryAgain",
+    "task.startAgain",
+    "usagePause.resume",
+    "task.continueAll",
   ].includes(value);
 }
 export function compareTimeline(a: TimelineCursor, b: TimelineCursor): number {
@@ -263,8 +323,22 @@ export function mergeTimeline(
   incoming: readonly TimelineItem[],
 ): TimelineItem[] {
   const items = new Map(current.map((item) => [item.id, item]));
-  for (const item of incoming)
-    if ((items.get(item.id)?.revision ?? 0) < item.revision) items.set(item.id, item);
+  for (const item of incoming) {
+    const previous = items.get(item.id);
+    if (!previous || previous.revision < item.revision) items.set(item.id, item);
+    else if (
+      previous.kind === "task" &&
+      item.kind === "task" &&
+      previous.revision === item.revision &&
+      previous.state === "queued" &&
+      item.state === "queued"
+    )
+      items.set(item.id, {
+        ...previous,
+        waitingForModels: item.waitingForModels,
+        waitingLimit: item.waitingLimit,
+      });
+  }
   return [...items.values()].sort(compareTimeline);
 }
 export function splitText(text: string, maximum = 4096): string[] {
@@ -356,6 +430,13 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
   switch (operation) {
     case "conversation.stop":
       return exact(value, ["conversationId"]) && isResearchId(value.conversationId);
+    case "task.continueAll":
+    case "pause.read":
+      return exact(value, []);
+    case "usagePause.resume":
+      return exact(value, ["connection"]) && value.connection === "chatgpt";
+    case "task.tryAgain":
+    case "task.startAgain":
     case "task.stop":
       return exact(value, ["taskId"]) && isResearchId(value.taskId);
     case "destination.read":
@@ -448,14 +529,34 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
 }
 function conversation(value: unknown): boolean {
   return (
-    exact(value, ["id", "projectId", "title", "createdAt", "updatedAt", "revision", "agentId"]) &&
+    exact(value, [
+      "id",
+      "projectId",
+      "title",
+      "createdAt",
+      "updatedAt",
+      "revision",
+      "agentId",
+      "latestReplyTaskId",
+      "runningTask",
+    ]) &&
     isResearchId(value.id) &&
     isResearchId(value.projectId) &&
     nullable(value.title, (x) => typeof x === "string") &&
     date(value.createdAt) &&
     date(value.updatedAt) &&
     integer(value.revision) &&
-    value.agentId === "virgilio"
+    value.agentId === "virgilio" &&
+    nullable(value.latestReplyTaskId, isResearchId) &&
+    nullable(
+      value.runningTask,
+      (x) =>
+        exact(x, ["id", "agentId", "state"]) &&
+        isResearchId(x.id) &&
+        x.agentId === "virgilio" &&
+        typeof x.state === "string" &&
+        ["running", "cancelling"].includes(x.state),
+    )
   );
 }
 function project(value: unknown): boolean {
@@ -552,7 +653,69 @@ function item(value: unknown): boolean {
           ["complete", "partial"].includes(value.ending))
     );
   return (
-    exact(value, ["id", "position", "rank", "revision", "kind", "agentId", "language", "state"]) &&
+    exact(value, [
+      "id",
+      "position",
+      "rank",
+      "revision",
+      "kind",
+      "agentId",
+      "language",
+      "state",
+      "connection",
+      "blockingReason",
+      "outcomeReason",
+      "replyMessageId",
+      "waitingForModels",
+      "waitingLimit",
+      "dispatched",
+      "superseded",
+      "maxAttemptDurationMs",
+      "maxInactivityMs",
+    ]) &&
+    isConnectionId(value.connection) &&
+    nullable(
+      value.blockingReason,
+      (x) =>
+        typeof x === "string" &&
+        [
+          "connection_disabled",
+          "permission_required",
+          "input_changed",
+          "configuration_unavailable",
+          "restart_paused",
+          "usage_limit_reached",
+        ].includes(x),
+    ) &&
+    nullable(
+      value.outcomeReason,
+      (x) =>
+        typeof x === "string" &&
+        [
+          "usage_limit_reached",
+          "not_eligible",
+          "connection_expired",
+          "provider_unavailable",
+          "request_rejected",
+          "provider_error",
+          "invalid_output",
+          "output_limit_exceeded",
+          "connection_lost",
+          "empty_reply",
+          "permit_expired",
+          "inactivity_timeout",
+          "deadline_exceeded",
+          "cancelled_by_researcher",
+          "service_restarted",
+        ].includes(x),
+    ) &&
+    nullable(value.replyMessageId, isResearchId) &&
+    typeof value.waitingForModels === "boolean" &&
+    nullable(value.waitingLimit, integer) &&
+    typeof value.dispatched === "boolean" &&
+    typeof value.superseded === "boolean" &&
+    integer(value.maxAttemptDurationMs) &&
+    integer(value.maxInactivityMs) &&
     value.kind === "task" &&
     value.rank === 3 &&
     value.agentId === "virgilio" &&
@@ -569,6 +732,22 @@ function item(value: unknown): boolean {
   );
 }
 export function researchOutput(operation: ResearchOperation, value: unknown): boolean {
+  if (operation === "pause.read")
+    return (
+      exact(value, ["revision", "restart", "usage"]) &&
+      integer(value.revision) &&
+      integer(value.restart, 0) &&
+      Array.isArray(value.usage) &&
+      value.usage.length <= 128 &&
+      value.usage.every(
+        (entry) =>
+          exact(entry, ["connection", "count"]) &&
+          isConnectionId(entry.connection) &&
+          integer(entry.count, 0),
+      ) &&
+      new Set(value.usage.map((entry: unknown) => (obj(entry) ? entry.connection : undefined)))
+        .size === value.usage.length
+    );
   if (operation === "destination.read")
     return (
       exact(value, ["destination"]) &&
@@ -622,6 +801,10 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
 }
 export function isResearchEvent(value: unknown): value is ResearchEvent {
   if (!obj(value)) return false;
+  if (value.kind === "destinationChanged")
+    return exact(value, ["kind", "connection"]) && isConnectionId(value.connection);
+  if (value.kind === "pauseCounts")
+    return exact(value, ["kind", "revision"]) && integer(value.revision);
   if (value.kind === "inferenceActivity") return exact(value, ["kind"]);
   if (value.kind === "reply")
     return (

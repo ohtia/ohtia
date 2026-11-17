@@ -17,6 +17,7 @@ import {
   type ResearchSchema,
 } from "./research.js";
 import { TaskTransaction, type TaskContext } from "./tasks.js";
+import { operationPolicy } from "./operations.js";
 import { setupRevision } from "./project-setup.js";
 import { storedText } from "./research-text.js";
 
@@ -36,6 +37,7 @@ async function timelineItem(
   db: Kysely<ResearchSchema>,
   conversationId: string,
   id: string,
+  context: TaskContext,
 ): Promise<TimelineItem | undefined> {
   const row = await db
     .selectFrom("messages")
@@ -86,18 +88,115 @@ async function timelineItem(
     .where("conversation_id", "=", bytes(conversationId))
     .where("id", "=", bytes(id))
     .executeTakeFirst();
-  return task
+  if (!task) return undefined;
+  const attempt = await db
+    .selectFrom("attempts")
+    .selectAll()
+    .where("task_id", "=", task.id)
+    .orderBy("attempt_number", "desc")
+    .executeTakeFirst();
+  const replacement = await db
+    .selectFrom("tasks")
+    .select("id")
+    .where("replaces_task_id", "=", task.id)
+    .executeTakeFirst();
+  const saved = await db
+    .selectFrom("messages")
+    .select("id")
+    .where("task_id", "=", task.id)
+    .executeTakeFirst();
+  const policy = operationPolicy(task.operation, task.policy_version, context.mode);
+  if (!policy) throw new Error("Task policy unavailable.");
+  return {
+    id,
+    kind: "task",
+    rank: 3,
+    revision: task.state_revision,
+    position: task.reply_position ?? task.input_through_position,
+    agentId: "virgilio",
+    language: task.document_language,
+    state: task.state,
+    connection: task.connection,
+    blockingReason: task.blocking_reason,
+    outcomeReason: attempt?.outcome_reason ?? null,
+    replyMessageId: saved ? identifier(saved.id) : null,
+    waitingForModels:
+      task.state === "queued" && context.connections.awaitingModels(task.connection),
+    waitingLimit:
+      task.state === "queued"
+        ? await new TaskTransaction(db, context).waitingLimit(task.connection)
+        : null,
+    dispatched:
+      attempt?.dispatch_permitted_at !== null && attempt?.dispatch_permitted_at !== undefined,
+    superseded:
+      !!replacement ||
+      (task.state === "cancelled" &&
+        ["service_restarted", "permit_expired"].includes(attempt?.outcome_reason ?? "")),
+    maxAttemptDurationMs: policy.max_attempt_duration_ms,
+    maxInactivityMs: policy.max_inactivity_ms,
+  };
+}
+export async function readPauseCounts(
+  db: Kysely<ResearchSchema>,
+): Promise<import("@ohtia/contracts").PauseCounts> {
+  const revision = await sql<{
+    revision: number;
+  }>`SELECT revision FROM pause_counts_revision`.execute(db);
+  const restart = await db
+    .selectFrom("tasks")
+    .select(({ fn }) => fn.countAll<number>().as("count"))
+    .where("state", "=", "blocked")
+    .where("blocking_reason", "=", "restart_paused")
+    .executeTakeFirstOrThrow();
+  const usage = [];
+  for (const pause of await db
+    .selectFrom("usage_limit_pauses")
+    .select("connection")
+    .where("resumed_at", "is", null)
+    .orderBy("connection")
+    .execute()) {
+    const held = await db
+      .selectFrom("tasks")
+      .select(({ fn }) => fn.countAll<number>().as("count"))
+      .where("state", "=", "blocked")
+      .where("blocking_reason", "=", "usage_limit_reached")
+      .where("connection", "=", pause.connection)
+      .executeTakeFirstOrThrow();
+    usage.push({ connection: pause.connection, count: held.count });
+  }
+  const snapshot = revision.rows[0];
+  if (!snapshot) throw new Error("Pause revision unavailable.");
+  return { revision: snapshot.revision, restart: restart.count, usage };
+}
+async function latestReplyTask(
+  db: Kysely<ResearchSchema>,
+  conversation: string,
+): Promise<string | null> {
+  const task = await db
+    .selectFrom("tasks")
+    .select("id")
+    .where("conversation_id", "=", bytes(conversation))
+    .orderBy(sql`rowid`, "desc")
+    .executeTakeFirst();
+  return task ? identifier(task.id) : null;
+}
+async function runningTask(
+  db: Kysely<ResearchSchema>,
+  conversation: string,
+): Promise<import("@ohtia/contracts").ConversationSummary["runningTask"]> {
+  const row = await db
+    .selectFrom("tasks")
+    .select(["id", "state"])
+    .where("conversation_id", "=", bytes(conversation))
+    .where("state", "in", ["running", "cancelling"])
+    .executeTakeFirst();
+  return row
     ? {
-        id,
-        kind: "task",
-        rank: 3,
-        revision: task.state_revision,
-        position: task.reply_position ?? task.input_through_position,
+        id: identifier(row.id),
         agentId: "virgilio",
-        language: task.document_language,
-        state: task.state,
+        state: row.state === "cancelling" ? "cancelling" : "running",
       }
-    : undefined;
+    : null;
 }
 export async function readResearch(
   db: Kysely<ResearchSchema>,
@@ -105,6 +204,8 @@ export async function readResearch(
   context: TaskContext,
 ): Promise<Outcome<unknown>> {
   switch (request.operation) {
+    case "pause.read":
+      return { ok: true, value: await readPauseCounts(db) };
     case "destination.read": {
       const p = request.payload;
       const project = await db
@@ -145,8 +246,17 @@ export async function readResearch(
           ? await listProjects(db)
           : await listConversations(db, request.payload.projectId);
       if (!result.ok) return result;
-      const rows = result.value.map((row) =>
-        "projectId" in row ? { ...row, agentId: "virgilio" as const } : row,
+      const rows = await Promise.all(
+        result.value.map(async (row) =>
+          "projectId" in row
+            ? {
+                ...row,
+                agentId: "virgilio" as const,
+                latestReplyTaskId: await latestReplyTask(db, row.id),
+                runningTask: await runningTask(db, row.id),
+              }
+            : row,
+        ),
       );
       const offset = p.cursor === null ? 0 : rows.findIndex((row) => row.id === p.cursor) + 1;
       if (p.cursor !== null && offset === 0) return failure("record_not_found");
@@ -172,7 +282,20 @@ export async function readResearch(
       const all = await listConversations(db, p.projectId);
       if (!all.ok) return all;
       const rows = new Map(
-        all.value.map((row) => [row.id, { ...row, agentId: "virgilio" as const }]),
+        await Promise.all(
+          all.value.map(
+            async (row) =>
+              [
+                row.id,
+                {
+                  ...row,
+                  agentId: "virgilio" as const,
+                  latestReplyTaskId: await latestReplyTask(db, row.id),
+                  runningTask: await runningTask(db, row.id),
+                },
+              ] as const,
+          ),
+        ),
       );
       const items = [];
       let consumed = 0;
@@ -207,7 +330,7 @@ export async function readResearch(
         ) ${before} ORDER BY position DESC, rank DESC, id DESC LIMIT ${p.count + 1}`.execute(db);
       const items: TimelineItem[] = [];
       for (const row of rows.rows.slice(0, p.count)) {
-        const item = await timelineItem(db, p.conversationId, identifier(row.id));
+        const item = await timelineItem(db, p.conversationId, identifier(row.id), context);
         if (!item) throw new Error("Timeline item vanished in snapshot.");
         const more = items.length + 1 < rows.rows.length;
         if (
@@ -231,7 +354,7 @@ export async function readResearch(
       const items: TimelineItem[] = [];
       let consumed = 0;
       for (const id of p.ids) {
-        const item = await timelineItem(db, p.conversationId, id);
+        const item = await timelineItem(db, p.conversationId, id, context);
         if (!item) return failure("record_not_found");
         if (
           !fitsResearchResult(request, {

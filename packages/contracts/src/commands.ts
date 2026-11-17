@@ -281,6 +281,7 @@ export interface AboutInformation {
   readonly notices: readonly AboutNotice[];
 }
 export const projectLinks = {
+  chatgptUsage: "https://chatgpt.com/settings/usage",
   repository: "https://github.com/ohtia/ohtia",
   documentation: "https://github.com/ohtia/ohtia/blob/main/docs/index.md",
   report: "https://github.com/ohtia/ohtia/issues/new/choose",

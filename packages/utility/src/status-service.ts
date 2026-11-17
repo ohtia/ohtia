@@ -2,6 +2,7 @@ import { ResearchService } from "./research-service.js";
 import { DurableProvider } from "./durable-provider.js";
 import {
   decodeConnectionReport,
+  providerMessageVersion,
   decodeApplicationExit,
   isIdentifier,
   isResearchOperation,
@@ -39,13 +40,32 @@ export function createStatusService(
 ) {
   if (!isInterfaceLocale(locale)) throw new Error("Unsupported trusted service locale.");
   const connections = new ServiceConnections();
-  storage?.setTaskContext({ generation, mode, connections });
+  let modelRefreshSequence = 0;
+  const context = {
+    generation,
+    mode,
+    connections,
+    requestModelRefresh: (connection: string) => {
+      const refresh_id = `models_${String(++modelRefreshSequence)}`;
+      connections.beginModelRefresh(connection, refresh_id);
+      send(
+        JSON.stringify({
+          kind: "model_list_refresh",
+          refresh_id,
+          version: providerMessageVersion,
+          generation,
+          connection,
+        }),
+      );
+    },
+  };
+  storage?.setTaskContext(context);
   // The service generation identifies every provider message; main discards the rest.
   let research: ResearchService | undefined;
   const durable = storage
     ? new DurableProvider({
         storage,
-        context: { generation, mode, connections },
+        context,
         send,
         reply: (task, sequence, text) => research?.reply(task, sequence, text),
       })
@@ -515,6 +535,12 @@ export function createStatusService(
         }
         enqueueProvider(async () => {
           if (!connections.receive(report)) throw new Error("Invalid connection report.");
+          if (report.kind === "connection_state" || !report.page.hasMore)
+            research?.connectionChanged(
+              report.kind === "connection_state"
+                ? report.snapshot.connection
+                : report.page.connection,
+            );
           if (enabled) await durable.pump();
         });
         return;

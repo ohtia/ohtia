@@ -22,18 +22,27 @@ interface Stream {
   revisions: Map<string, number>;
   sequence: number;
   running: number;
+  pauseRevision: number;
 }
 /** Serialized by the existing status-service queue; no second execution or storage authority. */
 export class ResearchService {
   private readonly staging = new TextStaging();
   private readonly streams = new Map<string, Stream>();
+  private readonly stopPauseObservation: () => void;
   constructor(
     private readonly storage: DurableStore,
     private readonly generation: string,
     private readonly emit: (value: unknown) => void,
     private readonly provider: DurableProvider,
     private readonly providerFailure: () => void,
-  ) {}
+  ) {
+    this.stopPauseObservation = storage.observePauseCounts((revision) => {
+      for (const stream of this.streams.values()) {
+        stream.pauseRevision = revision;
+        this.event(stream, { kind: "pauseCounts", revision });
+      }
+    });
+  }
   private event(stream: Stream, payload: ResearchEvent): void {
     if (this.streams.get(`${stream.window}/${stream.id}`) !== stream) return;
     this.emit({
@@ -48,6 +57,10 @@ export class ResearchService {
       payload,
     });
   }
+  connectionChanged(connection: string): void {
+    for (const stream of this.streams.values())
+      this.event(stream, { kind: "destinationChanged", connection });
+  }
   reply(taskId: string, sequence: number, text: string): void {
     for (const stream of this.streams.values())
       if (stream.revisions.has(`timeline/${taskId}`))
@@ -55,6 +68,8 @@ export class ResearchService {
   }
   async publish(): Promise<void> {
     if (!this.streams.size) return;
+    const pauses = await this.storage.readPauses();
+    if (!pauses.ok) throw new Error("Pause counts could not be refreshed.");
     const running = await this.storage.runningTaskCount();
     if (!running.ok) throw new Error("Inference activity could not be refreshed.");
     for (const stream of this.streams.values()) {
@@ -64,6 +79,10 @@ export class ResearchService {
       if (stream.running !== running.value) {
         stream.running = running.value;
         this.event(stream, { kind: "inferenceActivity" });
+      }
+      if (stream.pauseRevision !== pauses.value.revision) {
+        stream.pauseRevision = pauses.value.revision;
+        this.event(stream, { kind: "pauseCounts", revision: pauses.value.revision });
       }
       for (const change of result.value) {
         const key = `${change.record}/${change.id}`;
@@ -85,6 +104,7 @@ export class ResearchService {
     this.staging.closeWindow(window);
   }
   dispose(): void {
+    this.stopPauseObservation();
     this.staging.dispose();
     this.streams.clear();
   }
@@ -117,6 +137,8 @@ export class ResearchService {
         respond(failure("cancelled"));
         return true;
       }
+      const pauses = await this.storage.readPauses();
+      if (!pauses.ok) throw new Error("Pause counts could not be refreshed.");
       const running = await this.storage.runningTaskCount();
       if (!running.ok) {
         respond(running);
@@ -132,6 +154,7 @@ export class ResearchService {
         scope: { projectId: p.projectId, conversationId: p.conversationId },
         sequence: 0,
         running: running.value,
+        pauseRevision: pauses.value.revision,
         revisions: new Map(
           revisions.value.map((change) => [`${change.record}/${change.id}`, change.revision]),
         ),

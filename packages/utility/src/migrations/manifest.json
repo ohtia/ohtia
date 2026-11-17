@@ -58,5 +58,9 @@
   {
     "name": "0015_project_setup",
     "sha256": "3afacce7386ce5cd06a83cceede22badb672a4daaa09343b82698951f6006a83"
+  },
+  {
+    "name": "0016_task_notices",
+    "sha256": "208e78129804a8f05f355ffde5dd4d8cc3f5f84162e4a9de856cf643056d5e03"
   }
 ]

@@ -1,7 +1,7 @@
 ---
 type: Playbook
 title: Durable foundation storage
-description: Persist preferences, research records and setup proposals, resume durable tasks and recover verified migrations.
+description: Persist preferences, research records and setup proposals, recover task and inference-limit receipts and invalidate global pause counts.
 generated:
   by: codex/gpt-6.1-sol
 ---
@@ -11,6 +11,12 @@ generated:
 ## Conversation composition
 
 The [composer](epics/EPIC-003-research-agents/epic.md#spec-003-017-message-composer) keeps unsent text only in window memory. Confirmed saves remove only the submitted text while retaining newer input; an uncertain save preserves its operation identity until editing creates a new intent (PRIN-002 and PRIN-006). A Stop requested before the save result waits for that result, then stops the conversation even when the save failed or remains uncertain. The new immutable `0014_message_composer` migration admits `conversation.stop` receipts through the same checkpoint and recovery path, without changing earlier migrations. The command’s reserved transaction applies the existing task control to all unfinished tasks in the conversation and records one receipt. Replaying it returns its first result without affecting later tasks.
+
+## Task-notice recovery
+
+Migration `0016_task_notices` admits `task.tryAgain` receipts and replacement tasks whose original task failed. It follows the existing checkpoint and recovery path without changing historical migrations. Retry creates a new task; the failed task remains terminal, its saved partial reply stays outside the replacement input, and the new receipt records no duplicate-charge acknowledgement.
+
+Each admitted database connection creates a temporary pause-count revision and temporary triggers for held-task and usage-pause changes. These counters participate in the same transactions, roll back with them and invalidate subscribers only after commit; they restart at 1 on a new data-service connection and add no durable research record.
 
 ## Authority and opening
 
@@ -56,7 +62,7 @@ Migration `0009_usage_limit_pauses` preserves connection-wide plan pauses and th
 
 Migration `0010_reply_control` adds `messages.ending` and `tasks.charge_warning_accepted_at`. Existing agent messages become `complete` when their task completed, and `partial` otherwise; researcher messages keep an empty ending. Database rules enforce author-specific endings and immutable replacement warnings. `task.stop` commits cancellation intent before requesting interruption. Main acknowledges final outcomes only after its transport closes; a closed ChatGPT connection releases capacity even when its remote outcome remains uncertain. PRIN-006 and PRIN-016 require keeping remote generation and charges unknown after interruption.
 
-`task.startAgain` is a human acknowledgement of possible duplicate charges. It creates one linked task only for the conversation's latest uncertain reply, retaining the original input cutoff and excluding that task's partial reply. Partial messages included by later tasks receive the English reason-specific note defined in [SPEC-003-012](epics/EPIC-003-research-agents/epic.md#spec-003-012-stop-time-limits-and-uncertain-replacement), immediately after the message; its immutable message identity and revision 1 identify the note in the transfer manifest. Notes consume neither input-message nor input-byte budgets.
+`task.startAgain` is a human acknowledgement of possible duplicate charges. It creates one linked task only for the conversation's latest uncertain reply. When that task saved a partial reply, the replacement retains the original input cutoff and excludes that partial reply; otherwise it covers the conversation's current messages. Partial messages included by later tasks receive the English reason-specific note defined in [SPEC-003-012](epics/EPIC-003-research-agents/epic.md#spec-003-012-stop-time-limits-and-uncertain-replacement), immediately after the message; its immutable message identity and revision 1 identify the note in the transfer manifest. Notes consume neither input-message nor input-byte budgets.
 
 The development command accepts `--ohtia-dev-command=stop --ohtia-dev-task=<id>` and `--ohtia-dev-command=start-again --ohtia-dev-task=<id>`; invoking `start-again` acknowledges the duplicate-charge warning. Task identifiers are printed alongside attempt identifiers. `--ohtia-dev-command=continue-all` invokes `task.continueAll` for recovery-paused work across projects, after checking the admitted operation policy, task authority, current connection and open plan pauses. These commands use the existing serialized data-service command and receipt boundary.
 
