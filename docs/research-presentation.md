@@ -1,7 +1,7 @@
 ---
 type: Reference
 title: Research presentation API
-description: Compose controlled research components, accessible task notices and restricted conversation Markdown without storage or provider authority.
+description: Compose controlled research and action proposals, accessible task notices and restricted conversation Markdown without storage or provider authority.
 generated:
   by: codex/gpt-6.1-sol
 ---
@@ -10,7 +10,7 @@ generated:
 
 ## Ownership and inputs
 
-The renderer exports `EvidenceHighlight`, `TutorComment`, `ProposalCard`, `ContrastResult`, `CritiqueLevel`, `ObservationCard`, `ReviewRequired`, `CoverageStatement`, `SourceRow`, `ProcessingStatus`, `RestrictionBadge`, `WeeklyActions`, `StageStatus`, `PaceIndicator`, `SaveStatus`, `VersionConflict` and the supporting `MetricValue`. `VoiceLabel` remains part of the [character presentation API](character-presentation.md#static-attribution). The [design system](design-system.md#domain-components) owns their meaning, tokens and shapes; [STORY-002-009](epics/EPIC-002-basic-interface/STORY-002-009-research-component-specimens.md) defines this presentation increment. The components preserve evidence, inference and human attribution under PRIN-002, PRIN-004, PRIN-006 and PRIN-007.
+The renderer exports `EvidenceHighlight`, `TutorComment`, `ProposalCard`, `ActionProposalCard`, `ContrastResult`, `CritiqueLevel`, `ObservationCard`, `ReviewRequired`, `CoverageStatement`, `SourceRow`, `ProcessingStatus`, `RestrictionBadge`, `WeeklyActions`, `StageStatus`, `PaceIndicator`, `SaveStatus`, `VersionConflict` and the supporting `MetricValue`. `VoiceLabel` remains part of the [character presentation API](character-presentation.md#static-attribution). The [design system](design-system.md#domain-components) owns their meaning, tokens and shapes; [STORY-002-009](epics/EPIC-002-basic-interface/STORY-002-009-research-component-specimens.md) defines this presentation increment. The components preserve evidence, inference and human attribution under PRIN-002, PRIN-004, PRIN-006 and PRIN-007.
 
 Every component is controlled. The consumer supplies typed state, translated labels, recorded content and callbacks; no component reads storage, calls the application port, requests inference, applies prose to a manuscript or dispatches an agent. Consumers add their own catalog keys when they first bind a component to a screen, following [localization](localization.md). Callbacks report a researcher's request; they do not confirm research, persist a decision or certify an effect.
 
@@ -23,6 +23,8 @@ Supplied research content uses `RecordedText`: its text and the language recorde
 `TutorComment` quotes the original supervisor comment in the human voice with the declared author, the origin of that declaration and the submitted version. An optional interpretation is nested below with the actual contributor's `VoiceLabel`. `ProposalCard`, `ObservationCard` and the interpretation reject a supervisor identity at runtime as well as in their types, so neither the product character nor a named agent inherits the supervisor's authority. Researcher text keeps the ordinary unlabelled treatment.
 
 ## Trust, comparison and review
+
+`ActionProposalCard` presents a proposed agent action with `open`, `accepted`, `declined` or `replaced` state. The consumer supplies its title, state label, language-preserving labelled sections, note, disabled reason and callbacks. Open cards offer one primary and one or two secondary actions; decided cards retain their content without decision actions. Optional progress rows keep their own labels and callbacks. `showVoice` suppresses the proposer’s `VoiceLabel` only when the card directly follows that contributor’s message. Accepting records a human decision without certifying the proposed content (PRIN-002 and PRIN-010).
 
 `ProposalCard` takes a discriminated review state. Proposed and pending content offer confirmation, correction and rejection; proposed content also offers leaving it pending. A confirmed card requires the exact reviewed version and scope and shows the consumer's statement that confirmation is not a correctness certificate. A rejected card retains its reason. A card requiring review states what changed and offers only the consumer's review-again action. The shapes follow the [trust policy](design-system.md#trust-policy). A proposal, observation or supervisor-comment interpretation from an unknown producer keeps its dashed 2 px shape in `border.control` and ordinary text; it does not take the `voice.ohtia.*` colors reserved for system and AI origin. `CritiqueLevel` marks keep Ohtia's voice as the design system specifies.
 

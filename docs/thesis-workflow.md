@@ -4,8 +4,6 @@ title: "Thesis workflow"
 description: "Research stages, artifacts, review milestones, and reentry paths for theses and scientific papers."
 generated:
   by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: double-diamond
     resource: "https://www.designcouncil.org.uk/resources/the-double-diamond/"
@@ -81,7 +79,7 @@ Navigator state and persisted stage references use these identifiers. Changing a
 
 Begin with the material the researcher has: interests, an existing project, selected sources or a draft passage. Gather context progressively: work type, institution and known requirements, discipline and reasoning approach, research question, stage, target languages, available corpus, method, deadline and realistic availability. Unknown values remain unknown.
 
-Creating a local project and recording this context require no provider connection. If the researcher requests agent assistance, show the necessary connection and outgoing scope at that point. An imported requirement or source is not an instruction to grant tools or send additional data.
+Creating a project requires a connected AI service, because Virgilio sets it up through a conversation. If the researcher requests agent assistance, show the necessary connection and outgoing scope at that point. An imported requirement or source is not an instruction to grant tools or send additional data.
 
 During setup, Virgilio proposes the project's document language, the language of the thesis text in which agents work and answer, and the researcher confirms it. Keep it distinct from the OS-derived or user-overridden interface locale. Record the institution's citation and AI-use requirements with the document or statement that supports them, the supervisor/committee milestones, weekly availability, prior experience and any voluntarily disclosed support needs. The initial output is a revisable research profile and one useful focus. A researcher can start with a single source brief or citation comparison before formalizing the whole profile. Ohtia does not make a deadline, model choice or completed literature graph a prerequisite.
 
@@ -303,7 +301,7 @@ Milestone actions specify the exact artifact versions reviewed, evidence conside
 
 ## Acceptance journeys
 
-- Create a project without providers and record context; reopen it with its notes, draft and decisions intact.
+- Create a project with Virgilio and record context; reopen it with its notes, draft and decisions intact.
 - Start from one permitted document, request a bounded brief, inspect an anchor, correct a proposed claim and record the human review.
 - Start from a draft attribution, provide its source, examine a coverage-limited comparison and decide whether to revise or reject the finding.
 - Enter with advanced research, map only relevant artifacts, select a current focus and reopen an earlier milestone with a documented reason.

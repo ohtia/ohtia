@@ -30,20 +30,23 @@ export function MessageComposer({
   const stopping = state.stopping || state.cancelling;
   const stop = state.saving || stopping || (!hasText && state.running);
   const destinationUnavailable = state.destinationStatus !== "ready";
-  const disabled = stopping || (!stop && (!hasText || over || destinationUnavailable));
+  const disabled =
+    !!state.setupFinal || stopping || (!stop && (!hasText || over || destinationUnavailable));
   const destinationReason = !stop && hasText && !over && destinationUnavailable;
-  const reason = stopping
-    ? message(locale, "composer.stopping")
-    : !hasText && !stop
-      ? message(locale, "composer.empty")
-      : destinationReason
-        ? message(
-            locale,
-            state.destinationStatus === "failed"
-              ? "composer.destinationFailed"
-              : "composer.destinationLoading",
-          )
-        : "";
+  const reason = state.setupFinal
+    ? message(locale, "setup.composerDisabled")
+    : stopping
+      ? message(locale, "composer.stopping")
+      : !hasText && !stop
+        ? message(locale, "composer.empty")
+        : destinationReason
+          ? message(
+              locale,
+              state.destinationStatus === "failed"
+                ? "composer.destinationFailed"
+                : "composer.destinationLoading",
+            )
+          : "";
   const name = message(locale, stop ? "composer.stop" : "composer.send");
   const notice = over
     ? message(locale, "composer.remove", { excess: count - researcherMessageLimit })
@@ -55,6 +58,7 @@ export function MessageComposer({
   const danger = !over && state.notice === "failed";
   const described =
     [
+      state.setupFinal && `${id}-reason`,
       counter && `${id}-count`,
       notice && `${id}-notice`,
       state.stopFailed && `${id}-stop-error`,
@@ -94,6 +98,34 @@ export function MessageComposer({
       observer.disconnect();
     };
   }, [state.text]);
+  useLayoutEffect(() => {
+    if (!state.focusRequest) return;
+    const apply = (): boolean => {
+      const textarea = input.current;
+      if (!textarea) return false;
+      if (textarea.disabled) return true;
+      if (textarea.closest("[hidden], [inert]") || document.querySelector("dialog[open]"))
+        return false;
+      textarea.focus();
+      return document.activeElement === textarea;
+    };
+    if (apply()) return;
+    const observer = new MutationObserver(() => {
+      if (apply()) observer.disconnect();
+    });
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["open", "hidden", "inert"],
+      childList: true,
+      subtree: true,
+    });
+    return () => {
+      observer.disconnect();
+    };
+  }, [state.focusRequest]);
+  const placeholder = state.correction
+    ? message(locale, "setup.correctPlaceholder")
+    : message(locale, "composer.placeholder", { agent });
   function focusInput() {
     requestAnimationFrame(() => input.current?.focus());
   }
@@ -107,8 +139,9 @@ export function MessageComposer({
           ref={input}
           rows={1}
           value={state.text}
-          placeholder={message(locale, "composer.placeholder", { agent })}
-          aria-label={message(locale, "composer.placeholder", { agent })}
+          disabled={state.setupFinal}
+          placeholder={placeholder}
+          aria-label={placeholder}
           aria-describedby={described}
           aria-invalid={over || undefined}
           onChange={(event) => {
@@ -155,7 +188,7 @@ export function MessageComposer({
             aria-label={name}
             aria-disabled={disabled}
             aria-describedby={
-              stopping || (!hasText && !stop)
+              state.setupFinal || stopping || (!hasText && !stop)
                 ? `${id}-reason`
                 : !stop && over
                   ? `${id}-notice`
@@ -228,14 +261,21 @@ export function MessageComposer({
           </button>
         </div>
       )}
-      {reason && !(destinationReason && state.destinationStatus === "failed") && (
-        <p
-          id={`${id}-reason`}
-          className={stopping || destinationReason ? "composer-reason" : "primitive-announcement"}
-        >
-          {reason}
+      {state.setupFinal && (
+        <p id={`${id}-reason`} className="composer-reason" role="status">
+          {message(locale, "setup.composerDisabled")}
         </p>
       )}
+      {reason &&
+        !state.setupFinal &&
+        !(destinationReason && state.destinationStatus === "failed") && (
+          <p
+            id={`${id}-reason`}
+            className={stopping || destinationReason ? "composer-reason" : "primitive-announcement"}
+          >
+            {reason}
+          </p>
+        )}
       {state.destination && (
         <p className="composer-destination">
           {message(

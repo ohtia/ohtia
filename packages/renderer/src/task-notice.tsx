@@ -181,6 +181,7 @@ export function TaskNotice({
   connection,
   hasText,
   latest,
+  setupFinal = false,
   runningAgent,
 
   pauses,
@@ -194,6 +195,7 @@ export function TaskNotice({
   readonly connection: ProviderDeclaration["connection"];
   readonly hasText: boolean;
   readonly latest: boolean;
+  readonly setupFinal?: boolean;
   readonly runningAgent?: string | undefined;
 
   readonly pauses?: PauseCounts;
@@ -250,6 +252,9 @@ export function TaskNotice({
   const announcing =
     !!announcement.text && announcement.locale === locale && announcement.signature === signature;
   const [confirm, setConfirm] = useState(false);
+  useEffect(() => {
+    if (setupFinal) setConfirm(false);
+  }, [setupFinal]);
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState<
     "newer" | "pendingLimit" | "actionFailed" | "actionUncertain" | null
@@ -306,9 +311,11 @@ export function TaskNotice({
   if (!content) return null;
   const usage =
     task.blockingReason === "usage_limit_reached" || task.outcomeReason === "usage_limit_reached";
-  const retry = latest && task.state === "failed" && task.outcomeReason !== "not_eligible";
-  const restart = latest && task.state === "uncertain";
-  const resume = usage && (task.state === "blocked" || retry);
+  const retryableFailure =
+    latest && task.state === "failed" && task.outcomeReason !== "not_eligible";
+  const retry = !setupFinal && retryableFailure;
+  const restart = !setupFinal && latest && task.state === "uncertain";
+  const resume = usage && (task.state === "blocked" || retryableFailure);
   const count = pauses
     ? (pauses.usage.find((p) => p.connection === task.connection)?.count ?? 0)
     : undefined;

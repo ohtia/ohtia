@@ -7,6 +7,7 @@ import type { SimpleMessageKey } from "./catalogs.js";
 export type CommandPlatform = "win32" | "linux" | "darwin";
 export type CommandGroup = "general" | "panels" | "appearance" | "edit";
 export const commandIds = [
+  "project.new",
   "settings.open",
   "palette.open",
   "shortcuts.open",
@@ -76,6 +77,7 @@ const primary = (key: string) => ({
   darwin: [`Cmd+${key}`],
 });
 const bindings: Partial<Record<CommandId, CommandDefinition["shortcuts"]>> = {
+  "project.new": primary("N"),
   "settings.open": primary(","),
   "palette.open": primary("Shift+P"),
   "shortcuts.open": primary("/"),

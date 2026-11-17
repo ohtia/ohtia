@@ -2072,3 +2072,65 @@ it("does not misattribute setup proposals as agent messages before the setup-car
   expect(container.querySelector('.conversation-message[aria-label="Virgilio"]')).toBeNull();
   expect(container.textContent).not.toContain("Synthetic proposal");
 });
+
+it.each(["failed", "uncertain"] as const)(
+  "retains a historical %s setup notice but removes replacement actions after confirmation",
+  async (phase) => {
+    const task = reviewTask({ state: phase }),
+      s = {
+        ...state([task]),
+        project: {
+          id: scope.projectId,
+          projectType: "thesis" as const,
+          title: "Synthetic confirmed thesis",
+          documentLanguage: "en",
+          isDevelopment: false,
+          setupConfirmedAt: "2026-11-17T10:00:00Z",
+          createdAt: "2026-11-17T10:00:00Z",
+          updatedAt: "2026-11-17T10:00:00Z",
+        },
+        conversation: { ...summary, latestReplyTaskId: task.id },
+      };
+    await render(s);
+    expect(container.textContent).toContain(
+      phase === "failed" ? "reported an error" : "lost contact",
+    );
+    expect(
+      [...container.querySelectorAll("button")].some((b) =>
+        ["Try again", "Start reply again"].includes(b.textContent ?? ""),
+      ),
+    ).toBe(false);
+  },
+);
+
+it.each([true, false])(
+  "retains global usage resumption after confirmation only on the latest failed setup notice (latest: %s)",
+  async (latest) => {
+    const task = reviewTask({ outcomeReason: "usage_limit_reached" }),
+      perform = vi.fn(async () => ({ ok: true as const, value: { resultId: id(999) } }));
+    await act(async () =>
+      root.render(
+        h(TaskNotice, {
+          task,
+          locale: "en-US",
+          connection: chatgptConnection,
+          hasText: false,
+          latest,
+          setupFinal: true,
+          pauses: { revision: 1, restart: 0, usage: [{ connection: "chatgpt", count: 2 }] },
+          controller: { performTaskAction: perform },
+          commands: { openLink: async () => true },
+        }),
+      ),
+    );
+    const buttons = [...container.querySelectorAll("button")];
+    expect(buttons.map((button) => button.textContent)).toEqual(
+      latest ? ["Resume ChatGPT requests (2)"] : [],
+    );
+    expect(container.textContent).not.toContain("Try again");
+    if (latest) {
+      await act(async () => buttons[0]!.click());
+      expect(perform).toHaveBeenCalledWith(expect.any(String), "resume", task);
+    }
+  },
+);

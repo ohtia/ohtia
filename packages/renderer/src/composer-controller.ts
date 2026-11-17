@@ -17,6 +17,9 @@ import {
 export type ComposerNotice = "pendingLimit" | "inputTooLarge" | "uncertain" | "failed";
 export interface ComposerState {
   readonly text: string;
+  readonly correction?: string | null;
+  readonly setupFinal?: boolean;
+  readonly focusRequest?: number;
   readonly saving: boolean;
   readonly stopping: boolean;
   readonly cancelling: boolean;
@@ -99,12 +102,31 @@ export class ComposerController {
   }
   open(scope: ResearchScope): void {
     this.invalidateDestination(this.draft);
+    if (
+      this.scope.projectId !== scope.projectId ||
+      this.scope.conversationId !== scope.conversationId
+    )
+      this.update(this.draft, { correction: null });
     this.scope = scope;
     const key = `${scope.projectId ?? ""}/${scope.conversationId ?? ""}`;
     this.draft = this.drafts.get(key) ?? initial();
     this.drafts.set(key, this.draft);
     this.invalidateDestination(this.draft);
     this.update(this.draft, { destinationStatus: "loading", announcement: 0 });
+  }
+  focus = (): void => {
+    this.update(this.draft, { focusRequest: (this.draft.state.focusRequest ?? 0) + 1 });
+  };
+  correct(proposalId: string): void {
+    this.update(this.draft, { correction: proposalId });
+    this.focus();
+  }
+  setup(final: boolean, openProposalIds: readonly string[]): void {
+    const correction = this.draft.state.correction;
+    this.update(this.draft, {
+      setupFinal: final,
+      ...(correction && !openProposalIds.includes(correction) ? { correction: null } : {}),
+    });
   }
   edit = (text: string): void => {
     const draft = this.draft;
@@ -223,6 +245,7 @@ export class ComposerController {
     const draft = this.draft;
     const conversationId = this.scope.conversationId;
     if (
+      draft.state.setupFinal ||
       !conversationId ||
       !this.scope.projectId ||
       draft.state.destinationStatus !== "ready" ||
@@ -249,6 +272,7 @@ export class ComposerController {
       delete draft.pending;
       this.update(draft, {
         text,
+        ...(outcome.ok ? { correction: null } : {}),
         saving: false,
         notice: outcome.ok ? null : saveNotice(outcome.error.code),
       });

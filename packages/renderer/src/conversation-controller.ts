@@ -3,6 +3,8 @@ import {
   mergeTimeline,
   chatgptConnection,
   type PauseCounts,
+  type ProjectRecord,
+  type TimelineSetupProposal,
   type ProviderDeclaration,
   type TimelineTask,
   failure,
@@ -23,6 +25,11 @@ import {
 export type TaskAction = "resume" | "continue" | "retry" | "restart";
 export interface ConversationState {
   readonly pauses?: PauseCounts;
+  readonly project?: ProjectRecord;
+  readonly setupActions?: ReadonlyMap<
+    string,
+    { readonly busy: boolean; readonly action: "confirm" | "reject"; readonly error?: string }
+  >;
   readonly scope: ResearchScope;
   readonly status: "loading" | "ready" | "failed" | "unavailable";
   readonly conversation?: ConversationSummary;
@@ -133,12 +140,64 @@ export class ConversationController {
     }
     return result;
   }
+  private setupIntents = new Map<string, string>();
+  private setupActions = new Map<
+    string,
+    { busy: boolean; action: "confirm" | "reject"; error?: string }
+  >();
+  performSetupAction = async (
+    proposal: TimelineSetupProposal,
+    action: "confirm" | "reject",
+  ): Promise<void> => {
+    if (this.disposed || this.setupActions.get(proposal.id)?.busy) return;
+    const conversationId = this.state.scope.conversationId;
+    const key = `${proposal.id}/${action}`;
+    const operationId = this.setupIntents.get(key) ?? crypto.randomUUID();
+    this.setupIntents.set(key, operationId);
+    const update = (busy: boolean, error?: string) => {
+      this.setupActions.set(proposal.id, { busy, action, ...(error ? { error } : {}) });
+      if (!this.disposed && this.state.scope.conversationId === conversationId) {
+        this.state = { ...this.state, setupActions: new Map(this.setupActions) };
+        this.publish();
+      }
+    };
+    update(true);
+    let outcome;
+    try {
+      outcome = await (
+        action === "confirm"
+          ? this.port.confirmProjectSetup(operationId, { proposalId: proposal.id })
+          : this.port.rejectProjectSetup(operationId, { proposalId: proposal.id })
+      ).result;
+    } catch {
+      outcome = failure("invalid_service_result");
+    }
+    if (!this.live(this.epoch)) return;
+    update(false, outcome.ok ? undefined : outcome.error.code);
+    if (this.state.scope.conversationId !== conversationId) return;
+    const epoch = this.epoch;
+    if (outcome.ok || outcome.error.code === "proposal_not_waiting") {
+      try {
+        await this.readIds([proposal.id], epoch);
+        await this.projects(epoch);
+        if (this.live(epoch)) this.publish();
+      } catch {
+        this.failure(epoch);
+      }
+    }
+  };
   snapshot = (): ConversationState => this.state;
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   };
   private publish(): void {
+    this.composer.setup(
+      !!this.state.project?.setupConfirmedAt && !this.state.project.isDevelopment,
+      this.state.items
+        .filter((item) => item.kind === "setupProposal" && item.state === "proposed")
+        .map((item) => item.id),
+    );
     this.composer.running(
       !!this.state.conversation?.runningTask ||
         this.state.items.some(
@@ -196,6 +255,7 @@ export class ConversationController {
           status: cached.status === "ready" ? "ready" : "loading",
         }
       : empty(scope);
+    this.state = { ...this.state, setupActions: new Map(this.setupActions) };
     this.pendingReplies = new Map(this.state.replies);
     this.publish();
     this.connect(epoch, false);
@@ -282,6 +342,9 @@ export class ConversationController {
       if (!page.ok)
         throw Object.assign(new Error("Projects could not be read."), { code: page.error.code });
       if (!this.live(epoch)) return;
+      const project = page.value.items.find((project) => project.id === this.state.scope.projectId);
+      if (project && (!this.state.project?.setupConfirmedAt || project.setupConfirmedAt))
+        this.state = { ...this.state, project };
       cursor = page.value.next;
     } while (cursor);
   }
@@ -339,7 +402,18 @@ export class ConversationController {
     if (!this.live(epoch)) return;
     const texts = new Map(this.state.texts);
     for (const item of items)
-      if (item.kind === "message")
+      if (item.kind === "setupProposal") {
+        texts.set(
+          `${item.id}/title`,
+          typeof item.title === "string" ? item.title : await this.text(item.title, epoch),
+        );
+        texts.set(
+          `${item.id}/language`,
+          typeof item.documentLanguage === "string"
+            ? item.documentLanguage
+            : await this.text(item.documentLanguage, epoch),
+        );
+      } else if (item.kind === "message")
         texts.set(
           item.id,
           typeof item.content === "string" ? item.content : await this.text(item.content, epoch),

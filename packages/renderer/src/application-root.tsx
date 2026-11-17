@@ -1,4 +1,6 @@
-import { useSyncExternalStore } from "react";
+import { useId, useSyncExternalStore } from "react";
+import { NewProjectController } from "./new-project-controller.js";
+import { Dialog } from "./layers.js";
 import { ConversationController } from "./conversation-controller.js";
 import { ConversationView } from "./conversation-view.js";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -37,6 +39,9 @@ function bootstrapFailure(state: string | undefined): boolean {
       ].includes(state))
   );
 }
+function anotherProjectModalOpen(): boolean {
+  return !!document.querySelector("dialog[open]:not(.new-project-dialog):not(.new-project-error)");
+}
 export function ApplicationRoot({ bridge }: { readonly bridge: DesktopBridge }) {
   return (
     <SystemMotionProvider source={bridge.system}>
@@ -50,6 +55,39 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
     [bridge.foundation],
   );
   const conversationState = useSyncExternalStore(conversation.subscribe, conversation.snapshot);
+  const newProject = useMemo(
+    () =>
+      new NewProjectController(bridge.foundation, (scope) => {
+        conversation.open(scope);
+      }),
+    [bridge.foundation, conversation],
+  );
+  const projectDescriptionId = useId();
+  const newProjectState = useSyncExternalStore(newProject.subscribe, newProject.snapshot);
+  const [projectDialogBlocked, setProjectDialogBlocked] = useState(false);
+  useLayoutEffect(() => {
+    if (newProjectState.dialog === null) return;
+    const update = () => {
+      setProjectDialogBlocked(anotherProjectModalOpen());
+    };
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["open"],
+      childList: true,
+      subtree: true,
+    });
+    return () => {
+      observer.disconnect();
+    };
+  }, [newProjectState.dialog]);
+  useEffect(
+    () => () => {
+      newProject.dispose();
+    },
+    [newProject],
+  );
   const [bootstrap, setBootstrap] = useState<BootstrapSnapshot>();
   useEffect(() => {
     conversation.open(bootstrap?.openConversation ?? { projectId: null, conversationId: null });
@@ -199,6 +237,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
     <div className="workspace-window foundation-window">
       <SettingsSurfaces
         research={conversation}
+        newProject={newProject}
         composeWorkspace={workspaceMounted.current}
         bridge={bridge.commands}
         port={bridge.foundation}
@@ -209,6 +248,62 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
       >
         {(commands, binding, openConnections) => (
           <>
+            <Dialog
+              role={newProjectState.dialog === "failed" ? "alertdialog" : "dialog"}
+              descriptionId={projectDescriptionId}
+              open={newProjectState.dialog !== null && !projectDialogBlocked}
+              title={text(
+                newProjectState.dialog === "connection"
+                  ? "project.connectTitle"
+                  : newProjectState.dialog === "openingFailed"
+                    ? "project.openFailedTitle"
+                    : newProjectState.dialog === "uncertain"
+                      ? "project.createUncertainTitle"
+                      : "project.createFailedTitle",
+              )}
+              closeLabel={text("dialog.close")}
+              closePlacement="footer"
+              closeDisabled={newProjectState.busy}
+              onClose={() => {
+                if (!anotherProjectModalOpen()) newProject.close();
+              }}
+              returnFocusRef={returnFocus}
+              className={
+                newProjectState.dialog === "failed" ? "new-project-error" : "new-project-dialog"
+              }
+              footer={
+                <button
+                  type="button"
+                  className="primitive-button primitive-primary"
+                  aria-disabled={newProjectState.busy}
+                  onClick={() => {
+                    if (newProjectState.busy) return;
+                    if (newProjectState.dialog === "connection") {
+                      newProject.close();
+                      openConnections();
+                    } else void newProject.start();
+                  }}
+                >
+                  {text(
+                    newProjectState.dialog === "connection"
+                      ? "taskNotice.openConnections"
+                      : "taskNotice.tryAgain",
+                  )}
+                </button>
+              }
+            >
+              <p id={projectDescriptionId}>
+                {text(
+                  newProjectState.dialog === "connection"
+                    ? "project.connectBody"
+                    : newProjectState.dialog === "openingFailed"
+                      ? "project.openFailedBody"
+                      : newProjectState.dialog === "uncertain"
+                        ? "project.createUncertainBody"
+                        : "project.createFailedBody",
+                )}
+              </p>
+            </Dialog>
             {workspaceMounted.current && commands && (
               <div
                 className="application-workspace"
@@ -217,6 +312,9 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
               >
                 <WorkspaceChrome
                   {...binding}
+                  project={conversationState.project}
+                  projectScope={conversationState.scope.projectId ?? undefined}
+                  onComposerFocus={conversation.composer.focus}
                   chat={
                     conversationState.scope.conversationId ? (
                       <ConversationView

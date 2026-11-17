@@ -545,3 +545,8 @@
   flex: none;
   padding: calc(var(--focus-width) + var(--focus-offset)) var(--space-2);
 }
+
+.workspace-setup {
+  text-align: center;
+  padding-block: var(--space-12);
+}

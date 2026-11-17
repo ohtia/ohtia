@@ -2377,3 +2377,58 @@ it("reports a failed exit handshake as an action failure without claiming unprov
   );
   expect(peer.stop).not.toHaveBeenCalled();
 });
+
+it("binds message-copy scope only to the latest service-admitted research subscription", async () => {
+  const h = await launch({ locator: "located" });
+  const service = h.supervisors[0];
+  service.stateChanged("ready");
+  service.storageChanged({ generation: service.generation, state: "storage_ready" });
+  await vi.advanceTimersByTimeAsync(0);
+  const projectId = "019a8000-0000-7000-8000-000000000501",
+    conversationId = "019a8000-0000-7000-8000-000000000502";
+  const subscribe = (
+    requestId: string,
+    scope: { projectId: string | null; conversationId: string | null },
+  ) => {
+    const event = { ...h.event(), returnValue: undefined as any };
+    h.ipcMain.emit(h.constants.desktopChannels.session, event);
+    const encoded = h.constants.encodeEnvelope({
+      protocol: 1,
+      policy: h.constants.policyId,
+      kind: "request",
+      operation: "research.subscribe",
+      requestId,
+      operationId: requestId,
+      ...event.returnValue,
+      payload: { ...scope, subscriptionId: requestId },
+    });
+    if (!encoded.ok) throw new Error("Invalid fixture");
+    h.ipcMain.emit(h.constants.desktopChannels.port, event, encoded.value);
+    return service.dispatch.mock.calls.at(-1)[0];
+  };
+  const first = subscribe("scope-1", { projectId, conversationId });
+  expect(await h.action("read")).not.toHaveProperty("openConversation");
+  const reply = (accepted: any, ok = true) => {
+    const envelope = h.constants.encodeEnvelope({
+      ...accepted.request,
+      kind: "result",
+      payload: ok
+        ? { ok: true, value: { subscriptionId: accepted.request.requestId } }
+        : h.constants.failure("record_not_found"),
+    });
+    if (!envelope.ok) throw new Error("Invalid reply");
+    accepted.deliver(envelope.value);
+    accepted.release();
+    accepted.releaseSubscription();
+  };
+  reply(first);
+  expect(await h.action("read")).toMatchObject({ openConversation: { projectId, conversationId } });
+  const second = subscribe("scope-2", { projectId: null, conversationId: null });
+  reply(second, false);
+  expect(await h.action("read")).toHaveProperty("openConversation");
+  const older = subscribe("scope-3", { projectId, conversationId });
+  const latest = subscribe("scope-4", { projectId: null, conversationId: null });
+  reply(latest);
+  reply(older);
+  expect(await h.action("read")).not.toHaveProperty("openConversation");
+});

@@ -176,6 +176,7 @@ export function presentationReason(
   if (
     state.modal &&
     [
+      "project.new",
       "about.open",
       "help.open",
       "settings.open",

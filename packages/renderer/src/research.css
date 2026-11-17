@@ -274,3 +274,77 @@
     background: Canvas;
   }
 }
+
+.action-proposal {
+  margin-block: var(--space-2);
+  min-inline-size: 0;
+}
+.action-proposal-card {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-medium);
+  background: var(--surface-page);
+  color: var(--content-primary);
+  overflow-wrap: anywhere;
+}
+.action-proposal-card p {
+  margin: var(--space-0);
+}
+.action-proposal[data-state="open"] .action-proposal-card {
+  border: var(--border-width-state) dashed var(--voice-ohtia-border);
+}
+.action-proposal[data-state="accepted"] .action-proposal-card {
+  border: var(--border-width-state) solid var(--border-strong);
+}
+.action-proposal[data-state="declined"] .action-proposal-card,
+.action-proposal[data-state="replaced"] .action-proposal-card {
+  border: var(--border-width-default) solid var(--border-subtle);
+  color: var(--content-secondary);
+}
+.action-proposal-title {
+  font: var(--type-ui-subheading-weight) var(--type-ui-subheading-size) /
+    var(--type-ui-subheading-height) var(--type-ui-subheading-family);
+}
+.action-proposal-state {
+  display: flex;
+  align-items: start;
+  gap: var(--space-2);
+  font-size: var(--type-ui-label-size);
+  font-weight: var(--type-ui-label-weight);
+  line-height: var(--type-ui-label-height);
+}
+.action-proposal[data-state="open"] .action-proposal-state {
+  color: var(--voice-ohtia-content);
+}
+.action-proposal .research-fields {
+  gap: var(--space-1);
+  font-size: var(--type-ui-body-small-size);
+  line-height: var(--type-ui-body-small-height);
+}
+.action-proposal .research-fields dt {
+  color: var(--content-secondary);
+}
+.action-proposal-note {
+  padding-inline: var(--space-3) var(--space-0);
+  border-inline-start: var(--border-width-state) solid var(--border-subtle);
+  font-size: var(--type-ui-body-small-size);
+  line-height: var(--type-ui-body-small-height);
+}
+.action-proposal-reason {
+  font-size: var(--type-ui-caption-size);
+  line-height: var(--type-ui-caption-height);
+}
+.action-proposal .actions {
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.setup-invalid {
+  display: grid;
+  gap: var(--space-2);
+}
+@media (forced-colors: active) {
+  .action-proposal-card {
+    border-color: CanvasText;
+  }
+}

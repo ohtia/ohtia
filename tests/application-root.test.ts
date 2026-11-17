@@ -19,6 +19,9 @@ import {
   type CommandSnapshot,
   type LayoutRecord,
   type LayoutChange,
+  type ProjectRecord,
+  type Outcome,
+  type ResearchOutputs,
 } from "@ohtia/contracts";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -743,3 +746,266 @@ describe("integrated application authority", () => {
     expect(t.port.replaceCharacter).not.toHaveBeenCalled();
   }, 60000);
 });
+
+it.each(["welcome", "context", "palette", "shortcut", "menu"] as const)(
+  "starts project.new from %s through the same registry and focuses the safe dialog action",
+  async (entry) => {
+    const t = fixture();
+    Object.assign(t.port, {
+      readConnection: vi.fn(() => call({ ok: true, value: { state: "expired" } })),
+      createProject: vi.fn(),
+    });
+    await mount(t);
+    if (entry === "welcome")
+      await click('.workspace-welcome [data-workspace-command="project.new"]');
+    else if (entry === "context")
+      await click('.workspace-title-row [data-workspace-command="project.new"]');
+    else if (entry === "palette") {
+      await t.intent("palette.open");
+      expect(container.querySelector('[role="option"]')?.id).toContain("project.new");
+      await click('[role="option"][id$="project.new"]');
+    } else await t.intent("project.new");
+    const dialog = container.querySelector<HTMLDialogElement>(".new-project-dialog[open]")!;
+    expect(dialog).not.toBeNull();
+    expect(dialog.textContent).toContain("Connect an AI service to set up a project");
+    expect(dialog.textContent).not.toContain("ChatGPT");
+    expect(document.activeElement).toBe(dialog.querySelector("[data-close]"));
+    expect(
+      (t.port as unknown as { createProject: ReturnType<typeof vi.fn> }).createProject,
+    ).not.toHaveBeenCalled();
+    await act(async () =>
+      [...dialog.querySelectorAll("button")]
+        .find((button) => button.textContent === "Open Connections")!
+        .click(),
+    );
+    expect(container.querySelector(".settings-dialog[open]")).not.toBeNull();
+  },
+);
+
+it("opens a newly created setup project, reveals a hidden chat and preserves its scope across bootstrap polling", async () => {
+  const t = fixture();
+  const projectId = "019a8000-0000-7000-8000-000000000101",
+    conversationId = "019a8000-0000-7000-8000-000000000102";
+  const project = {
+    id: projectId,
+    projectType: "thesis",
+    title: null,
+    documentLanguage: null,
+    isDevelopment: false,
+    setupConfirmedAt: null,
+    createdAt: "2026-11-17T10:00:00Z",
+    updatedAt: "2026-11-17T10:00:00Z",
+  };
+  Object.assign(t.port, {
+    readConnection: vi.fn(() => call({ ok: true, value: { state: "connected" } })),
+    createProject: vi.fn(() => call({ ok: true, value: { resultId: projectId } })),
+    listProjects: () =>
+      call({ ok: true, value: { items: [{ ...project }], next: null, hasMore: false } }),
+    listConversations: () =>
+      call({ ok: true, value: { items: [{ id: conversationId }], next: null, hasMore: false } }),
+    subscribeResearch: () => ({
+      ready: Promise.resolve({ ok: true, value: { subscriptionId: "research-1" } }),
+      dispose() {},
+    }),
+    readPauses: () => call({ ok: true, value: { revision: 1, restart: 0, usage: [] } }),
+    readConversations: () =>
+      call({
+        ok: true,
+        value: {
+          items: [
+            {
+              id: conversationId,
+              projectId,
+              title: null,
+              createdAt: project.createdAt,
+              updatedAt: project.updatedAt,
+              revision: 1,
+              agentId: "virgilio",
+              latestReplyTaskId: null,
+              runningTask: null,
+            },
+          ],
+          remaining: [],
+        },
+      }),
+    listTimelineBefore: () => call({ ok: true, value: { items: [], next: null, hasMore: false } }),
+    readDestination: () => call({ ok: true, value: { destination: null } }),
+  });
+  await mount(t);
+  await t.intent("panels.chat");
+  expect(container.querySelector(".workspace-chat")?.hasAttribute("hidden")).toBe(true);
+  await click('.workspace-welcome [data-workspace-command="project.new"]');
+  expect(container.querySelector(".workspace-chat")?.hasAttribute("hidden")).toBe(false);
+  expect(container.querySelector(".workspace-project-context")?.textContent).toBe(
+    "New thesis · Setting up",
+  );
+  expect(container.querySelector(".workspace-explorer")?.textContent).toContain(
+    "Sources and documents aren’t available in this version.",
+  );
+  expect(container.querySelector(".conversation-empty")?.textContent).toContain(
+    "Tell Virgilio about your thesis",
+  );
+  expect(container.querySelector(".conversation-empty .voice-label")).toBeNull();
+  expect(document.activeElement).toBe(container.querySelector("textarea"));
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(container.querySelector(".workspace-project-context")?.textContent).toBe(
+    "New thesis · Setting up",
+  );
+  Object.assign(project, {
+    title: "Redes de cuidado",
+    documentLanguage: "es-AR",
+    setupConfirmedAt: project.createdAt,
+  });
+  vi.mocked(t.bridge.bootstrap.read).mockResolvedValue({
+    version: 1,
+    locale: "en-US",
+    state: "storage_ready",
+    openConversation: { projectId, conversationId },
+  });
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(container.querySelector(".workspace-project-context")?.getAttribute("lang")).toBe("es-AR");
+  const titleTooltip = container.querySelector(".workspace-context-tooltip")!;
+  await act(async () => titleTooltip.dispatchEvent(new Event("pointerover", { bubbles: true })));
+  expect(
+    titleTooltip.querySelector('[role="tooltip"]')?.closest("[lang]")?.getAttribute("lang"),
+  ).toBe("es-AR");
+});
+
+it("announces a creation failure with its description, preserves the open workspace and retries the same operation", async () => {
+  const t = fixture(),
+    createProject = vi.fn(() => call(failure("storage_failed")));
+  Object.assign(t.port, {
+    readConnection: () => call({ ok: true, value: { state: "connected" } }),
+    createProject,
+  });
+  await mount(t);
+  const trigger = container.querySelector<HTMLButtonElement>(
+    '.workspace-title-row [data-workspace-command="project.new"]',
+  )!;
+  await act(async () => trigger.focus());
+  await act(async () => trigger.click());
+  const dialog = container.querySelector<HTMLDialogElement>('dialog[role="alertdialog"][open]')!;
+  expect(dialog).not.toBeNull();
+  expect(dialog.textContent).toContain("Ohtia couldn’t create the project");
+  expect(document.getElementById(dialog.getAttribute("aria-describedby")!)?.textContent).toBe(
+    "Nothing was created, and your other projects are safe.",
+  );
+  expect(document.activeElement).toBe(dialog.querySelector("[data-close]"));
+  expect(container.querySelector(".workspace-project-context")?.textContent).toBe(
+    "No project open",
+  );
+  await act(async () =>
+    [...dialog.querySelectorAll("button")].find((b) => b.textContent === "Try again")!.click(),
+  );
+  expect(createProject).toHaveBeenCalledTimes(2);
+  expect(createProject.mock.calls[1]).toEqual(createProject.mock.calls[0]);
+  await act(async () => dialog.querySelector<HTMLButtonElement>("[data-close]")!.click());
+  expect(document.activeElement).toBe(trigger);
+});
+
+it("retains a creation failure while Settings owns the modal and shows it after Settings closes", async () => {
+  const t = fixture(),
+    pending = deferred<ReturnType<typeof failure>>();
+  Object.assign(t.port, {
+    readConnection: () => call({ ok: true, value: { state: "connected" } }),
+    createProject: () => ({ result: pending.promise, cancel() {} }),
+  });
+  await mount(t);
+  await t.intent("project.new");
+  await t.intent("settings.open");
+  const settings = container.querySelector<HTMLDialogElement>(".settings-dialog[open]")!;
+  expect(settings).not.toBeNull();
+  await act(async () => {
+    pending.resolve(failure("storage_failed"));
+    await Promise.resolve();
+  });
+  expect(settings.open).toBe(true);
+  expect(container.querySelector(".new-project-error[open]")).toBeNull();
+  await act(async () => settings.querySelector<HTMLButtonElement>("[data-close]")!.click());
+  const failureDialog = container.querySelector<HTMLDialogElement>(".new-project-error[open]")!;
+  expect(failureDialog).not.toBeNull();
+  expect(failureDialog.textContent).toContain(
+    "Nothing was created, and your other projects are safe.",
+  );
+  expect(document.activeElement).toBe(failureDialog.querySelector("[data-close]"));
+});
+
+it.each(["confirmed", "failed"] as const)(
+  "withholds unknown project state while reading and after a %s outcome",
+  async (outcome) => {
+    const t = fixture();
+    const project: ProjectRecord = {
+      id: "019a8000-0000-7000-8000-000000000101",
+      projectType: "thesis",
+      title: "Redes de cuidado",
+      documentLanguage: "es-AR",
+      isDevelopment: false,
+      setupConfirmedAt: "2026-11-17T10:00:00Z",
+      createdAt: "2026-11-17T10:00:00Z",
+      updatedAt: "2026-11-17T10:00:00Z",
+    };
+    const conversationId = "019a8000-0000-7000-8000-000000000102";
+    const pending = deferred<Outcome<ResearchOutputs["project.list"]>>();
+    Object.assign(t.port, {
+      listProjects: () => ({ result: pending.promise, cancel: vi.fn() }),
+      readPauses: () => call({ ok: true, value: { revision: 1, restart: 0, usage: [] } }),
+      readConversations: () =>
+        call({
+          ok: true,
+          value: {
+            items: [
+              {
+                id: conversationId,
+                projectId: project.id,
+                title: null,
+                createdAt: project.createdAt,
+                updatedAt: project.updatedAt,
+                revision: 1,
+                agentId: "virgilio",
+                latestReplyTaskId: null,
+                runningTask: null,
+              },
+            ],
+            remaining: [],
+          },
+        }),
+      listTimelineBefore: () =>
+        call({ ok: true, value: { items: [], next: null, hasMore: false } }),
+      readDestination: () => call({ ok: true, value: { destination: null } }),
+    });
+    vi.mocked(t.bridge.bootstrap.read).mockResolvedValue({
+      version: 1,
+      locale: "en-US",
+      state: "storage_ready",
+      openConversation: { projectId: project.id, conversationId },
+    });
+    await mount(t);
+    expect(container.querySelector(".workspace-project-context")).toBeNull();
+    expect(container.querySelector(".workspace-setup")).toBeNull();
+    expect(container.querySelector(".conversation-state")?.textContent).toContain(
+      "Loading conversation",
+    );
+    await act(async () =>
+      pending.resolve(
+        outcome === "confirmed"
+          ? { ok: true, value: { items: [project], next: null, hasMore: false } }
+          : failure("storage_failed"),
+      ),
+    );
+    if (outcome === "confirmed") {
+      expect(container.querySelector(".workspace-project-context")?.textContent).toBe(
+        project.title,
+      );
+      expect(container.querySelector(".workspace-setup")?.textContent).toContain(
+        "The Navigator isn’t available in this version",
+      );
+    } else {
+      expect(container.querySelector(".workspace-project-context")).toBeNull();
+      expect(container.querySelector(".workspace-setup")).toBeNull();
+      expect(container.querySelector(".conversation-state [role=alert]")).not.toBeNull();
+      expect(container.querySelector(".conversation-state button")?.textContent).toBe(
+        message("en-US", "conversation.reload"),
+      );
+    }
+  },
+);

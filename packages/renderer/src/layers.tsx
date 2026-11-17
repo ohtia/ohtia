@@ -32,7 +32,11 @@ export function Dialog({
   closePlacement = "header",
   footerClassName = "actions",
   closeDisabledReason,
+  descriptionId,
+  role,
 }: {
+  role?: "alertdialog" | "dialog";
+  descriptionId?: string;
   open: boolean;
   title: string;
   titleContent?: ReactNode;
@@ -168,6 +172,8 @@ export function Dialog({
   return (
     <dialog
       ref={ref}
+      role={role}
+      aria-describedby={descriptionId}
       className={`primitive-dialog ${className}`}
       aria-labelledby={id}
       onKeyDown={(event) => {
@@ -354,9 +360,11 @@ export function Tooltip({
   label,
   children,
   className,
+  language,
 }: {
   label: string;
   className?: string;
+  language?: string;
   children: ReactElement<{ "aria-describedby"?: string | undefined }>;
 }) {
   const id = useId();
@@ -390,6 +398,8 @@ export function Tooltip({
   return (
     <span
       ref={anchor}
+      lang={language}
+      dir={language === undefined ? undefined : "auto"}
       className={className ? `primitive-layer-anchor ${className}` : "primitive-layer-anchor"}
       onKeyDown={(event) => {
         if (event.key === "Escape" && visible) {

@@ -16,6 +16,7 @@ import {
   message,
   workspacePanels,
   type CommandId,
+  type ProjectRecord,
   type InterfaceLocale,
   type SimpleMessageKey,
   type WorkspacePanel,
@@ -56,6 +57,9 @@ export interface WorkspaceWindowInsets {
 }
 export interface WorkspaceChromeProps {
   readonly chat?: ReactNode;
+  readonly project?: ProjectRecord | undefined;
+  readonly projectScope?: string | undefined;
+  readonly onComposerFocus?: () => void;
   readonly chatTitle?: string | undefined;
   readonly fallbackFocusRef?: RefObject<HTMLAnchorElement | null>;
   readonly preferences: LayoutPreferences;
@@ -146,7 +150,8 @@ export function ShortcutControl({
         }
         aria-disabled={!!reason}
         aria-describedby={explanation ? reasonId : undefined}
-        onClick={() => {
+        onClick={(event) => {
+          if (id === "project.new" && event.detail > 1) return;
           if (reason) onUnavailable?.();
           else void commands.invoke(id);
         }}
@@ -170,6 +175,9 @@ export function ShortcutControl({
 export function WorkspaceChrome({
   chat,
   chatTitle,
+  project,
+  projectScope,
+  onComposerFocus,
   preferences,
   commands,
   fallbackFocusRef,
@@ -463,6 +471,41 @@ export function WorkspaceChrome({
           : headings.current[intent.panel];
     element?.focus({ preventScroll: true });
   }, [state, zoom]);
+  const revealedProject = useRef<string | undefined>(undefined);
+  useLayoutEffect(() => {
+    const layout = controller.current;
+    if (
+      !projectScope ||
+      revealedProject.current === projectScope ||
+      !layout ||
+      state?.initializing ||
+      preferences.busy
+    )
+      return;
+    revealedProject.current = projectScope;
+    if (layout.state.geometry.mode === "narrow") layout.select("chat");
+    else if (!layout.state.geometry.visible.chat) layout.visibility("chat");
+  }, [projectScope, state, preferences]);
+  const focusedProject = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (
+      !projectScope ||
+      focusedProject.current === projectScope ||
+      revealedProject.current !== projectScope ||
+      !state?.geometry.visible.chat
+    )
+      return;
+    focusedProject.current = projectScope;
+    onComposerFocus?.();
+  }, [projectScope, state, onComposerFocus]);
+  const projectLabel = projectScope
+    ? project
+      ? project.setupConfirmedAt
+        ? (project.title ?? "")
+        : text("setup.context")
+      : undefined
+    : text("workspace.noProject");
+  const projectLanguage = project?.setupConfirmedAt ? (project.documentLanguage ?? "") : locale;
   const geometry = state?.geometry;
   const narrow = geometry?.mode === "narrow";
   const layout = controller.current;
@@ -613,9 +656,18 @@ export function WorkspaceChrome({
             <ShortcutControl id="menu.open" commands={commands} locale={locale} icon="menu" />
           )}
           <OhtiaBrand />
-          <Tooltip className="workspace-context-tooltip" label={text("workspace.noProject")}>
-            <span className="workspace-project-context">{text("workspace.noProject")}</span>
-          </Tooltip>
+          {projectLabel !== undefined && (
+            <Tooltip
+              className="workspace-context-tooltip"
+              label={projectLabel}
+              language={projectLanguage}
+            >
+              <bdi className="workspace-project-context" lang={projectLanguage}>
+                {projectLabel}
+              </bdi>
+            </Tooltip>
+          )}
+          <ShortcutControl id="project.new" commands={commands} locale={locale} icon="plus" />
           <span className="workspace-drag-space" aria-hidden="true" />
           {!narrow && zoomIndicator}
           {!narrow && (
@@ -762,19 +814,34 @@ export function WorkspaceChrome({
                   }
                   tabIndex={0}
                 >
-                  {panel === "documents" ? (
+                  {panel === "documents" && projectScope ? (
+                    project && (
+                      <p className="workspace-empty workspace-setup">
+                        {text(
+                          project.setupConfirmedAt ? "setup.navigatorConfirmed" : "setup.navigator",
+                        )}
+                      </p>
+                    )
+                  ) : panel === "documents" ? (
                     <div className="workspace-welcome">
                       {decoration !== "hidden" && <ProductCharacter />}
                       <h1 data-type="type.ui.display">{text("workspace.welcome")}</h1>
                       <p>{text("workspace.welcomeText")}</p>
                       <div className="workspace-welcome-actions">
                         <ShortcutControl
+                          id="project.new"
+                          commands={commands}
+                          locale={locale}
+                          icon="plus"
+                          text
+                          primary
+                        />
+                        <ShortcutControl
                           id="settings.open"
                           commands={commands}
                           locale={locale}
                           icon="settings"
                           text
-                          primary
                           label={text("workspace.openSettings")}
                         />
                         <ShortcutControl
@@ -793,7 +860,11 @@ export function WorkspaceChrome({
                     <p className="workspace-empty">
                       <LucideGlyph name={panelIcons[panel]} size={20} />
                       {text(
-                        panel === "explorer" ? "workspace.explorerEmpty" : "workspace.chatEmpty",
+                        panel === "explorer"
+                          ? projectScope
+                            ? "setup.explorer"
+                            : "workspace.explorerEmpty"
+                          : "workspace.chatEmpty",
                       )}
                     </p>
                   )}
