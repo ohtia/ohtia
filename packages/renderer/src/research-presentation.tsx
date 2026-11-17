@@ -3,6 +3,7 @@ import type { InterfaceLocale } from "@ohtia/contracts";
 import { Button } from "./controls.js";
 import { LucideGlyph, type LucideName } from "./iconography.js";
 import { VoiceLabel, type ContributorIdentity } from "./contributor-identity.js";
+import "./research.css";
 
 /**
  * Controlled research presentation. Every value, label and callback comes from the consumer;
@@ -1023,3 +1024,110 @@ export function VersionConflict({
 }
 
 export { MessageMarkdown } from "./message-markdown.js";
+
+export interface ActionProposalCardProps {
+  readonly locale: InterfaceLocale;
+  readonly proposer: Extract<ContributorIdentity, { kind: "ai" }>;
+  readonly showVoice?: boolean;
+  readonly title: string;
+  readonly state: "open" | "accepted" | "declined" | "replaced";
+  readonly stateLabel: string;
+  readonly sections: readonly { readonly label: string; readonly value: RecordedText }[];
+  readonly note?: string;
+  readonly actions?: readonly {
+    readonly label: string;
+    readonly onPress: () => void;
+    readonly primary?: boolean;
+    readonly disabled?: boolean;
+  }[];
+  readonly disabledReason?: string;
+  readonly feedback?: ReactNode;
+  readonly progress?: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly stateLabel: string;
+    readonly action?: PresentationAction;
+  }[];
+}
+/** Accepting an action records a human decision, without certifying the proposed content. */
+export function ActionProposalCard({
+  locale,
+  proposer,
+  showVoice = true,
+  title,
+  state,
+  stateLabel,
+  sections,
+  note,
+  actions,
+  disabledReason,
+  feedback,
+  progress,
+}: ActionProposalCardProps) {
+  const id = useId();
+  return (
+    <section className="action-proposal" data-state={state} aria-labelledby={id}>
+      <div className="action-proposal-card">
+        {showVoice && <VoiceLabel identity={proposer} locale={locale} />}
+        <p id={id} className="action-proposal-title">
+          {title}
+        </p>
+        <p className="action-proposal-state">
+          <LucideGlyph
+            name={
+              state === "open"
+                ? "circle-dashed"
+                : state === "accepted"
+                  ? "circle-check"
+                  : "circle-x"
+            }
+            size={16}
+          />
+          {stateLabel}
+        </p>
+        <dl className="research-fields">
+          {sections.map((section, i) => (
+            <Field key={i} label={`${section.label}:`}>
+              <Recorded value={section.value} />
+            </Field>
+          ))}
+        </dl>
+        {note && <p className="action-proposal-note">{note}</p>}
+        {state === "open" && actions && (
+          <div className="actions">
+            {actions.map((action, i) => (
+              <button
+                key={i}
+                type="button"
+                className={`primitive-button${action.primary ? " primitive-primary" : ""}`}
+                aria-disabled={action.disabled || undefined}
+                aria-describedby={action.disabled && disabledReason ? `${id}-reason` : undefined}
+                onClick={() => {
+                  if (!action.disabled) action.onPress();
+                }}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {state === "open" && disabledReason && (
+          <p id={`${id}-reason`} className="action-proposal-reason">
+            {disabledReason}
+          </p>
+        )}
+        {feedback}
+        {progress && (
+          <ul className="action-proposal-progress">
+            {progress.map((row) => (
+              <li key={row.id}>
+                {row.label} · {row.stateLabel}
+                {row.action && <Button {...row.action} />}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+}

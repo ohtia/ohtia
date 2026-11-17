@@ -1,7 +1,8 @@
+import { SetupProposal } from "./setup-proposal.js";
 import { RecoveryFocusBoundary } from "./settings-notices.js";
 import { TaskNotice, taskNoticeContent } from "./task-notice.js";
 import { MessageComposer } from "./message-composer.js";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { message, type CommandBridge, type InterfaceLocale } from "@ohtia/contracts";
 import { MessageMarkdown } from "./research-presentation.js";
 import { contributorNames, VoiceLabel } from "./contributor-identity.js";
@@ -22,7 +23,7 @@ export function ConversationView({
     Partial<
       Pick<
         ConversationController,
-        "composer" | "performTaskAction" | "connections" | "claimTaskNotice"
+        "composer" | "performSetupAction" | "performTaskAction" | "connections" | "claimTaskNotice"
       >
     >;
   readonly locale: InterfaceLocale;
@@ -41,6 +42,49 @@ export function ConversationView({
   >(undefined);
   const [jump, setJump] = useState(false);
   const id = state.scope.conversationId;
+  const confirmation = useRef({
+    id: state.scope.projectId,
+    confirmed: state.project ? !!state.project.setupConfirmedAt : null,
+  });
+  const [setupAnnouncement, setSetupAnnouncement] = useState<{
+    readonly title: string;
+    readonly language: string | null;
+    readonly locale: InterfaceLocale;
+  } | null>(null);
+  useEffect(() => {
+    if (
+      confirmation.current.id === state.scope.projectId &&
+      confirmation.current.confirmed === false &&
+      state.project?.setupConfirmedAt &&
+      !state.project.isDevelopment
+    )
+      setSetupAnnouncement({
+        title: state.project.title ?? "",
+        language: state.project.documentLanguage,
+        locale,
+      });
+    else if (confirmation.current.id !== state.scope.projectId) setSetupAnnouncement(null);
+    confirmation.current = {
+      id: state.scope.projectId,
+      confirmed: state.project ? !!state.project.setupConfirmedAt : null,
+    };
+  }, [state.scope.projectId, state.project, locale]);
+  useEffect(() => {
+    setSetupAnnouncement((current) => (current?.locale === locale ? current : null));
+  }, [locale]);
+  useEffect(() => {
+    if (!setupAnnouncement) return;
+    const timer = setTimeout(() => {
+      setSetupAnnouncement((current) => (current === setupAnnouncement ? null : current));
+    }, 1000);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [setupAnnouncement]);
+  // The typed formatter retains catalog word order; each marker receives language-tagged text.
+  const setupParts = setupAnnouncement
+    ? message(setupAnnouncement.locale, "setup.announcement", { title: "\u0000" }).split("\u0000")
+    : [];
   const completion = useRef({ id, count: state.completed });
   const [announcement, setAnnouncement] = useState({ text: "", count: 0 });
   useEffect(() => {
@@ -192,12 +236,40 @@ export function ConversationView({
                 </p>
               </div>
             )}
-            {!state.items.some((item) => item.kind === "message") && state.replies.size === 0 && (
-              <p className="conversation-empty">{message(locale, "conversation.empty")}</p>
-            )}
+            {!state.items.some(
+              (item) => item.kind === "message" || item.kind === "setupProposal",
+            ) &&
+              state.replies.size === 0 && (
+                <p className="conversation-empty">
+                  {message(
+                    locale,
+                    state.project && !state.project.setupConfirmedAt
+                      ? "setup.empty"
+                      : "conversation.empty",
+                  )}
+                </p>
+              )}
             {state.items.map((item) => {
-              // Proposal cards are supplied by the new-project flow (STORY-003-015).
-              if (item.kind === "setupProposal") return null;
+              if (item.kind === "setupProposal")
+                return controller.composer && controller.performSetupAction ? (
+                  <div key={item.id} data-timeline-id={item.id}>
+                    <SetupProposal
+                      proposal={item}
+                      state={state}
+                      controller={{
+                        composer: controller.composer,
+                        performSetupAction: controller.performSetupAction,
+                      }}
+                      locale={locale}
+                      hasText={state.items.some(
+                        (saved) =>
+                          saved.kind === "message" &&
+                          saved.authorKind === "agent" &&
+                          saved.taskId === item.taskId,
+                      )}
+                    />
+                  </div>
+                ) : null;
               const streaming =
                 item.kind === "task" &&
                 (item.state === "running" || item.state === "cancelling") &&
@@ -257,6 +329,7 @@ export function ConversationView({
                       connection={connection}
                       hasText={!!saved || !!text}
                       latest={state.conversation?.latestReplyTaskId === item.id}
+                      setupFinal={!!state.project?.setupConfirmedAt && !state.project.isDevelopment}
                       runningAgent={
                         state.conversation?.runningTask &&
                         state.conversation.runningTask.id !== item.id
@@ -344,9 +417,32 @@ export function ConversationView({
           </div>
         </div>
       )}
-      {controller.composer && <MessageComposer controller={controller.composer} locale={locale} />}
+      {controller.composer && (
+        <MessageComposer
+          key={state.scope.conversationId}
+          controller={controller.composer}
+          locale={locale}
+        />
+      )}
       <p className="primitive-announcement" role="status" aria-live="polite" aria-atomic="true">
         <span key={announcement.count}>{announcement.text}</span>
+      </p>
+      <p
+        className="primitive-announcement setup-confirmation"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        lang={locale}
+      >
+        {setupAnnouncement?.locale === locale &&
+          setupParts.map((part, index) => (
+            <Fragment key={index}>
+              {index > 0 && (
+                <bdi lang={setupAnnouncement.language ?? ""}>{setupAnnouncement.title}</bdi>
+              )}
+              {part}
+            </Fragment>
+          ))}
       </p>
     </RecoveryFocusBoundary>
   );

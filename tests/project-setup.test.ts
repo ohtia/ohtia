@@ -1,6 +1,7 @@
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ServiceConnections,
   decodeProviderEvent,
@@ -13,12 +14,20 @@ import {
 } from "../packages/contracts/src/index.js";
 import {
   setupTool,
+  setupInstructions,
+  setupInstructionsV2,
   setupInvalidReason,
   setupNote,
   setupRevision,
 } from "../packages/utility/src/project-setup.js";
 import { operationPolicy, buildInput } from "../packages/utility/src/operations.js";
-import { LanguageRegistry, bytes, identifier } from "../packages/utility/src/research.js";
+import { TaskTransaction } from "../packages/utility/src/tasks.js";
+import {
+  LanguageRegistry,
+  bytes,
+  identifier,
+  canonicalJson,
+} from "../packages/utility/src/research.js";
 import { DurableStore } from "../packages/utility/src/storage.js";
 import { DurableProvider } from "../packages/utility/src/durable-provider.js";
 import { ProviderDispatch } from "../packages/main/src/provider-dispatch.js";
@@ -109,13 +118,102 @@ async function setup(development = false) {
 }
 
 describe("project setup task transactions", () => {
+  it("uses version 2 when a new message replaces a queued version 1 setup reply", async () => {
+    const f = await setup();
+    const routing = vi.spyOn(TaskTransaction.prototype, "destination").mockResolvedValue({
+      policy: operationPolicy("project_setup", 1, "development")!,
+      connection: "chatgpt",
+    });
+    value(await f.append());
+    routing.mockRestore();
+    value(await f.append("Use American English and agree on the English title."));
+    const task = await f.prepare();
+    expect(task.dispatch.request).toMatchObject({
+      policy_version: 2,
+      instruction_version: 2,
+      instructions: setupInstructionsV2,
+    });
+    const db = f.raw();
+    const rows = db
+      .prepare(
+        "SELECT id, state, policy_version, instruction_version, replaces_task_id FROM tasks ORDER BY rowid",
+      )
+      .all();
+    db.close();
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      state: "cancelled",
+      policy_version: 1,
+      instruction_version: 1,
+    });
+    expect(rows[1]).toMatchObject({
+      state: "running",
+      policy_version: 2,
+      instruction_version: 2,
+      replaces_task_id: (rows[0] as { id: Uint8Array }).id,
+    });
+  });
+
+  it("retains version 1 for recorded setup tasks and retries while new messages use version 2", async () => {
+    const f = await setup();
+    // Accept through the previous policy before restoring the current routing.
+    const routing = vi.spyOn(TaskTransaction.prototype, "destination").mockResolvedValue({
+      policy: operationPolicy("project_setup", 1, "development")!,
+      connection: "chatgpt",
+    });
+    value(await f.append());
+    routing.mockRestore();
+    const original = await f.prepare();
+    expect(original.dispatch.request).toMatchObject({
+      policy_version: 1,
+      instruction_version: 1,
+      instructions: setupInstructions,
+    });
+    value(
+      await f.store.recordTaskEvent(original.dispatch.request.attempt, {
+        type: "result",
+        sequence: 1,
+        result: { status: "failed", reason: "inactivity_timeout", dispatched: true },
+      }),
+    );
+    value(
+      await f.store.executeResearchCommand({
+        command: "task.tryAgain",
+        operationId: "retry-legacy-setup",
+        payload: { taskId: original.taskId },
+      }),
+    );
+    const retry = await f.prepare();
+    expect(retry.dispatch.request).toMatchObject({
+      policy_version: 1,
+      instruction_version: 1,
+      instructions: setupInstructions,
+    });
+    value(
+      await f.store.recordTaskEvent(
+        retry.dispatch.request.attempt,
+        { type: "result", sequence: 1, result: { status: "completed" } },
+        "",
+        [call("Synthetic English working title", "en-US")],
+      ),
+    );
+    value(await f.append("Use Spanish for Chile for the document instead."));
+    const next = await f.prepare();
+    expect(next.dispatch.request).toMatchObject({
+      policy_version: 2,
+      instruction_version: 2,
+      instructions: setupInstructionsV2,
+    });
+  });
+
   it("proposes from a completed tool-only reply, replaces only with valid content and confirms exactly once", async () => {
     const f = await setup();
     const first = await f.complete([call("First", "ES-ar")]);
     expect(first.task.dispatch.request).toMatchObject({
       operation: "project_setup",
-      policy_version: 1,
-      instruction_version: 1,
+      policy_version: 2,
+      instruction_version: 2,
+      instructions: setupInstructionsV2,
       tools: [setupTool],
       model: "first",
       document_language: null,
@@ -161,27 +259,36 @@ describe("project setup task transactions", () => {
     expect(f.proposals()[2]!.state).toBe("confirmed");
   });
 
-  it("rejects confirmation while a setup reply waits or runs; rejection remains available", async () => {
+  it("rejects decisions after a reply and permits rejection of a fresh proposal", async () => {
     const f = await setup();
     await f.complete([call()]);
-    const p = f.proposals()[0]!;
+    const old = f.proposals()[0]!;
     value(await f.append());
-    const command = {
-      command: "project.confirmSetup" as const,
-      operationId: "confirm",
-      payload: { proposalId: p.id },
-    };
-    expect(await f.store.executeResearchCommand(command)).toMatchObject({
-      error: { code: "setup_reply_active", nextAction: "retry_later" },
-    });
+    for (const command of ["project.confirmSetup", "project.rejectSetup"] as const) {
+      expect(
+        await f.store.executeResearchCommand({
+          command,
+          operationId: command.replaceAll(".", "-"),
+          payload: { proposalId: old.id },
+        }),
+      ).toMatchObject({
+        error: { code: "proposal_not_waiting", nextAction: "refresh_record" },
+      });
+    }
     const task = await f.prepare();
-    expect(await f.store.executeResearchCommand(command)).toMatchObject({
-      error: { code: "setup_reply_active" },
-    });
+    value(
+      await f.store.recordTaskEvent(
+        task.dispatch.request.attempt,
+        { type: "result", sequence: 1, result: { status: "completed" } },
+        "Updated proposal",
+        [call()],
+      ),
+    );
+    const fresh = f.proposals().at(-1)!;
     const reject = {
       command: "project.rejectSetup" as const,
-      operationId: "reject",
-      payload: { proposalId: p.id },
+      operationId: "reject-current",
+      payload: { proposalId: fresh.id },
     };
     const rejected = await f.store.executeResearchCommand(reject);
     expect(rejected.ok).toBe(true);
@@ -189,22 +296,11 @@ describe("project setup task transactions", () => {
     expect(
       await f.store.executeResearchCommand({ ...reject, operationId: "reject-again" }),
     ).toMatchObject({ error: { code: "proposal_not_waiting" } });
-    expect(await f.store.executeResearchCommand(command)).toMatchObject({
-      error: { code: "proposal_not_waiting" },
-    });
-    value(
-      await f.store.recordTaskEvent(
-        task.dispatch.request.attempt,
-        { type: "result", sequence: 1, result: { status: "completed" } },
-        "Reply",
-        [],
-      ),
-    );
     value(await f.append());
     expect(
       (await f.prepare()).dispatch.request.input.some(
-        (i) =>
-          i.text ===
+        (item) =>
+          item.text ===
           setupNote({
             state: "rejected",
             title: "Synthetic title",
@@ -214,6 +310,121 @@ describe("project setup task transactions", () => {
       ),
     ).toBe(true);
   });
+
+  it.each([
+    { name: "text-only", result: { status: "completed" } as ProviderResult, calls: [] },
+    {
+      name: "failed",
+      result: { status: "failed", reason: "provider_error", dispatched: true } as ProviderResult,
+      calls: [],
+    },
+    {
+      name: "uncertain",
+      result: { status: "uncertain", reason: "connection_lost" } as ProviderResult,
+      calls: [],
+    },
+    {
+      name: "invalid",
+      result: { status: "completed" } as ProviderResult,
+      calls: [call(" ", "en")],
+    },
+  ])(
+    "keeps the old proposal inactive after a $name follow-up until a new valid proposal",
+    async ({ result, calls }) => {
+      const f = await setup();
+      await f.complete([call()]);
+      const old = f.proposals()[0]!;
+      const followup = await f.complete(
+        calls,
+        "Agree on revised wording before a new proposal.",
+        result,
+      );
+      expect(followup.saved.result.status).toBe(result.status);
+      expect(f.proposals()[0]).toEqual(old);
+      for (const command of ["project.confirmSetup", "project.rejectSetup"] as const) {
+        expect(
+          await f.store.executeResearchCommand({
+            command,
+            operationId: `stale-${command.replaceAll(".", "-")}`,
+            payload: { proposalId: old.id },
+          }),
+        ).toMatchObject({ error: { code: "proposal_not_waiting" } });
+      }
+      expect(value(await f.store.readProjects())[0]).toMatchObject({
+        title: null,
+        documentLanguage: null,
+        setupConfirmedAt: null,
+      });
+      await f.complete([call("Updated English title", "en-US")]);
+      const fresh = f.proposals().at(-1)!;
+      expect(f.proposals()[0]!.state).toBe("replaced");
+      expect(
+        (
+          await f.store.executeResearchCommand({
+            command: "project.confirmSetup",
+            operationId: "confirm-fresh",
+            payload: { proposalId: fresh.id },
+          })
+        ).ok,
+      ).toBe(true);
+    },
+  );
+
+  it("keeps a proposal actionable after a failed save or an old message receipt replay", async () => {
+    const f = await setup();
+    await f.complete([call()]);
+    const proposal = f.proposals()[0]!;
+    const before = value(await f.store.readMessages(f.conversationId));
+    expect(
+      (
+        await f.store.executeResearchCommand({
+          command: "message.append",
+          operationId: "append-1",
+          payload: { conversationId: f.conversationId, content: "Synthetic setup request" },
+        })
+      ).ok,
+    ).toBe(true);
+    expect(await f.append("😀".repeat(20000))).toMatchObject({
+      error: { code: "input_too_large" },
+    });
+    expect(value(await f.store.readMessages(f.conversationId))).toEqual(before);
+    expect(
+      (
+        await f.store.executeResearchCommand({
+          command: "project.confirmSetup",
+          operationId: "confirm-unanswered",
+          payload: { proposalId: proposal.id },
+        })
+      ).ok,
+    ).toBe(true);
+  });
+
+  it.each([true, false])(
+    "serializes confirmation and a researcher reply with confirm-first=%s",
+    async (confirmFirst) => {
+      const f = await setup();
+      await f.complete([call()]);
+      const proposal = f.proposals()[0]!;
+      const confirm = {
+        command: "project.confirmSetup" as const,
+        operationId: "ordered-confirm",
+        payload: { proposalId: proposal.id },
+      };
+      if (confirmFirst) {
+        const result = await f.store.executeResearchCommand(confirm);
+        expect(result.ok).toBe(true);
+        value(await f.append());
+        expect(await f.store.executeResearchCommand(confirm)).toEqual(result);
+        expect(f.proposals()[0]!.state).toBe("confirmed");
+      } else {
+        value(await f.append());
+        expect(await f.store.executeResearchCommand(confirm)).toMatchObject({
+          error: { code: "proposal_not_waiting" },
+        });
+        expect(f.proposals()[0]!.state).toBe("proposed");
+      }
+    },
+  );
 
   it.each([
     ["", "qzz", "title_empty"],
@@ -460,6 +671,28 @@ describe("setup input and proposal notes", () => {
         "The document a student writes and defends to obtain an academic degree.",
       );
     expect(policy.instructions).toBe(normative);
+    const amendment = /```text\n([\s\S]*?)\n  ```/
+      .exec(
+        fs
+          .readFileSync("docs/epics/EPIC-003-research-agents/epic.md", "utf8")
+          .split("### SPEC-003-020:")[1]!,
+      )![1]!
+      .split("\n")
+      .map((line) => (line.startsWith("  ") ? line.slice(2) : line))
+      .join("\n");
+    const latest = operationPolicy("project_setup", 2, "installed")!;
+    expect(latest.instructions).toBe(
+      normative.replace(
+        "- Express the language as a BCP 47 tag",
+        `${amendment}\n- Express the language as a BCP 47 tag`,
+      ),
+    );
+    expect({
+      ...latest,
+      version: 1,
+      instruction_version: 1,
+      instructions: policy.instructions,
+    }).toEqual(policy);
     const namespace = JSON.parse(/```json\n([\s\S]*?)\n  ```/.exec(text)![1]!);
     const request = {
       ...conformanceRequest("chatgpt"),
@@ -1085,7 +1318,7 @@ it("accepts complete initial SSE arguments while treating message items as activ
   expect(events.at(-1)).toMatchObject({ type: "result", result: { status: "completed" } });
 });
 
-it("retains the accepted repeat-charge warning when a proposal is rejected before a retry", async () => {
+it("retains the accepted repeat-charge warning when an answered proposal cannot be rejected before a retry", async () => {
   const f = await setup();
   await f.complete([call()]);
   const proposal = f.proposals()[0]!;
@@ -1102,13 +1335,13 @@ it("retains the accepted repeat-charge warning when a proposal is rejected befor
     .prepare("SELECT charge_warning_accepted_at FROM tasks WHERE id=?")
     .get(bytes(retry)) as { charge_warning_accepted_at: string };
   expect(before.charge_warning_accepted_at).toEqual(expect.any(String));
-  value(
+  expect(
     await f.store.executeResearchCommand({
       command: "project.rejectSetup",
       operationId: "reject-before-retry",
       payload: { proposalId: proposal.id },
     }),
-  );
+  ).toMatchObject({ error: { code: "proposal_not_waiting" } });
   const waiting = db
     .prepare("SELECT id,charge_warning_accepted_at FROM tasks WHERE state IN ('queued','blocked')")
     .all() as { id: Uint8Array; charge_warning_accepted_at: string }[];
@@ -1122,7 +1355,7 @@ it("retains the accepted repeat-charge warning when a proposal is rejected befor
       (item) =>
         item.text ===
         setupNote({
-          state: "rejected",
+          state: "proposed",
           title: "Synthetic title",
           document_language: "en",
           invalid_reason: null,
@@ -1289,13 +1522,29 @@ it.each([
     await f.complete([call()]);
     const proposal = f.proposals()[0]!;
     const failed = await f.complete([], "Interrupted setup reply", result);
-    value(
-      await f.store.executeResearchCommand({
-        command: "project.confirmSetup",
-        operationId: "confirm-before-recovery",
-        payload: { proposalId: proposal.id },
-      }),
+    // A previous build allowed confirmation after this reply; preserve its historical finality.
+    const db = f.raw(),
+      stamp = new Date().toISOString();
+    db.exec("BEGIN");
+    db.prepare(
+      "UPDATE projects SET title=?, document_language=?, setup_confirmed_at=?, updated_at=? WHERE id=?",
+    ).run(proposal.title, proposal.document_language, stamp, stamp, bytes(f.projectId));
+    db.prepare(
+      "UPDATE project_setup_proposals SET state='confirmed', decided_at=?, decided_by_operation_id=? WHERE id=?",
+    ).run(stamp, "confirm-before-recovery", bytes(proposal.id));
+    db.prepare(
+      "INSERT INTO command_receipts(operation_id,command,payload_sha256,result_id,created_at) VALUES (?,?,?,?,?)",
+    ).run(
+      "confirm-before-recovery",
+      "project.confirmSetup",
+      createHash("sha256")
+        .update(canonicalJson({ proposalId: proposal.id }))
+        .digest(),
+      bytes(f.projectId),
+      stamp,
     );
+    db.exec("COMMIT");
+    db.close();
     expect(
       await f.store.executeResearchCommand({
         command,

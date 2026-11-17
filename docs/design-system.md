@@ -544,45 +544,45 @@ Icons come from Lucide, under the ISC license, except Feather derivatives, which
 
 Fixed mappings:
 
-| Meaning                       | Icon                   |
-| ----------------------------- | ---------------------- |
-| Ohtia                         | Original glasses       |
-| Navigator                     | `signpost`             |
-| Supervisor                    | `user-round`           |
-| `document`                    | `file-text`            |
-| `dataset`                     | `database`             |
-| `media`                       | `image`                |
-| `software`                    | `code`                 |
-| `object`                      | `archive`              |
-| Researcher-confirmed          | `circle-check`         |
-| Proposed or pending           | `circle-dashed`        |
-| Rejected                      | `circle-x`             |
-| Requires review               | `refresh-cw`           |
-| Restricted use                | `lock`                 |
-| Saved                         | `check`                |
-| Send message                  | `arrow-up`             |
-| Stop replies                  | `square`               |
-| Copy message                  | `copy`                 |
-| Reuse message                 | `text-cursor-input`    |
-| Copied                        | `clipboard-check`      |
-| External link                 | `external-link`        |
-| Close dialog                  | `x`                    |
-| Saving operation in timeline  | `save`                 |
-| Archive conversation          | `folder-archive`       |
-| Offline                       | `cloud-off`            |
-| Version conflict              | `git-compare`          |
-| Attention in a form or notice | `triangle-alert`       |
-| Operation failure             | `octagon-alert`        |
-| Information                   | `info`                 |
-| Plan pace                     | `calendar-clock`       |
-| Application menu              | `menu`                 |
-| Interface zoom indicator      | `zoom-in`              |
-| Command palette               | `search`               |
-| Keyboard shortcuts            | `keyboard`             |
-| Ohtia help                    | `circle-question-mark` |
-| Separator grip                | `grip-vertical`        |
-| Jump to latest message        | `arrow-down`           |
-| Agent writing                 | `pen-line`             |
+| Meaning                                      | Icon                   |
+| -------------------------------------------- | ---------------------- |
+| Ohtia                                        | Original glasses       |
+| Navigator                                    | `signpost`             |
+| Supervisor                                   | `user-round`           |
+| `document`                                   | `file-text`            |
+| `dataset`                                    | `database`             |
+| `media`                                      | `image`                |
+| `software`                                   | `code`                 |
+| `object`                                     | `archive`              |
+| Researcher-confirmed                         | `circle-check`         |
+| Proposed or pending                          | `circle-dashed`        |
+| Rejected, or a declined or replaced proposal | `circle-x`             |
+| Requires review                              | `refresh-cw`           |
+| Restricted use                               | `lock`                 |
+| Saved                                        | `check`                |
+| Send message                                 | `arrow-up`             |
+| Stop replies                                 | `square`               |
+| Copy message                                 | `copy`                 |
+| Reuse message                                | `text-cursor-input`    |
+| Copied                                       | `clipboard-check`      |
+| External link                                | `external-link`        |
+| Close dialog                                 | `x`                    |
+| Saving operation in timeline                 | `save`                 |
+| Archive conversation                         | `folder-archive`       |
+| Offline                                      | `cloud-off`            |
+| Version conflict                             | `git-compare`          |
+| Attention in a form or notice                | `triangle-alert`       |
+| Operation failure                            | `octagon-alert`        |
+| Information                                  | `info`                 |
+| Plan pace                                    | `calendar-clock`       |
+| Application menu                             | `menu`                 |
+| Interface zoom indicator                     | `zoom-in`              |
+| Command palette                              | `search`               |
+| Keyboard shortcuts                           | `keyboard`             |
+| Ohtia help                                   | `circle-question-mark` |
+| Separator grip                               | `grip-vertical`        |
+| Jump to latest message                       | `arrow-down`           |
+| Agent writing                                | `pen-line`             |
 
 Icons for comparison outcomes are defined in [domain components](#comparison-outcomes).
 
@@ -1219,7 +1219,7 @@ Each component is specified with its purpose, anatomy, variants, states, consume
 
 ### Base components
 
-- **Button.** Variants `primary`, in `action.primary.*`; `secondary`, with `border.control`; `quiet`, as underlined text; and `destructive`, in `danger.*`. The label is a verb with its object, for example “Confirm claim.” While loading, it retains its label and announces the state. Prefer allowing the action and explaining the error over disabling it; if disabled, the reason is visible. The conversation composer’s send button is the one exception: while the box is empty it is disabled without a separate visible reason, because the empty box shows it, and its tooltip and accessible description state it.
+- **Button.** Variants `primary`, in `action.primary.*`; `secondary`, with `border.control`; `quiet`, as underlined text; and `destructive`, in `danger.*`. The label is a verb with its object or complement, for example “Confirm claim” or “Continue with Josefa”. The exceptions are “New project”, the name researchers know from other applications for creating a project, “Try again” wherever an action is repeated, and the Preference saving labels “Check”, “Choose again” and “Apply again”. While loading, it retains its label and announces the state. Prefer allowing the action and explaining the error over disabling it; if disabled, the reason is visible. The conversation composer’s send button is the one exception: while the box is empty it is disabled without a separate visible reason, because the empty box shows it, and its tooltip and accessible description state it.
 - **Icon button.** Has an accessible name and tooltip, and its target meets pointer measurements.
 - **Link.** Always underlined. An external link indicates that in its text or an icon with an accessible name.
 - **Text field.** Visible label above, help below and error below in `attention.*`, with an icon and text explaining how to correct it. Optional fields are marked, not required ones. The conversation composer is an exception to the visible label above: its placeholder, “Message {agent}”, is also its accessible name, as in ChatGPT and Claude.
@@ -1264,6 +1264,8 @@ The `voice.ohtia.*` tokens identify system/AI-origin contributions and the produ
 | Requires review      | Notice with cause         | `refresh-cw`    | `attention.*`       |
 
 “Confirmed” indicates what the researcher reviewed and at which version; it does not certify correctness.
+
+`ActionProposalCard` presents an action that an AI contributor proposes for Ohtia to carry out, such as setting up a project, consulting another agent, handing a conversation to another agent, or running or changing a plan, and lets the researcher accept or decline it. It shows the proposing contributor's `VoiceLabel`, except when the card is right below that contributor's own message, a title naming the action, a state label right below the title, labelled sections of recorded text that keep their language and, while open, one primary action and one or two secondary actions; a disabled action shows its reason below the actions. Its states are open (2 px dashed border, `circle-dashed`, `voice.ohtia.*`, with the state label “Waiting for your answer”), accepted (2 px solid border, `circle-check`, `border.strong`), declined (secondary text, `circle-x`, `content.secondary`) and replaced (secondary text, `circle-x`, `content.secondary`, stating that a newer proposal replaced it). Declining an action is not a rejection of research content, so it needs no reason; the researcher tells the agent what to change in the conversation. After a decision the card keeps its content and offers no accept or decline action; a card that also shows the progress of the work it started shows it as rows with state labels and offers that work's own actions. Accepting records what the researcher read; it does not certify the content. `ProposalCard` remains the component for proposed research content.
 
 #### Comparison outcomes
 

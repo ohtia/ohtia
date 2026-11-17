@@ -362,6 +362,10 @@ describe("native menu and focused-window shortcut projection", () => {
         ...(Array.isArray(item.submenu) ? flatten(item.submenu) : []),
       ]);
     const items = flatten(menus.template(nativeOne));
+    const fileMenu = menus
+      .template(nativeOne)
+      .find((item) => item.label === message("es-AR", "menu.file"));
+    expect((fileMenu?.submenu as Electron.MenuItemConstructorOptions[])[0]?.id).toBe("project.new");
     expect(items.find((item) => item.id === "help.open")!.label).toBe("Ayuda de Ohtia");
     expect(items.find((item) => item.id === "settings.open")!.enabled).toBe(false);
     expect(items.find((item) => item.id === "edit.copy")!.role).toBe("copy");
@@ -1068,3 +1072,22 @@ it("reports each admitted command outcome once and revokes result observers with
   expect(notices).toHaveBeenCalledOnce();
   controller.subscribeResults(notices)();
 });
+
+it.each(["linux", "win32", "darwin"] as const)(
+  "routes New project and New window distinctly on %s",
+  (platform) => {
+    const key = (shift: boolean) =>
+      commandForInput(platform, {
+        key: "n",
+        code: "KeyN",
+        control: platform !== "darwin",
+        meta: platform === "darwin",
+        shift,
+        alt: false,
+        isComposing: false,
+      });
+    expect(key(false)).toBe("project.new");
+    expect(key(true)).toBe("window.new");
+    expect(commandDefinitions.filter((c) => c.group === "general")[0]?.id).toBe("project.new");
+  },
+);

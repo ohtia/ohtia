@@ -47,6 +47,7 @@ import {
   desktopChannels,
   desktopDocument,
   encodeEnvelope,
+  decodeText,
   failure,
   isBootstrapAction,
   message,
@@ -193,6 +194,7 @@ const windows = new Map<
   {
     generation: string;
     openConversation?: { projectId: string; conversationId: string };
+    researchSelection?: string;
     workspace: boolean;
     boundsSaved: boolean;
     presentable: boolean;
@@ -1098,6 +1100,12 @@ async function start(): Promise<void> {
             },
           }
         : admission.admit(sender, text);
+    const selection =
+      accepted.ok && accepted.value.request.operation === "research.subscribe"
+        ? accepted.value.request
+        : undefined;
+    const windowState = windows.get(window);
+    if (selection && windowState) windowState.researchSelection = selection.requestId;
     const frame = event.senderFrame;
     const deliver = (reply: string) => {
       if (
@@ -1105,8 +1113,26 @@ async function start(): Promise<void> {
         frame === window.webContents.mainFrame &&
         frame.url === desktopDocument &&
         windows.get(window)?.frame === frame
-      )
+      ) {
+        if (selection && windowState?.researchSelection === selection.requestId) {
+          const decoded = decodeText(reply);
+          if (
+            decoded.ok &&
+            decoded.value.kind === "result" &&
+            decoded.value.requestId === selection.requestId &&
+            decoded.value.payload.ok
+          ) {
+            const scope = selection.payload;
+            if (scope.projectId && scope.conversationId)
+              windowState.openConversation = {
+                projectId: scope.projectId,
+                conversationId: scope.conversationId,
+              };
+            else delete windowState.openConversation;
+          }
+        }
         frame.send(desktopChannels.reply, reply);
+      }
     };
     if (!accepted.ok) {
       if (authority.value.kind === "request") {

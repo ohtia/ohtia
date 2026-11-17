@@ -129,7 +129,7 @@ export const iconMappings = {
   "object": "archive",
   "Researcher-confirmed": "circle-check",
   "Proposed or pending": "circle-dashed",
-  "Rejected": "circle-x",
+  "Rejected, or a declined or replaced proposal": "circle-x",
   "Requires review": "refresh-cw",
   "Restricted use": "lock",
   "Saved": "check",

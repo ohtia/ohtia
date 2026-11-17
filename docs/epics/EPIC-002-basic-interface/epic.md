@@ -2,13 +2,11 @@
 type: "EPIC"
 title: "EPIC-002 — Basic interface"
 description: "Deliver accessible localized desktop menus, an integrated title bar, workspace controls, a command palette, extensible Settings and shared visual primitives, with native Wayland geometry limits."
+generated:
+  by: codex/gpt-6.1-sol
 tags: ["epic", "comp:app", "comp:desktop"]
 status: "stable"
 resource: https://github.com/ohtia/ohtia/issues/42
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: "electron-wayland"
     resource: "https://github.com/electron/electron/blob/v45.0.0/docs/api/browser-window.md"
@@ -139,8 +137,6 @@ stories:
     title: "Deliver the command palette and keyboard shortcuts help"
     concept: "./STORY-002-014-command-palette-and-shortcuts.md"
     resource: https://github.com/ohtia/ohtia/issues/56
-epic_status: "Active"
-started_on: 2026-10-25
 ---
 
 # EPIC-002 — Basic interface
@@ -460,13 +456,13 @@ Publication adds ADR-0039, Integrated window title bar, to the ADR register: its
 
 Agreed from the mockup review:[^mockups] the integrated row of SPEC-002-022 contains, in matching DOM and visual order: on Windows and Linux the application-menu button, or on macOS the traffic-light inset; the Ohtia glasses icon variant at 24 px beside the name in `type.ui.subheading`; the project context; empty drag space; the zoom indicator of SPEC-002-019 when zoom is not 100; one `role="group"` named Panels holding the PanelLeft, AppWindow and PanelRight toggles as one visually joined segmented set; the Expand document control; and, on Windows and Linux, the system-controls area. Reset layout with RotateCcw leaves the bar: it is used rarely and permanently occupied bar space, and it stays available in View, the command palette and Settings → Workspace layout.
 
-Project context: while no project capability exists, the bar shows the non-interactive text No project open in `content.secondary`. The project selector and the Create project control are not rendered as disabled stubs; they appear only with the capability that makes them work, in the positions workspace-layout.md defines.
+Project context: while no project capability exists, the bar shows the non-interactive text No project open in `content.secondary`. The project selector and the New project control are not rendered as disabled stubs; they appear only with the capability that makes them work, in the positions workspace-layout.md defines.
 
 Focus mode: while document focus mode is active, the Expand document control becomes a text button with the Minimize2 icon and the visible label Return to previous layout, so leaving focus mode never depends on recognizing an icon. Outside focus mode it remains the Maximize2 icon button named Expand document.
 
 Panel headers: heading rows keep `component.panel.header-minimum`. The explorer and chat headings use `type.ui.label` in `content.secondary`. Documents keeps its Documents heading for assistive technology as visually hidden text, and its tab row is the visible header. Heading names and order do not change.
 
-First run without a project: the fixed Navigator tab shows a welcome. It contains the static character at 128 CSS px under the PNG/SVG density rule of SPEC-002-003, decorative with empty alternative text; the H1 Welcome to Ohtia in `type.ui.display`; one paragraph stating that this version cannot yet create projects or converse with agents and that language, appearance, zoom and layout can be adjusted (PRIN-016); and three buttons invoking real registry commands: Open Settings as the primary action, Keyboard shortcuts and About Ohtia, each with truthful availability. The illustration follows the effective character mode through a controlled decoration input, like About: Hidden omits it without changing the text. The welcome never appears beside a visible manuscript and is not the Navigator once a project is open. The explorer shows one sentence, No project is open. This version cannot create projects yet. The chat region shows Conversations with agents are not available in this version. and renders no composer. The explorer footer holds Settings and Help buttons with their shortcut hints.
+First run without a project: the fixed Navigator tab shows a welcome. It contains the static character at 128 CSS px under the PNG/SVG density rule of SPEC-002-003, decorative with empty alternative text; the H1 Welcome to Ohtia in `type.ui.display`; one paragraph whose text is Start a project and set it up with Virgilio. You can also adjust language, appearance, zoom and layout in Settings.; and four buttons invoking real registry commands: New project as the primary action, Open Settings, Keyboard shortcuts and About Ohtia, each with truthful availability. The illustration follows the effective character mode through a controlled decoration input, like About: Hidden omits it without changing the text. The welcome never appears beside a visible manuscript and is not the Navigator once a project is open. The explorer shows one sentence, No project is open. The chat region shows Create a project to talk with Virgilio. and renders no composer. The explorer footer holds Settings and Help buttons with their shortcut hints.
 
 Tooltips: the tooltip of each icon-only control appends the command's shortcut for the running platform from the registry, for example Hide chat · Ctrl+Shift+3; the accessible name remains the action name and the shortcut is also exposed through `aria-keyshortcuts`.
 
@@ -481,7 +477,7 @@ Separator pair reset: double-clicking a separator, or pressing Enter while it ha
 Agreed menu structure from the mockup review:[^mockups]
 
 - macOS application menu Ohtia: About Ohtia; Settings…; Services; Hide Ohtia; Hide Others; Show All; Quit Ohtia. Use native roles where they exist.
-- File: New window; Settings… (Windows and Linux); Close window; Quit (Windows and Linux).
+- File: New project; New window; Settings… (Windows and Linux); Close window; Quit (Windows and Linux).
 - Edit: Undo, Redo, Cut, Copy, Paste and Select all, using native roles for the focused delivered surface.
 - View: Command palette…; Project contents, Documents and Chat as checkbox items reflecting the focused window's visibility; Expand document; Reset layout; Theme with System, Light and Dark as radio items; Increase zoom; Decrease zoom; Actual size; Full screen.
 - Help: Ohtia help; Keyboard shortcuts; Documentation and Report a problem as broker-authorized external links; Copy version information; About Ohtia on Windows and Linux only.
@@ -494,6 +490,7 @@ Agreed shortcut inventory, registered once in the command registry and shown ide
 | Command palette               | Ctrl+Shift+P      | Cmd+Shift+P    |
 | Keyboard shortcuts            | Ctrl+/            | Cmd+/          |
 | Ohtia help                    | F1                | Cmd+Shift+/    |
+| New project                   | Ctrl+N            | Cmd+N          |
 | New window                    | Ctrl+Shift+N      | Cmd+Shift+N    |
 | Close window                  | Ctrl+Shift+W      | Cmd+W          |
 | Quit                          | Ctrl+Q            | Cmd+Q          |

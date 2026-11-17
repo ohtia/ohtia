@@ -1002,3 +1002,22 @@ it("retains tab ownership when focusout leaves the active element unchanged", as
   await render(h(Tabs, { label: "Views", items: [items[0]!], selected: "one", onSelect: vi.fn() }));
   expect(document.activeElement).toBe(container.querySelector('[role="tab"]'));
 });
+
+it("keeps a tooltip and its recorded trigger in their own language with bidirectional isolation", async () => {
+  await render(
+    h(
+      Tooltip,
+      { label: "عنوان البحث", language: "ar" },
+      h("button", { type: "button" }, "عنوان البحث"),
+    ),
+  );
+  await focus(button());
+  const anchor = container.querySelector(".primitive-layer-anchor")!;
+  expect(anchor.getAttribute("lang")).toBe("ar");
+  expect(anchor.getAttribute("dir")).toBe("auto");
+  expect(container.querySelector("[role=tooltip]")?.closest("[lang]")).toBe(anchor);
+  await render(
+    h(Tooltip, { label: "Interface text" }, h("button", { type: "button" }, "Interface text")),
+  );
+  expect(anchor.hasAttribute("lang")).toBe(false);
+});

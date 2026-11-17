@@ -422,6 +422,15 @@
 .workspace-project-context {
   display: block;
 }
+.workspace[data-mode="narrow"] .workspace-title-row {
+  flex-wrap: wrap;
+  padding-block: calc(var(--focus-width) + var(--focus-offset));
+}
+.workspace[data-mode="narrow"] .workspace-context-tooltip {
+  flex: 1 1 var(--space-12);
+  min-inline-size: var(--space-12);
+  max-inline-size: max-content;
+}
 .workspace-selector {
   border-width: var(--space-0);
 }
@@ -544,4 +553,9 @@
 .workspace-chat-heading > .workspace-sizing {
   flex: none;
   padding: calc(var(--focus-width) + var(--focus-offset)) var(--space-2);
+}
+
+.workspace-setup {
+  text-align: center;
+  padding-block: var(--space-12);
 }

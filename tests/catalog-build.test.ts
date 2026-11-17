@@ -117,6 +117,29 @@ describe("catalog build admission", () => {
       }),
     ).rejects.toThrow(/Development module in product graph/);
   });
+  it("includes setup proposal styles in the actual desktop renderer asset graph", async () => {
+    const result = await build({
+      configFile: false,
+      root: path.resolve("packages/renderer/app"),
+      base: "./",
+      logLevel: "silent",
+      plugins: [productGraph(process.cwd())],
+      build: { write: false, sourcemap: false, assetsInlineLimit: 0 },
+    });
+    const outputs = (Array.isArray(result) ? result : [result]).flatMap((item) =>
+      "output" in item ? item.output : [],
+    );
+    const stylesheet = outputs.find(
+      (item) =>
+        item.type === "asset" &&
+        item.fileName.endsWith(".css") &&
+        String(item.source).includes(".action-proposal-card"),
+    );
+    expect(stylesheet).toBeDefined();
+    const html = outputs.find((item) => item.type === "asset" && item.fileName.endsWith(".html"));
+    expect(html?.type === "asset" ? String(html.source) : "").toContain(stylesheet!.fileName);
+  });
+
   it("exports research presentation from the renderer library without catalog specimens or synthetic research", async () => {
     const result = await build({
       configFile: "tooling/vite.renderer.mjs",

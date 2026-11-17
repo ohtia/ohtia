@@ -1,12 +1,21 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Workspace, CommandController, Dialog, Tabs, TextField } from "@ohtia/renderer";
 import { catalogs, type InterfaceLocale } from "../../packages/contracts/dist/index.js";
+import type { WorkspaceProps } from "../../packages/renderer/src/workspace.js";
 type Port = Parameters<typeof Workspace>[0]["port"];
 type Bridge = Parameters<typeof Workspace>[0]["commandBridge"];
 const call = <T,>(value: T) => ({ result: Promise.resolve(value), cancel() {} });
 
 /** The separate catalog owns all synthetic transport/data. No product fixture switch exists. */
-export function WorkspaceSpecimen({ chat }: { readonly chat?: ReactNode } = {}) {
+export function WorkspaceSpecimen({
+  chat,
+  project,
+  projectScope,
+  onComposerFocus,
+  onNewProject,
+}: Pick<WorkspaceProps, "chat" | "project" | "projectScope" | "onComposerFocus"> & {
+  readonly onNewProject?: () => void;
+} = {}) {
   const params = new URLSearchParams(location.search);
   const locale = (params.get("locale") ?? "en-US") as InterfaceLocale;
   useMemo(() => {
@@ -40,8 +49,13 @@ export function WorkspaceSpecimen({ chat }: { readonly chat?: ReactNode } = {}) 
           ok: true,
           value: { schemaVersion: 1, source: "missing", revision: 0, value: null },
         }),
-      replaceLayout: () => {
+      replaceLayout: (change: Parameters<Port["replaceLayout"]>[0]) => {
         setSaved((value) => value + 1);
+        if (onNewProject)
+          return call({
+            ok: true,
+            value: { schemaVersion: 1, source: "saved", revision: ++revision, value: change.value },
+          });
         return call({
           ok: false,
           error: {
@@ -86,6 +100,16 @@ export function WorkspaceSpecimen({ chat }: { readonly chat?: ReactNode } = {}) 
           },
         }),
       ];
+      if (onNewProject)
+        stops.push(
+          registry.register("project.new", {
+            state: () => ({}),
+            run: () => {
+              onNewProject();
+              return true;
+            },
+          }),
+        );
       registryRef.current = registry;
       stops.push(
         registry.register("zoom.reset", {
@@ -102,7 +126,7 @@ export function WorkspaceSpecimen({ chat }: { readonly chat?: ReactNode } = {}) 
         stops.forEach((stop) => stop());
       };
     },
-    [],
+    [onNewProject],
   );
   const theme = params.get("theme") ?? "light";
   document.documentElement.dataset.appearance = theme;
@@ -111,6 +135,9 @@ export function WorkspaceSpecimen({ chat }: { readonly chat?: ReactNode } = {}) 
     <>
       <Workspace
         {...(chat !== undefined ? { chat } : {})}
+        project={project}
+        projectScope={projectScope}
+        {...(onComposerFocus ? { onComposerFocus } : {})}
         port={synthetic.port}
         commandBridge={synthetic.bridge}
         registerHandlers={register}

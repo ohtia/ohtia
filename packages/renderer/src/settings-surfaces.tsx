@@ -1,3 +1,4 @@
+import type { NewProjectController } from "./new-project-controller.js";
 import { LimitsFeedback } from "./limits-panel.js";
 import { LimitsController } from "./limits-controller.js";
 import { ConversationController } from "./conversation-controller.js";
@@ -47,6 +48,7 @@ export function SettingsSurfaces({
   returnFocusRef,
   composeWorkspace = false,
   research,
+  newProject,
 }: {
   readonly children?: (
     commands: CommandController | undefined,
@@ -55,6 +57,7 @@ export function SettingsSurfaces({
   ) => ReactNode;
   readonly composeWorkspace?: boolean;
   readonly research?: ConversationController;
+  readonly newProject?: NewProjectController;
   readonly returnFocusRef?: ComponentProps<typeof CommandSurfaces>["returnFocusRef"];
   readonly port: FoundationPort;
   readonly bridge: CommandBridge;
@@ -200,6 +203,22 @@ export function SettingsSurfaces({
               : undefined;
       };
       const stops: (() => void)[] = [];
+      if (newProject) {
+        stops.push(
+          registry.register("project.new", {
+            state: () => {
+              const unavailable =
+                reason("project.new") ??
+                (!storageAvailable.current || newProject.snapshot().busy ? "busy" : undefined);
+              return unavailable ? { reason: unavailable } : {};
+            },
+            run: () => newProject.start(),
+          }),
+          newProject.subscribe(() => {
+            registry.changed();
+          }),
+        );
+      }
       for (const intent of ["increase", "decrease", "reset"] as const)
         stops.push(
           registry.register(`zoom.${intent}`, {
@@ -258,7 +277,7 @@ export function SettingsSurfaces({
         for (const stop of stops) stop();
       };
     },
-    [controller],
+    [controller, newProject],
   );
   const decoration = useCharacterMode(state.current?.character.value ?? "static");
   return (

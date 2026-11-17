@@ -26,7 +26,7 @@ Ohtia is open source under the repository's MIT license. Opening, reading, organ
 
 ## Desktop experience
 
-Ohtia is delivered as a graphical Electron application for Windows, macOS and Linux. The researcher creates or opens a project, connects optional providers and works through the interface without using a terminal. Phone and tablet applications are outside this desktop scope.
+Ohtia is delivered as a graphical Electron application for Windows, macOS and Linux. The researcher creates or opens a project, connects an AI service to set up projects with Virgilio and works through the interface without using a terminal. Phone and tablet applications are outside this desktop scope.
 
 The application guides provider setup, reports missing dependencies and offers supported installation or selection paths. Installing Ohtia and enabling a particular external integration are distinguishable operations. A missing integration does not prevent access to existing local work.
 

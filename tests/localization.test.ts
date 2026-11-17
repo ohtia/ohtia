@@ -594,3 +594,24 @@ it.each(["not_found", "pending", "failed"])(
     h.controller.dispose();
   },
 );
+
+it.each(["da-DK", "sv-SE"] as const)(
+  "uses the canonical thesis term throughout setup in %s",
+  (locale) => {
+    const type = message(locale, "project.type.thesis").toLocaleLowerCase(locale);
+    const texts = [
+      "project.openFailedTitle",
+      "project.openFailedBody",
+      "setup.context",
+      "setup.navigator",
+      "setup.empty",
+      "setup.title",
+      "project.createUncertainBody",
+    ] as const;
+    for (const key of texts)
+      expect(message(locale, key).toLocaleLowerCase(locale), key).toContain(type);
+    expect(
+      message(locale, "setup.announcement", { title: "Synthetic title" }).toLocaleLowerCase(locale),
+    ).toContain(type);
+  },
+);

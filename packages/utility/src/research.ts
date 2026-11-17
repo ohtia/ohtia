@@ -388,6 +388,19 @@ export async function applyResearchCommand(
         .executeTakeFirstOrThrow();
       if (proposal.state !== "proposed" || current.setup_confirmed_at !== null)
         return failure("proposal_not_waiting");
+      const producingTask = await db
+        .selectFrom("tasks")
+        .select(["conversation_id", "input_through_position"])
+        .where("id", "=", proposal.task_id)
+        .executeTakeFirstOrThrow();
+      const newerReply = await db
+        .selectFrom("messages")
+        .select("id")
+        .where("conversation_id", "=", producingTask.conversation_id)
+        .where("author_kind", "=", "researcher")
+        .where("position", ">", producingTask.input_through_position)
+        .executeTakeFirst();
+      if (newerReply) return failure("proposal_not_waiting");
       const confirming = input.command === "project.confirmSetup";
       if (confirming) {
         const active = await db
@@ -420,12 +433,7 @@ export async function applyResearchCommand(
         })
         .where("id", "=", proposal.id)
         .execute();
-      const task = await db
-        .selectFrom("tasks")
-        .select("conversation_id")
-        .where("id", "=", proposal.task_id)
-        .executeTakeFirstOrThrow();
-      tasks.touch(task.conversation_id);
+      tasks.touch(producingTask.conversation_id);
       result = confirming ? current.id : proposal.id;
       break;
     }
