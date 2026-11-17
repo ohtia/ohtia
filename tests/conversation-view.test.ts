@@ -2073,15 +2073,25 @@ it("does not misattribute setup proposals as agent messages before the setup-car
   expect(container.textContent).not.toContain("Synthetic proposal");
 });
 
-it.each(["failed", "uncertain"] as const)(
-  "retains a historical %s setup notice but removes replacement actions after confirmation",
-  async (phase) => {
-    const task = reviewTask({ state: phase }),
-      s = {
+it.each([
+  ["historical failed setup", null, "failed", null],
+  ["historical uncertain setup", null, "uncertain", null],
+  ["failed guidance", "en", "failed", "Try again"],
+  ["uncertain guidance", "en", "uncertain", "Start reply again"],
+] as const)(
+  "shows the appropriate recovery for the %s reply after confirmation",
+  async (_scenario, language, phase, action) => {
+    const task = reviewTask({ state: phase, language });
+    const performTaskAction = vi.fn(async () => ({
+      ok: true as const,
+      value: { resultId: id(999) },
+    }));
+    await render(
+      {
         ...state([task]),
         project: {
           id: scope.projectId,
-          projectType: "thesis" as const,
+          projectType: "thesis",
           title: "Synthetic confirmed thesis",
           documentLanguage: "en",
           isDevelopment: false,
@@ -2090,16 +2100,31 @@ it.each(["failed", "uncertain"] as const)(
           updatedAt: "2026-11-17T10:00:00Z",
         },
         conversation: { ...summary, latestReplyTaskId: task.id },
-      };
-    await render(s);
+      },
+      { performTaskAction } as unknown as ConversationController,
+    );
     expect(container.textContent).toContain(
       phase === "failed" ? "reported an error" : "lost contact",
     );
-    expect(
-      [...container.querySelectorAll("button")].some((b) =>
-        ["Try again", "Start reply again"].includes(b.textContent ?? ""),
-      ),
-    ).toBe(false);
+    const buttons = [
+      ...container.querySelectorAll<HTMLButtonElement>(".task-notice-actions button"),
+    ];
+    expect(buttons.map((button) => button.textContent)).toEqual(action ? [action] : []);
+    if (action === null) return;
+
+    await act(async () => buttons[0]!.click());
+    if (phase === "uncertain") {
+      expect(performTaskAction).not.toHaveBeenCalled();
+      expect(container.querySelector("dialog[open]")).not.toBeNull();
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>("dialog .primitive-primary")!.click(),
+      );
+    }
+    expect(performTaskAction).toHaveBeenCalledExactlyOnceWith(
+      expect.any(String),
+      phase === "failed" ? "retry" : "restart",
+      task,
+    );
   },
 );
 

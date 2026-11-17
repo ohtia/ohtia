@@ -224,6 +224,7 @@ export class ConversationController {
           update(false, "proposal_not_waiting", true);
         await this.projects(epoch);
         if (this.live(epoch)) {
+          void this.composer.refreshDestination();
           this.publish();
           if (!outcome.ok && outcome.error.code === "proposal_not_waiting") this.reload();
         }

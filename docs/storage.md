@@ -1,9 +1,9 @@
 ---
 type: Playbook
 title: Durable foundation storage
-description: Persist preferences, versioned research tasks and setup proposals with current decision windows, recover durable receipts and invalidate global pause counts.
+description: Persist preferences, versioned research tasks and setup proposals, bound guidance transfers, recover durable receipts and invalidate global pause counts.
 generated:
-  by: codex/gpt-6.1-sol
+  by: codex/gpt-6.2-sol
 ---
 
 # Durable foundation storage
@@ -78,7 +78,7 @@ Main observes Electron’s suspend/resume events and sends the versioned, runtim
 
 Both setup decisions take `{ proposalId }` and use `command_receipts`. The [decision-window rule](epics/EPIC-003-research-agents/epic.md#spec-003-020-new-project-flow) makes a stored `proposed` row unavailable after a newer researcher reply, without changing its stored state. Both commands reject it with `proposal_not_waiting` before confirmation’s defensive `setup_reply_active` check; failure changes nothing. Confirmation atomically writes the confirmed values and time to the project and marks the proposal confirmed. Rejection marks only a still-actionable waiting proposal rejected. Replaying an accepted command returns its original result before current eligibility checks. The migration uses the existing checkpoint, recovery review and `task.continueAll` boundary.
 
-The credential-free provider channel has a 1 MiB envelope bound so six-byte JSON escaping of the 64 KiB message budget and proposal notes remains admissible. Main counts the UTF-8 bytes of every text and streamed argument part once per attempt. Complete calls stay buffered until the provider completes within that cumulative budget. Streamed argument parts still forward content-free activity events so recovery and inactivity checks observe the provider’s progress. A failure, uncertain ending, interrupt or limit discards every call. An overflowing text part forwards only its longest whole-code-point prefix that fits; overflow closes the transport and reports `output_limit_exceeded`. Partial text remains an attributed partial reply. Provider calls never confirm a project.
+The credential-free provider channel has a 2 MiB envelope bound so six-byte JSON escaping of the 256 KiB message budget and operation notes remains admissible. The private instruction text accepts up to 8 KiB to carry the shared thesis route and confirmed project context. Each input message accepts up to 80,000 UTF-8 bytes, covering the researcher’s 20,000-code-point limit. The input and transfer lists also accommodate all 500 guidance messages and their cut-message notes. Main counts the UTF-8 bytes of every text and streamed argument part once per attempt. Complete calls stay buffered until the provider completes within that cumulative budget. Streamed argument parts still forward content-free activity events so recovery and inactivity checks observe the provider’s progress. A failure, uncertain ending, interrupt or limit discards every call. An overflowing text part forwards only its longest whole-code-point prefix that fits; overflow closes the transport and reports `output_limit_exceeded`. Partial text remains an attributed partial reply. Provider calls never confirm a project.
 
 In the development runtime, `--ohtia-dev-command=create-project` prints an ordinary project's identifier and its setup conversation identifier. Send a message with `--ohtia-dev-command=send --ohtia-dev-conversation=<id> --ohtia-dev-text=<text>`. Completed proposals print their identifiers; confirm or reject one with `--ohtia-dev-command=confirm-setup --ohtia-dev-proposal=<id>` or `--ohtia-dev-command=reject-setup --ohtia-dev-proposal=<id>`. Development projects continue to use `development_test`. Namespace tools use the top-level `tools` route; the adapter's explicit `additional_tools` option supports a separately admitted test if a provider rejects that route, without a hidden retry.
 

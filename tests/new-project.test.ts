@@ -443,8 +443,8 @@ describe("setup cards and decisions", () => {
     await act(async () => {
       c.composer.setup(true, []);
     });
-    expect(container.querySelector("textarea")?.disabled).toBe(true);
-    expect(container.textContent).toContain("Virgilio can’t reply here yet.");
+    expect(container.querySelector("textarea")?.disabled).toBe(false);
+    expect(container.textContent).not.toContain("Virgilio can’t reply here yet.");
     c.dispose();
   });
   it.each(["en-US", "de-DE", "ko-KR"] as const)(
@@ -556,6 +556,13 @@ it("reads a confirmed decision and keeps its original receipt identity when acti
   await first;
   expect(c.snapshot().project?.title).toBe("Redes de cuidado");
   expect(c.composer.snapshot().setupFinal).toBe(true);
+  await flush();
+  c.composer.edit("Please help me clarify my research question.");
+  c.composer.send();
+  await flush();
+  expect(f.port.appendMessage).toHaveBeenCalledOnce();
+  expect(c.composer.snapshot().text).toBe("");
+  expect(f.port.readDestination.mock.calls.length).toBeGreaterThan(1);
   expect(c.snapshot().setupActions?.get(proposal.id)?.error).toBeUndefined();
   c.dispose();
 });
@@ -760,7 +767,7 @@ it.each(["confirm", "reject"] as const)(
   },
 );
 it.each(["", "Retained unsent text"])(
-  "describes the disabled confirmed composer with draft %s",
+  "keeps the confirmed composer editable and preserves the send prerequisite with draft %s",
   async (text) => {
     const f = fixture(),
       c = new ConversationController(f.bridge);
@@ -772,9 +779,11 @@ it.each(["", "Retained unsent text"])(
     const button = container.querySelector<HTMLButtonElement>(".composer-action")!,
       input = container.querySelector("textarea")!,
       id = button.getAttribute("aria-describedby")!;
-    expect(document.getElementById(id)?.textContent).toBe("Virgilio can’t reply here yet.");
-    expect(input.getAttribute("aria-describedby")?.split(" ")).toContain(id);
-    expect(input.disabled).toBe(true);
+    expect(document.getElementById(id)?.textContent).toBe(
+      text ? "Reading the message destination…" : "Write a message to send it.",
+    );
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    expect(input.disabled).toBe(false);
     expect(input.value).toBe(text);
     c.dispose();
   },

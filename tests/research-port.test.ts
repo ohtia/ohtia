@@ -72,7 +72,7 @@ async function harness() {
     service.dispose();
   });
   const project = value(await client.port.createProject("create-project").result);
-  // These transport cases use a confirmed project without introducing setup tasks.
+  // Confirmed-project messages exercise guidance task notices alongside research transport.
   const fixtureDb = fixture.raw();
   fixtureDb
     .prepare(
@@ -186,7 +186,11 @@ describe("research text transport", () => {
           count: 50,
         }).result,
       );
-      const reference = page.items[0]?.kind === "message" && page.items[0].content;
+      const message = page.items.find(
+        (item) => item.kind === "message" && item.id === saved.resultId,
+      );
+      expect(page.items.some((item) => item.kind === "task")).toBe(true);
+      const reference = message?.kind === "message" && message.content;
       expect(reference && typeof reference !== "string").toBe(true);
       if (!reference || typeof reference === "string") throw new Error("Expected text reference.");
       let read = "";
@@ -199,7 +203,7 @@ describe("research text transport", () => {
 });
 
 describe("research timeline and bounded reads", () => {
-  it("paginates 120 items in explicit batches and rechecks rename revisions through the real port", async () => {
+  it("paginates 120 messages with reply tasks in explicit batches and rechecks rename revisions through the real port", async () => {
     const h = await harness();
     for (let n = 0; n < 120; n++)
       value(
@@ -211,6 +215,8 @@ describe("research timeline and bounded reads", () => {
     const ids: string[] = [];
     let cursor = null;
     let count = 0;
+    let messageCount = 0;
+    let taskCount = 0;
     do {
       const items: ResearchOutputs["timeline.listBefore"] = value(
         await h.port.listTimelineBefore({ conversationId: h.conversationId, cursor, count: 50 })
@@ -218,12 +224,16 @@ describe("research timeline and bounded reads", () => {
       );
       ids.push(...items.items.map((item) => item.id));
       count += items.items.length;
+      messageCount += items.items.filter((item) => item.kind === "message").length;
+      taskCount += items.items.filter((item) => item.kind === "task").length;
       cursor = items.next;
       // Small whole-item fragments compose into the requested page of 50.
       if (cursor) expect(items.items.length).toBeGreaterThan(0);
     } while (cursor);
-    expect(count).toBe(120);
-    expect(new Set(ids).size).toBe(120);
+    expect(count).toBe(240);
+    expect(messageCount).toBe(120);
+    expect(taskCount).toBe(120);
+    expect(new Set(ids).size).toBe(240);
     const original = value(
       await h.port.readConversations({ projectId: h.projectId, ids: [h.conversationId] }).result,
     ).items[0]!;
@@ -882,7 +892,13 @@ it("routes destination reads through the service for existing and new conversati
       await h.port.readDestination({ projectId: h.projectId, conversationId: h.conversationId })
         .result,
     ),
-  ).toEqual({ destination: null });
+  ).toEqual({
+    destination: {
+      operation: "direct_guidance",
+      maxAttemptDurationMs: 600_000,
+      connection: "chatgpt",
+    },
+  });
   const projectId = value(
     await h.store.executeResearchCommand({
       command: "development.createProject",
