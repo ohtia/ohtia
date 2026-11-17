@@ -24,3 +24,11 @@
 .composer-specimen-panel {
   block-size: 800px;
 }
+
+.task-notices-specimen {
+  block-size: auto;
+  padding: var(--space-2);
+}
+.task-notices-specimen > article + article {
+  margin-block-start: var(--space-3);
+}

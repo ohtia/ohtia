@@ -31,6 +31,7 @@ export interface MessageRecord {
 export interface ResearchPayloads {
   readonly "conversation.stop": { readonly conversationId: string };
   readonly "task.stop": { readonly taskId: string };
+  readonly "task.tryAgain": { readonly taskId: string };
   /** Invoking this human command acknowledges possible duplicate charges. */
   readonly "task.startAgain": { readonly taskId: string };
   readonly "usagePause.resume": { readonly connection: "chatgpt" };
@@ -64,6 +65,7 @@ export const researchCommands = [
   "conversation.stop",
   "task.stop",
   "task.startAgain",
+  "task.tryAgain",
   "usagePause.resume",
   "task.continueAll",
   "task.cancelAll",

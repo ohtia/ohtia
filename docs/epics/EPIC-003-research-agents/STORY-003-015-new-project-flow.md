@@ -1,18 +1,16 @@
 ---
 type: Story
 title: "STORY-003-015 — New project flow"
-description: "Let the researcher start a project from five places and complete its setup with Virgilio through a proposal card."
+description: "Let the researcher start a project from five places, confirm a proposal with Virgilio and keep setup final after confirmation."
 generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
+  by: codex/gpt-6.1-sol
 tags: [story, "comp:app", "comp:docs"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/217
 epic: "EPIC-003"
 epic_concept: ./epic.md
 components: ["comp:app", "comp:docs"]
-applicable_blocks: ["SPEC-003-020"]
+applicable_blocks: ["SPEC-003-020", "SPEC-003-018"]
 ---
 
 # STORY-003-015 — New project flow
@@ -24,6 +22,8 @@ Add "New project" to the welcome, context bar, menu, palette and Ctrl/Cmd+N, the
 ## Applicable specification
 
 - [SPEC-003-020: New project flow](./epic.md#spec-003-020-new-project-flow)
+
+The [task-notice specification](epic.md#spec-003-018-task-notices) also applies to setup recovery and the new-project flow’s after-confirmation controls.
 
 ## Tasks
 
@@ -41,7 +41,11 @@ Add "New project" to the welcome, context bar, menu, palette and Ctrl/Cmd+N, the
 - [ ] Show the invalid-proposal notices as attention notices with `triangle-alert`, announced as a status, one sentence per code with `{tag}` as received and, for `title_too_long`, "Virgilio proposed a title longer than {max} characters." with plural forms and `{max}` 200, followed by "Virgilio will see this in his next reply."; the composer notices of STORY-003-012 that keep the message when `message.append` rejects it, attention notices with `triangle-alert` announced as a status: "Too many replies are waiting. Your message wasn't sent and is still in the box; send it again when some finish." for `pending_limit_reached` and "This message is too long for Virgilio to read. Your message wasn't sent and is still in the box; shorten it and send it again." for `input_too_large`, which `project_setup`'s 64 KiB input limit gives a 20,000-character message of four-byte characters; and the post-confirmation announcement, title and disabled composer.
 - [ ] Apply the documentation amendments of SPEC-003-020 with their exact texts: `docs/thesis-workflow.md`; every listed sentence of `docs/product-roadmap.md`, including the EPIC-003 boundary and first stories, the onboarding entry's input, experience, first stories and "Done when", the progressive-infrastructure paragraph and the workspace-scenario paragraph, so that no roadmap sentence places project creation, opening or switching, or the V08 and V13 project-switching and history cases, after EPIC-003; `docs/product-definition.md`; `docs/frontend-architecture.md`; SPEC-002-023 of `docs/epics/EPIC-002-basic-interface/epic.md` (welcome paragraph "Start a project and set it up with Virgilio. You can also adjust language, appearance, zoom and layout in Settings." with New project as the primary button, explorer "No project is open.", chat "Create a project to talk with Virgilio." and "New project control") and its SPEC-002-024 (File menu "New project; New window; …" and the shortcut row "New project", "Ctrl+N", "Cmd+N"); `docs/workspace-layout.md` (`Plus`: New project, and the first-run welcome); and in `docs/design-system.md` the Button rule "The label is a verb with its object, for example “Confirm claim.”", which becomes "The label is a verb with its object or complement, for example “Confirm claim” or “Continue with Josefa”. The exceptions are “New project”, the name researchers know from other applications for creating a project, “Try again” wherever an action is repeated, and the Preference saving labels “Check”, “Choose again” and “Apply again”."; in its "Iconography" fixed mappings, the row "Rejected | `circle-x`" becomes "Rejected, or a declined or replaced proposal | `circle-x`", aligned with the table's columns; and the `ActionProposalCard` paragraph after the `ProposalCard` "Confirmed" sentence in "Trust policy", with the exact text of SPEC-003-020, which leaves the `VoiceLabel` out right below the contributor's own message, places the state label right below the title and gives the open state the label “Waiting for your answer”.
 
+- [ ] Apply [SPEC-003-020’s after-confirmation rule](epic.md#spec-003-020-new-project-flow) to setup task replacement controls, using confirmed project state and retaining historical notices.
+
 ## Acceptance criteria
+
+- [ ] Confirming an earlier valid proposal while the latest setup task is failed or uncertain leaves that task’s notice readable without "Try again" or "Start reply again"; fresh commands follow [SPEC-003-018’s finality guard](epic.md#spec-003-018-task-notices), and recorded receipt replays retain their first result.
 
 - [ ] All five ways to start run `project.new` and create one project, a double click creates only one, and "New project" is the first item of File.
 - [ ] With no connection in the state `connected`, including one that is `expired` or `connecting`, nothing is created and the dialog appears, naming no service.

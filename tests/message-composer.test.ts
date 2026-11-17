@@ -48,7 +48,11 @@ async function harness(declaration?: ProviderDeclaration["connection"], ready = 
   const readConnection = vi.fn(() =>
     call({
       ok: true as const,
-      value: { account_email: "researcher@example.org", last_account_email: null },
+      value: {
+        state: "connected",
+        account_email: "researcher@example.org",
+        last_account_email: null,
+      },
     }),
   );
   const port = {
@@ -504,7 +508,10 @@ it("retains text when a text-part upload fails or the port throws before its res
 it("shows unknown account identity explicitly when a subscription has no stored email", async () => {
   const f = await harness();
   f.readConnection.mockReturnValueOnce(
-    call({ ok: true, value: { account_email: null, last_account_email: null } }) as never,
+    call({
+      ok: true,
+      value: { state: "connected", account_email: null, last_account_email: null },
+    }) as never,
   );
   await f.controller.refreshDestination();
   await render(f.controller);
@@ -764,4 +771,51 @@ it("does not initiate destination work or recovery after disposal", async () => 
   f.controller.dispose();
   await f.controller.refreshDestination();
   expect(f.destination).not.toHaveBeenCalled();
+});
+
+it("uses disconnected and globally paused destination variants for each connection kind", async () => {
+  for (const kind of ["subscription", "api_key"] as const) {
+    const f = await harness({
+      id: "chatgpt",
+      displayName: "Synthetic service",
+      kind,
+      usageUrl: null,
+    });
+    f.readConnection.mockReturnValueOnce(
+      call({
+        ok: true,
+        value: { state: "disconnected", account_email: null, last_account_email: null },
+      }) as never,
+    );
+    await f.controller.refreshDestination();
+    await render(f.controller);
+    expect(container.querySelector(".composer-destination")?.textContent).toBe(
+      "Synthetic service isn’t connected. Messages will wait until you connect.",
+    );
+    await f.controller.refreshDestination();
+    await act(async () =>
+      f.controller.pauses({
+        revision: 2,
+        restart: 0,
+        usage: [{ connection: "chatgpt", count: 12 }],
+      }),
+    );
+    expect(container.querySelector(".composer-destination")?.textContent).toContain(
+      kind === "subscription" ? "plan limit reached" : "no credit or spending limit reached",
+    );
+    await act(async () => f.controller.pauses({ revision: 3, restart: 0, usage: [] }));
+    expect(container.querySelector(".composer-destination")?.textContent).not.toContain("paused");
+  }
+});
+
+it("disables the composer Stop while another window's cancellation is observed", async () => {
+  const f = await harness();
+  f.controller.running(true, true);
+  await render(f.controller);
+  expect(container.querySelector(".composer-action")?.getAttribute("aria-disabled")).toBe("true");
+  expect(container.querySelector(".composer-reason")?.textContent).toBe(
+    "Wait until the replies stop.",
+  );
+  await act(async () => f.controller.running(false, false));
+  expect(container.querySelector(".composer-reason")).toBeNull();
 });

@@ -70,6 +70,12 @@ export function ComposerSpecimen() {
       sendTextPart() {
         return call({ ok: true, value: { accepted: true } });
       },
+      subscribeConnection() {
+        return {
+          ready: Promise.resolve({ ok: true, value: { subscriptionId: "connection" } }),
+          dispose() {},
+        };
+      },
       readDestination() {
         if (destinationFails) return call(failure("storage_failed"));
         const value = {
@@ -97,7 +103,11 @@ export function ComposerSpecimen() {
       readConnection() {
         return call({
           ok: true,
-          value: { account_email: "researcher@example.org", last_account_email: null },
+          value: {
+            state: "connected",
+            account_email: "researcher@example.org",
+            last_account_email: null,
+          },
         });
       },
     } as unknown as FoundationPort;

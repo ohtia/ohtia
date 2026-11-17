@@ -13,7 +13,7 @@ import {
 } from "../packages/contracts/src/index.js";
 import { canonicalJson, LanguageRegistry } from "../packages/utility/src/research.js";
 import { DurableStore } from "../packages/utility/dist/index.js";
-import { storageFixture, stores, Database } from "./fixtures/storage.js";
+import { legacyTaskInitialSql, storageFixture, stores, Database } from "./fixtures/storage.js";
 
 const fixturesByProject = new Map<string, ReturnType<typeof storageFixture>>();
 const proposalsByProject = new Map<string, string>();
@@ -72,7 +72,9 @@ function append(
 }
 function dropResearch(db: InstanceType<typeof Database>) {
   db.exec(
-    "DROP TABLE service_runs; DROP TABLE execution_limits_receipts; DROP TABLE project_setup_proposals; DELETE FROM kysely_migration WHERE name='0015_project_setup'; DELETE FROM ohtia_migration_artifacts WHERE name='0015_project_setup'; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; DELETE FROM kysely_migration WHERE name='0012_application_exit'; DELETE FROM ohtia_migration_artifacts WHERE name='0012_application_exit'; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; DROP TABLE attempts; DROP TABLE tasks; DELETE FROM kysely_migration WHERE name='0008_durable_ai_tasks'; DELETE FROM ohtia_migration_artifacts WHERE name='0008_durable_ai_tasks'; DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; PRAGMA user_version=6",
+    "DROP TABLE service_runs; DROP TABLE execution_limits_receipts; " +
+      legacyTaskInitialSql +
+      "DELETE FROM kysely_migration WHERE name='0016_task_notices'; DELETE FROM ohtia_migration_artifacts WHERE name='0016_task_notices'; DROP TABLE project_setup_proposals; DELETE FROM kysely_migration WHERE name='0015_project_setup'; DELETE FROM ohtia_migration_artifacts WHERE name='0015_project_setup'; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; DELETE FROM kysely_migration WHERE name='0012_application_exit'; DELETE FROM ohtia_migration_artifacts WHERE name='0012_application_exit'; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; DROP TABLE attempts; DROP TABLE tasks; DELETE FROM kysely_migration WHERE name='0008_durable_ai_tasks'; DELETE FROM ohtia_migration_artifacts WHERE name='0008_durable_ai_tasks'; DROP TABLE command_receipts; DROP TABLE messages; DROP TABLE conversations; DROP TABLE projects; DELETE FROM kysely_migration WHERE name='0007_research_records'; DELETE FROM ohtia_migration_artifacts WHERE name='0007_research_records'; PRAGMA user_version=6",
   );
 }
 
@@ -512,7 +514,7 @@ describe("migration 0007 and database-owned rules", () => {
     db.close();
     await store.open();
     const upgraded = raw();
-    expect(upgraded.pragma("user_version", { simple: true })).toBe(15);
+    expect(upgraded.pragma("user_version", { simple: true })).toBe(16);
     expect(upgraded.prepare("SELECT * FROM application_preferences ORDER BY key").all()).toEqual(
       before,
     );
@@ -525,7 +527,7 @@ describe("migration 0007 and database-owned rules", () => {
           fs.readFileSync(path.join(root, "recovery/migrations", s, "manifest.json"), "utf8"),
         ),
       ),
-    ).toContainEqual(expect.objectContaining({ sourceRevision: 6, targetRevision: 15 }));
+    ).toContainEqual(expect.objectContaining({ sourceRevision: 6, targetRevision: 16 }));
     expect(value(await store.readProjects())).toEqual([]);
     upgraded.close();
   });

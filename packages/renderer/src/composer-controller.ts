@@ -6,6 +6,8 @@ import {
   validResearcherMessage,
   type FoundationPort,
   type MessageDestination,
+  type PauseCounts,
+  type ConnectionState,
   type Outcome,
   type ProviderDeclaration,
   type ResearchResult,
@@ -17,6 +19,7 @@ export interface ComposerState {
   readonly text: string;
   readonly saving: boolean;
   readonly stopping: boolean;
+  readonly cancelling: boolean;
   readonly stopFailed: boolean;
   readonly running: boolean;
   readonly notice: ComposerNotice | null;
@@ -27,6 +30,8 @@ export interface ComposerState {
         readonly email: string;
       })
     | null;
+  readonly connectionState?: ConnectionState;
+  readonly usagePaused?: boolean;
   readonly announcement: number;
   readonly reuse: string | null;
 }
@@ -48,6 +53,7 @@ const initial = (): Draft => ({
     text: "",
     saving: false,
     stopping: false,
+    cancelling: false,
     stopFailed: false,
     running: false,
     notice: null,
@@ -64,6 +70,14 @@ export class ComposerController {
   private scope: ResearchScope = { projectId: null, conversationId: null };
   private draft = initial();
   private disposed = false;
+  private pauseCounts: PauseCounts | undefined;
+  pauses(counts: PauseCounts): void {
+    this.pauseCounts = counts;
+    for (const draft of this.drafts.values())
+      this.update(draft, {
+        usagePaused: counts.usage.some((p) => p.connection === draft.state.destination?.connection),
+      });
+  }
   private observationUnavailable = false;
   constructor(
     private readonly port: FoundationPort,
@@ -111,10 +125,11 @@ export class ComposerController {
     if (text !== null) this.edit(text);
     this.closeReuse();
   };
-  running(running: boolean): void {
+  running(running: boolean, cancelling = false): void {
     const draft = this.draft;
     this.update(draft, {
       running,
+      cancelling,
       ...(draft.stopConfirmed && !running ? { stopping: false } : {}),
     });
   }
@@ -188,6 +203,9 @@ export class ComposerController {
       if (!connection.ok) throw new Error("Destination account unavailable.");
       this.update(draft, {
         destinationStatus: "ready",
+        connectionState: connection.value.state,
+        usagePaused:
+          this.pauseCounts?.usage.some((p) => p.connection === destination.connection) ?? false,
         destination: {
           ...destination,
           declaration,
@@ -210,6 +228,7 @@ export class ComposerController {
       draft.state.destinationStatus !== "ready" ||
       draft.state.saving ||
       draft.state.stopping ||
+      draft.state.cancelling ||
       !validResearcherMessage(draft.state.text)
     )
       return;

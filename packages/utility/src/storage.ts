@@ -15,7 +15,11 @@ import {
   objects as setupObjects,
 } from "./migrations/0015_project_setup.mjs";
 import { up as composer, objects as composerObjects } from "./migrations/0014_message_composer.mjs";
-import { readResearch, researchRevisions } from "./research-reads.js";
+import {
+  up as taskNotices,
+  objects as taskNoticeObjects,
+} from "./migrations/0016_task_notices.mjs";
+import { readResearch, researchRevisions, readPauseCounts } from "./research-reads.js";
 import type { Request, ResearchScope, ResearchEvent, ResearchOperation } from "@ohtia/contracts";
 import {
   up as applicationExit,
@@ -251,6 +255,7 @@ const names = [
   "0013_execution_limits_receipts",
   "0014_message_composer",
   "0015_project_setup",
+  "0016_task_notices",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -617,6 +622,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 12 ? exitObjects : {}),
                 ...(revision >= 14 ? composerObjects : {}),
                 ...(revision >= 15 ? setupObjects : {}),
+                ...(revision >= 16 ? taskNoticeObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -787,6 +793,22 @@ export class DurableStore {
           throw new Error("Migration requires explicit recovery.", { cause: error });
         }
       }
+      // Connection-local invalidation state starts at one. TEMP triggers participate in
+      // the same transactions as task/pause changes, including rollback and coalescing.
+      this.pauseRevision = 1;
+      db.exec(`CREATE TEMP TABLE pause_counts_revision (revision INTEGER NOT NULL);
+        INSERT INTO pause_counts_revision VALUES (1);
+        CREATE TEMP TRIGGER pause_task_insert AFTER INSERT ON main.tasks
+        WHEN NEW.state='blocked' AND NEW.blocking_reason IN ('usage_limit_reached','restart_paused')
+        BEGIN UPDATE pause_counts_revision SET revision=revision+1; END;
+        CREATE TEMP TRIGGER pause_task_update AFTER UPDATE ON main.tasks
+        WHEN (OLD.state='blocked' AND OLD.blocking_reason IN ('usage_limit_reached','restart_paused'))
+          OR (NEW.state='blocked' AND NEW.blocking_reason IN ('usage_limit_reached','restart_paused'))
+        BEGIN UPDATE pause_counts_revision SET revision=revision+1; END;
+        CREATE TEMP TRIGGER pause_open AFTER INSERT ON main.usage_limit_pauses
+        BEGIN UPDATE pause_counts_revision SET revision=revision+1; END;
+        CREATE TEMP TRIGGER pause_close AFTER UPDATE ON main.usage_limit_pauses
+        BEGIN UPDATE pause_counts_revision SET revision=revision+1; END;`);
       this.initializationAllowed = false;
       this.admitted = true;
     } catch (error) {
@@ -989,6 +1011,7 @@ export class DurableStore {
                 "0013_execution_limits_receipts": { up: executionLimitsReceipts },
                 "0014_message_composer": { up: composer },
                 "0015_project_setup": { up: setup },
+                "0016_task_notices": { up: taskNotices },
               }),
           },
         });
@@ -2305,6 +2328,7 @@ export class DurableStore {
       "timeline.read": "ohtia.timeline.read",
       "conversation.read": "ohtia.conversation.read",
       "destination.read": "ohtia.destination.read",
+      "pause.read": "ohtia.pause.read",
     } as const;
     if (Object.hasOwn(events, operation))
       this.researchDiagnostic({ event_name: events[operation as keyof typeof events] });
@@ -2361,6 +2385,9 @@ export class DurableStore {
           diagnostics.push(...tasks.diagnostics);
           commitAttempted = true;
           await sql`COMMIT`.execute(transaction);
+          this.notifyPauseCounts();
+          for (const connection of tasks.modelRefreshes)
+            this.taskContext.requestModelRefresh?.(connection);
           return result;
         } catch (error) {
           if (this.native?.inTransaction) {
@@ -2396,6 +2423,7 @@ export class DurableStore {
         "task.stop": "ohtia.task.stop_requested",
         "conversation.stop": "ohtia.conversation.stop_requested",
         "task.startAgain": "ohtia.task.replaced",
+        "task.tryAgain": "ohtia.task.retry_requested",
         "task.continueAll": "ohtia.task.continue_requested",
         "task.cancelAll": "ohtia.task.cancel_all_requested",
         "usagePause.resume": "ohtia.usage_pause.resume_requested",
@@ -2426,6 +2454,7 @@ export class DurableStore {
           this.assert();
           commitAttempted = true;
           await sql`COMMIT`.execute(transaction);
+          this.notifyPauseCounts();
           return result;
         } catch (error) {
           if (this.native?.inTransaction) await sql`ROLLBACK`.execute(transaction);
@@ -2500,6 +2529,30 @@ export class DurableStore {
       if (event) this.researchDiagnostic({ event_name: event });
     } else if (diagnoseFailure) this.researchFailure(outcome.error.code);
     return outcome;
+  }
+  private readonly pauseObservers = new Set<(revision: number) => void>();
+  private pauseRevision = 1;
+  observePauseCounts(listener: (revision: number) => void): () => void {
+    this.pauseObservers.add(listener);
+    return () => {
+      this.pauseObservers.delete(listener);
+    };
+  }
+  private notifyPauseCounts(): void {
+    const row = this.native?.prepare("SELECT revision FROM pause_counts_revision").get() as
+      { revision: number } | undefined;
+    if (!row || row.revision === this.pauseRevision) return;
+    this.pauseRevision = row.revision;
+    for (const observer of this.pauseObservers) {
+      try {
+        observer(row.revision);
+      } catch {
+        /* An observer cannot change a committed result. */
+      }
+    }
+  }
+  readPauses(): Promise<Outcome<import("@ohtia/contracts").PauseCounts>> {
+    return this.researchRead(async (db) => ({ ok: true, value: await readPauseCounts(db) }));
   }
   readResearch(request: Request): Promise<Outcome<unknown>> {
     return this.researchRead((db) => readResearch(db, request, this.taskContext), undefined, false);

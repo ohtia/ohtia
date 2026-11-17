@@ -207,7 +207,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
         onLocale={applyLocale.current}
         returnFocusRef={returnFocus}
       >
-        {(commands, binding) => (
+        {(commands, binding, openConnections) => (
           <>
             {workspaceMounted.current && commands && (
               <div
@@ -222,6 +222,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                       <ConversationView
                         state={conversationState}
                         controller={conversation}
+                        onOpenConnections={openConnections}
                         commands={bridge.commands}
                         locale={bootstrap.locale}
                       />

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   catalogs,
+  chatgptConnection,
   type InterfaceLocale,
   type TimelineItem,
 } from "../../packages/contracts/dist/index.js";
@@ -64,6 +65,16 @@ export function ConversationSpecimen() {
       },
       {
         kind: "task",
+        connection: "chatgpt",
+        blockingReason: null,
+        outcomeReason: null,
+        replyMessageId: null,
+        waitingForModels: false,
+        waitingLimit: 3,
+        dispatched: true,
+        superseded: false,
+        maxAttemptDurationMs: 600_000,
+        maxInactivityMs: 120_000,
         id: id(31),
         position: 3,
         rank: 3,
@@ -93,7 +104,7 @@ export function ConversationSpecimen() {
         <ConversationView
           state={state}
           locale={locale}
-          controller={{ reload() {}, loadEarlier() {} }}
+          controller={{ connections: [chatgptConnection], reload() {}, loadEarlier() {} }}
           commands={{
             async copyMessage(messageId) {
               setLog(`copy ${messageId}`);

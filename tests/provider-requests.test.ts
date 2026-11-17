@@ -102,6 +102,7 @@ describe("provider message contracts", () => {
   it("decodes model-list refreshes only with their version, connection and current generation", () => {
     const refresh = {
       kind: "model_list_refresh",
+      refresh_id: "refresh-1",
       version: 1,
       generation: "g",
       connection: "chatgpt",
@@ -899,6 +900,7 @@ it("routes the validated model-list refresh through the main supervisor channel"
   supervisor.connectProvider({ dispatch: vi.fn(), interrupt: vi.fn(), refreshModels });
   const message = {
     kind: "model_list_refresh",
+    refresh_id: "refresh-1",
     version: 1,
     generation: "g",
     connection: "chatgpt",
@@ -1576,4 +1578,102 @@ it("preserves storage admission when a connection report arrives during the chec
   } finally {
     service.dispose();
   }
+});
+
+it("tags only reports produced after a correlated refresh request, and stale reports cannot release its hold", () => {
+  let receive!: (value: unknown) => void;
+  const sent: string[] = [];
+  const supervisor = new ServiceSupervisor(
+    {
+      send: (text) => {
+        sent.push(text);
+      },
+      kill: vi.fn(),
+      messages: (listener) => {
+        receive = listener;
+      },
+      exited: vi.fn(),
+    },
+    "g",
+    () => {},
+  );
+  receive(JSON.stringify({ kind: "ready", generation: "g" }));
+  const snapshot = {
+    connection: "chatgpt",
+    state: "connected",
+    reason: null,
+    probing: false,
+    probe_id: null,
+    model_list_revision: 1,
+    model_count: 0,
+    display_name: "ChatGPT",
+    account_email: null,
+    last_account_email: null,
+  };
+  const manager = {
+    ids: () => ["chatgpt"],
+    snapshot: () => snapshot,
+    listModels: () => ({
+      ok: true,
+      value: {
+        connection: "chatgpt",
+        model_list_revision: 1,
+        models: [],
+        nextCursor: 0,
+        hasMore: false,
+      },
+    }),
+  } as unknown as ConnectionManager;
+  const connections = new ServiceConnections();
+  const stale = {
+    kind: "connection_state" as const,
+    generation: "g",
+    snapshot: {
+      connection: "chatgpt",
+      state: "connected" as const,
+      reason: null,
+      probing: false,
+      probe_id: null,
+      model_list_revision: 1,
+      model_count: 0,
+    },
+  };
+  connections.receive(stale);
+  connections.beginModelRefresh("chatgpt", "refresh-2");
+  connections.receive(stale);
+  connections.receive({ ...stale, refresh_id: "refresh-1" });
+  expect(connections.awaitingModels("chatgpt")).toBe(true);
+  supervisor.connectProvider({
+    dispatch: vi.fn(),
+    interrupt: vi.fn(),
+    refreshModels: () => {
+      supervisor.reportConnections(manager);
+    },
+  });
+  supervisor.reportConnections(manager);
+  expect(
+    JSON.parse(sent.find((text) => JSON.parse(text).kind === "connection_state")!),
+  ).not.toHaveProperty("refresh_id");
+  sent.length = 0;
+  receive(
+    JSON.stringify({
+      kind: "model_list_refresh",
+      version: 1,
+      generation: "g",
+      connection: "chatgpt",
+      refresh_id: "refresh-2",
+    }),
+  );
+  const fresh = sent
+    .map((text) => JSON.parse(text))
+    .find((message) => message.kind === "connection_state");
+  expect(fresh.refresh_id).toBe("refresh-2");
+  connections.receive(fresh);
+  expect(connections.awaitingModels("chatgpt")).toBe(true);
+  for (const message of sent.map((text) => JSON.parse(text)))
+    if (message.kind === "connection_models") connections.receive(message);
+  expect(connections.awaitingModels("chatgpt")).toBe(false);
+  sent.length = 0;
+  supervisor.reportConnections(manager);
+  expect(JSON.parse(sent[0]!)).not.toHaveProperty("refresh_id");
 });

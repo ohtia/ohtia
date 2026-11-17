@@ -77,6 +77,7 @@ function sameRequest(a: Request, b: Extract<Envelope, { kind: "result" }>): bool
 }
 /** One child, one generation. A signal never releases accepted capacity; an exit receipt does. */
 export class ServiceSupervisor {
+  private readonly modelRefreshes = new Map<string, string>();
   private readonly pending = new Map<string, Work>();
   private readonly correlations = new WeakMap<Work, string>();
   private readonly streams = new Map<string, Work>();
@@ -243,9 +244,17 @@ export class ServiceSupervisor {
           model_list_revision: full.model_list_revision,
           model_count: full.model_count,
         };
+        const refresh_id = this.modelRefreshes.get(connection);
         this.child.send(
-          JSON.stringify({ kind: "connection_state", generation: this.generation, snapshot }),
+          JSON.stringify({
+            kind: "connection_state",
+            generation: this.generation,
+            snapshot,
+            ...(refresh_id ? { refresh_id } : {}),
+          }),
         );
+        if (refresh_id && !snapshot.probing && this.modelRefreshes.get(connection) === refresh_id)
+          this.modelRefreshes.delete(connection);
         if (snapshot.model_list_revision === null) continue;
         let cursor = 0;
         for (;;) {
@@ -468,7 +477,10 @@ export class ServiceSupervisor {
         if (dispatch) this.provider?.dispatch(dispatch);
         else if (interrupt) this.provider?.interrupt(interrupt);
         else if (report) this.provider?.report?.(report);
-        else if (refresh) this.provider?.refreshModels?.(refresh);
+        else if (refresh) {
+          this.modelRefreshes.set(refresh.connection, refresh.refresh_id);
+          this.provider?.refreshModels?.(refresh);
+        }
         return;
       }
     }

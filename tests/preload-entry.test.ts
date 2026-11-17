@@ -458,6 +458,7 @@ it("keeps named command bridge inputs/results bounded and strips native event au
     "ko-KR",
   );
   expect(await h.bridge.commands.openLink("repository")).toBe(true);
+  expect(await h.bridge.commands.openLink("chatgptUsage")).toBe(true);
   h.ipcRenderer.invoke.mockResolvedValueOnce({} as never);
   await expect(h.bridge.commands.about()).rejects.toThrow(/About information/);
   const about = {
@@ -971,4 +972,49 @@ it("forwards composer operations across the sandbox bridge and preserves uncerta
   expect(await calls[0]!.result).toMatchObject({ error: { code: "uncertain" } });
   expect(await calls[1]!.result).toMatchObject({ error: { code: "uncertain" } });
   expect(await calls[2]!.result).toMatchObject({ error: { code: "disposed" } });
+});
+
+it("carries the notice pause read and four idempotent actions through the sandbox entry", async () => {
+  const h = await load();
+  const taskId = "019a8000-0000-7000-8000-000000000001";
+  const port = h.bridge.foundation;
+  const calls = [
+    port.readPauses(),
+    port.tryAgainTask("try", { taskId }),
+    port.startAgainTask("restart", { taskId }),
+    port.resumeUsagePause("resume", { connection: "chatgpt" }),
+    port.continueAllTasks("continue"),
+  ];
+  const requests = h.ipcRenderer.send.mock.calls.map(([, text]) => JSON.parse(text));
+  expect(requests.map((request) => request.operation)).toEqual([
+    "pause.read",
+    "task.tryAgain",
+    "task.startAgain",
+    "usagePause.resume",
+    "task.continueAll",
+  ]);
+  expect(requests.slice(1).map((request) => request.operationId)).toEqual([
+    "try",
+    "restart",
+    "resume",
+    "continue",
+  ]);
+  for (const [index, request] of requests.entries())
+    h.ipcRenderer.emit(
+      desktopChannels.reply,
+      {},
+      JSON.stringify({
+        ...request,
+        kind: "result",
+        payload: {
+          ok: true,
+          value:
+            index === 0
+              ? { revision: 1, restart: 2, usage: [{ connection: "chatgpt", count: 3 }] }
+              : { resultId: taskId },
+        },
+      }),
+    );
+  for (const call of calls) expect((await call.result).ok).toBe(true);
+  h.window.dispatchEvent(new Event("unload"));
 });

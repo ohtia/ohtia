@@ -1,8 +1,10 @@
+import { RecoveryFocusBoundary } from "./settings-notices.js";
+import { TaskNotice, taskNoticeContent } from "./task-notice.js";
 import { MessageComposer } from "./message-composer.js";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { message, type CommandBridge, type InterfaceLocale } from "@ohtia/contracts";
 import { MessageMarkdown } from "./research-presentation.js";
-import { VoiceLabel } from "./contributor-identity.js";
+import { contributorNames, VoiceLabel } from "./contributor-identity.js";
 import { LucideGlyph } from "./iconography.js";
 import { Tooltip } from "./layers.js";
 import type { ConversationController, ConversationState } from "./conversation-controller.js";
@@ -13,14 +15,23 @@ export function ConversationView({
   controller,
   locale,
   commands,
+  onOpenConnections,
 }: {
   readonly state: ConversationState;
   readonly controller: Pick<ConversationController, "reload" | "loadEarlier"> &
-    Partial<Pick<ConversationController, "composer">>;
+    Partial<
+      Pick<
+        ConversationController,
+        "composer" | "performTaskAction" | "connections" | "claimTaskNotice"
+      >
+    >;
   readonly locale: InterfaceLocale;
-  readonly commands: Pick<CommandBridge, "copyMessage" | "openExternalLink">;
+  readonly commands: Pick<CommandBridge, "copyMessage" | "openExternalLink"> &
+    Partial<Pick<CommandBridge, "openLink">>;
+  readonly onOpenConnections?: () => void;
 }) {
   const viewport = useRef<HTMLDivElement>(null);
+  const statusViewport = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
   const anchors = useRef(new Map<string, { top: number; follow: boolean }>());
   const anchor = useRef<{ id: string; offset: number } | undefined>(undefined);
@@ -110,10 +121,17 @@ export function ConversationView({
     </div>
   );
   return (
-    <div className="conversation-view">
+    <RecoveryFocusBoundary
+      className="conversation-view"
+      onRecover={() => {
+        const target = viewport.current ?? statusViewport.current;
+        target?.focus();
+      }}
+    >
       {state.status !== "ready" ? (
         <div
           className="conversation-status-scroll"
+          ref={statusViewport}
           role="region"
           tabIndex={0}
           aria-label={message(locale, "command.panels.chat")}
@@ -184,8 +202,89 @@ export function ConversationView({
                 item.kind === "task" &&
                 (item.state === "running" || item.state === "cancelling") &&
                 !state.items.some((saved) => saved.kind === "message" && saved.taskId === item.id);
-              if (item.kind === "task" && !streaming) return null;
-              const researcher = item.kind === "message" && item.authorKind === "researcher";
+              if (item.kind === "task") {
+                const saved = state.items.find(
+                  (saved) => saved.kind === "message" && saved.taskId === item.id,
+                );
+                const text = state.replies.get(item.id)?.text ?? "";
+                const connection = controller.connections?.find((c) => c.id === item.connection);
+                if (
+                  !connection ||
+                  (!text && !taskNoticeContent(item, locale, connection, !!saved, undefined))
+                )
+                  return null;
+                return (
+                  <article
+                    key={item.id}
+                    data-timeline-id={item.id}
+                    className="conversation-message agent"
+                  >
+                    {streaming && text && (
+                      <>
+                        <VoiceLabel
+                          identity={{
+                            kind: "ai",
+                            contributor: item.agentId,
+                            definitionVersion: "1",
+                          }}
+                          locale={locale}
+                        />
+                        <div
+                          className="conversation-text"
+                          aria-busy="true"
+                          lang={item.language ?? ""}
+                          dir="auto"
+                        >
+                          <MessageMarkdown
+                            text={text}
+                            locale={locale}
+                            language={item.language ?? undefined}
+                            openExternalLink={commands.openExternalLink}
+                          />
+                        </div>
+                        <div className="conversation-writing" aria-hidden="true">
+                          <LucideGlyph name="pen-line" size={16} />
+                          {message(locale, "conversation.writing", { agent: "Virgilio" })}
+                        </div>
+                      </>
+                    )}
+                    <TaskNotice
+                      announce={(signature) =>
+                        controller.claimTaskNotice?.(item.id, item.revision, signature) ?? false
+                      }
+                      task={item}
+                      locale={locale}
+                      connection={connection}
+                      hasText={!!saved || !!text}
+                      latest={state.conversation?.latestReplyTaskId === item.id}
+                      runningAgent={
+                        state.conversation?.runningTask &&
+                        state.conversation.runningTask.id !== item.id
+                          ? contributorNames[state.conversation.runningTask.agentId]
+                          : state.items.some(
+                                (other) =>
+                                  other.kind === "task" &&
+                                  other.id !== item.id &&
+                                  ["running", "cancelling"].includes(other.state),
+                              )
+                            ? "Virgilio"
+                            : undefined
+                      }
+
+                      {...(state.pauses ? { pauses: state.pauses } : {})}
+                      controller={{
+                        performTaskAction: (id, action, task) =>
+                          controller.performTaskAction
+                            ? controller.performTaskAction(id, action, task)
+                            : Promise.reject(new Error("Task actions unavailable.")),
+                      }}
+                      commands={{ openLink: commands.openLink ?? (() => Promise.resolve(false)) }}
+                      {...(onOpenConnections ? { onOpenConnections } : {})}
+                    />
+                  </article>
+                );
+              }
+              const researcher = item.authorKind === "researcher";
               return (
                 <article
                   key={item.id}
@@ -202,35 +301,23 @@ export function ConversationView({
                   )}
                   <div className="conversation-text" lang={item.language ?? ""} dir="auto">
                     <MessageMarkdown
-                      text={
-                        item.kind === "message"
-                          ? (state.texts.get(item.id) ?? "")
-                          : (state.replies.get(item.id)?.text ?? "")
-                      }
+                      text={state.texts.get(item.id) ?? ""}
                       locale={locale}
                       language={item.language ?? undefined}
                       openExternalLink={commands.openExternalLink}
                     />
                   </div>
-                  {streaming ? (
-                    <div className="conversation-writing" aria-hidden="true">
-                      <LucideGlyph name="pen-line" size={16} />
-                      {message(locale, "conversation.writing", { agent: "Virgilio" })}
-                    </div>
-                  ) : (
-                    <SavedMessageActions
-                      key={`${id ?? ""}/${item.id}`}
-                      messageId={item.id}
-                      locale={locale}
-                      commands={commands}
-                      {...(researcher && controller.composer
-                        ? {
-                            onReuse: () =>
-                              controller.composer?.reuse(state.texts.get(item.id) ?? ""),
-                          }
-                        : {})}
-                    />
-                  )}
+                  <SavedMessageActions
+                    key={`${id ?? ""}/${item.id}`}
+                    messageId={item.id}
+                    locale={locale}
+                    commands={commands}
+                    {...(researcher && controller.composer
+                      ? {
+                          onReuse: () => controller.composer?.reuse(state.texts.get(item.id) ?? ""),
+                        }
+                      : {})}
+                  />
                 </article>
               );
             })}
@@ -261,7 +348,7 @@ export function ConversationView({
       <p className="primitive-announcement" role="status" aria-live="polite" aria-atomic="true">
         <span key={announcement.count}>{announcement.text}</span>
       </p>
-    </div>
+    </RecoveryFocusBoundary>
   );
 }
 

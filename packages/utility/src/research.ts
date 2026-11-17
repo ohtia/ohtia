@@ -247,6 +247,7 @@ const payloadKeys = {
   "conversation.stop": ["conversationId"],
   "task.stop": ["taskId"],
   "task.startAgain": ["taskId"],
+  "task.tryAgain": ["taskId"],
   "development.createProject": [],
   "project.create": [],
   "usagePause.resume": ["connection"],
@@ -312,6 +313,7 @@ export async function applyResearchCommand(
       break;
     }
     case "task.stop":
+    case "task.tryAgain":
     case "task.startAgain": {
       if (!isEntityId(input.payload.taskId)) return failure("invalid_message");
       const outcome = await tasks.control(

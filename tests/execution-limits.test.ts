@@ -16,7 +16,7 @@ import {
   type DiagnosticEvent,
   decodeDiagnosticEvent,
 } from "@ohtia/contracts";
-import { Database, storageFixture, stores } from "./fixtures/storage.js";
+import { legacyTaskInitialSql, Database, storageFixture, stores } from "./fixtures/storage.js";
 import { request } from "./fixtures/port-corpus.js";
 import { createStatusService } from "../packages/utility/src/status-service.js";
 import { DurableStore } from "../packages/utility/src/storage.js";
@@ -285,14 +285,16 @@ describe("execution limit contract and storage", () => {
     await f.store.close(true);
     const source = f.raw();
     source.exec(
-      "DROP TABLE execution_limits_receipts; DROP TABLE project_setup_proposals; DELETE FROM kysely_migration WHERE name='0015_project_setup'; DELETE FROM ohtia_migration_artifacts WHERE name='0015_project_setup'; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; PRAGMA user_version=12",
+      "DROP TABLE execution_limits_receipts; " +
+        legacyTaskInitialSql +
+        "DELETE FROM kysely_migration WHERE name='0016_task_notices'; DELETE FROM ohtia_migration_artifacts WHERE name='0016_task_notices'; DROP TABLE project_setup_proposals; DELETE FROM kysely_migration WHERE name='0015_project_setup'; DELETE FROM ohtia_migration_artifacts WHERE name='0015_project_setup'; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; PRAGMA user_version=12",
     );
     source.exec("DROP TRIGGER receipts_commands");
     source.exec(exitReceiptObjects.receipts_commands);
     source.close();
     await f.store.open();
     const db = f.raw();
-    expect(db.pragma("user_version", { simple: true })).toBe(15);
+    expect(db.pragma("user_version", { simple: true })).toBe(16);
     expect(db.prepare("SELECT state,blocking_reason FROM tasks").all()).toEqual([
       { state: "queued", blocking_reason: null },
     ]);

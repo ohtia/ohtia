@@ -1,3 +1,4 @@
+import { TaskNoticeSpecimen } from "./task-notice-specimen.js";
 import { ComposerSpecimen } from "./composer-specimen.js";
 import { ConversationSpecimen } from "./conversation-specimen.js";
 import { CharacterSpecimen } from "./character-specimen.js";
@@ -398,7 +399,9 @@ const root = document.getElementById("root");
 if (!root) throw new Error("Catalog root is missing.");
 const screen = new URLSearchParams(location.search).get("screen");
 createRoot(root).render(
-  screen === "composer" ? (
+  screen === "task-notices" ? (
+    <TaskNoticeSpecimen />
+  ) : screen === "composer" ? (
     <ComposerSpecimen />
   ) : screen === "conversation" ? (
     <ConversationSpecimen />

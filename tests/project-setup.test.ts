@@ -29,7 +29,7 @@ import type {
 } from "../packages/main/src/provider-adapter.js";
 import { responsesBody } from "../packages/main/src/chatgpt-responses.js";
 import { parseDevelopmentSwitches } from "../packages/main/src/development-command.js";
-import { storageFixture, stores } from "./fixtures/storage.js";
+import { storageFixture, stores, preTaskNoticeSql } from "./fixtures/storage.js";
 import { setupConnections, successful as value, proposeSetup } from "./fixtures/project-setup.js";
 import { conformanceRequest, dispatchThrough } from "./fixtures/provider-conformance.js";
 import { fakeChatGPT, sse, streamResponse } from "./fixtures/chatgpt.js";
@@ -1196,3 +1196,112 @@ it("rolls back setup finalization when its registry cannot be read and retries w
   expect(saved.prepare("SELECT count(*) FROM project_setup_proposals").pluck().get()).toBe(1);
   saved.close();
 });
+
+it("upgrades a schema-15 setup proposal without losing decisions or notice retry receipts", async () => {
+  const f = await setup();
+  await f.complete([call("Preserved setup", "es-AR")]);
+  const proposal = f.proposals()[0]!;
+  await f.store.close();
+  const source = f.raw();
+  source.exec(preTaskNoticeSql);
+  expect(source.pragma("user_version", { simple: true })).toBe(15);
+  source.close();
+  const reopened = new DurableStore(f.options);
+  stores.push(reopened);
+  await reopened.open();
+  reopened.setTaskContext(f.context);
+  expect(f.proposals()).toContainEqual(proposal);
+  value(
+    await reopened.executeResearchCommand({
+      command: "project.rejectSetup",
+      operationId: "reject-upgraded-setup",
+      payload: { proposalId: proposal.id },
+    }),
+  );
+  value(
+    await reopened.executeResearchCommand({
+      command: "message.append",
+      operationId: "append-after-upgrade",
+      payload: { conversationId: f.conversationId, content: "Revise the setup" },
+    }),
+  );
+  const prepared = value(await reopened.prepareTask())!;
+  value(
+    await reopened.recordTaskEvent(
+      prepared.dispatch.request.attempt,
+      {
+        type: "result",
+        sequence: 1,
+        result: { status: "failed", reason: "provider_error", dispatched: true },
+      },
+      "",
+    ),
+  );
+  const retry = value(
+    await reopened.executeResearchCommand({
+      command: "task.tryAgain",
+      operationId: "retry-upgraded-setup",
+      payload: { taskId: prepared.taskId },
+    }),
+  );
+  const db = f.raw();
+  expect(db.pragma("user_version", { simple: true })).toBe(16);
+  expect(
+    db
+      .prepare("SELECT state FROM project_setup_proposals WHERE id=?")
+      .pluck()
+      .get(bytes(proposal.id)),
+  ).toBe("rejected");
+  expect(
+    db
+      .prepare("SELECT charge_warning_accepted_at FROM tasks WHERE id=?")
+      .pluck()
+      .get(bytes(retry.resultId)),
+  ).toBeNull();
+  expect(
+    db
+      .prepare("SELECT command FROM command_receipts WHERE operation_id=?")
+      .pluck()
+      .get("reject-upgraded-setup"),
+  ).toBe("project.rejectSetup");
+  expect(
+    db
+      .prepare("SELECT command FROM command_receipts WHERE operation_id=?")
+      .pluck()
+      .get("retry-upgraded-setup"),
+  ).toBe("task.tryAgain");
+  db.close();
+});
+
+it.each([
+  {
+    command: "task.tryAgain" as const,
+    result: { status: "failed", reason: "provider_error", dispatched: true } as ProviderResult,
+  },
+  {
+    command: "task.startAgain" as const,
+    result: { status: "uncertain", reason: "connection_lost" } as ProviderResult,
+  },
+])(
+  "keeps $command from reviving setup after the researcher confirms its proposal",
+  async ({ command, result }) => {
+    const f = await setup();
+    await f.complete([call()]);
+    const proposal = f.proposals()[0]!;
+    const failed = await f.complete([], "Interrupted setup reply", result);
+    value(
+      await f.store.executeResearchCommand({
+        command: "project.confirmSetup",
+        operationId: "confirm-before-recovery",
+        payload: { proposalId: proposal.id },
+      }),
+    );
+    expect(
+      await f.store.executeResearchCommand({
+        command,
+        operationId: "recover-confirmed-setup",
+        payload: { taskId: failed.task.taskId },
+      }),
+    ).toMatchObject({ error: { code: "task_not_retryable" } });
+  },
+);

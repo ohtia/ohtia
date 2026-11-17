@@ -51,6 +51,7 @@ export function SettingsSurfaces({
   readonly children?: (
     commands: CommandController | undefined,
     binding: WorkspaceSettingsBinding,
+    openConnections: () => void,
   ) => ReactNode;
   readonly composeWorkspace?: boolean;
   readonly research?: ConversationController;
@@ -100,7 +101,7 @@ export function SettingsSurfaces({
     [],
   );
   const [layoutFailure, setLayoutFailure] = useState(false);
-  const [requestedFocus, setRequestedFocus] = useState<SettingFeature>();
+  const [requestedFocus, setRequestedFocus] = useState<SettingFeature | "connections">();
   const language = useMemo(
     () =>
       new LanguageController(
@@ -266,16 +267,23 @@ export function SettingsSurfaces({
         {...(children
           ? {
               children: (commands: CommandController | undefined) =>
-                children(commands, {
-                  preferences,
-                  decoration,
-                  zoom: state.effectiveZoom,
-                  layoutFailure,
-                  onDismissLayoutFailure: () => {
-                    setLayoutFailure(false);
+                children(
+                  commands,
+                  {
+                    preferences,
+                    decoration,
+                    zoom: state.effectiveZoom,
+                    layoutFailure,
+                    onDismissLayoutFailure: () => {
+                      setLayoutFailure(false);
+                    },
+                    onWorkspaceChange,
                   },
-                  onWorkspaceChange,
-                }),
+                  () => {
+                    setRequestedFocus("connections");
+                    void commands?.invoke("settings.open");
+                  },
+                ),
             }
           : {})}
         {...(returnFocusRef ? { returnFocusRef } : {})}

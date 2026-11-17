@@ -808,6 +808,13 @@
       "backgrounds": ["surface.panel"],
       "minimum": 3,
       "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".conversation-notice.status",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.emphasis"],
+      "minimum": 7,
+      "decorativeBorders": "border.subtle"
     }
   ],
   "overlays": [

@@ -1,3 +1,4 @@
+import { objects as setupReceiptObjects } from "../packages/utility/src/migrations/0015_project_setup.mjs";
 import { objects as composerReceiptObjects } from "../packages/utility/src/migrations/0014_message_composer.mjs";
 import { objects as exitReceiptObjects } from "../packages/utility/src/migrations/0012_application_exit.mjs";
 import fs from "node:fs";
@@ -20,7 +21,12 @@ import { createStatusService } from "../packages/utility/dist/index.js";
 import { DurableProvider } from "../packages/utility/src/durable-provider.js";
 import { parseDevelopmentSwitches } from "../packages/main/src/development-command.js";
 import { Migrator } from "../packages/utility/node_modules/kysely/dist/migration/index.js";
-import { Database, storageFixture } from "./fixtures/storage.js";
+import {
+  legacyTaskInitialSql,
+  preTaskNoticeSql,
+  Database,
+  storageFixture,
+} from "./fixtures/storage.js";
 
 function value<T>(outcome: Outcome<T>): T {
   if (!outcome.ok) throw new Error(JSON.stringify(outcome));
@@ -497,7 +503,7 @@ describe("blocked work and connection usage pauses", () => {
   });
 });
 
-describe.each(["legacy", "limits", "composer", "setup"])(
+describe.each(["legacy", "limits", "composer", "setup", "notices"])(
   "migration recovery task handoff from %s",
   (sourceKind) => {
     async function source(edge = false) {
@@ -523,21 +529,34 @@ describe.each(["legacy", "limits", "composer", "setup"])(
       await f.store.close();
       const old = f.raw();
       old.exec(
-        sourceKind === "setup"
-          ? "DROP TABLE project_setup_proposals; DELETE FROM kysely_migration WHERE name='0015_project_setup'; DELETE FROM ohtia_migration_artifacts WHERE name='0015_project_setup'; PRAGMA user_version=14"
-          : sourceKind === "composer"
-            ? "DROP TABLE project_setup_proposals; DELETE FROM kysely_migration WHERE name='0015_project_setup'; DELETE FROM ohtia_migration_artifacts WHERE name='0015_project_setup'; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; PRAGMA user_version=13"
-            : sourceKind === "limits"
-              ? "DROP TABLE execution_limits_receipts; DROP TABLE project_setup_proposals; DELETE FROM kysely_migration WHERE name='0015_project_setup'; DELETE FROM ohtia_migration_artifacts WHERE name='0015_project_setup'; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; PRAGMA user_version=12"
-              : "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DROP TABLE service_runs; DROP TABLE execution_limits_receipts; DROP TABLE project_setup_proposals; DELETE FROM kysely_migration WHERE name='0015_project_setup'; DELETE FROM ohtia_migration_artifacts WHERE name='0015_project_setup'; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; DELETE FROM kysely_migration WHERE name='0012_application_exit'; DELETE FROM ohtia_migration_artifacts WHERE name='0012_application_exit'; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; PRAGMA user_version=8",
+        sourceKind === "notices"
+          ? preTaskNoticeSql
+          : sourceKind === "setup"
+            ? legacyTaskInitialSql +
+              "DELETE FROM kysely_migration WHERE name='0016_task_notices'; DELETE FROM ohtia_migration_artifacts WHERE name='0016_task_notices'; DROP TABLE project_setup_proposals; DELETE FROM kysely_migration WHERE name='0015_project_setup'; DELETE FROM ohtia_migration_artifacts WHERE name='0015_project_setup'; PRAGMA user_version=14"
+            : sourceKind === "composer"
+              ? "" +
+                legacyTaskInitialSql +
+                "DELETE FROM kysely_migration WHERE name='0016_task_notices'; DELETE FROM ohtia_migration_artifacts WHERE name='0016_task_notices'; DROP TABLE project_setup_proposals; DELETE FROM kysely_migration WHERE name='0015_project_setup'; DELETE FROM ohtia_migration_artifacts WHERE name='0015_project_setup'; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; PRAGMA user_version=13"
+              : sourceKind === "limits"
+                ? "DROP TABLE execution_limits_receipts; " +
+                  legacyTaskInitialSql +
+                  "DELETE FROM kysely_migration WHERE name='0016_task_notices'; DELETE FROM ohtia_migration_artifacts WHERE name='0016_task_notices'; DROP TABLE project_setup_proposals; DELETE FROM kysely_migration WHERE name='0015_project_setup'; DELETE FROM ohtia_migration_artifacts WHERE name='0015_project_setup'; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; PRAGMA user_version=12"
+                : "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DROP TABLE service_runs; DROP TABLE execution_limits_receipts; " +
+                  legacyTaskInitialSql +
+                  "DELETE FROM kysely_migration WHERE name='0016_task_notices'; DELETE FROM ohtia_migration_artifacts WHERE name='0016_task_notices'; DROP TABLE project_setup_proposals; DELETE FROM kysely_migration WHERE name='0015_project_setup'; DELETE FROM ohtia_migration_artifacts WHERE name='0015_project_setup'; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; DELETE FROM kysely_migration WHERE name='0012_application_exit'; DELETE FROM ohtia_migration_artifacts WHERE name='0012_application_exit'; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; PRAGMA user_version=8",
       );
-      if (sourceKind !== "legacy" && sourceKind !== "setup") {
+      if (sourceKind !== "legacy" && sourceKind !== "setup" && sourceKind !== "notices") {
         old.exec("DROP TRIGGER receipts_commands");
         old.exec(exitReceiptObjects.receipts_commands);
       }
-      if (sourceKind === "setup") {
+      if (sourceKind === "setup" || sourceKind === "notices") {
         old.exec("DROP TRIGGER receipts_commands");
-        old.exec(composerReceiptObjects.receipts_commands);
+        old.exec(
+          sourceKind === "notices"
+            ? setupReceiptObjects.receipts_commands
+            : composerReceiptObjects.receipts_commands,
+        );
       }
       old.close();
       return { ...f, dispatched, unsent };
@@ -649,14 +668,16 @@ describe.each(["legacy", "limits", "composer", "setup"])(
           version: 1,
           operation: "edge-recovery",
           source:
-            sourceKind === "setup"
-              ? 14
-              : sourceKind === "composer"
-                ? 13
-                : sourceKind === "limits"
-                  ? 12
-                  : 8,
-          target: 15,
+            sourceKind === "notices"
+              ? 15
+              : sourceKind === "setup"
+                ? 14
+                : sourceKind === "composer"
+                  ? 13
+                  : sourceKind === "limits"
+                    ? 12
+                    : 8,
+          target: 16,
         }),
       );
       await f.store.retry();
@@ -699,14 +720,16 @@ describe.each(["legacy", "limits", "composer", "setup"])(
           version: 1,
           operation: "exhausted-recovery",
           source:
-            sourceKind === "setup"
-              ? 14
-              : sourceKind === "composer"
-                ? 13
-                : sourceKind === "limits"
-                  ? 12
-                  : 8,
-          target: 15,
+            sourceKind === "notices"
+              ? 15
+              : sourceKind === "setup"
+                ? 14
+                : sourceKind === "composer"
+                  ? 13
+                  : sourceKind === "limits"
+                    ? 12
+                    : 8,
+          target: 16,
         }),
       );
       await exhausted.store.retry();
@@ -725,14 +748,16 @@ describe.each(["legacy", "limits", "composer", "setup"])(
           version: 1,
           operation: "synthetic-recovery",
           source:
-            sourceKind === "setup"
-              ? 14
-              : sourceKind === "composer"
-                ? 13
-                : sourceKind === "limits"
-                  ? 12
-                  : 8,
-          target: 15,
+            sourceKind === "notices"
+              ? 15
+              : sourceKind === "setup"
+                ? 14
+                : sourceKind === "composer"
+                  ? 13
+                  : sourceKind === "limits"
+                    ? 12
+                    : 8,
+          target: 16,
         }),
       );
       await f.store.retry();
@@ -969,13 +994,15 @@ describe("reply control composed with connection and usage pauses", () => {
       await f.store.close();
       const db = f.raw();
       db.exec(
-        "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DROP TABLE service_runs; DROP TABLE execution_limits_receipts; DROP TABLE project_setup_proposals; DELETE FROM kysely_migration WHERE name='0015_project_setup'; DELETE FROM ohtia_migration_artifacts WHERE name='0015_project_setup'; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; DELETE FROM kysely_migration WHERE name='0012_application_exit'; DELETE FROM ohtia_migration_artifacts WHERE name='0012_application_exit'; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; PRAGMA user_version=9",
+        "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DROP TABLE service_runs; DROP TABLE execution_limits_receipts; " +
+          legacyTaskInitialSql +
+          "DELETE FROM kysely_migration WHERE name='0016_task_notices'; DELETE FROM ohtia_migration_artifacts WHERE name='0016_task_notices'; DROP TABLE project_setup_proposals; DELETE FROM kysely_migration WHERE name='0015_project_setup'; DELETE FROM ohtia_migration_artifacts WHERE name='0015_project_setup'; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; DELETE FROM kysely_migration WHERE name='0012_application_exit'; DELETE FROM ohtia_migration_artifacts WHERE name='0012_application_exit'; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; PRAGMA user_version=9",
       );
       db.close();
       if (recovery) {
         fs.writeFileSync(
           path.join(f.root, "migration-pending.json"),
-          JSON.stringify({ version: 1, operation: "composed-recovery", source: 9, target: 15 }),
+          JSON.stringify({ version: 1, operation: "composed-recovery", source: 9, target: 16 }),
         );
         await f.store.retry();
       } else await f.store.open();
@@ -991,13 +1018,14 @@ describe("reply control composed with connection and usage pauses", () => {
       expect(value(await f.resume("resume-after-reply-migration"))).toEqual(resumed);
       expect(await f.prepare()).not.toBeNull();
       const upgraded = f.raw();
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(15);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(16);
       expect(
         upgraded
-          .prepare("SELECT name FROM kysely_migration ORDER BY name DESC LIMIT 5")
+          .prepare("SELECT name FROM kysely_migration ORDER BY name DESC LIMIT 6")
           .pluck()
           .all(),
       ).toEqual([
+        "0016_task_notices",
         "0015_project_setup",
         "0014_message_composer",
         "0013_execution_limits_receipts",
@@ -1027,7 +1055,7 @@ it.each(["continue-all", "resume-requests"] as const)(
       await f.store.close();
       fs.writeFileSync(
         path.join(f.root, "migration-pending.json"),
-        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 15 }),
+        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 16 }),
       );
       await f.store.retry();
     }
@@ -1104,3 +1132,139 @@ function identifierForReceipt(id: Buffer): string {
   const h = id.toString("hex");
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
+
+describe("task-notice receipts and global counts", () => {
+  it("retries a failed reply once per receipt, preserves partial input and reserves a later reply", async () => {
+    const h = await setup();
+    const conversation = await h.start();
+    const dispatched = (await h.prepare())!;
+    value(
+      await h.store.recordTaskEvent(
+        dispatched.request.attempt,
+        {
+          type: "result",
+          sequence: 1,
+          result: { status: "failed", reason: "provider_error", dispatched: true },
+        },
+        "Saved partial reply",
+      ),
+    );
+    const old = value(await h.store.readMessages(conversation)).find(
+      (m) => m.authorKind === "agent",
+    )!;
+    const task = old.taskId!;
+    const command = {
+      command: "task.tryAgain" as const,
+      operationId: "retry-partial",
+      payload: { taskId: task },
+    };
+    const replacement = value(await h.store.executeResearchCommand(command));
+    expect(value(await h.store.executeResearchCommand(command))).toEqual(replacement);
+    const db = h.raw();
+    const rows = db
+      .prepare(
+        "SELECT id,state,input_through_position,reply_position,replaces_task_id,charge_warning_accepted_at FROM tasks ORDER BY rowid",
+      )
+      .all() as Record<string, unknown>[];
+    db.close();
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.state).toBe("failed");
+    expect(rows[1]!.input_through_position).toBe(rows[0]!.input_through_position);
+    expect(rows[1]!.charge_warning_accepted_at).toBeNull();
+    const retry = (await h.prepare())!;
+    expect(retry.request.input).not.toContain("Saved partial reply");
+    const raw = h.raw();
+    const position = raw
+      .prepare("SELECT reply_position FROM tasks WHERE id=?")
+      .get(Buffer.from(replacement.resultId.replaceAll("-", ""), "hex")) as {
+      reply_position: number;
+    };
+    raw.close();
+    expect(position.reply_position).toBeGreaterThan(old.position);
+    expect(
+      await h.store.executeResearchCommand({ ...command, operationId: "stale-retry" }),
+    ).toMatchObject({ ok: false, error: { code: "newer_task_exists" } });
+  });
+  it.each(["not_eligible", "completed"])("refuses Try again after %s", async (reason) => {
+    const h = await setup();
+    await h.start();
+    const dispatched = (await h.prepare())!;
+    if (reason === "completed")
+      value(
+        await h.store.recordTaskEvent(
+          dispatched.request.attempt,
+          { type: "result", sequence: 1, result: { status: "completed" } },
+          "Synthetic complete text",
+        ),
+      );
+    else
+      value(
+        await h.result(dispatched, { status: "failed", reason: "not_eligible", dispatched: true }),
+      );
+    const db = h.raw();
+    const row = db
+      .prepare("SELECT lower(hex(id)) as id FROM tasks ORDER BY rowid LIMIT 1")
+      .get() as { id: string };
+    db.close();
+    const taskId = row.id.replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, "$1-$2-$3-$4-$5");
+    expect(
+      await h.store.executeResearchCommand({
+        command: "task.tryAgain",
+        operationId: "not-retryable",
+        payload: { taskId },
+      }),
+    ).toMatchObject({ ok: false, error: { code: "task_not_retryable" } });
+  });
+  it("counts other projects and emits an invalidation for coalescing even when the count is unchanged", async () => {
+    const h = await setup();
+    const revisions: number[] = [];
+    const stop = h.store.observePauseCounts((revision) => revisions.push(revision));
+    h.store.observePauseCounts(() => {
+      throw new Error("Synthetic observer failure");
+    });
+    expect(value(await h.store.readPauses())).toEqual({ revision: 1, restart: 0, usage: [] });
+    const first = await h.start();
+    const secondProject = value(await h.project()).resultId;
+    const second = await h.start(secondProject);
+    const dispatched = (await h.prepare())!;
+    value(await h.result(dispatched, exhausted));
+    const before = value(await h.store.readPauses());
+    expect(before.usage).toEqual([{ connection: "chatgpt", count: 1 }]);
+    expect(before.revision).toBeGreaterThan(1);
+    value(await h.append(second));
+    const coalesced = value(await h.store.readPauses());
+    expect(coalesced.usage).toEqual(before.usage);
+    expect(coalesced.revision).toBeGreaterThan(before.revision);
+    value(
+      await h.store.executeResearchCommand({
+        command: "conversation.stop",
+        operationId: "stop-other-project",
+        payload: { conversationId: second },
+      }),
+    );
+    expect(value(await h.store.readPauses()).usage).toEqual([{ connection: "chatgpt", count: 0 }]);
+    value(await h.resume("window-one"));
+    const resumed = value(await h.store.readPauses());
+    value(await h.resume("window-two"));
+    expect(value(await h.store.readPauses())).toEqual(resumed);
+    expect(resumed.usage).toEqual([]);
+    expect(revisions.length).toBeGreaterThanOrEqual(4);
+    expect(revisions.at(-1)).toBe(resumed.revision);
+    expect(first).not.toBe(second);
+    stop();
+  });
+  it("starts pause revisions at one after restart and continues all projects without change in the second window", async () => {
+    const h = await setup();
+    await h.start();
+    const other = value(await h.project()).resultId;
+    await h.start(other);
+    await h.store.close();
+    await h.store.open();
+    expect(value(await h.store.readPauses())).toEqual({ revision: 1, restart: 2, usage: [] });
+    value(await h.continueAll("one-window"));
+    expect(value(await h.store.readPauses()).restart).toBe(0);
+    const revision = value(await h.store.readPauses()).revision;
+    value(await h.continueAll("other-window"));
+    expect(value(await h.store.readPauses()).revision).toBe(revision);
+  });
+});

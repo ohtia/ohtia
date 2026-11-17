@@ -19,7 +19,7 @@ okf_version: "0.2"
 - [Application composition and interface candidates](application-composition.md) — Compose the installed workspace and bind native packages and the separate development catalog to one immutable verification candidate.
 - [Semantic renderer primitives](semantic-primitives.md) — Controlled React components, named-command surfaces, keyboard patterns and the isolated synthetic development catalog.
 - [Character presentation API](character-presentation.md) — Compose controlled character modes, cancellable presentation batches and static contributor attribution without preference or research authority.
-- [Research presentation API](research-presentation.md) — Compose controlled research components and restricted conversation Markdown without storage or provider authority.
+- [Research presentation API](research-presentation.md) — Compose controlled research components, accessible task notices and restricted conversation Markdown without storage or provider authority.
 - [Renderer design foundations](design-foundations.md) — Generate canonical design tokens and verify bundled typography, icons and static branding before building the renderer.
 - [Ohtia design system](design-system.md) — Visual identity, tokens, symbol and character, typography, composition, accessibility, localization, components and patterns of Ohtia's interface.
 - [Workspace controller API](workspace-controller.md) — Compose deterministic per-window workspace geometry with the named layout preference and receipt boundary.
@@ -40,9 +40,9 @@ okf_version: "0.2"
 - [Scaleway qualification access preflight](scaleway-access.md) — Check protected GitHub Actions read access and ARM image compatibility without creating cloud resources or claiming native qualification.
 - [Ephemeral ARM installation qualification](scaleway-qualification.md) — Define protected authority, bounded diagnostics and recovery for unsigned native ARM qualification on ephemeral Scaleway leases.
 - [Isolated desktop runtime](desktop-runtime.md) — Admit native runtime contexts, manage the window lifecycle and verify supervised status and fixed-home bootstrap boundaries.
-- [Durable foundation storage](storage.md) — Persist preferences, research records and setup proposals, resume durable tasks and recover verified migrations.
+- [Durable foundation storage](storage.md) — Persist preferences, research records and setup proposals, recover task and inference-limit receipts and invalidate global pause counts.
 - [Desktop foundation contract](desktop-foundation-contract.md) — Native target and distribution qualification inputs, pinned candidate metadata, numeric resource policy and evidence ownership for the desktop foundation.
-- [Bounded foundation application port](application-port.md) — Versioned application configuration, provider connections and bounded research operations with scoped events and text parts across the desktop boundary.
+- [Bounded foundation application port](application-port.md) — Versioned application configuration, provider connections and bounded research operations with durable task controls, global pause counts, scoped events and text parts across the desktop boundary.
 - [Foundation security applicability](foundation-security.md) — Versioned security applicability, enforcing boundaries and reproducible evidence obligations for the desktop foundation.
 - [Content-free broker diagnostics](diagnostics.md) — Closed diagnostic events, broker-owned bounded files, native account protection and reproducible privacy and failure evidence.
 

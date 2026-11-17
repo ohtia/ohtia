@@ -31,6 +31,7 @@ export type ConnectionReport =
       readonly kind: "connection_state";
       readonly generation: string;
       readonly snapshot: ServiceConnectionSnapshot;
+      readonly refresh_id?: string;
     }
   | { readonly kind: "connection_models"; readonly generation: string; readonly page: ModelPage };
 export function decodeConnectionReport(
@@ -47,7 +48,11 @@ export function decodeConnectionReport(
     if (!isIdentifier(record.generation) || record.generation !== generation) return;
     if (
       record.kind === "connection_state" &&
-      Object.keys(record).sort().join(",") === "generation,kind,snapshot" &&
+      Object.keys(record).sort().join(",") ===
+        (Object.hasOwn(record, "refresh_id")
+          ? "generation,kind,refresh_id,snapshot"
+          : "generation,kind,snapshot") &&
+      (!Object.hasOwn(record, "refresh_id") || isIdentifier(record.refresh_id)) &&
       serviceSnapshot(record.snapshot)
     )
       return value as ConnectionReport;
@@ -64,6 +69,10 @@ export function decodeConnectionReport(
 }
 /** Only complete lists are visible to the future task engine; availability is always state-based. */
 export class ServiceConnections {
+  private readonly refreshing = new Map<string, string>();
+  beginModelRefresh(connection: string, refreshId: string): void {
+    this.refreshing.set(connection, refreshId);
+  }
   private readonly records = new Map<
     string,
     {
@@ -74,6 +83,12 @@ export class ServiceConnections {
   >();
   receive(report: ConnectionReport): boolean {
     if (report.kind === "connection_state") {
+      if (
+        !report.snapshot.probing &&
+        report.refresh_id !== undefined &&
+        this.refreshing.get(report.snapshot.connection) === report.refresh_id
+      )
+        this.refreshing.delete(report.snapshot.connection);
       const previous = this.records.get(report.snapshot.connection);
       const sameRevision =
         previous !== undefined &&
@@ -117,9 +132,10 @@ export class ServiceConnections {
   awaitingModels(connection: string): boolean {
     const record = this.records.get(connection);
     return (
-      !!record &&
-      record.models === null &&
-      (record.snapshot.probing || record.snapshot.model_list_revision !== null)
+      this.refreshing.has(connection) ||
+      (!!record &&
+        record.models === null &&
+        (record.snapshot.probing || record.snapshot.model_list_revision !== null))
     );
   }
   available(connection: string): boolean {
