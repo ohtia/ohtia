@@ -2,17 +2,13 @@
 type: Story
 title: "STORY-003-017 — Virgilio: clarify and next step"
 description: "Let Virgilio guide the researcher in every confirmed project in the document language, within bounded input and output."
-generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 tags: [story, "comp:llm", "comp:docs", "comp:app"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/219
 epic: "EPIC-003"
 epic_concept: ./epic.md
 components: ["comp:llm", "comp:docs", "comp:app"]
-applicable_blocks: ["SPEC-003-022"]
+applicable_blocks: ["SPEC-003-022", "SPEC-003-044"]
 ---
 
 # STORY-003-017 — Virgilio: clarify and next step
@@ -25,6 +21,8 @@ Add the `direct_guidance` operation with its instructions, newest-first bounded 
 
 - [SPEC-003-022: Virgilio: clarify and next step](./epic.md#spec-003-022-virgilio-clarify-and-next-step)
 
+- [SPEC-003-044: Thesis route in agent instructions](./epic.md#spec-003-044-thesis-route-in-agent-instructions)
+
 ## Tasks
 
 - [ ] Start after STORY-003-015 is merged and its output is on the base branch: Confirmed projects and the composer.
@@ -36,6 +34,8 @@ Add the `direct_guidance` operation with its instructions, newest-first bounded 
 - [ ] Keep a message in the composer with STORY-003-012's attention notice "Too many replies are waiting. Your message wasn't sent and is still in the box; send it again when some finish." when `message.append` is rejected with `pending_limit_reached`.
 - [ ] Apply the documentation amendment of SPEC-003-022 to `docs/agents/agent-virgilio.md`: in "Operations", "Each operation has a versioned policy, instruction and output contract under ADR-0029. Evaluate and enable operations separately; the headings identify research operations, not provider API methods." becomes "Each operation has a versioned policy, instruction and output contract under ADR-0029, and is enabled once its adapter conformance and operational checks pass. The headings identify research capabilities, not provider API methods. Clarifying a research question and proposing a next research action run in one operation, `direct_guidance`, the standard way Virgilio answers in a confirmed project; Virgilio chooses from the researcher's message which of them to do.", keeping the ADR-0029 link; and "Clarify a research question" and "Propose a next research action" each start with "**Operation:** `direct_guidance`." before their "Input" line.
 
+- [ ] Introduce the shared thesis-route instruction section of SPEC-003-044 in the existing data-service instruction builder and compose it exactly once with direct_guidance version 1, retaining the existing project placeholders, policy and no-tools boundary.
+
 ## Acceptance criteria
 
 - [ ] A project in setup uses `project_setup` and a confirmed one uses `direct_guidance`.
@@ -44,6 +44,9 @@ Add the `direct_guidance` operation with its instructions, newest-first bounded 
 - [ ] The composer works after confirmation, and the pending limit keeps the message in the composer with its notice.
 - [ ] With the researcher's account, Virgilio clarifies a question, proposes a next action and answers in Spanish to an English message in a Spanish thesis.
 - [ ] `docs/agents/agent-virgilio.md` maps both the clarification and the next-action headings to `direct_guidance` and no longer asks to evaluate and enable them separately.
+
+- [ ] Every direct-guidance request carries the shared thesis-route section exactly once after its role instructions, including the progressive-context, reentry, prerequisite, proposal and human-review boundaries.
+- [ ] Synthetic contexts cover a broad new interest, advanced existing work, an unchosen interview technique and a missing prerequisite; deterministic tests verify composed instructions and actual supplied context, without grading model replies.
 
 ## Quality checklist
 

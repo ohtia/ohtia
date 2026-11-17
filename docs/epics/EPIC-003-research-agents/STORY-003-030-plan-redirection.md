@@ -2,17 +2,13 @@
 type: Story
 title: "STORY-003-030 — Plan redirection"
 description: "Let the researcher change a running plan through a change Virgilio proposes, touching only unfinished work."
-generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 tags: [story, "comp:llm", "comp:storage", "comp:app", "comp:docs"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/232
 epic: "EPIC-003"
 epic_concept: ./epic.md
 components: ["comp:llm", "comp:storage", "comp:app", "comp:docs"]
-applicable_blocks: ["SPEC-003-035"]
+applicable_blocks: ["SPEC-003-035", "SPEC-003-045"]
 ---
 
 # STORY-003-030 — Plan redirection
@@ -24,6 +20,8 @@ Add `propose_plan_change` to `direct_guidance` version 5, the change card, super
 ## Applicable specification
 
 - [SPEC-003-035: Plan redirection](./epic.md#spec-003-035-plan-redirection)
+
+- [SPEC-003-045: Research context across coordination](./epic.md#spec-003-045-research-context-across-coordination)
 
 ## Tasks
 
@@ -43,6 +41,8 @@ Add `propose_plan_change` to `direct_guidance` version 5, the change card, super
 - [ ] Apply the documentation amendment of SPEC-003-035 to `docs/agents/agent-collaboration.md`, "Handoff ownership and redirection": "It may alter only unactivated intent within the accepted envelope." becomes "It may alter work that has not completed within the accepted envelope; running work it touches is stopped and superseded first. Completion, readiness, dependencies and progress then count only the current contributions, leaving out those it removed or superseded, whose records and disclosures remain."
 - [ ] Build the change card with STORY-003-015's `ActionProposalCard` and the plan rows and their measurements of STORY-003-027 and STORY-003-028, and compare it with `epic-003-plan-change.png`; the EPIC text prevails over a capture.
 
+- [ ] Apply SPEC-003-045 when a plan’s purpose or premises change: preserve completed results’ original questions and disclose limits on their relevance without treating their completion as acceptance against the new question.
+
 ## Acceptance criteria
 
 - [ ] Changes before and after a contribution starts behave as in scenario 19.
@@ -61,6 +61,9 @@ Add `propose_plan_change` to `direct_guidance` version 5, the change card, super
 - [ ] `contribution_synthesis` version 2 receives removed and replaced contributions in their one-line layouts, under its added instructions, and "Based on:" names them.
 - [ ] A failed "Apply change" or "Decline change" keeps the card open with its notice and repeats with the same operation identifier, and the card and the invalid notice have rank 2 and move from revision 1 to 2 when the proposal is applied, declined or replaced.
 - [ ] With the researcher's account, removing and changing contributions of a running plan ends in a correct synthesis.
+
+- [ ] A changed plan purpose preserves completed results’ original questions and provenance, and the synthesis input retains the old result and changed purpose without implying that the old result resolves the new question.
+- [ ] Direct guidance and synthesis retain the shared thesis-route section after redirection instructions are added.
 
 ## Quality checklist
 

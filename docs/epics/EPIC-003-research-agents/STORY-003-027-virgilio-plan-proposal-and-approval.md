@@ -2,17 +2,13 @@
 type: Story
 title: "STORY-003-027 — Virgilio: plan proposal and approval"
 description: "Let Virgilio propose a complete plan that the researcher reads on a card and runs or declines."
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 tags: [story, "comp:llm", "comp:app", "comp:docs"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/229
 epic: "EPIC-003"
 epic_concept: ./epic.md
 components: ["comp:llm", "comp:app", "comp:docs"]
-applicable_blocks: ["SPEC-003-032"]
+applicable_blocks: ["SPEC-003-032", "SPEC-003-045"]
 ---
 
 # STORY-003-027 — Virgilio: plan proposal and approval
@@ -24,6 +20,8 @@ Add `propose_plan` to `direct_guidance` version 3, its invalid-plan notices, the
 ## Applicable specification
 
 - [SPEC-003-032: Virgilio: plan proposal and approval](./epic.md#spec-003-032-virgilio-plan-proposal-and-approval)
+
+- [SPEC-003-045: Research context across coordination](./epic.md#spec-003-045-research-context-across-coordination)
 
 ## Tasks
 
@@ -40,6 +38,8 @@ Add `propose_plan` to `direct_guidance` version 3, its invalid-plan notices, the
 - [ ] Show a consultation task's "Try again" and "Start reply again" only when its notice item says another attempt fits, and show below the button, as attention notices with `triangle-alert` announced as a status, "This consultation has no work left for another attempt. Ask Virgilio for a new consultation if you need one." for `limit_reached` and "Nothing was sent: Josefa now uses a different service than the one you approved. Choose {service} for Josefa again in Settings › Agents, then try again." for `destination_changed`.
 - [ ] Apply the documentation amendments of SPEC-003-032: in `docs/agents/agent-virgilio.md`, add "**Operation:** `direct_guidance`, through its plan proposal; the researcher approves the concrete plan before any contribution runs." at the start of "Plan bounded collaboration" and "**Operation:** `contribution_synthesis`, a separate task that Ohtia starts when an approved plan's work finishes." at the start of "Synthesize attributed contributions", each before its "Input" line, and "Planning, direct guidance and synthesis each require their own evaluated operation policy." becomes "Direct guidance, which includes planning, and synthesis each have their own versioned operation policy."; in `docs/product-roadmap.md`, "separately bounded planning/contribution/synthesis turns" becomes "separately bounded contribution and synthesis turns, with planning inside direct guidance"; and in `docs/agents/agent-collaboration.md`, "Releasing the coordinator turn", "A Virgilio planning turn runs as an ordinary bounded inference task." becomes "Virgilio plans inside an ordinary bounded direct-guidance turn, and the researcher approves the concrete plan it proposes before any contribution task is accepted." and the diagram's nodes become, in order, "Virgilio direct-guidance turn proposes a plan", "Commit proposal and finish execution", "Researcher approves the concrete plan", "Durable dependency wait without inference capacity", "Eligible specialist task", "Commit artifact and completion receipt", "Budgeted Virgilio synthesis task when useful" and "Attributed results and human review", each linked to the next; ADR-0053 already places planning inside direct guidance.
 - [ ] Build the plan card with STORY-003-015's `ActionProposalCard` and its measurements, and its rows to the measurements in tokens of the "Measurements" list of this story's block, SPEC-003-032: `space.2` block padding with `border.subtle` separators, meta lines in `type.ui.caption` and plan keys in IBM Plex Mono at 12 px; compare them with the open, declined and replaced cards, refusals and invalid plans of `epic-003-plan-proposal.png`, whose accepted card, reading "Running · 0 of 3 done", shows STORY-003-028's plan state; the EPIC text prevails over a capture.
+
+- [ ] Apply SPEC-003-045 to plan shared context and requests using their existing fields: preserve the research purpose, expected output, attributed choices, available inputs and unresolved dependencies without granting academic approval.
 
 ## Acceptance criteria
 
@@ -60,6 +60,9 @@ Add `propose_plan` to `direct_guidance` version 3, its invalid-plan notices, the
 - [ ] A consultation's "Try again" hides when no attempt fits, and its `limit_reached` and `destination_changed` refusals show their notices.
 - [ ] `docs/agents/agent-virgilio.md`, `docs/product-roadmap.md` and `docs/agents/agent-collaboration.md` place planning inside direct guidance, with the new diagram.
 - [ ] With the researcher's account, a three-objective literature plan proposed by Virgilio runs to its synthesis.
+
+- [ ] The approved shared context and requests preserve the relevant research question or uncertainty, expected outputs, attributed choices, supplied material and missing dependencies within the existing schemas and transfer limits.
+- [ ] A contribution may return a justified limited preparation or insufficient-context account; running the plan authorizes the displayed agent work and transfers, not an academic decision.
 
 ## Quality checklist
 

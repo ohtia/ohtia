@@ -2,17 +2,13 @@
 type: Story
 title: "STORY-003-029 — Handoff"
 description: "Let Virgilio hand a conversation to Josefa with a note and let the researcher bring Virgilio back with selected messages."
-generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 tags: [story, "comp:llm", "comp:app", "comp:storage", "comp:docs"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/231
 epic: "EPIC-003"
 epic_concept: ./epic.md
 components: ["comp:llm", "comp:app", "comp:storage", "comp:docs"]
-applicable_blocks: ["SPEC-003-034"]
+applicable_blocks: ["SPEC-003-034", "SPEC-003-045"]
 ---
 
 # STORY-003-029 — Handoff
@@ -24,6 +20,8 @@ Add `propose_handoff` to `direct_guidance` version 4, the handoff card, ownershi
 ## Applicable specification
 
 - [SPEC-003-034: Handoff](./epic.md#spec-003-034-handoff)
+
+- [SPEC-003-045: Research context across coordination](./epic.md#spec-003-045-research-context-across-coordination)
 
 ## Tasks
 
@@ -44,6 +42,8 @@ Add `propose_handoff` to `direct_guidance` version 4, the handoff card, ownershi
 - [ ] Apply the documentation amendments of SPEC-003-034: in `docs/agents/agent-collaboration.md`, "Handoff ownership and redirection", "A proposed handoff identifies its conversation branch, current and proposed response owner, target definition/operation, reason, selected context manifest and expected intervention/branch versions." becomes "A proposed handoff identifies its conversation, current and proposed response owner, target definition/operation, reason, the note or selected messages it passes and the expected conversation owner revision.", and the two handoff sentence replacements of SPEC-003-034, the first of which allows a handoff "only when the conversation has no running, queued, blocked or cancelling reply, unfinished plan or pending consultation"; and in `docs/agents/agent-virgilio.md`, "Plan bounded collaboration", as left by STORY-003-022, "A proposed contribution graph of two or more contributions, or a bounded handoff request, with role, question, immutable input requirements, artifact dependencies, required/optional coverage and allocations." becomes "A proposed contribution graph of two or more contributions, with role, question, immutable input requirements, artifact dependencies, required/optional coverage and allocations, or a proposed handoff, with the receiving agent, a note of what it needs to know and the reason."
 - [ ] Build the handoff card with STORY-003-015's `ActionProposalCard` and its measurements, and the divider and return dialog to the measurements in tokens of the "Measurements" list of this story's block, SPEC-003-034, and compare them with `epic-003-handoff.png`, `epic-003-handoff-return.png`, `epic-003-handoff-return-never.png` and `epic-003-handoff-states.png`; the EPIC text prevails over a capture.
 
+- [ ] Apply SPEC-003-045 to handoff notes and selected returns, preserving permitted attribution and explicit unknowns while retaining the shared thesis-route section in both agents’ instruction versions.
+
 ## Acceptance criteria
 
 - [ ] Accept, reject and pending handoffs behave as in scenario 18, including replays and races.
@@ -60,6 +60,9 @@ Add `propose_handoff` to `direct_guidance` version 4, the handoff card, ownershi
 - [ ] A selection of 300 messages crosses the port in parts, and an invalid selection is rejected with `selection_invalid` without storing anything, after which the dialog rereads its list, preselects the specialist's latest message and shows its notice.
 - [ ] Each invalid proposal reason shows its notice, and the card names the connection Josefa's requests would use.
 - [ ] With the researcher's account, a handoff to Josefa, two turns with her and a return to Virgilio with her latest message work.
+
+- [ ] A handoff and return preserve only permitted context with its attribution and unknowns, including a return with no selected messages; neither model invents omitted context through an application-supplied recap.
+- [ ] Both agents retain the shared thesis-route section when handoff instructions are added.
 
 ## Quality checklist
 

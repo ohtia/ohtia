@@ -2,17 +2,13 @@
 type: Story
 title: "STORY-003-023 — Contribution graphs"
 description: "Store plans of several contributions with dependencies, validate them and advance them without holding slots while waiting."
-generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 tags: [story, "comp:storage", "comp:llm", "comp:app", "comp:docs"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/225
 epic: "EPIC-003"
 epic_concept: ./epic.md
 components: ["comp:storage", "comp:llm", "comp:app", "comp:docs"]
-applicable_blocks: ["SPEC-003-028"]
+applicable_blocks: ["SPEC-003-028", "SPEC-003-046"]
 ---
 
 # STORY-003-023 — Contribution graphs
@@ -24,6 +20,8 @@ Extend interventions and contributions into versioned contribution graphs with d
 ## Applicable specification
 
 - [SPEC-003-028: Contribution graphs](./epic.md#spec-003-028-contribution-graphs)
+
+- [SPEC-003-046: Agent outcomes, milestones and memory](./epic.md#spec-003-046-agent-outcomes-milestones-and-memory)
 
 ## Tasks
 
@@ -42,6 +40,8 @@ Extend interventions and contributions into versioned contribution graphs with d
 - [ ] Build varied test agents with different limits, dependencies and one that fails.
 - [ ] Apply the documentation amendment to `docs/agents/agent-collaboration.md`, "Completion, cancellation and recovery": "An intervention reports complete requested coverage only when every required contribution has an accepted terminal result, all required coordination has finished and no delegated execution remains unresolved." becomes "An intervention reports complete requested coverage only when every required contribution has an accepted terminal result, all required coordination has finished and no delegated execution is still waiting, queued or running; an optional contribution whose execution ended uncertain is reported as uncertain and does not reduce the required coverage."; and, in "Intervention and contribution records", "Reject duplicate equivalent contribution requests using a policy-versioned key containing purpose, role, input versions and output contract; an explicitly authorized independent review has a distinct declared purpose." becomes "Reject duplicate equivalent contribution requests using a policy-versioned key, scoped to the intervention, over agent, operation, request and prerequisites; an explicitly authorized independent review has a distinct request."
 
+- [ ] Apply SPEC-003-046’s distinction between graph execution outcomes and academic milestones without changing completion, dependency or failure-propagation rules.
+
 ## Acceptance criteria
 
 - [ ] Every rejection of `plan.addContributions`, including a request over 8 KiB, and every rejected purpose or shared context saves nothing.
@@ -59,6 +59,8 @@ Extend interventions and contributions into versioned contribution graphs with d
 - [ ] A cancelled prerequisite blocks its dependents, and "Try again" is rejected with `task_not_retryable` once the plan has ended.
 - [ ] `plan.addContributions` is not on the application port.
 - [ ] Scenario 4 of `agent-collaboration-evaluation.md` passes for the graph: a cycle and an unsupported specialist are rejected before any work is accepted.
+
+- [ ] A graph whose completed fake results leave an academic question unresolved still completes under the execution rules and preserves that limitation for synthesis, without an academic approval or stage-transition effect.
 
 ## Quality checklist
 

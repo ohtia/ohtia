@@ -2,17 +2,13 @@
 type: Story
 title: "STORY-003-032 — Project memory for agents"
 description: "Give every project an automatic, attributed and reversible memory that Virgilio keeps and every agent receives."
-generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 tags: [story, "comp:llm", "comp:storage", "comp:app", "comp:docs"]
 status: stable
 resource: https://github.com/ohtia/ohtia/issues/234
 epic: "EPIC-003"
 epic_concept: ./epic.md
 components: ["comp:llm", "comp:storage", "comp:app", "comp:docs"]
-applicable_blocks: ["SPEC-003-037"]
+applicable_blocks: ["SPEC-003-037", "SPEC-003-046"]
 ---
 
 # STORY-003-032 — Project memory for agents
@@ -24,6 +20,8 @@ Add memory entries and versions, Virgilio's automatic `update_memory` in `direct
 ## Applicable specification
 
 - [SPEC-003-037: Project memory for agents](./epic.md#spec-003-037-project-memory-for-agents)
+
+- [SPEC-003-046: Agent outcomes, milestones and memory](./epic.md#spec-003-046-agent-outcomes-milestones-and-memory)
 
 ## Tasks
 
@@ -43,6 +41,8 @@ Add memory entries and versions, Virgilio's automatic `update_memory` in `direct
 - [ ] Apply the documentation amendment of SPEC-003-037 to `docs/design-system.md`, "Iconography", fixed mappings: add the row "Memory changes | `notebook-pen`".
 - [ ] Build the memory-change line and its notices from the canonical tokens, with the notices of STORY-003-013, and compare them with the memory-change lines and undo results of `epic-003-memory-states.png` and the reply's "Memory updated" line of `epic-003-memory-light.png` and `epic-003-memory-dark.png`, whose "Open project memory" link arrives with STORY-003-033; the EPIC text prevails over a capture.
 
+- [ ] Apply SPEC-003-046 to the memory instruction additions of Virgilio, Josefa and synthesis: attributed memory cannot update the canonical profile, workflow state, milestone review or academic approval.
+
 ## Acceptance criteria
 
 - [ ] A goal or decision without a researcher source is rejected, a merge that includes one is rejected, and Virgilio cannot change an entry whose current version the researcher wrote, an undo's included.
@@ -60,6 +60,9 @@ Add memory entries and versions, Virgilio's automatic `update_memory` in `direct
 - [ ] A reply based on an old version shows the mark (scenario 12) as its memory-review item of rank 4 and revision 1, announced through `research.subscribe`, while versions its own changes or their undo wrote never mark it; an entry edited from another conversation between a reply's dispatch and the saving of its message gives that reply the item in the transaction that saves the message.
 - [ ] `docs/design-system.md` maps `notebook-pen` to memory changes.
 - [ ] With the researcher's account, a decision told to Virgilio shows its "Memory updated" line, is used in another conversation, and Virgilio's later change of it marks the old reply.
+
+- [ ] All three agents’ memory instruction additions distinguish memory from the canonical profile, workflow state, evidence confirmation and academic approval.
+- [ ] Memory changes and undo retain their authority, attribution and version checks and create no academic stage-transition or approval effect.
 
 ## Quality checklist
 
