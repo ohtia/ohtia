@@ -245,7 +245,6 @@ export class ComposerController {
     const draft = this.draft;
     const conversationId = this.scope.conversationId;
     if (
-      draft.state.setupFinal ||
       !conversationId ||
       !this.scope.projectId ||
       draft.state.destinationStatus !== "ready" ||

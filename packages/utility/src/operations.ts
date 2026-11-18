@@ -1,3 +1,4 @@
+import { directGuidanceInstructions } from "./direct-guidance.js";
 import { setupInstructions, setupInstructionsV2 } from "./project-setup.js";
 import { utf8Size, type ProviderOperation, type TransferEntry } from "@ohtia/contracts";
 
@@ -49,6 +50,24 @@ const projectSetupV1: OperationPolicy = Object.freeze({
 });
 
 const policies: readonly OperationPolicy[] = Object.freeze([
+  Object.freeze({
+    operation: "direct_guidance",
+    version: 1,
+    instruction_version: 1,
+    max_pending_tasks: 100,
+    max_input_bytes: 256 * 1024,
+    max_input_items: 500,
+    max_output_bytes: 64 * 1024,
+    max_work_units: 1,
+    max_attempt_duration_ms: 10 * 60 * 1000,
+    max_inactivity_ms: 120 * 1000,
+    stop_grace_ms: 5 * 1000,
+    max_attempts: 2,
+    max_auto_retries: 0,
+    retry_backoff_ms: 0,
+    instructions: directGuidanceInstructions,
+    modes: Object.freeze(["development", "installed", "qualification"] as const),
+  }),
   projectSetupV1,
   Object.freeze({
     ...projectSetupV1,

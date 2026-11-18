@@ -336,7 +336,12 @@ export function ConversationView({
                       connection={connection}
                       hasText={!!saved || !!text}
                       latest={state.conversation?.latestReplyTaskId === item.id}
-                      setupFinal={!!state.project?.setupConfirmedAt && !state.project.isDevelopment}
+                      // Only tasks accepted before the document language was confirmed are setup tasks.
+                      setupFinal={
+                        item.language === null &&
+                        !!state.project?.setupConfirmedAt &&
+                        !state.project.isDevelopment
+                      }
                       runningAgent={
                         state.conversation?.runningTask &&
                         state.conversation.runningTask.id !== item.id

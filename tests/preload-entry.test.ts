@@ -878,6 +878,8 @@ it("carries persisted research through the sandbox entry and revokes scoped stre
     expect(await port.readReplyParts({ taskId: saved.id, fromSequence: 1 }).result).toEqual(
       failure("record_not_found"),
     );
+    // Stop queued guidance before the fixture prepares another project's setup.
+    await expectValue(port.stopConversation("entry-stop-guidance", { conversationId }));
     const setupProject = await expectValue(port.createProject("entry-proposal-project"));
     await service.drain();
     const proposalId = await proposeSetup(fixture.store, fixture.raw, setupProject.resultId);

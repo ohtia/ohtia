@@ -819,3 +819,33 @@ it("disables the composer Stop while another window's cancellation is observed",
   await act(async () => f.controller.running(false, false));
   expect(container.querySelector(".composer-reason")).toBeNull();
 });
+
+it("keeps confirmed-project guidance editable and retains a pending-limit rejection with its attention notice", async () => {
+  const f = await harness();
+  f.controller.setup(true, []);
+  f.controller.edit("Please suggest a next research action.");
+  f.append.mockReturnValueOnce(call(failure("pending_limit_reached")));
+  await render(f.controller);
+  const input = container.querySelector("textarea")!;
+  expect(input.disabled).toBe(false);
+  expect(input.getAttribute("aria-label")).toBe(
+    message("en-US", "composer.placeholder", { agent: "Virgilio" }),
+  );
+  expect(container.textContent).not.toContain(message("en-US", "setup.composerDisabled"));
+  await act(async () =>
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  await settle();
+  expect(f.append).toHaveBeenCalledOnce();
+  expect(input.value).toBe("Please suggest a next research action.");
+  const notice = container.querySelector(".conversation-notice.attention")!;
+  expect(notice.textContent).toBe(message("en-US", "composer.pendingLimit"));
+  expect(notice.getAttribute("role")).toBe("status");
+  expect(notice.querySelector("button, a")).toBeNull();
+  await act(async () =>
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  await settle();
+  expect(f.append).toHaveBeenCalledTimes(2);
+  expect(input.value).toBe("");
+});

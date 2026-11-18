@@ -5,6 +5,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ServiceConnections,
   decodeProviderEvent,
+  decodeDiagnosticEvent,
+  makeDiagnosticRecord,
+  type DiagnosticEvent,
+  decodeDevelopmentReport,
   decodeProviderDispatch,
   utf8Size,
   providerMessageBytes,
@@ -20,6 +24,10 @@ import {
   setupNote,
   setupRevision,
 } from "../packages/utility/src/project-setup.js";
+import {
+  directGuidanceInstructions,
+  guidanceInstructions,
+} from "../packages/utility/src/direct-guidance.js";
 import { operationPolicy, buildInput } from "../packages/utility/src/operations.js";
 import { TaskTransaction } from "../packages/utility/src/tasks.js";
 import {
@@ -50,8 +58,12 @@ const call = (title = "Synthetic title", document_language = "en"): ProviderTool
 });
 const registry = () =>
   new LanguageRegistry(path.resolve("config/localization/iana-language-subtag-registry.txt"));
-async function setup(development = false) {
+async function setup(development = false, emitDiagnostic?: (event: DiagnosticEvent) => void) {
   const f = storageFixture();
+  if (emitDiagnostic) {
+    f.store = new DurableStore({ ...f.options, emitDiagnostic });
+    stores.push(f.store);
+  }
   await f.store.open();
   const context = {
     generation: "setup-tests",
@@ -255,7 +267,7 @@ describe("project setup task transactions", () => {
       documentLanguage: "es-AR",
     });
     value(await f.append("A message after confirmation"));
-    expect(value(await f.store.prepareTask())).toBeNull();
+    expect(value(await f.store.prepareTask())?.dispatch.request.operation).toBe("direct_guidance");
     expect(f.proposals()[2]!.state).toBe("confirmed");
   });
 
@@ -1554,3 +1566,435 @@ it.each([
     ).toMatchObject({ error: { code: "task_not_retryable" } });
   },
 );
+
+describe("confirmed project direct guidance", () => {
+  const specification = fs.readFileSync("docs/epics/EPIC-003-research-agents/epic.md", "utf8");
+
+  function specifiedInstructions(block: string, indentation: number): string {
+    const text = specification.split(`### ${block}:`)[1]!.split("\n### SPEC-")[0]!;
+    return /```text\n([\s\S]*?)\n *```/
+      .exec(text)![1]!
+      .split("\n")
+      .map((line) => line.slice(indentation))
+      .join("\n");
+  }
+
+  const roleInstructions = specifiedInstructions("SPEC-003-022", 2);
+  const thesisRoute = specifiedInstructions("SPEC-003-044", 0);
+  const normative = `${roleInstructions}\n\n${thesisRoute}`;
+
+  async function confirmed(emitDiagnostic?: (event: DiagnosticEvent) => void) {
+    const f = await setup(false, emitDiagnostic);
+    const setupReply = await f.complete([call("Redes de cuidado", "es-AR")]);
+    expect(setupReply.task.dispatch.request.operation).toBe("project_setup");
+    value(
+      await f.store.executeResearchCommand({
+        command: "project.confirmSetup",
+        operationId: "confirm-guidance",
+        payload: { proposalId: f.proposals()[0]!.id },
+      }),
+    );
+    return f;
+  }
+
+  it("pins guidance policy and the normative instruction with literal confirmed context", () => {
+    const policy = operationPolicy("direct_guidance", 1, "installed")!;
+    expect(policy).toMatchObject({
+      operation: "direct_guidance",
+      version: 1,
+      instruction_version: 1,
+      max_pending_tasks: 100,
+      max_input_bytes: 262144,
+      max_input_items: 500,
+      max_output_bytes: 65536,
+      max_work_units: 1,
+      max_attempt_duration_ms: 600000,
+      max_inactivity_ms: 120000,
+      stop_grace_ms: 5000,
+      max_attempts: 2,
+      max_auto_retries: 0,
+      retry_backoff_ms: 0,
+    });
+    for (const mode of ["development", "qualification"] as const)
+      expect(operationPolicy("direct_guidance", 1, mode)).toBe(policy);
+    expect(operationPolicy("direct_guidance", 2, "installed")).toBeUndefined();
+    expect(directGuidanceInstructions).toBe(normative);
+    expect(policy.instructions.split(thesisRoute)).toEqual([`${roleInstructions}\n\n`, ""]);
+    const instructions = guidanceInstructions({
+      project_type: "thesis",
+      title: "$& {document_language}",
+      document_language: "es-AR",
+    });
+    expect(instructions).toContain(
+      "Project type: Thesis. The document a student writes and defends to obtain an academic degree.",
+    );
+    expect(instructions).toContain("Working title: $& {document_language}");
+    expect(instructions).toContain("Document language: Spanish (Argentina) (es-AR)");
+  });
+
+  it.each([
+    [
+      "a broad new interest",
+      "Me interesa el apoyo entre estudiantes. Todavía no tengo una pregunta.",
+    ],
+    [
+      "advanced existing work",
+      "Ya elegí comparar dos tutorías de primer año y tengo resultados descriptivos de un semestre.",
+    ],
+    [
+      "an unchosen interview technique",
+      "Estoy considerando entrevistas, pero todavía no elegí un diseño ni formulé la pregunta.",
+    ],
+    [
+      "a missing prerequisite",
+      "Quiero recoger testimonios, pero aún no tengo acceso a participantes ni confirmación de los permisos aplicables.",
+    ],
+  ])("sends the complete thesis route with %s", async (_scenario, context) => {
+    const f = await confirmed();
+    const contextId = value(await f.append(context)).resultId;
+    const question = "¿Qué paso tendría sentido ahora?";
+    const questionId = value(await f.append(question)).resultId;
+    const task = await f.prepare();
+    const decoded = decodeProviderDispatch(JSON.stringify(task.dispatch), task.dispatch.generation);
+    const expectedRole = roleInstructions
+      .replace("{project_type_name}", "Thesis")
+      .replace(
+        "{project_type_description}",
+        "The document a student writes and defends to obtain an academic degree.",
+      )
+      .replace("{title}", "Redes de cuidado")
+      .replace("{document_language_name}", "Spanish (Argentina)")
+      .replace("{document_language}", "es-AR");
+    expect(decoded?.request).toMatchObject({
+      operation: "direct_guidance",
+      instruction_version: 1,
+      instructions: `${expectedRole}\n\n${thesisRoute}`,
+      tools: [],
+      input: [
+        { role: "user", text: "Synthetic setup request" },
+        { role: "user", text: context },
+        { role: "user", text: question },
+      ],
+    });
+    expect(task.transfer.slice(-2)).toEqual([
+      { kind: "message", reference: contextId },
+      { kind: "message", reference: questionId },
+    ]);
+  });
+
+  it("routes confirmed messages through the fake provider without tools and records exact transfer identities", async () => {
+    const diagnostics: DiagnosticEvent[] = [];
+    const f = await confirmed((event) => diagnostics.push(event));
+    value(await f.append("Please help me clarify the question."));
+    const task = await f.prepare();
+    const request = task.dispatch.request;
+    expect(request).toMatchObject({
+      operation: "direct_guidance",
+      model: "first",
+      policy_version: 1,
+      instruction_version: 1,
+      document_language: "es-AR",
+      tools: [],
+      limits: {
+        max_output_bytes: 65536,
+        max_attempt_duration_ms: 600000,
+        max_inactivity_ms: 120000,
+      },
+    });
+    expect(request.instructions).toContain("Working title: Redes de cuidado");
+    expect(request.instructions).toContain("Document language: Spanish (Argentina) (es-AR)");
+    const fake = createFakeProvider();
+    const dispatch = new ProviderDispatch(
+      [
+        {
+          ...fake,
+          declaration: {
+            ...fake.declaration,
+            connection: { ...fake.declaration.connection, id: "chatgpt" },
+          },
+        },
+      ],
+      {
+        state: () => "connected",
+        send: (_generation, text) => {
+          const event = decodeProviderEvent(text, "setup-tests");
+          expect(event).toBeDefined();
+          events.push(event!.event);
+        },
+      },
+    );
+    const events: ProviderEvent[] = [];
+    dispatch.begin("setup-tests");
+    // The task fixture uses a fixed clock; authorize this synthetic dispatch at the current clock.
+    await dispatch.receive({
+      ...task.dispatch,
+      permit: { ...task.dispatch.permit, issued_at: Date.now() },
+    });
+    await vi.waitFor(() => expect(events.at(-1)?.type).toBe("result"));
+    expect(events.at(-1)).toMatchObject({ type: "result", result: { status: "completed" } });
+    let reply = "";
+    for (const event of events) {
+      if (event.type === "text") reply += event.text;
+      value(await f.store.recordTaskEvent(request.attempt, event, reply));
+    }
+    dispatch.dispose();
+    expect(value(await f.store.readMessages(f.conversationId)).at(-1)).toMatchObject({
+      content: "Synthetic reply.",
+      ending: "complete",
+    });
+    const db = f.raw();
+    const attempt = db
+      .prepare("SELECT transfer_manifest, requested_model FROM attempts WHERE id=?")
+      .get(bytes(request.attempt)) as { transfer_manifest: string; requested_model: string };
+    db.close();
+    const sent = value(await f.store.readMessages(f.conversationId))
+      .filter((m) => m.taskId !== task.taskId)
+      .map((m) => m.id);
+    expect(
+      JSON.parse(attempt.transfer_manifest)
+        .filter((entry: { kind: string }) => entry.kind === "message")
+        .map((entry: { reference: string }) => entry.reference),
+    ).toEqual(sent);
+    expect(attempt.requested_model).toBe("first");
+    expect(f.proposals()).toHaveLength(1);
+    expect(diagnostics.map((event) => event.event_name)).toEqual(
+      expect.arrayContaining([
+        "ohtia.task.accepted",
+        "ohtia.task.dispatch_permitted",
+        "ohtia.task.completed",
+      ]),
+    );
+    for (const event of diagnostics) {
+      expect(decodeDiagnosticEvent(event)).toEqual(event);
+      expect(makeDiagnosticRecord(event, "0.0.0", "2026-11-17T00:00:00.000Z")).toBeDefined();
+    }
+    expect(JSON.stringify(diagnostics)).not.toMatch(
+      /Redes|Spanish|Synthetic reply|clarify the question|first|es-AR|You are Virgilio/,
+    );
+  });
+
+  it.each(["setup", "confirmed"] as const)(
+    "keeps a misrouted %s project task blocked when its connection returns",
+    async (stage) => {
+      const f = stage === "setup" ? await setup() : await confirmed();
+      f.store.setTaskContext({ ...f.context, connections: new ServiceConnections() });
+      const routing = vi.spyOn(TaskTransaction.prototype, "destination").mockResolvedValue({
+        policy: operationPolicy(
+          stage === "setup" ? "direct_guidance" : "project_setup",
+          1,
+          "development",
+        )!,
+        connection: "chatgpt",
+      });
+      try {
+        value(await f.append("Synthetic request with an incompatible routed operation"));
+      } finally {
+        routing.mockRestore();
+      }
+      f.store.setTaskContext(f.context);
+      value(await f.store.reconcileTaskConnections());
+      expect(value(await f.store.prepareTask())).toBeNull();
+      const db = f.raw();
+      const task = db
+        .prepare("SELECT id,state,blocking_reason FROM tasks ORDER BY rowid DESC LIMIT 1")
+        .get() as { id: Uint8Array; state: string; blocking_reason: string };
+      expect(task).toMatchObject({ state: "blocked", blocking_reason: "connection_disabled" });
+      expect(db.prepare("SELECT count(*) FROM attempts WHERE task_id=?").pluck().get(task.id)).toBe(
+        0,
+      );
+      db.close();
+    },
+  );
+
+  it("bounds recent whole messages by bytes and records omissions and partial replies", async () => {
+    const f = await confirmed();
+    const ids: string[] = [];
+    for (let n = 0; n < 4; n++) ids.push(value(await f.append("😀".repeat(20000))).resultId);
+    const task = await f.prepare();
+    expect(decodeProviderDispatch(JSON.stringify(task.dispatch), task.dispatch.generation)).toEqual(
+      task.dispatch,
+    );
+    expect(task.dispatch.request.input).toEqual([
+      { role: "user", text: "Earlier messages in this conversation are not included." },
+      ...Array.from({ length: 3 }, () => ({ role: "user", text: "😀".repeat(20000) })),
+    ]);
+    expect(
+      task.transfer.filter((entry) => entry.kind === "message").map((entry) => entry.reference),
+    ).toEqual(ids.slice(1));
+    expect(task.transfer).toContainEqual({
+      kind: "note",
+      note: "earlier_messages_omitted",
+      reference: f.conversationId,
+      revision: expect.any(Number),
+    });
+    value(
+      await f.store.recordTaskEvent(
+        task.dispatch.request.attempt,
+        {
+          type: "result",
+          sequence: 1,
+          result: { status: "failed", reason: "inactivity_timeout", dispatched: true },
+        },
+        "Incomplete guidance",
+      ),
+    );
+    value(await f.append("Propose the next action."));
+    const next = await f.prepare();
+    expect(next.dispatch.request.input).toContainEqual({
+      role: "user",
+      text: "Note from Ohtia: Virgilio's reply above is incomplete. It was cut off because the service sent nothing for too long.",
+    });
+    expect(
+      next.transfer.some((entry) => entry.kind === "note" && entry.note === "partial_reply"),
+    ).toBe(true);
+  });
+
+  it("rejects the 101st waiting guidance reply atomically while coalescing an existing reply at the cap", async () => {
+    const f = await confirmed();
+    const waitingConversations: string[] = [f.conversationId];
+    for (let n = 0; n < 99; n++) {
+      const projectId = value(
+        await f.store.executeResearchCommand({
+          command: "project.create",
+          operationId: `guidance-project-${n}`,
+          payload: {},
+        }),
+      ).resultId;
+      const proposalId = await proposeSetup(f.store, f.raw, projectId, {
+        title: "Synthetic confirmed title",
+        document_language: "es-AR",
+      });
+      value(
+        await f.store.executeResearchCommand({
+          command: "project.confirmSetup",
+          operationId: `guidance-confirm-${n}`,
+          payload: { proposalId },
+        }),
+      );
+      const conversationId = value(await f.store.readConversations(projectId))[0]!.id;
+      waitingConversations.push(conversationId);
+    }
+    const projectId = value(
+      await f.store.executeResearchCommand({
+        command: "project.create",
+        operationId: "guidance-overflow-project",
+        payload: {},
+      }),
+    ).resultId;
+    const proposalId = await proposeSetup(f.store, f.raw, projectId);
+    value(
+      await f.store.executeResearchCommand({
+        command: "project.confirmSetup",
+        operationId: "guidance-overflow-confirm",
+        payload: { proposalId },
+      }),
+    );
+    const conversationId = value(await f.store.readConversations(projectId))[0]!.id;
+    for (const [n, waitingId] of waitingConversations.entries())
+      value(
+        await f.store.executeResearchCommand({
+          command: "message.append",
+          operationId: `guidance-pending-${n}`,
+          payload: { conversationId: waitingId, content: "Waiting guidance" },
+        }),
+      );
+    const before = value(await f.store.readMessages(conversationId));
+    expect(
+      await f.store.executeResearchCommand({
+        command: "message.append",
+        operationId: "guidance-overflow-message",
+        payload: { conversationId, content: "Must stay in composer" },
+      }),
+    ).toMatchObject({ error: { code: "pending_limit_reached" } });
+    expect(value(await f.store.readMessages(conversationId))).toEqual(before);
+    value(await f.append("Replace my waiting guidance"));
+    const db = f.raw();
+    expect(
+      db
+        .prepare(
+          "SELECT count(*) FROM tasks WHERE operation='direct_guidance' AND state IN ('queued','blocked')",
+        )
+        .pluck()
+        .get(),
+    ).toBe(100);
+    expect(
+      db
+        .prepare(
+          "SELECT count(*) FROM command_receipts WHERE operation_id='guidance-overflow-message'",
+        )
+        .pluck()
+        .get(),
+    ).toBe(0);
+    db.close();
+  }, 60000);
+
+  it("carries 500 recent messages and cut notes through both private decoders with worst-case escaping", () => {
+    const policy = operationPolicy("direct_guidance", 1, "development")!;
+    const messages = Array.from({ length: 501 }, (_, i) => ({
+      reference: `message-${i}`,
+      position: i,
+      role: "assistant" as const,
+      text: "\u0001".repeat(524),
+      partial: { agent: "Virgilio", reason: "inactivity_timeout" },
+    }));
+    const built = buildInput(policy, messages, { reference: "conversation", revision: 1 })!;
+    expect(built.input).toHaveLength(1001);
+    expect(built.transfer.filter((entry) => entry.kind === "message")).toHaveLength(500);
+    expect(built.transfer).not.toContainEqual({ kind: "message", reference: "message-0" });
+    const dispatch = {
+      kind: "provider_dispatch",
+      version: 1,
+      generation: "bounded-guidance",
+      request: {
+        ...conformanceRequest("chatgpt"),
+        operation: "direct_guidance",
+        input: built.input,
+        instructions: guidanceInstructions({
+          project_type: "thesis",
+          title: "Synthetic title",
+          document_language: "es-AR",
+        }),
+      },
+      permit: { id: "permit", attempt: "attempt-1", issued_at: 1 },
+    };
+    const encoded = JSON.stringify(dispatch);
+    expect(utf8Size(encoded)).toBeGreaterThan(1024 * 1024);
+    expect(utf8Size(encoded)).toBeLessThanOrEqual(providerMessageBytes);
+    expect(decodeProviderDispatch(encoded, dispatch.generation)).toEqual(dispatch);
+    for (const [instructions, admitted] of [
+      ["é".repeat(4096), true],
+      ["é".repeat(4096) + "a", false],
+    ] as const) {
+      const withInstructions = {
+        ...dispatch,
+        request: { ...dispatch.request, instructions },
+      };
+      expect(decodeProviderDispatch(JSON.stringify(withInstructions), dispatch.generation)).toEqual(
+        admitted ? withInstructions : undefined,
+      );
+    }
+    const report = {
+      kind: "development_report",
+      version: 1,
+      generation: "bounded-guidance",
+      operation_id: "guidance-report",
+      report: {
+        type: "finished",
+        attempt: "attempt-1",
+        result: { status: "completed" },
+        usage: {
+          input_tokens: null,
+          cached_input_tokens: null,
+          output_tokens: null,
+          reasoning_tokens: null,
+        },
+        transfer: built.transfer,
+        events: 2,
+        duration_ms: 10,
+        longest_silence_ms: 5,
+      },
+    };
+    expect(built.transfer).toHaveLength(1002);
+    expect(decodeDevelopmentReport(JSON.stringify(report), report.generation)).toEqual(report);
+  });
+});

@@ -1,3 +1,4 @@
+import { researcherMessageLimit } from "./research-port.js";
 import { portLimits, utf8Size, isIdentifier } from "./port.js";
 import { isConnectionId } from "./connections.js";
 
@@ -6,11 +7,13 @@ import { isConnectionId } from "./connections.js";
  * and main, which checks the dispatch permit, attaches the credential and sends them (ADR-0028).
  */
 export const providerMessageVersion = 1;
-/** Six-byte JSON escaping of 64 KiB of messages plus setup/cut notes fits this private envelope. */
-export const providerMessageBytes = 1024 * 1024;
+/** Six-byte JSON escaping of 256 KiB of messages plus instructions/cut notes fits this envelope. */
+export const providerMessageBytes = 2 * 1024 * 1024;
+/** Private instruction text includes the shared thesis route and rendered project context. */
+const providerInstructionBytes = 8 * 1024;
 /** ADR-0028's versioned permit validity: not a response deadline. Real-account checks measure it. */
 export const dispatchPermitPolicy = Object.freeze({ version: 1, validity_ms: 2000 });
-export const providerOperations = ["development_test", "project_setup"] as const;
+export const providerOperations = ["development_test", "project_setup", "direct_guidance"] as const;
 export type ProviderOperation = (typeof providerOperations)[number];
 export const providerFailureReasons = [
   "usage_limit_reached",
@@ -255,7 +258,7 @@ function isInput(value: unknown): value is ProviderInputItem {
     (value.role === "user" || value.role === "assistant") &&
     typeof value.text === "string" &&
     value.text.length > 0 &&
-    boundedText(value.text, portLimits.message_bytes)
+    boundedText(value.text, researcherMessageLimit * 4)
   );
 }
 function isTool(value: unknown): value is ProviderTool {
@@ -321,10 +324,10 @@ export function isProviderRequestData(value: unknown): value is ProviderRequestD
     isProviderModelSlug(value.model) &&
     typeof value.instructions === "string" &&
     value.instructions.length > 0 &&
-    boundedText(value.instructions, portLimits.string_bytes) &&
+    boundedText(value.instructions, providerInstructionBytes) &&
     Array.isArray(value.input) &&
     value.input.length > 0 &&
-    value.input.length <= 601 &&
+    value.input.length <= 1001 &&
     value.input.every(isInput) &&
     Array.isArray(value.tools) &&
     value.tools.length <= 32 &&
@@ -634,7 +637,7 @@ function isDevelopmentReport(value: unknown): value is DevelopmentReport {
         isProviderResult(value.result) &&
         isUsage(value.usage) &&
         Array.isArray(value.transfer) &&
-        value.transfer.length <= 601 &&
+        value.transfer.length <= 1002 &&
         value.transfer.every(isTransferEntry) &&
         count(value.events) &&
         count(value.duration_ms) &&

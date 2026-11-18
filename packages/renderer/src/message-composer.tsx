@@ -30,23 +30,20 @@ export function MessageComposer({
   const stopping = state.stopping || state.cancelling;
   const stop = state.saving || stopping || (!hasText && state.running);
   const destinationUnavailable = state.destinationStatus !== "ready";
-  const disabled =
-    !!state.setupFinal || stopping || (!stop && (!hasText || over || destinationUnavailable));
+  const disabled = stopping || (!stop && (!hasText || over || destinationUnavailable));
   const destinationReason = !stop && hasText && !over && destinationUnavailable;
-  const reason = state.setupFinal
-    ? message(locale, "setup.composerDisabled")
-    : stopping
-      ? message(locale, "composer.stopping")
-      : !hasText && !stop
-        ? message(locale, "composer.empty")
-        : destinationReason
-          ? message(
-              locale,
-              state.destinationStatus === "failed"
-                ? "composer.destinationFailed"
-                : "composer.destinationLoading",
-            )
-          : "";
+  const reason = stopping
+    ? message(locale, "composer.stopping")
+    : !hasText && !stop
+      ? message(locale, "composer.empty")
+      : destinationReason
+        ? message(
+            locale,
+            state.destinationStatus === "failed"
+              ? "composer.destinationFailed"
+              : "composer.destinationLoading",
+          )
+        : "";
   const name = message(locale, stop ? "composer.stop" : "composer.send");
   const notice = over
     ? message(locale, "composer.remove", { excess: count - researcherMessageLimit })
@@ -58,7 +55,6 @@ export function MessageComposer({
   const danger = !over && state.notice === "failed";
   const described =
     [
-      state.setupFinal && `${id}-reason`,
       counter && `${id}-count`,
       notice && `${id}-notice`,
       state.stopFailed && `${id}-stop-error`,
@@ -145,7 +141,6 @@ export function MessageComposer({
           ref={input}
           rows={1}
           value={state.text}
-          disabled={state.setupFinal}
           placeholder={placeholder}
           aria-label={placeholder}
           aria-describedby={described}
@@ -194,7 +189,7 @@ export function MessageComposer({
             aria-label={name}
             aria-disabled={disabled}
             aria-describedby={
-              state.setupFinal || stopping || (!hasText && !stop)
+              stopping || (!hasText && !stop)
                 ? `${id}-reason`
                 : !stop && over
                   ? `${id}-notice`
@@ -267,21 +262,14 @@ export function MessageComposer({
           </button>
         </div>
       )}
-      {state.setupFinal && (
-        <p id={`${id}-reason`} className="composer-reason" role="status">
-          {message(locale, "setup.composerDisabled")}
+      {reason && !(destinationReason && state.destinationStatus === "failed") && (
+        <p
+          id={`${id}-reason`}
+          className={stopping || destinationReason ? "composer-reason" : "primitive-announcement"}
+        >
+          {reason}
         </p>
       )}
-      {reason &&
-        !state.setupFinal &&
-        !(destinationReason && state.destinationStatus === "failed") && (
-          <p
-            id={`${id}-reason`}
-            className={stopping || destinationReason ? "composer-reason" : "primitive-announcement"}
-          >
-            {reason}
-          </p>
-        )}
       {state.destination && (
         <p className="composer-destination">
           {message(

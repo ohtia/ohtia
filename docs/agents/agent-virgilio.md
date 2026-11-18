@@ -1,9 +1,9 @@
 ---
 type: Specification
 title: "Virgilio: research guide"
-description: "Virgilio's research guidance, bounded planning, attributed synthesis, context, evaluation requirements and visual presentation."
+description: "Virgilio's direct guidance, bounded planning, attributed synthesis, context, evaluation requirements and visual presentation."
 generated:
-  by: codex/gpt-6.1-sol
+  by: codex/gpt-6.2-sol
 ---
 
 # Virgilio: research guide
@@ -105,7 +105,9 @@ All inputs retain their project scope, exact versions, language, restrictions an
 
 ## Operations
 
-Each operation has a versioned policy, instruction and output contract under [ADR-0029](../adr/adr-0029-operation-profiles-and-usage-reports.md). Evaluate and enable operations separately; the headings identify research operations, not provider API methods.
+Each operation has a versioned policy, instruction and output contract under [ADR-0029](../adr/adr-0029-operation-profiles-and-usage-reports.md), and is enabled once its adapter conformance and operational checks pass. The headings identify research capabilities, not provider API methods. Clarifying a research question and proposing a next research action run in one operation, `direct_guidance`, the standard way Virgilio answers in a confirmed project; Virgilio chooses from the researcher’s message which of them to do.
+
+In confirmed projects, `direct_guidance` uses the [shared thesis route](../epics/EPIC-003-research-agents/epic.md#spec-003-044-thesis-route-in-agent-instructions) to relate suggestions to the researcher’s starting point, available material and prerequisites.
 
 ### Set up a project
 
@@ -119,6 +121,8 @@ Virgilio gives no research advice before setup ends, never guesses a script or r
 
 ### Clarify a research question
 
+**Operation:** `direct_guidance`.
+
 **Input:** The researcher's interests or question, relevant objectives, supplied constraints and any selected supporting material.
 
 **Output:** A bounded account of the problem, possible delimitations, explicit assumptions and the next useful question. Distinguish topic, problem, question and objectives; preserve already agreed choices unless a reason to revisit them is identified.
@@ -126,6 +130,8 @@ Virgilio gives no research advice before setup ends, never guesses a script or r
 Do not require a complete profile before helping or claim novelty from absent search results.
 
 ### Propose a next research action
+
+**Operation:** `direct_guidance`.
 
 **Input:** The current focus, exact available artifacts, dependencies and any agreed plan, dates and actual availability relevant to the request.
 

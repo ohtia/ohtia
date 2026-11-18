@@ -1,3 +1,4 @@
+import { guidanceInstructions } from "./direct-guidance.js";
 import {
   acceptedSetupCalls,
   setupInvalidReason,
@@ -181,10 +182,13 @@ export class TaskTransaction {
       .selectAll()
       .where("id", "=", projectId)
       .executeTakeFirstOrThrow();
-    if (!project.is_development && project.setup_confirmed_at !== null) return null;
     const policy = operationPolicy(
-      project.is_development ? "development_test" : "project_setup",
-      project.is_development ? 1 : 2,
+      project.is_development
+        ? "development_test"
+        : project.setup_confirmed_at === null
+          ? "project_setup"
+          : "direct_guidance",
+      !project.is_development && project.setup_confirmed_at === null ? 2 : 1,
       this.context.mode,
     );
     return policy ? { policy, connection: "chatgpt" } : null;
@@ -214,13 +218,6 @@ export class TaskTransaction {
     conversationId: Uint8Array | null,
     content: string,
   ): Promise<Outcome<null>> {
-    const project = await this.db
-      .selectFrom("projects")
-      .selectAll()
-      .where("id", "=", projectId)
-      .executeTakeFirstOrThrow();
-    if (!project.is_development && project.setup_confirmed_at !== null)
-      return { ok: true, value: null };
     const destination = await this.destination(projectId);
     if (!destination) return failure("service_unavailable");
     const { policy } = destination;
@@ -257,7 +254,6 @@ export class TaskTransaction {
       .where("id", "=", projectId)
       .executeTakeFirstOrThrow();
     this.touch(conversationId);
-    if (!project.is_development && project.setup_confirmed_at !== null) return;
     this.diagnostics.push({ event_name: "ohtia.task.accepted" });
     const destination = await this.destination(projectId);
     if (!destination) throw new Error("Task policy unavailable.");
@@ -352,7 +348,10 @@ export class TaskTransaction {
       !!project &&
       (project.is_development
         ? task.operation === "development_test"
-        : project.setup_confirmed_at === null && task.operation === "project_setup") &&
+        : project.setup_confirmed_at === null
+          ? task.operation === "project_setup"
+          : task.operation === "direct_guidance" &&
+            task.document_language === project.document_language) &&
       !!message &&
       !!receipt &&
       ["conversation.start", "message.append", "task.startAgain", "task.tryAgain"].includes(
@@ -778,6 +777,21 @@ export class TaskTransaction {
             ]
           : [];
       });
+      const project = await this.db
+        .selectFrom("projects")
+        .selectAll()
+        .where("id", "=", task.project_id)
+        .executeTakeFirstOrThrow();
+      const instructions =
+        task.operation === "direct_guidance" &&
+        project.title !== null &&
+        task.document_language !== null
+          ? guidanceInstructions({
+              project_type: project.project_type,
+              title: project.title,
+              document_language: task.document_language,
+            })
+          : policy.instructions;
       const built = buildInput(
         policy,
         inputMessages,
@@ -860,7 +874,7 @@ export class TaskTransaction {
             operation: policy.operation,
             connection: task.connection,
             model,
-            instructions: policy.instructions,
+            instructions,
             input: built.input,
             tools: task.operation === "project_setup" ? [setupTool] : [],
             project: identifier(task.project_id),
