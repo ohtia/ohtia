@@ -608,6 +608,11 @@
       "reason": "Linux procfs executable symlink and Unix account-identity fixture; native Windows uses its separate process-token observer."
     },
     {
+      "id": "test_quality_vm.VirtualMachineTests.test_debian_kde_package_failure_stops_the_provisioning_script",
+      "platforms": ["win32"],
+      "reason": "The Debian guest provisioning fixture executes the POSIX cloud-init shell."
+    },
+    {
       "id": "test_quality_vm.VirtualMachineTests.test_guest_compositor_and_failed_suite_share_bus_and_retain_bounded_log",
       "platforms": ["win32"],
       "reason": "Linux guest compositor, Unix-domain socket and user-service ownership fixture; Windows is not a Linux VM host."

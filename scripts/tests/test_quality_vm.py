@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import runpy
+import shlex
 import socket
 import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import nullcontext
+from contextlib import nullcontext, redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -51,38 +53,35 @@ class VirtualMachineTests(unittest.TestCase):
             vm.cloud_config("unreviewed-distribution", "public-key", desktop="gnome")
 
     def test_readiness_marker_never_overrides_failed_cloud_initialization(self):
-        for status in (0, 1, 2):
-            with self.subTest(status=status):
-                calls = []
-
-                def command(arguments, **kwargs):
-                    calls.append(arguments[-1])
-                    if arguments[-1] == "sudo cloud-init status --wait --long":
-                        self.assertTrue(kwargs["check"])
-                        self.assertGreater(kwargs["timeout"], 0)
-                        self.assertLessEqual(kwargs["timeout"], 60)
-                        if status:
-                            raise subprocess.CalledProcessError(status, arguments)
-                    return subprocess.CompletedProcess(arguments, 0)
-
+        for status, diagnostic in (
+            (0, ""),
+            (1, "package installation failed"),
+            (2, "recoverable cloud-init error"),
+            (1, "Guest provisioning readiness marker is missing."),
+            (1, "Guest provisioning requires git in the guest user's PATH."),
+        ):
+            with self.subTest(status=status, diagnostic=diagnostic):
+                ssh = ["ssh", "owned-guest"]
+                output = io.StringIO()
+                result = subprocess.CompletedProcess(ssh, status, "cloud-init status\n", diagnostic)
                 with (
-                    patch.object(vm.subprocess, "run", side_effect=command),
+                    patch.object(vm.subprocess, "run", return_value=result) as execute,
                     patch.object(vm.time, "monotonic", return_value=100),
+                    redirect_stderr(output),
+                    redirect_stdout(output),
                 ):
                     if status:
-                        with self.assertRaises(subprocess.CalledProcessError):
-                            vm.wait_guest_setup(
-                                ["ssh", "owned-guest"], Mock(poll=lambda: None), 160
-                            )
+                        with self.assertRaisesRegex(
+                            delivery.DeliveryError, "Guest provisioning failed"
+                        ):
+                            vm.wait_guest_setup(ssh, Mock(poll=lambda: None), 160)
                     else:
-                        vm.wait_guest_setup(["ssh", "owned-guest"], Mock(poll=lambda: None), 160)
-                self.assertEqual(
-                    calls,
-                    [
-                        "test -f /var/lib/ohtia-ready",
-                        "sudo cloud-init status --wait --long",
-                    ],
+                        vm.wait_guest_setup(ssh, Mock(poll=lambda: None), 160)
+                execute.assert_called_once_with(
+                    ssh + [vm.GUEST_SETUP_CHECK], capture_output=True, text=True, timeout=60
                 )
+                self.assertIn("cloud-init status", output.getvalue())
+                self.assertIn(diagnostic, output.getvalue())
         debian = json.loads(
             vm.cloud_config("debian-13", "public-key", desktop="gnome").split("\n", 1)[1]
         )
@@ -93,6 +92,119 @@ class VirtualMachineTests(unittest.TestCase):
         self.assertIn("libatspi2.0-0t64", debian["packages"])
         self.assertNotIn("libatspi2.0-0", debian["packages"])
         self.assertNotIn("apt", fedora)
+
+    def test_guest_setup_retries_ssh_transport_within_the_original_deadline(self):
+        ssh = ["ssh", "owned-guest"]
+        responses = [
+            subprocess.CompletedProcess(ssh, 255, "", "connection refused"),
+            subprocess.CompletedProcess(ssh, 0, "status: done", ""),
+        ]
+        with (
+            patch.object(vm.subprocess, "run", side_effect=responses) as execute,
+            patch.object(vm.time, "monotonic", side_effect=[100, 101, 103]),
+            patch.object(vm.time, "sleep") as sleep,
+            redirect_stdout(io.StringIO()),
+        ):
+            vm.wait_guest_setup(ssh, Mock(poll=lambda: None), 104)
+        self.assertEqual([call.kwargs["timeout"] for call in execute.call_args_list], [4, 1])
+        sleep.assert_called_once_with(2)
+        output = io.StringIO()
+        timeout = subprocess.TimeoutExpired(
+            ssh, 1, output=b"cloud-init still running", stderr=b"partial guest error"
+        )
+        with (
+            patch.object(vm.subprocess, "run", side_effect=timeout),
+            patch.object(vm.time, "monotonic", return_value=100),
+            redirect_stdout(output),
+            redirect_stderr(output),
+            self.assertRaisesRegex(delivery.DeliveryError, "bounded deadline"),
+        ):
+            vm.wait_guest_setup(ssh, Mock(poll=lambda: None), 101)
+        self.assertIn("cloud-init still running", output.getvalue())
+        self.assertIn("partial guest error", output.getvalue())
+        with (
+            patch.object(vm.subprocess, "run", return_value=responses[0]),
+            patch.object(vm.time, "monotonic", side_effect=[100, 101, 102]),
+            patch.object(vm.time, "sleep") as sleep,
+            redirect_stderr(output),
+            self.assertRaisesRegex(delivery.DeliveryError, "bounded deadline"),
+        ):
+            vm.wait_guest_setup(ssh, Mock(poll=lambda: None), 102)
+        sleep.assert_called_once_with(1)
+        self.assertTrue(output.getvalue().endswith("connection refused"))
+
+    @unittest.skipIf(sys.platform == "win32", "The Debian guest uses the POSIX cloud-init shell.")
+    def test_debian_kde_package_failure_stops_the_provisioning_script(self):
+        config = json.loads(
+            vm.cloud_config("debian-13", "public-key", desktop="kde").split("\n", 1)[1]
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            marker = root / "ready"
+            # cloud-init renders string entries verbatim and quotes each argv item.
+            script = "\n".join(
+                entry
+                if isinstance(entry, str)
+                else shlex.join(
+                    [str(marker) if item == "/var/lib/ohtia-ready" else item for item in entry]
+                )
+                for entry in config["runcmd"]
+            )
+            commands = {
+                "apt-get": 'printf "APT fixture exit %s\\n" "$APT_STATUS"\nexit "$APT_STATUS"\n',
+                "loginctl": "exit 0\n",
+                "sudo": 'exit "$CLOUD_STATUS"\n',
+            }
+            for tool, script_text in commands.items():
+                path = root / tool
+                path.write_text("#!/bin/sh\n" + script_text)
+                path.chmod(0o700)
+            env = {**os.environ, "PATH": str(root) + os.pathsep + os.defpath}
+            for status in (100, 0):
+                with self.subTest(apt=status):
+                    result = subprocess.run(
+                        ["/bin/sh", "-c", script],
+                        env={**env, "APT_STATUS": str(status)},
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode, status, result.stderr)
+                    self.assertIn(f"APT fixture exit {status}", result.stdout)
+                    self.assertEqual(marker.exists(), status == 0)
+            ready_check = vm.GUEST_SETUP_CHECK.replace(
+                "/var/lib/ohtia-ready", shlex.quote(str(marker))
+            )
+            for tool in ("git", "python3"):
+                path = root / tool
+                path.write_text("#!/bin/sh\nexit 0\n")
+                path.chmod(0o700)
+            for cloud_status, missing, expected in (
+                (2, None, 2),
+                (0, "ready", 1),
+                (0, "git", 1),
+                (0, "python3", 1),
+                (0, None, 0),
+            ):
+                with self.subTest(cloud_init=cloud_status, missing=missing):
+                    if missing:
+                        (root / missing).rename(root / "unused")
+                    result = subprocess.run(
+                        ["/bin/sh", "-c", ready_check],
+                        env={**env, "PATH": str(root), "CLOUD_STATUS": str(cloud_status)},
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                        check=False,
+                    )
+                    if missing:
+                        (root / "unused").rename(root / missing)
+                        diagnostic = (
+                            "marker is missing" if missing == "ready" else f"requires {missing}"
+                        )
+                        self.assertIn(diagnostic, result.stderr)
+                    self.assertEqual(result.returncode, expected, result.stderr)
 
     def test_guest_policy_has_no_emulated_or_arm_fallback(self):
         policy = delivery.read(delivery.ROOT / "config/quality/virtual-machines.json")
