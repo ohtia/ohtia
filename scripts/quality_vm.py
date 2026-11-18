@@ -21,6 +21,20 @@ import quality_delivery as delivery
 
 ROOT = delivery.ROOT
 
+GUEST_SETUP_CHECK = """\
+sudo cloud-init status --wait --long || exit $?
+if ! test -f /var/lib/ohtia-ready; then
+    echo "Guest provisioning readiness marker is missing." >&2
+    exit 1
+fi
+for tool in git python3; do
+    if ! command -v "$tool" >/dev/null; then
+        echo "Guest provisioning requires $tool in the guest user's PATH." >&2
+        exit 1
+    fi
+done
+"""
+
 
 def run(arguments: list, **kwargs) -> subprocess.CompletedProcess:
     return subprocess.run(
@@ -106,7 +120,9 @@ def cloud_config(profile: str, public_key: str, *, desktop: str) -> str:
         ]
     )
     delivery.require(desktop in linux_desktop.DESKTOPS, "Unknown guest desktop.")
-    commands = []
+    # cloud-init writes runcmd entries into a single shell script. Debian KDE's APT
+    # transaction must stop that script if it fails, before the marker is written.
+    commands: list[str | list[str]] = ["set -e"] if profile == "debian-13" else []
     if desktop == "kde":
         # The official KDE set installs without recommended or weak dependencies, never GNOME.
         commands += linux_desktop.kde_install_commands(profile, packages)
@@ -128,7 +144,7 @@ def cloud_config(profile: str, public_key: str, *, desktop: str) -> str:
         ["loginctl", "enable-linger", "ohtia"],
         ["touch", "/var/lib/ohtia-ready"],
     ]
-    # JSON is YAML 1.2; cloud-init receives structured argv, not interpolated source text.
+    # JSON is YAML 1.2, and each command's arguments stay structured.
     value = {
         "users": [
             {
@@ -194,23 +210,36 @@ def ssh_arguments(key: Path, known: Path, port: int) -> list:
 
 def wait_guest_setup(ssh: list[str], child, deadline: float) -> None:
     """Require successful completed provisioning before copying or running source."""
-    while time.monotonic() < deadline:
-        delivery.require(child.poll() is None, "Native guest stopped before readiness.")
-        ready = subprocess.run(
-            ssh + ["test -f /var/lib/ohtia-ready"],
-            capture_output=True,
-            timeout=10,
-        )
-        if ready.returncode == 0:
-            # runcmd can create its marker even after the package module failed.
-            # Wait outside cloud-init itself and reject all nonzero setup outcomes.
-            run(
-                ssh + ["sudo cloud-init status --wait --long"],
-                timeout=max(1, deadline - time.monotonic()),
+    timeout_message = "Guest provisioning exceeded its bounded deadline. See serial.log."
+    last_ssh_error = ""
+    while (remaining := deadline - time.monotonic()) > 0:
+        delivery.require(child.poll() is None, "Native guest stopped during provisioning.")
+        try:
+            result = subprocess.run(
+                ssh + [GUEST_SETUP_CHECK],
+                capture_output=True,
+                text=True,
+                timeout=remaining,
             )
-            return
-        time.sleep(2)
-    raise delivery.DeliveryError("Guest setup exceeded its bounded deadline.")
+        except subprocess.TimeoutExpired as error:
+            print((error.stdout or b"").decode(errors="replace"), end="", flush=True)
+            stderr = (error.stderr or b"").decode(errors="replace")
+            print(stderr or last_ssh_error, end="", file=sys.stderr, flush=True)
+            raise delivery.DeliveryError(timeout_message) from error
+        if result.returncode == 255:  # SSH transport is unavailable while the guest boots.
+            last_ssh_error = result.stderr or last_ssh_error
+            time.sleep(min(2, max(0, deadline - time.monotonic())))
+            continue
+        print(result.stdout, end="", flush=True)
+        print(result.stderr, end="", file=sys.stderr, flush=True)
+        delivery.require(
+            result.returncode == 0,
+            f"Guest provisioning failed (exit {result.returncode}). See serial.log.",
+        )
+        delivery.require(child.poll() is None, "Native guest stopped during provisioning.")
+        return
+    print(last_ssh_error, end="", file=sys.stderr, flush=True)
+    raise delivery.DeliveryError(timeout_message)
 
 
 def guest_metadata(cell_id: str, identity: dict) -> dict[str, str]:

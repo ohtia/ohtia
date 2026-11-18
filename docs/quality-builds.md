@@ -40,6 +40,8 @@ The temporary mirror list uses the official HTTPS archive and security mirrors, 
 
 Index refresh, archive acquisition, installation/configuration and package inventory share a twelve-minute wall-clock budget. APT retries a failed transfer once and uses fifteen-second connection/inactivity timeouts. GNU `timeout` bounds the entire child process group even when downloads keep progressing slowly, reserving five seconds for termination before forced cleanup. Downloads complete before installation, which uses `--no-download`; index refresh errors and any incomplete phase fail the job. All phases log their available time, result and elapsed time, while APT records the actual download sources and volume. The workflow has a separate fifteen-minute step limit as an outer cancellation bound. Inspect these phase records before attributing a delay to package installation or tests.
 
+Debian guests retry APT transfers within the guest deadline. A failed KDE package transaction stops the cloud-init script before it writes the readiness marker. Before transferring the source bundle to any KVM guest, the host waits for cloud-init to succeed and checks the marker and the guest account's access to `git` and `python3`. For a provisioning failure, inspect the cloud-init status in the job log and the original package-manager output in the retained `serial.log`.
+
 ### Build and aggregate
 
 Frozen setup and the common build entry precede native construction. These CI commands require their genuine GitHub event context and hosted VM; they do not grant local execution admission:
