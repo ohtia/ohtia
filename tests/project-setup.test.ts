@@ -4,6 +4,8 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ServiceConnections,
+  conversationTitlePolicy,
+  requestsConversationTitle,
   decodeProviderEvent,
   decodeDiagnosticEvent,
   makeDiagnosticRecord,
@@ -46,7 +48,12 @@ import type {
 } from "../packages/main/src/provider-adapter.js";
 import { responsesBody } from "../packages/main/src/chatgpt-responses.js";
 import { parseDevelopmentSwitches } from "../packages/main/src/development-command.js";
-import { storageFixture, stores, preTaskNoticeSql } from "./fixtures/storage.js";
+import {
+  storageFixture,
+  stores,
+  preTaskNoticeSql,
+  preConversationTitlesSql,
+} from "./fixtures/storage.js";
 import { setupConnections, successful as value, proposeSetup } from "./fixtures/project-setup.js";
 import { conformanceRequest, dispatchThrough } from "./fixtures/provider-conformance.js";
 import { fakeChatGPT, sse, streamResponse } from "./fixtures/chatgpt.js";
@@ -1490,7 +1497,7 @@ it("upgrades a schema-15 setup proposal without losing decisions or notice retry
     }),
   );
   const db = f.raw();
-  expect(db.pragma("user_version", { simple: true })).toBe(17);
+  expect(db.pragma("user_version", { simple: true })).toBe(18);
   expect(
     db
       .prepare("SELECT state FROM project_setup_proposals WHERE id=?")
@@ -1596,6 +1603,284 @@ describe("confirmed project direct guidance", () => {
     );
     return f;
   }
+
+  async function titleConversation(content: string) {
+    const f = await confirmed();
+    const id = value(
+      await f.store.executeResearchCommand({
+        command: "conversation.start",
+        operationId: "start-title-conversation",
+        payload: { projectId: f.projectId, content },
+      }),
+    ).resultId;
+    let n = 0;
+    const read = async () =>
+      value(await f.store.readConversations(f.projectId)).find((row) => row.id === id)!;
+    const rename = (expectedUpdatedAt: string, title = "Researcher's chosen title") =>
+      f.store.executeResearchCommand({
+        command: "conversation.rename",
+        operationId: `rename-title-${++n}`,
+        payload: { conversationId: id, expectedUpdatedAt, title },
+      });
+    const append = (content: string) =>
+      f.store.executeResearchCommand({
+        command: "message.append",
+        operationId: `append-title-${++n}`,
+        payload: { conversationId: id, content },
+      });
+    const reply = async (
+      result: ProviderResult,
+      options: {
+        readonly beforeResult?: () => Promise<void>;
+        readonly tools?: boolean;
+        readonly text?: string;
+      } = {},
+    ) => {
+      const task = await f.prepare();
+      const sent = vi.fn<NonNullable<ReturnType<typeof createFakeProvider>["requests"]>["send"]>(
+        async (request, control) => {
+          expect(control.release()).toBe(true);
+          const text = options.text ?? "Synthetic researcher guidance.";
+          if (text) control.emit({ type: "text", text });
+          await options.beforeResult?.();
+          if (
+            result.status === "completed" &&
+            result.conversation_title &&
+            requestsConversationTitle(request)
+          )
+            control.emit({
+              type: "tool_call",
+              namespace: conversationTitlePolicy.namespace,
+              name: conversationTitlePolicy.name,
+              arguments: JSON.stringify({ title: result.conversation_title }),
+            });
+          const terminal =
+            result.status === "completed" ? { status: "completed" as const } : result;
+          control.emit({ type: "result", result: terminal });
+          control.emit({ type: "result", result: terminal }); // An adapter can deliver a duplicate terminal event.
+        },
+      );
+      const fake = createFakeProvider({ send: sent });
+      const events: ProviderEvent[] = [];
+      const dispatch = new ProviderDispatch(
+        [
+          {
+            ...fake,
+            declaration: {
+              ...fake.declaration,
+              capabilities: { ...fake.declaration.capabilities, tools: options.tools ?? true },
+              connection: { ...fake.declaration.connection, id: "chatgpt" },
+            },
+          },
+        ],
+        {
+          state: () => "connected",
+          send: (generation, wire) => {
+            events.push(decodeProviderEvent(wire, generation)!.event);
+          },
+        },
+      );
+      dispatch.begin(f.context.generation);
+      await dispatch.receive({
+        ...task.dispatch,
+        permit: { ...task.dispatch.permit, issued_at: Date.now() },
+      });
+      dispatch.dispose();
+      expect(sent).toHaveBeenCalledOnce();
+      const terminals = events.filter((event) => event.type === "result");
+      expect(terminals).toHaveLength(1);
+      const terminal = terminals[0]!;
+      const text = events
+        .filter((event) => event.type === "text")
+        .map((event) => event.text)
+        .join("");
+      const saved = value(
+        await f.store.recordTaskEvent(task.dispatch.request.attempt, terminal, text),
+      );
+      expect(saved).toMatchObject({ recorded: true });
+      return { task, sent: sent.mock.calls[0]![0], terminal, text, saved };
+    };
+    return { ...f, id, read, rename, append, reply };
+  }
+
+  it("saves a topical opening and its title provenance, and ignores replay after reopening", async () => {
+    const topic = "¿Cómo comparar tutorías entre pares?";
+    const f = await titleConversation(topic);
+    const opening = await f.read();
+    expect(opening.title).toBeNull();
+    expect(value(await f.store.readMessages(f.id))).toMatchObject([{ content: topic }]);
+    const title = "Tutorías entre pares";
+    const { task, sent, terminal, text } = await f.reply({
+      status: "completed",
+      conversation_title: title,
+    });
+    expect(requestsConversationTitle(sent)).toBe(true);
+    expect(sent.instructions).toContain(
+      "Write your ordinary research reply first. If the researcher's messages establish a topic, then call suggest_conversation_title exactly once in the same response.",
+    );
+    expect(sent.instructions).toContain("If the conversation contains only a greeting");
+    expect(sent.input).toEqual([{ role: "user", text: topic }]);
+    const named = await f.read();
+    expect(named).toMatchObject({ title, updatedAt: opening.updatedAt });
+    expect(named.revision).toBeGreaterThan(opening.revision);
+    const db = f.raw();
+    try {
+      expect(
+        db
+          .prepare(
+            "SELECT c.title_attempt_id, a.conversation_title_policy FROM conversations c JOIN attempts a ON a.id=c.title_attempt_id WHERE c.id=?",
+          )
+          .get(bytes(f.id)),
+      ).toEqual({
+        title_attempt_id: bytes(task.dispatch.request.attempt),
+        conversation_title_policy: conversationTitlePolicy.version,
+      });
+    } finally {
+      db.close();
+    }
+    expect(
+      value(await f.store.recordTaskEvent(task.dispatch.request.attempt, terminal, text)),
+    ).toEqual({ recorded: false });
+    expect(await f.read()).toEqual(named);
+
+    await f.store.close();
+    const reopened = new DurableStore(f.options);
+    stores.push(reopened);
+    await reopened.open();
+    expect(value(await reopened.readConversations(f.projectId))).toContainEqual(named);
+    expect(value(await reopened.readMessages(f.id)).at(-1)).toMatchObject({
+      content: text,
+      ending: "complete",
+    });
+  });
+
+  it("leaves a greeting unnamed and suggests a title on the first topical exchange", async () => {
+    const f = await titleConversation("Hola");
+    const greeting = await f.reply({ status: "completed" });
+    expect(requestsConversationTitle(greeting.sent)).toBe(true);
+    expect((await f.read()).title).toBeNull();
+    const content = "Quiero investigar las redes de cuidado entre estudiantes.";
+    value(await f.append(content));
+    const topic = await f.reply({ status: "completed", conversation_title: "Redes de cuidado" });
+    expect(topic.sent.input).toEqual([
+      { role: "user", text: "Hola" },
+      { role: "assistant", text: greeting.text },
+      { role: "user", text: content },
+    ]);
+    expect((await f.read()).title).toBe("Redes de cuidado");
+    value(await f.append("Ahora tengo otra pregunta."));
+    const later = await f.reply({ status: "completed", conversation_title: "Otro tema" });
+    expect(requestsConversationTitle(later.sent)).toBe(false);
+    expect(later.sent.instructions).not.toContain("suggest_conversation_title");
+    expect((await f.read()).title).toBe("Redes de cuidado");
+  });
+
+  it.each(["before", "during", "after"] as const)(
+    "preserves a manual rename saved %s title generation and keeps manual conflicts",
+    async (timing) => {
+      const f = await titleConversation("Quiero estudiar las tutorías entre pares.");
+      const { updatedAt } = await f.read();
+      const rename = async () => {
+        value(await f.rename(updatedAt));
+      };
+      if (timing === "before") await rename();
+      const reply = await f.reply(
+        { status: "completed", conversation_title: "Tutorías entre pares" },
+        timing === "during" ? { beforeResult: rename } : {},
+      );
+      if (timing === "after") {
+        expect((await f.read()).title).toBe("Tutorías entre pares");
+        await rename();
+      }
+      expect(requestsConversationTitle(reply.sent)).toBe(timing !== "before");
+      const named = await f.read();
+      expect(named.title).toBe("Researcher's chosen title");
+      expect(await f.rename(updatedAt, "Other window")).toMatchObject({
+        ok: false,
+        error: { code: "stale_revision" },
+      });
+      expect(await f.read()).toEqual(named);
+      const db = f.raw();
+      try {
+        expect(
+          db.prepare("SELECT title_attempt_id FROM conversations WHERE id=?").get(bytes(f.id)),
+        ).toEqual({ title_attempt_id: null });
+      } finally {
+        db.close();
+      }
+    },
+  );
+
+  it.each([
+    { name: "unsupported metadata", title: "Synthetic topic", tools: false },
+    { name: "title outside the name rules", title: "x".repeat(201), tools: true },
+  ])("preserves the reply and date for $name", async ({ title, tools }) => {
+    const f = await titleConversation("Quiero delimitar un estudio de tutorías.");
+    const reply = await f.reply({ status: "completed", conversation_title: title }, { tools });
+    expect(reply.terminal.result).toEqual({ status: "completed" });
+    const ordinaryPrompt = guidanceInstructions({
+      project_type: "thesis",
+      title: "Redes de cuidado",
+      document_language: "es-AR",
+    });
+    if (!tools) expect(reply.sent.instructions).toBe(ordinaryPrompt);
+    expect((await f.read()).title).toBeNull();
+    expect(value(await f.store.readMessages(f.id)).at(-1)).toMatchObject({
+      content: reply.text,
+      ending: "complete",
+    });
+  });
+
+  it("keeps a title-only result unnamed and allows an explicit text-only retry", async () => {
+    const f = await titleConversation("Quiero comparar los programas de tutoría.");
+    const { task, saved } = await f.reply(
+      { status: "completed", conversation_title: "Programas de tutoría" },
+      { text: "" },
+    );
+    expect(saved).toMatchObject({
+      result: { status: "failed", reason: "empty_reply" },
+    });
+    expect((await f.read()).title).toBeNull();
+    expect(value(await f.store.readMessages(f.id))).toHaveLength(1);
+    value(
+      await f.store.executeResearchCommand({
+        command: "task.tryAgain",
+        operationId: "retry-title-only-response",
+        payload: { taskId: task.taskId },
+      }),
+    );
+    const retry = await f.reply({ status: "completed" });
+    expect(requestsConversationTitle(retry.sent)).toBe(false);
+    expect(retry.saved).toMatchObject({ result: { status: "completed" } });
+  });
+
+  it("keeps a conversation already saved under schema 17 ineligible after migration", async () => {
+    const f = await titleConversation("Existing unnamed conversation");
+    await f.reply({ status: "completed" });
+    await f.store.close();
+    const old = f.raw();
+    try {
+      old.exec(preConversationTitlesSql + "PRAGMA user_version=17;");
+    } finally {
+      old.close();
+    }
+    const upgraded = new DurableStore(f.options);
+    stores.push(upgraded);
+    await upgraded.open();
+    upgraded.setTaskContext(f.context);
+    value(
+      await upgraded.executeResearchCommand({
+        command: "message.append",
+        operationId: "append-after-title-migration",
+        payload: { conversationId: f.id, content: "Consider sampling techniques." },
+      }),
+    );
+    const task = value(await upgraded.prepareTask())!;
+    expect(requestsConversationTitle(task.dispatch.request)).toBe(false);
+    expect(value(await upgraded.readConversations(f.projectId))).toContainEqual(
+      expect.objectContaining({ id: f.id, title: null }),
+    );
+  });
 
   it("pins guidance policy and the normative instruction with literal confirmed context", () => {
     const policy = operationPolicy("direct_guidance", 1, "installed")!;

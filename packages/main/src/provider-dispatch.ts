@@ -2,6 +2,11 @@ import {
   dispatchPermitPolicy,
   isProviderEvent,
   isProviderToolLabel,
+  requestsConversationTitle,
+  conversationTitlePolicy,
+  conversationTitleInstructionSuffix,
+  isConversationTitleTool,
+  validConversationTitle,
   providerMessageVersion,
   providerTextPieces,
   type ConnectionState,
@@ -32,6 +37,7 @@ interface Dispatched {
   timer?: ReturnType<typeof setTimeout>;
   readonly limits: ProviderRequestLimits;
   outputBytes: number;
+  conversationTitle: boolean;
   readonly calls: Map<string | symbol, BufferedToolCall>;
   sampledWall: number;
   sampledMono: number;
@@ -40,6 +46,30 @@ interface Dispatched {
   lastEvent: number;
   readonly closed: Promise<void>;
   readonly acknowledgeClosed: () => void;
+}
+/** An optional title is only metadata of one successfully completed, bounded reply. */
+function titleSuggestion(calls: Iterable<BufferedToolCall>): string | undefined {
+  const matching = [...calls].filter(isConversationTitleTool);
+  const call = matching[0];
+  if (
+    matching.length !== 1 ||
+    !call?.complete ||
+    Buffer.byteLength(call.arguments, "utf8") > conversationTitlePolicy.max_argument_bytes
+  )
+    return;
+  try {
+    const value: unknown = JSON.parse(call.arguments);
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      Object.keys(value).length === 1 &&
+      "title" in value &&
+      validConversationTitle(value.title)
+    )
+      return value.title;
+  } catch {
+    // Invalid optional arguments leave the reply usable.
+  }
 }
 function resultDiagnostic(result: ProviderResult): DiagnosticEvent {
   switch (result.status) {
@@ -183,6 +213,7 @@ export class ProviderDispatch {
       done: false,
       limits: request.limits,
       outputBytes: 0,
+      conversationTitle: requestsConversationTitle(request),
       calls: new Map(),
       sampledWall: this.wall(),
       sampledMono: this.monotonic(),
@@ -286,7 +317,18 @@ export class ProviderDispatch {
         },
       };
       try {
-        await adapter.requests.send(request, control);
+        const providerRequest =
+          record.conversationTitle && !adapter.declaration.capabilities.tools
+            ? {
+                ...request,
+                tools: [],
+                instructions: request.instructions.endsWith(conversationTitleInstructionSuffix)
+                  ? request.instructions.slice(0, -conversationTitleInstructionSuffix.length)
+                  : request.instructions,
+              }
+            : request;
+        if (providerRequest !== request) record.conversationTitle = false;
+        await adapter.requests.send(providerRequest, control);
       } catch {
         /* The result below states what main can still know. */
       }
@@ -353,7 +395,11 @@ export class ProviderDispatch {
   }
   private finish(record: Dispatched, result: ProviderResult): void {
     if (record.done || record.closing) return;
-    if (
+    if (result.status === "completed" && record.conversationTitle) {
+      const title = titleSuggestion(record.calls.values());
+      if (title !== undefined) result = { status: "completed", conversation_title: title };
+      record.calls.clear();
+    } else if (
       result.status === "completed" &&
       [...record.calls.values()].some(
         (call) =>
@@ -427,6 +473,13 @@ export class ProviderDispatch {
       record.outputBytes = record.limits.max_output_bytes;
       return undefined;
     };
+    // Only main can issue a title in a result, after counting the actual tool argument bytes.
+    if (
+      body.type === "result" &&
+      body.result.status === "completed" &&
+      Object.hasOwn(body.result, "conversation_title")
+    )
+      body = { type: "result", result: { status: "completed" } };
     if (body.type === "tool_start") {
       if (
         !body.id ||

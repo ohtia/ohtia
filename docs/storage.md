@@ -1,9 +1,7 @@
 ---
 type: Playbook
 title: Durable foundation storage
-description: Persist project opening order, preferences, versioned research tasks and setup proposals, with durable receipts, recovery, bounded guidance transfers and pause-count invalidation.
-generated:
-  by: codex/gpt-6.2-sol
+description: Persist project opening order, conversation titles, preferences, research tasks and setup proposals with durable receipts, recovery, bounded transfers and pause-count invalidation.
 ---
 
 # Durable foundation storage
@@ -11,6 +9,12 @@ generated:
 ## Conversation composition
 
 The [composer](epics/EPIC-003-research-agents/epic.md#spec-003-017-message-composer) keeps unsent text only in window memory. Confirmed saves remove only the submitted text while retaining newer input; an uncertain save preserves its operation identity until editing creates a new intent (PRIN-002 and PRIN-006). A Stop requested before the save result waits for that result, then stops the conversation even when the save failed or remains uncertain. The new immutable `0014_message_composer` migration admits `conversation.stop` receipts through the same checkpoint and recovery path, without changing earlier migrations. The command’s reserved transaction applies the existing task control to all unfinished tasks in the conversation and records one receipt. Replaying it returns its first result without affecting later tasks.
+
+## Conversation titles
+
+Migration `0018_conversation_titles` enables optional title suggestions for research conversations created through `conversation.start`. The opening message and conversation are still saved together. Existing conversations retain their current names or localized creation dates. The title uses versioned metadata from the same direct-guidance response and uses the conversation context already admitted for that reply. Main counts the title arguments together with the reply text under the existing attempt output limit. A missing, incomplete or invalid suggestion leaves the date visible and preserves a successful reply. An explicit retry of an empty reply that requested title metadata sends only the ordinary reply request.
+
+Finalization checks for an unnamed eligible conversation and saves the suggestion and producing attempt together with the reply. The attempt identifies the title policy, model and transferred inputs (PRIN-004). The conversation revision refreshes the chat header and history. Its manual rename timestamp advances only on a researcher rename, so a rename already in progress can win after a suggestion lands. Saving a researcher name clears the active suggestion’s origin and retains the existing conflict rule for two manual renames (PRIN-002).
 
 ## Project opening
 

@@ -1,6 +1,8 @@
+import { objects as initialResearchObjects } from "../packages/utility/src/migrations/0007_research_records.mjs";
 import { objects as initialTaskObjects } from "../packages/utility/src/migrations/0008_durable_ai_tasks.mjs";
 const legacyTaskInitialSql = `DROP TRIGGER tasks_initial; ${initialTaskObjects.tasks_initial}; `;
 const projectOpeningLedgerSql =
+  `DROP TRIGGER conversations_changes; ${initialResearchObjects.conversations_changes}; ALTER TABLE conversations DROP COLUMN title_attempt_id; ALTER TABLE conversations DROP COLUMN automatic_title_eligible; ALTER TABLE attempts DROP COLUMN conversation_title_policy; DELETE FROM kysely_migration WHERE name='0018_conversation_titles'; DELETE FROM ohtia_migration_artifacts WHERE name='0018_conversation_titles'; ` +
   "DELETE FROM kysely_migration WHERE name='0017_project_opening'; DELETE FROM ohtia_migration_artifacts WHERE name='0017_project_opening'; ";
 // Non-shipping component checks execute the actual packaged module and binding in Electron's utility runtime.
 import fs from "node:fs";

@@ -1,10 +1,11 @@
 import { nextPosition, type TaskSchema, type TaskTransaction } from "./tasks.js";
 import fs from "node:fs";
 import * as crypto from "node:crypto";
-import { type Kysely, sql } from "kysely";
+import { type Generated, type Kysely, sql } from "kysely";
 import {
   failure,
   validResearcherMessage,
+  validConversationTitle,
   isIdentifier,
   isDiagnosticTime,
   researchCommands,
@@ -51,7 +52,10 @@ import type { SetupProposalRow } from "./project-setup.js";
 export interface ResearchSchema extends TaskSchema {
   project_setup_proposals: SetupProposalRow;
   projects: ProjectRow;
-  conversations: ConversationRow;
+  conversations: ConversationRow & {
+    automatic_title_eligible: Generated<number>;
+    title_attempt_id: Generated<Uint8Array | null>;
+  };
   messages: MessageRow;
   command_receipts: {
     operation_id: string;
@@ -87,17 +91,6 @@ function text(value: unknown): value is string {
   return (
     typeof value === "string" &&
     !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value)
-  );
-}
-function name(value: unknown): value is string {
-  return (
-    text(value) &&
-    value.length > 0 &&
-    value.length <= 400 &&
-    Array.from(value).length <= 200 &&
-    value.trim() === value &&
-    !/^\p{White_Space}|\p{White_Space}$/u.test(value) &&
-    !value.includes("\0")
   );
 }
 function isUsageConnection(value: unknown): value is "chatgpt" {
@@ -488,6 +481,7 @@ export async function applyResearchCommand(
           id: result,
           project_id: current.id,
           title: null,
+          automatic_title_eligible: current.is_development ? 0 : 1,
           created_at: now,
           updated_at: now,
           revision: 1,
@@ -507,7 +501,7 @@ export async function applyResearchCommand(
         .where("id", "=", bytes(p.conversationId))
         .executeTakeFirst();
       if (!current) return failure("record_not_found");
-      if (!name(p.title)) return failure("name_invalid");
+      if (!validConversationTitle(p.title)) return failure("name_invalid");
       if (p.expectedUpdatedAt !== current.updated_at) return staleRevision(current.revision);
       result = current.id;
       const updated = new Date(
@@ -515,7 +509,12 @@ export async function applyResearchCommand(
       ).toISOString();
       await db
         .updateTable("conversations")
-        .set({ title: p.title, updated_at: updated, revision: current.revision + 1 })
+        .set({
+          title: p.title,
+          title_attempt_id: null,
+          updated_at: updated,
+          revision: current.revision + 1,
+        })
         .where("id", "=", result)
         .execute();
       break;

@@ -20,7 +20,7 @@ import {
   responsesEndpoint,
 } from "../packages/main/src/chatgpt-responses.js";
 import { chatGPTEndpoints } from "../packages/main/src/chatgpt-sign-in.js";
-import type { ProviderEvent } from "@ohtia/contracts";
+import { conversationTitlePolicy, type ProviderEvent, type ProviderTool } from "@ohtia/contracts";
 
 const fixtures: ReturnType<typeof fakeChatGPT>[] = [];
 afterEach(() => {
@@ -53,6 +53,118 @@ function refreshes(f: ReturnType<typeof fakeChatGPT>): number {
 }
 
 describe("ChatGPT requests over the Responses API", () => {
+  const titleTool: ProviderTool = {
+    namespace: conversationTitlePolicy.namespace,
+    name: conversationTitlePolicy.name,
+    description: "Suggest a title alongside the reply.",
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: { title: { type: "string", description: "A short title." } },
+      required: ["title"],
+      additionalProperties: false,
+    },
+  };
+  function streamedTitle(args: string, id = "title-call", complete = true): string[] {
+    return [
+      sse({
+        type: "response.output_item.added",
+        item: {
+          type: "function_call",
+          id,
+          name: titleTool.name,
+          namespace: titleTool.namespace,
+        },
+      }),
+      sse({ type: "response.function_call_arguments.delta", item_id: id, delta: args }),
+      ...(complete
+        ? [sse({ type: "response.function_call_arguments.done", item_id: id, arguments: args })]
+        : []),
+    ];
+  }
+  it.each([
+    {
+      outcome: "valid title",
+      arguments: JSON.stringify({ title: "Peer tutoring" }),
+      title: "Peer tutoring",
+    },
+    { outcome: "malformed arguments", arguments: "{" },
+    { outcome: "invalid title", arguments: JSON.stringify({ title: " padded " }) },
+    { outcome: "overlong optional metadata", arguments: " ".repeat(4097) },
+    {
+      outcome: "incomplete title call",
+      arguments: JSON.stringify({ title: "Peer tutoring" }),
+      incomplete: true,
+    },
+    {
+      outcome: "duplicate title calls",
+      arguments: JSON.stringify({ title: "Peer tutoring" }),
+      duplicate: true,
+    },
+    { outcome: "missing title call", arguments: undefined },
+  ])("keeps the reply usable with $outcome in the same Responses request", async (scenario) => {
+    const f = await signedIn();
+    const args = scenario.arguments;
+    f.responses = () =>
+      streamResponse([
+        ...syntheticReply.slice(0, -1),
+        ...(args === undefined ? [] : streamedTitle(args, "title-call", !scenario.incomplete)),
+        ...(args !== undefined && scenario.duplicate
+          ? streamedTitle(args, "duplicate-title-call")
+          : []),
+        syntheticReply.at(-1)!,
+      ]);
+    const events = await dispatchThrough(f.manager, f.adapter, {
+      ...conformanceRequest("chatgpt"),
+      operation: "direct_guidance",
+      tools: [titleTool],
+    });
+    expect(f.responseRequests).toHaveLength(1);
+    expect(f.responseRequests[0]?.body.tools).toMatchObject([
+      { name: titleTool.namespace, tools: [{ name: titleTool.name }] },
+    ]);
+    expect(events.some((event) => event.type === "tool_call")).toBe(false);
+    expect(text(events)).toBe("Synthetic reply.");
+    expect(result(events)).toEqual({
+      status: "completed",
+      ...(scenario.title === undefined ? {} : { conversation_title: scenario.title }),
+    });
+  });
+
+  it.each([false, true])(
+    "counts streamed title argument bytes with the reply (title first: %s)",
+    async (titleFirst) => {
+      const f = await signedIn();
+      const reply = "x".repeat(65530);
+      const args = JSON.stringify({ title: "T" });
+      const replyEvent = sse({ type: "response.output_text.delta", delta: reply });
+      const titleEvents = streamedTitle(args);
+      f.responses = () =>
+        streamResponse([
+          syntheticReply[0]!,
+          ...(titleFirst ? [...titleEvents, replyEvent] : [replyEvent, ...titleEvents]),
+          syntheticReply.at(-1)!,
+        ]);
+      const request = conformanceRequest("chatgpt");
+      const events = await dispatchThrough(f.manager, f.adapter, {
+        ...request,
+        operation: "direct_guidance",
+        tools: [titleTool],
+        limits: { ...request.limits, max_output_bytes: 65536 },
+      });
+      expect(f.responseRequests).toHaveLength(1);
+      expect(events.some((event) => event.type === "tool_call")).toBe(false);
+      expect(text(events)).toBe(
+        titleFirst ? reply.slice(0, 65536 - Buffer.byteLength(args)) : reply,
+      );
+      expect(result(events)).toEqual({
+        status: "failed",
+        reason: "output_limit_exceeded",
+        dispatched: true,
+      });
+    },
+  );
+
   it("keeps server order while selecting visible models after an earlier hidden entry", async () => {
     const f = await signedIn();
     f.models = {

@@ -10,7 +10,7 @@ import {
 import type { ProviderToolCall } from "@ohtia/contracts";
 import type { LanguageRegistry } from "./research.js";
 import { randomUUID } from "node:crypto";
-import { type Kysely, sql } from "kysely";
+import { type Generated, type Kysely, sql } from "kysely";
 import {
   type Outcome,
   type ProviderDispatchMessage,
@@ -24,9 +24,27 @@ import {
   isProviderModelSlug,
   type DiagnosticEvent,
   providerMessageVersion,
+  conversationTitlePolicy,
+  conversationTitleInstructionSuffix,
+  validConversationTitle,
+  type ProviderTool,
+  utf8Size,
 } from "@ohtia/contracts";
 import { bytes, identifier, newId, type ResearchSchema } from "./research.js";
 import { buildInput, operationPolicy } from "./operations.js";
+const conversationTitleTool: ProviderTool = {
+  namespace: conversationTitlePolicy.namespace,
+  name: conversationTitlePolicy.name,
+  description: "Return the title of the current conversation alongside the ordinary reply.",
+  strict: true,
+  parameters: {
+    type: "object",
+    properties: { title: { type: "string", description: "A concise conversation title." } },
+    required: ["title"],
+    additionalProperties: false,
+  },
+};
+
 export type RuntimeMode = "development" | "installed" | "qualification";
 
 export type TaskState =
@@ -123,7 +141,7 @@ export interface TaskSchema {
   service_runs: { generation: string; started_at: string; clean_stop_at: string | null };
   usage_limit_pauses: UsagePauseRow;
   tasks: TaskRow;
-  attempts: AttemptRow;
+  attempts: AttemptRow & { conversation_title_policy: Generated<number | null> };
   application_preferences: { key: string; schema_version: number; revision: number; value: string };
 }
 export const unknownUsage: ProviderUsage = Object.freeze({
@@ -149,6 +167,7 @@ export class TaskTransaction {
   readonly diagnostics: DiagnosticEvent[] = [];
   readonly modelRefreshes = new Set<string>();
   private readonly conversations = new Map<string, Uint8Array>();
+  private titleSuggestion?: { conversation: string; attemptId: Uint8Array; title: string };
   constructor(
     private readonly db: Kysely<ResearchSchema>,
     readonly context: TaskContext,
@@ -158,12 +177,23 @@ export class TaskTransaction {
     this.conversations.set(identifier(conversation), conversation);
   }
   async flush(): Promise<void> {
-    for (const id of this.conversations.values())
-      await this.db
+    for (const [conversation, id] of this.conversations) {
+      const revision = this.db
         .updateTable("conversations")
         .set({ revision: sql`revision+1` })
-        .where("id", "=", id)
-        .execute();
+        .where("id", "=", id);
+      const suggestion = this.titleSuggestion;
+      if (suggestion?.conversation === conversation) {
+        // Keep the manual rename version so an edit already in progress can still win.
+        const named = await revision
+          .set({ title: suggestion.title, title_attempt_id: suggestion.attemptId })
+          .where("automatic_title_eligible", "=", 1)
+          .where("title", "is", null)
+          .executeTakeFirst();
+        if (named.numUpdatedRows === 1n) continue;
+      }
+      await revision.execute();
+    }
   }
   private async change(task: TaskRow, change: Partial<TaskRow>): Promise<void> {
     const changed = await this.db
@@ -720,6 +750,20 @@ export class TaskTransaction {
         .selectAll()
         .where("id", "=", task.conversation_id)
         .executeTakeFirstOrThrow();
+      const suggestTitle =
+        task.operation === "direct_guidance" &&
+        conversation.automatic_title_eligible === 1 &&
+        conversation.title === null &&
+        !(
+          task.replaces_task_id &&
+          (await this.db
+            .selectFrom("attempts")
+            .select("id")
+            .where("task_id", "=", task.replaces_task_id)
+            .where("conversation_title_policy", "=", conversationTitlePolicy.version)
+            .where("outcome_reason", "=", "empty_reply")
+            .executeTakeFirst())
+        );
       const messages = await this.db
         .selectFrom("messages")
         .selectAll()
@@ -856,6 +900,7 @@ export class TaskTransaction {
           requested_model: model,
           dispatch_permitted_at: this.now,
           transfer_manifest: JSON.stringify(built.transfer),
+          conversation_title_policy: suggestTitle ? conversationTitlePolicy.version : null,
           started_at: this.now,
         })
         .where("id", "=", attemptId)
@@ -874,9 +919,16 @@ export class TaskTransaction {
             operation: policy.operation,
             connection: task.connection,
             model,
-            instructions,
+            instructions: suggestTitle
+              ? instructions + conversationTitleInstructionSuffix
+              : instructions,
             input: built.input,
-            tools: task.operation === "project_setup" ? [setupTool] : [],
+            tools:
+              task.operation === "project_setup"
+                ? [setupTool]
+                : suggestTitle
+                  ? [conversationTitleTool]
+                  : [],
             project: identifier(task.project_id),
             policy_version: task.policy_version,
             instruction_version: task.instruction_version,
@@ -1033,6 +1085,20 @@ export class TaskTransaction {
         })
         .execute();
       await this.replaceWaiting(task.conversation_id);
+    }
+    if (
+      result.status === "completed" &&
+      task.operation === "direct_guidance" &&
+      attempt.conversation_title_policy === conversationTitlePolicy.version &&
+      validConversationTitle(result.conversation_title) &&
+      policy &&
+      utf8Size(text) + utf8Size(result.conversation_title) <= policy.max_output_bytes
+    ) {
+      this.titleSuggestion = {
+        conversation: identifier(task.conversation_id),
+        title: result.conversation_title,
+        attemptId: attempt.id,
+      };
     }
     let proposalId: string | undefined;
     if (state === "completed" && accepted[0]) {
