@@ -1,3 +1,4 @@
+import { validConversationTitle } from "./research.js";
 import { researcherMessageLimit } from "./research-port.js";
 import { portLimits, utf8Size, isIdentifier } from "./port.js";
 import { isConnectionId } from "./connections.js";
@@ -39,7 +40,7 @@ export const notDispatchedReasons = [
 ] as const;
 export type NotDispatchedReason = (typeof notDispatchedReasons)[number];
 export type ProviderResult =
-  | { readonly status: "completed" }
+  | { readonly status: "completed"; readonly conversation_title?: string }
   | {
       readonly status: "failed";
       readonly reason: Exclude<ProviderFailureReason, "connection_lost" | "permit_expired">;
@@ -91,6 +92,39 @@ export interface ProviderTool {
     readonly required: readonly string[];
     readonly additionalProperties: false;
   };
+}
+/** Version 1 of the optional title metadata returned alongside a direct-guidance reply. */
+export const conversationTitlePolicy = Object.freeze({
+  version: 1,
+  namespace: "ohtia_metadata",
+  name: "suggest_conversation_title",
+  max_argument_bytes: 4096,
+});
+export const conversationTitleInstructionSuffix =
+  "\n\n" +
+  [
+    "Write your ordinary research reply first.",
+    `If the researcher's messages establish a topic, then call ${conversationTitlePolicy.name} exactly once in the same response.`,
+    "Use a short, plain-text title in the document language that describes the earliest clear exchange. Base it on what the researcher is discussing and use your reply when it clarifies the topic.",
+    "A concrete research question or task qualifies even when the thesis is still being defined. Use the conversation's topic independently of the project's working title.",
+    "If the conversation contains only a greeting, or the topic is still unclear, omit the call.",
+    "Keep the title in the tool arguments and out of your ordinary reply.",
+  ].join(" ");
+
+export function isConversationTitleTool(tool: { namespace: unknown; name: unknown }): boolean {
+  return (
+    tool.namespace === conversationTitlePolicy.namespace &&
+    tool.name === conversationTitlePolicy.name
+  );
+}
+export function requestsConversationTitle(
+  request: Pick<ProviderRequestData, "operation" | "tools">,
+): boolean {
+  return (
+    request.operation === "direct_guidance" &&
+    request.tools.length === 1 &&
+    request.tools.some(isConversationTitleTool)
+  );
 }
 export interface ProviderToolCall {
   /** Null is an unnamespaced provider call; it cannot match a namespaced permitted tool. */
@@ -198,6 +232,11 @@ export function isProviderResult(value: unknown): value is ProviderResult {
   if (!record(value)) return false;
   switch (value.status) {
     case "completed":
+      return (
+        exact(value, ["status"]) ||
+        (exact(value, ["status", "conversation_title"]) &&
+          validConversationTitle(value.conversation_title))
+      );
     case "cancelled":
       return exact(value, ["status"]);
     case "uncertain":

@@ -18,6 +18,18 @@ export interface ConversationRecord {
   readonly updatedAt: string;
   readonly revision: number;
 }
+/** The same persisted name rules apply to researcher edits and generated suggestions. */
+export function validConversationTitle(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 400 &&
+    Array.from(value).length <= 200 &&
+    value.trim() === value &&
+    !/^\p{White_Space}|\p{White_Space}$/u.test(value) &&
+    !/[\0\uD800-\uDFFF]/u.test(value)
+  );
+}
 export interface MessageRecord {
   readonly id: string;
   readonly conversationId: string;

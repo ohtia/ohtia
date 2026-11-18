@@ -1,5 +1,6 @@
 import {
   isProviderModelSlug,
+  conversationTitlePolicy,
   type ProviderFailureReason,
   type ProviderRequestData,
   type ProviderUsage,
@@ -41,7 +42,10 @@ export function responsesBody(
   const namespaces = [...new Set(request.tools.map((tool) => tool.namespace))].map((name) => ({
     type: "namespace",
     name,
-    description: "Actions that Ohtia shows to the researcher for confirmation.",
+    description:
+      name === conversationTitlePolicy.namespace
+        ? "Optional metadata for the current reply."
+        : "Actions that Ohtia shows to the researcher for confirmation.",
     tools: request.tools
       .filter((tool) => tool.namespace === name)
       .map((tool) => ({

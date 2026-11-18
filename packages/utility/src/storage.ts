@@ -24,6 +24,11 @@ import {
   columns as openingColumns,
   objects as openingObjects,
 } from "./migrations/0017_project_opening.mjs";
+import {
+  up as conversationTitles,
+  columns as titleColumns,
+  objects as titleObjects,
+} from "./migrations/0018_conversation_titles.mjs";
 import { readResearch, researchRevisions, readPauseCounts } from "./research-reads.js";
 import type { Request, ResearchScope, ResearchEvent, ResearchOperation } from "@ohtia/contracts";
 import {
@@ -262,6 +267,7 @@ const names = [
   "0015_project_setup",
   "0016_task_notices",
   "0017_project_opening",
+  "0018_conversation_titles",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -590,7 +596,14 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                     ", " + openingColumns.opened + ",\n    CHECK ((title",
                   )
                 : definition.slice(0, -1) + ", " + openingColumns.error + ")"
-              : definition,
+              : revision >= 18 && name === "conversations"
+                ? definition.slice(0, -1) +
+                  ", " +
+                  titleColumns.eligible +
+                  ", " +
+                  titleColumns.origin +
+                  ")"
+                : definition,
         ])
       : []),
     ...(revision >= 8
@@ -601,7 +614,12 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ",\n    CHECK ((state=",
                 `, ${replyColumns.charge},\n    CHECK ((state=`,
               )
-            : definition,
+            : revision >= 18 && name === "attempts"
+              ? definition.replace(
+                  ",\n    UNIQUE (task_id,attempt_number)",
+                  `, ${titleColumns.policy},\n    UNIQUE (task_id,attempt_number)`,
+                )
+              : definition,
         ])
       : []),
     ...(revision >= 15 ? Object.entries(setupTables) : []),
@@ -637,6 +655,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 15 ? setupObjects : {}),
                 ...(revision >= 16 ? taskNoticeObjects : {}),
                 ...(revision >= 17 ? openingObjects : {}),
+                ...(revision >= 18 ? titleObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1027,6 +1046,7 @@ export class DurableStore {
                 "0015_project_setup": { up: setup },
                 "0016_task_notices": { up: taskNotices },
                 "0017_project_opening": { up: projectOpening },
+                "0018_conversation_titles": { up: conversationTitles },
               }),
           },
         });
