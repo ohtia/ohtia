@@ -19,11 +19,12 @@ export class NewProjectController {
   private disposed = false;
   constructor(
     private readonly port: FoundationPort,
-    private readonly onCreated: (scope: ResearchScope) => void,
+    private readonly onCreated: (scope: ResearchScope, selectionRevision: number) => void,
     private readonly nextId: () => string = () => crypto.randomUUID(),
     private readonly connections: readonly ProviderDeclaration["connection"][] = [
       chatgptConnection,
     ],
+    private readonly selectionRevision: () => number = () => 0,
   ) {}
   snapshot = (): NewProjectState => this.state;
   subscribe = (listener: () => void): (() => void) => {
@@ -45,6 +46,7 @@ export class NewProjectController {
   }
   start = async (): Promise<boolean> => {
     if (this.disposed || this.state.busy) return false;
+    const selectionRevision = this.selectionRevision();
     this.update({ busy: true, dialog: null });
     try {
       if (!this.createdId) {
@@ -86,10 +88,10 @@ export class NewProjectController {
       if (this.isDisposed()) return false;
       if (!conversations.ok || !conversations.value.items[0])
         throw new Error("Created project could not be opened.");
-      this.onCreated({
-        projectId: this.createdId,
-        conversationId: conversations.value.items[0].id,
-      });
+      this.onCreated(
+        { projectId: this.createdId, conversationId: conversations.value.items[0].id },
+        selectionRevision,
+      );
       this.operationId = undefined;
       this.createdId = undefined;
       this.update({ busy: false, dialog: null });

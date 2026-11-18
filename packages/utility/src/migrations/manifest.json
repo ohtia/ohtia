@@ -62,5 +62,9 @@
   {
     "name": "0016_task_notices",
     "sha256": "208e78129804a8f05f355ffde5dd4d8cc3f5f84162e4a9de856cf643056d5e03"
+  },
+  {
+    "name": "0017_project_opening",
+    "sha256": "fe07cf7665d1b362689dd5294bfe8248117d8794c3ecb579e27bb431dce961dd"
   }
 ]

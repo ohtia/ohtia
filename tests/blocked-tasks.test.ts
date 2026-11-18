@@ -677,7 +677,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 16,
+          target: 17,
         }),
       );
       await f.store.retry();
@@ -729,7 +729,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 16,
+          target: 17,
         }),
       );
       await exhausted.store.retry();
@@ -757,7 +757,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 16,
+          target: 17,
         }),
       );
       await f.store.retry();
@@ -1002,7 +1002,7 @@ describe("reply control composed with connection and usage pauses", () => {
       if (recovery) {
         fs.writeFileSync(
           path.join(f.root, "migration-pending.json"),
-          JSON.stringify({ version: 1, operation: "composed-recovery", source: 9, target: 16 }),
+          JSON.stringify({ version: 1, operation: "composed-recovery", source: 9, target: 17 }),
         );
         await f.store.retry();
       } else await f.store.open();
@@ -1018,13 +1018,14 @@ describe("reply control composed with connection and usage pauses", () => {
       expect(value(await f.resume("resume-after-reply-migration"))).toEqual(resumed);
       expect(await f.prepare()).not.toBeNull();
       const upgraded = f.raw();
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(16);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(17);
       expect(
         upgraded
-          .prepare("SELECT name FROM kysely_migration ORDER BY name DESC LIMIT 6")
+          .prepare("SELECT name FROM kysely_migration ORDER BY name DESC LIMIT 7")
           .pluck()
           .all(),
       ).toEqual([
+        "0017_project_opening",
         "0016_task_notices",
         "0015_project_setup",
         "0014_message_composer",
@@ -1055,7 +1056,7 @@ it.each(["continue-all", "resume-requests"] as const)(
       await f.store.close();
       fs.writeFileSync(
         path.join(f.root, "migration-pending.json"),
-        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 16 }),
+        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 17 }),
       );
       await f.store.retry();
     }

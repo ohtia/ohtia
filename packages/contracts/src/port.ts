@@ -712,6 +712,12 @@ export const operationErrorCodes = Object.freeze({
   "pause.read": readErrors,
   "destination.read": [...readErrors, "record_not_found"],
   "project.create": [...researchMutationErrors, "uncertain", "operation_conflict"],
+  "project.open": [
+    ...researchMutationErrors,
+    "record_not_found",
+    "uncertain",
+    "operation_conflict",
+  ],
   "project.confirmSetup": [
     ...researchMutationErrors,
     "record_not_found",

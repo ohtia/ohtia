@@ -84,6 +84,7 @@ async function launch(
   cleanups.push(() => {
     Reflect.deleteProperty(globalThis, "__ohtiaLoadInitialDocument");
     Reflect.deleteProperty(globalThis, "__ohtiaAcceptance");
+    Reflect.deleteProperty(globalThis, "__ohtiaBootstrapPlacement");
     Reflect.deleteProperty(globalThis, "__ohtiaCredentialAcceptance");
   });
   const constants = await import("../packages/contracts/src/index.js");
@@ -2122,6 +2123,7 @@ it("hands development switches to the open development instance and runs them on
     });
     expect(await h.action("read")).toMatchObject({
       openConversation: { projectId, conversationId },
+      navigateConversation: { projectId, conversationId, revision: 1 },
     });
     expect(written.join("")).toContain(`opened conversation ${conversationId}`);
     await h.action("new_window");
@@ -2431,4 +2433,84 @@ it("binds message-copy scope only to the latest service-admitted research subscr
   reply(latest);
   reply(older);
   expect(await h.action("read")).not.toHaveProperty("openConversation");
+});
+
+it("restores a project only in the application's first window and keeps new windows project-free", async () => {
+  const h = await launch();
+  expect((await h.action("read")).restoreLastProject).toBe(true);
+  await h.action("new_window");
+  const second = h.Window.all.at(-1)!;
+  expect(second).not.toBe(h.window);
+  const snapshot = await h.action("read", second);
+  expect(snapshot.restoreLastProject).toBe(false);
+  expect(snapshot.openConversation).toBeUndefined();
+  expect((await h.action("read")).restoreLastProject).toBe(true);
+  const pending = h.action("new_window");
+  h.window.emit("closed");
+  expect((await pending).restoreLastProject).toBeUndefined();
+  expect((await h.action("read", h.Window.all.at(-1)!)).restoreLastProject).toBe(false);
+});
+
+it.each(["development", "installed"] as const)(
+  "automatically admits a configured store on %s startup before restoring the first project",
+  async (mode) => {
+    const h = await launch({
+      mode,
+      developmentBuild: mode === "development",
+      locator: "located",
+      instrumented: mode === "installed",
+    });
+    expect(h.utilityProcess.fork.mock.calls[0][1][3]).toBe("open");
+    expect(await h.action("read")).toMatchObject({
+      state: "storage_opening",
+      restoreLastProject: true,
+    });
+    const current = h.supervisors[0];
+    current.stateChanged("ready");
+    current.storageChanged({ generation: current.generation, state: "storage_ready" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await h.action("read")).toMatchObject({
+      state: "storage_ready",
+      restoreLastProject: true,
+      serviceGeneration: current.generation,
+    });
+    const observe = Reflect.get(globalThis, "__ohtiaBootstrapPlacement");
+    if (mode === "installed")
+      expect(observe(h.window)).toEqual({
+        bounds: h.window.setBounds.mock.calls[0][0],
+        maximized: false,
+      });
+    else expect(observe).toBeUndefined();
+    expect(h.utilityProcess.fork).toHaveBeenCalledOnce();
+    await h.action("new_window");
+    expect(await h.action("read", h.Window.all.at(-1))).toMatchObject({
+      state: "storage_ready",
+      restoreLastProject: false,
+    });
+  },
+);
+it("keeps missing and rejected ordinary locators and qualification admission behind their existing explicit controls", async () => {
+  for (const [mode, locator] of [
+    ["installed", "missing"],
+    ["development", "missing"],
+    ["installed", "path_rejected"],
+    ["installed", "locator_invalid"],
+    ["qualification", "located"],
+  ] as const) {
+    const h = await launch({ mode, locator });
+    expect(h.utilityProcess.fork.mock.calls[0][1][3]).toBe("blocked");
+    expect((await h.action("read")).state).not.toBe("storage_opening");
+    cleanups.splice(0).forEach((cleanup) => cleanup());
+  }
+});
+it("preserves migration recovery gates when automatic configured-store admission fails", async () => {
+  const h = await launch({ mode: "installed", locator: "located" });
+  const current = h.supervisors[0];
+  current.stateChanged("ready");
+  current.storageChanged({ generation: current.generation, state: "recovery_required" });
+  expect((await h.action("read")).state).toBe("recovery_required");
+  await h.action("open_storage");
+  expect(h.utilityProcess.fork).toHaveBeenCalledOnce();
+  await h.action("retry_service");
+  expect(h.utilityProcess.fork.mock.calls[1][1][3]).toBe("retry");
 });

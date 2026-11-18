@@ -9,11 +9,16 @@ const call = <T,>(value: T) => ({ result: Promise.resolve(value), cancel() {} })
 /** The separate catalog owns all synthetic transport/data. No product fixture switch exists. */
 export function WorkspaceSpecimen({
   chat,
+  projectSelector,
+  hasProjects,
   project,
   projectScope,
   onComposerFocus,
   onNewProject,
-}: Pick<WorkspaceProps, "chat" | "project" | "projectScope" | "onComposerFocus"> & {
+}: Pick<
+  WorkspaceProps,
+  "chat" | "projectSelector" | "hasProjects" | "project" | "projectScope" | "onComposerFocus"
+> & {
   readonly onNewProject?: () => void;
 } = {}) {
   const params = new URLSearchParams(location.search);
@@ -135,6 +140,8 @@ export function WorkspaceSpecimen({
     <>
       <Workspace
         {...(chat !== undefined ? { chat } : {})}
+        projectSelector={projectSelector}
+        hasProjects={hasProjects}
         project={project}
         projectScope={projectScope}
         {...(onComposerFocus ? { onComposerFocus } : {})}

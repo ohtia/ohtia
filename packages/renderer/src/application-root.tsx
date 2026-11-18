@@ -1,4 +1,6 @@
 import { useId, useSyncExternalStore } from "react";
+import { ProjectController } from "./project-controller.js";
+import { ProjectSelector } from "./project-selector.js";
 import { NewProjectController } from "./new-project-controller.js";
 import { Dialog } from "./layers.js";
 import { ConversationController } from "./conversation-controller.js";
@@ -55,13 +57,53 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
     [bridge.foundation],
   );
   const conversationState = useSyncExternalStore(conversation.subscribe, conversation.snapshot);
-  const newProject = useMemo(
+  const [createdProject, setCreatedProject] = useState<string>();
+  const projects = useMemo(
     () =>
-      new NewProjectController(bridge.foundation, (scope) => {
+      new ProjectController(bridge.foundation, (scope) => {
+        setCreatedProject(undefined);
         conversation.open(scope);
       }),
     [bridge.foundation, conversation],
   );
+  const projectState = useSyncExternalStore(projects.subscribe, projects.snapshot);
+  useEffect(
+    () =>
+      conversation.observe((notice) => {
+        if (
+          notice !== "ready" &&
+          notice.ok &&
+          notice.value.kind === "changed" &&
+          notice.value.record === "project"
+        )
+          projects.noteProject();
+      }),
+    [conversation, projects],
+  );
+  useEffect(() => {
+    projects.remember(conversationState.scope);
+  }, [projects, conversationState.scope]);
+  useEffect(
+    () => () => {
+      projects.dispose();
+    },
+    [projects],
+  );
+  const newProject = useMemo(
+    () =>
+      new NewProjectController(
+        bridge.foundation,
+        (scope, revision) => {
+          if (projects.adopt(scope, revision)) setCreatedProject(scope.projectId ?? undefined);
+        },
+        undefined,
+        undefined,
+        projects.beginCreation,
+      ),
+    [bridge.foundation, projects],
+  );
+  const activeProject =
+    conversationState.project ?? projects.project(conversationState.scope.projectId);
   const projectDescriptionId = useId();
   const newProjectState = useSyncExternalStore(newProject.subscribe, newProject.snapshot);
   const [projectDialogBlocked, setProjectDialogBlocked] = useState(false);
@@ -89,10 +131,54 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
     [newProject],
   );
   const [bootstrap, setBootstrap] = useState<BootstrapSnapshot>();
+  const bootstrapSelection = useMemo(
+    () => ({ restored: false, revision: 0, previousReady: null as BootstrapSnapshot | null }),
+    [bridge],
+  );
   useEffect(() => {
-    conversation.open(bootstrap?.openConversation ?? { projectId: null, conversationId: null });
+    if (bootstrap?.state !== "storage_ready") {
+      bootstrapSelection.previousReady = null;
+      return;
+    }
+    const previous = bootstrapSelection.previousReady;
+    const recovered =
+      bootstrapSelection.restored &&
+      (!previous || previous.serviceGeneration !== bootstrap.serviceGeneration);
+    bootstrapSelection.previousReady = bootstrap;
+    const navigation = bootstrap.navigateConversation;
+    const explicit =
+      bootstrapSelection.restored &&
+      navigation &&
+      navigation.revision > bootstrapSelection.revision;
+    const current = conversation.snapshot().scope;
+    const scope = explicit
+      ? { projectId: navigation.projectId, conversationId: navigation.conversationId }
+      : !bootstrapSelection.restored
+        ? bootstrap.openConversation
+        : undefined;
+    if (navigation)
+      bootstrapSelection.revision = Math.max(bootstrapSelection.revision, navigation.revision);
+    bootstrapSelection.restored = true;
+    if (scope) projects.adopt(scope);
+    else {
+      const acknowledged =
+        bootstrap.openConversation?.projectId === current.projectId &&
+        bootstrap.openConversation.conversationId === current.conversationId;
+      if (acknowledged) projects.remember(current);
+      // A replaced service may never have acknowledged the renderer's active scope.
+      if (recovered || !current.projectId) conversation.open(current);
+      else if (acknowledged) conversation.refreshProject();
+    }
+    void projects.initialize((bootstrap.restoreLastProject ?? false) && !scope);
   }, [
     conversation,
+    projects,
+    bootstrapSelection,
+    bootstrap?.navigateConversation?.revision,
+    bootstrap?.navigateConversation?.projectId,
+    bootstrap?.navigateConversation?.conversationId,
+    bootstrap?.restoreLastProject,
+    bootstrap?.serviceGeneration,
     bootstrap?.state,
     bootstrap?.openConversation?.projectId,
     bootstrap?.openConversation?.conversationId,
@@ -312,8 +398,23 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
               >
                 <WorkspaceChrome
                   {...binding}
-                  project={conversationState.project}
+                  projectSelector={
+                    <ProjectSelector
+                      controller={projects}
+                      state={projectState}
+                      current={activeProject}
+                      currentId={conversationState.scope.projectId}
+                      currentFailed={
+                        conversationState.status === "failed" ||
+                        conversationState.status === "unavailable"
+                      }
+                      locale={bootstrap.locale}
+                    />
+                  }
+                  hasProjects={projectState.hasProjects}
+                  project={activeProject}
                   projectScope={conversationState.scope.projectId ?? undefined}
+                  revealProjectChat={createdProject === conversationState.scope.projectId}
                   onComposerFocus={conversation.composer.focus}
                   chat={
                     conversationState.scope.conversationId ? (

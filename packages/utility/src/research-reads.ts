@@ -9,13 +9,7 @@ import {
   type ResearchScope,
   type TimelineItem,
 } from "@ohtia/contracts";
-import {
-  bytes,
-  identifier,
-  listProjects,
-  listConversations,
-  type ResearchSchema,
-} from "./research.js";
+import { bytes, identifier, listConversations, type ResearchSchema } from "./research.js";
 import { TaskTransaction, type TaskContext } from "./tasks.js";
 import { operationPolicy } from "./operations.js";
 import { setupRevision } from "./project-setup.js";
@@ -238,13 +232,60 @@ export async function readResearch(
       };
     }
 
-    case "project.list":
+    case "project.list": {
+      const { cursor, count } = request.payload;
+      let query = db.selectFrom("projects").selectAll();
+      if (cursor)
+        query = query.where((eb) =>
+          eb.or([
+            eb("last_opened_at", "<", cursor.lastOpenedAt),
+            eb.and([
+              eb("last_opened_at", "=", cursor.lastOpenedAt),
+              eb("id", "<", bytes(cursor.id)),
+            ]),
+          ]),
+        );
+      const rows = await query
+        .orderBy("last_opened_at", "desc")
+        .orderBy("id", "desc")
+        .limit(count + 1)
+        .execute();
+      const items: import("@ohtia/contracts").ProjectRecord[] = [];
+      const cursorOf = (row: import("@ohtia/contracts").ProjectRecord) => ({
+        lastOpenedAt: row.lastOpenedAt,
+        id: row.id,
+      });
+      for (const row of rows.slice(0, count)) {
+        const item = {
+          id: identifier(row.id),
+          projectType: row.project_type,
+          title: row.title,
+          documentLanguage: row.document_language,
+          isDevelopment: row.is_development === 1,
+          setupConfirmedAt: row.setup_confirmed_at,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+          lastOpenedAt: row.last_opened_at,
+        };
+        const hasMore = items.length + 1 < rows.length;
+        if (
+          !fitsResearchResult(request, {
+            items: [...items, item],
+            next: hasMore ? cursorOf(item) : null,
+            hasMore,
+          })
+        )
+          break;
+        items.push(item);
+      }
+      const hasMore = items.length < rows.length;
+      const last = items.at(-1);
+      if (hasMore && !last) return failure("invalid_service_result");
+      return { ok: true, value: { items, next: hasMore && last ? cursorOf(last) : null, hasMore } };
+    }
     case "conversation.list": {
       const p = request.payload;
-      const result =
-        request.operation === "project.list"
-          ? await listProjects(db)
-          : await listConversations(db, request.payload.projectId);
+      const result = await listConversations(db, request.payload.projectId);
       if (!result.ok) return result;
       const rows = await Promise.all(
         result.value.map(async (row) =>

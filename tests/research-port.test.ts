@@ -1,3 +1,4 @@
+import { ProjectController } from "../packages/renderer/src/project-controller.js";
 import { proposeSetup } from "./fixtures/project-setup.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -264,7 +265,7 @@ describe("research timeline and bounded reads", () => {
   });
   it("returns whole conversations in requested order and remaining identifiers within the envelope bounds", async () => {
     const h = await harness();
-    value(await h.port.listProjects({ cursor: null, count: 50 }).result);
+    value(await h.port.listProjects({ cursor: null, count: 40 }).result);
     const db = h.raw();
     for (let n = 1; n <= 128; n++)
       db.prepare(
@@ -590,7 +591,7 @@ it("verifies long downloaded text and restarts at part one after a damaged read"
     await h.port.subscribeResearch({ projectId: null, conversationId: null }, () => {}).ready,
   ).toEqual(failure("busy"));
   subscription.dispose();
-  value(await h.port.listProjects({ cursor: null, count: 50 }).result);
+  value(await h.port.listProjects({ cursor: null, count: 40 }).result);
   const fresh = h.port.subscribeResearch({ projectId: null, conversationId: null }, () => {});
   value(await fresh.ready);
   fresh.dispose();
@@ -624,7 +625,6 @@ it("rejects missing records and cross-project scopes with controlled errors and 
   const calls = [
     h.port.readDestination({ projectId: missing, agentId: "virgilio" }),
     h.port.stopConversation("stop-missing-conversation", { conversationId: missing }),
-    h.port.listProjects({ cursor: missing, count: 50 }),
     h.port.listConversations({ projectId: missing, cursor: null, count: 50 }),
     h.port.listConversations({ projectId: h.projectId, cursor: missing, count: 50 }),
     h.port.readConversations({ projectId: h.projectId, ids: [missing] }),
@@ -726,7 +726,7 @@ it("emits one correctly attributed public research diagnostic without content or
   const h = await harness();
   const events: DiagnosticEvent[] = [];
   Object.assign(h.options, { emitDiagnostic: (event: DiagnosticEvent) => events.push(event) });
-  value(await h.port.listProjects({ cursor: null, count: 50 }).result);
+  value(await h.port.listProjects({ cursor: null, count: 40 }).result);
   expect(events.map((event) => event.event_name)).toEqual(["ohtia.project.listed"]);
   events.length = 0;
   value(
@@ -1379,4 +1379,59 @@ it("reads proposal-only reply positions and publishes each decision revision thr
     await h.port.confirmProjectSetup("stale-proposal", { proposalId: first }).result,
   ).toMatchObject({ error: { code: "proposal_not_waiting" } });
   subscription.dispose();
+});
+
+it("carries project opening and tuple-cursor batches through the actual window port without losing equal-time rows", async () => {
+  const h = await harness();
+  for (let index = 0; index < 94; index++)
+    value(await h.port.createProject(`selector-${String(index)}`).result);
+  const db = h.raw();
+  db.prepare(
+    "UPDATE projects SET title=?,document_language='ko',setup_confirmed_at=created_at,last_opened_at='2026-11-17T00:00:00.000Z'",
+  ).run("한".repeat(200));
+  db.close();
+  let fragmented = false;
+  let cursor: import("@ohtia/contracts").ProjectCursor | null = null;
+  const ids: string[] = [];
+  const sizes: number[] = [];
+  do {
+    const batch: import("@ohtia/contracts").ProjectRecord[] = [];
+    do {
+      const requested = 40 - batch.length;
+      const page = value(await h.port.listProjects({ cursor, count: requested }).result);
+      if (page.hasMore && page.items.length < requested) fragmented = true;
+      batch.push(...page.items);
+      cursor = page.next;
+    } while (cursor && batch.length < 40);
+    sizes.push(batch.length);
+    ids.push(...batch.map((row) => row.id));
+  } while (cursor);
+  expect(sizes).toEqual([40, 40, 15]);
+  expect(new Set(ids).size).toBe(95);
+  expect(fragmented).toBe(true);
+  const selector = new ProjectController(h.port, () => {});
+  await selector.load();
+  expect(selector.snapshot().items.map((row) => row.id)).toEqual(ids.slice(0, 40));
+  await selector.load(true);
+  expect(selector.snapshot().items.map((row) => row.id)).toEqual(ids.slice(0, 80));
+  await selector.load(true);
+  expect(selector.snapshot().items.map((row) => row.id)).toEqual(ids);
+  expect(selector.snapshot().next).toBeNull();
+  selector.dispose();
+  const events: DiagnosticEvent[] = [];
+  Object.assign(h.options, { emitDiagnostic: (event: DiagnosticEvent) => events.push(event) });
+  const target = ids.at(-1)!;
+  expect(
+    value(await h.port.openProject("selector-open", { projectId: target }).result).resultId,
+  ).toBe(target);
+  expect(events.map((event) => event.event_name)).toEqual(["ohtia.project.opened"]);
+  expect(events[0]).toEqual({ event_name: "ohtia.project.opened" });
+  const first = value(await h.port.listProjects({ cursor: null, count: 1 }).result);
+  expect(first.items[0]?.id).toBe(target);
+  const missing = entity(99999);
+  const rejected = await h.port.openProject("selector-missing", { projectId: missing }).result;
+  expect(rejected).toEqual(failure("record_not_found"));
+  expect(await h.port.openProject("selector-missing", { projectId: missing }).result).toEqual(
+    rejected,
+  );
 });

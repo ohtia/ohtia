@@ -73,6 +73,7 @@ export function setupProposalResponded(
   );
 }
 export class ConversationController {
+  readonly readingPositions = new Map<string, { top: number; follow: boolean }>();
   private state: ConversationState = empty({ projectId: null, conversationId: null });
   private readonly listeners = new Set<() => void>();
   private stream: Subscription | undefined;
@@ -385,12 +386,24 @@ export class ConversationController {
         });
     });
   }
+  refreshProject(): void {
+    const epoch = this.epoch;
+    this.queue = this.queue
+      .then(async () => {
+        if (!this.live(epoch)) return;
+        await this.projects(epoch);
+        if (this.live(epoch)) this.publish();
+      })
+      .catch(() => {
+        // The established subscription remains authoritative if this metadata read fails.
+      });
+  }
   private async projects(epoch: number): Promise<void> {
-    let cursor: string | null = null;
+    let cursor: import("@ohtia/contracts").ProjectCursor | null = null;
     do {
       const page: Outcome<ResearchOutputs["project.list"]> = await this.port.listProjects({
         cursor,
-        count: 128,
+        count: 40,
       }).result;
       if (!page.ok)
         throw Object.assign(new Error("Projects could not be read."), { code: page.error.code });
@@ -398,6 +411,7 @@ export class ConversationController {
       const project = page.value.items.find((project) => project.id === this.state.scope.projectId);
       if (project && (!this.state.project?.setupConfirmedAt || project.setupConfirmedAt))
         this.state = { ...this.state, project };
+      if (project) return;
       cursor = page.value.next;
     } while (cursor);
   }

@@ -417,6 +417,19 @@
     "setup.announcement": "Thesis set up: {title}",
     "setup.composerDisabled": "Virgilio can’t reply here yet.",
     "project.createUncertainTitle": "Ohtia couldn’t confirm whether the project was created",
-    "project.createUncertainBody": "Try again to check and open the thesis; nothing will be created twice."
+    "project.createUncertainBody": "Try again to check and open the thesis; nothing will be created twice.",
+    "project.current": "Current project",
+    "project.newThesis": "New thesis",
+    "project.none": "No projects yet.",
+    "project.loading": "Loading…",
+    "project.more": "Show more projects",
+    "project.loadingMore": "Loading more projects…",
+    "project.loadFailed": "Ohtia couldn’t load the projects. They’re still saved.",
+    "project.loadMoreFailed": "Ohtia couldn’t load more projects. They’re still saved.",
+    "project.reload": "Reload projects",
+    "project.settingUp": "Thesis · Setting up · {created}",
+    "project.chooseWelcome": "Choose a project in the project selector, or start a new one and set it up with Virgilio. You can also adjust language, appearance, zoom and layout in Settings.",
+    "project.chooseChat": "Choose a project in the project selector to talk with Virgilio.",
+    "project.openExistingFailed": "Ohtia couldn’t open the project. It’s still saved."
   }
 }

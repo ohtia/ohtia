@@ -1,7 +1,7 @@
 import { isResearchId, type ResearchScope } from "./research-port.js";
 import type { CommandBridge } from "./commands.js";
 import { isInterfaceLocale } from "./locale.js";
-import type { FoundationPort, InterfaceLocale } from "./port.js";
+import { isIdentifier, type FoundationPort, type InterfaceLocale } from "./port.js";
 
 export const desktopDocument = "ohtia://app/index.html";
 /** Private fixed channels; these are never exposed as bridge arguments. */
@@ -63,6 +63,9 @@ export type BootstrapState = (typeof bootstrapStates)[number];
 export type BootstrapNotice = "shutdown_uncertain" | "resource_failure" | "locale_fallback";
 export interface BootstrapSnapshot {
   readonly openConversation?: ResearchScope;
+  readonly navigateConversation?: ResearchScope & { readonly revision: number };
+  readonly restoreLastProject?: boolean;
+  readonly serviceGeneration?: string;
   readonly version: 1;
   readonly locale: InterfaceLocale;
   readonly state: BootstrapState;
@@ -91,7 +94,29 @@ export function decodeBootstrapSnapshot(value: unknown): BootstrapSnapshot | und
       "locale,notice,state,version",
       "locale,openConversation,state,version",
       "locale,notice,openConversation,state,version",
-    ].includes(Object.keys(record).sort().join(",")) ||
+    ].includes(
+      Object.keys(record)
+        .filter(
+          (key) =>
+            key !== "restoreLastProject" &&
+            key !== "navigateConversation" &&
+            key !== "serviceGeneration",
+        )
+        .sort()
+        .join(","),
+    ) ||
+    ("restoreLastProject" in record && typeof record.restoreLastProject !== "boolean") ||
+    ("serviceGeneration" in record &&
+      (record.state !== "storage_ready" || !isIdentifier(record.serviceGeneration))) ||
+    ("navigateConversation" in record &&
+      (!record.navigateConversation ||
+        typeof record.navigateConversation !== "object" ||
+        Object.keys(record.navigateConversation).sort().join(",") !==
+          "conversationId,projectId,revision" ||
+        !isResearchId((record.navigateConversation as ResearchScope).projectId) ||
+        !isResearchId((record.navigateConversation as ResearchScope).conversationId) ||
+        !Number.isSafeInteger((record.navigateConversation as { revision: number }).revision) ||
+        (record.navigateConversation as { revision: number }).revision < 1)) ||
     ("notice" in record &&
       record.notice !== "shutdown_uncertain" &&
       record.notice !== "resource_failure" &&
@@ -108,8 +133,21 @@ export function decodeBootstrapSnapshot(value: unknown): BootstrapSnapshot | und
   )
     return;
   return {
+    ...(record.navigateConversation
+      ? {
+          navigateConversation: record.navigateConversation as NonNullable<
+            BootstrapSnapshot["navigateConversation"]
+          >,
+        }
+      : {}),
+    ...("restoreLastProject" in record
+      ? { restoreLastProject: record.restoreLastProject as boolean }
+      : {}),
     ...(record.openConversation
       ? { openConversation: record.openConversation as ResearchScope }
+      : {}),
+    ...(typeof record.serviceGeneration === "string"
+      ? { serviceGeneration: record.serviceGeneration }
       : {}),
     version: 1,
     locale: record.locale,

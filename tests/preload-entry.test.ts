@@ -815,7 +815,13 @@ it("carries persisted research through the sandbox entry and revokes scoped stre
   try {
     const project = await expectValue(port.createProject("entry-create"));
     const projectId = project.resultId;
-    expect((await expectValue(port.listProjects({ cursor: null, count: 50 }))).items[0]?.id).toBe(
+    expect(await expectValue(port.openProject("entry-open", { projectId }))).toEqual({
+      resultId: projectId,
+    });
+    expect(await expectValue(port.openProject("entry-open", { projectId }))).toEqual({
+      resultId: projectId,
+    });
+    expect((await expectValue(port.listProjects({ cursor: null, count: 40 }))).items[0]?.id).toBe(
       projectId,
     );
     await expectValue(
