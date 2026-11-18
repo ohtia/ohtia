@@ -47,7 +47,7 @@ class LinuxDependenciesTests(unittest.TestCase):
             f"URIs: {dependencies.MIRROR_SOURCE}\n"
             "Suites: resolute resolute-updates resolute-security resolute-backports\n"
             "Components: main restricted universe multiverse\n"
-            "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n"
+            f"Signed-By: {dependencies.ARCHIVE_KEYRING}\n"
         )
         self.mirrors = self.apt / "apt-mirrors.txt"
         self.mirrors.write_text(
@@ -56,6 +56,8 @@ class LinuxDependenciesTests(unittest.TestCase):
             "https://security.ubuntu.com/ubuntu/\tpriority:3\n"
         )
         self.inventory = self.root / "packages.txt"
+        self.cache = self.root / "cache"
+        self.cache.mkdir()
         self.lists = self.root / "lists"
         self.lists.mkdir()
         for suite in dependencies.FRESH_SUITES:
@@ -79,8 +81,16 @@ class LinuxDependenciesTests(unittest.TestCase):
                 "display-session",
                 self.apt,
                 self.inventory,
-                self.lists,
+                cache_root=self.cache,
             )
+
+    def publish_indexes(self, command):
+        if "update" not in command:
+            return
+        prefix = "Dir::State::lists="
+        scoped = Path(next(arg[len(prefix) :] for arg in command if arg.startswith(prefix)))
+        for index in self.lists.iterdir():
+            shutil.copyfile(index, scoped / index.name)
 
     def test_gnu_timeout_prefers_prefixed_tool_and_verifies_fallback(self):
         for found, selected in (
@@ -124,7 +134,11 @@ class LinuxDependenciesTests(unittest.TestCase):
                 self.assertRaises(dependencies.ProvisionError),
             ):
                 dependencies.provision(
-                    "linux-x64-ubuntu-26-04-gnome", "display-session", self.apt, self.inventory
+                    "linux-x64-ubuntu-26-04-gnome",
+                    "display-session",
+                    self.apt,
+                    self.inventory,
+                    cache_root=self.cache,
                 )
             self.assertEqual(self.mirrors.read_bytes(), original)
             self.assertFalse(self.inventory.exists())
@@ -165,39 +179,35 @@ class LinuxDependenciesTests(unittest.TestCase):
                 dependencies.packages_for(cell, launcher)
 
     def test_mirror_selection_preserves_source_bytes_and_authentication(self):
-        for filename in ("ubuntu.sources", "ubuntu.list"):
-            with self.subTest(format=filename):
-                if filename.endswith(".list"):
-                    self.source.unlink()
-                    self.source = self.apt / "sources.list"
-                    self.source.write_text(
-                        "deb [arch=arm64 signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] "
-                        f"{dependencies.MIRROR_SOURCE} resolute main universe\n"
-                    )
-                original = self.source.read_bytes()
-                other = self.parts / "vendor.list"
-                other.write_text(
-                    "deb [signed-by=/vendor.gpg] https://vendor.invalid/ stable main\n"
-                )
-                vendor = other.read_bytes()
-                with contextlib.redirect_stdout(io.StringIO()):
-                    dependencies.configure_mirrors(self.apt)
-                self.assertEqual(self.source.read_bytes(), original)
-                self.assertEqual(other.read_bytes(), vendor)
-                self.assertEqual(
-                    self.mirrors.read_text().splitlines(),
-                    [
-                        "https://archive.ubuntu.com/ubuntu/\tpriority:1",
-                        "https://security.ubuntu.com/ubuntu/\tpriority:2",
-                        "https://mirrors.edge.kernel.org/ubuntu/\tpriority:3",
-                        "https://mirrors.mit.edu/ubuntu/\tpriority:4",
-                    ],
-                )
+        original = self.source.read_text()
+        main = original.replace(" resolute-security", "")
+        security = original.replace(
+            "resolute resolute-updates resolute-security resolute-backports", "resolute-security"
+        ).replace(f"URIs: {dependencies.MIRROR_SOURCE}", f"URIs:\n {dependencies.MIRROR_SOURCE}")
+        self.source.write_text(f"# Hosted Ubuntu archives\n{main}\n{security}")
+        source_bytes = self.source.read_bytes()
+        vendor = self.parts / "vendor.list"
+        vendor.write_text("deb [signed-by=/vendor.gpg] https://vendor.invalid/ stable main\n")
+        vendor_bytes = vendor.read_bytes()
+        self.assertEqual(dependencies.ubuntu_source(self.apt), self.source)
+        with contextlib.redirect_stdout(io.StringIO()):
+            dependencies.configure_mirrors(self.mirrors)
+        self.assertEqual(self.source.read_bytes(), source_bytes)
+        self.assertEqual(vendor.read_bytes(), vendor_bytes)
+        self.assertEqual(
+            self.mirrors.read_text().splitlines(),
+            [
+                "https://archive.ubuntu.com/ubuntu/\tpriority:1",
+                "https://security.ubuntu.com/ubuntu/\tpriority:2",
+                "https://mirrors.edge.kernel.org/ubuntu/\tpriority:3",
+                "https://mirrors.mit.edu/ubuntu/\tpriority:4",
+            ],
+        )
 
     def test_unresolvable_mirrors_are_skipped_in_their_declared_order(self):
         self.resolves.side_effect = lambda host: not host.endswith("ubuntu.com")
         with contextlib.redirect_stdout(io.StringIO()) as output:
-            dependencies.configure_mirrors(self.apt)
+            dependencies.configure_mirrors(self.mirrors)
         self.assertEqual(
             self.mirrors.read_text().splitlines(),
             [
@@ -266,6 +276,7 @@ class LinuxDependenciesTests(unittest.TestCase):
 
             def execute(command, **kwargs):
                 calls.append(command)
+                self.publish_indexes(command)
                 return subprocess.CompletedProcess(command, 0)
 
             with (
@@ -290,26 +301,61 @@ class LinuxDependenciesTests(unittest.TestCase):
 
     def test_source_drift_fails_without_rewriting_the_mirror_list(self):
         original = self.mirrors.read_bytes()
+        source = self.source.read_text()
+        uri = dependencies.MIRROR_SOURCE
         for content in (
-            "URIs: https://archive.ubuntu.com/ubuntu/\n",
-            f"URIs: {dependencies.MIRROR_SOURCE} http://azure.archive.ubuntu.com/ubuntu/\n",
+            source.replace(uri, "https://archive.ubuntu.com/ubuntu/"),
+            source.replace(uri, f"{uri} http://azure.archive.ubuntu.com/ubuntu/"),
+            source.replace(uri, f"{uri}\n https://vendor.invalid/"),
+            source + "\n" + source.replace(uri, "https://vendor.invalid/"),
+            source.replace(dependencies.ARCHIVE_KEYRING, "/vendor.gpg"),
+            source + "Trusted: yes\n",
+            source + f"URIs: {uri}\n",
+            source.replace("URIs:", "# URIs:"),
         ):
             self.source.write_text(content)
-            with self.subTest(content=content), self.assertRaises(dependencies.ProvisionError):
-                dependencies.configure_mirrors(self.apt)
+            with (
+                self.subTest(content=content),
+                contextlib.redirect_stdout(io.StringIO()),
+                self.assertRaisesRegex(dependencies.ProvisionError, "runner source drift"),
+            ):
+                self.provision()
             self.assertEqual(self.mirrors.read_bytes(), original)
-        self.source.write_text(f"URIs: {dependencies.MIRROR_SOURCE}\n")
+        self.source.rename(self.apt / "sources.list")
+        with (
+            contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaisesRegex(dependencies.ProvisionError, "ubuntu.sources is missing"),
+        ):
+            self.provision()
+        self.assertEqual(self.mirrors.read_bytes(), original)
+        self.source.write_text(source)
         self.mirrors.unlink()
-        with self.assertRaises(dependencies.ProvisionError):
-            dependencies.configure_mirrors(self.apt)
+        with (
+            contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaisesRegex(dependencies.ProvisionError, "mirror list is missing"),
+        ):
+            self.provision()
 
     def test_successful_phases_share_budget_and_install_only_downloaded_archives(self):
         now = [0.0]
         calls = []
+        unrelated = self.parts / "microsoft-prod.list"
+        definition = "deb https://packages.microsoft.com/ubuntu/26.04/prod resolute main\n"
+        unrelated.write_text(definition)
 
         def execute(command, **kwargs):
             calls.append((command, kwargs))
             now[0] += 100
+            if "apt-get" in command:
+                # In the unscoped invocation APT would refresh the vendor's failing index.
+                if f"Dir::Etc::sourcelist={self.source}" not in command or (
+                    "Dir::Etc::sourceparts=-" not in command
+                ):
+                    return subprocess.CompletedProcess(command, 100)
+                option = next(arg for arg in command if arg.startswith("Dir::State::lists="))
+                state = Path(option.split("=", 1)[1]).parent
+                self.assertEqual(state.stat().st_mode & 0o777, 0o755)
+                self.publish_indexes(command)
             if kwargs["stdout"]:
                 kwargs["stdout"].write("synthetic-package 1.0\n")
             return subprocess.CompletedProcess(command, 0)
@@ -325,6 +371,21 @@ class LinuxDependenciesTests(unittest.TestCase):
         self.assertEqual(
             [command[3] for command in commands], ["715.000s", "615.000s", "515.000s", "415.000s"]
         )
+        scopes = [
+            dict(arg.split("=", 1) for arg in command if arg.startswith("Dir::"))
+            for command in commands[:3]
+        ]
+        self.assertEqual(scopes, [scopes[0]] * 3)
+        scope = scopes[0]
+        self.assertEqual(scope["Dir::Cache::pkgcache"], "")
+        self.assertEqual(scope["Dir::Cache::srcpkgcache"], "")
+        lists = Path(scope["Dir::State::lists"])
+        archives = Path(scope["Dir::Cache::archives"])
+        self.assertNotEqual(lists, self.lists)
+        self.assertEqual(lists.parent, archives.parent)
+        self.assertEqual(lists.parent.parent, self.cache)
+        self.assertFalse(lists.parent.exists())
+        self.assertEqual(unrelated.read_text(), definition)
         self.assertIn("--error-on=any", commands[0])
         self.assertIn("--download-only", commands[1])
         self.assertIn("--no-download", commands[2])
@@ -350,7 +411,10 @@ class LinuxDependenciesTests(unittest.TestCase):
 
             def execute(command, **kwargs):
                 calls.append(command)
-                return subprocess.CompletedProcess(command, 100 if len(calls) == failed + 1 else 0)
+                if len(calls) == failed + 1:
+                    return subprocess.CompletedProcess(command, 100)
+                self.publish_indexes(command)
+                return subprocess.CompletedProcess(command, 0)
 
             with (
                 self.subTest(failed=failed),

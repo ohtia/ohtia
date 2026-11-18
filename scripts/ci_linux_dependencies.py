@@ -6,11 +6,14 @@ import email.utils
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import UTC, datetime, timedelta
+from email.parser import Parser
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -20,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BUDGET_SECONDS = 12 * 60
 KILL_GRACE_SECONDS = 5
 MIRROR_SOURCE = "mirror+file:/etc/apt/apt-mirrors.txt"
+ARCHIVE_KEYRING = "/usr/share/keyrings/ubuntu-archive-keyring.gpg"
 # Official mirrors first; the fallbacks sit outside ubuntu.com so a failure resolving that domain
 # does not take every mirror down. All of them are authenticated with the same Ubuntu keys.
 MIRRORS = (
@@ -119,21 +123,31 @@ def resolves(host: str) -> bool:
     return result.returncode == 0 and bool(result.stdout.strip())
 
 
-def configure_mirrors(apt_root: Path) -> None:
-    """Keep sources, suites, components and Signed-By; change only the hosted mirror list."""
-    sources = [apt_root / "sources.list"]
-    for suffix in ("*.list", "*.sources"):
-        sources.extend(sorted((apt_root / "sources.list.d").glob(suffix)))
-    contents = [path.read_text() for path in sources if path.is_file()]
-    if not any(MIRROR_SOURCE in content for content in contents):
-        raise ProvisionError(
-            "Hosted APT mirror-list source is missing; inspect runner source drift."
-        )
-    if any("azure.archive.ubuntu.com" in content for content in contents):
-        raise ProvisionError(
-            "A direct Azure APT source bypasses the mirror list; inspect source drift."
-        )
-    mirrors = apt_root / "apt-mirrors.txt"
+def ubuntu_source(apt_root: Path) -> Path:
+    """Admit only the Ubuntu archive definition shipped by the hosted runner."""
+    source = apt_root / "sources.list.d" / "ubuntu.sources"
+    if not source.is_file():
+        raise ProvisionError("Hosted ubuntu.sources is missing; inspect runner source drift.")
+    text = "\n".join(line for line in source.read_text().splitlines() if not line.startswith("#"))
+    for block in re.split(r"\n[ \t]*\n", text.strip()):
+        stanza = Parser().parsestr(block, headersonly=True)
+        uris = [value.split() for value in stanza.get_all("URIs", [])]
+        keys = [value.split() for value in stanza.get_all("Signed-By", [])]
+        if stanza.defects or uris != [[MIRROR_SOURCE]] or keys != [[ARCHIVE_KEYRING]]:
+            raise ProvisionError(
+                "Hosted ubuntu.sources must use the runner mirror list and Ubuntu archive "
+                "keyring in every stanza; inspect runner source drift."
+            )
+        for option in ("Trusted", "Allow-Insecure", "Allow-Weak", "Allow-Downgrade-To-Insecure"):
+            if option in stanza:
+                raise ProvisionError(
+                    f"Hosted ubuntu.sources overrides {option}; inspect runner source drift."
+                )
+    return source
+
+
+def configure_mirrors(mirrors: Path) -> None:
+    """Keep the source file intact and replace the runner's mirror priorities."""
     if not mirrors.is_file():
         raise ProvisionError("Hosted APT mirror list is missing.")
     available = []
@@ -230,36 +244,60 @@ def provision(
     launcher: str,
     apt_root: Path,
     inventory: Path,
-    lists: Path = Path("/var/lib/apt/lists"),
+    *,
+    cache_root: Path,
 ) -> None:
     packages = packages_for(cell, launcher)
     started = time.monotonic()
     deadline = started + BUDGET_SECONDS
     print(f"Provisioning {cell} via {launcher}; budget={BUDGET_SECONDS}s", flush=True)
     timeout_executable = gnu_timeout()
-    configure_mirrors(apt_root)
+    source = ubuntu_source(apt_root)
+    configure_mirrors(apt_root / "apt-mirrors.txt")
+    print(f"Ubuntu APT source: {source}", flush=True)
     print("Requested host packages: " + " ".join(packages), flush=True)
-    run_phase(
-        "index refresh",
-        [*APT, "update", "--error-on=any"],
-        deadline,
-        timeout_executable=timeout_executable,
-    )
-    check_index_freshness(lists)
-    install = ["install", "--no-install-recommends", "-y", *packages]
-    run_phase(
-        "archive acquisition",
-        [*APT, "--download-only", *install],
-        deadline,
-        timeout_executable=timeout_executable,
-    )
-    # Installation cannot silently start another network transfer after the bounded download.
-    run_phase(
-        "installation/configuration",
-        [*APT, "--no-download", *install],
-        deadline,
-        timeout_executable=timeout_executable,
-    )
+    with tempfile.TemporaryDirectory(prefix="ohtia-native-apt-", dir=cache_root) as path:
+        state = Path(path)
+        state.chmod(0o755)  # Allow APT's unprivileged download user to traverse the directory.
+        lists, archives = state / "lists", state / "archives"
+        lists.mkdir()
+        archives.mkdir()
+        apt = [
+            *APT,
+            "-o",
+            f"Dir::Etc::sourcelist={source}",
+            "-o",
+            "Dir::Etc::sourceparts=-",
+            "-o",
+            f"Dir::State::lists={lists}",
+            "-o",
+            f"Dir::Cache::archives={archives}",
+            "-o",
+            "Dir::Cache::pkgcache=",
+            "-o",
+            "Dir::Cache::srcpkgcache=",
+        ]
+        run_phase(
+            "index refresh",
+            [*apt, "update", "--error-on=any"],
+            deadline,
+            timeout_executable=timeout_executable,
+        )
+        check_index_freshness(lists)
+        install = ["install", "--no-install-recommends", "-y", *packages]
+        run_phase(
+            "archive acquisition",
+            [*apt, "--download-only", *install],
+            deadline,
+            timeout_executable=timeout_executable,
+        )
+        # Installation uses the same sources, indexes and archives without network access.
+        run_phase(
+            "installation/configuration",
+            [*apt, "--no-download", *install],
+            deadline,
+            timeout_executable=timeout_executable,
+        )
     with inventory.open("w") as stream:
         run_phase(
             "package inventory",
@@ -292,6 +330,7 @@ def main() -> int:
             sys.argv[2],
             Path("/etc/apt"),
             Path(os.environ["RUNNER_TEMP"]) / "ohtia-native-packages.txt",
+            cache_root=Path("/var/cache/apt"),
         )
     except (ProvisionError, OSError, KeyError, ValueError) as exc:
         print(f"Linux CI provisioning failed: {exc}", file=sys.stderr, flush=True)
