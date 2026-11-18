@@ -180,22 +180,54 @@ class LinuxDependenciesTests(unittest.TestCase):
 
     def test_mirror_selection_preserves_source_bytes_and_authentication(self):
         original = self.source.read_text()
-        main = original.replace(" resolute-security", "")
+        main = original.replace(" resolute-security", "") + "Architectures: amd64 arm64\n"
         security = original.replace(
             "resolute resolute-updates resolute-security resolute-backports", "resolute-security"
-        ).replace(f"URIs: {dependencies.MIRROR_SOURCE}", f"URIs:\n {dependencies.MIRROR_SOURCE}")
-        self.source.write_text(f"# Hosted Ubuntu archives\n{main}\n{security}")
-        source_bytes = self.source.read_bytes()
+        )
         vendor = self.parts / "vendor.list"
         vendor.write_text("deb [signed-by=/vendor.gpg] https://vendor.invalid/ stable main\n")
         vendor_bytes = vendor.read_bytes()
-        self.assertEqual(dependencies.ubuntu_source(self.apt), self.source)
+        mirror_bytes = self.mirrors.read_bytes()
+        staged_source = self.cache / "ubuntu.sources"
+        staged_mirrors = self.cache / "apt-mirrors.txt"
+        staged_uri = f"mirror+file:{staged_mirrors.as_posix()}"
+        runner_mirror = dependencies.MIRROR_SOURCE
+        for archive, updates, variants in (
+            (runner_mirror, runner_mirror, "runner mirror list"),
+            (
+                "http://archive.ubuntu.com/ubuntu/",
+                "http://security.ubuntu.com/ubuntu",
+                "direct Ubuntu archive",
+            ),
+            (
+                "https://archive.ubuntu.com/ubuntu",
+                runner_mirror,
+                "direct Ubuntu archive, runner mirror list",
+            ),
+        ):
+            with self.subTest(variants=variants):
+                stock_main = main.replace(runner_mirror, archive)
+                stock_security = security.replace(f"URIs: {runner_mirror}", f"uris:\n {updates}")
+                self.source.write_text(
+                    f"# Hosted Ubuntu archives\n\n{stock_main}\n{stock_security}"
+                )
+                source_bytes = self.source.read_bytes()
+                with contextlib.redirect_stdout(io.StringIO()) as output:
+                    dependencies.write_ubuntu_sources(self.apt, staged_source, staged_mirrors)
+                expected = (
+                    main.replace(runner_mirror, staged_uri)
+                    + "\n"
+                    + security.replace(f"URIs: {runner_mirror}", f"uris: {staged_uri}")
+                )
+                self.assertEqual(staged_source.read_text(), expected)
+                self.assertEqual(self.source.read_bytes(), source_bytes)
+                self.assertIn(f"Ubuntu APT source variants: {variants}", output.getvalue())
         with contextlib.redirect_stdout(io.StringIO()):
-            dependencies.configure_mirrors(self.mirrors)
-        self.assertEqual(self.source.read_bytes(), source_bytes)
+            dependencies.configure_mirrors(staged_mirrors)
+        self.assertEqual(self.mirrors.read_bytes(), mirror_bytes)
         self.assertEqual(vendor.read_bytes(), vendor_bytes)
         self.assertEqual(
-            self.mirrors.read_text().splitlines(),
+            staged_mirrors.read_text().splitlines(),
             [
                 "https://archive.ubuntu.com/ubuntu/\tpriority:1",
                 "https://security.ubuntu.com/ubuntu/\tpriority:2",
@@ -206,10 +238,11 @@ class LinuxDependenciesTests(unittest.TestCase):
 
     def test_unresolvable_mirrors_are_skipped_in_their_declared_order(self):
         self.resolves.side_effect = lambda host: not host.endswith("ubuntu.com")
+        staged_mirrors = self.cache / "apt-mirrors.txt"
         with contextlib.redirect_stdout(io.StringIO()) as output:
-            dependencies.configure_mirrors(self.mirrors)
+            dependencies.configure_mirrors(staged_mirrors)
         self.assertEqual(
-            self.mirrors.read_text().splitlines(),
+            staged_mirrors.read_text().splitlines(),
             [
                 "https://mirrors.edge.kernel.org/ubuntu/\tpriority:1",
                 "https://mirrors.mit.edu/ubuntu/\tpriority:2",
@@ -235,7 +268,7 @@ class LinuxDependenciesTests(unittest.TestCase):
             self.assertRaisesRegex(dependencies.ProvisionError, "No Ubuntu APT mirror resolved"),
         ):
             self.provision()
-        execute.assert_not_called()
+        self.assertEqual(execute.call_count, 0)
         self.assertEqual(self.mirrors.read_bytes(), original)
         self.assertFalse(self.inventory.exists())
 
@@ -303,24 +336,43 @@ class LinuxDependenciesTests(unittest.TestCase):
         original = self.mirrors.read_bytes()
         source = self.source.read_text()
         uri = dependencies.MIRROR_SOURCE
-        for content in (
-            source.replace(uri, "https://archive.ubuntu.com/ubuntu/"),
-            source.replace(uri, f"{uri} http://azure.archive.ubuntu.com/ubuntu/"),
-            source.replace(uri, f"{uri}\n https://vendor.invalid/"),
-            source + "\n" + source.replace(uri, "https://vendor.invalid/"),
-            source.replace(dependencies.ARCHIVE_KEYRING, "/vendor.gpg"),
-            source + "Trusted: yes\n",
-            source + f"URIs: {uri}\n",
-            source.replace("URIs:", "# URIs:"),
+        unknown = "https://vendor.invalid/ubuntu?fixture=private"
+        for content, expected in (
+            (source.replace(uri, "http://azure.archive.ubuntu.com/ubuntu/"), "stanza 1.*URIs"),
+            (source.replace(uri, f"{uri}\n {unknown}"), "stanza 1.*URIs"),
+            (source + "\n" + source.replace(uri, unknown), "stanza 2.*URIs"),
+            (source.replace(dependencies.ARCHIVE_KEYRING, "/vendor.gpg"), "stanza 1.*Signed-By"),
+            (source + "Trusted: yes\n", "stanza 1 overrides Trusted"),
+            (source + "Allow-Insecure: yes\n", "stanza 1 overrides Allow-Insecure"),
+            (source + f"URIs: {uri}\n", "stanza 1.*URIs"),
+            (source.replace("URIs:", "# URIs:"), "stanza 1.*URIs"),
+            (source.replace("URIs:", "Broken URIs"), "stanza 1.*valid deb822"),
+            ("\n   " + source, "stanza 1.*valid deb822"),
+            ("From synthetic-envelope\n" + source, "stanza 1.*valid deb822"),
+            (source + "From synthetic-envelope\n", "stanza 1.*valid deb822"),
+            (source.replace("Suites:", "# Suites:"), "stanza 1.*Suites"),
+            ("# Empty fixture\n", "contains no deb822 stanzas"),
         ):
             self.source.write_text(content)
             with (
-                self.subTest(content=content),
+                self.subTest(expected=expected),
                 contextlib.redirect_stdout(io.StringIO()),
-                self.assertRaisesRegex(dependencies.ProvisionError, "runner source drift"),
+                patch.object(dependencies.subprocess, "run") as execute,
+                self.assertRaisesRegex(dependencies.ProvisionError, expected) as error,
             ):
                 self.provision()
+            # Mock call arguments include the inherited subprocess environment.
+            self.assertEqual(execute.call_count, 0)
+            self.assertIn("runner source drift", str(error.exception))
+            self.assertNotIn(unknown, str(error.exception))
             self.assertEqual(self.mirrors.read_bytes(), original)
+            self.assertEqual(list(self.cache.iterdir()), [])
+        self.source.write_bytes(b"\xff")
+        with (
+            contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaisesRegex(dependencies.ProvisionError, "must be UTF-8"),
+        ):
+            self.provision()
         self.source.rename(self.apt / "sources.list")
         with (
             contextlib.redirect_stdout(io.StringIO()),
@@ -328,13 +380,6 @@ class LinuxDependenciesTests(unittest.TestCase):
         ):
             self.provision()
         self.assertEqual(self.mirrors.read_bytes(), original)
-        self.source.write_text(source)
-        self.mirrors.unlink()
-        with (
-            contextlib.redirect_stdout(io.StringIO()),
-            self.assertRaisesRegex(dependencies.ProvisionError, "mirror list is missing"),
-        ):
-            self.provision()
 
     def test_successful_phases_share_budget_and_install_only_downloaded_archives(self):
         now = [0.0]
@@ -342,19 +387,29 @@ class LinuxDependenciesTests(unittest.TestCase):
         unrelated = self.parts / "microsoft-prod.list"
         definition = "deb https://packages.microsoft.com/ubuntu/26.04/prod resolute main\n"
         unrelated.write_text(definition)
+        self.mirrors.unlink()
+        direct_source = self.source.read_text().replace(
+            dependencies.MIRROR_SOURCE, "http://archive.ubuntu.com/ubuntu/"
+        )
+        self.source.write_text(direct_source)
 
         def execute(command, **kwargs):
             calls.append((command, kwargs))
             now[0] += 100
             if "apt-get" in command:
-                # In the unscoped invocation APT would refresh the vendor's failing index.
-                if f"Dir::Etc::sourcelist={self.source}" not in command or (
-                    "Dir::Etc::sourceparts=-" not in command
+                scope = dict(arg.split("=", 1) for arg in command if arg.startswith("Dir::"))
+                state = Path(scope["Dir::State::lists"]).parent
+                if scope["Dir::Etc::sourceparts"] != "-" or scope["Dir::Etc::sourcelist"] != str(
+                    state / "ubuntu.sources"
                 ):
+                    # Without the scoped options the unrelated vendor's index would fail.
                     return subprocess.CompletedProcess(command, 100)
-                option = next(arg for arg in command if arg.startswith("Dir::State::lists="))
-                state = Path(option.split("=", 1)[1]).parent
                 self.assertEqual(state.stat().st_mode & 0o777, 0o755)
+                mirror_uri = f"mirror+file:{(state / 'apt-mirrors.txt').as_posix()}"
+                self.assertEqual(
+                    (state / "ubuntu.sources").read_text(),
+                    direct_source.replace("http://archive.ubuntu.com/ubuntu/", mirror_uri),
+                )
                 self.publish_indexes(command)
             if kwargs["stdout"]:
                 kwargs["stdout"].write("synthetic-package 1.0\n")
@@ -386,6 +441,8 @@ class LinuxDependenciesTests(unittest.TestCase):
         self.assertEqual(lists.parent.parent, self.cache)
         self.assertFalse(lists.parent.exists())
         self.assertEqual(unrelated.read_text(), definition)
+        self.assertEqual(self.source.read_text(), direct_source)
+        self.assertFalse(self.mirrors.exists())
         self.assertIn("--error-on=any", commands[0])
         self.assertIn("--download-only", commands[1])
         self.assertIn("--no-download", commands[2])
@@ -440,7 +497,7 @@ class LinuxDependenciesTests(unittest.TestCase):
                     deadline,
                     timeout_executable="/synthetic/gnutimeout",
                 )
-            execute.assert_not_called()
+            self.assertEqual(execute.call_count, 0)
         with (
             patch.object(dependencies.time, "monotonic", return_value=100),
             patch.object(

@@ -23,6 +23,11 @@ ROOT = Path(__file__).resolve().parents[1]
 BUDGET_SECONDS = 12 * 60
 KILL_GRACE_SECONDS = 5
 MIRROR_SOURCE = "mirror+file:/etc/apt/apt-mirrors.txt"
+STOCK_SOURCES = {
+    f"{scheme}://{host}/ubuntu"
+    for host in ("archive.ubuntu.com", "security.ubuntu.com")
+    for scheme in ("http", "https")
+}
 ARCHIVE_KEYRING = "/usr/share/keyrings/ubuntu-archive-keyring.gpg"
 # Official mirrors first; the fallbacks sit outside ubuntu.com so a failure resolving that domain
 # does not take every mirror down. All of them are authenticated with the same Ubuntu keys.
@@ -123,33 +128,62 @@ def resolves(host: str) -> bool:
     return result.returncode == 0 and bool(result.stdout.strip())
 
 
-def ubuntu_source(apt_root: Path) -> Path:
-    """Admit only the Ubuntu archive definition shipped by the hosted runner."""
-    source = apt_root / "sources.list.d" / "ubuntu.sources"
-    if not source.is_file():
+def write_ubuntu_sources(apt_root: Path, source: Path, mirrors: Path) -> None:
+    """Isolate and normalize the supported Ubuntu archive definitions for all APT phases."""
+    runner_source = apt_root / "sources.list.d" / "ubuntu.sources"
+    if not runner_source.is_file():
         raise ProvisionError("Hosted ubuntu.sources is missing; inspect runner source drift.")
-    text = "\n".join(line for line in source.read_text().splitlines() if not line.startswith("#"))
-    for block in re.split(r"\n[ \t]*\n", text.strip()):
+    try:
+        text = runner_source.read_text(encoding="utf-8")
+    except UnicodeDecodeError as error:
+        raise ProvisionError(
+            "Hosted ubuntu.sources must be UTF-8; inspect runner source drift."
+        ) from error
+    text = "\n".join(line for line in text.split("\n") if not line.startswith("#"))
+    blocks = [block for block in re.split(r"(?m)^[ \t]*\n", text) if block.strip()]
+    if not blocks:
+        raise ProvisionError(
+            "Hosted ubuntu.sources contains no deb822 stanzas; inspect runner source drift."
+        )
+    rendered = []
+    variants = set()
+    mirror_uri = f"mirror+file:{mirrors.as_posix()}"
+    for index, block in enumerate(blocks, start=1):
         stanza = Parser().parsestr(block, headersonly=True)
+        prefix = f"Hosted ubuntu.sources stanza {index}"
+        suffix = "inspect runner source drift."
+        # The email parser can treat a trailing mbox delimiter as a body without a defect.
+        if stanza.defects or stanza.get_unixfrom() or stanza.get_payload():
+            raise ProvisionError(f"{prefix} is not a valid deb822 stanza; {suffix}")
+        for field in ("Types", "Suites", "Components"):
+            values = stanza.get_all(field, [])
+            if len(values) != 1 or not values[0].strip():
+                raise ProvisionError(f"{prefix} must declare one nonempty {field} field; {suffix}")
         uris = [value.split() for value in stanza.get_all("URIs", [])]
-        keys = [value.split() for value in stanza.get_all("Signed-By", [])]
-        if stanza.defects or uris != [[MIRROR_SOURCE]] or keys != [[ARCHIVE_KEYRING]]:
+        if uris == [[MIRROR_SOURCE]]:
+            variants.add("runner mirror list")
+        elif len(uris) == 1 and len(uris[0]) == 1 and uris[0][0].removesuffix("/") in STOCK_SOURCES:
+            variants.add("direct Ubuntu archive")
+        else:
             raise ProvisionError(
-                "Hosted ubuntu.sources must use the runner mirror list and Ubuntu archive "
-                "keyring in every stanza; inspect runner source drift."
+                f"{prefix} must declare one supported Ubuntu archive URI in URIs; {suffix}"
+            )
+        keys = [value.split() for value in stanza.get_all("Signed-By", [])]
+        if keys != [[ARCHIVE_KEYRING]]:
+            raise ProvisionError(
+                f"{prefix} must use the Ubuntu archive keyring in Signed-By; {suffix}"
             )
         for option in ("Trusted", "Allow-Insecure", "Allow-Weak", "Allow-Downgrade-To-Insecure"):
             if option in stanza:
-                raise ProvisionError(
-                    f"Hosted ubuntu.sources overrides {option}; inspect runner source drift."
-                )
-    return source
+                raise ProvisionError(f"{prefix} overrides {option}; {suffix}")
+        stanza.replace_header("URIs", mirror_uri)
+        rendered.append("\n".join(f"{name}: {value}" for name, value in stanza.raw_items()))
+    source.write_text("\n\n".join(rendered) + "\n", encoding="utf-8")
+    print("Ubuntu APT source variants: " + ", ".join(sorted(variants)), flush=True)
 
 
 def configure_mirrors(mirrors: Path) -> None:
-    """Keep the source file intact and replace the runner's mirror priorities."""
-    if not mirrors.is_file():
-        raise ProvisionError("Hosted APT mirror list is missing.")
+    """Write the provisioning-only mirror list with the reviewed priorities."""
     available = []
     for mirror in MIRRORS:
         host = urlsplit(mirror).hostname
@@ -252,13 +286,14 @@ def provision(
     deadline = started + BUDGET_SECONDS
     print(f"Provisioning {cell} via {launcher}; budget={BUDGET_SECONDS}s", flush=True)
     timeout_executable = gnu_timeout()
-    source = ubuntu_source(apt_root)
-    configure_mirrors(apt_root / "apt-mirrors.txt")
-    print(f"Ubuntu APT source: {source}", flush=True)
     print("Requested host packages: " + " ".join(packages), flush=True)
     with tempfile.TemporaryDirectory(prefix="ohtia-native-apt-", dir=cache_root) as path:
         state = Path(path)
         state.chmod(0o755)  # Allow APT's unprivileged download user to traverse the directory.
+        source, mirrors = state / "ubuntu.sources", state / "apt-mirrors.txt"
+        write_ubuntu_sources(apt_root, source, mirrors)
+        configure_mirrors(mirrors)
+        print(f"Ubuntu APT source: {source}", flush=True)
         lists, archives = state / "lists", state / "archives"
         lists.mkdir()
         archives.mkdir()
