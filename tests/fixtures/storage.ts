@@ -1,4 +1,5 @@
 import { objects as initialResearchObjects } from "../../packages/utility/src/migrations/0007_research_records.mjs";
+import { objects as openingObjects } from "../../packages/utility/src/migrations/0017_project_opening.mjs";
 import { objects as setupObjects } from "../../packages/utility/src/migrations/0015_project_setup.mjs";
 import { objects as initialTaskObjects } from "../../packages/utility/src/migrations/0008_durable_ai_tasks.mjs";
 import fs from "node:fs";
@@ -11,7 +12,11 @@ import { DurableStore, type StorageOptions } from "../../packages/utility/dist/i
 
 const require = createRequire(new URL("../../packages/utility/package.json", import.meta.url));
 export const Database = require("better-sqlite3") as typeof import("better-sqlite3");
-export const preConversationTitlesSql = `DROP TRIGGER conversations_changes; ${initialResearchObjects.conversations_changes}; ALTER TABLE conversations DROP COLUMN title_attempt_id; ALTER TABLE conversations DROP COLUMN automatic_title_eligible; ALTER TABLE attempts DROP COLUMN conversation_title_policy; DELETE FROM kysely_migration WHERE name='0018_conversation_titles'; DELETE FROM ohtia_migration_artifacts WHERE name='0018_conversation_titles'; `;
+const josefaLedgerSql =
+  "DELETE FROM kysely_migration WHERE name='0019_josefa_search_planning'; DELETE FROM ohtia_migration_artifacts WHERE name='0019_josefa_search_planning'; ";
+export const preJosefaReceiptsSql = `DROP TRIGGER receipts_commands; ${openingObjects.receipts_commands}; `;
+export const preJosefaSql = preJosefaReceiptsSql + josefaLedgerSql;
+export const preConversationTitlesSql = `${josefaLedgerSql}DROP TRIGGER conversations_changes; ${initialResearchObjects.conversations_changes}; ALTER TABLE conversations DROP COLUMN title_attempt_id; ALTER TABLE conversations DROP COLUMN automatic_title_eligible; ALTER TABLE attempts DROP COLUMN conversation_title_policy; DELETE FROM kysely_migration WHERE name='0018_conversation_titles'; DELETE FROM ohtia_migration_artifacts WHERE name='0018_conversation_titles'; `;
 export const preProjectOpeningSql =
   preConversationTitlesSql +
   "DROP INDEX projects_open_order; ALTER TABLE projects DROP COLUMN last_opened_at; ALTER TABLE command_receipts DROP COLUMN error_code; DELETE FROM kysely_migration WHERE name='0017_project_opening'; DELETE FROM ohtia_migration_artifacts WHERE name='0017_project_opening'; ";

@@ -1,6 +1,12 @@
 import { directGuidanceInstructions } from "./direct-guidance.js";
+import { searchStrategyInstructions } from "./search-strategy.js";
 import { setupInstructions, setupInstructionsV2 } from "./project-setup.js";
-import { utf8Size, type ProviderOperation, type TransferEntry } from "@ohtia/contracts";
+import {
+  utf8Size,
+  type ProviderOperation,
+  type ReplyAgent,
+  type TransferEntry,
+} from "@ohtia/contracts";
 
 /** SPEC-003-004: every operation version fixes all of these values; the researcher cannot edit them. */
 export interface OperationPolicy {
@@ -49,24 +55,32 @@ const projectSetupV1: OperationPolicy = Object.freeze({
   modes: Object.freeze(["development", "installed", "qualification"] as const),
 });
 
+const directGuidanceV1: OperationPolicy = Object.freeze({
+  operation: "direct_guidance",
+  version: 1,
+  instruction_version: 1,
+  max_pending_tasks: 100,
+  max_input_bytes: 256 * 1024,
+  max_input_items: 500,
+  max_output_bytes: 64 * 1024,
+  max_work_units: 1,
+  max_attempt_duration_ms: 10 * 60 * 1000,
+  max_inactivity_ms: 120 * 1000,
+  stop_grace_ms: 5 * 1000,
+  max_attempts: 2,
+  max_auto_retries: 0,
+  retry_backoff_ms: 0,
+  instructions: directGuidanceInstructions,
+  modes: Object.freeze(["development", "installed", "qualification"] as const),
+});
+
 const policies: readonly OperationPolicy[] = Object.freeze([
+  directGuidanceV1,
   Object.freeze({
-    operation: "direct_guidance",
-    version: 1,
-    instruction_version: 1,
-    max_pending_tasks: 100,
-    max_input_bytes: 256 * 1024,
-    max_input_items: 500,
-    max_output_bytes: 64 * 1024,
-    max_work_units: 1,
-    max_attempt_duration_ms: 10 * 60 * 1000,
-    max_inactivity_ms: 120 * 1000,
-    stop_grace_ms: 5 * 1000,
-    max_attempts: 2,
-    max_auto_retries: 0,
-    retry_backoff_ms: 0,
-    instructions: directGuidanceInstructions,
-    modes: Object.freeze(["development", "installed", "qualification"] as const),
+    ...directGuidanceV1,
+    operation: "search_strategy_planning",
+    instructions: searchStrategyInstructions,
+    modes: Object.freeze(["development"] as const),
   }),
   projectSetupV1,
   Object.freeze({
@@ -101,10 +115,20 @@ export function operationPolicy(
   version: number,
   mode: "development" | "installed" | "qualification",
 ): OperationPolicy | undefined {
-  return policies.find(
-    (policy) =>
-      policy.operation === operation && policy.version === version && policy.modes.includes(mode),
-  );
+  const policy = recordedOperationPolicy(operation, version);
+  return policy?.modes.includes(mode) ? policy : undefined;
+}
+
+/** Interpret existing records independently of the current mode's dispatch authorization. */
+export function recordedOperationPolicy(
+  operation: string,
+  version: number,
+): OperationPolicy | undefined {
+  return policies.find((policy) => policy.operation === operation && policy.version === version);
+}
+
+export function replyAgent(operation: string): ReplyAgent {
+  return operation === "search_strategy_planning" ? "josefa" : "virgilio";
 }
 
 export const omittedMessagesNote = "Earlier messages in this conversation are not included.";

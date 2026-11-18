@@ -3,7 +3,7 @@ type: Specification
 title: "Thesis workflow"
 description: "Research stages, artifacts, review milestones, and reentry paths for theses and scientific papers."
 generated:
-  by: codex/gpt-6.1-sol
+  by: codex/gpt-6.2-sol
 sources:
   - id: double-diamond
     resource: "https://www.designcouncil.org.uk/resources/the-double-diamond/"
@@ -156,7 +156,7 @@ Agree and record:
 
 - **Purpose:** the question and the contribution needed from each avenue.
 - **Vocabulary:** concepts, keywords, synonyms, translations, descriptors and operator combinations.
-- **Search locations:** pertinent and accessible databases, catalogs, repositories and reference/citation routes through enabled adapters.
+- **Search locations:** pertinent and accessible databases, catalogs, repositories and reference/citation routes; a strategy marks those that enabled adapters can query as such and every other proposed location as unverified.
 - **Scope:** periods, languages, contexts, populations and material kinds, justifying filters that might exclude relevant contributions.
 - **Selection:** inclusion/exclusion, duplicate/version treatment and reasons for reading priorities.
 - **Planned work:** initial queries, responsibilities, available time and exploratory/deep reading order.

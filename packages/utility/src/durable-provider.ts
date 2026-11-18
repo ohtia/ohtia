@@ -268,7 +268,10 @@ export class DurableProvider {
                     payload: { projectId: action.project, content: action.text },
                   }
                 : {
-                    command: "message.append" as const,
+                    command:
+                      action.name === "send-to-josefa"
+                        ? ("development.sendToJosefa" as const)
+                        : ("message.append" as const),
                     operationId: action.operation_id,
                     payload: { conversationId: action.conversation, content: action.text },
                   };

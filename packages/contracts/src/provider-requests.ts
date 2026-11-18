@@ -10,11 +10,16 @@ import { isConnectionId } from "./connections.js";
 export const providerMessageVersion = 1;
 /** Six-byte JSON escaping of 256 KiB of messages plus instructions/cut notes fits this envelope. */
 export const providerMessageBytes = 2 * 1024 * 1024;
-/** Private instruction text includes the shared thesis route and rendered project context. */
-const providerInstructionBytes = 8 * 1024;
+/** Fits the role and shared thesis route with the rendered context, including an 800-byte title. */
+const providerInstructionBytes = 10 * 1024;
 /** ADR-0028's versioned permit validity: not a response deadline. Real-account checks measure it. */
 export const dispatchPermitPolicy = Object.freeze({ version: 1, validity_ms: 2000 });
-export const providerOperations = ["development_test", "project_setup", "direct_guidance"] as const;
+export const providerOperations = [
+  "development_test",
+  "project_setup",
+  "direct_guidance",
+  "search_strategy_planning",
+] as const;
 export type ProviderOperation = (typeof providerOperations)[number];
 export const providerFailureReasons = [
   "usage_limit_reached",
@@ -370,6 +375,7 @@ export function isProviderRequestData(value: unknown): value is ProviderRequestD
     value.input.every(isInput) &&
     Array.isArray(value.tools) &&
     value.tools.length <= 32 &&
+    (value.operation !== "search_strategy_planning" || value.tools.length === 0) &&
     value.tools.every(isTool) &&
     record(value.limits) &&
     exact(value.limits, ["max_output_bytes", "max_attempt_duration_ms", "max_inactivity_ms"]) &&
@@ -534,7 +540,7 @@ export type DevelopmentAction =
       readonly text: string;
     }
   | {
-      readonly name: "send";
+      readonly name: "send" | "send-to-josefa";
       readonly operation_id: string;
       readonly conversation: string;
       readonly text: string;
@@ -731,17 +737,18 @@ export function decodeDevelopmentAction(
   )
     return value as unknown as DevelopmentActionMessage;
   if (
-    (action.name === "start-conversation" || action.name === "send") &&
-    exact(action, [
-      "name",
-      "operation_id",
-      action.name === "send" ? "conversation" : "project",
-      "text",
-    ]) &&
-    isIdentifier(action.name === "send" ? action.conversation : action.project) &&
-    isDevelopmentText(action.text)
-  )
-    return value as unknown as DevelopmentActionMessage;
+    action.name === "start-conversation" ||
+    action.name === "send" ||
+    action.name === "send-to-josefa"
+  ) {
+    const target = action.name === "start-conversation" ? "project" : "conversation";
+    if (
+      exact(action, ["name", "operation_id", target, "text"]) &&
+      isIdentifier(action[target]) &&
+      isDevelopmentText(action.text)
+    )
+      return value as unknown as DevelopmentActionMessage;
+  }
   if (
     action.name === "request" &&
     exact(action, ["name", "operation_id", "model", "text"]) &&

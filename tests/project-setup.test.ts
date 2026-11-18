@@ -26,10 +26,8 @@ import {
   setupNote,
   setupRevision,
 } from "../packages/utility/src/project-setup.js";
-import {
-  directGuidanceInstructions,
-  guidanceInstructions,
-} from "../packages/utility/src/direct-guidance.js";
+import { directGuidanceInstructions } from "../packages/utility/src/direct-guidance.js";
+import { renderProjectInstructions } from "../packages/utility/src/thesis-route.js";
 import { operationPolicy, buildInput } from "../packages/utility/src/operations.js";
 import { TaskTransaction } from "../packages/utility/src/tasks.js";
 import {
@@ -53,6 +51,7 @@ import {
   stores,
   preTaskNoticeSql,
   preConversationTitlesSql,
+  preJosefaReceiptsSql,
 } from "./fixtures/storage.js";
 import { setupConnections, successful as value, proposeSetup } from "./fixtures/project-setup.js";
 import { conformanceRequest, dispatchThrough } from "./fixtures/provider-conformance.js";
@@ -1497,7 +1496,7 @@ it("upgrades a schema-15 setup proposal without losing decisions or notice retry
     }),
   );
   const db = f.raw();
-  expect(db.pragma("user_version", { simple: true })).toBe(18);
+  expect(db.pragma("user_version", { simple: true })).toBe(19);
   expect(
     db
       .prepare("SELECT state FROM project_setup_proposals WHERE id=?")
@@ -1818,7 +1817,7 @@ describe("confirmed project direct guidance", () => {
     const f = await titleConversation("Quiero delimitar un estudio de tutorías.");
     const reply = await f.reply({ status: "completed", conversation_title: title }, { tools });
     expect(reply.terminal.result).toEqual({ status: "completed" });
-    const ordinaryPrompt = guidanceInstructions({
+    const ordinaryPrompt = renderProjectInstructions(directGuidanceInstructions, {
       project_type: "thesis",
       title: "Redes de cuidado",
       document_language: "es-AR",
@@ -1860,7 +1859,7 @@ describe("confirmed project direct guidance", () => {
     await f.store.close();
     const old = f.raw();
     try {
-      old.exec(preConversationTitlesSql + "PRAGMA user_version=17;");
+      old.exec(preConversationTitlesSql + preJosefaReceiptsSql + "PRAGMA user_version=17;");
     } finally {
       old.close();
     }
@@ -1905,7 +1904,7 @@ describe("confirmed project direct guidance", () => {
     expect(operationPolicy("direct_guidance", 2, "installed")).toBeUndefined();
     expect(directGuidanceInstructions).toBe(normative);
     expect(policy.instructions.split(thesisRoute)).toEqual([`${roleInstructions}\n\n`, ""]);
-    const instructions = guidanceInstructions({
+    const instructions = renderProjectInstructions(directGuidanceInstructions, {
       project_type: "thesis",
       title: "$& {document_language}",
       document_language: "es-AR",
@@ -2234,7 +2233,7 @@ describe("confirmed project direct guidance", () => {
         ...conformanceRequest("chatgpt"),
         operation: "direct_guidance",
         input: built.input,
-        instructions: guidanceInstructions({
+        instructions: renderProjectInstructions(directGuidanceInstructions, {
           project_type: "thesis",
           title: "Synthetic title",
           document_language: "es-AR",
@@ -2247,8 +2246,8 @@ describe("confirmed project direct guidance", () => {
     expect(utf8Size(encoded)).toBeLessThanOrEqual(providerMessageBytes);
     expect(decodeProviderDispatch(encoded, dispatch.generation)).toEqual(dispatch);
     for (const [instructions, admitted] of [
-      ["é".repeat(4096), true],
-      ["é".repeat(4096) + "a", false],
+      ["é".repeat(5120), true],
+      ["é".repeat(5120) + "a", false],
     ] as const) {
       const withInstructions = {
         ...dispatch,

@@ -51,6 +51,7 @@ export interface ResearchPayloads {
   readonly "task.continueAll": Record<string, never>;
   readonly "task.cancelAll": Record<string, never>;
   readonly "development.createProject": Record<string, never>;
+  readonly "development.sendToJosefa": ResearchPayloads["message.append"];
   readonly "project.create": Record<string, never>;
   readonly "project.open": { readonly projectId: string };
   readonly "project.confirmSetup": { readonly proposalId: string };
@@ -84,6 +85,7 @@ export const researchCommands = [
   "task.continueAll",
   "task.cancelAll",
   "development.createProject",
+  "development.sendToJosefa",
   "project.create",
   "project.open",
   "project.confirmSetup",
