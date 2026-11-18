@@ -7,6 +7,8 @@ import {
   portLimits,
   failure,
   type DesktopBridge,
+  type Envelope,
+  type Request,
 } from "../packages/contracts/src/index.js";
 
 const descriptors = new Map<string, PropertyDescriptor | undefined>();
@@ -215,50 +217,55 @@ it("bounds logical locale owners across replacement and cleans every owner at un
   for (const stream of streams) stream.dispose();
   expect(h.ipcRenderer.listenerCount(desktopChannels.preferencesReady)).toBe(0);
 });
-it("recovers the actual controller and named bridge without an availability sampling transition", async () => {
+it("recovers the controller and named bridge when readiness overlaps a locale refresh", async () => {
   const h = await load();
   let value = "ko-KR";
   let revision = 9;
+  let waitingForStorage = false;
+  const pending: Request[] = [];
+  const subscriptions: Extract<Request, { operation: "locale.subscribe" }>[] = [];
+  const reply = (request: Request, payload: unknown) => {
+    h.ipcRenderer.emit(
+      desktopChannels.reply,
+      {},
+      JSON.stringify({ ...request, kind: "result", payload }),
+    );
+  };
+  const snapshot = (request: Request) => ({
+    serviceGeneration: request.serviceGeneration,
+    record: { schemaVersion: 1, revision, value, source: revision ? "saved" : "default" },
+    systemLocale: "en-US",
+    effectiveLocale: value === "system" ? "en-US" : value,
+  });
+  const publish = (request: (typeof subscriptions)[number], sequence: number) => {
+    h.ipcRenderer.emit(
+      desktopChannels.reply,
+      {},
+      JSON.stringify({
+        protocol: request.protocol,
+        policy: request.policy,
+        kind: "event",
+        windowGeneration: request.windowGeneration,
+        serviceGeneration: request.serviceGeneration,
+        subscriptionId: request.payload.subscriptionId,
+        sequence,
+        topic: "locale",
+        payload: snapshot(request),
+      }),
+    );
+  };
   h.ipcRenderer.send.mockImplementation((_channel, text) => {
-    const request = JSON.parse(text);
+    const request = JSON.parse(text) as Envelope;
     if (request.kind !== "request") return;
-    const snapshot = {
-      serviceGeneration: request.serviceGeneration,
-      record: { schemaVersion: 1, revision, value, source: revision ? "saved" : "default" },
-      systemLocale: "en-US",
-      effectiveLocale: value === "system" ? "en-US" : value,
-    };
-    if (request.operation === "locale.read")
-      h.ipcRenderer.emit(
-        desktopChannels.reply,
-        {},
-        JSON.stringify({ ...request, kind: "result", payload: { ok: true, value: snapshot } }),
-      );
+    if (waitingForStorage) {
+      pending.push(request);
+      return;
+    }
+    if (request.operation === "locale.read") reply(request, { ok: true, value: snapshot(request) });
     if (request.operation === "locale.subscribe") {
-      h.ipcRenderer.emit(
-        desktopChannels.reply,
-        {},
-        JSON.stringify({
-          ...request,
-          kind: "result",
-          payload: { ok: true, value: request.payload },
-        }),
-      );
-      h.ipcRenderer.emit(
-        desktopChannels.reply,
-        {},
-        JSON.stringify({
-          protocol: request.protocol,
-          policy: request.policy,
-          kind: "event",
-          windowGeneration: request.windowGeneration,
-          serviceGeneration: request.serviceGeneration,
-          subscriptionId: request.payload.subscriptionId,
-          sequence: 1,
-          topic: "locale",
-          payload: snapshot,
-        }),
-      );
+      subscriptions.push(request);
+      reply(request, { ok: true, value: request.payload });
+      publish(request, 1);
     }
   });
   const applied = vi.fn();
@@ -274,20 +281,34 @@ it("recovers the actual controller and named bridge without an availability samp
   h.ipcRenderer.emit(desktopChannels.reconnect);
   value = "system";
   revision = 0;
+  waitingForStorage = true;
+  const opening = controller.refresh();
+  expect(pending.map(({ operation }) => operation)).toEqual(["locale.subscribe", "locale.read"]);
   h.ipcRenderer.emit(desktopChannels.preferencesReady, {}, "service-2");
+  waitingForStorage = false;
+  for (const request of pending) reply(request, failure("service_unavailable"));
+  await opening;
   await vi.advanceTimersByTimeAsync(0);
-  expect(
-    h.ipcRenderer.send.mock.calls.filter(([, text]) => {
-      const request = JSON.parse(text);
-      return request.kind === "request" && request.operation === "locale.subscribe";
-    }),
-  ).toHaveLength(2);
+  expect(subscriptions.map(({ serviceGeneration }) => serviceGeneration)).toEqual([
+    "service-1",
+    "service-2",
+  ]);
   expect(controller.snapshot().current).toMatchObject({
     serviceGeneration: "service-2",
     effectiveLocale: "en-US",
     record: { revision: 0 },
   });
   expect(controller.snapshot().readFailed).toBe(false);
+  value = "es-AR";
+  revision = 1;
+  publish(subscriptions[1]!, 2);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(applied).toHaveBeenLastCalledWith(snapshot(subscriptions[1]!));
+  expect(
+    h.ipcRenderer.send.mock.calls.some(
+      ([, text]) => JSON.parse(text).operation === "locale.replace",
+    ),
+  ).toBe(false);
   controller.dispose();
   h.window.dispatchEvent(new Event("unload"));
 });

@@ -23,10 +23,12 @@ import {
   type LocaleChoice,
   type PortCall,
   type LocaleChange,
+  type Subscription,
 } from "@ohtia/contracts";
 import { pseudolocalize } from "../tooling/pseudolocalization.mjs";
 import { catalogGate } from "../tooling/quality-catalogs.mjs";
 import { LanguageController } from "../packages/renderer/src/language-controller.js";
+import { deferred } from "./fixtures/settings.js";
 
 const snapshot = (value: LocaleChoice = "system", revision = 0): LocaleSnapshot => ({
   serviceGeneration: "service-1",
@@ -34,14 +36,14 @@ const snapshot = (value: LocaleChoice = "system", revision = 0): LocaleSnapshot 
   systemLocale: "en-GB",
   effectiveLocale: value === "system" ? "en-GB" : value,
 });
-function call<T>(value: T): PortCall<T> {
+function call<T>(value: Outcome<T>): PortCall<T> {
   return { result: Promise.resolve(value), cancel: vi.fn() };
 }
 function harness(apply = vi.fn()) {
   let notify: (result: Outcome<LocaleSnapshot>) => void = () => {};
   const port = {
-    readLocale: vi.fn(() => call({ ok: true as const, value: snapshot() })),
-    replaceLocale: vi.fn((command: LocaleChange): PortCall<Outcome<SavedLocaleRecord>> =>
+    readLocale: vi.fn((): PortCall<LocaleSnapshot> => call({ ok: true, value: snapshot() })),
+    replaceLocale: vi.fn((command: LocaleChange): PortCall<SavedLocaleRecord> =>
       call({
         ok: true,
         value: {
@@ -52,10 +54,10 @@ function harness(apply = vi.fn()) {
         },
       }),
     ),
-    readLocaleReceipt: vi.fn((): PortCall<Outcome<LocaleReceipt>> =>
+    readLocaleReceipt: vi.fn((): PortCall<LocaleReceipt> =>
       call({ ok: true, value: { state: "not_found" } }),
     ),
-    subscribeLocale: vi.fn((listener: typeof notify) => {
+    subscribeLocale: vi.fn((listener: typeof notify): Subscription => {
       notify = listener;
       return {
         ready: Promise.resolve({ ok: true as const, value: { subscriptionId: "locale" } }),
@@ -409,13 +411,56 @@ describe("reviewed locale recovery contracts", () => {
     );
     const opening = h.controller.refresh();
     h.notify(failure("sequence_gap"));
+    h.port.subscribeLocale.mockReturnValueOnce({
+      ready: Promise.resolve(failure("service_unavailable")),
+      dispose: vi.fn(),
+    });
+    h.port.readLocale.mockReturnValue(call({ ok: true, value: snapshot() }));
     complete({ ok: true, value: snapshot() });
     await opening;
     expect(h.controller.snapshot().readFailed).toBe(true);
-    expect(h.port.subscribeLocale).toHaveBeenCalledOnce();
-    h.port.readLocale.mockImplementation(() => call({ ok: true, value: snapshot() }));
+    expect(h.port.subscribeLocale).toHaveBeenCalledTimes(2);
     await h.controller.refresh();
     expect(h.controller.snapshot().readFailed).toBe(false);
+    h.controller.dispose();
+  });
+  it("leaves a repeated gap inspectable after one follow-up", async () => {
+    const h = harness();
+    const dispose = vi.fn();
+    h.port.readLocale.mockReturnValue(call(failure("service_unavailable")));
+    h.port.subscribeLocale.mockImplementation((listener) => {
+      listener(failure("sequence_gap"));
+      listener(failure("sequence_gap"));
+      return { ready: Promise.resolve(failure("service_unavailable")), dispose };
+    });
+    const refresh = h.controller.refresh();
+    expect(h.controller.refresh()).toBe(refresh);
+    await refresh;
+    expect(h.controller.snapshot().readFailed).toBe(true);
+    expect(h.port.subscribeLocale).toHaveBeenCalledTimes(2);
+    expect(h.port.readLocale).toHaveBeenCalledTimes(2);
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(h.port.replaceLocale).not.toHaveBeenCalled();
+    h.controller.dispose();
+    expect(dispose).toHaveBeenCalledTimes(2);
+  });
+  it("ignores a locale reread from a superseded refresh epoch", async () => {
+    const h = harness();
+    await h.controller.refresh();
+    const oldRead = deferred<Outcome<LocaleSnapshot>>();
+    h.port.readLocale.mockReturnValueOnce({ result: oldRead.promise, cancel: vi.fn() });
+    const saving = h.controller.choose("ko-KR");
+    await vi.waitFor(() => expect(h.port.readLocale).toHaveBeenCalledTimes(2));
+    const restored = { ...snapshot("es-AR", 1), serviceGeneration: "service-2" };
+    h.port.readLocale.mockReturnValue(call({ ok: true, value: restored }));
+    await h.controller.refresh();
+    expect(h.controller.snapshot().current).toEqual(restored);
+    const obsolete = snapshot("fr-FR", 12);
+    oldRead.resolve({ ok: true, value: obsolete });
+    await saving;
+    expect(h.controller.snapshot().current).toEqual(restored);
+    expect(h.apply).not.toHaveBeenCalledWith(obsolete);
+    expect(h.port.replaceLocale).toHaveBeenCalledOnce();
     h.controller.dispose();
   });
   it("adopts a restored checkpoint's lower revision only through a new admitted generation", async () => {

@@ -39,7 +39,6 @@ export class LanguageController {
   private pendingGeneration: string | undefined;
   private lastChoice: LocaleChoice = "system";
   private disposed = false;
-  private recovering = false;
   private subscriptionFailed = false;
   private accepted: SavedLocaleRecord | undefined;
   private checking = false;
@@ -113,50 +112,54 @@ export class LanguageController {
       this.update({ displayFailed: true });
     }
   }
-  private async read(): Promise<void> {
+  private async read(): Promise<Outcome<LocaleSnapshot>> {
     const call = this.port.readLocale();
     this.reads.add(call);
     const result = await call.result;
     this.reads.delete(call);
-    if (this.isDisposed()) return;
+    return result;
+  }
+  private finishRead(result: Outcome<LocaleSnapshot>, epoch: number): void {
+    if (this.isDisposed() || epoch !== this.streamEpoch) return;
     if (result.ok) {
       this.accept(result.value);
       if (this.state.phase === "loading") this.update({ phase: "idle" });
     } else this.update({ readFailed: true });
   }
-  /** One bounded reread/resubscribe after a gap; another failure stays inspectable for explicit refresh. */
+  /** Share a refresh and its one possible follow-up across overlapping callers. */
   refresh(): Promise<void> {
     if (this.isDisposed()) return Promise.resolve();
     if (this.refreshTask) return this.refreshTask;
-    this.refreshTask = this.refreshOnce().finally(() => {
+    this.refreshTask = this.refreshOnce(true).finally(() => {
       this.refreshTask = undefined;
     });
     return this.refreshTask;
   }
-  private async refreshOnce(): Promise<void> {
-    this.recovering = true;
+  private async refreshOnce(allowFollowUp: boolean): Promise<void> {
     this.subscriptionFailed = false;
-    this.stream?.dispose();
     const epoch = ++this.streamEpoch;
+    this.stream?.dispose();
+    const opening = { pending: true, gap: false };
     this.stream = this.port.subscribeLocale((result) => {
       if (this.isDisposed() || epoch !== this.streamEpoch) return;
       if (result.ok) this.accept(result.value, true);
       else {
         this.subscriptionFailed = true;
-        // A gap starts bounded recovery; report a load failure only if that recovery fails.
-        if (!this.recovering) void this.refresh();
+        if (opening.pending) opening.gap ||= result.error.code === "sequence_gap";
+        else void this.refresh();
       }
     });
-    const [ready] = await Promise.all([this.stream.ready, this.read()]);
-    if (!this.isDisposed() && epoch === this.streamEpoch) {
-      if (!ready.ok) this.subscriptionFailed = true;
-      if (this.subscriptionFailed) this.update({ readFailed: true });
-      this.recovering = false;
-      if (this.pending && this.state.phase === "uncertain") await this.check();
-      // A receipt wait can outlive the stream. Its gap cannot restart refreshTask until
-      // this task finishes, so preserve that failed recovery for an explicit refresh.
-      if (this.subscriptionFailed && !this.state.readFailed) this.update({ readFailed: true });
-    }
+    const [ready, result] = await Promise.all([this.stream.ready, this.read()]);
+    opening.pending = false;
+    if (this.isDisposed() || epoch !== this.streamEpoch) return;
+    // The stream can be invalidated before both calls settle, even on successful replies.
+    if (allowFollowUp && opening.gap) return this.refreshOnce(false);
+    if (!ready.ok) this.subscriptionFailed = true;
+    this.finishRead(result, epoch);
+    if (this.subscriptionFailed) this.update({ readFailed: true });
+    if (this.pending && this.state.phase === "uncertain") await this.check();
+    // A receipt wait can outlive the stream. Leave that failure available for explicit refresh.
+    if (this.subscriptionFailed && !this.state.readFailed) this.update({ readFailed: true });
   }
   async choose(value: unknown): Promise<void> {
     if (
@@ -204,7 +207,8 @@ export class LanguageController {
         draft: this.state.current?.record.value ?? "system",
       });
     // A failed refresh cannot turn a saved mutation into failure or allocate a new operation.
-    await this.read();
+    const epoch = this.streamEpoch;
+    this.finishRead(await this.read(), epoch);
   }
   async retry(): Promise<void> {
     if (this.state.phase === "rejected" || this.state.canChoose) await this.choose(this.lastChoice);
