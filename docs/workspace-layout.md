@@ -2,8 +2,6 @@
 type: Specification
 title: Workspace layout
 description: Deterministic workspace geometry, accessible panel controls, desktop layout preferences and interaction acceptance scenarios.
-generated:
-  by: codex/gpt-6.1-sol
 ---
 
 # Workspace layout
@@ -86,7 +84,7 @@ PascalCase icon names below identify the corresponding Lucide exports; the desig
 - `Maximize2`/`Minimize2`: Expand document/Return to previous layout. While focus mode is active the control is a text button with the visible label Return to previous layout.
 - `RotateCcw`: Reset layout, offered in View, the command palette and Settings rather than in the context bar.
 - `Settings`: Settings, available in the explorer footer, rail and narrow context bar. Any provider sign-out action identifies its corresponding connection/account; it is not an Ohtia-account sign-out requirement.
-- `Plus`: New project, beside the project selector. `MessageSquarePlus`: Create conversation in {projectName}, in chat. `List`: Conversation history. `ArrowLeft`: Return to conversation, in history. These are separate actions with separate destinations.
+- `Plus`: New project, beside the project selector. `MessageSquarePlus`: New conversation, in chat. `List`: Show conversation history. `ArrowLeft`: Return to conversation, in history. These are separate actions with separate destinations.
 
 Targets use the design system's `component.target.minimum`, or `component.target.coarse` with a coarse pointer. The last visible panel's hide control remains focusable with `aria-disabled=true`; activation does nothing and explains that at least one panel must remain visible. An empty panel still counts; the rail does not. Before hiding a focused panel, move focus to its context-bar control. Reopening focuses the panel heading and restores its reading position. Hidden content leaves Tab order and the accessibility tree without destroying its state.
 
@@ -128,7 +126,7 @@ Verify the delivered controls with synthetic data under the packaged CSP, in bot
 - **V02 — Hide/restore:** exercise all seven nonempty panel combinations and both rail sizes, the hidden-center example, last-panel protection, focus mode/restore and manual exit from focus mode without losing tabs, buffers or active work.
 - **V03 — Sizes/preferences:** exercise both separators, keyboard/Shift/Home/End and all width buttons. From the initial 1024 layout, the left separator permits explorer 200–416 and documents 536–320; the right permits documents 320–536 and chat 496–280. Cover separator pair reset by double-click and Enter with its three oracles, every cancellation route, hidden-center resizing, viewport-only clipping, restart restoration, corruption, all-hidden tampering, unavailable writes, cross-window isolation and Reset layout in wide/narrow modes.
 - **V04 — Active project:** use three synthetic projects with the second selected, 120-character names, Hangul and bidirectional text; preserve full accessible names, stable collection order, pagination selection and independent explorer group states.
-- **V05 — Project forms:** distinguish Create project from Create conversation; verify initial/return focus, repeated clicks, Enter/Esc/IME, preserved input, duplicate-submission prevention, controlled failures, uncertain receipts, expected-version conflicts and late results that do not change the active scope.
+- **V05 — Project forms:** distinguish New project from New conversation; verify initial/return focus, repeated clicks, Enter/Esc/IME, preserved input, duplicate-submission prevention, controlled failures, uncertain receipts, expected-version conflicts and late results that do not change the active scope.
 - **V06 — Surface states:** distinguish loading/empty/error/unavailable/populated in each collection, document and chat; provider absence does not create fixture content or prevent local reading/editing.
 - **V07 — Chat fit:** verify empty/long messages, attributed voices, lists/quotes/code/URLs, hostile HTML, multiline preview, copy failure and reuse with prior input, at 280 px and with long translations.
 - **V08 — Independence:** switch conversations while reading a document, hide/reopen every panel during streaming and traverse project A→B→A during delayed reads. Preserve origin-scoped buffers, anchors and execution; inspect the persisted layout record for absence of IDs/private content.

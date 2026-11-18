@@ -12,6 +12,7 @@ import {
   type Outcome,
   type TimelineItem,
   type ResearchOutputs,
+  type ConversationCursor,
   type DiagnosticEvent,
 } from "../packages/contracts/src/index.js";
 import { TextStaging, digest } from "../packages/utility/src/research-text.js";
@@ -490,10 +491,33 @@ describe("research timeline and bounded reads", () => {
         ),
       { timeout: 3000 },
     );
+    const summary = async () =>
+      value(
+        await h.port.readConversations({
+          projectId: project.resultId,
+          ids: [conversation.id],
+        }).result,
+      ).items[0]!;
+    expect((await summary()).status).toBe("replying");
+    const later = value(
+      await h.port.appendMessage("later-researcher-message", {
+        conversationId: conversation.id,
+        content: "A later question",
+      }).result,
+    );
+    const before = await summary();
+    expect(before).toMatchObject({ latestPrefix: "A later question", status: "replying" });
     event({ type: "result", sequence, result: { status: "completed" } });
+    expect(await summary()).toMatchObject({
+      latestPrefix: before.latestPrefix,
+      latestAt: before.latestAt,
+    });
     const last = value(
-      await h.port.listTimelineBefore({ conversationId: conversation.id, cursor: null, count: 1 })
-        .result,
+      await h.port.listTimelineBefore({
+        conversationId: conversation.id,
+        cursor: { position: task.position + 1, rank: 1, id: later.resultId },
+        count: 1,
+      }).result,
     );
     expect(last.items[0]).toMatchObject({ kind: "task", state: "completed", rank: 3 });
     const preceding = value(
@@ -626,7 +650,6 @@ it("rejects missing records and cross-project scopes with controlled errors and 
     h.port.readDestination({ projectId: missing, agentId: "virgilio" }),
     h.port.stopConversation("stop-missing-conversation", { conversationId: missing }),
     h.port.listConversations({ projectId: missing, cursor: null, count: 50 }),
-    h.port.listConversations({ projectId: h.projectId, cursor: missing, count: 50 }),
     h.port.readConversations({ projectId: h.projectId, ids: [missing] }),
     h.port.listTimelineBefore({ conversationId: missing, cursor: null, count: 50 }),
     h.port.readTimeline({ conversationId: h.conversationId, ids: [missing] }),
@@ -1434,4 +1457,99 @@ it("carries project opening and tuple-cursor batches through the actual window p
   expect(await h.port.openProject("selector-missing", { projectId: missing }).result).toEqual(
     rejected,
   );
+});
+
+it("uses a stable conversation cursor and returns bounded, unparsed Unicode prefixes", async () => {
+  const h = await harness();
+  const time = "2026-11-17T10:00:00.000Z";
+  const latestAt = "2026-11-17T11:00:00.000Z";
+  const bytes = (id: string) => Buffer.from(id.replaceAll("-", ""), "hex");
+  const prefix = "**" + "😀".repeat(1022);
+  const db = h.raw();
+  try {
+    const add = db.prepare(
+      "INSERT INTO conversations (id,project_id,title,created_at,updated_at,revision) VALUES (?,?,NULL,?,?,1)",
+    );
+    for (let n = 1; n <= 110; n++) add.run(bytes(entity(n)), bytes(h.projectId), time, time);
+    db.prepare(
+      "INSERT INTO messages (id,conversation_id,position,author_kind,content,created_at) VALUES (?,?,1,'researcher',?,?)",
+    ).run(bytes(entity(900)), bytes(entity(5)), prefix + "😀", latestAt);
+  } finally {
+    db.close();
+  }
+  async function page(
+    cursor: ConversationCursor | null,
+  ): Promise<ResearchOutputs["conversation.list"]> {
+    const items = [];
+    do {
+      const fragment = value(
+        await h.port.listConversations({ projectId: h.projectId, cursor, count: 50 - items.length })
+          .result,
+      );
+      items.push(...fragment.items);
+      cursor = fragment.next;
+    } while (cursor && items.length < 50);
+    return { items, next: cursor, hasMore: !!cursor };
+  }
+  const first = await page(null);
+  expect(first.items).toHaveLength(50);
+  expect(first.items.find((row) => row.id === entity(5))).toMatchObject({
+    latestAt,
+    latestPrefix: prefix,
+    latestTruncated: true,
+    latestLanguage: null,
+  });
+  const oldCursor = first.next!;
+  const mutation = h.raw();
+  try {
+    mutation
+      .prepare(
+        "INSERT INTO messages (id,conversation_id,position,author_kind,content,created_at) VALUES (?,?,1,'researcher',?,?)",
+      )
+      .run(bytes(entity(901)), bytes(oldCursor.id), "Cursor moved", "2026-11-17T12:00:00.000Z");
+  } finally {
+    mutation.close();
+  }
+  const second = await page(oldCursor);
+  const third = await page(second.next);
+  expect(second.items).toHaveLength(50);
+  expect(third.items).toHaveLength(11);
+  expect(third.next).toBeNull();
+  expect(new Set([...first.items, ...second.items, ...third.items].map((row) => row.id)).size).toBe(
+    111,
+  );
+  const reread = value(
+    await h.port.readConversations({
+      projectId: h.projectId,
+      ids: [oldCursor.id, entity(5)],
+    }).result,
+  );
+  expect(reread.items[0]).toMatchObject({ id: oldCursor.id, latestPrefix: "Cursor moved" });
+  expect(reread.items[1]?.latestPrefix).toBe(prefix);
+});
+
+it("starts a conversation atomically and replays its confirmed receipt with the same identifier", async () => {
+  const h = await harness();
+  const before = value(await h.store.readConversations(h.projectId));
+  const input = { projectId: h.projectId, content: "**First question**" };
+  expect(await h.port.startConversation("empty-start", { ...input, content: " " }).result).toEqual(
+    failure("message_invalid"),
+  );
+  await h.service.drain();
+  expect(value(await h.store.readConversations(h.projectId))).toEqual(before);
+  const saved = value(await h.port.startConversation("start-conversation", input).result);
+  expect(value(await h.port.startConversation("start-conversation", input).result)).toEqual(saved);
+  await h.service.drain();
+  expect(value(await h.store.readConversations(h.projectId))).toHaveLength(before.length + 1);
+  expect(value(await h.store.readMessages(saved.resultId))).toMatchObject([
+    { position: 1, content: input.content },
+  ]);
+  expect(
+    value(
+      await h.port.readConversations({
+        projectId: h.projectId,
+        ids: [saved.resultId],
+      }).result,
+    ).items[0],
+  ).toMatchObject({ latestPrefix: input.content, status: "waiting" });
 });

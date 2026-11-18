@@ -252,6 +252,12 @@
       "sha256": "feb39ae75388ca2d4a69159403e4a4ac875d8f1ce9b3cdbe641b35d32208f974"
     },
     {
+      "name": "pencil",
+      "file": "pencil.svg",
+      "archive_member": "package/icons/pencil.svg",
+      "sha256": "c1cb374ad0eacb479202429df9fecfdf0aabec3d254c8fb76305ff9637436272"
+    },
+    {
       "name": "plus",
       "file": "plus.svg",
       "archive_member": "package/icons/plus.svg",

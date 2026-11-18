@@ -252,7 +252,9 @@ export function ConversationView({
                     locale,
                     state.project && !state.project.setupConfirmedAt
                       ? "setup.empty"
-                      : "conversation.empty",
+                      : !id && state.scope.projectId
+                        ? "history.empty"
+                        : "conversation.empty",
                   )}
                 </p>
               )}

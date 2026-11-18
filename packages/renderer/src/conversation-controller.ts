@@ -1,3 +1,4 @@
+import { ConversationHistoryController } from "./conversation-history-controller.js";
 import { ComposerController } from "./composer-controller.js";
 import {
   mergeTimeline,
@@ -8,12 +9,14 @@ import {
   type ProviderDeclaration,
   type TimelineTask,
   failure,
+  staleRevision,
   compareTimeline,
   portLimits,
   utf8Size,
   type Outcome,
   type ResearchOutputs,
   type ConversationSummary,
+  type CommandReason,
   type FoundationPort,
   type ResearchEvent,
   type ResearchScope,
@@ -23,6 +26,15 @@ import {
   type TextReference,
 } from "@ohtia/contracts";
 export type TaskAction = "resume" | "continue" | "retry" | "restart";
+type RenameNotice = "empty" | "spaces" | "long" | "stale" | "uncertain" | "failed";
+interface RenameState {
+  readonly text: string;
+  readonly expectedUpdatedAt: string;
+  readonly busy: boolean;
+  readonly notice?: RenameNotice | undefined;
+  readonly intent?: string | undefined;
+  readonly needsRefresh?: boolean | undefined;
+}
 export interface ConversationState {
   readonly pauses?: PauseCounts;
   readonly project?: ProjectRecord;
@@ -38,6 +50,9 @@ export interface ConversationState {
   readonly scope: ResearchScope;
   readonly status: "loading" | "ready" | "failed" | "unavailable";
   readonly conversation?: ConversationSummary;
+  readonly rename?: RenameState | undefined;
+  readonly renamed?: number | undefined;
+  readonly newConversationRequest?: number | undefined;
   readonly items: readonly TimelineItem[];
   readonly texts: ReadonlyMap<string, string>;
   readonly replies: ReadonlyMap<string, { readonly sequence: number; readonly text: string }>;
@@ -107,13 +122,31 @@ export class ConversationController {
     return live;
   }
   readonly composer: ComposerController;
+  readonly history: ConversationHistoryController;
+  private newRequest = 0;
+  private renameAnnouncement = 0;
+  private readonly renames = new Map<string, RenameState>();
   constructor(
     private readonly port: FoundationPort,
     readonly connections: readonly ProviderDeclaration["connection"][] = [chatgptConnection],
+    onConversationStarted?: (scope: ResearchScope) => void,
   ) {
-    this.composer = new ComposerController(port, undefined, connections, () => {
-      this.reload();
-    });
+    this.history = new ConversationHistoryController(port, this.reload);
+    this.composer = new ComposerController(
+      port,
+      undefined,
+      connections,
+      this.reload,
+      (scope, active) => {
+        onConversationStarted?.(scope);
+        if (
+          active &&
+          this.state.scope.projectId === scope.projectId &&
+          !this.state.scope.conversationId
+        )
+          this.open(scope);
+      },
+    );
   }
   private pauseEpoch = -1;
   async refreshPauses(): Promise<void> {
@@ -239,6 +272,141 @@ export class ConversationController {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   };
+  newConversationReason = (): CommandReason | undefined => {
+    if (!this.state.scope.projectId) return "no_project";
+    if (!this.state.project) return "busy";
+    if (!this.state.project.setupConfirmedAt) return "project_in_setup";
+    if (this.state.status === "unavailable") return "busy";
+    return undefined;
+  };
+  startNew = (): boolean => {
+    const { projectId, conversationId } = this.state.scope;
+    if (this.disposed || !projectId || this.newConversationReason()) return false;
+    this.history.hide();
+    if (conversationId) this.open({ projectId, conversationId: null });
+    this.state = { ...this.state, newConversationRequest: ++this.newRequest };
+    this.publish();
+    return true;
+  };
+  switchConversation = (id: string): void => {
+    const { projectId, conversationId } = this.state.scope;
+    this.history.hide();
+    if (projectId && id !== conversationId) this.open({ projectId, conversationId: id });
+  };
+  private setRename(id: string, rename?: RenameState): void {
+    if (this.disposed) return;
+    if (rename) this.renames.set(id, rename);
+    else this.renames.delete(id);
+    if (this.state.scope.conversationId === id) {
+      this.state = { ...this.state, rename };
+      this.publish();
+    }
+  }
+  beginRename = (displayedName: string): void => {
+    const row = this.state.conversation;
+    if (!row || this.renames.has(row.id)) return;
+    this.setRename(row.id, {
+      text: displayedName,
+      expectedUpdatedAt: row.updatedAt,
+      busy: false,
+    });
+  };
+  editRename = (text: string): void => {
+    const { rename, scope } = this.state;
+    if (!rename || rename.busy || !scope.conversationId || text === rename.text) return;
+    this.setRename(scope.conversationId, { ...rename, text, notice: undefined, intent: undefined });
+  };
+  cancelRename = (): void => {
+    const { rename, scope } = this.state;
+    if (scope.conversationId && rename && !rename.busy) this.setRename(scope.conversationId);
+  };
+  saveRename = async (): Promise<void> => {
+    const {
+      rename,
+      scope: { projectId, conversationId },
+    } = this.state;
+    if (!projectId || !conversationId || !rename || rename.busy) return;
+    const { text } = rename;
+    const invalid = !text
+      ? "empty"
+      : text.trim() !== text || /^\p{White_Space}|\p{White_Space}$/u.test(text)
+        ? "spaces"
+        : Array.from(text).length > 200
+          ? "long"
+          : undefined;
+    if (invalid) {
+      this.setRename(conversationId, { ...rename, notice: invalid });
+      return;
+    }
+    const intent = rename.intent ?? crypto.randomUUID();
+    this.setRename(conversationId, { ...rename, intent, busy: true, notice: undefined });
+    let result: Outcome<import("@ohtia/contracts").ResearchResult> = staleRevision(0);
+    if (!rename.needsRefresh) {
+      try {
+        result = await this.port.renameConversation(intent, {
+          conversationId,
+          title: text,
+          expectedUpdatedAt: rename.expectedUpdatedAt,
+        }).result;
+      } catch {
+        result = failure("invalid_service_result");
+      }
+    }
+    if (this.disposed) return;
+    const stale = !result.ok && result.error.code === "stale_revision";
+    if (result.ok || stale) {
+      // Resolve the expected version from a scoped read. A receipt confirms the
+      // rename even when a subsequent read fails.
+      let current: ConversationSummary | undefined;
+      try {
+        const fresh = await this.port.readConversations({ projectId, ids: [conversationId] })
+          .result;
+        if (fresh.ok) current = fresh.value.items[0];
+      } catch {
+        // Stale edits must refresh before they may send another mutation.
+      }
+      if (!this.live(this.epoch)) return;
+      if (current && this.state.scope.conversationId === conversationId) {
+        this.acceptHeader(current);
+        current = this.state.conversation;
+      }
+      if (current && this.state.scope.projectId === projectId)
+        this.history.changed(current.id, current.revision);
+      if (result.ok) {
+        if (this.state.conversation?.id === conversationId) {
+          this.state = {
+            ...this.state,
+            conversation: current ?? { ...this.state.conversation, title: text },
+            renamed: ++this.renameAnnouncement,
+          };
+        }
+        this.setRename(conversationId);
+      } else {
+        this.setRename(conversationId, {
+          ...rename,
+          busy: false,
+          intent: undefined,
+          notice: current ? "stale" : "failed",
+          expectedUpdatedAt: current ? current.updatedAt : rename.expectedUpdatedAt,
+          needsRefresh: !current,
+        });
+      }
+      return;
+    }
+    const uncertain = [
+      "uncertain",
+      "timeout",
+      "cancelled",
+      "disposed",
+      "invalid_service_result",
+    ].includes(result.error.code);
+    this.setRename(conversationId, {
+      ...rename,
+      busy: false,
+      intent,
+      notice: uncertain ? "uncertain" : "failed",
+    });
+  };
   private publish(): void {
     this.composer.setup(
       !!this.state.project?.setupConfirmedAt && !this.state.project.isDevelopment,
@@ -283,6 +451,7 @@ export class ConversationController {
     if (!this.live(epoch)) return;
     const stream = this.stream;
     this.composer.destinationObservationLost();
+    this.history.disconnected(error.code);
     this.failure(epoch, error);
     if (this.live(epoch)) this.epoch++;
     stream?.dispose();
@@ -291,9 +460,12 @@ export class ConversationController {
     if (this.disposed) return;
     if (this.state.scope.conversationId)
       this.cache.set(this.state.scope.conversationId, this.state);
+    const previous = this.state;
+    this.history.scope(scope.projectId);
     this.composer.open(scope);
     this.composer.destinationObservationPending();
     const epoch = ++this.epoch;
+    this.queue = Promise.resolve();
     if (this.subscriptionRetry) clearTimeout(this.subscriptionRetry);
     this.subscriptionRetry = undefined;
     this.stream?.dispose();
@@ -309,7 +481,16 @@ export class ConversationController {
           status: cached.status === "ready" ? "ready" : "loading",
         }
       : empty(scope);
-    this.state = { ...this.state, setupActions: new Map(this.setupActions) };
+    this.state = {
+      ...this.state,
+      ...(previous.scope.projectId === scope.projectId && previous.project
+        ? { project: previous.project }
+        : {}),
+      rename: scope.conversationId ? this.renames.get(scope.conversationId) : undefined,
+      newConversationRequest: undefined,
+      renamed: previous.renamed,
+      setupActions: new Map(this.setupActions),
+    };
     this.pendingReplies = new Map(this.state.replies);
     this.publish();
     this.connect(epoch, false);
@@ -333,7 +514,9 @@ export class ConversationController {
         if (notice.error.code === "sequence_gap") {
           // A fresh subscription identity precedes all reads so changes during recovery remain observable.
           this.composer.destinationObservationPending();
+          this.history.scope(this.state.scope.projectId);
           const recovery = ++this.epoch;
+          this.queue = Promise.resolve();
           this.state = { ...this.state, loadingEarlier: false, failedEarlier: false };
           this.publish();
           this.revisions.clear();
@@ -343,6 +526,8 @@ export class ConversationController {
         }
         return;
       }
+      if (notice.value.kind === "changed" && notice.value.record === "conversation")
+        this.history.changed(notice.value.id, notice.value.revision);
       this.queue = this.queue
         .then(async () => {
           if (this.live(epoch)) await this.event(notice.value, epoch);
@@ -372,6 +557,7 @@ export class ConversationController {
         return;
       }
       this.composer.destinationObservationReady();
+      this.history.connected();
       this.observed("ready");
       this.queue = this.queue
         .then(async () => {
@@ -422,10 +608,13 @@ export class ConversationController {
     if (!result.ok)
       throw Object.assign(new Error("Conversation unavailable."), { code: result.error.code });
     const conversation = result.value.items[0];
-    if (!conversation || conversation.projectId !== projectId)
+    if (!conversation || conversation.id !== conversationId || conversation.projectId !== projectId)
       throw new Error("Invalid conversation scope.");
+    if (this.live(epoch)) this.acceptHeader(conversation);
+  }
+  private acceptHeader(conversation: ConversationSummary): void {
     if (
-      this.live(epoch) &&
+      this.state.scope.conversationId === conversation.id &&
       (!this.state.conversation || this.state.conversation.revision <= conversation.revision)
     )
       this.state = { ...this.state, conversation };
@@ -719,6 +908,7 @@ export class ConversationController {
           sequence: event.sequence,
           text: previous.text + event.text,
         });
+      if (!this.live(epoch)) return;
       this.timer ??= setTimeout(() => {
         this.timer = undefined;
         if (this.live(epoch)) {
@@ -748,6 +938,8 @@ export class ConversationController {
   dispose(): void {
     this.disposed = true;
     this.composer.dispose();
+    this.history.dispose();
+    this.renames.clear();
     this.epoch++;
     this.stream?.dispose();
     if (this.timer) clearTimeout(this.timer);

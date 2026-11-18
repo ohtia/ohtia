@@ -619,6 +619,49 @@ function literalNotation(source: string): LiteralMessage {
   };
 }
 
+function parseMessage(text: string) {
+  // CommonMark treats LF, CRLF and CR alike; the stored text stays untouched.
+  const source = text.replace(/\r\n?/g, "\n");
+  let literal = literalNotation(source);
+  let tree = fromMarkdown(literal.text, {
+    extensions: [gfmTable()],
+    mdastExtensions: [gfmTableFromMarkdown()],
+  });
+  if (!withinMarkdownDepth(tree)) {
+    literal = plainMessage(source);
+    tree = fromMarkdown(literal.text);
+  }
+  return { ...literal, tree };
+}
+
+export function conversationPreview(prefix: string, truncated: boolean): string {
+  const parsed = parseMessage(prefix);
+  function text(node: Node): string {
+    switch (node.type) {
+      case "definition":
+        return "";
+      case "break":
+      case "thematicBreak":
+        return " ";
+    }
+    if ("value" in node) return parsed.restore(node.value);
+    if ("children" in node) {
+      const separate = ["root", "blockquote", "list", "listItem", "table", "tableRow"].includes(
+        node.type,
+      );
+      return node.children.map(text).join(separate ? " " : "");
+    }
+    return "";
+  }
+  const plain = Array.from(
+    text(parsed.tree)
+      .replace(/[\s\p{White_Space}]+/gu, " ")
+      .trim(),
+  );
+  const limit = 120;
+  return plain.slice(0, limit).join("") + (plain.length > limit || truncated ? "…" : "");
+}
+
 /** A closed React element mapping. No HTML renderer, sanitizer or remote resource resolver. */
 export const MessageMarkdown = memo(function MessageMarkdown({
   text,
@@ -631,20 +674,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   readonly language?: string | undefined;
   readonly openExternalLink: (url: string) => Promise<boolean>;
 }) {
-  const parsed = useMemo(() => {
-    // CommonMark treats LF, CRLF and CR alike; the stored text stays untouched.
-    const source = text.replace(/\r\n?/g, "\n");
-    let literal = literalNotation(source);
-    let tree = fromMarkdown(literal.text, {
-      extensions: [gfmTable()],
-      mdastExtensions: [gfmTableFromMarkdown()],
-    });
-    if (!withinMarkdownDepth(tree)) {
-      literal = plainMessage(source);
-      tree = fromMarkdown(literal.text);
-    }
-    return { ...literal, tree };
-  }, [text]);
+  const parsed = useMemo(() => parseMessage(text), [text]);
   const definitions = new Map<string, string>();
   function collectDefinitions(node: Node): void {
     if (

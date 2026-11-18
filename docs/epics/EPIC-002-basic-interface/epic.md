@@ -2,8 +2,6 @@
 type: "EPIC"
 title: "EPIC-002 — Basic interface"
 description: "Deliver accessible localized desktop menus, an integrated title bar, workspace controls, a command palette, extensible Settings and shared visual primitives, with native Wayland geometry limits."
-generated:
-  by: codex/gpt-6.1-sol
 tags: ["epic", "comp:app", "comp:desktop"]
 status: "stable"
 resource: https://github.com/ohtia/ohtia/issues/42
@@ -477,7 +475,7 @@ Separator pair reset: double-clicking a separator, or pressing Enter while it ha
 Agreed menu structure from the mockup review:[^mockups]
 
 - macOS application menu Ohtia: About Ohtia; Settings…; Services; Hide Ohtia; Hide Others; Show All; Quit Ohtia. Use native roles where they exist.
-- File: New project; New window; Settings… (Windows and Linux); Close window; Quit (Windows and Linux).
+- File: New project; New conversation; New window; Settings… (Windows and Linux); Close window; Quit (Windows and Linux).
 - Edit: Undo, Redo, Cut, Copy, Paste and Select all, using native roles for the focused delivered surface.
 - View: Command palette…; Project contents, Documents and Chat as checkbox items reflecting the focused window's visibility; Expand document; Reset layout; Theme with System, Light and Dark as radio items; Increase zoom; Decrease zoom; Actual size; Full screen.
 - Help: Ohtia help; Keyboard shortcuts; Documentation and Report a problem as broker-authorized external links; Copy version information; About Ohtia on Windows and Linux only.
@@ -491,6 +489,7 @@ Agreed shortcut inventory, registered once in the command registry and shown ide
 | Keyboard shortcuts            | Ctrl+/            | Cmd+/          |
 | Ohtia help                    | F1                | Cmd+Shift+/    |
 | New project                   | Ctrl+N            | Cmd+N          |
+| New conversation              | Ctrl+Shift+O      | Cmd+Shift+O    |
 | New window                    | Ctrl+Shift+N      | Cmd+Shift+N    |
 | Close window                  | Ctrl+Shift+W      | Cmd+W          |
 | Quit                          | Ctrl+Q            | Cmd+Q          |

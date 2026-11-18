@@ -29,6 +29,7 @@ import {
   type LayoutFocusIntent,
   type WorkspaceState,
 } from "./workspace-controller.js";
+import { designMetrics } from "./design-tokens.js";
 import { separatorRange } from "./workspace-geometry.js";
 import { OhtiaBrand } from "./branding.js";
 import { LucideGlyph, type LucideName } from "./iconography.js";
@@ -64,6 +65,10 @@ export interface WorkspaceChromeProps {
   readonly revealProjectChat?: boolean | undefined;
   readonly onComposerFocus?: () => void;
   readonly chatTitle?: string | undefined;
+  readonly chatHeadingStart?: ReactNode;
+  readonly chatHeadingActions?: ReactNode;
+  readonly replaceChatHeading?: boolean | undefined;
+  readonly revealChatRequest?: number | undefined;
   readonly fallbackFocusRef?: RefObject<HTMLAnchorElement | null>;
   readonly preferences: LayoutPreferences;
   readonly commands: CommandController;
@@ -178,6 +183,10 @@ export function ShortcutControl({
 export function WorkspaceChrome({
   chat,
   chatTitle,
+  chatHeadingStart,
+  chatHeadingActions,
+  replaceChatHeading,
+  revealChatRequest,
   projectSelector,
   hasProjects = false,
   project,
@@ -506,6 +515,33 @@ export function WorkspaceChrome({
     focusedProject.current = projectScope;
     onComposerFocus?.();
   }, [revealProjectChat, projectScope, state, onComposerFocus]);
+  const revealedChatRequest = useRef<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    const layout = controller.current;
+    if (
+      !revealChatRequest ||
+      revealChatRequest === revealedChatRequest.current ||
+      !layout ||
+      state?.initializing ||
+      preferences.busy
+    )
+      return;
+    revealedChatRequest.current = revealChatRequest;
+    if (layout.state.geometry.mode === "narrow") layout.select("chat");
+    else if (!layout.state.geometry.visible.chat) layout.visibility("chat");
+  }, [revealChatRequest, state, preferences]);
+  const focusedChatRequest = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (
+      !revealChatRequest ||
+      revealedChatRequest.current !== revealChatRequest ||
+      focusedChatRequest.current === revealChatRequest ||
+      !state?.geometry.visible.chat
+    )
+      return;
+    focusedChatRequest.current = revealChatRequest;
+    onComposerFocus?.();
+  }, [revealChatRequest, state, onComposerFocus]);
   const projectLabel = projectScope
     ? project
       ? project.setupConfirmedAt
@@ -773,7 +809,9 @@ export function WorkspaceChrome({
               }}
               tabIndex={-1}
               className={
-                panel === "documents" ? "primitive-announcement" : "workspace-panel-heading"
+                panel === "documents" || (panel === "chat" && replaceChatHeading)
+                  ? "primitive-announcement"
+                  : "workspace-panel-heading"
               }
             >
               {panel === "chat" && chatTitle ? chatTitle : text(panelKeys[panel])}
@@ -785,14 +823,25 @@ export function WorkspaceChrome({
                 className={`workspace-panel workspace-${panel}`}
                 id={panelId(panel)}
                 data-workspace-panel={panel}
+                data-chat-compact={
+                  panel === "chat" &&
+                  geometry &&
+                  geometry.widths.chat <= designMetrics["component.workspace.chat.minimum"]
+                    ? true
+                    : undefined
+                }
                 hidden={!geometry?.visible[panel]}
                 inert={!geometry?.visible[panel]}
                 aria-labelledby={`${panelId(panel)}-heading`}
                 style={{ inlineSize: geometry?.widths[panel] }}
               >
                 {panel === "chat" ? (
-                  <div className="workspace-chat-heading">
+                  <div
+                    className={`workspace-chat-heading${chatHeadingStart || chatHeadingActions ? " with-conversation-controls" : ""}`}
+                  >
+                    {chatHeadingStart}
                     {heading}
+                    {chatHeadingActions}
                     {sizingControls(panel)}
                   </div>
                 ) : (

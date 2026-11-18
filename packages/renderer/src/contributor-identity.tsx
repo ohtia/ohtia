@@ -18,13 +18,19 @@ export type ContributorIdentity =
   | { readonly kind: "unknown" };
 
 /** Canonical static role motifs. No provider readiness, execution or review meaning. */
-export function ContributorSymbol({ contributor }: { readonly contributor: ContributorId }) {
+export function ContributorSymbol({
+  contributor,
+  size = 24,
+}: {
+  readonly contributor: ContributorId;
+  readonly size?: 20 | 24;
+}) {
   return (
     <svg
       className="contributor-symbol"
       data-contributor={contributor}
-      width="24"
-      height="24"
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       aria-hidden="true"
       focusable="false"
@@ -104,10 +110,19 @@ export function ContributorSymbol({ contributor }: { readonly contributor: Contr
 export function VoiceLabel({
   identity,
   locale,
+  compact = false,
 }: {
   readonly identity: ContributorIdentity;
   readonly locale: InterfaceLocale;
+  readonly compact?: boolean;
 }) {
+  if (compact && identity.kind === "ai")
+    return (
+      <span className="voice-label" lang={locale} data-origin="ai" data-compact>
+        <ContributorSymbol contributor={identity.contributor} size={20} />
+        <span>{contributorNames[identity.contributor]}</span>
+      </span>
+    );
   const origin =
     identity.kind === "supervisor"
       ? "human"

@@ -157,6 +157,7 @@ export const iconMappings = {
   "Ohtia help": "circle-question-mark",
   "Separator grip": "grip-vertical",
   "Jump to latest message": "arrow-down",
+  "Rename conversation": "pencil",
   "Agent writing": "pen-line",
   "Supported by examined content": "circle-dot",
   "Partially supported": "contrast",

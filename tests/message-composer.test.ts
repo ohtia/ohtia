@@ -849,3 +849,53 @@ it("keeps confirmed-project guidance editable and retains a pending-limit reject
   expect(f.append).toHaveBeenCalledTimes(2);
   expect(input.value).toBe("");
 });
+
+it.each(["pending_limit_reached", "storage_failed", "uncertain"] as const)(
+  "keeps a new conversation draft and operation identity when start returns %s",
+  async (code) => {
+    const h = await harness();
+    const start = vi
+      .fn<FoundationPort["startConversation"]>()
+      .mockReturnValueOnce(call(failure(code)))
+      .mockReturnValueOnce(call(success));
+    const adopted = vi.fn();
+    const controller = new ComposerController(
+      {
+        startConversation: start,
+        readDestination: h.destination,
+        readConnection: h.readConnection,
+      } as unknown as FoundationPort,
+      () => "one-start",
+      undefined,
+      undefined,
+      adopted,
+    );
+    controllers.push(controller);
+    controller.open({ projectId, conversationId: null });
+    await controller.refreshDestination();
+    expect(h.destination).toHaveBeenLastCalledWith({ projectId, agentId: "virgilio" });
+    controller.edit("First message");
+    expect(start).not.toHaveBeenCalled();
+    controller.send();
+    await settle();
+    expect(controller.snapshot()).toMatchObject({
+      text: "First message",
+      notice:
+        code === "pending_limit_reached"
+          ? "pendingLimit"
+          : code === "uncertain"
+            ? "uncertain"
+            : "failed",
+    });
+    expect(adopted).not.toHaveBeenCalled();
+    controller.send();
+    await settle();
+    expect(start.mock.calls).toEqual([
+      ["one-start", { projectId, content: "First message" }],
+      ["one-start", { projectId, content: "First message" }],
+    ]);
+    expect(adopted).toHaveBeenCalledWith({ projectId, conversationId: resultId }, true);
+    controller.open({ projectId, conversationId: resultId });
+    expect(controller.snapshot().text).toBe("");
+  },
+);

@@ -32,7 +32,7 @@ export class ProjectController {
     firstPageRevision: 0,
   };
   private readonly listeners = new Set<() => void>();
-  private readonly conversations = new Map<string, string>();
+  private readonly conversations = new Map<string, string | null>();
   private listEpoch = 0;
   private selectionEpoch = 0;
   private restoreEpoch: number | undefined;
@@ -66,8 +66,10 @@ export class ProjectController {
     for (const listener of this.listeners) listener();
   }
   remember(scope: ResearchScope): void {
-    if (scope.projectId && scope.conversationId)
-      this.conversations.set(scope.projectId, scope.conversationId);
+    if (scope.projectId) this.conversations.set(scope.projectId, scope.conversationId);
+  }
+  rememberStarted(scope: ResearchScope): void {
+    if (scope.projectId && this.conversations.get(scope.projectId) === null) this.remember(scope);
   }
   project(id: string | null): ProjectRecord | undefined {
     return id ? this.knownProjects.get(id) : undefined;
@@ -176,7 +178,7 @@ export class ProjectController {
     this.update({ openingFailed: null });
     try {
       let conversationId = this.conversations.get(projectId);
-      if (!conversationId) {
+      if (conversationId === undefined) {
         const page = await this.port.listConversations({ projectId, cursor: null, count: 1 })
           .result;
         if (this.isDisposed() || epoch !== this.selectionEpoch) return;

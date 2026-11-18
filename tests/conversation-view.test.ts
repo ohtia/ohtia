@@ -1,9 +1,16 @@
 import { deferred } from "./fixtures/settings.js";
 // @vitest-environment jsdom
-import { act, createElement as h } from "react";
+import { act, createElement as h, useSyncExternalStore } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskNotice, taskNoticeContent } from "../packages/renderer/src/task-notice.js";
+import {
+  ConversationHistory,
+  ConversationRenameNotice,
+  historyTime,
+} from "../packages/renderer/src/conversation-history.js";
+import { conversationPreview } from "../packages/renderer/src/message-markdown.js";
+import { ConversationHistoryController } from "../packages/renderer/src/conversation-history-controller.js";
 import { ConversationView } from "../packages/renderer/src/conversation-view.js";
 import {
   ConversationController,
@@ -11,6 +18,8 @@ import {
 } from "../packages/renderer/src/conversation-controller.js";
 import {
   failure,
+  staleRevision,
+  compareConversations,
   chatgptConnection,
   type TimelineTask,
   type InterfaceLocale,
@@ -46,6 +55,11 @@ const summary: ConversationSummary = {
   updatedAt: "2026-11-15T10:12:00.000Z",
   revision: 1,
   agentId: "virgilio",
+  latestAt: "2026-11-15T10:12:00.000Z",
+  latestPrefix: "",
+  latestTruncated: false,
+  latestLanguage: null,
+  status: null,
   latestReplyTaskId: null,
   runningTask: null,
 };
@@ -2197,4 +2211,492 @@ it("preserves origin drafts across project A to B to A with delayed reads", asyn
   await settle();
   expect(h.controller.composer.snapshot().text).toBe("Unsent B");
   h.controller.dispose();
+});
+
+describe("conversation history", () => {
+  it("merges project events into the loaded range and recovers rows after a sequence gap", async () => {
+    const h = controllerHarness();
+    const rows = Array.from({ length: 106 }, (_, n) => ({
+      ...summary,
+      id: id(3000 + n),
+      title: `Conversation ${n}`,
+    }));
+    const sorted = () => [...rows].sort((a, b) => compareConversations(b, a));
+    const page = vi.fn<FoundationPort["listConversations"]>(({ cursor, count }) => {
+      const eligible = sorted().filter((row) => !cursor || compareConversations(row, cursor) < 0);
+      const items = eligible.slice(0, count);
+      const last = items.at(-1);
+      const next =
+        eligible.length > items.length && last ? { latestAt: last.latestAt, id: last.id } : null;
+      return ok({ items, next, hasMore: !!next });
+    });
+    h.port.listConversations = page;
+    vi.mocked(h.port.readConversations).mockImplementation(({ ids }) =>
+      ok({
+        items: ids.flatMap((id) =>
+          id === summary.id ? [summary] : rows.filter((row) => row.id === id),
+        ),
+        remaining: [],
+      }),
+    );
+    await settle();
+    expect(page).not.toHaveBeenCalled();
+    h.controller.history.show();
+    expect(h.controller.history.snapshot().status).toBe("loading");
+    await settle();
+    const snapshot = h.controller.history.snapshot;
+    expect(snapshot().items).toHaveLength(50);
+    const cursor = snapshot().next;
+    const moved = rows[0]!;
+    moved.latestAt = "2026-11-16T15:13:08.000Z";
+    moved.revision++;
+    h.emit({
+      ok: true,
+      value: { kind: "changed", record: "conversation", id: moved.id, revision: moved.revision },
+    });
+    await settle();
+    expect(snapshot().items[0]?.id).toBe(moved.id);
+    expect(snapshot().next).toEqual(cursor);
+    page.mockReturnValueOnce(call(failure("storage_failed")));
+    h.controller.history.loadOlder();
+    await settle();
+    expect(snapshot().failedOlder).toBe(true);
+    expect(snapshot().next).toEqual(cursor);
+    h.controller.history.loadOlder();
+    await settle();
+    h.controller.history.loadOlder();
+    await settle();
+    expect(snapshot().next).toBeNull();
+    expect(snapshot().items.map((row) => row.id)).toEqual(sorted().map((row) => row.id));
+
+    const unseen = { ...moved, id: id(3999), title: "Created elsewhere" };
+    rows.push(unseen);
+    vi.mocked(h.port.readConversations).mockClear();
+    h.emit(failure("sequence_gap"));
+    await vi.waitFor(() => expect(snapshot().items[0]?.id).toBe(unseen.id));
+    expect(snapshot().items).toHaveLength(107);
+    expect(page).toHaveBeenCalledWith({ projectId: scope.projectId, cursor: null, count: 50 });
+    expect(h.port.readConversations).toHaveBeenCalledWith({
+      projectId: scope.projectId,
+      ids: expect.arrayContaining([moved.id]),
+    });
+    h.controller.dispose();
+  });
+
+  it("renders full accessible preview text, localized status and time at a selected row", async () => {
+    const harness = controllerHarness();
+    const history = harness.controller.history;
+    const row = {
+      ...summary,
+      title: "Interviews",
+      latestPrefix: "**Evidence** " + "한".repeat(123),
+      latestTruncated: true,
+      latestLanguage: "ko-KR",
+      status: "attention" as const,
+    };
+    await act(async () =>
+      root.render(
+        h(ConversationHistory, {
+          state: {
+            projectId: scope.projectId,
+            visible: true,
+            status: "ready",
+            items: [row],
+            next: null,
+            loadingOlder: false,
+            failedOlder: false,
+          },
+          controller: history,
+          current: row.id,
+          locale: "de-DE",
+          select: harness.controller.switchConversation,
+        }),
+      ),
+    );
+    const button = container.querySelector("button");
+    expect(button?.getAttribute("aria-current")).toBe("true");
+    expect(button?.querySelector(".chat-history-selection")).not.toBeNull();
+    expect(button?.querySelector("[data-compact]")?.textContent).toBe("Virgilio");
+    expect(button?.querySelector("time")?.dateTime).toBe(row.latestAt);
+    expect(button?.querySelector(".chat-history-preview")?.textContent).toBe(
+      "Evidence " + "한".repeat(111) + "…",
+    );
+    expect(button?.querySelector(".chat-history-preview")?.getAttribute("lang")).toBe("ko-KR");
+    expect(button?.querySelector(".chat-history-status")?.textContent).toBe(
+      "Erfordert Ihre Aufmerksamkeit",
+    );
+    const now = new Date(2026, 10, 18, 14, 3);
+    expect(historyTime(now.toISOString(), "en-US", now)).toBe("2:03 PM");
+    expect(historyTime(new Date(2026, 10, 3).toISOString(), "en-US", now)).toBe("Nov 3");
+    expect(historyTime(new Date(2025, 10, 3).toISOString(), "en-US", now)).toBe("Nov 3, 2025");
+    harness.controller.dispose();
+  });
+});
+
+it("retains the original version and typed name through a rename conflict and an uncertain retry", async () => {
+  const h = controllerHarness();
+  const rename = vi.fn<FoundationPort["renameConversation"]>();
+  h.port.renameConversation = rename;
+  await settle();
+  h.controller.beginRename("Original");
+  for (const [text, notice] of [
+    ["", "empty"],
+    [" name ", "spaces"],
+    ["😀".repeat(201), "long"],
+  ] as const) {
+    h.controller.editRename(text);
+    await h.controller.saveRename();
+    expect(h.controller.snapshot().rename).toMatchObject({ text, notice });
+  }
+  expect(rename).not.toHaveBeenCalled();
+  h.controller.editRename("Field text");
+  const other = {
+    ...summary,
+    title: "Other window",
+    updatedAt: "2026-11-15T10:12:00.001Z",
+    revision: 2,
+  };
+  vi.mocked(h.port.readConversations).mockReturnValue(ok({ items: [other], remaining: [] }));
+  rename.mockReturnValueOnce(call(staleRevision(2)));
+  await h.controller.saveRename();
+  expect(rename.mock.calls[0]?.[1].expectedUpdatedAt).toBe(summary.updatedAt);
+  expect(h.controller.snapshot().rename).toMatchObject({ text: "Field text", notice: "stale" });
+  rename.mockReturnValueOnce(call(failure("uncertain")));
+  await h.controller.saveRename();
+  expect(h.controller.snapshot().rename?.notice).toBe("uncertain");
+  expect(rename.mock.calls[1]?.[1].expectedUpdatedAt).toBe(other.updatedAt);
+  expect(rename.mock.calls[1]?.[0]).not.toBe(rename.mock.calls[0]?.[0]);
+  rename.mockReturnValueOnce(ok({ resultId: summary.id }));
+  vi.mocked(h.port.readConversations).mockReturnValue(
+    ok({
+      items: [{ ...other, title: "Field text", revision: 3 }],
+      remaining: [],
+    }),
+  );
+  await h.controller.saveRename();
+  expect(rename.mock.calls[2]).toEqual(rename.mock.calls[1]);
+  expect(h.controller.snapshot().rename).toBeUndefined();
+  expect(h.controller.snapshot().conversation?.title).toBe("Field text");
+  expect(h.controller.snapshot().renamed).toBe(1);
+  h.controller.dispose();
+});
+
+it("shows first-page and older-page problems with explicit retry and restores focus after paging", async () => {
+  const latest = { ...summary, latestPrefix: "Latest" };
+  const firstRows = Array.from({ length: 50 }, (_, index) => ({ ...latest, id: id(2000 - index) }));
+  const next = { latestAt: latest.latestAt, id: firstRows[49]!.id };
+  const older = { ...summary, id: id(1900), latestPrefix: "", status: "waiting" as const };
+  const page = vi.fn<FoundationPort["listConversations"]>();
+  const select = vi.fn();
+  const controller = new ConversationHistoryController(
+    { listConversations: page } as unknown as FoundationPort,
+    vi.fn(),
+  );
+  function Fixture() {
+    const state = useSyncExternalStore(controller.subscribe, controller.snapshot);
+    return h(ConversationHistory, {
+      controller,
+      state,
+      current: latest.id,
+      select,
+      locale: "en-US",
+    });
+  }
+  controller.show();
+  controller.scope(scope.projectId);
+  controller.disconnected("service_unavailable");
+  controller.show();
+  controller.loadOlder();
+  await act(async () => root.render(h(Fixture)));
+  expect(container.querySelector("[role=status]")?.textContent).toContain(
+    "Conversations are unavailable",
+  );
+
+  const first = deferred<Outcome<ResearchOutputs["conversation.list"]>>();
+  page.mockReturnValueOnce({ result: first.promise, cancel() {} });
+  await act(async () => {
+    controller.connected();
+    controller.show();
+    controller.reload();
+  });
+  expect(container.querySelector("[aria-busy=true] p")?.textContent).toBe("Loading conversations…");
+  await act(async () => first.resolve(failure("storage_failed")));
+  expect(container.querySelector("[role=alert]")?.textContent).toContain(
+    "Ohtia couldn’t load the conversations.",
+  );
+  expect(container.querySelector("[role=alert] button")).toBeNull();
+  const button = () => container.querySelector<HTMLButtonElement>(".chat-history-actions button")!;
+  expect(button().textContent).toBe("Reload conversations");
+
+  page.mockReturnValueOnce(ok({ items: firstRows, next, hasMore: true }));
+  await act(async () => button().click());
+  expect(button().textContent).toBe("Load older conversations");
+  expect(container.querySelector(".chat-history-list")?.children).toHaveLength(50);
+  container.querySelector(".chat-history-list")?.dispatchEvent(new Event("scroll"));
+  expect(page).toHaveBeenCalledTimes(2);
+  const loading = deferred<Outcome<ResearchOutputs["conversation.list"]>>();
+  page.mockReturnValueOnce({ result: loading.promise, cancel() {} });
+  await act(async () => {
+    button().focus();
+    button().click();
+    controller.loadOlder();
+  });
+  expect(button().disabled).toBe(true);
+  expect(container.querySelector("[role=status]")?.textContent).toBe(
+    "Loading older conversations…",
+  );
+  await act(async () => loading.resolve(failure("storage_failed")));
+  expect(container.querySelector("[role=alert]")?.textContent).toContain(
+    "Ohtia couldn’t load older conversations.",
+  );
+  expect(container.querySelector(".chat-history-list")?.children).toHaveLength(50);
+  page.mockReturnValueOnce(ok({ items: [older], next: null, hasMore: false }));
+  await act(async () => {
+    button().focus();
+    button().click();
+  });
+  expect(button()).toBeNull();
+  expect(document.activeElement).toBe(container.querySelector(".chat-history-list"));
+  expect(container.querySelector("[data-status=waiting]")?.textContent).toBe("Waiting");
+  await act(async () => container.querySelector<HTMLButtonElement>(".chat-history-row")!.click());
+  expect(select).toHaveBeenCalledWith(latest.id);
+  await act(async () => controller.disconnected("service_unavailable"));
+  expect(container.querySelector("[role=status]")?.textContent).toContain(
+    "Conversations are unavailable",
+  );
+  controller.dispose();
+});
+
+it("ignores an old project page and keeps rows inside the established history range after reconnecting", async () => {
+  const previous = deferred<Outcome<ResearchOutputs["conversation.list"]>>();
+  const page = vi
+    .fn<FoundationPort["listConversations"]>()
+    .mockReturnValueOnce({ result: previous.promise, cancel() {} });
+  const oldest = { ...summary, id: id(15), latestAt: "2026-11-04T09:00:00.000Z" };
+  const newer = { ...summary, id: id(16), latestAt: "2026-11-05T09:00:00.000Z" };
+  const frontier = { latestAt: newer.latestAt, id: newer.id };
+  const read = vi.fn<FoundationPort["readConversations"]>();
+  const controller = new ConversationHistoryController(
+    {
+      listConversations: page,
+      readConversations: read,
+    } as unknown as FoundationPort,
+    () => {},
+  );
+  controller.scope(id(90));
+  controller.connected();
+  controller.show();
+  await settle();
+  controller.scope(scope.projectId);
+  controller.connected();
+  page
+    .mockReturnValueOnce(ok({ items: [newer], next: frontier, hasMore: true }))
+    .mockReturnValueOnce(ok({ items: [], next: null, hasMore: false }));
+  controller.show();
+  await settle();
+  previous.resolve({ ok: true, value: { items: [summary], next: null, hasMore: false } });
+  await settle();
+  expect(controller.snapshot().items).toEqual([newer]);
+  expect(page).toHaveBeenLastCalledWith({
+    projectId: scope.projectId,
+    cursor: frontier,
+    count: 49,
+  });
+  // An interrupted older page should keep the previous cursor on return.
+  controller.scope(id(90));
+  controller.connected();
+  const first = Array.from({ length: 50 }, (_, index) => ({
+    ...newer,
+    id: id(99 - index),
+    projectId: id(90),
+  }));
+  const last = first[49]!;
+  const cursor = { latestAt: last.latestAt, id: last.id };
+  const interrupted = deferred<Outcome<ResearchOutputs["conversation.list"]>>();
+  page
+    .mockReturnValueOnce(ok({ items: first, next: cursor, hasMore: true }))
+    .mockReturnValueOnce({ result: interrupted.promise, cancel() {} });
+  controller.show();
+  await settle();
+  controller.loadOlder();
+  await settle();
+  controller.scope(id(90));
+  expect(controller.snapshot().loadingOlder).toBe(false);
+  page.mockReturnValueOnce(
+    ok({
+      items: [...first.slice(0, 49), { ...oldest, projectId: id(90) }],
+      next: null,
+      hasMore: false,
+    }),
+  );
+  read.mockReturnValueOnce(ok({ items: first, remaining: [] }));
+  controller.connected();
+  await settle();
+  interrupted.resolve({ ok: true, value: { items: [summary], next: null, hasMore: false } });
+  await settle();
+  expect(controller.snapshot().items).toEqual(first);
+  expect(controller.snapshot().next).toEqual(cursor);
+  controller.dispose();
+});
+
+it("renders rename validation and recovery notices with their own semantics and format", async () => {
+  const base = { text: "한".repeat(202), expectedUpdatedAt: summary.updatedAt, busy: false };
+  for (const [notice, text] of [
+    ["long", "Remove 2 characters to save this name."],
+    ["stale", "This conversation was renamed in another window."],
+    ["uncertain", "Ohtia couldn’t confirm that the name was saved."],
+  ] as const) {
+    await act(async () =>
+      root.render(
+        h(ConversationRenameNotice, {
+          rename: { ...base, notice },
+          renamed: undefined,
+          noticeId: "name-notice",
+          locale: "en-US",
+        }),
+      ),
+    );
+    expect(container.querySelector("#name-notice[role=status]")?.textContent).toContain(text);
+    expect(container.querySelector("#name-notice svg")).not.toBeNull();
+  }
+  await act(async () =>
+    root.render(
+      h(ConversationRenameNotice, {
+        rename: undefined,
+        renamed: 1,
+        noticeId: "name-notice",
+        locale: "en-US",
+      }),
+    ),
+  );
+  expect(container.querySelector("[role=status]")?.textContent).toBe("Conversation renamed.");
+});
+
+it("preserves the typed name if the conflict reread fails and fetches a fresh version before retrying", async () => {
+  const h = controllerHarness();
+  h.port.renameConversation = vi
+    .fn()
+    .mockReturnValueOnce(call(staleRevision(2)))
+    .mockReturnValueOnce(ok({ resultId: summary.id }));
+  await settle();
+  expect(h.controller.startNew()).toBe(false);
+  h.controller.beginRename("Original");
+  h.controller.beginRename("Second edit request");
+  h.controller.editRename("Original");
+  h.controller.editRename("New name");
+  vi.mocked(h.port.readConversations)
+    .mockReturnValueOnce(call(failure("storage_failed")))
+    .mockReturnValueOnce(
+      ok({
+        items: [
+          { ...summary, title: "Other window", revision: 2, updatedAt: "2026-11-16T11:13:00.000Z" },
+        ],
+        remaining: [],
+      }),
+    )
+    .mockImplementationOnce(() => {
+      throw new Error("Read unavailable");
+    });
+  await h.controller.saveRename();
+  expect(h.controller.snapshot().rename).toMatchObject({
+    text: "New name",
+    notice: "failed",
+    needsRefresh: true,
+  });
+  await h.controller.saveRename();
+  expect(h.port.renameConversation).toHaveBeenCalledOnce();
+  expect(h.controller.snapshot().rename).toMatchObject({
+    text: "New name",
+    notice: "stale",
+    needsRefresh: false,
+  });
+  await h.controller.saveRename();
+  expect(h.controller.snapshot().conversation?.title).toBe("New name");
+  h.controller.dispose();
+  await h.controller.saveRename();
+});
+
+it("extracts preview node text across Markdown blocks, breaks and references", () => {
+  expect(
+    conversationPreview(
+      "# Heading\n\nOne  \ntwo\n\n***\n\n- **Three**\n- `four`\n\n[Five][link]\n\n[link]: https://example.org",
+      false,
+    ),
+  ).toBe("Heading One two Three four Five");
+  expect(conversationPreview("😀".repeat(120), true)).toBe("😀".repeat(120) + "…");
+  expect(conversationPreview(" \n\n ", false)).toBe("");
+  expect(conversationPreview("> ".repeat(14) + "readable", false)).toContain("readable");
+});
+
+it("retains a focused row while a sequence gap is repaired and reconnects from the history retry", async () => {
+  const fixture = controllerHarness();
+  const controller = fixture.controller.history;
+  const page = vi.fn<FoundationPort["listConversations"]>(() =>
+    ok({
+      items: [summary],
+      next: null,
+      hasMore: false,
+    }),
+  );
+  fixture.port.listConversations = page;
+  function Fixture() {
+    const state = useSyncExternalStore(controller.subscribe, controller.snapshot);
+    return h(ConversationHistory, {
+      controller,
+      state,
+      current: summary.id,
+      locale: "en-US",
+      select: fixture.controller.switchConversation,
+    });
+  }
+  await settle();
+  await act(async () => {
+    root.render(h(Fixture));
+    controller.show();
+  });
+  const row = container.querySelector<HTMLButtonElement>(".chat-history-row")!;
+  row.focus();
+  const pending = deferred<Outcome<ResearchOutputs["conversation.list"]>>();
+  page.mockReturnValueOnce({ result: pending.promise, cancel() {} });
+  await act(async () => fixture.emit(failure("sequence_gap")));
+  expect(container.querySelector(".chat-history-row")).toBe(row);
+  expect(document.activeElement).toBe(row);
+  expect(container.querySelector("[aria-busy=true]")).toBeNull();
+  await act(async () =>
+    pending.resolve({
+      ok: true,
+      value: { items: [summary], next: null, hasMore: false },
+    }),
+  );
+  expect(document.activeElement).toBe(row);
+
+  await act(async () => fixture.emit(failure("storage_failed")));
+  expect(container.querySelector("[role=alert]")?.textContent).toContain(
+    "couldn’t load the conversations",
+  );
+  const retry = () => container.querySelector<HTMLButtonElement>(".chat-history-actions button")!;
+  expect(retry().textContent).toBe("Reload conversations");
+  const repeatedFailure = deferred<Outcome<ResearchOutputs["conversation.list"]>>();
+  page.mockReturnValueOnce({ result: repeatedFailure.promise, cancel() {} });
+  await act(async () => {
+    retry().focus();
+    retry().click();
+  });
+  expect(fixture.port.subscribeResearch).toHaveBeenCalledTimes(3);
+  await act(async () => repeatedFailure.resolve(failure("storage_failed")));
+  expect(document.activeElement).toBe(retry());
+
+  const successfulRetry = deferred<Outcome<ResearchOutputs["conversation.list"]>>();
+  page.mockReturnValueOnce({ result: successfulRetry.promise, cancel() {} });
+  await act(async () => retry().click());
+  await act(async () =>
+    successfulRetry.resolve({
+      ok: true,
+      value: { items: [summary], next: null, hasMore: false },
+    }),
+  );
+  expect(container.querySelector(".chat-history-row")).not.toBeNull();
+  expect(container.querySelector("[role=alert]")).toBeNull();
+  expect(document.activeElement).toBe(container.querySelector(".chat-history-list"));
+  fixture.controller.dispose();
 });

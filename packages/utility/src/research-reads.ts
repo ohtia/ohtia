@@ -1,6 +1,8 @@
 import { sql, type Kysely } from "kysely";
 import {
   failure,
+  conversationPreviewPrefixLimit,
+  type ConversationSummary,
   encodeEnvelope,
   splitText,
   type Outcome,
@@ -9,7 +11,14 @@ import {
   type ResearchScope,
   type TimelineItem,
 } from "@ohtia/contracts";
-import { bytes, identifier, listConversations, type ResearchSchema } from "./research.js";
+import {
+  bytes,
+  conversationRecord,
+  conversationSummaries,
+  identifier,
+  type ConversationRow,
+  type ResearchSchema,
+} from "./research.js";
 import { TaskTransaction, type TaskContext } from "./tasks.js";
 import { operationPolicy } from "./operations.js";
 import { setupRevision } from "./project-setup.js";
@@ -162,35 +171,54 @@ export async function readPauseCounts(
   if (!snapshot) throw new Error("Pause revision unavailable.");
   return { revision: snapshot.revision, restart: restart.count, usage };
 }
-async function latestReplyTask(
+async function summarizeConversation(
   db: Kysely<ResearchSchema>,
-  conversation: string,
-): Promise<string | null> {
-  const task = await db
-    .selectFrom("tasks")
-    .select("id")
-    .where("conversation_id", "=", bytes(conversation))
-    .orderBy(sql`rowid`, "desc")
-    .executeTakeFirst();
-  return task ? identifier(task.id) : null;
-}
-async function runningTask(
-  db: Kysely<ResearchSchema>,
-  conversation: string,
-): Promise<import("@ohtia/contracts").ConversationSummary["runningTask"]> {
-  const row = await db
+  row: ConversationRow & { latestAt: string; latestMessageId: Uint8Array | null },
+): Promise<ConversationSummary> {
+  const latest = row.latestMessageId
+    ? await db
+        .selectFrom("messages")
+        .leftJoin("tasks", "tasks.id", "messages.task_id")
+        .select(["messages.content", "tasks.document_language as language"])
+        .where("messages.id", "=", row.latestMessageId)
+        .executeTakeFirstOrThrow()
+    : undefined;
+  const prefix = [];
+  for (const character of latest?.content ?? "") {
+    prefix.push(character);
+    if (prefix.length > conversationPreviewPrefixLimit) break;
+  }
+  const tasks = db
     .selectFrom("tasks")
     .select(["id", "state"])
-    .where("conversation_id", "=", bytes(conversation))
-    .where("state", "in", ["running", "cancelling"])
-    .executeTakeFirst();
-  return row
-    ? {
-        id: identifier(row.id),
-        agentId: "virgilio",
-        state: row.state === "cancelling" ? "cancelling" : "running",
-      }
-    : null;
+    .where("conversation_id", "=", row.id);
+  const latestTask = await tasks.orderBy(sql`rowid`, "desc").executeTakeFirst();
+  const running = await tasks.where("state", "in", ["running", "cancelling"]).executeTakeFirst();
+  const waiting = await tasks.where("state", "in", ["queued", "blocked"]).executeTakeFirst();
+  return {
+    ...conversationRecord(row),
+    latestAt: row.latestAt,
+    latestPrefix: prefix.slice(0, conversationPreviewPrefixLimit).join(""),
+    latestTruncated: prefix.length > conversationPreviewPrefixLimit,
+    latestLanguage: latest?.language ?? null,
+    agentId: "virgilio",
+    latestReplyTaskId: latestTask ? identifier(latestTask.id) : null,
+    runningTask: running
+      ? {
+          id: identifier(running.id),
+          agentId: "virgilio",
+          state: running.state === "cancelling" ? "cancelling" : "running",
+        }
+      : null,
+    status:
+      latestTask?.state === "failed" || latestTask?.state === "uncertain"
+        ? "attention"
+        : running
+          ? "replying"
+          : waiting
+            ? "waiting"
+            : null,
+  };
 }
 export async function readResearch(
   db: Kysely<ResearchSchema>,
@@ -284,77 +312,76 @@ export async function readResearch(
       return { ok: true, value: { items, next: hasMore && last ? cursorOf(last) : null, hasMore } };
     }
     case "conversation.list": {
-      const p = request.payload;
-      const result = await listConversations(db, request.payload.projectId);
-      if (!result.ok) return result;
-      const rows = await Promise.all(
-        result.value.map(async (row) =>
-          "projectId" in row
-            ? {
-                ...row,
-                agentId: "virgilio" as const,
-                latestReplyTaskId: await latestReplyTask(db, row.id),
-                runningTask: await runningTask(db, row.id),
-              }
-            : row,
-        ),
-      );
-      const offset = p.cursor === null ? 0 : rows.findIndex((row) => row.id === p.cursor) + 1;
-      if (p.cursor !== null && offset === 0) return failure("record_not_found");
-      const items: typeof rows = [];
-      for (const row of rows.slice(offset, offset + p.count)) {
-        const more = offset + items.length + 1 < rows.length;
+      const { projectId, cursor, count } = request.payload;
+      const project = await db
+        .selectFrom("projects")
+        .select("id")
+        .where("id", "=", bytes(projectId))
+        .executeTakeFirst();
+      if (!project) return failure("record_not_found");
+      let query = conversationSummaries(db, projectId).selectAll();
+      if (cursor)
+        query = query.where((eb) =>
+          eb.or([
+            eb("latestAt", "<", cursor.latestAt),
+            eb.and([eb("latestAt", "=", cursor.latestAt), eb("id", "<", bytes(cursor.id))]),
+          ]),
+        );
+      const rows = await query
+        .orderBy("latestAt", "desc")
+        .orderBy("id", "desc")
+        .limit(count + 1)
+        .execute();
+      const items: ConversationSummary[] = [];
+      const cursorOf = ({ latestAt, id }: ConversationSummary) => ({ latestAt, id });
+      for (const row of rows.slice(0, count)) {
+        const item = await summarizeConversation(db, row);
+        const hasMore = items.length + 1 < rows.length;
         if (
           !fitsResearchResult(request, {
-            items: [...items, row],
-            next: more ? row.id : null,
-            hasMore: more,
+            items: [...items, item],
+            next: hasMore ? cursorOf(item) : null,
+            hasMore,
           })
         )
           break;
-        items.push(row);
+        items.push(item);
       }
-      const hasMore = offset + items.length < rows.length;
-      if (hasMore && !items.length) return failure("invalid_service_result");
-      return { ok: true, value: { items, next: hasMore ? items.at(-1)?.id : null, hasMore } };
+      const hasMore = items.length < rows.length;
+      const last = items.at(-1);
+      if (hasMore && !last) return failure("invalid_service_result");
+      return { ok: true, value: { items, next: hasMore && last ? cursorOf(last) : null, hasMore } };
     }
     case "conversation.read": {
-      const p = request.payload;
-      const all = await listConversations(db, p.projectId);
-      if (!all.ok) return all;
-      const rows = new Map(
-        await Promise.all(
-          all.value.map(
-            async (row) =>
-              [
-                row.id,
-                {
-                  ...row,
-                  agentId: "virgilio" as const,
-                  latestReplyTaskId: await latestReplyTask(db, row.id),
-                  runningTask: await runningTask(db, row.id),
-                },
-              ] as const,
-          ),
-        ),
-      );
-      const items = [];
-      let consumed = 0;
-      for (const id of p.ids) {
-        const row = rows.get(id);
+      const { projectId, ids } = request.payload;
+      const project = await db
+        .selectFrom("projects")
+        .select("id")
+        .where("id", "=", bytes(projectId))
+        .executeTakeFirst();
+      if (!project) return failure("record_not_found");
+      if (!ids.length) return { ok: true, value: { items: [], remaining: [] } };
+      const rows = await conversationSummaries(db, projectId)
+        .selectAll()
+        .where("id", "in", ids.map(bytes))
+        .execute();
+      const byId = new Map(rows.map((row) => [identifier(row.id), row]));
+      const items: ConversationSummary[] = [];
+      for (const id of ids) {
+        const row = byId.get(id);
         if (!row) return failure("record_not_found");
+        const item = await summarizeConversation(db, row);
         if (
           !fitsResearchResult(request, {
-            items: [...items, row],
-            remaining: p.ids.slice(consumed + 1),
+            items: [...items, item],
+            remaining: ids.slice(items.length + 1),
           })
         )
           break;
-        items.push(row);
-        consumed++;
+        items.push(item);
       }
-      if (p.ids.length && !consumed) return failure("invalid_service_result");
-      return { ok: true, value: { items, remaining: p.ids.slice(consumed) } };
+      if (!items.length) return failure("invalid_service_result");
+      return { ok: true, value: { items, remaining: ids.slice(items.length) } };
     }
     case "timeline.listBefore": {
       const p = request.payload;
