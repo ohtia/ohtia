@@ -219,6 +219,28 @@ export function SettingsSurfaces({
           }),
         );
       }
+      if (research) {
+        let lastReason = research.newConversationReason();
+        stops.push(
+          registry.register("conversation.new", {
+            state: () => {
+              const unavailable =
+                reason("conversation.new") ??
+                research.newConversationReason() ??
+                (!storageAvailable.current ? "busy" : undefined);
+              return unavailable ? { reason: unavailable } : {};
+            },
+            run: research.startNew,
+          }),
+          research.subscribe(() => {
+            const nextReason = research.newConversationReason();
+            if (nextReason !== lastReason) {
+              lastReason = nextReason;
+              registry.changed();
+            }
+          }),
+        );
+      }
       for (const intent of ["increase", "decrease", "reset"] as const)
         stops.push(
           registry.register(`zoom.${intent}`, {
@@ -277,7 +299,7 @@ export function SettingsSurfaces({
         for (const stop of stops) stop();
       };
     },
-    [controller, newProject],
+    [controller, newProject, research],
   );
   const decoration = useCharacterMode(state.current?.character.value ?? "static");
   return (

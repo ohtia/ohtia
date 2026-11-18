@@ -4,6 +4,13 @@ import { ProjectSelector } from "./project-selector.js";
 import { NewProjectController } from "./new-project-controller.js";
 import { Dialog } from "./layers.js";
 import { ConversationController } from "./conversation-controller.js";
+import {
+  ConversationHeaderButton,
+  ConversationHistory,
+  ConversationNameField,
+  ConversationRenameNotice,
+  conversationName,
+} from "./conversation-history.js";
 import { ConversationView } from "./conversation-view.js";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
@@ -52,20 +59,49 @@ export function ApplicationRoot({ bridge }: { readonly bridge: DesktopBridge }) 
   );
 }
 function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
-  const conversation = useMemo(
-    () => new ConversationController(bridge.foundation),
-    [bridge.foundation],
-  );
-  const conversationState = useSyncExternalStore(conversation.subscribe, conversation.snapshot);
   const [createdProject, setCreatedProject] = useState<string>();
-  const projects = useMemo(
-    () =>
-      new ProjectController(bridge.foundation, (scope) => {
-        setCreatedProject(undefined);
-        conversation.open(scope);
-      }),
-    [bridge.foundation, conversation],
+  const { conversation, projects } = useMemo(() => {
+    const conversation = new ConversationController(bridge.foundation, undefined, (scope) => {
+      projects.rememberStarted(scope);
+    });
+    const projects = new ProjectController(bridge.foundation, (scope) => {
+      setCreatedProject(undefined);
+      conversation.open(scope);
+    });
+    return { conversation, projects };
+  }, [bridge.foundation]);
+  const conversationState = useSyncExternalStore(conversation.subscribe, conversation.snapshot);
+  const history = useSyncExternalStore(
+    conversation.history.subscribe,
+    conversation.history.snapshot,
   );
+  const historyButton = useRef<HTMLButtonElement>(null);
+  const returnButton = useRef<HTMLButtonElement>(null);
+  const renameButton = useRef<HTMLButtonElement>(null);
+  const renameNotice = useId();
+  const previousChatView = useRef({ history: false, renaming: false, id: null as string | null });
+  useLayoutEffect(() => {
+    const previous = previousChatView.current;
+    const renaming = !!conversationState.rename && !history.visible;
+    previousChatView.current = {
+      history: history.visible,
+      renaming,
+      id: conversationState.scope.conversationId,
+    };
+    const focus =
+      previous.history !== history.visible
+        ? history.visible
+          ? returnButton.current
+          : historyButton.current
+        : previous.renaming &&
+            !renaming &&
+            previous.id === conversationState.scope.conversationId &&
+            document.activeElement === document.body
+          ? renameButton.current
+          : null;
+    if (focus && !focus.closest("[hidden], [inert]") && !document.querySelector("dialog[open]"))
+      focus.focus({ preventScroll: true });
+  }, [history.visible, conversationState.rename, conversationState.scope.conversationId]);
   const projectState = useSyncExternalStore(projects.subscribe, projects.snapshot);
   useEffect(
     () =>
@@ -416,25 +452,118 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                   projectScope={conversationState.scope.projectId ?? undefined}
                   revealProjectChat={createdProject === conversationState.scope.projectId}
                   onComposerFocus={conversation.composer.focus}
-                  chat={
-                    conversationState.scope.conversationId ? (
-                      <ConversationView
-                        state={conversationState}
-                        controller={conversation}
-                        onOpenConnections={openConnections}
-                        commands={bridge.commands}
-                        locale={bootstrap.locale}
+                  revealChatRequest={conversationState.newConversationRequest}
+                  chatHeadingStart={
+                    history.visible && (
+                      <ConversationHeaderButton
+                        buttonRef={returnButton}
+                        icon="arrow-left"
+                        label={message(bootstrap.locale, "history.return")}
+                        action={conversation.history.hide}
                       />
+                    )
+                  }
+                  replaceChatHeading={!history.visible && !!conversationState.rename}
+                  chatHeadingActions={
+                    conversationState.scope.projectId && (
+                      <>
+                        {!history.visible && (
+                          <>
+                            {conversationState.rename ? (
+                              <ConversationNameField
+                                key={conversationState.scope.conversationId}
+                                controller={conversation}
+                                rename={conversationState.rename}
+                                locale={bootstrap.locale}
+                                noticeId={renameNotice}
+                              />
+                            ) : (
+                              conversationState.conversation && (
+                                <ConversationHeaderButton
+                                  buttonRef={renameButton}
+                                  icon="pencil"
+                                  label={message(bootstrap.locale, "history.rename")}
+                                  action={() => {
+                                    if (conversationState.conversation)
+                                      conversation.beginRename(
+                                        conversationName(
+                                          conversationState.conversation,
+                                          bootstrap.locale,
+                                        ),
+                                      );
+                                  }}
+                                />
+                              )
+                            )}
+                            {activeProject?.setupConfirmedAt && (
+                              <ConversationHeaderButton
+                                buttonRef={historyButton}
+                                icon="list"
+                                label={message(bootstrap.locale, "history.show")}
+                                action={conversation.history.show}
+                              />
+                            )}
+                          </>
+                        )}
+                        {activeProject?.setupConfirmedAt && (
+                          <ShortcutControl
+                            id="conversation.new"
+                            commands={commands}
+                            locale={bootstrap.locale}
+                            icon="message-square-plus"
+                          />
+                        )}
+                      </>
+                    )
+                  }
+                  chat={
+                    conversationState.scope.projectId ? (
+                      <>
+                        <span className="primitive-announcement" role="status" data-history-loading>
+                          {history.visible && history.status === "loading"
+                            ? message(bootstrap.locale, "history.loading")
+                            : ""}
+                        </span>
+                        <div className="chat-conversation" hidden={history.visible}>
+                          <ConversationRenameNotice
+                            rename={conversationState.rename}
+                            renamed={conversationState.renamed}
+                            noticeId={renameNotice}
+                            locale={bootstrap.locale}
+                          />
+                          <div className="chat-timeline-slot">
+                            <ConversationView
+                              state={conversationState}
+                              controller={conversation}
+                              onOpenConnections={openConnections}
+                              commands={bridge.commands}
+                              locale={bootstrap.locale}
+                            />
+                          </div>
+                        </div>
+                        {history.visible && (
+                          <div className="chat-history-view">
+                            <ConversationHistory
+                              state={history}
+                              controller={conversation.history}
+                              select={conversation.switchConversation}
+                              current={conversationState.scope.conversationId}
+                              locale={bootstrap.locale}
+                            />
+                          </div>
+                        )}
+                      </>
                     ) : undefined
                   }
                   chatTitle={
-                    conversationState.conversation
-                      ? (conversationState.conversation.title ??
-                        new Intl.DateTimeFormat(bootstrap.locale, {
-                          dateStyle: "medium",
-                          timeStyle: "short",
-                        }).format(new Date(conversationState.conversation.createdAt)))
-                      : undefined
+                    history.visible
+                      ? message(bootstrap.locale, "history.title")
+                      : conversationState.conversation
+                        ? conversationName(conversationState.conversation, bootstrap.locale)
+                        : conversationState.scope.projectId &&
+                            !conversationState.scope.conversationId
+                          ? message(bootstrap.locale, "command.conversation.new")
+                          : undefined
                   }
                   commands={commands}
                   available={workspaceReady}

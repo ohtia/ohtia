@@ -223,7 +223,7 @@ function project(row: ProjectRow): ProjectRecord {
     updatedAt: row.updated_at,
   };
 }
-function conversation(row: ConversationRow): ConversationRecord {
+export function conversationRecord(row: ConversationRow): ConversationRecord {
   return {
     id: identifier(row.id),
     projectId: identifier(row.project_id),
@@ -603,17 +603,33 @@ export async function listConversations(
       .executeTakeFirst())
   )
     return failure("record_not_found");
-  const rows = await db
-    .selectFrom("conversations")
+  const rows = await conversationSummaries(db, projectId)
     .selectAll()
-    .where("project_id", "=", bytes(projectId))
-    .orderBy(
-      sql<string>`coalesce((SELECT created_at FROM messages WHERE conversation_id=conversations.id ORDER BY position DESC LIMIT 1),conversations.created_at)`,
-      "desc",
-    )
+    .orderBy("latestAt", "desc")
     .orderBy("id", "desc")
     .execute();
-  return { ok: true, value: rows.map(conversation) };
+  return { ok: true, value: rows.map(conversationRecord) };
+}
+export function conversationSummaries(db: Kysely<ResearchSchema>, projectId: string) {
+  return db.selectFrom(
+    db
+      .selectFrom("conversations")
+      .leftJoin("messages as latest", (join) =>
+        join.on(
+          "latest.id",
+          "=",
+          sql<Uint8Array>`(
+          SELECT id FROM messages WHERE conversation_id = conversations.id
+          ORDER BY position DESC LIMIT 1
+        )`,
+        ),
+      )
+      .where("conversations.project_id", "=", bytes(projectId))
+      .selectAll("conversations")
+      .select("latest.id as latestMessageId")
+      .select(sql<string>`coalesce(latest.created_at, conversations.created_at)`.as("latestAt"))
+      .as("summaries"),
+  );
 }
 export async function listMessages(
   db: Kysely<ResearchSchema>,

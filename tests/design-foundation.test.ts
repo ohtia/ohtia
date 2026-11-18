@@ -191,6 +191,7 @@ describe("review regression contracts", () => {
           "character.css",
           "research.css",
           "conversation.css",
+          "conversation-history.css",
           "message-markdown.css",
           "message-composer.css",
         ].map((name) => `packages/renderer/src/${name}`),

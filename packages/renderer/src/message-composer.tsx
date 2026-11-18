@@ -28,9 +28,10 @@ export function MessageComposer({
   const counter = count >= 18_000;
   const hasText = state.text.trim().length > 0;
   const stopping = state.stopping || state.cancelling;
-  const stop = state.saving || stopping || (!hasText && state.running);
+  const stop = !state.starting && (state.saving || stopping || (!hasText && state.running));
   const destinationUnavailable = state.destinationStatus !== "ready";
-  const disabled = stopping || (!stop && (!hasText || over || destinationUnavailable));
+  const disabled =
+    !!state.starting || stopping || (!stop && (!hasText || over || destinationUnavailable));
   const destinationReason = !stop && hasText && !over && destinationUnavailable;
   const reason = stopping
     ? message(locale, "composer.stopping")

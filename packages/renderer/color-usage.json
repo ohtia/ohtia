@@ -899,6 +899,72 @@
       "backgrounds": ["surface.panel"],
       "minimum": 7,
       "foreground": "content.primary"
+    },
+    {
+      "selector": ".workspace .workspace-chat-heading.with-conversation-controls > .workspace-panel-heading",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".with-conversation-controls > .primitive-layer-anchor > .workspace-control",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".with-conversation-controls > .primitive-layer-anchor > .workspace-control:hover",
+      "backgrounds": ["surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".chat-rename-field",
+      "backgrounds": ["surface.page", "surface.panel"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".chat-history-row",
+      "backgrounds": ["surface.panel", "surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.primary",
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".chat-history-row:hover",
+      "backgrounds": ["surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".chat-history-selection",
+      "backgrounds": ["surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".chat-history-row-meta,\n.chat-history-status",
+      "backgrounds": ["surface.panel", "surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.secondary"
+    },
+    {
+      "selector": ".chat-history-preview",
+      "backgrounds": ["surface.panel", "surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.secondary"
+    },
+    {
+      "selector": ".chat-history-status[data-status=\"attention\"]",
+      "backgrounds": ["surface.panel", "surface.emphasis"],
+      "minimum": 7,
+      "foreground": "attention.content"
+    },
+    {
+      "selector": ".voice-label[data-compact]",
+      "backgrounds": ["surface.panel", "surface.emphasis"],
+      "minimum": 7,
+      "foreground": "voice.ohtia.content"
     }
   ],
   "overlays": [

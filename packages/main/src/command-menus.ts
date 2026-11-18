@@ -341,6 +341,7 @@ export class CommandMenus {
         : []),
       group("file", [
         item("project.new"),
+        item("conversation.new"),
         item("window.new"),
         ...(!mac ? [item("settings.open"), separator] : []),
         item("window.close"),

@@ -758,6 +758,7 @@ it.each(["welcome", "context", "palette", "shortcut", "menu"] as const)(
       createProject: vi.fn(),
     });
     await mount(t);
+    expect(t.entry("conversation.new")?.reason).toBe("no_project");
     if (entry === "welcome")
       await click('.workspace-welcome [data-workspace-command="project.new"]');
     else if (entry === "context")
@@ -824,6 +825,11 @@ it("opens a newly created setup project, reveals a hidden chat and preserves its
               updatedAt: project.updatedAt,
               revision: 1,
               agentId: "virgilio",
+              latestAt: project.createdAt,
+              latestPrefix: "",
+              latestTruncated: false,
+              latestLanguage: null,
+              status: null,
               latestReplyTaskId: null,
               runningTask: null,
             },
@@ -849,6 +855,14 @@ it("opens a newly created setup project, reveals a hidden chat and preserves its
     "Tell Virgilio about your thesis",
   );
   expect(container.querySelector(".conversation-empty .voice-label")).toBeNull();
+  expect(
+    container.querySelector('.workspace-chat [aria-label="Rename conversation"]'),
+  ).not.toBeNull();
+  expect(
+    container.querySelector('.workspace-chat [aria-label="Show conversation history"]'),
+  ).toBeNull();
+  expect(container.querySelector('.workspace-chat [aria-label="New conversation"]')).toBeNull();
+  expect(t.entry("conversation.new")?.reason).toBe("project_in_setup");
   expect(document.activeElement).toBe(container.querySelector("textarea"));
   await act(async () => vi.advanceTimersByTimeAsync(1000));
   expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe(
@@ -968,6 +982,11 @@ it.each(["confirmed", "failed"] as const)(
                 updatedAt: project.updatedAt,
                 revision: 1,
                 agentId: "virgilio",
+                latestAt: project.createdAt,
+                latestPrefix: "",
+                latestTruncated: false,
+                latestLanguage: null,
+                status: null,
                 latestReplyTaskId: null,
                 runningTask: null,
               },
@@ -1054,6 +1073,11 @@ function raceFixture() {
             updatedAt: rows[0].updatedAt,
             revision: 1,
             agentId: "virgilio",
+            latestAt: rows[0].createdAt,
+            latestPrefix: "",
+            latestTruncated: false,
+            latestLanguage: null,
+            status: null,
             latestReplyTaskId: null,
             runningTask: null,
           })),
@@ -1173,3 +1197,178 @@ it.each([true, false])(
     expect(subscribeResearch).toHaveBeenCalledTimes(previousCalls + 1);
   },
 );
+
+it("opens history in the chat panel, restores its draft, and reveals a lazy conversation from the registry", async () => {
+  const t = raceFixture();
+  const projectId = t.ids[0]!;
+  const createdAt = "2026-11-17T10:00:00.000Z";
+  const otherId = "019a8000-0000-7000-8000-000000000111";
+  const rows = [projectId, otherId].map((id, index) => ({
+    id,
+    projectId,
+    title: index ? "Second interview" : "First interview",
+    createdAt,
+    updatedAt: createdAt,
+    revision: 1,
+    latestAt: createdAt,
+    latestPrefix: "Synthetic evidence",
+    latestLanguage: null,
+    latestTruncated: false,
+    status: null,
+    agentId: "virgilio" as const,
+    runningTask: null,
+    latestReplyTaskId: null,
+  }));
+  const confirmedRename = deferred<Outcome<{ resultId: string }>>();
+  const renameConversation = vi
+    .fn()
+    .mockReturnValueOnce(call(failure("storage_failed")))
+    .mockReturnValueOnce({ result: confirmedRename.promise, cancel() {} });
+  const firstPage = deferred<Outcome<ResearchOutputs["conversation.list"]>>();
+  const saved = deferred<Outcome<{ resultId: string }>>();
+  const startedId = "019a8000-0000-7000-8000-000000000120";
+  const startConversation = vi.fn(() => ({ result: saved.promise, cancel() {} }));
+  Object.assign(t.port, {
+    readConversations: ({ projectId: project, ids }: { projectId: string; ids: string[] }) =>
+      call({
+        ok: true,
+        value: {
+          items: ids.flatMap((id) =>
+            project === projectId
+              ? rows.filter((row) => row.id === id)
+              : [{ ...rows[0], id, projectId: project }],
+          ),
+          remaining: [],
+        },
+      }),
+    listConversations: vi
+      .fn(({ projectId: project }: { projectId: string }) =>
+        call({
+          ok: true,
+          value: {
+            items: project === projectId ? [...rows].reverse() : [{ id: project }],
+            next: null,
+            hasMore: false,
+          },
+        }),
+      )
+      .mockReturnValueOnce({ result: firstPage.promise, cancel() {} }),
+    startConversation,
+    renameConversation,
+  });
+  await mount(t);
+  const selector = (name: string) => `.workspace-chat button[aria-label="${name}"]`;
+  const header = () =>
+    container.querySelector(".workspace-chat .workspace-panel-heading")?.textContent;
+  const writeDraft = async (text: string) => {
+    const input = container.querySelector("textarea")!;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+      setter.call(input, text);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  expect(header()).toBe("First interview");
+  expect(
+    [...container.querySelectorAll(".workspace-chat-heading button")]
+      .slice(0, 3)
+      .map((button) => button.getAttribute("aria-label")),
+  ).toEqual(["Rename conversation", "Show conversation history", "New conversation"]);
+  await click(selector("Rename conversation"));
+  const rename = container.querySelector<HTMLInputElement>(
+    'input[aria-label="Conversation name"]',
+  )!;
+  expect(document.activeElement).toBe(rename);
+  await act(async () => {
+    rename.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    rename.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, isComposing: true }),
+    );
+  });
+  expect(renameConversation).not.toHaveBeenCalled();
+  await act(async () => {
+    rename.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+    rename.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  });
+  expect(renameConversation).toHaveBeenCalledOnce();
+  expect(container.querySelector(".chat-rename-notice [role=alert]")?.textContent).toContain(
+    "Your name is still in the field",
+  );
+  await act(async () => {
+    rename.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  expect(header()).toBe("First interview");
+  expect(document.activeElement).toBe(container.querySelector(selector("Rename conversation")));
+  await click(selector("Rename conversation"));
+  await act(async () => {
+    container
+      .querySelector('input[aria-label="Conversation name"]')!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  });
+  expect(renameConversation).toHaveBeenCalledTimes(2);
+  const documents = container.querySelector<HTMLElement>(
+    ".workspace-documents .workspace-panel-scroll",
+  )!;
+  await act(async () => documents.focus());
+  await act(async () => confirmedRename.resolve({ ok: true, value: { resultId: projectId } }));
+  expect(document.activeElement).toBe(documents);
+  await writeDraft("A private draft");
+  await click(selector("Show conversation history"));
+  expect(header()).toBe("Conversations");
+  expect(document.activeElement).toBe(container.querySelector(selector("Return to conversation")));
+  expect(container.querySelector(".chat-conversation")?.hasAttribute("hidden")).toBe(true);
+  expect(container.querySelector(".chat-history-view [aria-busy=true]")).not.toBeNull();
+  const loading = container.querySelector('[data-history-loading][role="status"]')!;
+  expect(loading.closest("[aria-busy=true]")).toBeNull();
+  expect(loading.textContent).toBe("Loading conversations…");
+  await act(async () =>
+    firstPage.resolve({
+      ok: true,
+      value: { items: [...rows].reverse(), next: null, hasMore: false },
+    }),
+  );
+  expect(container.querySelector(".chat-history-row[aria-current=true]")?.textContent).toContain(
+    "First interview",
+  );
+  await t.intent("panels.chat");
+  expect(container.querySelector(".workspace-chat")?.hasAttribute("hidden")).toBe(true);
+  await t.intent("panels.chat");
+  expect(header()).toBe("Conversations");
+  await click(".chat-history-row");
+  expect(header()).toBe("Second interview");
+  expect(container.querySelector("textarea")?.value).toBe("");
+  await click(selector("Show conversation history"));
+  await act(async () => {
+    [...container.querySelectorAll<HTMLButtonElement>(".chat-history-row")]
+      .find((row) => row.textContent?.includes("First interview"))!
+      .click();
+  });
+  expect(header()).toBe("First interview");
+  expect(container.querySelector("textarea")?.value).toBe("A private draft");
+  await t.intent("panels.chat");
+  await t.intent("conversation.new");
+  expect(header()).toBe("New conversation");
+  expect(container.querySelector(selector("Rename conversation"))).toBeNull();
+  expect(container.querySelector(".workspace-chat")?.hasAttribute("hidden")).toBe(false);
+  expect(container.querySelector(".conversation-empty")?.textContent).toBe(
+    "Ask Virgilio about your thesis.",
+  );
+  expect(document.activeElement).toBe(container.querySelector("textarea"));
+  expect(startConversation).not.toHaveBeenCalled();
+
+  await writeDraft("Draft for the pending conversation");
+  await selectRaceProject(1);
+  await selectRaceProject(0);
+  expect(header()).toBe("New conversation");
+  expect(container.querySelector("textarea")?.value).toBe("Draft for the pending conversation");
+
+  await click(selector(message("en-US", "composer.send")));
+  expect(startConversation).toHaveBeenCalledOnce();
+  await selectRaceProject(1);
+  rows.push({ ...rows[0]!, id: startedId, title: "Conversation saved in background" });
+  await act(async () => saved.resolve({ ok: true, value: { resultId: startedId } }));
+  expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe("Project 2");
+  await selectRaceProject(0);
+  expect(header()).toBe("Conversation saved in background");
+  expect(container.querySelector("textarea")?.value).toBe("");
+});

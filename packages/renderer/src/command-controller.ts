@@ -177,6 +177,7 @@ export function presentationReason(
     state.modal &&
     [
       "project.new",
+      "conversation.new",
       "about.open",
       "help.open",
       "settings.open",

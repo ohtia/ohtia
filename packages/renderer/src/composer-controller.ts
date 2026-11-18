@@ -21,6 +21,7 @@ export interface ComposerState {
   readonly setupFinal?: boolean;
   readonly focusRequest?: number;
   readonly saving: boolean;
+  readonly starting?: boolean;
   readonly stopping: boolean;
   readonly cancelling: boolean;
   readonly stopFailed: boolean;
@@ -89,6 +90,7 @@ export class ComposerController {
       chatgptConnection,
     ],
     private readonly restoreObservation?: () => void,
+    private readonly conversationStarted?: (scope: ResearchScope, active: boolean) => void,
   ) {}
   snapshot = (): ComposerState => this.draft.state;
   subscribe = (listener: () => void): (() => void) => {
@@ -243,10 +245,10 @@ export class ComposerController {
   }
   send = (): void => {
     const draft = this.draft;
-    const conversationId = this.scope.conversationId;
+    const { projectId, conversationId } = this.scope;
     if (
-      !conversationId ||
-      !this.scope.projectId ||
+      !projectId ||
+      (!conversationId && !this.conversationStarted) ||
       draft.state.destinationStatus !== "ready" ||
       draft.state.saving ||
       draft.state.stopping ||
@@ -261,8 +263,13 @@ export class ComposerController {
     };
     draft.intent = intent;
     draft.pending = { text: intent.text, clearPrefix: true };
-    this.update(draft, { saving: true, notice: null, announcement: draft.state.announcement + 1 });
-    void this.save(conversationId, intent).then(async (outcome) => {
+    this.update(draft, {
+      saving: true,
+      starting: !conversationId,
+      notice: null,
+      announcement: draft.state.announcement + 1,
+    });
+    void this.save(projectId, conversationId, intent).then(async (outcome) => {
       if (this.disposed) return;
       const text =
         outcome.ok && draft.pending?.clearPrefix
@@ -273,14 +280,28 @@ export class ComposerController {
         text,
         ...(outcome.ok ? { correction: null } : {}),
         saving: false,
-        notice: outcome.ok ? null : saveNotice(outcome.error.code),
+        starting: false,
+        notice: outcome.ok ? null : saveNotice(outcome.error.code, !conversationId),
       });
       if (outcome.ok && draft.intent === intent) delete draft.intent;
-      if (draft.state.stopping) await this.stop(draft, conversationId);
+      if (conversationId && draft.state.stopping) await this.stop(draft, conversationId);
+      if (!conversationId && outcome.ok && outcome.value.resultId) {
+        const key = `${projectId}/${outcome.value.resultId}`;
+        const existing = this.drafts.get(key);
+        // Another window can observe the saved row and this window can open it
+        // before the receipt arrives. Preserve both drafts in that case.
+        if (!existing) this.drafts.set(key, draft);
+        if (!existing || !draft.state.text) this.drafts.delete(`${projectId}/`);
+        this.conversationStarted?.(
+          { projectId, conversationId: outcome.value.resultId },
+          this.draft === draft,
+        );
+      }
     });
   };
   private async save(
-    conversationId: string,
+    projectId: string,
+    conversationId: string | null,
     intent: { readonly id: string; readonly text: string },
   ): Promise<Outcome<ResearchResult>> {
     try {
@@ -308,7 +329,11 @@ export class ComposerController {
             }).result;
             if (!part.ok) return part;
           }
-        const result = await this.port.appendMessage(intent.id, { conversationId, content }).result;
+        const result = await (
+          conversationId
+            ? this.port.appendMessage(intent.id, { conversationId, content })
+            : this.port.startConversation(intent.id, { projectId, content })
+        ).result;
         if (result.ok || result.error.code !== "parts_incomplete" || attempt === 1) return result;
       }
     } catch {
@@ -351,9 +376,9 @@ export class ComposerController {
     this.drafts.clear();
   }
 }
-function saveNotice(code: string): ComposerNotice {
+function saveNotice(code: string, starting: boolean): ComposerNotice {
   if (code === "pending_limit_reached") return "pendingLimit";
-  if (code === "input_too_large") return "inputTooLarge";
+  if (!starting && code === "input_too_large") return "inputTooLarge";
   return ["uncertain", "timeout", "cancelled", "disposed", "invalid_service_result"].includes(code)
     ? "uncertain"
     : "failed";

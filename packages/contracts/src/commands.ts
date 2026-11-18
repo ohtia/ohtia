@@ -8,6 +8,7 @@ export type CommandPlatform = "win32" | "linux" | "darwin";
 export type CommandGroup = "general" | "panels" | "appearance" | "edit";
 export const commandIds = [
   "project.new",
+  "conversation.new",
   "settings.open",
   "palette.open",
   "shortcuts.open",
@@ -51,7 +52,9 @@ export type CommandReason =
   | "actual_size"
   | "wide_layout"
   | "last_panel"
-  | "window_limit";
+  | "window_limit"
+  | "no_project"
+  | "project_in_setup";
 export const commandReasons: readonly CommandReason[] = [
   "handler_missing",
   "modal_open",
@@ -64,6 +67,8 @@ export const commandReasons: readonly CommandReason[] = [
   "wide_layout",
   "last_panel",
   "window_limit",
+  "no_project",
+  "project_in_setup",
 ];
 export interface CommandDefinition {
   readonly id: CommandId;
@@ -78,6 +83,7 @@ const primary = (key: string) => ({
 });
 const bindings: Partial<Record<CommandId, CommandDefinition["shortcuts"]>> = {
   "project.new": primary("N"),
+  "conversation.new": primary("Shift+O"),
   "settings.open": primary(","),
   "palette.open": primary("Shift+P"),
   "shortcuts.open": primary("/"),

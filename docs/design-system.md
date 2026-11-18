@@ -40,8 +40,6 @@ sources:
   - id: lucide
     resource: https://github.com/lucide-icons/lucide/tree/1ef60af944de207e0d5176905a0759ba12e6ee8d
     title: Lucide — Repository at the examined commit
-generated:
-  by: codex/gpt-6.1-sol
 ---
 
 # Ohtia design system
@@ -584,6 +582,7 @@ Fixed mappings:
 | Ohtia help                                   | `circle-question-mark` |
 | Separator grip                               | `grip-vertical`        |
 | Jump to latest message                       | `arrow-down`           |
+| Rename conversation                          | `pencil`               |
 | Agent writing                                | `pen-line`             |
 
 Icons for comparison outcomes are defined in [domain components](#comparison-outcomes).
@@ -1221,10 +1220,10 @@ Each component is specified with its purpose, anatomy, variants, states, consume
 
 ### Base components
 
-- **Button.** Variants `primary`, in `action.primary.*`; `secondary`, with `border.control`; `quiet`, as underlined text; and `destructive`, in `danger.*`. The label is a verb with its object or complement, for example “Confirm claim” or “Continue with Josefa”. The exceptions are “New project”, the name researchers know from other applications for creating a project, “Try again” wherever an action is repeated, and the Preference saving labels “Check”, “Choose again” and “Apply again”. While loading, it retains its label and announces the state. Prefer allowing the action and explaining the error over disabling it; if disabled, the reason is visible. The conversation composer’s send button is the one exception: while the box is empty it is disabled without a separate visible reason, because the empty box shows it, and its tooltip and accessible description state it.
+- **Button.** Variants `primary`, in `action.primary.*`; `secondary`, with `border.control`; `quiet`, as underlined text; and `destructive`, in `danger.*`. The label is a verb with its object or complement, for example “Confirm claim” or “Continue with Josefa”. The exceptions are “New project” and “New conversation”, the names researchers know from other applications for these creation actions, “Try again” wherever an action is repeated, and the Preference saving labels “Check”, “Choose again” and “Apply again”. While loading, it retains its label and announces the state. Prefer allowing the action and explaining the error over disabling it; if disabled, the reason is visible. The conversation composer’s send button is the one exception: while the box is empty it is disabled without a separate visible reason, because the empty box shows it, and its tooltip and accessible description state it.
 - **Icon button.** Has an accessible name and tooltip, and its target meets pointer measurements.
 - **Link.** Always underlined. An external link indicates that in its text or an icon with an accessible name.
-- **Text field.** Visible label above, help below and error below in `attention.*`, with an icon and text explaining how to correct it. Optional fields are marked, not required ones. The conversation composer is an exception to the visible label above: its placeholder, “Message {agent}”, is also its accessible name, as in ChatGPT and Claude.
+- **Text field.** Visible label above, help below and error below in `attention.*`, with an icon and text explaining how to correct it. Optional fields are marked, not required ones. The conversation composer is an exception to the visible label above: its placeholder, “Message {agent}”, is also its accessible name, as in ChatGPT and Claude. The inline field that replaces a conversation’s name while renaming it is the second exception. Its accessible name is “Conversation name”.
 - **Selector.** A native `select`, or an APG combobox when the list is long or searchable.
 - **Checkbox, radio button and switch.** A switch is used only for settings applied immediately.
 - **Tabs.** Activation is manual: arrows move focus and Enter or Space activates a tab.
@@ -1249,7 +1248,7 @@ Component names are identifiers and remain in English.
 
 The `voice.ohtia.*` tokens identify system/AI-origin contributions and the product character. Named AI contributors share this provenance family while retaining their distinct avatar/symbol, name and role under [Ohtia and agent identity](agents/agent-identity.md#visual-family-and-attribution). These tokens do not define specialist capabilities, grant research authority or imply human authorship. `voice.tutor.*` remains reserved for original human supervisor feedback; Virgilio never inherits that treatment.
 
-- **`VoiceLabel`.** Identifies the actual speaker: Ohtia for product notices, with its glasses; a named AI contributor, with its own static symbol/avatar, name, localized role and AI label; or the human supervisor, with `user-round` and `voice.tutor.*`. Product and AI-origin labels use `voice.ohtia.*` without merging their authorship. Researcher text retains the ordinary unlabelled treatment. A composed response preserves attribution to its linked specialist findings.
+- **`VoiceLabel`.** Identifies the actual speaker: Ohtia for product notices, with its glasses; a named AI contributor, with its own static symbol/avatar, name, localized role and AI label; or the human supervisor, with `user-round` and `voice.tutor.*`. Product and AI-origin labels use `voice.ohtia.*` without merging their authorship. Researcher text retains the ordinary unlabelled treatment. Its compact variant, for list rows and one-line attributions where the full label does not fit, shows only the contributor’s static symbol at 20 px and name, in `type.ui.caption` at weight 500 and `voice.ohtia.content`, with a `space.1` gap. The full label stays the attribution of messages, notices and cards. A composed response preserves attribution to its linked specialist findings.
 - **`EvidenceHighlight`.** Marks an anchored source passage with `evidence.surface` and the `evidence.line` rule. A confirmed claim has a fill and solid rule; a proposed claim has only a 2 px dashed underline in `evidence.line`. The accessible name states source, page or location, and state.
 - **`TutorComment`.** Shows the original human supervisor comment in quotation marks, the author according to the file or user declaration, and the submitted version. An AI interpretation is nested below with its own actual contributor's `VoiceLabel`; neither the product character nor a named agent inherits the human comment's authority.
 

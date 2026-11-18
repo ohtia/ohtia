@@ -118,15 +118,31 @@ export interface TimelineSetupProposal extends TimelineIdentity {
     | null;
 }
 export type TimelineItem = TimelineMessage | TimelineTask | TimelineSetupProposal;
-export type ConversationSummary = ConversationRecord & {
-  readonly agentId: "virgilio";
-  readonly latestReplyTaskId: string | null;
-  readonly runningTask: {
-    readonly id: string;
+export interface ConversationCursor {
+  readonly latestAt: string;
+  readonly id: string;
+}
+export function compareConversations(a: ConversationCursor, b: ConversationCursor): number {
+  return (
+    (a.latestAt < b.latestAt ? -1 : a.latestAt > b.latestAt ? 1 : 0) ||
+    (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  );
+}
+export const conversationPreviewPrefixLimit = 1024;
+export type ConversationSummary = ConversationRecord &
+  ConversationCursor & {
+    readonly latestPrefix: string;
+    readonly latestTruncated: boolean;
+    readonly latestLanguage: string | null;
+    readonly status: "attention" | "replying" | "waiting" | null;
     readonly agentId: "virgilio";
-    readonly state: "running" | "cancelling";
-  } | null;
-};
+    readonly latestReplyTaskId: string | null;
+    readonly runningTask: {
+      readonly id: string;
+      readonly agentId: "virgilio";
+      readonly state: "running" | "cancelling";
+    } | null;
+  };
 export interface PauseCounts {
   readonly revision: number;
   readonly restart: number;
@@ -199,7 +215,7 @@ export interface ResearchInputs {
   "project.list": { readonly cursor: ProjectCursor | null; readonly count: number };
   "conversation.list": {
     readonly projectId: string;
-    readonly cursor: string | null;
+    readonly cursor: ConversationCursor | null;
     readonly count: number;
   };
   "conversation.read": { readonly projectId: string; readonly ids: readonly string[] };
@@ -231,7 +247,7 @@ export interface ResearchOutputs {
   "conversation.rename": ResearchResult;
   "message.append": ResearchResult;
   "project.list": ListPage<ProjectRecord, ProjectCursor>;
-  "conversation.list": ListPage<ConversationSummary, string>;
+  "conversation.list": ListPage<ConversationSummary, ConversationCursor>;
   "conversation.read": IdPage<ConversationSummary>;
   "timeline.listBefore": ListPage<TimelineItem, TimelineCursor>;
   "timeline.read": IdPage<TimelineItem>;
@@ -491,7 +507,7 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
       return (
         exact(value, ["projectId", "cursor", "count"]) &&
         isResearchId(value.projectId) &&
-        nullable(value.cursor, isResearchId) &&
+        nullable(value.cursor, conversationCursor) &&
         integer(value.count, 1, 128)
       );
     case "conversation.read":
@@ -538,6 +554,9 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
       );
   }
 }
+function conversationCursor(value: unknown): boolean {
+  return exact(value, ["latestAt", "id"]) && date(value.latestAt) && isResearchId(value.id);
+}
 function conversation(value: unknown): boolean {
   return (
     exact(value, [
@@ -548,6 +567,11 @@ function conversation(value: unknown): boolean {
       "updatedAt",
       "revision",
       "agentId",
+      "latestAt",
+      "latestPrefix",
+      "latestTruncated",
+      "latestLanguage",
+      "status",
       "latestReplyTaskId",
       "runningTask",
     ]) &&
@@ -558,6 +582,14 @@ function conversation(value: unknown): boolean {
     date(value.updatedAt) &&
     integer(value.revision) &&
     value.agentId === "virgilio" &&
+    date(value.latestAt) &&
+    typeof value.latestPrefix === "string" &&
+    Array.from(value.latestPrefix).length <= conversationPreviewPrefixLimit &&
+    typeof value.latestTruncated === "boolean" &&
+    (!value.latestTruncated ||
+      Array.from(value.latestPrefix).length === conversationPreviewPrefixLimit) &&
+    nullable(value.latestLanguage, (x) => typeof x === "string") &&
+    nullable(value.status, (x) => x === "attention" || x === "replying" || x === "waiting") &&
     nullable(value.latestReplyTaskId, isResearchId) &&
     nullable(
       value.runningTask,
@@ -813,7 +845,7 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
         ? cursor(value.next)
         : operation === "project.list"
           ? projectCursor(value.next)
-          : isResearchId(value.next)
+          : conversationCursor(value.next)
       : value.next === null)
   );
 }
@@ -851,6 +883,8 @@ export function researchResultMatches(
 ): boolean {
   if (!obj(input) || !obj(output)) return false;
   if (operation === "project.open") return output.resultId === input.projectId;
+  if (operation === "conversation.start") return isResearchId(output.resultId);
+  if (operation === "conversation.rename") return output.resultId === input.conversationId;
   if (operation === "project.list") {
     const items = output.items as readonly ProjectRecord[];
     const compare = (a: ProjectCursor, b: ProjectCursor) =>
@@ -884,29 +918,37 @@ export function researchResultMatches(
       (requested.length === 0 || items.length > 0)
     );
   }
-  if (operation === "timeline.listBefore" || operation === "conversation.list") {
-    const items = output.items as readonly (TimelineCursor & { readonly projectId?: string })[];
-    if (items.length > (input.count as number) || (output.hasMore && !items.length)) return false;
-    if (
-      operation === "conversation.list" &&
-      items.some((item) => item.projectId !== input.projectId)
-    )
-      return false;
+  if (operation === "conversation.list") {
+    const items = output.items as readonly ConversationSummary[];
     const last = items.at(-1);
     if (
-      output.hasMore &&
-      last &&
-      (operation === "timeline.listBefore"
-        ? compareTimeline(last, output.next as TimelineCursor) !== 0
-        : last.id !== output.next)
+      items.length > (input.count as number) ||
+      (output.hasMore &&
+        (!last || compareConversations(last, output.next as ConversationCursor) !== 0))
     )
       return false;
-    if (operation === "timeline.listBefore")
-      return items.every(
+    return (
+      items.every(
         (item, index) =>
-          (!input.cursor || compareTimeline(item, input.cursor as TimelineCursor) < 0) &&
-          (index === 0 || compareTimeline(items[index - 1] ?? item, item) > 0),
-      );
+          item.projectId === input.projectId &&
+          (!input.cursor || compareConversations(item, input.cursor as ConversationCursor) < 0) &&
+          (index === 0 || compareConversations(items[index - 1] ?? item, item) > 0),
+      ) && new Set(items.map((item) => item.id)).size === items.length
+    );
+  }
+  if (operation === "timeline.listBefore") {
+    const items = output.items as readonly TimelineCursor[];
+    const last = items.at(-1);
+    if (
+      items.length > (input.count as number) ||
+      (output.hasMore && (!last || compareTimeline(last, output.next as TimelineCursor) !== 0))
+    )
+      return false;
+    return items.every(
+      (item, index) =>
+        (!input.cursor || compareTimeline(item, input.cursor as TimelineCursor) < 0) &&
+        (index === 0 || compareTimeline(items[index - 1] ?? item, item) > 0),
+    );
   }
   if (operation === "reply.readParts") {
     const parts = output.parts as readonly ReplyPart[];
