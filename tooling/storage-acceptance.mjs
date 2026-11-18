@@ -501,11 +501,13 @@ try {
     await verifyPackagedSettings(application, page, second, output, reportFailure),
   );
   enterPhase("prepare-utility-replacement", 'input[type="radio"][value="system"]');
-  // Leave a draft in the first window, then replace the utility. The document and input must survive.
+  // Keep both documents and the first window's draft through utility replacement.
   await control.check();
-  await page.evaluate(() => {
-    window.__storageDocumentMarker = "retained";
-  });
+  for (const retained of [page, second]) {
+    await retained.evaluate(() => {
+      window.__storageDocumentMarker = "retained";
+    });
+  }
   enterPhase("replace-utility");
   const processes = await application.evaluate(({ app }) => app.getAppMetrics());
   const services = processes.filter(
@@ -524,7 +526,6 @@ try {
     initialLanguage.value.serviceGeneration,
     (observed) => record("utility-locale-recovery-publication", observed),
   );
-  expect(await page.evaluate(() => window.__storageDocumentMarker)).toBe("retained");
   enterPhase("verify-retained-appearance", 'input[type="radio"][value="system"]');
   await expect(control).toBeChecked();
   enterPhase("verify-replaced-utility-locale", 'select[aria-describedby="language-help"]');
@@ -539,6 +540,8 @@ try {
     "lang",
     initialLanguage.value.effectiveLocale,
   );
+  for (const retained of [page, second])
+    expect(await retained.evaluate(() => window.__storageDocumentMarker)).toBe("retained");
   record("utility-retry-preserves-input-and-document", {
     retainedValue: "system",
     processes,
