@@ -63,11 +63,17 @@ export interface TimelineCursor {
 export interface TimelineIdentity extends TimelineCursor {
   readonly revision: number;
 }
+export type ReplyAgent = "virgilio" | "josefa";
+
+export function isReplyAgent(value: unknown): value is ReplyAgent {
+  return value === "virgilio" || value === "josefa";
+}
+
 export interface TimelineMessage extends TimelineIdentity {
   readonly kind: "message";
   readonly rank: 1;
   readonly authorKind: "researcher" | "agent";
-  readonly agentId: "virgilio" | null;
+  readonly agentId: ReplyAgent | null;
   readonly taskId: string | null;
   readonly content: PortText;
   readonly language: string | null;
@@ -76,7 +82,7 @@ export interface TimelineMessage extends TimelineIdentity {
 export interface TimelineTask extends TimelineIdentity {
   readonly kind: "task";
   readonly rank: 3;
-  readonly agentId: "virgilio";
+  readonly agentId: ReplyAgent;
   readonly language: string | null;
   readonly connection: string;
   readonly blockingReason: string | null;
@@ -139,7 +145,7 @@ export type ConversationSummary = ConversationRecord &
     readonly latestReplyTaskId: string | null;
     readonly runningTask: {
       readonly id: string;
-      readonly agentId: "virgilio";
+      readonly agentId: ReplyAgent;
       readonly state: "running" | "cancelling";
     } | null;
   };
@@ -596,7 +602,7 @@ function conversation(value: unknown): boolean {
       (x) =>
         exact(x, ["id", "agentId", "state"]) &&
         isResearchId(x.id) &&
-        x.agentId === "virgilio" &&
+        isReplyAgent(x.agentId) &&
         typeof x.state === "string" &&
         ["running", "cancelling"].includes(x.state),
     )
@@ -695,7 +701,7 @@ function item(value: unknown): boolean {
           value.language === null &&
           value.ending === null
         : value.authorKind === "agent" &&
-          value.agentId === "virgilio" &&
+          isReplyAgent(value.agentId) &&
           isResearchId(value.taskId) &&
           typeof value.ending === "string" &&
           ["complete", "partial"].includes(value.ending))
@@ -766,7 +772,7 @@ function item(value: unknown): boolean {
     integer(value.maxInactivityMs) &&
     value.kind === "task" &&
     value.rank === 3 &&
-    value.agentId === "virgilio" &&
+    isReplyAgent(value.agentId) &&
     [
       "queued",
       "blocked",

@@ -670,8 +670,23 @@ it("announces each newly finished reply and does not replay that notice on navig
   expect(container.querySelector("[aria-live]")?.textContent).toBe("");
   await render({ ...initial, completed: 1 });
   expect(container.querySelector("[aria-live]")?.textContent).toBe("");
-  await render({ ...initial, completed: 2 });
-  expect(container.querySelector("[aria-live]")?.textContent).toBe("Virgilio replied");
+  const josefa = state([
+    ...initial.items,
+    {
+      ...message(2),
+      authorKind: "agent",
+      agentId: "josefa",
+      taskId: id(900),
+      language: "es-AR",
+      ending: "complete",
+      content: "Plan de búsqueda",
+    },
+  ]);
+  await render({ ...josefa, completed: 2, completedAgent: "josefa" });
+  expect(container.querySelector("[aria-live]")?.textContent).toBe("Josefa replied");
+  expect(
+    container.querySelector('article[aria-label="Josefa"] .conversation-text')?.textContent,
+  ).toBe("Plan de búsqueda");
 });
 
 it("retains the earlier-page continuation when reloading an initially interrupted page", async () => {

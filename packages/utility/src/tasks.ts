@@ -1,4 +1,4 @@
-import { guidanceInstructions } from "./direct-guidance.js";
+import { renderProjectInstructions } from "./thesis-route.js";
 import {
   acceptedSetupCalls,
   setupInvalidReason,
@@ -31,7 +31,7 @@ import {
   utf8Size,
 } from "@ohtia/contracts";
 import { bytes, identifier, newId, type ResearchSchema } from "./research.js";
-import { buildInput, operationPolicy } from "./operations.js";
+import { buildInput, operationPolicy, recordedOperationPolicy, replyAgent } from "./operations.js";
 const conversationTitleTool: ProviderTool = {
   namespace: conversationTitlePolicy.namespace,
   name: conversationTitlePolicy.name,
@@ -206,12 +206,17 @@ export class TaskTransaction {
     this.touch(task.conversation_id);
   }
   /** Shared routing for acceptance and destination preview, independent of connection state. */
-  async destination(projectId: Uint8Array) {
+  async destination(projectId: Uint8Array, recipient?: "josefa") {
     const project = await this.db
       .selectFrom("projects")
       .selectAll()
       .where("id", "=", projectId)
       .executeTakeFirstOrThrow();
+    if (recipient === "josefa") {
+      if (project.is_development || project.setup_confirmed_at === null) return null;
+      const policy = operationPolicy("search_strategy_planning", 1, this.context.mode);
+      return policy ? { policy, connection: "chatgpt" } : null;
+    }
     const policy = operationPolicy(
       project.is_development
         ? "development_test"
@@ -247,8 +252,9 @@ export class TaskTransaction {
     projectId: Uint8Array,
     conversationId: Uint8Array | null,
     content: string,
+    recipient?: "josefa",
   ): Promise<Outcome<null>> {
-    const destination = await this.destination(projectId);
+    const destination = await this.destination(projectId, recipient);
     if (!destination) return failure("service_unavailable");
     const { policy } = destination;
     if (Buffer.byteLength(content, "utf8") > policy.max_input_bytes)
@@ -260,7 +266,7 @@ export class TaskTransaction {
       .where("operation", "=", policy.operation)
       .where("state", "in", ["queued", "blocked"])
       .executeTakeFirstOrThrow();
-    if (!pending && count.count >= policy.max_pending_tasks)
+    if (pending?.operation !== policy.operation && count.count >= policy.max_pending_tasks)
       return failure("pending_limit_reached");
     return { ok: true, value: null };
   }
@@ -277,6 +283,7 @@ export class TaskTransaction {
     conversationId: Uint8Array,
     position: number,
     operationId: string,
+    recipient?: "josefa",
   ): Promise<void> {
     const project = await this.db
       .selectFrom("projects")
@@ -285,7 +292,7 @@ export class TaskTransaction {
       .executeTakeFirstOrThrow();
     this.touch(conversationId);
     this.diagnostics.push({ event_name: "ohtia.task.accepted" });
-    const destination = await this.destination(projectId);
+    const destination = await this.destination(projectId, recipient);
     if (!destination) throw new Error("Task policy unavailable.");
     const { policy, connection } = destination;
     const old = await this.waiting(conversationId);
@@ -380,13 +387,16 @@ export class TaskTransaction {
         ? task.operation === "development_test"
         : project.setup_confirmed_at === null
           ? task.operation === "project_setup"
-          : task.operation === "direct_guidance" &&
+          : (task.operation === "direct_guidance" ||
+              task.operation === "search_strategy_planning") &&
             task.document_language === project.document_language) &&
       !!message &&
       !!receipt &&
-      ["conversation.start", "message.append", "task.startAgain", "task.tryAgain"].includes(
-        receipt.command,
-      )
+      (receipt.command === "task.startAgain" ||
+        receipt.command === "task.tryAgain" ||
+        (task.operation === "search_strategy_planning"
+          ? receipt.command === "development.sendToJosefa"
+          : receipt.command === "conversation.start" || receipt.command === "message.append"))
     );
   }
   private pending() {
@@ -627,16 +637,7 @@ export class TaskTransaction {
         })
         .where("id", "=", attempt.id)
         .execute();
-      const project = await this.db
-        .selectFrom("projects")
-        .select("is_development")
-        .where("id", "=", task.project_id)
-        .executeTakeFirstOrThrow();
-      const policy = operationPolicy(
-        task.operation,
-        task.policy_version,
-        project.is_development ? "development" : "installed",
-      );
+      const policy = recordedOperationPolicy(task.operation, task.policy_version);
       const state: TaskState = cancelled
         ? "cancelled"
         : dispatched
@@ -827,10 +828,10 @@ export class TaskTransaction {
         .where("id", "=", task.project_id)
         .executeTakeFirstOrThrow();
       const instructions =
-        task.operation === "direct_guidance" &&
+        (task.operation === "direct_guidance" || task.operation === "search_strategy_planning") &&
         project.title !== null &&
         task.document_language !== null
-          ? guidanceInstructions({
+          ? renderProjectInstructions(policy.instructions, {
               project_type: project.project_type,
               title: project.title,
               document_language: task.document_language,
@@ -1077,7 +1078,7 @@ export class TaskTransaction {
           conversation_id: task.conversation_id,
           position: task.reply_position,
           author_kind: "agent",
-          agent_id: "virgilio",
+          agent_id: replyAgent(task.operation),
           content: text,
           task_id: task.id,
           ending: state === "completed" ? "complete" : "partial",

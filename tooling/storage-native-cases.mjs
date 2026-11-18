@@ -3,7 +3,7 @@ import { objects as initialTaskObjects } from "../packages/utility/src/migration
 const legacyTaskInitialSql = `DROP TRIGGER tasks_initial; ${initialTaskObjects.tasks_initial}; `;
 const projectOpeningLedgerSql =
   `DROP TRIGGER conversations_changes; ${initialResearchObjects.conversations_changes}; ALTER TABLE conversations DROP COLUMN title_attempt_id; ALTER TABLE conversations DROP COLUMN automatic_title_eligible; ALTER TABLE attempts DROP COLUMN conversation_title_policy; DELETE FROM kysely_migration WHERE name='0018_conversation_titles'; DELETE FROM ohtia_migration_artifacts WHERE name='0018_conversation_titles'; ` +
-  "DELETE FROM kysely_migration WHERE name='0017_project_opening'; DELETE FROM ohtia_migration_artifacts WHERE name='0017_project_opening'; ";
+  "DELETE FROM kysely_migration WHERE name='0019_josefa_search_planning'; DELETE FROM ohtia_migration_artifacts WHERE name='0019_josefa_search_planning'; DELETE FROM kysely_migration WHERE name='0017_project_opening'; DELETE FROM ohtia_migration_artifacts WHERE name='0017_project_opening'; ";
 // Non-shipping component checks execute the actual packaged module and binding in Electron's utility runtime.
 import fs from "node:fs";
 import path from "node:path";

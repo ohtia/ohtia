@@ -1,5 +1,4 @@
-import { projectTypes } from "@ohtia/contracts";
-import { thesisRouteInstructions } from "./thesis-route.js";
+import { withThesisRoute } from "./thesis-route.js";
 
 /** Virgilio’s role instructions for direct guidance version 1 (SPEC-003-022). */
 const virgilioRoleInstructions = `You are Virgilio, the research guide in Ohtia, a desktop application where researchers write research documents with the help of AI agents. You guide the researcher; you are not their human supervisor, and you do not replace them.
@@ -24,28 +23,4 @@ Rules:
 - If a request is ambiguous, ask one short clarifying question instead of guessing.
 - You cannot approve, save or change the researcher's document, and chat replies are not approvals.`;
 
-export const directGuidanceInstructions = `${virgilioRoleInstructions}\n\n${thesisRouteInstructions}`;
-
-/** Interpolate once so project text stays literal. */
-export function guidanceInstructions(project: {
-  readonly project_type: keyof typeof projectTypes;
-  readonly title: string;
-  readonly document_language: string;
-}): string {
-  const type = projectTypes[project.project_type];
-  const values: Readonly<Record<string, string>> = {
-    project_type_name: type.name,
-    project_type_description: type.description,
-    title: project.title,
-    document_language: project.document_language,
-    document_language_name:
-      new Intl.DisplayNames(["en"], {
-        type: "language",
-        languageDisplay: "standard",
-      }).of(project.document_language) ?? project.document_language,
-  };
-  return directGuidanceInstructions.replace(
-    /\{([a-z_]+)\}/g,
-    (_, key: string) => values[key] ?? "",
-  );
-}
+export const directGuidanceInstructions = withThesisRoute(virgilioRoleInstructions);

@@ -245,6 +245,7 @@ const payloadKeys = {
   "task.startAgain": ["taskId"],
   "task.tryAgain": ["taskId"],
   "development.createProject": [],
+  "development.sendToJosefa": ["conversationId", "content"],
   "project.create": [],
   "project.open": ["projectId"],
   "usagePause.resume": ["connection"],
@@ -270,7 +271,8 @@ export async function applyResearchCommand(
     Object.keys(input).sort().join(",") !== "command,operationId,payload" ||
     !isIdentifier(input.operationId) ||
     !researchCommands.includes(input.command) ||
-    !object(input.payload)
+    !object(input.payload) ||
+    (input.command === "development.sendToJosefa" && tasks.context.mode !== "development")
   )
     return failure("invalid_message");
   let hash: Buffer;
@@ -519,7 +521,9 @@ export async function applyResearchCommand(
         .execute();
       break;
     }
+    case "development.sendToJosefa":
     case "message.append": {
+      const recipient = input.command === "development.sendToJosefa" ? "josefa" : undefined;
       const p = input.payload;
       if (!isEntityId(p.conversationId)) return failure("invalid_message");
       const current = await db
@@ -529,7 +533,7 @@ export async function applyResearchCommand(
         .executeTakeFirst();
       if (!current) return failure("record_not_found");
       if (!text(p.content) || !validResearcherMessage(p.content)) return failure("message_invalid");
-      const admission = await tasks.admission(current.project_id, current.id, p.content);
+      const admission = await tasks.admission(current.project_id, current.id, p.content, recipient);
       if (!admission.ok) return admission;
       result = await append(db, current.id, p.content, now);
       const saved = await db
@@ -537,7 +541,13 @@ export async function applyResearchCommand(
         .select("position")
         .where("id", "=", result)
         .executeTakeFirstOrThrow();
-      await tasks.accept(current.project_id, current.id, saved.position, input.operationId);
+      await tasks.accept(
+        current.project_id,
+        current.id,
+        saved.position,
+        input.operationId,
+        recipient,
+      );
       break;
     }
   }

@@ -70,5 +70,9 @@
   {
     "name": "0018_conversation_titles",
     "sha256": "2c6f7922fc06363e134c2d53e0f51aeeba1e06bde326dcf78b8f3c80d918b25f"
+  },
+  {
+    "name": "0019_josefa_search_planning",
+    "sha256": "211b2048fa6556bdd5a8f8dcfca1a8e106287b45dba07a9c08f81e91ad9787db"
   }
 ]

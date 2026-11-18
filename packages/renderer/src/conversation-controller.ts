@@ -60,6 +60,7 @@ export interface ConversationState {
   readonly loadingEarlier: boolean;
   readonly failedEarlier: boolean;
   readonly completed: number;
+  readonly completedAgent?: TimelineTask["agentId"] | undefined;
 }
 const empty = (scope: ResearchScope): ConversationState => ({
   scope,
@@ -699,17 +700,20 @@ export class ConversationController {
         );
     }
     let completed = this.state.completed;
+    let completedAgent = this.state.completedAgent;
     for (const item of items)
       if (
         item.kind === "message" &&
-        item.authorKind === "agent" &&
+        item.agentId !== null &&
         (announce ||
           introduced.has(item.taskId ?? "") ||
           this.introducedTasks.get(item.taskId ?? "") === this.state.scope.conversationId ||
           this.pendingReplies.has(item.taskId ?? "")) &&
         !previous.some((old) => old.id === item.id)
-      )
+      ) {
         completed++;
+        completedAgent = item.agentId;
+      }
     const replies = new Map(this.state.replies);
     for (const item of items)
       if (item.kind === "message" && item.taskId) {
@@ -722,6 +726,7 @@ export class ConversationController {
       texts,
       replies,
       completed,
+      completedAgent,
     };
   }
   private async page(

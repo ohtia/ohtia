@@ -99,11 +99,19 @@ export function ConversationView({
     if (previous.id !== id) setAnnouncement({ text: "", count: 0 });
     else if (state.completed > previous.count)
       setAnnouncement({
-        text: message(locale, "conversation.replied", { agent: "Virgilio" }),
+        text: message(locale, "conversation.replied", {
+          agent: contributorNames[state.completedAgent ?? "virgilio"],
+        }),
         count: state.completed,
       });
     completion.current = { id, count: state.completed };
-  }, [id, state.completed, locale]);
+  }, [id, state.completed, state.completedAgent, locale]);
+  const visibleRunning = state.items.find(
+    (item) => item.kind === "task" && (item.state === "running" || item.state === "cancelling"),
+  );
+  const running =
+    state.conversation?.runningTask ??
+    (visibleRunning?.kind === "task" ? visibleRunning : undefined);
   const remember = () => {
     const element = viewport.current;
     if (!element || !id) return;
@@ -325,7 +333,9 @@ export function ConversationView({
                         </div>
                         <div className="conversation-writing" aria-hidden="true">
                           <LucideGlyph name="pen-line" size={16} />
-                          {message(locale, "conversation.writing", { agent: "Virgilio" })}
+                          {message(locale, "conversation.writing", {
+                            agent: contributorNames[item.agentId],
+                          })}
                         </div>
                       </>
                     )}
@@ -345,17 +355,9 @@ export function ConversationView({
                         !state.project.isDevelopment
                       }
                       runningAgent={
-                        state.conversation?.runningTask &&
-                        state.conversation.runningTask.id !== item.id
-                          ? contributorNames[state.conversation.runningTask.agentId]
-                          : state.items.some(
-                                (other) =>
-                                  other.kind === "task" &&
-                                  other.id !== item.id &&
-                                  ["running", "cancelling"].includes(other.state),
-                              )
-                            ? "Virgilio"
-                            : undefined
+                        running && running.id !== item.id
+                          ? contributorNames[running.agentId]
+                          : undefined
                       }
 
                       {...(state.pauses ? { pauses: state.pauses } : {})}
@@ -372,17 +374,18 @@ export function ConversationView({
                 );
               }
               const researcher = item.authorKind === "researcher";
+              const agent = item.agentId;
               return (
                 <article
                   key={item.id}
                   data-timeline-id={item.id}
                   className={`conversation-message ${researcher ? "researcher" : "agent"}`}
-                  aria-label={researcher ? message(locale, "conversation.you") : "Virgilio"}
+                  aria-label={agent ? contributorNames[agent] : message(locale, "conversation.you")}
                   aria-busy={streaming || undefined}
                 >
-                  {!researcher && (
+                  {agent && (
                     <VoiceLabel
-                      identity={{ kind: "ai", contributor: "virgilio", definitionVersion: "1" }}
+                      identity={{ kind: "ai", contributor: agent, definitionVersion: "1" }}
                       locale={locale}
                     />
                   )}

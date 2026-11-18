@@ -1,6 +1,7 @@
 import { sql, type Kysely } from "kysely";
 import {
   failure,
+  isReplyAgent,
   conversationPreviewPrefixLimit,
   type ConversationSummary,
   encodeEnvelope,
@@ -20,7 +21,7 @@ import {
   type ResearchSchema,
 } from "./research.js";
 import { TaskTransaction, type TaskContext } from "./tasks.js";
-import { operationPolicy } from "./operations.js";
+import { recordedOperationPolicy, replyAgent } from "./operations.js";
 import { setupRevision } from "./project-setup.js";
 import { storedText } from "./research-text.js";
 
@@ -50,7 +51,9 @@ async function timelineItem(
     .where("messages.conversation_id", "=", bytes(conversationId))
     .where("messages.id", "=", bytes(id))
     .executeTakeFirst();
-  if (row)
+  if (row) {
+    if (row.agent_id !== null && !isReplyAgent(row.agent_id))
+      throw new Error("Unknown reply author.");
     return {
       id,
       kind: "message",
@@ -58,12 +61,13 @@ async function timelineItem(
       revision: 1,
       position: row.position,
       authorKind: row.author_kind,
-      agentId: row.author_kind === "agent" ? "virgilio" : null,
+      agentId: row.agent_id,
       taskId: row.task_id ? identifier(row.task_id) : null,
       content: storedText(row.content, `message_${id}`),
       language: row.author_kind === "agent" ? row.language : null,
       ending: row.ending,
     };
+  }
   const proposal = await db
     .selectFrom("project_setup_proposals as p")
     .innerJoin("tasks as t", "t.id", "p.task_id")
@@ -108,7 +112,7 @@ async function timelineItem(
     .select("id")
     .where("task_id", "=", task.id)
     .executeTakeFirst();
-  const policy = operationPolicy(task.operation, task.policy_version, context.mode);
+  const policy = recordedOperationPolicy(task.operation, task.policy_version);
   if (!policy) throw new Error("Task policy unavailable.");
   return {
     id,
@@ -116,7 +120,7 @@ async function timelineItem(
     rank: 3,
     revision: task.state_revision,
     position: task.reply_position ?? task.input_through_position,
-    agentId: "virgilio",
+    agentId: replyAgent(task.operation),
     language: task.document_language,
     state: task.state,
     connection: task.connection,
@@ -193,7 +197,10 @@ async function summarizeConversation(
     .select(["id", "state"])
     .where("conversation_id", "=", row.id);
   const latestTask = await tasks.orderBy(sql`rowid`, "desc").executeTakeFirst();
-  const running = await tasks.where("state", "in", ["running", "cancelling"]).executeTakeFirst();
+  const running = await tasks
+    .select("operation")
+    .where("state", "in", ["running", "cancelling"])
+    .executeTakeFirst();
   const waiting = await tasks.where("state", "in", ["queued", "blocked"]).executeTakeFirst();
   return {
     ...conversationRecord(row),
@@ -206,7 +213,7 @@ async function summarizeConversation(
     runningTask: running
       ? {
           id: identifier(running.id),
-          agentId: "virgilio",
+          agentId: replyAgent(running.operation),
           state: running.state === "cancelling" ? "cancelling" : "running",
         }
       : null,

@@ -101,6 +101,13 @@ export const diagnosticCatalog = Object.freeze({
   ),
   "ohtia.conversation.started": event("data_service", "conversation.start", "INFO", "success", []),
   "ohtia.conversation.renamed": event("data_service", "conversation.rename", "INFO", "success", []),
+  "ohtia.development.josefa_message_appended": event(
+    "data_service",
+    "development.sendToJosefa",
+    "INFO",
+    "success",
+    [],
+  ),
   "ohtia.message.appended": event("data_service", "message.append", "INFO", "success", []),
   "ohtia.project.listed": event("data_service", "project.list", "DEBUG", "success", []),
   "ohtia.conversation.listed": event("data_service", "conversation.list", "DEBUG", "success", []),

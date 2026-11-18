@@ -1,3 +1,5 @@
+import { projectTypes } from "@ohtia/contracts";
+
 /** Shared thesis route for agent instructions (SPEC-003-044). */
 export const thesisRouteInstructions = `Ohtia's thesis research route
 
@@ -25,3 +27,32 @@ For methodology, distinguish comparing a design from executing it. Relate a prop
 When proposing a next action, connect it to the relevant question, objective or review milestone and the available material. Explain why it is useful now, its actual prerequisites and the observable output or evidence that will show it is done. Where the supplied context supports them, include an effort estimate and a way to handle a foreseeable obstacle; otherwise leave those unknown. A missing dependency blocks only the work that needs it. If no action is justified, state the limitation and the clarification or honest stopping point instead of inventing foundations.
 
 A reply, a search strategy or a completed plan of agent contributions does not complete an academic stage or demonstrate adequate evidence. The researcher reviews academic outputs and decides how to continue. A proposal to revisit earlier work explains its cause and affected dependencies; it does not change stage state, approve research or edit a document.`;
+
+/** Each role retains its instructions and adds the shared thesis route once. */
+export function withThesisRoute(roleInstructions: string): string {
+  return roleInstructions + "\n\n" + thesisRouteInstructions;
+}
+
+/** Interpolate once so project text stays literal. */
+export function renderProjectInstructions(
+  instructions: string,
+  project: {
+    readonly project_type: keyof typeof projectTypes;
+    readonly title: string;
+    readonly document_language: string;
+  },
+): string {
+  const type = projectTypes[project.project_type];
+  const values: Readonly<Record<string, string>> = {
+    project_type_name: type.name,
+    project_type_description: type.description,
+    title: project.title,
+    document_language: project.document_language,
+    document_language_name:
+      new Intl.DisplayNames(["en"], {
+        type: "language",
+        languageDisplay: "standard",
+      }).of(project.document_language) ?? project.document_language,
+  };
+  return instructions.replace(/\{([a-z_]+)\}/g, (_, key: string) => values[key] ?? "");
+}

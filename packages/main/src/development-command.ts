@@ -28,6 +28,7 @@ const actions: Readonly<Record<string, readonly string[]>> = Object.freeze({
   "open-conversation": ["conversation"],
   "start-conversation": ["project", "text"],
   send: ["conversation", "text"],
+  "send-to-josefa": ["conversation", "text"],
   interrupt: ["attempt"],
   stop: ["task"],
   "start-again": ["task"],
@@ -88,8 +89,8 @@ export function parseDevelopmentSwitches(
     command === "continue-all"
   )
     return { ok: true, action: { name: command, operation_id: operationId } };
-  if (command === "start-conversation" || command === "send") {
-    const id = values.get(command === "send" ? "conversation" : "project");
+  if (command === "start-conversation" || command === "send" || command === "send-to-josefa") {
+    const id = values.get(command === "start-conversation" ? "project" : "conversation");
     const text = values.get("text");
     if (!isIdentifier(id) || !isDevelopmentText(text))
       return {
@@ -99,9 +100,9 @@ export function parseDevelopmentSwitches(
     return {
       ok: true,
       action:
-        command === "send"
-          ? { name: command, operation_id: operationId, conversation: id, text }
-          : { name: command, operation_id: operationId, project: id, text },
+        command === "start-conversation"
+          ? { name: command, operation_id: operationId, project: id, text }
+          : { name: command, operation_id: operationId, conversation: id, text },
     };
   }
   if (command === "request") {

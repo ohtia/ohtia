@@ -112,6 +112,7 @@ export function inspectWorkspace(root) {
             "migrations/0016_task_notices.mjs",
             "migrations/0017_project_opening.mjs",
             "migrations/0018_conversation_titles.mjs",
+            "migrations/0019_josefa_search_planning.mjs",
             "migrations/0015_project_setup.mjs",
             "migrations/0009_usage_limit_pauses.mjs",
             "migrations/0005_presentation_receipts.mjs",

@@ -29,6 +29,10 @@ import {
   columns as titleColumns,
   objects as titleObjects,
 } from "./migrations/0018_conversation_titles.mjs";
+import {
+  up as josefaSearchPlanning,
+  objects as josefaObjects,
+} from "./migrations/0019_josefa_search_planning.mjs";
 import { readResearch, researchRevisions, readPauseCounts } from "./research-reads.js";
 import type { Request, ResearchScope, ResearchEvent, ResearchOperation } from "@ohtia/contracts";
 import {
@@ -268,6 +272,7 @@ const names = [
   "0016_task_notices",
   "0017_project_opening",
   "0018_conversation_titles",
+  "0019_josefa_search_planning",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -656,6 +661,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 16 ? taskNoticeObjects : {}),
                 ...(revision >= 17 ? openingObjects : {}),
                 ...(revision >= 18 ? titleObjects : {}),
+                ...(revision >= 19 ? josefaObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1047,6 +1053,7 @@ export class DurableStore {
                 "0016_task_notices": { up: taskNotices },
                 "0017_project_opening": { up: projectOpening },
                 "0018_conversation_titles": { up: conversationTitles },
+                "0019_josefa_search_planning": { up: josefaSearchPlanning },
               }),
           },
         });
@@ -2452,6 +2459,7 @@ export class DurableStore {
       for (const event of diagnostics) this.researchDiagnostic(event);
       const events = {
         "development.createProject": "ohtia.project.created",
+        "development.sendToJosefa": "ohtia.development.josefa_message_appended",
         "project.create": "ohtia.project.created",
         "project.open": "ohtia.project.opened",
         "project.confirmSetup": "ohtia.project.setup_confirmed",
