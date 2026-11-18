@@ -571,3 +571,15 @@
     var(--component-workspace-documents-minimum) + var(--space-2) + var(--component-target-minimum)
   );
 }
+
+.workspace[data-mode="narrow"] .workspace-project-controls {
+  /* Wrap the project controls together when the title-bar safe area is narrow. */
+  flex: 100 1 calc(var(--space-16) + var(--space-2) + var(--component-target-coarse));
+}
+@media (pointer: coarse) {
+  .workspace[data-mode="narrow"] .workspace-project-controls {
+    /* Keep room for the selected title beside the selector icons and the larger Plus target. */
+    flex: 100 1
+      calc(var(--space-16) + var(--space-8) + var(--space-2) + var(--component-target-coarse));
+  }
+}

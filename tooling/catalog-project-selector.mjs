@@ -1,7 +1,27 @@
-/* global document, getComputedStyle */
+/* global document, getComputedStyle, matchMedia */
 import { expect } from "@playwright/test";
 import path from "node:path";
 import { captureCatalog, watchCatalogPage } from "./catalog-character.mjs";
+
+async function selectorInTitleRow(page) {
+  const titleRow = page.locator(".workspace-title-row");
+  const combo = titleRow.getByRole("combobox");
+  const plus = titleRow.locator('[data-workspace-command="project.new"]');
+  await expect(combo).toBeVisible();
+  await expect(plus).toBeVisible();
+  const [row, selector, create] = await Promise.all([
+    titleRow.boundingBox(),
+    combo.boundingBox(),
+    plus.boundingBox(),
+  ]);
+  expect(selector.x).toBeGreaterThanOrEqual(row.x);
+  expect(create.x).toBeGreaterThanOrEqual(selector.x + selector.width);
+  expect(create.x + create.width).toBeLessThanOrEqual(row.x + row.width);
+  expect(
+    Math.abs(selector.y + selector.height / 2 - create.y - create.height / 2),
+  ).toBeLessThanOrEqual(1);
+  return combo;
+}
 
 export async function verifyProjectSelectorSpecimen(page, url, engine, output) {
   const watch = await watchCatalogPage(page, url, "Project selector", engine);
@@ -19,18 +39,7 @@ export async function verifyProjectSelectorSpecimen(page, url, engine, output) {
           await page.goto(
             `${url}?screen=project-selector&locale=${locale}&theme=${theme}${expanded ? "&expanded" : ""}`,
           );
-          const combo = page.getByRole("combobox");
-          await expect(combo).toBeVisible();
-          const firstRow = await combo.evaluate(
-            (node) => node.closest(".workspace-title-row") !== null,
-          );
-          expect(firstRow).toBe(true);
-          const plus = page.locator('.workspace-title-row [data-workspace-command="project.new"]');
-          const comboRect = await combo.boundingBox();
-          const plusRect = await plus.boundingBox();
-          expect(Math.abs(comboRect.y - plusRect.y)).toBeLessThanOrEqual(1);
-          expect(plusRect.x).toBeGreaterThanOrEqual(comboRect.x + comboRect.width);
-          expect(plusRect.x + plusRect.width).toBeLessThanOrEqual(width);
+          const combo = await selectorInTitleRow(page);
           expect((await combo.locator("bdi").boundingBox()).width).toBeGreaterThan(24);
 
           await combo.focus();
@@ -86,6 +95,68 @@ export async function verifyProjectSelectorSpecimen(page, url, engine, output) {
           });
           journeys++;
         }
+    const verifyInsets = async (target, coarse) => {
+      await target.setViewportSize({ width: 320, height: 900 });
+      for (const [platform, start, end, locale] of [
+        ["linux", 0, 138, "de-DE"],
+        ["darwin", 76, 0, "ko-KR"],
+      ]) {
+        await target.goto(
+          `${url}?screen=project-selector&platform=${platform}&start=${start}&end=${end}&locale=${locale}`,
+        );
+        const combo = await selectorInTitleRow(target);
+        const row = await target.locator(".workspace-title-row").boundingBox();
+        expect(row.x).toBe(start);
+        expect(row.x + row.width).toBe(320 - end);
+        if (coarse) {
+          expect(await target.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
+          const plus = await target
+            .locator('.workspace-title-row [data-workspace-command="project.new"]')
+            .boundingBox();
+          expect(Math.min(plus.width, plus.height)).toBeGreaterThanOrEqual(44);
+          const selector = await combo.boundingBox();
+          expect(Math.min(selector.width, selector.height)).toBeGreaterThanOrEqual(44);
+        }
+        await combo.click();
+        const options = target.getByRole("option");
+        await expect(options).toHaveCount(41);
+        if (coarse) {
+          const smallest = await options.evaluateAll((rows) =>
+            Math.min(
+              ...rows.map((row) => {
+                const bounds = row.getBoundingClientRect();
+                return Math.min(bounds.width, bounds.height);
+              }),
+            ),
+          );
+          expect(smallest).toBeGreaterThanOrEqual(44);
+        }
+        await options.first().click();
+        await expect(combo.locator("svg")).toHaveCount(2);
+        await selectorInTitleRow(target);
+        expect(
+          (await combo.locator("bdi").boundingBox()).width,
+          `${platform} selected project title, coarse pointer: ${String(coarse)}`,
+        ).toBeGreaterThan(24);
+        journeys++;
+      }
+    };
+    await verifyInsets(page, false);
+    if (engine === "chromium") {
+      const coarse = await page.context().browser().newContext({ hasTouch: true });
+      try {
+        const target = await coarse.newPage();
+        const touch = await watchCatalogPage(target, url, "Project selector coarse insets", engine);
+        try {
+          await verifyInsets(target, true);
+          await touch.assert();
+        } finally {
+          await touch.dispose();
+        }
+      } finally {
+        await coarse.close();
+      }
+    }
     for (const state of ["empty", "failed", "slow", "failedMore"]) {
       await page.goto(`${url}?screen=project-selector&${state}`);
       const combo = page.getByRole("combobox");

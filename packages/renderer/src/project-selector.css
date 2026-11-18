@@ -111,6 +111,11 @@
   gap: var(--space-2);
   margin-block-start: var(--space-2);
 }
+@media (pointer: coarse) {
+  .project-selector-option {
+    min-block-size: var(--component-target-coarse);
+  }
+}
 @media (forced-colors: active) {
   .project-selector-option[aria-selected="true"] {
     border-color: Highlight;
