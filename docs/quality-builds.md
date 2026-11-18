@@ -1,11 +1,9 @@
 ---
 type: Playbook
 title: Native quality builds
-description: Build unsigned development packages with bounded Linux host provisioning on standard hosted native VMs and verify artifact and checkout provenance.
+description: Build unsigned development packages with bounded Ubuntu-only host provisioning on standard hosted native VMs and verify artifact and checkout provenance.
 generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
+  by: codex/gpt-6.2-sol
 ---
 
 # Native quality builds
@@ -36,7 +34,9 @@ Retain each synthetic state generation inside the owned scratch root before star
 
 The workflow runs `scripts/ci_linux_dependencies.py` with package-manager authority only on fresh GitHub-hosted Ubuntu 26.04 VMs. Both GNOME and KDE KVM cells install the minimal QEMU, cloud-image, networking and ACL host prerequisites; their desktops and application dependencies belong inside the guests. Native Ubuntu display-session cells install their own GNOME or official Kubuntu desktop set without recommended packages and do not need QEMU.
 
-Host provisioning keeps the runner's APT source definitions, suites, components and signature settings. It replaces the Azure-first `/etc/apt/apt-mirrors.txt` with the official HTTPS archive and security mirrors, in that order, followed by the kernel.org and MIT mirrors outside the `ubuntu.com` domain, for both x64 and ARM64. Only mirrors whose host resolves within 10 seconds are listed, and provisioning fails before any APT command when none resolves. Every mirror is authenticated with the same Ubuntu archive keys; because Ubuntu's `InRelease` files carry no `Valid-Until`, provisioning also rejects `resolute-security` and `resolute-updates` indexes dated more than 7 days before the check. A missing mirror-list source or a direct Azure source fails with a configuration-drift diagnostic rather than silently retaining the degraded source. This procedure changes only the ephemeral host; guest distribution sources retain their own preparation procedure.
+For index refresh, package acquisition and installation, APT uses only the runner's `/etc/apt/sources.list.d/ubuntu.sources` and temporary index and archive directories under `/var/cache/apt` shared by those phases. The runner's source files, suites, components and signature settings remain intact. Every stanza must use the hosted mirror list and the Ubuntu archive keyring. A missing file, unexpected URI or keyring, or a `Trusted`, `Allow-Insecure`, `Allow-Weak` or `Allow-Downgrade-To-Insecure` field fails with a configuration-drift diagnostic.
+
+Host provisioning replaces the Azure-first `/etc/apt/apt-mirrors.txt` with the official HTTPS archive and security mirrors, followed by the kernel.org and MIT mirrors, for both x64 and ARM64. Only mirrors whose host resolves within 10 seconds are listed. Provisioning fails before any APT command when none resolves. Every mirror is authenticated with the same Ubuntu archive keys. Because Ubuntu's `InRelease` files carry no `Valid-Until`, provisioning rejects `resolute-security` and `resolute-updates` indexes dated more than 7 days before the check. Guest distribution sources follow their own preparation procedure.
 
 Index refresh, archive acquisition, installation/configuration and package inventory share a twelve-minute wall-clock budget. APT retries a failed transfer once and uses fifteen-second connection/inactivity timeouts. GNU `timeout` bounds the entire child process group even when downloads keep progressing slowly, reserving five seconds for termination before forced cleanup. Downloads complete before installation, which uses `--no-download`; index refresh errors and any incomplete phase fail the job. All phases log their available time, result and elapsed time, while APT records the actual download sources and volume. The workflow has a separate fifteen-minute step limit as an outer cancellation bound. Inspect these phase records before attributing a delay to package installation or tests.
 
@@ -55,7 +55,7 @@ Linux uses the workflow's private display/session wrapper. Other platforms selec
 
 A development version has the form `<version>-dev.<run>.<attempt>`, where `<version>` is the final version of the root `package.json` defined by the [release policy](release-policy.md#version-and-compatibility-semantics); it is never a reserved final version. Each plan binds repository, event, PR head/base where applicable, actual checkout commit/tree, workflow and policy digests, locks, target/tool manifests and smoke inventories. Native receipts bind the plan, host/image identity, package format, exact bytes and SHA-256, executable/addon architecture, prepared payload and packaged suite reports. Linux receipts also bind the operating-system package list taken before package construction by the [shared bounded list function](scaleway-qualification.md#evidence-and-limits); the aggregator rechecks its length, SHA-256, canonical form and package count. The PR and actual integrated-main identities remain distinct.
 
-Each job records its checkout before repository tooling. The trusted pre-merge verifier checks the exact reviewed workflow/inventory and requires the corresponding receipt in every job's bounded log. It still accepts only `pull_request` evidence. A successful main push never substitutes for PR admission, and a synthetic merge never substitutes for the actual integrated revision. Rerun all jobs for a new attempt: previous-attempt packages do not qualify the new coordinated result.
+Each job records its checkout before repository tooling. The trusted pre-merge verifier checks the exact reviewed workflow/inventory and requires the corresponding receipt in every job's bounded log. It still accepts only `pull_request` evidence. A successful main push never substitutes for PR admission, and a synthetic merge never substitutes for the actual integrated revision. If any required job fails in a full-matrix run and you retry, select **Re-run all jobs**. The aggregate accepts native artifacts only from the new attempt.
 
 ## Retention and retrieval
 
