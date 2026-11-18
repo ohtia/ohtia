@@ -862,6 +862,43 @@
       "foreground": "content.primary",
       "backgrounds": ["surface.panel"],
       "minimum": 7
+    },
+    {
+      "selector": ".project-selector-button",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".project-selector-popup",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7,
+      "foreground": "content.primary",
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".project-selector-option[aria-selected=\"true\"]",
+      "backgrounds": ["surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.primary"
+    },
+    {
+      "selector": ".project-selector-lines > span",
+      "backgrounds": ["surface.panel", "surface.emphasis"],
+      "minimum": 7,
+      "foreground": "content.secondary"
+    },
+    {
+      "selector": ".project-selector-notice",
+      "backgrounds": ["danger.surface"],
+      "minimum": 7,
+      "foreground": "danger.content"
+    },
+    {
+      "selector": ".project-selector-open-error",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7,
+      "foreground": "content.primary"
     }
   ],
   "overlays": [

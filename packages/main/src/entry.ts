@@ -194,6 +194,8 @@ const windows = new Map<
   {
     generation: string;
     openConversation?: { projectId: string; conversationId: string };
+    navigateConversation?: NonNullable<BootstrapSnapshot["navigateConversation"]>;
+    restoreLastProject: boolean;
     researchSelection?: string;
     workspace: boolean;
     boundsSaved: boolean;
@@ -411,11 +413,28 @@ if (acceptance)
     value: () => ({ ...acceptance }),
     configurable: true,
   });
+const bootstrapPlacements = acceptance
+  ? new WeakMap<
+      BrowserWindow,
+      { bounds: ReturnType<typeof requestBootstrapPlacement>; maximized: boolean }
+    >()
+  : undefined;
+if (bootstrapPlacements)
+  Object.defineProperty(globalThis, "__ohtiaBootstrapPlacement", {
+    value: (window: BrowserWindow) => bootstrapPlacements.get(window),
+    configurable: true,
+  });
 let metricTimer: ReturnType<typeof setInterval> | undefined;
-const snapshot = (window?: BrowserWindow): BootstrapSnapshot => {
-  const openConversation = window ? windows.get(window)?.openConversation : undefined;
+const snapshot = (window: BrowserWindow): BootstrapSnapshot => {
+  const windowState = windows.get(window);
+  const openConversation = windowState?.openConversation;
   return {
     ...(openConversation ? { openConversation } : {}),
+    ...(windowState?.navigateConversation
+      ? { navigateConversation: windowState.navigateConversation }
+      : {}),
+    ...(windowState ? { restoreLastProject: windowState.restoreLastProject } : {}),
+    ...(bootstrapState === "storage_ready" ? { serviceGeneration: generation } : {}),
     version: 1,
     locale,
     state: bootstrapState === "missing" ? "pending_create" : bootstrapState,
@@ -498,6 +517,7 @@ async function createWindow(
     pendingWindows--;
   }
 }
+let firstProjectWindow = true;
 function constructWindow(
   placement: ReturnType<typeof windowPlacement>,
   workspace: boolean,
@@ -528,6 +548,7 @@ function constructWindow(
     windowMinimum.height + outer.height - content.height,
   );
   windows.set(window, {
+    restoreLastProject: firstProjectWindow,
     generation: randomUUID(),
     workspace,
     boundsSaved: false,
@@ -538,6 +559,7 @@ function constructWindow(
     activate: false,
     maximizeOnShow: placement.maximized,
   });
+  firstProjectWindow = false;
   commandMenus.attach(window);
   window.webContents.on("zoom-changed", (_event, direction) => {
     commandMenus.dispatch(window, direction === "in" ? "zoom.increase" : "zoom.decrease", true);
@@ -649,7 +671,7 @@ function constructWindow(
   } else loadDocument();
   return { status: "completed" };
 }
-function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"): void {
+function startService(mode?: "open" | "retry" | "restore" | "blocked"): void {
   if (quitting || (service && !service.ceased)) return;
   if (providerDispatch && !providerDispatch.ceased) {
     // Recovery classifies old attempts only after every ended-generation transport has closed.
@@ -660,6 +682,14 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
   }
   const locator = readLocator(settings, context);
   bootstrapState = refreshLocatorState(bootstrapState, locator.state);
+  if (mode === undefined) {
+    mode = context.mode !== "qualification" && locator.state === "located" ? "open" : "blocked";
+    if (mode === "open") {
+      storageRequested = true;
+      admissionFallback = storageInterruptionState(bootstrapState);
+      bootstrapState = "storage_opening";
+    }
+  }
   const storageMode = mode === "open" && locator.state === "missing" ? "create" : mode;
   generation = randomUUID();
   windowTheme.reset();
@@ -804,12 +834,13 @@ function startService(mode: "open" | "retry" | "restore" | "blocked" = "blocked"
           for (const [existing, state] of windows)
             if (!existing.isDestroyed()) {
               if (!state.workspace) {
-                requestBootstrapPlacement(
+                const bounds = requestBootstrapPlacement(
                   existing,
                   placement,
                   state.presentable && !state.firstShow,
                   nativeWayland,
                 );
+                bootstrapPlacements?.set(existing, { bounds, maximized: placement.maximized });
                 state.maximizeOnShow = placement.maximized;
               }
               state.workspace = true;
@@ -954,7 +985,14 @@ async function start(): Promise<void> {
           BrowserWindow.getFocusedWindow() ??
           [...windows.keys()].find((window) => !window.isDestroyed());
         const state = window && windows.get(window);
-        if (state) state.openConversation = { projectId, conversationId };
+        if (state) {
+          state.openConversation = { projectId, conversationId };
+          state.navigateConversation = {
+            projectId,
+            conversationId,
+            revision: (state.navigateConversation?.revision ?? 0) + 1,
+          };
+        }
       },
       ready: () =>
         connectionsRead && service?.available && bootstrapState === "storage_ready"

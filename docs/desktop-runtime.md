@@ -1,11 +1,9 @@
 ---
 type: Playbook
 title: Isolated desktop runtime
-description: Admit native runtime contexts, manage the window lifecycle and verify supervised status and fixed-home bootstrap boundaries.
+description: Admit ordinary and qualified native contexts, open configured storage safely, and verify supervised window and service lifecycles.
 generated:
-  by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
+  by: codex/gpt-6.1-sol
 ---
 
 # Isolated desktop runtime
@@ -39,6 +37,8 @@ Renderer preference mutations remain unavailable until the broker publishes `sto
 - **`development`:** `python3 scripts/workspace.py run dev`, from your ordinary account and graphical session. It takes no arguments except the development command switches `--ohtia-dev-command=<action>` and `--ohtia-dev-<argument>=<value>`, which main admits only in this mode; while a window from the checkout is open, they reach that instance.
 - **`installed`:** an installed package opened normally. It needs no profile.
 - **`qualification`:** the procedures below, with an independent profile.
+
+In development and installed modes, a valid saved locator starts the existing compatibility and integrity admission automatically, as [Application preferences and bootstrap](architecture.md#application-preferences-and-bootstrap) requires. The workspace and its first-window project restoration become available only after successful storage activation. A missing locator retains the explicit first opening, and rejected locations or migration-recovery gates retain their controlled actions. Qualification keeps its explicit fixture controls.
 
 ### Develop from your ordinary account
 

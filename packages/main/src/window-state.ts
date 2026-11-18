@@ -96,14 +96,16 @@ export function requestBootstrapPlacement(
   placement: Placement,
   revealed: boolean,
   wayland: boolean,
-): void {
+): Partial<Rectangle> {
   if (revealed) window.unmaximize();
-  window.setBounds({
+  const bounds = {
     ...(wayland ? {} : { x: placement.x, y: placement.y }),
     width: placement.width,
     height: placement.height,
-  });
+  };
+  window.setBounds(bounds);
   if (revealed && placement.maximized) window.maximize();
+  return bounds;
 }
 export function windowOptions(
   platform: string,

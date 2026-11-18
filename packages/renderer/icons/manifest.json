@@ -150,6 +150,12 @@
       "sha256": "6124c1c3ed1b585ca3421c83dbfa5c44ed7cceb664ba09ca2ac03351bf454a62"
     },
     {
+      "name": "graduation-cap",
+      "file": "graduation-cap.svg",
+      "archive_member": "package/icons/graduation-cap.svg",
+      "sha256": "8fe183714eedc32f6fc80631083bb76c315dd788bdb72c2db43181a29132ee8d"
+    },
+    {
       "name": "grip-vertical",
       "file": "grip-vertical.svg",
       "archive_member": "package/icons/grip-vertical.svg",

@@ -47,6 +47,7 @@ const project = {
   documentLanguage: null,
   isDevelopment: false,
   setupConfirmedAt: null,
+  lastOpenedAt: "2026-11-17T10:00:00.000Z",
   createdAt: "2026-11-17T10:00:00Z",
   updatedAt: "2026-11-17T10:00:00Z",
 };
@@ -170,7 +171,7 @@ describe("new project creation intent", () => {
     pending.resolve({ ok: true, value: { resultId: projectId } });
     expect(await first).toBe(true);
     expect(f.port.createProject).toHaveBeenCalledExactlyOnceWith("creation-1");
-    expect(opened).toHaveBeenCalledExactlyOnceWith({ projectId, conversationId });
+    expect(opened).toHaveBeenCalledExactlyOnceWith({ projectId, conversationId }, 0);
     c.dispose();
   });
   it("keeps the operation identifier across failure, dialog dismissal and retry", async () => {
@@ -190,10 +191,19 @@ describe("new project creation intent", () => {
     const f = fixture(),
       opened = vi.fn();
     f.port.listConversations.mockReturnValueOnce(call(failure("service_unavailable")) as never);
-    const c = new NewProjectController(f.bridge, opened);
+    let selectionRevision = 1;
+    const c = new NewProjectController(
+      f.bridge,
+      opened,
+      undefined,
+      undefined,
+      () => selectionRevision,
+    );
     expect(await c.start()).toBe(false);
     expect(c.snapshot().dialog).toBe("openingFailed");
+    selectionRevision = 3;
     expect(await c.start()).toBe(true);
+    expect(opened).toHaveBeenCalledExactlyOnceWith({ projectId, conversationId }, 3);
     expect(f.port.createProject).toHaveBeenCalledOnce();
     c.dispose();
   });

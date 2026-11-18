@@ -22,6 +22,7 @@ import {
   type ProjectRecord,
   type Outcome,
   type ResearchOutputs,
+  type ResearchScope,
 } from "@ohtia/contracts";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -87,6 +88,7 @@ function fixture() {
   const localeStop = vi.fn();
   const port = {
     ...settings.port,
+    listProjects: vi.fn(() => call({ ok: true, value: { items: [], next: null, hasMore: false } })),
     readStatus: vi.fn(() =>
       call({
         ok: true,
@@ -793,6 +795,7 @@ it("opens a newly created setup project, reveals a hidden chat and preserves its
     documentLanguage: null,
     isDevelopment: false,
     setupConfirmedAt: null,
+    lastOpenedAt: "2026-11-17T10:00:00.000Z",
     createdAt: "2026-11-17T10:00:00Z",
     updatedAt: "2026-11-17T10:00:00Z",
   };
@@ -836,7 +839,7 @@ it("opens a newly created setup project, reveals a hidden chat and preserves its
   expect(container.querySelector(".workspace-chat")?.hasAttribute("hidden")).toBe(true);
   await click('.workspace-welcome [data-workspace-command="project.new"]');
   expect(container.querySelector(".workspace-chat")?.hasAttribute("hidden")).toBe(false);
-  expect(container.querySelector(".workspace-project-context")?.textContent).toBe(
+  expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe(
     "New thesis · Setting up",
   );
   expect(container.querySelector(".workspace-explorer")?.textContent).toContain(
@@ -848,7 +851,7 @@ it("opens a newly created setup project, reveals a hidden chat and preserves its
   expect(container.querySelector(".conversation-empty .voice-label")).toBeNull();
   expect(document.activeElement).toBe(container.querySelector("textarea"));
   await act(async () => vi.advanceTimersByTimeAsync(1000));
-  expect(container.querySelector(".workspace-project-context")?.textContent).toBe(
+  expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe(
     "New thesis · Setting up",
   );
   Object.assign(project, {
@@ -863,7 +866,9 @@ it("opens a newly created setup project, reveals a hidden chat and preserves its
     openConversation: { projectId, conversationId },
   });
   await act(async () => vi.advanceTimersByTimeAsync(1000));
-  expect(container.querySelector(".workspace-project-context")?.getAttribute("lang")).toBe("es-AR");
+  expect(container.querySelector(".project-selector-button bdi")?.getAttribute("lang")).toBe(
+    "es-AR",
+  );
   const titleTooltip = container.querySelector(".workspace-context-tooltip")!;
   await act(async () => titleTooltip.dispatchEvent(new Event("pointerover", { bubbles: true })));
   expect(
@@ -891,7 +896,7 @@ it("announces a creation failure with its description, preserves the open worksp
     "Nothing was created, and your other projects are safe.",
   );
   expect(document.activeElement).toBe(dialog.querySelector("[data-close]"));
-  expect(container.querySelector(".workspace-project-context")?.textContent).toBe(
+  expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe(
     "No project open",
   );
   await act(async () =>
@@ -941,6 +946,7 @@ it.each(["confirmed", "failed"] as const)(
       documentLanguage: "es-AR",
       isDevelopment: false,
       setupConfirmedAt: "2026-11-17T10:00:00Z",
+      lastOpenedAt: "2026-11-17T10:00:00.000Z",
       createdAt: "2026-11-17T10:00:00Z",
       updatedAt: "2026-11-17T10:00:00Z",
     };
@@ -980,7 +986,7 @@ it.each(["confirmed", "failed"] as const)(
       openConversation: { projectId: project.id, conversationId },
     });
     await mount(t);
-    expect(container.querySelector(".workspace-project-context")).toBeNull();
+    expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe("Loading…");
     expect(container.querySelector(".workspace-setup")).toBeNull();
     expect(container.querySelector(".conversation-state")?.textContent).toContain(
       "Loading conversation",
@@ -993,19 +999,177 @@ it.each(["confirmed", "failed"] as const)(
       ),
     );
     if (outcome === "confirmed") {
-      expect(container.querySelector(".workspace-project-context")?.textContent).toBe(
+      expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe(
         project.title,
       );
       expect(container.querySelector(".workspace-setup")?.textContent).toContain(
         "The Navigator isn’t available in this version",
       );
     } else {
-      expect(container.querySelector(".workspace-project-context")).toBeNull();
+      expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe(
+        message("en-US", "project.loadFailed"),
+      );
       expect(container.querySelector(".workspace-setup")).toBeNull();
       expect(container.querySelector(".conversation-state [role=alert]")).not.toBeNull();
       expect(container.querySelector(".conversation-state button")?.textContent).toBe(
         message("en-US", "conversation.reload"),
       );
     }
+  },
+);
+
+function raceFixture() {
+  const t = fixture();
+  const ids = [101, 201, 301].map((n) => `019a8000-0000-7000-8000-${String(n).padStart(12, "0")}`);
+  const rows = ids.map((id, n) => ({
+    id,
+    projectType: "thesis",
+    title: `Project ${n + 1}`,
+    documentLanguage: "en-US",
+    isDevelopment: false,
+    setupConfirmedAt: "2026-11-17T10:00:00.000Z",
+    createdAt: "2026-11-17T10:00:00.000Z",
+    updatedAt: "2026-11-17T10:00:00.000Z",
+    lastOpenedAt: "2026-11-17T10:00:00.000Z",
+  }));
+  Object.assign(t.port, {
+    readConnection: vi.fn(() => call({ ok: true, value: { state: "connected" } })),
+    listProjects: () => call({ ok: true, value: { items: rows, next: null, hasMore: false } }),
+    listConversations: ({ projectId }: { projectId: string }) =>
+      call({ ok: true, value: { items: [{ id: projectId }], next: null, hasMore: false } }),
+    subscribeResearch: () => ({
+      ready: Promise.resolve({ ok: true, value: { subscriptionId: "research-1" } }),
+      dispose() {},
+    }),
+    readPauses: () => call({ ok: true, value: { revision: 1, restart: 0, usage: [] } }),
+    readConversations: ({ ids: wanted }: { ids: string[] }) =>
+      call({
+        ok: true,
+        value: {
+          items: wanted.map((id) => ({
+            id,
+            projectId: id,
+            title: null,
+            createdAt: rows[0].createdAt,
+            updatedAt: rows[0].updatedAt,
+            revision: 1,
+            agentId: "virgilio",
+            latestReplyTaskId: null,
+            runningTask: null,
+          })),
+          remaining: [],
+        },
+      }),
+    listTimelineBefore: () => call({ ok: true, value: { items: [], next: null, hasMore: false } }),
+    readDestination: () => call({ ok: true, value: { destination: null } }),
+  });
+  vi.mocked(t.bridge.bootstrap.read).mockResolvedValue({
+    version: 1,
+    locale: "en-US",
+    state: "storage_ready",
+    navigateConversation: { projectId: ids[2], conversationId: ids[2], revision: 1 },
+    openConversation: { projectId: ids[0], conversationId: ids[0] },
+  });
+  return { ...t, ids };
+}
+async function selectRaceProject(n: number) {
+  await click("[role=combobox]");
+  await act(async () => {
+    (document.querySelectorAll("[role=option]")[n] as HTMLElement).click();
+  });
+}
+it("keeps a later project selection when an earlier creation completes", async () => {
+  const t = raceFixture();
+  const pending = deferred<Outcome<{ resultId: string }>>();
+  Object.assign(t.port, {
+    createProject: vi.fn(() => ({ result: pending.promise, cancel: vi.fn() })),
+  });
+  await mount(t);
+  await t.intent("project.new");
+  await selectRaceProject(1);
+  expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe("Project 2");
+  await act(async () => pending.resolve({ ok: true, value: { resultId: t.ids[2] } }));
+  expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe("Project 2");
+});
+it("ignores delayed bootstrap acknowledgements after A to B to A while preserving explicit development navigation", async () => {
+  const t = raceFixture();
+  await mount(t);
+  await selectRaceProject(1);
+  await selectRaceProject(0);
+  vi.mocked(t.bridge.bootstrap.read).mockResolvedValue({
+    version: 1,
+    locale: "en-US",
+    state: "storage_ready",
+    openConversation: { projectId: t.ids[1], conversationId: t.ids[1] },
+  });
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe("Project 1");
+  vi.mocked(t.bridge.bootstrap.read).mockResolvedValue({
+    version: 1,
+    locale: "en-US",
+    state: "storage_ready",
+    openConversation: { projectId: t.ids[1], conversationId: t.ids[1] },
+    navigateConversation: { projectId: t.ids[1], conversationId: t.ids[1], revision: 2 },
+  });
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe("Project 2");
+  await selectRaceProject(0);
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe("Project 1");
+});
+
+it.each([true, false])(
+  "reconnects the selected conversation after recovery with an old acknowledgement (storage loss observed: %s)",
+  async (observeLoss) => {
+    const t = raceFixture();
+    const pending = deferred<Outcome<{ subscriptionId: string }>>();
+    const acknowledgement = { projectId: t.ids[0], conversationId: t.ids[0] };
+    const selected = { projectId: t.ids[1], conversationId: t.ids[1] };
+    const ready = (serviceGeneration: string, scope = acknowledgement) => ({
+      version: 1 as const,
+      locale: "en-US" as const,
+      state: "storage_ready" as const,
+      serviceGeneration,
+      openConversation: scope,
+    });
+    vi.mocked(t.bridge.bootstrap.read).mockResolvedValue(ready("service-a"));
+    let recovered = false;
+    const subscribeResearch = vi.fn((scope: ResearchScope) => ({
+      ready:
+        scope.projectId === selected.projectId && !recovered
+          ? pending.promise
+          : Promise.resolve({ ok: true as const, value: { subscriptionId: "research-1" } }),
+      dispose: vi.fn(),
+    }));
+    const openProject = vi.fn(() => call({ ok: true, value: { resultId: selected.projectId } }));
+    Object.assign(t.port, { subscribeResearch, openProject });
+    await mount(t);
+    await selectRaceProject(1);
+    expect(subscribeResearch).toHaveBeenLastCalledWith(selected, expect.any(Function));
+    await act(async () => pending.resolve(failure("service_unavailable")));
+    expect(container.querySelector(".conversation-status-scroll")?.textContent).toContain(
+      message("en-US", "conversation.unavailable"),
+    );
+    if (observeLoss) {
+      vi.mocked(t.bridge.bootstrap.read).mockResolvedValue({
+        version: 1,
+        locale: "en-US",
+        state: "storage_failed",
+      });
+      await act(async () => vi.advanceTimersByTimeAsync(1000));
+    }
+    recovered = true;
+    const previousCalls = subscribeResearch.mock.calls.length;
+    const openingWrites = openProject.mock.calls.length;
+    vi.mocked(t.bridge.bootstrap.read).mockResolvedValue(ready("service-b"));
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(subscribeResearch).toHaveBeenCalledTimes(previousCalls + 1);
+    expect(subscribeResearch).toHaveBeenLastCalledWith(selected, expect.any(Function));
+    expect(openProject).toHaveBeenCalledTimes(openingWrites);
+    expect(container.querySelector(".project-selector-button bdi")?.textContent).toBe("Project 2");
+    expect(container.querySelector(".conversation-timeline")).not.toBeNull();
+    vi.mocked(t.bridge.bootstrap.read).mockResolvedValue(ready("service-b", selected));
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(subscribeResearch).toHaveBeenCalledTimes(previousCalls + 1);
   },
 );

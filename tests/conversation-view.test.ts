@@ -1,3 +1,4 @@
+import { deferred } from "./fixtures/settings.js";
 // @vitest-environment jsdom
 import { act, createElement as h } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -17,6 +18,7 @@ import {
   type FoundationPort,
   type Outcome,
   type ResearchEvent,
+  type ResearchOutputs,
   type TimelineItem,
   type ConversationSummary,
 } from "../packages/contracts/src/index.js";
@@ -543,7 +545,10 @@ it("restores each conversation’s reading position and keeps its anchor through
   container.hidden = false;
   await act(async () => resize());
   expect(viewport.scrollTop).toBe(150);
-  const other = { ...state([message(10)]), scope: { ...scope, conversationId: id(3000) } };
+  const other = {
+    ...state([message(10)]),
+    scope: { projectId: id(1001), conversationId: id(3000) },
+  };
   await render(other, controller);
   expect(viewport.scrollTop).toBe(2000);
   viewport.scrollTop = 80;
@@ -2086,6 +2091,7 @@ it.each(["failed", "uncertain"] as const)(
           documentLanguage: "en",
           isDevelopment: false,
           setupConfirmedAt: "2026-11-17T10:00:00Z",
+          lastOpenedAt: "2026-11-17T10:00:00.000Z",
           createdAt: "2026-11-17T10:00:00Z",
           updatedAt: "2026-11-17T10:00:00Z",
         },
@@ -2134,3 +2140,36 @@ it.each([true, false])(
     }
   },
 );
+
+it("preserves origin drafts across project A to B to A with delayed reads", async () => {
+  const h = controllerHarness();
+  await settle();
+  h.controller.composer.edit("Unsent A 연구");
+  const aItems = h.controller.snapshot().items.map((item) => item.id);
+  const pending = deferred<Outcome<ResearchOutputs["conversation.read"]>>();
+  vi.mocked(h.port.readConversations).mockImplementationOnce(() => ({
+    result: pending.promise,
+    cancel: vi.fn(),
+  }));
+  h.controller.open({ projectId: id(1001), conversationId: id(3000) });
+  await settle();
+  h.controller.composer.edit("Unsent B");
+  h.controller.open(scope);
+  await settle();
+  expect(h.controller.composer.snapshot().text).toBe("Unsent A 연구");
+  pending.resolve({
+    ok: true,
+    value: { items: [{ ...summary, projectId: id(1001), id: id(3000) }], remaining: [] },
+  });
+  await settle();
+  expect(h.controller.snapshot().scope).toEqual(scope);
+  expect(h.controller.snapshot().items.map((item) => item.id)).toEqual(aItems);
+  expect(h.controller.composer.snapshot().text).toBe("Unsent A 연구");
+  vi.mocked(h.port.readConversations).mockImplementation(() =>
+    ok({ items: [{ ...summary, projectId: id(1001), id: id(3000) }], remaining: [] }),
+  );
+  h.controller.open({ projectId: id(1001), conversationId: id(3000) });
+  await settle();
+  expect(h.controller.composer.snapshot().text).toBe("Unsent B");
+  h.controller.dispose();
+});

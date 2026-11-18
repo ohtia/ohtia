@@ -169,6 +169,19 @@ describe("runtime launch and recovery guards", () => {
     expect(isBootstrapAction("choose_open")).toBe(false);
     expect(isBootstrapAction("choose_create")).toBe(false);
     expect(isBootstrapAction("retry_service")).toBe(true);
+    const snapshot = { version: 1, locale: "en-US", state: "storage_ready" };
+    expect(decodeBootstrapSnapshot({ ...snapshot, serviceGeneration: "service-a" })).toEqual({
+      ...snapshot,
+      serviceGeneration: "service-a",
+    });
+    expect(decodeBootstrapSnapshot({ ...snapshot, serviceGeneration: "/private" })).toBeUndefined();
+    expect(
+      decodeBootstrapSnapshot({
+        ...snapshot,
+        state: "storage_opening",
+        serviceGeneration: "service-a",
+      }),
+    ).toBeUndefined();
     expect(
       decodeBootstrapSnapshot({
         version: 1,

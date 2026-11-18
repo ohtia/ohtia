@@ -549,6 +549,8 @@ Fixed mappings:
 | Ohtia                                        | Original glasses       |
 | Navigator                                    | `signpost`             |
 | Supervisor                                   | `user-round`           |
+| Thesis                                       | `graduation-cap`       |
+| Open project in the project selector         | `check`                |
 | `document`                                   | `file-text`            |
 | `dataset`                                    | `database`             |
 | `media`                                      | `image`                |

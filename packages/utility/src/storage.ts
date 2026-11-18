@@ -19,6 +19,11 @@ import {
   up as taskNotices,
   objects as taskNoticeObjects,
 } from "./migrations/0016_task_notices.mjs";
+import {
+  up as projectOpening,
+  columns as openingColumns,
+  objects as openingObjects,
+} from "./migrations/0017_project_opening.mjs";
 import { readResearch, researchRevisions, readPauseCounts } from "./research-reads.js";
 import type { Request, ResearchScope, ResearchEvent, ResearchOperation } from "@ohtia/contracts";
 import {
@@ -256,6 +261,7 @@ const names = [
   "0014_message_composer",
   "0015_project_setup",
   "0016_task_notices",
+  "0017_project_opening",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -577,7 +583,14 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ",\n    UNIQUE (conversation_id,position)",
                 `, task_id BLOB REFERENCES tasks(id)${revision >= 10 ? `, ${replyColumns.ending}` : ""},\n    UNIQUE (conversation_id,position)`,
               )
-            : definition,
+            : revision >= 17 && (name === "projects" || name === "command_receipts")
+              ? name === "projects"
+                ? definition.replace(
+                    ",\n    CHECK ((title",
+                    ", " + openingColumns.opened + ",\n    CHECK ((title",
+                  )
+                : definition.slice(0, -1) + ", " + openingColumns.error + ")"
+              : definition,
         ])
       : []),
     ...(revision >= 8
@@ -623,6 +636,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 14 ? composerObjects : {}),
                 ...(revision >= 15 ? setupObjects : {}),
                 ...(revision >= 16 ? taskNoticeObjects : {}),
+                ...(revision >= 17 ? openingObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1012,6 +1026,7 @@ export class DurableStore {
                 "0014_message_composer": { up: composer },
                 "0015_project_setup": { up: setup },
                 "0016_task_notices": { up: taskNotices },
+                "0017_project_opening": { up: projectOpening },
               }),
           },
         });
@@ -2377,7 +2392,10 @@ export class DurableStore {
             payloadHash,
           );
           this.assert();
-          if (!result.ok) {
+          if (
+            !result.ok &&
+            !(result.error.code === "record_not_found" && command.command === "project.open")
+          ) {
             await sql`ROLLBACK`.execute(transaction);
             return result;
           }
@@ -2415,6 +2433,7 @@ export class DurableStore {
       const events = {
         "development.createProject": "ohtia.project.created",
         "project.create": "ohtia.project.created",
+        "project.open": "ohtia.project.opened",
         "project.confirmSetup": "ohtia.project.setup_confirmed",
         "project.rejectSetup": "ohtia.project.setup_rejected",
         "conversation.start": "ohtia.conversation.started",
@@ -2616,7 +2635,9 @@ export class DurableStore {
         if (!row) return { ok: true, value: null };
         return row.command === command &&
           Buffer.from(row.payload_sha256).toString("hex") === payloadHash
-          ? { ok: true, value: { resultId: identifier(row.result_id) } }
+          ? row.error_code
+            ? failure(row.error_code)
+            : { ok: true, value: { resultId: identifier(row.result_id) } }
           : failure("operation_conflict");
       },
       undefined,

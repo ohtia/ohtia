@@ -122,6 +122,8 @@ export const designMetrics = {
 export const iconMappings = {
   "Navigator": "signpost",
   "Supervisor": "user-round",
+  "Thesis": "graduation-cap",
+  "Open project in the project selector": "check",
   "document": "file-text",
   "dataset": "database",
   "media": "image",

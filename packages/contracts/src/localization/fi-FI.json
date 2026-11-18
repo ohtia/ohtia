@@ -417,6 +417,19 @@
     "setup.announcement": "Opinnäyte määritetty: {title}",
     "setup.composerDisabled": "Virgilio ei voi vielä vastata täällä.",
     "project.createUncertainTitle": "Ohtia ei voinut vahvistaa, luotiinko projekti",
-    "project.createUncertainBody": "Yritä uudelleen tarkistaaksesi ja avataksesi opinnäytteen; mitään ei luoda kahdesti."
+    "project.createUncertainBody": "Yritä uudelleen tarkistaaksesi ja avataksesi opinnäytteen; mitään ei luoda kahdesti.",
+    "project.current": "Nykyinen projekti",
+    "project.newThesis": "Uusi opinnäyte",
+    "project.none": "Ei vielä projekteja.",
+    "project.loading": "Ladataan…",
+    "project.more": "Näytä lisää projekteja",
+    "project.loadingMore": "Ladataan lisää projekteja…",
+    "project.loadFailed": "Ohtia ei voinut ladata projekteja. Ne ovat edelleen tallessa.",
+    "project.loadMoreFailed": "Ohtia ei voinut ladata lisää projekteja. Ne ovat edelleen tallessa.",
+    "project.reload": "Lataa projektit uudelleen",
+    "project.settingUp": "Opinnäyte · Määritetään · {created}",
+    "project.chooseWelcome": "Valitse projekti projektivalitsimesta tai aloita uusi ja määritä se Virgilion kanssa. Asetuksissa voit myös säätää kieltä, ulkoasua, zoomausta ja asettelua.",
+    "project.chooseChat": "Valitse projekti projektivalitsimesta keskustellaksesi Virgilion kanssa.",
+    "project.openExistingFailed": "Ohtia ei voinut avata projektia. Se on edelleen tallessa."
   }
 }

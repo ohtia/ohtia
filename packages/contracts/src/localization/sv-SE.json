@@ -417,6 +417,19 @@
     "setup.announcement": "Avhandling konfigurerad: {title}",
     "setup.composerDisabled": "Virgilio kan inte svara här ännu.",
     "project.createUncertainTitle": "Ohtia kunde inte bekräfta om projektet skapades",
-    "project.createUncertainBody": "Försök igen för att kontrollera och öppna avhandlingen; inget skapas två gånger."
+    "project.createUncertainBody": "Försök igen för att kontrollera och öppna avhandlingen; inget skapas två gånger.",
+    "project.current": "Aktuellt projekt",
+    "project.newThesis": "Ny avhandling",
+    "project.none": "Det finns inga projekt ännu.",
+    "project.loading": "Läser in…",
+    "project.more": "Visa fler projekt",
+    "project.loadingMore": "Läser in fler projekt…",
+    "project.loadFailed": "Ohtia kunde inte läsa in projekten. De finns fortfarande sparade.",
+    "project.loadMoreFailed": "Ohtia kunde inte läsa in fler projekt. De finns fortfarande sparade.",
+    "project.reload": "Läs in projekten igen",
+    "project.settingUp": "Avhandling · Konfigureras · {created}",
+    "project.chooseWelcome": "Välj ett projekt i projektväljaren eller starta ett nytt och konfigurera det med Virgilio. Du kan också justera språk, utseende, zoom och layout i Inställningar.",
+    "project.chooseChat": "Välj ett projekt i projektväljaren för att prata med Virgilio.",
+    "project.openExistingFailed": "Ohtia kunde inte öppna projektet. Det finns fortfarande sparat."
   }
 }

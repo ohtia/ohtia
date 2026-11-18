@@ -361,16 +361,19 @@ export function Tooltip({
   children,
   className,
   language,
+  disabled = false,
 }: {
   label: string;
   className?: string;
   language?: string;
+  disabled?: boolean;
   children: ReactElement<{ "aria-describedby"?: string | undefined }>;
 }) {
   const id = useId();
   const anchor = useRef<HTMLSpanElement>(null);
   const layer = useRef<HTMLSpanElement>(null);
-  const [visible, setVisible] = useState(false);
+  const [requested, setVisible] = useState(false);
+  const visible = requested && !disabled;
   const dismissed = useRef(false);
   const hovered = useRef(false);
   useLayerPosition(visible, anchor, layer, true);
@@ -411,7 +414,7 @@ export function Tooltip({
       }}
       onPointerEnter={() => {
         hovered.current = true;
-        if (!dismissed.current) setVisible(true);
+        if (!disabled && !dismissed.current) setVisible(true);
       }}
       onPointerLeave={(event) => {
         hovered.current = false;
@@ -421,7 +424,7 @@ export function Tooltip({
         }
       }}
       onFocus={() => {
-        if (!dismissed.current) setVisible(true);
+        if (!disabled && !dismissed.current) setVisible(true);
       }}
       onBlur={(event) => {
         if (!hovered.current && !event.currentTarget.contains(event.relatedTarget)) {
