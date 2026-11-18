@@ -417,6 +417,19 @@
     "setup.announcement": "Scriptie ingesteld: {title}",
     "setup.composerDisabled": "Virgilio kan hier nog niet antwoorden.",
     "project.createUncertainTitle": "Ohtia kon niet bevestigen of het project is gemaakt",
-    "project.createUncertainBody": "Probeer het opnieuw om dit te controleren en de scriptie te openen; er wordt niets dubbel gemaakt."
+    "project.createUncertainBody": "Probeer het opnieuw om dit te controleren en de scriptie te openen; er wordt niets dubbel gemaakt.",
+    "project.current": "Huidig project",
+    "project.newThesis": "Nieuwe scriptie",
+    "project.none": "Er zijn nog geen projecten.",
+    "project.loading": "Laden…",
+    "project.more": "Meer projecten tonen",
+    "project.loadingMore": "Meer projecten laden…",
+    "project.loadFailed": "Ohtia kon de projecten niet laden. Ze zijn nog steeds opgeslagen.",
+    "project.loadMoreFailed": "Ohtia kon niet meer projecten laden. Ze zijn nog steeds opgeslagen.",
+    "project.reload": "Projecten opnieuw laden",
+    "project.settingUp": "Scriptie · Wordt ingesteld · {created}",
+    "project.chooseWelcome": "Kies een project in de projectkiezer of start een nieuw project en stel het in met Virgilio. In Instellingen kun je ook taal, uiterlijk, zoom en indeling aanpassen.",
+    "project.chooseChat": "Kies een project in de projectkiezer om met Virgilio te praten.",
+    "project.openExistingFailed": "Ohtia kon het project niet openen. Het is nog steeds opgeslagen."
   }
 }

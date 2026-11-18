@@ -355,6 +355,7 @@ const bridge: DesktopBridge = {
       connection.client.port.replaceExecutionLimits(change, generation),
     readExecutionLimitsReceipt: (id) => connection.client.port.readExecutionLimitsReceipt(id),
     createProject: (id) => connection.client.port.createProject(id),
+    openProject: (id, input) => connection.client.port.openProject(id, input),
     confirmProjectSetup: (id, input) => connection.client.port.confirmProjectSetup(id, input),
     rejectProjectSetup: (id, input) => connection.client.port.rejectProjectSetup(id, input),
     startConversation: (id, input) => connection.client.port.startConversation(id, input),

@@ -1,3 +1,4 @@
+import { verifyProjectSelectorSpecimen } from "./catalog-project-selector.mjs";
 import { verifyTaskNoticeSpecimen } from "./catalog-task-notices.mjs";
 import { verifyComposerSpecimen } from "./catalog-composer.mjs";
 import { verifyConversationSpecimen } from "./catalog-conversation.mjs";
@@ -154,6 +155,18 @@ export async function verifyCatalog(page, url, engine, output) {
       research = await verifyResearchSpecimen(researchPage, url, engine, output);
     } finally {
       await researchContext.close();
+    }
+    const projectContext = await browser.newContext();
+    let projects;
+    try {
+      projects = await verifyProjectSelectorSpecimen(
+        await projectContext.newPage(),
+        url,
+        engine,
+        output,
+      );
+    } finally {
+      await projectContext.close();
     }
     const conversationContext = await browser.newContext();
     let conversation;
@@ -441,6 +454,7 @@ export async function verifyCatalog(page, url, engine, output) {
       stickyTableHeader: true,
       research,
       conversation,
+      projects,
       composer,
       notices,
       commandDiscovery,

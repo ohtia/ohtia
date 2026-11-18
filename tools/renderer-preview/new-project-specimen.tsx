@@ -60,6 +60,7 @@ export function NewProjectSpecimen() {
     documentLanguage: decision === "confirmed" ? "es-AR" : null,
     isDevelopment: false,
     setupConfirmedAt: decision === "confirmed" ? "2026-11-17T10:00:00Z" : null,
+    lastOpenedAt: "2026-11-17T10:00:00.000Z",
     createdAt: "2026-11-17T10:00:00Z",
     updatedAt: "2026-11-17T10:00:00Z",
   };

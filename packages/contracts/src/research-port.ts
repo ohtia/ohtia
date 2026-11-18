@@ -9,6 +9,7 @@ import type { PortCall, Subscription, Outcome } from "./port.js";
 
 export const researchOperations = [
   "project.create",
+  "project.open",
   "project.confirmSetup",
   "project.rejectSetup",
   "conversation.start",
@@ -49,6 +50,10 @@ export interface TextPart {
   readonly bytes: number;
   readonly sha256: string;
   readonly text: string;
+}
+export interface ProjectCursor {
+  readonly lastOpenedAt: string;
+  readonly id: string;
 }
 export interface TimelineCursor {
   readonly position: number;
@@ -185,12 +190,13 @@ export interface ResearchInputs {
     { readonly conversationId: string } | { readonly agentId: "virgilio" }
   );
   "project.create": ResearchPayloads["project.create"];
+  "project.open": ResearchPayloads["project.open"];
   "project.confirmSetup": ResearchPayloads["project.confirmSetup"];
   "project.rejectSetup": ResearchPayloads["project.rejectSetup"];
   "conversation.start": { readonly projectId: string; readonly content: string | TextDescriptor };
   "conversation.rename": ResearchPayloads["conversation.rename"];
   "message.append": { readonly conversationId: string; readonly content: string | TextDescriptor };
-  "project.list": { readonly cursor: string | null; readonly count: number };
+  "project.list": { readonly cursor: ProjectCursor | null; readonly count: number };
   "conversation.list": {
     readonly projectId: string;
     readonly cursor: string | null;
@@ -218,12 +224,13 @@ export interface ResearchOutputs {
   "task.stop": ResearchResult;
   "destination.read": { readonly destination: MessageDestination | null };
   "project.create": ResearchResult;
+  "project.open": ResearchResult;
   "project.confirmSetup": ResearchResult;
   "project.rejectSetup": ResearchResult;
   "conversation.start": ResearchResult;
   "conversation.rename": ResearchResult;
   "message.append": ResearchResult;
-  "project.list": ListPage<ProjectRecord, string>;
+  "project.list": ListPage<ProjectRecord, ProjectCursor>;
   "conversation.list": ListPage<ConversationSummary, string>;
   "conversation.read": IdPage<ConversationSummary>;
   "timeline.listBefore": ListPage<TimelineItem, TimelineCursor>;
@@ -257,6 +264,7 @@ export interface ResearchPort {
     input: ResearchInputs["destination.read"],
   ): PortCall<ResearchOutputs["destination.read"]>;
   createProject(operationId: string): PortCall<ResearchResult>;
+  openProject(operationId: string, input: ResearchInputs["project.open"]): PortCall<ResearchResult>;
   confirmProjectSetup(
     operationId: string,
     input: ResearchInputs["project.confirmSetup"],
@@ -302,6 +310,7 @@ export function isResearchOperation(value: string): value is ResearchOperation {
 export function isResearchMutation(value: string): value is WindowResearchCommand {
   return [
     "project.create",
+    "project.open",
     "project.confirmSetup",
     "project.rejectSetup",
     "conversation.start",
@@ -448,6 +457,8 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
       );
     case "project.create":
       return exact(value, []);
+    case "project.open":
+      return exact(value, ["projectId"]) && isResearchId(value.projectId);
     case "project.confirmSetup":
     case "project.rejectSetup":
       return exact(value, ["proposalId"]) && isResearchId(value.proposalId);
@@ -473,8 +484,8 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
     case "project.list":
       return (
         exact(value, ["cursor", "count"]) &&
-        nullable(value.cursor, isResearchId) &&
-        integer(value.count, 1, 128)
+        nullable(value.cursor, projectCursor) &&
+        integer(value.count, 1, 40)
       );
     case "conversation.list":
       return (
@@ -559,6 +570,9 @@ function conversation(value: unknown): boolean {
     )
   );
 }
+function projectCursor(value: unknown): boolean {
+  return exact(value, ["lastOpenedAt", "id"]) && date(value.lastOpenedAt) && isResearchId(value.id);
+}
 function project(value: unknown): boolean {
   return (
     exact(value, [
@@ -568,6 +582,7 @@ function project(value: unknown): boolean {
       "documentLanguage",
       "isDevelopment",
       "setupConfirmedAt",
+      "lastOpenedAt",
       "createdAt",
       "updatedAt",
     ]) &&
@@ -577,6 +592,7 @@ function project(value: unknown): boolean {
     nullable(value.documentLanguage, (x) => typeof x === "string") &&
     typeof value.isDevelopment === "boolean" &&
     nullable(value.setupConfirmedAt, date) &&
+    date(value.lastOpenedAt) &&
     date(value.createdAt) &&
     date(value.updatedAt)
   );
@@ -795,7 +811,9 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
     (value.hasMore
       ? operation === "timeline.listBefore"
         ? cursor(value.next)
-        : isResearchId(value.next)
+        : operation === "project.list"
+          ? projectCursor(value.next)
+          : isResearchId(value.next)
       : value.next === null)
   );
 }
@@ -832,6 +850,24 @@ export function researchResultMatches(
   output: unknown,
 ): boolean {
   if (!obj(input) || !obj(output)) return false;
+  if (operation === "project.open") return output.resultId === input.projectId;
+  if (operation === "project.list") {
+    const items = output.items as readonly ProjectRecord[];
+    const compare = (a: ProjectCursor, b: ProjectCursor) =>
+      (a.lastOpenedAt < b.lastOpenedAt ? -1 : a.lastOpenedAt > b.lastOpenedAt ? 1 : 0) ||
+      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+    const last = items.at(-1);
+    if (
+      items.length > (input.count as number) ||
+      (output.hasMore && (!last || compare(last, output.next as ProjectCursor) !== 0))
+    )
+      return false;
+    return items.every(
+      (item, index) =>
+        (!input.cursor || compare(item, input.cursor as ProjectCursor) < 0) &&
+        (index === 0 || compare(items[index - 1] ?? item, item) > 0),
+    );
+  }
   if (operation === "conversation.read" || operation === "timeline.read") {
     const requested = input.ids as readonly string[];
     const items = output.items as readonly { readonly id: string; readonly projectId?: string }[];
@@ -848,11 +884,7 @@ export function researchResultMatches(
       (requested.length === 0 || items.length > 0)
     );
   }
-  if (
-    operation === "timeline.listBefore" ||
-    operation === "project.list" ||
-    operation === "conversation.list"
-  ) {
+  if (operation === "timeline.listBefore" || operation === "conversation.list") {
     const items = output.items as readonly (TimelineCursor & { readonly projectId?: string })[];
     if (items.length > (input.count as number) || (output.hasMore && !items.length)) return false;
     if (

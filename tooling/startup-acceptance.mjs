@@ -132,12 +132,15 @@ async function stop(application) {
 async function openStorage(page) {
   const { locale } = await page.evaluate(() => window.ohtia.bootstrap.read());
   await page.getByRole("button", { name: message(locale, "open_storage"), exact: true }).click();
+  await waitForStorage(page);
+  return locale;
+}
+async function waitForStorage(page) {
   await expect
     .poll(async () => (await page.evaluate(() => window.ohtia.bootstrap.read())).state, {
       timeout: portLimits.application_start_ms,
     })
     .toBe("storage_ready");
-  return locale;
 }
 async function readSavedAppearance(page) {
   await expect
@@ -328,6 +331,7 @@ async function installedJourney(scratch) {
   });
   await stop(application);
   ({ application, page } = await start(installedRuntime, env));
+  await waitForStorage(page);
   await expect
     .poll(() =>
       application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()),
@@ -345,44 +349,18 @@ async function installedJourney(scratch) {
     positional ? "positioned" : "wayland",
   );
   const { maximized: expectedMaximized, ...expectedNormalBounds } = expectedPlacement;
-  const nativeAfterRestart = await application.browserWindow(page);
-  let restored;
-  try {
-    // Observe the actual instance without replacing the preference authority or its effects.
-    await nativeAfterRestart.evaluate((window) => {
-      window.__ohtiaBoundsRequests = [];
-      window.__ohtiaBoundsMethods = {};
-      for (const method of ["setBounds", "maximize", "unmaximize"]) {
-        const original = window[method];
-        window.__ohtiaBoundsMethods[method] = original;
-        window[method] = function (...args) {
-          this.__ohtiaBoundsRequests.push({ method, args });
-          return original.apply(this, args);
-        };
-      }
-    });
-    await openStorage(page);
-    restored = await nativeAfterRestart.evaluate((window) => ({
-      requests: window.__ohtiaBoundsRequests,
+  const restored = await application.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows()[0];
+    return {
+      requested: globalThis.__ohtiaBootstrapPlacement(window),
       accepted: {
         bounds: window.getBounds(),
         normalBounds: window.getNormalBounds(),
         contentBounds: window.getContentBounds(),
         maximized: window.isMaximized(),
       },
-    }));
-  } finally {
-    await withCommandCleanup(
-      () =>
-        nativeAfterRestart.evaluate((window) => {
-          for (const [method, original] of Object.entries(window.__ohtiaBoundsMethods ?? {}))
-            window[method] = original;
-          delete window.__ohtiaBoundsRequests;
-          delete window.__ohtiaBoundsMethods;
-        }),
-      () => nativeAfterRestart.dispose(),
-    );
-  }
+    };
+  });
   // The fresh process obtains these requests only by reading the close-time durable record.
   // Wayland's compositor may restrict acceptance; it does not relax this request contract.
   const boundsObservation = {
@@ -401,11 +379,7 @@ async function installedJourney(scratch) {
   const requestedBounds = positional
     ? expectedNormalBounds
     : { width: expectedNormalBounds.width, height: expectedNormalBounds.height };
-  expect(restored.requests).toEqual([
-    { method: "unmaximize", args: [] },
-    { method: "setBounds", args: [requestedBounds] },
-    ...(expectedMaximized ? [{ method: "maximize", args: [] }] : []),
-  ]);
+  expect(restored.requested).toEqual({ bounds: requestedBounds, maximized: expectedMaximized });
   if (positional) {
     await expect
       .poll(
@@ -483,7 +457,7 @@ async function developmentCases() {
     record("development-roots-run-together", {});
     await stop(application);
     ({ application, page } = await start(first, first.env));
-    await openStorage(page);
+    await waitForStorage(page);
     const reopened = await readSavedAppearance(page);
     expect(reopened.value.value).toBe("dark");
     await stop(application);

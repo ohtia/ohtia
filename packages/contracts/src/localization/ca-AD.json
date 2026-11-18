@@ -417,6 +417,19 @@
     "setup.announcement": "Tesi configurada: {title}",
     "setup.composerDisabled": "Virgilio encara no pot respondre aquí.",
     "project.createUncertainTitle": "Ohtia no ha pogut confirmar si s’ha creat el projecte",
-    "project.createUncertainBody": "Torna a intentar-ho per comprovar-ho i obrir la tesi; no es crearà res dues vegades."
+    "project.createUncertainBody": "Torna a intentar-ho per comprovar-ho i obrir la tesi; no es crearà res dues vegades.",
+    "project.current": "Projecte actual",
+    "project.newThesis": "Tesi nova",
+    "project.none": "Encara no hi ha projectes.",
+    "project.loading": "S’està carregant…",
+    "project.more": "Mostra més projectes",
+    "project.loadingMore": "S’estan carregant més projectes…",
+    "project.loadFailed": "Ohtia no ha pogut carregar els projectes. Continuen desats.",
+    "project.loadMoreFailed": "Ohtia no ha pogut carregar més projectes. Continuen desats.",
+    "project.reload": "Torna a carregar els projectes",
+    "project.settingUp": "Tesi · En configuració · {created}",
+    "project.chooseWelcome": "Tria un projecte al selector de projectes o comença’n un de nou i configura’l amb Virgilio. També pots ajustar l’idioma, l’aparença, el zoom i la disposició a Configuració.",
+    "project.chooseChat": "Tria un projecte al selector de projectes per parlar amb Virgilio.",
+    "project.openExistingFailed": "Ohtia no ha pogut obrir el projecte. Continua desat."
   }
 }

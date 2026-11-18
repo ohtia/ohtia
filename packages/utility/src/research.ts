@@ -26,6 +26,7 @@ export interface ProjectRow {
   setup_confirmed_at: string | null;
   created_at: string;
   updated_at: string;
+  last_opened_at: string;
 }
 export interface ConversationRow {
   id: Uint8Array;
@@ -57,6 +58,7 @@ export interface ResearchSchema extends TaskSchema {
     command: ResearchCommand["command"];
     payload_sha256: Uint8Array;
     result_id: Uint8Array;
+    error_code: "record_not_found" | null;
     created_at: string;
   };
 }
@@ -216,6 +218,7 @@ function project(row: ProjectRow): ProjectRecord {
     documentLanguage: row.document_language,
     isDevelopment: row.is_development === 1,
     setupConfirmedAt: row.setup_confirmed_at,
+    lastOpenedAt: row.last_opened_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -250,6 +253,7 @@ const payloadKeys = {
   "task.tryAgain": ["taskId"],
   "development.createProject": [],
   "project.create": [],
+  "project.open": ["projectId"],
   "usagePause.resume": ["connection"],
   "task.continueAll": [],
   "task.cancelAll": [],
@@ -291,7 +295,9 @@ export async function applyResearchCommand(
     .executeTakeFirst();
   if (receipt)
     return receipt.command === input.command && Buffer.from(receipt.payload_sha256).equals(hash)
-      ? { ok: true, value: { resultId: identifier(receipt.result_id) } }
+      ? receipt.error_code
+        ? failure(receipt.error_code)
+        : { ok: true, value: { resultId: identifier(receipt.result_id) } }
       : failure("operation_conflict");
   const keys = payloadKeys[input.command];
   if (
@@ -355,6 +361,7 @@ export async function applyResearchCommand(
           document_language: development ? "en" : null,
           is_development: development ? 1 : 0,
           setup_confirmed_at: development ? now : null,
+          last_opened_at: now,
           created_at: now,
           updated_at: now,
         })
@@ -370,6 +377,30 @@ export async function applyResearchCommand(
           revision: 1,
         })
         .execute();
+      break;
+    }
+    case "project.open": {
+      if (!isEntityId(input.payload.projectId)) return failure("invalid_message");
+      result = bytes(input.payload.projectId);
+      const opened = await db
+        .updateTable("projects")
+        .set({ last_opened_at: now })
+        .where("id", "=", result)
+        .executeTakeFirst();
+      if (opened.numUpdatedRows === 0n) {
+        await db
+          .insertInto("command_receipts")
+          .values({
+            operation_id: input.operationId,
+            command: input.command,
+            payload_sha256: hash,
+            result_id: result,
+            error_code: "record_not_found",
+            created_at: now,
+          })
+          .execute();
+        return failure("record_not_found");
+      }
       break;
     }
     case "project.confirmSetup":
@@ -518,6 +549,7 @@ export async function applyResearchCommand(
       command: input.command,
       payload_sha256: hash,
       result_id: result,
+      error_code: null,
       created_at: now,
     })
     .execute();
@@ -553,7 +585,7 @@ export async function listProjects(
   const rows = await db
     .selectFrom("projects")
     .selectAll()
-    .orderBy("created_at", "desc")
+    .orderBy("last_opened_at", "desc")
     .orderBy("id", "desc")
     .execute();
   return { ok: true, value: rows.map(project) };

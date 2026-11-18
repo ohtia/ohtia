@@ -57,8 +57,11 @@ export interface WorkspaceWindowInsets {
 }
 export interface WorkspaceChromeProps {
   readonly chat?: ReactNode;
+  readonly projectSelector?: ReactNode;
+  readonly hasProjects?: boolean | undefined;
   readonly project?: ProjectRecord | undefined;
   readonly projectScope?: string | undefined;
+  readonly revealProjectChat?: boolean | undefined;
   readonly onComposerFocus?: () => void;
   readonly chatTitle?: string | undefined;
   readonly fallbackFocusRef?: RefObject<HTMLAnchorElement | null>;
@@ -175,8 +178,11 @@ export function ShortcutControl({
 export function WorkspaceChrome({
   chat,
   chatTitle,
+  projectSelector,
+  hasProjects = false,
   project,
   projectScope,
+  revealProjectChat = true,
   onComposerFocus,
   preferences,
   commands,
@@ -475,6 +481,7 @@ export function WorkspaceChrome({
   useLayoutEffect(() => {
     const layout = controller.current;
     if (
+      !revealProjectChat ||
       !projectScope ||
       revealedProject.current === projectScope ||
       !layout ||
@@ -485,10 +492,11 @@ export function WorkspaceChrome({
     revealedProject.current = projectScope;
     if (layout.state.geometry.mode === "narrow") layout.select("chat");
     else if (!layout.state.geometry.visible.chat) layout.visibility("chat");
-  }, [projectScope, state, preferences]);
+  }, [revealProjectChat, projectScope, state, preferences]);
   const focusedProject = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (
+      !revealProjectChat ||
       !projectScope ||
       focusedProject.current === projectScope ||
       revealedProject.current !== projectScope ||
@@ -497,7 +505,7 @@ export function WorkspaceChrome({
       return;
     focusedProject.current = projectScope;
     onComposerFocus?.();
-  }, [projectScope, state, onComposerFocus]);
+  }, [revealProjectChat, projectScope, state, onComposerFocus]);
   const projectLabel = projectScope
     ? project
       ? project.setupConfirmedAt
@@ -656,18 +664,21 @@ export function WorkspaceChrome({
             <ShortcutControl id="menu.open" commands={commands} locale={locale} icon="menu" />
           )}
           <OhtiaBrand />
-          {projectLabel !== undefined && (
-            <Tooltip
-              className="workspace-context-tooltip"
-              label={projectLabel}
-              language={projectLanguage}
-            >
-              <bdi className="workspace-project-context" lang={projectLanguage}>
-                {projectLabel}
-              </bdi>
-            </Tooltip>
-          )}
-          <ShortcutControl id="project.new" commands={commands} locale={locale} icon="plus" />
+          <div className="workspace-project-controls">
+            {projectSelector ??
+              (projectLabel !== undefined && (
+                <Tooltip
+                  className="workspace-context-tooltip"
+                  label={projectLabel}
+                  language={projectLanguage}
+                >
+                  <bdi className="workspace-project-context" lang={projectLanguage}>
+                    {projectLabel}
+                  </bdi>
+                </Tooltip>
+              ))}
+            <ShortcutControl id="project.new" commands={commands} locale={locale} icon="plus" />
+          </div>
           <span className="workspace-drag-space" aria-hidden="true" />
           {!narrow && zoomIndicator}
           {!narrow && (
@@ -826,7 +837,7 @@ export function WorkspaceChrome({
                     <div className="workspace-welcome">
                       {decoration !== "hidden" && <ProductCharacter />}
                       <h1 data-type="type.ui.display">{text("workspace.welcome")}</h1>
-                      <p>{text("workspace.welcomeText")}</p>
+                      <p>{text(hasProjects ? "project.chooseWelcome" : "workspace.welcomeText")}</p>
                       <div className="workspace-welcome-actions">
                         <ShortcutControl
                           id="project.new"
@@ -864,7 +875,9 @@ export function WorkspaceChrome({
                           ? projectScope
                             ? "setup.explorer"
                             : "workspace.explorerEmpty"
-                          : "workspace.chatEmpty",
+                          : hasProjects
+                            ? "project.chooseChat"
+                            : "workspace.chatEmpty",
                       )}
                     </p>
                   )}

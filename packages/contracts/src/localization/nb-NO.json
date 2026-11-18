@@ -417,6 +417,19 @@
     "setup.announcement": "Avhandling satt opp: {title}",
     "setup.composerDisabled": "Virgilio kan ikke svare her ennå.",
     "project.createUncertainTitle": "Ohtia kunne ikke bekrefte om prosjektet ble opprettet",
-    "project.createUncertainBody": "Prøv igjen for å kontrollere og åpne avhandlingen; ingenting blir opprettet to ganger."
+    "project.createUncertainBody": "Prøv igjen for å kontrollere og åpne avhandlingen; ingenting blir opprettet to ganger.",
+    "project.current": "Gjeldende prosjekt",
+    "project.newThesis": "Ny avhandling",
+    "project.none": "Ingen prosjekter ennå.",
+    "project.loading": "Laster inn…",
+    "project.more": "Vis flere prosjekter",
+    "project.loadingMore": "Laster inn flere prosjekter…",
+    "project.loadFailed": "Ohtia kunne ikke laste inn prosjektene. De er fortsatt lagret.",
+    "project.loadMoreFailed": "Ohtia kunne ikke laste inn flere prosjekter. De er fortsatt lagret.",
+    "project.reload": "Last inn prosjektene på nytt",
+    "project.settingUp": "Avhandling · Under oppsett · {created}",
+    "project.chooseWelcome": "Velg et prosjekt i prosjektvelgeren, eller start et nytt og sett det opp med Virgilio. Du kan også justere språk, utseende, zoom og oppsett i Innstillinger.",
+    "project.chooseChat": "Velg et prosjekt i prosjektvelgeren for å snakke med Virgilio.",
+    "project.openExistingFailed": "Ohtia kunne ikke åpne prosjektet. Det er fortsatt lagret."
   }
 }

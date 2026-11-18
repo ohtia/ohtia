@@ -10,7 +10,9 @@ import { DurableStore, type StorageOptions } from "../../packages/utility/dist/i
 
 const require = createRequire(new URL("../../packages/utility/package.json", import.meta.url));
 export const Database = require("better-sqlite3") as typeof import("better-sqlite3");
-export const legacyTaskInitialSql = `DROP TRIGGER tasks_initial; ${initialTaskObjects.tasks_initial}; `;
+export const preProjectOpeningSql =
+  "DROP INDEX projects_open_order; ALTER TABLE projects DROP COLUMN last_opened_at; ALTER TABLE command_receipts DROP COLUMN error_code; DELETE FROM kysely_migration WHERE name='0017_project_opening'; DELETE FROM ohtia_migration_artifacts WHERE name='0017_project_opening'; ";
+export const legacyTaskInitialSql = `${preProjectOpeningSql}DROP TRIGGER tasks_initial; ${initialTaskObjects.tasks_initial}; `;
 export const preTaskNoticeSql = `${legacyTaskInitialSql} DROP TRIGGER receipts_commands; ${setupObjects.receipts_commands}; DELETE FROM kysely_migration WHERE name='0016_task_notices'; DELETE FROM ohtia_migration_artifacts WHERE name='0016_task_notices'; PRAGMA user_version=15;`;
 export const roots: string[] = [];
 export const stores: DurableStore[] = [];

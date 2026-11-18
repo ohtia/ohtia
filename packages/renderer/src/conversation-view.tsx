@@ -23,7 +23,12 @@ export function ConversationView({
     Partial<
       Pick<
         ConversationController,
-        "composer" | "performSetupAction" | "performTaskAction" | "connections" | "claimTaskNotice"
+        | "composer"
+        | "performSetupAction"
+        | "performTaskAction"
+        | "connections"
+        | "claimTaskNotice"
+        | "readingPositions"
       >
     >;
   readonly locale: InterfaceLocale;
@@ -34,7 +39,9 @@ export function ConversationView({
   const viewport = useRef<HTMLDivElement>(null);
   const statusViewport = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
-  const anchors = useRef(new Map<string, { top: number; follow: boolean }>());
+  const anchors = useRef(
+    controller.readingPositions ?? new Map<string, { top: number; follow: boolean }>(),
+  );
   const anchor = useRef<{ id: string; offset: number } | undefined>(undefined);
   const previous = useRef<string | null>(null);
   const earlierTrigger = useRef<

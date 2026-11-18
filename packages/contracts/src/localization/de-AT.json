@@ -417,6 +417,19 @@
     "setup.announcement": "Abschlussarbeit eingerichtet: {title}",
     "setup.composerDisabled": "Virgilio kann hier noch nicht antworten.",
     "project.createUncertainTitle": "Ohtia konnte die Erstellung des Projekts nicht bestätigen",
-    "project.createUncertainBody": "Versuche es erneut, um dies zu prüfen und die Abschlussarbeit zu öffnen; es wird nichts doppelt erstellt."
+    "project.createUncertainBody": "Versuche es erneut, um dies zu prüfen und die Abschlussarbeit zu öffnen; es wird nichts doppelt erstellt.",
+    "project.current": "Aktuelles Projekt",
+    "project.newThesis": "Neue Abschlussarbeit",
+    "project.none": "Noch keine Projekte.",
+    "project.loading": "Wird geladen…",
+    "project.more": "Weitere Projekte anzeigen",
+    "project.loadingMore": "Weitere Projekte werden geladen…",
+    "project.loadFailed": "Ohtia konnte die Projekte nicht laden. Sie sind weiterhin gespeichert.",
+    "project.loadMoreFailed": "Ohtia konnte weitere Projekte nicht laden. Sie sind weiterhin gespeichert.",
+    "project.reload": "Projekte neu laden",
+    "project.settingUp": "Abschlussarbeit · Wird eingerichtet · {created}",
+    "project.chooseWelcome": "Wähle ein Projekt in der Projektauswahl oder starte ein neues und richte es mit Virgilio ein. In den Einstellungen kannst du auch Sprache, Erscheinungsbild, Zoom und Layout anpassen.",
+    "project.chooseChat": "Wähle ein Projekt in der Projektauswahl, um mit Virgilio zu sprechen.",
+    "project.openExistingFailed": "Ohtia konnte das Projekt nicht öffnen. Es ist weiterhin gespeichert."
   }
 }

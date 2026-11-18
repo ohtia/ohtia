@@ -1232,7 +1232,7 @@ it("keeps all four main subscription reservations until disposal and then admits
 });
 it("returns timeout for a slow research read while retaining accepted capacity until generation cessation", async () => {
   const h = supervisor();
-  const pending = work({ operation: "project.list", payload: { cursor: null, count: 50 } });
+  const pending = work({ operation: "project.list", payload: { cursor: null, count: 40 } });
   h.service.dispatch(pending);
   await vi.advanceTimersByTimeAsync(portLimits.request_deadline_ms);
   expect(pending.deliver).toHaveBeenCalledWith(expect.stringContaining('"code":"timeout"'));
@@ -1281,7 +1281,7 @@ async function suspendResearchRead(h: Awaited<ReturnType<typeof integratedResear
     await gate;
     return original(request);
   });
-  const call = h.port.listProjects({ cursor: null, count: 50 });
+  const call = h.port.listProjects({ cursor: null, count: 40 });
   await vi.waitFor(() => expect(read).toHaveBeenCalled());
   return { release, call };
 }

@@ -694,3 +694,28 @@ it("places chat width actions beside its heading before content and preserves re
   await viewport(1280);
   expect(heading.querySelectorAll("[data-workspace-size=chat]")).toHaveLength(2);
 });
+
+it("keeps hidden chat and layout preferences unchanged when switching existing projects", async () => {
+  const { preferences, saved } = store();
+  const focus = vi.fn();
+  await render(preferences, {
+    projectScope: "A",
+    revealProjectChat: false,
+    onComposerFocus: focus,
+  });
+  await invoke("panels.chat");
+  const writes = saved.length;
+  await render(preferences, {
+    projectScope: "B",
+    revealProjectChat: false,
+    onComposerFocus: focus,
+  });
+  await render(preferences, {
+    projectScope: "A",
+    revealProjectChat: false,
+    onComposerFocus: focus,
+  });
+  expect(container.querySelector<HTMLElement>(".workspace-chat")!.hidden).toBe(true);
+  expect(saved).toHaveLength(writes);
+  expect(focus).not.toHaveBeenCalled();
+});

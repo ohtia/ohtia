@@ -7,6 +7,7 @@ export interface ProjectRecord {
   readonly isDevelopment: boolean;
   readonly setupConfirmedAt: string | null;
   readonly createdAt: string;
+  readonly lastOpenedAt: string;
   readonly updatedAt: string;
 }
 export interface ConversationRecord {
@@ -39,6 +40,7 @@ export interface ResearchPayloads {
   readonly "task.cancelAll": Record<string, never>;
   readonly "development.createProject": Record<string, never>;
   readonly "project.create": Record<string, never>;
+  readonly "project.open": { readonly projectId: string };
   readonly "project.confirmSetup": { readonly proposalId: string };
   readonly "project.rejectSetup": { readonly proposalId: string };
   readonly "conversation.start": { readonly projectId: string; readonly content: string };
@@ -71,6 +73,7 @@ export const researchCommands = [
   "task.cancelAll",
   "development.createProject",
   "project.create",
+  "project.open",
   "project.confirmSetup",
   "project.rejectSetup",
   "conversation.start",
