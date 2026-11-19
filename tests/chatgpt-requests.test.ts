@@ -17,6 +17,7 @@ import {
   closeResponseTransport,
   isTransportFailure,
   reportedUsage,
+  readResponseStream,
   responsesEndpoint,
 } from "../packages/main/src/chatgpt-responses.js";
 import { chatGPTEndpoints } from "../packages/main/src/chatgpt-sign-in.js";
@@ -847,6 +848,68 @@ describe("Responses stream parsing edges", () => {
     expect(text(events)).toBe("Text");
     expect(events.some((event) => event.type === "usage")).toBe(false);
     expect(result(events)).toEqual({ status: "completed" });
+  });
+  it.each([
+    { scenario: "final text only", deltas: [] },
+    { scenario: "text already streamed", deltas: ["Which language", " should the thesis use?"] },
+  ])("delivers $scenario once from a completed response", async ({ deltas }) => {
+    const reply = "Which language should the thesis use?";
+    const events = await run([
+      ...deltas.map((delta) => sse({ type: "response.output_text.delta", delta })),
+      sse({
+        type: "response.completed",
+        response: {
+          output: [
+            { type: "reasoning", summary: [{ type: "summary_text", text: "Do not show this." }] },
+            {
+              type: "message",
+              role: "assistant",
+              content: [
+                { type: "output_text", text: "Which language" },
+                { type: "output_text", text: " should the thesis use?" },
+              ],
+            },
+          ],
+          usage: completedUsage,
+        },
+      }),
+    ]);
+    expect(text(events)).toBe(reply);
+    expect(result(events)).toEqual({ status: "completed" });
+  });
+  it("stops delivering final text when emitting a part aborts the request", async () => {
+    const controller = new AbortController();
+    const events: string[] = [];
+    const response = new Response(
+      sse({
+        type: "response.completed",
+        response: {
+          output: [
+            {
+              type: "message",
+              role: "assistant",
+              content: [
+                { type: "output_text", text: "First part" },
+                { type: "output_text", text: "Discarded part" },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    await readResponseStream(
+      response,
+      {
+        signal: controller.signal,
+        release: () => true,
+        emit(event) {
+          events.push(event.type);
+          if (event.type === "text") controller.abort();
+        },
+      },
+      { classified() {} },
+    );
+    expect(events).toEqual(["started", "text"]);
   });
   it.each([
     ["an unknown field line", ["unknown: x\n\n"]],

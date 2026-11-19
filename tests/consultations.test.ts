@@ -1,9 +1,15 @@
+import { DurableProvider } from "../packages/utility/src/durable-provider.js";
+import { ProviderDispatch } from "../packages/main/src/provider-dispatch.js";
 import { describe, expect, it } from "vitest";
 import { createFakeProvider } from "../packages/main/src/fake-provider.js";
 import { dispatchThrough } from "./fixtures/provider-conformance.js";
 import {
   conversationTitlePolicy,
   decodeProviderDispatch,
+  decodeProviderEvent,
+  failure,
+  type ProviderEventMessage,
+  type DiagnosticEvent,
   policyId,
   researchOutput,
   type ProviderToolCall,
@@ -37,8 +43,11 @@ const call = (
   name: "propose_consultation",
   arguments: JSON.stringify({ agent, reason, request }),
 });
-async function fixture(title = "Synthetic investigation") {
-  const f = storageFixture();
+async function fixture(
+  title = "Synthetic investigation",
+  emitDiagnostic?: (event: DiagnosticEvent) => void,
+) {
+  const f = storageFixture(emitDiagnostic);
   await f.store.open();
   f.store.setTaskContext({
     generation: "setup-tests",
@@ -104,7 +113,14 @@ async function fixture(title = "Synthetic investigation") {
     if (!proposal || proposal.kind !== "consultation") throw new Error("Expected a consultation.");
     return proposal;
   };
-  return { ...f, run, append, prepare, timeline, propose, projectId, conversationId };
+  const destination = (connection: string) =>
+    f.store.setTaskContext({
+      mode: "development",
+      generation: "setup-tests",
+      connections: setupConnections(),
+      resolveAgentConnection: (agent) => (agent === "josefa" ? connection : "chatgpt"),
+    });
+  return { ...f, run, append, prepare, timeline, propose, projectId, conversationId, destination };
 }
 
 describe("consultations", () => {
@@ -659,7 +675,7 @@ it("migrates populated revision 20 while preserving task acceptance order, charg
   await f.store.open();
   const migrated = f.raw();
   try {
-    expect(migrated.pragma("user_version", { simple: true })).toBe(22);
+    expect(migrated.pragma("user_version", { simple: true })).toBe(23);
     expect(read(migrated)).toEqual(before);
     expect(
       migrated.prepare("SELECT state,blocking_reason FROM tasks WHERE id=?").get(bytes(resultId)),
@@ -671,5 +687,359 @@ it("migrates populated revision 20 while preserving task acceptance order, charg
     ).toThrow();
   } finally {
     migrated.close();
+  }
+});
+
+it("reports and enforces the consultation budget across attempts, with the destination fixed at acceptance", async () => {
+  const f = await fixture();
+  const proposal = await f.propose([call("Compare research sources.")], "Ask Josefa.");
+  value(
+    await f.run({
+      command: "consultation.accept",
+      operationId: "bounded-consultation",
+      payload: { proposalId: proposal.id, connection: "chatgpt" },
+    }),
+  );
+  const rows = (sql: string) => {
+    const db = f.raw();
+    try {
+      return db.prepare(sql).all();
+    } finally {
+      db.close();
+    }
+  };
+  expect(rows("SELECT * FROM intervention_limits")).toEqual([
+    expect.objectContaining({
+      policy: "consultation",
+      policy_version: 1,
+      max_contributions: 1,
+      max_dependencies: 0,
+      max_levels: 1,
+      max_coordinator_turns: 0,
+      max_requests: 4,
+      max_input_bytes: 1048576,
+      max_output_bytes: 262144,
+      max_work_ms: 2400000,
+    }),
+  ]);
+  expect(rows("SELECT agent_id, operation, connection FROM intervention_operations")).toEqual([
+    { agent_id: "josefa", operation: "search_strategy_planning", connection: "chatgpt" },
+  ]);
+  const first = await f.prepare();
+  const attempts = () =>
+    rows(`SELECT state,used_requests,used_input_bytes,used_output_bytes,used_work_ms
+    FROM work_allocations ORDER BY rowid`);
+  expect(attempts()).toHaveLength(2);
+  expect(attempts().map((row) => row.state)).toEqual(["held", "held"]);
+  const event = {
+    type: "result",
+    sequence: 1,
+    result: { status: "uncertain", reason: "connection_lost" },
+  } as const;
+  value(
+    await f.store.recordTaskEvent(first.dispatch.request.attempt, event, "Partial", [], {
+      dispatched: true,
+      input_bytes: 400,
+      output_bytes: 7,
+      work_ms: 10,
+    }),
+  );
+  expect(attempts()[0]).toEqual({
+    state: "settled",
+    used_requests: 1,
+    used_input_bytes: 262144,
+    used_output_bytes: 65536,
+    used_work_ms: 600000,
+  });
+  expect(attempts()[1]).toMatchObject({ state: "released", used_requests: null });
+  const startAgain = {
+    command: "contribution.startAgain",
+    operationId: "recover-consultation",
+    payload: { taskId: first.taskId },
+  } as const;
+  f.destination("fake");
+  expect(await f.run(startAgain)).toEqual(failure("destination_changed"));
+  expect(attempts()).toHaveLength(2);
+  f.destination("chatgpt");
+  value(await f.run(startAgain));
+  const second = await f.prepare();
+  value(await f.store.recordTaskEvent(second.dispatch.request.attempt, event, "Another partial"));
+  const third = {
+    ...startAgain,
+    operationId: "another-consultation",
+    payload: { taskId: second.taskId },
+  };
+  value(await f.run(third));
+  const latest = await f.prepare();
+  value(await f.store.recordTaskEvent(latest.dispatch.request.attempt, event, "Latest partial"));
+  expect(
+    await f.run({
+      ...startAgain,
+      operationId: "over-budget",
+      payload: { taskId: latest.taskId },
+    }),
+  ).toEqual(failure("limit_reached"));
+  expect(attempts().map((row) => row.state)).toEqual([
+    "settled",
+    "released",
+    "settled",
+    "released",
+    "settled",
+    "released",
+  ]);
+  expect((await f.timeline()).items).toContainEqual(
+    expect.objectContaining({
+      id: latest.taskId,
+      kind: "task",
+      consultation: true,
+      consultationRetryFits: false,
+      state: "uncertain",
+    }),
+  );
+});
+
+it.each([true, false])(
+  "releases the first attempt and accounts for Stop after dispatch = %s",
+  async (dispatched) => {
+    const diagnostics: DiagnosticEvent[] = [];
+    const f = await fixture(undefined, (event) => diagnostics.push(event));
+    const proposal = await f.propose([call("Compare two approved bibliographies.")], "Ask Josefa.");
+    value(
+      await f.run({
+        command: "consultation.accept",
+        operationId: "stop-consultation",
+        payload: { proposalId: proposal.id, connection: "chatgpt" },
+      }),
+    );
+    const refused = await f.prepare();
+    value(
+      await f.store.recordTaskEvent(
+        refused.dispatch.request.attempt,
+        {
+          type: "result",
+          sequence: 1,
+          result: { status: "failed", reason: "permit_expired", dispatched: false },
+        },
+        "",
+      ),
+    );
+    const second = await f.prepare();
+    expect(second.taskId).toBe(refused.taskId);
+
+    const events: ProviderEventMessage[] = [];
+    let observed!: () => void;
+    const started = new Promise<void>((resolve) => {
+      observed = resolve;
+    });
+    const adapter = createFakeProvider({
+      holdReply: true,
+      ...(dispatched
+        ? {}
+        : {
+            prepare: (signal: AbortSignal) =>
+              new Promise<"temporary">((resolve) => {
+                signal.addEventListener("abort", () => resolve("temporary"), { once: true });
+                observed();
+              }),
+          }),
+    });
+    let now = second.dispatch.permit.issued_at;
+    const broker = new ProviderDispatch(
+      [
+        {
+          ...adapter,
+          declaration: {
+            ...adapter.declaration,
+            connection: { ...adapter.declaration.connection, id: "chatgpt" },
+          },
+        },
+      ],
+      {
+        state: () => "connected",
+        wallClock: () => now,
+        monotonic: () => now,
+        send(generation, text) {
+          const event = decodeProviderEvent(text, generation);
+          if (!event) throw new Error("Expected a valid broker measurement.");
+          events.push(event);
+          if (event.event.type === "text") observed();
+        },
+      },
+    );
+    broker.begin(second.dispatch.generation);
+    const dispatch = broker.receive(second.dispatch);
+    await started;
+    now += 43;
+    if (dispatched)
+      value(
+        await f.store.recordTaskEvent(
+          second.dispatch.request.attempt,
+          {
+            type: "usage",
+            sequence: events.length + 1,
+            usage: {
+              input_tokens: 13,
+              output_tokens: null,
+              cached_input_tokens: null,
+              reasoning_tokens: null,
+            },
+          },
+          "",
+        ),
+      );
+    value(
+      await f.run({
+        command: "task.stop",
+        operationId: "stop-attempt",
+        payload: { taskId: second.taskId },
+      }),
+    );
+    broker.interrupt({
+      kind: "provider_interrupt",
+      version: 1,
+      generation: second.dispatch.generation,
+      attempt: second.dispatch.request.attempt,
+    });
+    await dispatch;
+    broker.dispose();
+    const terminal = events.at(-1)!;
+    const text = events
+      .flatMap(({ event }) => (event.type === "text" ? [event.text] : []))
+      .join("");
+    expect(terminal.event).toMatchObject({ type: "result", result: { status: "cancelled" } });
+    expect(terminal.work).toEqual({
+      dispatched,
+      input_bytes: dispatched
+        ? second.dispatch.request.input.reduce(
+            (bytes, { text }) => bytes + Buffer.byteLength(text),
+            0,
+          )
+        : 0,
+      output_bytes: Buffer.byteLength(text),
+      work_ms: dispatched ? 43 : 0,
+    });
+    value(await f.store.recordTaskEvent(terminal.attempt, terminal.event, text, [], terminal.work));
+    const db = f.raw();
+    try {
+      expect(
+        db
+          .prepare(
+            `SELECT attempt_number, state, used_requests, used_input_bytes, used_output_bytes, used_work_ms
+      FROM work_allocations ORDER BY attempt_number`,
+          )
+          .all(),
+      ).toEqual([
+        {
+          attempt_number: 1,
+          state: "released",
+          used_requests: null,
+          used_input_bytes: null,
+          used_output_bytes: null,
+          used_work_ms: null,
+        },
+        {
+          attempt_number: 2,
+          state: dispatched ? "settled" : "released",
+          used_requests: dispatched ? 1 : null,
+          used_input_bytes: dispatched ? terminal.work?.input_bytes : null,
+          used_output_bytes: dispatched ? terminal.work?.output_bytes : null,
+          used_work_ms: dispatched ? 43 : null,
+        },
+      ]);
+      expect(
+        db
+          .prepare("SELECT input_tokens, output_tokens FROM attempts WHERE id=?")
+          .get(bytes(terminal.attempt)),
+      ).toEqual({ input_tokens: dispatched ? 13 : null, output_tokens: null });
+    } finally {
+      db.close();
+    }
+    const ledger = diagnostics.filter(({ event_name }) => event_name.startsWith("ohtia.work."));
+    expect(ledger).toEqual([
+      { event_name: "ohtia.work.reserved" },
+      { event_name: "ohtia.work.released" },
+      { event_name: dispatched ? "ohtia.work.settled" : "ohtia.work.released" },
+    ]);
+  },
+);
+
+it("keeps proof of zero dispatch when Stop follows a data-service clock cut", async () => {
+  for (const researcherStopped of [true, false]) {
+    const f = await fixture();
+    const proposal = await f.propose([call("Compare bibliographies.")], "Ask Josefa.");
+    value(
+      await f.run({
+        command: "consultation.accept",
+        operationId: "accept-cut-race",
+        payload: { proposalId: proposal.id, connection: "chatgpt" },
+      }),
+    );
+    const notice = (await f.timeline()).items.find(
+      (item) => item.kind === "task" && item.consultation,
+    );
+    expect(notice).toBeDefined();
+    const messages: unknown[] = [];
+    const generation = "setup-tests";
+    let time = Date.UTC(2026, 10, 19);
+    const provider = new DurableProvider({
+      storage: f.store,
+      context: { generation, mode: "development", connections: setupConnections() },
+      send: (message) => messages.push(JSON.parse(message)),
+      wallClock: () => time,
+      monotonic: () => time,
+    });
+    await provider.pump();
+    const attempt = messages.flatMap((message) => {
+      const dispatch = decodeProviderDispatch(JSON.stringify(message), generation);
+      return dispatch ? [dispatch.request.attempt] : [];
+    })[0]!;
+    const suspendedAt = new Date(time).toISOString();
+    time += 700000;
+    provider.wake({
+      kind: "service_wake",
+      version: 1,
+      generation,
+      suspendedAt,
+      resumedAt: new Date(time).toISOString(),
+      asleepMs: 700000,
+    });
+    expect(messages).toContainEqual(
+      expect.objectContaining({ kind: "provider_interrupt", attempt }),
+    );
+    if (researcherStopped)
+      value(
+        await f.run({
+          command: "task.stop",
+          operationId: "stop-after-cut",
+          payload: { taskId: notice!.id },
+        }),
+      );
+    expect(
+      await provider.receive({
+        kind: "provider_event",
+        version: 1,
+        generation,
+        attempt,
+        event: { type: "result", sequence: 1, result: { status: "cancelled" } },
+        work: { dispatched: false, input_bytes: 0, output_bytes: 0, work_ms: 0 },
+      }),
+    ).toBe(true);
+    const db = f.raw();
+    try {
+      expect(
+        db
+          .prepare("SELECT state,dispatch_permitted_at,outcome_reason FROM attempts WHERE id=?")
+          .get(bytes(attempt)),
+      ).toEqual({
+        state: "cancelled",
+        dispatch_permitted_at: null,
+        outcome_reason: researcherStopped ? "cancelled_by_researcher" : "permit_expired",
+      });
+      expect(
+        db.prepare("SELECT state FROM work_allocations ORDER BY attempt_number").pluck().all(),
+      ).toEqual(["released", researcherStopped ? "released" : "held"]);
+    } finally {
+      db.close();
+    }
   }
 });

@@ -71,7 +71,9 @@ export interface ResearchPayloads {
   readonly "task.stop": { readonly taskId: string };
   readonly "consultation.accept": { readonly proposalId: string; readonly connection: string };
   readonly "consultation.decline": { readonly proposalId: string };
-  readonly "contribution.tryAgain": ResearchPayloads["task.tryAgain"];
+  /** Taskless destination refusals are addressed by contribution ID. */
+  readonly "contribution.tryAgain":
+    ResearchPayloads["task.tryAgain"] | { readonly contributionId: string };
   readonly "contribution.startAgain": ResearchPayloads["task.startAgain"];
   readonly "task.tryAgain": { readonly taskId: string };
   /** Invoking this human command acknowledges possible duplicate charges. */

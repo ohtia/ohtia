@@ -1,3 +1,4 @@
+import { consultationRetryFits } from "./work-limits.js";
 import { sql, type Kysely } from "kysely";
 import {
   failure,
@@ -184,6 +185,7 @@ async function timelineItem(
       ? {
           consultation: true as const,
           replacesTaskId: task.replaces_task_id ? identifier(task.replaces_task_id) : null,
+          consultationRetryFits: !replacement && (await consultationRetryFits(db, task, policy)),
         }
       : {}),
     agentId: replyAgent(task.operation),

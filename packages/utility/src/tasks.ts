@@ -11,10 +11,24 @@ import {
   holdingDependencies,
   planContributions,
   planInput,
+  readyInputs,
   topologicalOrder,
   waitingForPlanWork,
 } from "./contribution-graphs.js";
 import type { ContributionRow, InterventionRow } from "./consultations.js";
+import {
+  authorizeWork,
+  authorizedOperation,
+  bindWork,
+  consultationLimits,
+  interventionLimits,
+  releasePendingWork,
+  releaseTaskWork,
+  releaseUnboundContributionWork,
+  reserveWork,
+  settleWork,
+  workFits,
+} from "./work-limits.js";
 import { renderProjectInstructions } from "./thesis-route.js";
 import {
   acceptedSetupCalls,
@@ -36,6 +50,7 @@ import {
   type ProviderEvent,
   type ProviderResult,
   type ProviderUsage,
+  type ProviderWorkUsage,
   type TransferEntry,
   type ServiceConnections,
   failure,
@@ -50,7 +65,13 @@ import {
   utf8Size,
 } from "@ohtia/contracts";
 import { bytes, identifier, newId, type ResearchSchema } from "./research.js";
-import { buildInput, operationPolicy, recordedOperationPolicy, replyAgent } from "./operations.js";
+import {
+  buildInput,
+  operationPolicy,
+  recordedOperationPolicy,
+  replyAgent,
+  type OperationPolicy,
+} from "./operations.js";
 const conversationTitleTool: ProviderTool = {
   namespace: conversationTitlePolicy.namespace,
   name: conversationTitlePolicy.name,
@@ -165,6 +186,10 @@ export interface TaskSchema {
   attempts: AttemptRow & { conversation_title_policy: Generated<number | null> };
   application_preferences: { key: string; schema_version: number; revision: number; value: string };
 }
+function delegatedTask(task: TaskRow): boolean {
+  return task.kind !== "reply";
+}
+
 export const unknownUsage: ProviderUsage = Object.freeze({
   input_tokens: null,
   cached_input_tokens: null,
@@ -183,6 +208,7 @@ export interface TaskContext {
   readonly generation: string;
   readonly connections: ServiceConnections;
   readonly requestModelRefresh?: (connection: string) => void;
+  readonly resolveAgentConnection?: (agent: ReplyAgent) => string;
 }
 /** One instance belongs to one short database transaction. It never sends a provider request. */
 export class TaskTransaction {
@@ -252,6 +278,7 @@ export class TaskTransaction {
         state === "uncertain" ||
         state === "cancelled"
       ) {
+        if (await releaseTaskWork(this.db, task.id, this.now)) this.workReleased();
         const result =
           state === "completed"
             ? await this.db
@@ -275,6 +302,9 @@ export class TaskTransaction {
       }
     }
   }
+  agentConnection(agent: ReplyAgent): string {
+    return this.context.resolveAgentConnection?.(agent) ?? "chatgpt";
+  }
   /** Shared routing for acceptance and destination preview, independent of connection state. */
   async destination(projectId: Uint8Array, recipient: ConversationAgent = "virgilio") {
     const project = await this.db
@@ -285,7 +315,7 @@ export class TaskTransaction {
     if (recipient === "josefa") {
       if (project.is_development || project.setup_confirmed_at === null) return null;
       const policy = operationPolicy("search_strategy_planning", 2, this.context.mode);
-      return policy ? { policy, connection: "chatgpt" } : null;
+      return policy ? { policy, connection: this.agentConnection(recipient) } : null;
     }
     if (recipient !== "virgilio") return null;
     const policy = operationPolicy(
@@ -297,7 +327,7 @@ export class TaskTransaction {
       project.is_development ? 1 : 2,
       this.context.mode,
     );
-    return policy ? { policy, connection: "chatgpt" } : null;
+    return policy ? { policy, connection: this.agentConnection(recipient) } : null;
   }
   async stopConversation(id: Uint8Array, operationId: string): Promise<Outcome<Uint8Array>> {
     const conversation = await this.db
@@ -378,6 +408,8 @@ export class TaskTransaction {
         return failure("consultation_unfinished");
       if (await this.pendingLimitReached(destination.policy))
         return failure("pending_limit_reached");
+      if (!(await workFits(this.db, consultationLimits, [destination.policy])))
+        return failure("limit_reached");
     }
     await this.db
       .updateTable("interventions")
@@ -390,6 +422,20 @@ export class TaskTransaction {
       .where("id", "=", id)
       .execute();
     if (destination) {
+      await authorizeWork(
+        this.db,
+        id,
+        consultationLimits,
+        [
+          {
+            agent_id: contribution.agent_id,
+            operation: contribution.operation,
+            connection: destination.connection,
+          },
+        ],
+        this.now,
+      );
+      await reserveWork(this.db, id, contribution.id, destination.policy, this.now);
       const taskId = newId();
       const reason = await this.connectionBlock(destination.connection);
       const project = await this.db
@@ -427,7 +473,11 @@ export class TaskTransaction {
         .set({ task_id: taskId, state: "active" })
         .where("id", "=", contribution.id)
         .execute();
-      this.diagnostics.push({ event_name: "ohtia.task.accepted" });
+      await bindWork(this.db, contribution.id, taskId);
+      this.diagnostics.push(
+        { event_name: "ohtia.task.accepted" },
+        { event_name: "ohtia.work.reserved" },
+      );
     }
     this.touch(proposal.conversation_id);
     return { ok: true, value: id };
@@ -467,10 +517,12 @@ export class TaskTransaction {
     )
       return failure("plan_state_changed");
     await this.clearPlanRestartHolds(id);
+    const hasResult = contributions.some(({ state }) => state === "completed");
+    if (await releasePendingWork(this.db, id, this.now, !hasResult)) this.workReleased();
     await this.db
       .updateTable("interventions")
       .set({
-        outcome: contributions.some(({ state }) => state === "completed") ? "partial" : "failed",
+        outcome: hasResult ? "partial" : "failed",
         finished_at: this.now,
         finished_by_operation_id: operationId,
         revision: sql`revision+1`,
@@ -490,7 +542,8 @@ export class TaskTransaction {
       .where("state", "=", "accepted")
       .where("outcome", "is", null)
       .executeTakeFirst();
-    if (!plan) return;
+    // Revision 22 could store synthetic plans, but had no accepted work envelopes for them.
+    if (!plan || !(await interventionLimits(this.db, id))) return;
     const nodes = await planContributions(this.db, id);
     const byId = new Map(nodes.map((row) => [identifier(row.id), row]));
     const edges = new Map(nodes.map((row) => [identifier(row.id), [] as string[]]));
@@ -510,6 +563,10 @@ export class TaskTransaction {
       const node = nodeAt(key);
       if (node.state !== "waiting" && node.state !== "blocked") continue;
       const prerequisites = (edges.get(key) ?? []).map(nodeAt);
+      if (node.ready_inputs !== null) {
+        if (!node.restart_held) await this.activateContribution(plan, node);
+        continue;
+      }
       const blocker = prerequisites.find(
         ({ state }) => !waitingForPlanWork(state) && state !== "completed",
       );
@@ -550,6 +607,7 @@ export class TaskTransaction {
       )
     ) {
       await this.clearPlanRestartHolds(id);
+      if (await releasePendingWork(this.db, id, this.now, false)) this.workReleased();
       await this.db
         .updateTable("interventions")
         .set({
@@ -563,6 +621,24 @@ export class TaskTransaction {
     }
   }
 
+  private async activationRefusal(
+    node: Selectable<ContributionRow>,
+  ): Promise<"destination_changed" | "input_changed" | undefined> {
+    const operation = await authorizedOperation(
+      this.db,
+      node.intervention_id,
+      node.agent_id,
+      node.operation,
+    );
+    if (!operation || operation.connection !== this.agentConnection(node.agent_id))
+      return "destination_changed";
+    if (
+      node.plan_key !== null &&
+      (node.ready_inputs === null || node.ready_inputs !== (await readyInputs(this.db, node.id)))
+    )
+      return "input_changed";
+  }
+
   private async activateContribution(
     plan: Selectable<InterventionRow>,
     node: Selectable<ContributionRow>,
@@ -570,28 +646,102 @@ export class TaskTransaction {
     const policy = recordedOperationPolicy(node.operation, node.policy_version);
     if (!policy || !plan.decided_by_operation_id)
       throw new Error("Accepted contribution has no policy or receipt.");
-    if (!(await planInput(this.db, node, policy))) {
+    if (node.ready_inputs === null) {
+      const inputs = await readyInputs(this.db, node.id);
+      if (inputs !== undefined) {
+        await this.db
+          .updateTable("contributions")
+          .set({ ready_inputs: inputs })
+          .where("id", "=", node.id)
+          .execute();
+        node.ready_inputs = inputs;
+      }
+    }
+    const refusal = await this.activationRefusal(node);
+    const reason =
+      refusal ?? ((await planInput(this.db, node, policy)) ? undefined : "input_too_large");
+    if (reason) {
       node.state = "failed";
       await this.db
         .updateTable("contributions")
-        .set({ state: node.state, failure_reason: "input_too_large" })
+        .set({ state: node.state, failure_reason: reason, restart_held: 0 })
         .where("id", "=", node.id)
         .execute();
+      if (await releaseUnboundContributionWork(this.db, node.id, this.now)) this.workReleased();
       this.touchIntervention(plan.id);
-      this.diagnostics.push({
-        event_name: "ohtia.contribution.input_too_large",
-        error_code: "input_too_large",
-      });
+      this.diagnostics.push(
+        reason === "input_too_large"
+          ? { event_name: "ohtia.contribution.input_too_large", error_code: reason }
+          : { event_name: "ohtia.contribution.activation_refused", error_code: reason },
+      );
       return;
     }
     if (await this.pendingLimitReached(policy)) return;
+    await this.insertContributionTask(plan, node, policy, plan.decided_by_operation_id);
+  }
+
+  async retryContributionWithoutTask(
+    id: Uint8Array,
+    operationId: string,
+  ): Promise<Outcome<Uint8Array>> {
+    const node = await this.db
+      .selectFrom("contributions")
+      .selectAll()
+      .where("id", "=", id)
+      .where("plan_key", "is not", null)
+      .executeTakeFirst();
+    if (!node) return failure("record_not_found");
+    const plan = await this.db
+      .selectFrom("interventions")
+      .selectAll()
+      .where("id", "=", node.intervention_id)
+      .executeTakeFirstOrThrow();
+    if (plan.outcome || node.task_id || node.failure_reason !== "destination_changed")
+      return failure("task_not_retryable");
+    const refusal = await this.activationRefusal(node);
+    if (refusal) return failure(refusal);
+    const policy = operationPolicy(node.operation, node.policy_version, this.context.mode);
+    if (!policy) return failure("service_unavailable");
+    if (!(await planInput(this.db, node, policy))) return failure("input_too_large");
+    const limits = await interventionLimits(this.db, plan.id);
+    if (!limits || !(await workFits(this.db, limits, [policy], plan.id)))
+      return failure("limit_reached");
+    if (await this.pendingLimitReached(policy)) return failure("pending_limit_reached");
+    await reserveWork(this.db, plan.id, node.id, policy, this.now);
+    this.diagnostics.push({ event_name: "ohtia.work.reserved" });
+    const taskId = await this.insertContributionTask(plan, node, policy, operationId);
+    this.changedPlans.set(identifier(plan.id), plan.id);
+    return { ok: true, value: taskId };
+  }
+
+  private async settleDelegatedAttempt(
+    attempt: Pick<AttemptRow, "id" | "task_id" | "attempt_number">,
+    dispatched: boolean,
+    work?: ProviderWorkUsage,
+  ): Promise<void> {
+    if (await settleWork(this.db, attempt, this.now, dispatched, work)) {
+      if (dispatched) this.diagnostics.push({ event_name: "ohtia.work.settled" });
+      else this.workReleased();
+    }
+  }
+
+  private workReleased(): void {
+    this.diagnostics.push({ event_name: "ohtia.work.released" });
+  }
+
+  private async insertContributionTask(
+    plan: Selectable<InterventionRow>,
+    node: Selectable<ContributionRow>,
+    policy: OperationPolicy,
+    operationId: string,
+  ): Promise<Uint8Array> {
     const project = await this.db
       .selectFrom("projects")
       .select("document_language")
       .where("id", "=", plan.project_id)
       .executeTakeFirstOrThrow();
     const taskId = newId();
-    const connection = "chatgpt";
+    const connection = this.agentConnection(node.agent_id);
     const reason = operationPolicy(node.operation, node.policy_version, this.context.mode)
       ? await this.connectionBlock(connection)
       : "configuration_unavailable";
@@ -610,7 +760,7 @@ export class TaskTransaction {
         instruction_version: policy.instruction_version,
         connection,
         document_language: project.document_language,
-        accepted_by_operation_id: plan.decided_by_operation_id,
+        accepted_by_operation_id: operationId,
         replaces_task_id: null,
         charge_warning_accepted_at: null,
         state: reason ? "blocked" : "queued",
@@ -620,14 +770,16 @@ export class TaskTransaction {
         updated_at: this.now,
       })
       .execute();
+    await bindWork(this.db, node.id, taskId);
     node.state = "active";
     await this.db
       .updateTable("contributions")
-      .set({ task_id: taskId, state: node.state })
+      .set({ task_id: taskId, state: node.state, failure_reason: null })
       .where("id", "=", node.id)
       .execute();
     this.touchIntervention(plan.id);
     this.diagnostics.push({ event_name: "ohtia.task.accepted" });
+    return taskId;
   }
 
   private async pendingLimitReached(
@@ -734,12 +886,25 @@ export class TaskTransaction {
   /** Revalidate the released operation's authority and immutable inputs without changing its scope. */
   private async valid(task: TaskRow): Promise<boolean> {
     const policy = operationPolicy(task.operation, task.policy_version, this.context.mode);
-    if (
-      !policy ||
-      policy.instruction_version !== task.instruction_version ||
-      task.connection !== "chatgpt"
-    )
-      return false;
+    if (!policy || policy.instruction_version !== task.instruction_version) return false;
+    if (task.kind === "reply") {
+      if (task.connection !== "chatgpt") return false;
+    } else {
+      const contribution =
+        task.contribution_id &&
+        (await this.db
+          .selectFrom("contributions")
+          .selectAll()
+          .where("id", "=", task.contribution_id)
+          .where("task_id", "=", task.id)
+          .executeTakeFirst());
+      if (
+        !contribution ||
+        task.connection !== this.agentConnection(contribution.agent_id) ||
+        (await this.activationRefusal(contribution))
+      )
+        return false;
+    }
     const project = await this.db
       .selectFrom("projects")
       .selectAll()
@@ -903,10 +1068,14 @@ export class TaskTransaction {
               state: "cancelled",
               outcome_reason: "cancelled_by_researcher",
               finished_at: this.now,
-              ...unknownUsage,
+              ...(!delegatedTask(task) || attempt.dispatch_permitted_at === null
+                ? unknownUsage
+                : {}),
             })
             .where("id", "=", attempt.id)
             .execute();
+          if (delegatedTask(task))
+            await this.settleDelegatedAttempt(attempt, attempt.dispatch_permitted_at !== null);
           await this.change(task, { state: "cancelled" });
           this.diagnostics.push({ event_name: "ohtia.task.cancelled" });
         } else if (task.state === "running") {
@@ -921,15 +1090,17 @@ export class TaskTransaction {
       return { ok: true, value: task.id };
     }
     const isConsultation = task.kind === "consultation";
-    const delegated = task.kind !== "reply";
+    const delegated = delegatedTask(task);
     if (command.startsWith("contribution.") !== delegated) return failure("task_not_retryable");
     const retry = command === "task.tryAgain" || command === "contribution.tryAgain";
-    if (delegated && task.contribution_id) {
-      const contribution = await this.db
-        .selectFrom("contributions")
-        .selectAll()
-        .where("id", "=", task.contribution_id)
-        .executeTakeFirstOrThrow();
+    const contribution = task.contribution_id
+      ? await this.db
+          .selectFrom("contributions")
+          .selectAll()
+          .where("id", "=", task.contribution_id)
+          .executeTakeFirstOrThrow()
+      : undefined;
+    if (contribution) {
       if (task.kind === "contribution") {
         const plan = await this.db
           .selectFrom("interventions")
@@ -974,6 +1145,16 @@ export class TaskTransaction {
     if (newer) return failure("newer_task_exists");
     const policy = operationPolicy(task.operation, task.policy_version, this.context.mode);
     if (!policy) return failure("service_unavailable");
+    if (contribution) {
+      const limits = await interventionLimits(this.db, contribution.intervention_id);
+      if (!limits) return failure("limit_reached");
+      if (task.connection !== this.agentConnection(contribution.agent_id))
+        return failure("destination_changed");
+      const destination = await this.activationRefusal(contribution);
+      if (destination) return failure(destination);
+      if (!(await workFits(this.db, limits, [policy], contribution.intervention_id)))
+        return failure("limit_reached");
+    }
     if (isConsultation && (await this.unfinishedConsultation(task.conversation_id)))
       return failure("consultation_unfinished");
     if (await this.pendingLimitReached(policy)) return failure("pending_limit_reached");
@@ -1000,6 +1181,10 @@ export class TaskTransaction {
         .orderBy("position", "desc")
         .executeTakeFirstOrThrow());
     const replacement = newId();
+    if (contribution) {
+      await reserveWork(this.db, contribution.intervention_id, contribution.id, policy, this.now);
+      this.diagnostics.push({ event_name: "ohtia.work.reserved" });
+    }
     await this.db
       .insertInto("tasks")
       .values({
@@ -1019,6 +1204,7 @@ export class TaskTransaction {
       })
       .execute();
     if (task.contribution_id) {
+      await bindWork(this.db, task.contribution_id, replacement);
       const contribution = await this.db
         .updateTable("contributions")
         .set({ task_id: replacement, state: "active", failure_reason: null })
@@ -1053,9 +1239,11 @@ export class TaskTransaction {
       .set({ state: "cancelled", blocked_by_contribution_id: null, restart_held: 0 })
       .where("intervention_id", "in", this.openPlans())
       .where("state", "in", ["waiting", "blocked"])
-      .returning("intervention_id")
+      .returning(["id", "intervention_id"])
       .execute();
-    for (const { intervention_id: id } of waiting) {
+    for (const { id: contributionId, intervention_id: id } of waiting) {
+      if (await releaseUnboundContributionWork(this.db, contributionId, this.now))
+        this.workReleased();
       this.touchIntervention(id);
       this.changedPlans.set(identifier(id), id);
     }
@@ -1122,10 +1310,11 @@ export class TaskTransaction {
           state: cancelled || !dispatched ? "cancelled" : "uncertain",
           outcome_reason: cancelled ? "cancelled_by_researcher" : "service_restarted",
           finished_at: this.now,
-          ...unknownUsage,
+          ...(!delegatedTask(task) || !dispatched ? unknownUsage : {}),
         })
         .where("id", "=", attempt.id)
         .execute();
+      if (delegatedTask(task)) await this.settleDelegatedAttempt(attempt, dispatched);
       const policy = recordedOperationPolicy(task.operation, task.policy_version);
       const state: TaskState = cancelled
         ? "cancelled"
@@ -1242,7 +1431,7 @@ export class TaskTransaction {
       )
         continue;
       const policy = operationPolicy(task.operation, task.policy_version, this.context.mode);
-      if (!policy || (task.kind === "contribution" && !(await this.valid(task)))) {
+      if (!policy || (delegatedTask(task) && !(await this.valid(task)))) {
         await this.change(task, { state: "blocked", blocking_reason: "configuration_unavailable" });
         continue;
       }
@@ -1512,6 +1701,11 @@ export class TaskTransaction {
           .set({ state: "failed", outcome_reason: reason, finished_at: this.now })
           .where("id", "=", attemptId)
           .execute();
+        if (delegatedTask(task))
+          await this.settleDelegatedAttempt(
+            { id: attemptId, task_id: task.id, attempt_number: previous.length + 1 },
+            false,
+          );
         this.diagnostics.push({ event_name: "ohtia.task.failed" });
         await this.change(task, { state: "failed" });
         continue;
@@ -1582,6 +1776,7 @@ export class TaskTransaction {
     text: string,
     calls: readonly ProviderToolCall[] = [],
     registry?: () => LanguageRegistry,
+    work?: ProviderWorkUsage,
   ): Promise<RecordedTaskEvent> {
     const attempt = await this.db
       .selectFrom("attempts")
@@ -1632,7 +1827,11 @@ export class TaskTransaction {
         : event.result.status === "completed" && !text && !accepted.length && !consultation
           ? { status: "failed", reason: "empty_reply", dispatched: true }
           : event.result;
-    const notDispatched = result.status === "failed" && !result.dispatched;
+    const notDispatched =
+      (result.status === "failed" && !result.dispatched) ||
+      (delegatedTask(task) &&
+        ((event.result.status === "failed" && !event.result.dispatched) ||
+          work?.dispatched === false));
     let state: AttemptState = result.status;
     const reason: AttemptReason | null =
       result.status === "failed" || result.status === "uncertain"
@@ -1640,7 +1839,11 @@ export class TaskTransaction {
         : result.status === "cancelled"
           ? "cancelled_by_researcher"
           : null;
-    if (notDispatched && ["permit_expired", "connection_expired"].includes(result.reason))
+    if (
+      notDispatched &&
+      result.status === "failed" &&
+      ["permit_expired", "connection_expired"].includes(result.reason)
+    )
       state = "cancelled";
     await this.db
       .updateTable("attempts")
@@ -1649,16 +1852,26 @@ export class TaskTransaction {
         outcome_reason: reason,
         finished_at: this.now,
         ...(notDispatched ? { dispatch_permitted_at: null } : {}),
-        ...(state === "cancelled" ||
-        state === "uncertain" ||
-        reason === "deadline_exceeded" ||
-        reason === "inactivity_timeout" ||
-        reason === "output_limit_exceeded"
+        ...((
+          delegatedTask(task)
+            ? notDispatched
+            : state === "cancelled" ||
+              state === "uncertain" ||
+              reason === "deadline_exceeded" ||
+              reason === "inactivity_timeout" ||
+              reason === "output_limit_exceeded"
+        )
           ? unknownUsage
           : {}),
       })
       .where("id", "=", attempt.id)
       .execute();
+    if (delegatedTask(task))
+      await this.settleDelegatedAttempt(
+        attempt,
+        !notDispatched && attempt.dispatch_permitted_at !== null,
+        event.result.status === "uncertain" ? undefined : work,
+      );
     const policy = operationPolicy(task.operation, task.policy_version, this.context.mode);
     let taskState: TaskState =
       state === "completed"
@@ -1668,7 +1881,7 @@ export class TaskTransaction {
           : state === "cancelled"
             ? "cancelled"
             : "failed";
-    if (notDispatched && result.reason === "permit_expired")
+    if (notDispatched && result.status === "failed" && result.reason === "permit_expired")
       taskState =
         task.kind === "reply" && (await this.waiting(task.conversation_id))
           ? "cancelled"
@@ -1676,7 +1889,7 @@ export class TaskTransaction {
             ? "queued"
             : "failed";
     let blockingReason: BlockingReason | null = null;
-    if (notDispatched && result.reason === "connection_expired") {
+    if (notDispatched && result.status === "failed" && result.reason === "connection_expired") {
       taskState =
         task.kind === "reply" && (await this.waiting(task.conversation_id))
           ? "cancelled"

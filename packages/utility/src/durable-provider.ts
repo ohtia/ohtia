@@ -16,11 +16,11 @@ import {
 } from "@ohtia/contracts";
 import type { DurableStore } from "./storage.js";
 import { operationPolicy } from "./operations.js";
-import { unknownUsage, type TaskContext } from "./tasks.js";
+import { unknownUsage, type TaskContext, type TaskRow } from "./tasks.js";
 
 interface Stream {
   readonly taskId: string;
-  readonly publishReply: boolean;
+  readonly taskKind: TaskRow["kind"];
   readonly parts: ReplyPart[];
   readonly operationId: string;
   text: string;
@@ -345,7 +345,7 @@ export class DurableProvider {
         const now = this.now();
         this.streams.set(message.request.attempt, {
           taskId: prepared.value.taskId,
-          publishReply: prepared.value.kind !== "contribution",
+          taskKind: prepared.value.kind,
           parts: [],
           operationId: prepared.value.acceptedByOperationId,
           text: "",
@@ -411,7 +411,7 @@ export class DurableProvider {
       for (const text of kept ? splitText(kept) : []) {
         const sequence = stream.parts.length + 1;
         stream.parts.push({ sequence, text });
-        if (stream.publishReply) this.options.reply?.(stream.taskId, sequence, text);
+        if (stream.taskKind !== "contribution") this.options.reply?.(stream.taskId, sequence, text);
       }
       if (kept)
         this.report(stream.operationId, { type: "text", attempt: message.attempt, text: kept });
@@ -439,17 +439,26 @@ export class DurableProvider {
     }
     // A wake timeout cannot overwrite main's proof that no request was dispatched.
     // Preserve its reason and the task's remaining readmission budget.
-    if (
-      event.type === "result" &&
-      stream.cut &&
-      !(event.result.status === "failed" && !event.result.dispatched)
-    )
-      event = { ...event, result: { status: "failed", reason: stream.cut, dispatched: true } };
+    if (event.type === "result" && stream.cut) {
+      if (stream.taskKind !== "reply" && message.work?.dispatched === false) {
+        if (event.result.status === "cancelled")
+          event = {
+            ...event,
+            result: { status: "failed", reason: "permit_expired", dispatched: false },
+          };
+      } else if (
+        !(event.result.status === "failed" && !event.result.dispatched) &&
+        (stream.taskKind === "reply" || event.result.status !== "uncertain")
+      ) {
+        event = { ...event, result: { status: "failed", reason: stream.cut, dispatched: true } };
+      }
+    }
     const saved = await this.options.storage.recordTaskEvent(
       message.attempt,
       event,
       stream.text,
       stream.calls,
+      stream.taskKind === "reply" ? undefined : message.work,
     );
     if (!saved.ok) throw new Error("Provider event could not be stored.");
     if (!saved.value.recorded) return true;
@@ -465,12 +474,13 @@ export class DurableProvider {
       const result = saved.value.result;
       if (!result) throw new Error("Terminal provider outcome was not recorded.");
       if (
-        result.status === "cancelled" ||
-        result.status === "uncertain" ||
-        (result.status === "failed" &&
-          ["deadline_exceeded", "inactivity_timeout", "output_limit_exceeded"].includes(
-            result.reason,
-          ))
+        stream.taskKind === "reply" &&
+        (result.status === "cancelled" ||
+          result.status === "uncertain" ||
+          (result.status === "failed" &&
+            ["deadline_exceeded", "inactivity_timeout", "output_limit_exceeded"].includes(
+              result.reason,
+            )))
       )
         stream.usage = unknownUsage;
       this.finished(message.attempt, stream, result, now);

@@ -118,9 +118,11 @@ export function conversationTitleInstructionSuffix(operation: ProviderOperation)
     "\n\n" +
     [
       setup
-        ? "Follow the project setup instructions above, including when to call propose_project_setup."
+        ? "Complete the setup turn first. Write the setup reply as visible assistant text or call propose_project_setup when the title and language are agreed."
         : "Write your ordinary research reply first.",
-      `If the researcher's messages establish a topic, then call ${conversationTitlePolicy.name} exactly once in the same response.`,
+      setup
+        ? `If the researcher's messages establish a topic, you may call ${conversationTitlePolicy.name} once after the setup reply or proposal in the same response. Omit this optional title call if it would be the only output.`
+        : `If the researcher's messages establish a topic, then call ${conversationTitlePolicy.name} exactly once in the same response.`,
       `Use a short, plain-text title in ${setup ? "the conversation language" : "the document language"} that describes the earliest clear exchange. Base it on what the researcher is discussing and use your reply when it clarifies the topic.`,
       "A concrete research question or task qualifies even when the thesis is still being defined. Use the conversation's topic independently of the project's working title.",
       "If the conversation contains only a greeting, or the topic is still unclear, omit the call.",
@@ -177,12 +179,20 @@ export interface ProviderDispatchMessage {
   readonly request: ProviderRequestData;
   readonly permit: DispatchPermit;
 }
+/** Main's measurements of the provider payload and elapsed dispatch time. */
+export interface ProviderWorkUsage {
+  readonly dispatched: boolean;
+  readonly input_bytes: number;
+  readonly output_bytes: number;
+  readonly work_ms: number;
+}
 export interface ProviderEventMessage {
   readonly kind: "provider_event";
   readonly version: typeof providerMessageVersion;
   readonly generation: string;
   readonly attempt: string;
   readonly event: ProviderEvent;
+  readonly work?: ProviderWorkUsage;
 }
 export interface ProviderInterruptMessage {
   readonly kind: "provider_interrupt";
@@ -447,6 +457,24 @@ export function decodeProviderDispatch(
     return value as unknown as ProviderDispatchMessage;
   return;
 }
+function isProviderWorkUsage(value: unknown, result: ProviderResult): value is ProviderWorkUsage {
+  if (!record(value) || !exact(value, ["dispatched", "input_bytes", "output_bytes", "work_ms"]))
+    return false;
+  const counts = [value.input_bytes, value.output_bytes, value.work_ms];
+  if (!counts.every((n) => typeof n === "number" && Number.isSafeInteger(n) && n >= 0))
+    return false;
+  const expected =
+    result.status === "cancelled"
+      ? value.dispatched
+      : result.status === "failed"
+        ? result.dispatched
+        : true;
+  return (
+    typeof value.dispatched === "boolean" &&
+    value.dispatched === expected &&
+    (value.dispatched || counts.every((n) => n === 0))
+  );
+}
 export function decodeProviderEvent(
   text: unknown,
   generation: string,
@@ -454,9 +482,18 @@ export function decodeProviderEvent(
   const value = parse(text);
   if (
     header(value, "provider_event", generation) &&
-    exact(value, ["kind", "version", "generation", "attempt", "event"]) &&
+    exact(value, [
+      "kind",
+      "version",
+      "generation",
+      "attempt",
+      "event",
+      ...(Object.hasOwn(value, "work") ? ["work"] : []),
+    ]) &&
     isIdentifier(value.attempt) &&
-    isProviderEvent(value.event)
+    isProviderEvent(value.event) &&
+    (!Object.hasOwn(value, "work") ||
+      (value.event.type === "result" && isProviderWorkUsage(value.work, value.event.result)))
   )
     return value as unknown as ProviderEventMessage;
   return;

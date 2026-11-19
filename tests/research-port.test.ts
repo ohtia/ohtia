@@ -321,6 +321,36 @@ describe("research timeline and bounded reads", () => {
     expect(
       mergeTimeline([task], [message, task, { ...task, revision: 1, state: "queued" }]),
     ).toEqual([message, task]);
+
+    const consultation = {
+      ...task,
+      agentId: "josefa",
+      consultation: true,
+      replacesTaskId: null,
+      consultationRetryFits: true,
+      state: "failed",
+      connection: "chatgpt",
+      replyMessageId: null,
+      blockingReason: null,
+      outcomeReason: "provider_error",
+      dispatched: true,
+      superseded: false,
+      waitingForModels: false,
+      waitingLimit: null,
+      maxAttemptDurationMs: 600000,
+      maxInactivityMs: 120000,
+    } as const;
+    const budgetSpent = { ...consultation, consultationRetryFits: false };
+    expect(mergeTimeline([consultation], [budgetSpent])).toEqual([budgetSpent]);
+    const superseded = { ...budgetSpent, superseded: true };
+    expect(mergeTimeline([consultation], [superseded])).toEqual([superseded]);
+    const replacement = {
+      ...consultation,
+      id: entity(4),
+      replacesTaskId: consultation.id,
+      state: "queued",
+    } as const;
+    expect(mergeTimeline([consultation], [replacement])).toEqual([superseded, replacement]);
   });
   it("a window without an open project receives only shared record events", async () => {
     const h = await harness();

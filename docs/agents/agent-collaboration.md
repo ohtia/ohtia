@@ -2,6 +2,8 @@
 type: Specification
 title: "Agent collaboration"
 description: "Virgilio, research specialists, bounded collaboration, inspectable memory, and human-approved editorial proposals."
+generated:
+  by: codex/gpt-6.2-sol
 sources:
   - id: openai-orchestration
     resource: "https://developers.openai.com/api/docs/guides/agents/orchestration"
@@ -168,7 +170,7 @@ A continuation records the exact event set and graph version it consumes. The tr
 
 ### Shared work envelope
 
-Before enabling an intervention policy, supply positive finite limits for total contribution tasks, coordinator turns, delegation depth, graph nodes/edges, aggregate input/output/work units and total active execution duration. The policy also bounds pending contributions, event count/payload and retained context size. It supplies every per-operation field required by ADR-0051. Missing or invalid bounds leave that operation unavailable. Exact values are operation/language evaluation inputs, not universal research quotas.
+Before enabling an intervention policy, supply finite limits for total contribution tasks, coordinator turns, delegation depth, graph nodes/edges, aggregate input/output/work units and total active execution duration; each is positive, except that a policy may set zero coordinator turns or zero dependencies when its interventions never use them, as a single consultation does. The policy also bounds pending contributions, event count/payload and retained context size. It supplies every per-operation field required by ADR-0051. Missing or invalid bounds leave that operation unavailable. Exact values are operation/language evaluation inputs, not universal research quotas.
 
 Reserve an allocation transactionally before accepting each task, counting parallel reservations and all layers' retries. Actual usage and proven unused capacity settle against the same intervention ledger; interrupted or uncertain dispatch does not return a guessed unused allocation. Bound coordinator planning, specialists, independent review and synthesis together. A new task, provider session, restart or handoff cannot reset cumulative limits. Exhaustion returns the available artifacts and a clear limitation or requests a separately authorized intervention linked to the earlier one.
 

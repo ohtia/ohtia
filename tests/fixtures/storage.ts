@@ -38,7 +38,7 @@ afterEach(async () => {
   for (const store of stores.splice(0)) await store.close();
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
-export function storageFixture() {
+export function storageFixture(emitDiagnostic?: StorageOptions["emitDiagnostic"]) {
   const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "ohtia storage ñ ")));
   roots.push(root);
   const sourceBinding = fs.realpathSync.native(
@@ -104,6 +104,7 @@ export function storageFixture() {
     release: "synthetic-0",
     allowCreate: true,
     assertAdmission: () => {},
+    ...(emitDiagnostic ? { emitDiagnostic } : {}),
   };
   const store = new DurableStore(options);
   stores.push(store);
