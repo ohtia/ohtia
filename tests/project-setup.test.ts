@@ -206,6 +206,12 @@ describe("automatic titles during project setup", () => {
     const { request, record, providerCalls } = await reply(f, [titleCall, proposal]);
     expect(requestsConversationTitle(request)).toBe(true);
     expect(request.instructions).toContain(
+      "Complete the setup turn first. Write the setup reply as visible assistant text or call propose_project_setup",
+    );
+    expect(request.instructions).toContain(
+      "Omit this optional title call if it would be the only output.",
+    );
+    expect(request.instructions).toContain(
       "a short, plain-text title in the conversation language",
     );
     const policy = operationPolicy("project_setup", 2, "development")!;
@@ -1699,7 +1705,7 @@ it("upgrades a schema-15 setup proposal without losing decisions or notice retry
     }),
   );
   const db = f.raw();
-  expect(db.pragma("user_version", { simple: true })).toBe(22);
+  expect(db.pragma("user_version", { simple: true })).toBe(23);
   expect(
     db
       .prepare("SELECT state FROM project_setup_proposals WHERE id=?")

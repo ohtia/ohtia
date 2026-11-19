@@ -187,7 +187,7 @@ describe("provider message contracts", () => {
       { status: "resumed" },
     ])
       expect(isProviderResult(result)).toBe(false);
-    const event = (value: unknown) =>
+    const event = (value: unknown, metadata?: { work: unknown }) =>
       decodeProviderEvent(
         JSON.stringify({
           kind: "provider_event",
@@ -195,6 +195,7 @@ describe("provider message contracts", () => {
           generation: "g",
           attempt: "a",
           event: value,
+          ...metadata,
         }),
         "g",
       );
@@ -218,6 +219,27 @@ describe("provider message contracts", () => {
     expect(
       event({ sequence: 1, type: "started", provider_request_id: "", model: null }),
     ).toBeUndefined();
+    const terminal = { sequence: 3, type: "result", result: { status: "completed" } };
+    const measured = { dispatched: true, input_bytes: 41, output_bytes: 12, work_ms: 83 };
+    expect(event(terminal, { work: measured })?.work).toEqual(measured);
+    for (const work of [
+      null,
+      { ...measured, extra: true },
+      { ...measured, input_bytes: -1 },
+      { ...measured, output_bytes: 0.5 },
+      { ...measured, work_ms: "83" },
+      { dispatched: false, input_bytes: 0, output_bytes: 0, work_ms: 0 },
+    ])
+      expect(event(terminal, { work })).toBeUndefined();
+    expect(event({ sequence: 1, type: "text", text: "Reply" }, { work: measured })).toBeUndefined();
+    const refused = {
+      ...terminal,
+      result: { status: "failed", reason: "permit_expired", dispatched: false },
+    };
+    expect(
+      event(refused, { work: { dispatched: false, input_bytes: 0, output_bytes: 0, work_ms: 0 } }),
+    ).toBeDefined();
+    expect(event(refused, { work: { ...measured, dispatched: false } })).toBeUndefined();
   });
   it("splits partial text into channel-sized pieces without breaking a code point", () => {
     const text = `${"a".repeat(1023)}😀${"b".repeat(1500)}`;

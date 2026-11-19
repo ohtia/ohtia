@@ -10,6 +10,7 @@ import {
   validConversationTitle,
   providerMessageVersion,
   providerTextPieces,
+  utf8Size,
   type ConnectionState,
   type DiagnosticEvent,
   type NotDispatchedReason,
@@ -37,7 +38,9 @@ interface Dispatched {
   closing?: ProviderResult;
   timer?: ReturnType<typeof setTimeout>;
   readonly limits: ProviderRequestLimits;
+  inputBytes: number;
   outputBytes: number;
+  releasedAt?: number;
   conversationTitle: boolean;
   consultationEnabled: boolean;
   readonly calls: Map<string | symbol, BufferedToolCall>;
@@ -214,6 +217,7 @@ export class ProviderDispatch {
       released: false,
       done: false,
       limits: request.limits,
+      inputBytes: 0,
       outputBytes: 0,
       conversationTitle: requestsConversationTitle(request),
       consultationEnabled: request.tools.some(isConsultationTool),
@@ -315,6 +319,7 @@ export class ProviderDispatch {
           }
           clearTimeout(expiry);
           record.released = true;
+          record.releasedAt = this.elapsed(record);
           this.options.diagnostic?.({ event_name: "ohtia.provider.dispatched" });
           return true;
         },
@@ -338,6 +343,11 @@ export class ProviderDispatch {
           record.conversationTitle = false;
           record.consultationEnabled = false;
         }
+        // Count the UTF-8 input items in the same units as the operation policy.
+        record.inputBytes = providerRequest.input.reduce(
+          (total, item) => total + utf8Size(item.text),
+          0,
+        );
         await adapter.requests.send(providerRequest, control);
       } catch {
         /* The result below states what main can still know. */
@@ -466,6 +476,21 @@ export class ProviderDispatch {
         generation: record.generation,
         attempt: record.attempt,
         event: { type: "result", sequence: ++record.sequence, result: record.closing },
+        work:
+          record.releasedAt === undefined ||
+          (record.closing.status === "failed" && !record.closing.dispatched)
+            ? { dispatched: false, input_bytes: 0, output_bytes: 0, work_ms: 0 }
+            : {
+                dispatched: true,
+                input_bytes: record.inputBytes,
+                output_bytes: record.outputBytes,
+                work_ms: Math.ceil(
+                  Math.min(
+                    record.limits.max_attempt_duration_ms,
+                    this.elapsed(record) - record.releasedAt,
+                  ),
+                ),
+              },
       }),
     );
   }

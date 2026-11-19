@@ -23,10 +23,21 @@ const priorTaskObjects = {
   receipts_commands: josefaObjects.receipts_commands,
 };
 
+export const dropWorkLimitsSql = `
+  DROP TABLE work_allocations;
+  DROP TABLE intervention_operations;
+  DROP TABLE intervention_limits;
+  DROP TRIGGER attempts_changes;
+  ${durableTaskObjects.attempts_changes};
+  DELETE FROM kysely_migration WHERE name='0023_shared_work_limits';
+  DELETE FROM ohtia_migration_artifacts WHERE name='0023_shared_work_limits';
+`;
+
 // Build a revision-20 fixture with only reply tasks while retaining historical rowids.
 export const preConsultationSql = `
   PRAGMA foreign_keys=OFF;
   PRAGMA legacy_alter_table=ON;
+  ${dropWorkLimitsSql}
   DROP TRIGGER receipts_commands;
   ALTER TABLE tasks RENAME TO tasks_with_consultations;
   ${priorTaskTable};

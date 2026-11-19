@@ -50,6 +50,11 @@ import {
   tables as graphTables,
   objects as graphObjects,
 } from "./migrations/0022_contribution_graphs.mjs";
+import {
+  objects as workLimitObjects,
+  tables as workLimitTables,
+  up as sharedWorkLimits,
+} from "./migrations/0023_shared_work_limits.mjs";
 import { readResearch, researchRevisions, readPauseCounts } from "./research-reads.js";
 import type { Request, ResearchScope, ResearchEvent, ResearchOperation } from "@ohtia/contracts";
 import {
@@ -294,6 +299,7 @@ const names = [
   "0020_conversation_agents",
   "0021_consultations",
   "0022_contribution_graphs",
+  "0023_shared_work_limits",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -516,6 +522,9 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
       : revision >= 21
         ? Object.keys(consultationTables)
         : []),
+    ...(revision >= 23
+      ? Object.keys(workLimitTables).filter((name) => name !== "contributions")
+      : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -660,7 +669,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
       : []),
     ...(revision >= 15 ? Object.entries(setupTables) : []),
     ...(revision >= 22
-      ? Object.entries(graphTables)
+      ? Object.entries(revision >= 23 ? { ...graphTables, ...workLimitTables } : graphTables)
       : revision >= 21
         ? Object.entries(consultationTables)
         : []),
@@ -700,6 +709,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 19 ? josefaObjects : {}),
                 ...(revision >= 20 ? agentObjects : {}),
                 ...(revision >= 22 ? graphObjects : revision >= 21 ? consultationObjects : {}),
+                ...(revision >= 23 ? workLimitObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1064,7 +1074,7 @@ export class DurableStore {
       let committed = false;
       try {
         this.assert();
-        if (source < 22) db.pragma("foreign_keys = OFF");
+        if (source < 23) db.pragma("foreign_keys = OFF");
         await sql`BEGIN EXCLUSIVE`.execute(connection);
         begun = true;
         await sql`CREATE TABLE IF NOT EXISTS ohtia_migration_artifacts (name TEXT PRIMARY KEY NOT NULL, sha256 TEXT NOT NULL CHECK(length(sha256)=64 AND sha256 NOT GLOB '*[^0-9a-f]*'))`.execute(
@@ -1099,6 +1109,7 @@ export class DurableStore {
                 "0020_conversation_agents": { up: conversationAgents },
                 "0021_consultations": { up: consultations },
                 "0022_contribution_graphs": { up: contributionGraphs },
+                "0023_shared_work_limits": { up: sharedWorkLimits },
               }),
           },
         });
@@ -1132,7 +1143,7 @@ export class DurableStore {
         // Keep intent and checkpoint on every failure, including a successful commit with a lost acknowledgement.
         throw new Error(`Migration requires explicit recovery (${operation}).`, { cause: error });
       } finally {
-        if (source < 22) db.pragma("foreign_keys = ON");
+        if (source < 23) db.pragma("foreign_keys = ON");
       }
     });
   }
@@ -2597,9 +2608,10 @@ export class DurableStore {
     event: ProviderEvent,
     text: string,
     calls: readonly import("@ohtia/contracts").ProviderToolCall[] = [],
+    work?: import("@ohtia/contracts").ProviderWorkUsage,
   ): Promise<Outcome<RecordedTaskEvent>> {
     return this.taskTransaction((tasks) =>
-      tasks.event(attempt, event, text, calls, () => this.registry()),
+      tasks.event(attempt, event, text, calls, () => this.registry(), work),
     );
   }
 

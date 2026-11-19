@@ -86,7 +86,8 @@ export interface ContributionRow {
     "waiting" | "active" | "completed" | "failed" | "uncertain" | "blocked" | "cancelled"
   >;
   blocked_by_contribution_id: Generated<Uint8Array | null>;
-  failure_reason: Generated<"input_too_large" | null>;
+  failure_reason: Generated<"input_too_large" | "input_changed" | "destination_changed" | null>;
+  ready_inputs: Generated<string | null>;
   result_message_id: Generated<Uint8Array | null>;
   restart_held: Generated<number>;
   dedupe_key: Uint8Array;

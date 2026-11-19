@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { expect, it } from "vitest";
+import { objects as limitsObjects } from "../packages/utility/src/migrations/0023_shared_work_limits.mjs";
 import {
   failure,
   isResearchOperation,
@@ -23,6 +24,7 @@ import { bytes, identifier } from "../packages/utility/src/research.js";
 import type { PreparedTask } from "../packages/utility/src/tasks.js";
 import { proposeSetup, setupConnections, successful as value } from "./fixtures/project-setup.js";
 import { dispatchThrough } from "./fixtures/provider-conformance.js";
+import { dropWorkLimitsSql } from "../tooling/storage-legacy-consultation-fixture.mjs";
 import { storageFixture } from "./fixtures/storage.js";
 
 const unresolved = "The primary question remains unresolved because the sample is too small.";
@@ -97,6 +99,13 @@ async function fixture(limit = 3) {
         text,
       )
       .then(value);
+  const resolve = (agent: "josefa" | "virgilio", connection: string) =>
+    f.store.setTaskContext({
+      generation: "setup-tests",
+      mode: "development",
+      connections: setupConnections(),
+      resolveAgentConnection: (id) => (id === agent ? connection : "chatgpt"),
+    });
   return {
     ...f,
     run,
@@ -110,6 +119,7 @@ async function fixture(limit = 3) {
     prepare,
     next,
     settle,
+    resolve,
   };
 }
 
@@ -614,6 +624,7 @@ it("migrates completed, failed, uncertain, cancelled, active and waiting consult
   connection.exec(
     "PRAGMA foreign_keys=OFF; PRAGMA legacy_alter_table=ON; DROP TRIGGER receipts_commands;",
   );
+  connection.exec(dropWorkLimitsSql);
   for (const table of ["tasks", "contributions", "interventions"])
     connection.exec(`ALTER TABLE ${table} RENAME TO ${table}_with_graphs`);
   for (const definition of [...Object.values(consultationTables), consultationTasks])
@@ -657,17 +668,52 @@ it("migrates completed, failed, uncertain, cancelled, active and waiting consult
       key_bytes: 32,
     })),
   );
+  expect(
+    f.query("SELECT policy,policy_version,max_requests FROM intervention_limits ORDER BY rowid"),
+  ).toEqual(Array(5).fill({ policy: "consultation", policy_version: 1, max_requests: 4 }));
+  expect(f.query("SELECT connection FROM intervention_operations ORDER BY rowid")).toEqual(
+    Array(5).fill({ connection: "chatgpt" }),
+  );
+  const historical =
+    f.query(`SELECT a.state,a.used_requests,a.used_input_bytes,a.used_output_bytes,a.used_work_ms
+    FROM work_allocations a JOIN tasks t ON t.id=a.task_id ORDER BY t.rowid,a.attempt_number`);
+  expect(historical.map(({ state }) => state)).toEqual([
+    "settled",
+    "released",
+    "settled",
+    "released",
+    "settled",
+    "released",
+    "settled",
+    "released",
+    "held",
+    "held",
+  ]);
+  for (const row of historical.filter(({ state }) => state === "settled"))
+    expect(row).toEqual({
+      state: "settled",
+      used_requests: 1,
+      used_input_bytes: 262144,
+      used_output_bytes: 65536,
+      used_work_ms: 600000,
+    });
   expect(f.query("PRAGMA foreign_key_check")).toEqual([]);
 });
 
+async function saturatePlanQueue(f: Awaited<ReturnType<typeof fixture>>) {
+  for (const [index, size] of [8, 8, 4].entries())
+    value(
+      await f.add(
+        `fill-queue-${index}`,
+        f.newPlan(Array.from({ length: size }, (_, i) => task(`root-${i}`))),
+      ),
+    );
+}
+
 it("holds accepted contributions without tasks after a crash until explicit continuation", async () => {
   const f = await fixture();
-  const { resultId } = value(
-    await f.add(
-      "saturated",
-      f.newPlan(Array.from({ length: 21 }, (_, index) => task(`root-${index}`))),
-    ),
-  );
+  await saturatePlanQueue(f);
+  const { resultId } = value(await f.add("saturated", f.newPlan([task("root")])));
   await f.next();
   await f.store.close();
   await f.store.open();
@@ -693,13 +739,11 @@ it("holds accepted contributions without tasks after a crash until explicit cont
 
 it("cancels accepted taskless work before freeing capacity and keeps it stopped on reopen", async () => {
   const f = await fixture();
+  await saturatePlanQueue(f);
   const { resultId } = value(
     await f.add(
       "saturated",
-      f.newPlan([
-        ...Array.from({ length: 21 }, (_, index) => task(`root-${index}`)),
-        task("dependent", { prerequisites: ["root-0"] }),
-      ]),
+      f.newPlan([task("root"), task("dependent", { prerequisites: ["root"] })]),
     ),
   );
   await f.store.close();
@@ -707,7 +751,7 @@ it("cancels accepted taskless work before freeing capacity and keeps it stopped 
   expect(value(await f.store.readPauses()).restart).toBe(22);
   value(await f.run({ command: "task.cancelAll", operationId: "cancel-saturated", payload: {} }));
   expect(value(await f.store.readPauses()).restart).toBe(0);
-  expect(f.states(resultId).map(([, state]) => state)).toEqual(Array(22).fill("cancelled"));
+  expect(f.states(resultId).map(([, state]) => state)).toEqual(["cancelled", "cancelled"]);
   expect(f.query("SELECT COUNT(*) AS count FROM tasks")).toEqual([{ count: 20 }]);
   expect(await f.prepare()).toBeNull();
   await f.store.close();
@@ -829,3 +873,282 @@ it("records charge acknowledgement when starting an uncertain plan contribution 
   const review = await f.next();
   expect(review.dispatch.request.input.at(-1)?.text).toContain(unresolved);
 });
+
+it("copies the plan envelope, reserves both shares and rejects oversized or unauthorized graph changes atomically", async () => {
+  const f = await fixture();
+  const oversized = Array.from({ length: 9 }, (_, index) => task(`root-${index}`));
+  expect(await f.add("oversized", f.newPlan(oversized))).toEqual(failure("plan_too_large"));
+  const dense: PlanContributionRequest[] = [];
+  for (let index = 0; index < 7; index++)
+    dense.push(task(`node-${index}`, { prerequisites: dense.map(({ planKey }) => planKey) }));
+  expect(await f.add("dense", f.newPlan(dense))).toEqual(failure("plan_too_large"));
+  expect(f.query("SELECT * FROM interventions")).toEqual([]);
+  expect(f.query("SELECT * FROM intervention_limits")).toEqual([]);
+  const plan = value(
+    await f.add(
+      "bounded-plan",
+      f.newPlan([task("source"), task("use-source", { prerequisites: ["source"] })]),
+    ),
+  );
+  expect(f.query("SELECT * FROM intervention_limits")).toEqual([
+    expect.objectContaining({
+      policy: "plan",
+      policy_version: 1,
+      max_contributions: 8,
+      max_dependencies: 16,
+      max_levels: 1,
+      max_coordinator_turns: 3,
+      max_requests: 24,
+      max_input_bytes: 8388608,
+      max_output_bytes: 2097152,
+      max_work_ms: 14400000,
+    }),
+  ]);
+  expect(
+    f.query("SELECT agent_id,operation,connection FROM intervention_operations ORDER BY agent_id"),
+  ).toEqual([
+    { agent_id: "josefa", operation: "development_test", connection: "chatgpt" },
+    { agent_id: "virgilio", operation: "development_test_synthesis", connection: "chatgpt" },
+  ]);
+  const allocations = f.query(
+    "SELECT share,state,task_id IS NOT NULL AS linked FROM work_allocations ORDER BY rowid",
+  );
+  expect(allocations).toEqual([
+    ...Array(2).fill({ share: "synthesis", state: "held", linked: 0 }),
+    ...Array(2).fill({ share: "contribution", state: "held", linked: 1 }),
+    ...Array(2).fill({ share: "contribution", state: "held", linked: 0 }),
+  ]);
+  expect(
+    await f.add("unapproved-operation", {
+      planId: plan.resultId,
+      expectedGraphVersion: 1,
+      contributions: [task("virgilio-task", { agent: "virgilio" })],
+    }),
+  ).toEqual(failure("agent_not_authorized"));
+
+  const db = f.raw();
+  try {
+    expect(() => db.exec("UPDATE intervention_limits SET max_requests=7")).toThrow(/Immutable/);
+    expect(() => db.exec("DELETE FROM intervention_operations")).toThrow(/Immutable/);
+    // Make only one request share available to exercise aggregate admission without running a provider.
+    db.exec(`DROP TRIGGER intervention_limits_changes;
+      UPDATE intervention_limits SET max_requests=7;
+      ${limitsObjects.intervention_limits_changes};`);
+  } finally {
+    db.close();
+  }
+  expect(
+    await f.add("over-budget", {
+      planId: plan.resultId,
+      expectedGraphVersion: 1,
+      contributions: [task("another")],
+    }),
+  ).toEqual(failure("limit_reached"));
+  expect(f.query("SELECT graph_version FROM interventions")).toEqual([{ graph_version: 1 }]);
+  expect(
+    f.query(
+      "SELECT share,state,task_id IS NOT NULL AS linked FROM work_allocations ORDER BY rowid",
+    ),
+  ).toEqual(allocations);
+  expect(
+    f.query("SELECT operation_id FROM command_receipts WHERE command='plan.addContributions'"),
+  ).toEqual([{ operation_id: "bounded-plan" }]);
+});
+
+it("serializes replacement reservations when two contributions compete for the final share", async () => {
+  const f = await fixture();
+  const { resultId } = value(
+    await f.add(
+      "parallel-budget",
+      f.newPlan(Array.from({ length: 8 }, (_, index) => task(`root-${index}`))),
+    ),
+  );
+  const tasks = [];
+  for (let index = 0; index < 8; index++) {
+    const pending = await f.next();
+    tasks.push(pending);
+    await f.settle(pending, { status: "failed", reason: "provider_error", dispatched: true });
+  }
+  const retry = (index: number) =>
+    ({
+      command: "contribution.tryAgain",
+      operationId: `replace-${index}`,
+      payload: { taskId: tasks[index]!.taskId },
+    }) as const;
+  for (let index = 0; index < 6; index++) value(await f.run(retry(index)));
+  const concurrent = await Promise.all([f.run(retry(6)), f.run(retry(7))]);
+  expect(concurrent.filter(({ ok }) => ok)).toHaveLength(1);
+  const loser = concurrent[0]?.ok ? 7 : 6;
+  expect(await f.run(retry(loser))).toEqual(failure("limit_reached"));
+  const sum = f.query(
+    `SELECT SUM(CASE state WHEN 'held' THEN reserved_requests ELSE used_requests END) AS requests
+    FROM work_allocations WHERE intervention_id=?`,
+    resultId,
+  );
+  expect(sum).toEqual([{ requests: 24 }]);
+  expect(f.query("SELECT count(*) AS count FROM tasks")).toEqual([{ count: 15 }]);
+});
+
+it("fails a taskless contribution when its destination changes and recovers only with the approved route", async () => {
+  const f = await fixture();
+  const plan = value(
+    await f.add(
+      "approved-route",
+      f.newPlan([
+        task("source"),
+        task("review", { agent: "virgilio", prerequisites: ["source"] }),
+        task("dependent", { prerequisites: ["review"] }),
+      ]),
+    ),
+  );
+  const source = await f.next();
+  f.resolve("virgilio", "fake");
+  await f.settle(source, undefined, "Approved result.");
+  expect(f.states(plan.resultId)).toEqual([
+    ["source", "completed", null, null],
+    ["review", "failed", null, "destination_changed"],
+    ["dependent", "blocked", "review", null],
+  ]);
+  expect(await f.prepare()).toBeNull();
+  const row = f.query("SELECT id FROM contributions WHERE plan_key='review'")[0]!;
+  const retry = {
+    command: "contribution.tryAgain",
+    operationId: "retry-route",
+    payload: { contributionId: identifier(row.id as Uint8Array) },
+  } as const;
+  expect(researchInput(retry.command, retry.payload)).toBe(true);
+  expect(await f.run(retry)).toEqual(failure("destination_changed"));
+  expect(f.query("SELECT count(*) AS count FROM tasks")).toEqual([{ count: 1 }]);
+  f.resolve("virgilio", "chatgpt");
+  const replacement = value(await f.run(retry));
+  expect(f.states(plan.resultId)).toEqual([
+    ["source", "completed", null, null],
+    ["review", "active", null, null],
+    ["dependent", "waiting", null, null],
+  ]);
+  expect((await f.next()).taskId).toBe(replacement.resultId);
+});
+
+it("refuses oversized input before retrying a taskless contribution on its approved route", async () => {
+  const f = await fixture();
+  const { resultId } = value(
+    await f.add(
+      "oversized-retry",
+      f.newPlan([task("source"), task("review", { agent: "virgilio", prerequisites: ["source"] })]),
+    ),
+  );
+  const source = await f.next();
+  f.resolve("virgilio", "fake");
+  await f.settle(source, undefined, "é".repeat(2100));
+  const states = f.states(resultId);
+  expect(states).toContainEqual(["review", "failed", null, "destination_changed"]);
+  const { id } = f.query("SELECT id FROM contributions WHERE plan_key='review'")[0]!;
+  const contributionId = identifier(id as Uint8Array);
+  const allocations = () =>
+    f.query(
+      "SELECT state FROM work_allocations WHERE contribution_id=? ORDER BY attempt_number",
+      contributionId,
+    );
+  expect(allocations()).toEqual([{ state: "released" }, { state: "released" }]);
+
+  f.resolve("virgilio", "chatgpt");
+  expect(
+    await f.run({
+      command: "contribution.tryAgain",
+      operationId: "retry-oversized",
+      payload: { contributionId },
+    }),
+  ).toEqual(failure("input_too_large"));
+  expect(f.states(resultId)).toEqual(states);
+  expect(allocations()).toEqual([{ state: "released" }, { state: "released" }]);
+  expect(f.query("SELECT count(*) AS count FROM tasks")).toEqual([{ count: 1 }]);
+  expect(f.query("SELECT 1 FROM command_receipts WHERE operation_id='retry-oversized'")).toEqual(
+    [],
+  );
+  expect(await f.prepare()).toBeNull();
+});
+
+it("refuses to activate a ready contribution when its prerequisite no longer holds its approved result", async () => {
+  const f = await fixture();
+  const plan = value(
+    await f.add(
+      "approved-input",
+      f.newPlan([task("source"), task("dependent", { prerequisites: ["source"] })]),
+    ),
+  );
+  const source = await f.next();
+  await saturatePlanQueue(f);
+  await f.settle(source, undefined, "Original approved result.");
+  expect(
+    f.query(
+      "SELECT ready_inputs IS NOT NULL AS ready, task_id FROM contributions WHERE plan_key='dependent'",
+    ),
+  ).toEqual([{ ready: 1, task_id: null }]);
+  const db = f.raw();
+  try {
+    // Simulate a stale readiness witness that production graph rules do not allow replacing.
+    db.exec(`DROP TRIGGER contributions_changes;
+      UPDATE contributions SET ready_inputs='[]' WHERE plan_key='dependent';
+      ${limitsObjects.contributions_changes};`);
+  } finally {
+    db.close();
+  }
+  await f.next();
+  expect(f.states(plan.resultId)).toEqual([
+    ["source", "completed", null, null],
+    ["dependent", "failed", null, "input_changed"],
+  ]);
+  expect(
+    f.query(
+      "SELECT count(*) AS count FROM tasks WHERE contribution_id=(SELECT id FROM contributions WHERE plan_key='dependent')",
+    ),
+  ).toEqual([{ count: 0 }]);
+});
+
+it.each(["contribution.tryAgain", "contribution.startAgain"] as const)(
+  "preserves the task and ledger when %s sees a changed destination or prerequisite",
+  async (command) => {
+    const f = await fixture();
+    const plan = value(
+      await f.add(
+        "explicit-activation",
+        f.newPlan([
+          task("source"),
+          task("review", { agent: "virgilio", prerequisites: ["source"] }),
+        ]),
+      ),
+    );
+    await f.settle(await f.next(), undefined, "Original result.");
+    const review = await f.next();
+    const restarting = command === "contribution.startAgain";
+    await f.settle(
+      review,
+      restarting
+        ? { status: "uncertain", reason: "connection_lost" }
+        : { status: "failed", reason: "provider_error", dispatched: true },
+    );
+    const retry = { command, operationId: "retry-explicit", payload: { taskId: review.taskId } };
+    const read = () => ({
+      tasks: f.query("SELECT * FROM tasks ORDER BY rowid"),
+      allocations: f.query("SELECT * FROM work_allocations ORDER BY rowid"),
+      states: f.states(plan.resultId),
+      receipts: f.query("SELECT * FROM command_receipts WHERE operation_id='retry-explicit'"),
+    });
+    const before = read();
+    f.resolve("virgilio", "fake");
+    expect(await f.run(retry)).toEqual(failure("destination_changed"));
+    expect(read()).toEqual(before);
+    f.resolve("virgilio", "chatgpt");
+    const db = f.raw();
+    try {
+      db.exec(`DROP TRIGGER contributions_changes;
+        UPDATE contributions SET ready_inputs='[]' WHERE plan_key='review';
+        ${limitsObjects.contributions_changes};`);
+    } finally {
+      db.close();
+    }
+    expect(await f.run(retry)).toEqual(failure("input_changed"));
+    expect(read()).toEqual(before);
+    expect(await f.prepare()).toBeNull();
+  },
+);

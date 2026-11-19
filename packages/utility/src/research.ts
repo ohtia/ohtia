@@ -1,3 +1,8 @@
+import type {
+  InterventionLimitsRow,
+  InterventionOperationRow,
+  WorkAllocationRow,
+} from "./work-limits.js";
 import { nextPosition, type TaskSchema, type TaskTransaction } from "./tasks.js";
 import fs from "node:fs";
 import * as crypto from "node:crypto";
@@ -61,6 +66,9 @@ import {
 } from "./contribution-graphs.js";
 import type { ContributionRow, InterventionRow } from "./consultations.js";
 export interface ResearchSchema extends TaskSchema {
+  intervention_limits: InterventionLimitsRow;
+  intervention_operations: InterventionOperationRow;
+  work_allocations: WorkAllocationRow;
   interventions: InterventionRow;
   contributions: ContributionRow;
   contribution_dependencies: DependencyRow;
@@ -319,11 +327,14 @@ export async function applyResearchCommand(
         : { ok: true, value: await researchReceiptResult(db, receipt) }
       : failure("operation_conflict");
   const keys =
-    input.command === "conversation.start" && Object.hasOwn(input.payload, "agentId")
-      ? [...payloadKeys["conversation.start"], "agentId"]
-      : input.command === "plan.addContributions" && Object.hasOwn(input.payload, "conversationId")
-        ? ["conversationId", "expectedGraphVersion", "purpose", "sharedContext", "contributions"]
-        : payloadKeys[input.command];
+    input.command === "contribution.tryAgain" && "contributionId" in input.payload
+      ? ["contributionId"]
+      : input.command === "conversation.start" && Object.hasOwn(input.payload, "agentId")
+        ? [...payloadKeys["conversation.start"], "agentId"]
+        : input.command === "plan.addContributions" &&
+            Object.hasOwn(input.payload, "conversationId")
+          ? ["conversationId", "expectedGraphVersion", "purpose", "sharedContext", "contributions"]
+          : payloadKeys[input.command];
   if (
     Object.keys(input.payload).length !== keys.length ||
     !keys.every((key) => Object.hasOwn(input.payload, key))
@@ -337,10 +348,12 @@ export async function applyResearchCommand(
         db,
         input.payload,
         tasks.context.mode,
+        (agent) => tasks.agentConnection(agent),
         input.operationId,
         now,
       );
       if (!added.ok) return added;
+      tasks.diagnostics.push({ event_name: "ohtia.work.reserved" });
       await tasks.advancePlan(added.value);
       result = added.value;
       break;
@@ -362,17 +375,22 @@ export async function applyResearchCommand(
       result = outcome.value;
       break;
     }
-    case "task.stop":
     case "contribution.tryAgain":
+    case "task.stop":
     case "contribution.startAgain":
     case "task.tryAgain":
     case "task.startAgain": {
-      if (!isEntityId(input.payload.taskId)) return failure("invalid_message");
-      const outcome = await tasks.control(
-        input.command,
-        bytes(input.payload.taskId),
-        input.operationId,
-      );
+      const outcome =
+        "contributionId" in input.payload
+          ? isEntityId(input.payload.contributionId)
+            ? await tasks.retryContributionWithoutTask(
+                bytes(input.payload.contributionId),
+                input.operationId,
+              )
+            : failure("invalid_message")
+          : isEntityId(input.payload.taskId)
+            ? await tasks.control(input.command, bytes(input.payload.taskId), input.operationId)
+            : failure("invalid_message");
       if (!outcome.ok) return outcome;
       result = outcome.value;
       break;

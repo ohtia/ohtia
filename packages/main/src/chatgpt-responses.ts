@@ -263,6 +263,23 @@ export function reportedUsage(value: unknown): ProviderUsage | undefined {
   };
 }
 const eventBytes = 4 * 1024 * 1024;
+
+function* completedAssistantText(output: unknown): Iterable<string> {
+  if (!Array.isArray(output)) return;
+  for (const item of output) {
+    if (
+      !object(item) ||
+      item.type !== "message" ||
+      item.role !== "assistant" ||
+      !Array.isArray(item.content)
+    )
+      continue;
+    for (const part of item.content) {
+      if (object(part) && part.type === "output_text" && typeof part.text === "string" && part.text)
+        yield part.text;
+    }
+  }
+}
 /**
  * Read a Responses stream. Success requires `response.completed`; an end without a final event is
  * uncertain; an event Ohtia cannot parse fails as invalid output, keeping the text already sent.
@@ -276,6 +293,8 @@ export async function readResponseStream(
 ): Promise<void> {
   const requestId = response.headers.get("x-request-id");
   let started = false;
+  let streamedText = false;
+  const isAborted = () => control.signal.aborted;
   const calls = new Set<string>();
   const ended = new Set<string>();
   const start = (model: unknown) => {
@@ -304,7 +323,7 @@ export async function readResponseStream(
   };
   /** Returns true once the stream has reached its final event. */
   const handle = async (block: string): Promise<boolean | "invalid"> => {
-    if (control.signal.aborted) return true;
+    if (isAborted()) return true;
     const data: string[] = [];
     for (const line of block.split("\n")) {
       if (line.startsWith("data:")) data.push(line.slice(line.startsWith("data: ") ? 6 : 5));
@@ -332,7 +351,10 @@ export async function readResponseStream(
     switch (value.type) {
       case "response.output_text.delta":
         if (typeof value.delta !== "string") return "invalid";
-        if (value.delta) control.emit({ type: "text", text: value.delta });
+        if (value.delta) {
+          streamedText = true;
+          control.emit({ type: "text", text: value.delta });
+        }
         return false;
       case "response.output_item.added": {
         const item = value.item;
@@ -387,6 +409,13 @@ export async function readResponseStream(
       case "response.completed":
         if (!body) return "invalid";
         usage();
+        // The completed response can carry text even when no text deltas arrived.
+        if (!streamedText) {
+          for (const text of completedAssistantText(body.output)) {
+            control.emit({ type: "text", text });
+            if (isAborted()) return true;
+          }
+        }
         control.emit({ type: "result", result: { status: "completed" } });
         return true;
       case "response.failed":

@@ -106,6 +106,7 @@ export interface TimelineTask extends TimelineIdentity {
   readonly rank: 3;
   readonly consultation?: true;
   readonly replacesTaskId?: string | null;
+  readonly consultationRetryFits?: boolean;
   readonly agentId: ReplyAgent;
   readonly language: string | null;
   readonly connection: string;
@@ -444,25 +445,34 @@ export function mergeTimeline(
       item.superseded &&
       previous.revision === item.revision
     )
-      items.set(item.id, { ...previous, superseded: true });
+      items.set(item.id, {
+        ...previous,
+        superseded: true,
+        ...(item.consultationRetryFits === undefined
+          ? {}
+          : { consultationRetryFits: item.consultationRetryFits }),
+      });
     else if (
       previous.kind === "task" &&
       item.kind === "task" &&
       previous.revision === item.revision &&
-      previous.state === "queued" &&
-      item.state === "queued"
+      ((previous.state === "queued" && item.state === "queued") ||
+        item.consultationRetryFits !== previous.consultationRetryFits)
     )
       items.set(item.id, {
         ...previous,
         waitingForModels: item.waitingForModels,
         waitingLimit: item.waitingLimit,
+        ...(item.consultationRetryFits === undefined
+          ? {}
+          : { consultationRetryFits: item.consultationRetryFits }),
       });
   }
   for (const task of items.values()) {
     if (task.kind !== "task" || !task.consultation || !task.replacesTaskId) continue;
     const replaced = items.get(task.replacesTaskId);
     if (replaced && replaced.kind === "task" && !replaced.superseded)
-      items.set(replaced.id, { ...replaced, superseded: true });
+      items.set(replaced.id, { ...replaced, superseded: true, consultationRetryFits: false });
   }
   return [...items.values()].sort(compareTimeline);
 }
@@ -561,6 +571,10 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
     case "usagePause.resume":
       return exact(value, ["connection"]) && value.connection === "chatgpt";
     case "contribution.tryAgain":
+      return (
+        (exact(value, ["taskId"]) && isResearchId(value.taskId)) ||
+        (exact(value, ["contributionId"]) && isResearchId(value.contributionId))
+      );
     case "contribution.startAgain":
     case "task.tryAgain":
     case "task.startAgain":
@@ -867,9 +881,13 @@ function item(value: unknown): boolean {
       "superseded",
       "maxAttemptDurationMs",
       "maxInactivityMs",
-      ...(value.consultation === true ? ["consultation", "replacesTaskId"] : []),
+      ...(value.consultation === true
+        ? ["consultation", "replacesTaskId", "consultationRetryFits"]
+        : []),
     ]) &&
-    (value.consultation !== true || nullable(value.replacesTaskId, isResearchId)) &&
+    (value.consultation !== true ||
+      (nullable(value.replacesTaskId, isResearchId) &&
+        typeof value.consultationRetryFits === "boolean")) &&
     isConnectionId(value.connection) &&
     nullable(
       value.blockingReason,

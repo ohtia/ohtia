@@ -2,7 +2,21 @@ import { createHash } from "node:crypto";
 import { failure, type AddContributionsPayload, type Outcome, utf8Size } from "@ohtia/contracts";
 import { sql, type Kysely, type NotNull, type Selectable } from "kysely";
 import { consultableAgents, type ContributionRow } from "./consultations.js";
-import { operationPolicy, type InputMessage, type OperationPolicy } from "./operations.js";
+import {
+  operationPolicy,
+  testSynthesisPolicy,
+  type InputMessage,
+  type OperationPolicy,
+} from "./operations.js";
+import {
+  authorizedOperation,
+  authorizeWork,
+  interventionLimits,
+  planLimits,
+  reserveWork,
+  workFits,
+} from "./work-limits.js";
+import type { ReplyAgent } from "@ohtia/contracts";
 import {
   bytes,
   canonicalJson,
@@ -133,6 +147,7 @@ export async function addContributions(
   db: Kysely<ResearchSchema>,
   payload: AddContributionsPayload,
   mode: RuntimeMode,
+  resolveConnection: (agent: ReplyAgent) => string,
   operationId: string,
   now: string,
 ): Promise<Outcome<Uint8Array>> {
@@ -179,7 +194,11 @@ export async function addContributions(
   if (!conversation.is_development && !conversation.setup_confirmed_at)
     return failure("agent_unavailable");
   const enabled = agents(mode, !!conversation.is_development);
+  const limits = existing ? await interventionLimits(db, id) : planLimits;
+  if (!limits) return failure("limit_reached");
   const previous = existing ? await planContributions(db, id) : [];
+  if (previous.length + requests.length > limits.max_contributions)
+    return failure("plan_too_large");
   const byKey = new Map(previous.map((row) => [row.plan_key, row.id]));
   const keysById = new Map(previous.map((row) => [identifier(row.id), row.plan_key]));
   const edges = new Map<string, string[]>(previous.map((row) => [row.plan_key, []]));
@@ -203,6 +222,11 @@ export async function addContributions(
     required: number;
     dedupe_key: Uint8Array;
   }> = [];
+  const policies: OperationPolicy[] = [];
+  let dependencyCount = [...edges.values()].reduce(
+    (total, prerequisites) => total + prerequisites.length,
+    0,
+  );
   for (const request of requests) {
     if (request === null || typeof request !== "object" || Array.isArray(request))
       return failure("invalid_message");
@@ -225,12 +249,17 @@ export async function addContributions(
     if (!entry.request.trim()) return failure("request_empty");
     if (utf8Size(entry.request) > 8192) return failure("request_too_large");
     const agent = enabled.find(({ id }) => id === entry.agent);
-    if (!agent || !operationPolicy(agent.operation, agent.version, mode))
-      return failure("agent_unavailable");
+    const policy = agent && operationPolicy(agent.operation, agent.version, mode);
+    if (existing && (!agent || !(await authorizedOperation(db, id, agent.id, agent.operation))))
+      return failure("agent_not_authorized");
+    if (!agent || !policy) return failure("agent_unavailable");
+    policies.push(policy);
     if (!entry.prerequisites.every(isPlanKey)) return failure("unknown_prerequisite");
     const prerequisites = [...new Set(entry.prerequisites)];
     if (prerequisites.includes(entry.planKey)) return failure("self_dependency");
     if (prerequisites.length !== entry.prerequisites.length) return failure("invalid_message");
+    dependencyCount += prerequisites.length;
+    if (dependencyCount > limits.max_dependencies) return failure("plan_too_large");
     const key = contributionKey(
       agent.id,
       agent.operation,
@@ -259,6 +288,17 @@ export async function addContributions(
     if (edges.get(key)?.some((prerequisite) => !byKey.has(prerequisite)))
       return failure("unknown_prerequisite");
   if (!topologicalOrder(edges)) return failure("cycle");
+
+  // Only the coordinator can add work. Prerequisite chains do not add delegation levels.
+  if (
+    !(await workFits(
+      db,
+      limits,
+      creating ? [...policies, testSynthesisPolicy] : policies,
+      existing?.id,
+    ))
+  )
+    return failure("limit_reached");
 
   const dependencies = contributions.flatMap(({ id: contributionId, plan_key }) =>
     (edges.get(plan_key) ?? []).map((prerequisite) => {
@@ -300,6 +340,25 @@ export async function addContributions(
         shared_context: payload.sharedContext,
       })
       .execute();
+    await authorizeWork(
+      db,
+      id,
+      limits,
+      [
+        ...contributions.map(({ agent_id, operation }) => ({
+          agent_id,
+          operation,
+          connection: resolveConnection(agent_id),
+        })),
+        {
+          agent_id: "virgilio",
+          operation: testSynthesisPolicy.operation,
+          connection: resolveConnection("virgilio"),
+        },
+      ],
+      now,
+    );
+    await reserveWork(db, id, null, testSynthesisPolicy, now);
   } else {
     await db
       .updateTable("interventions")
@@ -308,7 +367,7 @@ export async function addContributions(
       .execute();
   }
   // Insert in researcher order. All endpoints must exist before adding edges.
-  for (const contribution of contributions)
+  for (const [index, contribution] of contributions.entries()) {
     await db
       .insertInto("contributions")
       .values({
@@ -319,6 +378,10 @@ export async function addContributions(
         created_at: now,
       })
       .execute();
+    const policy = policies[index];
+    if (!policy) throw new Error("Validated contribution lacks its policy.");
+    await reserveWork(db, id, contribution.id, policy, now);
+  }
   for (const dependency of dependencies)
     await db.insertInto("contribution_dependencies").values(dependency).execute();
   await db
@@ -335,6 +398,54 @@ export async function addContributions(
     })
     .execute();
   return { ok: true, value: id };
+}
+
+/** Freeze the dependency identities and completed results when a contribution becomes ready. */
+export async function readyInputs(
+  db: Kysely<ResearchSchema>,
+  id: Uint8Array,
+): Promise<string | undefined> {
+  const rows = await db
+    .selectFrom("contribution_dependencies as d")
+    .innerJoin("contributions as c", "c.id", "d.prerequisite_id")
+    .leftJoin("messages as m", "m.id", "c.result_message_id")
+    .select([
+      "d.id",
+      "c.state",
+      "c.task_id",
+      "m.id as result",
+      "m.task_id as result_task",
+      "m.ending",
+    ])
+    .select((eb) =>
+      eb
+        .exists(
+          eb
+            .selectFrom("tasks as t")
+            .select("t.id")
+            .whereRef("t.replaces_task_id", "=", "c.task_id"),
+        )
+        .as("superseded"),
+    )
+    .where("d.contribution_id", "=", id)
+    .where("d.removed_in_graph_version", "is", null)
+    .orderBy("d.id")
+    .execute();
+  const inputs = [];
+  for (const row of rows) {
+    if (
+      row.state !== "completed" ||
+      !row.result ||
+      !row.result_task ||
+      !row.task_id ||
+      row.ending !== "complete" ||
+      row.superseded ||
+      identifier(row.result_task) !== identifier(row.task_id)
+    )
+      return;
+    inputs.push([identifier(row.id), identifier(row.result)]);
+  }
+  return JSON.stringify(inputs);
 }
 
 export async function planInput(
