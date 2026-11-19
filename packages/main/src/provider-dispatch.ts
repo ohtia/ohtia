@@ -320,14 +320,17 @@ export class ProviderDispatch {
         },
       };
       try {
+        const titleInstructions = conversationTitleInstructionSuffix(request.operation);
         const providerRequest =
           (record.conversationTitle || record.consultationEnabled) &&
           !adapter.declaration.capabilities.tools
             ? {
                 ...request,
-                tools: [],
-                instructions: request.instructions.endsWith(conversationTitleInstructionSuffix)
-                  ? request.instructions.slice(0, -conversationTitleInstructionSuffix.length)
+                tools: request.tools.filter(
+                  (tool) => !isConversationTitleTool(tool) && !isConsultationTool(tool),
+                ),
+                instructions: request.instructions.endsWith(titleInstructions)
+                  ? request.instructions.slice(0, -titleInstructions.length)
                   : request.instructions,
               }
             : request;

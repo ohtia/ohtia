@@ -1274,9 +1274,20 @@ export class TaskTransaction {
         .executeTakeFirstOrThrow();
       const suggestTitle =
         task.kind === "reply" &&
-        task.operation === "direct_guidance" &&
         conversation.automatic_title_eligible === 1 &&
         conversation.title === null &&
+        (task.operation === "project_setup"
+          ? task.instruction_version >= 2
+          : task.operation === "direct_guidance" &&
+            // The setup conversation receives suggestions only during setup.
+            !(await this.db
+              .selectFrom("project_setup_proposals as p")
+              .innerJoin("tasks as t", "t.id", "p.task_id")
+              .select("p.id")
+              .where("p.project_id", "=", task.project_id)
+              .where("p.state", "=", "confirmed")
+              .where("t.conversation_id", "=", task.conversation_id)
+              .executeTakeFirst())) &&
         !(
           task.replaces_task_id &&
           (await this.db
@@ -1537,18 +1548,14 @@ export class TaskTransaction {
             connection: task.connection,
             model,
             instructions: suggestTitle
-              ? instructions + conversationTitleInstructionSuffix
+              ? instructions + conversationTitleInstructionSuffix(policy.operation)
               : instructions,
             input: built.input,
-            tools:
-              task.operation === "project_setup"
-                ? [setupTool]
-                : [
-                    ...(enabledConsultations.length
-                      ? [consultationTool(enabledConsultations)]
-                      : []),
-                    ...(suggestTitle ? [conversationTitleTool] : []),
-                  ],
+            tools: [
+              ...(task.operation === "project_setup" ? [setupTool] : []),
+              ...(enabledConsultations.length ? [consultationTool(enabledConsultations)] : []),
+              ...(suggestTitle ? [conversationTitleTool] : []),
+            ],
             project: identifier(task.project_id),
             policy_version: task.policy_version,
             instruction_version: task.instruction_version,
@@ -1725,7 +1732,7 @@ export class TaskTransaction {
     }
     if (
       result.status === "completed" &&
-      task.operation === "direct_guidance" &&
+      (task.operation === "direct_guidance" || task.operation === "project_setup") &&
       attempt.conversation_title_policy === conversationTitlePolicy.version &&
       validConversationTitle(result.conversation_title) &&
       policy &&

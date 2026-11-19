@@ -105,23 +105,29 @@ export function isConsultationTool(tool: { namespace: unknown; name: unknown }):
   return tool.namespace === "ohtia" && tool.name === "propose_consultation";
 }
 
-/** Version 1 of the optional title metadata returned alongside a direct-guidance reply. */
+/** Version 1 of the optional title metadata returned alongside a Virgilio reply. */
 export const conversationTitlePolicy = Object.freeze({
   version: 1,
   namespace: "ohtia_metadata",
   name: "suggest_conversation_title",
   max_argument_bytes: 4096,
 });
-export const conversationTitleInstructionSuffix =
-  "\n\n" +
-  [
-    "Write your ordinary research reply first.",
-    `If the researcher's messages establish a topic, then call ${conversationTitlePolicy.name} exactly once in the same response.`,
-    "Use a short, plain-text title in the document language that describes the earliest clear exchange. Base it on what the researcher is discussing and use your reply when it clarifies the topic.",
-    "A concrete research question or task qualifies even when the thesis is still being defined. Use the conversation's topic independently of the project's working title.",
-    "If the conversation contains only a greeting, or the topic is still unclear, omit the call.",
-    "Keep the title in the tool arguments and out of your ordinary reply.",
-  ].join(" ");
+export function conversationTitleInstructionSuffix(operation: ProviderOperation): string {
+  const setup = operation === "project_setup";
+  return (
+    "\n\n" +
+    [
+      setup
+        ? "Follow the project setup instructions above, including when to call propose_project_setup."
+        : "Write your ordinary research reply first.",
+      `If the researcher's messages establish a topic, then call ${conversationTitlePolicy.name} exactly once in the same response.`,
+      `Use a short, plain-text title in ${setup ? "the conversation language" : "the document language"} that describes the earliest clear exchange. Base it on what the researcher is discussing and use your reply when it clarifies the topic.`,
+      "A concrete research question or task qualifies even when the thesis is still being defined. Use the conversation's topic independently of the project's working title.",
+      "If the conversation contains only a greeting, or the topic is still unclear, omit the call.",
+      "Keep the title in the tool arguments and out of your ordinary reply.",
+    ].join(" ")
+  );
+}
 
 export function isConversationTitleTool(tool: { namespace: unknown; name: unknown }): boolean {
   return (
@@ -132,7 +138,10 @@ export function isConversationTitleTool(tool: { namespace: unknown; name: unknow
 export function requestsConversationTitle(
   request: Pick<ProviderRequestData, "operation" | "tools">,
 ): boolean {
-  return request.operation === "direct_guidance" && request.tools.some(isConversationTitleTool);
+  return (
+    (request.operation === "direct_guidance" || request.operation === "project_setup") &&
+    request.tools.some(isConversationTitleTool)
+  );
 }
 export interface ProviderToolCall {
   /** Null is an unnamespaced provider call; it cannot match a namespaced permitted tool. */

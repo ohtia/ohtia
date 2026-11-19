@@ -1,7 +1,7 @@
 ---
 type: Playbook
 title: Durable foundation storage
-description: Persist project opening order, conversation agents and titles, preferences, research tasks and setup proposals with durable receipts, recovery, bounded transfers and pause-count invalidation.
+description: Persist project opening order, conversation agents and title provenance, preferences, research tasks and setup proposals with durable receipts, recovery, bounded transfers and pause-count invalidation.
 generated:
   by: codex/gpt-6.2-sol
 ---
@@ -14,7 +14,7 @@ The [composer](epics/EPIC-003-research-agents/epic.md#spec-003-017-message-compo
 
 ## Conversation titles
 
-Migration `0018_conversation_titles` enables optional title suggestions for research conversations created through `conversation.start`. The opening message and conversation are still saved together. Existing conversations retain their current names or localized creation dates. The title uses versioned metadata from the same direct-guidance response and uses the conversation context already admitted for that reply. Main counts the title arguments together with the reply text under the existing attempt output limit. A missing, incomplete or invalid suggestion leaves the date visible and preserves a successful reply. An explicit retry of an empty reply that requested title metadata sends only the ordinary reply request.
+Migration `0018_conversation_titles` provides the storage for optional conversation title suggestions. A new conversation opened with `conversation.start` can receive a suggestion from direct guidance, and a new project’s initial conversation can receive one during setup. A setup suggestion describes the first clear topic in the conversation language. The project’s working title and document language still require separate confirmation. Each suggestion uses versioned metadata from the same Virgilio response and the conversation context already admitted for that reply. Existing conversations keep their earlier eligibility. Main counts the title arguments together with the reply text under the existing attempt output limit. A missing, incomplete or invalid suggestion leaves the date visible and preserves a successful reply. An explicit retry of an empty reply that requested title metadata sends only the ordinary reply request.
 
 Finalization checks for an unnamed eligible conversation and saves the suggestion and producing attempt together with the reply. The attempt identifies the title policy, model and transferred inputs (PRIN-004). The conversation revision refreshes the chat header and history. Its manual rename timestamp advances only on a researcher rename, so a rename already in progress can win after a suggestion lands. Saving a researcher name clears the active suggestion’s origin and retains the existing conflict rule for two manual renames (PRIN-002).
 

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ServiceConnections,
   conversationTitlePolicy,
+  conversationTitleInstructionSuffix,
   requestsConversationTitle,
   decodeProviderEvent,
   decodeDiagnosticEvent,
@@ -135,6 +136,205 @@ async function setup(development = false, emitDiagnostic?: (event: DiagnosticEve
   return { ...f, context, projectId, conversationId, append, prepare, proposals, complete };
 }
 
+describe("automatic titles during project setup", () => {
+  const title = "Tutorías entre pares";
+  const topic = "Quiero estudiar las tutorías entre pares.";
+  const workingTitle = "A comparative study of peer tutoring";
+  const proposal = call(workingTitle, "en");
+  const titleCall: ProviderToolCall = {
+    namespace: conversationTitlePolicy.namespace,
+    name: conversationTitlePolicy.name,
+    arguments: JSON.stringify({ title }),
+  };
+  const read = async (f: Awaited<ReturnType<typeof setup>>) =>
+    value(await f.store.readConversations(f.projectId))[0]!;
+
+  async function reply(
+    f: Awaited<ReturnType<typeof setup>>,
+    calls: readonly ProviderToolCall[],
+    options: { readonly beforeResult?: () => Promise<void>; readonly tools?: boolean } = {},
+  ) {
+    const { dispatch } = await f.prepare();
+    const text = "Sigamos con el tema de la tesis.";
+    const send = vi.fn<NonNullable<ReturnType<typeof createFakeProvider>["requests"]>["send"]>(
+      async (_request, control) => {
+        expect(control.release()).toBe(true);
+        control.emit({ type: "text", text });
+        await options.beforeResult?.();
+        for (const item of calls) control.emit({ type: "tool_call", ...item });
+        control.emit({ type: "result", result: { status: "completed" } });
+      },
+    );
+    const fake = createFakeProvider({ send });
+    const events = await dispatchThrough(
+      { snapshot: () => ({ state: "connected" }) } as Parameters<typeof dispatchThrough>[0],
+      {
+        ...fake,
+        declaration: {
+          ...fake.declaration,
+          capabilities: { ...fake.declaration.capabilities, tools: options.tools ?? true },
+          connection: { ...fake.declaration.connection, id: "chatgpt" },
+        },
+      },
+      dispatch.request,
+    );
+    expect(send).toHaveBeenCalledOnce();
+    expect(events.filter((event) => event.type === "text")).toEqual([
+      expect.objectContaining({ text }),
+    ]);
+    const terminal = events.at(-1)!;
+    expect(terminal.type).toBe("result");
+    const providerCalls = events.filter((event) => event.type === "tool_call");
+    const record = () =>
+      f.store.recordTaskEvent(dispatch.request.attempt, terminal, text, providerCalls);
+    expect(value(await record())).toMatchObject({
+      recorded: true,
+      result: { status: "completed" },
+    });
+    return { request: send.mock.calls[0]![0], terminal, record, providerCalls };
+  }
+
+  it("saves a topical opening and its producing attempt alongside a separately confirmed setup", async () => {
+    const f = await setup();
+    const opening = await read(f);
+    expect(opening.title).toBeNull();
+    value(
+      await f.append(
+        `${topic} El documento será en inglés y acordamos el título «${workingTitle}».`,
+      ),
+    );
+    const { request, record, providerCalls } = await reply(f, [titleCall, proposal]);
+    expect(requestsConversationTitle(request)).toBe(true);
+    expect(request.instructions).toContain(
+      "a short, plain-text title in the conversation language",
+    );
+    const policy = operationPolicy("project_setup", 2, "development")!;
+    expect(request.limits.max_output_bytes).toBe(policy.max_output_bytes);
+    expect(providerCalls).toEqual([expect.objectContaining(proposal)]);
+    const named = await read(f);
+    expect(named).toMatchObject({ id: opening.id, title, updatedAt: opening.updatedAt });
+    expect(named.revision).toBeGreaterThan(opening.revision);
+    expect(value(await f.store.readProjects())[0]).toMatchObject({
+      title: null,
+      documentLanguage: null,
+    });
+    expect(f.proposals()).toEqual([
+      expect.objectContaining({ state: "proposed", title: workingTitle }),
+    ]);
+    const db = f.raw();
+    try {
+      expect(
+        db.prepare("SELECT title_attempt_id FROM conversations WHERE id=?").get(bytes(opening.id)),
+      ).toEqual({
+        title_attempt_id: bytes(request.attempt),
+      });
+    } finally {
+      db.close();
+    }
+    expect(value(await record())).toEqual({ recorded: false });
+    expect(await read(f)).toEqual(named);
+
+    value(
+      await f.store.executeResearchCommand({
+        command: "project.confirmSetup",
+        operationId: "confirm-named-setup",
+        payload: { proposalId: f.proposals()[0]!.id },
+      }),
+    );
+    await f.store.close();
+    const reopened = new DurableStore(f.options);
+    stores.push(reopened);
+    await reopened.open();
+    expect(value(await reopened.readProjects())[0]).toMatchObject({
+      title: workingTitle,
+      documentLanguage: "en",
+    });
+    expect(value(await reopened.readConversations(f.projectId))).toEqual([
+      expect.objectContaining({ id: opening.id, title }),
+    ]);
+  });
+
+  it("keeps a greeting unnamed and saves the first topical exchange without requiring a setup proposal", async () => {
+    const f = await setup();
+    value(await f.append("Hola"));
+    expect(requestsConversationTitle((await reply(f, [])).request)).toBe(true);
+    expect((await read(f)).title).toBeNull();
+    value(await f.append(topic));
+    const topical = await reply(f, [titleCall]);
+    expect(topical.request.input.map((item) => item.text)).toEqual([
+      "Hola",
+      "Sigamos con el tema de la tesis.",
+      topic,
+    ]);
+    expect((await read(f)).title).toBe(title);
+    expect(f.proposals()).toEqual([]);
+    value(await f.append("Escribiré en inglés."));
+    expect(requestsConversationTitle((await reply(f, [proposal])).request)).toBe(false);
+    expect((await read(f)).title).toBe(title);
+  });
+
+  it.each([
+    { label: "missing", metadata: [], tools: true },
+    { label: "malformed", metadata: [{ ...titleCall, arguments: "{" }], tools: true },
+    { label: "invalid", metadata: [{ ...titleCall, arguments: '{"title":" "}' }], tools: true },
+    { label: "duplicated", metadata: [titleCall, titleCall], tools: true },
+    { label: "unavailable", metadata: [], tools: false },
+  ])(
+    "preserves the reply and setup proposal when title metadata is $label",
+    async ({ metadata, tools }) => {
+      const f = await setup();
+      value(await f.append(topic));
+      const { request, terminal } = await reply(f, [...metadata, proposal], { tools });
+      expect(requestsConversationTitle(request)).toBe(tools);
+      if (!tools) {
+        expect(request.tools).toEqual([setupTool]);
+        expect(request.instructions).toBe(setupInstructionsV2);
+      }
+      expect(terminal).toMatchObject({ result: { status: "completed" } });
+      expect((await read(f)).title).toBeNull();
+      expect(f.proposals()[0]).toMatchObject({ state: "proposed", title: workingTitle });
+      expect(value(await f.store.readMessages(f.conversationId)).at(-1)).toMatchObject({
+        ending: "complete",
+      });
+    },
+  );
+
+  it.each(["before", "after"] as const)(
+    "keeps a manual name saved %s the same in-flight result",
+    async (timing) => {
+      const f = await setup();
+      const { id, updatedAt } = await read(f);
+      value(await f.append(topic));
+      const rename = async () => {
+        value(
+          await f.store.executeResearchCommand({
+            command: "conversation.rename",
+            operationId: "rename-setup-chat",
+            payload: {
+              conversationId: id,
+              expectedUpdatedAt: updatedAt,
+              title: "Researcher's notebook",
+            },
+          }),
+        );
+      };
+      const { record } = await reply(
+        f,
+        [titleCall],
+        timing === "before" ? { beforeResult: rename } : {},
+      );
+      if (timing === "after") {
+        expect((await read(f)).title).toBe(title);
+        await rename();
+      }
+      const named = await read(f);
+      expect(named.title).toBe("Researcher's notebook");
+      expect(value(await record())).toEqual({ recorded: false });
+      expect(await read(f)).toEqual(named);
+    },
+  );
+});
+
 describe("project setup task transactions", () => {
   it("uses version 2 when a new message replaces a queued version 1 setup reply", async () => {
     const f = await setup();
@@ -149,7 +349,7 @@ describe("project setup task transactions", () => {
     expect(task.dispatch.request).toMatchObject({
       policy_version: 2,
       instruction_version: 2,
-      instructions: setupInstructionsV2,
+      instructions: setupInstructionsV2 + conversationTitleInstructionSuffix("project_setup"),
     });
     const db = f.raw();
     const rows = db
@@ -220,7 +420,7 @@ describe("project setup task transactions", () => {
     expect(next.dispatch.request).toMatchObject({
       policy_version: 2,
       instruction_version: 2,
-      instructions: setupInstructionsV2,
+      instructions: setupInstructionsV2 + conversationTitleInstructionSuffix("project_setup"),
     });
   });
 
@@ -231,8 +431,8 @@ describe("project setup task transactions", () => {
       operation: "project_setup",
       policy_version: 2,
       instruction_version: 2,
-      instructions: setupInstructionsV2,
-      tools: [setupTool],
+      instructions: setupInstructionsV2 + conversationTitleInstructionSuffix("project_setup"),
+      tools: [setupTool, expect.objectContaining({ name: conversationTitlePolicy.name })],
       model: "first",
       document_language: null,
     });
@@ -273,7 +473,9 @@ describe("project setup task transactions", () => {
       documentLanguage: "es-AR",
     });
     value(await f.append("A message after confirmation"));
-    expect(value(await f.store.prepareTask())?.dispatch.request.operation).toBe("direct_guidance");
+    const request = (await f.prepare()).dispatch.request;
+    expect(request.operation).toBe("direct_guidance");
+    expect(requestsConversationTitle(request)).toBe(false);
     expect(f.proposals()[2]!.state).toBe("confirmed");
   });
 
@@ -1477,6 +1679,7 @@ it("upgrades a schema-15 setup proposal without losing decisions or notice retry
     }),
   );
   const prepared = value(await reopened.prepareTask())!;
+  expect(requestsConversationTitle(prepared.dispatch.request)).toBe(false);
   value(
     await reopened.recordTaskEvent(
       prepared.dispatch.request.attempt,
