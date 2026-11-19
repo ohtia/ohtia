@@ -534,6 +534,7 @@ export function createFoundationPort(
     renameConversation: (id, input) => call("conversation.rename", input, id),
     stopConversation: (id, input) => call("conversation.stop", input, id),
     readPauses: () => call("pause.read", {}),
+    finishPlan: (id, input) => call("plan.finish", input, id),
     acceptConsultation: (id, input) => call("consultation.accept", input, id),
     declineConsultation: (id, input) => call("consultation.decline", input, id),
     tryAgainContribution: (id, input) => call("contribution.tryAgain", input, id),

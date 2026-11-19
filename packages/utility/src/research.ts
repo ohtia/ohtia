@@ -54,10 +54,17 @@ export interface MessageRow {
   created_at: string;
 }
 import type { SetupProposalRow } from "./project-setup.js";
+import {
+  addContributions,
+  type DependencyRow,
+  type GraphChangeRow,
+} from "./contribution-graphs.js";
 import type { ContributionRow, InterventionRow } from "./consultations.js";
 export interface ResearchSchema extends TaskSchema {
   interventions: InterventionRow;
   contributions: ContributionRow;
+  contribution_dependencies: DependencyRow;
+  graph_changes: GraphChangeRow;
   project_setup_proposals: SetupProposalRow;
   projects: ProjectRow;
   conversations: Omit<ConversationRow, "agent_id"> & {
@@ -262,6 +269,8 @@ const payloadKeys = {
   "development.sendToJosefa": ["conversationId", "content"],
   "project.create": [],
   "project.open": ["projectId"],
+  "plan.addContributions": ["planId", "expectedGraphVersion", "contributions"],
+  "plan.finish": ["planId"],
   "usagePause.resume": ["connection"],
   "task.continueAll": [],
   "task.cancelAll": [],
@@ -286,7 +295,8 @@ export async function applyResearchCommand(
     !isIdentifier(input.operationId) ||
     !researchCommands.includes(input.command) ||
     !object(input.payload) ||
-    (input.command === "development.sendToJosefa" && tasks.context.mode !== "development")
+    ((input.command === "development.sendToJosefa" || input.command === "plan.addContributions") &&
+      tasks.context.mode !== "development")
   )
     return failure("invalid_message");
   let hash: Buffer;
@@ -306,12 +316,14 @@ export async function applyResearchCommand(
     return receipt.command === input.command && Buffer.from(receipt.payload_sha256).equals(hash)
       ? receipt.error_code
         ? failure(receipt.error_code)
-        : { ok: true, value: { resultId: identifier(receipt.result_id) } }
+        : { ok: true, value: await researchReceiptResult(db, receipt) }
       : failure("operation_conflict");
   const keys =
     input.command === "conversation.start" && Object.hasOwn(input.payload, "agentId")
       ? [...payloadKeys["conversation.start"], "agentId"]
-      : payloadKeys[input.command];
+      : input.command === "plan.addContributions" && Object.hasOwn(input.payload, "conversationId")
+        ? ["conversationId", "expectedGraphVersion", "purpose", "sharedContext", "contributions"]
+        : payloadKeys[input.command];
   if (
     Object.keys(input.payload).length !== keys.length ||
     !keys.every((key) => Object.hasOwn(input.payload, key))
@@ -320,6 +332,26 @@ export async function applyResearchCommand(
   const now = new Date().toISOString();
   let result: Uint8Array;
   switch (input.command) {
+    case "plan.addContributions": {
+      const added = await addContributions(
+        db,
+        input.payload,
+        tasks.context.mode,
+        input.operationId,
+        now,
+      );
+      if (!added.ok) return added;
+      await tasks.advancePlan(added.value);
+      result = added.value;
+      break;
+    }
+    case "plan.finish": {
+      if (!isEntityId(input.payload.planId)) return failure("invalid_message");
+      const finished = await tasks.finishPlan(bytes(input.payload.planId), input.operationId);
+      if (!finished.ok) return finished;
+      result = finished.value;
+      break;
+    }
     case "conversation.stop": {
       if (!isEntityId(input.payload.conversationId)) return failure("invalid_message");
       const outcome = await tasks.stopConversation(
@@ -604,7 +636,24 @@ export async function applyResearchCommand(
       created_at: now,
     })
     .execute();
-  return { ok: true, value: { resultId: identifier(result) } };
+  return {
+    ok: true,
+    value: await researchReceiptResult(db, { command: input.command, result_id: result }),
+  };
+}
+export async function researchReceiptResult(
+  db: Kysely<ResearchSchema>,
+  receipt: Pick<ResearchSchema["command_receipts"], "command" | "result_id">,
+): Promise<ResearchResult> {
+  const resultId = identifier(receipt.result_id);
+  if (receipt.command !== "plan.finish") return { resultId };
+  const { outcome } = await db
+    .selectFrom("interventions")
+    .select("outcome")
+    .where("id", "=", receipt.result_id)
+    .executeTakeFirstOrThrow();
+  if (!outcome) throw new Error("Finished plan lacks an outcome.");
+  return { resultId, outcome };
 }
 async function append(
   db: Kysely<ResearchSchema>,

@@ -6,6 +6,15 @@ import {
   decodeConsultationProposal,
   otherAgentInput,
 } from "./consultations.js";
+import {
+  contributionKey,
+  holdingDependencies,
+  planContributions,
+  planInput,
+  topologicalOrder,
+  waitingForPlanWork,
+} from "./contribution-graphs.js";
+import type { ContributionRow, InterventionRow } from "./consultations.js";
 import { renderProjectInstructions } from "./thesis-route.js";
 import {
   acceptedSetupCalls,
@@ -18,7 +27,7 @@ import {
 import type { ProviderToolCall } from "@ohtia/contracts";
 import type { LanguageRegistry } from "./research.js";
 import { randomUUID } from "node:crypto";
-import { type Generated, type Kysely, sql } from "kysely";
+import { type Generated, type Kysely, type Selectable, sql } from "kysely";
 import {
   type Outcome,
   type ConversationAgent,
@@ -103,7 +112,7 @@ export interface TaskRow {
   project_id: Uint8Array;
   conversation_id: Uint8Array;
   input_through_position: number | null;
-  kind: "reply" | "consultation";
+  kind: "reply" | "consultation" | "contribution";
   contribution_id: Uint8Array | null;
   reply_position: number | null;
   operation: string;
@@ -163,6 +172,7 @@ export const unknownUsage: ProviderUsage = Object.freeze({
   reasoning_tokens: null,
 });
 export interface PreparedTask {
+  readonly kind: TaskRow["kind"];
   readonly dispatch: ProviderDispatchMessage;
   readonly transfer: readonly TransferEntry[];
   readonly acceptedByOperationId: string;
@@ -178,6 +188,7 @@ export interface TaskContext {
 export class TaskTransaction {
   readonly diagnostics: DiagnosticEvent[] = [];
   readonly modelRefreshes = new Set<string>();
+  private readonly changedPlans = new Map<string, Uint8Array>();
   private readonly interventions = new Map<string, Uint8Array>();
   private readonly conversations = new Map<string, Uint8Array>();
   private titleSuggestion?: { conversation: string; attemptId: Uint8Array; title: string };
@@ -193,6 +204,7 @@ export class TaskTransaction {
     this.interventions.set(identifier(id), id);
   }
   async flush(): Promise<void> {
+    for (const id of this.changedPlans.values()) await this.advancePlan(id);
     for (const id of this.interventions.values())
       await this.db
         .updateTable("interventions")
@@ -233,6 +245,34 @@ export class TaskTransaction {
         .where("id", "=", task.contribution_id)
         .executeTakeFirstOrThrow();
       this.touchIntervention(contribution.intervention_id);
+      const state = change.state;
+      if (
+        state === "completed" ||
+        state === "failed" ||
+        state === "uncertain" ||
+        state === "cancelled"
+      ) {
+        const result =
+          state === "completed"
+            ? await this.db
+                .selectFrom("messages")
+                .select("id")
+                .where("task_id", "=", task.id)
+                .where("ending", "=", "complete")
+                .executeTakeFirstOrThrow()
+            : undefined;
+        await this.db
+          .updateTable("contributions")
+          .set({ state, result_message_id: result?.id ?? null })
+          .where("id", "=", task.contribution_id)
+          .where("task_id", "=", task.id)
+          .execute();
+        if (task.kind === "contribution")
+          this.changedPlans.set(
+            identifier(contribution.intervention_id),
+            contribution.intervention_id,
+          );
+      }
     }
   }
   /** Shared routing for acceptance and destination preview, independent of connection state. */
@@ -270,6 +310,7 @@ export class TaskTransaction {
       .selectFrom("tasks")
       .select("id")
       .where("conversation_id", "=", id)
+      .where("kind", "!=", "contribution")
       .where("state", "in", ["queued", "blocked", "running", "cancelling"])
       .execute();
     for (const task of tasks) {
@@ -319,6 +360,7 @@ export class TaskTransaction {
       .selectFrom("interventions")
       .selectAll()
       .where("id", "=", id)
+      .where("kind", "=", "consultation")
       .executeTakeFirst();
     if (!proposal) return failure("record_not_found");
     if (proposal.state !== "proposed") return failure("proposal_not_waiting");
@@ -328,9 +370,7 @@ export class TaskTransaction {
       .where("intervention_id", "=", id)
       .executeTakeFirstOrThrow();
     const accepting = shownConnection !== undefined;
-    const destination = accepting
-      ? await this.destination(proposal.project_id, contribution.agent_id)
-      : null;
+    const destination = accepting ? await this.destination(proposal.project_id, "josefa") : null;
     if (accepting && (!destination || destination.connection !== shownConnection))
       return failure("destination_changed");
     if (destination) {
@@ -384,7 +424,7 @@ export class TaskTransaction {
         .execute();
       await this.db
         .updateTable("contributions")
-        .set({ task_id: taskId })
+        .set({ task_id: taskId, state: "active" })
         .where("id", "=", contribution.id)
         .execute();
       this.diagnostics.push({ event_name: "ohtia.task.accepted" });
@@ -392,6 +432,204 @@ export class TaskTransaction {
     this.touch(proposal.conversation_id);
     return { ok: true, value: id };
   }
+  private openPlans() {
+    return this.db
+      .selectFrom("interventions")
+      .select("id")
+      .where("kind", "=", "plan")
+      .where("state", "=", "accepted")
+      .where("outcome", "is", null);
+  }
+
+  private clearPlanRestartHolds(id: Uint8Array) {
+    return this.db
+      .updateTable("contributions")
+      .set({ restart_held: 0 })
+      .where("intervention_id", "=", id)
+      .where("restart_held", "=", 1)
+      .execute();
+  }
+
+  async finishPlan(id: Uint8Array, operationId: string): Promise<Outcome<Uint8Array>> {
+    const plan = await this.db
+      .selectFrom("interventions")
+      .selectAll()
+      .where("id", "=", id)
+      .where("kind", "=", "plan")
+      .where("state", "=", "accepted")
+      .executeTakeFirst();
+    if (!plan) return failure("record_not_found");
+    if (plan.outcome) return { ok: true, value: id };
+    const contributions = await planContributions(this.db, id);
+    if (
+      contributions.some(({ state }) => waitingForPlanWork(state)) ||
+      !contributions.some(({ state, required }) => required && state !== "completed")
+    )
+      return failure("plan_state_changed");
+    await this.clearPlanRestartHolds(id);
+    await this.db
+      .updateTable("interventions")
+      .set({
+        outcome: contributions.some(({ state }) => state === "completed") ? "partial" : "failed",
+        finished_at: this.now,
+        finished_by_operation_id: operationId,
+        revision: sql`revision+1`,
+      })
+      .where("id", "=", id)
+      .execute();
+    return { ok: true, value: id };
+  }
+
+  /** Advance the accepted graph against committed task outcomes in the same transaction. */
+  async advancePlan(id: Uint8Array): Promise<void> {
+    const plan = await this.db
+      .selectFrom("interventions")
+      .selectAll()
+      .where("id", "=", id)
+      .where("kind", "=", "plan")
+      .where("state", "=", "accepted")
+      .where("outcome", "is", null)
+      .executeTakeFirst();
+    if (!plan) return;
+    const nodes = await planContributions(this.db, id);
+    const byId = new Map(nodes.map((row) => [identifier(row.id), row]));
+    const edges = new Map(nodes.map((row) => [identifier(row.id), [] as string[]]));
+    for (const edge of await holdingDependencies(this.db, id)) {
+      const prerequisites = edges.get(identifier(edge.contribution_id));
+      if (!prerequisites) throw new Error("Stored dependency lacks a contribution.");
+      prerequisites.push(identifier(edge.prerequisite_id));
+    }
+    const order = topologicalOrder(edges);
+    if (!order) throw new Error("Stored contribution graph contains a cycle.");
+    const nodeAt = (key: string) => {
+      const node = byId.get(key);
+      if (!node) throw new Error("Stored dependency lacks a contribution.");
+      return node;
+    };
+    for (const key of order) {
+      const node = nodeAt(key);
+      if (node.state !== "waiting" && node.state !== "blocked") continue;
+      const prerequisites = (edges.get(key) ?? []).map(nodeAt);
+      const blocker = prerequisites.find(
+        ({ state }) => !waitingForPlanWork(state) && state !== "completed",
+      );
+      if (blocker) {
+        const root = blocker.blocked_by_contribution_id ?? blocker.id;
+        if (
+          !node.blocked_by_contribution_id ||
+          identifier(root) !== identifier(node.blocked_by_contribution_id)
+        ) {
+          await this.db
+            .updateTable("contributions")
+            .set({ state: "blocked", blocked_by_contribution_id: root })
+            .where("id", "=", node.id)
+            .execute();
+          node.state = "blocked";
+          node.blocked_by_contribution_id = root;
+          this.touchIntervention(id);
+        }
+        continue;
+      }
+      if (node.state === "blocked") {
+        await this.db
+          .updateTable("contributions")
+          .set({ state: "waiting", blocked_by_contribution_id: null })
+          .where("id", "=", node.id)
+          .execute();
+        node.state = "waiting";
+        node.blocked_by_contribution_id = null;
+        this.touchIntervention(id);
+      }
+      if (!node.restart_held && prerequisites.every(({ state }) => state === "completed"))
+        await this.activateContribution(plan, node);
+    }
+    if (
+      nodes.length &&
+      nodes.every(
+        ({ required, state }) => !waitingForPlanWork(state) && (!required || state === "completed"),
+      )
+    ) {
+      await this.clearPlanRestartHolds(id);
+      await this.db
+        .updateTable("interventions")
+        .set({
+          outcome: "complete",
+          finished_at: this.now,
+          revision: sql`revision+1`,
+        })
+        .where("id", "=", id)
+        .execute();
+      this.diagnostics.push({ event_name: "ohtia.plan.completed" });
+    }
+  }
+
+  private async activateContribution(
+    plan: Selectable<InterventionRow>,
+    node: Selectable<ContributionRow>,
+  ): Promise<void> {
+    const policy = recordedOperationPolicy(node.operation, node.policy_version);
+    if (!policy || !plan.decided_by_operation_id)
+      throw new Error("Accepted contribution has no policy or receipt.");
+    if (!(await planInput(this.db, node, policy))) {
+      node.state = "failed";
+      await this.db
+        .updateTable("contributions")
+        .set({ state: node.state, failure_reason: "input_too_large" })
+        .where("id", "=", node.id)
+        .execute();
+      this.touchIntervention(plan.id);
+      this.diagnostics.push({
+        event_name: "ohtia.contribution.input_too_large",
+        error_code: "input_too_large",
+      });
+      return;
+    }
+    if (await this.pendingLimitReached(policy)) return;
+    const project = await this.db
+      .selectFrom("projects")
+      .select("document_language")
+      .where("id", "=", plan.project_id)
+      .executeTakeFirstOrThrow();
+    const taskId = newId();
+    const connection = "chatgpt";
+    const reason = operationPolicy(node.operation, node.policy_version, this.context.mode)
+      ? await this.connectionBlock(connection)
+      : "configuration_unavailable";
+    await this.db
+      .insertInto("tasks")
+      .values({
+        id: taskId,
+        kind: "contribution",
+        contribution_id: node.id,
+        project_id: plan.project_id,
+        conversation_id: plan.conversation_id,
+        input_through_position: null,
+        reply_position: null,
+        operation: policy.operation,
+        policy_version: policy.version,
+        instruction_version: policy.instruction_version,
+        connection,
+        document_language: project.document_language,
+        accepted_by_operation_id: plan.decided_by_operation_id,
+        replaces_task_id: null,
+        charge_warning_accepted_at: null,
+        state: reason ? "blocked" : "queued",
+        blocking_reason: reason,
+        state_revision: 1,
+        created_at: this.now,
+        updated_at: this.now,
+      })
+      .execute();
+    node.state = "active";
+    await this.db
+      .updateTable("contributions")
+      .set({ task_id: taskId, state: node.state })
+      .where("id", "=", node.id)
+      .execute();
+    this.touchIntervention(plan.id);
+    this.diagnostics.push({ event_name: "ohtia.task.accepted" });
+  }
+
   private async pendingLimitReached(
     policy: NonNullable<ReturnType<typeof operationPolicy>>,
   ): Promise<boolean> {
@@ -512,6 +750,40 @@ export class TaskTransaction {
       .selectAll()
       .where("operation_id", "=", task.accepted_by_operation_id)
       .executeTakeFirst();
+    if (task.kind === "contribution") {
+      if (
+        !project ||
+        !task.contribution_id ||
+        !receipt ||
+        project.document_language !== task.document_language
+      )
+        return false;
+      const eligible = project.is_development
+        ? task.operation === "development_test"
+        : project.setup_confirmed_at !== null && task.operation === "search_strategy_planning";
+      if (!eligible) return false;
+      const plan = await this.db
+        .selectFrom("contributions as c")
+        .innerJoin("interventions as i", "i.id", "c.intervention_id")
+        .select(["i.id", "i.decided_by_operation_id"])
+        .where("c.id", "=", task.contribution_id)
+        .where("c.task_id", "=", task.id)
+        .where("i.kind", "=", "plan")
+        .where("i.state", "=", "accepted")
+        .where("i.outcome", "is", null)
+        .executeTakeFirst();
+      if (!plan) return false;
+      if (receipt.command === "plan.addContributions")
+        return (
+          plan.decided_by_operation_id === receipt.operation_id &&
+          identifier(receipt.result_id) === identifier(plan.id)
+        );
+      return (
+        (receipt.command === "contribution.tryAgain" ||
+          receipt.command === "contribution.startAgain") &&
+        identifier(receipt.result_id) === identifier(task.id)
+      );
+    }
     if (task.kind === "consultation")
       return (
         !!project &&
@@ -599,6 +871,7 @@ export class TaskTransaction {
       | "contribution.startAgain",
     id: Uint8Array,
     operationId: string,
+    stoppingAll = false,
   ): Promise<Outcome<Uint8Array>> {
     const task = await this.db
       .selectFrom("tasks")
@@ -607,6 +880,7 @@ export class TaskTransaction {
       .executeTakeFirst();
     if (!task) return failure("record_not_found");
     if (command === "task.stop") {
+      if (task.kind === "contribution" && !stoppingAll) return failure("task_not_stoppable");
       if (task.state === "queued" || task.state === "blocked") {
         await this.change(task, { state: "cancelled", blocking_reason: null });
         this.diagnostics.push({ event_name: "ohtia.task.cancelled" });
@@ -647,15 +921,23 @@ export class TaskTransaction {
       return { ok: true, value: task.id };
     }
     const isConsultation = task.kind === "consultation";
-    if (command.startsWith("contribution.") !== isConsultation)
-      return failure("task_not_retryable");
+    const delegated = task.kind !== "reply";
+    if (command.startsWith("contribution.") !== delegated) return failure("task_not_retryable");
     const retry = command === "task.tryAgain" || command === "contribution.tryAgain";
-    if (isConsultation && task.contribution_id) {
+    if (delegated && task.contribution_id) {
       const contribution = await this.db
         .selectFrom("contributions")
         .selectAll()
         .where("id", "=", task.contribution_id)
         .executeTakeFirstOrThrow();
+      if (task.kind === "contribution") {
+        const plan = await this.db
+          .selectFrom("interventions")
+          .select("outcome")
+          .where("id", "=", contribution.intervention_id)
+          .executeTakeFirstOrThrow();
+        if (plan.outcome) return failure("task_not_retryable");
+      }
       if (!contribution.task_id || identifier(contribution.task_id) !== identifier(task.id))
         return failure("newer_task_exists");
     }
@@ -681,7 +963,7 @@ export class TaskTransaction {
     }
     // rowid expresses actual acceptance order even if the wall clock moves backwards.
     const newer =
-      !isConsultation &&
+      !delegated &&
       (await this.db
         .selectFrom("tasks")
         .select("id")
@@ -702,7 +984,7 @@ export class TaskTransaction {
       .executeTakeFirstOrThrow();
     const reason = await this.connectionBlock(task.connection);
     const partial =
-      !isConsultation &&
+      !delegated &&
       (await this.db
         .selectFrom("messages")
         .select("id")
@@ -710,7 +992,7 @@ export class TaskTransaction {
         .where("ending", "=", "partial")
         .executeTakeFirst());
     const latest =
-      !isConsultation &&
+      !delegated &&
       (await this.db
         .selectFrom("messages")
         .select("position")
@@ -726,7 +1008,7 @@ export class TaskTransaction {
         reply_position: null,
         replaces_task_id: task.id,
         accepted_by_operation_id: operationId,
-        document_language: isConsultation ? task.document_language : project.document_language,
+        document_language: delegated ? task.document_language : project.document_language,
         input_through_position: latest && !partial ? latest.position : task.input_through_position,
         charge_warning_accepted_at: retry ? null : this.now,
         state: reason ? "blocked" : "queued",
@@ -739,11 +1021,16 @@ export class TaskTransaction {
     if (task.contribution_id) {
       const contribution = await this.db
         .updateTable("contributions")
-        .set({ task_id: replacement })
+        .set({ task_id: replacement, state: "active", failure_reason: null })
         .where("id", "=", task.contribution_id)
         .returning("intervention_id")
         .executeTakeFirstOrThrow();
       this.touchIntervention(contribution.intervention_id);
+      if (task.kind === "contribution")
+        this.changedPlans.set(
+          identifier(contribution.intervention_id),
+          contribution.intervention_id,
+        );
     }
     this.touch(task.conversation_id);
     if (retry && this.context.connections.read(task.connection)?.models?.length === 0)
@@ -760,13 +1047,25 @@ export class TaskTransaction {
   }
   /** One transaction cancels pending work and records the same stopping intent as Stop. */
   async cancelAll(): Promise<void> {
+    // Cancel accepted intents before releasing any pending task capacity.
+    const waiting = await this.db
+      .updateTable("contributions")
+      .set({ state: "cancelled", blocked_by_contribution_id: null, restart_held: 0 })
+      .where("intervention_id", "in", this.openPlans())
+      .where("state", "in", ["waiting", "blocked"])
+      .returning("intervention_id")
+      .execute();
+    for (const { intervention_id: id } of waiting) {
+      this.touchIntervention(id);
+      this.changedPlans.set(identifier(id), id);
+    }
     const tasks = await this.db
       .selectFrom("tasks")
       .select("id")
       .where("state", "in", ["queued", "blocked", "running", "cancelling"])
       .execute();
     for (const task of tasks) {
-      const result = await this.control("task.stop", task.id, "cancel-all");
+      const result = await this.control("task.stop", task.id, "cancel-all", true);
       if (!result.ok) throw new Error("Task cancellation failed.");
     }
   }
@@ -785,6 +1084,17 @@ export class TaskTransaction {
   }
   /** Main has closed the old generation before admission. A permit is possible dispatch. */
   async recoverRestart(orderly: boolean): Promise<void> {
+    const held = orderly
+      ? []
+      : await this.db
+          .updateTable("contributions")
+          .set({ restart_held: 1 })
+          .where("intervention_id", "in", this.openPlans())
+          .where("state", "in", ["waiting", "blocked"])
+          .where("restart_held", "=", 0)
+          .returning("intervention_id")
+          .execute();
+    for (const { intervention_id: id } of held) this.touchIntervention(id);
     const tasks = await this.db
       .selectFrom("tasks")
       .selectAll()
@@ -833,7 +1143,7 @@ export class TaskTransaction {
         blocking_reason: state === "blocked" ? "restart_paused" : null,
       });
     }
-    if (!orderly && tasks.length)
+    if (!orderly && (tasks.length || held.length))
       this.diagnostics.push({ event_name: "ohtia.task.recovery_paused" });
   }
   /** Continue the shared recovery hold only after all current prerequisites are revalidated. */
@@ -848,6 +1158,16 @@ export class TaskTransaction {
           : ((await this.connectionBlock(task.connection)) ??
             ((await this.valid(task)) ? null : "connection_disabled"));
       await this.change(task, { state: reason ? "blocked" : "queued", blocking_reason: reason });
+    }
+    const continued = await this.db
+      .updateTable("contributions")
+      .set({ restart_held: 0 })
+      .where("restart_held", "=", 1)
+      .returning("intervention_id")
+      .execute();
+    for (const { intervention_id: id } of continued) {
+      this.touchIntervention(id);
+      this.changedPlans.set(identifier(id), id);
     }
     this.diagnostics.push({ event_name: "ohtia.task.continued" });
   }
@@ -883,6 +1203,18 @@ export class TaskTransaction {
   async prepareNext(): Promise<PreparedTask | null> {
     const { limit, occupied } = await this.capacity();
     if (occupied.length >= limit) return null;
+    // A graph may have ready contributions waiting for its operation's pending-task budget.
+    const plans = await this.db
+      .selectFrom("contributions as c")
+      .innerJoin("interventions as i", "i.id", "c.intervention_id")
+      .select("i.id")
+      .distinct()
+      .where("i.kind", "=", "plan")
+      .where("i.state", "=", "accepted")
+      .where("i.outcome", "is", null)
+      .where("c.state", "=", "waiting")
+      .execute();
+    for (const plan of plans) await this.advancePlan(plan.id);
     const candidates = await this.db
       .selectFrom("tasks")
       .innerJoin("command_receipts as r", "r.operation_id", "tasks.accepted_by_operation_id")
@@ -894,19 +1226,23 @@ export class TaskTransaction {
     const queuedConversations = new Set<string>();
     for (const task of candidates) {
       const conversationKey = identifier(task.conversation_id);
-      if (queuedConversations.has(conversationKey)) continue;
-      queuedConversations.add(conversationKey);
+      if (task.kind !== "contribution") {
+        if (queuedConversations.has(conversationKey)) continue;
+        queuedConversations.add(conversationKey);
+      }
       if (task.state !== "queued") continue;
       if (
+        task.kind !== "contribution" &&
         occupied.some(
           (other) =>
             Buffer.from(other.conversation_id).equals(Buffer.from(task.conversation_id)) &&
+            other.kind !== "contribution" &&
             other.state !== "uncertain",
         )
       )
         continue;
       const policy = operationPolicy(task.operation, task.policy_version, this.context.mode);
-      if (!policy) {
+      if (!policy || (task.kind === "contribution" && !(await this.valid(task)))) {
         await this.change(task, { state: "blocked", blocking_reason: "configuration_unavailable" });
         continue;
       }
@@ -937,6 +1273,7 @@ export class TaskTransaction {
         .where("id", "=", task.conversation_id)
         .executeTakeFirstOrThrow();
       const suggestTitle =
+        task.kind === "reply" &&
         task.operation === "direct_guidance" &&
         conversation.automatic_title_eligible === 1 &&
         conversation.title === null &&
@@ -955,10 +1292,12 @@ export class TaskTransaction {
           ? []
           : await this.db
               .selectFrom("messages")
-              .selectAll()
-              .where("conversation_id", "=", task.conversation_id)
-              .where("position", "<=", task.input_through_position)
-              .orderBy("position")
+              .leftJoin("tasks as origin", "origin.id", "messages.task_id")
+              .selectAll("messages")
+              .select("origin.kind as origin_kind")
+              .where("messages.conversation_id", "=", task.conversation_id)
+              .where("messages.position", "<=", task.input_through_position)
+              .orderBy("messages.position")
               .execute();
       const inputMessages = [];
       for (const message of messages) {
@@ -972,7 +1311,9 @@ export class TaskTransaction {
                 .executeTakeFirst()
             : undefined;
         const otherAgent =
-          message.author_kind === "agent" && message.agent_id !== replyAgent(task.operation);
+          message.author_kind === "agent" &&
+          (message.origin_kind === "contribution" ||
+            message.agent_id !== replyAgent(task.operation));
         inputMessages.push({
           reference: identifier(message.id),
           position: message.position,
@@ -1025,7 +1366,9 @@ export class TaskTransaction {
         },
       );
       const enabledConsultations =
-        task.operation === "direct_guidance" && task.instruction_version >= 2
+        task.kind === "reply" &&
+        task.operation === "direct_guidance" &&
+        task.instruction_version >= 2
           ? consultableAgents(this.context.mode)
           : [];
       if (enabledConsultations.length) {
@@ -1043,6 +1386,7 @@ export class TaskTransaction {
             "c.agent_id",
           ])
           .where("i.conversation_id", "=", task.conversation_id)
+          .where("i.kind", "=", "consultation")
           .orderBy("t.reply_position")
           .execute();
         for (const proposal of consultations) {
@@ -1070,7 +1414,9 @@ export class TaskTransaction {
         .where("id", "=", task.project_id)
         .executeTakeFirstOrThrow();
       const instructions =
-        (task.operation === "direct_guidance" || task.operation === "search_strategy_planning") &&
+        (task.kind === "contribution" ||
+          task.operation === "direct_guidance" ||
+          task.operation === "search_strategy_planning") &&
         project.title !== null &&
         task.document_language !== null
           ? renderProjectInstructions(
@@ -1090,18 +1436,25 @@ export class TaskTransaction {
               },
             )
           : policy.instructions;
+      const contributionInput =
+        task.kind === "contribution" && contribution
+          ? await planInput(this.db, contribution, policy)
+          : undefined;
+      if (task.kind === "contribution" && !contributionInput)
+        throw new Error("Activated contribution lacks its validated input.");
       const built = buildInput(
         policy,
-        contribution
-          ? [
-              {
-                role: "user",
-                reference: identifier(contribution.id),
-                text: consultationInput(contribution.request),
-                transferKind: "consultation_request",
-              },
-            ]
-          : inputMessages,
+        contributionInput ??
+          (contribution
+            ? [
+                {
+                  role: "user",
+                  reference: identifier(contribution.id),
+                  text: consultationInput(contribution.request),
+                  transferKind: "consultation_request",
+                },
+              ]
+            : inputMessages),
         {
           reference: identifier(conversation.id),
           revision: conversation.revision,
@@ -1170,6 +1523,7 @@ export class TaskTransaction {
         .execute();
       this.diagnostics.push({ event_name: "ohtia.task.dispatch_permitted" });
       return {
+        kind: task.kind,
         transfer: built.transfer,
         acceptedByOperationId: task.accepted_by_operation_id,
         taskId: identifier(task.id),
@@ -1342,6 +1696,14 @@ export class TaskTransaction {
     }
     if (text && !notDispatched) {
       if (task.reply_position === null) throw new Error("Running task lacks a reply reservation.");
+      const contributor =
+        task.kind === "contribution" && task.contribution_id
+          ? await this.db
+              .selectFrom("contributions")
+              .select("agent_id")
+              .where("id", "=", task.contribution_id)
+              .executeTakeFirstOrThrow()
+          : undefined;
       await this.db
         .insertInto("messages")
         .values({
@@ -1349,7 +1711,7 @@ export class TaskTransaction {
           conversation_id: task.conversation_id,
           position: task.reply_position,
           author_kind: "agent",
-          agent_id: replyAgent(task.operation),
+          agent_id: contributor?.agent_id ?? replyAgent(task.operation),
           content: text,
           task_id: task.id,
           ending: state === "completed" ? "complete" : "partial",
@@ -1358,7 +1720,7 @@ export class TaskTransaction {
         .execute();
       await this.replaceWaiting(
         task.conversation_id,
-        task.kind === "consultation" ? task.reply_position : undefined,
+        task.kind !== "reply" ? task.reply_position : undefined,
       );
     }
     if (
@@ -1442,6 +1804,13 @@ export class TaskTransaction {
           .insertInto("contributions")
           .values({
             ...consultation.values,
+            dedupe_key: contributionKey(
+              consultation.values.agent_id,
+              consultation.values.operation,
+              2,
+              consultation.values.request,
+              [],
+            ),
             id: newId(),
             intervention_id: id,
             task_id: null,

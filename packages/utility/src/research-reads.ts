@@ -122,9 +122,12 @@ async function timelineItem(
       "initial.connection",
     ])
     .where("i.conversation_id", "=", bytes(conversationId))
+    .where("i.kind", "=", "consultation")
     .where("i.id", "=", bytes(id))
     .executeTakeFirst();
-  if (consultation && consultation.reply_position !== null)
+  if (consultation && consultation.reply_position !== null) {
+    if (consultation.agent_id !== null && consultation.agent_id !== "josefa")
+      throw new Error("Unknown consultation agent.");
     return {
       id,
       kind: "consultation",
@@ -143,11 +146,13 @@ async function timelineItem(
       reason: consultation.reason,
       connection: consultation.connection,
     };
+  }
   const task = await db
     .selectFrom("tasks as t")
     .selectAll("t")
     .select(taskPosition.as("position"))
     .where("t.conversation_id", "=", bytes(conversationId))
+    .where("t.kind", "!=", "contribution")
     .where("t.id", "=", bytes(id))
     .executeTakeFirst();
   if (!task) return undefined;
@@ -216,6 +221,12 @@ export async function readPauseCounts(
     .where("state", "=", "blocked")
     .where("blocking_reason", "=", "restart_paused")
     .executeTakeFirstOrThrow();
+  const heldContributions = await db
+    .selectFrom("contributions")
+    .select(({ fn }) => fn.countAll<number>().as("count"))
+    .where("restart_held", "=", 1)
+    .where("state", "=", "waiting")
+    .executeTakeFirstOrThrow();
   const usage = [];
   for (const pause of await db
     .selectFrom("usage_limit_pauses")
@@ -234,7 +245,7 @@ export async function readPauseCounts(
   }
   const snapshot = revision.rows[0];
   if (!snapshot) throw new Error("Pause revision unavailable.");
-  return { revision: snapshot.revision, restart: restart.count, usage };
+  return { revision: snapshot.revision, restart: restart.count + heldContributions.count, usage };
 }
 async function summarizeConversation(
   db: Kysely<ResearchSchema>,
@@ -256,7 +267,8 @@ async function summarizeConversation(
   const tasks = db
     .selectFrom("tasks")
     .select(["id", "state"])
-    .where("conversation_id", "=", row.id);
+    .where("conversation_id", "=", row.id)
+    .where("kind", "!=", "contribution");
   const latestTask = await tasks.orderBy(sql`rowid`, "desc").executeTakeFirst();
   const latestReply = await tasks
     .where("kind", "=", "reply")
@@ -466,11 +478,11 @@ export async function readResearch(
       const rows = await sql<{ id: Uint8Array; position: number; rank: number }>`
         SELECT id, position, rank FROM (
           SELECT id, position, 1 AS rank FROM messages WHERE conversation_id = ${bytes(p.conversationId)}
-          UNION ALL SELECT t.id, ${taskPosition} AS position, 3 AS rank FROM tasks t WHERE t.conversation_id = ${bytes(p.conversationId)}
+          UNION ALL SELECT t.id, ${taskPosition} AS position, 3 AS rank FROM tasks t WHERE t.conversation_id = ${bytes(p.conversationId)} AND t.kind <> 'contribution'
           UNION ALL SELECT p.id, t.reply_position AS position, 2 AS rank FROM project_setup_proposals p JOIN tasks t ON t.id=p.task_id WHERE t.conversation_id = ${bytes(p.conversationId)}
           UNION ALL SELECT i.id, t.reply_position AS position, 2 AS rank
             FROM interventions i JOIN attempts a ON a.id=i.proposed_by_attempt_id JOIN tasks t ON t.id=a.task_id
-            WHERE i.conversation_id = ${bytes(p.conversationId)}
+            WHERE i.conversation_id = ${bytes(p.conversationId)} AND i.kind = 'consultation'
         ) ${before} ORDER BY position DESC, rank DESC, id DESC LIMIT ${p.count + 1}`.execute(db);
       const items: TimelineItem[] = [];
       for (const row of rows.rows.slice(0, p.count)) {
@@ -519,6 +531,7 @@ export async function readResearch(
         const row = await db
           .selectFrom("contributions")
           .select("request")
+          .where("plan_key", "is", null)
           .where("intervention_id", "=", bytes(consultation[1]))
           .executeTakeFirst();
         const text = row && splitText(row.request)[request.payload.index - 1];
@@ -631,6 +644,7 @@ export async function researchRevisions(
     for (const row of await db
       .selectFrom("interventions")
       .select(["id", "revision"])
+      .where("kind", "=", "consultation")
       .where("conversation_id", "=", bytes(scope.conversationId))
       .execute())
       result.push({
@@ -642,6 +656,7 @@ export async function researchRevisions(
     for (const row of await db
       .selectFrom("tasks")
       .select(["id", "state_revision"])
+      .where("kind", "!=", "contribution")
       .where("conversation_id", "=", bytes(scope.conversationId))
       .execute())
       result.push({

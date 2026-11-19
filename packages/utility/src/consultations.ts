@@ -6,6 +6,8 @@ import {
   type ProviderToolCall,
   type ReplyAgent,
 } from "@ohtia/contracts";
+import type { Generated } from "kysely";
+import type { PlanOutcome } from "@ohtia/contracts";
 import { operationPolicy } from "./operations.js";
 import type { RuntimeMode } from "./tasks.js";
 
@@ -57,10 +59,16 @@ export interface InterventionRow {
   id: Uint8Array;
   project_id: Uint8Array;
   conversation_id: Uint8Array;
-  kind: "consultation";
+  kind: "consultation" | "plan";
   state: ConsultationState;
   invalid_reason: ConsultationInvalidReason | null;
-  proposed_by_attempt_id: Uint8Array;
+  proposed_by_attempt_id: Uint8Array | null;
+  purpose: Generated<string | null>;
+  shared_context: Generated<string | null>;
+  graph_version: Generated<number>;
+  outcome: Generated<PlanOutcome | null>;
+  finished_at: Generated<string | null>;
+  finished_by_operation_id: Generated<string | null>;
   created_at: string;
   decided_at: string | null;
   decided_by_operation_id: string | null;
@@ -70,15 +78,30 @@ export interface InterventionRow {
 export interface ContributionRow {
   id: Uint8Array;
   intervention_id: Uint8Array;
-  agent_id: "josefa";
-  operation: "search_strategy_planning";
+  agent_id: "josefa" | "virgilio";
+  operation: "search_strategy_planning" | "development_test";
+  plan_key: Generated<string | null>;
+  required: Generated<number>;
+  state: Generated<
+    "waiting" | "active" | "completed" | "failed" | "uncertain" | "blocked" | "cancelled"
+  >;
+  blocked_by_contribution_id: Generated<Uint8Array | null>;
+  failure_reason: Generated<"input_too_large" | null>;
+  result_message_id: Generated<Uint8Array | null>;
+  restart_held: Generated<number>;
+  dedupe_key: Uint8Array;
+  policy_version: Generated<number>;
+  added_in_graph_version: Generated<number>;
   request: string;
   reason: string;
   task_id: Uint8Array | null;
   created_at: string;
 }
 
-type Proposal = Pick<ContributionRow, "agent_id" | "operation" | "request" | "reason">;
+type Proposal = Pick<ContributionRow, "request" | "reason"> & {
+  agent_id: "josefa";
+  operation: "search_strategy_planning";
+};
 export function decodeConsultationProposal(
   calls: readonly ProviderToolCall[],
   mode: RuntimeMode,

@@ -362,6 +362,7 @@ const bridge: DesktopBridge = {
     renameConversation: (id, input) => connection.client.port.renameConversation(id, input),
     stopConversation: (id, input) => connection.client.port.stopConversation(id, input),
     readPauses: () => connection.client.port.readPauses(),
+    finishPlan: (id, input) => connection.client.port.finishPlan(id, input),
     acceptConsultation: (id, input) => connection.client.port.acceptConsultation(id, input),
     declineConsultation: (id, input) => connection.client.port.declineConsultation(id, input),
     tryAgainContribution: (id, input) => connection.client.port.tryAgainContribution(id, input),

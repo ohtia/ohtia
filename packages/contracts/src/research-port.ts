@@ -1,9 +1,11 @@
 import type {
   ConversationRecord,
+  FinishPlanResult,
   ProjectRecord,
   ResearchPayloads,
   ResearchResult,
 } from "./research.js";
+import { planOutcomes, type PlanOutcome } from "./research.js";
 import { isConnectionId } from "./connections.js";
 import type { PortCall, Subscription, Outcome } from "./port.js";
 
@@ -17,6 +19,7 @@ export const researchOperations = [
   "message.append",
   "conversation.stop",
   "task.stop",
+  "plan.finish",
   "consultation.accept",
   "consultation.decline",
   "contribution.tryAgain",
@@ -248,6 +251,7 @@ export interface ResearchInputs {
   "contribution.startAgain": ResearchPayloads["contribution.startAgain"];
   "contribution.tryAgain": ResearchPayloads["contribution.tryAgain"];
   "consultation.decline": ResearchPayloads["consultation.decline"];
+  "plan.finish": ResearchPayloads["plan.finish"];
   "consultation.accept": ResearchPayloads["consultation.accept"];
   "task.tryAgain": ResearchPayloads["task.tryAgain"];
   "task.startAgain": ResearchPayloads["task.startAgain"];
@@ -290,6 +294,7 @@ export interface ResearchOutputs {
   "contribution.startAgain": ResearchResult;
   "contribution.tryAgain": ResearchResult;
   "consultation.decline": ResearchResult;
+  "plan.finish": FinishPlanResult;
   "consultation.accept": ResearchResult;
   "task.tryAgain": ResearchResult;
   "task.startAgain": ResearchResult;
@@ -317,6 +322,7 @@ export interface ResearchOutputs {
 }
 export interface ResearchPort {
   readPauses(): PortCall<PauseCounts>;
+  finishPlan(operationId: string, input: ResearchInputs["plan.finish"]): PortCall<FinishPlanResult>;
   acceptConsultation(
     operationId: string,
     input: ResearchInputs["consultation.accept"],
@@ -409,6 +415,7 @@ export function isResearchMutation(value: string): value is WindowResearchComman
     "message.append",
     "conversation.stop",
     "task.stop",
+    "plan.finish",
     "consultation.accept",
     "consultation.decline",
     "contribution.tryAgain",
@@ -570,6 +577,8 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
       return exact(value, []);
     case "project.open":
       return exact(value, ["projectId"]) && isResearchId(value.projectId);
+    case "plan.finish":
+      return exact(value, ["planId"]) && isResearchId(value.planId);
     case "consultation.accept":
       return (
         exact(value, ["proposalId", "connection"]) &&
@@ -948,6 +957,12 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
           isConnectionId(d.connection),
       )
     );
+  if (operation === "plan.finish")
+    return (
+      exact(value, ["resultId", "outcome"]) &&
+      isResearchId(value.resultId) &&
+      planOutcomes.includes(value.outcome as PlanOutcome)
+    );
   if (isResearchMutation(operation))
     return exact(value, ["resultId"]) && isResearchId(value.resultId);
   if (operation === "research.subscribe")
@@ -1022,6 +1037,7 @@ export function researchResultMatches(
   output: unknown,
 ): boolean {
   if (!obj(input) || !obj(output)) return false;
+  if (operation === "plan.finish") return output.resultId === input.planId;
   if (operation === "project.open") return output.resultId === input.projectId;
   if (operation === "conversation.start") return isResearchId(output.resultId);
   if (operation === "conversation.rename") return output.resultId === input.conversationId;

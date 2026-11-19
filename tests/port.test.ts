@@ -270,6 +270,7 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
         "tryAgainTask",
         "startAgainTask",
         "acceptConsultation",
+        "finishPlan",
         "declineConsultation",
         "tryAgainContribution",
         "startAgainContribution",

@@ -37,11 +37,15 @@ export const preConsultationSql = `
       connection,document_language,accepted_by_operation_id,replaces_task_id,state,blocking_reason,state_revision,
       created_at,updated_at,charge_warning_accepted_at FROM tasks_with_consultations ORDER BY rowid;
   DROP TABLE tasks_with_consultations;
+  DROP TABLE contribution_dependencies;
+  DROP TABLE graph_changes;
   DROP TABLE contributions;
   DROP TABLE interventions;
   ${Object.values(priorTaskObjects).join(";\n")};
   DELETE FROM kysely_migration WHERE name='0021_consultations';
   DELETE FROM ohtia_migration_artifacts WHERE name='0021_consultations';
+  DELETE FROM kysely_migration WHERE name='0022_contribution_graphs';
+  DELETE FROM ohtia_migration_artifacts WHERE name='0022_contribution_graphs';
   PRAGMA user_version=20;
   PRAGMA legacy_alter_table=OFF;
 `;

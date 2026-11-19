@@ -679,7 +679,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 21,
+          target: 22,
         }),
       );
       await f.store.retry();
@@ -731,7 +731,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 21,
+          target: 22,
         }),
       );
       await exhausted.store.retry();
@@ -759,7 +759,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 21,
+          target: 22,
         }),
       );
       await f.store.retry();
@@ -1005,7 +1005,7 @@ describe("reply control composed with connection and usage pauses", () => {
       if (recovery) {
         fs.writeFileSync(
           path.join(f.root, "migration-pending.json"),
-          JSON.stringify({ version: 1, operation: "composed-recovery", source: 9, target: 21 }),
+          JSON.stringify({ version: 1, operation: "composed-recovery", source: 9, target: 22 }),
         );
         await f.store.retry();
       } else await f.store.open();
@@ -1021,13 +1021,14 @@ describe("reply control composed with connection and usage pauses", () => {
       expect(value(await f.resume("resume-after-reply-migration"))).toEqual(resumed);
       expect(await f.prepare()).not.toBeNull();
       const upgraded = f.raw();
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(21);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(22);
       expect(
         upgraded
           .prepare("SELECT name FROM kysely_migration ORDER BY name DESC LIMIT 10")
           .pluck()
           .all(),
       ).toEqual([
+        "0022_contribution_graphs",
         "0021_consultations",
         "0020_conversation_agents",
         "0019_josefa_search_planning",
@@ -1037,7 +1038,6 @@ describe("reply control composed with connection and usage pauses", () => {
         "0015_project_setup",
         "0014_message_composer",
         "0013_execution_limits_receipts",
-        "0012_application_exit",
       ]);
       expect(
         upgraded
@@ -1062,7 +1062,7 @@ it.each(["continue-all", "resume-requests"] as const)(
       await f.store.close();
       fs.writeFileSync(
         path.join(f.root, "migration-pending.json"),
-        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 21 }),
+        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 22 }),
       );
       await f.store.retry();
     }

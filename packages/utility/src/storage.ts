@@ -44,6 +44,12 @@ import {
   tables as consultationTables,
   objects as consultationObjects,
 } from "./migrations/0021_consultations.mjs";
+import {
+  up as contributionGraphs,
+  graphTasks,
+  tables as graphTables,
+  objects as graphObjects,
+} from "./migrations/0022_contribution_graphs.mjs";
 import { readResearch, researchRevisions, readPauseCounts } from "./research-reads.js";
 import type { Request, ResearchScope, ResearchEvent, ResearchOperation } from "@ohtia/contracts";
 import {
@@ -79,6 +85,7 @@ import {
 } from "./migrations/0008_durable_ai_tasks.mjs";
 import {
   applyResearchCommand,
+  researchReceiptResult,
   LanguageRegistry,
   listProjects,
   identifier,
@@ -286,6 +293,7 @@ const names = [
   "0019_josefa_search_planning",
   "0020_conversation_agents",
   "0021_consultations",
+  "0022_contribution_graphs",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -503,7 +511,11 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 11 ? Object.keys(runTables) : []),
     ...(revision >= 13 ? ["execution_limits_receipts"] : []),
     ...(revision >= 15 ? Object.keys(setupTables) : []),
-    ...(revision >= 21 ? Object.keys(consultationTables) : []),
+    ...(revision >= 22
+      ? Object.keys(graphTables)
+      : revision >= 21
+        ? Object.keys(consultationTables)
+        : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -630,7 +642,9 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
       ? Object.entries(taskTables).map(([name, definition]) => [
           name,
           revision >= 21 && name === "tasks"
-            ? consultationTasks
+            ? revision >= 22
+              ? graphTasks
+              : consultationTasks
             : revision >= 10 && name === "tasks"
               ? definition.replace(
                   ",\n    CHECK ((state=",
@@ -645,7 +659,11 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
         ])
       : []),
     ...(revision >= 15 ? Object.entries(setupTables) : []),
-    ...(revision >= 21 ? Object.entries(consultationTables) : []),
+    ...(revision >= 22
+      ? Object.entries(graphTables)
+      : revision >= 21
+        ? Object.entries(consultationTables)
+        : []),
     ...(revision >= 9 ? Object.entries(usageTables) : []),
     ...(revision >= 11 ? Object.entries(runTables) : []),
     ...(revision >= 13 ? [["execution_limits_receipts", executionLimitsReceiptsSchema]] : []),
@@ -681,7 +699,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 18 ? titleObjects : {}),
                 ...(revision >= 19 ? josefaObjects : {}),
                 ...(revision >= 20 ? agentObjects : {}),
-                ...(revision >= 21 ? consultationObjects : {}),
+                ...(revision >= 22 ? graphObjects : revision >= 21 ? consultationObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -864,6 +882,9 @@ export class DurableStore {
         WHEN (OLD.state='blocked' AND OLD.blocking_reason IN ('usage_limit_reached','restart_paused'))
           OR (NEW.state='blocked' AND NEW.blocking_reason IN ('usage_limit_reached','restart_paused'))
         BEGIN UPDATE pause_counts_revision SET revision=revision+1; END;
+        CREATE TEMP TRIGGER pause_contribution_update AFTER UPDATE OF restart_held,state ON main.contributions
+        WHEN (OLD.restart_held=1 AND OLD.state='waiting')<>(NEW.restart_held=1 AND NEW.state='waiting')
+        BEGIN UPDATE pause_counts_revision SET revision=revision+1; END;
         CREATE TEMP TRIGGER pause_open AFTER INSERT ON main.usage_limit_pauses
         BEGIN UPDATE pause_counts_revision SET revision=revision+1; END;
         CREATE TEMP TRIGGER pause_close AFTER UPDATE ON main.usage_limit_pauses
@@ -1043,7 +1064,7 @@ export class DurableStore {
       let committed = false;
       try {
         this.assert();
-        if (source < 21) db.pragma("foreign_keys = OFF");
+        if (source < 22) db.pragma("foreign_keys = OFF");
         await sql`BEGIN EXCLUSIVE`.execute(connection);
         begun = true;
         await sql`CREATE TABLE IF NOT EXISTS ohtia_migration_artifacts (name TEXT PRIMARY KEY NOT NULL, sha256 TEXT NOT NULL CHECK(length(sha256)=64 AND sha256 NOT GLOB '*[^0-9a-f]*'))`.execute(
@@ -1077,6 +1098,7 @@ export class DurableStore {
                 "0019_josefa_search_planning": { up: josefaSearchPlanning },
                 "0020_conversation_agents": { up: conversationAgents },
                 "0021_consultations": { up: consultations },
+                "0022_contribution_graphs": { up: contributionGraphs },
               }),
           },
         });
@@ -1110,7 +1132,7 @@ export class DurableStore {
         // Keep intent and checkpoint on every failure, including a successful commit with a lost acknowledgement.
         throw new Error(`Migration requires explicit recovery (${operation}).`, { cause: error });
       } finally {
-        if (source < 21) db.pragma("foreign_keys = ON");
+        if (source < 22) db.pragma("foreign_keys = ON");
       }
     });
   }
@@ -2496,6 +2518,8 @@ export class DurableStore {
         "conversation.stop": "ohtia.conversation.stop_requested",
         "task.startAgain": "ohtia.task.replaced",
         "task.tryAgain": "ohtia.task.retry_requested",
+        "plan.addContributions": "ohtia.plan.graph_recorded",
+        "plan.finish": "ohtia.plan.finished",
         "consultation.accept": "ohtia.consultation.accepted",
         "consultation.decline": "ohtia.consultation.declined",
         "contribution.tryAgain": "ohtia.contribution.retry_requested",
@@ -2671,6 +2695,7 @@ export class DurableStore {
           .selectFrom("tasks")
           .select("id")
           .where("id", "=", bytes(taskId))
+          .where("kind", "!=", "contribution")
           .executeTakeFirst()),
       }),
       undefined,
@@ -2681,7 +2706,7 @@ export class DurableStore {
     operationId: string,
     command: string,
     payloadHash: string,
-  ): Promise<Outcome<{ resultId: string } | null>> {
+  ): Promise<Outcome<ResearchResult | null>> {
     return this.researchRead(
       async (db) => {
         const row = await db
@@ -2694,7 +2719,7 @@ export class DurableStore {
           Buffer.from(row.payload_sha256).toString("hex") === payloadHash
           ? row.error_code
             ? failure(row.error_code)
-            : { ok: true, value: { resultId: identifier(row.result_id) } }
+            : { ok: true, value: await researchReceiptResult(db, row) }
           : failure("operation_conflict");
       },
       undefined,

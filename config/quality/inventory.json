@@ -20,6 +20,7 @@
     "tests/connections-panel.test.ts",
     "tests/connections.test.ts",
     "tests/consultations.test.ts",
+    "tests/contribution-graphs.test.ts",
     "tests/conversation-view.test.ts",
     "tests/credential-store.test.ts",
     "tests/design-foundation.test.ts",

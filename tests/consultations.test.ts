@@ -659,7 +659,7 @@ it("migrates populated revision 20 while preserving task acceptance order, charg
   await f.store.open();
   const migrated = f.raw();
   try {
-    expect(migrated.pragma("user_version", { simple: true })).toBe(21);
+    expect(migrated.pragma("user_version", { simple: true })).toBe(22);
     expect(read(migrated)).toEqual(before);
     expect(
       migrated.prepare("SELECT state,blocking_reason FROM tasks WHERE id=?").get(bytes(resultId)),
