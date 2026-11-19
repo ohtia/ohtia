@@ -1496,7 +1496,7 @@ it("upgrades a schema-15 setup proposal without losing decisions or notice retry
     }),
   );
   const db = f.raw();
-  expect(db.pragma("user_version", { simple: true })).toBe(20);
+  expect(db.pragma("user_version", { simple: true })).toBe(21);
   expect(
     db
       .prepare("SELECT state FROM project_setup_proposals WHERE id=?")
@@ -1822,7 +1822,12 @@ describe("confirmed project direct guidance", () => {
       title: "Redes de cuidado",
       document_language: "es-AR",
     });
-    if (!tools) expect(reply.sent.instructions).toBe(ordinaryPrompt);
+    if (!tools) {
+      expect(reply.sent.instructions).toContain(
+        ordinaryPrompt.split("\n\nOhtia's thesis research route")[0],
+      );
+      expect(reply.sent.instructions).not.toContain("exactly once in the same response");
+    }
     expect((await f.read()).title).toBeNull();
     expect(value(await f.store.readMessages(f.id)).at(-1)).toMatchObject({
       content: reply.text,
@@ -1901,7 +1906,10 @@ describe("confirmed project direct guidance", () => {
     });
     for (const mode of ["development", "qualification"] as const)
       expect(operationPolicy("direct_guidance", 1, mode)).toBe(policy);
-    expect(operationPolicy("direct_guidance", 2, "installed")).toBeUndefined();
+    expect(operationPolicy("direct_guidance", 2, "installed")).toMatchObject({
+      version: 2,
+      instruction_version: 2,
+    });
     expect(directGuidanceInstructions).toBe(normative);
     expect(policy.instructions.split(thesisRoute)).toEqual([`${roleInstructions}\n\n`, ""]);
     const instructions = renderProjectInstructions(directGuidanceInstructions, {
@@ -1951,22 +1959,23 @@ describe("confirmed project direct guidance", () => {
       .replace("{document_language}", "es-AR");
     expect(decoded?.request).toMatchObject({
       operation: "direct_guidance",
-      instruction_version: 1,
-      instructions: `${expectedRole}\n\n${thesisRoute}`,
-      tools: [],
+      instruction_version: 2,
+      instructions: expect.stringContaining(thesisRoute),
+      tools: [{ name: "propose_consultation", strict: true }],
       input: [
         { role: "user", text: "Synthetic setup request" },
         { role: "user", text: context },
         { role: "user", text: question },
       ],
     });
+    expect(decoded?.request.instructions).toContain(expectedRole);
     expect(task.transfer.slice(-2)).toEqual([
       { kind: "message", reference: contextId },
       { kind: "message", reference: questionId },
     ]);
   });
 
-  it("routes confirmed messages through the fake provider without tools and records exact transfer identities", async () => {
+  it("routes confirmed messages through the fake provider with the consultation tool and records exact transfer identities", async () => {
     const diagnostics: DiagnosticEvent[] = [];
     const f = await confirmed((event) => diagnostics.push(event));
     value(await f.append("Please help me clarify the question."));
@@ -1975,10 +1984,10 @@ describe("confirmed project direct guidance", () => {
     expect(request).toMatchObject({
       operation: "direct_guidance",
       model: "first",
-      policy_version: 1,
-      instruction_version: 1,
+      policy_version: 2,
+      instruction_version: 2,
       document_language: "es-AR",
-      tools: [],
+      tools: [{ name: "propose_consultation", strict: true }],
       limits: {
         max_output_bytes: 65536,
         max_attempt_duration_ms: 600000,

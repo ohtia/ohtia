@@ -92,12 +92,19 @@ export interface ProviderTool {
   readonly parameters: {
     readonly type: "object";
     readonly properties: Readonly<
-      Record<string, { readonly type: "string"; readonly description: string }>
+      Record<
+        string,
+        { readonly type: "string"; readonly description: string; readonly enum?: readonly string[] }
+      >
     >;
     readonly required: readonly string[];
     readonly additionalProperties: false;
   };
 }
+export function isConsultationTool(tool: { namespace: unknown; name: unknown }): boolean {
+  return tool.namespace === "ohtia" && tool.name === "propose_consultation";
+}
+
 /** Version 1 of the optional title metadata returned alongside a direct-guidance reply. */
 export const conversationTitlePolicy = Object.freeze({
   version: 1,
@@ -125,11 +132,7 @@ export function isConversationTitleTool(tool: { namespace: unknown; name: unknow
 export function requestsConversationTitle(
   request: Pick<ProviderRequestData, "operation" | "tools">,
 ): boolean {
-  return (
-    request.operation === "direct_guidance" &&
-    request.tools.length === 1 &&
-    request.tools.some(isConversationTitleTool)
-  );
+  return request.operation === "direct_guidance" && request.tools.some(isConversationTitleTool);
 }
 export interface ProviderToolCall {
   /** Null is an unnamespaced provider call; it cannot match a namespaced permitted tool. */
@@ -333,7 +336,12 @@ function isTool(value: unknown): value is ProviderTool {
       ([key, field]) =>
         isIdentifier(key) &&
         record(field) &&
-        exact(field, ["type", "description"]) &&
+        (exact(field, ["type", "description"]) ||
+          (exact(field, ["type", "description", "enum"]) &&
+            Array.isArray(field.enum) &&
+            field.enum.length > 0 &&
+            field.enum.length <= 32 &&
+            field.enum.every(isProviderToolLabel))) &&
         field.type === "string" &&
         boundedText(field.description, 4096),
     )
@@ -371,7 +379,8 @@ export function isProviderRequestData(value: unknown): value is ProviderRequestD
     boundedText(value.instructions, providerInstructionBytes) &&
     Array.isArray(value.input) &&
     value.input.length > 0 &&
-    value.input.length <= 1001 &&
+    value.input.length <=
+      (value.operation === "direct_guidance" && value.instruction_version >= 2 ? 1501 : 1001) &&
     value.input.every(isInput) &&
     Array.isArray(value.tools) &&
     value.tools.length <= 32 &&
@@ -557,10 +566,11 @@ export type TransferEntry =
       readonly operation: ProviderOperation;
       readonly version: number;
     }
-  | { readonly kind: "message"; readonly reference: string }
+  | { readonly kind: "message" | "consultation_request"; readonly reference: string }
   | {
       readonly kind: "note";
-      readonly note: "earlier_messages_omitted" | "partial_reply" | "setup_proposal";
+      readonly note:
+        "earlier_messages_omitted" | "partial_reply" | "setup_proposal" | "consultation_proposal";
       readonly reference: string;
       readonly revision: number;
     };
@@ -619,7 +629,7 @@ function isTransferEntry(value: unknown): value is TransferEntry {
       Number.isSafeInteger(value.version) &&
       (value.version as number) > 0
     );
-  if (value.kind === "message")
+  if (value.kind === "message" || value.kind === "consultation_request")
     return exact(value, ["kind", "reference"]) && isIdentifier(value.reference);
   return (
     value.kind === "note" &&
@@ -629,7 +639,8 @@ function isTransferEntry(value: unknown): value is TransferEntry {
     value.revision > 0 &&
     (value.note === "earlier_messages_omitted" ||
       value.note === "partial_reply" ||
-      value.note === "setup_proposal")
+      value.note === "setup_proposal" ||
+      value.note === "consultation_proposal")
   );
 }
 function isDevelopmentReport(value: unknown): value is DevelopmentReport {
@@ -682,7 +693,7 @@ function isDevelopmentReport(value: unknown): value is DevelopmentReport {
         isProviderResult(value.result) &&
         isUsage(value.usage) &&
         Array.isArray(value.transfer) &&
-        value.transfer.length <= 1002 &&
+        value.transfer.length <= 1502 &&
         value.transfer.every(isTransferEntry) &&
         count(value.events) &&
         count(value.duration_ms) &&

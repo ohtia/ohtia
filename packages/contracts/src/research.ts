@@ -47,6 +47,10 @@ export interface MessageRecord {
 export interface ResearchPayloads {
   readonly "conversation.stop": { readonly conversationId: string };
   readonly "task.stop": { readonly taskId: string };
+  readonly "consultation.accept": { readonly proposalId: string; readonly connection: string };
+  readonly "consultation.decline": { readonly proposalId: string };
+  readonly "contribution.tryAgain": ResearchPayloads["task.tryAgain"];
+  readonly "contribution.startAgain": ResearchPayloads["task.startAgain"];
   readonly "task.tryAgain": { readonly taskId: string };
   /** Invoking this human command acknowledges possible duplicate charges. */
   readonly "task.startAgain": { readonly taskId: string };
@@ -88,6 +92,10 @@ export const researchCommands = [
   "task.stop",
   "task.startAgain",
   "task.tryAgain",
+  "consultation.accept",
+  "consultation.decline",
+  "contribution.tryAgain",
+  "contribution.startAgain",
   "usagePause.resume",
   "task.continueAll",
   "task.cancelAll",

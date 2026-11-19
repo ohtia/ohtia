@@ -2,6 +2,7 @@ import {
   dispatchPermitPolicy,
   isProviderEvent,
   isProviderToolLabel,
+  isConsultationTool,
   requestsConversationTitle,
   conversationTitlePolicy,
   conversationTitleInstructionSuffix,
@@ -38,6 +39,7 @@ interface Dispatched {
   readonly limits: ProviderRequestLimits;
   outputBytes: number;
   conversationTitle: boolean;
+  consultationEnabled: boolean;
   readonly calls: Map<string | symbol, BufferedToolCall>;
   sampledWall: number;
   sampledMono: number;
@@ -214,6 +216,7 @@ export class ProviderDispatch {
       limits: request.limits,
       outputBytes: 0,
       conversationTitle: requestsConversationTitle(request),
+      consultationEnabled: request.tools.some(isConsultationTool),
       calls: new Map(),
       sampledWall: this.wall(),
       sampledMono: this.monotonic(),
@@ -318,7 +321,8 @@ export class ProviderDispatch {
       };
       try {
         const providerRequest =
-          record.conversationTitle && !adapter.declaration.capabilities.tools
+          (record.conversationTitle || record.consultationEnabled) &&
+          !adapter.declaration.capabilities.tools
             ? {
                 ...request,
                 tools: [],
@@ -327,7 +331,10 @@ export class ProviderDispatch {
                   : request.instructions,
               }
             : request;
-        if (providerRequest !== request) record.conversationTitle = false;
+        if (providerRequest !== request) {
+          record.conversationTitle = false;
+          record.consultationEnabled = false;
+        }
         await adapter.requests.send(providerRequest, control);
       } catch {
         /* The result below states what main can still know. */
@@ -398,8 +405,10 @@ export class ProviderDispatch {
     if (result.status === "completed" && record.conversationTitle) {
       const title = titleSuggestion(record.calls.values());
       if (title !== undefined) result = { status: "completed", conversation_title: title };
-      record.calls.clear();
-    } else if (
+      for (const [id, call] of record.calls)
+        if (isConversationTitleTool(call)) record.calls.delete(id);
+    }
+    if (
       result.status === "completed" &&
       [...record.calls.values()].some(
         (call) =>
@@ -519,7 +528,22 @@ export class ProviderDispatch {
         invalid();
         return;
       }
-      call.complete = true;
+      const finalized = body.arguments ?? call.arguments;
+      const matches = finalized.startsWith(call.arguments);
+      if (!matches && (!record.conversationTitle || !isConversationTitleTool(call))) {
+        invalid();
+        return;
+      }
+      // Count a repeated prefix once and charge conflicting metadata before discarding it.
+      if (account(matches ? finalized.slice(call.arguments.length) : finalized) === undefined) {
+        this.finish(record, {
+          status: "failed",
+          reason: "output_limit_exceeded",
+          dispatched: true,
+        });
+        return;
+      }
+      record.calls.set(body.id, { ...call, arguments: matches ? finalized : "", complete: true });
     } else if (body.type === "tool_call") {
       // Atomic calls from adapters follow exactly the same cumulative accounting.
       if (record.calls.size >= record.limits.max_output_bytes) {

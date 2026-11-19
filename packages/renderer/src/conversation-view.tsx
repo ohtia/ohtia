@@ -1,3 +1,4 @@
+import { ConsultationProposal } from "./consultation-proposal.js";
 import { SetupProposal } from "./setup-proposal.js";
 import { RecoveryFocusBoundary } from "./settings-notices.js";
 import { TaskNotice, taskNoticeContent } from "./task-notice.js";
@@ -39,6 +40,8 @@ export function ConversationView({
         ConversationController,
         | "composer"
         | "performSetupAction"
+        | "performConsultationAction"
+        | "observeConsultationDestination"
         | "performTaskAction"
         | "connections"
         | "claimTaskNotice"
@@ -272,7 +275,10 @@ export function ConversationView({
               </div>
             )}
             {!state.items.some(
-              (item) => item.kind === "message" || item.kind === "setupProposal",
+              (item) =>
+                item.kind === "message" ||
+                item.kind === "setupProposal" ||
+                item.kind === "consultation",
             ) &&
               state.replies.size === 0 && (
                 <p className="conversation-empty">
@@ -289,6 +295,34 @@ export function ConversationView({
                 </p>
               )}
             {state.items.map((item) => {
+              if (item.kind === "consultation")
+                return controller.performConsultationAction &&
+                  controller.observeConsultationDestination &&
+                  controller.connections ? (
+                  <div key={item.id} data-timeline-id={item.id}>
+                    <ConsultationProposal
+                      proposal={item}
+                      request={
+                        state.texts.get(item.id) ??
+                        (typeof item.request === "string" ? item.request : "")
+                      }
+                      destination={state.consultationDestination}
+                      locale={locale}
+                      controller={{
+                        performConsultationAction: controller.performConsultationAction,
+                        observeConsultationDestination: controller.observeConsultationDestination,
+                        connections: controller.connections,
+                      }}
+                      hasText={state.items.some(
+                        (saved) =>
+                          saved.kind === "message" &&
+                          saved.agentId === "virgilio" &&
+                          saved.taskId === item.taskId,
+                      )}
+                      openExternalLink={commands.openExternalLink}
+                    />
+                  </div>
+                ) : null;
               if (item.kind === "setupProposal")
                 return controller.composer && controller.performSetupAction ? (
                   <div key={item.id} data-timeline-id={item.id}>
@@ -330,6 +364,12 @@ export function ConversationView({
                     data-timeline-id={item.id}
                     className="conversation-message agent"
                   >
+                    {item.consultation && !text && !saved && (
+                      <VoiceLabel
+                        identity={{ kind: "ai", contributor: item.agentId, definitionVersion: "1" }}
+                        locale={locale}
+                      />
+                    )}
                     {streaming && text && (
                       <>
                         <VoiceLabel
@@ -340,6 +380,11 @@ export function ConversationView({
                           }}
                           locale={locale}
                         />
+                        {item.consultation && (
+                          <p className="consultation-caption">
+                            {message(locale, "consultation.caption")}
+                          </p>
+                        )}
                         <div
                           className="conversation-text"
                           aria-busy="true"
@@ -369,7 +414,11 @@ export function ConversationView({
                       locale={locale}
                       connection={connection}
                       hasText={!!saved || !!text}
-                      latest={state.conversation?.latestReplyTaskId === item.id}
+                      latest={
+                        item.consultation
+                          ? !item.superseded
+                          : state.conversation?.latestReplyTaskId === item.id
+                      }
                       // Only tasks accepted before the document language was confirmed are setup tasks.
                       setupFinal={
                         item.language === null &&
@@ -410,6 +459,11 @@ export function ConversationView({
                       identity={{ kind: "ai", contributor: agent, definitionVersion: "1" }}
                       locale={locale}
                     />
+                  )}
+                  {item.consultation && (
+                    <p className="consultation-caption">
+                      {message(locale, "consultation.caption")}
+                    </p>
                   )}
                   <div className="conversation-text" lang={item.language ?? ""} dir="auto">
                     <MessageMarkdown

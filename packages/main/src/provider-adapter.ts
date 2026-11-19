@@ -31,7 +31,7 @@ export type AdapterEvent =
       readonly name: string;
     }
   | { readonly type: "tool_arguments"; readonly id: string; readonly text: string }
-  | { readonly type: "tool_end"; readonly id: string };
+  | { readonly type: "tool_end"; readonly id: string; readonly arguments?: string };
 export interface BufferedToolCall extends ProviderToolCall {
   complete: boolean;
 }

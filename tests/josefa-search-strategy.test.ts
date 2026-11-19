@@ -156,7 +156,20 @@ describe("Josefa search strategy", () => {
       const dispatch = dispatches[0]!;
       const withTool = { ...dispatch, request: { ...dispatch.request, tools: [setupTool] } };
       expect(decodeProviderDispatch(JSON.stringify(withTool), generation)).toBeUndefined();
-      const role = specifiedInstructions("SPEC-003-025", 2)
+      const epic = fs.readFileSync("docs/epics/EPIC-003-research-agents/epic.md", "utf8");
+      const instructions = epic
+        .split("**Josefa's instructions, version 2,**")[1]!
+        .split("```text\n")[1]!
+        .split("  ```")[0]!;
+      const role = instructions
+        .trimEnd()
+        .split("\n")
+        .map((line) => line.slice(2))
+        .join("\n")
+        .replace(
+          "- Start by stating that this is a plan",
+          "- When you propose a plan, start by stating that this is a plan",
+        )
         .replace("{project_type_name}", "Thesis")
         .replace(
           "{project_type_description}",
@@ -170,8 +183,8 @@ describe("Josefa search strategy", () => {
       expect(dispatch.request).toMatchObject({
         operation: "search_strategy_planning",
         document_language: "es-AR",
-        policy_version: 1,
-        instruction_version: 1,
+        policy_version: 2,
+        instruction_version: 2,
         tools: [],
         model: "first",
         instructions: role + "\n\n" + route,
@@ -255,7 +268,7 @@ describe("Josefa search strategy", () => {
       ).toMatchObject({
         result: { status: "completed" },
         transfer: [
-          { kind: "instructions", operation: "search_strategy_planning", version: 1 },
+          { kind: "instructions", operation: "search_strategy_planning", version: 2 },
           { kind: "message", reference: messages[0]!.id },
           { kind: "message", reference: messages[1]!.id },
         ],
@@ -627,8 +640,8 @@ it("backfills a revision 19 conversation and keeps the selected Josefa's direct 
     const dispatch = dispatches[0]!;
     expect(dispatch.request).toMatchObject({
       operation: "search_strategy_planning",
-      policy_version: 1,
-      instruction_version: 1,
+      policy_version: 2,
+      instruction_version: 2,
       input: [{ role: "user", text: "Plan a search for peer tutoring" }],
       tools: [],
     });
@@ -664,13 +677,13 @@ it("backfills a revision 19 conversation and keeps the selected Josefa's direct 
     ]);
     const migrated = f.raw();
     try {
-      expect(migrated.pragma("user_version", { simple: true })).toBe(20);
+      expect(migrated.pragma("user_version", { simple: true })).toBe(21);
       const transfer = migrated
         .prepare("SELECT transfer_manifest FROM attempts WHERE id=?")
         .pluck()
         .get(bytes(dispatch.request.attempt)) as string;
       expect(JSON.parse(transfer)).toEqual([
-        { kind: "instructions", operation: "search_strategy_planning", version: 1 },
+        { kind: "instructions", operation: "search_strategy_planning", version: 2 },
         { kind: "message", reference: messages[0]!.id },
       ]);
       expect(() =>

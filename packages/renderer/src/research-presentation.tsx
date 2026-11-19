@@ -1032,7 +1032,12 @@ export interface ActionProposalCardProps {
   readonly title: string;
   readonly state: "open" | "accepted" | "declined" | "replaced";
   readonly stateLabel: string;
-  readonly sections: readonly { readonly label: string; readonly value: RecordedText }[];
+  readonly sections: readonly {
+    readonly label: string;
+    readonly value: RecordedText;
+    readonly rendered?: ReactNode;
+  }[];
+  readonly recipient?: ReactNode;
   readonly note?: string;
   readonly actions?: readonly {
     readonly label: string;
@@ -1058,6 +1063,7 @@ export function ActionProposalCard({
   state,
   stateLabel,
   sections,
+  recipient,
   note,
   actions,
   disabledReason,
@@ -1085,10 +1091,11 @@ export function ActionProposalCard({
           />
           {stateLabel}
         </p>
+        {recipient}
         <dl className="research-fields">
           {sections.map((section, i) => (
             <Field key={i} label={`${section.label}:`}>
-              <Recorded value={section.value} />
+              {section.rendered ?? <Recorded value={section.value} />}
             </Field>
           ))}
         </dl>

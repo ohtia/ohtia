@@ -268,3 +268,25 @@
 .task-notice-actions + .conversation-notice {
   margin-block-start: var(--space-2);
 }
+
+.consultation-recipient {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--type-ui-caption-size);
+  line-height: var(--type-ui-caption-height);
+}
+
+.consultation-request {
+  border-inline-start: var(--border-width-state) solid var(--border-subtle);
+  padding-inline: var(--space-3) var(--space-0);
+  overflow-wrap: anywhere;
+}
+
+.consultation-caption {
+  margin: 0;
+  color: var(--content-secondary);
+  font-size: var(--type-ui-caption-size);
+  line-height: var(--type-ui-caption-height);
+}

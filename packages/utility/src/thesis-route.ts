@@ -41,9 +41,11 @@ export function renderProjectInstructions(
     readonly title: string;
     readonly document_language: string;
   },
+  context: Readonly<Record<string, string>> = {},
 ): string {
   const type = projectTypes[project.project_type];
   const values: Readonly<Record<string, string>> = {
+    ...context,
     project_type_name: type.name,
     project_type_description: type.description,
     title: project.title,

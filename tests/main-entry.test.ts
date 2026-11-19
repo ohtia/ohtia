@@ -2146,6 +2146,11 @@ it("hands development switches to the open development instance and runs them on
       request: {
         attempt: "development-2",
         operation: "development_test",
+        project: "019a8000-0000-7000-8000-000000000501",
+        policy_version: 1,
+        instruction_version: 1,
+        document_language: null,
+        tools: [],
         connection: "chatgpt",
         model: "first",
         instructions: "Synthetic.",

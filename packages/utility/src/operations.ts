@@ -1,5 +1,5 @@
-import { directGuidanceInstructions } from "./direct-guidance.js";
-import { searchStrategyInstructions } from "./search-strategy.js";
+import { directGuidanceInstructions, directGuidanceInstructionsV2 } from "./direct-guidance.js";
+import { searchStrategyInstructions, searchStrategyInstructionsV2 } from "./search-strategy.js";
 import { setupInstructions, setupInstructionsV2 } from "./project-setup.js";
 import {
   utf8Size,
@@ -74,12 +74,26 @@ const directGuidanceV1: OperationPolicy = Object.freeze({
   modes: Object.freeze(["development", "installed", "qualification"] as const),
 });
 
+const searchStrategyV1: OperationPolicy = Object.freeze({
+  ...directGuidanceV1,
+  operation: "search_strategy_planning",
+  instructions: searchStrategyInstructions,
+});
+
 const policies: readonly OperationPolicy[] = Object.freeze([
   directGuidanceV1,
   Object.freeze({
     ...directGuidanceV1,
-    operation: "search_strategy_planning",
-    instructions: searchStrategyInstructions,
+    version: 2,
+    instruction_version: 2,
+    instructions: directGuidanceInstructionsV2,
+  }),
+  searchStrategyV1,
+  Object.freeze({
+    ...searchStrategyV1,
+    version: 2,
+    instruction_version: 2,
+    instructions: searchStrategyInstructionsV2,
   }),
   projectSetupV1,
   Object.freeze({
@@ -134,6 +148,7 @@ export const omittedMessagesNote = "Earlier messages in this conversation are no
 export interface InputMessage {
   /** An identifier recorded in the transfer list, never the text. */
   readonly reference: string;
+  readonly transferKind?: "consultation_request";
   readonly position?: number;
   readonly role: "user" | "assistant";
   readonly text: string;
@@ -153,6 +168,7 @@ export function buildInput(
   messages: readonly InputMessage[],
   context: { readonly reference: string; readonly revision: number },
   notes: readonly {
+    readonly kind?: "consultation_proposal";
     readonly position: number;
     readonly reference: string;
     readonly revision: number;
@@ -192,7 +208,10 @@ export function buildInput(
               },
             ]
           : []),
-        ...after(message, index).map((note) => ({ role: "user" as const, text: note.text })),
+        ...after(message, index).map((note) => ({
+          role: "user" as const,
+          text: note.text,
+        })),
       ]),
     ],
     transfer: [
@@ -201,7 +220,7 @@ export function buildInput(
         ? [{ kind: "note" as const, note: "earlier_messages_omitted" as const, ...context }]
         : []),
       ...chosen.flatMap((message, index): TransferEntry[] => [
-        { kind: "message", reference: message.reference },
+        { kind: message.transferKind ?? "message", reference: message.reference },
         ...(message.partial
           ? [
               {
@@ -212,9 +231,9 @@ export function buildInput(
               },
             ]
           : []),
-        ...after(message, index).map((note) => ({
+        ...after(message, index).map((note): TransferEntry => ({
           kind: "note" as const,
-          note: "setup_proposal" as const,
+          note: note.kind ?? "setup_proposal",
           reference: note.reference,
           revision: note.revision,
         })),

@@ -378,7 +378,11 @@ export async function readResponseStream(
         )
           return "invalid";
         ended.add(value.item_id);
-        control.emit({ type: "tool_end", id: value.item_id });
+        control.emit({
+          type: "tool_end",
+          id: value.item_id,
+          ...(typeof value.arguments === "string" ? { arguments: value.arguments } : {}),
+        });
         return false;
       case "response.completed":
         if (!body) return "invalid";

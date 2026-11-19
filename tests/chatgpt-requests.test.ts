@@ -20,6 +20,7 @@ import {
   responsesEndpoint,
 } from "../packages/main/src/chatgpt-responses.js";
 import { chatGPTEndpoints } from "../packages/main/src/chatgpt-sign-in.js";
+import { consultableAgents, consultationTool } from "../packages/utility/src/consultations.js";
 import { conversationTitlePolicy, type ProviderEvent, type ProviderTool } from "@ohtia/contracts";
 
 const fixtures: ReturnType<typeof fakeChatGPT>[] = [];
@@ -128,6 +129,176 @@ describe("ChatGPT requests over the Responses API", () => {
     expect(result(events)).toEqual({
       status: "completed",
       ...(scenario.title === undefined ? {} : { conversation_title: scenario.title }),
+    });
+  });
+
+  it.each([
+    ["final arguments only", "", "School attendance"],
+    ["a streamed prefix", '{"title":', "School attendance"],
+    ["a full streamed snapshot", '{"title":"School attendance"}', "School attendance"],
+    ["a conflicting snapshot", '{"title":"Weather observations"}', undefined],
+    ["a conflicting snapshot over budget", '{"title":"Weather observations"}', undefined, 1],
+  ] as const)(
+    "handles title metadata with %s alongside a consultation",
+    async (_kind, prefix, title, bytesOverBudget = 0) => {
+      const f = await signedIn();
+      const consultation = consultationTool(consultableAgents("development"));
+      const consultationArgs = JSON.stringify({
+        agent: "josefa",
+        request: "Suggest terms for a search about school attendance.",
+        reason: "Review possible terms.",
+      });
+      const args = '{"title":"School attendance"}';
+      const titleStart = streamedTitle(args)[0]!;
+      f.responses = () =>
+        streamResponse([
+          ...syntheticReply.slice(0, -1),
+          titleStart,
+          sse({
+            type: "response.output_item.added",
+            item: {
+              type: "function_call",
+              id: "consultation-call",
+              namespace: consultation.namespace,
+              name: consultation.name,
+            },
+          }),
+          ...(prefix
+            ? [
+                sse({
+                  type: "response.function_call_arguments.delta",
+                  item_id: "title-call",
+                  delta: prefix,
+                }),
+              ]
+            : []),
+          sse({
+            type: "response.function_call_arguments.delta",
+            item_id: "consultation-call",
+            delta: consultationArgs,
+          }),
+          sse({
+            type: "response.function_call_arguments.done",
+            item_id: "title-call",
+            arguments: args,
+          }),
+          sse({
+            type: "response.function_call_arguments.done",
+            item_id: "consultation-call",
+            arguments: consultationArgs,
+          }),
+          syntheticReply.at(-1)!,
+        ]);
+      const request = conformanceRequest("chatgpt");
+      const countedTitleArgs = title ? args : prefix + args;
+      const events = await dispatchThrough(f.manager, f.adapter, {
+        ...request,
+        operation: "direct_guidance",
+        tools: [consultation, titleTool],
+        limits: {
+          ...request.limits,
+          max_output_bytes:
+            Buffer.byteLength("Synthetic reply." + consultationArgs + countedTitleArgs) -
+            bytesOverBudget,
+        },
+      });
+      expect(f.responseRequests).toHaveLength(1);
+      expect(text(events)).toBe("Synthetic reply.");
+      if (bytesOverBudget) {
+        expect(events.some((event) => event.type === "tool_call")).toBe(false);
+        expect(result(events)).toEqual({
+          status: "failed",
+          reason: "output_limit_exceeded",
+          dispatched: true,
+        });
+        return;
+      }
+      expect(events.filter((event) => event.type === "tool_call")).toEqual([
+        expect.objectContaining({
+          namespace: consultation.namespace,
+          name: consultation.name,
+          arguments: consultationArgs,
+        }),
+      ]);
+      expect(result(events)).toEqual({
+        status: "completed",
+        ...(title ? { conversation_title: title } : {}),
+      });
+    },
+  );
+
+  it("rejects conflicting finalized arguments for a proposed consultation", async () => {
+    const f = await signedIn();
+    const consultation = consultationTool(consultableAgents("development"));
+    const args = JSON.stringify({
+      agent: "josefa",
+      request: "Find terminology.",
+      reason: "Review terms.",
+    });
+    const finalized = JSON.stringify({
+      agent: "josefa",
+      request: "Find databases.",
+      reason: "Review terms.",
+    });
+    f.responses = () =>
+      streamResponse([
+        ...syntheticReply.slice(0, -1),
+        sse({
+          type: "response.output_item.added",
+          item: {
+            type: "function_call",
+            id: "consultation-call",
+            namespace: consultation.namespace,
+            name: consultation.name,
+          },
+        }),
+        sse({
+          type: "response.function_call_arguments.delta",
+          item_id: "consultation-call",
+          delta: args,
+        }),
+        sse({
+          type: "response.function_call_arguments.done",
+          item_id: "consultation-call",
+          arguments: finalized,
+        }),
+        syntheticReply.at(-1)!,
+      ]);
+    const events = await dispatchThrough(f.manager, f.adapter, {
+      ...conformanceRequest("chatgpt"),
+      operation: "direct_guidance",
+      tools: [consultation, titleTool],
+    });
+    expect(text(events)).toBe("Synthetic reply.");
+    expect(events.some((event) => event.type === "tool_call")).toBe(false);
+    expect(result(events)).toEqual({
+      status: "failed",
+      reason: "invalid_output",
+      dispatched: true,
+    });
+  });
+
+  it("charges title arguments delivered at finalization against the same output budget", async () => {
+    const f = await signedIn();
+    const args = '{"title":"School attendance"}';
+    const [start, , end] = streamedTitle(args);
+    f.responses = () =>
+      streamResponse([...syntheticReply.slice(0, -1), start!, end!, syntheticReply.at(-1)!]);
+    const request = conformanceRequest("chatgpt");
+    const events = await dispatchThrough(f.manager, f.adapter, {
+      ...request,
+      operation: "direct_guidance",
+      tools: [titleTool],
+      limits: {
+        ...request.limits,
+        max_output_bytes: Buffer.byteLength("Synthetic reply." + args) - 1,
+      },
+    });
+    expect(text(events)).toBe("Synthetic reply.");
+    expect(result(events)).toEqual({
+      status: "failed",
+      reason: "output_limit_exceeded",
+      dispatched: true,
     });
   });
 

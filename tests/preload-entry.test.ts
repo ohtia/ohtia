@@ -1047,3 +1047,27 @@ it("carries the notice pause read and four idempotent actions through the sandbo
   for (const call of calls) expect((await call.result).ok).toBe(true);
   h.window.dispatchEvent(new Event("unload"));
 });
+
+it("forwards consultation decisions and contribution retries with their original receipts", async () => {
+  const h = await load();
+  const taskId = "019a8000-0000-7000-8000-000000000001";
+  const proposalId = "019a8000-0000-7000-8000-000000000002";
+  const port = h.bridge.foundation;
+  const calls = [
+    port.acceptConsultation("accept", { proposalId, connection: "chatgpt" }),
+    port.declineConsultation("decline", { proposalId }),
+    port.tryAgainContribution("retry", { taskId }),
+    port.startAgainContribution("restart", { taskId }),
+  ];
+  const requests = h.ipcRenderer.send.mock.calls.map(([, text]) => JSON.parse(text));
+  expect(
+    requests.map(({ operation, operationId, payload }) => [operation, operationId, payload]),
+  ).toEqual([
+    ["consultation.accept", "accept", { proposalId, connection: "chatgpt" }],
+    ["consultation.decline", "decline", { proposalId }],
+    ["contribution.tryAgain", "retry", { taskId }],
+    ["contribution.startAgain", "restart", { taskId }],
+  ]);
+  h.window.dispatchEvent(new Event("unload"));
+  for (const call of calls) expect(await call.result).toEqual(failure("uncertain"));
+});

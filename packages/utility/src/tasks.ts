@@ -1,3 +1,11 @@
+import {
+  consultableAgents,
+  consultationTool,
+  consultationNote,
+  consultationInput,
+  decodeConsultationProposal,
+  otherAgentInput,
+} from "./consultations.js";
 import { renderProjectInstructions } from "./thesis-route.js";
 import {
   acceptedSetupCalls,
@@ -94,7 +102,9 @@ export interface TaskRow {
   id: Uint8Array;
   project_id: Uint8Array;
   conversation_id: Uint8Array;
-  input_through_position: number;
+  input_through_position: number | null;
+  kind: "reply" | "consultation";
+  contribution_id: Uint8Array | null;
   reply_position: number | null;
   operation: string;
   policy_version: number;
@@ -168,6 +178,7 @@ export interface TaskContext {
 export class TaskTransaction {
   readonly diagnostics: DiagnosticEvent[] = [];
   readonly modelRefreshes = new Set<string>();
+  private readonly interventions = new Map<string, Uint8Array>();
   private readonly conversations = new Map<string, Uint8Array>();
   private titleSuggestion?: { conversation: string; attemptId: Uint8Array; title: string };
   constructor(
@@ -178,7 +189,16 @@ export class TaskTransaction {
   touch(conversation: Uint8Array): void {
     this.conversations.set(identifier(conversation), conversation);
   }
+  private touchIntervention(id: Uint8Array): void {
+    this.interventions.set(identifier(id), id);
+  }
   async flush(): Promise<void> {
+    for (const id of this.interventions.values())
+      await this.db
+        .updateTable("interventions")
+        .set({ revision: sql`revision+1` })
+        .where("id", "=", id)
+        .execute();
     for (const [conversation, id] of this.conversations) {
       const revision = this.db
         .updateTable("conversations")
@@ -206,6 +226,14 @@ export class TaskTransaction {
       .executeTakeFirstOrThrow();
     if (changed.numUpdatedRows !== 1n) throw new Error("Task revision changed.");
     this.touch(task.conversation_id);
+    if (task.contribution_id) {
+      const contribution = await this.db
+        .selectFrom("contributions")
+        .select("intervention_id")
+        .where("id", "=", task.contribution_id)
+        .executeTakeFirstOrThrow();
+      this.touchIntervention(contribution.intervention_id);
+    }
   }
   /** Shared routing for acceptance and destination preview, independent of connection state. */
   async destination(projectId: Uint8Array, recipient: ConversationAgent = "virgilio") {
@@ -216,7 +244,7 @@ export class TaskTransaction {
       .executeTakeFirstOrThrow();
     if (recipient === "josefa") {
       if (project.is_development || project.setup_confirmed_at === null) return null;
-      const policy = operationPolicy("search_strategy_planning", 1, this.context.mode);
+      const policy = operationPolicy("search_strategy_planning", 2, this.context.mode);
       return policy ? { policy, connection: "chatgpt" } : null;
     }
     if (recipient !== "virgilio") return null;
@@ -226,7 +254,7 @@ export class TaskTransaction {
         : project.setup_confirmed_at === null
           ? "project_setup"
           : "direct_guidance",
-      !project.is_development && project.setup_confirmed_at === null ? 2 : 1,
+      project.is_development ? 1 : 2,
       this.context.mode,
     );
     return policy ? { policy, connection: "chatgpt" } : null;
@@ -273,11 +301,114 @@ export class TaskTransaction {
       return failure("pending_limit_reached");
     return { ok: true, value: null };
   }
+  private unfinishedConsultation(conversation: Uint8Array) {
+    return this.db
+      .selectFrom("tasks")
+      .select("id")
+      .where("conversation_id", "=", conversation)
+      .where("kind", "=", "consultation")
+      .where("state", "in", ["queued", "blocked", "running", "cancelling"])
+      .executeTakeFirst();
+  }
+  async decideConsultation(
+    id: Uint8Array,
+    operationId: string,
+    shownConnection: string | undefined,
+  ): Promise<Outcome<Uint8Array>> {
+    const proposal = await this.db
+      .selectFrom("interventions")
+      .selectAll()
+      .where("id", "=", id)
+      .executeTakeFirst();
+    if (!proposal) return failure("record_not_found");
+    if (proposal.state !== "proposed") return failure("proposal_not_waiting");
+    const contribution = await this.db
+      .selectFrom("contributions")
+      .selectAll()
+      .where("intervention_id", "=", id)
+      .executeTakeFirstOrThrow();
+    const accepting = shownConnection !== undefined;
+    const destination = accepting
+      ? await this.destination(proposal.project_id, contribution.agent_id)
+      : null;
+    if (accepting && (!destination || destination.connection !== shownConnection))
+      return failure("destination_changed");
+    if (destination) {
+      if (await this.unfinishedConsultation(proposal.conversation_id))
+        return failure("consultation_unfinished");
+      if (await this.pendingLimitReached(destination.policy))
+        return failure("pending_limit_reached");
+    }
+    await this.db
+      .updateTable("interventions")
+      .set({
+        state: accepting ? "accepted" : "declined",
+        decided_at: this.now,
+        decided_by_operation_id: operationId,
+        revision: sql`revision+1`,
+      })
+      .where("id", "=", id)
+      .execute();
+    if (destination) {
+      const taskId = newId();
+      const reason = await this.connectionBlock(destination.connection);
+      const project = await this.db
+        .selectFrom("projects")
+        .select("document_language")
+        .where("id", "=", proposal.project_id)
+        .executeTakeFirstOrThrow();
+      await this.db
+        .insertInto("tasks")
+        .values({
+          id: taskId,
+          project_id: proposal.project_id,
+          conversation_id: proposal.conversation_id,
+          input_through_position: null,
+          kind: "consultation",
+          contribution_id: contribution.id,
+          reply_position: null,
+          operation: destination.policy.operation,
+          policy_version: destination.policy.version,
+          instruction_version: destination.policy.instruction_version,
+          connection: destination.connection,
+          document_language: project.document_language,
+          accepted_by_operation_id: operationId,
+          replaces_task_id: null,
+          charge_warning_accepted_at: null,
+          state: reason ? "blocked" : "queued",
+          blocking_reason: reason,
+          state_revision: 1,
+          created_at: this.now,
+          updated_at: this.now,
+        })
+        .execute();
+      await this.db
+        .updateTable("contributions")
+        .set({ task_id: taskId })
+        .where("id", "=", contribution.id)
+        .execute();
+      this.diagnostics.push({ event_name: "ohtia.task.accepted" });
+    }
+    this.touch(proposal.conversation_id);
+    return { ok: true, value: id };
+  }
+  private async pendingLimitReached(
+    policy: NonNullable<ReturnType<typeof operationPolicy>>,
+  ): Promise<boolean> {
+    const pending = await this.db
+      .selectFrom("tasks")
+      .select(({ fn }) => fn.countAll<number>().as("count"))
+      .where("operation", "=", policy.operation)
+      .where("state", "in", ["queued", "blocked"])
+      .executeTakeFirstOrThrow();
+    return pending.count >= policy.max_pending_tasks;
+  }
   private waiting(conversation: Uint8Array) {
     return this.db
       .selectFrom("tasks")
       .selectAll()
       .where("conversation_id", "=", conversation)
+      .where("kind", "=", "reply")
       .where("state", "in", ["queued", "blocked"])
       .executeTakeFirst();
   }
@@ -308,6 +439,8 @@ export class TaskTransaction {
         project_id: projectId,
         conversation_id: conversationId,
         input_through_position: position,
+        kind: "reply",
+        contribution_id: null,
         reply_position: null,
         operation: policy.operation,
         policy_version: policy.version,
@@ -325,7 +458,7 @@ export class TaskTransaction {
       })
       .execute();
   }
-  private async replaceWaiting(conversation: Uint8Array): Promise<void> {
+  private async replaceWaiting(conversation: Uint8Array, includedPosition?: number): Promise<void> {
     const old = await this.waiting(conversation);
     if (!old) return;
     const reason = old.blocking_reason ?? (await this.connectionBlock(old.connection));
@@ -334,6 +467,7 @@ export class TaskTransaction {
       .insertInto("tasks")
       .values({
         ...old,
+        input_through_position: Math.max(old.input_through_position ?? 0, includedPosition ?? 0),
         id: newId(),
         replaces_task_id: old.id,
         charge_warning_accepted_at: null,
@@ -378,6 +512,19 @@ export class TaskTransaction {
       .selectAll()
       .where("operation_id", "=", task.accepted_by_operation_id)
       .executeTakeFirst();
+    if (task.kind === "consultation")
+      return (
+        !!project &&
+        !project.is_development &&
+        project.setup_confirmed_at !== null &&
+        project.document_language === task.document_language &&
+        task.operation === "search_strategy_planning" &&
+        !!task.contribution_id &&
+        !!receipt &&
+        ["consultation.accept", "contribution.tryAgain", "contribution.startAgain"].includes(
+          receipt.command,
+        )
+      );
     const message = await this.db
       .selectFrom("messages")
       .select("id")
@@ -444,7 +591,12 @@ export class TaskTransaction {
     this.diagnostics.push({ event_name: "ohtia.usage_pause.resumed" });
   }
   async control(
-    command: "task.stop" | "task.startAgain" | "task.tryAgain",
+    command:
+      | "task.stop"
+      | "task.startAgain"
+      | "task.tryAgain"
+      | "contribution.tryAgain"
+      | "contribution.startAgain",
     id: Uint8Array,
     operationId: string,
   ): Promise<Outcome<Uint8Array>> {
@@ -494,6 +646,19 @@ export class TaskTransaction {
       }
       return { ok: true, value: task.id };
     }
+    const isConsultation = task.kind === "consultation";
+    if (command.startsWith("contribution.") !== isConsultation)
+      return failure("task_not_retryable");
+    const retry = command === "task.tryAgain" || command === "contribution.tryAgain";
+    if (isConsultation && task.contribution_id) {
+      const contribution = await this.db
+        .selectFrom("contributions")
+        .selectAll()
+        .where("id", "=", task.contribution_id)
+        .executeTakeFirstOrThrow();
+      if (!contribution.task_id || identifier(contribution.task_id) !== identifier(task.id))
+        return failure("newer_task_exists");
+    }
     const lastAttempt = await this.db
       .selectFrom("attempts")
       .selectAll()
@@ -501,7 +666,7 @@ export class TaskTransaction {
       .orderBy("attempt_number", "desc")
       .executeTakeFirst();
     if (
-      command === "task.tryAgain"
+      retry
         ? task.state !== "failed" || lastAttempt?.outcome_reason === "not_eligible"
         : task.state !== "uncertain"
     )
@@ -515,40 +680,43 @@ export class TaskTransaction {
       if (project.setup_confirmed_at !== null) return failure("task_not_retryable");
     }
     // rowid expresses actual acceptance order even if the wall clock moves backwards.
-    const newer = await this.db
-      .selectFrom("tasks")
-      .select("id")
-      .where("conversation_id", "=", task.conversation_id)
-      .where(sql<boolean>`rowid > (SELECT rowid FROM tasks WHERE id=${task.id})`)
-      .executeTakeFirst();
+    const newer =
+      !isConsultation &&
+      (await this.db
+        .selectFrom("tasks")
+        .select("id")
+        .where("conversation_id", "=", task.conversation_id)
+        .where("kind", "=", "reply")
+        .where(sql<boolean>`rowid > (SELECT rowid FROM tasks WHERE id=${task.id})`)
+        .executeTakeFirst());
     if (newer) return failure("newer_task_exists");
     const policy = operationPolicy(task.operation, task.policy_version, this.context.mode);
     if (!policy) return failure("service_unavailable");
-    const pending = await this.db
-      .selectFrom("tasks")
-      .select(({ fn }) => fn.countAll<number>().as("count"))
-      .where("operation", "=", task.operation)
-      .where("state", "in", ["queued", "blocked"])
-      .executeTakeFirstOrThrow();
-    if (pending.count >= policy.max_pending_tasks) return failure("pending_limit_reached");
+    if (isConsultation && (await this.unfinishedConsultation(task.conversation_id)))
+      return failure("consultation_unfinished");
+    if (await this.pendingLimitReached(policy)) return failure("pending_limit_reached");
     const project = await this.db
       .selectFrom("projects")
       .select("document_language")
       .where("id", "=", task.project_id)
       .executeTakeFirstOrThrow();
     const reason = await this.connectionBlock(task.connection);
-    const partial = await this.db
-      .selectFrom("messages")
-      .select("id")
-      .where("task_id", "=", task.id)
-      .where("ending", "=", "partial")
-      .executeTakeFirst();
-    const latest = await this.db
-      .selectFrom("messages")
-      .select("position")
-      .where("conversation_id", "=", task.conversation_id)
-      .orderBy("position", "desc")
-      .executeTakeFirstOrThrow();
+    const partial =
+      !isConsultation &&
+      (await this.db
+        .selectFrom("messages")
+        .select("id")
+        .where("task_id", "=", task.id)
+        .where("ending", "=", "partial")
+        .executeTakeFirst());
+    const latest =
+      !isConsultation &&
+      (await this.db
+        .selectFrom("messages")
+        .select("position")
+        .where("conversation_id", "=", task.conversation_id)
+        .orderBy("position", "desc")
+        .executeTakeFirstOrThrow());
     const replacement = newId();
     await this.db
       .insertInto("tasks")
@@ -558,9 +726,9 @@ export class TaskTransaction {
         reply_position: null,
         replaces_task_id: task.id,
         accepted_by_operation_id: operationId,
-        document_language: project.document_language,
-        input_through_position: partial ? task.input_through_position : latest.position,
-        charge_warning_accepted_at: command === "task.startAgain" ? this.now : null,
+        document_language: isConsultation ? task.document_language : project.document_language,
+        input_through_position: latest && !partial ? latest.position : task.input_through_position,
+        charge_warning_accepted_at: retry ? null : this.now,
         state: reason ? "blocked" : "queued",
         blocking_reason: reason,
         state_revision: 1,
@@ -568,11 +736,17 @@ export class TaskTransaction {
         updated_at: this.now,
       })
       .execute();
+    if (task.contribution_id) {
+      const contribution = await this.db
+        .updateTable("contributions")
+        .set({ task_id: replacement })
+        .where("id", "=", task.contribution_id)
+        .returning("intervention_id")
+        .executeTakeFirstOrThrow();
+      this.touchIntervention(contribution.intervention_id);
+    }
     this.touch(task.conversation_id);
-    if (
-      command === "task.tryAgain" &&
-      this.context.connections.read(task.connection)?.models?.length === 0
-    )
+    if (retry && this.context.connections.read(task.connection)?.models?.length === 0)
       this.modelRefreshes.add(task.connection);
     return { ok: true, value: replacement };
   }
@@ -647,7 +821,7 @@ export class TaskTransaction {
         ? "cancelled"
         : dispatched
           ? "uncertain"
-          : (await this.waiting(task.conversation_id))
+          : task.kind === "reply" && (await this.waiting(task.conversation_id))
             ? "cancelled"
             : policy && attempt.attempt_number >= policy.max_attempts
               ? "failed"
@@ -711,12 +885,18 @@ export class TaskTransaction {
     if (occupied.length >= limit) return null;
     const candidates = await this.db
       .selectFrom("tasks")
-      .selectAll()
-      .where("state", "=", "queued")
-      .orderBy("created_at")
-      .orderBy("id")
+      .innerJoin("command_receipts as r", "r.operation_id", "tasks.accepted_by_operation_id")
+      .selectAll("tasks")
+      .where("tasks.state", "in", ["queued", "blocked"])
+      .orderBy(sql`r.rowid`)
+      .orderBy(sql`tasks.rowid`)
       .execute();
+    const queuedConversations = new Set<string>();
     for (const task of candidates) {
+      const conversationKey = identifier(task.conversation_id);
+      if (queuedConversations.has(conversationKey)) continue;
+      queuedConversations.add(conversationKey);
+      if (task.state !== "queued") continue;
       if (
         occupied.some(
           (other) =>
@@ -770,13 +950,16 @@ export class TaskTransaction {
             .where("outcome_reason", "=", "empty_reply")
             .executeTakeFirst())
         );
-      const messages = await this.db
-        .selectFrom("messages")
-        .selectAll()
-        .where("conversation_id", "=", task.conversation_id)
-        .where("position", "<=", task.input_through_position)
-        .orderBy("position")
-        .execute();
+      const messages =
+        task.input_through_position === null
+          ? []
+          : await this.db
+              .selectFrom("messages")
+              .selectAll()
+              .where("conversation_id", "=", task.conversation_id)
+              .where("position", "<=", task.input_through_position)
+              .orderBy("position")
+              .execute();
       const inputMessages = [];
       for (const message of messages) {
         const outcome =
@@ -788,11 +971,23 @@ export class TaskTransaction {
                 .orderBy("attempt_number", "desc")
                 .executeTakeFirst()
             : undefined;
+        const otherAgent =
+          message.author_kind === "agent" && message.agent_id !== replyAgent(task.operation);
         inputMessages.push({
           reference: identifier(message.id),
           position: message.position,
-          role: message.author_kind === "researcher" ? ("user" as const) : ("assistant" as const),
-          text: message.content,
+          role:
+            message.author_kind === "researcher" || otherAgent
+              ? ("user" as const)
+              : ("assistant" as const),
+          text: otherAgent
+            ? otherAgentInput(
+                replyAgent(
+                  message.agent_id === "josefa" ? "search_strategy_planning" : "direct_guidance",
+                ),
+                message.content,
+              )
+            : message.content,
           ...(message.ending === "partial"
             ? {
                 partial: {
@@ -814,19 +1009,61 @@ export class TaskTransaction {
               .orderBy("t.reply_position")
               .execute()
           : [];
-      const notes = proposals.flatMap((proposal) => {
-        const text = setupNote(proposal);
-        return text && proposal.reply_position !== null
-          ? [
-              {
-                position: proposal.reply_position,
-                reference: identifier(proposal.id),
-                revision: setupRevision(proposal),
-                text,
-              },
-            ]
+      const notes: NonNullable<Parameters<typeof buildInput>[3]>[number][] = proposals.flatMap(
+        (proposal) => {
+          const text = setupNote(proposal);
+          return text && proposal.reply_position !== null
+            ? [
+                {
+                  position: proposal.reply_position,
+                  reference: identifier(proposal.id),
+                  revision: setupRevision(proposal),
+                  text,
+                },
+              ]
+            : [];
+        },
+      );
+      const enabledConsultations =
+        task.operation === "direct_guidance" && task.instruction_version >= 2
+          ? consultableAgents(this.context.mode)
           : [];
-      });
+      if (enabledConsultations.length) {
+        const consultations = await this.db
+          .selectFrom("interventions as i")
+          .innerJoin("attempts as a", "a.id", "i.proposed_by_attempt_id")
+          .innerJoin("tasks as t", "t.id", "a.task_id")
+          .leftJoin("contributions as c", "c.intervention_id", "i.id")
+          .select([
+            "i.id",
+            "i.state",
+            "i.invalid_reason",
+            "i.revision",
+            "t.reply_position",
+            "c.agent_id",
+          ])
+          .where("i.conversation_id", "=", task.conversation_id)
+          .orderBy("t.reply_position")
+          .execute();
+        for (const proposal of consultations) {
+          if (proposal.reply_position === null) continue;
+          const agent = enabledConsultations.find(({ id }) => id === proposal.agent_id);
+          notes.push({
+            kind: "consultation_proposal",
+            position: proposal.reply_position,
+            reference: identifier(proposal.id),
+            revision: proposal.revision,
+            text: consultationNote(proposal, agent?.name ?? "Josefa"),
+          });
+        }
+      }
+      const contribution = task.contribution_id
+        ? await this.db
+            .selectFrom("contributions")
+            .selectAll()
+            .where("id", "=", task.contribution_id)
+            .executeTakeFirstOrThrow()
+        : undefined;
       const project = await this.db
         .selectFrom("projects")
         .selectAll()
@@ -836,15 +1073,35 @@ export class TaskTransaction {
         (task.operation === "direct_guidance" || task.operation === "search_strategy_planning") &&
         project.title !== null &&
         task.document_language !== null
-          ? renderProjectInstructions(policy.instructions, {
-              project_type: project.project_type,
-              title: project.title,
-              document_language: task.document_language,
-            })
+          ? renderProjectInstructions(
+              policy.instructions,
+              {
+                project_type: project.project_type,
+                title: project.title,
+                document_language: task.document_language,
+              },
+              {
+                queryable_locations: "none in this version",
+                consultable_agents: enabledConsultations
+                  .map(
+                    ({ id, name, role, capability }) => `- ${id}: ${name}, ${role}, ${capability}.`,
+                  )
+                  .join("\n"),
+              },
+            )
           : policy.instructions;
       const built = buildInput(
         policy,
-        inputMessages,
+        contribution
+          ? [
+              {
+                role: "user",
+                reference: identifier(contribution.id),
+                text: consultationInput(contribution.request),
+                transferKind: "consultation_request",
+              },
+            ]
+          : inputMessages,
         {
           reference: identifier(conversation.id),
           revision: conversation.revision,
@@ -932,9 +1189,12 @@ export class TaskTransaction {
             tools:
               task.operation === "project_setup"
                 ? [setupTool]
-                : suggestTitle
-                  ? [conversationTitleTool]
-                  : [],
+                : [
+                    ...(enabledConsultations.length
+                      ? [consultationTool(enabledConsultations)]
+                      : []),
+                    ...(suggestTitle ? [conversationTitleTool] : []),
+                  ],
             project: identifier(task.project_id),
             policy_version: task.policy_version,
             instruction_version: task.instruction_version,
@@ -1001,10 +1261,14 @@ export class TaskTransaction {
     // Stop won the committed revision: even an already queued successful result can only
     // acknowledge cessation. Keep received partial text, never publish it as a complete reply.
     const accepted = task.operation === "project_setup" ? acceptedSetupCalls(calls) : [];
+    const consultation =
+      task.operation === "direct_guidance" && task.instruction_version >= 2
+        ? decodeConsultationProposal(calls, this.context.mode)
+        : undefined;
     const result: ProviderResult =
       task.state === "cancelling"
         ? { status: "cancelled" }
-        : event.result.status === "completed" && !text && !accepted.length
+        : event.result.status === "completed" && !text && !accepted.length && !consultation
           ? { status: "failed", reason: "empty_reply", dispatched: true }
           : event.result;
     const notDispatched = result.status === "failed" && !result.dispatched;
@@ -1044,18 +1308,20 @@ export class TaskTransaction {
             ? "cancelled"
             : "failed";
     if (notDispatched && result.reason === "permit_expired")
-      taskState = (await this.waiting(task.conversation_id))
-        ? "cancelled"
-        : policy && attempt.attempt_number < policy.max_attempts
-          ? "queued"
-          : "failed";
+      taskState =
+        task.kind === "reply" && (await this.waiting(task.conversation_id))
+          ? "cancelled"
+          : policy && attempt.attempt_number < policy.max_attempts
+            ? "queued"
+            : "failed";
     let blockingReason: BlockingReason | null = null;
     if (notDispatched && result.reason === "connection_expired") {
-      taskState = (await this.waiting(task.conversation_id))
-        ? "cancelled"
-        : policy && attempt.attempt_number < policy.max_attempts
-          ? "blocked"
-          : "failed";
+      taskState =
+        task.kind === "reply" && (await this.waiting(task.conversation_id))
+          ? "cancelled"
+          : policy && attempt.attempt_number < policy.max_attempts
+            ? "blocked"
+            : "failed";
       if (taskState === "blocked") blockingReason = "connection_disabled";
     }
     if (reason === "usage_limit_reached" && task.connection === "chatgpt") {
@@ -1090,7 +1356,10 @@ export class TaskTransaction {
           created_at: this.now,
         })
         .execute();
-      await this.replaceWaiting(task.conversation_id);
+      await this.replaceWaiting(
+        task.conversation_id,
+        task.kind === "consultation" ? task.reply_position : undefined,
+      );
     }
     if (
       result.status === "completed" &&
@@ -1139,6 +1408,47 @@ export class TaskTransaction {
         .execute();
       this.diagnostics.push({ event_name: "ohtia.project.setup_proposed" });
       // A tool-only reply changes the next queued task's input as well as a textual reply.
+      if (!text) await this.replaceWaiting(task.conversation_id);
+    }
+    if (state === "completed" && consultation) {
+      const invalid = "invalid" in consultation ? consultation.invalid : null;
+      const id = newId();
+      if (!invalid)
+        await this.db
+          .updateTable("interventions")
+          .set({ state: "replaced", decided_at: this.now, revision: sql`revision+1` })
+          .where("kind", "=", "consultation")
+          .where("state", "=", "proposed")
+          .where("conversation_id", "=", task.conversation_id)
+          .execute();
+      await this.db
+        .insertInto("interventions")
+        .values({
+          id,
+          project_id: task.project_id,
+          conversation_id: task.conversation_id,
+          kind: "consultation",
+          proposed_by_attempt_id: attempt.id,
+          invalid_reason: invalid,
+          state: invalid ? "invalid" : "proposed",
+          created_at: this.now,
+          decided_at: invalid ? this.now : null,
+          decided_by_operation_id: null,
+          revision: 1,
+        })
+        .execute();
+      if ("values" in consultation)
+        await this.db
+          .insertInto("contributions")
+          .values({
+            ...consultation.values,
+            id: newId(),
+            intervention_id: id,
+            task_id: null,
+            created_at: this.now,
+          })
+          .execute();
+      this.diagnostics.push({ event_name: "ohtia.consultation.proposed" });
       if (!text) await this.replaceWaiting(task.conversation_id);
     }
     await this.change(task, { state: taskState, blocking_reason: blockingReason });

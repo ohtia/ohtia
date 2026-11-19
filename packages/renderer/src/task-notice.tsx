@@ -259,7 +259,7 @@ export function TaskNotice({
   }, [setupFinal]);
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState<
-    "newer" | "pendingLimit" | "actionFailed" | "actionUncertain" | null
+    "newer" | "pendingLimit" | "consultationUnfinished" | "actionFailed" | "actionUncertain" | null
   >(null);
   const active = useRef(false);
   const intents = useRef(new Map<TaskAction, string>());
@@ -301,13 +301,19 @@ export function TaskNotice({
       setFeedback(
         result.error.code === "newer_task_exists"
           ? "newer"
-          : result.error.code === "pending_limit_reached"
-            ? "pendingLimit"
-            : ["uncertain", "timeout", "cancelled", "disposed", "invalid_service_result"].includes(
-                  result.error.code,
-                )
-              ? "actionUncertain"
-              : "actionFailed",
+          : result.error.code === "consultation_unfinished"
+            ? "consultationUnfinished"
+            : result.error.code === "pending_limit_reached"
+              ? "pendingLimit"
+              : [
+                    "uncertain",
+                    "timeout",
+                    "cancelled",
+                    "disposed",
+                    "invalid_service_result",
+                  ].includes(result.error.code)
+                ? "actionUncertain"
+                : "actionFailed",
       );
   }
   if (!content) return null;
@@ -446,7 +452,11 @@ export function TaskNotice({
             name={feedback === "actionFailed" ? "octagon-alert" : "triangle-alert"}
             size={16}
           />
-          <span>{message(locale, `taskNotice.${feedback}`)}</span>
+          <span>
+            {feedback === "consultationUnfinished"
+              ? message(locale, "consultation.retryUnfinished")
+              : message(locale, `taskNotice.${feedback}`)}
+          </span>
         </div>
       )}
       {(restart || confirm) && (

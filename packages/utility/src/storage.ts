@@ -38,6 +38,12 @@ import {
   agentColumn,
   objects as agentObjects,
 } from "./migrations/0020_conversation_agents.mjs";
+import {
+  up as consultations,
+  consultationTasks,
+  tables as consultationTables,
+  objects as consultationObjects,
+} from "./migrations/0021_consultations.mjs";
 import { readResearch, researchRevisions, readPauseCounts } from "./research-reads.js";
 import type { Request, ResearchScope, ResearchEvent, ResearchOperation } from "@ohtia/contracts";
 import {
@@ -279,6 +285,7 @@ const names = [
   "0018_conversation_titles",
   "0019_josefa_search_planning",
   "0020_conversation_agents",
+  "0021_consultations",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -496,6 +503,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 11 ? Object.keys(runTables) : []),
     ...(revision >= 13 ? ["execution_limits_receipts"] : []),
     ...(revision >= 15 ? Object.keys(setupTables) : []),
+    ...(revision >= 21 ? Object.keys(consultationTables) : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -621,20 +629,23 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 8
       ? Object.entries(taskTables).map(([name, definition]) => [
           name,
-          revision >= 10 && name === "tasks"
-            ? definition.replace(
-                ",\n    CHECK ((state=",
-                `, ${replyColumns.charge},\n    CHECK ((state=`,
-              )
-            : revision >= 18 && name === "attempts"
+          revision >= 21 && name === "tasks"
+            ? consultationTasks
+            : revision >= 10 && name === "tasks"
               ? definition.replace(
-                  ",\n    UNIQUE (task_id,attempt_number)",
-                  `, ${titleColumns.policy},\n    UNIQUE (task_id,attempt_number)`,
+                  ",\n    CHECK ((state=",
+                  `, ${replyColumns.charge},\n    CHECK ((state=`,
                 )
-              : definition,
+              : revision >= 18 && name === "attempts"
+                ? definition.replace(
+                    ",\n    UNIQUE (task_id,attempt_number)",
+                    `, ${titleColumns.policy},\n    UNIQUE (task_id,attempt_number)`,
+                  )
+                : definition,
         ])
       : []),
     ...(revision >= 15 ? Object.entries(setupTables) : []),
+    ...(revision >= 21 ? Object.entries(consultationTables) : []),
     ...(revision >= 9 ? Object.entries(usageTables) : []),
     ...(revision >= 11 ? Object.entries(runTables) : []),
     ...(revision >= 13 ? [["execution_limits_receipts", executionLimitsReceiptsSchema]] : []),
@@ -670,6 +681,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 18 ? titleObjects : {}),
                 ...(revision >= 19 ? josefaObjects : {}),
                 ...(revision >= 20 ? agentObjects : {}),
+                ...(revision >= 21 ? consultationObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1031,6 +1043,7 @@ export class DurableStore {
       let committed = false;
       try {
         this.assert();
+        if (source < 21) db.pragma("foreign_keys = OFF");
         await sql`BEGIN EXCLUSIVE`.execute(connection);
         begun = true;
         await sql`CREATE TABLE IF NOT EXISTS ohtia_migration_artifacts (name TEXT PRIMARY KEY NOT NULL, sha256 TEXT NOT NULL CHECK(length(sha256)=64 AND sha256 NOT GLOB '*[^0-9a-f]*'))`.execute(
@@ -1063,6 +1076,7 @@ export class DurableStore {
                 "0018_conversation_titles": { up: conversationTitles },
                 "0019_josefa_search_planning": { up: josefaSearchPlanning },
                 "0020_conversation_agents": { up: conversationAgents },
+                "0021_consultations": { up: consultations },
               }),
           },
         });
@@ -1095,6 +1109,8 @@ export class DurableStore {
         }
         // Keep intent and checkpoint on every failure, including a successful commit with a lost acknowledgement.
         throw new Error(`Migration requires explicit recovery (${operation}).`, { cause: error });
+      } finally {
+        if (source < 21) db.pragma("foreign_keys = ON");
       }
     });
   }
@@ -2480,6 +2496,10 @@ export class DurableStore {
         "conversation.stop": "ohtia.conversation.stop_requested",
         "task.startAgain": "ohtia.task.replaced",
         "task.tryAgain": "ohtia.task.retry_requested",
+        "consultation.accept": "ohtia.consultation.accepted",
+        "consultation.decline": "ohtia.consultation.declined",
+        "contribution.tryAgain": "ohtia.contribution.retry_requested",
+        "contribution.startAgain": "ohtia.contribution.restarted",
         "task.continueAll": "ohtia.task.continue_requested",
         "task.cancelAll": "ohtia.task.cancel_all_requested",
         "usagePause.resume": "ohtia.usage_pause.resume_requested",
