@@ -161,6 +161,7 @@ export function ComposerSpecimen() {
   };
   const state: ConversationState = {
     scope: { projectId, conversationId },
+    agentHint: "virgilio",
     status:
       viewState === "loading" || viewState === "failed" || viewState === "unavailable"
         ? viewState
