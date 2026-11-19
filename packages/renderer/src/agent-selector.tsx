@@ -107,7 +107,7 @@ function AgentSelector({
   }, [open]);
   useEffect(() => {
     if (!open || !current) return;
-    document.getElementById(optionId(current))?.scrollIntoView?.({ block: "nearest" });
+    document.getElementById(optionId(current))?.scrollIntoView({ block: "nearest" });
   }, [current, id, open]);
 
   const option = (agent: ConversationAgent, index: number) => {
@@ -120,7 +120,9 @@ function AgentSelector({
         role="option"
         aria-selected={active === index}
         aria-disabled={disabled || undefined}
-        onClick={() => commit(agent)}
+        onClick={() => {
+          commit(agent);
+        }}
       >
         <ContributorSymbol contributor={agent} size={20} />
         <span className="agent-option-lines">
@@ -216,7 +218,7 @@ function AgentSelector({
             commit(current);
             close();
           } else if (key === "Enter" || key === " ") commit(current);
-          else if (!altKey && active !== null) {
+          else if (!altKey) {
             const offset =
               key === "ArrowDown" ? 1 : key === "ArrowUp" ? -1 : key === "PageDown" ? 10 : -10;
             setActive(Math.max(0, Math.min(last, active + offset)));
@@ -237,7 +239,9 @@ function AgentSelector({
             role="listbox"
             aria-labelledby={labelId}
             className="agent-listbox"
-            onMouseDown={(event) => event.preventDefault()}
+            onMouseDown={(event) => {
+              event.preventDefault();
+            }}
             style={{
               top: position.top,
               left: position.left,

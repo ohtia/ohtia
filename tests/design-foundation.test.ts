@@ -188,6 +188,7 @@ describe("review regression contracts", () => {
           "settings.css",
           "workspace-chrome.css",
           "project-selector.css",
+          "agent-selector.css",
           "character.css",
           "research.css",
           "conversation.css",

@@ -83,6 +83,7 @@ beforeEach(() => {
     callback();
     return 1;
   });
+  HTMLElement.prototype.scrollIntoView = vi.fn();
   HTMLDialogElement.prototype.showModal = function () {
     this.open = true;
   };
@@ -943,10 +944,40 @@ it("selects Josefa before the first send and exposes disabled choices to keyboar
   await renderBand(true);
   const button = container.querySelector<HTMLButtonElement>('[role="combobox"]')!;
   button.focus();
-  const key = (key: string) =>
+  const key = (key: string, modifiers: KeyboardEventInit = {}) =>
     act(async () =>
-      button.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })),
+      button.dispatchEvent(
+        new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...modifiers }),
+      ),
     );
+  const activeOption = () => document.getElementById(button.getAttribute("aria-activedescendant")!);
+  await key("Escape");
+  await key("j", { ctrlKey: true });
+  expect(button.getAttribute("aria-expanded")).toBe("false");
+  await act(async () => button.click());
+  expect(activeOption()?.textContent).toContain("Virgilio");
+  await key("ArrowDown");
+  expect(activeOption()?.textContent).toContain("Josefa");
+  await key("PageDown");
+  expect(activeOption()?.textContent).toContain("María");
+  await key("PageUp");
+  expect(activeOption()?.textContent).toContain("Virgilio");
+  await key("ArrowDown");
+  await key("ArrowUp", { altKey: true });
+  expect(controller.selectedAgent()).toBe("josefa");
+  expect(button.getAttribute("aria-expanded")).toBe("false");
+  await key("Home");
+  expect(activeOption()?.textContent).toContain("Virgilio");
+  await key("Tab");
+  expect(controller.selectedAgent()).toBe("virgilio");
+  expect(button.getAttribute("aria-expanded")).toBe("false");
+  await act(async () => button.click());
+  const josefaOption = document.querySelectorAll<HTMLElement>('[role="option"]')[1]!;
+  await act(async () => josefaOption.click());
+  expect(controller.selectedAgent()).toBe("josefa");
+  await key("Home");
+  await act(async () => activeOption()?.click());
+  expect(controller.selectedAgent()).toBe("virgilio");
   await key("ArrowDown");
   expect(button.textContent).toContain("Virgilio");
   expect(document.getElementById(button.getAttribute("aria-labelledby")!)?.textContent).toBe(

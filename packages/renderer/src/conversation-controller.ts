@@ -498,7 +498,7 @@ export class ConversationController {
       ...(previous.scope.projectId === scope.projectId && previous.project
         ? { project: previous.project }
         : {}),
-      agentHint: agentHint ?? cached?.agentHint,
+      agentHint: agentHint ?? this.state.agentHint,
       rename: scope.conversationId ? this.renames.get(scope.conversationId) : undefined,
       newConversationRequest: undefined,
       renamed: previous.renamed,
