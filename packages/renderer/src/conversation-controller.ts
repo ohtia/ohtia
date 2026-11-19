@@ -16,6 +16,7 @@ import {
   type Outcome,
   type ResearchOutputs,
   type ConversationSummary,
+  type ReplyAgent,
   type CommandReason,
   type FoundationPort,
   type ResearchEvent,
@@ -50,6 +51,7 @@ export interface ConversationState {
   readonly scope: ResearchScope;
   readonly status: "loading" | "ready" | "failed" | "unavailable";
   readonly conversation?: ConversationSummary;
+  readonly agentHint?: ReplyAgent | undefined;
   readonly rename?: RenameState | undefined;
   readonly renamed?: number | undefined;
   readonly newConversationRequest?: number | undefined;
@@ -61,6 +63,14 @@ export interface ConversationState {
   readonly failedEarlier: boolean;
   readonly completed: number;
   readonly completedAgent?: TimelineTask["agentId"] | undefined;
+}
+export function knownConversationAgent(state: ConversationState): ReplyAgent | undefined {
+  const project = state.project;
+  return (
+    state.conversation?.agentId ??
+    state.agentHint ??
+    (project && (project.isDevelopment || !project.setupConfirmedAt) ? "virgilio" : undefined)
+  );
 }
 const empty = (scope: ResearchScope): ConversationState => ({
   scope,
@@ -138,14 +148,14 @@ export class ConversationController {
       undefined,
       connections,
       this.reload,
-      (scope, active) => {
+      (scope, active, agent) => {
         onConversationStarted?.(scope);
         if (
           active &&
           this.state.scope.projectId === scope.projectId &&
           !this.state.scope.conversationId
         )
-          this.open(scope);
+          this.open(scope, agent);
       },
     );
   }
@@ -291,8 +301,9 @@ export class ConversationController {
   };
   switchConversation = (id: string): void => {
     const { projectId, conversationId } = this.state.scope;
+    const agent = this.history.snapshot().items.find((row) => row.id === id)?.agentId;
     this.history.hide();
-    if (projectId && id !== conversationId) this.open({ projectId, conversationId: id });
+    if (projectId && id !== conversationId) this.open({ projectId, conversationId: id }, agent);
   };
   private setRename(id: string, rename?: RenameState): void {
     if (this.disposed) return;
@@ -457,7 +468,7 @@ export class ConversationController {
     if (this.live(epoch)) this.epoch++;
     stream?.dispose();
   }
-  open(scope: ResearchScope): void {
+  open(scope: ResearchScope, agentHint?: ReplyAgent): void {
     if (this.disposed) return;
     if (this.state.scope.conversationId)
       this.cache.set(this.state.scope.conversationId, this.state);
@@ -487,6 +498,7 @@ export class ConversationController {
       ...(previous.scope.projectId === scope.projectId && previous.project
         ? { project: previous.project }
         : {}),
+      agentHint: agentHint ?? cached?.agentHint,
       rename: scope.conversationId ? this.renames.get(scope.conversationId) : undefined,
       newConversationRequest: undefined,
       renamed: previous.renamed,

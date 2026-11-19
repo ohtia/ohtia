@@ -123,7 +123,7 @@ export const iconMappings = {
   "Navigator": "signpost",
   "Supervisor": "user-round",
   "Thesis": "graduation-cap",
-  "Open project in the project selector": "check",
+  "Open project or chosen agent in a selector": "check",
   "document": "file-text",
   "dataset": "database",
   "media": "image",

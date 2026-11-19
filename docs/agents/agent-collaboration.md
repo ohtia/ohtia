@@ -19,7 +19,7 @@ sources:
     resource: "https://code.claude.com/docs/en/agent-sdk/overview"
     title: "Anthropic — Agent SDK overview"
 generated:
-  by: codex/gpt-6.1-sol
+  by: codex/gpt-6.2-sol
 ---
 
 # Agent collaboration
@@ -110,7 +110,7 @@ The initial interface offers Virgilio, the reference librarian, analytical reade
 
 ### Specialist selection and routing
 
-Honor an explicit specialist or writing-review mode selected by the researcher. Validate that its operation is enabled for the requested language, inputs, destination and required controls before accepting execution. If it is unavailable or unsuitable, explain the reason and offer a named alternative; do not silently substitute another role, provider or model.
+Honor an explicit specialist or writing-review mode selected by the researcher. Validate that its operation is enabled for the requested language, inputs, destination and required controls before accepting execution. If it is unavailable or unsuitable, show it disabled with its reason; do not name or silently substitute another role, provider or model.
 
 For an unassigned request, select the smallest role set needed for the requested output. A search strategy or reference-discovery request maps to the reference librarian; examination of source content maps to the analytical reader; checking an attribution or inferential step maps to the critical evidence reviewer; structure, coherence or proposed wording maps to the academic editor; spelling, grammar and formal consistency map to the proofreader. Virgilio retains guidance, clarification and synthesis. Methodological specialization follows the capability boundary above. A composite request can justify a contribution graph, but none of these mappings requires activating every specialist or adding a review round to a simple action.
 

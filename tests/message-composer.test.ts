@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ComposerController } from "../packages/renderer/src/composer-controller.js";
 import { ExitDialog } from "../packages/renderer/src/exit-dialog.js";
+import { AgentBand } from "../packages/renderer/src/agent-selector.js";
 import { MessageComposer } from "../packages/renderer/src/message-composer.js";
 import {
   failure,
@@ -386,8 +387,8 @@ it.each(["subscription", "api_key"] as const)(
     await render(f.controller);
     expect(container.querySelector(".composer-destination")?.textContent).toBe(
       kind === "subscription"
-        ? "To Fake service (researcher@example.org)"
-        : "To Fake service · API key",
+        ? "To Fake service (researcher@example.org) · Stops after 10 min"
+        : "To Fake service · API key · Stops after 10 min",
     );
     expect(f.destination.mock.calls[0]).toEqual([{ projectId, conversationId }]);
     await act(async () => {
@@ -850,7 +851,7 @@ it("keeps confirmed-project guidance editable and retains a pending-limit reject
   expect(input.value).toBe("");
 });
 
-it.each(["pending_limit_reached", "storage_failed", "uncertain"] as const)(
+it.each(["pending_limit_reached", "storage_failed", "uncertain", "agent_unavailable"] as const)(
   "keeps a new conversation draft and operation identity when start returns %s",
   async (code) => {
     const h = await harness();
@@ -888,14 +889,149 @@ it.each(["pending_limit_reached", "storage_failed", "uncertain"] as const)(
             : "failed",
     });
     expect(adopted).not.toHaveBeenCalled();
+    if (code === "uncertain") {
+      controller.selectAgent("josefa");
+      expect(controller.selectedAgent()).toBe("virgilio");
+    }
     controller.send();
     await settle();
     expect(start.mock.calls).toEqual([
-      ["one-start", { projectId, content: "First message" }],
-      ["one-start", { projectId, content: "First message" }],
+      ["one-start", { projectId, agentId: "virgilio", content: "First message" }],
+      ["one-start", { projectId, agentId: "virgilio", content: "First message" }],
     ]);
-    expect(adopted).toHaveBeenCalledWith({ projectId, conversationId: resultId }, true);
+    expect(adopted).toHaveBeenCalledWith({ projectId, conversationId: resultId }, true, "virgilio");
     controller.open({ projectId, conversationId: resultId });
     expect(controller.snapshot().text).toBe("");
   },
 );
+
+it("selects Josefa before the first send and exposes disabled choices to keyboard users", async () => {
+  const f = await harness();
+  const started = deferred<Outcome<ResearchResult>>();
+  const chooseDestination =
+    deferred<Awaited<ReturnType<FoundationPort["readDestination"]>["result"]>>();
+  const start = vi.fn<FoundationPort["startConversation"]>(() => started);
+  const controller = new ComposerController(
+    {
+      startConversation: start,
+      readDestination: f.destination,
+      readConnection: f.readConnection,
+    } as unknown as FoundationPort,
+    () => "select-intent",
+    undefined,
+    undefined,
+    vi.fn(),
+  );
+  controllers.push(controller);
+  controller.open({ projectId, conversationId: null });
+  await controller.refreshDestination();
+  const renderBand = async (selectable: boolean, agent?: "virgilio" | "josefa") => {
+    await act(async () =>
+      root.render(
+        h(
+          "div",
+          null,
+          h(AgentBand, { composer: controller, selectable, agent, locale: "en-US" }),
+          h(MessageComposer, { controller, agentId: agent, locale: "en-US" }),
+        ),
+      ),
+    );
+  };
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    () => new DOMRect(0, 0, 280, 49),
+  );
+  await renderBand(true);
+  const button = container.querySelector<HTMLButtonElement>('[role="combobox"]')!;
+  button.focus();
+  const key = (key: string) =>
+    act(async () =>
+      button.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })),
+    );
+  await key("ArrowDown");
+  expect(button.textContent).toContain("Virgilio");
+  expect(document.getElementById(button.getAttribute("aria-labelledby")!)?.textContent).toBe(
+    "Talk to:",
+  );
+  expect(document.querySelector('[role="option"] svg:last-child')).toBeTruthy();
+  expect(
+    document.querySelectorAll('[role="group"] [role="option"][aria-disabled="true"]'),
+  ).toHaveLength(2);
+  expect(document.querySelector('[role="group"]')?.textContent).toContain("Writing review");
+  const josefa = document.querySelectorAll('[role="option"]')[1]!;
+  const hover = new Event("pointermove", { bubbles: true });
+  Object.defineProperty(hover, "pointerType", { value: "mouse" });
+  await act(async () => josefa.dispatchEvent(hover));
+  expect(
+    document.getElementById(button.getAttribute("aria-activedescendant")!)?.textContent,
+  ).toContain("Virgilio");
+  const paddingClick = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+  await act(async () => document.querySelector('[role="listbox"]')!.dispatchEvent(paddingClick));
+  expect(paddingClick.defaultPrevented).toBe(true);
+  await key("End");
+  const disabled = document.getElementById(button.getAttribute("aria-activedescendant")!)!;
+  expect(disabled.getAttribute("aria-disabled")).toBe("true");
+  expect(disabled.textContent).toContain("María");
+  expect(disabled.textContent).toContain("Not available in this version.");
+  await key("Enter");
+  expect(button.getAttribute("aria-expanded")).toBe("true");
+  await key("Escape");
+  expect(button.getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(button);
+  f.destination.mockReturnValueOnce(chooseDestination as never);
+  await key("j");
+  expect(
+    document.getElementById(button.getAttribute("aria-activedescendant")!)?.textContent,
+  ).toContain("Josefa");
+  const input = container.querySelector("textarea")!;
+  // Clicking the composer must commit the same option as any other focus departure.
+  await act(async () => input.dispatchEvent(new Event("pointerdown", { bubbles: true })));
+  await act(async () => input.focus());
+  expect(document.activeElement).toBe(input);
+  expect(button.getAttribute("aria-expanded")).toBe("false");
+  expect(f.destination).toHaveBeenLastCalledWith({ projectId, agentId: "josefa" });
+  expect(start).not.toHaveBeenCalled();
+  expect(container.querySelector("textarea")?.placeholder).toBe("Message Josefa");
+  expect(container.querySelector(".composer-destination")).toBeNull();
+  await act(async () => {
+    controller.edit("Plan my search");
+    controller.send();
+  });
+  expect(start).not.toHaveBeenCalled();
+  await act(async () =>
+    chooseDestination.resolve({
+      ok: true,
+      value: {
+        destination: {
+          operation: "search_strategy_planning",
+          maxAttemptDurationMs: 420_000,
+          connection: "chatgpt",
+        },
+      },
+    }),
+  );
+  expect(container.querySelector(".composer-destination")?.textContent).toContain(
+    "Stops after 7 min",
+  );
+  await act(async () => controller.send());
+  expect(start).toHaveBeenCalledExactlyOnceWith("select-intent", {
+    projectId,
+    agentId: "josefa",
+    content: "Plan my search",
+  });
+  await act(async () => controller.selectAgent("virgilio"));
+  expect(controller.selectedAgent()).toBe("josefa");
+  await act(async () => {
+    started.resolve(success);
+    controller.open({ projectId, conversationId: resultId });
+  });
+  await renderBand(false, "josefa");
+  expect(container.querySelector('[role="combobox"]')).toBeNull();
+  expect(container.querySelector(".agent-band")?.textContent).toBe(
+    "Josefa · Reference librarian · AI",
+  );
+  await renderBand(false, "virgilio");
+  expect(container.querySelector(".agent-band")?.textContent).toBe(
+    "Virgilio · Research guide · AI",
+  );
+  vi.restoreAllMocks();
+});

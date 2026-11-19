@@ -2,14 +2,28 @@ import { SetupProposal } from "./setup-proposal.js";
 import { RecoveryFocusBoundary } from "./settings-notices.js";
 import { TaskNotice, taskNoticeContent } from "./task-notice.js";
 import { MessageComposer } from "./message-composer.js";
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  Fragment,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { message, type CommandBridge, type InterfaceLocale } from "@ohtia/contracts";
 import { MessageMarkdown } from "./research-presentation.js";
 import { contributorNames, VoiceLabel } from "./contributor-identity.js";
 import { LucideGlyph } from "./iconography.js";
 import { Tooltip } from "./layers.js";
-import type { ConversationController, ConversationState } from "./conversation-controller.js";
+import {
+  knownConversationAgent,
+  type ConversationController,
+  type ConversationState,
+} from "./conversation-controller.js";
 import "./conversation.css";
+
+const subscribeWithoutComposer = () => () => {};
+const defaultDraftAgent = () => "virgilio" as const;
 
 export function ConversationView({
   state,
@@ -49,6 +63,11 @@ export function ConversationView({
   >(undefined);
   const [jump, setJump] = useState(false);
   const id = state.scope.conversationId;
+  const draftAgent = useSyncExternalStore(
+    controller.composer?.subscribe ?? subscribeWithoutComposer,
+    controller.composer?.selectedAgent ?? defaultDraftAgent,
+  );
+  const agentId = knownConversationAgent(state) ?? (id ? undefined : draftAgent);
   const confirmation = useRef({
     id: state.scope.projectId,
     confirmed: state.project ? !!state.project.setupConfirmedAt : null,
@@ -94,18 +113,19 @@ export function ConversationView({
     : [];
   const completion = useRef({ id, count: state.completed });
   const [announcement, setAnnouncement] = useState({ text: "", count: 0 });
+  const completedAgent = state.completedAgent ?? agentId;
   useEffect(() => {
     const previous = completion.current;
     if (previous.id !== id) setAnnouncement({ text: "", count: 0 });
-    else if (state.completed > previous.count)
+    else if (state.completed > previous.count && completedAgent)
       setAnnouncement({
         text: message(locale, "conversation.replied", {
-          agent: contributorNames[state.completedAgent ?? "virgilio"],
+          agent: contributorNames[completedAgent],
         }),
         count: state.completed,
       });
     completion.current = { id, count: state.completed };
-  }, [id, state.completed, state.completedAgent, locale]);
+  }, [id, state.completed, completedAgent, locale]);
   const visibleRunning = state.items.find(
     (item) => item.kind === "task" && (item.state === "running" || item.state === "cancelling"),
   );
@@ -261,7 +281,9 @@ export function ConversationView({
                     state.project && !state.project.setupConfirmedAt
                       ? "setup.empty"
                       : !id && state.scope.projectId
-                        ? "history.empty"
+                        ? agentId === "josefa"
+                          ? "agentSelector.emptyJosefa"
+                          : "history.empty"
                         : "conversation.empty",
                   )}
                 </p>
@@ -434,11 +456,12 @@ export function ConversationView({
           </div>
         </div>
       )}
-      {controller.composer && (
+      {controller.composer && agentId && (
         <MessageComposer
           key={state.scope.conversationId}
           controller={controller.composer}
           locale={locale}
+          agentId={agentId}
         />
       )}
       <p className="primitive-announcement" role="status" aria-live="polite" aria-atomic="true">

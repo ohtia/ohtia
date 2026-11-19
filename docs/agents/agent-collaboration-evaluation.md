@@ -3,7 +3,7 @@ type: Playbook
 title: "Agent collaboration evaluation"
 description: "Verify bounded execution and collaboration scenarios, and review research usefulness, evidence fidelity and human review as optional material that gates no enablement."
 generated:
-  by: codex/gpt-6.1-sol
+  by: codex/gpt-6.2-sol
 ---
 
 # Agent collaboration evaluation
@@ -69,7 +69,7 @@ Use synthetic provider/process implementations and controlled transaction orderi
 15. Feed sensitive markers through success, exceptions, stderr, runtime traces and diagnostic export. Research records may retain permitted content; operational diagnostics obey ADR-0013 and do not capture it.
 16. Stop or disconnect during delegated work, then receive late cost data. Preserve unknown usage until supported settlement without restoring research effects or resetting the intervention budget.
 
-17. Select an explicit role and an ambiguous unassigned request. Preserve the explicit selection or explain its unavailability; otherwise use the smallest suitable evaluated role set and request clarification before speculative delegation. Neither an avatar nor a model's confidence can authorize substitution.
+17. Select an explicit role and an ambiguous unassigned request. Preserve the explicit selection or explain its unavailability; otherwise use the smallest suitable enabled role set and request clarification before speculative delegation. Neither an avatar nor a model's confidence can authorize substitution.
 18. Accept, reject and pause a handoff; replay it and race it with a branch-owner change. Only an accepted expected-version command changes ownership. Pending/rejected transfers preserve the prior owner, historical messages retain their producers and the recipient cannot reuse an active sender's capability or capacity.
 19. Redirect work before and after child-task acceptance. Update only eligible intent, keep accepted immutable inputs, cancel superseded execution explicitly and retain the original question on late results. Broader scope requires fresh authorization and cannot reset accumulated work.
 20. Fail or omit required and optional contributions, including an optional-labelled prerequisite of a required descendant. Block dependent activation without invented artifacts, allow only independent authorized work, disclose omissions and keep unresolved execution uncertain. A completed task with insufficient required coverage cannot yield a complete research intervention.

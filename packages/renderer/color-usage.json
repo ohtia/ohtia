@@ -965,6 +965,55 @@
       "backgrounds": ["surface.panel", "surface.emphasis"],
       "minimum": 7,
       "foreground": "voice.ohtia.content"
+    },
+    {
+      "selector": ".agent-band",
+      "backgrounds": ["surface.panel"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".agent-band-label",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7
+    },
+    {
+      "selector": ".agent-select-button",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
+      "selector": ".agent-band .contributor-symbol,\n.agent-listbox .contributor-symbol",
+      "foreground": "voice.ohtia.content",
+      "backgrounds": ["surface.page", "surface.panel", "surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".agent-listbox",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".agent-option[aria-disabled=\"true\"],\n.agent-option[aria-disabled=\"true\"] .contributor-symbol",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.panel", "surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".agent-option[aria-selected=\"true\"]",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".agent-option-lines > :not(:first-child),\n.agent-group-heading",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.panel", "surface.emphasis"],
+      "minimum": 7
     }
   ],
   "overlays": [

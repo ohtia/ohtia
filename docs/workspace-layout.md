@@ -2,6 +2,8 @@
 type: Specification
 title: Workspace layout
 description: Deterministic workspace geometry, accessible panel controls, desktop layout preferences and interaction acceptance scenarios.
+generated:
+  by: codex/gpt-6.2-sol
 ---
 
 # Workspace layout
@@ -34,7 +36,7 @@ The [product character and contributor identities](agents/agent-identity.md) ret
 
 - `explorer`: uses its workspace initial/minimum width tokens. Its heading is Project contents; it contains the active project's materials, the Navigator entry and Settings. When hidden in wide layout, it leaves the `component.rail.width` control rail, or `component.rail.coarse` with a coarse pointer. The rail is not a visible panel and contains no project collection.
 - `documents`: uses its workspace minimum width token and initial width given by the calculation below. It contains the Documents heading, tabs, active document and focus-mode control. Navigator is the fixed first tab, cannot be closed and is activated when a project opens. Hiding documents leaves zero width and no rail.
-- `chat`: uses its workspace initial/minimum width tokens. It contains the conversation heading, history/new-conversation controls, scrollable messages/activity and a composer in its own bottom row. Hiding chat leaves zero width and no rail. History replaces the right panel's content; it is neither a fourth column nor a modal.
+- `chat`: uses its workspace initial/minimum width tokens. It contains the conversation heading, history/new-conversation controls, a band below the heading that shows the conversation's agent and, while the conversation is empty, the agent selector, scrollable messages/activity and a composer in its own bottom row. Hiding chat leaves zero width and no rail. History replaces the right panel's content; it is neither a fourth column nor a modal.
 - Separators occupy `component.separator.line` between each pair of adjacent visible panels: two for three panels, one for two and none for one. There is no separator against the explorer rail. When documents are hidden, one separator directly joins explorer and chat.
 
 Use the design system's `type.doc.body` and `type.doc.title`, with the named workspace document/content padding tokens on each side and text capped at `measure.reading`. Interface chrome uses the corresponding Sans roles. The reading-width target is `L = measure.reading + 2 × (component.workspace.document.padding + component.workspace.content.padding)`, with `measure.reading` resolved against the document body font size. The current derived value is `34 × 18 + 2 × (12 + 8) = 652` CSS px. Changing those tokens requires updating the derived target and affected geometry expectations together.

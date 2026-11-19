@@ -4,7 +4,10 @@ import {
   message,
   researcherMessageLimit,
   type InterfaceLocale,
+  type ReplyAgent,
 } from "@ohtia/contracts";
+import { contributorNames } from "./contributor-identity.js";
+import { formatOperationDuration } from "./task-notice.js";
 import { Dialog, Tooltip } from "./layers.js";
 import { LucideGlyph } from "./iconography.js";
 import type { ComposerController } from "./composer-controller.js";
@@ -13,13 +16,14 @@ import "./message-composer.css";
 export function MessageComposer({
   controller,
   locale,
-  agent = "Virgilio",
+  agentId,
 }: {
   readonly controller: ComposerController;
   readonly locale: InterfaceLocale;
-  readonly agent?: string;
+  readonly agentId?: ReplyAgent | undefined;
 }) {
   const state = useSyncExternalStore(controller.subscribe, controller.snapshot);
+  const agent = contributorNames[agentId ?? state.agentId];
   const input = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
   const id = useId();
@@ -292,6 +296,14 @@ export function MessageComposer({
                 ? { email: state.destination.email || message(locale, "identity.unknown") }
                 : {}),
             },
+          )}
+          {state.connectionState === "connected" && !state.usagePaused && (
+            <>
+              {" · "}
+              {message(locale, "composer.destinationLimit", {
+                limit: formatOperationDuration(locale, state.destination.maxAttemptDurationMs),
+              })}
+            </>
           )}
         </p>
       )}

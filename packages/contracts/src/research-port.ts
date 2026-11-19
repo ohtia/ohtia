@@ -63,6 +63,20 @@ export interface TimelineCursor {
 export interface TimelineIdentity extends TimelineCursor {
   readonly revision: number;
 }
+export const conversationAgents = [
+  "virgilio",
+  "josefa",
+  "jorge-luis",
+  "erasmus",
+  "boris",
+  "maria",
+] as const;
+export type ConversationAgent = (typeof conversationAgents)[number];
+
+export function isConversationAgent(value: unknown): value is ConversationAgent {
+  return conversationAgents.some((agent) => agent === value);
+}
+
 export type ReplyAgent = "virgilio" | "josefa";
 
 export function isReplyAgent(value: unknown): value is ReplyAgent {
@@ -141,7 +155,6 @@ export type ConversationSummary = ConversationRecord &
     readonly latestTruncated: boolean;
     readonly latestLanguage: string | null;
     readonly status: "attention" | "replying" | "waiting" | null;
-    readonly agentId: "virgilio";
     readonly latestReplyTaskId: string | null;
     readonly runningTask: {
       readonly id: string;
@@ -209,13 +222,15 @@ export interface ResearchInputs {
   "conversation.stop": ResearchPayloads["conversation.stop"];
   "task.stop": ResearchPayloads["task.stop"];
   "destination.read": { readonly projectId: string } & (
-    { readonly conversationId: string } | { readonly agentId: "virgilio" }
+    { readonly conversationId: string } | { readonly agentId: ConversationAgent }
   );
   "project.create": ResearchPayloads["project.create"];
   "project.open": ResearchPayloads["project.open"];
   "project.confirmSetup": ResearchPayloads["project.confirmSetup"];
   "project.rejectSetup": ResearchPayloads["project.rejectSetup"];
-  "conversation.start": { readonly projectId: string; readonly content: string | TextDescriptor };
+  "conversation.start": Omit<ResearchPayloads["conversation.start"], "content"> & {
+    readonly content: string | TextDescriptor;
+  };
   "conversation.rename": ResearchPayloads["conversation.rename"];
   "message.append": { readonly conversationId: string; readonly content: string | TextDescriptor };
   "project.list": { readonly cursor: ProjectCursor | null; readonly count: number };
@@ -475,7 +490,7 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
         obj(value) &&
         isResearchId(value.projectId) &&
         ((exact(value, ["projectId", "conversationId"]) && isResearchId(value.conversationId)) ||
-          (exact(value, ["projectId", "agentId"]) && value.agentId === "virgilio"))
+          (exact(value, ["projectId", "agentId"]) && isConversationAgent(value.agentId)))
       );
     case "project.create":
       return exact(value, []);
@@ -486,7 +501,9 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
       return exact(value, ["proposalId"]) && isResearchId(value.proposalId);
     case "conversation.start":
       return (
-        exact(value, ["projectId", "content"]) &&
+        (exact(value, ["projectId", "content"]) ||
+          (exact(value, ["projectId", "agentId", "content"]) &&
+            isConversationAgent(value.agentId))) &&
         isResearchId(value.projectId) &&
         content(value.content)
       );
@@ -587,7 +604,7 @@ function conversation(value: unknown): boolean {
     date(value.createdAt) &&
     date(value.updatedAt) &&
     integer(value.revision) &&
-    value.agentId === "virgilio" &&
+    isReplyAgent(value.agentId) &&
     date(value.latestAt) &&
     typeof value.latestPrefix === "string" &&
     Array.from(value.latestPrefix).length <= conversationPreviewPrefixLimit &&

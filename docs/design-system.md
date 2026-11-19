@@ -40,6 +40,8 @@ sources:
   - id: lucide
     resource: https://github.com/lucide-icons/lucide/tree/1ef60af944de207e0d5176905a0759ba12e6ee8d
     title: Lucide — Repository at the examined commit
+generated:
+  by: codex/gpt-6.2-sol
 ---
 
 # Ohtia design system
@@ -548,7 +550,7 @@ Fixed mappings:
 | Navigator                                    | `signpost`             |
 | Supervisor                                   | `user-round`           |
 | Thesis                                       | `graduation-cap`       |
-| Open project in the project selector         | `check`                |
+| Open project or chosen agent in a selector   | `check`                |
 | `document`                                   | `file-text`            |
 | `dataset`                                    | `database`             |
 | `media`                                      | `image`                |

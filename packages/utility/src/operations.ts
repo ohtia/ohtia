@@ -80,7 +80,6 @@ const policies: readonly OperationPolicy[] = Object.freeze([
     ...directGuidanceV1,
     operation: "search_strategy_planning",
     instructions: searchStrategyInstructions,
-    modes: Object.freeze(["development"] as const),
   }),
   projectSetupV1,
   Object.freeze({
