@@ -1,3 +1,4 @@
+import { dataServiceExitCodes } from "@ohtia/contracts";
 import { fixturePath, differentTarget } from "./fixtures/platform.js";
 import fs from "node:fs";
 import os from "node:os";
@@ -182,6 +183,7 @@ async function launch(
   const listeners = new Map(
     ["uncaughtException", "unhandledRejection"].map((name) => [name, process.listeners(name)]),
   );
+  let signalFailure!: (name: "uncaughtException" | "unhandledRejection") => void;
   try {
     await import("../packages/utility/src/entry.js");
   } finally {
@@ -193,6 +195,11 @@ async function launch(
         .filter((listener) => !before.includes(listener))
         .map((listener) => ({ name, listener })),
     );
+    signalFailure = (name) => {
+      const registered = added.find((entry) => entry.name === name);
+      if (!registered) throw new Error("Missing utility failure listener.");
+      registered.listener(new Error("Synthetic private failure text"));
+    };
     listenerCleanups.push(() => {
       for (const { name, listener } of added) process.removeListener(name, listener);
     });
@@ -207,6 +214,7 @@ async function launch(
     exit,
     stores,
     service,
+    signalFailure,
     generation: options.generation ?? "generation-1",
     changeSentinel: () => actualFs.writeFileSync(sentinel, "changed after admission"),
   };
@@ -421,11 +429,26 @@ describe("utility process composition with isolated synthetic files", () => {
     expect(h.service.activate).not.toHaveBeenCalled();
     expect(h.exit).not.toHaveBeenCalled();
   });
+  it("maps runtime and service failures to distinct exit codes", async () => {
+    const h = await launch({ mode: "blocked" });
+    const { createStatusService } = await import("../packages/utility/src/status-service.js");
+    const fail = vi.mocked(createStatusService).mock.calls[0][4]!;
+    h.signalFailure("uncaughtException");
+    h.signalFailure("unhandledRejection");
+    fail("provider_work_failed");
+    fail("storage_admission_lost");
+    expect(h.exit.mock.calls).toEqual([
+      [dataServiceExitCodes.uncaught_exception],
+      [dataServiceExitCodes.unhandled_rejection],
+      [dataServiceExitCodes.provider_work_failed],
+      [dataServiceExitCodes.storage_admission_lost],
+    ]);
+  });
   it("disposes the service on malformed parent traffic", async () => {
     const h = await launch({ mode: "blocked" });
     h.parent.emit("message", { data: "not-json" });
     expect(h.service.dispose).toHaveBeenCalledOnce();
-    expect(h.exit).toHaveBeenCalledWith(1);
+    expect(h.exit).toHaveBeenCalledWith(dataServiceExitCodes.message_handler_failed);
   });
   it.each(["close", "sentinel"])("fails shutdown when %s verification fails", async (failure) => {
     const h = await launch({ closeFailure: failure === "close" });

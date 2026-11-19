@@ -9,6 +9,7 @@ import {
   decodeModelListRefresh,
   dispatchPermitPolicy,
   isProviderResult,
+  providerTextChunk,
   providerTextPieces,
   providerMessageBytes,
   ServiceConnections,
@@ -535,6 +536,7 @@ function dispatcher(
   options: {
     state?: "connected" | "disconnected" | (() => "connected" | "disconnected");
     wall?: () => number;
+    onSend?: (event: ProviderEvent) => void;
   } = {},
 ) {
   const sent: { generation: string; event: ProviderEvent }[] = [];
@@ -546,6 +548,7 @@ function dispatcher(
       const decoded = decodeProviderEvent(text, generation);
       expect(decoded).toBeDefined();
       sent.push({ generation, event: decoded!.event });
+      options.onSend?.(decoded!.event);
     },
     diagnostic: (event) => diagnostics.push(event),
     wallClock: options.wall,
@@ -685,6 +688,71 @@ describe("main's dispatch guards", () => {
       expect(h.results()[0]).toMatchObject({ result: expected });
     }
   });
+  it("coalesces a burst of provider text and sends pending text before the result", async () => {
+    vi.useFakeTimers();
+    let control!: Parameters<ProviderRequests["send"]>[1];
+    const h = dispatcher(
+      createFakeProvider({
+        send: (_request, given) => {
+          control = given;
+          given.release();
+          given.emit({ type: "text", text: "" });
+          for (let i = 0; i < 200; i++) given.emit({ type: "text", text: "ñ" });
+          return new Promise<void>((resolve) => {
+            given.signal.addEventListener("abort", () => resolve(), { once: true });
+          });
+        },
+      }),
+    );
+    const sent = h.dispatch.receive(h.message());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.sent).toEqual([]);
+    await vi.advanceTimersByTimeAsync(20);
+    expect(h.sent.map(({ event }) => event)).toEqual([
+      { type: "text", sequence: 1, text: "ñ".repeat(200) },
+    ]);
+    control.emit({ type: "text", text: "Before activity" });
+    control.emit({ type: "activity" });
+    control.emit({ type: "text", text: "Final" });
+    control.emit({ type: "result", result: { status: "completed" } });
+    await sent;
+    expect(h.sent.map(({ event }) => event)).toEqual([
+      { type: "text", sequence: 1, text: "ñ".repeat(200) },
+      { type: "text", sequence: 2, text: "Before activity" },
+      { type: "activity", sequence: 3 },
+      { type: "text", sequence: 4, text: "Final" },
+      { type: "result", sequence: 5, result: { status: "completed" } },
+    ]);
+    await vi.advanceTimersByTimeAsync(20);
+    expect(h.sent).toHaveLength(5);
+  });
+  it.each([
+    ["full text buffer", { type: "text", text: "a".repeat(providerTextChunk) }],
+    ["activity", { type: "activity" }],
+    ["result", { type: "result", result: { status: "completed" } }],
+  ] as const)("stops forwarding when a %s flush ends the generation", async (_event, next) => {
+    const h = dispatcher(
+      createFakeProvider({
+        send: async (_request, control) => {
+          if (!control.release()) return;
+          control.emit({ type: "text", text: "Buffered" });
+          control.emit(next);
+        },
+      }),
+      {
+        onSend: (event) => {
+          if (event.type === "text") h.dispatch.end("g1");
+        },
+      },
+    );
+    await h.dispatch.receive(h.message());
+    await h.dispatch.drain();
+    expect(h.sent).toEqual([
+      { generation: "g1", event: { type: "text", text: "Buffered", sequence: 1 } },
+    ]);
+    expect(h.diagnostics).toEqual([{ event_name: "ohtia.provider.dispatched" }]);
+    expect(h.dispatch.query("a1")).toBe("unknown");
+  });
   it("closes the requests of an ended generation and forwards none of their later events", async () => {
     let control!: Parameters<ProviderRequests["send"]>[1];
     const h = dispatcher(
@@ -702,6 +770,7 @@ describe("main's dispatch guards", () => {
       expect(h.dispatch.query("a1")).toBe("running");
       expect(control).toBeDefined();
     });
+    control.emit({ type: "text", text: "Pending before replacement" });
     h.dispatch.end("g1");
     expect(control.signal.aborted).toBe(true);
     control.emit({ type: "text", text: "late" });
@@ -715,6 +784,7 @@ describe("main's dispatch guards", () => {
       generation: "g1",
       attempt: "a1",
     });
+    await new Promise((resolve) => setTimeout(resolve, 20));
     expect(h.sent).toHaveLength(1);
   });
   it("records closed diagnostic events without identifiers, text or credentials", async () => {

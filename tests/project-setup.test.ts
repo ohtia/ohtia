@@ -1303,9 +1303,11 @@ it("publishes no buffered call while the response remains open and discards it o
     });
     await ready;
     expect(events.filter((event) => event.type === "activity")).toHaveLength(3);
-    expect(events.filter((event) => event.type !== "activity").map((event) => event.type)).toEqual([
-      "text",
-    ]);
+    await vi.waitFor(() =>
+      expect(
+        events.filter((event) => event.type !== "activity").map((event) => event.type),
+      ).toEqual(["text"]),
+    );
     if (interrupt)
       dispatch.interrupt({
         kind: "provider_interrupt",

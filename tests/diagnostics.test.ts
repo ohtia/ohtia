@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   portLimits,
   diagnosticCatalog,
+  dataServiceExitCodes,
   diagnosticLimits,
   decodeDiagnosticEvent,
   decodeDiagnosticRecord,
@@ -581,6 +582,57 @@ describe("broker-owned bounded diagnostic files", { timeout: nativeAclCaseTimeou
     expect(await writer.read(0, 1)).toMatchObject({ ok: false });
     expect(await writer.read(5)).toMatchObject({ ok: false });
   });
+  it.each(["protocol", "process"] as const)(
+    "distinguishes %s loss from the child exit receipt without logging rejected content",
+    (trigger) => {
+      let receive!: (input: unknown) => void;
+      let exit!: (code?: number) => void;
+      const diagnostic = vi.fn();
+      const changed = vi.fn();
+      const kill = vi.fn();
+      const generation = "ecf27148-ac67-40c9-bcb6-2047fa1e7a7b";
+      const supervisor = new ServiceSupervisor(
+        {
+          send: () => {},
+          kill,
+          messages: (listener) => {
+            receive = listener;
+          },
+          exited: (listener) => {
+            exit = listener;
+          },
+        },
+        generation,
+        changed,
+        undefined,
+        false,
+        diagnostic,
+      );
+      receive(JSON.stringify({ kind: "ready", generation }));
+      if (trigger === "protocol") {
+        receive(JSON.stringify({ kind: "unknown", content: marker }));
+        expect(supervisor.available).toBe(false);
+        expect(supervisor.ceased).toBe(false);
+        expect(kill).toHaveBeenCalledOnce();
+        expect(diagnostic).toHaveBeenCalledExactlyOnceWith(
+          { event_name: "ohtia.service.faulted", error_code: "protocol_rejected" },
+          generation,
+        );
+      }
+      exit(dataServiceExitCodes.message_handler_failed);
+      exit(1);
+      expect(supervisor.available).toBe(false);
+      expect(supervisor.ceased).toBe(true);
+      expect(changed).toHaveBeenLastCalledWith("unavailable", false);
+      expect(kill).toHaveBeenCalledTimes(trigger === "protocol" ? 1 : 0);
+      expect(diagnostic).toHaveBeenCalledTimes(trigger === "protocol" ? 2 : 1);
+      expect(diagnostic).toHaveBeenLastCalledWith(
+        { event_name: "ohtia.service.child_exited", error_code: "message_handler_failed" },
+        generation,
+      );
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(marker);
+    },
+  );
   it("routes only validated current child diagnostics without releasing or faulting application work", () => {
     let receive: (input: unknown) => void = () => {};
     const diagnostic = vi.fn();

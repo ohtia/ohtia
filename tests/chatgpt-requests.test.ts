@@ -107,6 +107,7 @@ describe("ChatGPT requests over the Responses API", () => {
   ])("keeps the reply usable with $outcome in the same Responses request", async (scenario) => {
     const f = await signedIn();
     const args = scenario.arguments;
+    const diagnostic = vi.fn();
     f.responses = () =>
       streamResponse([
         ...syntheticReply.slice(0, -1),
@@ -116,11 +117,12 @@ describe("ChatGPT requests over the Responses API", () => {
           : []),
         syntheticReply.at(-1)!,
       ]);
-    const events = await dispatchThrough(f.manager, f.adapter, {
-      ...conformanceRequest("chatgpt"),
-      operation: "direct_guidance",
-      tools: [titleTool],
-    });
+    const events = await dispatchThrough(
+      f.manager,
+      f.adapter,
+      { ...conformanceRequest("chatgpt"), operation: "direct_guidance", tools: [titleTool] },
+      { diagnostic },
+    );
     expect(f.responseRequests).toHaveLength(1);
     expect(f.responseRequests[0]?.body.tools).toMatchObject([
       { name: titleTool.namespace, tools: [{ name: titleTool.name }] },
@@ -131,6 +133,20 @@ describe("ChatGPT requests over the Responses API", () => {
       status: "completed",
       ...(scenario.title === undefined ? {} : { conversation_title: scenario.title }),
     });
+    expect(diagnostic.mock.calls).toEqual([
+      [{ event_name: "ohtia.provider.dispatched" }, "conformance"],
+      [{ event_name: "ohtia.provider.title_requested" }, "conformance"],
+      [{ event_name: "ohtia.provider.completed" }, "conformance"],
+      [
+        {
+          event_name:
+            scenario.title === undefined
+              ? "ohtia.provider.title_omitted"
+              : "ohtia.provider.title_suggested",
+        },
+        "conformance",
+      ],
+    ]);
   });
 
   it.each([
@@ -387,17 +403,20 @@ describe("ChatGPT requests over the Responses API", () => {
     });
     for (const field of forbiddenResponseFields) expect(sent!.body).not.toHaveProperty(field);
     expect(sent!.headers.Authorization).toMatch(/^Bearer access-one-/);
-    expect(events).toEqual([
+    expect(events.map((event) => event.sequence)).toEqual(events.map((_, i) => i + 1));
+    expect(events.slice(0, 2)).toEqual([
       { sequence: 1, type: "started", provider_request_id: "req_synthetic-1", model: "first" },
       { sequence: 2, type: "activity" },
-      { sequence: 3, type: "text", text: "Synthetic " },
-      { sequence: 4, type: "text", text: "reply." },
+    ]);
+    expect(events.slice(2, -2).every((event) => event.type === "text")).toBe(true);
+    expect(text(events)).toBe("Synthetic reply.");
+    expect(events.slice(-2)).toEqual([
       {
-        sequence: 5,
+        sequence: events.length - 1,
         type: "usage",
         usage: { input_tokens: 41, cached_input_tokens: 0, output_tokens: 7, reasoning_tokens: 3 },
       },
-      { sequence: 6, type: "result", result: { status: "completed" } },
+      { sequence: events.length, type: "result", result: { status: "completed" } },
     ]);
     // Nothing main forwards to the data service carries the credential.
     expect(JSON.stringify(events)).not.toMatch(/access-one|refresh-one/);

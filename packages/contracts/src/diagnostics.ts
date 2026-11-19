@@ -22,6 +22,17 @@ const event = <
   outcome: R,
   errors: E,
 ) => Object.freeze({ component, operation, severity, outcome, errors: Object.freeze(errors) });
+// Reserved status codes used by the utility entry for controlled failure paths.
+export const dataServiceExitCodes = Object.freeze({
+  uncaught_exception: 64,
+  unhandled_rejection: 65,
+  message_handler_failed: 66,
+  provider_work_failed: 67,
+  storage_admission_lost: 68,
+});
+const dataServiceExitReasons = Object.keys(
+  dataServiceExitCodes,
+) as (keyof typeof dataServiceExitCodes)[];
 export const diagnosticCatalog = Object.freeze({
   "ohtia.pause.read": event("data_service", "pause.read", "DEBUG", "success", []),
   "ohtia.plan.graph_recorded": event(
@@ -257,6 +268,9 @@ export const diagnosticCatalog = Object.freeze({
   ]),
   "ohtia.provider.discarded": event("broker", "provider.dispatch", "DEBUG", "discarded", []),
   "ohtia.provider.completed": event("broker", "provider.request", "INFO", "completed", []),
+  "ohtia.provider.title_requested": event("broker", "provider.title", "INFO", "requested", []),
+  "ohtia.provider.title_suggested": event("broker", "provider.title", "INFO", "suggested", []),
+  "ohtia.provider.title_omitted": event("broker", "provider.title", "INFO", "omitted", []),
   "ohtia.provider.failed": event("broker", "provider.request", "WARN", "failure", [
     "usage_limit_reached",
     "not_eligible",
@@ -288,6 +302,19 @@ export const diagnosticCatalog = Object.freeze({
   "ohtia.application.started": event("broker", "application.start", "INFO", "success", []),
   "ohtia.application.stopped": event("broker", "application.stop", "INFO", "success", []),
   "ohtia.service.ready": event("broker", "service.start", "INFO", "success", []),
+  "ohtia.service.faulted": event("broker", "service.run", "ERROR", "failure", [
+    "startup_timeout",
+    "request_timeout",
+    "channel_write_failed",
+    "protocol_rejected",
+    "wake_queue_full",
+  ]),
+  "ohtia.service.child_exited": event("broker", "service.exit", "WARN", "exited", [
+    "exit_zero",
+    "exit_nonzero",
+    "exit_unknown",
+    ...dataServiceExitReasons,
+  ]),
   "ohtia.service.unavailable": event("broker", "service.run", "ERROR", "failure", [
     "service_unavailable",
   ]),
@@ -319,6 +346,15 @@ export const diagnosticCatalog = Object.freeze({
     "runtime_failed",
   ]),
 });
+export function dataServiceExitReason(
+  code: number | undefined,
+): (typeof diagnosticCatalog)["ohtia.service.child_exited"]["errors"][number] {
+  if (code === undefined) return "exit_unknown";
+  if (code === 0) return "exit_zero";
+  return (
+    dataServiceExitReasons.find((reason) => dataServiceExitCodes[reason] === code) ?? "exit_nonzero"
+  );
+}
 export type DiagnosticEventName = keyof typeof diagnosticCatalog;
 export type DiagnosticEvent = {
   [K in DiagnosticEventName]: {

@@ -399,6 +399,8 @@ export class DurableProvider {
     stream.last = now;
     stream.sequence = message.event.sequence;
     let event = message.event;
+    // Provider activity updates the attempt clock without changing any durable state.
+    if (event.type === "activity") return true;
     if (event.type === "text") {
       if (stream.cut) return true;
       const remaining = stream.maxOutput - stream.outputBytes;

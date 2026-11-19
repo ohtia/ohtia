@@ -9,6 +9,7 @@ import {
   admitDevelopmentRoot,
   admitRuntimeProfile,
   decodeStorageNotice,
+  dataServiceExitCodes,
   decodeServiceShutdown,
   isArtifactVersion,
   isDevelopmentExecutable,
@@ -25,10 +26,10 @@ suppressDiagnosticCapture((discard) => {
   process.stderr.write = discard;
 });
 process.on("uncaughtException", () => {
-  process.exit(1);
+  process.exit(dataServiceExitCodes.uncaught_exception);
 });
 process.on("unhandledRejection", () => {
-  process.exit(1);
+  process.exit(dataServiceExitCodes.unhandled_rejection);
 });
 
 /** Recheck the native context independently before even a future locator/store could be opened. */
@@ -218,8 +219,8 @@ async function start(): Promise<void> {
       parent.postMessage(text);
     },
     store,
-    () => {
-      process.exit(1);
+    (reason) => {
+      process.exit(dataServiceExitCodes[reason]);
     },
     // Determined here, independently of main, under ADR-0043.
     selected.mode,
@@ -268,7 +269,7 @@ async function start(): Promise<void> {
       service.receive(event.data);
     } catch {
       service.dispose();
-      process.exit(1);
+      process.exit(dataServiceExitCodes.message_handler_failed);
     }
   });
   initialization = initializeStorage(

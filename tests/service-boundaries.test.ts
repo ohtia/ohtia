@@ -57,13 +57,14 @@ function supervisor(
   };
   const state = vi.fn();
   const storage = vi.fn();
+  const diagnostic = vi.fn();
   const service = new ServiceSupervisor(
     child,
     "service-1",
     state,
     storage,
     false,
-    undefined,
+    diagnostic,
     localeChanged,
     presentationChanged,
   );
@@ -72,6 +73,7 @@ function supervisor(
     child,
     state,
     storage,
+    diagnostic,
     service,
     receive: (value: unknown) => receive(value),
     exited: () => exited(),
@@ -100,6 +102,28 @@ function event(topic: "status" | "appearance" = "status", subscriptionId = "subs
 }
 
 describe("supervised stream authority and cessation", () => {
+  it("records the first channel write failure and awaits exit before releasing work", () => {
+    const h = supervisor();
+    h.child.send.mockImplementation(() => {
+      throw new Error("Synthetic channel write failure");
+    });
+    const pending = work();
+    h.service.dispatch(pending);
+    h.service.disposeWindow("other-window");
+    expect(h.child.send).toHaveBeenCalledTimes(2);
+    expect(h.child.kill).toHaveBeenCalledOnce();
+    expect(h.diagnostic).toHaveBeenCalledExactlyOnceWith(
+      { event_name: "ohtia.service.faulted", error_code: "channel_write_failed" },
+      "service-1",
+    );
+    expect(pending.release).not.toHaveBeenCalled();
+    h.exited();
+    expect(h.diagnostic).toHaveBeenLastCalledWith(
+      { event_name: "ohtia.service.child_exited", error_code: "exit_unknown" },
+      "service-1",
+    );
+    expect(pending.release).toHaveBeenCalledOnce();
+  });
   it("routes both stream topics and keeps disposal capacity until the service acknowledgement", () => {
     const h = supervisor();
     for (const topic of ["status", "appearance"] as const) {
@@ -337,6 +361,19 @@ describe("service admission and queued subscription failures", () => {
     h.receive();
     expect(h.lost).toHaveBeenCalledOnce();
     expect(h.sent.at(-1)).toMatchObject({ payload: { value: { engine: "unavailable" } } });
+  });
+  it("reports storage admission loss discovered during an accepted read", async () => {
+    const h = serviceFixture();
+    h.service.activate("en-US");
+    h.store.readAppearance.mockImplementationOnce(async () => {
+      h.store.admissionReady = false;
+      return { ok: true, value: appearance };
+    });
+    h.receive({ operation: "appearance.read", payload: {} });
+    expect(h.lost).not.toHaveBeenCalled();
+    await h.service.drain();
+    expect(h.lost).toHaveBeenCalledExactlyOnceWith("storage_admission_lost");
+    h.service.dispose();
   });
   it("enforces per-window subscription capacity and rejects duplicates", () => {
     const h = serviceFixture();
@@ -686,9 +723,7 @@ it("owns a provider fault without a queued window command and keeps a throwing o
   h.lost.mockImplementation(() => {
     throw new Error("Synthetic observer failure.");
   });
-  const failed = vi
-    .spyOn(DurableProvider.prototype, "receive")
-    .mockRejectedValueOnce(new Error("Synthetic storage failure."));
+  const failed = vi.spyOn(DurableProvider.prototype, "receive").mockResolvedValueOnce(false);
   try {
     h.service.receive(
       JSON.stringify({
@@ -700,7 +735,7 @@ it("owns a provider fault without a queued window command and keeps a throwing o
       }),
     );
     await expect(h.service.drain()).resolves.toBeUndefined();
-    expect(h.lost).toHaveBeenCalledOnce();
+    expect(h.lost).toHaveBeenCalledExactlyOnceWith("provider_work_failed");
     h.receive();
     expect(h.sent.at(-1)).toMatchObject({
       payload: { ok: true, value: { service: "unavailable", engine: "unavailable" } },
@@ -991,8 +1026,19 @@ it.each(["requested", "unexpected"])(
     if (termination === "unexpected") {
       receive("invalid peer input");
       receive(JSON.stringify(stopEvent));
-      expect(diagnostic).not.toHaveBeenCalled();
+      expect(diagnostic).toHaveBeenCalledExactlyOnceWith(
+        { event_name: "ohtia.service.faulted", error_code: "protocol_rejected" },
+        "service-1",
+      );
+      const stopping = service.stop();
       exit();
+      release();
+      await expect(stopping).resolves.toBe(true);
+      expect(diagnostic).toHaveBeenCalledTimes(2);
+      expect(diagnostic).toHaveBeenLastCalledWith(
+        { event_name: "ohtia.service.child_exited", error_code: "exit_unknown" },
+        "service-1",
+      );
       return;
     }
     const stopping = service.stop();
@@ -1209,6 +1255,38 @@ it.each(["unsubscribe", "window-close"] as const)(
     }
   },
 );
+it("keeps provider activity notifications out of the serialized research read workload", async () => {
+  const h = await integratedResearch();
+  const stream = h.port.subscribeResearch(h.scope, () => {});
+  try {
+    h.unwrap(await stream.ready);
+    await h.peer.drain();
+    vi.useFakeTimers();
+    const readRevisions = h.store.researchRevisions.bind(h.store);
+    const revisions = vi.spyOn(h.store, "researchRevisions").mockImplementation(async (...args) => {
+      await new Promise((resume) => setTimeout(resume, 100));
+      return readRevisions(...args);
+    });
+    for (let sequence = 1; sequence <= 100; sequence++)
+      h.peer.receive(
+        JSON.stringify({
+          kind: "provider_event",
+          version: 1,
+          generation: "service-1",
+          attempt: "activity-attempt",
+          event: { type: "activity", sequence },
+        }),
+      );
+    const read = h.port.listProjects({ cursor: null, count: 10 });
+    await vi.advanceTimersByTimeAsync(portLimits.request_deadline_ms);
+    await expect(read.result).resolves.toEqual({ ok: true, value: expect.any(Object) });
+    expect(revisions).not.toHaveBeenCalled();
+    expect(h.child.kill).not.toHaveBeenCalled();
+  } finally {
+    stream.dispose();
+    h.dispose();
+  }
+});
 it("keeps all four main subscription reservations until disposal and then admits the fresh research identity", async () => {
   const h = await integratedResearch();
   try {
