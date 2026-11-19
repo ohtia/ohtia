@@ -6,6 +6,7 @@ import {
   type PauseCounts,
   type ProjectRecord,
   type TimelineSetupProposal,
+  type TimelineConsultation,
   type ProviderDeclaration,
   type TimelineTask,
   failure,
@@ -38,6 +39,7 @@ interface RenameState {
 }
 export interface ConversationState {
   readonly pauses?: PauseCounts;
+  readonly consultationDestination?: string | null | undefined;
   readonly project?: ProjectRecord;
   readonly setupActions?: ReadonlyMap<
     string,
@@ -159,6 +161,77 @@ export class ConversationController {
       },
     );
   }
+  private consultationRead = 0;
+  refreshConsultationDestination = async (): Promise<void> => {
+    const { projectId } = this.state.scope;
+    if (
+      !projectId ||
+      !this.state.items.some((item) => item.kind === "consultation" && item.state === "proposed")
+    )
+      return;
+    const epoch = this.epoch;
+    const revision = ++this.consultationRead;
+    const result = await this.port
+      .readDestination({ projectId, agentId: "josefa" })
+      .result.catch(() => failure("invalid_service_result"));
+    if (!this.live(epoch) || revision !== this.consultationRead) return;
+    this.state = {
+      ...this.state,
+      consultationDestination: result.ok ? (result.value.destination?.connection ?? null) : null,
+    };
+    this.publish();
+  };
+  observeConsultationDestination = (): (() => void) => {
+    void this.refreshConsultationDestination();
+    const scope = this.state.scope;
+    let observing = true;
+    const subscriptions = this.connections.map(({ id }) =>
+      this.port.subscribeConnection(id, (notice) => {
+        if (
+          observing &&
+          notice.ok &&
+          scope.projectId === this.state.scope.projectId &&
+          scope.conversationId === this.state.scope.conversationId
+        )
+          void this.refreshConsultationDestination();
+      }),
+    );
+    return () => {
+      observing = false;
+      for (const subscription of subscriptions) subscription.dispose();
+    };
+  };
+  performConsultationAction = async (
+    operationId: string,
+    proposal: TimelineConsultation,
+    action: "accept" | "decline",
+    connection?: string,
+  ): Promise<Outcome<import("@ohtia/contracts").ResearchResult>> => {
+    const epoch = this.epoch;
+    if (action === "accept" && !connection) return failure("service_unavailable");
+    const result = await (
+      action === "accept" && connection
+        ? this.port.acceptConsultation(operationId, { proposalId: proposal.id, connection })
+        : this.port.declineConsultation(operationId, { proposalId: proposal.id })
+    ).result.catch(() => failure("invalid_service_result"));
+    if (this.live(epoch)) {
+      if (!result.ok && result.error.code === "destination_changed")
+        await this.refreshConsultationDestination();
+      if (result.ok || result.error.code === "proposal_not_waiting") {
+        this.queue = this.queue
+          .then(async () => {
+            if (!this.live(epoch)) return;
+            await this.readIds([proposal.id], epoch);
+            if (this.live(epoch)) this.publish();
+          })
+          .catch(() => {
+            if (this.live(epoch)) this.reload();
+          });
+        await this.queue;
+      }
+    }
+    return result;
+  };
   private pauseEpoch = -1;
   async refreshPauses(): Promise<void> {
     const epoch = this.epoch;
@@ -186,8 +259,12 @@ export class ConversationController {
           : action === "continue"
             ? this.port.continueAllTasks(operationId)
             : action === "retry"
-              ? this.port.tryAgainTask(operationId, { taskId: task.id })
-              : this.port.startAgainTask(operationId, { taskId: task.id })
+              ? task.consultation
+                ? this.port.tryAgainContribution(operationId, { taskId: task.id })
+                : this.port.tryAgainTask(operationId, { taskId: task.id })
+              : task.consultation
+                ? this.port.startAgainContribution(operationId, { taskId: task.id })
+                : this.port.startAgainTask(operationId, { taskId: task.id })
       ).result;
     } catch {
       result = failure("invalid_service_result");
@@ -203,6 +280,7 @@ export class ConversationController {
       }
       this.reload();
     }
+    if (!result.ok && result.error.code === "newer_task_exists") this.reload();
     return result;
   }
   private setupIntents = new Map<string, string>();
@@ -682,6 +760,11 @@ export class ConversationController {
             ? item.documentLanguage
             : await this.text(item.documentLanguage, epoch),
         );
+      } else if (item.kind === "consultation" && item.request !== null) {
+        texts.set(
+          item.id,
+          typeof item.request === "string" ? item.request : await this.text(item.request, epoch),
+        );
       } else if (item.kind === "message")
         texts.set(
           item.id,
@@ -877,6 +960,7 @@ export class ConversationController {
   private async event(event: ResearchEvent, epoch: number): Promise<void> {
     if (event.kind === "destinationChanged") {
       void this.composer.refreshDestination();
+      void this.refreshConsultationDestination();
       await this.readIds(
         this.state.items
           .filter((item) => item.kind === "task" && item.state === "queued")

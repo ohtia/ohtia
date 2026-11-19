@@ -37,6 +37,17 @@ async function exists(db: Kysely<ResearchSchema>, conversationId: string): Promi
     .where("id", "=", bytes(conversationId))
     .executeTakeFirst());
 }
+// An unstarted retry follows the most recent reserved position in its replacement chain.
+const taskPosition = sql<number>`coalesce(t.reply_position, t.input_through_position,
+  (WITH RECURSIVE previous(id, reply_position, replaces_task_id, depth) AS (
+    SELECT id, reply_position, replaces_task_id, 1 FROM tasks WHERE id=t.replaces_task_id
+    UNION ALL SELECT older.id, older.reply_position, older.replaces_task_id, previous.depth+1
+      FROM tasks older JOIN previous ON older.id=previous.replaces_task_id
+  ) SELECT reply_position FROM previous WHERE reply_position IS NOT NULL ORDER BY depth LIMIT 1),
+  (SELECT origin.reply_position FROM contributions c JOIN interventions i ON i.id=c.intervention_id
+    JOIN attempts a ON a.id=i.proposed_by_attempt_id JOIN tasks origin ON origin.id=a.task_id
+    WHERE c.id=t.contribution_id))`;
+
 async function timelineItem(
   db: Kysely<ResearchSchema>,
   conversationId: string,
@@ -47,7 +58,7 @@ async function timelineItem(
     .selectFrom("messages")
     .leftJoin("tasks", "tasks.id", "messages.task_id")
     .selectAll("messages")
-    .select("tasks.document_language as language")
+    .select(["tasks.document_language as language", "tasks.kind as task_kind"])
     .where("messages.conversation_id", "=", bytes(conversationId))
     .where("messages.id", "=", bytes(id))
     .executeTakeFirst();
@@ -57,6 +68,7 @@ async function timelineItem(
     return {
       id,
       kind: "message",
+      ...(row.task_kind === "consultation" ? ({ consultation: true } as const) : {}),
       rank: 1,
       revision: 1,
       position: row.position,
@@ -89,11 +101,54 @@ async function timelineItem(
       state: proposal.state,
       invalidReason: proposal.invalid_reason,
     };
+  const consultation = await db
+    .selectFrom("interventions as i")
+    .innerJoin("attempts as a", "a.id", "i.proposed_by_attempt_id")
+    .innerJoin("tasks as origin", "origin.id", "a.task_id")
+    .leftJoin("contributions as c", "c.intervention_id", "i.id")
+    .leftJoin("tasks as initial", (join) =>
+      join.onRef("initial.contribution_id", "=", "c.id").on("initial.replaces_task_id", "is", null),
+    )
+    .select([
+      "i.state",
+      "i.invalid_reason",
+      "i.revision",
+      "origin.id as taskId",
+      "origin.reply_position",
+      "origin.document_language",
+      "c.agent_id",
+      "c.request",
+      "c.reason",
+      "initial.connection",
+    ])
+    .where("i.conversation_id", "=", bytes(conversationId))
+    .where("i.id", "=", bytes(id))
+    .executeTakeFirst();
+  if (consultation && consultation.reply_position !== null)
+    return {
+      id,
+      kind: "consultation",
+      rank: 2,
+      revision: consultation.revision,
+      position: consultation.reply_position,
+      taskId: identifier(consultation.taskId),
+      language: consultation.document_language,
+      state: consultation.state,
+      invalidReason: consultation.invalid_reason,
+      agentId: consultation.agent_id,
+      request:
+        consultation.request === null
+          ? null
+          : storedText(consultation.request, `consultation_${id}`),
+      reason: consultation.reason,
+      connection: consultation.connection,
+    };
   const task = await db
-    .selectFrom("tasks")
-    .selectAll()
-    .where("conversation_id", "=", bytes(conversationId))
-    .where("id", "=", bytes(id))
+    .selectFrom("tasks as t")
+    .selectAll("t")
+    .select(taskPosition.as("position"))
+    .where("t.conversation_id", "=", bytes(conversationId))
+    .where("t.id", "=", bytes(id))
     .executeTakeFirst();
   if (!task) return undefined;
   const attempt = await db
@@ -119,7 +174,13 @@ async function timelineItem(
     kind: "task",
     rank: 3,
     revision: task.state_revision,
-    position: task.reply_position ?? task.input_through_position,
+    position: task.position,
+    ...(task.kind === "consultation"
+      ? {
+          consultation: true as const,
+          replacesTaskId: task.replaces_task_id ? identifier(task.replaces_task_id) : null,
+        }
+      : {}),
     agentId: replyAgent(task.operation),
     language: task.document_language,
     state: task.state,
@@ -197,6 +258,10 @@ async function summarizeConversation(
     .select(["id", "state"])
     .where("conversation_id", "=", row.id);
   const latestTask = await tasks.orderBy(sql`rowid`, "desc").executeTakeFirst();
+  const latestReply = await tasks
+    .where("kind", "=", "reply")
+    .orderBy(sql`rowid`, "desc")
+    .executeTakeFirst();
   const running = await tasks
     .select("operation")
     .where("state", "in", ["running", "cancelling"])
@@ -208,7 +273,7 @@ async function summarizeConversation(
     latestPrefix: prefix.slice(0, conversationPreviewPrefixLimit).join(""),
     latestTruncated: prefix.length > conversationPreviewPrefixLimit,
     latestLanguage: latest?.language ?? null,
-    latestReplyTaskId: latestTask ? identifier(latestTask.id) : null,
+    latestReplyTaskId: latestReply ? identifier(latestReply.id) : null,
     runningTask: running
       ? {
           id: identifier(running.id),
@@ -401,8 +466,11 @@ export async function readResearch(
       const rows = await sql<{ id: Uint8Array; position: number; rank: number }>`
         SELECT id, position, rank FROM (
           SELECT id, position, 1 AS rank FROM messages WHERE conversation_id = ${bytes(p.conversationId)}
-          UNION ALL SELECT id, coalesce(reply_position,input_through_position) AS position, 3 AS rank FROM tasks WHERE conversation_id = ${bytes(p.conversationId)}
+          UNION ALL SELECT t.id, ${taskPosition} AS position, 3 AS rank FROM tasks t WHERE t.conversation_id = ${bytes(p.conversationId)}
           UNION ALL SELECT p.id, t.reply_position AS position, 2 AS rank FROM project_setup_proposals p JOIN tasks t ON t.id=p.task_id WHERE t.conversation_id = ${bytes(p.conversationId)}
+          UNION ALL SELECT i.id, t.reply_position AS position, 2 AS rank
+            FROM interventions i JOIN attempts a ON a.id=i.proposed_by_attempt_id JOIN tasks t ON t.id=a.task_id
+            WHERE i.conversation_id = ${bytes(p.conversationId)}
         ) ${before} ORDER BY position DESC, rank DESC, id DESC LIMIT ${p.count + 1}`.execute(db);
       const items: TimelineItem[] = [];
       for (const row of rows.rows.slice(0, p.count)) {
@@ -446,6 +514,18 @@ export async function readResearch(
       return { ok: true, value: { items, remaining: p.ids.slice(consumed) } };
     }
     case "text.readPart": {
+      const consultation = /^consultation_([0-9a-f-]+)$/.exec(request.payload.source);
+      if (consultation?.[1]) {
+        const row = await db
+          .selectFrom("contributions")
+          .select("request")
+          .where("intervention_id", "=", bytes(consultation[1]))
+          .executeTakeFirst();
+        const text = row && splitText(row.request)[request.payload.index - 1];
+        return typeof text === "string"
+          ? { ok: true, value: { text } }
+          : failure("record_not_found");
+      }
       const setup = /^setup_(title|language)_([0-9a-f-]+)$/.exec(request.payload.source);
       if (setup?.[2]) {
         const row = await db
@@ -547,6 +627,17 @@ export async function researchRevisions(
         record: "timeline",
         id: identifier(row.id),
         revision: setupRevision(row),
+      });
+    for (const row of await db
+      .selectFrom("interventions")
+      .select(["id", "revision"])
+      .where("conversation_id", "=", bytes(scope.conversationId))
+      .execute())
+      result.push({
+        kind: "changed",
+        record: "timeline",
+        id: identifier(row.id),
+        revision: row.revision,
       });
     for (const row of await db
       .selectFrom("tasks")

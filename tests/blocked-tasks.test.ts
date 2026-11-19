@@ -1,3 +1,4 @@
+import { preConsultationSql, legacyTaskInitialFrom20Sql } from "./fixtures/storage.js";
 import { objects as setupReceiptObjects } from "../packages/utility/src/migrations/0015_project_setup.mjs";
 import { objects as composerReceiptObjects } from "../packages/utility/src/migrations/0014_message_composer.mjs";
 import { objects as exitReceiptObjects } from "../packages/utility/src/migrations/0012_application_exit.mjs";
@@ -542,8 +543,9 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                 ? "DROP TABLE execution_limits_receipts; " +
                   legacyTaskInitialSql +
                   "DELETE FROM kysely_migration WHERE name='0016_task_notices'; DELETE FROM ohtia_migration_artifacts WHERE name='0016_task_notices'; DROP TABLE project_setup_proposals; DELETE FROM kysely_migration WHERE name='0015_project_setup'; DELETE FROM ohtia_migration_artifacts WHERE name='0015_project_setup'; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; PRAGMA user_version=12"
-                : "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DROP TABLE service_runs; DROP TABLE execution_limits_receipts; " +
-                  legacyTaskInitialSql +
+                : preConsultationSql +
+                  "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DROP TABLE service_runs; DROP TABLE execution_limits_receipts; " +
+                  legacyTaskInitialFrom20Sql +
                   "DELETE FROM kysely_migration WHERE name='0016_task_notices'; DELETE FROM ohtia_migration_artifacts WHERE name='0016_task_notices'; DROP TABLE project_setup_proposals; DELETE FROM kysely_migration WHERE name='0015_project_setup'; DELETE FROM ohtia_migration_artifacts WHERE name='0015_project_setup'; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; DELETE FROM kysely_migration WHERE name='0012_application_exit'; DELETE FROM ohtia_migration_artifacts WHERE name='0012_application_exit'; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; DROP TABLE usage_limit_pauses; DELETE FROM kysely_migration WHERE name='0009_usage_limit_pauses'; DELETE FROM ohtia_migration_artifacts WHERE name='0009_usage_limit_pauses'; PRAGMA user_version=8",
       );
       if (sourceKind !== "legacy" && sourceKind !== "setup" && sourceKind !== "notices") {
@@ -677,7 +679,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 20,
+          target: 21,
         }),
       );
       await f.store.retry();
@@ -729,7 +731,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 20,
+          target: 21,
         }),
       );
       await exhausted.store.retry();
@@ -757,7 +759,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 20,
+          target: 21,
         }),
       );
       await f.store.retry();
@@ -994,15 +996,16 @@ describe("reply control composed with connection and usage pauses", () => {
       await f.store.close();
       const db = f.raw();
       db.exec(
-        "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DROP TABLE service_runs; DROP TABLE execution_limits_receipts; " +
-          legacyTaskInitialSql +
+        preConsultationSql +
+          "DROP TRIGGER messages_ending; DROP TRIGGER receipts_commands; DROP TRIGGER tasks_charge_initial; DROP TRIGGER tasks_charge_changes; ALTER TABLE messages DROP COLUMN ending; ALTER TABLE tasks DROP COLUMN charge_warning_accepted_at; DROP TABLE service_runs; DROP TABLE execution_limits_receipts; " +
+          legacyTaskInitialFrom20Sql +
           "DELETE FROM kysely_migration WHERE name='0016_task_notices'; DELETE FROM ohtia_migration_artifacts WHERE name='0016_task_notices'; DROP TABLE project_setup_proposals; DELETE FROM kysely_migration WHERE name='0015_project_setup'; DELETE FROM ohtia_migration_artifacts WHERE name='0015_project_setup'; DELETE FROM kysely_migration WHERE name='0014_message_composer'; DELETE FROM ohtia_migration_artifacts WHERE name='0014_message_composer'; DELETE FROM kysely_migration WHERE name='0013_execution_limits_receipts'; DELETE FROM ohtia_migration_artifacts WHERE name='0013_execution_limits_receipts'; DELETE FROM kysely_migration WHERE name='0012_application_exit'; DELETE FROM ohtia_migration_artifacts WHERE name='0012_application_exit'; DELETE FROM kysely_migration WHERE name='0011_service_runs'; DELETE FROM ohtia_migration_artifacts WHERE name='0011_service_runs'; DELETE FROM kysely_migration WHERE name='0010_reply_control'; DELETE FROM ohtia_migration_artifacts WHERE name='0010_reply_control'; PRAGMA user_version=9",
       );
       db.close();
       if (recovery) {
         fs.writeFileSync(
           path.join(f.root, "migration-pending.json"),
-          JSON.stringify({ version: 1, operation: "composed-recovery", source: 9, target: 20 }),
+          JSON.stringify({ version: 1, operation: "composed-recovery", source: 9, target: 21 }),
         );
         await f.store.retry();
       } else await f.store.open();
@@ -1018,13 +1021,14 @@ describe("reply control composed with connection and usage pauses", () => {
       expect(value(await f.resume("resume-after-reply-migration"))).toEqual(resumed);
       expect(await f.prepare()).not.toBeNull();
       const upgraded = f.raw();
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(20);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(21);
       expect(
         upgraded
           .prepare("SELECT name FROM kysely_migration ORDER BY name DESC LIMIT 10")
           .pluck()
           .all(),
       ).toEqual([
+        "0021_consultations",
         "0020_conversation_agents",
         "0019_josefa_search_planning",
         "0018_conversation_titles",
@@ -1034,7 +1038,6 @@ describe("reply control composed with connection and usage pauses", () => {
         "0014_message_composer",
         "0013_execution_limits_receipts",
         "0012_application_exit",
-        "0011_service_runs",
       ]);
       expect(
         upgraded
@@ -1059,7 +1062,7 @@ it.each(["continue-all", "resume-requests"] as const)(
       await f.store.close();
       fs.writeFileSync(
         path.join(f.root, "migration-pending.json"),
-        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 20 }),
+        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 21 }),
       );
       await f.store.retry();
     }

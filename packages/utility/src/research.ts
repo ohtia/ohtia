@@ -4,6 +4,7 @@ import * as crypto from "node:crypto";
 import { type Generated, type Kysely, sql } from "kysely";
 import {
   failure,
+  isConnectionId,
   validResearcherMessage,
   validConversationTitle,
   isIdentifier,
@@ -53,7 +54,10 @@ export interface MessageRow {
   created_at: string;
 }
 import type { SetupProposalRow } from "./project-setup.js";
+import type { ContributionRow, InterventionRow } from "./consultations.js";
 export interface ResearchSchema extends TaskSchema {
+  interventions: InterventionRow;
+  contributions: ContributionRow;
   project_setup_proposals: SetupProposalRow;
   projects: ProjectRow;
   conversations: Omit<ConversationRow, "agent_id"> & {
@@ -250,6 +254,10 @@ const payloadKeys = {
   "task.stop": ["taskId"],
   "task.startAgain": ["taskId"],
   "task.tryAgain": ["taskId"],
+  "contribution.tryAgain": ["taskId"],
+  "contribution.startAgain": ["taskId"],
+  "consultation.accept": ["proposalId", "connection"],
+  "consultation.decline": ["proposalId"],
   "development.createProject": [],
   "development.sendToJosefa": ["conversationId", "content"],
   "project.create": [],
@@ -323,6 +331,8 @@ export async function applyResearchCommand(
       break;
     }
     case "task.stop":
+    case "contribution.tryAgain":
+    case "contribution.startAgain":
     case "task.tryAgain":
     case "task.startAgain": {
       if (!isEntityId(input.payload.taskId)) return failure("invalid_message");
@@ -330,6 +340,22 @@ export async function applyResearchCommand(
         input.command,
         bytes(input.payload.taskId),
         input.operationId,
+      );
+      if (!outcome.ok) return outcome;
+      result = outcome.value;
+      break;
+    }
+    case "consultation.accept":
+    case "consultation.decline": {
+      if (!isEntityId(input.payload.proposalId)) return failure("invalid_message");
+      const connection =
+        input.command === "consultation.accept" ? input.payload.connection : undefined;
+      if (input.command === "consultation.accept" && !isConnectionId(connection))
+        return failure("invalid_message");
+      const outcome = await tasks.decideConsultation(
+        bytes(input.payload.proposalId),
+        input.operationId,
+        connection,
       );
       if (!outcome.ok) return outcome;
       result = outcome.value;

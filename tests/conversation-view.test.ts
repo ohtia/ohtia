@@ -1,3 +1,4 @@
+import { createHash, webcrypto } from "node:crypto";
 import { deferred } from "./fixtures/settings.js";
 // @vitest-environment jsdom
 import { act, createElement as h, useSyncExternalStore } from "react";
@@ -22,6 +23,7 @@ import {
   compareConversations,
   chatgptConnection,
   type TimelineTask,
+  type TimelineConsultation,
   type InterfaceLocale,
   portLimits,
   type FoundationPort,
@@ -119,6 +121,65 @@ async function render(next: ConversationState, controller = {} as ConversationCo
 }
 
 describe("conversation presentation", () => {
+  it("shows the consultation request as Markdown and retries a failed decision with the same intent", async () => {
+    const proposal = {
+      kind: "consultation",
+      id: id(12),
+      position: 3,
+      rank: 2,
+      revision: 1,
+      state: "proposed",
+      invalidReason: null,
+      taskId: id(900),
+      language: "en",
+      agentId: "josefa",
+      request: "**Exact request**",
+      reason: "**Plain reason**",
+      connection: null,
+    } as const;
+    const proposingReply = {
+      kind: "message",
+      id: id(11),
+      position: 3,
+      rank: 1,
+      revision: 1,
+      authorKind: "agent",
+      agentId: "virgilio",
+      taskId: id(900),
+      language: "en",
+      content: "We could ask.",
+      ending: "complete",
+    } as const;
+    const performConsultationAction = vi.fn(async () => failure("storage_failed"));
+    const observeConsultationDestination = vi.fn(() => () => {});
+    const controller = {
+      performConsultationAction,
+      observeConsultationDestination,
+    } as unknown as ConversationController;
+    await render(
+      { ...state([proposingReply, proposal]), consultationDestination: "chatgpt" },
+      controller,
+    );
+    const card = container.querySelector(".action-proposal")!;
+    expect(card.querySelector("strong")?.textContent).toBe("Exact request");
+    expect(card.textContent).toContain("**Plain reason**");
+    expect(card.textContent).toContain("Waiting for your answer");
+    expect(card.textContent).toContain("Josefa · ChatGPT");
+    expect(card.querySelectorAll(".voice-label")).toHaveLength(1);
+    expect(observeConsultationDestination).toHaveBeenCalledOnce();
+    const accept = [...card.querySelectorAll("button")].find(
+      (element) => element.textContent === "Ask Josefa",
+    )!;
+    await act(async () => accept.click());
+    expect(card.querySelector('[role="alert"]')?.textContent).toContain(
+      "Ohtia couldn’t ask Josefa.",
+    );
+    await act(async () => accept.click());
+    expect(performConsultationAction.mock.calls[0]).toEqual(
+      performConsultationAction.mock.calls[1],
+    );
+  });
+
   it("renders hostile markup literally and marks researcher and agent languages", async () => {
     const text = '<script>alert("unsafe")</script>\n<img src=x onerror=alert(1)> javascript:evil()';
     const agent: TimelineItem = {
@@ -2763,4 +2824,267 @@ it("retains a focused row while a sequence gap is repaired and reconnects from t
   expect(container.querySelector("[role=alert]")).toBeNull();
   expect(document.activeElement).toBe(container.querySelector(".chat-history-list"));
   fixture.controller.dispose();
+});
+
+const consultation = (change: Partial<TimelineConsultation> = {}): TimelineConsultation => ({
+  kind: "consultation",
+  id: id(800),
+  position: 130,
+  rank: 2,
+  revision: 1,
+  agentId: "josefa",
+  taskId: id(799),
+  state: "proposed",
+  invalidReason: null,
+  language: "en",
+  request: "**Self-contained request**",
+  reason: "Support the choice of search terms.",
+  connection: null,
+  ...change,
+});
+const consultationController = (methods: Partial<ConversationController>) =>
+  methods as ConversationController;
+const buttonNamed = (name: string) =>
+  [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === name,
+  )!;
+
+describe("consultation states and synchronization", () => {
+  it("shows invalid consultations with singularly attributed notices and translated count formatting", async () => {
+    const controller = consultationController({
+      performConsultationAction: vi.fn(async () => failure("storage_failed")),
+      observeConsultationDestination: vi.fn(() => () => {}),
+    });
+    const invalid = (invalidReason: TimelineConsultation["invalidReason"]) =>
+      consultation({
+        state: "invalid",
+        invalidReason,
+        request: null,
+        reason: null,
+        agentId: null,
+      });
+    await render(state([invalid("request_empty")]), controller);
+    expect(container.querySelector(".setup-invalid .voice-label")?.textContent).toContain(
+      "Virgilio",
+    );
+    expect(container.querySelector(".setup-invalid [role=status]")?.textContent).toContain(
+      "The request was empty.",
+    );
+    expect(container.querySelector(".action-proposal")).toBeNull();
+    await render(state([invalid("reason_too_long")]), controller);
+    expect(container.querySelector(".setup-invalid [role=status]")?.textContent).toContain(
+      "The consultation’s reason was longer than 500 characters.",
+    );
+    expect(controller.observeConsultationDestination).not.toHaveBeenCalled();
+  });
+
+  it("refreshes the displayed destination on rejection, leaves failed decisions available, and restores focus on acceptance", async () => {
+    const performConsultationAction = vi
+      .fn()
+      .mockReturnValueOnce(Promise.resolve(failure("destination_changed")))
+      .mockReturnValueOnce(Promise.resolve(failure("consultation_unfinished")))
+      .mockRejectedValueOnce(new Error("Synthetic IPC failure"))
+      .mockReturnValueOnce(Promise.resolve(failure("storage_failed")))
+      .mockReturnValueOnce(Promise.resolve({ ok: true, value: { resultId: id(800) } }));
+    const stop = vi.fn();
+    const observer = vi.fn(() => stop);
+    const controller = consultationController({
+      performConsultationAction,
+      observeConsultationDestination: observer,
+    });
+    const open = consultation();
+    await render(state([open]), controller);
+    expect(buttonNamed("Ask Josefa").getAttribute("aria-disabled")).toBe("true");
+    expect(container.textContent).not.toContain("Josefa’s service could not be read.");
+    await render({ ...state([open]), consultationDestination: null }, controller);
+    expect(buttonNamed("Ask Josefa").getAttribute("aria-disabled")).toBe("true");
+    expect(container.textContent).toContain("Josefa’s service could not be read.");
+    await render({ ...state([open]), consultationDestination: "chatgpt" }, controller);
+    const ask = buttonNamed("Ask Josefa");
+    ask.focus();
+    await act(async () => ask.click());
+    expect(container.querySelector(".action-proposal [role=status]")?.textContent).toContain(
+      "Josefa’s service changed",
+    );
+    await act(async () => ask.click());
+    expect(container.querySelector(".action-proposal [role=status]")?.textContent).toContain(
+      "Another consultation",
+    );
+    await act(async () => buttonNamed("Decline consultation").click());
+    expect(container.querySelector(".action-proposal [role=alert]")?.textContent).toContain(
+      "Ohtia couldn’t decline the consultation.",
+    );
+    await act(async () => buttonNamed("Decline consultation").click());
+    expect(performConsultationAction.mock.calls[2]).toEqual(
+      performConsultationAction.mock.calls[3],
+    );
+    await act(async () => ask.click());
+    await render(
+      {
+        ...state([consultation({ state: "accepted", connection: "chatgpt", revision: 2 })]),
+        consultationDestination: null,
+      },
+      controller,
+    );
+    expect(container.querySelector(".action-proposal")?.textContent).toContain(
+      "You accepted this consultation.",
+    );
+    expect(container.querySelector(".conversation-notice")).toBeNull();
+    expect(container.querySelector(".consultation-recipient")?.textContent).toContain("ChatGPT");
+    expect(document.activeElement).toBe(container.querySelector(".consultation-proposal"));
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it("reads the exact request parts and the shown connection, and reconciles window races against the receipt", async () => {
+    const h = controllerHarness(false);
+    const request = "Research purpose and scope. " + "x".repeat(4500);
+    const reference = {
+      source: "consultation_" + id(800),
+      parts: 2,
+      bytes: request.length,
+      sha256: createHash("sha256").update(request).digest("hex"),
+    };
+    const record = consultation({ request: reference });
+    h.items.push(record);
+    const part = vi.fn(({ index }: { index: number }) =>
+      ok({ text: index === 1 ? request.slice(0, 4096) : request.slice(4096) }),
+    );
+    const destination = {
+      destination: {
+        connection: "chatgpt",
+        operation: "search_strategy_planning",
+        maxAttemptDurationMs: 600_000,
+      },
+    };
+    const updates: Parameters<FoundationPort["subscribeConnection"]>[1][] = [];
+    const dispose = vi.fn();
+    const accept = vi.fn(() => call(failure("destination_changed")));
+    const decline = vi.fn(() => call(failure("proposal_not_waiting")));
+    Object.assign(h.port, {
+      readTextPart: part,
+      acceptConsultation: accept,
+      declineConsultation: decline,
+      subscribeConnection: vi.fn((_id, receive) => {
+        updates.push(receive);
+        return { ready: Promise.resolve({ ok: true, value: { subscriptionId: "seen" } }), dispose };
+      }),
+    });
+    vi.stubGlobal("crypto", webcrypto);
+    try {
+      h.controller.open(scope);
+      await vi.waitFor(() => expect(h.controller.snapshot().texts.get(record.id)).toBe(request));
+      expect(part).toHaveBeenCalledWith({ source: reference.source, index: 2 });
+      vi.mocked(h.port.readDestination).mockReturnValue(ok(destination as never));
+      const end = h.controller.observeConsultationDestination();
+      await settle();
+      expect(h.controller.snapshot().consultationDestination).toBe("chatgpt");
+      const update = updates.at(-1)!;
+      const event = { ok: true, value: { connection: "chatgpt" } } as Parameters<typeof update>[0];
+      vi.mocked(h.port.readDestination).mockReturnValueOnce(ok({ destination: null }));
+      update(event);
+      await settle();
+      expect(h.controller.snapshot().consultationDestination).toBeNull();
+      vi.mocked(h.port.readDestination).mockReturnValueOnce(call(failure("storage_failed")));
+      update(event);
+      await settle();
+      expect(h.controller.snapshot().consultationDestination).toBeNull();
+      vi.mocked(h.port.readDestination).mockImplementationOnce(() => ({
+        result: Promise.reject(new Error("Synthetic disconnect")),
+        cancel() {},
+      }));
+      update(event);
+      await settle();
+      expect(await h.controller.performConsultationAction("missing", record, "accept")).toEqual(
+        failure("service_unavailable"),
+      );
+      expect(
+        await h.controller.performConsultationAction("accept", record, "accept", "chatgpt"),
+      ).toEqual(failure("destination_changed"));
+      expect(accept).toHaveBeenCalledWith("accept", {
+        proposalId: record.id,
+        connection: "chatgpt",
+      });
+      expect(h.controller.snapshot().consultationDestination).toBe("chatgpt");
+      h.items[h.items.indexOf(record)] = consultation({ state: "declined", revision: 2 });
+      expect(await h.controller.performConsultationAction("decline", record, "decline")).toEqual(
+        failure("proposal_not_waiting"),
+      );
+      expect(decline).toHaveBeenCalledWith("decline", { proposalId: record.id });
+      expect(h.controller.snapshot().items).toContainEqual(
+        expect.objectContaining({ id: record.id, state: "declined" }),
+      );
+      vi.mocked(h.port.readDestination).mockClear();
+      update(event);
+      update(failure("disposed"));
+      end();
+      update(event);
+      await settle();
+      expect(dispose).toHaveBeenCalled();
+      expect(h.port.readDestination).not.toHaveBeenCalled();
+    } finally {
+      h.controller.dispose();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("routes contribution retries and exposes Josefa’s starting notice, streaming reply and saved attribution", async () => {
+    const h = controllerHarness();
+    const tryAgainContribution = vi.fn(() => call(failure("consultation_unfinished")));
+    const startAgainContribution = vi.fn(() => call(failure("newer_task_exists")));
+    Object.assign(h.port, { tryAgainContribution, startAgainContribution });
+    await settle();
+    const reload = vi.spyOn(h.controller, "reload").mockImplementation(() => {});
+    const task = reviewTask({
+      id: id(799),
+      agentId: "josefa",
+      consultation: true,
+      replacesTaskId: null,
+    });
+    expect(await h.controller.performTaskAction("retry", "retry", task)).toEqual(
+      failure("consultation_unfinished"),
+    );
+    expect(await h.controller.performTaskAction("restart", "restart", task)).toEqual(
+      failure("newer_task_exists"),
+    );
+    expect(tryAgainContribution).toHaveBeenCalledWith("retry", { taskId: task.id });
+    expect(startAgainContribution).toHaveBeenCalledWith("restart", { taskId: task.id });
+    expect(reload).toHaveBeenCalledOnce();
+    const performTaskAction = h.controller.performTaskAction.bind(h.controller);
+    await render(state([task]), consultationController({ performTaskAction }));
+    await act(async () => buttonNamed("Try again").click());
+    expect(container.textContent).toContain(
+      "Another consultation in this conversation hasn’t finished. Try again when it ends.",
+    );
+    expect(container.querySelector(".voice-label")?.textContent).toContain("Josefa");
+    await render({
+      ...state([{ ...task, state: "running" }]),
+      replies: new Map([[task.id, { sequence: 1, text: "**Beginning**" }]]),
+    });
+    expect(container.querySelector(".consultation-caption")?.textContent).toBe(
+      "Consulted by Virgilio",
+    );
+    expect(container.querySelector(".conversation-text strong")?.textContent).toBe("Beginning");
+    const result: TimelineItem = {
+      kind: "message",
+      id: id(801),
+      position: 5,
+      rank: 1,
+      revision: 1,
+      authorKind: "agent",
+      agentId: "josefa",
+      taskId: task.id,
+      content: "Saved plan.",
+      language: "en",
+      consultation: true,
+      ending: "complete",
+    };
+    await render(state([result]));
+    expect(container.querySelector(".consultation-caption")?.textContent).toBe(
+      "Consulted by Virgilio",
+    );
+    expect(container.textContent).toContain("Saved plan.");
+    await render(state([{ ...task, outcomeReason: "not_eligible" }]));
+    expect(buttonNamed("Try again")).toBeUndefined();
+    h.controller.dispose();
+  });
 });

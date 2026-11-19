@@ -17,6 +17,10 @@ export const researchOperations = [
   "message.append",
   "conversation.stop",
   "task.stop",
+  "consultation.accept",
+  "consultation.decline",
+  "contribution.tryAgain",
+  "contribution.startAgain",
   "task.tryAgain",
   "task.startAgain",
   "usagePause.resume",
@@ -86,6 +90,7 @@ export function isReplyAgent(value: unknown): value is ReplyAgent {
 export interface TimelineMessage extends TimelineIdentity {
   readonly kind: "message";
   readonly rank: 1;
+  readonly consultation?: true;
   readonly authorKind: "researcher" | "agent";
   readonly agentId: ReplyAgent | null;
   readonly taskId: string | null;
@@ -96,6 +101,8 @@ export interface TimelineMessage extends TimelineIdentity {
 export interface TimelineTask extends TimelineIdentity {
   readonly kind: "task";
   readonly rank: 3;
+  readonly consultation?: true;
+  readonly replacesTaskId?: string | null;
   readonly agentId: ReplyAgent;
   readonly language: string | null;
   readonly connection: string;
@@ -137,7 +144,30 @@ export interface TimelineSetupProposal extends TimelineIdentity {
     | "multiple_calls"
     | null;
 }
-export type TimelineItem = TimelineMessage | TimelineTask | TimelineSetupProposal;
+export const consultationInvalidReasons = [
+  "request_empty",
+  "request_too_long",
+  "reason_empty",
+  "reason_too_long",
+  "agent_unavailable",
+  "multiple_calls",
+] as const;
+export type ConsultationInvalidReason = (typeof consultationInvalidReasons)[number];
+export type ConsultationState = "proposed" | "accepted" | "declined" | "replaced" | "invalid";
+export interface TimelineConsultation extends TimelineIdentity {
+  readonly kind: "consultation";
+  readonly rank: 2;
+  readonly taskId: string;
+  readonly language: string | null;
+  readonly state: ConsultationState;
+  readonly invalidReason: ConsultationInvalidReason | null;
+  readonly agentId: "josefa" | null;
+  readonly request: PortText | null;
+  readonly reason: string | null;
+  readonly connection: string | null;
+}
+export type TimelineItem =
+  TimelineMessage | TimelineTask | TimelineSetupProposal | TimelineConsultation;
 export interface ConversationCursor {
   readonly latestAt: string;
   readonly id: string;
@@ -215,6 +245,10 @@ export function validResearcherMessage(text: string): boolean {
 }
 export interface ResearchInputs {
   "pause.read": Record<string, never>;
+  "contribution.startAgain": ResearchPayloads["contribution.startAgain"];
+  "contribution.tryAgain": ResearchPayloads["contribution.tryAgain"];
+  "consultation.decline": ResearchPayloads["consultation.decline"];
+  "consultation.accept": ResearchPayloads["consultation.accept"];
   "task.tryAgain": ResearchPayloads["task.tryAgain"];
   "task.startAgain": ResearchPayloads["task.startAgain"];
   "usagePause.resume": ResearchPayloads["usagePause.resume"];
@@ -253,6 +287,10 @@ export interface ResearchInputs {
 }
 export interface ResearchOutputs {
   "pause.read": PauseCounts;
+  "contribution.startAgain": ResearchResult;
+  "contribution.tryAgain": ResearchResult;
+  "consultation.decline": ResearchResult;
+  "consultation.accept": ResearchResult;
   "task.tryAgain": ResearchResult;
   "task.startAgain": ResearchResult;
   "usagePause.resume": ResearchResult;
@@ -279,6 +317,22 @@ export interface ResearchOutputs {
 }
 export interface ResearchPort {
   readPauses(): PortCall<PauseCounts>;
+  acceptConsultation(
+    operationId: string,
+    input: ResearchInputs["consultation.accept"],
+  ): PortCall<ResearchResult>;
+  declineConsultation(
+    operationId: string,
+    input: ResearchInputs["consultation.decline"],
+  ): PortCall<ResearchResult>;
+  tryAgainContribution(
+    operationId: string,
+    input: ResearchInputs["contribution.tryAgain"],
+  ): PortCall<ResearchResult>;
+  startAgainContribution(
+    operationId: string,
+    input: ResearchInputs["contribution.startAgain"],
+  ): PortCall<ResearchResult>;
   tryAgainTask(
     operationId: string,
     input: ResearchInputs["task.tryAgain"],
@@ -355,6 +409,10 @@ export function isResearchMutation(value: string): value is WindowResearchComman
     "message.append",
     "conversation.stop",
     "task.stop",
+    "consultation.accept",
+    "consultation.decline",
+    "contribution.tryAgain",
+    "contribution.startAgain",
     "task.tryAgain",
     "task.startAgain",
     "usagePause.resume",
@@ -375,6 +433,14 @@ export function mergeTimeline(
     else if (
       previous.kind === "task" &&
       item.kind === "task" &&
+      item.consultation &&
+      item.superseded &&
+      previous.revision === item.revision
+    )
+      items.set(item.id, { ...previous, superseded: true });
+    else if (
+      previous.kind === "task" &&
+      item.kind === "task" &&
       previous.revision === item.revision &&
       previous.state === "queued" &&
       item.state === "queued"
@@ -384,6 +450,12 @@ export function mergeTimeline(
         waitingForModels: item.waitingForModels,
         waitingLimit: item.waitingLimit,
       });
+  }
+  for (const task of items.values()) {
+    if (task.kind !== "task" || !task.consultation || !task.replacesTaskId) continue;
+    const replaced = items.get(task.replacesTaskId);
+    if (replaced && replaced.kind === "task" && !replaced.superseded)
+      items.set(replaced.id, { ...replaced, superseded: true });
   }
   return [...items.values()].sort(compareTimeline);
 }
@@ -481,6 +553,8 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
       return exact(value, []);
     case "usagePause.resume":
       return exact(value, ["connection"]) && value.connection === "chatgpt";
+    case "contribution.tryAgain":
+    case "contribution.startAgain":
     case "task.tryAgain":
     case "task.startAgain":
     case "task.stop":
@@ -496,6 +570,13 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
       return exact(value, []);
     case "project.open":
       return exact(value, ["projectId"]) && isResearchId(value.projectId);
+    case "consultation.accept":
+      return (
+        exact(value, ["proposalId", "connection"]) &&
+        isResearchId(value.proposalId) &&
+        isConnectionId(value.connection)
+      );
+    case "consultation.decline":
     case "project.confirmSetup":
     case "project.rejectSetup":
       return exact(value, ["proposalId"]) && isResearchId(value.proposalId);
@@ -659,6 +740,38 @@ function item(value: unknown): boolean {
     !integer(value.revision)
   )
     return false;
+  if (value.kind === "consultation")
+    return (
+      exact(value, [
+        "id",
+        "position",
+        "rank",
+        "revision",
+        "kind",
+        "taskId",
+        "language",
+        "state",
+        "invalidReason",
+        "agentId",
+        "request",
+        "reason",
+        "connection",
+      ]) &&
+      value.rank === 2 &&
+      isResearchId(value.taskId) &&
+      nullable(value.language, (language) => typeof language === "string") &&
+      ["proposed", "accepted", "declined", "replaced", "invalid"].includes(value.state as string) &&
+      (value.state === "accepted" ? isConnectionId(value.connection) : value.connection === null) &&
+      (value.state === "invalid"
+        ? consultationInvalidReasons.includes(value.invalidReason as ConsultationInvalidReason) &&
+          value.agentId === null &&
+          value.request === null &&
+          value.reason === null
+        : value.invalidReason === null &&
+          value.agentId === "josefa" &&
+          (typeof value.request === "string" || isTextReference(value.request)) &&
+          typeof value.reason === "string")
+    );
   if (value.kind === "setupProposal")
     return (
       exact(value, [
@@ -708,12 +821,14 @@ function item(value: unknown): boolean {
         "content",
         "language",
         "ending",
+        ...(value.consultation === true ? ["consultation"] : []),
       ]) &&
       value.rank === 1 &&
       value.revision === 1 &&
       (typeof value.content === "string" || isTextReference(value.content)) &&
       (value.authorKind === "researcher"
-        ? value.agentId === null &&
+        ? value.consultation === undefined &&
+          value.agentId === null &&
           value.taskId === null &&
           value.language === null &&
           value.ending === null
@@ -743,7 +858,9 @@ function item(value: unknown): boolean {
       "superseded",
       "maxAttemptDurationMs",
       "maxInactivityMs",
+      ...(value.consultation === true ? ["consultation", "replacesTaskId"] : []),
     ]) &&
+    (value.consultation !== true || nullable(value.replacesTaskId, isResearchId)) &&
     isConnectionId(value.connection) &&
     nullable(
       value.blockingReason,

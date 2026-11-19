@@ -678,6 +678,18 @@
       "minimum": 7
     },
     {
+      "selector": ".consultation-caption",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7
+    },
+    {
+      "selector": ".consultation-request",
+      "backgrounds": ["surface.page"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
       "selector": ".conversation-writing",
       "foreground": "content.secondary",
       "backgrounds": ["surface.panel"],

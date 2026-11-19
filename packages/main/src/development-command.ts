@@ -145,9 +145,9 @@ function describeTransfer(transfer: readonly TransferEntry[]): string {
     .map((entry) =>
       entry.kind === "instructions"
         ? `instructions ${entry.operation} v${String(entry.version)}`
-        : entry.kind === "message"
-          ? `message ${entry.reference}`
-          : `note ${entry.note}`,
+        : entry.kind === "note"
+          ? `note ${entry.note}`
+          : `${entry.kind} ${entry.reference}`,
     )
     .join(", ");
 }

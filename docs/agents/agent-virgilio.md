@@ -1,7 +1,7 @@
 ---
 type: Specification
 title: "Virgilio: research guide"
-description: "Virgilio's direct guidance, bounded planning, attributed synthesis, context, evaluation requirements and visual presentation."
+description: "Virgilio's direct guidance, consultations, bounded planning, attributed synthesis, context, evaluation requirements and visual presentation."
 generated:
   by: codex/gpt-6.2-sol
 ---
@@ -139,11 +139,13 @@ Do not require a complete profile before helping or claim novelty from absent se
 
 Suggestions remain distinct from accepted decisions. Schedule pace does not measure intellectual quality, and advice cannot silently reschedule the project.
 
+The next action can be a consultation: one contribution that another enabled agent prepares from a self-contained request, which Virgilio proposes in direct guidance and the researcher accepts or declines before anything is sent. The consulted agent does not see the conversation; its result appears there, and Virgilio sees it when the researcher writes next.
+
 ### Plan bounded collaboration
 
 **Input:** An authorized contribution purpose, selected evidence, enabled role/operation capabilities, expected outputs and remaining intervention limits.
 
-**Output:** A proposed contribution graph or bounded consultation/handoff request with role, question, immutable input requirements, artifact dependencies, required/optional coverage and allocations. Use the smallest suitable role set and explain why coordination helps.
+**Output:** A proposed contribution graph of two or more contributions, or a bounded handoff request, with role, question, immutable input requirements, artifact dependencies, required/optional coverage and allocations. Use the smallest suitable role set and explain why coordination helps.
 
 The application validates intent before admission. Finish planning and release execution capacity before dependent inference; a waiting coordinator cannot hold the only inference slot. In-flight accepted inputs remain immutable.
 

@@ -1,3 +1,5 @@
+import { preConsultationSql } from "../../tooling/storage-legacy-consultation-fixture.mjs";
+export { preConsultationSql };
 import { objects as initialResearchObjects } from "../../packages/utility/src/migrations/0007_research_records.mjs";
 import { objects as titleObjects } from "../../packages/utility/src/migrations/0018_conversation_titles.mjs";
 import { objects as openingObjects } from "../../packages/utility/src/migrations/0017_project_opening.mjs";
@@ -13,17 +15,21 @@ import { DurableStore, type StorageOptions } from "../../packages/utility/dist/i
 
 const require = createRequire(new URL("../../packages/utility/package.json", import.meta.url));
 export const Database = require("better-sqlite3") as typeof import("better-sqlite3");
-export const preConversationAgentsSql = `DROP TRIGGER conversations_changes; ${titleObjects.conversations_changes}; ALTER TABLE conversations DROP COLUMN agent_id; DELETE FROM kysely_migration WHERE name='0020_conversation_agents'; DELETE FROM ohtia_migration_artifacts WHERE name='0020_conversation_agents'; `;
+const preConversationAgentsFrom20Sql = `DROP TRIGGER conversations_changes; ${titleObjects.conversations_changes}; ALTER TABLE conversations DROP COLUMN agent_id; DELETE FROM kysely_migration WHERE name='0020_conversation_agents'; DELETE FROM ohtia_migration_artifacts WHERE name='0020_conversation_agents'; `;
+export const preConversationAgentsSql = preConsultationSql + preConversationAgentsFrom20Sql;
 const josefaLedgerSql =
-  preConversationAgentsSql +
+  preConversationAgentsFrom20Sql +
   "DELETE FROM kysely_migration WHERE name='0019_josefa_search_planning'; DELETE FROM ohtia_migration_artifacts WHERE name='0019_josefa_search_planning'; ";
 export const preJosefaReceiptsSql = `DROP TRIGGER receipts_commands; ${openingObjects.receipts_commands}; `;
-export const preJosefaSql = preJosefaReceiptsSql + josefaLedgerSql;
-export const preConversationTitlesSql = `${josefaLedgerSql}DROP TRIGGER conversations_changes; ${initialResearchObjects.conversations_changes}; ALTER TABLE conversations DROP COLUMN title_attempt_id; ALTER TABLE conversations DROP COLUMN automatic_title_eligible; ALTER TABLE attempts DROP COLUMN conversation_title_policy; DELETE FROM kysely_migration WHERE name='0018_conversation_titles'; DELETE FROM ohtia_migration_artifacts WHERE name='0018_conversation_titles'; `;
-export const preProjectOpeningSql =
-  preConversationTitlesSql +
+export const preJosefaSql = preConsultationSql + preJosefaReceiptsSql + josefaLedgerSql;
+const preConversationTitlesFrom20Sql = `${josefaLedgerSql}DROP TRIGGER conversations_changes; ${initialResearchObjects.conversations_changes}; ALTER TABLE conversations DROP COLUMN title_attempt_id; ALTER TABLE conversations DROP COLUMN automatic_title_eligible; ALTER TABLE attempts DROP COLUMN conversation_title_policy; DELETE FROM kysely_migration WHERE name='0018_conversation_titles'; DELETE FROM ohtia_migration_artifacts WHERE name='0018_conversation_titles'; `;
+export const preConversationTitlesSql = preConsultationSql + preConversationTitlesFrom20Sql;
+const preProjectOpeningFrom20Sql =
+  preConversationTitlesFrom20Sql +
   "DROP INDEX projects_open_order; ALTER TABLE projects DROP COLUMN last_opened_at; ALTER TABLE command_receipts DROP COLUMN error_code; DELETE FROM kysely_migration WHERE name='0017_project_opening'; DELETE FROM ohtia_migration_artifacts WHERE name='0017_project_opening'; ";
-export const legacyTaskInitialSql = `${preProjectOpeningSql}DROP TRIGGER tasks_initial; ${initialTaskObjects.tasks_initial}; `;
+export const preProjectOpeningSql = preConsultationSql + preProjectOpeningFrom20Sql;
+export const legacyTaskInitialFrom20Sql = `${preProjectOpeningFrom20Sql}DROP TRIGGER tasks_initial; ${initialTaskObjects.tasks_initial}; `;
+export const legacyTaskInitialSql = preConsultationSql + legacyTaskInitialFrom20Sql;
 export const preTaskNoticeSql = `${legacyTaskInitialSql} DROP TRIGGER receipts_commands; ${setupObjects.receipts_commands}; DELETE FROM kysely_migration WHERE name='0016_task_notices'; DELETE FROM ohtia_migration_artifacts WHERE name='0016_task_notices'; PRAGMA user_version=15;`;
 export const roots: string[] = [];
 export const stores: DurableStore[] = [];
