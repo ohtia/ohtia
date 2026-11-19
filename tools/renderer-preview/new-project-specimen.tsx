@@ -78,6 +78,7 @@ export function NewProjectSpecimen() {
   };
   const state: ConversationState = {
     scope: { projectId, conversationId },
+    agentHint: "virgilio",
     project,
     status: "ready",
     items: params.has("empty")

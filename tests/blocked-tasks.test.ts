@@ -677,7 +677,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 19,
+          target: 20,
         }),
       );
       await f.store.retry();
@@ -729,7 +729,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 19,
+          target: 20,
         }),
       );
       await exhausted.store.retry();
@@ -757,7 +757,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 19,
+          target: 20,
         }),
       );
       await f.store.retry();
@@ -1002,7 +1002,7 @@ describe("reply control composed with connection and usage pauses", () => {
       if (recovery) {
         fs.writeFileSync(
           path.join(f.root, "migration-pending.json"),
-          JSON.stringify({ version: 1, operation: "composed-recovery", source: 9, target: 19 }),
+          JSON.stringify({ version: 1, operation: "composed-recovery", source: 9, target: 20 }),
         );
         await f.store.retry();
       } else await f.store.open();
@@ -1018,13 +1018,14 @@ describe("reply control composed with connection and usage pauses", () => {
       expect(value(await f.resume("resume-after-reply-migration"))).toEqual(resumed);
       expect(await f.prepare()).not.toBeNull();
       const upgraded = f.raw();
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(19);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(20);
       expect(
         upgraded
-          .prepare("SELECT name FROM kysely_migration ORDER BY name DESC LIMIT 9")
+          .prepare("SELECT name FROM kysely_migration ORDER BY name DESC LIMIT 10")
           .pluck()
           .all(),
       ).toEqual([
+        "0020_conversation_agents",
         "0019_josefa_search_planning",
         "0018_conversation_titles",
         "0017_project_opening",
@@ -1058,7 +1059,7 @@ it.each(["continue-all", "resume-requests"] as const)(
       await f.store.close();
       fs.writeFileSync(
         path.join(f.root, "migration-pending.json"),
-        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 19 }),
+        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 20 }),
       );
       await f.store.retry();
     }

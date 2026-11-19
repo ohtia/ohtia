@@ -208,7 +208,6 @@ async function summarizeConversation(
     latestPrefix: prefix.slice(0, conversationPreviewPrefixLimit).join(""),
     latestTruncated: prefix.length > conversationPreviewPrefixLimit,
     latestLanguage: latest?.language ?? null,
-    agentId: "virgilio",
     latestReplyTaskId: latestTask ? identifier(latestTask.id) : null,
     runningTask: running
       ? {
@@ -243,16 +242,18 @@ export async function readResearch(
         .where("id", "=", bytes(p.projectId))
         .executeTakeFirst();
       if (!project) return failure("record_not_found");
+      let agent = "agentId" in p ? p.agentId : undefined;
       if ("conversationId" in p) {
         const conversation = await db
           .selectFrom("conversations")
-          .select("id")
+          .select("agent_id")
           .where("id", "=", bytes(p.conversationId))
           .where("project_id", "=", project.id)
           .executeTakeFirst();
         if (!conversation) return failure("record_not_found");
+        agent = conversation.agent_id;
       }
-      const destination = await new TaskTransaction(db, context).destination(project.id);
+      const destination = await new TaskTransaction(db, context).destination(project.id, agent);
       return {
         ok: true,
         value: {

@@ -3,7 +3,7 @@ import { ProjectController } from "./project-controller.js";
 import { ProjectSelector } from "./project-selector.js";
 import { NewProjectController } from "./new-project-controller.js";
 import { Dialog } from "./layers.js";
-import { ConversationController } from "./conversation-controller.js";
+import { ConversationController, knownConversationAgent } from "./conversation-controller.js";
 import {
   ConversationHeaderButton,
   ConversationHistory,
@@ -11,6 +11,7 @@ import {
   ConversationRenameNotice,
   conversationName,
 } from "./conversation-history.js";
+import { AgentBand } from "./agent-selector.js";
 import { ConversationView } from "./conversation-view.js";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
@@ -525,6 +526,19 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                             : ""}
                         </span>
                         <div className="chat-conversation" hidden={history.visible}>
+                          {!history.visible && (
+                            <AgentBand
+                              key={conversationState.scope.projectId}
+                              composer={conversation.composer}
+                              agent={knownConversationAgent(conversationState)}
+                              selectable={
+                                !conversationState.scope.conversationId &&
+                                !!conversationState.project?.setupConfirmedAt &&
+                                !conversationState.project.isDevelopment
+                              }
+                              locale={bootstrap.locale}
+                            />
+                          )}
                           <ConversationRenameNotice
                             rename={conversationState.rename}
                             renamed={conversationState.renamed}

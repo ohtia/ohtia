@@ -13,6 +13,8 @@ import { randomUUID } from "node:crypto";
 import { type Generated, type Kysely, sql } from "kysely";
 import {
   type Outcome,
+  type ConversationAgent,
+  type ReplyAgent,
   type ProviderDispatchMessage,
   type ProviderEvent,
   type ProviderResult,
@@ -206,7 +208,7 @@ export class TaskTransaction {
     this.touch(task.conversation_id);
   }
   /** Shared routing for acceptance and destination preview, independent of connection state. */
-  async destination(projectId: Uint8Array, recipient?: "josefa") {
+  async destination(projectId: Uint8Array, recipient: ConversationAgent = "virgilio") {
     const project = await this.db
       .selectFrom("projects")
       .selectAll()
@@ -217,6 +219,7 @@ export class TaskTransaction {
       const policy = operationPolicy("search_strategy_planning", 1, this.context.mode);
       return policy ? { policy, connection: "chatgpt" } : null;
     }
+    if (recipient !== "virgilio") return null;
     const policy = operationPolicy(
       project.is_development
         ? "development_test"
@@ -252,7 +255,7 @@ export class TaskTransaction {
     projectId: Uint8Array,
     conversationId: Uint8Array | null,
     content: string,
-    recipient?: "josefa",
+    recipient?: ReplyAgent,
   ): Promise<Outcome<null>> {
     const destination = await this.destination(projectId, recipient);
     if (!destination) return failure("service_unavailable");
@@ -283,7 +286,7 @@ export class TaskTransaction {
     conversationId: Uint8Array,
     position: number,
     operationId: string,
-    recipient?: "josefa",
+    recipient?: ReplyAgent,
   ): Promise<void> {
     const project = await this.db
       .selectFrom("projects")
@@ -394,9 +397,11 @@ export class TaskTransaction {
       !!receipt &&
       (receipt.command === "task.startAgain" ||
         receipt.command === "task.tryAgain" ||
-        (task.operation === "search_strategy_planning"
-          ? receipt.command === "development.sendToJosefa"
-          : receipt.command === "conversation.start" || receipt.command === "message.append"))
+        receipt.command === "conversation.start" ||
+        receipt.command === "message.append" ||
+        (receipt.command === "development.sendToJosefa" &&
+          this.context.mode === "development" &&
+          task.operation === "search_strategy_planning"))
     );
   }
   private pending() {

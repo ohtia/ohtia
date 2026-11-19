@@ -664,7 +664,7 @@ it("announces each newly finished reply and does not replay that notice on navig
   const initial = state([message(1)]);
   await render(initial);
   expect(container.querySelector("[aria-live]")?.textContent).toBe("");
-  await render({ ...initial, completed: 1 });
+  await render({ ...initial, completed: 1, completedAgent: "virgilio" });
   expect(container.querySelector("[aria-live]")?.textContent).toBe("Virgilio replied");
   await render({ ...initial, scope: { ...scope, conversationId: id(4000) }, completed: 0 });
   expect(container.querySelector("[aria-live]")?.textContent).toBe("");
@@ -928,12 +928,60 @@ it.each(["navigation", "gap"] as const)(
 it("wires the second researcher action to reuse exact saved text in the composer", async () => {
   const f = controllerHarness();
   await settle();
-  await render(state([message(1, "  reused\n한글 text  ")]), f.controller);
+  await render(
+    { ...state([message(1, "  reused\n한글 text  ")]), conversation: summary },
+    f.controller,
+  );
   const buttons = container.querySelectorAll<HTMLButtonElement>(".conversation-actions button");
   expect(buttons[1]?.getAttribute("aria-label")).toBe("Reuse message");
   await act(async () => buttons[1]!.click());
   expect(container.querySelector("textarea")?.value).toBe("  reused\n한글 text  ");
   f.controller.dispose();
+});
+
+it("keeps Josefa in the composer while the saved conversation is loading", async () => {
+  const h = controllerHarness(false);
+  const project = {
+    id: scope.projectId,
+    projectType: "thesis" as const,
+    title: "Synthetic thesis",
+    documentLanguage: "en",
+    isDevelopment: false,
+    setupConfirmedAt: summary.createdAt,
+    createdAt: summary.createdAt,
+    updatedAt: summary.updatedAt,
+    lastOpenedAt: summary.updatedAt,
+  };
+  vi.mocked(h.port.listProjects).mockReturnValue(
+    ok({ items: [project], next: null, hasMore: false }),
+  );
+  vi.mocked(h.port.readConversations).mockReturnValue({
+    result: new Promise(() => {}),
+    cancel() {},
+  });
+  h.port.startConversation = vi.fn(() => ok({ resultId: scope.conversationId }));
+  h.controller.open({ projectId: scope.projectId, conversationId: null });
+  await settle();
+  h.controller.composer.selectAgent("josefa");
+  await settle();
+  await render(h.controller.snapshot(), h.controller);
+  expect(container.querySelector(".conversation-empty")?.textContent).toBe(
+    "Ask Josefa about your search.",
+  );
+  await act(async () => {
+    h.controller.composer.edit("Search for tutoring studies.");
+    h.controller.composer.send();
+    await settle();
+  });
+  expect(h.controller.snapshot()).toMatchObject({
+    scope,
+    status: "loading",
+    agentHint: "josefa",
+  });
+  expect(h.controller.snapshot().conversation).toBeUndefined();
+  await render(h.controller.snapshot(), h.controller);
+  expect(container.querySelector("textarea")?.placeholder).toBe("Message Josefa");
+  h.controller.dispose();
 });
 
 it("loads the timeline and processes replies independently of a stalled destination read", async () => {
@@ -2304,6 +2352,7 @@ describe("conversation history", () => {
     const row = {
       ...summary,
       title: "Interviews",
+      agentId: "josefa" as const,
       latestPrefix: "**Evidence** " + "한".repeat(123),
       latestTruncated: true,
       latestLanguage: "ko-KR",
@@ -2331,7 +2380,7 @@ describe("conversation history", () => {
     const button = container.querySelector("button");
     expect(button?.getAttribute("aria-current")).toBe("true");
     expect(button?.querySelector(".chat-history-selection")).not.toBeNull();
-    expect(button?.querySelector("[data-compact]")?.textContent).toBe("Virgilio");
+    expect(button?.querySelector("[data-compact]")?.textContent).toBe("Josefa");
     expect(button?.querySelector("time")?.dateTime).toBe(row.latestAt);
     expect(button?.querySelector(".chat-history-preview")?.textContent).toBe(
       "Evidence " + "한".repeat(111) + "…",

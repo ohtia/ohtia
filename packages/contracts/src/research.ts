@@ -1,3 +1,5 @@
+import type { ConversationAgent, ReplyAgent } from "./research-port.js";
+
 /** Internal data-service contract. Window exposure belongs to STORY-003-010. */
 export interface ProjectRecord {
   readonly id: string;
@@ -13,6 +15,7 @@ export interface ProjectRecord {
 export interface ConversationRecord {
   readonly id: string;
   readonly projectId: string;
+  readonly agentId: ReplyAgent;
   readonly title: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -56,7 +59,11 @@ export interface ResearchPayloads {
   readonly "project.open": { readonly projectId: string };
   readonly "project.confirmSetup": { readonly proposalId: string };
   readonly "project.rejectSetup": { readonly proposalId: string };
-  readonly "conversation.start": { readonly projectId: string; readonly content: string };
+  readonly "conversation.start": {
+    readonly projectId: string;
+    readonly agentId?: ConversationAgent;
+    readonly content: string;
+  };
   readonly "conversation.rename": {
     readonly conversationId: string;
     readonly title: string;

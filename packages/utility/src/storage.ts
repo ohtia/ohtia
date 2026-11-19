@@ -33,6 +33,11 @@ import {
   up as josefaSearchPlanning,
   objects as josefaObjects,
 } from "./migrations/0019_josefa_search_planning.mjs";
+import {
+  up as conversationAgents,
+  agentColumn,
+  objects as agentObjects,
+} from "./migrations/0020_conversation_agents.mjs";
 import { readResearch, researchRevisions, readPauseCounts } from "./research-reads.js";
 import type { Request, ResearchScope, ResearchEvent, ResearchOperation } from "@ohtia/contracts";
 import {
@@ -273,6 +278,7 @@ const names = [
   "0017_project_opening",
   "0018_conversation_titles",
   "0019_josefa_search_planning",
+  "0020_conversation_agents",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -607,6 +613,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                   titleColumns.eligible +
                   ", " +
                   titleColumns.origin +
+                  (revision >= 20 ? ", " + agentColumn : "") +
                   ")"
                 : definition,
         ])
@@ -662,6 +669,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 17 ? openingObjects : {}),
                 ...(revision >= 18 ? titleObjects : {}),
                 ...(revision >= 19 ? josefaObjects : {}),
+                ...(revision >= 20 ? agentObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1054,6 +1062,7 @@ export class DurableStore {
                 "0017_project_opening": { up: projectOpening },
                 "0018_conversation_titles": { up: conversationTitles },
                 "0019_josefa_search_planning": { up: josefaSearchPlanning },
+                "0020_conversation_agents": { up: conversationAgents },
               }),
           },
         });

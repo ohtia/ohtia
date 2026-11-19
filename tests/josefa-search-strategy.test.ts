@@ -26,7 +26,12 @@ import { setupTool } from "../packages/utility/src/project-setup.js";
 import { bytes } from "../packages/utility/src/research.js";
 import { DurableStore } from "../packages/utility/src/storage.js";
 import { setupConnections, successful as value, proposeSetup } from "./fixtures/project-setup.js";
-import { preJosefaSql, storageFixture, stores } from "./fixtures/storage.js";
+import {
+  preConversationAgentsSql,
+  preJosefaSql,
+  storageFixture,
+  stores,
+} from "./fixtures/storage.js";
 
 const title = "Redes de cuidado $& {document_language}";
 const generation = "setup-tests";
@@ -568,4 +573,115 @@ describe("Josefa search strategy", () => {
       "search_strategy_planning",
     );
   });
+});
+
+it("backfills a revision 19 conversation and keeps the selected Josefa's direct reply and transfer record", async () => {
+  const log: DiagnosticEvent[] = [];
+  const f = await fixture({ log });
+  await f.store.close();
+  const legacy = f.raw();
+  try {
+    legacy.exec(preConversationAgentsSql + "PRAGMA user_version=19;");
+  } finally {
+    legacy.close();
+  }
+  await f.store.open();
+  const installed = { ...context(), mode: "installed" as const };
+  f.store.setTaskContext(installed);
+  const sent: string[] = [];
+  const provider = new DurableProvider({
+    storage: f.store,
+    context: installed,
+    send: (text) => sent.push(text),
+  });
+  try {
+    expect(
+      await f.store.executeResearchCommand({
+        command: "conversation.start",
+        operationId: "reject-unavailable-agent",
+        payload: { projectId: f.projectId, agentId: "erasmus", content: "Synthetic question" },
+      }),
+    ).toMatchObject({ ok: false, error: { code: "agent_unavailable" } });
+    expect(log).toContainEqual(
+      expect.objectContaining({
+        event_name: "ohtia.research.failed",
+        error_code: "agent_unavailable",
+      }),
+    );
+    const old = value(await f.store.readConversations(f.projectId));
+    expect(old).toEqual([expect.objectContaining({ id: f.conversationId, agentId: "virgilio" })]);
+    const { resultId } = value(
+      await f.store.executeResearchCommand({
+        command: "conversation.start",
+        operationId: "direct-josefa",
+        payload: {
+          projectId: f.projectId,
+          agentId: "josefa",
+          content: "Plan a search for peer tutoring",
+        },
+      }),
+    );
+    await provider.pump();
+    const dispatches = sent.map((wire) => decodeProviderDispatch(wire, generation)).filter(Boolean);
+    expect(dispatches).toHaveLength(1);
+    const dispatch = dispatches[0]!;
+    expect(dispatch.request).toMatchObject({
+      operation: "search_strategy_planning",
+      policy_version: 1,
+      instruction_version: 1,
+      input: [{ role: "user", text: "Plan a search for peer tutoring" }],
+      tools: [],
+    });
+    const fake = createFakeProvider();
+    const events: ProviderEventMessage[] = [];
+    const main = new ProviderDispatch(
+      [
+        {
+          ...fake,
+          declaration: {
+            ...fake.declaration,
+            connection: { ...fake.declaration.connection, id: "chatgpt" },
+          },
+        },
+      ],
+      {
+        state: () => "connected",
+        send: (_generation, wire) => events.push(decodeProviderEvent(wire, generation)!),
+      },
+    );
+    try {
+      main.begin(generation);
+      await main.receive({ ...dispatch, permit: { ...dispatch.permit, issued_at: Date.now() } });
+      await vi.waitFor(() => expect(events.at(-1)?.event.type).toBe("result"));
+      for (const event of events) await provider.receive(event);
+    } finally {
+      main.dispose();
+    }
+    const messages = value(await f.store.readMessages(resultId));
+    expect(messages).toMatchObject([
+      { authorKind: "researcher", agentId: null },
+      { authorKind: "agent", agentId: "josefa", ending: "complete" },
+    ]);
+    const migrated = f.raw();
+    try {
+      expect(migrated.pragma("user_version", { simple: true })).toBe(20);
+      const transfer = migrated
+        .prepare("SELECT transfer_manifest FROM attempts WHERE id=?")
+        .pluck()
+        .get(bytes(dispatch.request.attempt)) as string;
+      expect(JSON.parse(transfer)).toEqual([
+        { kind: "instructions", operation: "search_strategy_planning", version: 1 },
+        { kind: "message", reference: messages[0]!.id },
+      ]);
+      expect(() =>
+        migrated
+          .prepare("UPDATE conversations SET agent_id='virgilio',revision=revision+1 WHERE id=?")
+          .run(bytes(resultId)),
+      ).toThrow("Invalid conversation change");
+    } finally {
+      migrated.close();
+    }
+  } finally {
+    provider.dispose();
+  }
 });

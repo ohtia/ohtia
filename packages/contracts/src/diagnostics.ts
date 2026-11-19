@@ -135,6 +135,7 @@ export const diagnosticCatalog = Object.freeze({
     "proposal_not_waiting",
     "setup_reply_active",
     "project_in_setup",
+    "agent_unavailable",
     "record_not_found",
     "name_invalid",
     "message_invalid",

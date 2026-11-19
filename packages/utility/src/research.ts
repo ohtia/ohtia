@@ -7,6 +7,9 @@ import {
   validResearcherMessage,
   validConversationTitle,
   isIdentifier,
+  isConversationAgent,
+  isReplyAgent,
+  type ReplyAgent,
   isDiagnosticTime,
   researchCommands,
   staleRevision,
@@ -32,6 +35,7 @@ export interface ProjectRow {
 export interface ConversationRow {
   id: Uint8Array;
   project_id: Uint8Array;
+  agent_id: ReplyAgent;
   title: string | null;
   created_at: string;
   updated_at: string;
@@ -52,7 +56,8 @@ import type { SetupProposalRow } from "./project-setup.js";
 export interface ResearchSchema extends TaskSchema {
   project_setup_proposals: SetupProposalRow;
   projects: ProjectRow;
-  conversations: ConversationRow & {
+  conversations: Omit<ConversationRow, "agent_id"> & {
+    agent_id: Generated<ReplyAgent>;
     automatic_title_eligible: Generated<number>;
     title_attempt_id: Generated<Uint8Array | null>;
   };
@@ -220,6 +225,7 @@ export function conversationRecord(row: ConversationRow): ConversationRecord {
   return {
     id: identifier(row.id),
     projectId: identifier(row.project_id),
+    agentId: row.agent_id,
     title: row.title,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -294,7 +300,10 @@ export async function applyResearchCommand(
         ? failure(receipt.error_code)
         : { ok: true, value: { resultId: identifier(receipt.result_id) } }
       : failure("operation_conflict");
-  const keys = payloadKeys[input.command];
+  const keys =
+    input.command === "conversation.start" && Object.hasOwn(input.payload, "agentId")
+      ? [...payloadKeys["conversation.start"], "agentId"]
+      : payloadKeys[input.command];
   if (
     Object.keys(input.payload).length !== keys.length ||
     !keys.every((key) => Object.hasOwn(input.payload, key))
@@ -474,8 +483,14 @@ export async function applyResearchCommand(
       if (!current) return failure("record_not_found");
       if (current.setup_confirmed_at === null) return failure("project_in_setup");
       if (!text(p.content) || !validResearcherMessage(p.content)) return failure("message_invalid");
-      const admission = await tasks.admission(current.id, null, p.content);
-      if (!admission.ok) return admission;
+      const agent = Object.hasOwn(p, "agentId") ? p.agentId : "virgilio";
+      if (!isConversationAgent(agent)) return failure("invalid_message");
+      if (!isReplyAgent(agent)) return failure("agent_unavailable");
+      const admission = await tasks.admission(current.id, null, p.content, agent);
+      if (!admission.ok)
+        return admission.error.code === "service_unavailable"
+          ? failure("agent_unavailable")
+          : admission;
       result = newId();
       await db
         .insertInto("conversations")
@@ -483,6 +498,7 @@ export async function applyResearchCommand(
           id: result,
           project_id: current.id,
           title: null,
+          agent_id: agent,
           automatic_title_eligible: current.is_development ? 0 : 1,
           created_at: now,
           updated_at: now,
@@ -490,7 +506,7 @@ export async function applyResearchCommand(
         })
         .execute();
       await append(db, result, p.content, now);
-      await tasks.accept(current.id, result, 1, input.operationId);
+      await tasks.accept(current.id, result, 1, input.operationId, agent);
       break;
     }
     case "conversation.rename": {
@@ -523,7 +539,6 @@ export async function applyResearchCommand(
     }
     case "development.sendToJosefa":
     case "message.append": {
-      const recipient = input.command === "development.sendToJosefa" ? "josefa" : undefined;
       const p = input.payload;
       if (!isEntityId(p.conversationId)) return failure("invalid_message");
       const current = await db
@@ -533,6 +548,7 @@ export async function applyResearchCommand(
         .executeTakeFirst();
       if (!current) return failure("record_not_found");
       if (!text(p.content) || !validResearcherMessage(p.content)) return failure("message_invalid");
+      const recipient = input.command === "development.sendToJosefa" ? "josefa" : current.agent_id;
       const admission = await tasks.admission(current.project_id, current.id, p.content, recipient);
       if (!admission.ok) return admission;
       result = await append(db, current.id, p.content, now);

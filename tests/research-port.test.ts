@@ -1553,3 +1553,73 @@ it("starts a conversation atomically and replays its confirmed receipt with the 
     ).items[0],
   ).toMatchObject({ latestPrefix: input.content, status: "waiting" });
 });
+
+it("uses the selected agent for destination reads, atomic starts and both history reads", async () => {
+  const h = await harness();
+  const projectId = h.projectId;
+  const read = async (
+    input: { agentId: "virgilio" | "josefa" | "jorge-luis" } | { conversationId: string },
+  ) => value(await h.port.readDestination({ projectId, ...input }).result).destination;
+  expect(await read({ agentId: "virgilio" })).toMatchObject({ operation: "direct_guidance" });
+  expect(await read({ agentId: "josefa" })).toMatchObject({
+    operation: "search_strategy_planning",
+  });
+  expect(await read({ agentId: "jorge-luis" })).toBeNull();
+
+  const db = h.raw();
+  try {
+    const inventory = db.prepare(
+      "SELECT (SELECT count(*) FROM conversations) AS conversations, (SELECT count(*) FROM messages) AS messages, (SELECT count(*) FROM tasks) AS tasks, (SELECT count(*) FROM command_receipts) AS receipts",
+    );
+    const before = inventory.get();
+    for (const agentId of ["jorge-luis", "erasmus", "boris", "maria"] as const) {
+      expect(
+        await h.port.startConversation("agent-unavailable", {
+          projectId,
+          agentId,
+          content: "Plan a search",
+        }).result,
+      ).toEqual(failure("agent_unavailable"));
+    }
+    expect(inventory.get()).toEqual(before);
+
+    const input = { projectId, agentId: "josefa", content: "Plan a search" } as const;
+    const { resultId: conversationId } = value(
+      await h.port.startConversation("agent-start", input).result,
+    );
+    expect(value(await h.port.startConversation("agent-start", input).result).resultId).toBe(
+      conversationId,
+    );
+    expect(
+      await h.port.startConversation("agent-start", { ...input, agentId: "virgilio" }).result,
+    ).toEqual(failure("operation_conflict"));
+    expect(await read({ conversationId })).toMatchObject({ operation: "search_strategy_planning" });
+    const rows = value(
+      await h.port.listConversations({ projectId, cursor: null, count: 50 }).result,
+    ).items;
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: h.conversationId, agentId: "virgilio" }),
+        expect.objectContaining({ id: conversationId, agentId: "josefa" }),
+      ]),
+    );
+    const summary = value(
+      await h.port.readConversations({ projectId, ids: [conversationId] }).result,
+    ).items[0];
+    expect(summary).toMatchObject({ id: conversationId, agentId: "josefa" });
+    value(
+      await h.port.appendMessage("agent-append", {
+        conversationId,
+        content: "Include alternate terms",
+      }).result,
+    );
+    expect(
+      db
+        .prepare("SELECT DISTINCT operation FROM tasks WHERE conversation_id=?")
+        .pluck()
+        .all(Buffer.from(conversationId.replaceAll("-", ""), "hex")),
+    ).toEqual(["search_strategy_planning"]);
+  } finally {
+    db.close();
+  }
+});

@@ -1,4 +1,5 @@
 import { objects as initialResearchObjects } from "../../packages/utility/src/migrations/0007_research_records.mjs";
+import { objects as titleObjects } from "../../packages/utility/src/migrations/0018_conversation_titles.mjs";
 import { objects as openingObjects } from "../../packages/utility/src/migrations/0017_project_opening.mjs";
 import { objects as setupObjects } from "../../packages/utility/src/migrations/0015_project_setup.mjs";
 import { objects as initialTaskObjects } from "../../packages/utility/src/migrations/0008_durable_ai_tasks.mjs";
@@ -12,7 +13,9 @@ import { DurableStore, type StorageOptions } from "../../packages/utility/dist/i
 
 const require = createRequire(new URL("../../packages/utility/package.json", import.meta.url));
 export const Database = require("better-sqlite3") as typeof import("better-sqlite3");
+export const preConversationAgentsSql = `DROP TRIGGER conversations_changes; ${titleObjects.conversations_changes}; ALTER TABLE conversations DROP COLUMN agent_id; DELETE FROM kysely_migration WHERE name='0020_conversation_agents'; DELETE FROM ohtia_migration_artifacts WHERE name='0020_conversation_agents'; `;
 const josefaLedgerSql =
+  preConversationAgentsSql +
   "DELETE FROM kysely_migration WHERE name='0019_josefa_search_planning'; DELETE FROM ohtia_migration_artifacts WHERE name='0019_josefa_search_planning'; ";
 export const preJosefaReceiptsSql = `DROP TRIGGER receipts_commands; ${openingObjects.receipts_commands}; `;
 export const preJosefaSql = preJosefaReceiptsSql + josefaLedgerSql;

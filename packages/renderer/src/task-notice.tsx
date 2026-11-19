@@ -20,6 +20,15 @@ export interface TaskNoticeContent {
   readonly role: "status" | "alert";
   readonly usage?: string;
 }
+export function formatOperationDuration(locale: InterfaceLocale, milliseconds: number): string {
+  return new Intl.NumberFormat(locale, {
+    style: "unit",
+    unit: "minute",
+    unitDisplay: "short",
+    maximumFractionDigits: 0,
+  }).format(milliseconds / 60000);
+}
+
 export function taskNoticeContent(
   task: TimelineTask,
   locale: InterfaceLocale,
@@ -29,15 +38,8 @@ export function taskNoticeContent(
 ): TaskNoticeContent | null {
   const service = connection.displayName;
   const agent = contributorNames[task.agentId];
-  const unit = (milliseconds: number) =>
-    new Intl.NumberFormat(locale, {
-      style: "unit",
-      unit: "minute",
-      unitDisplay: "short",
-      maximumFractionDigits: 0,
-    }).format(milliseconds / 60000);
-  const limit = unit(task.maxAttemptDurationMs);
-  const inactivity = unit(task.maxInactivityMs);
+  const limit = formatOperationDuration(locale, task.maxAttemptDurationMs);
+  const inactivity = formatOperationDuration(locale, task.maxInactivityMs);
   const text = (
     key:
       | "stopping"

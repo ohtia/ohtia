@@ -10,6 +10,7 @@ import {
   type ConnectionState,
   type Outcome,
   type ProviderDeclaration,
+  type ReplyAgent,
   type ResearchResult,
   type ResearchScope,
 } from "@ohtia/contracts";
@@ -17,6 +18,7 @@ import {
 export type ComposerNotice = "pendingLimit" | "inputTooLarge" | "uncertain" | "failed";
 export interface ComposerState {
   readonly text: string;
+  readonly agentId: ReplyAgent;
   readonly correction?: string | null;
   readonly setupFinal?: boolean;
   readonly focusRequest?: number;
@@ -41,8 +43,7 @@ export interface ComposerState {
 }
 interface Draft {
   state: ComposerState;
-  version: number;
-  intent?: { readonly id: string; readonly text: string; readonly version: number };
+  intent?: { readonly id: string; readonly text: string; readonly agentId: ReplyAgent };
   pending?: { readonly text: string; clearPrefix: boolean };
   stopId?: string;
   stopConfirmed: boolean;
@@ -50,11 +51,11 @@ interface Draft {
   destinationCancel?: () => void;
 }
 const initial = (): Draft => ({
-  version: 0,
   stopConfirmed: false,
   destinationRead: 0,
   state: {
     text: "",
+    agentId: "virgilio",
     saving: false,
     stopping: false,
     cancelling: false,
@@ -90,9 +91,14 @@ export class ComposerController {
       chatgptConnection,
     ],
     private readonly restoreObservation?: () => void,
-    private readonly conversationStarted?: (scope: ResearchScope, active: boolean) => void,
+    private readonly conversationStarted?: (
+      scope: ResearchScope,
+      active: boolean,
+      agent: ReplyAgent,
+    ) => void,
   ) {}
   snapshot = (): ComposerState => this.draft.state;
+  selectedAgent = (): ReplyAgent => this.draft.state.agentId;
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -133,9 +139,22 @@ export class ComposerController {
   edit = (text: string): void => {
     const draft = this.draft;
     if (draft.pending && !text.startsWith(draft.pending.text)) draft.pending.clearPrefix = false;
-    draft.version++;
     delete draft.intent;
     this.update(draft, { text, notice: null });
+  };
+  selectAgent = (agentId: ReplyAgent): void => {
+    const draft = this.draft;
+    if (
+      !this.scope.projectId ||
+      this.scope.conversationId ||
+      draft.state.saving ||
+      draft.state.notice === "uncertain" ||
+      draft.state.agentId === agentId
+    )
+      return;
+    delete draft.intent;
+    this.update(draft, { agentId, destination: null, destinationStatus: "loading", notice: null });
+    void this.refreshDestination();
   };
   reuse = (text: string): void => {
     if (this.draft.state.text.length) this.update(this.draft, { reuse: text });
@@ -203,7 +222,7 @@ export class ComposerController {
       const request = this.port.readDestination(
         scope.conversationId
           ? { projectId: scope.projectId, conversationId: scope.conversationId }
-          : { projectId: scope.projectId, agentId: "virgilio" },
+          : { projectId: scope.projectId, agentId: draft.state.agentId },
       );
       draft.destinationCancel = () => {
         request.cancel();
@@ -259,7 +278,7 @@ export class ComposerController {
     const intent = draft.intent ?? {
       id: this.nextId(),
       text: draft.state.text,
-      version: draft.version,
+      agentId: draft.state.agentId,
     };
     draft.intent = intent;
     draft.pending = { text: intent.text, clearPrefix: true };
@@ -295,6 +314,7 @@ export class ComposerController {
         this.conversationStarted?.(
           { projectId, conversationId: outcome.value.resultId },
           this.draft === draft,
+          intent.agentId,
         );
       }
     });
@@ -302,7 +322,7 @@ export class ComposerController {
   private async save(
     projectId: string,
     conversationId: string | null,
-    intent: { readonly id: string; readonly text: string },
+    intent: { readonly id: string; readonly text: string; readonly agentId: ReplyAgent },
   ): Promise<Outcome<ResearchResult>> {
     try {
       const parts = splitText(intent.text);
@@ -332,7 +352,11 @@ export class ComposerController {
         const result = await (
           conversationId
             ? this.port.appendMessage(intent.id, { conversationId, content })
-            : this.port.startConversation(intent.id, { projectId, content })
+            : this.port.startConversation(intent.id, {
+                projectId,
+                agentId: intent.agentId,
+                content,
+              })
         ).result;
         if (result.ok || result.error.code !== "parts_incomplete" || attempt === 1) return result;
       }
