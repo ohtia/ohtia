@@ -9,6 +9,7 @@ import {
   isConversationTitleTool,
   validConversationTitle,
   providerMessageVersion,
+  providerTextChunk,
   providerTextPieces,
   utf8Size,
   type ConnectionState,
@@ -16,6 +17,7 @@ import {
   type NotDispatchedReason,
   type ProviderDispatchMessage,
   type ProviderEventBody,
+  type ProviderEvent,
   type ProviderInterruptMessage,
   type ProviderResult,
   type ProviderRequestLimits,
@@ -27,6 +29,9 @@ import type {
   AdapterEvent,
   BufferedToolCall,
 } from "./provider-adapter.js";
+
+// Give closely spaced provider deltas one bounded interval to share a channel message.
+const textFlushMs = 16;
 
 interface Dispatched {
   readonly generation: string;
@@ -40,6 +45,8 @@ interface Dispatched {
   readonly limits: ProviderRequestLimits;
   inputBytes: number;
   outputBytes: number;
+  pendingText: string;
+  textTimer: ReturnType<typeof setTimeout> | undefined;
   releasedAt?: number;
   conversationTitle: boolean;
   consultationEnabled: boolean;
@@ -116,7 +123,7 @@ export class ProviderDispatch {
       readonly state: (connection: string) => ConnectionState | undefined;
       /** Post one message to the data service of that generation. */
       readonly send: (generation: string, text: string) => void;
-      readonly diagnostic?: (event: DiagnosticEvent) => void;
+      readonly diagnostic?: (event: DiagnosticEvent, generation: string) => void;
       readonly wallClock?: () => number;
       readonly monotonic?: () => number;
     },
@@ -172,6 +179,7 @@ export class ProviderDispatch {
     for (const record of this.records.values()) {
       record.done = true;
       clearTimeout(record.timer);
+      clearTimeout(record.textTimer);
       record.abort.abort();
     }
     this.records.clear();
@@ -198,7 +206,7 @@ export class ProviderDispatch {
       this.used.has(permit.id) ||
       this.records.has(request.attempt)
     ) {
-      this.options.diagnostic?.({ event_name: "ohtia.provider.discarded" });
+      this.options.diagnostic?.({ event_name: "ohtia.provider.discarded" }, message.generation);
       return;
     }
     this.used.add(permit.id);
@@ -219,6 +227,8 @@ export class ProviderDispatch {
       limits: request.limits,
       inputBytes: 0,
       outputBytes: 0,
+      pendingText: "",
+      textTimer: undefined,
       conversationTitle: requestsConversationTitle(request),
       consultationEnabled: request.tools.some(isConsultationTool),
       calls: new Map(),
@@ -320,7 +330,12 @@ export class ProviderDispatch {
           clearTimeout(expiry);
           record.released = true;
           record.releasedAt = this.elapsed(record);
-          this.options.diagnostic?.({ event_name: "ohtia.provider.dispatched" });
+          this.options.diagnostic?.({ event_name: "ohtia.provider.dispatched" }, record.generation);
+          if (record.conversationTitle)
+            this.options.diagnostic?.(
+              { event_name: "ohtia.provider.title_requested" },
+              record.generation,
+            );
           return true;
         },
       };
@@ -415,6 +430,8 @@ export class ProviderDispatch {
   }
   private finish(record: Dispatched, result: ProviderResult): void {
     if (record.done || record.closing) return;
+    this.flushText(record);
+    if (this.records.get(record.attempt) !== record) return;
     if (result.status === "completed" && record.conversationTitle) {
       const title = titleSuggestion(record.calls.values());
       if (title !== undefined) result = { status: "completed", conversation_title: title };
@@ -446,26 +463,26 @@ export class ProviderDispatch {
     record.done = true;
     clearTimeout(record.timer);
     this.records.delete(record.attempt);
-    this.options.diagnostic?.(resultDiagnostic(record.closing));
+    this.options.diagnostic?.(resultDiagnostic(record.closing), record.generation);
     if (record.closing.status === "completed") {
-      for (const call of record.calls.values()) {
-        this.options.send(
+      if (record.conversationTitle)
+        this.options.diagnostic?.(
+          {
+            event_name:
+              record.closing.conversation_title === undefined
+                ? "ohtia.provider.title_omitted"
+                : "ohtia.provider.title_suggested",
+          },
           record.generation,
-          JSON.stringify({
-            kind: "provider_event",
-            version: providerMessageVersion,
-            generation: record.generation,
-            attempt: record.attempt,
-            event: {
-              type: "tool_call",
-              sequence: ++record.sequence,
-              namespace: call.namespace,
-              name: call.name,
-              arguments: call.arguments,
-            },
-          }),
         );
-      }
+      for (const call of record.calls.values())
+        this.sendEvent(record, {
+          type: "tool_call",
+          sequence: ++record.sequence,
+          namespace: call.namespace,
+          name: call.name,
+          arguments: call.arguments,
+        });
     }
     record.calls.clear();
     this.options.send(
@@ -594,7 +611,7 @@ export class ProviderDispatch {
     } else if (body.type === "text") {
       const remaining = record.limits.max_output_bytes - record.outputBytes;
       if (account(body.text) !== undefined) {
-        this.forward(record, body);
+        this.bufferText(record, body.text);
         return;
       }
       let prefix = "";
@@ -605,7 +622,7 @@ export class ProviderDispatch {
         prefix += point;
         bytes += size;
       }
-      if (prefix) this.forward(record, { type: "text", text: prefix });
+      if (prefix) this.bufferText(record, prefix);
       this.finish(record, { status: "failed", reason: "output_limit_exceeded", dispatched: true });
       return;
     } else {
@@ -615,43 +632,69 @@ export class ProviderDispatch {
     // Arguments are withheld as research effects, but their receipt is still provider activity.
     this.forward(record, { type: "activity" });
   }
+  private bufferText(record: Dispatched, text: string): void {
+    if (!text) return;
+    for (const piece of providerTextPieces(text)) {
+      if (!isProviderEvent({ type: "text", sequence: 1, text: piece })) {
+        this.finish(record, { status: "failed", reason: "invalid_output", dispatched: true });
+        return;
+      }
+      if (record.pendingText.length + piece.length > providerTextChunk) this.flushText(record);
+      if (record.done) return;
+      record.pendingText += piece;
+    }
+    if (!record.pendingText) return;
+    record.lastEvent = this.elapsed(record);
+    this.arm(record);
+    if (!record.textTimer) {
+      record.textTimer = setTimeout(() => {
+        this.flushText(record);
+      }, textFlushMs);
+      record.textTimer.unref();
+    }
+  }
+  private flushText(record: Dispatched): void {
+    clearTimeout(record.textTimer);
+    record.textTimer = undefined;
+    const text = record.pendingText;
+    record.pendingText = "";
+    if (text && !record.done)
+      this.sendEvent(record, { type: "text", sequence: ++record.sequence, text });
+  }
   private forward(record: Dispatched, body: ProviderEventBody): void {
     if (this.expired(record)) return;
-    const bodies: readonly ProviderEventBody[] =
-      body.type === "text"
-        ? providerTextPieces(body.text).map((text) => ({ type: "text" as const, text }))
-        : [body];
-    for (const piece of bodies) {
-      const sequenced = { ...piece, sequence: record.sequence + 1 };
-      if (!isProviderEvent(sequenced)) {
-        // An adapter defect must not forge a malformed event or leave the attempt open.
-        this.emit(record, {
-          type: "result",
-          result: record.released
-            ? { status: "failed", reason: "invalid_output", dispatched: true }
-            : { status: "failed", reason: "provider_unavailable", dispatched: false },
-        });
-        return;
-      }
-      record.sequence++;
-      if (sequenced.type === "result") {
-        record.sequence--; // The terminal sequence is assigned after confirmed transport closure.
-        this.finish(record, sequenced.result);
-        return;
-      }
-      record.lastEvent = this.elapsed(record);
-      this.arm(record);
-      this.options.send(
-        record.generation,
-        JSON.stringify({
-          kind: "provider_event",
-          version: providerMessageVersion,
-          generation: record.generation,
-          attempt: record.attempt,
-          event: sequenced,
-        }),
+    const sequenced = { ...body, sequence: 1 };
+    if (!isProviderEvent(sequenced)) {
+      // An adapter defect must not forge a malformed event or leave the attempt open.
+      this.finish(
+        record,
+        record.released
+          ? { status: "failed", reason: "invalid_output", dispatched: true }
+          : { status: "failed", reason: "provider_unavailable", dispatched: false },
       );
+      return;
     }
+    if (sequenced.type === "result") {
+      this.finish(record, sequenced.result);
+      return;
+    }
+    this.flushText(record);
+    if (record.done) return;
+    record.lastEvent = this.elapsed(record);
+    this.arm(record);
+    this.sendEvent(record, { ...sequenced, sequence: ++record.sequence });
+  }
+  private sendEvent(record: Dispatched, event: ProviderEvent): void {
+    this.options.send(
+      record.generation,
+      JSON.stringify({
+        kind: "provider_event",
+        version: providerMessageVersion,
+        generation: record.generation,
+        attempt: record.attempt,
+        event,
+      }),
+    );
   }
   dispose(): void {
     this.end();

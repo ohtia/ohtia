@@ -4,6 +4,7 @@ import { RequestBudget } from "./port-admission.js";
 import { randomUUID } from "node:crypto";
 import {
   decodeText,
+  dataServiceExitReason,
   decodeApplicationExit,
   type ApplicationExitState,
   decodeEnvelope,
@@ -46,7 +47,7 @@ export interface SupervisedChild {
   send(message: string): void;
   kill(): void;
   messages(listener: (message: unknown) => void): void;
-  exited(listener: () => void): void;
+  exited(listener: (code?: number) => void): void;
 }
 /** Main's receivers for the provider messages of this generation's data service. */
 export interface ProviderChannel {
@@ -75,6 +76,8 @@ function sameRequest(a: Request, b: Extract<Envelope, { kind: "result" }>): bool
     a.operation === b.operation
   );
 }
+type ServiceFault = Extract<DiagnosticEvent, { event_name: "ohtia.service.faulted" }>["error_code"];
+
 /** One child, one generation. A signal never releases accepted capacity; an exit receipt does. */
 export class ServiceSupervisor {
   private readonly modelRefreshes = new Map<string, string>();
@@ -85,7 +88,7 @@ export class ServiceSupervisor {
   private storageReported = false;
   private ready = false;
   private stopped = false;
-  private faulted = false;
+  private unavailableCause: ServiceFault | "requested_stop" | undefined;
   private requestedStop = false;
   private readonly startup: ReturnType<typeof setTimeout>;
   private readonly terminationTimers = new Set<ReturnType<typeof setTimeout>>();
@@ -120,11 +123,11 @@ export class ServiceSupervisor {
     child.messages((message) => {
       this.receive(message);
     });
-    child.exited(() => {
-      this.didExit();
+    child.exited((code) => {
+      this.didExit(code);
     });
     this.startup = setTimeout(() => {
-      this.fault();
+      this.fault("startup_timeout");
     }, portLimits.service_start_ms);
   }
   activateStorage(locale: InterfaceLocale): boolean {
@@ -135,7 +138,7 @@ export class ServiceSupervisor {
       );
       return true;
     } catch {
-      this.fault();
+      this.fault("channel_write_failed");
       return false;
     }
   }
@@ -147,7 +150,7 @@ export class ServiceSupervisor {
       );
       return true;
     } catch {
-      this.fault();
+      this.fault("channel_write_failed");
       return false;
     }
   }
@@ -157,9 +160,10 @@ export class ServiceSupervisor {
   /** Keep ordered wake reviews within the shared channel's pending bound, including startup. */
   postWake(text: string): boolean {
     const wake = decodeServiceWake(text);
-    if (!wake || wake.generation !== this.generation || this.stopped || this.faulted) return false;
+    if (!wake || wake.generation !== this.generation || this.stopped || this.unavailableCause)
+      return false;
     if (this.pendingWakes.length >= portLimits.pending_global) {
-      this.fault();
+      this.fault("wake_queue_full");
       return false;
     }
     this.pendingWakes.push({ text, message: wake });
@@ -172,15 +176,15 @@ export class ServiceSupervisor {
       this.child.send(text);
       return true;
     } catch {
-      this.fault();
+      this.fault("channel_write_failed");
       return false;
     }
   }
   get available(): boolean {
-    return this.ready && !this.stopped && !this.faulted;
+    return this.ready && !this.stopped && !this.unavailableCause;
   }
   get recoveryRequired(): boolean {
-    return this.faulted;
+    return this.unavailableCause !== undefined;
   }
   get ceased(): boolean {
     return this.stopped;
@@ -278,7 +282,7 @@ export class ServiceSupervisor {
       }
       return true;
     } catch {
-      this.fault();
+      this.fault("channel_write_failed");
       return false;
     }
   }
@@ -308,7 +312,7 @@ export class ServiceSupervisor {
           payload: failure(isResearchMutation(work.request.operation) ? "uncertain" : "timeout"),
         });
         if (encoded.ok) work.deliver(encoded.value);
-        this.fault();
+        this.fault("request_timeout");
       }, portLimits.request_deadline_ms),
     );
     if (
@@ -322,7 +326,7 @@ export class ServiceSupervisor {
         key(work.request.windowGeneration, work.request.payload.subscriptionId),
         work,
       );
-    if (!this.send(work.request)) this.fault();
+    this.send(work.request);
   }
   control(envelope: Envelope): void {
     if (envelope.kind !== "cancel" && envelope.kind !== "unsubscribe") return;
@@ -336,7 +340,7 @@ export class ServiceSupervisor {
       )
         return;
     } else if (!this.streams.has(key(envelope.windowGeneration, envelope.subscriptionId))) return;
-    if (!this.send(envelope)) this.fault();
+    this.send(envelope);
   }
   disposeWindow(windowGeneration: string): void {
     if (!this.stopped) {
@@ -349,7 +353,7 @@ export class ServiceSupervisor {
           }),
         );
       } catch {
-        this.fault();
+        this.fault("channel_write_failed");
       }
     }
     for (const work of this.streams.values()) {
@@ -386,14 +390,16 @@ export class ServiceSupervisor {
         });
       }
   }
-  private send(value: unknown): boolean {
+  private send(value: unknown): void {
     const encoded = encodeEnvelope(value);
-    if (!encoded.ok) return false;
+    if (!encoded.ok) {
+      this.fault("protocol_rejected");
+      return;
+    }
     try {
       this.child.send(encoded.value);
-      return true;
     } catch {
-      return false;
+      this.fault("channel_write_failed");
     }
   }
   private reject(work: Work, code: "busy" | "service_unavailable" = "service_unavailable"): void {
@@ -408,7 +414,7 @@ export class ServiceSupervisor {
   }
   private receive(input: unknown): void {
     if (this.stopped) return;
-    if (this.faulted) {
+    if (this.unavailableCause) {
       // Shutdown denies work first; only its final catalog event may cross that boundary.
       if (this.requestedStop && this.shutdownDrained && !this.stopDiagnosticForwarded) {
         const event = decodeChildDiagnostic(input, this.generation);
@@ -430,7 +436,7 @@ export class ServiceSupervisor {
       input === JSON.stringify({ kind: "ready", generation: this.generation })
     ) {
       if (this.ready) {
-        this.fault();
+        this.fault("protocol_rejected");
         return;
       }
       clearTimeout(this.startup);
@@ -443,7 +449,7 @@ export class ServiceSupervisor {
     if (wake) {
       if (wake.generation !== this.generation) return;
       if (!this.ready) {
-        this.fault();
+        this.fault("protocol_rejected");
         return;
       }
       const expected = this.pendingWakes[0]?.message;
@@ -471,7 +477,7 @@ export class ServiceSupervisor {
           : decodeModelListRefresh(input, this.generation);
       if (dispatch || interrupt || report || refresh) {
         if (!this.ready) {
-          this.fault();
+          this.fault("protocol_rejected");
           return;
         }
         if (dispatch) this.provider?.dispatch(dispatch);
@@ -515,7 +521,7 @@ export class ServiceSupervisor {
             record.value.operation !== "appearance.read" ||
             !record.value.payload.ok
           ) {
-            this.fault();
+            this.fault("protocol_rejected");
             return;
           }
           this.appearanceChanged?.(record.value.payload.value);
@@ -529,7 +535,7 @@ export class ServiceSupervisor {
             storage.generation !== this.generation ||
             !this.storageChanged
           ) {
-            this.fault();
+            this.fault("protocol_rejected");
             return;
           }
           this.storageReported = true;
@@ -572,7 +578,7 @@ export class ServiceSupervisor {
         ) {
           const snapshot = decodeLocaleSnapshot(notice.snapshot);
           if (!snapshot || snapshot.serviceGeneration !== this.generation || !this.ready) {
-            this.fault();
+            this.fault("protocol_rejected");
             return;
           }
           this.localeChanged?.(snapshot);
@@ -602,7 +608,7 @@ export class ServiceSupervisor {
           snapshot?.serviceGeneration !== this.generation ||
           !this.ready
         ) {
-          this.fault();
+          this.fault("protocol_rejected");
           return;
         }
         this.presentationChanged?.(snapshot);
@@ -611,13 +617,13 @@ export class ServiceSupervisor {
     }
     const decoded = decodeText(input);
     if (!decoded.ok) {
-      this.fault();
+      this.fault("protocol_rejected");
       return;
     }
     const value = decoded.value;
     if (value.serviceGeneration !== this.generation) return;
     if (!this.ready) {
-      this.fault();
+      this.fault("protocol_rejected");
       return;
     }
     if (value.kind === "result") {
@@ -625,7 +631,7 @@ export class ServiceSupervisor {
       const work = this.pending.get(id);
       if (!work) return;
       if (!sameRequest(work.request, value)) {
-        this.fault();
+        this.fault("protocol_rejected");
         return;
       }
       if (value.operation === "appearance.read" && value.payload.ok)
@@ -695,7 +701,7 @@ export class ServiceSupervisor {
                 ? work.request.operation !== "locale.subscribe"
                 : work.request.operation !== "appearance.subscribe")
       ) {
-        this.fault();
+        this.fault("protocol_rejected");
         return;
       }
       if (value.topic === "presentation") this.presentationChanged?.(value.payload);
@@ -703,13 +709,14 @@ export class ServiceSupervisor {
       work.deliver(input as string);
       return;
     }
-    this.fault();
+    this.fault("protocol_rejected");
   }
-  private fault(): void {
-    if (this.faulted || this.stopped) return;
-    this.faulted = true;
+  private fault(code: ServiceFault): void {
+    if (this.unavailableCause || this.stopped) return;
+    this.unavailableCause = code;
     this.ready = false;
     clearTimeout(this.startup);
+    this.diagnostic?.({ event_name: "ohtia.service.faulted", error_code: code }, this.generation);
     this.changed("unavailable");
     try {
       this.child.kill();
@@ -717,8 +724,16 @@ export class ServiceSupervisor {
       /* Capacity remains quarantined without exit evidence. */
     }
   }
-  private didExit(): void {
+  private didExit(code: number | undefined): void {
     if (this.stopped) return;
+    if (this.unavailableCause !== "requested_stop")
+      this.diagnostic?.(
+        {
+          event_name: "ohtia.service.child_exited",
+          error_code: dataServiceExitReason(code),
+        },
+        this.generation,
+      );
     this.stopped = true;
     this.ready = false;
     clearTimeout(this.startup);
@@ -784,7 +799,7 @@ export class ServiceSupervisor {
     this.stoppingAdmitted = admitted;
     if (!this.stopped) {
       this.ready = false;
-      this.faulted = true;
+      this.unavailableCause ??= "requested_stop";
       this.requestedStop = true;
       clearTimeout(this.startup);
       // Main closes this generation's transports here. No later permit can enter receive().

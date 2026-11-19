@@ -1,3 +1,5 @@
+import type { DiagnosticEvent } from "@ohtia/contracts";
+import { conformanceRequest } from "./fixtures/provider-conformance.js";
 import { fixturePath } from "./fixtures/platform.js";
 import { EventEmitter } from "node:events";
 import path from "node:path";
@@ -251,6 +253,9 @@ async function launch(
   const protocol = { registerSchemesAsPrivileged: vi.fn() };
   const children: ReturnType<typeof child>[] = [];
   const diagnosticWriters: { readonly version: string }[] = [];
+  const diagnosticAppend = vi.fn<(event: DiagnosticEvent, correlation?: string) => Promise<void>>(
+    async () => {},
+  );
   function child() {
     return Object.assign(new EventEmitter(), { postMessage: vi.fn(), kill: vi.fn() });
   }
@@ -322,7 +327,7 @@ async function launch(
       readonly stateChanged: (state: string) => void,
       readonly storageChanged: (notice: object) => void,
       _storageAdmitting?: boolean,
-      _diagnostic?: unknown,
+      readonly diagnostic?: (event: DiagnosticEvent, correlation?: string) => void,
       readonly localeChanged?: (snapshot: import("@ohtia/contracts").LocaleSnapshot) => void,
       readonly presentationChanged?: (
         snapshot: import("@ohtia/contracts").PresentationSnapshot,
@@ -443,7 +448,7 @@ async function launch(
         diagnosticWriters.push(options);
       }
       reservedPermissionProcesses = 0;
-      append = vi.fn(async () => undefined);
+      append = diagnosticAppend;
       close = vi.fn(async () => undefined);
     },
   }));
@@ -533,6 +538,7 @@ async function launch(
     utilityProcess,
     children,
     diagnosticWriters,
+    diagnosticAppend,
     supervisors,
     publish,
     failure,
@@ -684,6 +690,42 @@ describe("broker composition with synthetic Electron adapters", () => {
     for (const call of h.utilityProcess.fork.mock.calls) expect(call[1][4]).toBe("0.3.0-dev.7.2");
     expect(h.diagnosticWriters.map((options) => options.version)).toEqual(["0.3.0-dev.7.2"]);
     expect(await h.command("about")).toMatchObject({ version: "0.3.0-dev.7.2" });
+  });
+  it("correlates service and provider diagnostics to the current generation", async () => {
+    const h = await launch({ mode: "installed" });
+    expect((await h.action("open_storage")).state).toBe("storage_opening");
+    const service = h.supervisors.at(-1)!;
+    service.stateChanged("ready");
+    service.diagnostic?.({ event_name: "ohtia.storage.opened" });
+    const requestCorrelation = "019a8000-0000-7000-8000-000000000510";
+    const event = { event_name: "ohtia.service.faulted", error_code: "request_timeout" } as const;
+    service.diagnostic?.(event, requestCorrelation);
+    const request = conformanceRequest("chatgpt");
+    service.connectProvider.mock.calls[0][0].dispatch({
+      kind: "provider_dispatch",
+      version: 1,
+      generation: service.generation,
+      request,
+      permit: { id: "expired-permit", attempt: request.attempt, issued_at: Date.now() + 1 },
+    });
+    service.stateChanged("unavailable");
+    service.stateChanged("unavailable");
+    const events = h.diagnosticAppend.mock.calls.filter(([entry]) =>
+      /ohtia\.(service|storage|provider)\./.test(entry.event_name),
+    );
+    expect(events).toEqual([
+      [{ event_name: "ohtia.service.ready" }, service.generation],
+      [{ event_name: "ohtia.storage.opened" }, service.generation],
+      [event, requestCorrelation],
+      [
+        { event_name: "ohtia.provider.not_dispatched", error_code: "permit_expired" },
+        service.generation,
+      ],
+      [
+        { event_name: "ohtia.service.unavailable", error_code: "service_unavailable" },
+        service.generation,
+      ],
+    ]);
   });
   it("reports an aliased research root without starting the store", async () => {
     const h = await launch({ mode: "installed", researchRootRefused: true });

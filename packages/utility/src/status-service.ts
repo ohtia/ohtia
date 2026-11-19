@@ -35,7 +35,7 @@ export function createStatusService(
   locale: InterfaceLocale,
   send: (text: string) => void,
   storage?: DurableStore,
-  admissionLost?: () => void,
+  admissionLost?: (reason: "provider_work_failed" | "storage_admission_lost") => void,
   mode: RuntimeMode = "installed",
 ) {
   if (!isInterfaceLocale(locale)) throw new Error("Unsupported trusted service locale.");
@@ -107,7 +107,7 @@ export function createStatusService(
     durable?.dispose();
     status = { ...status, service: "unavailable", engine: "unavailable" };
     try {
-      admissionLost?.();
+      admissionLost?.("provider_work_failed");
     } catch {
       // An observer cannot restore this generation's execution authority.
     }
@@ -547,11 +547,16 @@ export function createStatusService(
       }
       const providerEvent = decodeProviderEvent(text, generation);
       if (providerEvent) {
-        if (durable)
-          enqueueProvider(async () => {
-            if (!(await durable.receive(providerEvent)))
-              throw new Error("Invalid provider event order.");
-          }, providerEvent.event.type !== "text");
+        if (durable) {
+          const type = providerEvent.event.type;
+          enqueueProvider(
+            async () => {
+              if (!(await durable.receive(providerEvent)))
+                throw new Error("Invalid provider event order.");
+            },
+            type === "started" || type === "usage" || type === "result",
+          );
+        }
 
         return;
       }
@@ -587,7 +592,7 @@ export function createStatusService(
       if (value.kind !== "request") throw new Error("Unauthorized broker message direction.");
       if (enabled) {
         status = { ...status, engine: storage?.admissionReady ? "verified" : "unavailable" };
-        if (!storage?.admissionReady) admissionLost?.();
+        if (!storage?.admissionReady) admissionLost?.("storage_admission_lost");
       }
       if (value.operation === "status.read") {
         emit({ ...value, kind: "result", payload: { ok: true, value: status } });
@@ -679,7 +684,8 @@ export function createStatusService(
           emit({ ...value, kind: "result", payload: outcome });
         })
         .finally(() => {
-          if (!storage.admissionReady && !disposed && !providerFailed) admissionLost?.();
+          if (!storage.admissionReady && !disposed && !providerFailed)
+            admissionLost?.("storage_admission_lost");
           pending--;
           if (subscriptionKey) queuedSubscriptions.delete(subscriptionKey);
         });

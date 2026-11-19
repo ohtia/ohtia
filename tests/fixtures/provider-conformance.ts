@@ -10,6 +10,7 @@ import {
   decodeProviderEvent,
   isProviderEvent,
   type ProviderEvent,
+  type DiagnosticEvent,
   type ProviderRequestData,
 } from "../../packages/contracts/src/index.js";
 import { ProviderDispatch } from "../../packages/main/src/provider-dispatch.js";
@@ -38,11 +39,13 @@ export async function dispatchThrough(
   adapter: ProviderAdapter,
   request: ProviderRequestData,
   options: {
+    readonly diagnostic?: (event: DiagnosticEvent, generation: string) => void;
     readonly interrupt?: (dispatch: ProviderDispatch, events: readonly ProviderEvent[]) => void;
   } = {},
 ): Promise<ProviderEvent[]> {
   const events: ProviderEvent[] = [];
   const dispatch = new ProviderDispatch([adapter], {
+    diagnostic: options.diagnostic,
     state: (id) => manager.snapshot(id)?.state,
     send: (generation, text) => {
       const decoded = decodeProviderEvent(text, generation);

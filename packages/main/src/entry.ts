@@ -753,16 +753,16 @@ function startService(mode?: "open" | "retry" | "restore" | "blocked"): void {
     generation,
     (state, requestedStop = false) => {
       if (state === "ready") {
-        void diagnostics?.append({ event_name: "ohtia.service.ready" });
+        void diagnostics?.append({ event_name: "ohtia.service.ready" }, serviceGeneration);
         if (connections && service) service.reportConnections(connections.manager);
         developmentCommand?.flush();
       } else if (!requestedStop && !failureReported) {
         applicationExit.abort(false);
         failureReported = true;
-        void diagnostics?.append({
-          event_name: "ohtia.service.unavailable",
-          error_code: "service_unavailable",
-        });
+        void diagnostics?.append(
+          { event_name: "ohtia.service.unavailable", error_code: "service_unavailable" },
+          serviceGeneration,
+        );
       }
       if (state === "unavailable") {
         // Close every provider request of the ending generation before another service starts.
@@ -858,7 +858,7 @@ function startService(mode?: "open" | "retry" | "restore" | "blocked"): void {
     },
     mode !== "blocked" && ["missing", "located"].includes(locator.state),
     (event, correlation) => {
-      void diagnostics?.append(event, correlation);
+      void diagnostics?.append(event, correlation ?? serviceGeneration);
     },
     (snapshot) => {
       locale = snapshot.effectiveLocale;
@@ -971,7 +971,9 @@ async function start(): Promise<void> {
     send: (target, text) => {
       if (service?.generation === target) service.postProvider(text);
     },
-    diagnostic: connectionDiagnostic,
+    diagnostic: (event, target) => {
+      void diagnostics?.append(event, target);
+    },
   });
   if (
     typeof __OHTIA_DEVELOPMENT_BUILD__ !== "undefined" &&
