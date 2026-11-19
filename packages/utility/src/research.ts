@@ -434,6 +434,7 @@ export async function applyResearchCommand(
           id: newId(),
           project_id: result,
           title: null,
+          automatic_title_eligible: development ? 0 : 1,
           created_at: now,
           updated_at: now,
           revision: 1,
