@@ -300,9 +300,12 @@ describe("development_test policy and input rule", () => {
       retry_backoff_ms: 0,
       instructions: developmentInstructions,
     });
-    expect(operationPolicy("development_test", 1, "installed")).toBeUndefined();
-    expect(operationPolicy("development_test", 1, "qualification")).toBeUndefined();
-    expect(operationPolicy("development_test", 2, "development")).toBeUndefined();
+    for (const version of [1, 2, 3]) {
+      expect(operationPolicy("development_test", version, "development")?.version).toBe(version);
+      expect(operationPolicy("development_test", version, "installed")).toBeUndefined();
+      expect(operationPolicy("development_test", version, "qualification")).toBeUndefined();
+    }
+    expect(operationPolicy("development_test", 4, "development")).toBeUndefined();
   });
   it("sends the newest whole messages oldest first, with the note when older ones are left out", () => {
     const policy = operationPolicy("development_test", 1, "development")!;

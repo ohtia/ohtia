@@ -44,7 +44,29 @@ export interface MessageRecord {
   readonly ending: "complete" | "partial" | null;
   readonly createdAt: string;
 }
+export interface PlanContributionRequest {
+  readonly planKey: string;
+  readonly agent: string;
+  readonly request: string;
+  readonly reason: string;
+  readonly required?: boolean;
+  readonly prerequisites: readonly string[];
+}
+export type AddContributionsPayload = (
+  | {
+      readonly conversationId: string;
+      readonly expectedGraphVersion: 0;
+      readonly purpose: string;
+      readonly sharedContext: string;
+    }
+  | { readonly planId: string; readonly expectedGraphVersion: number }
+) & { readonly contributions: readonly PlanContributionRequest[] };
+export const planOutcomes = ["complete", "partial", "failed"] as const;
+export type PlanOutcome = (typeof planOutcomes)[number];
+
 export interface ResearchPayloads {
+  readonly "plan.addContributions": AddContributionsPayload;
+  readonly "plan.finish": { readonly planId: string };
   readonly "conversation.stop": { readonly conversationId: string };
   readonly "task.stop": { readonly taskId: string };
   readonly "consultation.accept": { readonly proposalId: string; readonly connection: string };
@@ -86,8 +108,14 @@ export type ResearchCommand = {
 /** A stable receipt result; read records separately so replay never returns newer content as the old result. */
 export interface ResearchResult {
   readonly resultId: string;
+  readonly outcome?: PlanOutcome;
+}
+export interface FinishPlanResult extends ResearchResult {
+  readonly outcome: PlanOutcome;
 }
 export const researchCommands = [
+  "plan.addContributions",
+  "plan.finish",
   "conversation.stop",
   "task.stop",
   "task.startAgain",

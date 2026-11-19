@@ -566,7 +566,10 @@ export type TransferEntry =
       readonly operation: ProviderOperation;
       readonly version: number;
     }
-  | { readonly kind: "message" | "consultation_request"; readonly reference: string }
+  | {
+      readonly kind: "message" | "consultation_request" | "contribution_request";
+      readonly reference: string;
+    }
   | {
       readonly kind: "note";
       readonly note:
@@ -629,7 +632,11 @@ function isTransferEntry(value: unknown): value is TransferEntry {
       Number.isSafeInteger(value.version) &&
       (value.version as number) > 0
     );
-  if (value.kind === "message" || value.kind === "consultation_request")
+  if (
+    value.kind === "message" ||
+    value.kind === "consultation_request" ||
+    value.kind === "contribution_request"
+  )
     return exact(value, ["kind", "reference"]) && isIdentifier(value.reference);
   return (
     value.kind === "note" &&

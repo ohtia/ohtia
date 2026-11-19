@@ -18,8 +18,6 @@ sources:
   - id: anthropic-access
     resource: "https://code.claude.com/docs/en/agent-sdk/overview"
     title: "Anthropic — Agent SDK overview"
-generated:
-  by: codex/gpt-6.2-sol
 ---
 
 # Agent collaboration
@@ -139,7 +137,7 @@ The intervention retains:
 
 A **contribution** identifies a bounded question and expected output, target role/definition version, prerequisites, immutable input manifest and allocated work. It declares whether it is required for the requested coverage or optional; omission of that classification defaults to required. Every prerequisite names the committed artifact/output contract needed before activation. It links to its task/attempt receipts and accepted artifact versions. A later contribution uses earlier committed artifacts by identity; it does not read another agent's mutable working context. A completed contribution means its operation returned an accepted result, not that a researcher confirmed its meaning.
 
-Graph changes use expected-version, idempotent application commands. A repeated command with identical payload returns its receipt; a conflicting reuse fails. Reject missing prerequisites, self-dependencies, cycles, destinations outside the envelope, unsupported capabilities and allocations beyond remaining limits before creating accepted child work. Reject duplicate equivalent contribution requests using a policy-versioned key containing purpose, role, input versions and output contract; an explicitly authorized independent review has a distinct declared purpose. Preserve historical graphs and the grounds for changed plans.
+Graph changes use expected-version, idempotent application commands. A repeated command with identical payload returns its receipt; a conflicting reuse fails. Reject missing prerequisites, self-dependencies, cycles, destinations outside the envelope, unsupported capabilities and allocations beyond remaining limits before creating accepted child work. Reject duplicate equivalent contribution requests using a policy-versioned key, scoped to the intervention, over agent, operation, request and prerequisites; an explicitly authorized independent review has a distinct request. Preserve historical graphs and the grounds for changed plans.
 
 ## Execution, events and bounds
 
@@ -178,7 +176,7 @@ Distinguish enforceable limits on tasks, inputs and tools from estimated token/m
 
 ### Completion, cancellation and recovery
 
-An intervention reports complete requested coverage only when every required contribution has an accepted terminal result, all required coordination has finished and no delegated execution remains unresolved. A required contribution's output contract defines adequate coverage; a valid result containing an inaccessible or unreadable required input does not satisfy that coverage merely because its task completed. Preserve both the terminal execution receipt and the research limitation. Agent consensus never supplies human confirmation.
+An intervention reports complete requested coverage only when every required contribution has an accepted terminal result, all required coordination has finished and no delegated execution is still waiting, queued or running; an optional contribution whose execution ended uncertain is reported as uncertain and does not reduce the required coverage. A required contribution's output contract defines adequate coverage; a valid result containing an inaccessible or unreadable required input does not satisfy that coverage merely because its task completed. Preserve both the terminal execution receipt and the research limitation. Agent consensus never supplies human confirmation.
 
 A failed, cancelled or insufficient prerequisite prevents activation of dependents requiring its artifact. Retain the dependency and reason; do not accept an empty substitute, invent evidence, rerun the producer outside its retry budget or silently remove the dependent. Independent branches may continue within the existing authorization and allocations. An optional contribution is still a mandatory prerequisite for any descendant that explicitly depends on its output; the optional label cannot bypass that edge.
 

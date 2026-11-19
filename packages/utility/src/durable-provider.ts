@@ -20,6 +20,7 @@ import { unknownUsage, type TaskContext } from "./tasks.js";
 
 interface Stream {
   readonly taskId: string;
+  readonly publishReply: boolean;
   readonly parts: ReplyPart[];
   readonly operationId: string;
   text: string;
@@ -344,6 +345,7 @@ export class DurableProvider {
         const now = this.now();
         this.streams.set(message.request.attempt, {
           taskId: prepared.value.taskId,
+          publishReply: prepared.value.kind !== "contribution",
           parts: [],
           operationId: prepared.value.acceptedByOperationId,
           text: "",
@@ -409,7 +411,7 @@ export class DurableProvider {
       for (const text of kept ? splitText(kept) : []) {
         const sequence = stream.parts.length + 1;
         stream.parts.push({ sequence, text });
-        this.options.reply?.(stream.taskId, sequence, text);
+        if (stream.publishReply) this.options.reply?.(stream.taskId, sequence, text);
       }
       if (kept)
         this.report(stream.operationId, { type: "text", attempt: message.attempt, text: kept });

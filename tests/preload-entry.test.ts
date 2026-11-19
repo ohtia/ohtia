@@ -1059,6 +1059,7 @@ it("forwards consultation decisions and contribution retries with their original
     port.tryAgainContribution("retry", { taskId }),
     port.startAgainContribution("restart", { taskId }),
   ];
+  const finish = port.finishPlan("finish", { planId: proposalId });
   const requests = h.ipcRenderer.send.mock.calls.map(([, text]) => JSON.parse(text));
   expect(
     requests.map(({ operation, operationId, payload }) => [operation, operationId, payload]),
@@ -1067,7 +1068,21 @@ it("forwards consultation decisions and contribution retries with their original
     ["consultation.decline", "decline", { proposalId }],
     ["contribution.tryAgain", "retry", { taskId }],
     ["contribution.startAgain", "restart", { taskId }],
+    ["plan.finish", "finish", { planId: proposalId }],
   ]);
+  h.ipcRenderer.emit(
+    desktopChannels.reply,
+    {},
+    JSON.stringify({
+      ...requests.at(-1),
+      kind: "result",
+      payload: { ok: true, value: { resultId: proposalId, outcome: "partial" } },
+    }),
+  );
+  expect(await finish.result).toEqual({
+    ok: true,
+    value: { resultId: proposalId, outcome: "partial" },
+  });
   h.window.dispatchEvent(new Event("unload"));
   for (const call of calls) expect(await call.result).toEqual(failure("uncertain"));
 });

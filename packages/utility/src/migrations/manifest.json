@@ -82,5 +82,9 @@
   {
     "name": "0021_consultations",
     "sha256": "fba3e2457b0efa4af558e74113207c92a7e9a85197437f2753c18a5095a3e40c"
+  },
+  {
+    "name": "0022_contribution_graphs",
+    "sha256": "a5f634c0883d736a8a82b1dbed59f2368eac4caf965739b82f17ee5114325687"
   }
 ]
