@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
-import { sql, type Kysely, type Selectable, type NotNull } from "kysely";
+import { sql, type Generated, type Kysely, type Selectable, type NotNull } from "kysely";
 import {
   failure,
+  utf8Size,
+  type TransferEntry,
+  type SynthesisSource,
   isPlanEventPayload,
   planEventLimit,
   planEventPageSize,
@@ -21,8 +24,8 @@ import {
   planContributions,
   waitingForPlanWork,
 } from "./contribution-graphs.js";
-import type { InterventionRow } from "./consultations.js";
-import type { InputMessage } from "./operations.js";
+import { agentIdentity, type InterventionRow } from "./consultations.js";
+import type { BuiltInput, InputMessage, OperationPolicy } from "./operations.js";
 import { bytes, canonicalJson, identifier, newId, type ResearchSchema } from "./research.js";
 
 export interface PlanEventRow {
@@ -45,6 +48,7 @@ export interface ContinuationRow {
   policy_version: 1;
   admission: "waiting" | "admitted" | "withdrawn";
   restart_held: number;
+  stopped: Generated<number>;
   task_id: Uint8Array | null;
   ready_key: Uint8Array;
   created_at: string;
@@ -170,7 +174,7 @@ export async function createContinuation(
 }
 
 /** Preserve every contribution's recorded disposition, including optional uncertain work. */
-export async function synthesisInput(
+export async function legacySynthesisInput(
   db: Kysely<ResearchSchema>,
   plan: Selectable<InterventionRow>,
 ): Promise<InputMessage[]> {
@@ -212,6 +216,146 @@ export async function synthesisInput(
         : []),
     ]),
   ];
+}
+
+/** A finalized plan's graph and results are immutable, including across synthesis retries. */
+export async function synthesisInput(
+  db: Kysely<ResearchSchema>,
+  plan: Selectable<InterventionRow>,
+  continuation: Pick<ContinuationRow, "reason" | "graph_version">,
+  policy: OperationPolicy,
+): Promise<BuiltInput | undefined> {
+  const outcome = continuation.reason === "finished_partial" ? "partial" : "complete";
+  if (
+    plan.outcome !== outcome ||
+    plan.graph_version !== continuation.graph_version ||
+    plan.purpose === null ||
+    plan.shared_context === null
+  )
+    throw new Error("Synthesis lacks its finalized plan.");
+
+  const planText = [
+    "The researcher approved this plan, and no contribution of it is still working. Write its synthesis.",
+    `Purpose of the plan:\n${plan.purpose}`,
+    ...(plan.shared_context
+      ? [`Context for every contribution of the plan:\n${plan.shared_context}`]
+      : []),
+    `Plan outcome: ${outcome}`,
+  ].join("\n\n");
+  const input: BuiltInput["input"][number][] = [{ role: "user", text: planText }];
+  const transfer: TransferEntry[] = [
+    { kind: "instructions", operation: policy.operation, version: policy.instruction_version },
+    { kind: "plan_context", reference: identifier(plan.id) },
+  ];
+  const nodes = await planContributions(db, plan.id);
+  const keys = new Map(nodes.map((node) => [identifier(node.id), node.plan_key]));
+  for (const node of nodes) {
+    const { name, role } = agentIdentity(node.agent_id);
+    const request = `Request:\n${node.request}`;
+    let stateLine: string;
+    let result: string | undefined;
+    transfer.push({ kind: "contribution_state", reference: identifier(node.id) });
+    switch (node.state) {
+      case "completed": {
+        if (!node.result_message_id) throw new Error("Completed contribution lacks its result.");
+        const message = await db
+          .selectFrom("messages")
+          .select("content")
+          .where("id", "=", node.result_message_id)
+          .executeTakeFirstOrThrow();
+        stateLine = "completed.";
+        result = `Result:\n${message.content}`;
+        transfer.push({ kind: "message", reference: identifier(node.result_message_id) });
+        break;
+      }
+      case "failed":
+      case "uncertain": {
+        const last =
+          node.task_id && (node.state === "uncertain" || !node.failure_reason)
+            ? await db
+                .selectFrom("attempts")
+                .select("outcome_reason")
+                .where("task_id", "=", node.task_id)
+                .orderBy("attempt_number", "desc")
+                .executeTakeFirst()
+            : undefined;
+        const code = (node.state === "failed" ? node.failure_reason : null) ?? last?.outcome_reason;
+        if (!code) throw new Error("Unsuccessful contribution lacks its reason.");
+        stateLine =
+          node.state === "failed"
+            ? `failed with the code ${code}; it has no result.`
+            : `ended uncertain with the code ${code}: Ohtia lost contact with the service, so whether it finished is unknown; it has no result.`;
+        break;
+      }
+      case "blocked": {
+        const key =
+          node.blocked_by_contribution_id && keys.get(identifier(node.blocked_by_contribution_id));
+        if (!key) throw new Error("Blocked contribution lacks its prerequisite.");
+        stateLine = `blocked, because contribution ${key} did not complete; it has no result.`;
+        break;
+      }
+      case "cancelled":
+        stateLine = "cancelled; it has no result.";
+        break;
+      default:
+        throw new Error("Synthesis cannot receive work that is still pending.");
+    }
+    const requirement = node.required ? "required" : "optional";
+    input.push({
+      role: "user",
+      text: [
+        `Contribution ${node.plan_key} by ${name}, ${role} (${requirement}): ${stateLine}`,
+        request,
+        ...(result === undefined ? [] : [result]),
+      ].join("\n\n"),
+    });
+  }
+  if (
+    input.length > policy.max_input_items ||
+    input.reduce((total, { text }) => total + utf8Size(text), 0) > policy.max_input_bytes
+  )
+    return;
+  return { input, transfer };
+}
+
+/** Project only the contribution identities and result references recorded for this dispatch. */
+export async function synthesisSources(
+  db: Kysely<ResearchSchema>,
+  taskId: Uint8Array,
+): Promise<SynthesisSource[]> {
+  const { transfer_manifest: manifest } = await db
+    .selectFrom("attempts")
+    .select("transfer_manifest")
+    .where("task_id", "=", taskId)
+    .where("dispatch_permitted_at", "is not", null)
+    .orderBy("attempt_number", "desc")
+    .executeTakeFirstOrThrow();
+  if (!manifest) throw new Error("Synthesis message lacks its transfer record.");
+  const transfer = JSON.parse(manifest) as TransferEntry[];
+  const plan = transfer.find((entry) => entry.kind === "plan_context");
+  if (plan?.kind !== "plan_context") throw new Error("Synthesis transfer lacks its plan.");
+  const nodes = new Map(
+    (await planContributions(db, bytes(plan.reference))).map((node) => [identifier(node.id), node]),
+  );
+  return transfer.flatMap((entry, index): SynthesisSource[] => {
+    if (entry.kind !== "contribution_state") return [];
+    const node = nodes.get(entry.reference);
+    if (!node) throw new Error("Synthesis transfer lacks its contribution.");
+    const source = { key: node.plan_key, agentId: node.agent_id };
+    const next = transfer[index + 1];
+    if (node.state === "completed") {
+      if (
+        next?.kind !== "message" ||
+        !node.result_message_id ||
+        next.reference !== identifier(node.result_message_id)
+      )
+        throw new Error("Synthesis transfer lacks its completed result.");
+      return [{ ...source, state: node.state, messageId: next.reference }];
+    }
+    if (node.state === "active" || node.state === "waiting" || next?.kind === "message")
+      throw new Error("Synthesis transfer contains an invalid contribution state.");
+    return [{ ...source, state: node.state, messageId: null }];
+  });
 }
 
 function planText(text: string, source: string): PlanText {

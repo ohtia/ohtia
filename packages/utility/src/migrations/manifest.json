@@ -94,5 +94,9 @@
   {
     "name": "0024_plan_coordination",
     "sha256": "82ec2ce89af4955ba2084dc2342236f7fbcd8bfe989c4afbbf0dff9f9d7a95c3"
+  },
+  {
+    "name": "0025_contribution_synthesis",
+    "sha256": "a0edfcecc2f389e82dc0e189588f7521adcbcf7b9b17c8365e43d48ba57da7ff"
   }
 ]

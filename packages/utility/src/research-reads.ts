@@ -1,4 +1,10 @@
-import { listPlanEvents, planRevisions, readPlan, readPlanText } from "./plan-coordination.js";
+import {
+  listPlanEvents,
+  planRevisions,
+  readPlan,
+  readPlanText,
+  synthesisSources,
+} from "./plan-coordination.js";
 import { consultationRetryFits } from "./work-limits.js";
 import { sql, type Kysely } from "kysely";
 import {
@@ -40,7 +46,7 @@ async function exists(db: Kysely<ResearchSchema>, conversationId: string): Promi
     .executeTakeFirst());
 }
 // An unstarted retry follows the most recent reserved position in its replacement chain.
-const taskPosition = sql<number>`coalesce(t.reply_position, t.input_through_position,
+const taskPosition = sql<number>`CASE WHEN t.kind='synthesis' THEN t.reply_position ELSE coalesce(t.reply_position, t.input_through_position,
   (WITH RECURSIVE previous(id, reply_position, replaces_task_id, depth) AS (
     SELECT id, reply_position, replaces_task_id, 1 FROM tasks WHERE id=t.replaces_task_id
     UNION ALL SELECT older.id, older.reply_position, older.replaces_task_id, previous.depth+1
@@ -48,7 +54,7 @@ const taskPosition = sql<number>`coalesce(t.reply_position, t.input_through_posi
   ) SELECT reply_position FROM previous WHERE reply_position IS NOT NULL ORDER BY depth LIMIT 1),
   (SELECT origin.reply_position FROM contributions c JOIN interventions i ON i.id=c.intervention_id
     JOIN attempts a ON a.id=i.proposed_by_attempt_id JOIN tasks origin ON origin.id=a.task_id
-    WHERE c.id=t.contribution_id))`;
+    WHERE c.id=t.contribution_id)) END`;
 
 async function timelineItem(
   db: Kysely<ResearchSchema>,
@@ -60,7 +66,11 @@ async function timelineItem(
     .selectFrom("messages")
     .leftJoin("tasks", "tasks.id", "messages.task_id")
     .selectAll("messages")
-    .select(["tasks.document_language as language", "tasks.kind as task_kind"])
+    .select([
+      "tasks.document_language as language",
+      "tasks.kind as task_kind",
+      "tasks.operation as operation",
+    ])
     .where("messages.conversation_id", "=", bytes(conversationId))
     .where("messages.id", "=", bytes(id))
     .executeTakeFirst();
@@ -71,6 +81,9 @@ async function timelineItem(
       id,
       kind: "message",
       ...(row.task_kind === "consultation" ? ({ consultation: true } as const) : {}),
+      ...(row.task_id && row.operation === "contribution_synthesis"
+        ? { synthesisSources: await synthesisSources(db, row.task_id) }
+        : {}),
       rank: 1,
       revision: 1,
       position: row.position,
@@ -154,10 +167,18 @@ async function timelineItem(
     .selectAll("t")
     .select(taskPosition.as("position"))
     .where("t.conversation_id", "=", bytes(conversationId))
-    .where("t.kind", "in", ["reply", "consultation"])
+    .where((eb) =>
+      eb.or([
+        eb("t.kind", "in", ["reply", "consultation"]),
+        eb.and([
+          eb("t.operation", "=", "contribution_synthesis"),
+          eb("t.reply_position", "is not", null),
+        ]),
+      ]),
+    )
     .where("t.id", "=", bytes(id))
     .executeTakeFirst();
-  if (!task || task.state === "waiting_capacity") return undefined;
+  if (!task) return undefined;
   const attempt = await db
     .selectFrom("attempts")
     .selectAll()
@@ -176,6 +197,14 @@ async function timelineItem(
     .executeTakeFirst();
   const policy = recordedOperationPolicy(task.operation, task.policy_version);
   if (!policy) throw new Error("Task policy unavailable.");
+  const synthesis =
+    task.kind === "synthesis"
+      ? await db
+          .selectFrom("continuations")
+          .select("stopped")
+          .where("task_id", "=", task.id)
+          .executeTakeFirst()
+      : undefined;
   return {
     id,
     kind: "task",
@@ -189,9 +218,12 @@ async function timelineItem(
           consultationRetryFits: !replacement && (await consultationRetryFits(db, task, policy)),
         }
       : {}),
+    ...(task.kind === "synthesis"
+      ? { synthesis: true as const, synthesisStopped: synthesis?.stopped === 1 }
+      : {}),
     agentId: replyAgent(task.operation),
     language: task.document_language,
-    state: task.state,
+    state: task.state === "waiting_capacity" ? "queued" : task.state,
     connection: task.connection,
     blockingReason: task.blocking_reason,
     outcomeReason: attempt?.outcome_reason ?? null,
@@ -495,7 +527,7 @@ export async function readResearch(
       const rows = await sql<{ id: Uint8Array; position: number; rank: number }>`
         SELECT id, position, rank FROM (
           SELECT id, position, 1 AS rank FROM messages WHERE conversation_id = ${bytes(p.conversationId)}
-          UNION ALL SELECT t.id, ${taskPosition} AS position, 3 AS rank FROM tasks t WHERE t.conversation_id = ${bytes(p.conversationId)} AND t.kind IN ('reply','consultation')
+          UNION ALL SELECT t.id, ${taskPosition} AS position, 3 AS rank FROM tasks t WHERE t.conversation_id = ${bytes(p.conversationId)} AND (t.kind IN ('reply','consultation') OR (t.operation='contribution_synthesis' AND t.reply_position IS NOT NULL))
           UNION ALL SELECT p.id, t.reply_position AS position, 2 AS rank FROM project_setup_proposals p JOIN tasks t ON t.id=p.task_id WHERE t.conversation_id = ${bytes(p.conversationId)}
           UNION ALL SELECT i.id, t.reply_position AS position, 2 AS rank
             FROM interventions i JOIN attempts a ON a.id=i.proposed_by_attempt_id JOIN tasks t ON t.id=a.task_id
@@ -675,7 +707,15 @@ export async function researchRevisions(
     for (const row of await db
       .selectFrom("tasks")
       .select(["id", "state_revision"])
-      .where("kind", "in", ["reply", "consultation"])
+      .where((eb) =>
+        eb.or([
+          eb("kind", "in", ["reply", "consultation"]),
+          eb.and([
+            eb("operation", "=", "contribution_synthesis"),
+            eb("reply_position", "is not", null),
+          ]),
+        ]),
+      )
       .where("conversation_id", "=", bytes(scope.conversationId))
       .execute())
       result.push({

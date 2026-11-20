@@ -21,6 +21,7 @@ import { unknownUsage, type TaskContext, type TaskRow } from "./tasks.js";
 interface Stream {
   readonly taskId: string;
   readonly taskKind: TaskRow["kind"];
+  readonly showReply: boolean;
   readonly parts: ReplyPart[];
   readonly operationId: string;
   text: string;
@@ -238,44 +239,50 @@ export class DurableProvider {
       return;
     }
     const command =
-      action.name === "confirm-setup" || action.name === "reject-setup"
+      action.name === "run-plan"
         ? {
-            command:
-              action.name === "confirm-setup"
-                ? ("project.confirmSetup" as const)
-                : ("project.rejectSetup" as const),
+            command: "development.runPlan" as const,
             operationId: action.operation_id,
-            payload: { proposalId: action.proposal },
+            payload: { projectId: action.project },
           }
-        : action.name === "create-project"
-          ? { command: "project.create" as const, operationId: action.operation_id, payload: {} }
-          : action.name === "stop" || action.name === "start-again"
-            ? {
-                command:
-                  action.name === "stop" ? ("task.stop" as const) : ("task.startAgain" as const),
-                operationId: action.operation_id,
-                payload: { taskId: action.task },
-              }
-            : action.name === "create-development-project"
+        : action.name === "confirm-setup" || action.name === "reject-setup"
+          ? {
+              command:
+                action.name === "confirm-setup"
+                  ? ("project.confirmSetup" as const)
+                  : ("project.rejectSetup" as const),
+              operationId: action.operation_id,
+              payload: { proposalId: action.proposal },
+            }
+          : action.name === "create-project"
+            ? { command: "project.create" as const, operationId: action.operation_id, payload: {} }
+            : action.name === "stop" || action.name === "start-again"
               ? {
-                  command: "development.createProject" as const,
+                  command:
+                    action.name === "stop" ? ("task.stop" as const) : ("task.startAgain" as const),
                   operationId: action.operation_id,
-                  payload: {},
+                  payload: { taskId: action.task },
                 }
-              : action.name === "start-conversation"
+              : action.name === "create-development-project"
                 ? {
-                    command: "conversation.start" as const,
+                    command: "development.createProject" as const,
                     operationId: action.operation_id,
-                    payload: { projectId: action.project, content: action.text },
+                    payload: {},
                   }
-                : {
-                    command:
-                      action.name === "send-to-josefa"
-                        ? ("development.sendToJosefa" as const)
-                        : ("message.append" as const),
-                    operationId: action.operation_id,
-                    payload: { conversationId: action.conversation, content: action.text },
-                  };
+                : action.name === "start-conversation"
+                  ? {
+                      command: "conversation.start" as const,
+                      operationId: action.operation_id,
+                      payload: { projectId: action.project, content: action.text },
+                    }
+                  : {
+                      command:
+                        action.name === "send-to-josefa"
+                          ? ("development.sendToJosefa" as const)
+                          : ("message.append" as const),
+                      operationId: action.operation_id,
+                      payload: { conversationId: action.conversation, content: action.text },
+                    };
     const result = await this.options.storage.executeResearchCommand(command);
     if (!result.ok) {
       this.report(action.operation_id, {
@@ -288,6 +295,7 @@ export class DurableProvider {
           result.error.code === "task_not_retryable" ||
           result.error.code === "proposal_not_waiting" ||
           result.error.code === "setup_reply_active" ||
+          result.error.code === "project_in_setup" ||
           result.error.code === "uncertain"
             ? result.error.code
             : "invalid_action",
@@ -300,15 +308,17 @@ export class DurableProvider {
     this.report(action.operation_id, {
       type: "record",
       record:
-        action.name === "create-development-project" || action.name === "create-project"
-          ? "project"
-          : action.name === "confirm-setup" || action.name === "reject-setup"
-            ? "receipt"
-            : action.name === "start-conversation"
-              ? "conversation"
-              : action.name === "stop" || action.name === "start-again"
-                ? "task"
-                : "message",
+        action.name === "run-plan"
+          ? "plan"
+          : action.name === "create-development-project" || action.name === "create-project"
+            ? "project"
+            : action.name === "confirm-setup" || action.name === "reject-setup"
+              ? "receipt"
+              : action.name === "start-conversation"
+                ? "conversation"
+                : action.name === "stop" || action.name === "start-again"
+                  ? "task"
+                  : "message",
       id: result.value.resultId,
     });
     if (action.name === "create-project") {
@@ -346,6 +356,10 @@ export class DurableProvider {
         this.streams.set(message.request.attempt, {
           taskId: prepared.value.taskId,
           taskKind: prepared.value.kind,
+          showReply:
+            prepared.value.kind === "reply" ||
+            prepared.value.kind === "consultation" ||
+            message.request.operation === "contribution_synthesis",
           parts: [],
           operationId: prepared.value.acceptedByOperationId,
           text: "",
@@ -413,8 +427,7 @@ export class DurableProvider {
       for (const text of kept ? splitText(kept) : []) {
         const sequence = stream.parts.length + 1;
         stream.parts.push({ sequence, text });
-        if (stream.taskKind === "reply" || stream.taskKind === "consultation")
-          this.options.reply?.(stream.taskId, sequence, text);
+        if (stream.showReply) this.options.reply?.(stream.taskId, sequence, text);
       }
       if (kept)
         this.report(stream.operationId, { type: "text", attempt: message.attempt, text: kept });

@@ -3088,3 +3088,128 @@ describe("consultation states and synchronization", () => {
     h.controller.dispose();
   });
 });
+
+describe("plan synthesis presentation", () => {
+  it("loads a result across earlier timeline pages and can retry the same reveal after a read failure", async () => {
+    const h = controllerHarness();
+    try {
+      await settle();
+      const previous = h.controller.snapshot().next;
+      const source = h.items[0]!;
+      expect(h.controller.snapshot().items).not.toContainEqual(source);
+      vi.mocked(h.port.listTimelineBefore).mockReturnValueOnce(call(failure("storage_failed")));
+      expect(await h.controller.revealMessage(source.id)).toBe(false);
+      expect(h.controller.snapshot()).toMatchObject({
+        failedEarlier: true,
+        loadingEarlier: false,
+        next: previous,
+      });
+      expect(await h.controller.revealMessage(source.id)).toBe(true);
+      expect(h.controller.snapshot().items).toContainEqual(source);
+      expect(h.controller.snapshot()).toMatchObject({
+        failedEarlier: false,
+        loadingEarlier: false,
+        next: null,
+      });
+      const calls = vi.mocked(h.port.listTimelineBefore).mock.calls.length;
+      expect(await h.controller.revealMessage(source.id)).toBe(true);
+      expect(h.port.listTimelineBefore).toHaveBeenCalledTimes(calls);
+    } finally {
+      h.controller.dispose();
+    }
+  });
+
+  it("links only completed results, labels the synthesis and focuses the linked message", async () => {
+    const contribution: TimelineItem = {
+      kind: "message",
+      id: id(810),
+      position: 2,
+      rank: 1,
+      revision: 1,
+      authorKind: "agent",
+      agentId: "josefa",
+      taskId: id(811),
+      content: "Examine the first catalog.",
+      language: "en",
+      ending: "complete",
+    };
+    const synthesis: TimelineItem = {
+      kind: "message",
+      id: id(812),
+      position: 4,
+      rank: 1,
+      revision: 1,
+      authorKind: "agent",
+      agentId: "virgilio",
+      taskId: id(813),
+      content: "No sources were examined.",
+      language: "en",
+      ending: "complete",
+      synthesisSources: [
+        { key: "objective-1", agentId: "josefa", state: "completed", messageId: contribution.id },
+        { key: "objective-2", agentId: "josefa", state: "failed", messageId: null },
+        { key: "objective-3", agentId: "josefa", state: "blocked", messageId: null },
+        { key: "objective-4", agentId: "josefa", state: "cancelled", messageId: null },
+        { key: "objective-5", agentId: "josefa", state: "uncertain", messageId: null },
+      ],
+    };
+    const revealMessage = vi.fn(async () => true);
+    const controller = { revealMessage } as unknown as ConversationController;
+    await render(state([contribution, synthesis]), controller);
+    const message = container.querySelector(`[data-timeline-id="${synthesis.id}"]`);
+    expect(message?.querySelector(".voice-label + .consultation-caption")?.textContent).toBe(
+      "Plan synthesis",
+    );
+    const sources = message?.querySelector(".synthesis-references");
+    expect(sources?.textContent).toBe(
+      "Based on: objective-1 · Josefa, objective-2 · Josefa (failed), objective-3 · Josefa (blocked), objective-4 · Josefa (cancelled), and objective-5 · Josefa (uncertain)",
+    );
+    expect(sources?.querySelectorAll("a")).toHaveLength(1);
+    const link = sources?.querySelector("a");
+    const contributionElement = document.getElementById("message-" + contribution.id);
+    if (contributionElement) contributionElement.scrollIntoView = vi.fn();
+    expect(link?.getAttribute("href")).toBe(`#message-${contribution.id}`);
+    await act(async () => link?.click());
+    expect(revealMessage).toHaveBeenCalledWith(contribution.id);
+    expect(document.activeElement?.id).toBe(`message-${contribution.id}`);
+  });
+
+  it("routes synthesis recovery through one command with acknowledgement and hides retries for terminal refusals", async () => {
+    const h = controllerHarness();
+    const tryAgainSynthesis = vi.fn(() => call(failure("limit_reached")));
+    Object.assign(h.port, { tryAgainSynthesis });
+    const task = reviewTask({
+      id: id(814),
+      synthesis: true,
+      synthesisStopped: false,
+      state: "uncertain",
+    });
+    const controller = consultationController({
+      performTaskAction: h.controller.performTaskAction.bind(h.controller),
+    });
+    await render(state([task]), controller);
+    await act(async () => buttonNamed("Start reply again").click());
+    expect(tryAgainSynthesis).not.toHaveBeenCalled();
+    const dialog = document.querySelector("dialog[open]");
+    expect(dialog).toBeTruthy();
+    const confirm = [...(dialog?.querySelectorAll("button") ?? [])].find(
+      (button) => button.textContent === "Start reply again",
+    );
+    await act(async () => confirm?.click());
+    expect(tryAgainSynthesis).toHaveBeenCalledWith(expect.any(String), { taskId: task.id });
+    expect(container.textContent).toContain("The plan has reached its work limit.");
+    await render(state([{ ...task, synthesisStopped: true }]), controller);
+    expect(buttonNamed("Start reply again")).toBeUndefined();
+    await render(
+      state([{ ...task, state: "failed", outcomeReason: "input_too_large" }]),
+      controller,
+    );
+    expect(container.textContent).toContain(
+      "The plan’s results were longer than Ohtia can send for a synthesis.",
+    );
+    expect(buttonNamed("Try again")).toBeUndefined();
+    await render(state([{ ...task, state: "failed", outcomeReason: "not_eligible" }]), controller);
+    expect(buttonNamed("Try again")).toBeUndefined();
+    h.controller.dispose();
+  });
+});

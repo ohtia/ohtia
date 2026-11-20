@@ -684,6 +684,12 @@
       "minimum": 7
     },
     {
+      "selector": ".synthesis-references",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7
+    },
+    {
       "selector": ".consultation-request",
       "backgrounds": ["surface.page"],
       "minimum": 3,

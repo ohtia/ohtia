@@ -1,5 +1,5 @@
 import { validConversationTitle } from "./research.js";
-import { researcherMessageLimit } from "./research-port.js";
+import { isResearchId, researcherMessageLimit } from "./research-port.js";
 import { portLimits, utf8Size, isIdentifier } from "./port.js";
 import { isConnectionId } from "./connections.js";
 
@@ -8,8 +8,10 @@ import { isConnectionId } from "./connections.js";
  * and main, which checks the dispatch permit, attaches the credential and sends them (ADR-0028).
  */
 export const providerMessageVersion = 1;
-/** Six-byte JSON escaping of 256 KiB of messages plus instructions/cut notes fits this envelope. */
+/** Ordinary provider messages retain their existing envelope. */
 export const providerMessageBytes = 2 * 1024 * 1024;
+/** Synthesis can send 768 KiB of text with up to six JSON bytes per input byte. */
+export const providerDispatchBytes = 5 * 1024 * 1024;
 /** Fits the role and shared thesis route with the rendered context, including an 800-byte title. */
 const providerInstructionBytes = 10 * 1024;
 /** ADR-0028's versioned permit validity: not a response deadline. Real-account checks measure it. */
@@ -17,6 +19,7 @@ export const dispatchPermitPolicy = Object.freeze({ version: 1, validity_ms: 200
 export const providerOperations = [
   "development_test",
   "development_test_synthesis",
+  "contribution_synthesis",
   "project_setup",
   "direct_guidance",
   "search_strategy_planning",
@@ -404,6 +407,11 @@ export function isProviderRequestData(value: unknown): value is ProviderRequestD
     value.input.every(isInput) &&
     Array.isArray(value.tools) &&
     value.tools.length <= 32 &&
+    (value.operation !== "contribution_synthesis" ||
+      (value.input.length <= 50 &&
+        value.input.every(({ role }) => role === "user") &&
+        value.input.reduce((bytes, item) => bytes + utf8Size(item.text), 0) <= 768 * 1024 &&
+        value.tools.length === 0)) &&
     (value.operation !== "search_strategy_planning" || value.tools.length === 0) &&
     (value.operation !== "development_test_synthesis" ||
       (value.connection === "fake" && value.tools.length === 0)) &&
@@ -422,10 +430,13 @@ function isPermit(value: unknown): value is DispatchPermit {
     count(value.issued_at)
   );
 }
-function parse(text: unknown): Record<string, unknown> | undefined {
-  if (typeof text !== "string" || text.length > providerMessageBytes) return;
+function parse(
+  text: unknown,
+  maxBytes = providerMessageBytes,
+): Record<string, unknown> | undefined {
+  if (typeof text !== "string" || text.length > maxBytes) return;
   try {
-    if (utf8Size(text) > providerMessageBytes) return;
+    if (utf8Size(text) > maxBytes) return;
     const value: unknown = JSON.parse(text);
     return record(value) ? value : undefined;
   } catch {
@@ -450,11 +461,13 @@ export function decodeProviderDispatch(
   text: unknown,
   generation: string,
 ): ProviderDispatchMessage | undefined {
-  const value = parse(text);
+  const value = parse(text, providerDispatchBytes);
   if (
     header(value, "provider_dispatch", generation) &&
     exact(value, ["kind", "version", "generation", "request", "permit"]) &&
     isProviderRequestData(value.request) &&
+    (value.request.operation === "contribution_synthesis" ||
+      (typeof text === "string" && utf8Size(text) <= providerMessageBytes)) &&
     isPermit(value.permit)
   )
     return value as unknown as ProviderDispatchMessage;
@@ -585,6 +598,7 @@ export type DevelopmentAction =
     }
   | { readonly name: "interrupt"; readonly operation_id: string; readonly attempt: string }
   | { readonly name: "create-development-project"; readonly operation_id: string }
+  | { readonly name: "run-plan"; readonly operation_id: string; readonly project: string }
   | { readonly name: "create-project"; readonly operation_id: string }
   | { readonly name: "confirm-setup"; readonly operation_id: string; readonly proposal: string }
   | { readonly name: "reject-setup"; readonly operation_id: string; readonly proposal: string }
@@ -644,6 +658,7 @@ export const developmentRefusals = [
   "task_not_retryable",
   "proposal_not_waiting",
   "setup_reply_active",
+  "project_in_setup",
 ] as const;
 export type DevelopmentReport =
   | {
@@ -653,7 +668,8 @@ export type DevelopmentReport =
     }
   | {
       readonly type: "record";
-      readonly record: "project" | "conversation" | "message" | "task" | "receipt" | "proposal";
+      readonly record:
+        "project" | "conversation" | "message" | "task" | "receipt" | "proposal" | "plan";
       readonly id: string;
     }
   | { readonly type: "refused"; readonly reason: (typeof developmentRefusals)[number] }
@@ -719,7 +735,7 @@ function isDevelopmentReport(value: unknown): value is DevelopmentReport {
     case "record":
       return (
         exact(value, ["type", "record", "id"]) &&
-        ["project", "conversation", "message", "task", "receipt", "proposal"].includes(
+        ["project", "conversation", "message", "task", "receipt", "proposal", "plan"].includes(
           value.record as string,
         ) &&
         isIdentifier(value.id)
@@ -808,6 +824,12 @@ export function decodeDevelopmentAction(
       action.name === "create-project" ||
       action.name === "continue-all") &&
     exact(action, ["name", "operation_id"])
+  )
+    return value as unknown as DevelopmentActionMessage;
+  if (
+    action.name === "run-plan" &&
+    exact(action, ["name", "operation_id", "project"]) &&
+    isResearchId(action.project)
   )
     return value as unknown as DevelopmentActionMessage;
   if (

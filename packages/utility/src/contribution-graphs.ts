@@ -4,7 +4,7 @@ import { sql, type Kysely, type NotNull, type Selectable } from "kysely";
 import { consultableAgents, type ContributionRow } from "./consultations.js";
 import {
   operationPolicy,
-  testSynthesisPolicy,
+  contributionSynthesisPolicy,
   type InputMessage,
   type OperationPolicy,
 } from "./operations.js";
@@ -294,7 +294,7 @@ export async function addContributions(
     !(await workFits(
       db,
       limits,
-      creating ? [...policies, testSynthesisPolicy] : policies,
+      creating ? [...policies, contributionSynthesisPolicy] : policies,
       existing?.id,
     ))
   )
@@ -352,13 +352,13 @@ export async function addContributions(
         })),
         {
           agent_id: "virgilio",
-          operation: testSynthesisPolicy.operation,
+          operation: contributionSynthesisPolicy.operation,
           connection: resolveConnection("virgilio"),
         },
       ],
       now,
     );
-    await reserveWork(db, id, null, testSynthesisPolicy, now);
+    await reserveWork(db, id, null, contributionSynthesisPolicy, now);
   } else {
     await db
       .updateTable("interventions")

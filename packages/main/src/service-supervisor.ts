@@ -32,7 +32,7 @@ import {
   failure,
   isIdentifier,
   portLimits,
-  providerMessageBytes,
+  providerDispatchBytes,
   policyId,
   type Operation,
   type OperationInputs,
@@ -465,7 +465,7 @@ export class ServiceSupervisor {
       if (this.pendingWakes.length === 0) this.provider?.wakeReviewed?.(wake);
       return;
     }
-    if (typeof input === "string" && input.length <= providerMessageBytes) {
+    if (typeof input === "string" && input.length <= providerDispatchBytes) {
       // Versioned provider messages; a malformed one falls through to the peer decoder's fault.
       const dispatch = decodeProviderDispatch(input, this.generation);
       const interrupt = dispatch ? undefined : decodeProviderInterrupt(input, this.generation);
