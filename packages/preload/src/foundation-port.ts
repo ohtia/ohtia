@@ -542,6 +542,7 @@ export function createFoundationPort(
     declineConsultation: (id, input) => call("consultation.decline", input, id),
     tryAgainContribution: (id, input) => call("contribution.tryAgain", input, id),
     startAgainContribution: (id, input) => call("contribution.startAgain", input, id),
+    tryAgainSynthesis: (id, input) => call("synthesis.tryAgain", input, id),
     tryAgainTask: (id, input) => call("task.tryAgain", input, id),
     startAgainTask: (id, input) => call("task.startAgain", input, id),
     resumeUsagePause: (id, input) => call("usagePause.resume", input, id),

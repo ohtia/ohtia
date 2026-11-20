@@ -11,7 +11,12 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { message, type CommandBridge, type InterfaceLocale } from "@ohtia/contracts";
+import {
+  message,
+  type CommandBridge,
+  type InterfaceLocale,
+  type SynthesisSource,
+} from "@ohtia/contracts";
 import { MessageMarkdown } from "./research-presentation.js";
 import { contributorNames, VoiceLabel } from "./contributor-identity.js";
 import { LucideGlyph } from "./iconography.js";
@@ -25,6 +30,50 @@ import "./conversation.css";
 
 const subscribeWithoutComposer = () => () => {};
 const defaultDraftAgent = () => "virgilio" as const;
+
+function SynthesisReferences({
+  sources,
+  locale,
+  reveal,
+}: {
+  readonly sources: readonly SynthesisSource[];
+  readonly locale: InterfaceLocale;
+  readonly reveal: (id: string) => void;
+}) {
+  const list = new Intl.ListFormat(locale, { style: "long", type: "conjunction" });
+  const parts = list.formatToParts(sources.map(({ key }) => key));
+  const entries = new Map(sources.map((source) => [source.key, source]));
+  return (
+    <p className="synthesis-references" lang={locale} dir="auto">
+      {message(locale, "synthesis.basedOn")}{" "}
+      {parts.map((part, index) => {
+        const source = part.type === "element" ? entries.get(part.value) : undefined;
+        if (!source) return <Fragment key={index}>{part.value}</Fragment>;
+        const label = `${source.key} · ${contributorNames[source.agentId]}`;
+        if (source.state !== "completed")
+          return (
+            <bdi key={index}>
+              {label} ({message(locale, `synthesis.state.${source.state}`)})
+            </bdi>
+          );
+        const id = source.messageId;
+        return (
+          <a
+            className="primitive-link"
+            href={`#message-${id}`}
+            key={index}
+            onClick={(event) => {
+              event.preventDefault();
+              reveal(id);
+            }}
+          >
+            <bdi>{label}</bdi>
+          </a>
+        );
+      })}
+    </p>
+  );
+}
 
 export function ConversationView({
   state,
@@ -46,6 +95,7 @@ export function ConversationView({
         | "connections"
         | "claimTaskNotice"
         | "readingPositions"
+        | "revealMessage"
       >
     >;
   readonly locale: InterfaceLocale;
@@ -65,6 +115,9 @@ export function ConversationView({
     { button: HTMLButtonElement; conversation: string | null } | undefined
   >(undefined);
   const [jump, setJump] = useState(false);
+  const [target, setTarget] = useState<{ conversationId: string | null; messageId: string } | null>(
+    null,
+  );
   const id = state.scope.conversationId;
   const draftAgent = useSyncExternalStore(
     controller.composer?.subscribe ?? subscribeWithoutComposer,
@@ -169,6 +222,21 @@ export function ConversationView({
   restore.current = restoreReading;
   useLayoutEffect(() => {
     restore.current();
+    if (target && target.conversationId === id) {
+      const message = document.getElementById(`message-${target.messageId}`);
+      if (
+        message &&
+        viewport.current?.contains(message) &&
+        !viewport.current.closest("[hidden], [inert]")
+      ) {
+        follow.current = false;
+        message.scrollIntoView({ block: "nearest" });
+        message.focus({ preventScroll: true });
+        remember();
+        setJump(true);
+        setTarget(null);
+      }
+    }
     const trigger = earlierTrigger.current;
     if (!trigger || state.loadingEarlier) return;
     earlierTrigger.current = undefined;
@@ -380,9 +448,12 @@ export function ConversationView({
                           }}
                           locale={locale}
                         />
-                        {item.consultation && (
+                        {(item.consultation || item.synthesis) && (
                           <p className="consultation-caption">
-                            {message(locale, "consultation.caption")}
+                            {message(
+                              locale,
+                              item.synthesis ? "synthesis.caption" : "consultation.caption",
+                            )}
                           </p>
                         )}
                         <div
@@ -415,8 +486,8 @@ export function ConversationView({
                       connection={connection}
                       hasText={!!saved || !!text}
                       latest={
-                        item.consultation
-                          ? !item.superseded
+                        item.consultation || item.synthesis
+                          ? !item.superseded && !item.synthesisStopped
                           : state.conversation?.latestReplyTaskId === item.id
                       }
                       // Only tasks accepted before the document language was confirmed are setup tasks.
@@ -449,6 +520,8 @@ export function ConversationView({
               return (
                 <article
                   key={item.id}
+                  id={`message-${item.id}`}
+                  tabIndex={-1}
                   data-timeline-id={item.id}
                   className={`conversation-message ${researcher ? "researcher" : "agent"}`}
                   aria-label={agent ? contributorNames[agent] : message(locale, "conversation.you")}
@@ -460,9 +533,12 @@ export function ConversationView({
                       locale={locale}
                     />
                   )}
-                  {item.consultation && (
+                  {(item.consultation || item.synthesisSources) && (
                     <p className="consultation-caption">
-                      {message(locale, "consultation.caption")}
+                      {message(
+                        locale,
+                        item.synthesisSources ? "synthesis.caption" : "consultation.caption",
+                      )}
                     </p>
                   )}
                   <div className="conversation-text" lang={item.language ?? ""} dir="auto">
@@ -473,6 +549,20 @@ export function ConversationView({
                       openExternalLink={commands.openExternalLink}
                     />
                   </div>
+                  {item.synthesisSources && (
+                    <SynthesisReferences
+                      sources={item.synthesisSources}
+                      locale={locale}
+                      reveal={(messageId) => {
+                        const request = { conversationId: id, messageId };
+                        setTarget(request);
+                        void controller.revealMessage?.(messageId).then((found) => {
+                          if (!found)
+                            setTarget((current) => (current === request ? null : current));
+                        });
+                      }}
+                    />
+                  )}
                   <SavedMessageActions
                     key={`${id ?? ""}/${item.id}`}
                     messageId={item.id}

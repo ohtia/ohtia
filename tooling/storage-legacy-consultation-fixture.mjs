@@ -7,6 +7,8 @@ import {
   objects as replyObjects,
 } from "../packages/utility/src/migrations/0010_reply_control.mjs";
 import { objects as noticeObjects } from "../packages/utility/src/migrations/0016_task_notices.mjs";
+import { columns as titleColumns } from "../packages/utility/src/migrations/0018_conversation_titles.mjs";
+import { objects as limits } from "../packages/utility/src/migrations/0023_shared_work_limits.mjs";
 import { objects as josefaObjects } from "../packages/utility/src/migrations/0019_josefa_search_planning.mjs";
 
 const priorTaskTable = durableTaskTables.tasks.replace(
@@ -23,7 +25,32 @@ const priorTaskObjects = {
   receipts_commands: josefaObjects.receipts_commands,
 };
 
+const priorAttempts = durableTaskTables.attempts.replace(
+  ",\n    UNIQUE (task_id,attempt_number)",
+  `, ${titleColumns.policy},\n    UNIQUE (task_id,attempt_number)`,
+);
+const attemptFields =
+  "id,task_id,attempt_number,service_generation,state,outcome_reason,requested_model,observed_model,dispatch_permitted_at,transfer_manifest,provider_request_id,input_tokens,cached_input_tokens,output_tokens,reasoning_tokens,created_at,started_at,finished_at,conversation_title_policy";
+const attemptObjects = Object.entries({
+  ...durableTaskObjects,
+  attempts_changes: limits.attempts_changes,
+})
+  .filter(([name]) => name.startsWith("attempts_"))
+  .map(([, definition]) => definition);
+
+export const dropSynthesisAttemptSql = `
+  ALTER TABLE attempts RENAME TO attempts_with_synthesis;
+  ${priorAttempts};
+  INSERT INTO attempts(rowid,${attemptFields})
+    SELECT rowid,${attemptFields} FROM attempts_with_synthesis ORDER BY rowid;
+  DROP TABLE attempts_with_synthesis;
+  ${attemptObjects.join(";\n")};
+  DELETE FROM kysely_migration WHERE name='0025_contribution_synthesis';
+  DELETE FROM ohtia_migration_artifacts WHERE name='0025_contribution_synthesis';
+`;
+
 export const dropCoordinationSql = `
+  ${dropSynthesisAttemptSql}
   DROP TABLE continuations;
   DROP TABLE intervention_events;
   DELETE FROM kysely_migration WHERE name='0024_plan_coordination';

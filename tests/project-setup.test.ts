@@ -1707,7 +1707,7 @@ it("upgrades a schema-15 setup proposal without losing decisions or notice retry
     }),
   );
   const db = f.raw();
-  expect(db.pragma("user_version", { simple: true })).toBe(24);
+  expect(db.pragma("user_version", { simple: true })).toBe(25);
   expect(
     db
       .prepare("SELECT state FROM project_setup_proposals WHERE id=?")

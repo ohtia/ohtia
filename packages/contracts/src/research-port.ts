@@ -28,6 +28,7 @@ export const researchOperations = [
   "contribution.tryAgain",
   "contribution.startAgain",
   "task.tryAgain",
+  "synthesis.tryAgain",
   "task.startAgain",
   "usagePause.resume",
   "task.continueAll",
@@ -93,10 +94,16 @@ export function isReplyAgent(value: unknown): value is ReplyAgent {
   return value === "virgilio" || value === "josefa";
 }
 
+export type SynthesisSource = { readonly key: string; readonly agentId: ReplyAgent } & (
+  | { readonly state: "completed"; readonly messageId: string }
+  | { readonly state: "failed" | "blocked" | "cancelled" | "uncertain"; readonly messageId: null }
+);
+
 export interface TimelineMessage extends TimelineIdentity {
   readonly kind: "message";
   readonly rank: 1;
   readonly consultation?: true;
+  readonly synthesisSources?: readonly SynthesisSource[];
   readonly authorKind: "researcher" | "agent";
   readonly agentId: ReplyAgent | null;
   readonly taskId: string | null;
@@ -110,6 +117,8 @@ export interface TimelineTask extends TimelineIdentity {
   readonly consultation?: true;
   readonly replacesTaskId?: string | null;
   readonly consultationRetryFits?: boolean;
+  readonly synthesis?: true;
+  readonly synthesisStopped?: boolean;
   readonly agentId: ReplyAgent;
   readonly language: string | null;
   readonly connection: string;
@@ -367,6 +376,7 @@ export interface ResearchInputs {
   "planEvent.list": { readonly planId: string; readonly afterSequence: number };
   "consultation.accept": ResearchPayloads["consultation.accept"];
   "task.tryAgain": ResearchPayloads["task.tryAgain"];
+  "synthesis.tryAgain": ResearchPayloads["synthesis.tryAgain"];
   "task.startAgain": ResearchPayloads["task.startAgain"];
   "usagePause.resume": ResearchPayloads["usagePause.resume"];
   "task.continueAll": ResearchPayloads["task.continueAll"];
@@ -413,6 +423,7 @@ export interface ResearchOutputs {
   "planEvent.list": PlanEventPage;
   "consultation.accept": ResearchResult;
   "task.tryAgain": ResearchResult;
+  "synthesis.tryAgain": ResearchResult;
   "task.startAgain": ResearchResult;
   "usagePause.resume": ResearchResult;
   "task.continueAll": ResearchResult;
@@ -457,6 +468,10 @@ export interface ResearchPort {
   startAgainContribution(
     operationId: string,
     input: ResearchInputs["contribution.startAgain"],
+  ): PortCall<ResearchResult>;
+  tryAgainSynthesis(
+    operationId: string,
+    input: ResearchInputs["synthesis.tryAgain"],
   ): PortCall<ResearchResult>;
   tryAgainTask(
     operationId: string,
@@ -541,6 +556,7 @@ export function isResearchMutation(value: string): value is WindowResearchComman
     "contribution.tryAgain",
     "contribution.startAgain",
     "task.tryAgain",
+    "synthesis.tryAgain",
     "task.startAgain",
     "usagePause.resume",
     "task.continueAll",
@@ -560,7 +576,7 @@ export function mergeTimeline(
     else if (
       previous.kind === "task" &&
       item.kind === "task" &&
-      item.consultation &&
+      (item.consultation || item.synthesis) &&
       item.superseded &&
       previous.revision === item.revision
     )
@@ -695,6 +711,7 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
         (exact(value, ["contributionId"]) && isResearchId(value.contributionId))
       );
     case "contribution.startAgain":
+    case "synthesis.tryAgain":
     case "task.tryAgain":
     case "task.startAgain":
     case "task.stop":
@@ -972,9 +989,14 @@ function item(value: unknown): boolean {
         "language",
         "ending",
         ...(value.consultation === true ? ["consultation"] : []),
+        ...(value.synthesisSources !== undefined ? ["synthesisSources"] : []),
       ]) &&
       value.rank === 1 &&
       value.revision === 1 &&
+      (value.synthesisSources === undefined ||
+        (value.agentId === "virgilio" &&
+          value.consultation === undefined &&
+          isSynthesisSources(value.synthesisSources))) &&
       (typeof value.content === "string" || isTextReference(value.content)) &&
       (value.authorKind === "researcher"
         ? value.consultation === undefined &&
@@ -1011,7 +1033,12 @@ function item(value: unknown): boolean {
       ...(value.consultation === true
         ? ["consultation", "replacesTaskId", "consultationRetryFits"]
         : []),
+      ...(value.synthesis === true ? ["synthesis", "synthesisStopped"] : []),
     ]) &&
+    (value.synthesis !== true ||
+      (value.agentId === "virgilio" &&
+        value.consultation === undefined &&
+        typeof value.synthesisStopped === "boolean")) &&
     (value.consultation !== true ||
       (nullable(value.replacesTaskId, isResearchId) &&
         typeof value.consultationRetryFits === "boolean")) &&
@@ -1044,6 +1071,7 @@ function item(value: unknown): boolean {
           "output_limit_exceeded",
           "connection_lost",
           "empty_reply",
+          "input_too_large",
           "permit_expired",
           "inactivity_timeout",
           "deadline_exceeded",
@@ -1073,6 +1101,27 @@ function item(value: unknown): boolean {
     ].includes(value.state as string)
   );
 }
+function isSynthesisSources(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.length <= 8 &&
+    value.every(
+      (source: unknown) =>
+        exact(source, ["key", "agentId", "state", "messageId"]) &&
+        typeof source.key === "string" &&
+        /^[a-z0-9-]{1,64}$/.test(source.key) &&
+        isReplyAgent(source.agentId) &&
+        (source.state === "completed"
+          ? isResearchId(source.messageId)
+          : ["failed", "blocked", "cancelled", "uncertain"].some(
+              (state) => state === source.state,
+            ) && source.messageId === null),
+    ) &&
+    new Set(value.map((source: SynthesisSource) => source.key)).size === value.length
+  );
+}
+
 export function researchOutput(operation: ResearchOperation, value: unknown): boolean {
   if (operation === "pause.read")
     return (

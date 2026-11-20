@@ -728,6 +728,16 @@ export const operationErrorCodes = Object.freeze({
     "uncertain",
     "operation_conflict",
   ],
+  "synthesis.tryAgain": [
+    ...researchMutationErrors,
+    "record_not_found",
+    "uncertain",
+    "operation_conflict",
+    "task_not_retryable",
+    "newer_task_exists",
+    "pending_limit_reached",
+    "limit_reached",
+  ],
   "task.tryAgain": [
     ...researchMutationErrors,
     "record_not_found",

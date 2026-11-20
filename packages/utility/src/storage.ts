@@ -60,6 +60,11 @@ import {
   objects as coordinationObjects,
   up as planCoordination,
 } from "./migrations/0024_plan_coordination.mjs";
+import {
+  synthesisTables,
+  objects as synthesisObjects,
+  up as contributionSynthesis,
+} from "./migrations/0025_contribution_synthesis.mjs";
 import { readResearch, researchRevisions, readPauseCounts } from "./research-reads.js";
 import type { Request, ResearchScope, ResearchEvent, ResearchOperation } from "@ohtia/contracts";
 import {
@@ -306,6 +311,7 @@ const names = [
   "0022_contribution_graphs",
   "0023_shared_work_limits",
   "0024_plan_coordination",
+  "0025_contribution_synthesis",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -663,17 +669,19 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
               : revision >= 22
                 ? graphTasks
                 : consultationTasks
-            : revision >= 10 && name === "tasks"
-              ? definition.replace(
-                  ",\n    CHECK ((state=",
-                  `, ${replyColumns.charge},\n    CHECK ((state=`,
-                )
-              : revision >= 18 && name === "attempts"
+            : revision >= 25 && name === "attempts"
+              ? synthesisTables.attempts
+              : revision >= 10 && name === "tasks"
                 ? definition.replace(
-                    ",\n    UNIQUE (task_id,attempt_number)",
-                    `, ${titleColumns.policy},\n    UNIQUE (task_id,attempt_number)`,
+                    ",\n    CHECK ((state=",
+                    `, ${replyColumns.charge},\n    CHECK ((state=`,
                   )
-                : definition,
+                : revision >= 18 && name === "attempts"
+                  ? definition.replace(
+                      ",\n    UNIQUE (task_id,attempt_number)",
+                      `, ${titleColumns.policy},\n    UNIQUE (task_id,attempt_number)`,
+                    )
+                  : definition,
         ])
       : []),
     ...(revision >= 15 ? Object.entries(setupTables) : []),
@@ -685,7 +693,8 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...workLimitTables,
                 interventions: coordinationTables.interventions,
                 intervention_events: coordinationTables.intervention_events,
-                continuations: coordinationTables.continuations,
+                continuations:
+                  revision >= 25 ? synthesisTables.continuations : coordinationTables.continuations,
               }
             : revision >= 23
               ? { ...graphTables, ...workLimitTables }
@@ -732,6 +741,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 22 ? graphObjects : revision >= 21 ? consultationObjects : {}),
                 ...(revision >= 23 ? workLimitObjects : {}),
                 ...(revision >= 24 ? coordinationObjects : {}),
+                ...(revision >= 25 ? synthesisObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1143,6 +1153,7 @@ export class DurableStore {
                 "0022_contribution_graphs": { up: contributionGraphs },
                 "0023_shared_work_limits": { up: sharedWorkLimits },
                 "0024_plan_coordination": { up: planCoordination },
+                "0025_contribution_synthesis": { up: contributionSynthesis },
               }),
           },
         });
@@ -2570,6 +2581,8 @@ export class DurableStore {
         "conversation.stop": "ohtia.conversation.stop_requested",
         "task.startAgain": "ohtia.task.replaced",
         "task.tryAgain": "ohtia.task.retry_requested",
+        "synthesis.tryAgain": "ohtia.synthesis.retry_requested",
+        "development.runPlan": "ohtia.development.plan_started",
         "plan.addContributions": "ohtia.plan.graph_recorded",
         "plan.finish": "ohtia.plan.finished",
         "plan.cancel": "ohtia.plan.cancel_requested",

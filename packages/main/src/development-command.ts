@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import {
   isIdentifier,
+  isResearchId,
   isProviderModelSlug,
   isDevelopmentText,
   portLimits,
@@ -27,6 +28,7 @@ const actions: Readonly<Record<string, readonly string[]>> = Object.freeze({
   "reject-setup": ["proposal"],
   "open-conversation": ["conversation"],
   "start-conversation": ["project", "text"],
+  "run-plan": ["project"],
   send: ["conversation", "text"],
   "send-to-josefa": ["conversation", "text"],
   interrupt: ["attempt"],
@@ -89,6 +91,11 @@ export function parseDevelopmentSwitches(
     command === "continue-all"
   )
     return { ok: true, action: { name: command, operation_id: operationId } };
+  if (command === "run-plan") {
+    const project = values.get("project");
+    if (!isResearchId(project)) return { ok: false, error: "Use a project identifier." };
+    return { ok: true, action: { name: command, operation_id: operationId, project } };
+  }
   if (command === "start-conversation" || command === "send" || command === "send-to-josefa") {
     const id = values.get(command === "start-conversation" ? "project" : "conversation");
     const text = values.get("text");

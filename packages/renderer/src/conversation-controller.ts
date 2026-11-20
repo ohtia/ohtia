@@ -258,19 +258,26 @@ export class ConversationController {
           ? this.port.resumeUsagePause(operationId, { connection: task.connection as "chatgpt" })
           : action === "continue"
             ? this.port.continueAllTasks(operationId)
-            : action === "retry"
-              ? task.consultation
-                ? this.port.tryAgainContribution(operationId, { taskId: task.id })
-                : this.port.tryAgainTask(operationId, { taskId: task.id })
-              : task.consultation
-                ? this.port.startAgainContribution(operationId, { taskId: task.id })
-                : this.port.startAgainTask(operationId, { taskId: task.id })
+            : task.synthesis
+              ? this.port.tryAgainSynthesis(operationId, { taskId: task.id })
+              : action === "retry"
+                ? task.consultation
+                  ? this.port.tryAgainContribution(operationId, { taskId: task.id })
+                  : this.port.tryAgainTask(operationId, { taskId: task.id })
+                : task.consultation
+                  ? this.port.startAgainContribution(operationId, { taskId: task.id })
+                  : this.port.startAgainTask(operationId, { taskId: task.id })
       ).result;
     } catch {
       result = failure("invalid_service_result");
     }
     if (result.ok && !this.disposed) {
-      if ((action === "retry" || action === "restart") && conversationId && result.value.resultId)
+      if (
+        !task.synthesis &&
+        (action === "retry" || action === "restart") &&
+        conversationId &&
+        result.value.resultId
+      )
         this.introducedTasks.set(result.value.resultId, conversationId);
       // A failed reread cannot turn a confirmed save into another mutation.
       try {
@@ -956,6 +963,35 @@ export class ConversationController {
       }
       if (this.live(epoch)) this.publish();
     });
+  };
+  revealMessage = (id: string): Promise<boolean> => {
+    const epoch = this.epoch;
+    const reveal = this.queue.then(async () => {
+      if (!this.live(epoch)) return false;
+      if (this.state.items.some((item) => item.id === id)) return true;
+      this.state = { ...this.state, loadingEarlier: true, failedEarlier: false };
+      this.publish();
+      try {
+        let next = this.state.next;
+        while (next && this.live(epoch) && !this.state.items.some((item) => item.id === id))
+          next = await this.page(next, epoch);
+        if (this.live(epoch))
+          this.state = {
+            ...this.state,
+            next,
+            loadingEarlier: false,
+            failedEarlier: !this.state.items.some((item) => item.id === id),
+          };
+      } catch {
+        if (this.live(epoch))
+          this.state = { ...this.state, loadingEarlier: false, failedEarlier: true };
+      }
+      if (!this.live(epoch)) return false;
+      this.publish();
+      return !this.state.failedEarlier;
+    });
+    this.queue = reveal.then(() => {});
+    return reveal;
   };
   private async event(event: ResearchEvent, epoch: number): Promise<void> {
     if (event.kind === "destinationChanged") {

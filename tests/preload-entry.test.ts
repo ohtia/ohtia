@@ -159,7 +159,18 @@ describe("sandbox preload composition", () => {
     expect(
       h.ipcRenderer.send.mock.calls.slice(-3).map(([, text]) => JSON.parse(text).operation),
     ).toEqual(["plan.read", "planEvent.list", "plan.cancel"]);
+    const retrySynthesis = h.bridge.foundation.tryAgainSynthesis("try-synthesis", {
+      taskId: "019a8000-0000-7000-8000-000000000501",
+    });
+    const retryWire = h.ipcRenderer.send.mock.calls.at(-1);
+    expect(retryWire?.[0]).toBe(desktopChannels.port);
+    expect(JSON.parse(retryWire?.[1] as string)).toMatchObject({
+      operation: "synthesis.tryAgain",
+      operationId: "try-synthesis",
+      payload: { taskId: "019a8000-0000-7000-8000-000000000501" },
+    });
     h.window.dispatchEvent(new Event("unload"));
+    expect(await retrySynthesis.result).toMatchObject({ ok: false, error: { code: "uncertain" } });
     for (const call of planCalls) expect(await call.result).toMatchObject({ ok: false });
     expect(await fresh.result).toMatchObject({ ok: false, error: { code: "disposed" } });
     expect(h.ipcRenderer.listenerCount(desktopChannels.ended)).toBe(0);

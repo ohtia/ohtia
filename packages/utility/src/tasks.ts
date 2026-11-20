@@ -22,6 +22,7 @@ import {
   createContinuation,
   hasEventRoom,
   planContinuation,
+  legacySynthesisInput,
   synthesisInput,
 } from "./plan-coordination.js";
 import type { PlanEventKind, PlanEventPayload } from "@ohtia/contracts";
@@ -82,6 +83,7 @@ import {
   recordedOperationPolicy,
   replyAgent,
   testSynthesisPolicy,
+  contributionSynthesisPolicy,
   type OperationPolicy,
 } from "./operations.js";
 const conversationTitleTool: ProviderTool = {
@@ -136,6 +138,7 @@ export type AttemptReason =
   | "output_limit_exceeded"
   | "connection_lost"
   | "empty_reply"
+  | "input_too_large"
   | "permit_expired"
   | "inactivity_timeout"
   | "deadline_exceeded"
@@ -251,8 +254,10 @@ export class TaskTransaction {
   }
   async flush(): Promise<void> {
     for (const id of this.changedPlans.values()) await this.advancePlan(id);
-    if (this.admitSynthesis && !this.stopContinuationAdmission)
-      await this.admitWaitingContinuations();
+    if (this.admitSynthesis && !this.stopContinuationAdmission) {
+      await this.admitWaitingContinuations(contributionSynthesisPolicy);
+      await this.admitWaitingContinuations(testSynthesisPolicy);
+    }
     for (const id of this.interventions.values())
       await this.db
         .updateTable("interventions")
@@ -660,8 +665,7 @@ export class TaskTransaction {
     this.touchIntervention(plan.id);
   }
 
-  private async admitWaitingContinuations(): Promise<void> {
-    const policy = testSynthesisPolicy;
+  private async admitWaitingContinuations(policy: OperationPolicy): Promise<void> {
     let available = policy.max_pending_tasks - (await this.pendingCount(policy.operation));
     if (available <= 0) return;
     const returning = await this.db
@@ -685,6 +689,16 @@ export class TaskTransaction {
       .selectFrom("continuations")
       .selectAll()
       .where("admission", "=", "waiting")
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom("intervention_operations as o")
+            .select("o.intervention_id")
+            .whereRef("o.intervention_id", "=", "continuations.intervention_id")
+            .where("o.agent_id", "=", "virgilio")
+            .where("o.operation", "=", policy.operation),
+        ),
+      )
       .orderBy("created_at")
       .orderBy("id")
       .limit(available)
@@ -711,9 +725,9 @@ export class TaskTransaction {
       const taskId = newId();
       const reason = row.restart_held
         ? "restart_paused"
-        : route.connection !== "fake" || this.context.mode !== "development"
-          ? "configuration_unavailable"
-          : await this.connectionBlock(route.connection);
+        : this.synthesisRouteAvailable(policy.operation, route.connection)
+          ? await this.connectionBlock(route.connection)
+          : "configuration_unavailable";
       await this.db
         .updateTable("continuations")
         .set({ admission: "admitted", task_id: taskId, restart_held: 0 })
@@ -1140,6 +1154,15 @@ export class TaskTransaction {
     if (!this.context.connections.available(connection)) return "connection_disabled";
     return (await this.usagePause(connection)) ? "usage_limit_reached" : null;
   }
+  private synthesisRouteAvailable(operation: string, connection: string): boolean {
+    return (
+      connection === this.agentConnection("virgilio") &&
+      (operation === contributionSynthesisPolicy.operation ||
+        (operation === testSynthesisPolicy.operation &&
+          connection === "fake" &&
+          this.context.mode === "development"))
+    );
+  }
   /** Revalidate the released operation's authority and immutable inputs without changing its scope. */
   private async valid(task: TaskRow): Promise<boolean> {
     const policy = operationPolicy(task.operation, task.policy_version, this.context.mode);
@@ -1195,7 +1218,7 @@ export class TaskTransaction {
         .where("i.outcome", "is", null)
         .executeTakeFirst();
       if (!plan) return false;
-      if (receipt.command === "plan.addContributions")
+      if (receipt.command === "plan.addContributions" || receipt.command === "development.runPlan")
         return (
           plan.decided_by_operation_id === receipt.operation_id &&
           identifier(receipt.result_id) === identifier(plan.id)
@@ -1209,20 +1232,33 @@ export class TaskTransaction {
     if (task.kind === "synthesis") {
       const continuation = await this.db
         .selectFrom("continuations")
-        .select("id")
+        .select(["id", "intervention_id"])
         .where("task_id", "=", task.id)
         .where("admission", "=", "admitted")
+        .where("stopped", "=", 0)
         .executeTakeFirst();
       return (
         !!continuation &&
         !!project &&
-        (project.is_development === 1 || project.setup_confirmed_at !== null) &&
+        (project.is_development === 1
+          ? this.context.mode === "development"
+          : project.setup_confirmed_at !== null) &&
         project.document_language === task.document_language &&
-        task.connection === "fake" &&
-        this.agentConnection("virgilio") === task.connection &&
-        task.operation === testSynthesisPolicy.operation &&
+        this.synthesisRouteAvailable(task.operation, task.connection) &&
+        (
+          await authorizedOperation(
+            this.db,
+            continuation.intervention_id,
+            "virgilio",
+            task.operation,
+          )
+        )?.connection === task.connection &&
         !!receipt &&
-        ["plan.addContributions", "plan.finish"].includes(receipt.command)
+        (receipt.command === "synthesis.tryAgain"
+          ? identifier(receipt.result_id) === identifier(task.id)
+          : ["plan.addContributions", "plan.finish", "development.runPlan"].includes(
+              receipt.command,
+            ))
       );
     }
     if (task.kind === "consultation")
@@ -1307,13 +1343,96 @@ export class TaskTransaction {
     await this.reconcileConnections();
     this.diagnostics.push({ event_name: "ohtia.usage_pause.resumed" });
   }
+  private async retrySynthesis(task: TaskRow, operationId: string): Promise<Outcome<Uint8Array>> {
+    if (task.kind !== "synthesis" || task.operation !== contributionSynthesisPolicy.operation)
+      return failure("task_not_retryable");
+    const continuation = await this.db
+      .selectFrom("continuations as c")
+      .innerJoin("work_allocations as w", "w.intervention_id", "c.intervention_id")
+      .selectAll("c")
+      .where("w.task_id", "=", task.id)
+      .executeTakeFirst();
+    if (!continuation?.task_id) return failure("record_not_found");
+    if (identifier(continuation.task_id) !== identifier(task.id))
+      return failure("newer_task_exists");
+    const attempt = await this.db
+      .selectFrom("attempts")
+      .select("outcome_reason")
+      .where("task_id", "=", task.id)
+      .orderBy("attempt_number", "desc")
+      .executeTakeFirst();
+    if (
+      continuation.stopped ||
+      (task.state !== "failed" && task.state !== "uncertain") ||
+      ["not_eligible", "input_too_large"].includes(attempt?.outcome_reason ?? "")
+    )
+      return failure("task_not_retryable");
+    const policy = contributionSynthesisPolicy;
+    const limits = await interventionLimits(this.db, continuation.intervention_id);
+    const turns = await this.db
+      .selectFrom("work_allocations")
+      .select(({ fn }) => fn.count<number>("task_id").distinct().as("count"))
+      .where("intervention_id", "=", continuation.intervention_id)
+      .where("share", "=", "synthesis")
+      .executeTakeFirstOrThrow();
+    if (
+      !limits ||
+      turns.count >= limits.max_coordinator_turns ||
+      !(await workFits(this.db, limits, [policy], continuation.intervention_id))
+    )
+      return failure("limit_reached");
+    if (await this.pendingLimitReached(policy)) return failure("pending_limit_reached");
+    const replacement = newId();
+    const reason = this.synthesisRouteAvailable(task.operation, task.connection)
+      ? await this.connectionBlock(task.connection)
+      : "configuration_unavailable";
+
+    await reserveWork(this.db, continuation.intervention_id, null, policy, this.now);
+    await this.db
+      .insertInto("tasks")
+      .values({
+        ...task,
+        id: replacement,
+        accepted_by_operation_id: operationId,
+        replaces_task_id: task.id,
+        charge_warning_accepted_at: task.state === "uncertain" ? this.now : null,
+        reply_position: null,
+        state: reason ? "blocked" : "queued",
+        blocking_reason: reason,
+        state_revision: 1,
+        created_at: this.now,
+        updated_at: this.now,
+      })
+      .execute();
+    await this.change(task, {});
+    await this.db
+      .updateTable("continuations")
+      .set({ task_id: replacement })
+      .where("id", "=", continuation.id)
+      .execute();
+    await bindSynthesisWork(this.db, continuation.intervention_id, replacement);
+    this.touchIntervention(continuation.intervention_id);
+    this.touch(task.conversation_id);
+    if (
+      task.state === "failed" &&
+      this.context.connections.read(task.connection)?.models?.length === 0
+    )
+      this.modelRefreshes.add(task.connection);
+    this.diagnostics.push(
+      { event_name: "ohtia.task.accepted" },
+      { event_name: "ohtia.work.reserved" },
+    );
+    return { ok: true, value: replacement };
+  }
+
   async control(
     command:
       | "task.stop"
       | "task.startAgain"
       | "task.tryAgain"
       | "contribution.tryAgain"
-      | "contribution.startAgain",
+      | "contribution.startAgain"
+      | "synthesis.tryAgain",
     id: Uint8Array,
     operationId: string,
     stoppingAll = false,
@@ -1327,6 +1446,16 @@ export class TaskTransaction {
     if (command === "task.stop") {
       if ((task.kind === "contribution" || task.kind === "synthesis") && !stoppingAll)
         return failure("task_not_stoppable");
+      if (
+        task.kind === "synthesis" &&
+        ["queued", "blocked", "waiting_capacity", "running", "cancelling"].includes(task.state)
+      )
+        await this.db
+          .updateTable("continuations")
+          .set({ stopped: 1 })
+          .where("task_id", "=", task.id)
+          .where("stopped", "=", 0)
+          .execute();
       if (
         task.state === "queued" ||
         task.state === "blocked" ||
@@ -1374,6 +1503,7 @@ export class TaskTransaction {
       }
       return { ok: true, value: task.id };
     }
+    if (command === "synthesis.tryAgain") return this.retrySynthesis(task, operationId);
     if (task.kind === "synthesis") return failure("task_not_retryable");
     const isConsultation = task.kind === "consultation";
     const delegated = delegatedTask(task);
@@ -1971,7 +2101,8 @@ export class TaskTransaction {
       const instructions =
         (task.kind === "contribution" ||
           task.operation === "direct_guidance" ||
-          task.operation === "search_strategy_planning") &&
+          task.operation === "search_strategy_planning" ||
+          task.operation === "contribution_synthesis") &&
         project.title !== null &&
         task.document_language !== null
           ? renderProjectInstructions(
@@ -2001,31 +2132,34 @@ export class TaskTransaction {
         task.kind === "synthesis"
           ? await this.db
               .selectFrom("continuations")
-              .select("intervention_id")
+              .select(["intervention_id", "reason", "graph_version"])
               .where("task_id", "=", task.id)
               .executeTakeFirstOrThrow()
           : undefined;
       const plan = owner ? await acceptedPlan(this.db, owner.intervention_id) : undefined;
       if (owner && !plan) throw new Error("Synthesis lacks its accepted plan.");
-      const built = buildInput(
-        policy,
-        (plan ? await synthesisInput(this.db, plan) : contributionInput) ??
-          (contribution
-            ? [
-                {
-                  role: "user",
-                  reference: identifier(contribution.id),
-                  text: consultationInput(contribution.request),
-                  transferKind: "consultation_request",
-                },
-              ]
-            : inputMessages),
-        {
-          reference: identifier(conversation.id),
-          revision: conversation.revision,
-        },
-        notes,
-      );
+      const synthesis = plan && owner && task.operation === "contribution_synthesis";
+      const built = synthesis
+        ? await synthesisInput(this.db, plan, owner, policy)
+        : buildInput(
+            policy,
+            (plan ? await legacySynthesisInput(this.db, plan) : contributionInput) ??
+              (contribution
+                ? [
+                    {
+                      role: "user",
+                      reference: identifier(contribution.id),
+                      text: consultationInput(contribution.request),
+                      transferKind: "consultation_request",
+                    },
+                  ]
+                : inputMessages),
+            {
+              reference: identifier(conversation.id),
+              revision: conversation.revision,
+            },
+            notes,
+          );
       if (previous.length >= policy.max_attempts) {
         this.diagnostics.push({ event_name: "ohtia.task.failed" });
         await this.change(task, { state: "failed" });
@@ -2056,11 +2190,14 @@ export class TaskTransaction {
         })
         .execute();
       if (!model || !built || exhausted) {
-        const reason = !model
-          ? "provider_unavailable"
-          : !built
-            ? "invalid_output"
-            : "permit_expired";
+        const reason =
+          synthesis && !built
+            ? "input_too_large"
+            : !model
+              ? "provider_unavailable"
+              : !built
+                ? "invalid_output"
+                : "permit_expired";
         await this.db
           .updateTable("attempts")
           .set({ state: "failed", outcome_reason: reason, finished_at: this.now })
@@ -2072,7 +2209,9 @@ export class TaskTransaction {
             false,
           );
         this.diagnostics.push({ event_name: "ohtia.task.failed" });
-        await this.change(task, { state: "failed" });
+        if (synthesis && task.reply_position === null)
+          await this.change(task, { state: "failed", reply_position: position });
+        else await this.change(task, { state: "failed" });
         continue;
       }
       await this.change(task, {

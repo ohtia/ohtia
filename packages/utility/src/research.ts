@@ -276,6 +276,8 @@ const payloadKeys = {
   "contribution.startAgain": ["taskId"],
   "consultation.accept": ["proposalId", "connection"],
   "consultation.decline": ["proposalId"],
+  "synthesis.tryAgain": ["taskId"],
+  "development.runPlan": ["projectId"],
   "development.createProject": [],
   "development.sendToJosefa": ["conversationId", "content"],
   "project.create": [],
@@ -307,7 +309,9 @@ export async function applyResearchCommand(
     !isIdentifier(input.operationId) ||
     !researchCommands.includes(input.command) ||
     !object(input.payload) ||
-    ((input.command === "development.sendToJosefa" || input.command === "plan.addContributions") &&
+    ((input.command === "development.sendToJosefa" ||
+      input.command === "development.runPlan" ||
+      input.command === "plan.addContributions") &&
       tasks.context.mode !== "development")
   )
     return failure("invalid_message");
@@ -347,6 +351,81 @@ export async function applyResearchCommand(
   const now = new Date().toISOString();
   let result: Uint8Array;
   switch (input.command) {
+    case "development.runPlan": {
+      const { projectId } = input.payload;
+      if (!isEntityId(projectId)) return failure("invalid_message");
+      const project = await db
+        .selectFrom("projects")
+        .selectAll()
+        .where("id", "=", bytes(projectId))
+        .where("is_development", "=", 0)
+        .executeTakeFirst();
+      if (!project) return failure("record_not_found");
+      if (project.setup_confirmed_at === null) return failure("project_in_setup");
+      if (project.title === null) throw new Error("Confirmed thesis lacks its working title.");
+      // The fixed plan already has a topic when this command creates the conversation.
+      const planTitle = `Search strategy plan · ${project.title}`;
+      const conversation = newId();
+      await db
+        .insertInto("conversations")
+        .values({
+          id: conversation,
+          project_id: project.id,
+          agent_id: "virgilio",
+          title: validConversationTitle(planTitle) ? planTitle : project.title,
+          created_at: now,
+          updated_at: now,
+          revision: 1,
+        })
+        .execute();
+      await append(
+        db,
+        conversation,
+        "Development test: run Ohtia's fixed two-contribution plan.",
+        now,
+      );
+      const added = await addContributions(
+        db,
+        {
+          conversationId: identifier(conversation),
+          expectedGraphVersion: 0,
+          purpose:
+            "Prepare a search strategy for the project's working title, and a second one that extends it to neighboring disciplines.",
+          sharedContext:
+            "This plan is a development test of Ohtia. Base each strategy only on the project's working title and document language.",
+          contributions: [
+            {
+              planKey: "core-strategy",
+              agent: "josefa",
+              required: true,
+              prerequisites: [],
+              request:
+                "Propose a search strategy for the central topic of the project's working title.",
+              reason: "The first strategy covers the central topic.",
+            },
+            {
+              planKey: "extended-strategy",
+              agent: "josefa",
+              required: true,
+              prerequisites: ["core-strategy"],
+              request:
+                "Using the strategy of contribution core-strategy, propose a second search strategy that extends it to neighboring disciplines and to sources in other languages.",
+              reason: "The second strategy shows how a contribution uses the result it depends on.",
+            },
+          ],
+        },
+        tasks.context.mode,
+        (agent) => tasks.agentConnection(agent),
+        input.operationId,
+        now,
+      );
+      if (!added.ok) return added;
+      tasks.diagnostics.push({ event_name: "ohtia.work.reserved" });
+      const recorded = await tasks.recordGraphChange(added.value);
+      if (!recorded.ok) return recorded;
+      result = added.value;
+      break;
+    }
     case "plan.addContributions": {
       const added = await addContributions(
         db,
@@ -384,6 +463,7 @@ export async function applyResearchCommand(
       result = outcome.value;
       break;
     }
+    case "synthesis.tryAgain":
     case "contribution.tryAgain":
     case "task.stop":
     case "contribution.startAgain":

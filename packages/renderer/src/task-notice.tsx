@@ -109,6 +109,8 @@ export function taskNoticeContent(
       ...(task.dispatched ? { usage: message(locale, "taskNotice.stopUsage", { service }) } : {}),
     };
   if (task.state !== "failed") return null;
+  if (task.synthesis && task.outcomeReason === "input_too_large")
+    return { text: message(locale, "synthesis.inputTooLarge"), tone: "danger", role: "alert" };
   if (
     hasText &&
     [
@@ -259,7 +261,13 @@ export function TaskNotice({
   }, [setupFinal]);
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState<
-    "newer" | "pendingLimit" | "consultationUnfinished" | "actionFailed" | "actionUncertain" | null
+    | "newer"
+    | "pendingLimit"
+    | "synthesisLimit"
+    | "consultationUnfinished"
+    | "actionFailed"
+    | "actionUncertain"
+    | null
   >(null);
   const active = useRef(false);
   const intents = useRef(new Map<TaskAction, string>());
@@ -292,6 +300,7 @@ export function TaskNotice({
       [
         "newer_task_exists",
         "pending_limit_reached",
+        "limit_reached",
         "task_not_retryable",
         "record_not_found",
       ].includes(result.error.code)
@@ -301,26 +310,30 @@ export function TaskNotice({
       setFeedback(
         result.error.code === "newer_task_exists"
           ? "newer"
-          : result.error.code === "consultation_unfinished"
-            ? "consultationUnfinished"
-            : result.error.code === "pending_limit_reached"
-              ? "pendingLimit"
-              : [
-                    "uncertain",
-                    "timeout",
-                    "cancelled",
-                    "disposed",
-                    "invalid_service_result",
-                  ].includes(result.error.code)
-                ? "actionUncertain"
-                : "actionFailed",
+          : result.error.code === "limit_reached" && task.synthesis
+            ? "synthesisLimit"
+            : result.error.code === "consultation_unfinished"
+              ? "consultationUnfinished"
+              : result.error.code === "pending_limit_reached"
+                ? "pendingLimit"
+                : [
+                      "uncertain",
+                      "timeout",
+                      "cancelled",
+                      "disposed",
+                      "invalid_service_result",
+                    ].includes(result.error.code)
+                  ? "actionUncertain"
+                  : "actionFailed",
       );
   }
   if (!content) return null;
   const usage =
     task.blockingReason === "usage_limit_reached" || task.outcomeReason === "usage_limit_reached";
   const retryableFailure =
-    latest && task.state === "failed" && task.outcomeReason !== "not_eligible";
+    latest &&
+    task.state === "failed" &&
+    !["not_eligible", "input_too_large"].includes(task.outcomeReason ?? "");
   const retry = !setupFinal && retryableFailure;
   const restart = !setupFinal && latest && task.state === "uncertain";
   const resume = usage && (task.state === "blocked" || retryableFailure);
@@ -349,6 +362,9 @@ export function TaskNotice({
           identity={{ kind: "ai", contributor: task.agentId, definitionVersion: "1" }}
           locale={locale}
         />
+      )}
+      {task.synthesis && !hasText && (
+        <p className="consultation-caption">{message(locale, "synthesis.caption")}</p>
       )}
       <div
         className="primitive-announcement"
@@ -455,7 +471,9 @@ export function TaskNotice({
           <span>
             {feedback === "consultationUnfinished"
               ? message(locale, "consultation.retryUnfinished")
-              : message(locale, `taskNotice.${feedback}`)}
+              : feedback === "synthesisLimit"
+                ? message(locale, "synthesis.limitReached")
+                : message(locale, `taskNotice.${feedback}`)}
           </span>
         </div>
       )}

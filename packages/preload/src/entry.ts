@@ -370,6 +370,7 @@ const bridge: DesktopBridge = {
     declineConsultation: (id, input) => connection.client.port.declineConsultation(id, input),
     tryAgainContribution: (id, input) => connection.client.port.tryAgainContribution(id, input),
     startAgainContribution: (id, input) => connection.client.port.startAgainContribution(id, input),
+    tryAgainSynthesis: (id, input) => connection.client.port.tryAgainSynthesis(id, input),
     tryAgainTask: (id, input) => connection.client.port.tryAgainTask(id, input),
     startAgainTask: (id, input) => connection.client.port.startAgainTask(id, input),
     resumeUsagePause: (id, input) => connection.client.port.resumeUsagePause(id, input),

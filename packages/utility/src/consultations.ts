@@ -155,11 +155,17 @@ export function consultationInput(request: string): string {
   );
 }
 
+export function agentIdentity(agent: ReplyAgent) {
+  return (
+    consultationCatalog.find(({ id }) => id === agent) ?? {
+      name: "Virgilio",
+      role: "the research guide",
+    }
+  );
+}
+
 export function otherAgentInput(agent: ReplyAgent, content: string): string {
-  const identity = consultationCatalog.find(({ id }) => id === agent) ?? {
-    name: "Virgilio",
-    role: "the research guide",
-  };
+  const identity = agentIdentity(agent);
   return `Message from ${identity.name}, ${identity.role}:\n\n${content}`;
 }
 
