@@ -303,6 +303,7 @@
   color: var(--content-secondary);
 }
 .action-proposal-title {
+  margin: 0;
   font: var(--type-ui-subheading-weight) var(--type-ui-subheading-size) /
     var(--type-ui-subheading-height) var(--type-ui-subheading-family);
 }

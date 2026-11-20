@@ -44,6 +44,30 @@ export interface MessageRecord {
   readonly ending: "complete" | "partial" | null;
   readonly createdAt: string;
 }
+export const planInvalidReasons = [
+  "multiple_calls",
+  "plan_unfinished",
+  "empty_plan",
+  "too_few_contributions",
+  "plan_too_large",
+  "limit_reached",
+  "purpose_empty",
+  "purpose_too_long",
+  "shared_context_too_large",
+  "request_empty",
+  "request_too_large",
+  "reason_empty",
+  "reason_too_long",
+  "plan_key_invalid",
+  "plan_key_duplicate",
+  "duplicate_contribution",
+  "unknown_prerequisite",
+  "self_dependency",
+  "cycle",
+  "agent_unavailable",
+] as const;
+export type PlanInvalidReason = (typeof planInvalidReasons)[number];
+
 export interface PlanContributionRequest {
   readonly planKey: string;
   readonly agent: string;
@@ -70,6 +94,11 @@ export interface ResearchPayloads {
   readonly "plan.finish": { readonly planId: string };
   readonly "conversation.stop": { readonly conversationId: string };
   readonly "task.stop": { readonly taskId: string };
+  readonly "plan.accept": {
+    readonly planId: string;
+    readonly connections: Readonly<Partial<Record<ReplyAgent, string>>>;
+  };
+  readonly "plan.decline": { readonly planId: string };
   readonly "consultation.accept": { readonly proposalId: string; readonly connection: string };
   readonly "consultation.decline": { readonly proposalId: string };
   /** Taskless destination refusals are addressed by contribution ID. */
@@ -126,6 +155,8 @@ export const researchCommands = [
   "task.stop",
   "task.startAgain",
   "task.tryAgain",
+  "plan.accept",
+  "plan.decline",
   "consultation.accept",
   "consultation.decline",
   "contribution.tryAgain",

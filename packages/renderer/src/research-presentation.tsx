@@ -1038,6 +1038,9 @@ export interface ActionProposalCardProps {
     readonly rendered?: ReactNode;
   }[];
   readonly recipient?: ReactNode;
+  readonly details?: ReactNode;
+  readonly announceState?: boolean;
+  readonly busy?: boolean;
   readonly note?: string;
   readonly actions?: readonly {
     readonly label: string;
@@ -1064,6 +1067,9 @@ export function ActionProposalCard({
   stateLabel,
   sections,
   recipient,
+  details,
+  announceState,
+  busy,
   note,
   actions,
   disabledReason,
@@ -1072,13 +1078,22 @@ export function ActionProposalCard({
 }: ActionProposalCardProps) {
   const id = useId();
   return (
-    <section className="action-proposal" data-state={state} aria-labelledby={id}>
+    <section
+      className="action-proposal"
+      data-state={state}
+      aria-labelledby={id}
+      aria-busy={busy || undefined}
+    >
       <div className="action-proposal-card">
         {showVoice && <VoiceLabel identity={proposer} locale={locale} />}
-        <p id={id} className="action-proposal-title">
+        <h3 id={id} className="action-proposal-title">
           {title}
-        </p>
-        <p className="action-proposal-state">
+        </h3>
+        <p
+          className="action-proposal-state"
+          aria-live={announceState ? "polite" : undefined}
+          aria-atomic={announceState || undefined}
+        >
           <LucideGlyph
             name={
               state === "open"
@@ -1092,13 +1107,16 @@ export function ActionProposalCard({
           {stateLabel}
         </p>
         {recipient}
-        <dl className="research-fields">
-          {sections.map((section, i) => (
-            <Field key={i} label={`${section.label}:`}>
-              {section.rendered ?? <Recorded value={section.value} />}
-            </Field>
-          ))}
-        </dl>
+        {sections.length > 0 && (
+          <dl className="research-fields">
+            {sections.map((section, i) => (
+              <Field key={i} label={`${section.label}:`}>
+                {section.rendered ?? <Recorded value={section.value} />}
+              </Field>
+            ))}
+          </dl>
+        )}
+        {details}
         {note && <p className="action-proposal-note">{note}</p>}
         {state === "open" && actions && (
           <div className="actions">

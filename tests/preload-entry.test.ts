@@ -155,10 +155,19 @@ describe("sandbox preload composition", () => {
       h.bridge.foundation.readPlan({ planId }),
       h.bridge.foundation.listPlanEvents({ planId, afterSequence: 0 }),
       h.bridge.foundation.cancelPlan("plan-cancel", { planId }),
+      h.bridge.foundation.acceptPlan("plan-accept", {
+        planId,
+        connections: { josefa: "openai", virgilio: "chatgpt" },
+      }),
+      h.bridge.foundation.declinePlan("plan-decline", { planId }),
     ];
     expect(
-      h.ipcRenderer.send.mock.calls.slice(-3).map(([, text]) => JSON.parse(text).operation),
-    ).toEqual(["plan.read", "planEvent.list", "plan.cancel"]);
+      h.ipcRenderer.send.mock.calls.slice(-5).map(([, text]) => JSON.parse(text).operation),
+    ).toEqual(["plan.read", "planEvent.list", "plan.cancel", "plan.accept", "plan.decline"]);
+    expect(JSON.parse(h.ipcRenderer.send.mock.calls.at(-2)![1]).payload).toEqual({
+      planId,
+      connections: { josefa: "openai", virgilio: "chatgpt" },
+    });
     const retrySynthesis = h.bridge.foundation.tryAgainSynthesis("try-synthesis", {
       taskId: "019a8000-0000-7000-8000-000000000501",
     });

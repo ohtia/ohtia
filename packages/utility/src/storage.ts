@@ -65,6 +65,11 @@ import {
   objects as synthesisObjects,
   up as contributionSynthesis,
 } from "./migrations/0025_contribution_synthesis.mjs";
+import {
+  interventions as planProposalInterventions,
+  objects as planProposalObjects,
+  up as planProposals,
+} from "./migrations/0026_plan_proposals.mjs";
 import { readResearch, researchRevisions, readPauseCounts } from "./research-reads.js";
 import type { Request, ResearchScope, ResearchEvent, ResearchOperation } from "@ohtia/contracts";
 import {
@@ -312,6 +317,7 @@ const names = [
   "0023_shared_work_limits",
   "0024_plan_coordination",
   "0025_contribution_synthesis",
+  "0026_plan_proposals",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -691,7 +697,8 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
             ? {
                 ...graphTables,
                 ...workLimitTables,
-                interventions: coordinationTables.interventions,
+                interventions:
+                  revision >= 26 ? planProposalInterventions : coordinationTables.interventions,
                 intervention_events: coordinationTables.intervention_events,
                 continuations:
                   revision >= 25 ? synthesisTables.continuations : coordinationTables.continuations,
@@ -742,6 +749,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 23 ? workLimitObjects : {}),
                 ...(revision >= 24 ? coordinationObjects : {}),
                 ...(revision >= 25 ? synthesisObjects : {}),
+                ...(revision >= 26 ? planProposalObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1154,6 +1162,7 @@ export class DurableStore {
                 "0023_shared_work_limits": { up: sharedWorkLimits },
                 "0024_plan_coordination": { up: planCoordination },
                 "0025_contribution_synthesis": { up: contributionSynthesis },
+                "0026_plan_proposals": { up: planProposals },
               }),
           },
         });
@@ -2489,6 +2498,28 @@ export class DurableStore {
       "storage_failed";
     this.researchDiagnostic({ event_name: "ohtia.research.failed", error_code: error });
   }
+  /** Retry a locked COMMIT on the same transaction while SQLite confirms it is still active. */
+  private async commitResearch(transaction: Kysely<Schema>): Promise<void> {
+    const deadline = performance.now() + 250;
+    for (;;) {
+      try {
+        await sql`COMMIT`.execute(transaction);
+        return;
+      } catch (error) {
+        const remaining = deadline - performance.now();
+        if (
+          !(error instanceof Database.SqliteError) ||
+          error.code !== "SQLITE_BUSY" ||
+          !this.native?.inTransaction ||
+          remaining <= 0
+        )
+          throw error;
+        await new Promise<void>((resolve) => setTimeout(resolve, Math.min(10, remaining)));
+        if (performance.now() >= deadline) throw error;
+        this.assert();
+      }
+    }
+  }
   async executeResearchCommand(
     command: ResearchCommand,
     payloadHash?: string,
@@ -2538,7 +2569,7 @@ export class DurableStore {
           await tasks.flush();
           diagnostics.push(...tasks.diagnostics);
           commitAttempted = true;
-          await sql`COMMIT`.execute(transaction);
+          await this.commitResearch(transaction);
           this.continuationAdmissionStopped = tasks.continuationAdmissionStopped;
           this.notifyPauseCounts();
           for (const connection of tasks.modelRefreshes)
@@ -2568,33 +2599,35 @@ export class DurableStore {
     if (outcome.ok) {
       for (const event of diagnostics) this.researchDiagnostic(event);
       const events = {
-        "development.createProject": "ohtia.project.created",
-        "development.sendToJosefa": "ohtia.development.josefa_message_appended",
-        "project.create": "ohtia.project.created",
-        "project.open": "ohtia.project.opened",
-        "project.confirmSetup": "ohtia.project.setup_confirmed",
-        "project.rejectSetup": "ohtia.project.setup_rejected",
-        "conversation.start": "ohtia.conversation.started",
-        "conversation.rename": "ohtia.conversation.renamed",
-        "message.append": "ohtia.message.appended",
-        "task.stop": "ohtia.task.stop_requested",
-        "conversation.stop": "ohtia.conversation.stop_requested",
-        "task.startAgain": "ohtia.task.replaced",
-        "task.tryAgain": "ohtia.task.retry_requested",
-        "synthesis.tryAgain": "ohtia.synthesis.retry_requested",
-        "development.runPlan": "ohtia.development.plan_started",
-        "plan.addContributions": "ohtia.plan.graph_recorded",
-        "plan.finish": "ohtia.plan.finished",
-        "plan.cancel": "ohtia.plan.cancel_requested",
-        "consultation.accept": "ohtia.consultation.accepted",
-        "consultation.decline": "ohtia.consultation.declined",
-        "contribution.tryAgain": "ohtia.contribution.retry_requested",
-        "contribution.startAgain": "ohtia.contribution.restarted",
-        "task.continueAll": "ohtia.task.continue_requested",
-        "task.cancelAll": "ohtia.task.cancel_all_requested",
-        "usagePause.resume": "ohtia.usage_pause.resume_requested",
+        "development.createProject": { event_name: "ohtia.project.created" },
+        "development.sendToJosefa": { event_name: "ohtia.development.josefa_message_appended" },
+        "project.create": { event_name: "ohtia.project.created" },
+        "project.open": { event_name: "ohtia.project.opened" },
+        "project.confirmSetup": { event_name: "ohtia.project.setup_confirmed" },
+        "project.rejectSetup": { event_name: "ohtia.project.setup_rejected" },
+        "conversation.start": { event_name: "ohtia.conversation.started" },
+        "conversation.rename": { event_name: "ohtia.conversation.renamed" },
+        "message.append": { event_name: "ohtia.message.appended" },
+        "task.stop": { event_name: "ohtia.task.stop_requested" },
+        "conversation.stop": { event_name: "ohtia.conversation.stop_requested" },
+        "task.startAgain": { event_name: "ohtia.task.replaced" },
+        "task.tryAgain": { event_name: "ohtia.task.retry_requested" },
+        "synthesis.tryAgain": { event_name: "ohtia.synthesis.retry_requested" },
+        "development.runPlan": { event_name: "ohtia.development.plan_started" },
+        "plan.addContributions": { event_name: "ohtia.plan.graph_recorded" },
+        "plan.accept": { event_name: "ohtia.plan.accepted" },
+        "plan.decline": { event_name: "ohtia.plan.declined" },
+        "plan.finish": { event_name: "ohtia.plan.finished" },
+        "plan.cancel": { event_name: "ohtia.plan.cancel_requested" },
+        "consultation.accept": { event_name: "ohtia.consultation.accepted" },
+        "consultation.decline": { event_name: "ohtia.consultation.declined" },
+        "contribution.tryAgain": { event_name: "ohtia.contribution.retry_requested" },
+        "contribution.startAgain": { event_name: "ohtia.contribution.restarted" },
+        "task.continueAll": { event_name: "ohtia.task.continue_requested" },
+        "task.cancelAll": { event_name: "ohtia.task.cancel_all_requested" },
+        "usagePause.resume": { event_name: "ohtia.usage_pause.resume_requested" },
       } as const;
-      this.researchDiagnostic({ event_name: events[command.command] });
+      this.researchDiagnostic(events[command.command]);
     } else {
       this.researchFailure(outcome.error.code);
     }
@@ -2624,7 +2657,7 @@ export class DurableStore {
           diagnostics.push(...tasks.diagnostics);
           this.assert();
           commitAttempted = true;
-          await sql`COMMIT`.execute(transaction);
+          await this.commitResearch(transaction);
           this.notifyPauseCounts();
           return result;
         } catch (error) {

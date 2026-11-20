@@ -535,6 +535,8 @@ export function createFoundationPort(
     stopConversation: (id, input) => call("conversation.stop", input, id),
     readPauses: () => call("pause.read", {}),
     cancelPlan: (id, input) => call("plan.cancel", input, id),
+    acceptPlan: (id, input) => call("plan.accept", input, id),
+    declinePlan: (id, input) => call("plan.decline", input, id),
     readPlan: (input) => call("plan.read", input),
     listPlanEvents: (input) => call("planEvent.list", input),
     finishPlan: (id, input) => call("plan.finish", input, id),

@@ -14,6 +14,7 @@ import {
   operationErrorCodes,
   portLimits,
   staleRevision,
+  invalidPlan,
   supportedLocales,
   utf8Size,
   validateJsonBounds,
@@ -67,7 +68,9 @@ describe("P3 shared producer/consumer conformance corpus", () => {
         const payload =
           code === "stale_revision"
             ? staleRevision(42)
-            : failure(code as Exclude<keyof typeof errorActions, "stale_revision">);
+            : code === "plan_invalid"
+              ? invalidPlan("reason_empty")
+              : failure(code as Exclude<keyof typeof errorActions, "stale_revision">);
         expect(decodeEnvelope({ ...request(), operation, kind: "result", payload }).ok).toBe(
           allowed.includes(code as never),
         );
@@ -271,11 +274,13 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
         "tryAgainSynthesis",
         "startAgainTask",
         "acceptConsultation",
+        "acceptPlan",
         "finishPlan",
         "cancelPlan",
         "readPlan",
         "listPlanEvents",
         "declineConsultation",
+        "declinePlan",
         "tryAgainContribution",
         "startAgainContribution",
         "resumeUsagePause",

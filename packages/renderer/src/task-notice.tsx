@@ -264,6 +264,9 @@ export function TaskNotice({
     | "newer"
     | "pendingLimit"
     | "synthesisLimit"
+    | "planUnfinished"
+    | "consultationLimit"
+    | "consultationDestination"
     | "consultationUnfinished"
     | "actionFailed"
     | "actionUncertain"
@@ -301,6 +304,8 @@ export function TaskNotice({
         "newer_task_exists",
         "pending_limit_reached",
         "limit_reached",
+        "plan_unfinished",
+        "destination_changed",
         "task_not_retryable",
         "record_not_found",
       ].includes(result.error.code)
@@ -310,21 +315,27 @@ export function TaskNotice({
       setFeedback(
         result.error.code === "newer_task_exists"
           ? "newer"
-          : result.error.code === "limit_reached" && task.synthesis
-            ? "synthesisLimit"
-            : result.error.code === "consultation_unfinished"
-              ? "consultationUnfinished"
-              : result.error.code === "pending_limit_reached"
-                ? "pendingLimit"
-                : [
-                      "uncertain",
-                      "timeout",
-                      "cancelled",
-                      "disposed",
-                      "invalid_service_result",
-                    ].includes(result.error.code)
-                  ? "actionUncertain"
-                  : "actionFailed",
+          : result.error.code === "plan_unfinished"
+            ? "planUnfinished"
+            : result.error.code === "limit_reached" && task.consultation
+              ? "consultationLimit"
+              : result.error.code === "destination_changed" && task.consultation
+                ? "consultationDestination"
+                : result.error.code === "limit_reached" && task.synthesis
+                  ? "synthesisLimit"
+                  : result.error.code === "consultation_unfinished"
+                    ? "consultationUnfinished"
+                    : result.error.code === "pending_limit_reached"
+                      ? "pendingLimit"
+                      : [
+                            "uncertain",
+                            "timeout",
+                            "cancelled",
+                            "disposed",
+                            "invalid_service_result",
+                          ].includes(result.error.code)
+                        ? "actionUncertain"
+                        : "actionFailed",
       );
   }
   if (!content) return null;
@@ -334,8 +345,9 @@ export function TaskNotice({
     latest &&
     task.state === "failed" &&
     !["not_eligible", "input_too_large"].includes(task.outcomeReason ?? "");
-  const retry = !setupFinal && retryableFailure;
-  const restart = !setupFinal && latest && task.state === "uncertain";
+  const fits = !task.consultation || task.consultationRetryFits === true;
+  const retry = !setupFinal && fits && retryableFailure;
+  const restart = !setupFinal && fits && latest && task.state === "uncertain";
   const resume = usage && (task.state === "blocked" || retryableFailure);
   const count = pauses
     ? (pauses.usage.find((p) => p.connection === task.connection)?.count ?? 0)
@@ -469,11 +481,19 @@ export function TaskNotice({
             size={16}
           />
           <span>
-            {feedback === "consultationUnfinished"
-              ? message(locale, "consultation.retryUnfinished")
-              : feedback === "synthesisLimit"
-                ? message(locale, "synthesis.limitReached")
-                : message(locale, `taskNotice.${feedback}`)}
+            {feedback === "planUnfinished"
+              ? message(locale, "plan.unfinished")
+              : feedback === "consultationLimit"
+                ? message(locale, "plan.consultationLimit")
+                : feedback === "consultationDestination"
+                  ? message(locale, "plan.consultationDestination", {
+                      service: connection.displayName,
+                    })
+                  : feedback === "consultationUnfinished"
+                    ? message(locale, "consultation.retryUnfinished")
+                    : feedback === "synthesisLimit"
+                      ? message(locale, "synthesis.limitReached")
+                      : message(locale, `taskNotice.${feedback}`)}
           </span>
         </div>
       )}

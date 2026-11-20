@@ -985,6 +985,12 @@
       "foreground": "voice.ohtia.content"
     },
     {
+      "selector": ".plan-row",
+      "backgrounds": ["surface.page"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
       "selector": ".agent-band",
       "backgrounds": ["surface.panel"],
       "minimum": 3,
