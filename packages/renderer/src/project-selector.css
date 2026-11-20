@@ -37,6 +37,7 @@
 }
 .project-selector-popup {
   position: fixed;
+  app-region: no-drag;
   z-index: var(--z-popover);
   inline-size: var(--component-workspace-chat-initial);
   max-inline-size: 100vw;
@@ -100,6 +101,7 @@
 }
 .project-selector-open-error {
   position: fixed;
+  app-region: no-drag;
   z-index: var(--z-popover);
   color: var(--content-primary);
   background: var(--surface-panel);

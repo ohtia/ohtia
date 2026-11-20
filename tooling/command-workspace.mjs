@@ -4,6 +4,7 @@ import { expect } from "@playwright/test";
 import { message } from "../packages/contracts/dist/index.js";
 import { focusNative, withCommandCleanup } from "./command-native-focus.mjs";
 import { invokeNativeMenu } from "./command-acceptance.mjs";
+import { setNativeViewport } from "./design-viewport.mjs";
 import { verifyDialogSafeAreas } from "./dialog-safe-area.mjs";
 
 /** Wait for the workspace entry; the bootstrap launcher can hide after main reports ready. */
@@ -81,6 +82,60 @@ export async function verifyWorkspaceSettingsEntry(
   }
 }
 
+async function verifyTitleBarHitRegions(titleRow, wide) {
+  const geometry = await titleRow.evaluate((row, wide) => {
+    const bounds = row.getBoundingClientRect();
+    const overlay = window.navigator.windowControlsOverlay?.getTitlebarAreaRect();
+    const style = getComputedStyle(row);
+    const spacer = row.querySelector(".workspace-drag-space").getBoundingClientRect();
+    const center = (rect) => ({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
+    const regionAt = ({ x, y }) => {
+      for (let target = document.elementFromPoint(x, y); target; target = target.parentElement) {
+        const region = getComputedStyle(target).getPropertyValue("app-region");
+        if (region === "drag" || region === "no-drag") return region;
+      }
+      return null;
+    };
+    const blank = { spacer: center(spacer) };
+    if (wide) {
+      const group = row.querySelector(".workspace-panel-controls").getBoundingClientRect();
+      blank.gapBeforePanelControls = {
+        x: group.x - Number.parseFloat(style.columnGap) / 2,
+        y: center(group).y,
+      };
+    }
+    return {
+      x: bounds.x,
+      right: bounds.right,
+      height: bounds.height,
+      overlay: overlay ? { x: overlay.x, right: overlay.right } : null,
+      blank: Object.fromEntries(
+        Object.entries(blank).map(([name, point]) => [name, { ...point, region: regionAt(point) }]),
+      ),
+      controls: [...row.querySelectorAll("button")].map((button) => {
+        const point = center(button.getBoundingClientRect());
+        return {
+          command: button.dataset.workspaceCommand ?? button.getAttribute("aria-label"),
+          hit: button.contains(document.elementFromPoint(point.x, point.y)),
+          region: regionAt(point),
+        };
+      }),
+    };
+  }, wide);
+  if (wide) expect(geometry.height).toBe(48);
+  expect(geometry.overlay, "Native window-controls safe area must be observable.").not.toBeNull();
+  expect(geometry.x).toBeGreaterThanOrEqual(geometry.overlay.x);
+  expect(geometry.right).toBeLessThanOrEqual(geometry.overlay.right);
+  for (const [name, point] of Object.entries(geometry.blank)) {
+    expect(point.region, `Title-bar ${name} is draggable`).toBe("drag");
+  }
+  for (const { command, hit, region } of geometry.controls) {
+    expect(hit, `Title-bar ${command} is the pointer target`).toBe(true);
+    expect(region, `Title-bar ${command} is interactive`).toBe("no-drag");
+  }
+  return geometry;
+}
+
 /** Installed root only: no catalog navigation, fixture root or synthetic research controls. */
 export async function verifyWorkspaceComposition(
   application,
@@ -146,27 +201,16 @@ export async function verifyWorkspaceComposition(
         await settleLayout();
         const titleRow = page.locator(".application-workspace .workspace-title-row");
         await expect(titleRow).toHaveCount(1);
-        const geometry = await titleRow.evaluate((row) => {
-          const bounds = row.getBoundingClientRect();
-          const overlay = window.navigator.windowControlsOverlay?.getTitlebarAreaRect();
-          return {
-            x: bounds.x,
-            right: bounds.right,
-            height: bounds.height,
-            overlay: overlay ? { x: overlay.x, right: overlay.right } : null,
-            drag: getComputedStyle(row.querySelector(".workspace-drag-space")).getPropertyValue(
-              "app-region",
-            ),
-          };
-        });
-        expect(geometry.height).toBe(48);
-        expect(geometry.drag).toBe("drag");
-        expect(
-          geometry.overlay,
-          "Native window-controls safe area must be observable.",
-        ).not.toBeNull();
-        expect(geometry.x).toBeGreaterThanOrEqual(geometry.overlay.x);
-        expect(geometry.right).toBeLessThanOrEqual(geometry.overlay.right);
+        const geometry = await verifyTitleBarHitRegions(titleRow, true);
+        const documents = page.locator('[data-workspace-panel="documents"]');
+        const documentToggle = command("panels.documents");
+        await documentToggle.click();
+        await expect(documents).toBeHidden();
+        await settleLayout();
+        const withoutDocuments = await verifyTitleBarHitRegions(titleRow, true);
+        await documentToggle.click();
+        await expect(documents).toBeVisible();
+        await settleLayout();
         await openSettings(command("settings.open"), "explorer footer");
         const chat = settings.getByRole("checkbox", {
           name: text("command.panels.chat"),
@@ -223,6 +267,7 @@ export async function verifyWorkspaceComposition(
         await page.keyboard.press("Escape");
         await native.evaluate((window) => window.setContentSize(600, 800));
         await expect(page.locator(".workspace")).toHaveAttribute("data-mode", "narrow");
+        const narrow = await verifyTitleBarHitRegions(titleRow, false);
         await openSettings(
           page.locator('.workspace-narrow-row [data-workspace-command="settings.open"]'),
           "narrow bar",
@@ -238,12 +283,35 @@ export async function verifyWorkspaceComposition(
           invoke,
           trigger: page.locator('.workspace-narrow-row [data-workspace-command="settings.open"]'),
         });
-        await native.evaluate((window) => window.setContentSize(1280, 800));
+        const palette = page.locator(".command-palette[open]");
+        const originalZoom = await native.evaluate((window) => window.webContents.getZoomFactor());
+        const zoomed = await withCommandCleanup(
+          async () => {
+            await setNativeViewport(page, native, { width: 1280, height: 600, zoomFactor: 4 });
+            await expect(page.locator(".workspace")).toHaveAttribute("data-mode", "narrow");
+            const observation = await verifyTitleBarHitRegions(titleRow, false);
+            await focusNative(native, "zoomed command palette");
+            await invoke("palette.open");
+            await expect(palette).toBeVisible();
+            await expect(titleRow).toHaveCSS("app-region", "none");
+            await page.keyboard.press("Escape");
+            await expect(palette).toBeHidden();
+            await expect(titleRow).toHaveCSS("app-region", "drag");
+            return observation;
+          },
+          async () => {
+            if (await palette.isVisible()) await page.keyboard.press("Escape");
+            await setNativeViewport(page, native, {
+              width: 1280,
+              height: 800,
+              zoomFactor: originalZoom,
+            });
+          },
+        );
         await expect(page.locator(".workspace")).toHaveAttribute("data-mode", "wide");
         await settleLayout();
         await focusNative(native, "workspace command palette");
         await invoke("palette.open");
-        const palette = page.locator(".command-palette[open]");
         await expect(palette).toBeVisible();
         await resetWorkspaceLayoutFromPalette(page, locale);
         await settleLayout();
@@ -312,10 +380,13 @@ export async function verifyWorkspaceComposition(
         await page.screenshot({ path: path.join(output, "integrated-workspace.png") });
         return {
           geometry,
+          titleBarHitRegions: { withoutDocuments, narrow, zoomed },
           safeArea,
           entries: ["footer", "rail", "narrow"],
           cases: [
             "shared-settings-layout",
+            "title-bar-hit-regions-with-panel-changes-and-zoom",
+            "title-bar-drag-suspended-while-modal-is-open",
             ...safeArea.cases,
             "separator-key-and-pair-reset",
             "palette-real-command",
@@ -327,6 +398,7 @@ export async function verifyWorkspaceComposition(
           ],
           limitations: [
             "Menu popup dismissal is controlled by the non-shipping observer; physical Alt/menu input, native IME, assistive operators and window-manager first-frame capture remain separately qualified.",
+            "Title-bar hit regions are checked in Chromium. Native pointer movement and double-click behavior require compositor evidence.",
             ...safeArea.limitations,
           ],
         };
