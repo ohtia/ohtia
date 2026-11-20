@@ -52,8 +52,14 @@
   padding: var(--space-0) var(--space-2);
   border-block-end: var(--border-width-default) solid var(--border-subtle);
 }
+/* Modal dialogs and their backdrops can overlap the title row at high zoom. */
+:root:not(:has(dialog:modal)) .workspace .workspace-title-row,
+.foundation-title-row .workspace-drag-space {
+  app-region: drag;
+}
 .workspace-title-row > .ohtia-brand {
   flex-shrink: 0;
+  app-region: no-drag;
 }
 .workspace-title-row .primitive-layer-anchor {
   flex-shrink: 0;
@@ -73,7 +79,6 @@
   flex: 1;
   align-self: stretch;
   min-inline-size: var(--space-2);
-  app-region: drag;
 }
 .workspace .workspace-control,
 .foundation-titlebar .workspace-control {
@@ -418,6 +423,7 @@
   align-self: stretch;
   min-inline-size: var(--space-0);
   flex-shrink: 1;
+  app-region: no-drag;
 }
 .workspace-project-context {
   display: block;
