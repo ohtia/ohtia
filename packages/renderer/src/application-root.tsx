@@ -1,3 +1,4 @@
+import { contributorNames } from "./contributor-identity.js";
 import { useId, useSyncExternalStore } from "react";
 import { ProjectController } from "./project-controller.js";
 import { ProjectSelector } from "./project-selector.js";
@@ -14,7 +15,7 @@ import {
 import { AgentBand } from "./agent-selector.js";
 import { HandoffReturnControl } from "./handoff.js";
 import { ConversationView } from "./conversation-view.js";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import {
   message,
@@ -77,6 +78,44 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
     conversation.history.subscribe,
     conversation.history.snapshot,
   );
+  const activity = useSyncExternalStore(
+    conversation.activity.subscribe,
+    conversation.activity.snapshot,
+  );
+  const chatVisible = useRef(false);
+  const updateActivityPresentation = useCallback(() => {
+    conversation.activity.presentation(
+      chatVisible.current &&
+        !conversation.history.snapshot().visible &&
+        conversation.snapshot().status === "ready",
+      document.hasFocus() && document.visibilityState === "visible",
+    );
+  }, [conversation]);
+  const onChatVisibility = useCallback(
+    (visible: boolean) => {
+      chatVisible.current = visible;
+      updateActivityPresentation();
+    },
+    [updateActivityPresentation],
+  );
+  useLayoutEffect(() => {
+    updateActivityPresentation();
+    window.addEventListener("focus", updateActivityPresentation);
+    window.addEventListener("blur", updateActivityPresentation);
+    document.addEventListener("visibilitychange", updateActivityPresentation);
+    return () => {
+      window.removeEventListener("focus", updateActivityPresentation);
+      window.removeEventListener("blur", updateActivityPresentation);
+      document.removeEventListener("visibilitychange", updateActivityPresentation);
+    };
+  }, [updateActivityPresentation]);
+  useLayoutEffect(updateActivityPresentation, [
+    updateActivityPresentation,
+    history.visible,
+    conversationState.scope.projectId,
+    conversationState.scope.conversationId,
+    conversationState.status,
+  ]);
   const agentBand = useRef<HTMLDivElement>(null);
   const historyButton = useRef<HTMLButtonElement>(null);
   const returnButton = useRef<HTMLButtonElement>(null);
@@ -360,6 +399,37 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
   }
   return (
     <div className="workspace-window foundation-window">
+      <span
+        className="primitive-announcement"
+        role="status"
+        aria-atomic="true"
+        lang={bootstrap.locale}
+      >
+        {activity.replyAnnouncement && (
+          <span key={activity.replyAnnouncement.key}>
+            {activity.replyAnnouncement.agent
+              ? message(bootstrap.locale, "conversation.replied", {
+                  agent: contributorNames[activity.replyAnnouncement.agent],
+                })
+              : message(bootstrap.locale, "activity.newReplies", {
+                  count: activity.replyAnnouncement.count,
+                })}
+          </span>
+        )}
+      </span>
+      <span
+        className="primitive-announcement"
+        role="alert"
+        aria-atomic="false"
+        aria-relevant="additions"
+        lang={bootstrap.locale}
+      >
+        {activity.alerts.map((alert) => (
+          <span key={alert.key}>
+            {text(alert.source === "plan" ? "activity.planAlert" : "activity.conversationAlert")}
+          </span>
+        ))}
+      </span>
       <SettingsSurfaces
         research={conversation}
         newProject={newProject}
@@ -437,10 +507,13 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
               >
                 <WorkspaceChrome
                   {...binding}
+                  chatActivity={activity.chat}
+                  onChatVisibility={onChatVisibility}
                   projectSelector={
                     <ProjectSelector
                       controller={projects}
                       state={projectState}
+                      attentionProjects={activity.projects}
                       current={activeProject}
                       currentId={conversationState.scope.projectId}
                       currentFailed={
@@ -504,6 +577,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                                 icon="list"
                                 label={message(bootstrap.locale, "history.show")}
                                 action={conversation.history.show}
+                                activity={{ counts: activity.history, locale: bootstrap.locale }}
                               />
                             )}
                           </>
@@ -562,6 +636,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                           <div className="chat-timeline-slot">
                             <ConversationView
                               state={conversationState}
+                              sharedReplyAnnouncements
                               controller={conversation}
                               onOpenConnections={openConnections}
                               commands={bridge.commands}

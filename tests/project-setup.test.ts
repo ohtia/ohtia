@@ -209,6 +209,9 @@ describe("automatic titles during project setup", () => {
       "Complete the setup turn first. Write the setup reply as visible assistant text or call propose_project_setup",
     );
     expect(request.instructions).toContain(
+      `If the researcher's messages establish a topic, call ${conversationTitlePolicy.name} exactly once in the same response, including when you call propose_project_setup.`,
+    );
+    expect(request.instructions).toContain(
       "Omit this optional title call if it would be the only output.",
     );
     expect(request.instructions).toContain(

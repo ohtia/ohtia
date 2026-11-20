@@ -919,6 +919,10 @@ it("carries persisted research through the sandbox entry and revokes scoped stre
     expect((await expectValue(port.listProjects({ cursor: null, count: 40 }))).items[0]?.id).toBe(
       projectId,
     );
+    const initialAttention = { items: [], next: null, hasMore: false, revision: 1 };
+    expect(await expectValue(port.listProjectAttention({ cursor: null, count: 40 }))).toEqual(
+      initialAttention,
+    );
     await expectValue(
       port.confirmProjectSetup("entry-confirm", {
         proposalId: await proposeSetup(fixture.store, fixture.raw, projectId),
@@ -996,6 +1000,9 @@ it("carries persisted research through the sandbox entry and revokes scoped stre
     expect(listener).toHaveBeenCalledWith(failure("sequence_gap"));
     const current = port.subscribeResearch({ projectId, conversationId }, () => {});
     expect((await current.ready).ok).toBe(true);
+    expect(await expectValue(port.listProjectAttention({ cursor: projectId, count: 1 }))).toEqual(
+      initialAttention,
+    );
     h.window.dispatchEvent(new Event("unload"));
     expect(h.ipcRenderer.listenerCount(desktopChannels.reply)).toBe(0);
   } finally {

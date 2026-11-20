@@ -196,6 +196,15 @@
       },
       "effective_model_evidence": "The active implementation rollout matched by CODEX_THREAD_ID records gpt-6.2-sol with effort high in turn_context.",
       "human_linguistic_review": null
+    },
+    {
+      "scope": "activity.* messages for STORY-003-031 in every supported locale",
+      "producer": {
+        "agent": "codex",
+        "effective_model": "gpt-6.2-sol"
+      },
+      "effective_model_evidence": "The implementation rollout matched by CODEX_THREAD_ID records gpt-6.2-sol with effort high in turn_context.",
+      "human_linguistic_review": null
     }
   ]
 }

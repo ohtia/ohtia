@@ -556,6 +556,7 @@ export function createFoundationPort(
     stopTask: (id, input) => call("task.stop", input, id),
     readDestination: (input) => call("destination.read", input),
     appendMessage: (id, input) => call("message.append", input, id),
+    listProjectAttention: (input) => call("projectAttention.list", input),
     listProjects: (input) => call("project.list", input),
     listConversations: (input) => call("conversation.list", input),
     readConversations: (input) => call("conversation.read", input),

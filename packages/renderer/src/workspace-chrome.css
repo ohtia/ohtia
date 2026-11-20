@@ -163,7 +163,7 @@
   inline-size: 100%;
   padding: var(--space-1);
 }
-.workspace-selector .workspace-control > span:not(.primitive-announcement) {
+.workspace-selector .workspace-control > span:not(.primitive-announcement, .activity-badge) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

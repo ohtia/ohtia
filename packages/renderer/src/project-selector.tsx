@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { message, type InterfaceLocale, type ProjectRecord } from "@ohtia/contracts";
 import type { ProjectController, ProjectState } from "./project-controller.js";
+import { ActivityBadge } from "./activity-badge.js";
 import { LucideGlyph } from "./iconography.js";
 import { Tooltip } from "./layers.js";
 import "./project-selector.css";
@@ -13,6 +14,7 @@ export function ProjectSelector({
   currentId,
   currentFailed = false,
   locale,
+  attentionProjects,
 }: {
   readonly controller: ProjectController;
   readonly state: ProjectState;
@@ -20,6 +22,7 @@ export function ProjectSelector({
   readonly currentId: string | null;
   readonly currentFailed?: boolean;
   readonly locale: InterfaceLocale;
+  readonly attentionProjects?: ReadonlySet<string>;
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -44,6 +47,8 @@ export function ProjectSelector({
         ? (current.title ?? "")
         : message(locale, "setup.context")
     : message(locale, "workspace.noProject");
+  const marked =
+    !!attentionProjects && [...attentionProjects].some((project) => project !== currentId);
   const count = state.items.length + (state.next || state.failed ? 1 : 0);
   const closedListFailure = !open && state.failed;
   const noticeVisible =
@@ -235,7 +240,7 @@ export function ProjectSelector({
           ref={button}
           type="button"
           role="combobox"
-          className="project-selector-button"
+          className={`project-selector-button${marked ? " activity-badge-control" : ""}`}
           aria-label={message(locale, "project.current")}
           aria-expanded={open}
           aria-busy={state.loading}
@@ -333,6 +338,14 @@ export function ProjectSelector({
             {value}
           </bdi>
           <LucideGlyph name="arrow-down" size={16} />
+          {marked && (
+            <>
+              <span className="primitive-announcement">
+                {message(locale, "activity.otherProject")}
+              </span>
+              <ActivityBadge variant="attention" />
+            </>
+          )}
         </button>
       </Tooltip>
       {noticeVisible && (
@@ -436,6 +449,12 @@ export function ProjectSelector({
                                 timeStyle: "short",
                               }).format(new Date(project.createdAt)),
                             })}
+                        {attentionProjects?.has(project.id) && (
+                          <span className="project-selector-attention">
+                            <LucideGlyph name="triangle-alert" size={16} />
+                            {message(locale, "history.attention")}
+                          </span>
+                        )}
                       </span>
                     </span>
                     {project.id === currentId && <LucideGlyph name="check" size={16} />}

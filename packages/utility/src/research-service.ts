@@ -32,6 +32,7 @@ export class ResearchService {
   private readonly staging = new TextStaging();
   private readonly streams = new Map<string, Stream>();
   private readonly stopPauseObservation: () => void;
+  private readonly stopActivityObservation: () => void;
   constructor(
     private readonly storage: DurableStore,
     private readonly generation: string,
@@ -39,6 +40,21 @@ export class ResearchService {
     private readonly provider: DurableProvider,
     private readonly providerFailure: () => void,
   ) {
+    this.stopActivityObservation = storage.observeResearchActivity((event) => {
+      for (const stream of this.streams.values()) {
+        if (event.kind === "replyFinished" && stream.scope.projectId !== event.projectId) continue;
+        if (event.kind === "attentionRaised") {
+          const { kind, source, conversationId, task, plan } = event;
+          const current = stream.scope.conversationId === conversationId;
+          this.event(stream, {
+            kind,
+            source,
+            ...(task && current ? { task } : {}),
+            ...(plan && current ? { plan } : {}),
+          });
+        } else this.event(stream, event);
+      }
+    });
     this.stopPauseObservation = storage.observePauseCounts((revision) => {
       for (const stream of this.streams.values()) {
         stream.pauseRevision = revision;
@@ -108,6 +124,7 @@ export class ResearchService {
   }
   dispose(): void {
     this.stopPauseObservation();
+    this.stopActivityObservation();
     this.staging.dispose();
     this.streams.clear();
   }

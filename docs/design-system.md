@@ -504,7 +504,7 @@ The following were not verified:
 
 ### Shape
 
-- `radius.none` is 0; `radius.small`, 4 px, for controls, buttons and state labels; `radius.medium`, 6 px, for cards, panels and notices; `radius.large`, 10 px, for dialogs and drawers; `radius.pill`, 9999 px, only for voice labels.
+- `radius.none` is 0; `radius.small`, 4 px, for controls, buttons and state labels; `radius.medium`, 6 px, for cards, panels and notices; `radius.large`, 10 px, for dialogs and drawers; `radius.pill`, 9999 px, only for voice labels and the `ActivityBadge` count.
 - `border-width.default` is 1 px. `border-width.state` is 2 px and marks trust state: dashed for proposed or pending, and solid in `border.strong` for researcher-confirmed content.
 - `focus.width` is 3 px and `focus.offset` is 2 px.
 
@@ -1311,6 +1311,10 @@ The `voice.ohtia.*` tokens identify system/AI-origin contributions and the produ
 - **`WeeklyActions`.** The week's actions, identified as Ohtia proposals. The Navigator shows at most five; the set of three to five is selected by the capability generating actions. Each action states what to do, why now, how to know it is done and estimated time, according to the [thesis workflow](thesis-workflow.md#navigator-behavior).
 - **`StageStatus`.** Represents stage, stage state and current focus separately. States are “Not started,” “In progress” and “Done,” always as badge text. The focused stage carries a 1 px `border.strong` border and “Focus” marker; it does not use `border-width.state` thickness, which is reserved for trust state. A pending change proposal is marked “Pending proposal” in `voice.ohtia.content`. In the horizontal map, stage names use 12/18 at weight 500 and may wrap; the vertical list uses `type.ui.body-small`.
 - **`PaceIndicator`.** Appears only with an agreed deadline and plan. “At the planned pace” uses neutral tone and “behind the plan” uses `attention`; without a plan there is no indicator, only explanatory text. It is never applied to an argument's strength.
+
+#### Activity
+
+- **`ActivityBadge`.** Marks a control whose content changed while the researcher was not looking at it: the Open chat panel control or the Chat segment of the narrow layout, the Conversation history control and the project selector with its rows. The `new` variant is a number in a neutral tone that counts agent replies that finished unseen; the `attention` variant is `triangle-alert` in the `attention` tone for work that needs the researcher. The mark extends the accessible name of the control it sits on, opens nothing by itself, never blinks or pulses, and in forced colors is told apart by its shape and text, not by color. It sits on the control's corner and overlaps it by 6 px, so the control keeps its size: `new` is a pill at the top-end corner, 18 px high and at least 18 px wide, with 5 px inline padding and `radius.pill`, in `action.primary.surface` with the count in `action.primary.content`, 12/18 px at weight 600 with tabular numerals; `attention` is an 18 px circle at the bottom-end corner with a 1 px `attention.border` border on `attention.surface` and a 12 px `triangle-alert` in `attention.content`. Both carry a 2 px halo in the surface they sit on and, in forced colors, a 1 px `CanvasText` border. These measurements are the component's own, outside the spacing and icon scales. A project row shows `triangle-alert` and “Needs your attention” in its second line instead of a badge.
 
 #### Saving
 

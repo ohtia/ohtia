@@ -1,3 +1,4 @@
+import { ActivityBadges, activityName, type ActivityCounts } from "./activity-badge.js";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { message, type ConversationSummary, type InterfaceLocale } from "@ohtia/contracts";
 import { VoiceLabel } from "./contributor-identity.js";
@@ -193,22 +194,27 @@ export function ConversationHeaderButton({
   icon,
   label,
   action,
+  activity,
 }: {
   buttonRef: React.RefObject<HTMLButtonElement | null>;
   icon: LucideName;
   label: string;
   action: () => void;
+  activity?: { readonly counts: ActivityCounts; readonly locale: InterfaceLocale };
 }) {
+  const name = activity ? activityName(activity.locale, label, activity.counts, "history") : label;
+  const marked = !!(activity?.counts.replies || activity?.counts.attention);
   return (
-    <Tooltip label={label}>
+    <Tooltip label={name}>
       <button
         type="button"
-        className="workspace-control"
+        className={`workspace-control${marked ? " activity-badge-control" : ""}`}
         ref={buttonRef}
-        aria-label={label}
+        aria-label={name}
         onClick={action}
       >
         <LucideGlyph name={icon} size={icon === "pencil" ? 16 : 20} />
+        {marked && <ActivityBadges {...activity} />}
       </button>
     </Tooltip>
   );

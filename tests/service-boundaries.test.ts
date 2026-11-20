@@ -276,6 +276,7 @@ function serviceFixture(mode: "installed" | "development" = "installed") {
     admissionReady: true,
     setTaskContext: vi.fn(),
     observePauseCounts: vi.fn(() => () => {}),
+    observeResearchActivity: vi.fn(() => () => {}),
     readExecutionLimits: vi.fn(async () => ({
       ok: true,
       value: {

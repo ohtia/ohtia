@@ -1,0 +1,55 @@
+.activity-badge-control {
+  position: relative;
+}
+.activity-badge {
+  position: absolute;
+  inset-inline-end: -6px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  block-size: 18px;
+  min-inline-size: 18px;
+  pointer-events: none;
+  box-shadow: 0 0 0 2px var(--surface-panel);
+}
+.activity-badge-new {
+  inset-block-start: -6px;
+  padding-inline: 5px;
+  border-radius: var(--radius-pill);
+  color: var(--action-primary-content);
+  background: var(--action-primary-surface);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.activity-badge-attention {
+  inset-block-end: -6px;
+  inline-size: 18px;
+  border: var(--border-width-default) solid var(--attention-border);
+  border-radius: 50%;
+  color: var(--attention-content);
+  background: var(--attention-surface);
+}
+.workspace-selector .activity-badge {
+  box-shadow: 0 0 0 2px var(--surface-emphasis);
+}
+@media (forced-colors: active) {
+  .activity-badge,
+  .workspace-selector .activity-badge {
+    forced-color-adjust: none;
+    color: CanvasText;
+    background: Canvas;
+    border-width: 1px;
+    border-style: solid;
+    border-color: CanvasText;
+    box-shadow: 0 0 0 2px Canvas;
+  }
+}
+.activity-badge-attention svg {
+  inline-size: 12px;
+  block-size: 12px;
+  flex: none;
+}

@@ -24,7 +24,7 @@ export type PlanCardController = Pick<
   | "performPlanAction"
   | "connections"
 > &
-  Partial<Pick<ConversationController, "performPlanProgressAction">>;
+  Partial<Pick<ConversationController, "performPlanProgressAction" | "hasSharedPlanAttention">>;
 
 const identity = (contributor: ReplyAgent) =>
   ({ kind: "ai", contributor, definitionVersion: "1" }) as const;
@@ -369,6 +369,9 @@ export function PlanProposal({
                 plan={plan}
                 stateLabel={progress.label}
                 announceAcceptance={viewedOpenPlan.current}
+                sharedAttentionAnnouncement={
+                  controller.hasSharedPlanAttention?.(plan.planId, plan.revision) ?? false
+                }
                 locale={locale}
                 connections={connections}
                 root={root}

@@ -21,11 +21,7 @@ import {
   type ResearchEvent,
   type ResearchScope,
 } from "@ohtia/contracts";
-import {
-  holdingDependencies,
-  planContributions,
-  waitingForPlanWork,
-} from "./contribution-graphs.js";
+import { holdingDependencies, planContributions } from "./contribution-graphs.js";
 import { agentIdentity, type InterventionRow } from "./consultations.js";
 import {
   recordedOperationPolicy,
@@ -60,6 +56,18 @@ export interface ContinuationRow {
   ready_key: Uint8Array;
   created_at: string;
 }
+
+/** Matches the plan card and attention projections, including event exhaustion. */
+export const planNeedsAttention = sql<number>`i.kind='plan' AND i.state='accepted' AND i.outcome IS NULL
+  AND NOT EXISTS (SELECT 1 FROM contributions c WHERE c.intervention_id=i.id AND c.state='active')
+  AND (
+    EXISTS (SELECT 1 FROM intervention_events e WHERE e.intervention_id=i.id AND e.sequence>=${planEventLimit})
+    OR (
+      NOT EXISTS (SELECT 1 FROM contributions c WHERE c.intervention_id=i.id AND c.state='waiting')
+      AND EXISTS (SELECT 1 FROM contributions c WHERE c.intervention_id=i.id
+        AND c.required=1 AND c.state<>'completed')
+    )
+  )`;
 
 export function acceptedPlans(db: Kysely<ResearchSchema>) {
   return db
@@ -458,8 +466,9 @@ export async function readPlan(
   planId: string,
 ): Promise<Outcome<PlanSnapshot>> {
   const plan = await db
-    .selectFrom("interventions")
-    .selectAll()
+    .selectFrom("interventions as i")
+    .selectAll("i")
+    .select(planNeedsAttention.as("needs_attention"))
     .where("id", "=", bytes(planId))
     .where("kind", "=", "plan")
     .executeTakeFirst();
@@ -492,7 +501,7 @@ export async function readPlan(
     .where("a.dispatch_permitted_at", "is not", null)
     .executeTakeFirstOrThrow();
   const nodeId = (id: Uint8Array | null) => (id ? identifier(id) : null);
-  const hasActive = nodes.some(({ state }) => state === "active");
+
   return {
     ok: true,
     value: {
@@ -509,13 +518,7 @@ export async function readPlan(
       ),
       maxRequests: limits?.max_requests ?? planLimits.max_requests,
       requestsUsed: usage.requests,
-      needsAttention:
-        plan.state === "accepted" &&
-        !plan.outcome &&
-        !hasActive &&
-        (throughSequence >= planEventLimit ||
-          (!nodes.some(({ state }) => waitingForPlanWork(state)) &&
-            nodes.some(({ required, state }) => !!required && state !== "completed"))),
+      needsAttention: !!plan.needs_attention,
       purpose: planText(plan.purpose ?? "", `plan_purpose_${planId}`),
       sharedContext: planText(plan.shared_context ?? "", `plan_context_${planId}`),
       contributions: await Promise.all(

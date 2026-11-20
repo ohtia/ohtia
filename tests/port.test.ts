@@ -310,6 +310,7 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
         "openProject",
         "listConversations",
         "listProjects",
+        "listProjectAttention",
         "listTimelineBefore",
         "readConversations",
         "readReplyParts",

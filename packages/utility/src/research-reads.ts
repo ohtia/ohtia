@@ -36,6 +36,8 @@ import {
 } from "./research.js";
 import { TaskTransaction, type TaskContext } from "./tasks.js";
 import { recordedOperationPolicy, replyAgent } from "./operations.js";
+import { conversationAttention, type ResearchAttention } from "./research-attention.js";
+import { taskPosition } from "./research-task-position.js";
 import { setupRevision } from "./project-setup.js";
 import { storedText } from "./research-text.js";
 
@@ -51,17 +53,6 @@ async function exists(db: Kysely<ResearchSchema>, conversationId: string): Promi
     .where("id", "=", bytes(conversationId))
     .executeTakeFirst());
 }
-// An unstarted retry follows the most recent reserved position in its replacement chain.
-const taskPosition = sql<number>`CASE WHEN t.kind='synthesis' THEN t.reply_position ELSE coalesce(t.reply_position, t.input_through_position,
-  (WITH RECURSIVE previous(id, reply_position, replaces_task_id, depth) AS (
-    SELECT id, reply_position, replaces_task_id, 1 FROM tasks WHERE id=t.replaces_task_id
-    UNION ALL SELECT older.id, older.reply_position, older.replaces_task_id, previous.depth+1
-      FROM tasks older JOIN previous ON older.id=previous.replaces_task_id
-  ) SELECT reply_position FROM previous WHERE reply_position IS NOT NULL ORDER BY depth LIMIT 1),
-  (SELECT origin.reply_position FROM contributions c JOIN interventions i ON i.id=c.intervention_id
-    JOIN attempts a ON a.id=i.proposed_by_attempt_id JOIN tasks origin ON origin.id=a.task_id
-    WHERE c.id=t.contribution_id)) END`;
-
 // Model proposals and the explicit development run have an identifiable chat position.
 const visibleIntervention = sql<boolean>`(i.proposed_by_attempt_id IS NOT NULL OR EXISTS (
   SELECT 1 FROM command_receipts r WHERE r.operation_id=i.decided_by_operation_id
@@ -427,7 +418,7 @@ async function summarizeConversation(
     .select(["id", "state"])
     .where("conversation_id", "=", row.id)
     .where("kind", "in", ["reply", "consultation"]);
-  const latestTask = await tasks.orderBy(sql`rowid`, "desc").executeTakeFirst();
+  const attention = await conversationAttention(db, row.id);
   const latestReply = await tasks
     .where("kind", "=", "reply")
     .orderBy(sql`rowid`, "desc")
@@ -436,7 +427,12 @@ async function summarizeConversation(
     .select("operation")
     .where("state", "in", ["running", "cancelling"])
     .executeTakeFirst();
-  const waiting = await tasks.where("state", "in", ["queued", "blocked"]).executeTakeFirst();
+  const waiting = await db
+    .selectFrom("tasks")
+    .select("id")
+    .where("conversation_id", "=", row.id)
+    .where("state", "in", ["queued", "blocked", "waiting_capacity"])
+    .executeTakeFirst();
   return {
     ...conversationRecord(row),
     ownerPosition: (await handoffBoundary(db, row.id))?.position ?? null,
@@ -453,7 +449,7 @@ async function summarizeConversation(
         }
       : null,
     status:
-      latestTask?.state === "failed" || latestTask?.state === "uncertain"
+      attention.reply_attention || attention.plan_id
         ? "attention"
         : running
           ? "replying"
@@ -466,6 +462,7 @@ export async function readResearch(
   db: Kysely<ResearchSchema>,
   request: Request,
   context: TaskContext,
+  attention: ResearchAttention,
 ): Promise<Outcome<unknown>> {
   switch (request.operation) {
     case "handoff.selection": {
@@ -577,6 +574,12 @@ export async function readResearch(
       };
     }
 
+    case "projectAttention.list": {
+      const value = attention.list(request.payload);
+      return fitsResearchResult(request, value)
+        ? { ok: true, value }
+        : failure("invalid_service_result");
+    }
     case "project.list": {
       const { cursor, count } = request.payload;
       let query = db.selectFrom("projects").selectAll();
@@ -595,7 +598,7 @@ export async function readResearch(
         .orderBy("id", "desc")
         .limit(count + 1)
         .execute();
-      const items: import("@ohtia/contracts").ProjectRecord[] = [];
+      const items: import("@ohtia/contracts").ProjectSummary[] = [];
       const cursorOf = (row: import("@ohtia/contracts").ProjectRecord) => ({
         lastOpenedAt: row.lastOpenedAt,
         id: row.id,
@@ -611,6 +614,7 @@ export async function readResearch(
           createdAt: row.created_at,
           updatedAt: row.updated_at,
           lastOpenedAt: row.last_opened_at,
+          needsAttention: attention.has(identifier(row.id)),
         };
         const hasMore = items.length + 1 < rows.length;
         if (

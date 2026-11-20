@@ -339,6 +339,7 @@ function controllerHarness(start = true) {
         dispose() {},
       };
     }),
+    listProjectAttention: () => ok({ items: [], next: null, hasMore: false, revision: 1 }),
     listProjects: vi.fn(() => ok({ items: [], next: null, hasMore: false })),
     readConversations: vi.fn(() => ok({ items: [summary], remaining: [] })),
     listTimelineBefore: vi.fn((p) => {
@@ -1883,6 +1884,43 @@ it("knows the conversation's running task even when its reserved position is out
   expect(h.controller.composer.snapshot().cancelling).toBe(true);
   h.controller.dispose();
 });
+it("announces a failed task once when the window already received its shared alert", async () => {
+  const h = controllerHarness(false);
+  const task = reviewTask({ state: "running" });
+  h.items.push(task);
+  h.controller.open(scope);
+  await settle();
+  const failed = {
+    ...task,
+    revision: task.revision + 1,
+    state: "failed",
+    outcomeReason: "provider_error",
+  } as const;
+  h.items[h.items.indexOf(task)] = failed;
+  h.emit({
+    ok: true,
+    value: {
+      kind: "attentionRaised",
+      source: "conversation",
+      task: { id: failed.id, revision: failed.revision },
+    },
+  });
+  h.emit({
+    ok: true,
+    value: { kind: "changed", record: "timeline", id: failed.id, revision: failed.revision },
+  });
+  await settle();
+  await render(h.controller.snapshot(), h.controller);
+  expect(h.controller.activity.snapshot().alerts).toMatchObject([{ source: "conversation" }]);
+  const item = container.querySelector(`[data-timeline-id="${failed.id}"]`)!;
+  expect(item.querySelector(".conversation-notice")?.textContent).toBeTruthy();
+  expect(item.querySelector(".conversation-notice")?.getAttribute("aria-hidden")).toBeNull();
+  expect(
+    [...item.querySelectorAll("[data-task-notice-announcement]")].map((node) => node.textContent),
+  ).toEqual(["", ""]);
+  h.controller.dispose();
+});
+
 it("announces a live notice transition once and stays silent for historical reads, navigation and locale changes", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const harness = controllerHarness(false);
@@ -3521,8 +3559,10 @@ describe("plan decision card", () => {
     >(async () => ({ ok: true, value: { resultId: accepted.planId } }));
     const revealMessage = vi.fn(async () => true);
     const onOpenConnections = vi.fn();
+    const hasSharedPlanAttention = vi.fn((_planId: string, _revision: number) => false);
     const controller = {
       readPlanCard,
+      hasSharedPlanAttention,
       readPlanDestinations: vi.fn(async () => ({})),
       observePlanDestinations: vi.fn(() => () => {}),
       performPlanAction: vi.fn(),
@@ -3531,11 +3571,13 @@ describe("plan decision card", () => {
     } as unknown as ConversationController;
     return {
       readPlanCard,
+      hasSharedPlanAttention,
       performPlanProgressAction,
       revealMessage,
       onOpenConnections,
       update: (patch: Partial<ReadPlanCard>) => {
         displayed = { ...accepted, ...patch, revision: ++revision };
+        return revision;
       },
       show: (locale: InterfaceLocale = "en-US") =>
         render(
@@ -3549,6 +3591,28 @@ describe("plan decision card", () => {
         ),
     };
   }
+
+  it("announces plan attention locally when the matching shared alert was not received", async () => {
+    const h = progressHarness();
+    const announcement = () =>
+      container.querySelector("[data-plan-state-announcement]")?.textContent;
+    await h.show();
+    h.update({ needsAttention: true });
+    await h.show();
+    expect(announcement()).toBe("Needs your attention");
+
+    h.update({ needsAttention: false });
+    await h.show();
+    const matchingRevision = h.update({ needsAttention: true });
+    h.hasSharedPlanAttention.mockImplementation(
+      (planId, revision) => planId === accepted.planId && revision === matchingRevision,
+    );
+    await h.show();
+    expect(announcement()).toBe("");
+    h.update({ needsAttention: true });
+    await h.show();
+    expect(announcement()).toBe("");
+  });
 
   it("updates each live state in place, folds requests and follows the result without conferring academic completion", async () => {
     const h = progressHarness();

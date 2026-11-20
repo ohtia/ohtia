@@ -9,6 +9,8 @@ const selectorKey = (selector) =>
     .map((part) => trimCss(part))
     .sort()
     .join(",");
+const keyIsForcedBadge = (selector) =>
+  selectorKey(selector) === ".activity-badge,.workspace-selector .activity-badge";
 const systems = new Set([
   "canvas",
   "canvastext",
@@ -248,12 +250,24 @@ export function checkColorUsage(model, sources, usage) {
           );
           if (/var[\t\n\f\r ]*\(/i.test(withoutReferences))
             throw new Error(`Unsupported variable expression: ${context}/${property}`);
+          // The two-pixel halo separates the badge from the icon using the underlying bar's paint.
+          const badgeHalo =
+            property === "box-shadow" &&
+            ((rule.selector === ".activity-badge" && value === "0 0 0 2px var(--surface-panel)") ||
+              (rule.selector === ".workspace-selector .activity-badge" &&
+                value === "0 0 0 2px var(--surface-emphasis)") ||
+              (forced && keyIsForcedBadge(rule.selector) && value === "0 0 0 2px Canvas"));
+          if (badgeHalo) continue;
           const custom = property.startsWith("--") && names.has(property);
           const neutral =
             ((property === "border" || property === "outline") && /^(0|none)$/.test(value)) ||
             (property === "app-region" && /^(drag|no-drag)$/.test(value)) ||
             (property === "touch-action" && value === "none") ||
             (property === "overflow-anchor" && value === "none") ||
+            (forced &&
+              keyIsForcedBadge(rule.selector) &&
+              property === "forced-color-adjust" &&
+              value === "none") ||
             (property === "pointer-events" && /^(auto|none)$/.test(value)) ||
             (property === "text-overflow" && value === "ellipsis") ||
             (property === "transform" && /^translate[XY]\((?:-?[0-9]+%|0)\)$/.test(value)) ||

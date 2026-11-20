@@ -205,6 +205,13 @@ export const diagnosticCatalog = Object.freeze({
     [],
   ),
   "ohtia.message.appended": event("data_service", "message.append", "INFO", "success", []),
+  "ohtia.project_attention.listed": event(
+    "data_service",
+    "projectAttention.list",
+    "DEBUG",
+    "success",
+    [],
+  ),
   "ohtia.project.listed": event("data_service", "project.list", "DEBUG", "success", []),
   "ohtia.conversation.listed": event("data_service", "conversation.list", "DEBUG", "success", []),
   "ohtia.research.subscribed": event("data_service", "research.subscribe", "DEBUG", "success", []),

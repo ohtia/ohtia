@@ -384,6 +384,7 @@ const bridge: DesktopBridge = {
     stopTask: (id, input) => connection.client.port.stopTask(id, input),
     readDestination: (input) => connection.client.port.readDestination(input),
     appendMessage: (id, input) => connection.client.port.appendMessage(id, input),
+    listProjectAttention: (input) => connection.client.port.listProjectAttention(input),
     listProjects: (input) => connection.client.port.listProjects(input),
     listConversations: (input) => connection.client.port.listConversations(input),
     readConversations: (input) => connection.client.port.readConversations(input),

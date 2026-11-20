@@ -64,6 +64,8 @@ export function harness() {
       ready: Promise.resolve({ ok: true as const, value: { subscriptionId: "research" } }),
       dispose() {},
     }),
+    listProjectAttention: () =>
+      call({ ok: true as const, value: { items: [], next: null, hasMore: false, revision: 1 } }),
     listProjects: () =>
       call({ ok: true as const, value: { items: [], next: null, hasMore: false } }),
     readConnection: () => call(failure("service_unavailable")),
