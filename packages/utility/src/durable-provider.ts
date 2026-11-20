@@ -413,7 +413,8 @@ export class DurableProvider {
       for (const text of kept ? splitText(kept) : []) {
         const sequence = stream.parts.length + 1;
         stream.parts.push({ sequence, text });
-        if (stream.taskKind !== "contribution") this.options.reply?.(stream.taskId, sequence, text);
+        if (stream.taskKind === "reply" || stream.taskKind === "consultation")
+          this.options.reply?.(stream.taskId, sequence, text);
       }
       if (kept)
         this.report(stream.operationId, { type: "text", attempt: message.attempt, text: kept });

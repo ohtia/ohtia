@@ -7,7 +7,7 @@ import type {
 } from "./research.js";
 import { planOutcomes, type PlanOutcome } from "./research.js";
 import { isConnectionId } from "./connections.js";
-import type { PortCall, Subscription, Outcome } from "./port.js";
+import { utf8Size, type PortCall, type Subscription, type Outcome } from "./port.js";
 
 export const researchOperations = [
   "project.create",
@@ -20,6 +20,9 @@ export const researchOperations = [
   "conversation.stop",
   "task.stop",
   "plan.finish",
+  "plan.cancel",
+  "plan.read",
+  "planEvent.list",
   "consultation.accept",
   "consultation.decline",
   "contribution.tryAgain",
@@ -222,7 +225,113 @@ export interface ReplyParts {
   readonly parts: readonly ReplyPart[];
   readonly latestSequence: number;
 }
+export const planEventKinds = [
+  "contribution_started",
+  "contribution_completed",
+  "contribution_failed",
+  "contribution_uncertain",
+  "contribution_blocked",
+  "contribution_waiting",
+  "contribution_cancelled",
+  "graph_changed",
+  "continuation_created",
+  "plan_ended",
+] as const;
+export type PlanEventKind = (typeof planEventKinds)[number];
+export const planContributionStates = [
+  "waiting",
+  "active",
+  "completed",
+  "failed",
+  "uncertain",
+  "blocked",
+  "cancelled",
+] as const;
+export const continuationAdmissions = ["waiting", "admitted", "withdrawn"] as const;
+export const planSynthesisStates = [
+  "queued",
+  "blocked",
+  "running",
+  "cancelling",
+  "completed",
+  "failed",
+  "cancelled",
+  "uncertain",
+] as const;
+export const planEventLimit = 512;
+export const planEventPageSize = 24;
+export type PlanEventPayload =
+  | Readonly<Record<string, never>>
+  | { readonly graphVersion: number }
+  | { readonly outcome: PlanOutcome }
+  | { readonly continuationId: string }
+  | { readonly blockedBy: string }
+  | {
+      readonly reason:
+        "destination_changed" | "input_changed" | "input_too_large" | "cancelled_by_researcher";
+    };
+export interface PlanEvent {
+  readonly id: string;
+  readonly sequence: number;
+  readonly kind: PlanEventKind;
+  readonly contributionId: string | null;
+  /** An intent can change state before it has a task. */
+  readonly taskId: string | null;
+  readonly payload: PlanEventPayload;
+  readonly payloadHash: string;
+  readonly createdAt: string;
+}
+export interface PlanEventPage {
+  readonly planId: string;
+  readonly throughSequence: number;
+  readonly events: readonly PlanEvent[];
+}
+export type PlanText = string | TextReference;
+export interface PlanSnapshot {
+  readonly planId: string;
+  readonly projectId: string;
+  readonly conversationId: string;
+  readonly revision: number;
+  readonly graphVersion: number;
+  readonly outcome: PlanOutcome | null;
+  readonly throughSequence: number;
+  readonly needsAttention: boolean;
+  readonly purpose: PlanText;
+  readonly sharedContext: PlanText;
+  readonly contributions: readonly {
+    readonly id: string;
+    readonly key: string;
+    readonly request: PlanText;
+    readonly reason: PlanText;
+    readonly failureReason: "destination_changed" | "input_changed" | "input_too_large" | null;
+    readonly agentId: ReplyAgent;
+    readonly required: boolean;
+    readonly state: (typeof planContributionStates)[number];
+    readonly taskId: string | null;
+    readonly resultMessageId: string | null;
+    readonly blockedBy: string | null;
+    readonly restartHeld: boolean;
+    readonly prerequisites: readonly string[];
+  }[];
+  readonly continuation: {
+    readonly id: string;
+    readonly graphVersion: number;
+    readonly throughSequence: number;
+    readonly reason: "required_set_complete" | "finished_partial";
+    readonly policyVersion: 1;
+    readonly admission: (typeof continuationAdmissions)[number];
+    readonly restartHeld: boolean;
+    readonly taskId: string | null;
+    readonly taskState: (typeof planSynthesisStates)[number] | null;
+  } | null;
+}
 export type ResearchEvent =
+  | {
+      readonly kind: "planChanged";
+      readonly planId: string;
+      readonly throughSequence: number;
+      readonly revision: number;
+    }
   | { readonly kind: "inferenceActivity" }
   | { readonly kind: "destinationChanged"; readonly connection: string }
   | { readonly kind: "pauseCounts"; readonly revision: number }
@@ -253,6 +362,9 @@ export interface ResearchInputs {
   "contribution.tryAgain": ResearchPayloads["contribution.tryAgain"];
   "consultation.decline": ResearchPayloads["consultation.decline"];
   "plan.finish": ResearchPayloads["plan.finish"];
+  "plan.cancel": ResearchPayloads["plan.cancel"];
+  "plan.read": { readonly planId: string };
+  "planEvent.list": { readonly planId: string; readonly afterSequence: number };
   "consultation.accept": ResearchPayloads["consultation.accept"];
   "task.tryAgain": ResearchPayloads["task.tryAgain"];
   "task.startAgain": ResearchPayloads["task.startAgain"];
@@ -296,6 +408,9 @@ export interface ResearchOutputs {
   "contribution.tryAgain": ResearchResult;
   "consultation.decline": ResearchResult;
   "plan.finish": FinishPlanResult;
+  "plan.cancel": FinishPlanResult;
+  "plan.read": PlanSnapshot;
+  "planEvent.list": PlanEventPage;
   "consultation.accept": ResearchResult;
   "task.tryAgain": ResearchResult;
   "task.startAgain": ResearchResult;
@@ -323,6 +438,9 @@ export interface ResearchOutputs {
 }
 export interface ResearchPort {
   readPauses(): PortCall<PauseCounts>;
+  cancelPlan(operationId: string, input: ResearchInputs["plan.cancel"]): PortCall<FinishPlanResult>;
+  readPlan(input: ResearchInputs["plan.read"]): PortCall<PlanSnapshot>;
+  listPlanEvents(input: ResearchInputs["planEvent.list"]): PortCall<PlanEventPage>;
   finishPlan(operationId: string, input: ResearchInputs["plan.finish"]): PortCall<FinishPlanResult>;
   acceptConsultation(
     operationId: string,
@@ -417,6 +535,7 @@ export function isResearchMutation(value: string): value is WindowResearchComman
     "conversation.stop",
     "task.stop",
     "plan.finish",
+    "plan.cancel",
     "consultation.accept",
     "consultation.decline",
     "contribution.tryAgain",
@@ -591,6 +710,14 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
       return exact(value, []);
     case "project.open":
       return exact(value, ["projectId"]) && isResearchId(value.projectId);
+    case "planEvent.list":
+      return (
+        exact(value, ["planId", "afterSequence"]) &&
+        isResearchId(value.planId) &&
+        integer(value.afterSequence, 0)
+      );
+    case "plan.read":
+    case "plan.cancel":
     case "plan.finish":
       return exact(value, ["planId"]) && isResearchId(value.planId);
     case "consultation.accept":
@@ -975,7 +1102,17 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
           isConnectionId(d.connection),
       )
     );
-  if (operation === "plan.finish")
+  if (operation === "plan.read") return isPlanSnapshot(value);
+  if (operation === "planEvent.list")
+    return (
+      exact(value, ["planId", "throughSequence", "events"]) &&
+      isResearchId(value.planId) &&
+      integer(value.throughSequence, 0) &&
+      Array.isArray(value.events) &&
+      value.events.length <= planEventPageSize &&
+      value.events.every(isPlanEvent)
+    );
+  if (operation === "plan.finish" || operation === "plan.cancel")
     return (
       exact(value, ["resultId", "outcome"]) &&
       isResearchId(value.resultId) &&
@@ -1022,8 +1159,171 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
       : value.next === null)
   );
 }
+export function isPlanEventPayload(kind: PlanEventKind, value: unknown): value is PlanEventPayload {
+  if (kind === "graph_changed")
+    return exact(value, ["graphVersion"]) && integer(value.graphVersion);
+  if (kind === "plan_ended")
+    return exact(value, ["outcome"]) && planOutcomes.some((outcome) => outcome === value.outcome);
+  if (kind === "continuation_created")
+    return exact(value, ["continuationId"]) && isResearchId(value.continuationId);
+  if (kind === "contribution_blocked")
+    return exact(value, ["blockedBy"]) && isResearchId(value.blockedBy);
+  if (kind === "contribution_failed" || kind === "contribution_uncertain")
+    return (
+      exact(value, []) ||
+      (exact(value, ["reason"]) &&
+        ["destination_changed", "input_changed", "input_too_large", "cancelled_by_researcher"].some(
+          (reason) => reason === value.reason,
+        ))
+    );
+  return exact(value, []);
+}
+function isPlanEvent(value: unknown): value is PlanEvent {
+  if (
+    !exact(value, [
+      "id",
+      "sequence",
+      "kind",
+      "contributionId",
+      "taskId",
+      "payload",
+      "payloadHash",
+      "createdAt",
+    ])
+  )
+    return false;
+  const kind = planEventKinds.find((entry) => entry === value.kind);
+  return (
+    !!kind &&
+    isResearchId(value.id) &&
+    integer(value.sequence) &&
+    (kind.startsWith("contribution_")
+      ? isResearchId(value.contributionId) &&
+        (isResearchId(value.taskId) ||
+          (value.taskId === null &&
+            !["contribution_started", "contribution_completed", "contribution_uncertain"].includes(
+              kind,
+            )))
+      : value.contributionId === null && value.taskId === null) &&
+    isPlanEventPayload(kind, value.payload) &&
+    hash(value.payloadHash) &&
+    typeof value.createdAt === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value.createdAt)
+  );
+}
+function isPlanText(value: unknown): value is PlanText {
+  return (
+    (typeof value === "string" && utf8Size(JSON.stringify(value)) <= 512) ||
+    (exact(value, ["source", "parts", "bytes", "sha256"]) &&
+      opaque(value.source) &&
+      integer(value.parts, 1, 9) &&
+      integer(value.bytes, 1, 32768) &&
+      hash(value.sha256))
+  );
+}
+function isPlanSnapshot(value: unknown): value is PlanSnapshot {
+  return (
+    exact(value, [
+      "planId",
+      "projectId",
+      "conversationId",
+      "revision",
+      "graphVersion",
+      "outcome",
+      "throughSequence",
+      "needsAttention",
+      "purpose",
+      "sharedContext",
+      "contributions",
+      "continuation",
+    ]) &&
+    isResearchId(value.planId) &&
+    isResearchId(value.projectId) &&
+    isResearchId(value.conversationId) &&
+    integer(value.revision) &&
+    integer(value.graphVersion) &&
+    (value.outcome === null || planOutcomes.some((outcome) => outcome === value.outcome)) &&
+    integer(value.throughSequence, 0) &&
+    typeof value.needsAttention === "boolean" &&
+    isPlanText(value.purpose) &&
+    isPlanText(value.sharedContext) &&
+    Array.isArray(value.contributions) &&
+    value.contributions.length <= 8 &&
+    value.contributions.every(
+      (node) =>
+        exact(node, [
+          "id",
+          "key",
+          "request",
+          "reason",
+          "failureReason",
+          "agentId",
+          "required",
+          "state",
+          "taskId",
+          "resultMessageId",
+          "blockedBy",
+          "restartHeld",
+          "prerequisites",
+        ]) &&
+        isResearchId(node.id) &&
+        typeof node.key === "string" &&
+        /^[a-z0-9-]{1,64}$/.test(node.key) &&
+        isPlanText(node.request) &&
+        isPlanText(node.reason) &&
+        [null, "destination_changed", "input_changed", "input_too_large"].some(
+          (reason) => reason === node.failureReason,
+        ) &&
+        isReplyAgent(node.agentId) &&
+        typeof node.required === "boolean" &&
+        planContributionStates.some((state) => state === node.state) &&
+        [node.taskId, node.resultMessageId, node.blockedBy].every(
+          (id) => id === null || isResearchId(id),
+        ) &&
+        typeof node.restartHeld === "boolean" &&
+        Array.isArray(node.prerequisites) &&
+        node.prerequisites.length <= 8 &&
+        node.prerequisites.every(isResearchId),
+    ) &&
+    (value.continuation === null || isContinuationSnapshot(value.continuation))
+  );
+}
+function isContinuationSnapshot(value: unknown): boolean {
+  return (
+    exact(value, [
+      "id",
+      "graphVersion",
+      "throughSequence",
+      "reason",
+      "policyVersion",
+      "admission",
+      "restartHeld",
+      "taskId",
+      "taskState",
+    ]) &&
+    isResearchId(value.id) &&
+    integer(value.graphVersion) &&
+    integer(value.throughSequence) &&
+    (value.reason === "required_set_complete" || value.reason === "finished_partial") &&
+    value.policyVersion === 1 &&
+    continuationAdmissions.some((admission) => admission === value.admission) &&
+    typeof value.restartHeld === "boolean" &&
+    (!value.restartHeld || value.admission === "waiting") &&
+    (value.admission === "admitted"
+      ? isResearchId(value.taskId) && planSynthesisStates.some((state) => state === value.taskState)
+      : value.taskId === null && value.taskState === null)
+  );
+}
+
 export function isResearchEvent(value: unknown): value is ResearchEvent {
   if (!obj(value)) return false;
+  if (value.kind === "planChanged")
+    return (
+      exact(value, ["kind", "planId", "throughSequence", "revision"]) &&
+      isResearchId(value.planId) &&
+      integer(value.throughSequence, 0) &&
+      integer(value.revision)
+    );
   if (value.kind === "destinationChanged")
     return exact(value, ["kind", "connection"]) && isConnectionId(value.connection);
   if (value.kind === "pauseCounts")
@@ -1055,7 +1355,21 @@ export function researchResultMatches(
   output: unknown,
 ): boolean {
   if (!obj(input) || !obj(output)) return false;
-  if (operation === "plan.finish") return output.resultId === input.planId;
+  if (operation === "plan.finish" || operation === "plan.cancel")
+    return output.resultId === input.planId;
+  if (operation === "plan.read") return output.planId === input.planId;
+  if (operation === "planEvent.list") {
+    const events = output.events as readonly PlanEvent[];
+    return (
+      output.planId === input.planId &&
+      events.every(
+        (event, index) =>
+          event.sequence > (input.afterSequence as number) &&
+          event.sequence <= (output.throughSequence as number) &&
+          event.sequence > (events[index - 1]?.sequence ?? 0),
+      )
+    );
+  }
   if (operation === "project.open") return output.resultId === input.projectId;
   if (operation === "conversation.start") return isResearchId(output.resultId);
   if (operation === "conversation.rename") return output.resultId === input.conversationId;

@@ -1,12 +1,27 @@
+import fs from "node:fs";
+import path from "node:path";
 import { createHash } from "node:crypto";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import {
+  graphTasks,
+  objects as graphObjects,
+  tables as graphTables,
+} from "../packages/utility/src/migrations/0022_contribution_graphs.mjs";
 import { objects as limitsObjects } from "../packages/utility/src/migrations/0023_shared_work_limits.mjs";
 import {
   failure,
   isResearchOperation,
   policyId,
+  encodeEnvelope,
+  ServiceConnections,
+  type Request,
+  type PlanSnapshot,
+  type PlanEventPage,
+  type ResearchEvent,
   researchInput,
   researchOutput,
+  researchResultMatches,
+  isProviderRequestData,
   type AddContributionsPayload,
   type PlanContributionRequest,
   type ProviderResult,
@@ -20,11 +35,17 @@ import {
   objects as consultationObjects,
   tables as consultationTables,
 } from "../packages/utility/src/migrations/0021_consultations.mjs";
+import { PlanClient } from "../packages/renderer/src/plan-client.js";
+import { ResearchService } from "../packages/utility/src/research-service.js";
+import type { DurableProvider } from "../packages/utility/src/durable-provider.js";
 import { bytes, identifier } from "../packages/utility/src/research.js";
-import type { PreparedTask } from "../packages/utility/src/tasks.js";
+import { type PreparedTask, TaskTransaction } from "../packages/utility/src/tasks.js";
 import { proposeSetup, setupConnections, successful as value } from "./fixtures/project-setup.js";
 import { dispatchThrough } from "./fixtures/provider-conformance.js";
-import { dropWorkLimitsSql } from "../tooling/storage-legacy-consultation-fixture.mjs";
+import {
+  dropCoordinationSql,
+  dropWorkLimitsSql,
+} from "../tooling/storage-legacy-consultation-fixture.mjs";
 import { storageFixture } from "./fixtures/storage.js";
 
 const unresolved = "The primary question remains unresolved because the sample is too small.";
@@ -321,6 +342,16 @@ it("propagates optional failure, reopens the chain on retry and retains roots wh
   expect(again.taskId).toBe(replacement);
   expect(again.acceptedByOperationId).toBe("retry");
   await f.settle(again, { status: "failed", dispatched: true, reason: "not_eligible" });
+  const page = await listEvents(f, resultId);
+  expect(researchOutput("planEvent.list", page)).toBe(true);
+  const events = page.events;
+  expect(
+    events.filter(({ kind }) => kind === "contribution_failed").map(({ taskId }) => taskId),
+  ).toEqual([root.taskId, again.taskId]);
+  expect(
+    events.filter(({ kind }) => kind === "contribution_waiting").map(({ taskId }) => taskId),
+  ).toEqual([null, null]);
+  expect(events.filter(({ kind }) => kind === "contribution_blocked")).toHaveLength(4);
   const blocked = f.states(resultId);
   expect(blocked).toContainEqual(["leaf", "blocked", "root", null]);
   const denied = { ...retry, operationId: "denied", payload: { taskId: replacement } };
@@ -381,11 +412,15 @@ it("blocks on cancellation and fails overlong dependent input before creating a 
   ]);
 });
 
-it("admits only plan.finish on the port and checks its exact result shape", async () => {
+it("admits plan coordination operations on the port and checks their exact shapes", async () => {
   const f = await fixture();
   expect(isResearchOperation("plan.addContributions")).toBe(false);
   const id = f.conversationId;
   expect(researchInput("plan.finish", { planId: id })).toBe(true);
+  expect(researchInput("plan.cancel", { planId: id })).toBe(true);
+  expect(researchInput("plan.read", { planId: id })).toBe(true);
+  expect(researchInput("planEvent.list", { planId: id, afterSequence: 0 })).toBe(true);
+  expect(researchInput("planEvent.list", { planId: id, afterSequence: -1 })).toBe(false);
   expect(researchOutput("plan.finish", { resultId: id, outcome: "partial" })).toBe(true);
   expect(researchOutput("plan.finish", { resultId: id })).toBe(false);
   expect(await f.finish(id)).toEqual(failure("record_not_found"));
@@ -1151,4 +1186,874 @@ it.each(["contribution.tryAgain", "contribution.startAgain"] as const)(
     expect(read()).toEqual(before);
     expect(await f.prepare()).toBeNull();
   },
+);
+
+function planPortRequest(
+  operation:
+    "plan.read" | "planEvent.list" | "plan.cancel" | "research.subscribe" | "text.readPart",
+  payload: Record<string, unknown>,
+  operationId = "port-request",
+) {
+  return {
+    protocol: 1,
+    policy: policyId,
+    kind: "request",
+    windowGeneration: "test-window",
+    serviceGeneration: "setup-tests",
+    requestId: operationId,
+    operationId,
+    operation,
+    payload,
+  } as Request;
+}
+
+function synthesisConnection(
+  f: Awaited<ReturnType<typeof fixture>>,
+  available: boolean,
+  fakeContributions = false,
+) {
+  const connections = setupConnections();
+  if (available) {
+    const messages: Parameters<ServiceConnections["receive"]>[0][] = [
+      {
+        kind: "connection_state",
+        generation: "setup-tests",
+        snapshot: {
+          connection: "fake",
+          state: "connected",
+          reason: null,
+          probing: false,
+          probe_id: null,
+          model_list_revision: 1,
+          model_count: 1,
+        },
+      },
+      {
+        kind: "connection_models",
+        generation: "setup-tests",
+        page: {
+          connection: "fake",
+          model_list_revision: 1,
+          models: [{ id: "fake-model", name: "Fake" }],
+          nextCursor: 1,
+          hasMore: false,
+        },
+      },
+    ];
+    for (const message of messages) connections.receive(message);
+  }
+  f.store.setTaskContext({
+    generation: "setup-tests",
+    mode: "development",
+    connections,
+    resolveAgentConnection: (agent) =>
+      agent === "virgilio" || fakeContributions ? "fake" : "chatgpt",
+  });
+}
+
+const readPlan = async (f: Awaited<ReturnType<typeof fixture>>, planId: string) =>
+  value(await f.store.readResearch(planPortRequest("plan.read", { planId }))) as PlanSnapshot;
+const listEvents = async (
+  f: Awaited<ReturnType<typeof fixture>>,
+  planId: string,
+  afterSequence = 0,
+) =>
+  value(
+    await f.store.readResearch(planPortRequest("planEvent.list", { planId, afterSequence })),
+  ) as PlanEventPage;
+const cancelPlan = (f: Awaited<ReturnType<typeof fixture>>, planId: string, operationId: string) =>
+  f.run({ command: "plan.cancel", operationId, payload: { planId } });
+const continuePlans = (f: Awaited<ReturnType<typeof fixture>>, operationId: string) =>
+  f.run({ command: "task.continueAll", operationId, payload: {} });
+
+it("commits one continuation with the result and exposes numbered events through the application port", async () => {
+  const f = await fixture();
+  synthesisConnection(f, false);
+  const sharedContext = "Synthetic context 🧪. ".repeat(230);
+  const request = "Synthetic contribution request. ".repeat(24);
+  const { resultId: planId } = value(
+    await f.add("accept", {
+      ...f.newPlan([task("root", { request })]),
+      sharedContext,
+    }),
+  );
+  const contribution = await f.next();
+  const envelopes: unknown[] = [];
+  const service = new ResearchService(
+    f.store,
+    "setup-tests",
+    (event) => envelopes.push(event),
+    { pump: async () => {} } as DurableProvider,
+    () => {
+      throw new Error("Provider failed.");
+    },
+  );
+  try {
+    await service.dispatch(
+      planPortRequest(
+        "research.subscribe",
+        { projectId: f.projectId, conversationId: f.conversationId, subscriptionId: "plan-events" },
+        "subscribe",
+      ),
+    );
+    await f.settle(contribution, { status: "completed" }, unresolved);
+    // Simulate a utility restart after commit and before publication.
+    await f.store.close();
+    await f.store.open();
+    await service.publish();
+    expect(envelopes).toContainEqual(
+      expect.objectContaining({
+        kind: "event",
+        payload: expect.objectContaining({ kind: "planChanged", planId, throughSequence: 5 }),
+      }),
+    );
+    await service.dispatch(
+      planPortRequest("planEvent.list", { planId, afterSequence: 0 }, "events"),
+    );
+    for (const envelope of envelopes) expect(encodeEnvelope(envelope).ok).toBe(true);
+    const page = await listEvents(f, planId);
+    expect(researchResultMatches("planEvent.list", { planId, afterSequence: 0 }, page)).toBe(true);
+    expect(researchResultMatches("planEvent.list", { planId, afterSequence: 1 }, page)).toBe(false);
+    expect(researchOutput("planEvent.list", { ...page, events: [{}] })).toBe(false);
+    expect(page.events.map(({ sequence, kind }) => [sequence, kind])).toEqual([
+      [1, "graph_changed"],
+      [2, "contribution_started"],
+      [3, "contribution_completed"],
+      [4, "plan_ended"],
+      [5, "continuation_created"],
+    ]);
+    for (const event of page.events) {
+      expect(event.payloadHash).toBe(
+        createHash("sha256").update(JSON.stringify(event.payload)).digest("hex"),
+      );
+      if (event.kind.startsWith("contribution_")) {
+        expect(event.contributionId).not.toBeNull();
+        expect(event.taskId).toBe(contribution.taskId);
+      } else expect(event).toMatchObject({ contributionId: null, taskId: null });
+    }
+    const plan = await readPlan(f, planId);
+    expect(researchOutput("plan.read", plan)).toBe(true);
+    expect(researchResultMatches("plan.read", { planId }, plan)).toBe(true);
+    expect(researchResultMatches("plan.read", { planId: f.projectId }, plan)).toBe(false);
+    expect(plan).toMatchObject({
+      outcome: "complete",
+      continuation: {
+        policyVersion: 1,
+        throughSequence: 4,
+        taskState: "blocked",
+      },
+    });
+    expect(f.query("SELECT id FROM continuations")).toHaveLength(1);
+    for (const [reference, expected] of [
+      [plan.sharedContext, sharedContext],
+      [plan.contributions[0]!.request, request],
+    ] as const) {
+      if (typeof reference === "string") throw new Error("Expected a bounded text reference.");
+      const parts = [];
+      for (let index = 1; index <= reference.parts; index++) {
+        const part = value(
+          await f.store.readResearch(
+            planPortRequest("text.readPart", {
+              source: reference.source,
+              index,
+            }),
+          ),
+        ) as { text: string };
+        parts.push(part.text);
+      }
+      expect(parts.join("")).toBe(expected);
+    }
+    expect(JSON.stringify(page.events)).not.toContain("Synthetic context");
+    await service.dispatch(planPortRequest("plan.read", { planId }, "read"));
+    expect(envelopes.at(-1)).toMatchObject({ kind: "result", payload: { ok: true, value: plan } });
+    await service.dispatch(planPortRequest("plan.cancel", { planId }, "cancel"));
+    expect(envelopes).toContainEqual(
+      expect.objectContaining({
+        kind: "result",
+        operationId: "cancel",
+        payload: { ok: true, value: { resultId: planId, outcome: "complete" } },
+      }),
+    );
+    expect((await readPlan(f, planId)).continuation?.taskState).toBe("cancelled");
+  } finally {
+    service.dispose();
+  }
+});
+
+it("deduplicates plan events and rereads on gaps and conflicting hashes without reviving a cancelled plan", async () => {
+  const f = await fixture();
+  const { resultId: planId } = value(await f.add("client", f.newPlan([task("root")])));
+  const page = await listEvents(f, planId);
+  const first = page.events[0]!;
+  const second = page.events[1]!;
+  const snapshots: PlanSnapshot[] = [];
+  const seen: number[] = [];
+  const response = <T>(result: Promise<T>) => ({ result, cancel: () => {} });
+  let readOverride:
+    (() => Promise<ReturnType<typeof failure> | { ok: true; value: PlanSnapshot }>) | undefined;
+  let eventsOverride:
+    (() => Promise<ReturnType<typeof failure> | { ok: true; value: PlanEventPage }>) | undefined;
+  const client = new PlanClient(
+    {
+      readPlan: () =>
+        response(
+          readOverride?.() ??
+            readPlan(f, planId).then((result) => ({ ok: true as const, value: result })),
+        ),
+      listPlanEvents: ({ afterSequence }) =>
+        response(
+          eventsOverride?.() ??
+            listEvents(f, planId, afterSequence).then((result) => ({
+              ok: true as const,
+              value: result,
+            })),
+        ),
+    },
+    planId,
+    (plan) => snapshots.push(plan),
+    (event) => seen.push(event.sequence),
+  );
+  const notice: Extract<ResearchEvent, { kind: "planChanged" }> = {
+    kind: "planChanged",
+    planId,
+    throughSequence: 2,
+    revision: 2,
+  };
+  await client.receive({ ...notice, planId: f.projectId });
+  await client.receive(notice);
+  await client.receive(notice);
+  await client.receiveEvent(first);
+  expect(seen).toEqual([1, 2]);
+  expect(snapshots).toHaveLength(1);
+  await client.receiveEvent({ ...first, payloadHash: "0".repeat(64) });
+  expect(snapshots).toHaveLength(2);
+  await client.receive({ ...notice, revision: 3 });
+  const open = snapshots.at(-1)!;
+  eventsOverride = async () => failure("service_unavailable");
+  expect(await client.receive({ ...notice, throughSequence: 4 })).toEqual(
+    failure("service_unavailable"),
+  );
+  eventsOverride = async () => ({ ok: true, value: { ...page, events: [] } });
+  expect((await client.receive({ ...notice, throughSequence: 4 }))?.ok).toBe(true);
+  eventsOverride = async () => ({
+    ok: true,
+    value: { ...page, events: [{ ...second, sequence: 4 }] },
+  });
+  expect((await client.receive({ ...notice, throughSequence: 4 }))?.ok).toBe(true);
+  readOverride = async () => failure("busy");
+  expect(await client.refresh()).toEqual(failure("busy"));
+  readOverride = async () => {
+    throw new Error("Synthetic transport failure.");
+  };
+  await expect(client.refresh()).rejects.toThrow("Synthetic transport failure.");
+  readOverride = undefined;
+  expect((await client.refresh()).ok).toBe(true);
+  value(await cancelPlan(f, planId, "client-cancel"));
+  await client.receiveEvent({ ...second, sequence: 9 });
+  await client.receiveEvent(second);
+  expect(snapshots.at(-1)?.outcome).toBe("cancelled");
+  readOverride = async () => ({ ok: true, value: { ...open, revision: 100 } });
+  expect(value(await client.refresh()).outcome).toBe("cancelled");
+  expect(seen).toEqual([1, 2]);
+});
+
+it("serializes contribution cancellation with late completion and preserves a cut stop as uncertain", async () => {
+  const f = await fixture();
+  const { resultId: planId } = value(
+    await f.add(
+      "cancel-race",
+      f.newPlan([task("running"), task("queued"), task("waiting", { prerequisites: ["running"] })]),
+    ),
+  );
+  const running = await f.next();
+  expect(value(await cancelPlan(f, planId, "cancel-race-stop"))).toMatchObject({
+    outcome: "cancelled",
+  });
+  await f.settle(
+    running,
+    { status: "uncertain", reason: "connection_lost" },
+    "Partial contribution.",
+  );
+  const plan = await readPlan(f, planId);
+  expect(plan.outcome).toBe("cancelled");
+  expect(plan.continuation).toBeNull();
+  expect(plan.contributions.map(({ state }) => state)).toEqual([
+    "uncertain",
+    "cancelled",
+    "cancelled",
+  ]);
+  expect((await listEvents(f, planId)).events.map(({ kind }) => kind)).toContain(
+    "contribution_uncertain",
+  );
+  expect(await f.prepare()).toBeNull();
+  const blockingReasons = [
+    "connection_disabled",
+    "permission_required",
+    "input_changed",
+    "configuration_unavailable",
+    "restart_paused",
+    "usage_limit_reached",
+  ];
+  const { resultId: blockedPlan } = value(
+    await f.add(
+      "blocked-plan",
+      f.newPlan(blockingReasons.map((_, index) => task(`blocked-${index}`))),
+    ),
+  );
+  const blockedTasks = (await readPlan(f, blockedPlan)).contributions;
+  const raw = f.raw();
+  try {
+    for (const [index, reason] of blockingReasons.entries())
+      raw
+        .prepare(
+          "UPDATE tasks SET state='blocked', blocking_reason=?, state_revision=state_revision+1 WHERE id=?",
+        )
+        .run(reason, bytes(blockedTasks[index]!.taskId!));
+  } finally {
+    raw.close();
+  }
+  value(await cancelPlan(f, blockedPlan, "cancel-all-blocking-reasons"));
+  const statuses = f.query(
+    `SELECT t.state, COUNT(a.id) AS attempts FROM contributions c
+    JOIN tasks t ON t.id=c.task_id LEFT JOIN attempts a ON a.task_id=t.id
+    WHERE c.intervention_id=? GROUP BY t.id`,
+    blockedPlan,
+  );
+  expect(statuses).toEqual(blockingReasons.map(() => ({ state: "cancelled", attempts: 0 })));
+  expect(await f.prepare()).toBeNull();
+  expect(await cancelPlan(f, f.conversationId, "missing-plan")).toEqual(
+    failure("record_not_found"),
+  );
+});
+
+it("isolates synthetic synthesis from conversation Stop and preserves partial text when stopped by its plan", async () => {
+  const f = await fixture();
+  synthesisConnection(f, true, true);
+  const { resultId: planId } = value(
+    await f.add("authorized", f.newPlan([task("required"), task("optional", { required: false })])),
+  );
+  await f.settle(await f.next(), { status: "completed" }, unresolved);
+  expect((await readPlan(f, planId)).outcome).toBeNull();
+  await f.settle(await f.next(), { status: "uncertain", reason: "connection_lost" });
+  const synthesis = await f.next();
+  expect(synthesis.kind).toBe("synthesis");
+  expect(synthesis.acceptedByOperationId).toBe("authorized");
+  expect(synthesis.dispatch.request.connection).toBe("fake");
+  expect(isProviderRequestData(synthesis.dispatch.request)).toBe(true);
+  expect(isProviderRequestData({ ...synthesis.dispatch.request, connection: "chatgpt" })).toBe(
+    false,
+  );
+  expect(synthesis.dispatch.request.tools).toEqual([]);
+  expect(synthesis.transfer.map(({ kind }) => kind)).toEqual([
+    "instructions",
+    "plan_context",
+    "contribution_state",
+    "message",
+    "contribution_state",
+  ]);
+  expect(
+    synthesis.dispatch.request.input.some(({ text }) => text.includes("(optional): uncertain")),
+  ).toBe(true);
+  expect(JSON.stringify(synthesis.dispatch.request)).not.toContain("multi_agent");
+  expect(
+    await f.run({
+      command: "task.stop",
+      operationId: "synth-stop-task",
+      payload: { taskId: synthesis.taskId },
+    }),
+  ).toEqual(failure("task_not_stoppable"));
+  value(
+    await f.run({
+      command: "conversation.stop",
+      operationId: "synth-stop-conversation",
+      payload: { conversationId: f.conversationId },
+    }),
+  );
+  expect((await readPlan(f, planId)).continuation?.taskState).toBe("running");
+  expect(value(await cancelPlan(f, planId, "synth-stop-plan"))).toMatchObject({
+    outcome: "complete",
+  });
+  await f.settle(synthesis, { status: "cancelled" }, "Synthesis stopped midway.");
+  expect((await readPlan(f, planId)).continuation?.taskState).toBe("cancelled");
+  expect(
+    f.query("SELECT kind,input_through_position AS cutoff FROM tasks WHERE id=?", synthesis.taskId),
+  ).toEqual([{ kind: "synthesis", cutoff: null }]);
+  expect(f.query("SELECT ending,content FROM messages WHERE task_id=?", synthesis.taskId)).toEqual([
+    { ending: "partial", content: "Synthesis stopped midway." },
+  ]);
+});
+
+it("stores a result at the event cap, rejects further graph changes and finishes waiting work explicitly", async () => {
+  const f = await fixture();
+  const { resultId: planId } = value(
+    await f.add(
+      "capped",
+      f.newPlan([
+        task("first"),
+        task("later", { prerequisites: ["first"] }),
+        task("retry", { required: false }),
+        task("blocked", { required: false, prerequisites: ["retry"] }),
+      ]),
+    ),
+  );
+  const first = await f.next();
+  const retry = await f.next();
+  await f.settle(retry, { status: "failed", dispatched: true, reason: "provider_error" });
+  const db = f.raw();
+  try {
+    db.exec(`WITH RECURSIVE events(n) AS (SELECT max(sequence)+1 FROM intervention_events UNION ALL SELECT n+1 FROM events WHERE n<511)
+      INSERT INTO intervention_events
+      SELECT randomblob(16),intervention_id,n,kind,NULL,NULL,payload,payload_sha256,created_at
+      FROM events JOIN intervention_events ON sequence=1`);
+  } finally {
+    db.close();
+  }
+  await f.settle(first, { status: "completed" }, unresolved);
+  expect(await readPlan(f, planId)).toMatchObject({
+    throughSequence: 512,
+    needsAttention: true,
+    contributions: [
+      { state: "completed" },
+      { state: "waiting" },
+      { state: "failed" },
+      { state: "blocked" },
+    ],
+  });
+  expect(
+    await f.add("cap-reject", { planId, expectedGraphVersion: 1, contributions: [task("new")] }),
+  ).toEqual(failure("event_limit_reached"));
+  expect(
+    await f.run({
+      command: "contribution.tryAgain",
+      operationId: "retry-at-cap",
+      payload: { taskId: retry.taskId },
+    }),
+  ).toEqual(failure("event_limit_reached"));
+  expect((await readPlan(f, planId)).throughSequence).toBe(512);
+  expect(value(await f.finish(planId, "finish-capped"))).toMatchObject({ outcome: "partial" });
+  expect(
+    (await readPlan(f, planId)).contributions.find(({ key }) => key === "blocked")?.state,
+  ).toBe("blocked");
+  expect((await listEvents(f, planId, 511)).events.map(({ kind }) => kind)).toEqual([
+    "contribution_completed",
+    "contribution_cancelled",
+    "plan_ended",
+    "continuation_created",
+  ]);
+});
+
+// These cases fill the pending queue and reopen file-backed SQLite stores.
+const synthesisRecoveryTimeoutMs = 60_000;
+
+async function fillSynthesisLimit(f: Awaited<ReturnType<typeof fixture>>) {
+  synthesisConnection(f, false);
+  const planIds = [];
+  for (let index = 0; index < 21; index++) {
+    const { resultId } = value(await f.add(`saturate-${index}`, f.newPlan([task("root")])));
+    planIds.push(resultId);
+    await f.settle(await f.next(), { status: "completed" }, unresolved);
+  }
+  return planIds;
+}
+
+it(
+  "transfers a held continuation to a paused task and preserves admission order across restart",
+  async () => {
+    const f = await fixture();
+    const planIds = await fillSynthesisLimit(f);
+    const first = planIds[0]!;
+    const last = planIds[20]!;
+    expect((await readPlan(f, last)).continuation).toMatchObject({
+      admission: "waiting",
+      taskId: null,
+    });
+    await f.store.close(true);
+    await f.store.open();
+    expect((await readPlan(f, last)).continuation).toMatchObject({
+      admission: "waiting",
+      restartHeld: false,
+    });
+    await f.store.close();
+    await f.store.open();
+    expect(value(await f.store.readPauses()).restart).toBe(21);
+    expect((await readPlan(f, last)).continuation).toMatchObject({
+      admission: "waiting",
+      restartHeld: true,
+    });
+    value(await cancelPlan(f, first, "release-restart-slot"));
+    expect((await readPlan(f, last)).continuation).toMatchObject({
+      admission: "admitted",
+      restartHeld: false,
+      taskState: "blocked",
+    });
+    expect(value(await f.store.readPauses()).restart).toBe(20);
+    synthesisConnection(f, true);
+    expect(await f.prepare()).toBeNull();
+    value(await continuePlans(f, "resume-after-restart"));
+    expect(value(await f.store.readPauses()).restart).toBe(0);
+    expect((await f.next()).kind).toBe("synthesis");
+
+    for (const orderly of [true, false]) {
+      const restarted = await fixture();
+      const ids = await fillSynthesisLimit(restarted);
+      expect(researchOutput("plan.read", await readPlan(restarted, ids[20]!))).toBe(true);
+      await restarted.store.close(orderly);
+      // Model a pending task already ended when startup begins its capacity review.
+      const raw = restarted.raw();
+      try {
+        raw
+          .prepare(
+            `UPDATE tasks SET state='cancelled', blocking_reason=NULL, state_revision=state_revision+1
+        WHERE id=(SELECT task_id FROM continuations WHERE intervention_id=?)`,
+          )
+          .run(bytes(ids[0]!));
+      } finally {
+        raw.close();
+      }
+      synthesisConnection(restarted, true);
+      await restarted.store.open();
+      expect((await readPlan(restarted, ids[20]!)).continuation).toMatchObject({
+        admission: "admitted",
+        restartHeld: false,
+        taskState: orderly ? "queued" : "blocked",
+      });
+      expect(value(await restarted.store.readPauses()).restart).toBe(orderly ? 0 : 20);
+    }
+  },
+  synthesisRecoveryTimeoutMs,
+);
+
+it(
+  "withdraws waiting and newly ready continuations during Cancel work and quit",
+  async () => {
+    const f = await fixture();
+    const planIds = await fillSynthesisLimit(f);
+    const last = planIds[20]!;
+    const { resultId: closing } = value(
+      await f.add(
+        "finish-during-quit",
+        f.newPlan([task("required"), task("optional", { required: false })]),
+      ),
+    );
+    await f.settle(await f.next(), { status: "completed" }, unresolved);
+    const optional = await f.next();
+    value(await f.run({ command: "task.cancelAll", operationId: "quit", payload: {} }));
+    await f.settle(optional, { status: "cancelled" });
+    for (const id of [last, closing])
+      expect(await readPlan(f, id)).toMatchObject({
+        outcome: "complete",
+        continuation: { admission: "withdrawn", taskId: null },
+      });
+    await f.store.close();
+    await f.store.open();
+    synthesisConnection(f, true);
+    expect(await f.prepare()).toBeNull();
+    expect(
+      f.query("SELECT id FROM tasks WHERE kind='synthesis' AND state IN ('queued','blocked')"),
+    ).toHaveLength(0);
+  },
+  synthesisRecoveryTimeoutMs,
+);
+
+it("withdraws a continuation when restart finishes a contribution stopped by Cancel work and quit", async () => {
+  const f = await fixture();
+  synthesisConnection(f, true);
+  const { resultId: planId } = value(
+    await f.add(
+      "quit-with-running",
+      f.newPlan([task("required"), task("optional", { required: false })]),
+    ),
+  );
+  await f.settle(await f.next(), { status: "completed" }, unresolved);
+  await f.next();
+  value(await f.run({ command: "task.cancelAll", operationId: "quit-before-ack", payload: {} }));
+  await f.store.close();
+  await f.store.open();
+  const plan = await readPlan(f, planId);
+  expect(plan.outcome).toBe("complete");
+  expect(plan.continuation).toMatchObject({ admission: "withdrawn", taskId: null });
+  expect(await f.prepare()).toBeNull();
+});
+
+it("reconstructs a missing continuation once when opening a ready plan", async () => {
+  const f = await fixture();
+  synthesisConnection(f, false);
+  const { resultId: planId } = value(await f.add("missed-on-restart", f.newPlan([task("root")])));
+  const active = await f.next();
+  await f.settle(active, { status: "completed" }, unresolved);
+  await f.store.close(true);
+  const db = f.raw();
+  try {
+    const triggers = db
+      .prepare(
+        "SELECT name,sql FROM sqlite_schema WHERE type='trigger' AND name IN ('continuations_delete','work_allocations_changes','tasks_delete')",
+      )
+      .all() as { name: string; sql: string }[];
+    db.pragma("foreign_keys=OFF");
+    for (const { name } of triggers) db.exec(`DROP TRIGGER ${name}`);
+    db.exec(`UPDATE work_allocations SET task_id=NULL WHERE share='synthesis';
+      DELETE FROM continuations; DELETE FROM tasks WHERE kind='synthesis'`);
+    for (const { sql } of triggers) db.exec(sql);
+  } finally {
+    db.close();
+  }
+  await f.store.open();
+  expect((await readPlan(f, planId)).continuation?.admission).toBe("admitted");
+  expect(f.query("SELECT id FROM continuations")).toHaveLength(1);
+  await f.store.close(true);
+  await f.store.open();
+  expect(f.query("SELECT id FROM continuations")).toHaveLength(1);
+});
+
+it(
+  "clears a continuation hold at full capacity and admits it atomically when the oldest task starts",
+  async () => {
+    const f = await fixture();
+    const planIds = await fillSynthesisLimit(f);
+    const { resultId: planId } = value(
+      await f.add("partial-admission", f.newPlan([task("useful"), task("unresolved")])),
+    );
+    await f.settle(await f.next(), { status: "completed" }, unresolved);
+    await f.settle(await f.next(), { status: "uncertain", reason: "connection_lost" });
+    expect(value(await f.finish(planId, "finish-while-full"))).toMatchObject({
+      outcome: "partial",
+    });
+    expect((await readPlan(f, planId)).continuation).toMatchObject({
+      admission: "waiting",
+      taskId: null,
+    });
+    await f.store.close();
+    await f.store.open();
+    expect(value(await f.store.readPauses()).restart).toBe(22);
+    synthesisConnection(f, true);
+    value(await continuePlans(f, "clear-holds-at-capacity"));
+    expect(value(await f.store.readPauses()).restart).toBe(0);
+    expect((await readPlan(f, planIds[20]!)).continuation).toMatchObject({
+      admission: "waiting",
+      restartHeld: false,
+    });
+    const synthesis = await f.next();
+    expect(synthesis.kind).toBe("synthesis");
+    expect((await readPlan(f, planIds[20]!)).continuation).toMatchObject({
+      admission: "admitted",
+      taskState: "queued",
+    });
+    expect((await readPlan(f, planId)).continuation).toMatchObject({
+      admission: "waiting",
+      restartHeld: false,
+    });
+    expect(
+      f.query("SELECT id FROM tasks WHERE kind='synthesis' AND state IN ('queued','blocked')"),
+    ).toHaveLength(20);
+    value(await cancelPlan(f, planId, "withdraw-partial"));
+    expect((await readPlan(f, planId)).continuation).toMatchObject({
+      admission: "withdrawn",
+      taskId: null,
+    });
+    const notSent = { status: "failed", reason: "permit_expired", dispatched: false } as const;
+    await f.settle(synthesis, notSent);
+    expect(f.query("SELECT state FROM tasks WHERE id=?", synthesis.taskId)).toEqual([
+      { state: "waiting_capacity" },
+    ]);
+    expect(
+      f.query(
+        "SELECT state FROM work_allocations WHERE task_id=? ORDER BY attempt_number",
+        synthesis.taskId,
+      ),
+    ).toEqual([{ state: "released" }, { state: "held" }]);
+    expect((await readPlan(f, planIds[0]!)).continuation).toMatchObject({
+      admission: "admitted",
+      taskId: synthesis.taskId,
+      taskState: "queued",
+    });
+    expect(value(await f.store.runningTaskCount())).toBe(0);
+    await f.store.close();
+    await f.store.open();
+    expect(value(await f.store.readPauses()).restart).toBe(21);
+    expect(await f.prepare()).toBeNull();
+    value(await continuePlans(f, "resume-returning-synthesis"));
+    const other = await f.next();
+    expect(other.taskId).not.toBe(synthesis.taskId);
+    expect(f.query("SELECT state FROM tasks WHERE id=?", synthesis.taskId)).toEqual([
+      { state: "queued" },
+    ]);
+    expect(
+      f.query("SELECT id FROM tasks WHERE kind='synthesis' AND state IN ('queued','blocked')"),
+    ).toHaveLength(20);
+    await f.settle(other, { status: "completed" }, "Another synthesis.");
+    const returned = await f.next();
+    expect(returned.taskId).toBe(synthesis.taskId);
+    expect(
+      f.query(
+        "SELECT attempt_number FROM attempts WHERE task_id=? ORDER BY attempt_number",
+        synthesis.taskId,
+      ),
+    ).toEqual([{ attempt_number: 1 }, { attempt_number: 2 }]);
+  },
+  synthesisRecoveryTimeoutMs,
+);
+
+it("keeps a waiting reply while the fake provider saves Virgilio's synthesis for subsequent input", async () => {
+  const f = await fixture(1);
+  synthesisConnection(f, true);
+  const { resultId: planId } = value(await f.add("own-synthesis", f.newPlan([task("first")])));
+  await f.settle(await f.next(), { status: "completed" }, unresolved);
+  const synthesis = await f.next();
+  const fake = createFakeProvider({
+    send: async (_request, control) => {
+      expect(control.release()).toBe(true);
+      control.emit({ type: "text", text: "Synthetic synthesis." });
+      control.emit({ type: "result", result: { status: "completed" } });
+    },
+  });
+  const events = await dispatchThrough(
+    { snapshot: () => ({ state: "connected" }) } as Parameters<typeof dispatchThrough>[0],
+    fake,
+    synthesis.dispatch.request,
+  );
+  const result = events.find((event) => event.type === "result");
+  if (!result) throw new Error("Fake synthesis produced no result.");
+  f.resolve("virgilio", "chatgpt");
+  const append = (operationId: string, content: string) =>
+    f.run({
+      command: "message.append",
+      operationId,
+      payload: { conversationId: f.conversationId, content },
+    });
+  value(await append("waiting-reply", "Waiting researcher message."));
+  const waiting = f.query("SELECT id,state_revision FROM tasks WHERE kind='reply'");
+  await f.settle(synthesis, result.result, "Synthetic synthesis.");
+  expect(f.query("SELECT id,state_revision FROM tasks WHERE kind='reply'")).toEqual(waiting);
+  expect((await readPlan(f, planId)).continuation?.taskState).toBe("completed");
+  value(await append("next-reply", "New researcher message."));
+  const reply = await f.next();
+  expect(reply.dispatch.request.input).toContainEqual({
+    role: "assistant",
+    text: "Synthetic synthesis.",
+  });
+  expect(reply.dispatch.request.input.at(-1)).toEqual({
+    role: "user",
+    text: "New researcher message.",
+  });
+});
+
+// Build a version-23 database with the same original contributions and held synthesis shares.
+function restoreRevision23Schema(db: ReturnType<ReturnType<typeof storageFixture>["raw"]>) {
+  db.exec(`PRAGMA foreign_keys=OFF; PRAGMA legacy_alter_table=ON;
+    DROP TRIGGER work_allocations_changes;
+    DROP TRIGGER tasks_delete;
+    UPDATE work_allocations SET task_id=NULL WHERE share='synthesis';
+    ${dropCoordinationSql}
+    DELETE FROM tasks WHERE kind='synthesis';
+    DROP TRIGGER receipts_commands;
+    DROP TRIGGER contributions_changes;
+    ALTER TABLE tasks RENAME TO tasks_revision_24;
+    ALTER TABLE interventions RENAME TO interventions_revision_24;
+    ${graphTasks};
+    ${graphTables.interventions};
+  `);
+  for (const table of ["tasks", "interventions"]) {
+    const fields = (db.pragma(`table_info(${table})`) as { name: string }[])
+      .map(({ name }) => name)
+      .join(",");
+    db.exec(`INSERT INTO ${table}(rowid,${fields})
+      SELECT rowid,${fields} FROM ${table}_revision_24 ORDER BY rowid;
+      DROP TABLE ${table}_revision_24;`);
+  }
+  const restoredObjects = {
+    ...Object.fromEntries(
+      Object.entries(taskObjects).filter(([name]) => name.startsWith("tasks_")),
+    ),
+    tasks_charge_initial: replyObjects.tasks_charge_initial,
+    tasks_charge_changes: replyObjects.tasks_charge_changes,
+    ...Object.fromEntries(
+      Object.entries(graphObjects).filter(([name]) => /^(tasks|interventions)_/.test(name)),
+    ),
+    receipts_commands: limitsObjects.receipts_commands,
+    contributions_changes: limitsObjects.contributions_changes,
+    work_allocations_changes: limitsObjects.work_allocations_changes,
+  };
+  for (const definition of Object.values(restoredObjects)) db.exec(definition);
+  db.pragma("user_version=23");
+  db.pragma("legacy_alter_table=OFF");
+}
+
+it(
+  "applies migration retry holds despite a clean stop marker and retains them on ordinary startup",
+  async () => {
+    const f = await fixture();
+    const plans = await fillSynthesisLimit(f);
+    const waiting = plans[20]!;
+    await f.store.close(true);
+    // Revision 24 committed before the migration gate's restart review did.
+    fs.writeFileSync(
+      path.join(f.root, "migration-pending.json"),
+      JSON.stringify({
+        version: 1,
+        operation: "plan-migration-retry",
+        source: 23,
+        target: 24,
+      }),
+    );
+    await expect(f.store.open()).rejects.toThrow(/recovery/);
+    await f.store.close();
+    await f.store.retry();
+    expect(value(await f.store.readPauses()).restart).toBe(21);
+    expect((await readPlan(f, waiting)).continuation).toMatchObject({
+      admission: "waiting",
+      restartHeld: true,
+    });
+    await f.store.close(true);
+    await f.store.open();
+    expect(value(await f.store.readPauses()).restart).toBe(21);
+    synthesisConnection(f, true);
+    expect(await f.prepare()).toBeNull();
+    value(await continuePlans(f, "continue-after-migration"));
+    expect(value(await f.store.readPauses()).restart).toBe(0);
+    expect((await f.next()).kind).toBe("synthesis");
+
+    const restored = await fixture();
+    synthesisConnection(restored, true);
+    const { resultId: completed } = value(
+      await restored.add("historical-complete", restored.newPlan([task("root")])),
+    );
+    await restored.settle(await restored.next(), { status: "completed" }, unresolved);
+    const { resultId: pending } = value(
+      await restored.add("historical-open", restored.newPlan([task("pending")])),
+    );
+    await restored.store.close(true);
+    const historical = restored.raw();
+    try {
+      restoreRevision23Schema(historical);
+      expect(historical.pragma("foreign_key_check")).toEqual([]);
+    } finally {
+      historical.close();
+    }
+
+    const failedReview = vi
+      .spyOn(TaskTransaction.prototype, "recoverRestart")
+      .mockRejectedValueOnce(
+        new Error("Synthetic interruption before the restart review commits."),
+      );
+    await expect(restored.store.open()).rejects.toThrow(/interruption/);
+    failedReview.mockRestore();
+    await restored.store.restorePending();
+    await restored.store.close();
+    await expect(restored.store.open()).rejects.toThrow(/recovery/);
+    await restored.store.retry();
+    expect(await readPlan(restored, completed)).toMatchObject({
+      outcome: "complete",
+      continuation: { admission: "admitted", taskState: "blocked" },
+    });
+    expect(await readPlan(restored, pending)).toMatchObject({
+      outcome: null,
+      contributions: [{ state: "active" }],
+    });
+    expect(value(await restored.store.readPauses()).restart).toBe(2);
+    expect(await restored.prepare()).toBeNull();
+    value(await continuePlans(restored, "continue-after-restore"));
+    expect(value(await restored.store.readPauses()).restart).toBe(0);
+    expect(await restored.next()).not.toBeNull();
+  },
+  synthesisRecoveryTimeoutMs,
 );

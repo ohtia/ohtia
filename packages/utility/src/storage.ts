@@ -55,6 +55,11 @@ import {
   tables as workLimitTables,
   up as sharedWorkLimits,
 } from "./migrations/0023_shared_work_limits.mjs";
+import {
+  coordinationTables,
+  objects as coordinationObjects,
+  up as planCoordination,
+} from "./migrations/0024_plan_coordination.mjs";
 import { readResearch, researchRevisions, readPauseCounts } from "./research-reads.js";
 import type { Request, ResearchScope, ResearchEvent, ResearchOperation } from "@ohtia/contracts";
 import {
@@ -300,6 +305,7 @@ const names = [
   "0021_consultations",
   "0022_contribution_graphs",
   "0023_shared_work_limits",
+  "0024_plan_coordination",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -525,6 +531,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 23
       ? Object.keys(workLimitTables).filter((name) => name !== "contributions")
       : []),
+    ...(revision >= 24 ? ["intervention_events", "continuations"] : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -651,9 +658,11 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
       ? Object.entries(taskTables).map(([name, definition]) => [
           name,
           revision >= 21 && name === "tasks"
-            ? revision >= 22
-              ? graphTasks
-              : consultationTasks
+            ? revision >= 24
+              ? coordinationTables.tasks
+              : revision >= 22
+                ? graphTasks
+                : consultationTasks
             : revision >= 10 && name === "tasks"
               ? definition.replace(
                   ",\n    CHECK ((state=",
@@ -669,7 +678,19 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
       : []),
     ...(revision >= 15 ? Object.entries(setupTables) : []),
     ...(revision >= 22
-      ? Object.entries(revision >= 23 ? { ...graphTables, ...workLimitTables } : graphTables)
+      ? Object.entries(
+          revision >= 24
+            ? {
+                ...graphTables,
+                ...workLimitTables,
+                interventions: coordinationTables.interventions,
+                intervention_events: coordinationTables.intervention_events,
+                continuations: coordinationTables.continuations,
+              }
+            : revision >= 23
+              ? { ...graphTables, ...workLimitTables }
+              : graphTables,
+        )
       : revision >= 21
         ? Object.entries(consultationTables)
         : []),
@@ -710,6 +731,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 20 ? agentObjects : {}),
                 ...(revision >= 22 ? graphObjects : revision >= 21 ? consultationObjects : {}),
                 ...(revision >= 23 ? workLimitObjects : {}),
+                ...(revision >= 24 ? coordinationObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -739,6 +761,7 @@ export class DurableStore {
   setTaskContext(context: TaskContext): void {
     this.taskContext = context;
   }
+  private continuationAdmissionStopped = false;
   private runGeneration: string | undefined;
   private languageRegistry: LanguageRegistry | undefined;
   private admitted = false;
@@ -822,6 +845,7 @@ export class DurableStore {
     const native = this.native;
     const generation = this.runGeneration;
     this.runGeneration = undefined;
+    this.continuationAdmissionStopped = false;
     try {
       if (clean && db && generation) {
         this.assert();
@@ -891,9 +915,16 @@ export class DurableStore {
         CREATE TEMP TRIGGER pause_task_update AFTER UPDATE ON main.tasks
         WHEN (OLD.state='blocked' AND OLD.blocking_reason IN ('usage_limit_reached','restart_paused'))
           OR (NEW.state='blocked' AND NEW.blocking_reason IN ('usage_limit_reached','restart_paused'))
+          OR (OLD.state='waiting_capacity' AND OLD.blocking_reason='restart_paused')
+          OR (NEW.state='waiting_capacity' AND NEW.blocking_reason='restart_paused')
         BEGIN UPDATE pause_counts_revision SET revision=revision+1; END;
         CREATE TEMP TRIGGER pause_contribution_update AFTER UPDATE OF restart_held,state ON main.contributions
         WHEN (OLD.restart_held=1 AND OLD.state='waiting')<>(NEW.restart_held=1 AND NEW.state='waiting')
+        BEGIN UPDATE pause_counts_revision SET revision=revision+1; END;
+        CREATE TEMP TRIGGER pause_continuation_insert AFTER INSERT ON main.continuations WHEN NEW.restart_held=1
+        BEGIN UPDATE pause_counts_revision SET revision=revision+1; END;
+        CREATE TEMP TRIGGER pause_continuation_update AFTER UPDATE OF restart_held ON main.continuations
+        WHEN OLD.restart_held<>NEW.restart_held
         BEGIN UPDATE pause_counts_revision SET revision=revision+1; END;
         CREATE TEMP TRIGGER pause_open AFTER INSERT ON main.usage_limit_pauses
         BEGIN UPDATE pause_counts_revision SET revision=revision+1; END;
@@ -1067,6 +1098,7 @@ export class DurableStore {
     const operation = randomUUID();
     writeSynced(this.gate, { version: 1, operation, source, target }, retrySource);
     await this.checkpoint(db, source, operation);
+    const rebuildsTables = source < 24;
     const selected = this.database;
     if (!selected) throw new Error("Missing migration connection.");
     await selected.connection().execute(async (connection) => {
@@ -1074,7 +1106,7 @@ export class DurableStore {
       let committed = false;
       try {
         this.assert();
-        if (source < 23) db.pragma("foreign_keys = OFF");
+        if (rebuildsTables) db.pragma("foreign_keys = OFF");
         await sql`BEGIN EXCLUSIVE`.execute(connection);
         begun = true;
         await sql`CREATE TABLE IF NOT EXISTS ohtia_migration_artifacts (name TEXT PRIMARY KEY NOT NULL, sha256 TEXT NOT NULL CHECK(length(sha256)=64 AND sha256 NOT GLOB '*[^0-9a-f]*'))`.execute(
@@ -1110,6 +1142,7 @@ export class DurableStore {
                 "0021_consultations": { up: consultations },
                 "0022_contribution_graphs": { up: contributionGraphs },
                 "0023_shared_work_limits": { up: sharedWorkLimits },
+                "0024_plan_coordination": { up: planCoordination },
               }),
           },
         });
@@ -1143,7 +1176,7 @@ export class DurableStore {
         // Keep intent and checkpoint on every failure, including a successful commit with a lost acknowledgement.
         throw new Error(`Migration requires explicit recovery (${operation}).`, { cause: error });
       } finally {
-        if (source < 23) db.pragma("foreign_keys = ON");
+        if (rebuildsTables) db.pragma("foreign_keys = ON");
       }
     });
   }
@@ -2429,6 +2462,8 @@ export class DurableStore {
       "conversation.read": "ohtia.conversation.read",
       "destination.read": "ohtia.destination.read",
       "pause.read": "ohtia.pause.read",
+      "plan.read": "ohtia.plan.read",
+      "planEvent.list": "ohtia.plan.events_listed",
     } as const;
     if (Object.hasOwn(events, operation))
       this.researchDiagnostic({ event_name: events[operation as keyof typeof events] });
@@ -2462,7 +2497,12 @@ export class DurableStore {
       outcome = await this.database.connection().execute(async (transaction) => {
         await sql`BEGIN IMMEDIATE`.execute(transaction);
         try {
-          const tasks = new TaskTransaction(transaction, this.taskContext);
+          const tasks = new TaskTransaction(
+            transaction,
+            this.taskContext,
+            undefined,
+            this.continuationAdmissionStopped,
+          );
           const result = await applyResearchCommand(
             transaction,
             command,
@@ -2488,6 +2528,7 @@ export class DurableStore {
           diagnostics.push(...tasks.diagnostics);
           commitAttempted = true;
           await sql`COMMIT`.execute(transaction);
+          this.continuationAdmissionStopped = tasks.continuationAdmissionStopped;
           this.notifyPauseCounts();
           for (const connection of tasks.modelRefreshes)
             this.taskContext.requestModelRefresh?.(connection);
@@ -2531,6 +2572,7 @@ export class DurableStore {
         "task.tryAgain": "ohtia.task.retry_requested",
         "plan.addContributions": "ohtia.plan.graph_recorded",
         "plan.finish": "ohtia.plan.finished",
+        "plan.cancel": "ohtia.plan.cancel_requested",
         "consultation.accept": "ohtia.consultation.accepted",
         "consultation.decline": "ohtia.consultation.declined",
         "contribution.tryAgain": "ohtia.contribution.retry_requested",
@@ -2558,7 +2600,12 @@ export class DurableStore {
       const value = await this.database.connection().execute(async (transaction) => {
         await sql`BEGIN IMMEDIATE`.execute(transaction);
         try {
-          const tasks = new TaskTransaction(transaction, this.taskContext);
+          const tasks = new TaskTransaction(
+            transaction,
+            this.taskContext,
+            undefined,
+            this.continuationAdmissionStopped,
+          );
           const result = await operation(tasks);
           await tasks.flush();
           diagnostics.push(...tasks.diagnostics);
@@ -2672,7 +2719,7 @@ export class DurableStore {
   researchRevisions(
     scope: ResearchScope,
     diagnoseFailure = true,
-  ): Promise<Outcome<readonly Extract<ResearchEvent, { kind: "changed" }>[]>> {
+  ): Promise<Outcome<readonly Extract<ResearchEvent, { kind: "changed" | "planChanged" }>[]>> {
     return this.researchRead(
       async (db) => {
         if (

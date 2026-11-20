@@ -1,3 +1,4 @@
+import { listPlanEvents, planRevisions, readPlan, readPlanText } from "./plan-coordination.js";
 import { consultationRetryFits } from "./work-limits.js";
 import { sql, type Kysely } from "kysely";
 import {
@@ -153,10 +154,10 @@ async function timelineItem(
     .selectAll("t")
     .select(taskPosition.as("position"))
     .where("t.conversation_id", "=", bytes(conversationId))
-    .where("t.kind", "!=", "contribution")
+    .where("t.kind", "in", ["reply", "consultation"])
     .where("t.id", "=", bytes(id))
     .executeTakeFirst();
-  if (!task) return undefined;
+  if (!task || task.state === "waiting_capacity") return undefined;
   const attempt = await db
     .selectFrom("attempts")
     .selectAll()
@@ -220,7 +221,7 @@ export async function readPauseCounts(
   const restart = await db
     .selectFrom("tasks")
     .select(({ fn }) => fn.countAll<number>().as("count"))
-    .where("state", "=", "blocked")
+    .where("state", "in", ["blocked", "waiting_capacity"])
     .where("blocking_reason", "=", "restart_paused")
     .executeTakeFirstOrThrow();
   const heldContributions = await db
@@ -228,6 +229,12 @@ export async function readPauseCounts(
     .select(({ fn }) => fn.countAll<number>().as("count"))
     .where("restart_held", "=", 1)
     .where("state", "=", "waiting")
+    .executeTakeFirstOrThrow();
+  const heldContinuations = await db
+    .selectFrom("continuations")
+    .select(({ fn }) => fn.countAll<number>().as("count"))
+    .where("admission", "=", "waiting")
+    .where("restart_held", "=", 1)
     .executeTakeFirstOrThrow();
   const usage = [];
   for (const pause of await db
@@ -247,7 +254,11 @@ export async function readPauseCounts(
   }
   const snapshot = revision.rows[0];
   if (!snapshot) throw new Error("Pause revision unavailable.");
-  return { revision: snapshot.revision, restart: restart.count + heldContributions.count, usage };
+  return {
+    revision: snapshot.revision,
+    restart: restart.count + heldContributions.count + heldContinuations.count,
+    usage,
+  };
 }
 async function summarizeConversation(
   db: Kysely<ResearchSchema>,
@@ -270,7 +281,7 @@ async function summarizeConversation(
     .selectFrom("tasks")
     .select(["id", "state"])
     .where("conversation_id", "=", row.id)
-    .where("kind", "!=", "contribution");
+    .where("kind", "in", ["reply", "consultation"]);
   const latestTask = await tasks.orderBy(sql`rowid`, "desc").executeTakeFirst();
   const latestReply = await tasks
     .where("kind", "=", "reply")
@@ -311,6 +322,10 @@ export async function readResearch(
   context: TaskContext,
 ): Promise<Outcome<unknown>> {
   switch (request.operation) {
+    case "plan.read":
+      return readPlan(db, request.payload.planId);
+    case "planEvent.list":
+      return listPlanEvents(db, request.payload.planId, request.payload.afterSequence);
     case "pause.read":
       return { ok: true, value: await readPauseCounts(db) };
     case "destination.read": {
@@ -480,7 +495,7 @@ export async function readResearch(
       const rows = await sql<{ id: Uint8Array; position: number; rank: number }>`
         SELECT id, position, rank FROM (
           SELECT id, position, 1 AS rank FROM messages WHERE conversation_id = ${bytes(p.conversationId)}
-          UNION ALL SELECT t.id, ${taskPosition} AS position, 3 AS rank FROM tasks t WHERE t.conversation_id = ${bytes(p.conversationId)} AND t.kind <> 'contribution'
+          UNION ALL SELECT t.id, ${taskPosition} AS position, 3 AS rank FROM tasks t WHERE t.conversation_id = ${bytes(p.conversationId)} AND t.kind IN ('reply','consultation')
           UNION ALL SELECT p.id, t.reply_position AS position, 2 AS rank FROM project_setup_proposals p JOIN tasks t ON t.id=p.task_id WHERE t.conversation_id = ${bytes(p.conversationId)}
           UNION ALL SELECT i.id, t.reply_position AS position, 2 AS rank
             FROM interventions i JOIN attempts a ON a.id=i.proposed_by_attempt_id JOIN tasks t ON t.id=a.task_id
@@ -528,6 +543,8 @@ export async function readResearch(
       return { ok: true, value: { items, remaining: p.ids.slice(consumed) } };
     }
     case "text.readPart": {
+      if (request.payload.source.startsWith("plan_"))
+        return readPlanText(db, request.payload.source, request.payload.index);
       const consultation = /^consultation_([0-9a-f-]+)$/.exec(request.payload.source);
       if (consultation?.[1]) {
         const row = await db
@@ -575,8 +592,8 @@ export async function readResearch(
 export async function researchRevisions(
   db: Kysely<ResearchSchema>,
   scope: ResearchScope,
-): Promise<readonly Extract<ResearchEvent, { kind: "changed" }>[]> {
-  const result: Extract<ResearchEvent, { kind: "changed" }>[] = [];
+): Promise<readonly Extract<ResearchEvent, { kind: "changed" | "planChanged" }>[]> {
+  const result: Extract<ResearchEvent, { kind: "changed" | "planChanged" }>[] = [];
   for (const row of await db.selectFrom("projects").select(["id", "setup_confirmed_at"]).execute())
     result.push({
       kind: "changed",
@@ -658,7 +675,7 @@ export async function researchRevisions(
     for (const row of await db
       .selectFrom("tasks")
       .select(["id", "state_revision"])
-      .where("kind", "!=", "contribution")
+      .where("kind", "in", ["reply", "consultation"])
       .where("conversation_id", "=", bytes(scope.conversationId))
       .execute())
       result.push({
@@ -668,5 +685,5 @@ export async function researchRevisions(
         revision: row.state_revision,
       });
   }
-  return result;
+  return [...result, ...(await planRevisions(db, scope))];
 }

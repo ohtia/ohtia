@@ -15,6 +15,9 @@ import { TextStaging } from "./research-text.js";
 import { fitsResearchResult } from "./research-reads.js";
 import type { DurableStore } from "./storage.js";
 import type { DurableProvider } from "./durable-provider.js";
+function revisionKey(event: Extract<ResearchEvent, { kind: "changed" | "planChanged" }>): string {
+  return event.kind === "planChanged" ? `plan/${event.planId}` : `${event.record}/${event.id}`;
+}
 interface Stream {
   readonly window: string;
   readonly id: string;
@@ -85,7 +88,7 @@ export class ResearchService {
         this.event(stream, { kind: "pauseCounts", revision: pauses.value.revision });
       }
       for (const change of result.value) {
-        const key = `${change.record}/${change.id}`;
+        const key = revisionKey(change);
         if ((stream.revisions.get(key) ?? 0) >= change.revision) continue;
         stream.revisions.set(key, change.revision);
         this.event(stream, change);
@@ -155,9 +158,7 @@ export class ResearchService {
         sequence: 0,
         running: running.value,
         pauseRevision: pauses.value.revision,
-        revisions: new Map(
-          revisions.value.map((change) => [`${change.record}/${change.id}`, change.revision]),
-        ),
+        revisions: new Map(revisions.value.map((change) => [revisionKey(change), change.revision])),
       });
       respond({ ok: true, value: { subscriptionId: p.subscriptionId } });
       return true;

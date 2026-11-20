@@ -217,6 +217,22 @@ export async function bindWork(
   if (result.numUpdatedRows !== 2n) throw new Error("Contribution lacks its attempt shares.");
 }
 
+export async function bindSynthesisWork(
+  db: Kysely<ResearchSchema>,
+  interventionId: Uint8Array,
+  taskId: Uint8Array,
+): Promise<void> {
+  const result = await db
+    .updateTable("work_allocations")
+    .set({ task_id: taskId })
+    .where("intervention_id", "=", interventionId)
+    .where("share", "=", "synthesis")
+    .where("task_id", "is", null)
+    .where("state", "=", "held")
+    .executeTakeFirstOrThrow();
+  if (result.numUpdatedRows !== 2n) throw new Error("Synthesis lacks its attempt shares.");
+}
+
 export async function releaseTaskWork(
   db: Kysely<ResearchSchema>,
   taskId: Uint8Array,

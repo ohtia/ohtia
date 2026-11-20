@@ -23,7 +23,15 @@ const priorTaskObjects = {
   receipts_commands: josefaObjects.receipts_commands,
 };
 
+export const dropCoordinationSql = `
+  DROP TABLE continuations;
+  DROP TABLE intervention_events;
+  DELETE FROM kysely_migration WHERE name='0024_plan_coordination';
+  DELETE FROM ohtia_migration_artifacts WHERE name='0024_plan_coordination';
+`;
+
 export const dropWorkLimitsSql = `
+  ${dropCoordinationSql}
   DROP TABLE work_allocations;
   DROP TABLE intervention_operations;
   DROP TABLE intervention_limits;
