@@ -64,8 +64,11 @@ import {
   type DependencyRow,
   type GraphChangeRow,
 } from "./contribution-graphs.js";
+import type { ContinuationRow, PlanEventRow } from "./plan-coordination.js";
 import type { ContributionRow, InterventionRow } from "./consultations.js";
 export interface ResearchSchema extends TaskSchema {
+  intervention_events: PlanEventRow;
+  continuations: ContinuationRow;
   intervention_limits: InterventionLimitsRow;
   intervention_operations: InterventionOperationRow;
   work_allocations: WorkAllocationRow;
@@ -279,6 +282,7 @@ const payloadKeys = {
   "project.open": ["projectId"],
   "plan.addContributions": ["planId", "expectedGraphVersion", "contributions"],
   "plan.finish": ["planId"],
+  "plan.cancel": ["planId"],
   "usagePause.resume": ["connection"],
   "task.continueAll": [],
   "task.cancelAll": [],
@@ -354,13 +358,18 @@ export async function applyResearchCommand(
       );
       if (!added.ok) return added;
       tasks.diagnostics.push({ event_name: "ohtia.work.reserved" });
-      await tasks.advancePlan(added.value);
+      const recorded = await tasks.recordGraphChange(added.value);
+      if (!recorded.ok) return recorded;
       result = added.value;
       break;
     }
+    case "plan.cancel":
     case "plan.finish": {
       if (!isEntityId(input.payload.planId)) return failure("invalid_message");
-      const finished = await tasks.finishPlan(bytes(input.payload.planId), input.operationId);
+      const finished =
+        input.command === "plan.cancel"
+          ? await tasks.cancelPlan(bytes(input.payload.planId), input.operationId)
+          : await tasks.finishPlan(bytes(input.payload.planId), input.operationId);
       if (!finished.ok) return finished;
       result = finished.value;
       break;
@@ -665,7 +674,7 @@ export async function researchReceiptResult(
   receipt: Pick<ResearchSchema["command_receipts"], "command" | "result_id">,
 ): Promise<ResearchResult> {
   const resultId = identifier(receipt.result_id);
-  if (receipt.command !== "plan.finish") return { resultId };
+  if (receipt.command !== "plan.finish" && receipt.command !== "plan.cancel") return { resultId };
   const { outcome } = await db
     .selectFrom("interventions")
     .select("outcome")

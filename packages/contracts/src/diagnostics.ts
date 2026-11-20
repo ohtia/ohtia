@@ -43,6 +43,9 @@ export const diagnosticCatalog = Object.freeze({
     [],
   ),
   "ohtia.plan.completed": event("data_service", "plan.advance", "INFO", "completed", []),
+  "ohtia.plan.cancel_requested": event("data_service", "plan.cancel", "INFO", "success", []),
+  "ohtia.plan.read": event("data_service", "plan.read", "DEBUG", "success", []),
+  "ohtia.plan.events_listed": event("data_service", "planEvent.list", "DEBUG", "success", []),
   "ohtia.plan.finished": event("data_service", "plan.finish", "INFO", "success", []),
   "ohtia.contribution.input_too_large": event("data_service", "plan.advance", "WARN", "failed", [
     "input_too_large",
@@ -215,6 +218,7 @@ export const diagnosticCatalog = Object.freeze({
     "purpose_too_long",
     "shared_context_too_large",
     "plan_state_changed",
+    "event_limit_reached",
     "task_not_stoppable",
     "project_in_setup",
     "agent_unavailable",

@@ -16,6 +16,7 @@ const providerInstructionBytes = 10 * 1024;
 export const dispatchPermitPolicy = Object.freeze({ version: 1, validity_ms: 2000 });
 export const providerOperations = [
   "development_test",
+  "development_test_synthesis",
   "project_setup",
   "direct_guidance",
   "search_strategy_planning",
@@ -404,6 +405,8 @@ export function isProviderRequestData(value: unknown): value is ProviderRequestD
     Array.isArray(value.tools) &&
     value.tools.length <= 32 &&
     (value.operation !== "search_strategy_planning" || value.tools.length === 0) &&
+    (value.operation !== "development_test_synthesis" ||
+      (value.connection === "fake" && value.tools.length === 0)) &&
     value.tools.every(isTool) &&
     record(value.limits) &&
     exact(value.limits, ["max_output_bytes", "max_attempt_duration_ms", "max_inactivity_ms"]) &&
@@ -613,7 +616,12 @@ export type TransferEntry =
       readonly version: number;
     }
   | {
-      readonly kind: "message" | "consultation_request" | "contribution_request";
+      readonly kind:
+        | "message"
+        | "consultation_request"
+        | "contribution_request"
+        | "plan_context"
+        | "contribution_state";
       readonly reference: string;
     }
   | {
@@ -681,7 +689,9 @@ function isTransferEntry(value: unknown): value is TransferEntry {
   if (
     value.kind === "message" ||
     value.kind === "consultation_request" ||
-    value.kind === "contribution_request"
+    value.kind === "contribution_request" ||
+    value.kind === "plan_context" ||
+    value.kind === "contribution_state"
   )
     return exact(value, ["kind", "reference"]) && isIdentifier(value.reference);
   return (

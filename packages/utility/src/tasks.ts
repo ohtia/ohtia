@@ -15,11 +15,22 @@ import {
   topologicalOrder,
   waitingForPlanWork,
 } from "./contribution-graphs.js";
+import {
+  acceptedPlan,
+  acceptedPlans,
+  appendPlanEvent,
+  createContinuation,
+  hasEventRoom,
+  planContinuation,
+  synthesisInput,
+} from "./plan-coordination.js";
+import type { PlanEventKind, PlanEventPayload } from "@ohtia/contracts";
 import type { ContributionRow, InterventionRow } from "./consultations.js";
 import {
   authorizeWork,
   authorizedOperation,
   bindWork,
+  bindSynthesisWork,
   consultationLimits,
   interventionLimits,
   releasePendingWork,
@@ -70,6 +81,7 @@ import {
   operationPolicy,
   recordedOperationPolicy,
   replyAgent,
+  testSynthesisPolicy,
   type OperationPolicy,
 } from "./operations.js";
 const conversationTitleTool: ProviderTool = {
@@ -90,6 +102,7 @@ export type RuntimeMode = "development" | "installed" | "qualification";
 export type TaskState =
   | "queued"
   | "blocked"
+  | "waiting_capacity"
   | "running"
   | "cancelling"
   | "completed"
@@ -133,7 +146,7 @@ export interface TaskRow {
   project_id: Uint8Array;
   conversation_id: Uint8Array;
   input_through_position: number | null;
-  kind: "reply" | "consultation" | "contribution";
+  kind: "reply" | "consultation" | "contribution" | "synthesis";
   contribution_id: Uint8Array | null;
   reply_position: number | null;
   operation: string;
@@ -217,11 +230,18 @@ export class TaskTransaction {
   private readonly changedPlans = new Map<string, Uint8Array>();
   private readonly interventions = new Map<string, Uint8Array>();
   private readonly conversations = new Map<string, Uint8Array>();
+  private admitSynthesis = false;
+  private restartingAfterCrash = false;
+  private readonly exitCancelledPlans = new Set<string>();
+  get continuationAdmissionStopped(): boolean {
+    return this.stopContinuationAdmission;
+  }
   private titleSuggestion?: { conversation: string; attemptId: Uint8Array; title: string };
   constructor(
     private readonly db: Kysely<ResearchSchema>,
     readonly context: TaskContext,
     private readonly now = new Date().toISOString(),
+    private stopContinuationAdmission = false,
   ) {}
   touch(conversation: Uint8Array): void {
     this.conversations.set(identifier(conversation), conversation);
@@ -231,6 +251,8 @@ export class TaskTransaction {
   }
   async flush(): Promise<void> {
     for (const id of this.changedPlans.values()) await this.advancePlan(id);
+    if (this.admitSynthesis && !this.stopContinuationAdmission)
+      await this.admitWaitingContinuations();
     for (const id of this.interventions.values())
       await this.db
         .updateTable("interventions")
@@ -264,6 +286,23 @@ export class TaskTransaction {
       .executeTakeFirstOrThrow();
     if (changed.numUpdatedRows !== 1n) throw new Error("Task revision changed.");
     this.touch(task.conversation_id);
+    if (task.kind === "synthesis") {
+      const owner = await this.db
+        .selectFrom("continuations")
+        .select("intervention_id")
+        .where("task_id", "=", task.id)
+        .executeTakeFirstOrThrow();
+      this.touchIntervention(owner.intervention_id);
+      if (
+        (task.state === "queued" || task.state === "blocked") &&
+        change.state &&
+        change.state !== "queued" &&
+        change.state !== "blocked"
+      )
+        this.admitSynthesis = true;
+      if (change.state && ["completed", "failed", "uncertain", "cancelled"].includes(change.state))
+        if (await releaseTaskWork(this.db, task.id, this.now)) this.workReleased();
+    }
     if (task.contribution_id) {
       const contribution = await this.db
         .selectFrom("contributions")
@@ -294,11 +333,19 @@ export class TaskTransaction {
           .where("id", "=", task.contribution_id)
           .where("task_id", "=", task.id)
           .execute();
-        if (task.kind === "contribution")
+        if (task.kind === "contribution") {
+          await this.planEvent(
+            contribution.intervention_id,
+            `contribution_${state}`,
+            {},
+            task.contribution_id,
+            task.id,
+          );
           this.changedPlans.set(
             identifier(contribution.intervention_id),
             contribution.intervention_id,
           );
+        }
       }
     }
   }
@@ -340,7 +387,7 @@ export class TaskTransaction {
       .selectFrom("tasks")
       .select("id")
       .where("conversation_id", "=", id)
-      .where("kind", "!=", "contribution")
+      .where("kind", "in", ["reply", "consultation"])
       .where("state", "in", ["queued", "blocked", "running", "cancelling"])
       .execute();
     for (const task of tasks) {
@@ -483,12 +530,7 @@ export class TaskTransaction {
     return { ok: true, value: id };
   }
   private openPlans() {
-    return this.db
-      .selectFrom("interventions")
-      .select("id")
-      .where("kind", "=", "plan")
-      .where("state", "=", "accepted")
-      .where("outcome", "is", null);
+    return acceptedPlans(this.db).select("id").where("outcome", "is", null);
   }
 
   private clearPlanRestartHolds(id: Uint8Array) {
@@ -498,6 +540,214 @@ export class TaskTransaction {
       .where("intervention_id", "=", id)
       .where("restart_held", "=", 1)
       .execute();
+  }
+
+  private planEvent(
+    id: Uint8Array,
+    kind: PlanEventKind,
+    payload: PlanEventPayload,
+    contributionId: Uint8Array | null = null,
+    taskId: Uint8Array | null = null,
+  ) {
+    this.touchIntervention(id);
+    return appendPlanEvent(this.db, id, this.now, kind, payload, contributionId, taskId);
+  }
+
+  async recordGraphChange(id: Uint8Array): Promise<Outcome<Uint8Array>> {
+    const plan = await acceptedPlan(this.db, id);
+    if (!plan) throw new Error("Changed plan could not be read.");
+    if (!(await hasEventRoom(this.db, id))) return failure("event_limit_reached");
+    await this.planEvent(id, "graph_changed", { graphVersion: plan.graph_version });
+    if (!(await this.advancePlan(id))) return failure("event_limit_reached");
+    return { ok: true, value: id };
+  }
+
+  private async cancelUnstartedContributions(
+    id?: Uint8Array,
+    states: readonly ("waiting" | "blocked")[] = ["waiting", "blocked"],
+  ): Promise<void> {
+    let query = this.db
+      .updateTable("contributions")
+      .set({ state: "cancelled", blocked_by_contribution_id: null, restart_held: 0 })
+      .where("state", "in", states);
+    query = id
+      ? query.where("intervention_id", "=", id)
+      : query.where("intervention_id", "in", this.openPlans());
+    const rows = await query.returning(["id", "intervention_id"]).execute();
+    for (const row of rows) {
+      if (await releaseUnboundContributionWork(this.db, row.id, this.now)) this.workReleased();
+      await this.planEvent(row.intervention_id, "contribution_cancelled", {}, row.id);
+      this.changedPlans.set(identifier(row.intervention_id), row.intervention_id);
+    }
+  }
+
+  private async withdrawWaitingContinuations(id?: Uint8Array): Promise<void> {
+    let query = this.db
+      .updateTable("continuations")
+      .set({ admission: "withdrawn", restart_held: 0 })
+      .where("admission", "=", "waiting");
+    if (id) query = query.where("intervention_id", "=", id);
+    for (const row of await query.returning("intervention_id").execute()) {
+      const released = await this.db
+        .updateTable("work_allocations")
+        .set({ state: "released", settled_at: this.now })
+        .where("intervention_id", "=", row.intervention_id)
+        .where("share", "=", "synthesis")
+        .where("task_id", "is", null)
+        .where("state", "=", "held")
+        .executeTakeFirst();
+      if (released.numUpdatedRows) this.workReleased();
+      this.touchIntervention(row.intervention_id);
+    }
+  }
+
+  async cancelPlan(id: Uint8Array, operationId: string): Promise<Outcome<Uint8Array>> {
+    const plan = await acceptedPlan(this.db, id);
+    if (!plan) return failure("record_not_found");
+    if (plan.outcome) {
+      const continuation = await planContinuation(this.db, id);
+      if (continuation?.admission === "waiting") await this.withdrawWaitingContinuations(id);
+      else if (continuation?.task_id)
+        await this.control("task.stop", continuation.task_id, operationId, true);
+      return { ok: true, value: id };
+    }
+    await this.cancelUnstartedContributions(id);
+    for (const node of await planContributions(this.db, id))
+      if (node.state === "active" && node.task_id)
+        await this.control("task.stop", node.task_id, operationId, true);
+    if (await releasePendingWork(this.db, id, this.now, true)) this.workReleased();
+    await this.endPlan(plan, "cancelled", operationId);
+    return { ok: true, value: id };
+  }
+
+  private async endPlan(
+    plan: Selectable<InterventionRow>,
+    outcome: NonNullable<Selectable<InterventionRow>["outcome"]>,
+    operationId: string | null = null,
+  ): Promise<void> {
+    await this.db
+      .updateTable("interventions")
+      .set({
+        outcome,
+        finished_at: this.now,
+        finished_by_operation_id: operationId,
+        revision: sql`revision+1`,
+      })
+      .where("id", "=", plan.id)
+      .execute();
+    await this.planEvent(plan.id, "plan_ended", { outcome });
+    if (outcome === "complete" || outcome === "partial")
+      await this.recordContinuation(plan, outcome);
+  }
+
+  private async recordContinuation(
+    plan: Selectable<InterventionRow>,
+    outcome: "complete" | "partial",
+  ): Promise<void> {
+    const withdrawn =
+      this.stopContinuationAdmission || this.exitCancelledPlans.has(identifier(plan.id));
+    await createContinuation(
+      this.db,
+      plan,
+      outcome === "complete" ? "required_set_complete" : "finished_partial",
+      this.now,
+      withdrawn,
+      this.restartingAfterCrash,
+    );
+    if (withdrawn) {
+      if (await releasePendingWork(this.db, plan.id, this.now, true)) this.workReleased();
+    } else this.admitSynthesis = true;
+    this.touchIntervention(plan.id);
+  }
+
+  private async admitWaitingContinuations(): Promise<void> {
+    const policy = testSynthesisPolicy;
+    let available = policy.max_pending_tasks - (await this.pendingCount(policy.operation));
+    if (available <= 0) return;
+    const returning = await this.db
+      .selectFrom("tasks")
+      .selectAll()
+      .where("kind", "=", "synthesis")
+      .where("operation", "=", policy.operation)
+      .where("state", "=", "waiting_capacity")
+      .orderBy("created_at")
+      .orderBy("id")
+      .limit(available)
+      .execute();
+    for (const task of returning) {
+      const reason = task.blocking_reason;
+      await this.change(task, { state: reason ? "blocked" : "queued", blocking_reason: reason });
+      this.diagnostics.push({ event_name: "ohtia.task.readmitted" });
+      available--;
+    }
+    if (available <= 0) return;
+    const rows = await this.db
+      .selectFrom("continuations")
+      .selectAll()
+      .where("admission", "=", "waiting")
+      .orderBy("created_at")
+      .orderBy("id")
+      .limit(available)
+      .execute();
+    for (const row of rows) {
+      const plan = await acceptedPlan(this.db, row.intervention_id);
+      const receipt =
+        row.reason === "finished_partial"
+          ? plan?.finished_by_operation_id
+          : plan?.decided_by_operation_id;
+      const route = await authorizedOperation(
+        this.db,
+        row.intervention_id,
+        "virgilio",
+        policy.operation,
+      );
+      if (!plan || !receipt || !route)
+        throw new Error("Ready continuation lacks its authorized operation.");
+      const project = await this.db
+        .selectFrom("projects")
+        .select("document_language")
+        .where("id", "=", plan.project_id)
+        .executeTakeFirstOrThrow();
+      const taskId = newId();
+      const reason = row.restart_held
+        ? "restart_paused"
+        : route.connection !== "fake" || this.context.mode !== "development"
+          ? "configuration_unavailable"
+          : await this.connectionBlock(route.connection);
+      await this.db
+        .updateTable("continuations")
+        .set({ admission: "admitted", task_id: taskId, restart_held: 0 })
+        .where("id", "=", row.id)
+        .execute();
+      await this.db
+        .insertInto("tasks")
+        .values({
+          id: taskId,
+          kind: "synthesis",
+          contribution_id: null,
+          project_id: plan.project_id,
+          conversation_id: plan.conversation_id,
+          input_through_position: null,
+          reply_position: null,
+          operation: policy.operation,
+          policy_version: policy.version,
+          instruction_version: policy.instruction_version,
+          connection: route.connection,
+          document_language: project.document_language,
+          accepted_by_operation_id: receipt,
+          replaces_task_id: null,
+          charge_warning_accepted_at: null,
+          state: reason ? "blocked" : "queued",
+          blocking_reason: reason,
+          state_revision: 1,
+          created_at: this.now,
+          updated_at: this.now,
+        })
+        .execute();
+      await bindSynthesisWork(this.db, plan.id, taskId);
+      this.touchIntervention(plan.id);
+      this.diagnostics.push({ event_name: "ohtia.task.accepted" });
+    }
   }
 
   async finishPlan(id: Uint8Array, operationId: string): Promise<Outcome<Uint8Array>> {
@@ -511,29 +761,24 @@ export class TaskTransaction {
     if (!plan) return failure("record_not_found");
     if (plan.outcome) return { ok: true, value: id };
     const contributions = await planContributions(this.db, id);
+    const capped = !(await hasEventRoom(this.db, id));
     if (
-      contributions.some(({ state }) => waitingForPlanWork(state)) ||
-      !contributions.some(({ state, required }) => required && state !== "completed")
+      contributions.some(({ state }) => state === "active") ||
+      (!capped &&
+        (contributions.some(({ state }) => state === "waiting") ||
+          !contributions.some(({ state, required }) => required && state !== "completed")))
     )
       return failure("plan_state_changed");
+    if (capped) await this.cancelUnstartedContributions(id, ["waiting"]);
     await this.clearPlanRestartHolds(id);
     const hasResult = contributions.some(({ state }) => state === "completed");
     if (await releasePendingWork(this.db, id, this.now, !hasResult)) this.workReleased();
-    await this.db
-      .updateTable("interventions")
-      .set({
-        outcome: hasResult ? "partial" : "failed",
-        finished_at: this.now,
-        finished_by_operation_id: operationId,
-        revision: sql`revision+1`,
-      })
-      .where("id", "=", id)
-      .execute();
+    await this.endPlan(plan, hasResult ? "partial" : "failed", operationId);
     return { ok: true, value: id };
   }
 
   /** Advance the accepted graph against committed task outcomes in the same transaction. */
-  async advancePlan(id: Uint8Array): Promise<void> {
+  private async advancePlan(id: Uint8Array): Promise<boolean> {
     const plan = await this.db
       .selectFrom("interventions")
       .selectAll()
@@ -543,7 +788,7 @@ export class TaskTransaction {
       .where("outcome", "is", null)
       .executeTakeFirst();
     // Revision 22 could store synthetic plans, but had no accepted work envelopes for them.
-    if (!plan || !(await interventionLimits(this.db, id))) return;
+    if (!plan || !(await interventionLimits(this.db, id))) return true;
     const nodes = await planContributions(this.db, id);
     const byId = new Map(nodes.map((row) => [identifier(row.id), row]));
     const edges = new Map(nodes.map((row) => [identifier(row.id), [] as string[]]));
@@ -559,12 +804,13 @@ export class TaskTransaction {
       if (!node) throw new Error("Stored dependency lacks a contribution.");
       return node;
     };
+    let withinCap = true;
     for (const key of order) {
       const node = nodeAt(key);
       if (node.state !== "waiting" && node.state !== "blocked") continue;
       const prerequisites = (edges.get(key) ?? []).map(nodeAt);
       if (node.ready_inputs !== null) {
-        if (!node.restart_held) await this.activateContribution(plan, node);
+        if (!node.restart_held && !(await this.activateContribution(plan, node))) withinCap = false;
         continue;
       }
       const blocker = prerequisites.find(
@@ -583,11 +829,21 @@ export class TaskTransaction {
             .execute();
           node.state = "blocked";
           node.blocked_by_contribution_id = root;
-          this.touchIntervention(id);
+          await this.planEvent(
+            id,
+            "contribution_blocked",
+            { blockedBy: identifier(root) },
+            node.id,
+          );
+          if (!(await hasEventRoom(this.db, id, 0))) withinCap = false;
         }
         continue;
       }
       if (node.state === "blocked") {
+        if (!(await hasEventRoom(this.db, id))) {
+          withinCap = false;
+          continue;
+        }
         await this.db
           .updateTable("contributions")
           .set({ state: "waiting", blocked_by_contribution_id: null })
@@ -595,10 +851,14 @@ export class TaskTransaction {
           .execute();
         node.state = "waiting";
         node.blocked_by_contribution_id = null;
-        this.touchIntervention(id);
+        await this.planEvent(id, "contribution_waiting", {}, node.id);
       }
-      if (!node.restart_held && prerequisites.every(({ state }) => state === "completed"))
-        await this.activateContribution(plan, node);
+      if (
+        !node.restart_held &&
+        prerequisites.every(({ state }) => state === "completed") &&
+        !(await this.activateContribution(plan, node))
+      )
+        withinCap = false;
     }
     if (
       nodes.length &&
@@ -608,17 +868,10 @@ export class TaskTransaction {
     ) {
       await this.clearPlanRestartHolds(id);
       if (await releasePendingWork(this.db, id, this.now, false)) this.workReleased();
-      await this.db
-        .updateTable("interventions")
-        .set({
-          outcome: "complete",
-          finished_at: this.now,
-          revision: sql`revision+1`,
-        })
-        .where("id", "=", id)
-        .execute();
+      await this.endPlan(plan, "complete");
       this.diagnostics.push({ event_name: "ohtia.plan.completed" });
     }
+    return withinCap;
   }
 
   private async activationRefusal(
@@ -642,7 +895,8 @@ export class TaskTransaction {
   private async activateContribution(
     plan: Selectable<InterventionRow>,
     node: Selectable<ContributionRow>,
-  ): Promise<void> {
+  ): Promise<boolean> {
+    if (!(await hasEventRoom(this.db, plan.id))) return false;
     const policy = recordedOperationPolicy(node.operation, node.policy_version);
     if (!policy || !plan.decided_by_operation_id)
       throw new Error("Accepted contribution has no policy or receipt.");
@@ -668,16 +922,17 @@ export class TaskTransaction {
         .where("id", "=", node.id)
         .execute();
       if (await releaseUnboundContributionWork(this.db, node.id, this.now)) this.workReleased();
-      this.touchIntervention(plan.id);
+      await this.planEvent(plan.id, "contribution_failed", { reason }, node.id);
       this.diagnostics.push(
         reason === "input_too_large"
           ? { event_name: "ohtia.contribution.input_too_large", error_code: reason }
           : { event_name: "ohtia.contribution.activation_refused", error_code: reason },
       );
-      return;
+      return true;
     }
-    if (await this.pendingLimitReached(policy)) return;
+    if (await this.pendingLimitReached(policy)) return true;
     await this.insertContributionTask(plan, node, policy, plan.decided_by_operation_id);
+    return true;
   }
 
   async retryContributionWithoutTask(
@@ -698,6 +953,7 @@ export class TaskTransaction {
       .executeTakeFirstOrThrow();
     if (plan.outcome || node.task_id || node.failure_reason !== "destination_changed")
       return failure("task_not_retryable");
+    if (!(await hasEventRoom(this.db, plan.id))) return failure("event_limit_reached");
     const refusal = await this.activationRefusal(node);
     if (refusal) return failure(refusal);
     const policy = operationPolicy(node.operation, node.policy_version, this.context.mode);
@@ -710,7 +966,7 @@ export class TaskTransaction {
     await reserveWork(this.db, plan.id, node.id, policy, this.now);
     this.diagnostics.push({ event_name: "ohtia.work.reserved" });
     const taskId = await this.insertContributionTask(plan, node, policy, operationId);
-    this.changedPlans.set(identifier(plan.id), plan.id);
+    if (!(await this.advancePlan(plan.id))) return failure("event_limit_reached");
     return { ok: true, value: taskId };
   }
 
@@ -777,21 +1033,22 @@ export class TaskTransaction {
       .set({ task_id: taskId, state: node.state, failure_reason: null })
       .where("id", "=", node.id)
       .execute();
-    this.touchIntervention(plan.id);
+    await this.planEvent(plan.id, "contribution_started", {}, node.id, taskId);
     this.diagnostics.push({ event_name: "ohtia.task.accepted" });
     return taskId;
   }
 
-  private async pendingLimitReached(
-    policy: NonNullable<ReturnType<typeof operationPolicy>>,
-  ): Promise<boolean> {
+  private async pendingLimitReached(policy: OperationPolicy): Promise<boolean> {
+    return (await this.pendingCount(policy.operation)) >= policy.max_pending_tasks;
+  }
+  private async pendingCount(operation: string): Promise<number> {
     const pending = await this.db
       .selectFrom("tasks")
       .select(({ fn }) => fn.countAll<number>().as("count"))
-      .where("operation", "=", policy.operation)
+      .where("operation", "=", operation)
       .where("state", "in", ["queued", "blocked"])
       .executeTakeFirstOrThrow();
-    return pending.count >= policy.max_pending_tasks;
+    return pending.count;
   }
   private waiting(conversation: Uint8Array) {
     return this.db
@@ -889,7 +1146,7 @@ export class TaskTransaction {
     if (!policy || policy.instruction_version !== task.instruction_version) return false;
     if (task.kind === "reply") {
       if (task.connection !== "chatgpt") return false;
-    } else {
+    } else if (task.kind !== "synthesis") {
       const contribution =
         task.contribution_id &&
         (await this.db
@@ -949,6 +1206,25 @@ export class TaskTransaction {
         identifier(receipt.result_id) === identifier(task.id)
       );
     }
+    if (task.kind === "synthesis") {
+      const continuation = await this.db
+        .selectFrom("continuations")
+        .select("id")
+        .where("task_id", "=", task.id)
+        .where("admission", "=", "admitted")
+        .executeTakeFirst();
+      return (
+        !!continuation &&
+        !!project &&
+        (project.is_development === 1 || project.setup_confirmed_at !== null) &&
+        project.document_language === task.document_language &&
+        task.connection === "fake" &&
+        this.agentConnection("virgilio") === task.connection &&
+        task.operation === testSynthesisPolicy.operation &&
+        !!receipt &&
+        ["plan.addContributions", "plan.finish"].includes(receipt.command)
+      );
+    }
     if (task.kind === "consultation")
       return (
         !!project &&
@@ -988,11 +1264,15 @@ export class TaskTransaction {
           task.operation === "search_strategy_planning"))
     );
   }
-  private pending() {
+  private pending(includeReturning = false) {
     return this.db
       .selectFrom("tasks")
       .selectAll()
-      .where("state", "in", ["queued", "blocked"])
+      .where(
+        "state",
+        "in",
+        includeReturning ? ["queued", "blocked", "waiting_capacity"] : ["queued", "blocked"],
+      )
       .orderBy("created_at")
       .orderBy("id")
       .execute();
@@ -1045,8 +1325,13 @@ export class TaskTransaction {
       .executeTakeFirst();
     if (!task) return failure("record_not_found");
     if (command === "task.stop") {
-      if (task.kind === "contribution" && !stoppingAll) return failure("task_not_stoppable");
-      if (task.state === "queued" || task.state === "blocked") {
+      if ((task.kind === "contribution" || task.kind === "synthesis") && !stoppingAll)
+        return failure("task_not_stoppable");
+      if (
+        task.state === "queued" ||
+        task.state === "blocked" ||
+        task.state === "waiting_capacity"
+      ) {
         await this.change(task, { state: "cancelled", blocking_reason: null });
         this.diagnostics.push({ event_name: "ohtia.task.cancelled" });
       } else if (task.state === "running" || task.state === "cancelling") {
@@ -1089,6 +1374,7 @@ export class TaskTransaction {
       }
       return { ok: true, value: task.id };
     }
+    if (task.kind === "synthesis") return failure("task_not_retryable");
     const isConsultation = task.kind === "consultation";
     const delegated = delegatedTask(task);
     if (command.startsWith("contribution.") !== delegated) return failure("task_not_retryable");
@@ -1108,6 +1394,8 @@ export class TaskTransaction {
           .where("id", "=", contribution.intervention_id)
           .executeTakeFirstOrThrow();
         if (plan.outcome) return failure("task_not_retryable");
+        if (!(await hasEventRoom(this.db, contribution.intervention_id)))
+          return failure("event_limit_reached");
       }
       if (!contribution.task_id || identifier(contribution.task_id) !== identifier(task.id))
         return failure("newer_task_exists");
@@ -1212,11 +1500,17 @@ export class TaskTransaction {
         .returning("intervention_id")
         .executeTakeFirstOrThrow();
       this.touchIntervention(contribution.intervention_id);
-      if (task.kind === "contribution")
-        this.changedPlans.set(
-          identifier(contribution.intervention_id),
+      if (task.kind === "contribution") {
+        await this.planEvent(
           contribution.intervention_id,
+          "contribution_started",
+          {},
+          task.contribution_id,
+          replacement,
         );
+        if (!(await this.advancePlan(contribution.intervention_id)))
+          return failure("event_limit_reached");
+      }
     }
     this.touch(task.conversation_id);
     if (retry && this.context.connections.read(task.connection)?.models?.length === 0)
@@ -1233,24 +1527,13 @@ export class TaskTransaction {
   }
   /** One transaction cancels pending work and records the same stopping intent as Stop. */
   async cancelAll(): Promise<void> {
-    // Cancel accepted intents before releasing any pending task capacity.
-    const waiting = await this.db
-      .updateTable("contributions")
-      .set({ state: "cancelled", blocked_by_contribution_id: null, restart_held: 0 })
-      .where("intervention_id", "in", this.openPlans())
-      .where("state", "in", ["waiting", "blocked"])
-      .returning(["id", "intervention_id"])
-      .execute();
-    for (const { id: contributionId, intervention_id: id } of waiting) {
-      if (await releaseUnboundContributionWork(this.db, contributionId, this.now))
-        this.workReleased();
-      this.touchIntervention(id);
-      this.changedPlans.set(identifier(id), id);
-    }
+    this.stopContinuationAdmission = true;
+    await this.withdrawWaitingContinuations();
+    await this.cancelUnstartedContributions();
     const tasks = await this.db
       .selectFrom("tasks")
       .select("id")
-      .where("state", "in", ["queued", "blocked", "running", "cancelling"])
+      .where("state", "in", ["queued", "blocked", "waiting_capacity", "running", "cancelling"])
       .execute();
     for (const task of tasks) {
       const result = await this.control("task.stop", task.id, "cancel-all", true);
@@ -1272,6 +1555,17 @@ export class TaskTransaction {
   }
   /** Main has closed the old generation before admission. A permit is possible dispatch. */
   async recoverRestart(orderly: boolean): Promise<void> {
+    this.restartingAfterCrash = !orderly;
+    const heldContinuations = !orderly
+      ? await this.db
+          .updateTable("continuations")
+          .set({ restart_held: 1 })
+          .where("admission", "=", "waiting")
+          .where("restart_held", "=", 0)
+          .returning("intervention_id")
+          .execute()
+      : [];
+    for (const row of heldContinuations) this.touchIntervention(row.intervention_id);
     const held = orderly
       ? []
       : await this.db
@@ -1286,14 +1580,21 @@ export class TaskTransaction {
     const tasks = await this.db
       .selectFrom("tasks")
       .selectAll()
-      .where("state", "in", ["queued", "blocked", "running", "cancelling"])
+      .where("state", "in", ["queued", "blocked", "waiting_capacity", "running", "cancelling"])
       .orderBy("created_at")
       .orderBy("id")
       .execute();
     for (const task of tasks) {
-      if (task.state === "queued" || task.state === "blocked") {
+      if (
+        task.state === "queued" ||
+        task.state === "blocked" ||
+        task.state === "waiting_capacity"
+      ) {
         if (!orderly && task.blocking_reason !== "restart_paused")
-          await this.change(task, { state: "blocked", blocking_reason: "restart_paused" });
+          await this.change(task, {
+            state: task.state === "waiting_capacity" ? task.state : "blocked",
+            blocking_reason: "restart_paused",
+          });
         continue;
       }
       const attempt = await this.db
@@ -1303,6 +1604,16 @@ export class TaskTransaction {
         .where("state", "in", ["prepared", "running", "waiting_user", "stopping"])
         .executeTakeFirstOrThrow();
       const cancelled = task.state === "cancelling";
+      if (cancelled && task.kind === "contribution" && task.contribution_id) {
+        const owner = await this.db
+          .selectFrom("contributions")
+          .select("intervention_id")
+          .where("id", "=", task.contribution_id)
+          .executeTakeFirstOrThrow();
+        // Plan Stop already ended its plan. A stopping contribution in an open plan
+        // can only be the durable intent left by Cancel work and quit.
+        this.exitCancelledPlans.add(identifier(owner.intervention_id));
+      }
       const dispatched = attempt.dispatch_permitted_at !== null;
       await this.db
         .updateTable("attempts")
@@ -1324,20 +1635,43 @@ export class TaskTransaction {
             ? "cancelled"
             : policy && attempt.attempt_number >= policy.max_attempts
               ? "failed"
-              : orderly
-                ? "queued"
-                : "blocked";
+              : policy && task.kind === "synthesis" && (await this.pendingLimitReached(policy))
+                ? "waiting_capacity"
+                : orderly
+                  ? "queued"
+                  : "blocked";
       await this.change(task, {
         state,
-        blocking_reason: state === "blocked" ? "restart_paused" : null,
+        blocking_reason:
+          state === "blocked" || (state === "waiting_capacity" && !orderly)
+            ? "restart_paused"
+            : null,
       });
     }
-    if (!orderly && (tasks.length || held.length))
+    // Reconcile a synthetic plan missing its atomic continuation before admitting pending work.
+    for (const plan of await acceptedPlans(this.db)
+      .selectAll()
+      .where(
+        "id",
+        "in",
+        this.db
+          .selectFrom("intervention_limits")
+          .select("intervention_id")
+          .where("policy", "=", "plan"),
+      )
+      .where("id", "not in", this.db.selectFrom("continuations").select("intervention_id"))
+      .execute()) {
+      if (plan.outcome === "complete" || plan.outcome === "partial")
+        await this.recordContinuation(plan, plan.outcome);
+      else if (!plan.outcome) this.changedPlans.set(identifier(plan.id), plan.id);
+    }
+    this.admitSynthesis = true;
+    if (!orderly && (tasks.length || held.length || heldContinuations.length))
       this.diagnostics.push({ event_name: "ohtia.task.recovery_paused" });
   }
   /** Continue the shared recovery hold only after all current prerequisites are revalidated. */
   async continueAll(): Promise<void> {
-    for (const task of await this.pending()) {
+    for (const task of await this.pending(true)) {
       if (task.blocking_reason !== "restart_paused") continue;
       // Explicit recovery continuation preserves the connection's plan pause across projects.
       const reason = (await this.usagePause(task.connection))
@@ -1346,7 +1680,10 @@ export class TaskTransaction {
           ? "configuration_unavailable"
           : ((await this.connectionBlock(task.connection)) ??
             ((await this.valid(task)) ? null : "connection_disabled"));
-      await this.change(task, { state: reason ? "blocked" : "queued", blocking_reason: reason });
+      await this.change(task, {
+        state: task.state === "waiting_capacity" ? task.state : reason ? "blocked" : "queued",
+        blocking_reason: reason,
+      });
     }
     const continued = await this.db
       .updateTable("contributions")
@@ -1358,6 +1695,15 @@ export class TaskTransaction {
       this.touchIntervention(id);
       this.changedPlans.set(identifier(id), id);
     }
+    for (const row of await this.db
+      .updateTable("continuations")
+      .set({ restart_held: 0 })
+      .where("admission", "=", "waiting")
+      .where("restart_held", "=", 1)
+      .returning("intervention_id")
+      .execute())
+      this.touchIntervention(row.intervention_id);
+    this.admitSynthesis = true;
     this.diagnostics.push({ event_name: "ohtia.task.continued" });
   }
   /** Capacity is read in the caller's transaction, using the dispatch admission rules. */
@@ -1372,9 +1718,18 @@ export class TaskTransaction {
       .selectFrom("tasks")
       .selectAll()
       .where("state", "in", ["running", "cancelling", "uncertain"])
-      // ChatGPT has no background execution or cancellation endpoint. Every final event is
-      // delivered after main has closed the connection; restart recovery closes old generations.
-      .where((eb) => eb.or([eb("state", "!=", "uncertain"), eb("connection", "!=", "chatgpt")]))
+      // ChatGPT and the development fake have no background work to quarantine after main
+      // closes their connection. Keep the recorded outcome uncertain without occupying capacity.
+      .where((eb) =>
+        eb.or([
+          eb("state", "!=", "uncertain"),
+          eb(
+            "connection",
+            "not in",
+            this.context.mode === "development" ? ["chatgpt", "fake"] : ["chatgpt"],
+          ),
+        ]),
+      )
       .execute();
     return { limit: limits.max_concurrent_inference, occupied };
   }
@@ -1415,17 +1770,17 @@ export class TaskTransaction {
     const queuedConversations = new Set<string>();
     for (const task of candidates) {
       const conversationKey = identifier(task.conversation_id);
-      if (task.kind !== "contribution") {
+      if (task.kind === "reply" || task.kind === "consultation") {
         if (queuedConversations.has(conversationKey)) continue;
         queuedConversations.add(conversationKey);
       }
       if (task.state !== "queued") continue;
       if (
-        task.kind !== "contribution" &&
+        (task.kind === "reply" || task.kind === "consultation") &&
         occupied.some(
           (other) =>
             Buffer.from(other.conversation_id).equals(Buffer.from(task.conversation_id)) &&
-            other.kind !== "contribution" &&
+            (other.kind === "reply" || other.kind === "consultation") &&
             other.state !== "uncertain",
         )
       )
@@ -1642,9 +1997,19 @@ export class TaskTransaction {
           : undefined;
       if (task.kind === "contribution" && !contributionInput)
         throw new Error("Activated contribution lacks its validated input.");
+      const owner =
+        task.kind === "synthesis"
+          ? await this.db
+              .selectFrom("continuations")
+              .select("intervention_id")
+              .where("task_id", "=", task.id)
+              .executeTakeFirstOrThrow()
+          : undefined;
+      const plan = owner ? await acceptedPlan(this.db, owner.intervention_id) : undefined;
+      if (owner && !plan) throw new Error("Synthesis lacks its accepted plan.");
       const built = buildInput(
         policy,
-        contributionInput ??
+        (plan ? await synthesisInput(this.db, plan) : contributionInput) ??
           (contribution
             ? [
                 {
@@ -1823,7 +2188,10 @@ export class TaskTransaction {
         : undefined;
     const result: ProviderResult =
       task.state === "cancelling"
-        ? { status: "cancelled" }
+        ? (task.kind === "contribution" || task.kind === "synthesis") &&
+          event.result.status === "uncertain"
+          ? event.result
+          : { status: "cancelled" }
         : event.result.status === "completed" && !text && !accepted.length && !consultation
           ? { status: "failed", reason: "empty_reply", dispatched: true }
           : event.result;
@@ -1873,6 +2241,7 @@ export class TaskTransaction {
         event.result.status === "uncertain" ? undefined : work,
       );
     const policy = operationPolicy(task.operation, task.policy_version, this.context.mode);
+    const canReturnToPending = policy && attempt.attempt_number < policy.max_attempts;
     let taskState: TaskState =
       state === "completed"
         ? "completed"
@@ -1881,22 +2250,25 @@ export class TaskTransaction {
           : state === "cancelled"
             ? "cancelled"
             : "failed";
-    if (notDispatched && result.status === "failed" && result.reason === "permit_expired")
-      taskState =
-        task.kind === "reply" && (await this.waiting(task.conversation_id))
-          ? "cancelled"
-          : policy && attempt.attempt_number < policy.max_attempts
-            ? "queued"
-            : "failed";
     let blockingReason: BlockingReason | null = null;
-    if (notDispatched && result.status === "failed" && result.reason === "connection_expired") {
-      taskState =
-        task.kind === "reply" && (await this.waiting(task.conversation_id))
-          ? "cancelled"
-          : policy && attempt.attempt_number < policy.max_attempts
-            ? "blocked"
-            : "failed";
-      if (taskState === "blocked") blockingReason = "connection_disabled";
+    if (
+      notDispatched &&
+      result.status === "failed" &&
+      (result.reason === "permit_expired" || result.reason === "connection_expired")
+    ) {
+      const disconnected = result.reason === "connection_expired";
+      if (task.kind === "reply" && (await this.waiting(task.conversation_id)))
+        taskState = "cancelled";
+      else if (!canReturnToPending) taskState = "failed";
+      else {
+        taskState =
+          task.kind === "synthesis" && (await this.pendingLimitReached(policy))
+            ? "waiting_capacity"
+            : disconnected
+              ? "blocked"
+              : "queued";
+        if (disconnected) blockingReason = "connection_disabled";
+      }
     }
     if (reason === "usage_limit_reached" && task.connection === "chatgpt") {
       if (!(await this.usagePause(task.connection))) {
@@ -1938,10 +2310,11 @@ export class TaskTransaction {
           created_at: this.now,
         })
         .execute();
-      await this.replaceWaiting(
-        task.conversation_id,
-        task.kind !== "reply" ? task.reply_position : undefined,
-      );
+      if (task.kind !== "synthesis")
+        await this.replaceWaiting(
+          task.conversation_id,
+          task.kind !== "reply" ? task.reply_position : undefined,
+        );
     }
     if (
       result.status === "completed" &&
@@ -2049,7 +2422,7 @@ export class TaskTransaction {
           ? "ohtia.task.completed"
           : taskState === "uncertain"
             ? "ohtia.task.uncertain"
-            : taskState === "blocked"
+            : taskState === "blocked" || taskState === "waiting_capacity"
               ? "ohtia.task.blocked"
               : taskState === "queued"
                 ? "ohtia.task.readmitted"

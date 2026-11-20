@@ -117,6 +117,7 @@ export function inspectWorkspace(root) {
             "migrations/0021_consultations.mjs",
             "migrations/0022_contribution_graphs.mjs",
             "migrations/0023_shared_work_limits.mjs",
+            "migrations/0024_plan_coordination.mjs",
             "migrations/0015_project_setup.mjs",
             "migrations/0009_usage_limit_pauses.mjs",
             "migrations/0005_presentation_receipts.mjs",

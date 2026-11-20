@@ -619,7 +619,7 @@ describe("durable task migration preservation", () => {
         max_concurrent_inference: expectedInference,
         max_concurrent_local_processing: 1,
       });
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(23);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(24);
       upgraded.close();
     },
   );
@@ -1183,7 +1183,7 @@ function recoveryGate(f: Awaited<ReturnType<typeof setup>>): string {
   const gate = path.join(f.root, "migration-pending.json");
   fs.writeFileSync(
     gate,
-    JSON.stringify({ version: 1, operation: "synthetic-recovery", source: 9, target: 23 }),
+    JSON.stringify({ version: 1, operation: "synthetic-recovery", source: 9, target: 24 }),
   );
   return gate;
 }

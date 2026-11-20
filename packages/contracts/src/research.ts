@@ -61,11 +61,12 @@ export type AddContributionsPayload = (
     }
   | { readonly planId: string; readonly expectedGraphVersion: number }
 ) & { readonly contributions: readonly PlanContributionRequest[] };
-export const planOutcomes = ["complete", "partial", "failed"] as const;
+export const planOutcomes = ["complete", "partial", "failed", "cancelled"] as const;
 export type PlanOutcome = (typeof planOutcomes)[number];
 
 export interface ResearchPayloads {
   readonly "plan.addContributions": AddContributionsPayload;
+  readonly "plan.cancel": { readonly planId: string };
   readonly "plan.finish": { readonly planId: string };
   readonly "conversation.stop": { readonly conversationId: string };
   readonly "task.stop": { readonly taskId: string };
@@ -118,6 +119,7 @@ export interface FinishPlanResult extends ResearchResult {
 export const researchCommands = [
   "plan.addContributions",
   "plan.finish",
+  "plan.cancel",
   "conversation.stop",
   "task.stop",
   "task.startAgain",

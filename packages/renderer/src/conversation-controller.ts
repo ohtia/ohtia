@@ -1019,6 +1019,7 @@ export class ConversationController {
       }, 100);
       return;
     }
+    if (event.kind !== "changed") return;
     const key = `${event.record}/${event.id}`;
     if ((this.revisions.get(key) ?? 0) >= event.revision) return;
     if (

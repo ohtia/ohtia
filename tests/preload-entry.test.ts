@@ -150,7 +150,17 @@ describe("sandbox preload composition", () => {
     expect(JSON.parse(h.ipcRenderer.send.mock.calls.at(-1)![1]).serviceGeneration).toBe(
       "service-2",
     );
+    const planId = "019a8000-0000-7000-8000-000000000227";
+    const planCalls = [
+      h.bridge.foundation.readPlan({ planId }),
+      h.bridge.foundation.listPlanEvents({ planId, afterSequence: 0 }),
+      h.bridge.foundation.cancelPlan("plan-cancel", { planId }),
+    ];
+    expect(
+      h.ipcRenderer.send.mock.calls.slice(-3).map(([, text]) => JSON.parse(text).operation),
+    ).toEqual(["plan.read", "planEvent.list", "plan.cancel"]);
     h.window.dispatchEvent(new Event("unload"));
+    for (const call of planCalls) expect(await call.result).toMatchObject({ ok: false });
     expect(await fresh.result).toMatchObject({ ok: false, error: { code: "disposed" } });
     expect(h.ipcRenderer.listenerCount(desktopChannels.ended)).toBe(0);
     expect(h.ipcRenderer.listenerCount(desktopChannels.reconnect)).toBe(0);

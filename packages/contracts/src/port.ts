@@ -171,6 +171,7 @@ export const errorActions = {
   purpose_empty: "check_request",
   purpose_too_long: "check_request",
   shared_context_too_large: "check_request",
+  event_limit_reached: "check_request",
   plan_state_changed: "refresh_record",
   task_not_stoppable: "check_request",
   project_in_setup: "refresh_record",
@@ -710,6 +711,9 @@ export const operationErrorCodes = Object.freeze({
     "uncertain",
     "operation_conflict",
   ],
+  "plan.read": [...readErrors, "record_not_found"],
+  "planEvent.list": [...readErrors, "record_not_found"],
+  "plan.cancel": [...researchMutationErrors, "record_not_found", "uncertain", "operation_conflict"],
   "plan.finish": [
     ...researchMutationErrors,
     "record_not_found",
@@ -761,6 +765,7 @@ export const operationErrorCodes = Object.freeze({
     "proposal_not_waiting",
   ],
   "contribution.tryAgain": [
+    "event_limit_reached",
     ...researchMutationErrors,
     "uncertain",
     "operation_conflict",
@@ -775,6 +780,7 @@ export const operationErrorCodes = Object.freeze({
     "limit_reached",
   ],
   "contribution.startAgain": [
+    "event_limit_reached",
     ...researchMutationErrors,
     "uncertain",
     "operation_conflict",
