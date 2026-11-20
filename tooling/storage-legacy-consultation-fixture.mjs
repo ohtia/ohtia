@@ -17,6 +17,9 @@ import {
 } from "../packages/utility/src/migrations/0024_plan_coordination.mjs";
 import { objects as graph } from "../packages/utility/src/migrations/0022_contribution_graphs.mjs";
 
+import { objects as conversationAgents } from "../packages/utility/src/migrations/0020_conversation_agents.mjs";
+import { objects as research } from "../packages/utility/src/migrations/0007_research_records.mjs";
+import { objects as proposals } from "../packages/utility/src/migrations/0026_plan_proposals.mjs";
 import { priorInterventionFields } from "../packages/utility/src/migrations/0026_plan_proposals.mjs";
 
 const priorTaskTable = durableTaskTables.tasks.replace(
@@ -46,7 +49,27 @@ const attemptObjects = Object.entries({
   .filter(([name]) => name.startsWith("attempts_"))
   .map(([, definition]) => definition);
 
+export const preHandoffSql = `
+  DROP TRIGGER conversations_initial;
+  DROP TRIGGER conversations_changes;
+  DROP TRIGGER tasks_reservation;
+  DROP TRIGGER messages_position;
+  DROP TRIGGER IF EXISTS receipts_commands;
+  DROP TABLE handoff_selected_messages;
+  DROP TABLE handoffs;
+  ALTER TABLE conversations DROP COLUMN owner_revision;
+  ${research.conversations_initial};
+  ${conversationAgents.conversations_changes};
+  ${durableTaskObjects.tasks_reservation};
+  ${durableTaskObjects.messages_position};
+  ${proposals.receipts_commands};
+  DELETE FROM kysely_migration WHERE name='0027_handoffs';
+  DELETE FROM ohtia_migration_artifacts WHERE name='0027_handoffs';
+  PRAGMA user_version=26;
+`;
+
 export const dropPlanProposalSql = `
+  ${preHandoffSql}
   ALTER TABLE interventions RENAME TO interventions_with_plans;
   ${coordinationTables.interventions};
   INSERT INTO interventions(rowid,${priorInterventionFields})

@@ -4,6 +4,11 @@ import { deferred } from "./fixtures/settings.js";
 import { act, createElement as h, useSyncExternalStore } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  HandoffDivider,
+  HandoffProposal,
+  HandoffReturnControl,
+} from "../packages/renderer/src/handoff.js";
 import { TaskNotice, taskNoticeContent } from "../packages/renderer/src/task-notice.js";
 import {
   ConversationHistory,
@@ -28,6 +33,7 @@ import {
   chatgptConnection,
   type TimelineTask,
   type TimelineConsultation,
+  type TimelineHandoffProposal,
   type InterfaceLocale,
   portLimits,
   type FoundationPort,
@@ -64,6 +70,8 @@ const summary: ConversationSummary = {
   revision: 1,
   agentId: "virgilio",
   latestAt: "2026-11-15T10:12:00.000Z",
+  ownerRevision: 1,
+  ownerPosition: null,
   latestPrefix: "",
   latestTruncated: false,
   latestLanguage: null,
@@ -4202,4 +4210,303 @@ describe("plan decision card", () => {
     await act(async () => link?.click());
     expect(revealMessage).toHaveBeenCalledWith(proposal.id);
   });
+});
+
+it("opens the return dialog on Close, preselects the latest Josefa reply, and retries an empty selection", async () => {
+  const conversation: ConversationSummary = {
+    ...summary,
+    agentId: "josefa",
+    ownerPosition: 11,
+    ownerRevision: 2,
+  };
+  const listHandoffMessages = vi.fn(async () => ({
+    ok: true as const,
+    value: {
+      priorReply: true,
+      messages: [
+        { position: 12, agentId: null, prefix: "**Search** in public catalogs.", truncated: false },
+        {
+          position: 13,
+          agentId: "josefa" as const,
+          prefix: "These terms are unverified.",
+          truncated: false,
+        },
+      ],
+    },
+  }));
+  const returnHandoff = vi.fn(async () => ({
+    ok: false as const,
+    error: {
+      code: "conversation_busy",
+      nextAction: "retry_later",
+      parameters: { reason: "reply_active" },
+    } as const,
+  }));
+  await act(async () =>
+    root.render(
+      h(HandoffReturnControl, {
+        conversation,
+        locale: "en-US",
+        controller: { listHandoffMessages, returnHandoff },
+      }),
+    ),
+  );
+  const trigger = container.querySelector("button")!;
+  trigger.focus();
+  await act(async () => trigger.click());
+  const dialog = container.querySelector("dialog")!;
+  expect(document.activeElement?.textContent).toBe("Close dialog");
+  expect(dialog.textContent).toContain("Virgilio will see his earlier part of this conversation");
+  const [all, researcher, specialist] = Array.from(
+    dialog.querySelectorAll<HTMLInputElement>("input"),
+  );
+  expect(all?.getAttribute("aria-checked")).toBe("mixed");
+  expect(all?.indeterminate).toBe(true);
+  expect(researcher?.labels?.[0]?.textContent).toBe("You: Search in public catalogs.");
+  expect(specialist?.labels?.[0]?.textContent).toBe("Josefa: These terms are unverified.");
+  expect(specialist?.checked).toBe(true);
+  await act(async () => all!.click());
+  expect(all?.getAttribute("aria-checked")).toBe("true");
+  await act(async () => all!.click());
+  expect(all?.getAttribute("aria-checked")).toBe("false");
+  const proceed = dialog.querySelector<HTMLButtonElement>(".primitive-primary")!;
+  await act(async () => proceed.click());
+  expect(dialog.querySelector(".handoff-feedback")?.getAttribute("role")).toBe("status");
+  expect(dialog.textContent).toContain("Wait until the current reply finishes, or stop it.");
+  await act(async () => proceed.click());
+  expect(returnHandoff).toHaveBeenNthCalledWith(1, expect.any(String), conversation.id, 2, "");
+  expect(returnHandoff.mock.calls[0]).toEqual(returnHandoff.mock.calls[1]);
+  await act(async () =>
+    dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+  );
+  expect(container.querySelector("dialog")).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+});
+
+it("refreshes an invalid return selection and keeps the attention notice and default specialist reply", async () => {
+  const conversation: ConversationSummary = { ...summary, agentId: "josefa" };
+  const listHandoffMessages = vi.fn(async () => ({
+    ok: true as const,
+    value: {
+      priorReply: false,
+      messages: [
+        { position: 1, agentId: null, prefix: "Question", truncated: false },
+        { position: 2, agentId: "josefa" as const, prefix: "Reply", truncated: false },
+      ],
+    },
+  }));
+  const returnHandoff = vi.fn(async () => failure("selection_invalid"));
+  await act(async () =>
+    root.render(
+      h(HandoffReturnControl, {
+        conversation,
+        locale: "en-US",
+        controller: { listHandoffMessages, returnHandoff },
+      }),
+    ),
+  );
+  await act(async () => container.querySelector("button")!.click());
+  const dialog = container.querySelector("dialog")!;
+  expect(dialog.textContent).toContain("Virgilio will see the messages you select:");
+  await act(async () => dialog.querySelectorAll("input")[2]!.click());
+  await act(async () => dialog.querySelector<HTMLButtonElement>(".primitive-primary")!.click());
+  expect(listHandoffMessages).toHaveBeenCalledTimes(2);
+  expect(dialog.querySelector(".handoff-feedback")?.getAttribute("role")).toBe("status");
+  expect(dialog.textContent).toContain(
+    "Ohtia couldn’t use this selection. Choose the messages again.",
+  );
+  expect(dialog.querySelectorAll("input")[2]?.checked).toBe(true);
+});
+
+it("shows and retries a handoff proposal with attributed note, destination, decision and feedback", async () => {
+  const proposal: TimelineHandoffProposal = {
+    id: id(8100),
+    kind: "handoffProposal",
+    rank: 2,
+    revision: 1,
+    position: 12,
+    taskId: id(8101),
+    expectedOwnerRevision: 1,
+    state: "proposed",
+    invalidReason: null,
+    note: "The researcher chose public schools.",
+    reason: "Refine a search strategy.",
+  };
+  const performHandoffAction = vi
+    .fn<ConversationController["performHandoffAction"]>()
+    .mockResolvedValueOnce({
+      ok: false,
+      error: {
+        code: "conversation_busy",
+        nextAction: "retry_later",
+        parameters: { reason: "plan_unfinished" },
+      },
+    })
+    .mockResolvedValueOnce(failure("storage_failed"))
+    .mockResolvedValueOnce(failure("owner_changed"))
+    .mockResolvedValue({ ok: true, value: { resultId: proposal.id } });
+  const render = async (next: TimelineHandoffProposal, service: string | undefined = "ChatGPT") => {
+    await act(async () =>
+      root.render(
+        h(HandoffProposal, {
+          proposal: next,
+          note: (next.note as string) ?? "",
+          locale: "en-US",
+          hasText: false,
+          documentLanguage: "en",
+          controller: { performHandoffAction },
+          service,
+        }),
+      ),
+    );
+  };
+  await render(proposal);
+  expect(container.textContent).toContain("Virgilio proposes continuing with Josefa");
+  expect(container.textContent).toContain("Waiting for your answer");
+  expect(container.textContent).toContain("Josefa · ChatGPT");
+  expect(container.textContent).toContain("Note for Josefa:The researcher chose public schools.");
+  const accept = Array.from(container.querySelectorAll("button")).find(
+    (button) => button.textContent === "Continue with Josefa",
+  )!;
+  await act(async () => accept.click());
+  expect(container.querySelector(".handoff-feedback")?.getAttribute("role")).toBe("status");
+  expect(container.textContent).toContain("Wait until the plan ends, or stop or finish it.");
+  await act(async () => accept.click());
+  expect(container.querySelector(".handoff-feedback")?.getAttribute("role")).toBe("alert");
+  expect(container.textContent).toContain("Ohtia couldn’t continue with Josefa.");
+  await act(async () => accept.click());
+  expect(container.textContent).toContain("The conversation changed. Review the proposal again.");
+  expect(performHandoffAction.mock.calls[0]).toEqual(performHandoffAction.mock.calls[1]);
+  await render({ ...proposal, state: "accepted", revision: 2 });
+  expect(container.textContent).toContain("Accepted. Josefa continues from here.");
+  expect(container.querySelectorAll("button")).toHaveLength(0);
+  await render({
+    ...proposal,
+    state: "invalid",
+    invalidReason: "reason_too_long",
+    note: null,
+    reason: null,
+  });
+  expect(container.querySelector('[role="status"]')?.textContent).toContain(
+    "longer than 500 characters",
+  );
+  expect(container.textContent).toContain("Virgilio will see this in his next reply.");
+  await act(async () => root.render(h(HandoffDivider, { agent: "josefa", locale: "en-US" })));
+  expect(container.querySelector(".handoff-divider > svg")?.getAttribute("width")).toBe("16");
+  expect(container.textContent).toBe("Josefa continues from here");
+});
+
+it("refreshes ownership and timeline after decisions and reads paged return previews", async () => {
+  const harness = controllerHarness(false);
+  vi.stubGlobal("crypto", webcrypto);
+  const proposal: TimelineHandoffProposal = {
+    id: id(9600),
+    kind: "handoffProposal",
+    taskId: id(9601),
+    position: 121,
+    expectedOwnerRevision: 1,
+    rank: 2,
+    revision: 1,
+    state: "proposed",
+    note: "Only this context may be shared.",
+    reason: "Review search terms.",
+    invalidReason: null,
+  };
+  harness.items.push(proposal);
+  harness.port.readDestination = vi.fn(() =>
+    ok({
+      destination: {
+        connection: "chatgpt",
+        operation: "search_strategy_planning",
+        maxAttemptDurationMs: 600000,
+      },
+    }),
+  );
+  let owner = summary;
+  harness.port.readConversations = vi.fn(() => ok({ items: [owner], remaining: [] }));
+  harness.port.acceptHandoff = vi.fn((_operation, input) => {
+    expect(input).toMatchObject({ proposalId: proposal.id, expectedOwnerRevision: 1 });
+    owner = { ...summary, agentId: "josefa", ownerRevision: 2, ownerPosition: 122, revision: 2 };
+    const row = harness.items.findIndex(({ id }) => id === proposal.id);
+    harness.items[row] = { ...proposal, state: "accepted", revision: 2 };
+    harness.items.push({
+      kind: "handoffDivider",
+      id: id(9602),
+      position: 122,
+      rank: 1,
+      revision: 1,
+      agentId: "josefa",
+    });
+    return ok({ resultId: proposal.id });
+  });
+  harness.port.declineHandoff = vi.fn(() => call(failure("proposal_not_waiting")));
+  harness.port.listHandoffSelection = vi.fn(({ after }) => {
+    const position = after + 1;
+    return ok({
+      priorReply: true,
+      next: after === 0 ? position : null,
+      messages: [{ position, agentId: "josefa" as const, prefix: "Reply", truncated: false }],
+    });
+  });
+  harness.port.returnHandoff = vi.fn(() => {
+    owner = { ...summary, ownerRevision: 3, ownerPosition: 123, revision: 3 };
+    return ok({ resultId: id(9603) });
+  });
+  try {
+    harness.controller.open(scope);
+    await settle();
+    await harness.controller.refreshConsultationDestination();
+    const open = harness.controller.snapshot();
+    expect(open.texts.get(proposal.id)).toBe(proposal.note);
+    expect(open.consultationDestination).toBe("chatgpt");
+    await render(open, harness.controller);
+    expect(container.textContent).toContain("Josefa · ChatGPT");
+    await act(async () => {
+      expect(await harness.controller.performHandoffAction("accept", proposal, "accept")).toEqual({
+        ok: true,
+        value: { resultId: proposal.id },
+      });
+    });
+    expect(harness.controller.snapshot().conversation?.agentId).toBe("josefa");
+    await act(async () => {
+      expect(
+        await harness.controller.performHandoffAction("stale-decline", proposal, "decline"),
+      ).toEqual(failure("proposal_not_waiting"));
+    });
+    expect(
+      await harness.controller.listHandoffMessages(
+        scope.conversationId,
+        2,
+        new AbortController().signal,
+      ),
+    ).toMatchObject({ ok: true, value: { messages: [{ position: 1 }, { position: 2 }] } });
+    expect(
+      await harness.controller.listHandoffMessages(scope.conversationId, 2, AbortSignal.abort()),
+    ).toEqual(failure("cancelled"));
+    const switched = harness.controller.snapshot();
+    const failed = reviewTask({
+      id: id(9605),
+      position: 120,
+      agentId: "virgilio",
+      state: "failed",
+      outcomeReason: "provider_error",
+    });
+    await render({ ...switched, items: [...switched.items, failed] }, harness.controller);
+    expect(container.textContent).toContain("Josefa continues from here");
+    expect(container.textContent).toContain(
+      "This reply was from Virgilio, before the conversation moved to Josefa.",
+    );
+    expect(
+      await harness.controller.returnHandoff("return", scope.conversationId, 2, "1,2"),
+    ).toEqual({ ok: true, value: { resultId: id(9603) } });
+    expect(harness.port.returnHandoff).toHaveBeenCalledWith("return", {
+      conversationId: scope.conversationId,
+      expectedOwnerRevision: 2,
+      selection: "1,2",
+    });
+    expect(harness.controller.snapshot().conversation?.agentId).toBe("virgilio");
+  } finally {
+    harness.controller.dispose();
+    vi.unstubAllGlobals();
+  }
 });

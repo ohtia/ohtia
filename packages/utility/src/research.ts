@@ -43,6 +43,7 @@ export interface ConversationRow {
   id: Uint8Array;
   project_id: Uint8Array;
   agent_id: ReplyAgent;
+  owner_revision: number;
   title: string | null;
   created_at: string;
   updated_at: string;
@@ -59,6 +60,7 @@ export interface MessageRow {
   ending: "complete" | "partial" | null;
   created_at: string;
 }
+import { decideHandoff, type HandoffRow } from "./handoffs.js";
 import type { SetupProposalRow } from "./project-setup.js";
 import {
   addContributions,
@@ -79,8 +81,11 @@ export interface ResearchSchema extends TaskSchema {
   graph_changes: GraphChangeRow;
   project_setup_proposals: SetupProposalRow;
   projects: ProjectRow;
-  conversations: Omit<ConversationRow, "agent_id"> & {
+  handoffs: HandoffRow;
+  handoff_selected_messages: { handoff_id: Uint8Array; message_id: Uint8Array };
+  conversations: Omit<ConversationRow, "agent_id" | "owner_revision"> & {
     agent_id: Generated<ReplyAgent>;
+    owner_revision: Generated<number>;
     automatic_title_eligible: Generated<number>;
     title_attempt_id: Generated<Uint8Array | null>;
   };
@@ -249,6 +254,7 @@ export function conversationRecord(row: ConversationRow): ConversationRecord {
     id: identifier(row.id),
     projectId: identifier(row.project_id),
     agentId: row.agent_id,
+    ownerRevision: row.owner_revision,
     title: row.title,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -269,6 +275,9 @@ function message(row: MessageRow): MessageRecord {
   };
 }
 const payloadKeys = {
+  "handoff.accept": ["proposalId", "expectedOwnerRevision"],
+  "handoff.decline": ["proposalId"],
+  "handoff.return": ["conversationId", "expectedOwnerRevision", "selection"],
   "conversation.stop": ["conversationId"],
   "task.stop": ["taskId"],
   "task.startAgain": ["taskId"],
@@ -354,6 +363,14 @@ export async function applyResearchCommand(
   const now = new Date().toISOString();
   let result: Uint8Array;
   switch (input.command) {
+    case "handoff.accept":
+    case "handoff.decline":
+    case "handoff.return": {
+      const decision = await decideHandoff(db, input, now);
+      if (!decision.ok) return decision;
+      result = decision.value;
+      break;
+    }
     case "development.runPlan": {
       const { projectId } = input.payload;
       if (!isEntityId(projectId)) return failure("invalid_message");
@@ -732,7 +749,12 @@ export async function applyResearchCommand(
         .executeTakeFirst();
       if (!current) return failure("record_not_found");
       if (!text(p.content) || !validResearcherMessage(p.content)) return failure("message_invalid");
-      const recipient = input.command === "development.sendToJosefa" ? "josefa" : current.agent_id;
+      // The development command still exercises initial Josefa replies. After a
+      // handoff, the same ownership boundary applies to every ordinary reply.
+      const toJosefa = input.command === "development.sendToJosefa";
+      if (toJosefa && current.owner_revision > 1 && current.agent_id !== "josefa")
+        return failure("owner_changed");
+      const recipient = toJosefa ? "josefa" : current.agent_id;
       const admission = await tasks.admission(current.project_id, current.id, p.content, recipient);
       if (!admission.ok) return admission;
       result = await append(db, current.id, p.content, now);

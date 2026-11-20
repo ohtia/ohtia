@@ -215,6 +215,20 @@ export class ResearchService {
           payload = { ...request.payload, content: text.value };
         } else this.staging.discard(request.windowGeneration, request.operationId);
       }
+      if (request.operation === "handoff.return") {
+        if (typeof request.payload.selection !== "string") {
+          const selection = this.staging.take(
+            request.windowGeneration,
+            request.operationId,
+            request.payload.selection,
+          );
+          if (!selection.ok) {
+            respond(selection);
+            return true;
+          }
+          payload = { ...request.payload, selection: selection.value };
+        } else this.staging.discard(request.windowGeneration, request.operationId);
+      }
       const result = await this.storage.executeResearchCommand(
         {
           command: request.operation,

@@ -5,6 +5,7 @@ import {
   readPlanText,
   synthesisSources,
 } from "./plan-coordination.js";
+import { handoffBoundary, returnableMessages, type HandoffRow } from "./handoffs.js";
 import { planInvalidReason } from "./plan-proposals.js";
 import { consultationRetryFits } from "./work-limits.js";
 import { sql, type Kysely } from "kysely";
@@ -12,6 +13,8 @@ import {
   failure,
   isReplyAgent,
   conversationPreviewPrefixLimit,
+  handoffSelectionPageSize,
+  type HandoffSelectionPage,
   type ConversationSummary,
   encodeEnvelope,
   splitText,
@@ -65,6 +68,10 @@ const visibleIntervention = sql<boolean>`(i.proposed_by_attempt_id IS NOT NULL O
     AND r.command='development.runPlan'))`;
 const interventionPosition = sql<number | null>`coalesce(t.reply_position,
   (SELECT min(m.position) FROM messages m WHERE m.conversation_id=i.conversation_id))`;
+
+function proposalRevision({ state }: Pick<HandoffRow, "state">) {
+  return state === "proposed" || state === "invalid" ? 1 : 2;
+}
 
 async function timelineItem(
   db: Kysely<ResearchSchema>,
@@ -220,6 +227,49 @@ async function timelineItem(
       reason: consultation.reason,
       connection: consultation.connection,
     };
+  }
+  // The originating attempt identifies the divider so the accepted card keeps its own ID.
+  const handoff = await db
+    .selectFrom("handoffs as h")
+    .leftJoin("attempts as a", "a.id", "h.proposed_by_attempt_id")
+    .leftJoin("tasks as t", "t.id", "a.task_id")
+    .selectAll("h")
+    .select(["t.id as taskId", "t.reply_position"])
+    .where("h.conversation_id", "=", bytes(conversationId))
+    .where((eb) =>
+      eb.or([eb("h.id", "=", bytes(id)), eb("h.proposed_by_attempt_id", "=", bytes(id))]),
+    )
+    .executeTakeFirst();
+  if (handoff) {
+    if (
+      handoff.state === "accepted" &&
+      handoff.position !== null &&
+      handoff.to_agent_id &&
+      identifier(handoff.proposed_by_attempt_id ?? handoff.id) === id
+    )
+      return {
+        id,
+        kind: "handoffDivider",
+        rank: 1,
+        revision: 1,
+        position: handoff.position,
+        agentId: handoff.to_agent_id,
+      };
+    if (handoff.taskId && handoff.reply_position !== null && identifier(handoff.id) === id)
+      return {
+        id,
+        kind: "handoffProposal",
+        rank: 2,
+        revision: proposalRevision(handoff),
+        position: handoff.reply_position,
+        taskId: identifier(handoff.taskId),
+        expectedOwnerRevision: handoff.expected_owner_revision,
+        state: handoff.state,
+        invalidReason: handoff.invalid_reason,
+        note: handoff.state === "invalid" ? null : storedText(handoff.note, `handoff_${id}`),
+        reason: handoff.state === "invalid" ? null : handoff.reason,
+      };
+    return undefined;
   }
   const task = await db
     .selectFrom("tasks as t")
@@ -389,6 +439,7 @@ async function summarizeConversation(
   const waiting = await tasks.where("state", "in", ["queued", "blocked"]).executeTakeFirst();
   return {
     ...conversationRecord(row),
+    ownerPosition: (await handoffBoundary(db, row.id))?.position ?? null,
     latestAt: row.latestAt,
     latestPrefix: prefix.slice(0, conversationPreviewPrefixLimit).join(""),
     latestTruncated: prefix.length > conversationPreviewPrefixLimit,
@@ -417,6 +468,75 @@ export async function readResearch(
   context: TaskContext,
 ): Promise<Outcome<unknown>> {
   switch (request.operation) {
+    case "handoff.selection": {
+      const { conversationId, expectedOwnerRevision, after } = request.payload;
+      const id = bytes(conversationId);
+      const conversation = await db
+        .selectFrom("conversations")
+        .select(["owner_revision", "agent_id"])
+        .where("id", "=", id)
+        .executeTakeFirst();
+      if (!conversation) return failure("record_not_found");
+      if (
+        conversation.owner_revision !== expectedOwnerRevision ||
+        conversation.agent_id !== "josefa"
+      )
+        return failure("owner_changed");
+      const prior = await db
+        .selectFrom("messages as m")
+        .innerJoin("tasks as t", "t.id", "m.task_id")
+        .select("m.id")
+        .where("m.conversation_id", "=", id)
+        .where("m.agent_id", "=", "virgilio")
+        .where("t.kind", "in", ["reply", "synthesis"])
+        .executeTakeFirst();
+      const priorHandoff = await db
+        .selectFrom("handoffs")
+        .select("id")
+        .where("conversation_id", "=", id)
+        .where("from_agent_id", "=", "virgilio")
+        .where("state", "=", "accepted")
+        .executeTakeFirst();
+      const priorReply = !!(prior || priorHandoff);
+      const rows = await returnableMessages(db, id)
+        .where("m.position", ">", after)
+        .select([
+          "m.position",
+          "m.agent_id",
+          sql<string>`substr(m.content,1,${conversationPreviewPrefixLimit + 1})`.as("sample"),
+        ])
+        .orderBy("m.position")
+        .limit(handoffSelectionPageSize + 1)
+        .execute();
+      const messages: HandoffSelectionPage["messages"] = rows
+        .slice(0, handoffSelectionPageSize)
+        .map((row) => {
+          const symbols = Array.from(row.sample);
+          if (row.agent_id !== null && !isReplyAgent(row.agent_id))
+            throw new Error("Unknown message author.");
+          return {
+            position: row.position,
+            agentId: row.agent_id,
+            prefix: symbols.slice(0, conversationPreviewPrefixLimit).join(""),
+            truncated: symbols.length > conversationPreviewPrefixLimit,
+          };
+        });
+      let length = messages.length;
+      while (length > 0) {
+        const last = messages[length - 1];
+        if (!last) break;
+        const page = {
+          priorReply,
+          messages: messages.slice(0, length),
+          next: rows.length > length ? last.position : null,
+        };
+        if (fitsResearchResult(request, page)) return { ok: true, value: page };
+        length--;
+      }
+      return rows.length
+        ? failure("invalid_service_result")
+        : { ok: true, value: { priorReply, messages: [], next: null } };
+    }
     case "plan.read":
       return readPlan(db, request.payload.planId);
     case "planEvent.list":
@@ -590,6 +710,11 @@ export async function readResearch(
       const rows = await sql<{ id: Uint8Array; position: number; rank: number }>`
         SELECT id, position, rank FROM (
           SELECT id, position, 1 AS rank FROM messages WHERE conversation_id = ${bytes(p.conversationId)}
+          UNION ALL SELECT coalesce(proposed_by_attempt_id,id), position, 1 AS rank FROM handoffs
+            WHERE conversation_id = ${bytes(p.conversationId)} AND state='accepted'
+          UNION ALL SELECT h.id, t.reply_position, 2 AS rank
+            FROM handoffs h JOIN attempts a ON a.id=h.proposed_by_attempt_id JOIN tasks t ON t.id=a.task_id
+            WHERE h.conversation_id = ${bytes(p.conversationId)}
           UNION ALL SELECT t.id, ${taskPosition} AS position, 3 AS rank FROM tasks t WHERE t.conversation_id = ${bytes(p.conversationId)} AND (t.kind IN ('reply','consultation') OR (t.operation='contribution_synthesis' AND t.reply_position IS NOT NULL))
           UNION ALL SELECT p.id, t.reply_position AS position, 2 AS rank FROM project_setup_proposals p JOIN tasks t ON t.id=p.task_id WHERE t.conversation_id = ${bytes(p.conversationId)}
           UNION ALL SELECT i.id, ${interventionPosition} AS position, 2 AS rank
@@ -640,6 +765,19 @@ export async function readResearch(
     case "text.readPart": {
       if (request.payload.source.startsWith("plan_"))
         return readPlanText(db, request.payload.source, request.payload.index);
+      const handoff = /^handoff_([0-9a-f-]+)$/.exec(request.payload.source);
+      if (handoff?.[1]) {
+        const row = await db
+          .selectFrom("handoffs")
+          .select("note")
+          .where("id", "=", bytes(handoff[1]))
+          .where("state", "!=", "invalid")
+          .executeTakeFirst();
+        const text = row && splitText(row.note)[request.payload.index - 1];
+        return typeof text === "string"
+          ? { ok: true, value: { text } }
+          : failure("record_not_found");
+      }
       const consultation = /^consultation_([0-9a-f-]+)$/.exec(request.payload.source);
       if (consultation?.[1]) {
         const row = await db
@@ -743,6 +881,26 @@ export async function researchRevisions(
       .where("conversation_id", "=", bytes(scope.conversationId))
       .execute())
       result.push({ kind: "changed", record: "timeline", id: identifier(row.id), revision: 1 });
+    for (const row of await db
+      .selectFrom("handoffs")
+      .select(["id", "state", "proposed_by_attempt_id"])
+      .where("conversation_id", "=", bytes(scope.conversationId))
+      .execute()) {
+      if (row.proposed_by_attempt_id)
+        result.push({
+          kind: "changed",
+          record: "timeline",
+          id: identifier(row.id),
+          revision: proposalRevision(row),
+        });
+      if (row.state === "accepted")
+        result.push({
+          kind: "changed",
+          record: "timeline",
+          id: identifier(row.proposed_by_attempt_id ?? row.id),
+          revision: 1,
+        });
+    }
     for (const row of await db
       .selectFrom("project_setup_proposals as p")
       .innerJoin("tasks as t", "t.id", "p.task_id")

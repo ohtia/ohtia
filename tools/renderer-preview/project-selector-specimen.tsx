@@ -82,6 +82,8 @@ export function ProjectSelectorSpecimen() {
                           revision: 1,
                           agentId: "virgilio",
                           latestAt: "2026-11-17T10:00:00.000Z",
+                          ownerRevision: 1,
+                          ownerPosition: null,
                           latestPrefix: "",
                           latestTruncated: false,
                           latestLanguage: null,

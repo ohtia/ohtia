@@ -1,4 +1,6 @@
 import { ProjectController } from "../packages/renderer/src/project-controller.js";
+import { bytes, newId } from "../packages/utility/src/research.js";
+import { stagedCommand } from "../packages/renderer/src/staged-command.js";
 import { proposeSetup } from "./fixtures/project-setup.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -1651,5 +1653,53 @@ it("uses the selected agent for destination reads, atomic starts and both histor
     ).toEqual(["search_strategy_planning"]);
   } finally {
     db.close();
+  }
+});
+
+it("transfers 300 selected positions as staged text through preload and the data service", async () => {
+  const f = await harness();
+  const started = value(
+    await f.port.startConversation("specialist", {
+      projectId: f.projectId,
+      agentId: "josefa",
+      content: "First message",
+    }).result,
+  );
+  const conversationId = started.resultId;
+  const db = f.raw();
+  const positions = Array.from({ length: 300 }, (_, index) => 1_000_000_000_000_000 + index);
+  try {
+    const stopped = await f.port.stopConversation("no-dispatch", { conversationId }).result;
+    expect(stopped.ok).toBe(true);
+    const insert = db.prepare(
+      "INSERT INTO messages(id,conversation_id,position,author_kind,content,created_at) VALUES(?,?,?,'researcher','Synthetic selection',?)",
+    );
+    db.transaction(() => {
+      for (const position of positions)
+        insert.run(newId(), bytes(conversationId), position, "2026-11-20T16:00:00.000Z");
+    })();
+  } finally {
+    db.close();
+  }
+  const input = positions.join(",");
+  expect(utf8Size(input)).toBeGreaterThan(4096);
+  const send = (selection: Parameters<typeof f.port.returnHandoff>[1]["selection"]) =>
+    f.port.returnHandoff("staged-selection", {
+      conversationId,
+      expectedOwnerRevision: 1,
+      selection,
+    });
+  const returned = value(await stagedCommand(f.port, "staged-selection", input, send));
+  const parts = splitText(input);
+  expect(
+    value(
+      await send({ parts: parts.length, bytes: utf8Size(input), sha256: digest(input) }).result,
+    ),
+  ).toEqual(returned);
+  const saved = f.raw();
+  try {
+    expect(saved.prepare("SELECT count(*) FROM handoff_selected_messages").pluck().get()).toBe(300);
+  } finally {
+    saved.close();
   }
 });

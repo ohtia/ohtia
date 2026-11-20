@@ -16,6 +16,7 @@ export interface ConversationRecord {
   readonly id: string;
   readonly projectId: string;
   readonly agentId: ReplyAgent;
+  readonly ownerRevision: number;
   readonly title: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -88,7 +89,34 @@ export type AddContributionsPayload = (
 export const planOutcomes = ["complete", "partial", "failed", "cancelled"] as const;
 export type PlanOutcome = (typeof planOutcomes)[number];
 
+export const handoffInvalidReasons = [
+  "note_empty",
+  "note_too_large",
+  "reason_empty",
+  "reason_too_long",
+  "agent_unavailable",
+  "conversation_busy",
+  "multiple_calls",
+] as const;
+export type HandoffInvalidReason = (typeof handoffInvalidReasons)[number];
+export const conversationBusyReasons = [
+  "reply_active",
+  "plan_unfinished",
+  "consultation_unfinished",
+] as const;
+export type ConversationBusyReason = (typeof conversationBusyReasons)[number];
+
 export interface ResearchPayloads {
+  readonly "handoff.accept": {
+    readonly proposalId: string;
+    readonly expectedOwnerRevision: number;
+  };
+  readonly "handoff.decline": { readonly proposalId: string };
+  readonly "handoff.return": {
+    readonly conversationId: string;
+    readonly expectedOwnerRevision: number;
+    readonly selection: string;
+  };
   readonly "plan.addContributions": AddContributionsPayload;
   readonly "plan.cancel": { readonly planId: string };
   readonly "plan.finish": { readonly planId: string };
@@ -148,6 +176,9 @@ export interface FinishPlanResult extends ResearchResult {
   readonly outcome: PlanOutcome;
 }
 export const researchCommands = [
+  "handoff.accept",
+  "handoff.decline",
+  "handoff.return",
   "plan.addContributions",
   "plan.finish",
   "plan.cancel",

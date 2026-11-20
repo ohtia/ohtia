@@ -1,8 +1,6 @@
+import { stagedCommand } from "./staged-command.js";
 import {
   chatgptConnection,
-  failure,
-  splitText,
-  utf8Size,
   validResearcherMessage,
   type FoundationPort,
   type MessageDestination,
@@ -324,46 +322,11 @@ export class ComposerController {
     conversationId: string | null,
     intent: { readonly id: string; readonly text: string; readonly agentId: ReplyAgent },
   ): Promise<Outcome<ResearchResult>> {
-    try {
-      const parts = splitText(intent.text);
-      let content: string | { parts: number; bytes: number; sha256: string } = intent.text;
-      if (parts.length > 1) {
-        const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(intent.text));
-        content = {
-          parts: parts.length,
-          bytes: utf8Size(intent.text),
-          sha256: [...new Uint8Array(hash)]
-            .map((byte) => byte.toString(16).padStart(2, "0"))
-            .join(""),
-        };
-      }
-      for (let attempt = 0; attempt < 2; attempt++) {
-        if (typeof content !== "string")
-          for (let index = 0; index < parts.length; index++) {
-            const part = await this.port.sendTextPart(intent.id, {
-              index: index + 1,
-              count: content.parts,
-              bytes: content.bytes,
-              sha256: content.sha256,
-              text: parts[index] ?? "",
-            }).result;
-            if (!part.ok) return part;
-          }
-        const result = await (
-          conversationId
-            ? this.port.appendMessage(intent.id, { conversationId, content })
-            : this.port.startConversation(intent.id, {
-                projectId,
-                agentId: intent.agentId,
-                content,
-              })
-        ).result;
-        if (result.ok || result.error.code !== "parts_incomplete" || attempt === 1) return result;
-      }
-    } catch {
-      return failure("invalid_service_result");
-    }
-    return failure("invalid_service_result");
+    return stagedCommand(this.port, intent.id, intent.text, (content) =>
+      conversationId
+        ? this.port.appendMessage(intent.id, { conversationId, content })
+        : this.port.startConversation(intent.id, { projectId, agentId: intent.agentId, content }),
+    );
   }
   requestStop = (): void => {
     const draft = this.draft;

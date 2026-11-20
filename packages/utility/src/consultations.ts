@@ -1,5 +1,6 @@
 import {
   isConsultationTool,
+  isCollaborationProposal,
   type ConsultationInvalidReason,
   type ConsultationState,
   type ProviderTool,
@@ -110,7 +111,7 @@ export function decodeConsultationProposal(
   mode: RuntimeMode,
 ): { readonly values: Proposal } | { readonly invalid: ConsultationInvalidReason } | undefined {
   const matching = calls.filter(isConsultationTool);
-  if (matching.length > 1) return { invalid: "multiple_calls" };
+  if (calls.filter(isCollaborationProposal).length > 1) return { invalid: "multiple_calls" };
   if (!matching[0]) return;
   let value: unknown;
   try {

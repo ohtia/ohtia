@@ -23,7 +23,7 @@ export function ContributorSymbol({
   size = 24,
 }: {
   readonly contributor: ContributorId;
-  readonly size?: 20 | 24;
+  readonly size?: 16 | 20 | 24;
 }) {
   return (
     <svg

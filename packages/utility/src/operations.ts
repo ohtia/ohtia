@@ -2,8 +2,13 @@ import {
   directGuidanceInstructions,
   directGuidanceInstructionsV2,
   directGuidanceInstructionsV3,
+  directGuidanceInstructionsV4,
 } from "./direct-guidance.js";
-import { searchStrategyInstructions, searchStrategyInstructionsV2 } from "./search-strategy.js";
+import {
+  searchStrategyInstructions,
+  searchStrategyInstructionsV2,
+  searchStrategyInstructionsV3,
+} from "./search-strategy.js";
 import { synthesisInstructions } from "./contribution-synthesis.js";
 import { setupInstructions, setupInstructionsV2 } from "./project-setup.js";
 import {
@@ -143,7 +148,20 @@ const policies: readonly OperationPolicy[] = Object.freeze([
     max_output_bytes: 160 * 1024,
     instructions: directGuidanceInstructionsV3,
   }),
+  Object.freeze({
+    ...directGuidanceV1,
+    version: 4,
+    instruction_version: 4,
+    max_output_bytes: 160 * 1024,
+    instructions: directGuidanceInstructionsV4,
+  }),
   searchStrategyV1,
+  Object.freeze({
+    ...searchStrategyV1,
+    version: 3,
+    instruction_version: 3,
+    instructions: searchStrategyInstructionsV3,
+  }),
   Object.freeze({
     ...searchStrategyV1,
     version: 2,
@@ -211,6 +229,8 @@ export interface InputMessage {
     "note" | "message"
   >;
   readonly position?: number;
+  readonly handoff?: { readonly reference: string; readonly text: string };
+  readonly handoffMarker?: true;
   readonly role: "user" | "assistant";
   readonly text: string;
   readonly partial?: { readonly agent: string; readonly reason: string | null };
@@ -229,7 +249,7 @@ export function buildInput(
   messages: readonly InputMessage[],
   context: { readonly reference: string; readonly revision: number },
   notes: readonly {
-    readonly kind?: "consultation_proposal" | "plan_proposal";
+    readonly kind?: "consultation_proposal" | "plan_proposal" | "handoff_proposal";
     readonly position: number;
     readonly reference: string;
     readonly revision: number;
@@ -238,11 +258,18 @@ export function buildInput(
 ): BuiltInput | undefined {
   const chosen: InputMessage[] = [];
   let bytes = 0;
+  let items = 0;
+  const handoffs = new Set<string>();
   for (const message of [...messages].reverse()) {
-    const size = utf8Size(message.text);
-    if (chosen.length + 1 > policy.max_input_items || bytes + size > policy.max_input_bytes) break;
+    const header =
+      message.handoff && !handoffs.has(message.handoff.reference) ? message.handoff : undefined;
+    const size = utf8Size(message.text) + (header ? utf8Size(header.text) : 0);
+    const count = header ? 2 : 1;
+    if (items + count > policy.max_input_items || bytes + size > policy.max_input_bytes) break;
+    if (header) handoffs.add(header.reference);
     chosen.unshift(message);
     bytes += size;
+    items += count;
   }
   // An input whose newest message alone exceeds the limits has nothing to answer.
   if (!chosen.length) return;
@@ -256,10 +283,26 @@ export function buildInput(
         note.position >= (message.position ?? 0) &&
         note.position < (chosen[index + 1]?.position ?? last + 1),
     );
+  const firstInSelection = (message: InputMessage, index: number) =>
+    message.handoff && message.handoff.reference !== chosen[index - 1]?.handoff?.reference
+      ? message.handoff
+      : undefined;
+  const projected = chosen.map((message, index) => ({
+    message,
+    header: firstInSelection(message, index),
+    notes: after(message, index),
+  }));
+  const contextEntry = (reference: string): TransferEntry => ({
+    kind: "note",
+    note: "handoff_context",
+    reference,
+    revision: 1,
+  });
   return {
     input: [
       ...(omitted ? [{ role: "user" as const, text: omittedMessagesNote }] : []),
-      ...chosen.flatMap((message, index) => [
+      ...projected.flatMap(({ message, header, notes }) => [
+        ...(header ? [{ role: "user" as const, text: header.text }] : []),
         { role: message.role, text: message.text },
         ...(message.partial
           ? [
@@ -269,7 +312,7 @@ export function buildInput(
               },
             ]
           : []),
-        ...after(message, index).map((note) => ({
+        ...notes.map((note) => ({
           role: "user" as const,
           text: note.text,
         })),
@@ -280,8 +323,11 @@ export function buildInput(
       ...(omitted
         ? [{ kind: "note" as const, note: "earlier_messages_omitted" as const, ...context }]
         : []),
-      ...chosen.flatMap((message, index): TransferEntry[] => [
-        { kind: message.transferKind ?? "message", reference: message.reference },
+      ...projected.flatMap(({ message, header, notes }): TransferEntry[] => [
+        ...(header ? [contextEntry(header.reference)] : []),
+        message.handoffMarker
+          ? contextEntry(message.reference)
+          : { kind: message.transferKind ?? "message", reference: message.reference },
         ...(message.partial
           ? [
               {
@@ -292,7 +338,7 @@ export function buildInput(
               },
             ]
           : []),
-        ...after(message, index).map((note): TransferEntry => ({
+        ...notes.map((note): TransferEntry => ({
           kind: "note" as const,
           note: note.kind ?? "setup_proposal",
           reference: note.reference,

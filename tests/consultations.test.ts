@@ -101,8 +101,12 @@ async function fixture(
       decodeProviderDispatch(JSON.stringify(task.dispatch), "setup-tests")?.request,
     ).toMatchObject({
       operation: "direct_guidance",
-      policy_version: 3,
-      tools: [{ name: "propose_consultation" }, { name: "propose_plan" }],
+      policy_version: 4,
+      tools: [
+        { name: "propose_consultation" },
+        { name: "propose_plan" },
+        { name: "propose_handoff" },
+      ],
     });
     expect(task.dispatch.request.instructions).toContain("open dependencies");
     expect(task.dispatch.request.instructions).toContain(
@@ -677,7 +681,7 @@ it("migrates populated revision 20 while preserving task acceptance order, charg
   await f.store.open();
   const migrated = f.raw();
   try {
-    expect(migrated.pragma("user_version", { simple: true })).toBe(26);
+    expect(migrated.pragma("user_version", { simple: true })).toBe(27);
     expect(read(migrated)).toEqual(before);
     expect(
       migrated.prepare("SELECT state,blocking_reason FROM tasks WHERE id=?").get(bytes(resultId)),
@@ -1365,8 +1369,8 @@ describe("Virgilio plan proposals", () => {
     const { task, proposal } = await record(f, [planCall([second, first])]);
     const request = decodeProviderDispatch(JSON.stringify(task.dispatch), "setup-tests")?.request;
     expect(request).toMatchObject({
-      policy_version: 3,
-      instruction_version: 3,
+      policy_version: 4,
+      instruction_version: 4,
       limits: { max_output_bytes: 160 * 1024 },
       tools: [
         { name: "propose_consultation" },
@@ -1387,6 +1391,7 @@ describe("Virgilio plan proposals", () => {
             },
           },
         },
+        { name: "propose_handoff" },
       ],
     });
     expect((await read(f, proposal.id)).contributions.map(({ key }) => key)).toEqual([

@@ -102,5 +102,9 @@
   {
     "name": "0026_plan_proposals",
     "sha256": "92323b872dede2d6b4ef19f5403d78ae849ce0247510e4c02eac601987ad2fda"
+  },
+  {
+    "name": "0027_handoffs",
+    "sha256": "d6749b7a09ebf86ef50f4f9e10a98fe048e9d1a4b6c8167c87951d01046ea642"
   }
 ]

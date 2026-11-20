@@ -2,8 +2,8 @@ import {
   dispatchPermitPolicy,
   isProviderEvent,
   isProviderToolLabel,
-  isConsultationTool,
-  isPlanTool,
+  isCollaborationProposal,
+  isHandoffTool,
   requestsConversationTitle,
   conversationTitlePolicy,
   conversationTitleInstructionSuffix,
@@ -51,6 +51,7 @@ interface Dispatched {
   releasedAt?: number;
   conversationTitle: boolean;
   proposalToolsEnabled: boolean;
+  handoffToolEnabled: boolean;
   readonly calls: Map<string | symbol, BufferedToolCall>;
   sampledWall: number;
   sampledMono: number;
@@ -231,9 +232,8 @@ export class ProviderDispatch {
       pendingText: "",
       textTimer: undefined,
       conversationTitle: requestsConversationTitle(request),
-      proposalToolsEnabled: request.tools.some(
-        (tool) => isConsultationTool(tool) || isPlanTool(tool),
-      ),
+      proposalToolsEnabled: request.tools.some(isCollaborationProposal),
+      handoffToolEnabled: request.tools.some(isHandoffTool),
       calls: new Map(),
       sampledWall: this.wall(),
       sampledMono: this.monotonic(),
@@ -350,10 +350,7 @@ export class ProviderDispatch {
             ? {
                 ...request,
                 tools: request.tools.filter(
-                  (tool) =>
-                    !isConversationTitleTool(tool) &&
-                    !isConsultationTool(tool) &&
-                    !isPlanTool(tool),
+                  (tool) => !isConversationTitleTool(tool) && !isCollaborationProposal(tool),
                 ),
                 instructions: request.instructions.endsWith(titleInstructions)
                   ? request.instructions.slice(0, -titleInstructions.length)
@@ -363,6 +360,7 @@ export class ProviderDispatch {
         if (providerRequest !== request) {
           record.conversationTitle = false;
           record.proposalToolsEnabled = false;
+          record.handoffToolEnabled = false;
         }
         // Count the UTF-8 input items in the same units as the operation policy.
         record.inputBytes = providerRequest.input.reduce(
@@ -438,6 +436,8 @@ export class ProviderDispatch {
     if (record.done || record.closing) return;
     this.flushText(record);
     if (this.records.get(record.attempt) !== record) return;
+    if (!record.handoffToolEnabled)
+      for (const [id, call] of record.calls) if (isHandoffTool(call)) record.calls.delete(id);
     if (result.status === "completed" && record.conversationTitle) {
       const title = titleSuggestion(record.calls.values());
       if (title !== undefined) result = { status: "completed", conversation_title: title };

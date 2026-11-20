@@ -20,12 +20,6 @@
   color: var(--content-primary);
   background: var(--surface-page);
 }
-.workspace button,
-.workspace a,
-.workspace [tabindex],
-.workspace .primitive-tooltip {
-  app-region: no-drag;
-}
 .workspace .workspace-panel,
 .workspace h1,
 .workspace h2,
@@ -56,6 +50,11 @@
 :root:not(:has(dialog:modal)) .workspace .workspace-title-row,
 .foundation-title-row .workspace-drag-space {
   app-region: drag;
+}
+/* Chromium can subtract drag exclusions for controls scrolled above the content viewport. */
+.workspace-title-row :is(button, a, [tabindex]),
+.workspace :is(.workspace-skip, .primitive-tooltip, .primitive-popover, .primitive-menu) {
+  app-region: no-drag;
 }
 .workspace-title-row > .ohtia-brand {
   flex-shrink: 0;

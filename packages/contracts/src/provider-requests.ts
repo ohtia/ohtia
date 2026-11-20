@@ -110,6 +110,12 @@ export interface ProviderTool {
   readonly strict: true;
   readonly parameters: ToolObject;
 }
+export function isHandoffTool(tool: { namespace: unknown; name: unknown }): boolean {
+  return tool.namespace === "ohtia" && tool.name === "propose_handoff";
+}
+export function isCollaborationProposal(tool: { namespace: unknown; name: unknown }): boolean {
+  return isConsultationTool(tool) || isPlanTool(tool) || isHandoffTool(tool);
+}
 export function isPlanTool(tool: { namespace: unknown; name: unknown }): boolean {
   return tool.namespace === "ohtia" && tool.name === "propose_plan";
 }
@@ -448,6 +454,8 @@ export function isProviderRequestData(value: unknown): value is ProviderRequestD
     value.tools.every(
       (tool) =>
         isTool(tool) &&
+        (!isHandoffTool(tool) ||
+          (value.operation === "direct_guidance" && Number(value.instruction_version) >= 4)) &&
         (!isPlanTool(tool) ||
           (value.operation === "direct_guidance" && Number(value.instruction_version) >= 3)),
     ) &&
@@ -681,6 +689,8 @@ export type TransferEntry =
         | "setup_proposal"
         | "consultation_proposal"
         | "plan_proposal"
+        | "handoff_proposal"
+        | "handoff_context"
         | "plan_status";
       readonly reference: string;
       readonly revision: number;
@@ -761,6 +771,8 @@ function isTransferEntry(value: unknown): value is TransferEntry {
       value.note === "setup_proposal" ||
       value.note === "consultation_proposal" ||
       value.note === "plan_proposal" ||
+      value.note === "handoff_proposal" ||
+      value.note === "handoff_context" ||
       value.note === "plan_status")
   );
 }

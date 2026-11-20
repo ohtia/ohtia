@@ -1707,7 +1707,7 @@ it("upgrades a schema-15 setup proposal without losing decisions or notice retry
     }),
   );
   const db = f.raw();
-  expect(db.pragma("user_version", { simple: true })).toBe(26);
+  expect(db.pragma("user_version", { simple: true })).toBe(27);
   expect(
     db
       .prepare("SELECT state FROM project_setup_proposals WHERE id=?")
@@ -2170,11 +2170,12 @@ describe("confirmed project direct guidance", () => {
       .replace("{document_language}", "es-AR");
     expect(decoded?.request).toMatchObject({
       operation: "direct_guidance",
-      instruction_version: 3,
+      instruction_version: 4,
       instructions: expect.stringContaining(thesisRoute),
       tools: [
         { name: "propose_consultation", strict: true },
         { name: "propose_plan", strict: true },
+        { name: "propose_handoff", strict: true },
       ],
       input: [
         { role: "user", text: "Synthetic setup request" },
@@ -2198,12 +2199,13 @@ describe("confirmed project direct guidance", () => {
     expect(request).toMatchObject({
       operation: "direct_guidance",
       model: "first",
-      policy_version: 3,
-      instruction_version: 3,
+      policy_version: 4,
+      instruction_version: 4,
       document_language: "es-AR",
       tools: [
         { name: "propose_consultation", strict: true },
         { name: "propose_plan", strict: true },
+        { name: "propose_handoff", strict: true },
       ],
       limits: {
         max_output_bytes: 163840,

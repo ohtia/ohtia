@@ -87,6 +87,7 @@ async function verifyTitleBarHitRegions(titleRow, wide) {
     const bounds = row.getBoundingClientRect();
     const overlay = window.navigator.windowControlsOverlay?.getTitlebarAreaRect();
     const style = getComputedStyle(row);
+    const workspace = row.closest(".workspace");
     const spacer = row.querySelector(".workspace-drag-space").getBoundingClientRect();
     const center = (rect) => ({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
     const regionAt = ({ x, y }) => {
@@ -112,6 +113,12 @@ async function verifyTitleBarHitRegions(titleRow, wide) {
       blank: Object.fromEntries(
         Object.entries(blank).map(([name, point]) => [name, { ...point, region: regionAt(point) }]),
       ),
+      skipRegion: getComputedStyle(workspace.querySelector(".workspace-skip")).getPropertyValue(
+        "app-region",
+      ),
+      contentFocusRegions: [...workspace.querySelectorAll(".workspace-panel h2[tabindex]")].map(
+        (heading) => getComputedStyle(heading).getPropertyValue("app-region"),
+      ),
       controls: [...row.querySelectorAll("button")].map((button) => {
         const point = center(button.getBoundingClientRect());
         return {
@@ -128,6 +135,13 @@ async function verifyTitleBarHitRegions(titleRow, wide) {
   expect(geometry.right).toBeLessThanOrEqual(geometry.overlay.right);
   for (const [name, point] of Object.entries(geometry.blank)) {
     expect(point.region, `Title-bar ${name} is draggable`).toBe("drag");
+  }
+  expect(geometry.skipRegion, "The skip link remains outside the drag surface").toBe("no-drag");
+  expect(geometry.contentFocusRegions.length).toBeGreaterThan(0);
+  for (const region of geometry.contentFocusRegions) {
+    expect(region, "Body focus targets must not subtract from the title-bar drag surface").toBe(
+      "none",
+    );
   }
   for (const { command, hit, region } of geometry.controls) {
     expect(hit, `Title-bar ${command} is the pointer target`).toBe(true);
