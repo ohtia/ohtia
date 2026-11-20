@@ -18,6 +18,7 @@ import {
   portLimits,
   utf8Size,
   type Outcome,
+  type ResearchResult,
   type ResearchOutputs,
   type ConversationSummary,
   type ReplyAgent,
@@ -41,6 +42,16 @@ export type ReadPlanCard = Omit<PlanSnapshot, "purpose" | "sharedContext" | "con
     readonly reason: string;
   })[];
 };
+export type PlanProgressAction =
+  | { readonly kind: "cancel" | "finish"; readonly planId: string }
+  | { readonly kind: "retryContribution"; readonly contributionId: string }
+  | { readonly kind: "retryTask" | "restartTask" | "retrySynthesis"; readonly taskId: string }
+  | {
+      readonly kind: "resume";
+      readonly connection: Parameters<FoundationPort["resumeUsagePause"]>[1]["connection"];
+    }
+  | { readonly kind: "continue" };
+
 export type TaskAction = "resume" | "continue" | "retry" | "restart";
 type RenameNotice = "empty" | "spaces" | "long" | "stale" | "uncertain" | "failed";
 interface RenameState {
@@ -259,6 +270,43 @@ export class ConversationController {
           if (this.live(epoch)) this.reload();
         });
       await this.queue;
+    }
+    return result;
+  };
+  performPlanProgressAction = async (
+    operationId: string,
+    action: PlanProgressAction,
+  ): Promise<Outcome<ResearchResult>> => {
+    const epoch = this.epoch;
+    const operation = () => {
+      switch (action.kind) {
+        case "cancel":
+          return this.port.cancelPlan(operationId, { planId: action.planId });
+        case "finish":
+          return this.port.finishPlan(operationId, { planId: action.planId });
+        case "retryContribution":
+          return this.port.tryAgainContribution(operationId, {
+            contributionId: action.contributionId,
+          });
+        case "retryTask":
+          return this.port.tryAgainContribution(operationId, { taskId: action.taskId });
+        case "restartTask":
+          return this.port.startAgainContribution(operationId, { taskId: action.taskId });
+        case "retrySynthesis":
+          return this.port.tryAgainSynthesis(operationId, { taskId: action.taskId });
+        case "continue":
+          return this.port.continueAllTasks(operationId);
+        case "resume":
+          return this.port.resumeUsagePause(operationId, { connection: action.connection });
+      }
+    };
+    const result = await operation().result.catch(() => failure("invalid_service_result"));
+    if (result.ok && this.live(epoch) && (action.kind === "continue" || action.kind === "resume")) {
+      try {
+        await this.refreshPauses();
+      } catch {
+        if (this.live(epoch)) this.failure(epoch);
+      }
     }
     return result;
   };
@@ -1098,6 +1146,16 @@ export class ConversationController {
     return reveal;
   };
   private async event(event: ResearchEvent, epoch: number): Promise<void> {
+    if (event.kind === "planChanged") {
+      const item = this.state.items.find(
+        (item) => item.id === event.planId && item.kind === "plan",
+      );
+      if (item && item.revision < event.revision) {
+        await this.readIds([event.planId], epoch);
+        if (this.live(epoch)) this.publish();
+      }
+      return;
+    }
     if (event.kind === "destinationChanged") {
       for (const refresh of this.destinationListeners) refresh();
       void this.composer.refreshDestination();
@@ -1160,7 +1218,6 @@ export class ConversationController {
       }, 100);
       return;
     }
-    if (event.kind !== "changed") return;
     const key = `${event.record}/${event.id}`;
     if ((this.revisions.get(key) ?? 0) >= event.revision) return;
     if (

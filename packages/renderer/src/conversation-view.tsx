@@ -92,6 +92,7 @@ export function ConversationView({
         | "readPlanDestinations"
         | "observePlanDestinations"
         | "performPlanAction"
+        | "performPlanProgressAction"
         | "composer"
         | "performSetupAction"
         | "performConsultationAction"
@@ -277,6 +278,9 @@ export function ConversationView({
           readPlanDestinations: controller.readPlanDestinations,
           observePlanDestinations: controller.observePlanDestinations,
           performPlanAction: controller.performPlanAction,
+          ...(controller.performPlanProgressAction
+            ? { performPlanProgressAction: controller.performPlanProgressAction }
+            : {}),
           connections: controller.connections,
         }
       : null;
@@ -397,6 +401,9 @@ export function ConversationView({
                       proposal={item}
                       locale={locale}
                       controller={planController}
+                      {...(state.pauses ? { pauses: state.pauses } : {})}
+                      {...(onOpenConnections ? { onOpenConnections } : {})}
+                      revealResult={reveal}
                       hasText={state.items.some(
                         (saved) =>
                           saved.kind === "message" &&
@@ -471,6 +478,12 @@ export function ConversationView({
                   (!text && !taskNoticeContent(item, locale, connection, !!saved, undefined))
                 )
                   return null;
+                const announcedOnPlan =
+                  !!planController &&
+                  item.synthesisPlanId !== undefined &&
+                  state.items.some(
+                    (entry) => entry.kind === "plan" && entry.id === item.synthesisPlanId,
+                  );
                 return (
                   <article
                     key={item.id}
@@ -524,7 +537,9 @@ export function ConversationView({
                     )}
                     <TaskNotice
                       announce={(signature) =>
-                        controller.claimTaskNotice?.(item.id, item.revision, signature) ?? false
+                        (controller.claimTaskNotice?.(item.id, item.revision, signature) ??
+                          false) &&
+                        !announcedOnPlan
                       }
                       task={item}
                       locale={locale}

@@ -5,6 +5,7 @@ import {
   projectLinks,
   type InterfaceLocale,
   type TimelineTask,
+  type PlanTaskProgress,
   type ProviderDeclaration,
   type PauseCounts,
   type CommandBridge,
@@ -38,21 +39,8 @@ export function taskNoticeContent(
 ): TaskNoticeContent | null {
   const service = connection.displayName;
   const agent = contributorNames[task.agentId];
-  const limit = formatOperationDuration(locale, task.maxAttemptDurationMs);
-  const inactivity = formatOperationDuration(locale, task.maxInactivityMs);
-  const text = (
-    key:
-      | "stopping"
-      | "stopped"
-      | "stoppedBefore"
-      | "restart"
-      | "partialStopped"
-      | "partialDeadline"
-      | "partialLength"
-      | "partialInvalid"
-      | "partialLost"
-      | "attempts",
-  ) => message(locale, `taskNotice.${key}`);
+  const text = (key: "stopping" | "stopped" | "stoppedBefore" | "restart" | "partialStopped") =>
+    message(locale, `taskNotice.${key}`);
   const status = (value: string): TaskNoticeContent => ({
     text: value,
     tone: "status",
@@ -109,6 +97,31 @@ export function taskNoticeContent(
       ...(task.dispatched ? { usage: message(locale, "taskNotice.stopUsage", { service }) } : {}),
     };
   if (task.state !== "failed") return null;
+  return failedTaskContent(task, locale, connection, hasText);
+}
+
+export function failedTaskContent(
+  task: PlanTaskProgress & Pick<TimelineTask, "synthesis">,
+  locale: InterfaceLocale,
+  connection: ProviderDeclaration["connection"],
+  hasText: boolean,
+): TaskNoticeContent {
+  const service = connection.displayName;
+  const agent = contributorNames[task.agentId];
+  const limit = formatOperationDuration(locale, task.maxAttemptDurationMs);
+  const inactivity = formatOperationDuration(locale, task.maxInactivityMs);
+  if (task.blockingReason === "usage_limit_reached" || task.outcomeReason === "usage_limit_reached")
+    return {
+      text: message(
+        locale,
+        connection.kind === "subscription"
+          ? "taskNotice.usage.subscription"
+          : "taskNotice.usage.apiKey",
+        { service },
+      ),
+      tone: "attention",
+      role: "alert",
+    };
   if (task.synthesis && task.outcomeReason === "input_too_large")
     return { text: message(locale, "synthesis.inputTooLarge"), tone: "danger", role: "alert" };
   if (
@@ -125,17 +138,17 @@ export function taskNoticeContent(
   ) {
     const partial =
       task.outcomeReason === "deadline_exceeded"
-        ? text("partialDeadline")
+        ? message(locale, "taskNotice.partialDeadline")
         : task.outcomeReason === "inactivity_timeout"
           ? message(locale, "taskNotice.partialInactivity", { inactivity })
           : task.outcomeReason === "output_limit_exceeded"
-            ? text("partialLength")
+            ? message(locale, "taskNotice.partialLength")
             : task.outcomeReason === "invalid_output"
-              ? text("partialInvalid")
+              ? message(locale, "taskNotice.partialInvalid")
               : ["provider_error", "provider_unavailable"].includes(task.outcomeReason ?? "")
                 ? message(locale, "taskNotice.partialProvider", { service })
-                : text("partialLost");
-    return status(partial);
+                : message(locale, "taskNotice.partialLost");
+    return { text: partial, tone: "status", role: "status" };
   }
   const reason = task.outcomeReason;
   const failed =
@@ -164,7 +177,7 @@ export function taskNoticeContent(
               : reason === "output_limit_exceeded"
                 ? message(locale, "taskNotice.outputLimit")
                 : reason === "service_restarted" || reason === "permit_expired"
-                  ? text("attempts")
+                  ? message(locale, "taskNotice.attempts")
                   : message(
                       locale,
                       reason === "provider_unavailable"

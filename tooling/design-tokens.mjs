@@ -123,7 +123,7 @@ export function readDesign(design, workspace) {
     },
   });
   for (const row of rows(section(design, "Fixed mappings:", "## Ohtia's symbol and character")))
-    if (/^[a-z]+(?:-[a-z]+)*$/.test(row[1])) icons[row[0]] = row[1];
+    if (/^[a-z]+(?:-[a-z0-9]+)*$/.test(row[1])) icons[row[0]] = row[1];
   for (const row of rows(
     section(design, "#### Comparison outcomes", "#### Criticism and review"),
   )) {

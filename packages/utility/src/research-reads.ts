@@ -260,7 +260,7 @@ async function timelineItem(
     task.kind === "synthesis"
       ? await db
           .selectFrom("continuations")
-          .select("stopped")
+          .select(["stopped", "intervention_id"])
           .where("task_id", "=", task.id)
           .executeTakeFirst()
       : undefined;
@@ -278,7 +278,11 @@ async function timelineItem(
         }
       : {}),
     ...(task.kind === "synthesis"
-      ? { synthesis: true as const, synthesisStopped: synthesis?.stopped === 1 }
+      ? {
+          synthesis: true as const,
+          synthesisStopped: synthesis?.stopped === 1,
+          ...(synthesis ? { synthesisPlanId: identifier(synthesis.intervention_id) } : {}),
+        }
       : {}),
     agentId: replyAgent(task.operation),
     language: task.document_language,

@@ -5,13 +5,15 @@ import {
   type CommandBridge,
   type InterfaceLocale,
   type PlanInvalidReason,
+  type PauseCounts,
   type PlanSnapshot,
   type ReplyAgent,
   type TimelinePlan,
 } from "@ohtia/contracts";
 import { VoiceLabel } from "./contributor-identity.js";
-import { LucideGlyph } from "./iconography.js";
+import { PlanNotice, PlanProgress, planProgressState } from "./plan-progress.js";
 import { ActionProposalCard, MessageMarkdown } from "./research-presentation.js";
+import { RecoveryFocusBoundary } from "./settings-notices.js";
 import type { ConversationController, ReadPlanCard } from "./conversation-controller.js";
 
 export type PlanCardController = Pick<
@@ -21,23 +23,11 @@ export type PlanCardController = Pick<
   | "observePlanDestinations"
   | "performPlanAction"
   | "connections"
->;
+> &
+  Partial<Pick<ConversationController, "performPlanProgressAction">>;
 
 const identity = (contributor: ReplyAgent) =>
   ({ kind: "ai", contributor, definitionVersion: "1" }) as const;
-
-type Feedback = { readonly message: string; readonly danger: boolean };
-function PlanNotice({ notice }: { readonly notice: Feedback }) {
-  return (
-    <div
-      className={`conversation-notice ${notice.danger ? "danger" : "attention"}`}
-      role={notice.danger ? "alert" : "status"}
-    >
-      <LucideGlyph name={notice.danger ? "octagon-alert" : "triangle-alert"} size={16} />
-      <span>{notice.message}</span>
-    </div>
-  );
-}
 
 function invalidMessage(locale: InterfaceLocale, reason: PlanInvalidReason): string {
   switch (reason) {
@@ -67,12 +57,18 @@ export function PlanProposal({
   controller,
   hasText,
   openExternalLink,
+  pauses,
+  revealResult,
+  onOpenConnections,
 }: {
   readonly proposal: TimelinePlan;
   readonly locale: InterfaceLocale;
   readonly controller: PlanCardController;
   readonly hasText: boolean;
   readonly openExternalLink: CommandBridge["openExternalLink"];
+  readonly pauses?: PauseCounts;
+  readonly revealResult: (id: string) => void;
+  readonly onOpenConnections?: () => void;
 }) {
   const {
     readPlanCard,
@@ -89,12 +85,21 @@ export function PlanProposal({
   const [feedback, setFeedback] = useState<ActionFeedback>();
   const [busy, setBusy] = useState(false);
   const active = useRef(false);
+  const viewedOpenPlan = useRef(false);
   const root = useRef<HTMLDivElement>(null);
-  const restore = useRef(false);
+  const restoreDecision = useRef(false);
   const intents = useRef(new Map<Action, { id: string; signature: string }>());
   const invalid = proposal.invalidReason;
-  const plan = read && read.revision >= proposal.revision ? read : undefined;
+  // Keep a displayed snapshot visible while its next revision is being read.
+  const plan =
+    read?.planId === proposal.id &&
+    (read.state === proposal.state || read.revision >= proposal.revision)
+      ? read
+      : undefined;
   const open = (plan?.state ?? proposal.state) === "proposed";
+  useEffect(() => {
+    if (plan?.state === "proposed") viewedOpenPlan.current = true;
+  }, [plan?.state]);
   const projectId = plan?.projectId;
   const agentList = plan
     ? [...new Set<ReplyAgent>(["virgilio", ...plan.contributions.map(({ agentId }) => agentId)])]
@@ -142,9 +147,9 @@ export function PlanProposal({
     };
   }, [open, projectId, agentList, readPlanDestinations, observePlanDestinations, refresh]);
   useLayoutEffect(() => {
-    if (!open && restore.current && document.activeElement === document.body)
+    if (!open && restoreDecision.current && document.activeElement === document.body)
       root.current?.focus({ preventScroll: true });
-    if (!open) restore.current = false;
+    if (!open) restoreDecision.current = false;
   }, [open]);
 
   const chosen: PlanSnapshot["connections"] =
@@ -164,7 +169,7 @@ export function PlanProposal({
       previous?.signature === signature ? previous : { id: crypto.randomUUID(), signature };
     intents.current.set(action, intent);
     active.current = true;
-    restore.current = root.current?.contains(document.activeElement) ?? false;
+    restoreDecision.current = root.current?.contains(document.activeElement) ?? false;
     setBusy(true);
     setFeedback(undefined);
     try {
@@ -242,7 +247,7 @@ export function PlanProposal({
     return n ? [message(locale, "plan.serviceRequests", { n, service: displayName })] : [];
   });
   const requestSummary =
-    plan && agentServices.size && (plan.state === "accepted" || (open && canRun))
+    plan && agentServices.size && open && canRun
       ? message(locale, "plan.requests", {
           requests: new Intl.ListFormat(locale, { style: "long", type: "conjunction" }).format(
             requestCounts,
@@ -252,6 +257,49 @@ export function PlanProposal({
       : null;
   const synthesisService = service("virgilio");
   const keys = new Map(plan?.contributions.map(({ id, key }) => [id, key]));
+  const progress = plan?.state === "accepted" ? planProgressState(plan, locale) : undefined;
+  type Contribution = ReadPlanCard["contributions"][number];
+  const contributionHeading = (node: Contribution) => (
+    <>
+      <div className="consultation-recipient">
+        <VoiceLabel identity={identity(node.agentId)} compact locale={locale} />
+        {service(node.agentId) && <span>· {service(node.agentId)?.displayName}</span>}
+      </div>
+      <p className="plan-meta">
+        <code>{node.key}</code> ·{" "}
+        {message(locale, node.required ? "plan.required" : "plan.optional")}
+      </p>
+      {!!node.prerequisites.length && (
+        <p className="plan-meta">
+          {message(locale, "plan.after", {
+            keys: new Intl.ListFormat(locale).format(
+              node.prerequisites.flatMap((id) => keys.get(id) ?? []),
+            ),
+          })}
+        </p>
+      )}
+    </>
+  );
+  const requestDetails = (node: Contribution) => (
+    <dl className="research-fields plan-request-fields">
+      <dt>{message(locale, "plan.request")}:</dt>
+      <dd>{markdown(node.request)}</dd>
+      <dt>{message(locale, "plan.reason")}:</dt>
+      <dd lang={language} dir="auto">
+        {node.reason}
+      </dd>
+    </dl>
+  );
+  const synthesisHeading = (
+    <div className="consultation-recipient">
+      <span>{message(locale, "plan.synthesis")} ·</span>
+      <VoiceLabel identity={identity("virgilio")} compact locale={locale} />
+      <span>
+        {synthesisService && `· ${synthesisService.displayName}`}
+        {planState !== "accepted" && message(locale, "plan.synthesisPurpose")}
+      </span>
+    </div>
+  );
   const warning = (() => {
     switch (feedback) {
       case undefined:
@@ -273,125 +321,132 @@ export function PlanProposal({
   })();
   return (
     <div ref={root} tabIndex={-1} id={`message-${proposal.id}`}>
-      <ActionProposalCard
-        locale={locale}
-        proposer={identity("virgilio")}
-        title={message(locale, "plan.title")}
-        showVoice={!hasText}
-        state={planState === "proposed" ? "open" : planState}
-        stateLabel={
-          planState === "proposed"
-            ? message(locale, "setup.waiting")
-            : message(locale, `plan.${planState}`)
-        }
-        announceState
-        busy={!plan && !readFailed}
-        sections={
-          plan
-            ? [
-                { label: message(locale, "plan.purpose"), value: { text: plan.purpose, language } },
-                {
-                  label: message(locale, "plan.context"),
-                  value: { text: plan.sharedContext, language },
-                  rendered: markdown(plan.sharedContext),
-                },
-              ]
-            : []
-        }
-        details={
-          plan ? (
-            <>
-              <ul className="plan-rows">
-                {plan.contributions.map((node) => (
-                  <li key={node.id} className="plan-row">
-                    <div className="consultation-recipient">
-                      <VoiceLabel identity={identity(node.agentId)} compact locale={locale} />
-                      {service(node.agentId) && <span>· {service(node.agentId)?.displayName}</span>}
-                    </div>
-                    <p className="plan-meta">
-                      <code>{node.key}</code> ·{" "}
-                      {message(locale, node.required ? "plan.required" : "plan.optional")}
-                    </p>
-                    {!!node.prerequisites.length && (
-                      <p className="plan-meta">
-                        {message(locale, "plan.after", {
-                          keys: new Intl.ListFormat(locale).format(
-                            node.prerequisites.flatMap((id) => keys.get(id) ?? []),
-                          ),
-                        })}
-                      </p>
-                    )}
-                    <dl className="research-fields">
-                      <dt>{message(locale, "plan.request")}:</dt>
-                      <dd>{markdown(node.request)}</dd>
-                      <dt>{message(locale, "plan.reason")}:</dt>
-                      <dd lang={language} dir="auto">
-                        {node.reason}
-                      </dd>
-                    </dl>
-                  </li>
-                ))}
-                <li className="plan-row plan-meta">
-                  <div className="consultation-recipient">
-                    <span>{message(locale, "plan.synthesis")} ·</span>
-                    <VoiceLabel identity={identity("virgilio")} compact locale={locale} />
-                    <span>
-                      {synthesisService && `· ${synthesisService.displayName}`}
-                      {plan.state !== "accepted" && message(locale, "plan.synthesisPurpose")}
-                    </span>
-                  </div>
-                </li>
-              </ul>
-              {requestSummary && <p className="plan-meta">{requestSummary}</p>}
-            </>
-          ) : !readFailed ? (
-            <p>{message(locale, "plan.loading")}</p>
-          ) : undefined
-        }
-        actions={
-          plan && open
-            ? [
-                {
-                  label: message(locale, "plan.run"),
-                  primary: true,
-                  disabled: busy || !canRun,
-                  onPress: () => void decide("accept"),
-                },
-                {
-                  label: message(locale, "plan.decline"),
-                  disabled: busy,
-                  onPress: () => void decide("decline"),
-                },
-              ]
-            : []
-        }
-        {...(plan && open && (busy || !canRun)
-          ? {
-              disabledReason: message(
-                locale,
-                busy ? "command.reason.busy" : "plan.destinationUnavailable",
-              ),
-            }
-          : {})}
-        feedback={
-          readFailed ? (
-            <>
-              <PlanNotice notice={{ danger: true, message: message(locale, "plan.readFailed") }} />
-              <button
-                type="button"
-                className="primitive-button plan-feedback-action"
-                onClick={() => {
+      <RecoveryFocusBoundary
+        className=""
+        onRecover={() => {
+          root.current?.focus({ preventScroll: true });
+        }}
+      >
+        <ActionProposalCard
+          locale={locale}
+          proposer={identity("virgilio")}
+          title={message(locale, "plan.title")}
+          showVoice={!hasText}
+          state={planState === "proposed" ? "open" : planState}
+          stateLabel={
+            progress?.label ??
+            (planState === "accepted"
+              ? message(locale, "plan.loading")
+              : planState === "proposed"
+                ? message(locale, "setup.waiting")
+                : message(locale, `plan.${planState}`))
+          }
+          {...(progress
+            ? { stateIcon: progress.icon }
+            : planState === "accepted"
+              ? { stateIcon: "circle-dashed" }
+              : {})}
+          announceState={planState !== "accepted"}
+          busy={!plan && !readFailed}
+          sections={
+            plan
+              ? [
+                  {
+                    label: message(locale, "plan.purpose"),
+                    value: { text: plan.purpose, language },
+                  },
+                  {
+                    label: message(locale, "plan.context"),
+                    value: { text: plan.sharedContext, language },
+                    rendered: markdown(plan.sharedContext),
+                  },
+                ]
+              : []
+          }
+          details={
+            progress && plan ? (
+              <PlanProgress
+                plan={plan}
+                stateLabel={progress.label}
+                announceAcceptance={viewedOpenPlan.current}
+                locale={locale}
+                connections={connections}
+                root={root}
+                {...(pauses ? { pauses } : {})}
+                {...(controller.performPlanProgressAction
+                  ? { perform: controller.performPlanProgressAction }
+                  : {})}
+                {...(onOpenConnections ? { onOpenConnections } : {})}
+                refresh={() => {
                   setReload((value) => value + 1);
                 }}
-              >
-                {message(locale, "plan.reload")}
-              </button>
-            </>
-          ) : open && warning ? (
-            <PlanNotice notice={warning} />
-          ) : null
-        }
-      />
+                revealResult={revealResult}
+                contributionHeading={contributionHeading}
+                requestDetails={requestDetails}
+                synthesisHeading={synthesisHeading}
+              />
+            ) : plan ? (
+              <>
+                <ul className="plan-rows">
+                  {plan.contributions.map((node) => (
+                    <li key={node.id} className="plan-row">
+                      {contributionHeading(node)}
+                      {requestDetails(node)}
+                    </li>
+                  ))}
+                  <li className="plan-row">{synthesisHeading}</li>
+                </ul>
+                {requestSummary && <p className="plan-meta">{requestSummary}</p>}
+              </>
+            ) : undefined
+          }
+          actions={
+            plan && open
+              ? [
+                  {
+                    label: message(locale, "plan.run"),
+                    primary: true,
+                    disabled: busy || !canRun,
+                    onPress: () => void decide("accept"),
+                  },
+                  {
+                    label: message(locale, "plan.decline"),
+                    disabled: busy,
+                    onPress: () => void decide("decline"),
+                  },
+                ]
+              : []
+          }
+          {...(plan && open && (busy || !canRun)
+            ? {
+                disabledReason: message(
+                  locale,
+                  busy ? "command.reason.busy" : "plan.destinationUnavailable",
+                ),
+              }
+            : {})}
+          feedback={
+            readFailed ? (
+              <>
+                <PlanNotice
+                  notice={{ danger: true, message: message(locale, "plan.readFailed") }}
+                />
+                <button
+                  type="button"
+                  className="primitive-button plan-feedback-action"
+                  onClick={() => {
+                    setReload((value) => value + 1);
+                  }}
+                >
+                  {message(locale, "plan.reload")}
+                </button>
+              </>
+            ) : open && warning ? (
+              <PlanNotice notice={warning} />
+            ) : null
+          }
+        />
+      </RecoveryFocusBoundary>
     </div>
   );
 }
