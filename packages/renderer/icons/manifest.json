@@ -54,10 +54,22 @@
       "sha256": "81d83fceac2ffc749f66fa1a35aaa12a23080eeda9bb88effdcd4637205047fc"
     },
     {
+      "name": "chart-pie",
+      "file": "chart-pie.svg",
+      "archive_member": "package/icons/chart-pie.svg",
+      "sha256": "808b9be7a5a595af4e29729a4ca005086da62b8347c841b2e6eb9c321f2e0122"
+    },
+    {
       "name": "check",
       "file": "check.svg",
       "archive_member": "package/icons/check.svg",
       "sha256": "7bb664a727396418e1ddc4f7126dad52a7e686e3293251080787296a0d8aa278"
+    },
+    {
+      "name": "check-check",
+      "file": "check-check.svg",
+      "archive_member": "package/icons/check-check.svg",
+      "sha256": "f055c9b2cacf644d21b66d67792ff81774edd68dc73a5ca17480e79cb5d16cd5"
     },
     {
       "name": "circle-check",
@@ -78,10 +90,34 @@
       "sha256": "05da2c5d8955aeffb94e735288dd13c0b93f97e22931b72067c9aec2d13aaa20"
     },
     {
+      "name": "circle-ellipsis",
+      "file": "circle-ellipsis.svg",
+      "archive_member": "package/icons/circle-ellipsis.svg",
+      "sha256": "1789d84c51f4a58d9adb51c78d95238349bdb28ca2240afdd4bbac33e5be1c01"
+    },
+    {
+      "name": "circle-minus",
+      "file": "circle-minus.svg",
+      "archive_member": "package/icons/circle-minus.svg",
+      "sha256": "a6331293299661b0b25376207a2732e7a52ae258dcdf0fa7e6eabffde167aa8d"
+    },
+    {
+      "name": "circle-pause",
+      "file": "circle-pause.svg",
+      "archive_member": "package/icons/circle-pause.svg",
+      "sha256": "4887e06243d9e70fc43bca4cd56cfca5661ca518f8cc29d6a9d1b2855edef47b"
+    },
+    {
       "name": "circle-question-mark",
       "file": "circle-question-mark.svg",
       "archive_member": "package/icons/circle-question-mark.svg",
       "sha256": "11450e7cfe83416546a62a8179c36c37817140114d0b911d8f054c13fccd219c"
+    },
+    {
+      "name": "circle-stop",
+      "file": "circle-stop.svg",
+      "archive_member": "package/icons/circle-stop.svg",
+      "sha256": "5af2394bb9f5d59dea78fe585ace70a69bcbf8e44ffbc27a3ebfdaee54bc63fa"
     },
     {
       "name": "circle-x",
@@ -178,6 +214,12 @@
       "file": "keyboard.svg",
       "archive_member": "package/icons/keyboard.svg",
       "sha256": "2ccb0930f3ecfe25b57a6f5e2c3acbef32655f460e2969a266f8f1ddf96beaba"
+    },
+    {
+      "name": "link-2-off",
+      "file": "link-2-off.svg",
+      "archive_member": "package/icons/link-2-off.svg",
+      "sha256": "8513b89149934862cc3cd36bc9019746e1a6cc61067f3b77f1cd659fb2a09c21"
     },
     {
       "name": "list",
@@ -328,6 +370,12 @@
       "file": "triangle-alert.svg",
       "archive_member": "package/icons/triangle-alert.svg",
       "sha256": "456054288ade09e5d0b77d80b75cfb5733bbf32e3eb09a78522e6a6a09def275"
+    },
+    {
+      "name": "unplug",
+      "file": "unplug.svg",
+      "archive_member": "package/icons/unplug.svg",
+      "sha256": "c178ca2d00bfdcf3be9eec5882a34629f17649bdc7364c430add4f61fcd88f70"
     },
     {
       "name": "user-round",

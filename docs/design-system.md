@@ -585,7 +585,17 @@ Fixed mappings:
 | Separator grip                               | `grip-vertical`        |
 | Jump to latest message                       | `arrow-down`           |
 | Rename conversation                          | `pencil`               |
-| Agent writing                                | `pen-line`             |
+| Agent writing or working                     | `pen-line`             |
+| Running plan                                 | `circle-ellipsis`      |
+| Finished agent work (Done, Complete)         | `check-check`          |
+| Partial outcome of agent work                | `chart-pie`            |
+| Blocked by another contribution              | `link-2-off`           |
+| Cancelled or stopped agent work              | `circle-stop`          |
+| Agent work not written                       | `circle-minus`         |
+| Paused agent work                            | `circle-pause`         |
+| Waiting for a disconnected service           | `unplug`               |
+
+A state label never uses an icon that this table or the domain components map to another meaning.
 
 Icons for comparison outcomes are defined in [domain components](#comparison-outcomes).
 

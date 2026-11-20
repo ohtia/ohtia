@@ -127,6 +127,7 @@ export interface TimelineTask extends TimelineIdentity {
   readonly consultationRetryFits?: boolean;
   readonly synthesis?: true;
   readonly synthesisStopped?: boolean;
+  readonly synthesisPlanId?: string;
   readonly agentId: ReplyAgent;
   readonly language: string | null;
   readonly connection: string;
@@ -312,6 +313,17 @@ export interface PlanEventPage {
   readonly events: readonly PlanEvent[];
 }
 export type PlanText = string | TextReference;
+export type PlanTaskProgress = Pick<
+  TimelineTask,
+  | "agentId"
+  | "state"
+  | "connection"
+  | "blockingReason"
+  | "outcomeReason"
+  | "replyMessageId"
+  | "maxAttemptDurationMs"
+  | "maxInactivityMs"
+>;
 export interface PlanSnapshot {
   readonly planId: string;
   readonly projectId: string;
@@ -324,6 +336,7 @@ export interface PlanSnapshot {
   readonly state: Exclude<ConsultationState, "invalid">;
   readonly connections: Readonly<Partial<Record<ReplyAgent, string>>>;
   readonly maxRequests: number;
+  readonly requestsUsed: number;
   readonly purpose: PlanText;
   readonly sharedContext: PlanText;
   readonly contributions: readonly {
@@ -336,6 +349,7 @@ export interface PlanSnapshot {
     readonly required: boolean;
     readonly state: (typeof planContributionStates)[number];
     readonly taskId: string | null;
+    readonly task: PlanTaskProgress | null;
     readonly resultMessageId: string | null;
     readonly blockedBy: string | null;
     readonly restartHeld: boolean;
@@ -351,6 +365,8 @@ export interface PlanSnapshot {
     readonly restartHeld: boolean;
     readonly taskId: string | null;
     readonly taskState: (typeof planSynthesisStates)[number] | null;
+    readonly task: PlanTaskProgress | null;
+    readonly stopped: boolean;
   } | null;
 }
 export type ResearchEvent =
@@ -1098,72 +1114,29 @@ function item(value: unknown): boolean {
       ...(value.consultation === true
         ? ["consultation", "replacesTaskId", "consultationRetryFits"]
         : []),
-      ...(value.synthesis === true ? ["synthesis", "synthesisStopped"] : []),
+      ...(value.synthesis === true
+        ? [
+            "synthesis",
+            "synthesisStopped",
+            ...(value.synthesisPlanId === undefined ? [] : ["synthesisPlanId"]),
+          ]
+        : []),
     ]) &&
     (value.synthesis !== true ||
       (value.agentId === "virgilio" &&
         value.consultation === undefined &&
-        typeof value.synthesisStopped === "boolean")) &&
+        typeof value.synthesisStopped === "boolean" &&
+        (value.synthesisPlanId === undefined || isResearchId(value.synthesisPlanId)))) &&
     (value.consultation !== true ||
       (nullable(value.replacesTaskId, isResearchId) &&
         typeof value.consultationRetryFits === "boolean")) &&
-    isConnectionId(value.connection) &&
-    nullable(
-      value.blockingReason,
-      (x) =>
-        typeof x === "string" &&
-        [
-          "connection_disabled",
-          "permission_required",
-          "input_changed",
-          "configuration_unavailable",
-          "restart_paused",
-          "usage_limit_reached",
-        ].includes(x),
-    ) &&
-    nullable(
-      value.outcomeReason,
-      (x) =>
-        typeof x === "string" &&
-        [
-          "usage_limit_reached",
-          "not_eligible",
-          "connection_expired",
-          "provider_unavailable",
-          "request_rejected",
-          "provider_error",
-          "invalid_output",
-          "output_limit_exceeded",
-          "connection_lost",
-          "empty_reply",
-          "input_too_large",
-          "permit_expired",
-          "inactivity_timeout",
-          "deadline_exceeded",
-          "cancelled_by_researcher",
-          "service_restarted",
-        ].includes(x),
-    ) &&
-    nullable(value.replyMessageId, isResearchId) &&
+    isTaskProgress(value) &&
     typeof value.waitingForModels === "boolean" &&
     nullable(value.waitingLimit, integer) &&
     typeof value.dispatched === "boolean" &&
     typeof value.superseded === "boolean" &&
-    integer(value.maxAttemptDurationMs) &&
-    integer(value.maxInactivityMs) &&
     value.kind === "task" &&
-    value.rank === 3 &&
-    isReplyAgent(value.agentId) &&
-    [
-      "queued",
-      "blocked",
-      "running",
-      "cancelling",
-      "completed",
-      "failed",
-      "cancelled",
-      "uncertain",
-    ].includes(value.state as string)
+    value.rank === 3
   );
 }
 function isSynthesisSources(value: unknown): boolean {
@@ -1345,6 +1318,68 @@ export function isPlanConnections(
     )
   );
 }
+function isTaskProgress(
+  value: Record<string, unknown>,
+): value is PlanTaskProgress & Record<string, unknown> {
+  return (
+    isReplyAgent(value.agentId) &&
+    planSynthesisStates.some((state) => state === value.state) &&
+    isConnectionId(value.connection) &&
+    nullable(
+      value.blockingReason,
+      (x) =>
+        typeof x === "string" &&
+        [
+          "connection_disabled",
+          "permission_required",
+          "input_changed",
+          "configuration_unavailable",
+          "restart_paused",
+          "usage_limit_reached",
+        ].includes(x),
+    ) &&
+    nullable(
+      value.outcomeReason,
+      (x) =>
+        typeof x === "string" &&
+        [
+          "usage_limit_reached",
+          "not_eligible",
+          "connection_expired",
+          "provider_unavailable",
+          "request_rejected",
+          "provider_error",
+          "invalid_output",
+          "output_limit_exceeded",
+          "connection_lost",
+          "empty_reply",
+          "input_too_large",
+          "permit_expired",
+          "inactivity_timeout",
+          "deadline_exceeded",
+          "cancelled_by_researcher",
+          "service_restarted",
+        ].includes(x),
+    ) &&
+    nullable(value.replyMessageId, isResearchId) &&
+    integer(value.maxAttemptDurationMs) &&
+    integer(value.maxInactivityMs)
+  );
+}
+function isPlanTaskProgress(value: unknown): value is PlanTaskProgress {
+  return (
+    exact(value, [
+      "agentId",
+      "state",
+      "connection",
+      "blockingReason",
+      "outcomeReason",
+      "replyMessageId",
+      "maxAttemptDurationMs",
+      "maxInactivityMs",
+    ]) && isTaskProgress(value)
+  );
+}
 function isPlanSnapshot(value: unknown): value is PlanSnapshot {
   return (
     exact(value, [
@@ -1359,6 +1394,7 @@ function isPlanSnapshot(value: unknown): value is PlanSnapshot {
       "state",
       "connections",
       "maxRequests",
+      "requestsUsed",
       "purpose",
       "sharedContext",
       "contributions",
@@ -1377,6 +1413,8 @@ function isPlanSnapshot(value: unknown): value is PlanSnapshot {
     isPlanConnections(value.connections) &&
     (value.state === "accepted" || Object.keys(value.connections).length === 0) &&
     integer(value.maxRequests) &&
+    integer(value.requestsUsed, 0) &&
+    value.requestsUsed <= value.maxRequests &&
     isPlanText(value.purpose) &&
     isPlanText(value.sharedContext) &&
     Array.isArray(value.contributions) &&
@@ -1393,6 +1431,7 @@ function isPlanSnapshot(value: unknown): value is PlanSnapshot {
           "required",
           "state",
           "taskId",
+          "task",
           "resultMessageId",
           "blockedBy",
           "restartHeld",
@@ -1412,6 +1451,9 @@ function isPlanSnapshot(value: unknown): value is PlanSnapshot {
         [node.taskId, node.resultMessageId, node.blockedBy].every(
           (id) => id === null || isResearchId(id),
         ) &&
+        (node.taskId === null
+          ? node.task === null
+          : isPlanTaskProgress(node.task) && node.task.agentId === node.agentId) &&
         typeof node.restartHeld === "boolean" &&
         Array.isArray(node.prerequisites) &&
         node.prerequisites.length <= 8 &&
@@ -1432,6 +1474,8 @@ function isContinuationSnapshot(value: unknown): boolean {
       "restartHeld",
       "taskId",
       "taskState",
+      "task",
+      "stopped",
     ]) &&
     isResearchId(value.id) &&
     integer(value.graphVersion) &&
@@ -1441,9 +1485,13 @@ function isContinuationSnapshot(value: unknown): boolean {
     continuationAdmissions.some((admission) => admission === value.admission) &&
     typeof value.restartHeld === "boolean" &&
     (!value.restartHeld || value.admission === "waiting") &&
+    typeof value.stopped === "boolean" &&
     (value.admission === "admitted"
-      ? isResearchId(value.taskId) && planSynthesisStates.some((state) => state === value.taskState)
-      : value.taskId === null && value.taskState === null)
+      ? isResearchId(value.taskId) &&
+        isPlanTaskProgress(value.task) &&
+        value.task.agentId === "virgilio" &&
+        value.task.state === value.taskState
+      : value.taskId === null && value.taskState === null && value.task === null)
   );
 }
 

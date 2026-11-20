@@ -1298,7 +1298,17 @@ it("commits one continuation with the result and exposes numbered events through
       sharedContext,
     }),
   );
+  const waiting = await readPlan(f, planId);
+  expect(waiting.requestsUsed).toBe(0);
+  expect(waiting.contributions[0]?.task).toMatchObject({ state: "queued", connection: "chatgpt" });
   const contribution = await f.next();
+  const running = await readPlan(f, planId);
+  expect(running.requestsUsed).toBe(1);
+  expect(running.contributions[0]?.task).toMatchObject({
+    state: "running",
+    outcomeReason: null,
+    replyMessageId: null,
+  });
   const envelopes: unknown[] = [];
   const service = new ResearchService(
     f.store,
@@ -1318,6 +1328,10 @@ it("commits one continuation with the result and exposes numbered events through
       ),
     );
     await f.settle(contribution, { status: "completed" }, unresolved);
+    expect((await readPlan(f, planId)).continuation?.task).toMatchObject({
+      state: "blocked",
+      blockingReason: "connection_disabled",
+    });
     // Simulate a utility restart after commit and before publication.
     await f.store.close();
     await f.store.open();
@@ -1354,14 +1368,29 @@ it("commits one continuation with the result and exposes numbered events through
     }
     const plan = await readPlan(f, planId);
     expect(researchOutput("plan.read", plan)).toBe(true);
+    expect(researchOutput("plan.read", { ...plan, requestsUsed: plan.maxRequests + 1 })).toBe(
+      false,
+    );
+    expect(
+      researchOutput("plan.read", { ...plan, continuation: { ...plan.continuation, task: null } }),
+    ).toBe(false);
+    expect(
+      researchOutput("plan.read", {
+        ...plan,
+        contributions: [{ ...plan.contributions[0], task: null }],
+      }),
+    ).toBe(false);
     expect(researchResultMatches("plan.read", { planId }, plan)).toBe(true);
     expect(researchResultMatches("plan.read", { planId: f.projectId }, plan)).toBe(false);
     expect(plan).toMatchObject({
       outcome: "complete",
+      requestsUsed: 1,
       continuation: {
         policyVersion: 1,
         throughSequence: 4,
         taskState: "blocked",
+        stopped: false,
+        task: { state: "blocked", blockingReason: "restart_paused", connection: "fake" },
       },
     });
     expect(f.query("SELECT id FROM continuations")).toHaveLength(1);
@@ -2690,7 +2719,11 @@ it("releases the coordinator's inference slot before an approved plan's contribu
   expect(synthesis.dispatch.request.operation).toBe("contribution_synthesis");
   expect(await f.prepare()).toBeNull();
   await f.settle(synthesis, undefined, "The research question still requires evidence.");
-  expect((await readPlan(f, planId)).continuation?.taskState).toBe("completed");
+  expect(await readPlan(f, planId)).toMatchObject({
+    outcome: "complete",
+    requestsUsed: 2,
+    continuation: { taskState: "completed", task: { replyMessageId: expect.any(String) } },
+  });
 });
 
 it("retains a plan stop when a running synthesis ends uncertain", async () => {
@@ -2701,9 +2734,20 @@ it("retains a plan stop when a running synthesis ends uncertain", async () => {
   expect(value(await cancelPlan(f, planId, "stop-running-synthesis"))).toMatchObject({
     outcome: "complete",
   });
+  expect((await readPlan(f, planId)).continuation).toMatchObject({
+    taskState: "cancelling",
+    stopped: true,
+  });
   await f.settle(synthesis, { status: "uncertain", reason: "connection_lost" });
+  await f.store.close(true);
+  await f.store.open();
+  expect((await readPlan(f, planId)).continuation).toMatchObject({
+    taskState: "uncertain",
+    stopped: true,
+  });
   expect((await timeline(f)).find(({ id }) => id === synthesis.taskId)).toMatchObject({
     synthesisStopped: true,
+    synthesisPlanId: planId,
     state: "uncertain",
   });
   expect(

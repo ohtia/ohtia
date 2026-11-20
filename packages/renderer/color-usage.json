@@ -708,6 +708,24 @@
       "minimum": 7
     },
     {
+      "selector": ".action-proposal-state[data-icon=\"octagon-alert\"]",
+      "foreground": "danger.content",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
+      "selector": ".action-proposal-state[data-icon=\"triangle-alert\"]",
+      "foreground": "attention.content",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
+      "selector": ".plan-request-toggle",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
       "selector": ".conversation-notice",
       "foreground": "content.primary",
       "backgrounds": ["attention.surface"],

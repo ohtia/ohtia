@@ -310,6 +310,46 @@
   font-family: var(--type-ui-code-family);
   font-size: 12px;
 }
+.plan-row .plan-row-state {
+  margin-block: var(--space-2) 0;
+}
+.action-proposal-state[data-icon="triangle-alert"] {
+  color: var(--attention-content);
+}
+.action-proposal-state[data-icon="octagon-alert"] {
+  color: var(--danger-content);
+}
+.plan-row-state code {
+  font-family: var(--type-ui-code-family);
+  font-size: var(--type-ui-code-size);
+}
+.plan-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-2);
+}
+.plan-row > .plan-row-actions,
+.plan-row-actions + .plan-request-fields {
+  margin-block-start: var(--space-2);
+}
+.plan-row-actions button {
+  min-inline-size: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.plan-request-toggle {
+  font: inherit;
+  padding-inline: 0;
+  min-block-size: var(--component-target-minimum);
+  border: none;
+  background: transparent;
+  color: var(--content-primary);
+  cursor: pointer;
+}
+.plan-row .plan-failure-reason {
+  margin-block: var(--space-1) 0;
+}
 .plan-feedback-action {
   margin-block-start: var(--space-2);
 }

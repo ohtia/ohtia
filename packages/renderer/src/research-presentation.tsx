@@ -1032,6 +1032,7 @@ export interface ActionProposalCardProps {
   readonly title: string;
   readonly state: "open" | "accepted" | "declined" | "replaced";
   readonly stateLabel: string;
+  readonly stateIcon?: Parameters<typeof LucideGlyph>[0]["name"];
   readonly sections: readonly {
     readonly label: string;
     readonly value: RecordedText;
@@ -1065,6 +1066,7 @@ export function ActionProposalCard({
   title,
   state,
   stateLabel,
+  stateIcon,
   sections,
   recipient,
   details,
@@ -1091,16 +1093,18 @@ export function ActionProposalCard({
         </h3>
         <p
           className="action-proposal-state"
+          data-icon={stateIcon}
           aria-live={announceState ? "polite" : undefined}
           aria-atomic={announceState || undefined}
         >
           <LucideGlyph
             name={
-              state === "open"
+              stateIcon ??
+              (state === "open"
                 ? "circle-dashed"
                 : state === "accepted"
                   ? "circle-check"
-                  : "circle-x"
+                  : "circle-x")
             }
             size={16}
           />

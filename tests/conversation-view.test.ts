@@ -17,6 +17,7 @@ import {
   ConversationController,
   type ConversationState,
   type ReadPlanCard,
+  type PlanProgressAction,
 } from "../packages/renderer/src/conversation-controller.js";
 import {
   failure,
@@ -33,6 +34,8 @@ import {
   type Outcome,
   type ResearchEvent,
   type ResearchOutputs,
+  type ResearchResult,
+  type PlanTaskProgress,
   type TimelineItem,
   type ConversationSummary,
 } from "../packages/contracts/src/index.js";
@@ -105,7 +108,12 @@ function state(items: readonly TimelineItem[] = []): ConversationState {
     completed: 0,
   };
 }
-async function render(next: ConversationState, controller = {} as ConversationController) {
+async function render(
+  next: ConversationState,
+  controller = {} as ConversationController,
+  locale: InterfaceLocale = "en-US",
+  onOpenConnections?: () => void,
+) {
   await act(async () =>
     root.render(
       h(ConversationView, {
@@ -116,7 +124,8 @@ async function render(next: ConversationState, controller = {} as ConversationCo
           claimTaskNotice: controller.claimTaskNotice?.bind(controller),
           performTaskAction: controller.performTaskAction?.bind(controller),
         },
-        locale: "en-US",
+        locale,
+        ...(onOpenConnections ? { onOpenConnections } : {}),
         commands: { copyMessage: async () => true, openExternalLink: async () => true },
       }),
     ),
@@ -3242,6 +3251,7 @@ describe("plan decision card", () => {
     prerequisites: [],
     state: "waiting",
     taskId: null,
+    task: null,
     resultMessageId: null,
     failureReason: null,
     blockedBy: null,
@@ -3258,6 +3268,7 @@ describe("plan decision card", () => {
     state: "proposed" as const,
     connections: {},
     maxRequests: 24,
+    requestsUsed: 0,
     purpose: "**Compare search strategies.**",
     sharedContext: "**Open catalogs** are available.",
     contributions: [first, { ...first, id: id(2032), key: "second", prerequisites: [first.id] }],
@@ -3272,8 +3283,10 @@ describe("plan decision card", () => {
 
   it("renders the approved content and displayed destinations, keeping the operation ID on retry", async () => {
     const readPlanDestinations = vi.fn(async () => ({ josefa: "openai", virgilio: "chatgpt" }));
-    const readPlanCard = vi.fn(async () => open);
-    const performPlanAction = vi.fn(async () => failure("storage_failed"));
+    const readPlanCard = vi.fn(async (): Promise<ReadPlanCard> => open);
+    const performPlanAction = vi.fn(async (): Promise<Outcome<ResearchResult>> =>
+      failure("storage_failed"),
+    );
     const controller = {
       readPlanCard,
       readPlanDestinations,
@@ -3316,15 +3329,27 @@ describe("plan decision card", () => {
       revision: 2,
       connections: { josefa: "openai", virgilio: "chatgpt" },
     };
-    const readAccepted = vi.fn(async () => accepted);
+    readPlanCard.mockResolvedValueOnce(accepted);
+    performPlanAction.mockResolvedValueOnce({ ok: true, value: { resultId: proposal.id } });
     const callsBeforeAcceptance = readPlanDestinations.mock.calls.length;
-    await render(state([{ ...proposal, state: "accepted", revision: 2 }]), {
-      ...controller,
-      readPlanCard: readAccepted,
-    } as unknown as ConversationController);
-    expect(container.textContent).toContain("You ran this plan.");
+    await act(async () => run.click());
+    expect(container.textContent).toContain("Running · 0 of 2 done");
     expect(container.textContent).toContain("OpenAI");
+    expect(container.textContent).not.toContain("**This stays plain text.**");
+    expect(container.textContent).toContain("Used 0 of up to 24 requests.");
+    const toggle = [...container.querySelectorAll("button")].find(
+      ({ textContent }) => textContent === "Show request",
+    )!;
+    expect(toggle.hasAttribute("aria-expanded")).toBe(false);
+    await act(async () => toggle.click());
+    expect(toggle.textContent).toBe("Hide request");
+    expect(container.querySelector(".plan-row strong")?.textContent).toBe("List");
+    expect(container.textContent).toContain("Request:");
+    expect(container.textContent).toContain("Reason:");
     expect(container.textContent).toContain("**This stays plain text.**");
+    await act(async () => toggle.click());
+    expect(toggle.textContent).toBe("Show request");
+    expect(container.querySelector(".plan-row strong")).toBeNull();
     expect(readPlanDestinations.mock.calls).toHaveLength(callsBeforeAcceptance);
   });
 
@@ -3356,7 +3381,7 @@ describe("plan decision card", () => {
     await act(async () => {
       reload.click();
     });
-    expect(container.textContent).toContain("You ran this plan.");
+    expect(container.textContent).toContain("Running · 0 of 2 done");
   });
   it("renders every invalid-plan reason without requesting plan contents", async () => {
     const readPlanCard = vi.fn();
@@ -3405,7 +3430,9 @@ describe("plan decision card", () => {
     );
     performPlanAction.mockResolvedValueOnce(failure("plan_unfinished"));
     await act(async () => buttonNamed("Run plan").click());
-    expect(container.textContent).toContain("Another plan in this conversation hasn’t finished.");
+    expect(container.textContent).toContain(
+      "Another plan in this conversation hasn’t finished. Wait for it to end, or stop or finish it on its card.",
+    );
     performPlanAction.mockRejectedValueOnce(new Error("restart while declining"));
     await act(async () => buttonNamed("Decline plan").click());
     expect(container.querySelector("[role=alert]")?.textContent).toContain(
@@ -3424,6 +3451,643 @@ describe("plan decision card", () => {
     expect(container.querySelector("[role=alert]")).toBeNull();
     expect(buttonNamed("Run plan")).toBeUndefined();
     expect(document.activeElement?.id).toBe(`message-${proposal.id}`);
+  });
+
+  const second = open.contributions[1]!;
+  const third = { ...first, id: id(2033), key: "third", prerequisites: [first.id, second.id] };
+  const accepted: ReadPlanCard = {
+    ...open,
+    state: "accepted",
+    graphVersion: 1,
+    revision: 2,
+    connections: { josefa: "chatgpt", virgilio: "chatgpt" },
+    contributions: [first, second, third],
+  };
+  const work = (part: Partial<PlanTaskProgress>): PlanTaskProgress => ({
+    agentId: "josefa",
+    state: "queued",
+    connection: "chatgpt",
+    blockingReason: null,
+    outcomeReason: null,
+    replyMessageId: null,
+    maxAttemptDurationMs: 600000,
+    maxInactivityMs: 120000,
+    ...part,
+  });
+  const continuation = (
+    task: PlanTaskProgress | null,
+  ): NonNullable<ReadPlanCard["continuation"]> => ({
+    id: id(2100),
+    reason: "finished_partial",
+    graphVersion: 1,
+    throughSequence: 1,
+    policyVersion: 1,
+    admission: task ? "admitted" : "waiting",
+    restartHeld: false,
+    stopped: false,
+    taskState: task?.state ?? null,
+    taskId: task ? id(2101) : null,
+    task,
+  });
+  const saved = {
+    ...message(2040, "The research question remains unresolved."),
+    authorKind: "agent",
+    agentId: "josefa",
+    taskId: id(2041),
+    ending: "complete",
+    language: "en",
+  } as const;
+  const status = (index: number, icon: string, label: string) => {
+    const labelNode = container.querySelectorAll(".plan-row-state")[index];
+    expect(labelNode?.getAttribute("data-icon")).toBe(icon);
+    expect(labelNode?.querySelector("svg[aria-hidden=true]")).toBeTruthy();
+    expect(labelNode?.lastElementChild?.textContent?.split(": ").slice(1).join(": ")).toBe(label);
+  };
+
+  function progressHarness() {
+    let displayed = accepted;
+    let revision = accepted.revision;
+    const readPlanCard = vi.fn(async () => displayed);
+    const performPlanProgressAction = vi.fn<
+      (operationId: string, action: PlanProgressAction) => Promise<Outcome<ResearchResult>>
+    >(async () => ({ ok: true, value: { resultId: accepted.planId } }));
+    const revealMessage = vi.fn(async () => true);
+    const onOpenConnections = vi.fn();
+    const controller = {
+      readPlanCard,
+      readPlanDestinations: vi.fn(async () => ({})),
+      observePlanDestinations: vi.fn(() => () => {}),
+      performPlanAction: vi.fn(),
+      performPlanProgressAction,
+      revealMessage,
+    } as unknown as ConversationController;
+    return {
+      readPlanCard,
+      performPlanProgressAction,
+      revealMessage,
+      onOpenConnections,
+      update: (patch: Partial<ReadPlanCard>) => {
+        displayed = { ...accepted, ...patch, revision: ++revision };
+      },
+      show: (locale: InterfaceLocale = "en-US") =>
+        render(
+          {
+            ...state([{ ...proposal, revision: displayed.revision, state: "accepted" }, saved]),
+            pauses: { revision: 1, restart: 3, usage: [{ connection: "chatgpt", count: 2 }] },
+          },
+          controller,
+          locale,
+          onOpenConnections,
+        ),
+    };
+  }
+
+  it("updates each live state in place, folds requests and follows the result without conferring academic completion", async () => {
+    const h = progressHarness();
+    await h.show();
+    const header = container.querySelector(".action-proposal-state");
+    expect(header?.getAttribute("data-icon")).toBe("circle-ellipsis");
+    expect(header?.textContent).toBe("Running · 0 of 3 done");
+    const announcements = () =>
+      [...container.querySelectorAll('[data-plan-state-announcement][aria-live="polite"]')]
+        .map((region) => region.textContent)
+        .filter(Boolean);
+    expect(announcements()).toEqual([]);
+    status(0, "circle-dashed", "Waiting to start");
+    status(2, "circle-dashed", "Waiting for vocabulary and second");
+    status(3, "circle-dashed", "Waiting for the contributions");
+    const waiting = container.querySelectorAll(".plan-row-state")[2];
+    const changes: string[] = [];
+    const observer = new MutationObserver(() => changes.push(waiting!.textContent!));
+    observer.observe(waiting!, { characterData: true, childList: true, subtree: true });
+    const completed = { ...first, state: "completed" as const, resultMessageId: saved.id };
+    h.update({
+      requestsUsed: 2,
+      contributions: [
+        completed,
+        { ...second, state: "active", taskId: id(2080), task: work({ state: "running" }) },
+        third,
+      ],
+    });
+    await h.show();
+    expect(container.querySelector(".action-proposal-state")).toBe(header);
+    expect(header?.textContent).toBe("Running · 1 of 3 done");
+    expect(container.querySelectorAll(".plan-row-state")[2]).toBe(waiting);
+    expect(waiting?.querySelector("code")?.textContent).toBe("second");
+    expect(changes).toEqual(["third: Waiting for second"]);
+    expect(announcements()).toEqual([
+      "Running · 1 of 3 done",
+      "vocabulary: Done",
+      "second: Working…",
+      "third: Waiting for second",
+    ]);
+    await act(async () => buttonNamed("Stop plan").click());
+    expect(announcements()).toEqual([]);
+    await act(async () =>
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      ),
+    );
+    expect(announcements()).toEqual([]);
+    await h.show();
+    expect(changes).toHaveLength(1);
+    observer.disconnect();
+    status(0, "check-check", "Done");
+    status(1, "pen-line", "Working…");
+    expect(container.textContent).toContain("Used 2 of up to 24 requests.");
+    const link = container.querySelector<HTMLAnchorElement>(
+      `.plan-row a[href="#message-${saved.id}"]`,
+    )!;
+    document.getElementById(`message-${saved.id}`)!.scrollIntoView = vi.fn();
+    await act(async () => link.click());
+    expect(h.revealMessage).toHaveBeenCalledWith(saved.id);
+    expect(document.activeElement?.id).toBe(`message-${saved.id}`);
+    expect(container.textContent).toContain("The research question remains unresolved.");
+    for (const [outcome, label, icon] of [
+      ["complete", "Complete", "check-check"],
+      ["partial", "Partial", "chart-pie"],
+      ["failed", "Failed", "octagon-alert"],
+      ["cancelled", "Cancelled", "circle-stop"],
+    ] as const) {
+      h.update({
+        outcome,
+        contributions: [
+          completed,
+          { ...second, state: "cancelled" },
+          { ...third, state: "cancelled" },
+        ],
+      });
+      await h.show();
+      expect(header?.textContent).toBe(label);
+      expect(header?.getAttribute("data-icon")).toBe(icon);
+      status(1, "circle-stop", "Cancelled");
+      status(
+        3,
+        outcome === "complete" || outcome === "partial" ? "circle-dashed" : "circle-minus",
+        outcome === "complete" || outcome === "partial" ? "Waiting to start" : "Not written",
+      );
+      expect(buttonNamed("Finish plan")).toBeUndefined();
+    }
+    h.update({ needsAttention: true });
+    await h.show("de-DE");
+    expect(header?.textContent).toBe("Erfordert deine Aufmerksamkeit");
+    expect(container.textContent).toContain("Wartet auf vocabulary und second");
+    await h.show("ko-KR");
+    expect(header?.textContent).toBe("확인이 필요함");
+    expect(container.textContent).toContain("vocabulary 및 second");
+  });
+
+  it("handles blocked, paused, cancelling and uncertain contribution tasks through their existing commands", async () => {
+    const h = progressHarness();
+    const taskId = id(2090);
+    const change = async (
+      task: PlanTaskProgress,
+      nodeState: ReadPlanCard["contributions"][number]["state"] = "active",
+    ) => {
+      h.update({ contributions: [{ ...first, state: nodeState, taskId, task }, second, third] });
+      await h.show();
+    };
+    await change(work({ state: "queued" }));
+    status(0, "circle-dashed", "Waiting to start");
+    await change(work({ state: "blocked", blockingReason: "connection_disabled" }));
+    status(0, "unplug", "Waiting: ChatGPT isn’t connected");
+    await act(async () => buttonNamed("Open Connections").click());
+    expect(h.onOpenConnections).toHaveBeenCalledOnce();
+    await change(work({ state: "blocked", blockingReason: "usage_limit_reached" }));
+    status(0, "circle-pause", "Paused: ChatGPT requests are paused");
+    await act(async () => buttonNamed("Resume ChatGPT requests (2)").click());
+    expect(h.performPlanProgressAction).toHaveBeenLastCalledWith(expect.any(String), {
+      kind: "resume",
+      connection: "chatgpt",
+    });
+    await change(work({ state: "blocked", blockingReason: "restart_paused" }));
+    status(0, "circle-pause", "Paused: Ohtia stopped before it started");
+    await act(async () => buttonNamed("Continue all (3)").click());
+    expect(h.performPlanProgressAction).toHaveBeenLastCalledWith(expect.any(String), {
+      kind: "continue",
+    });
+    h.update({ contributions: [{ ...first, restartHeld: true }, second, third] });
+    await h.show();
+    status(0, "circle-pause", "Paused: Ohtia stopped before it started");
+    await change(work({ state: "cancelling" }));
+    status(0, "circle-stop", "Stopping…");
+    await change(work({ state: "uncertain", outcomeReason: "connection_lost" }), "uncertain");
+    status(0, "triangle-alert", "Uncertain");
+    await act(async () => buttonNamed("Start reply again").click());
+    const dialog = container.querySelector("dialog[open]")!;
+    expect(dialog.textContent).toContain(
+      "Starting again may count this reply against your plan twice.",
+    );
+    await act(async () =>
+      [...dialog.querySelectorAll("button")]
+        .find((b) => b.textContent === "Start reply again")
+        ?.click(),
+    );
+    expect(h.performPlanProgressAction).toHaveBeenLastCalledWith(expect.any(String), {
+      kind: "restartTask",
+      taskId,
+    });
+    await change(work({ state: "failed", outcomeReason: "deadline_exceeded" }), "failed");
+    status(0, "octagon-alert", "Failed");
+    expect(container.querySelector(".plan-failure-reason")?.textContent).toBe(
+      "The reply took longer than 10 min.",
+    );
+    const retry = buttonNamed("Try again");
+    h.update({
+      contributions: [{ ...first, state: "active", taskId, task: work({}) }, second, third],
+    });
+    await act(async () => {
+      retry.focus();
+      retry.click();
+    });
+    expect(buttonNamed("Try again")).toBeUndefined();
+    expect(document.activeElement?.id).toBe(`message-${proposal.id}`);
+    expect(h.performPlanProgressAction).toHaveBeenLastCalledWith(expect.any(String), {
+      kind: "retryTask",
+      taskId,
+    });
+    await change(work({ state: "failed", outcomeReason: "not_eligible" }), "failed");
+    expect(buttonNamed("Try again")).toBeUndefined();
+    h.update({
+      outcome: "failed",
+      contributions: [
+        { ...first, state: "uncertain", taskId, task: work({ state: "uncertain" }) },
+        second,
+        third,
+      ],
+    });
+    await h.show();
+    expect(buttonNamed("Start reply again")).toBeUndefined();
+  });
+
+  it("shows activation failures and retry refusals with the approved service and the dependency key", async () => {
+    const h = progressHarness();
+    h.update({
+      needsAttention: true,
+      contributions: [
+        { ...first, state: "failed", failureReason: "destination_changed" },
+        { ...second, state: "blocked", blockedBy: first.id },
+        { ...third, state: "failed", failureReason: "input_changed" },
+      ],
+    });
+    await h.show();
+    status(0, "octagon-alert", "Failed");
+    expect(container.textContent).toContain(
+      "Not sent: Josefa now uses a different service than the one you approved. Choose ChatGPT for Josefa again in Settings › Agents, then try again.",
+    );
+    expect(container.textContent).toContain("Not sent: a result it depends on changed.");
+    status(1, "link-2-off", "Blocked by vocabulary");
+    expect(
+      [...container.querySelectorAll("button")].filter((b) => b.textContent === "Try again"),
+    ).toHaveLength(1);
+    const results = [
+      [
+        "limit_reached",
+        "This plan has no work left for another attempt. Finish it with what there is.",
+      ],
+      [
+        "destination_changed",
+        "Nothing was sent: Josefa now uses a different service than the one you approved. Choose ChatGPT for Josefa again in Settings › Agents, then try again.",
+      ],
+      ["input_changed", "Nothing was sent: a result this contribution depends on changed."],
+      [
+        "event_limit_reached",
+        "This plan reached the most changes Ohtia records. Finish or stop it.",
+      ],
+    ] as const;
+    for (const [code, notice] of results) {
+      h.performPlanProgressAction.mockResolvedValueOnce(failure(code));
+      await act(async () => buttonNamed("Try again").click());
+      expect(h.performPlanProgressAction).toHaveBeenLastCalledWith(expect.any(String), {
+        kind: "retryContribution",
+        contributionId: first.id,
+      });
+      expect(container.querySelector(".action-proposal [role=status]")?.textContent).toBe(notice);
+    }
+    h.performPlanProgressAction.mockResolvedValueOnce(failure("uncertain"));
+    await act(async () => buttonNamed("Try again").click());
+    expect(container.querySelector(".action-proposal [role=status]")?.textContent).toContain(
+      "Ohtia couldn’t confirm",
+    );
+    h.performPlanProgressAction.mockResolvedValueOnce(failure("pending_limit_reached"));
+    await act(async () => buttonNamed("Try again").click());
+    expect(container.querySelector(".action-proposal [role=status]")?.textContent).toContain(
+      "Too many replies are waiting.",
+    );
+    h.update({
+      contributions: [
+        { ...first, state: "failed", failureReason: "input_too_large" },
+        second,
+        third,
+      ],
+    });
+    await h.show();
+    expect(container.textContent).toContain(
+      "Not sent: its request and the results it depends on are longer than Ohtia allows.",
+    );
+    expect(buttonNamed("Try again")).toBeUndefined();
+  });
+
+  it("shows synthesis admission, restart holds, failures, recovery and durable stops after the plan outcome", async () => {
+    const h = progressHarness();
+    const show = async (synthesis = continuation(null)) => {
+      h.update({ outcome: "partial", continuation: synthesis });
+      await h.show();
+    };
+    await show();
+    status(3, "circle-dashed", "Waiting to start");
+    await show({ ...continuation(null), restartHeld: true });
+    status(3, "circle-pause", "Paused: Ohtia stopped before it started");
+    expect(buttonNamed("Continue all (3)")).toBeTruthy();
+    const synthesisWork = (part: Partial<PlanTaskProgress>) =>
+      continuation(work({ agentId: "virgilio", ...part }));
+    for (const [part, icon, label] of [
+      [{ state: "queued" }, "circle-dashed", "Waiting to start"],
+      [{ state: "running" }, "pen-line", "Working…"],
+      [{ state: "cancelling" }, "circle-stop", "Stopping…"],
+      [
+        { state: "blocked", blockingReason: "connection_disabled" },
+        "unplug",
+        "Waiting: ChatGPT isn’t connected",
+      ],
+      [
+        { state: "blocked", blockingReason: "usage_limit_reached" },
+        "circle-pause",
+        "Paused: ChatGPT requests are paused",
+      ],
+      [{ state: "cancelled" }, "circle-stop", "Stopped"],
+      [{ state: "completed", replyMessageId: saved.id }, "check-check", "Done"],
+      [{ state: "failed", outcomeReason: "not_eligible" }, "octagon-alert", "Failed"],
+      [{ state: "failed", outcomeReason: "input_too_large" }, "octagon-alert", "Failed"],
+    ] as const) {
+      await show(synthesisWork(part));
+      status(3, icon, label);
+      expect(buttonNamed("Try again")).toBeUndefined();
+    }
+    expect(container.textContent).toContain(
+      "The plan’s results were longer than Ohtia can send for a synthesis.",
+    );
+    await show(synthesisWork({ state: "failed", outcomeReason: "provider_unavailable" }));
+    h.performPlanProgressAction.mockResolvedValueOnce(failure("plan_unfinished"));
+    await act(async () => buttonNamed("Try again").click());
+    expect(h.performPlanProgressAction).toHaveBeenLastCalledWith(expect.any(String), {
+      kind: "retrySynthesis",
+      taskId: id(2101),
+    });
+    expect(container.querySelector(".action-proposal [role=status]")?.textContent).toBe(
+      "Another plan in this conversation hasn’t finished. Wait for it to end, or stop or finish it on its card.",
+    );
+    await show(synthesisWork({ state: "uncertain" }));
+    status(3, "triangle-alert", "Uncertain");
+    await act(async () => buttonNamed("Start reply again").click());
+    const dialog = container.querySelector("dialog[open]")!;
+    await act(async () =>
+      [...dialog.querySelectorAll("button")]
+        .find((b) => b.textContent === "Start reply again")
+        ?.click(),
+    );
+    expect(h.performPlanProgressAction).toHaveBeenLastCalledWith(expect.any(String), {
+      kind: "retrySynthesis",
+      taskId: id(2101),
+    });
+    await show({ ...synthesisWork({ state: "uncertain" }), stopped: true });
+    status(3, "circle-stop", "Stopped");
+    expect(buttonNamed("Start reply again")).toBeUndefined();
+    await show({ ...continuation(null), admission: "withdrawn" });
+    status(3, "circle-stop", "Stopped");
+    expect(buttonNamed("Stop plan")).toBeUndefined();
+  });
+
+  it("confirms ending with safe focus, preserves failed operation IDs and silently refreshes a stale finish", async () => {
+    const h = progressHarness();
+    await h.show();
+    async function dialog(label: string, text: string) {
+      const trigger = buttonNamed(label);
+      expect(trigger.classList.contains("primitive-primary")).toBe(false);
+      await act(async () => {
+        trigger.focus();
+        trigger.click();
+      });
+      const active = container.querySelector("dialog[open]")!;
+      expect(active.textContent).toContain(text);
+      expect(document.activeElement?.textContent).toBe("Close dialog");
+      return [...active.querySelectorAll("button")].find((b) => b.textContent === label)!;
+    }
+    await dialog(
+      "Stop plan",
+      "Finished results stay. Work in progress stops and no synthesis is written.",
+    );
+    const focusedOnClose: EventTarget[] = [];
+    const captureFocus = (event: FocusEvent) => {
+      if (event.target) focusedOnClose.push(event.target);
+    };
+    document.addEventListener("focusin", captureFocus);
+    await act(async () =>
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      ),
+    );
+    document.removeEventListener("focusin", captureFocus);
+    expect(focusedOnClose).toEqual([buttonNamed("Stop plan")]);
+    expect(container.querySelector("dialog[open]")).toBeNull();
+    expect(document.activeElement).toBe(buttonNamed("Stop plan"));
+    expect(h.performPlanProgressAction).not.toHaveBeenCalled();
+    h.performPlanProgressAction.mockRejectedValueOnce(new Error("storage unavailable"));
+    const stop = await dialog("Stop plan", "Stop this plan?");
+    await act(async () => stop.click());
+    expect(container.querySelector(".action-proposal [role=alert]")?.textContent).toBe(
+      "Ohtia couldn’t stop the plan. Nothing was saved; you can try again.",
+    );
+    const stopAgain = await dialog("Stop plan", "Stop this plan?");
+    h.update({ outcome: "cancelled" });
+    await act(async () => stopAgain.click());
+    expect(buttonNamed("Stop plan")).toBeUndefined();
+    expect(document.activeElement?.id).toBe(`message-${proposal.id}`);
+    expect(h.performPlanProgressAction.mock.calls[0]).toEqual(
+      h.performPlanProgressAction.mock.calls[1],
+    );
+    expect(h.performPlanProgressAction).toHaveBeenLastCalledWith(expect.any(String), {
+      kind: "cancel",
+      planId: accepted.planId,
+    });
+
+    h.update({ needsAttention: true });
+    await h.show();
+    h.performPlanProgressAction.mockResolvedValueOnce(failure("storage_failed"));
+    const finishEmpty = await dialog(
+      "Finish plan",
+      "It ends as failed, without a synthesis, because no contribution completed.",
+    );
+    await act(async () => finishEmpty.click());
+    expect(container.querySelector(".action-proposal [role=alert]")?.textContent).toBe(
+      "Ohtia couldn’t finish the plan. Nothing was saved; you can try again.",
+    );
+    h.update({
+      needsAttention: true,
+      contributions: [{ ...first, state: "completed", resultMessageId: saved.id }, second, third],
+    });
+    await h.show();
+    const finish = await dialog(
+      "Finish plan",
+      "Virgilio will write the synthesis with the completed results.",
+    );
+    const reads = h.readPlanCard.mock.calls.length;
+    h.performPlanProgressAction.mockResolvedValueOnce(failure("plan_state_changed"));
+    h.update({
+      outcome: "complete",
+      continuation: continuation(work({ agentId: "virgilio", state: "running" })),
+    });
+    await act(async () => finish.click());
+    expect(h.performPlanProgressAction.mock.calls[2]).toEqual(
+      h.performPlanProgressAction.mock.calls[3],
+    );
+    expect(h.performPlanProgressAction).toHaveBeenLastCalledWith(expect.any(String), {
+      kind: "finish",
+      planId: accepted.planId,
+    });
+    expect(h.readPlanCard.mock.calls.length).toBeGreaterThan(reads);
+    expect(container.querySelector(".action-proposal [role=alert]")).toBeNull();
+    expect(container.querySelector(".action-proposal-state")?.textContent).toBe("Complete");
+    expect(buttonNamed("Finish plan")).toBeUndefined();
+    await dialog(
+      "Stop plan",
+      "Finished results and the plan’s outcome stay. The synthesis stops; any text it already wrote stays, marked as incomplete.",
+    );
+  });
+
+  it("routes plan actions through the research port and refreshes visible plan revisions", async () => {
+    const h = controllerHarness(false);
+    h.items.splice(0, h.items.length, {
+      ...proposal,
+      state: "accepted",
+      revision: accepted.revision,
+    });
+    const succeed = () => ok({ resultId: proposal.id });
+    const ports = {
+      cancelPlan: vi.fn(succeed),
+      finishPlan: vi.fn(succeed),
+      tryAgainContribution: vi.fn(succeed),
+      startAgainContribution: vi.fn(succeed),
+      tryAgainSynthesis: vi.fn(succeed),
+      resumeUsagePause: vi.fn(succeed),
+      continueAllTasks: vi.fn(succeed),
+    };
+    Object.assign(h.port, ports);
+    try {
+      h.controller.open(scope);
+      await settle();
+      const taskId = id(2220);
+      const cases = [
+        [{ kind: "cancel", planId: proposal.id }, ports.cancelPlan, { planId: proposal.id }],
+        [{ kind: "finish", planId: proposal.id }, ports.finishPlan, { planId: proposal.id }],
+        [
+          { kind: "retryContribution", contributionId: first.id },
+          ports.tryAgainContribution,
+          { contributionId: first.id },
+        ],
+        [{ kind: "retryTask", taskId }, ports.tryAgainContribution, { taskId }],
+        [{ kind: "restartTask", taskId }, ports.startAgainContribution, { taskId }],
+        [{ kind: "retrySynthesis", taskId }, ports.tryAgainSynthesis, { taskId }],
+        [
+          { kind: "resume", connection: "chatgpt" },
+          ports.resumeUsagePause,
+          { connection: "chatgpt" },
+        ],
+        [{ kind: "continue" }, ports.continueAllTasks, undefined],
+      ] as const;
+      for (const [action, command, payload] of cases) {
+        expect(await h.controller.performPlanProgressAction("operation", action)).toEqual({
+          ok: true,
+          value: { resultId: proposal.id },
+        });
+        if (payload) expect(command).toHaveBeenLastCalledWith("operation", payload);
+        else expect(command).toHaveBeenLastCalledWith("operation");
+      }
+      expect(vi.mocked(h.port.readPauses).mock.calls.length).toBeGreaterThanOrEqual(2);
+      const newer = { ...proposal, state: "accepted", revision: accepted.revision + 1 } as const;
+      h.items[0] = newer;
+      h.emit({
+        ok: true,
+        value: {
+          kind: "planChanged",
+          planId: proposal.id,
+          revision: newer.revision,
+          throughSequence: 4,
+        },
+      });
+      await settle();
+      expect(h.controller.snapshot().items).toContainEqual(newer);
+      const reads = vi.mocked(h.port.readTimeline).mock.calls.length;
+      h.emit({
+        ok: true,
+        value: {
+          kind: "planChanged",
+          planId: proposal.id,
+          revision: newer.revision,
+          throughSequence: 4,
+        },
+      });
+      h.emit({
+        ok: true,
+        value: {
+          kind: "planChanged",
+          planId: id(2301),
+          revision: newer.revision,
+          throughSequence: 4,
+        },
+      });
+      await settle();
+      expect(h.port.readTimeline).toHaveBeenCalledTimes(reads);
+    } finally {
+      h.controller.dispose();
+    }
+  });
+
+  it("preserves the timeline notice and the plan state for incomplete synthesis results", async () => {
+    const task = reviewTask({
+      id: id(2230),
+      synthesis: true,
+      synthesisStopped: true,
+      synthesisPlanId: proposal.id,
+      state: "cancelled",
+      replyMessageId: saved.id,
+      dispatched: true,
+    });
+    const readPlanCard = vi.fn(async () => ({
+      ...accepted,
+      outcome: "complete" as const,
+      continuation: continuation(work({ agentId: "virgilio", state: "cancelled" })),
+    }));
+    const view = {
+      readPlanCard,
+      readPlanDestinations: vi.fn(async () => ({})),
+      observePlanDestinations: vi.fn(() => () => {}),
+      performPlanAction: vi.fn(),
+      claimTaskNotice: vi.fn(() => true),
+      performPlanProgressAction: vi.fn(),
+    } as unknown as ConversationController;
+    const incompleteReply = {
+      ...saved,
+      taskId: task.id,
+      agentId: "virgilio",
+      ending: "partial",
+    } as const;
+    await render(
+      state([
+        { ...proposal, state: "accepted", revision: accepted.revision },
+        incompleteReply,
+        task,
+      ]),
+      view,
+    );
+    status(3, "circle-stop", "Stopped");
+    const notice = container.querySelector(`[data-timeline-id="${task.id}"] .conversation-notice`);
+    expect(notice?.textContent).toContain("Incomplete — stopped by you");
+    expect(notice?.hasAttribute("role")).toBe(false);
+    expect(container.querySelector("[data-task-notice-announcement]")?.textContent).toBe("");
+    expect(container.textContent).toContain("The research question remains unresolved.");
+    expect(buttonNamed("Try again")).toBeUndefined();
+    expect(buttonNamed("Start reply again")).toBeUndefined();
   });
 
   it("reads ordered plan text parts and reconciles a stale decision through the conversation controller", async () => {

@@ -17,6 +17,7 @@ import {
   type PlanEventPage,
   type PlanEventPayload,
   type PlanSnapshot,
+  type PlanTaskProgress,
   type ResearchEvent,
   type ResearchScope,
 } from "@ohtia/contracts";
@@ -26,7 +27,12 @@ import {
   waitingForPlanWork,
 } from "./contribution-graphs.js";
 import { agentIdentity, type InterventionRow } from "./consultations.js";
-import type { BuiltInput, InputMessage, OperationPolicy } from "./operations.js";
+import {
+  recordedOperationPolicy,
+  type BuiltInput,
+  type InputMessage,
+  type OperationPolicy,
+} from "./operations.js";
 import { bytes, canonicalJson, identifier, newId, type ResearchSchema } from "./research.js";
 
 export interface PlanEventRow {
@@ -407,6 +413,46 @@ export async function readPlanText(
   return text === undefined ? failure("record_not_found") : { ok: true, value: { text } };
 }
 
+async function readPlanTask(
+  db: Kysely<ResearchSchema>,
+  id: Uint8Array | null,
+  agentId: PlanTaskProgress["agentId"],
+): Promise<PlanTaskProgress | null> {
+  if (!id) return null;
+  const task = await db
+    .selectFrom("tasks")
+    .select(["state", "blocking_reason", "connection", "operation", "policy_version"])
+    .select((eb) => [
+      eb
+        .selectFrom("attempts")
+        .select("outcome_reason")
+        .where("task_id", "=", id)
+        .orderBy("attempt_number", "desc")
+        .limit(1)
+        .as("outcomeReason"),
+      eb.selectFrom("messages").select("id").where("task_id", "=", id).as("messageId"),
+    ])
+    .where("id", "=", id)
+    .executeTakeFirstOrThrow();
+  const policy = recordedOperationPolicy(task.operation, task.policy_version);
+  if (!policy) throw new Error("Plan task policy unavailable.");
+  return {
+    agentId,
+    state:
+      task.state === "waiting_capacity"
+        ? task.blocking_reason
+          ? "blocked"
+          : "queued"
+        : task.state,
+    connection: task.connection,
+    blockingReason: task.blocking_reason,
+    outcomeReason: task.outcomeReason,
+    replyMessageId: task.messageId ? identifier(task.messageId) : null,
+    maxAttemptDurationMs: policy.max_attempt_duration_ms,
+    maxInactivityMs: policy.max_inactivity_ms,
+  };
+}
+
 export async function readPlan(
   db: Kysely<ResearchSchema>,
   planId: string,
@@ -435,13 +481,16 @@ export async function readPlan(
   const edges = await holdingDependencies(db, plan.id);
   const throughSequence = await planSequence(db, plan.id);
   const continuation = await planContinuation(db, plan.id);
-  const task = continuation?.task_id
-    ? await db
-        .selectFrom("tasks")
-        .select(["state", "blocking_reason"])
-        .where("id", "=", continuation.task_id)
-        .executeTakeFirstOrThrow()
-    : null;
+  const task = await readPlanTask(db, continuation?.task_id ?? null, "virgilio");
+  const usage = await db
+    .selectFrom("work_allocations as w")
+    .innerJoin("attempts as a", (join) =>
+      join.onRef("a.task_id", "=", "w.task_id").onRef("a.attempt_number", "=", "w.attempt_number"),
+    )
+    .select(({ fn }) => fn.countAll<number>().as("requests"))
+    .where("w.intervention_id", "=", plan.id)
+    .where("a.dispatch_permitted_at", "is not", null)
+    .executeTakeFirstOrThrow();
   const nodeId = (id: Uint8Array | null) => (id ? identifier(id) : null);
   const hasActive = nodes.some(({ state }) => state === "active");
   return {
@@ -459,6 +508,7 @@ export async function readPlan(
         destinations.map(({ agent_id, connection }) => [agent_id, connection]),
       ),
       maxRequests: limits?.max_requests ?? planLimits.max_requests,
+      requestsUsed: usage.requests,
       needsAttention:
         plan.state === "accepted" &&
         !plan.outcome &&
@@ -468,23 +518,26 @@ export async function readPlan(
             nodes.some(({ required, state }) => !!required && state !== "completed"))),
       purpose: planText(plan.purpose ?? "", `plan_purpose_${planId}`),
       sharedContext: planText(plan.shared_context ?? "", `plan_context_${planId}`),
-      contributions: nodes.map((node) => ({
-        request: planText(node.request, `plan_request_${identifier(node.id)}`),
-        reason: planText(node.reason, `plan_reason_${identifier(node.id)}`),
-        failureReason: node.failure_reason,
-        id: identifier(node.id),
-        key: node.plan_key,
-        agentId: node.agent_id,
-        required: !!node.required,
-        state: node.state,
-        taskId: nodeId(node.task_id),
-        resultMessageId: nodeId(node.result_message_id),
-        blockedBy: nodeId(node.blocked_by_contribution_id),
-        restartHeld: !!node.restart_held,
-        prerequisites: edges
-          .filter((edge) => identifier(edge.contribution_id) === identifier(node.id))
-          .map((edge) => identifier(edge.prerequisite_id)),
-      })),
+      contributions: await Promise.all(
+        nodes.map(async (node) => ({
+          request: planText(node.request, `plan_request_${identifier(node.id)}`),
+          reason: planText(node.reason, `plan_reason_${identifier(node.id)}`),
+          failureReason: node.failure_reason,
+          id: identifier(node.id),
+          key: node.plan_key,
+          agentId: node.agent_id,
+          required: !!node.required,
+          state: node.state,
+          taskId: nodeId(node.task_id),
+          task: await readPlanTask(db, node.task_id, node.agent_id),
+          resultMessageId: nodeId(node.result_message_id),
+          blockedBy: nodeId(node.blocked_by_contribution_id),
+          restartHeld: !!node.restart_held,
+          prerequisites: edges
+            .filter((edge) => identifier(edge.contribution_id) === identifier(node.id))
+            .map((edge) => identifier(edge.prerequisite_id)),
+        })),
+      ),
       continuation: continuation
         ? {
             id: identifier(continuation.id),
@@ -495,12 +548,9 @@ export async function readPlan(
             admission: continuation.admission,
             restartHeld: !!continuation.restart_held,
             taskId: nodeId(continuation.task_id),
-            taskState:
-              task?.state === "waiting_capacity"
-                ? task.blocking_reason
-                  ? "blocked"
-                  : "queued"
-                : (task?.state ?? null),
+            taskState: task?.state ?? null,
+            task,
+            stopped: !!continuation.stopped,
           }
         : null,
     },
