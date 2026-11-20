@@ -1,4 +1,11 @@
-import { useId, useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import {
   formatNumber,
   message,
@@ -13,6 +20,14 @@ import { LucideGlyph } from "./iconography.js";
 import type { ComposerController } from "./composer-controller.js";
 import "./message-composer.css";
 
+type Composition = "idle" | "active" | "ended-without-key";
+
+const modifierKeys = new Set(["Shift", "Control", "Alt", "AltGraph", "Meta", "CapsLock"]);
+
+function isEnterKey(event: KeyboardEvent): boolean {
+  return event.key === "Enter" || event.code === "Enter" || event.code === "NumpadEnter";
+}
+
 export function MessageComposer({
   controller,
   locale,
@@ -25,7 +40,33 @@ export function MessageComposer({
   const state = useSyncExternalStore(controller.subscribe, controller.snapshot);
   const agent = contributorNames[agentId ?? state.agentId];
   const input = useRef<HTMLTextAreaElement>(null);
-  const composing = useRef(false);
+  const composition = useRef<Composition>("idle");
+  const endingKey = useRef<string | null>(null);
+  const pointer = useRef<number | null>(null);
+  const confirmingEnter = useRef(false);
+  const resetComposition = useCallback(() => {
+    composition.current = "idle";
+    endingKey.current = null;
+    pointer.current = null;
+    confirmingEnter.current = false;
+  }, []);
+  useEffect(() => {
+    const releasePointer = (event: PointerEvent) => {
+      if (pointer.current !== event.pointerId) return;
+      pointer.current = null;
+      if (event.type === "pointerup" && composition.current === "ended-without-key")
+        composition.current = "idle";
+    };
+    window.addEventListener("blur", resetComposition);
+    // A drag starting in the editor can release outside it without moving keyboard focus.
+    document.addEventListener("pointerup", releasePointer, true);
+    document.addEventListener("pointercancel", releasePointer, true);
+    return () => {
+      window.removeEventListener("blur", resetComposition);
+      document.removeEventListener("pointerup", releasePointer, true);
+      document.removeEventListener("pointercancel", releasePointer, true);
+    };
+  }, [resetComposition]);
   const id = useId();
   const count = Array.from(state.text).length;
   const over = count > researcherMessageLimit;
@@ -154,22 +195,52 @@ export function MessageComposer({
             controller.edit(event.currentTarget.value);
           }}
           onCompositionStart={() => {
-            composing.current = true;
+            composition.current = "active";
+            endingKey.current = null;
           }}
           onCompositionEnd={() => {
-            composing.current = false;
+            // IBus can end composition before dispatching the key that ended it.
+            if (composition.current === "active") composition.current = "ended-without-key";
+          }}
+          onPointerDown={(event) => {
+            pointer.current = event.pointerId;
+          }}
+          onBlur={resetComposition}
+          onKeyUp={(event) => {
+            const enter = isEnterKey(event.nativeEvent);
+            if (enter) confirmingEnter.current = false;
+            if (enter || endingKey.current === (event.code || event.key)) {
+              endingKey.current = null;
+              if (composition.current === "ended-without-key") composition.current = "idle";
+            }
           }}
           onKeyDown={(event) => {
+            const phase = composition.current;
+            if (!event.repeat && !modifierKeys.has(event.key)) {
+              // Only a release after compositionend can account for an earlier keydown.
+              if (phase === "active") endingKey.current = event.code || event.key;
+              if (phase === "ended-without-key") {
+                endingKey.current = null;
+                composition.current = "idle";
+              }
+            }
             if (
-              event.key !== "Enter" ||
-              event.shiftKey ||
-              composing.current ||
+              phase === "active" ||
               event.nativeEvent.isComposing ||
-              // Chromium can finish native IME composition before delivering this keydown.
-              // eslint-disable-next-line @typescript-eslint/no-deprecated
-              event.keyCode === 229
-            )
+              // eslint-disable-next-line @typescript-eslint/no-deprecated -- A native IME key can report 229 after compositionend.
+              event.nativeEvent.keyCode === 229
+            ) {
+              // Microsoft Korean IME can send Process followed by Enter before the same keyup.
+              if (isEnterKey(event.nativeEvent)) confirmingEnter.current = true;
               return;
+            }
+            if (event.key !== "Enter") return;
+            if (phase === "ended-without-key" || confirmingEnter.current) {
+              confirmingEnter.current = true;
+              if (!event.shiftKey) event.preventDefault();
+              return;
+            }
+            if (event.shiftKey) return;
             event.preventDefault();
             controller.send();
           }}
