@@ -108,35 +108,240 @@ async function render(
 ) {
   await act(async () => root.render(h(MessageComposer, { controller, locale })));
 }
-it("sends on Enter, preserves Shift+Enter and does not send Enter during Korean composition or keycode 229", async () => {
+function composerKey(
+  input: HTMLTextAreaElement,
+  type: "keydown" | "keyup",
+  options: KeyboardEventInit = {},
+) {
+  const event = new KeyboardEvent(type, {
+    key: "Enter",
+    code: "Enter",
+    bubbles: true,
+    cancelable: true,
+    ...options,
+  });
+  input.dispatchEvent(event);
+  return event;
+}
+
+function composerComposition(input: HTMLTextAreaElement, type: "start" | "end", data = "") {
+  input.dispatchEvent(new CompositionEvent(`composition${type}`, { bubbles: true, data }));
+}
+
+it("sends on ordinary Enter and lets Shift+Enter insert a line break", async () => {
   const f = await harness();
-  f.controller.edit("한글 mixed text");
+  f.controller.edit("first line");
   await render(f.controller);
   const input = container.querySelector("textarea")!;
-  for (const event of [
-    new KeyboardEvent("keydown", { key: "Enter", shiftKey: true, bubbles: true }),
-    new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true }),
-    new KeyboardEvent("keydown", { key: "Enter", keyCode: 229, bubbles: true }),
-  ])
-    await act(async () => input.dispatchEvent(event));
-  await act(async () =>
-    input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
-  );
-  await act(async () =>
-    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
-  );
+  await act(async () => {
+    expect(composerKey(input, "keydown", { shiftKey: true }).defaultPrevented).toBe(false);
+    expect(composerKey(input, "keydown").defaultPrevented).toBe(true);
+  });
+  expect(f.append).toHaveBeenCalledExactlyOnceWith("intent-1", {
+    conversationId,
+    content: "first line",
+  });
+});
+
+it.each([
+  { code: "Enter", earlierKey: "none", shiftKey: false, sendButton: false },
+  { code: "NumpadEnter", earlierKey: "none", shiftKey: false, sendButton: true },
+  { code: "Enter", earlierKey: "released", shiftKey: false, sendButton: false },
+  { code: "Enter", earlierKey: "released", shiftKey: true, sendButton: false },
+  { code: "Enter", earlierKey: "held", shiftKey: false, sendButton: false },
+])(
+  "commits IBus Hangul before the confirming keydown without sending (%j)",
+  async ({ code, earlierKey, shiftKey, sendButton }) => {
+    const f = await harness();
+    f.controller.edit("한");
+    await render(f.controller);
+    const input = container.querySelector("textarea")!;
+    await act(async () => {
+      composerComposition(input, "start");
+      if (earlierKey === "released") {
+        composerKey(input, "keydown", { key: "Shift", code: "ShiftLeft", shiftKey: true });
+        composerKey(input, "keydown", { key: "T", code: "KeyT", shiftKey: true });
+        composerKey(input, "keyup", { key: "T", code: "KeyT", shiftKey: true });
+        if (!shiftKey) composerKey(input, "keyup", { key: "Shift", code: "ShiftLeft" });
+      }
+      if (earlierKey === "held")
+        composerKey(input, "keydown", {
+          key: "Process",
+          code: "KeyR",
+          keyCode: 229,
+          isComposing: true,
+        });
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+        input,
+        "한글",
+      );
+      input.dispatchEvent(
+        new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", data: "글" }),
+      );
+      composerComposition(input, "end", "글");
+      expect(composerKey(input, "keydown", { code, keyCode: 13, shiftKey }).defaultPrevented).toBe(
+        !shiftKey,
+      );
+      expect(composerKey(input, "keydown", { code, repeat: true, shiftKey }).defaultPrevented).toBe(
+        !shiftKey,
+      );
+      composerKey(input, "keyup", { code, shiftKey });
+      if (earlierKey === "held") composerKey(input, "keyup", { key: "r", code: "KeyR" });
+      if (shiftKey) composerKey(input, "keyup", { key: "Shift", code: "ShiftLeft" });
+    });
+    expect(input.value).toBe("한글");
+    expect(f.append).not.toHaveBeenCalled();
+
+    await act(async () => {
+      if (sendButton)
+        container.querySelector<HTMLButtonElement>('button[aria-label="Send message"]')!.click();
+      else composerKey(input, "keydown", { code });
+    });
+    expect(f.append).toHaveBeenCalledExactlyOnceWith("intent-1", {
+      conversationId,
+      content: "한글",
+    });
+  },
+);
+
+it.each([
+  { key: "Process", code: "Enter", isComposing: true, keyCode: 229 },
+  { key: "Enter", code: "NumpadEnter", isComposing: true },
+  { key: "Enter", code: "Enter" },
+])("keeps composing Enter and its follow-up keydown from sending (%j)", async (confirmation) => {
+  const f = await harness();
+  f.controller.edit("한글");
+  await render(f.controller);
+  const input = container.querySelector("textarea")!;
+  await act(async () => {
+    composerComposition(input, "start");
+    expect(composerKey(input, "keydown", confirmation).defaultPrevented).toBe(false);
+    composerComposition(input, "end", "글");
+    expect(composerKey(input, "keydown", { code: confirmation.code }).defaultPrevented).toBe(true);
+    expect(
+      composerKey(input, "keydown", { code: confirmation.code, repeat: true }).defaultPrevented,
+    ).toBe(true);
+    composerKey(input, "keyup", { key: "Process", code: confirmation.code });
+  });
+  expect(input.value).toBe("한글");
   expect(f.append).not.toHaveBeenCalled();
-  await act(async () =>
-    input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })),
-  );
-  await act(async () =>
-    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
-  );
-  expect(f.append).toHaveBeenCalledTimes(1);
-  expect(f.append.mock.calls[0]).toEqual([
-    "intent-1",
-    { conversationId, content: "한글 mixed text" },
-  ]);
+
+  await act(async () => {
+    composerKey(input, "keydown", { keyCode: 229 });
+    composerKey(input, "keyup");
+    composerKey(input, "keydown", { isComposing: true });
+    composerKey(input, "keyup");
+  });
+  expect(f.append).not.toHaveBeenCalled();
+
+  await act(async () => {
+    composerKey(input, "keydown", { code: confirmation.code });
+  });
+  expect(f.append).toHaveBeenCalledExactlyOnceWith("intent-1", {
+    conversationId,
+    content: "한글",
+  });
+});
+
+it.each(["pointerup", "pointercancel"])(
+  "protects a later confirmation after %s outside the editor",
+  async (release) => {
+    const f = await harness();
+    f.controller.edit("한글");
+    await render(f.controller);
+    const input = container.querySelector("textarea")!;
+    await act(async () => {
+      composerComposition(input, "start");
+      input.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      document.body.dispatchEvent(new PointerEvent(release, { bubbles: true }));
+      composerComposition(input, "end", "글");
+      expect(composerKey(input, "keydown").defaultPrevented).toBe(true);
+    });
+    expect(f.append).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["Period", "Space", "Backspace"])(
+  "sends on the next deliberate Enter after the %s release completes a composition",
+  async (code) => {
+    const f = await harness();
+    f.controller.edit("안녕하세요.");
+    await render(f.controller);
+    const input = container.querySelector("textarea")!;
+    await act(async () => {
+      composerComposition(input, "start");
+      composerKey(input, "keydown", { key: "Process", code, keyCode: 229, isComposing: true });
+      composerComposition(input, "end", "요");
+      composerKey(input, "keyup", { key: "Process", code });
+    });
+    expect(f.append).not.toHaveBeenCalled();
+
+    await act(async () => {
+      composerKey(input, "keydown");
+    });
+    expect(f.append).toHaveBeenCalledExactlyOnceWith("intent-1", {
+      conversationId,
+      content: "안녕하세요.",
+    });
+  },
+);
+
+it("protects confirmation while the pointer that started in the editor is still held", async () => {
+  const f = await harness();
+  f.controller.edit("한글");
+  await render(f.controller);
+  const input = container.querySelector("textarea")!;
+  await act(async () => {
+    composerComposition(input, "start");
+    input.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 1 }));
+    composerComposition(input, "end", "글");
+    expect(composerKey(input, "keydown").defaultPrevented).toBe(true);
+  });
+  expect(f.append).not.toHaveBeenCalled();
+});
+
+it.each([
+  "ArrowRight after end",
+  "ArrowRight before end",
+  "pointerdown",
+  "blur",
+  "window blur",
+  "Send",
+])("allows deliberate send after a composition ending handled by %s", async (ending) => {
+  const f = await harness();
+  f.controller.edit("한글");
+  await render(f.controller);
+  const input = container.querySelector("textarea")!;
+  await act(async () => {
+    input.focus();
+    composerComposition(input, "start");
+    if (ending === "pointerdown")
+      input.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    if (ending === "blur") input.blur();
+    if (ending === "window blur") window.dispatchEvent(new Event("blur"));
+    const arrow = { key: "ArrowRight", code: "ArrowRight" };
+    if (ending === "ArrowRight before end") composerKey(input, "keydown", arrow);
+    composerComposition(input, "end", "글");
+    if (ending === "pointerdown")
+      input.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+    if (ending === "ArrowRight before end") composerKey(input, "keyup", arrow);
+    if (ending === "ArrowRight after end")
+      expect(composerKey(input, "keydown", arrow).defaultPrevented).toBe(false);
+  });
+  expect(f.append).not.toHaveBeenCalled();
+
+  await act(async () => {
+    if (ending === "Send")
+      container.querySelector<HTMLButtonElement>('button[aria-label="Send message"]')!.click();
+    else {
+      input.focus();
+      composerKey(input, "keydown");
+    }
+  });
+  expect(f.append).toHaveBeenCalledExactlyOnceWith("intent-1", {
+    conversationId,
+    content: "한글",
+  });
 });
 it("keeps an over-limit paste whole, counts Unicode code points and describes the input and disabled Send", async () => {
   const f = await harness();
