@@ -83,6 +83,7 @@ export function ConversationView({
   locale,
   commands,
   onOpenConnections,
+  sharedReplyAnnouncements = false,
 }: {
   readonly state: ConversationState;
   readonly controller: Pick<ConversationController, "reload" | "loadEarlier"> &
@@ -90,6 +91,7 @@ export function ConversationView({
       Pick<
         ConversationController,
         | "readPlanCard"
+        | "hasSharedPlanAttention"
         | "readPlanDestinations"
         | "observePlanDestinations"
         | "performPlanAction"
@@ -110,6 +112,7 @@ export function ConversationView({
   readonly commands: Pick<CommandBridge, "copyMessage" | "openExternalLink"> &
     Partial<Pick<CommandBridge, "openLink">>;
   readonly onOpenConnections?: () => void;
+  readonly sharedReplyAnnouncements?: boolean;
 }) {
   const hasHandoffCard = state.items.some(
     (item) => item.kind === "handoffProposal" && item.state !== "invalid",
@@ -186,6 +189,7 @@ export function ConversationView({
   const completedAgent = state.completedAgent ?? agentId;
   useEffect(() => {
     const previous = completion.current;
+    if (sharedReplyAnnouncements) return;
     if (previous.id !== id) setAnnouncement({ text: "", count: 0 });
     else if (state.completed > previous.count && completedAgent)
       setAnnouncement({
@@ -195,7 +199,7 @@ export function ConversationView({
         count: state.completed,
       });
     completion.current = { id, count: state.completed };
-  }, [id, state.completed, completedAgent, locale]);
+  }, [id, state.completed, completedAgent, locale, sharedReplyAnnouncements]);
   const visibleRunning = state.items.find(
     (item) => item.kind === "task" && (item.state === "running" || item.state === "cancelling"),
   );
@@ -288,6 +292,9 @@ export function ConversationView({
           performPlanAction: controller.performPlanAction,
           ...(controller.performPlanProgressAction
             ? { performPlanProgressAction: controller.performPlanProgressAction }
+            : {}),
+          ...(controller.hasSharedPlanAttention
+            ? { hasSharedPlanAttention: controller.hasSharedPlanAttention }
             : {}),
           connections: controller.connections,
         }

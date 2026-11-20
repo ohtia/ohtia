@@ -1,3 +1,4 @@
+import { ActivityController } from "./activity-controller.js";
 import { ConversationHistoryController } from "./conversation-history-controller.js";
 import { stagedCommand } from "./staged-command.js";
 import { ComposerController } from "./composer-controller.js";
@@ -129,6 +130,7 @@ export function setupProposalResponded(
   );
 }
 export class ConversationController {
+  readonly activity: ActivityController;
   readonly readingPositions = new Map<string, { top: number; follow: boolean }>();
   private state: ConversationState = empty({ projectId: null, conversationId: null });
   private readonly listeners = new Set<() => void>();
@@ -154,13 +156,17 @@ export class ConversationController {
   private readonly noticeUpdates = new Map<string, number>();
   private readonly introducedTasks = new Map<string, string>();
   private readonly announcedNotices = new Map<string, string>();
+  private readonly sharedAttentionPlans = new Map<string, number>();
+  hasSharedPlanAttention = (id: string, revision: number): boolean =>
+    this.sharedAttentionPlans.get(id) === revision;
+  private readonly sharedAttentionTasks = new Map<string, number>();
   /** Historical reads do not announce. Live transitions are announced once per window. */
   claimTaskNotice(taskId: string, revision: number, signature: string): boolean {
     const live = (this.noticeUpdates.get(taskId) ?? 0) >= revision;
     const key = `${String(revision)}/${signature}`;
     if (this.announcedNotices.get(taskId) === key) return false;
     this.announcedNotices.set(taskId, key);
-    return live;
+    return live && this.sharedAttentionTasks.get(taskId) !== revision;
   }
   readonly composer: ComposerController;
   readonly history: ConversationHistoryController;
@@ -172,6 +178,7 @@ export class ConversationController {
     readonly connections: readonly ProviderDeclaration["connection"][] = [chatgptConnection],
     onConversationStarted?: (scope: ResearchScope) => void,
   ) {
+    this.activity = new ActivityController(port);
     this.history = new ConversationHistoryController(port, this.reload);
     this.composer = new ComposerController(
       port,
@@ -782,6 +789,7 @@ export class ConversationController {
     const stream = this.stream;
     this.composer.destinationObservationLost();
     this.history.disconnected(error.code);
+    this.activity.disconnect();
     this.failure(epoch, error);
     if (this.live(epoch)) this.epoch++;
     stream?.dispose();
@@ -823,6 +831,7 @@ export class ConversationController {
       setupActions: new Map(this.setupActions),
     };
     this.pendingReplies = new Map(this.state.replies);
+    this.activity.open(scope);
     this.publish();
     this.connect(epoch, false);
   }
@@ -846,6 +855,7 @@ export class ConversationController {
           // A fresh subscription identity precedes all reads so changes during recovery remain observable.
           this.composer.destinationObservationPending();
           this.history.scope(this.state.scope.projectId);
+          this.activity.disconnect();
           const recovery = ++this.epoch;
           this.queue = Promise.resolve();
           this.state = { ...this.state, loadingEarlier: false, failedEarlier: false };
@@ -857,6 +867,12 @@ export class ConversationController {
         }
         return;
       }
+      if (notice.value.kind === "attentionRaised") {
+        const { task, plan } = notice.value;
+        if (task) this.sharedAttentionTasks.set(task.id, task.revision);
+        if (plan) this.sharedAttentionPlans.set(plan.id, plan.revision);
+      }
+      this.activity.event(notice.value);
       if (notice.value.kind === "changed" && notice.value.record === "conversation")
         this.history.changed(notice.value.id, notice.value.revision);
       this.queue = this.queue
@@ -889,6 +905,7 @@ export class ConversationController {
       }
       this.composer.destinationObservationReady();
       this.history.connected();
+      this.activity.ready();
       this.observed("ready");
       this.queue = this.queue
         .then(async () => {
@@ -1232,6 +1249,12 @@ export class ConversationController {
     return reveal;
   };
   private async event(event: ResearchEvent, epoch: number): Promise<void> {
+    if (
+      event.kind === "projectAttention" ||
+      event.kind === "attentionRaised" ||
+      event.kind === "replyFinished"
+    )
+      return;
     if (event.kind === "planChanged") {
       const item = this.state.items.find(
         (item) => item.id === event.planId && item.kind === "plan",
@@ -1325,6 +1348,7 @@ export class ConversationController {
     this.disposed = true;
     this.composer.dispose();
     this.history.dispose();
+    this.activity.dispose();
     this.renames.clear();
     this.epoch++;
     this.stream?.dispose();
@@ -1336,6 +1360,8 @@ export class ConversationController {
     this.observers.clear();
     this.noticeUpdates.clear();
     this.announcedNotices.clear();
+    this.sharedAttentionTasks.clear();
+    this.sharedAttentionPlans.clear();
     this.introducedTasks.clear();
   }
 }

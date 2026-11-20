@@ -231,6 +231,10 @@ describe("consultations", () => {
 
   it("keeps a valid open proposal when the next proposal is invalid and rejects a replaced decision", async () => {
     const f = await fixture();
+    const replies: string[] = [];
+    const stop = f.store.observeResearchActivity((event) => {
+      if (event.kind === "replyFinished") replies.push(event.agentId);
+    });
     const first = await f.propose([call("Find terminology.")]);
     const invalid = await f.propose([call(""), call("Find catalogs.")]);
     expect(invalid).toMatchObject({
@@ -240,6 +244,8 @@ describe("consultations", () => {
     });
     expect((await f.timeline()).items).toContainEqual(first);
     const newer = await f.propose([call("Find catalogs.")]);
+    stop();
+    expect(replies).toEqual(["virgilio", "virgilio", "virgilio"]);
     const decided = await f.run({
       command: "consultation.decline",
       operationId: "stale",
@@ -1305,8 +1311,13 @@ describe("Virgilio plan proposals", () => {
 
   it("keeps invalid tool-only plans and their notes without replacing a valid proposal", async () => {
     const f = await fixture();
+    const replies: string[] = [];
+    const stop = f.store.observeResearchActivity((event) => {
+      if (event.kind === "replyFinished") replies.push(event.agentId);
+    });
     const { proposal: open } = await record(f, [planCall()]);
     expect(open).toMatchObject({ state: "proposed", rank: 2, revision: 1 });
+    expect(replies.splice(0)).toEqual(["virgilio"]);
     for (const [calls, reason] of [
       [[planCall([])], "empty_plan"],
       [[planCall([first])], "too_few_contributions"],
@@ -1335,8 +1346,11 @@ describe("Virgilio plan proposals", () => {
         revision: 1,
       });
       expect((await read(f, open.id)).state).toBe("proposed");
+      expect(replies.splice(0)).toEqual(["virgilio"]);
     }
     const { task, proposal: newer } = await record(f, [planCall()]);
+    stop();
+    expect(replies).toEqual(["virgilio"]);
     expect(
       task.dispatch.request.input.some(({ text }) =>
         text.includes("failed the check reason_empty"),

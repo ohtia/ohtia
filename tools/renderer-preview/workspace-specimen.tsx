@@ -9,6 +9,8 @@ const call = <T,>(value: T) => ({ result: Promise.resolve(value), cancel() {} })
 /** The separate catalog owns all synthetic transport/data. No product fixture switch exists. */
 export function WorkspaceSpecimen({
   chat,
+  chatActivity,
+  chatHeadingActions,
   projectSelector,
   hasProjects,
   project,
@@ -17,7 +19,14 @@ export function WorkspaceSpecimen({
   onNewProject,
 }: Pick<
   WorkspaceProps,
-  "chat" | "projectSelector" | "hasProjects" | "project" | "projectScope" | "onComposerFocus"
+  | "chat"
+  | "chatActivity"
+  | "chatHeadingActions"
+  | "projectSelector"
+  | "hasProjects"
+  | "project"
+  | "projectScope"
+  | "onComposerFocus"
 > & {
   readonly onNewProject?: () => void;
 } = {}) {
@@ -52,7 +61,18 @@ export function WorkspaceSpecimen({
       readLayout: () =>
         call({
           ok: true,
-          value: { schemaVersion: 1, source: "missing", revision: 0, value: null },
+          value: params.has("activity")
+            ? {
+                schemaVersion: 1,
+                source: "saved",
+                revision: 1,
+                value: {
+                  version: 1,
+                  visible: { explorer: true, documents: true, chat: false },
+                  preferredWidths: { explorer: 256, documents: 608, chat: 360 },
+                },
+              }
+            : { schemaVersion: 1, source: "missing", revision: 0, value: null },
         }),
       replaceLayout: (change: Parameters<Port["replaceLayout"]>[0]) => {
         setSaved((value) => value + 1);
@@ -140,6 +160,8 @@ export function WorkspaceSpecimen({
     <>
       <Workspace
         {...(chat !== undefined ? { chat } : {})}
+        {...(chatActivity ? { chatActivity } : {})}
+        {...(chatHeadingActions ? { chatHeadingActions } : {})}
         projectSelector={projectSelector}
         hasProjects={hasProjects}
         project={project}

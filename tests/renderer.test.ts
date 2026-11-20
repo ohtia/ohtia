@@ -290,6 +290,8 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
       ready: Promise.resolve({ ok: true, value: { subscriptionId: "research-test" } }),
       dispose() {},
     }),
+    listProjectAttention: () =>
+      call({ ok: true, value: { items: [], next: null, hasMore: false, revision: 1 } }),
     listProjects: () => call({ ok: true, value: { items: [], next: null, hasMore: false } }),
     readConnection: () => call({ ok: false, error: { code: "service_unavailable" } }),
     subscribeConnection: () => ({
@@ -441,7 +443,7 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1000);
   });
-  expect(container.querySelector('[role="alert"]')).toBe(document.activeElement);
+  expect(container.querySelector('#location-state[role="alert"]')).toBe(document.activeElement);
   await click(container, "restore_checkpoint");
   expect(bootstrap.restoreCheckpoint).toHaveBeenCalledOnce();
   bootstrap.retryService.mockRejectedValueOnce(new Error("synthetic failure"));

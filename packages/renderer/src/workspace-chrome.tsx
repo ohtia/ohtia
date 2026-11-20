@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ActivityBadges, activityName, type ActivityCounts } from "./activity-badge.js";
 import {
   Fragment,
   useEffect,
@@ -64,6 +65,8 @@ export interface WorkspaceChromeProps {
   readonly projectScope?: string | undefined;
   readonly revealProjectChat?: boolean | undefined;
   readonly onComposerFocus?: () => void;
+  readonly chatActivity?: ActivityCounts;
+  readonly onChatVisibility?: (visible: boolean) => void;
   readonly chatTitle?: string | undefined;
   readonly chatHeadingStart?: ReactNode;
   readonly chatHeadingActions?: ReactNode;
@@ -109,6 +112,7 @@ export function ShortcutControl({
   controlRef,
   onUnavailable,
   displayText,
+  activity,
   hint = false,
 }: {
   id: CommandId;
@@ -122,13 +126,16 @@ export function ShortcutControl({
   text?: boolean;
   primary?: boolean;
   displayText?: string;
+  activity?: ActivityCounts;
   hint?: boolean;
   controlRef?: RefCallback<HTMLButtonElement>;
   onUnavailable?: () => void;
 }) {
   const definition = commandDefinitions.find((entry) => entry.id === id);
   if (!definition) throw new Error("Unknown workspace command.");
-  const name = label ?? message(locale, definition.label);
+  const visibleName = label ?? message(locale, definition.label);
+  const name = activity ? activityName(locale, visibleName, activity, "chat") : visibleName;
+  const marked = !!(activity?.replies || activity?.attention);
   const shortcuts = definition.shortcuts[commands.context.platform];
   const reason = commands.entry(id).reason;
   const reasonId = useId();
@@ -138,7 +145,7 @@ export function ShortcutControl({
       <button
         type="button"
         ref={controlRef}
-        className={`workspace-control${text ? " workspace-text-control" : ""}${primary ? " workspace-primary" : ""}${id === "zoom.reset" ? " workspace-zoom" : ""}`}
+        className={`workspace-control${marked ? " activity-badge-control" : ""}${text ? " workspace-text-control" : ""}${primary ? " workspace-primary" : ""}${id === "zoom.reset" ? " workspace-zoom" : ""}`}
         data-workspace-command={id}
         aria-label={name}
         aria-controls={controls}
@@ -165,7 +172,8 @@ export function ShortcutControl({
         }}
       >
         {icon && <LucideGlyph name={icon} size={text ? 16 : 20} />}
-        {text && <span>{displayText ?? name}</span>}
+        {text && <span>{displayText ?? visibleName}</span>}
+        {marked && <ActivityBadges counts={activity} locale={locale} />}
         {hint && shortcuts.length > 0 && (id === "settings.open" || id === "help.open") && (
           <kbd>{shortcuts[0]}</kbd>
         )}
@@ -183,6 +191,8 @@ export function ShortcutControl({
 export function WorkspaceChrome({
   chat,
   chatTitle,
+  chatActivity,
+  onChatVisibility,
   chatHeadingStart,
   chatHeadingActions,
   replaceChatHeading,
@@ -574,6 +584,10 @@ export function WorkspaceChrome({
         })}
       />
     ) : undefined;
+  const chatVisible = available && !!geometry?.visible.chat;
+  useLayoutEffect(() => {
+    onChatVisibility?.(chatVisible);
+  }, [chatVisible, onChatVisibility]);
   const panelControl = (panel: WorkspacePanel, compact: boolean, registerRef = true) => (
     <ShortcutControl
       id={`panels.${panel}`}
@@ -585,6 +599,7 @@ export function WorkspaceChrome({
           ? text(panel === "explorer" ? "workspace.contents" : panelKeys[panel])
           : text(actionKeys[panel][geometry?.visible[panel] ? 1 : 0])
       }
+      {...(panel === "chat" && !chatVisible && chatActivity ? { activity: chatActivity } : {})}
       controls={panelId(panel)}
       expanded={!!geometry?.visible[panel]}
       pressed={!!geometry?.visible[panel]}

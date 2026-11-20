@@ -936,6 +936,7 @@ export const operationErrorCodes = Object.freeze({
     "uncertain",
     "operation_conflict",
   ],
+  "projectAttention.list": readErrors,
   "project.list": [...readErrors, "record_not_found"],
   "conversation.list": [...readErrors, "record_not_found"],
   "conversation.read": [...readErrors, "record_not_found"],

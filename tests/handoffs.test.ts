@@ -538,3 +538,87 @@ describe("conversation handoffs", () => {
     }
   });
 });
+
+it("keeps attention across a handoff and attributes replies to the agent that produced them", async () => {
+  const f = await fixture();
+  const { resultId: conversationId } = value(
+    await f.run({
+      command: "conversation.start",
+      operationId: "attention-josefa",
+      payload: { projectId: f.projectId, agentId: "josefa", content: "Find synthetic examples" },
+    }),
+  );
+  const readAttention = async () =>
+    value(
+      await f.store.readResearch({
+        ...identity,
+        operation: "projectAttention.list",
+        payload: { cursor: null, count: 10 },
+      }),
+    ) as ResearchOutputs["projectAttention.list"];
+  const replies: string[] = [];
+  const stop = f.store.observeResearchActivity((event) => {
+    if (event.kind === "replyFinished" && event.conversationId === conversationId)
+      replies.push(event.agentId);
+  });
+  try {
+    const josefa = await f.prepare();
+    value(
+      await f.store.recordTaskEvent(
+        josefa.dispatch.request.attempt,
+        {
+          type: "result",
+          sequence: 1,
+          result: { status: "failed", dispatched: true, reason: "provider_error" },
+        },
+        "Synthetic partial reply.",
+      ),
+    );
+    const attention = await readAttention();
+    expect(attention.items).toEqual([f.projectId]);
+    expect(replies).toEqual(["josefa"]);
+
+    value(
+      await f.run({
+        command: "handoff.return",
+        operationId: "return-with-attention",
+        payload: { conversationId, expectedOwnerRevision: 1, selection: "" },
+      }),
+    );
+    expect(await readAttention()).toEqual(attention);
+    expect(replies).toEqual(["josefa"]);
+
+    await f.append("Which research question remains open?", conversationId);
+    await f.settle(await f.prepare(), "The synthetic research question is still open.", [
+      propose(),
+    ]);
+    expect((await readAttention()).items).toEqual([]);
+    expect(replies).toEqual(["josefa", "virgilio"]);
+
+    await f.append("Can Josefa take another look?", conversationId);
+    const proposing = await f.prepare();
+    await f.settle(proposing, "", [propose("Consider another example.")]);
+    expect(await f.timeline(conversationId)).toContainEqual(
+      expect.objectContaining({
+        kind: "handoffProposal",
+        state: "proposed",
+        note: "Consider another example.",
+      }),
+    );
+    await f.settle(proposing, "", [propose("Consider another example.")]);
+    expect(replies).toEqual(["josefa", "virgilio", "virgilio"]);
+
+    await f.append("Could a handoff help here?", conversationId);
+    await f.settle(await f.prepare(), "", [propose(" ")]);
+    expect(await f.timeline(conversationId)).toContainEqual(
+      expect.objectContaining({
+        kind: "handoffProposal",
+        state: "invalid",
+        invalidReason: "note_empty",
+      }),
+    );
+    expect(replies).toEqual(["josefa", "virgilio", "virgilio", "virgilio"]);
+  } finally {
+    stop();
+  }
+});

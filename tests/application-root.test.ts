@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { ActivityController } from "../packages/renderer/src/activity-controller.js";
 import { act, createElement as h } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,7 +20,9 @@ import {
   type CommandSnapshot,
   type LayoutRecord,
   type LayoutChange,
-  type ProjectRecord,
+  type ProjectSummary,
+  type ResearchEvent,
+  type FoundationPort,
   type Outcome,
   type ResearchOutputs,
   type ResearchScope,
@@ -955,7 +958,8 @@ it.each(["confirmed", "failed"] as const)(
   "withholds unknown project state while reading and after a %s outcome",
   async (outcome) => {
     const t = fixture();
-    const project: ProjectRecord = {
+    const project: ProjectSummary = {
+      needsAttention: false,
       id: "019a8000-0000-7000-8000-000000000101",
       projectType: "thesis",
       title: "Redes de cuidado",
@@ -1379,4 +1383,220 @@ it("opens history in the chat panel, restores its draft, and reveals a lazy conv
   await selectRaceProject(0);
   expect(header()).toBe("Conversation saved in background");
   expect(container.querySelector("textarea")?.value).toBe("");
+});
+
+it("keeps hidden chat closed and groups reply announcements by window and conversation", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const t = raceFixture();
+  const projectId = t.ids[0]!;
+  const otherProject = t.ids[1]!;
+  const otherConversation = "019a8000-0000-7000-8000-000000000111";
+  let receive: (event: Outcome<ResearchEvent>) => void = () => {};
+  Object.assign(t.port, {
+    subscribeResearch: (_scope: unknown, listener: typeof receive) => {
+      receive = listener;
+      return {
+        ready: Promise.resolve({ ok: true, value: { subscriptionId: "activity" } }),
+        dispose() {},
+      };
+    },
+  });
+  vi.mocked(t.bridge.bootstrap.read).mockResolvedValue({
+    version: 1,
+    locale: "en-US",
+    state: "storage_ready",
+    openConversation: { projectId, conversationId: projectId },
+  });
+  await mount(t);
+  const chatButton = container.querySelector<HTMLButtonElement>(
+    '[data-workspace-command="panels.chat"]',
+  )!;
+  expect(chatButton.getAttribute("aria-expanded")).toBe("true");
+  await act(async () => chatButton.click());
+  const finish = (project: string, conversationId: string) =>
+    receive({
+      ok: true,
+      value: { kind: "replyFinished", projectId: project, conversationId, agentId: "virgilio" },
+    });
+  await act(async () => {
+    finish(projectId, projectId);
+    finish(projectId, otherConversation);
+    finish(projectId, otherConversation);
+    finish(otherProject, otherProject);
+  });
+  expect(chatButton.getAttribute("aria-expanded")).toBe("false");
+  expect(chatButton.getAttribute("aria-label")).toBe("Open chat, 3 new replies");
+  expect(chatButton.querySelector(".activity-badge-new")?.textContent).toBe("3");
+  await act(async () => vi.advanceTimersByTimeAsync(1999));
+  expect(container.textContent).not.toContain("3 new replies");
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(container.querySelector(".foundation-window > [role=status]")?.textContent).toBe(
+    "3 new replies",
+  );
+
+  width = 800;
+  await act(async () => resize.forEach((notify) => notify()));
+  const segment = container.querySelector<HTMLButtonElement>(
+    '.workspace-selector [data-workspace-command="panels.chat"]',
+  )!;
+  expect(segment.getAttribute("aria-label")).toBe("Chat, 3 new replies");
+  expect(segment.getAttribute("aria-pressed")).toBe("false");
+  await act(async () => segment.click());
+  const history = container.querySelector<HTMLButtonElement>(
+    '[aria-label^="Show conversation history"]',
+  )!;
+  expect(history.getAttribute("aria-label")).toBe("Show conversation history, 1 with new replies");
+  expect(history.querySelector(".activity-badge-new")?.textContent).toBe("1");
+
+  vi.mocked(document.hasFocus).mockReturnValue(false);
+  await act(async () => {
+    window.dispatchEvent(new Event("blur"));
+    finish(projectId, projectId);
+  });
+  const documents = container.querySelector<HTMLButtonElement>(
+    '.workspace-selector [data-workspace-command="panels.documents"]',
+  )!;
+  await act(async () => documents.click());
+  expect(segment.querySelector(".activity-badge-new")?.textContent).toBe("3");
+  await act(async () => segment.click());
+  vi.mocked(document.hasFocus).mockReturnValue(true);
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  await act(async () => documents.click());
+  expect(segment.querySelector(".activity-badge-new")?.textContent).toBe("2");
+
+  await act(async () => segment.click());
+  const visibility = vi.spyOn(document, "visibilityState", "get");
+  visibility.mockReturnValue("hidden");
+  await act(async () => {
+    document.dispatchEvent(new Event("visibilitychange"));
+    finish(projectId, projectId);
+    documents.click();
+  });
+  expect(segment.querySelector(".activity-badge-new")?.textContent).toBe("3");
+  visibility.mockReturnValue("visible");
+  await act(async () => {
+    document.dispatchEvent(new Event("visibilitychange"));
+    segment.click();
+  });
+  await act(async () => documents.click());
+  expect(segment.querySelector(".activity-badge-new")?.textContent).toBe("2");
+});
+
+it("restarts a mixed-revision attention read and reloads the selector after a sequence gap", async () => {
+  const t = raceFixture();
+  const [projectId, first, second] = t.ids as [string, string, string];
+  let receive: (event: Outcome<ResearchEvent>) => void = () => {};
+  let revision = 1;
+  const listProjectAttention = vi.fn(({ cursor }: { cursor: string | null }) => {
+    const result =
+      revision === 1
+        ? { items: [first], next: first, hasMore: true, revision: revision++ }
+        : revision === 2 && !cursor
+          ? { items: [second], next: null, hasMore: false, revision }
+          : { items: [], next: null, hasMore: false, revision };
+    return call({ ok: true, value: result });
+  });
+  Object.assign(t.port, {
+    listProjectAttention,
+    subscribeResearch: (_scope: unknown, listener: typeof receive) => {
+      receive = listener;
+      return {
+        ready: Promise.resolve({ ok: true, value: { subscriptionId: "activity" } }),
+        dispose() {},
+      };
+    },
+  });
+  vi.mocked(t.bridge.bootstrap.read).mockResolvedValue({
+    version: 1,
+    locale: "en-US",
+    state: "storage_ready",
+    openConversation: { projectId, conversationId: projectId },
+  });
+  await mount(t);
+  expect(listProjectAttention.mock.calls.map(([{ cursor }]) => cursor)).toEqual([
+    null,
+    first,
+    null,
+  ]);
+  const selector = container.querySelector<HTMLButtonElement>('[role="combobox"]')!;
+  expect(selector.getAttribute("aria-label")).toBe("Current project");
+  expect(selector.textContent).toBe("Project 1. Another project needs your attention.");
+  await act(async () => selector.click());
+  const marked = [...document.querySelectorAll('[role="option"]')].filter((row) =>
+    row.textContent?.includes("Needs your attention"),
+  );
+  expect(marked.map((row) => row.querySelector("bdi")?.textContent)).toEqual(["Project 3"]);
+  await act(async () =>
+    receive({
+      ok: true,
+      value: { kind: "attentionRaised", source: "plan" },
+    }),
+  );
+  expect(container.querySelector(".foundation-window > [role=alert]")?.textContent).toBe(
+    "A plan needs your attention.",
+  );
+  revision = 3;
+  await act(async () => receive(failure("sequence_gap")));
+  expect(listProjectAttention).toHaveBeenLastCalledWith({ cursor: null, count: 128 });
+  expect(selector.getAttribute("aria-label")).toBe("Current project");
+  expect(selector.querySelector(".activity-badge")).toBeNull();
+});
+
+it("retries an incomplete conversation-attention snapshot at the same project revision", async () => {
+  const {
+    ids: [projectId, conversationId],
+  } = raceFixture();
+  const listProjectAttention = vi.fn(() =>
+    call({ ok: true, value: { items: [projectId], next: null, hasMore: false, revision: 5 } }),
+  );
+  const listConversations = vi
+    .fn()
+    .mockReturnValueOnce(call(failure("storage_failed")))
+    .mockReturnValue(
+      call({
+        ok: true,
+        value: { items: [{ id: conversationId, status: "attention" }], next: null, hasMore: false },
+      }),
+    );
+  const activity = new ActivityController({
+    listProjectAttention,
+    listConversations,
+  } as unknown as FoundationPort);
+  disposals.push(() => activity.dispose());
+  activity.open({ projectId: projectId!, conversationId: null });
+  activity.ready();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(activity.snapshot().chat.attention).toBe(1);
+  expect(activity.snapshot().history.attention).toBe(0);
+  await vi.advanceTimersByTimeAsync(250);
+  expect(listProjectAttention).toHaveBeenCalledTimes(2);
+  expect(activity.snapshot().history.attention).toBe(1);
+  activity.event({ kind: "projectAttention", revision: 5 });
+  await vi.advanceTimersByTimeAsync(250);
+  expect(listProjectAttention).toHaveBeenCalledTimes(2);
+});
+
+it("does not include the previous project's replies in the next project's announcement", async () => {
+  const { ids } = raceFixture();
+  const activity = new ActivityController({} as FoundationPort);
+  disposals.push(() => activity.dispose());
+  const finish = (projectId: string) => {
+    activity.open({ projectId, conversationId: null });
+    activity.event({
+      kind: "replyFinished",
+      projectId,
+      conversationId: projectId,
+      agentId: "virgilio",
+    });
+  };
+  finish(ids[0]!);
+  await vi.advanceTimersByTimeAsync(1000);
+  finish(ids[1]!);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(activity.snapshot().replyAnnouncement).toBeUndefined();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(activity.snapshot().replyAnnouncement).toMatchObject({ count: 1 });
+  activity.open({ projectId: ids[0]!, conversationId: null });
+  expect(activity.snapshot().chat.replies).toBe(1);
 });

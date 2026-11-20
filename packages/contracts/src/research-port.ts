@@ -48,6 +48,7 @@ export const researchOperations = [
   "pause.read",
   "destination.read",
   "project.list",
+  "projectAttention.list",
   "conversation.list",
   "conversation.read",
   "timeline.listBefore",
@@ -265,6 +266,8 @@ export type ConversationSummary = ConversationRecord &
       readonly state: "running" | "cancelling";
     } | null;
   };
+export type ProjectSummary = ProjectRecord & { readonly needsAttention: boolean };
+export type ProjectAttentionPage = ListPage<string, string> & { readonly revision: number };
 export interface PauseCounts {
   readonly revision: number;
   readonly restart: number;
@@ -419,6 +422,19 @@ export type ResearchEvent =
   | { readonly kind: "inferenceActivity" }
   | { readonly kind: "destinationChanged"; readonly connection: string }
   | { readonly kind: "pauseCounts"; readonly revision: number }
+  | { readonly kind: "projectAttention"; readonly revision: number }
+  | {
+      readonly kind: "attentionRaised";
+      readonly source: "conversation" | "plan";
+      readonly task?: { readonly id: string; readonly revision: number };
+      readonly plan?: { readonly id: string; readonly revision: number };
+    }
+  | {
+      readonly kind: "replyFinished";
+      readonly projectId: string;
+      readonly conversationId: string;
+      readonly agentId: ReplyAgent;
+    }
   | {
       readonly kind: "changed";
       readonly record: "project" | "conversation" | "timeline" | "usagePause" | "executionLimits";
@@ -481,6 +497,7 @@ export interface ResearchInputs {
   };
   "conversation.rename": ResearchPayloads["conversation.rename"];
   "message.append": { readonly conversationId: string; readonly content: string | TextDescriptor };
+  "projectAttention.list": { readonly cursor: string | null; readonly count: number };
   "project.list": { readonly cursor: ProjectCursor | null; readonly count: number };
   "conversation.list": {
     readonly projectId: string;
@@ -530,7 +547,8 @@ export interface ResearchOutputs {
   "conversation.start": ResearchResult;
   "conversation.rename": ResearchResult;
   "message.append": ResearchResult;
-  "project.list": ListPage<ProjectRecord, ProjectCursor>;
+  "project.list": ListPage<ProjectSummary, ProjectCursor>;
+  "projectAttention.list": ProjectAttentionPage;
   "conversation.list": ListPage<ConversationSummary, ConversationCursor>;
   "conversation.read": IdPage<ConversationSummary>;
   "timeline.listBefore": ListPage<TimelineItem, TimelineCursor>;
@@ -624,6 +642,9 @@ export interface ResearchPort {
     operationId: string,
     input: ResearchInputs["message.append"],
   ): PortCall<ResearchResult>;
+  listProjectAttention(
+    input: ResearchInputs["projectAttention.list"],
+  ): PortCall<ProjectAttentionPage>;
   listProjects(input: ResearchInputs["project.list"]): PortCall<ResearchOutputs["project.list"]>;
   listConversations(
     input: ResearchInputs["conversation.list"],
@@ -910,6 +931,12 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
         typeof value.title === "string" &&
         date(value.expectedUpdatedAt)
       );
+    case "projectAttention.list":
+      return (
+        exact(value, ["cursor", "count"]) &&
+        nullable(value.cursor, isResearchId) &&
+        integer(value.count, 1, 128)
+      );
     case "project.list":
       return (
         exact(value, ["cursor", "count"]) &&
@@ -1032,6 +1059,7 @@ function project(value: unknown): boolean {
       "isDevelopment",
       "setupConfirmedAt",
       "lastOpenedAt",
+      "needsAttention",
       "createdAt",
       "updatedAt",
     ]) &&
@@ -1042,6 +1070,7 @@ function project(value: unknown): boolean {
     typeof value.isDevelopment === "boolean" &&
     nullable(value.setupConfirmedAt, date) &&
     date(value.lastOpenedAt) &&
+    typeof value.needsAttention === "boolean" &&
     date(value.createdAt) &&
     date(value.updatedAt)
   );
@@ -1373,6 +1402,14 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
           typeof part.text === "string",
       )
     );
+  if (operation === "projectAttention.list")
+    return (
+      exact(value, ["items", "next", "hasMore", "revision"]) &&
+      ids(value.items) &&
+      integer(value.revision) &&
+      typeof value.hasMore === "boolean" &&
+      (value.hasMore ? isResearchId(value.next) : value.next === null)
+    );
   const valid =
     operation === "project.list"
       ? project
@@ -1643,6 +1680,9 @@ function isContinuationSnapshot(value: unknown): boolean {
   );
 }
 
+function attentionSubject(value: unknown): boolean {
+  return exact(value, ["id", "revision"]) && isResearchId(value.id) && integer(value.revision);
+}
 export function isResearchEvent(value: unknown): value is ResearchEvent {
   if (!obj(value)) return false;
   if (value.kind === "planChanged")
@@ -1654,7 +1694,29 @@ export function isResearchEvent(value: unknown): value is ResearchEvent {
     );
   if (value.kind === "destinationChanged")
     return exact(value, ["kind", "connection"]) && isConnectionId(value.connection);
-  if (value.kind === "pauseCounts")
+  if (value.kind === "attentionRaised") {
+    if (value.source !== "conversation" && value.source !== "plan") return false;
+    const hasTask = Object.hasOwn(value, "task");
+    const hasPlan = Object.hasOwn(value, "plan");
+    return (
+      exact(value, [
+        "kind",
+        "source",
+        ...(hasTask ? ["task"] : []),
+        ...(hasPlan ? ["plan"] : []),
+      ]) &&
+      (!hasTask || attentionSubject(value.task)) &&
+      (!hasPlan || attentionSubject(value.plan))
+    );
+  }
+  if (value.kind === "replyFinished")
+    return (
+      exact(value, ["kind", "projectId", "conversationId", "agentId"]) &&
+      isResearchId(value.projectId) &&
+      isResearchId(value.conversationId) &&
+      isReplyAgent(value.agentId)
+    );
+  if (value.kind === "pauseCounts" || value.kind === "projectAttention")
     return exact(value, ["kind", "revision"]) && integer(value.revision);
   if (value.kind === "inferenceActivity") return exact(value, ["kind"]);
   if (value.kind === "reply")
@@ -1713,6 +1775,15 @@ export function researchResultMatches(
   if (operation === "project.open") return output.resultId === input.projectId;
   if (operation === "conversation.start") return isResearchId(output.resultId);
   if (operation === "conversation.rename") return output.resultId === input.conversationId;
+  if (operation === "projectAttention.list") {
+    const items = output.items as readonly string[];
+    const cursor = input.cursor as string | null;
+    return (
+      items.length <= (input.count as number) &&
+      (!output.hasMore || (items.length > 0 && output.next === items.at(-1))) &&
+      items.every((id, index) => id > (items[index - 1] ?? cursor ?? ""))
+    );
+  }
   if (operation === "project.list") {
     const items = output.items as readonly ProjectRecord[];
     const compare = (a: ProjectCursor, b: ProjectCursor) =>

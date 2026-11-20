@@ -76,6 +76,11 @@ import {
   objects as handoffObjects,
   up as handoffs,
 } from "./migrations/0027_handoffs.mjs";
+import {
+  ResearchAttention,
+  conversationAttention,
+  type ResearchActivity,
+} from "./research-attention.js";
 import { readResearch, researchRevisions, readPauseCounts } from "./research-reads.js";
 import type { Request, ResearchScope, ResearchEvent, ResearchOperation } from "@ohtia/contracts";
 import {
@@ -848,7 +853,7 @@ export class DurableStore {
       }
     }
   }
-  private openConnection(): Database.Database {
+  private openConnection(): { native: Database.Database; database: Kysely<Schema> } {
     this.assert();
     if (!exists(this.file)) {
       if (!this.creationAllowed || exists(this.recovery))
@@ -859,11 +864,12 @@ export class DurableStore {
       syncDirectory(this.options.root);
     }
     this.openedFile = fs.statSync(this.file, { bigint: true });
-    const db = connect(this.options, this.file);
-    this.native = db;
-    this.database = new Kysely<Schema>({ dialect: new SqliteDialect({ database: db }) });
+    const native = connect(this.options, this.file);
+    const database = new Kysely<Schema>({ dialect: new SqliteDialect({ database: native }) });
+    this.native = native;
+    this.database = database;
     this.assert();
-    return db;
+    return { native, database };
   }
   async close(orderly = false): Promise<void> {
     // Called only after the service queue drains. This is the last write before store closure.
@@ -909,7 +915,7 @@ export class DurableStore {
       this.assert();
       if (exists(this.gate) && !retrySource)
         throw new Error("Explicit migration recovery required.");
-      const db = this.openConnection();
+      const { native: db, database } = this.openConnection();
       const revision = compatibility(db, this.artifacts);
       if (revision === 0 && !this.initializationAllowed)
         throw new Error("An initialized locator cannot silently initialize an empty database.");
@@ -959,6 +965,7 @@ export class DurableStore {
         BEGIN UPDATE pause_counts_revision SET revision=revision+1; END;
         CREATE TEMP TRIGGER pause_close AFTER UPDATE ON main.usage_limit_pauses
         BEGIN UPDATE pause_counts_revision SET revision=revision+1; END;`);
+      await this.attention.initialize(database);
       this.initializationAllowed = false;
       this.admitted = true;
     } catch (error) {
@@ -2484,6 +2491,7 @@ export class DurableStore {
     }
     const events = {
       "project.list": "ohtia.project.listed",
+      "projectAttention.list": "ohtia.project_attention.listed",
       "conversation.list": "ohtia.conversation.listed",
       "research.subscribe": "ohtia.research.subscribed",
       "text.part": "ohtia.text.staged",
@@ -2511,6 +2519,37 @@ export class DurableStore {
       "storage_failed";
     this.researchDiagnostic({ event_name: "ohtia.research.failed", error_code: error });
   }
+  private readonly attention = new ResearchAttention();
+  private readonly activityObservers = new Set<(event: ResearchActivity) => void>();
+
+  observeResearchActivity(listener: (event: ResearchActivity) => void): () => void {
+    this.activityObservers.add(listener);
+    return () => {
+      this.activityObservers.delete(listener);
+    };
+  }
+
+  private async commitTaskTransaction(
+    transaction: Kysely<Schema>,
+    tasks: TaskTransaction,
+    committing: () => void,
+  ): Promise<void> {
+    const rows = [];
+    for (const id of tasks.touchedConversations)
+      rows.push(await conversationAttention(transaction, id));
+    committing();
+    await this.commitResearch(transaction);
+    for (const event of [...this.attention.commit(rows), ...tasks.finishedReplies]) {
+      for (const observer of this.activityObservers) {
+        try {
+          observer(event);
+        } catch {
+          /* An observer cannot change a committed result. */
+        }
+      }
+    }
+  }
+
   /** Retry a locked COMMIT on the same transaction while SQLite confirms it is still active. */
   private async commitResearch(transaction: Kysely<Schema>): Promise<void> {
     const deadline = performance.now() + 250;
@@ -2581,8 +2620,9 @@ export class DurableStore {
           }
           await tasks.flush();
           diagnostics.push(...tasks.diagnostics);
-          commitAttempted = true;
-          await this.commitResearch(transaction);
+          await this.commitTaskTransaction(transaction, tasks, () => {
+            commitAttempted = true;
+          });
           this.continuationAdmissionStopped = tasks.continuationAdmissionStopped;
           this.notifyPauseCounts();
           for (const connection of tasks.modelRefreshes)
@@ -2672,8 +2712,9 @@ export class DurableStore {
           await tasks.flush();
           diagnostics.push(...tasks.diagnostics);
           this.assert();
-          commitAttempted = true;
-          await this.commitResearch(transaction);
+          await this.commitTaskTransaction(transaction, tasks, () => {
+            commitAttempted = true;
+          });
           this.notifyPauseCounts();
           return result;
         } catch (error) {
@@ -2776,7 +2817,11 @@ export class DurableStore {
     return this.researchRead(async (db) => ({ ok: true, value: await readPauseCounts(db) }));
   }
   readResearch(request: Request): Promise<Outcome<unknown>> {
-    return this.researchRead((db) => readResearch(db, request, this.taskContext), undefined, false);
+    return this.researchRead(
+      (db) => readResearch(db, request, this.taskContext, this.attention),
+      undefined,
+      false,
+    );
   }
   researchRevisions(
     scope: ResearchScope,

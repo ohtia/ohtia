@@ -128,11 +128,13 @@ function PlanStateAnnouncement({
   locale,
   dialogOpen,
   initial = false,
+  suppress = false,
 }: {
   readonly text: string;
   readonly locale: InterfaceLocale;
   readonly dialogOpen: boolean;
   readonly initial?: boolean;
+  readonly suppress?: boolean;
 }) {
   const previous = useRef<{ text: string; locale: InterfaceLocale } | undefined>(undefined);
   const [announcement, setAnnouncement] = useState("");
@@ -143,8 +145,9 @@ function PlanStateAnnouncement({
     }
     const last = previous.current;
     previous.current = { text, locale };
-    if (last ? last.locale === locale && last.text !== text : initial) setAnnouncement(text);
-  }, [dialogOpen, initial, locale, text]);
+    if (last ? last.locale === locale && last.text !== text : initial)
+      setAnnouncement(suppress ? "" : text);
+  }, [dialogOpen, initial, locale, suppress, text]);
   useEffect(() => {
     if (!announcement) return;
     // A native dialog can remove and restore the background accessibility tree.
@@ -439,6 +442,7 @@ export function PlanProgress({
   plan,
   stateLabel,
   announceAcceptance,
+  sharedAttentionAnnouncement = false,
   locale,
   connections,
   pauses,
@@ -454,6 +458,7 @@ export function PlanProgress({
   readonly plan: ReadPlanCard;
   readonly stateLabel: string;
   readonly announceAcceptance: boolean;
+  readonly sharedAttentionAnnouncement?: boolean;
   readonly locale: InterfaceLocale;
   readonly connections: readonly Connection[];
   readonly pauses?: PauseCounts;
@@ -621,6 +626,7 @@ export function PlanProgress({
     <>
       <PlanStateAnnouncement
         text={stateLabel}
+        suppress={sharedAttentionAnnouncement && plan.needsAttention}
         locale={locale}
         dialogOpen={!!confirm}
         initial={announceAcceptance}

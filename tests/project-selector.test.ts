@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   failure,
   type FoundationPort,
-  type ProjectRecord,
+  type ProjectSummary,
   type ResearchOutputs,
   type ResearchScope,
 } from "@ohtia/contracts";
@@ -38,7 +38,8 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 const id = (n: number) => `019a8000-0000-7000-8000-${String(n).padStart(12, "0")}`;
-const project = (n: number): ProjectRecord => ({
+const project = (n: number): ProjectSummary => ({
+  needsAttention: false,
   id: id(n),
   projectType: "thesis",
   title: null,

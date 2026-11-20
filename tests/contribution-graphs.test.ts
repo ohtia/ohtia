@@ -1205,6 +1205,7 @@ function planPortRequest(
   operation:
     | "plan.read"
     | "planEvent.list"
+    | "projectAttention.list"
     | "plan.cancel"
     | "research.subscribe"
     | "text.readPart"
@@ -1647,6 +1648,19 @@ it("stores a result at the event cap, rejects further graph changes and finishes
   const first = await f.next();
   const retry = await f.next();
   await f.settle(retry, { status: "failed", dispatched: true, reason: "provider_error" });
+  const attention = () =>
+    f.store.readResearch({
+      protocol: 1,
+      policy: policyId,
+      kind: "request",
+      serviceGeneration: "setup-tests",
+      windowGeneration: "window",
+      requestId: "plan-attention",
+      operationId: "plan-attention",
+      operation: "projectAttention.list",
+      payload: { cursor: null, count: 1 },
+    });
+  expect(await attention()).toMatchObject({ ok: true, value: { items: [], revision: 1 } });
   const db = f.raw();
   try {
     db.exec(`WITH RECURSIVE events(n) AS (SELECT max(sequence)+1 FROM intervention_events UNION ALL SELECT n+1 FROM events WHERE n<511)
@@ -1657,6 +1671,8 @@ it("stores a result at the event cap, rejects further graph changes and finishes
     db.close();
   }
   await f.settle(first, { status: "completed" }, unresolved);
+  expect(await attention()).toMatchObject({ ok: true, value: { items: [f.projectId] } });
+  const revision = value(await attention()) as { revision: number };
   expect(await readPlan(f, planId)).toMatchObject({
     throughSequence: 512,
     needsAttention: true,
@@ -1679,6 +1695,10 @@ it("stores a result at the event cap, rejects further graph changes and finishes
   ).toEqual(failure("event_limit_reached"));
   expect((await readPlan(f, planId)).throughSequence).toBe(512);
   expect(value(await f.finish(planId, "finish-capped"))).toMatchObject({ outcome: "partial" });
+  expect(await attention()).toEqual({
+    ok: true,
+    value: { items: [], next: null, hasMore: false, revision: revision.revision + 1 },
+  });
   expect(
     (await readPlan(f, planId)).contributions.find(({ key }) => key === "blocked")?.state,
   ).toBe("blocked");
@@ -2181,6 +2201,81 @@ async function confirmedProject(
   );
   return projectId;
 }
+
+it.each(["failed", "completed"] as const)(
+  "uses a %s resumed synthesis as the latest visible reply",
+  async (status) => {
+    const f = await fixture(1);
+    const projectId = await confirmedProject(f);
+    const { resultId: planId } = value(
+      await f.run({
+        command: "development.runPlan",
+        operationId: "attention-plan",
+        payload: { projectId },
+      }),
+    );
+    await f.settle(await f.next(), undefined, unresolved);
+    await f.settle(await f.next(), undefined, unresolved);
+    const { conversationId, continuation } = await readPlan(f, planId);
+    const synthesisId = continuation?.taskId;
+    expect(synthesisId).toBeTruthy();
+
+    await f.store.close();
+    await f.store.open();
+    expect(await readPlan(f, planId)).toMatchObject({
+      continuation: {
+        taskId: synthesisId,
+        task: { state: "blocked", blockingReason: "restart_paused" },
+      },
+    });
+    value(
+      await f.run({
+        command: "message.append",
+        operationId: "newer-admission",
+        payload: { conversationId, content: "What question remains unresolved?" },
+      }),
+    );
+    const direct = await f.next();
+    expect(direct.kind).toBe("reply");
+    const outcome = (state: "failed" | "completed"): ProviderResult =>
+      state === "failed"
+        ? { status: state, dispatched: true, reason: "provider_error" }
+        : { status: state };
+    await f.settle(direct, outcome(status === "failed" ? "completed" : "failed"), unresolved);
+    const attention = async () =>
+      value(
+        await f.store.readResearch(
+          planPortRequest("projectAttention.list", { cursor: null, count: 10 }),
+        ),
+      ) as { readonly items: readonly string[] };
+    expect((await attention()).items).toEqual(status === "failed" ? [] : [projectId]);
+
+    value(
+      await f.run({ command: "task.continueAll", operationId: "restore-synthesis", payload: {} }),
+    );
+    const synthesis = await f.next();
+    expect(synthesis).toMatchObject({ kind: "synthesis", taskId: synthesisId });
+    await f.settle(synthesis, outcome(status), unresolved);
+    expect(
+      f.query("SELECT reply_position FROM tasks WHERE id=?", synthesis.taskId)[0]!.reply_position,
+    ).toBeGreaterThan(
+      Number(
+        f.query("SELECT reply_position FROM tasks WHERE id=?", direct.taskId)[0]!.reply_position,
+      ),
+    );
+    expect((await attention()).items).toEqual(status === "failed" ? [projectId] : []);
+    if (status === "failed") {
+      value(
+        await f.run({
+          command: "synthesis.tryAgain",
+          operationId: "supersede-synthesis",
+          payload: { taskId: synthesis.taskId },
+        }),
+      );
+      expect((await attention()).items).toEqual([]);
+    }
+  },
+);
 
 it("runs the fixed development plan in an ordinary thesis through separate turns at inference concurrency one", async () => {
   const f = await fixture(1);

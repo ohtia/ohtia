@@ -139,7 +139,7 @@ export function conversationTitleInstructionSuffix(operation: ProviderOperation)
         ? "Complete the setup turn first. Write the setup reply as visible assistant text or call propose_project_setup when the title and language are agreed."
         : "Write your ordinary research reply first.",
       setup
-        ? `If the researcher's messages establish a topic, you may call ${conversationTitlePolicy.name} once after the setup reply or proposal in the same response. Omit this optional title call if it would be the only output.`
+        ? `If the researcher's messages establish a topic, call ${conversationTitlePolicy.name} exactly once in the same response, including when you call propose_project_setup. Omit this optional title call if it would be the only output.`
         : `If the researcher's messages establish a topic, then call ${conversationTitlePolicy.name} exactly once in the same response.`,
       `Use a short, plain-text title in ${setup ? "the conversation language" : "the document language"} that describes the earliest clear exchange. Base it on what the researcher is discussing and use your reply when it clarifies the topic.`,
       "A concrete research question or task qualifies even when the thesis is still being defined. Use the conversation's topic independently of the project's working title.",

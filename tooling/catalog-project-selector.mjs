@@ -23,6 +23,105 @@ async function selectorInTitleRow(page) {
   return combo;
 }
 
+async function verifyActivityBadges(page, url, engine, output) {
+  for (const { locale, expanded, width } of [
+    { locale: "en-US", expanded: false, width: 1280 },
+    { locale: "de-DE", expanded: false, width: 320 },
+    { locale: "ko-KR", expanded: false, width: 320 },
+    { locale: "en-US", expanded: true, width: 320 },
+  ]) {
+    await page.setViewportSize({ width, height: 800 });
+    const base = `${url}?screen=project-selector&locale=${locale}${expanded ? "&expanded" : ""}`;
+    const chatControl = page.locator('[data-workspace-command="panels.chat"]');
+    await page.goto(base);
+    await expect(chatControl).toBeVisible();
+    const plain = await chatControl.boundingBox();
+    await page.goto(`${base}&activity`);
+    await expect(chatControl.locator(".activity-badge")).toHaveCount(2);
+    const marked = await chatControl.boundingBox();
+    expect(marked.width).toBeCloseTo(plain.width, 0);
+    expect(marked.height).toBeCloseTo(plain.height, 0);
+    const checks = await chatControl.evaluate((button) => {
+      const control = button.getBoundingClientRect();
+      const badge = button.querySelector(".activity-badge-new");
+      const attention = button.querySelector(".activity-badge-attention");
+      const news = badge.getBoundingClientRect();
+      const warning = attention.getBoundingClientRect();
+      const icon = attention.querySelector("svg").getBoundingClientRect();
+      return {
+        news: {
+          top: Math.round(news.top - control.top),
+          end: Math.round(news.right - control.right),
+          height: news.height,
+          padding: getComputedStyle(badge).paddingInline,
+        },
+        attention: {
+          end: Math.round(warning.right - control.right),
+          bottom: Math.round(warning.bottom - control.bottom),
+          width: warning.width,
+          height: warning.height,
+          icon: icon.width,
+        },
+        animations: badge.getAnimations().length + attention.getAnimations().length,
+      };
+    });
+    // Offsets are measured from the control's padding box, inside its border.
+    expect(checks.news.top).toBeGreaterThanOrEqual(-6);
+    expect(checks.news.top).toBeLessThanOrEqual(-5);
+    expect(checks.news.end).toBeGreaterThanOrEqual(5);
+    expect(checks.news.end).toBeLessThanOrEqual(6);
+    expect(checks.news.height).toBe(18);
+    expect(checks.news.padding).toBe("5px");
+    expect(checks.attention.end).toBeGreaterThanOrEqual(5);
+    expect(checks.attention.end).toBeLessThanOrEqual(6);
+    expect(checks.attention.bottom).toBeGreaterThanOrEqual(5);
+    expect(checks.attention.bottom).toBeLessThanOrEqual(6);
+    expect(checks.attention).toMatchObject({ width: 18, height: 18, icon: 12 });
+    expect(checks.animations).toBe(0);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+    if (!expanded && locale === "en-US") {
+      await captureCatalog(page, { path: path.join(output, `${engine}-activity-wide.png`) });
+      const selector = page.getByRole("combobox");
+      await expect(selector).toHaveAccessibleName("Current project");
+      expect(await selector.ariaSnapshot()).toContain("Another project needs your attention.");
+      await selector.click();
+      await expect(
+        page.getByRole("option").filter({ hasText: "Needs your attention" }),
+      ).toHaveCount(1);
+      await page.keyboard.press("Escape");
+      if (engine === "chromium") {
+        await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
+        for (const badge of await chatControl.locator(".activity-badge").all()) {
+          const border = await badge.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return [
+              style.borderTopWidth,
+              style.borderTopStyle,
+              style.borderTopColor === style.color,
+            ];
+          });
+          expect(border).toEqual(["1px", "solid", true]);
+        }
+        await captureCatalog(page, { path: path.join(output, `${engine}-activity-forced.png`) });
+        await page.emulateMedia({ forcedColors: "none", reducedMotion: "no-preference" });
+      }
+      await chatControl.click();
+      await expect(
+        page
+          .getByRole("button", {
+            name: "Show conversation history, 1 needs your attention, 2 with new replies",
+          })
+          .locator(".activity-badge"),
+      ).toHaveCount(2);
+    }
+  }
+  return 4;
+}
+
 export async function verifyProjectSelectorSpecimen(page, url, engine, output) {
   const watch = await watchCatalogPage(page, url, "Project selector", engine);
   const locales = ["en-US", "de-DE", "ko-KR"];
@@ -294,6 +393,7 @@ export async function verifyProjectSelectorSpecimen(page, url, engine, output) {
       await page.emulateMedia({ forcedColors: "none", reducedMotion: "no-preference" });
       journeys++;
     }
+    journeys += await verifyActivityBadges(page, url, engine, output);
     await watch.assert();
     return {
       journeys,

@@ -14,6 +14,8 @@ import {
   type Outcome,
   type TimelineItem,
   type ResearchOutputs,
+  type ResearchEvent,
+  type ProviderEvent,
   type ConversationCursor,
   type DiagnosticEvent,
 } from "../packages/contracts/src/index.js";
@@ -36,7 +38,7 @@ afterEach(() => {
 async function harness() {
   const fixture = storageFixture();
   await fixture.store.open();
-  let receive: (text: unknown) => void = () => {};
+  const listeners = new Map<string, (text: unknown) => void>();
   let id = 0;
   const sent: string[] = [];
   const lost = vi.fn();
@@ -45,36 +47,39 @@ async function harness() {
     "en-US",
     (text) => {
       sent.push(text);
-      if (decodeText(text).ok) receive(text);
+      const envelope = decodeText(text);
+      if (envelope.ok) listeners.get(envelope.value.windowGeneration)?.(text);
     },
     fixture.store,
     lost,
     "development",
   );
   service.activate("en-US");
-  const client = createFoundationPort(
-    { contextIsolated: true, sandboxed: true },
-    {
-      send: (text) => service.receive(text),
-      listen: (listener) => {
-        receive = listener;
-        return () => {
-          receive = () => {};
-        };
+  const openWindow = (windowGeneration: string) => {
+    const client = createFoundationPort(
+      { contextIsolated: true, sandboxed: true },
+      {
+        send: (text) => service.receive(text),
+        listen: (listener) => {
+          listeners.set(windowGeneration, listener);
+          return () => {
+            listeners.delete(windowGeneration);
+          };
+        },
       },
-    },
-    {
-      after: (ms, fn) => {
-        const timer = setTimeout(fn, ms);
-        return () => clearTimeout(timer);
+      {
+        after: (ms, fn) => {
+          const timer = setTimeout(fn, ms);
+          return () => clearTimeout(timer);
+        },
       },
-    },
-    { windowGeneration: "window", serviceGeneration: "service", nextId: () => `request-${++id}` },
-  );
-  controls.push(() => {
-    client.dispose();
-    service.dispose();
-  });
+      { windowGeneration, serviceGeneration: "service", nextId: () => `request-${++id}` },
+    );
+    controls.push(() => client.dispose());
+    return client;
+  };
+  const client = openWindow("window");
+  controls.push(() => service.dispose());
   const project = value(await client.port.createProject("create-project").result);
   // Confirmed-project messages exercise guidance task notices alongside research transport.
   const fixtureDb = fixture.raw();
@@ -93,6 +98,7 @@ async function harness() {
     lost,
     service,
     client,
+    openWindow,
     port: client.port,
     sent,
     projectId: project.resultId,
@@ -1375,7 +1381,7 @@ it("reads proposal-only reply positions and publishes each decision revision thr
   });
   const tasks = page.items.filter((item) => item.kind === "task");
   expect(proposal.position).toBe(tasks[0]!.position);
-  const notices: unknown[] = [];
+  const notices: Outcome<ResearchEvent>[] = [];
   const subscription = h.port.subscribeResearch(
     { projectId: project, conversationId: conversation },
     (notice) => notices.push(notice),
@@ -1433,6 +1439,19 @@ it("reads proposal-only reply positions and publishes each decision revision thr
   expect(
     await h.port.confirmProjectSetup("stale-proposal", { proposalId: first }).result,
   ).toMatchObject({ error: { code: "proposal_not_waiting" } });
+  const finishedReply = {
+    ok: true,
+    value: {
+      kind: "replyFinished",
+      projectId: project,
+      conversationId: conversation,
+      agentId: "virgilio",
+    },
+  };
+  expect(notices.filter((notice) => notice.ok && notice.value.kind === "replyFinished")).toEqual([
+    finishedReply,
+    finishedReply,
+  ]);
   subscription.dispose();
 });
 
@@ -1702,4 +1721,164 @@ it("transfers 300 selected positions as staged text through preload and the data
   } finally {
     saved.close();
   }
+});
+
+it("publishes durable project attention across windows and keeps finished replies scoped", async () => {
+  const h = await harness();
+  const send = (message: object) =>
+    h.service.receive(JSON.stringify({ generation: "service", ...message }));
+  send({
+    kind: "connection_state",
+    snapshot: {
+      connection: "chatgpt",
+      state: "connected",
+      reason: null,
+      probing: false,
+      probe_id: null,
+      model_list_revision: 1,
+      model_count: 1,
+    },
+  });
+  send({
+    kind: "connection_models",
+    page: {
+      connection: "chatgpt",
+      model_list_revision: 1,
+      models: [{ id: "model", name: "Model" }],
+      nextCursor: 1,
+      hasMore: false,
+    },
+  });
+  const projectId = value(
+    await h.store.executeResearchCommand({
+      command: "development.createProject",
+      operationId: "attention-project",
+      payload: {},
+    }),
+  ).resultId;
+  const conversationId = value(await h.store.readConversations(projectId))[0]!.id;
+  const activity: Outcome<ResearchEvent>[][] = [[], [], []];
+  const scopes = [projectId, h.projectId, null] as const;
+  const ports = [h.port, h.openWindow("other-project").port, h.openWindow("no-project").port];
+  for (const [index, port] of ports.entries())
+    value(
+      await port.subscribeResearch(
+        { projectId: scopes[index] ?? null, conversationId: index === 0 ? conversationId : null },
+        (event) => {
+          activity[index]?.push(event);
+        },
+      ).ready,
+    );
+  expect(value(await h.port.listProjectAttention({ cursor: null, count: 1 }).result)).toEqual({
+    items: [],
+    next: null,
+    hasMore: false,
+    revision: 1,
+  });
+  const question = async (operation: string) => {
+    value(
+      await h.port.appendMessage(operation, { conversationId, content: "Synthetic question" })
+        .result,
+    );
+    await h.service.drain();
+    return h.sent
+      .map((text) => JSON.parse(text))
+      .filter((message) => message.kind === "provider_dispatch")
+      .at(-1).request.attempt;
+  };
+  const attempt = await question("attention-failed");
+  const provider = (attempt: string, event: ProviderEvent) =>
+    send({ kind: "provider_event", version: 1, attempt, event });
+  provider(attempt, { type: "started", sequence: 1, provider_request_id: null, model: null });
+  provider(attempt, { type: "text", sequence: 2, text: "Synthetic partial reply" });
+  provider(attempt, {
+    type: "result",
+    sequence: 3,
+    result: { status: "failed", reason: "provider_unavailable", dispatched: true },
+  });
+  await h.service.drain();
+
+  const ids = async () =>
+    value(await h.port.listProjectAttention({ cursor: null, count: 1 }).result);
+  expect(await ids()).toEqual({ items: [projectId], next: null, hasMore: false, revision: 2 });
+  expect(
+    value(await h.port.listProjectAttention({ cursor: projectId, count: 1 }).result).items,
+  ).toEqual([]);
+  const conversation = async () =>
+    value(await h.port.readConversations({ projectId, ids: [conversationId] }).result).items[0];
+  const project = async () =>
+    value(await h.port.listProjects({ cursor: null, count: 1 }).result).items[0];
+  expect(await conversation()).toMatchObject({ status: "attention" });
+  expect(await project()).toMatchObject({ id: projectId, needsAttention: true });
+  await vi.waitFor(() => {
+    for (const events of activity)
+      expect(events).toContainEqual({ ok: true, value: { kind: "projectAttention", revision: 2 } });
+  });
+  const failed = value(
+    await h.port.listTimelineBefore({ conversationId, cursor: null, count: 50 }).result,
+  ).items.find((item) => item.kind === "task" && item.state === "failed");
+  expect(failed).toBeDefined();
+  expect(activity[0]).toContainEqual({
+    ok: true,
+    value: {
+      kind: "attentionRaised",
+      source: "conversation",
+      task: { id: failed!.id, revision: failed!.revision },
+    },
+  });
+  for (const events of activity.slice(1)) {
+    expect(events).toContainEqual({
+      ok: true,
+      value: { kind: "attentionRaised", source: "conversation" },
+    });
+  }
+  expect(activity[0]).toContainEqual({
+    ok: true,
+    value: { kind: "replyFinished", projectId, conversationId, agentId: "virgilio" },
+  });
+  for (const events of activity.slice(1))
+    expect(
+      events.some(
+        (event) =>
+          event.ok &&
+          (event.value.kind === "replyFinished" ||
+            (event.value.kind === "changed" &&
+              event.value.record === "project" &&
+              event.value.id === projectId)),
+      ),
+    ).toBe(false);
+
+  const replacement = await question("attention-resolution");
+  await h.service.drain();
+  expect(await ids()).toEqual({ items: [], next: null, hasMore: false, revision: 3 });
+  expect(await conversation()).toMatchObject({ status: "replying" });
+  await vi.waitFor(() => {
+    for (const events of activity)
+      expect(events).toContainEqual({ ok: true, value: { kind: "projectAttention", revision: 3 } });
+  });
+
+  provider(replacement, { type: "started", sequence: 1, provider_request_id: null, model: null });
+  provider(replacement, {
+    type: "result",
+    sequence: 2,
+    result: { status: "failed", reason: "provider_unavailable", dispatched: true },
+  });
+  await h.service.drain();
+  expect((await ids()).revision).toBe(4);
+  h.service.dispose();
+  await h.store.close();
+  await h.store.open();
+  expect(
+    await h.store.readResearch({
+      protocol: 1,
+      kind: "request",
+      policy: policyId,
+      windowGeneration: "window",
+      serviceGeneration: "service",
+      requestId: "restart-attention",
+      operationId: "restart-attention",
+      operation: "projectAttention.list",
+      payload: { cursor: null, count: 1 },
+    }),
+  ).toEqual({ ok: true, value: { items: [projectId], next: null, hasMore: false, revision: 1 } });
 });

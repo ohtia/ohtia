@@ -252,6 +252,13 @@ export interface TaskContext {
 export class TaskTransaction {
   readonly diagnostics: DiagnosticEvent[] = [];
   readonly modelRefreshes = new Set<string>();
+  readonly finishedReplies: Extract<
+    import("@ohtia/contracts").ResearchEvent,
+    { kind: "replyFinished" }
+  >[] = [];
+  get touchedConversations(): Iterable<Uint8Array> {
+    return this.conversations.values();
+  }
   private readonly changedPlans = new Map<string, Uint8Array>();
   private readonly interventions = new Map<string, Uint8Array>();
   private readonly conversations = new Map<string, Uint8Array>();
@@ -271,14 +278,14 @@ export class TaskTransaction {
   touch(conversation: Uint8Array): void {
     this.conversations.set(identifier(conversation), conversation);
   }
-  private readonly revisedInterventions = new Set<string>();
+  private readonly revisedInterventions = new Map<string, Uint8Array>();
   private touchIntervention(id: Uint8Array): void {
     const key = identifier(id);
     if (!this.revisedInterventions.has(key)) this.interventions.set(key, id);
   }
   private interventionRevised(id: Uint8Array): void {
     const key = identifier(id);
-    this.revisedInterventions.add(key);
+    this.revisedInterventions.set(key, id);
     this.interventions.delete(key);
   }
   async flush(): Promise<void> {
@@ -287,12 +294,23 @@ export class TaskTransaction {
       await this.admitWaitingContinuations(contributionSynthesisPolicy);
       await this.admitWaitingContinuations(testSynthesisPolicy);
     }
-    for (const id of this.interventions.values())
-      await this.db
+    for (const id of this.interventions.values()) {
+      const row = await this.db
         .updateTable("interventions")
         .set({ revision: sql`revision+1` })
         .where("id", "=", id)
-        .execute();
+        .returning("conversation_id")
+        .executeTakeFirstOrThrow();
+      this.touch(row.conversation_id);
+    }
+    for (const id of this.revisedInterventions.values()) {
+      const row = await this.db
+        .selectFrom("interventions")
+        .select("conversation_id")
+        .where("id", "=", id)
+        .executeTakeFirstOrThrow();
+      this.touch(row.conversation_id);
+    }
     for (const [conversation, id] of this.conversations) {
       const revision = this.db
         .updateTable("conversations")
@@ -2735,6 +2753,7 @@ export class TaskTransaction {
         this.diagnostics.push({ event_name: "ohtia.usage_pause.opened" });
       }
     }
+    let savedReplyAgent: ReplyAgent | undefined;
     if (text && !notDispatched) {
       if (task.reply_position === null) throw new Error("Running task lacks a reply reservation.");
       const contributor =
@@ -2745,6 +2764,7 @@ export class TaskTransaction {
               .where("id", "=", task.contribution_id)
               .executeTakeFirstOrThrow()
           : undefined;
+      const agentId = contributor?.agent_id ?? replyAgent(task.operation);
       await this.db
         .insertInto("messages")
         .values({
@@ -2752,13 +2772,14 @@ export class TaskTransaction {
           conversation_id: task.conversation_id,
           position: task.reply_position,
           author_kind: "agent",
-          agent_id: contributor?.agent_id ?? replyAgent(task.operation),
+          agent_id: agentId,
           content: text,
           task_id: task.id,
           ending: state === "completed" ? "complete" : "partial",
           created_at: this.now,
         })
         .execute();
+      savedReplyAgent = agentId;
       if (task.kind !== "synthesis")
         await this.replaceWaiting(
           task.conversation_id,
@@ -2780,6 +2801,7 @@ export class TaskTransaction {
       };
     }
     let proposalId: string | undefined;
+    let savedProposal = false;
     if (state === "completed" && accepted[0]) {
       if (!registry) throw new Error("Setup registry unavailable.");
       const values = accepted[0];
@@ -2810,6 +2832,7 @@ export class TaskTransaction {
           decided_by_operation_id: null,
         })
         .execute();
+      savedProposal = true;
       this.diagnostics.push({ event_name: "ohtia.project.setup_proposed" });
       // A tool-only reply changes the next queued task's input as well as a textual reply.
       if (!text) await this.replaceWaiting(task.conversation_id);
@@ -2829,6 +2852,7 @@ export class TaskTransaction {
         handoff,
         this.now,
       );
+      savedProposal = true;
       this.diagnostics.push({ event_name: "ohtia.handoff.proposed" });
       if (!text) await this.replaceWaiting(task.conversation_id);
     }
@@ -2878,6 +2902,7 @@ export class TaskTransaction {
             created_at: this.now,
           })
           .execute();
+      savedProposal = true;
       this.diagnostics.push({ event_name: "ohtia.consultation.proposed" });
       if (!text) await this.replaceWaiting(task.conversation_id);
     }
@@ -2927,9 +2952,19 @@ export class TaskTransaction {
             revision: 1,
           })
           .execute();
+      savedProposal = true;
       this.diagnostics.push({ event_name: "ohtia.plan.proposed" });
       if (!text) await this.replaceWaiting(task.conversation_id);
     }
+    // A proposal or its validation notice can be the whole reply.
+    // Save one event when the turn includes both text and a proposal.
+    if (savedReplyAgent || (savedProposal && !notDispatched))
+      this.finishedReplies.push({
+        kind: "replyFinished",
+        projectId: identifier(task.project_id),
+        conversationId: identifier(task.conversation_id),
+        agentId: savedReplyAgent ?? replyAgent(task.operation),
+      });
     await this.change(task, { state: taskState, blocking_reason: blockingReason });
     if (reason === "usage_limit_reached" && task.connection === "chatgpt")
       await this.reconcileConnections();

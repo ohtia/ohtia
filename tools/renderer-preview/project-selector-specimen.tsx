@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   type InterfaceLocale,
+  message,
   type ProjectRecord,
+  type ProjectSummary,
   failure,
 } from "../../packages/contracts/dist/index.js";
+import { ConversationHeaderButton } from "../../packages/renderer/src/conversation-history.js";
 import { ProjectController } from "../../packages/renderer/src/project-controller.js";
 import { ProjectSelector } from "../../packages/renderer/src/project-selector.js";
 import { WorkspaceSpecimen } from "./workspace-specimen.js";
@@ -11,10 +14,13 @@ import { WorkspaceSpecimen } from "./workspace-specimen.js";
 /** Synthetic project pages exercise the actual window controller without research authority. */
 export function ProjectSelectorSpecimen() {
   const params = new URLSearchParams(location.search);
+  const historyButton = useRef<HTMLButtonElement>(null);
+  const showActivity = params.has("activity");
   const locale = (params.get("locale") ?? "en-US") as InterfaceLocale;
   const projects = useMemo(
     () =>
-      Array.from({ length: params.has("empty") ? 0 : 95 }, (_, index): ProjectRecord => ({
+      Array.from({ length: params.has("empty") ? 0 : 95 }, (_, index): ProjectSummary => ({
+        needsAttention: showActivity && index === 3,
         id: `019a8000-0000-7000-8000-${String(index + 1).padStart(12, "0")}`,
         projectType: "thesis",
         title:
@@ -117,6 +123,20 @@ export function ProjectSelectorSpecimen() {
       hasProjects={state.hasProjects}
       project={selected}
       projectScope={selected?.id}
+      {...(showActivity
+        ? {
+            chatActivity: { replies: 12, attention: 1 },
+            chatHeadingActions: (
+              <ConversationHeaderButton
+                buttonRef={historyButton}
+                icon="list"
+                label={message(locale, "history.show")}
+                action={() => {}}
+                activity={{ counts: { replies: 2, attention: 1 }, locale }}
+              />
+            ),
+          }
+        : {})}
       projectSelector={
         <ProjectSelector
           controller={controller}
@@ -124,6 +144,13 @@ export function ProjectSelectorSpecimen() {
           current={selected}
           currentId={selected?.id ?? null}
           locale={locale}
+          {...(showActivity
+            ? {
+                attentionProjects: new Set(
+                  projects.filter((row) => row.needsAttention).map((row) => row.id),
+                ),
+              }
+            : {})}
         />
       }
     />
