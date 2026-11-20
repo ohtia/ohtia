@@ -2,7 +2,7 @@
 
 Agent identities, specialist contracts, collaboration, evaluation and implementation references.
 
-- [Agent collaboration](agent-collaboration.md) — Virgilio, research specialists, bounded collaboration, inspectable memory, and human-approved editorial proposals.
+- [Agent collaboration](agent-collaboration.md) — Virgilio, research specialists, bounded collaboration, conversation handoffs, inspectable memory, and human-approved editorial proposals.
 - [Ohtia and agent identity](agent-identity.md) — Product character, fixed contributor names and historical inspirations, human attribution, and accessible event-driven presentation.
 - [Virgilio: research guide](agent-virgilio.md) — Virgilio's direct guidance, consultations, bounded planning, attributed synthesis, context, evaluation requirements and visual presentation.
 - [Josefa: reference librarian](agent-josefa.md) — Josefa's search planning, bounded discovery, candidate selection, coverage review, evaluation requirements and visual presentation.

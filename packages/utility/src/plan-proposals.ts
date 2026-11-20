@@ -1,6 +1,6 @@
 import {
   isPlanTool,
-  isConsultationTool,
+  isCollaborationProposal,
   planInvalidReasons,
   type AddContributionsPayload,
   type PlanInvalidReason,
@@ -87,8 +87,7 @@ export function readPlanProposal(
 ): { readonly payload: NewPlan } | { readonly invalid: PlanInvalidReason } | undefined {
   const call = calls.find(isPlanTool);
   if (!call) return;
-  if (calls.filter((tool) => isPlanTool(tool) || isConsultationTool(tool)).length > 1)
-    return { invalid: "multiple_calls" };
+  if (calls.filter(isCollaborationProposal).length > 1) return { invalid: "multiple_calls" };
   let value: Record<string, unknown>;
   try {
     value = record(JSON.parse(call.arguments));

@@ -12,6 +12,7 @@ import {
   conversationName,
 } from "./conversation-history.js";
 import { AgentBand } from "./agent-selector.js";
+import { HandoffReturnControl } from "./handoff.js";
 import { ConversationView } from "./conversation-view.js";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
@@ -76,6 +77,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
     conversation.history.subscribe,
     conversation.history.snapshot,
   );
+  const agentBand = useRef<HTMLDivElement>(null);
   const historyButton = useRef<HTMLButtonElement>(null);
   const returnButton = useRef<HTMLButtonElement>(null);
   const renameButton = useRef<HTMLButtonElement>(null);
@@ -530,6 +532,18 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                             <AgentBand
                               key={conversationState.scope.projectId}
                               composer={conversation.composer}
+                              bandRef={agentBand}
+                              continuation={
+                                conversationState.conversation && (
+                                  <HandoffReturnControl
+                                    key={conversationState.conversation.id}
+                                    conversation={conversationState.conversation}
+                                    controller={conversation}
+                                    locale={bootstrap.locale}
+                                    focusAfter={agentBand}
+                                  />
+                                )
+                              }
                               agent={knownConversationAgent(conversationState)}
                               selectable={
                                 !conversationState.scope.conversationId &&

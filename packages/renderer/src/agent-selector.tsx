@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import type { ReactNode, RefObject } from "react";
 import { createPortal } from "react-dom";
 import {
   conversationAgents,
@@ -18,16 +19,20 @@ export function AgentBand({
   agent,
   selectable,
   locale,
+  continuation,
+  bandRef,
 }: {
   readonly composer: ComposerController;
   readonly agent: ReplyAgent | undefined;
   readonly selectable: boolean;
+  readonly continuation?: ReactNode;
+  readonly bandRef?: RefObject<HTMLDivElement | null>;
   readonly locale: InterfaceLocale;
 }) {
   const { agentId, saving, notice } = useSyncExternalStore(composer.subscribe, composer.snapshot);
   if (!selectable && !agent) return null;
   return (
-    <div className="agent-band">
+    <div className="agent-band" tabIndex={-1} ref={bandRef}>
       {selectable ? (
         <AgentSelector
           value={agentId}
@@ -42,6 +47,7 @@ export function AgentBand({
           locale={locale}
         />
       ) : null}
+      {continuation}
     </div>
   );
 }

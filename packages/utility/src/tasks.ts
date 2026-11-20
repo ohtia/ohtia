@@ -35,6 +35,16 @@ import {
   unfinishedPlan,
   unfinishedPlans,
 } from "./plan-proposals.js";
+import {
+  handoffBoundary,
+  handoffBusy,
+  handoffContext,
+  handoffProposalNote,
+  handoffTool,
+  readHandoffProposal,
+  replaceHandoff,
+  saveHandoffProposal,
+} from "./handoffs.js";
 import type { PlanEventKind, PlanEventPayload } from "@ohtia/contracts";
 import type { ContributionRow, InterventionRow } from "./consultations.js";
 import {
@@ -96,6 +106,7 @@ import {
   testSynthesisPolicy,
   contributionSynthesisPolicy,
   type OperationPolicy,
+  type InputMessage,
 } from "./operations.js";
 const conversationTitleTool: ProviderTool = {
   namespace: conversationTitlePolicy.namespace,
@@ -384,7 +395,7 @@ export class TaskTransaction {
       .executeTakeFirstOrThrow();
     if (recipient === "josefa") {
       if (project.is_development || project.setup_confirmed_at === null) return null;
-      const policy = operationPolicy("search_strategy_planning", 2, this.context.mode);
+      const policy = operationPolicy("search_strategy_planning", 3, this.context.mode);
       return policy ? { policy, connection: this.agentConnection(recipient) } : null;
     }
     if (recipient !== "virgilio") return null;
@@ -394,7 +405,7 @@ export class TaskTransaction {
         : project.setup_confirmed_at === null
           ? "project_setup"
           : "direct_guidance",
-      project.is_development ? 1 : project.setup_confirmed_at === null ? 2 : 3,
+      project.is_development ? 1 : project.setup_confirmed_at === null ? 2 : 4,
       this.context.mode,
     );
     return policy ? { policy, connection: this.agentConnection(recipient) } : null;
@@ -472,7 +483,12 @@ export class TaskTransaction {
     const accepting = shownConnection !== undefined;
     if (accepting && (await unfinishedPlan(this.db, proposal.conversation_id)))
       return failure("plan_unfinished");
-    const destination = accepting ? await this.destination(proposal.project_id, "josefa") : null;
+    const policy = accepting
+      ? operationPolicy(contribution.operation, contribution.policy_version, this.context.mode)
+      : undefined;
+    const destination = policy
+      ? { policy, connection: this.agentConnection(contribution.agent_id) }
+      : null;
     if (accepting && (!destination || destination.connection !== shownConnection))
       return failure("destination_changed");
     if (destination) {
@@ -1652,6 +1668,11 @@ export class TaskTransaction {
         .executeTakeFirstOrThrow();
       if (project.setup_confirmed_at !== null) return failure("task_not_retryable");
     }
+    if (task.kind === "reply" && task.input_through_position !== null) {
+      const boundary = await handoffBoundary(this.db, task.conversation_id);
+      if (boundary?.position && task.input_through_position < boundary.position)
+        return failure("task_not_retryable");
+    }
     // rowid expresses actual acceptance order even if the wall clock moves backwards.
     const newer =
       !delegated &&
@@ -2111,8 +2132,42 @@ export class TaskTransaction {
               .where("messages.position", "<=", task.input_through_position)
               .orderBy("messages.position")
               .execute();
-      const inputMessages = [];
-      for (const message of messages) {
+      const agent = replyAgent(task.operation);
+      const handoffs =
+        task.kind === "reply" && task.input_through_position !== null
+          ? await this.db
+              .selectFrom("handoffs")
+              .selectAll()
+              .where("conversation_id", "=", task.conversation_id)
+              .where("state", "=", "accepted")
+              .where("position", "<", task.input_through_position)
+              .orderBy("position")
+              .execute()
+          : [];
+      const selections = handoffs.length
+        ? await this.db
+            .selectFrom("handoff_selected_messages as s")
+            .innerJoin("handoffs as h", "h.id", "s.handoff_id")
+            .select(["s.handoff_id", "s.message_id"])
+            .where("h.conversation_id", "=", task.conversation_id)
+            .execute()
+        : [];
+      const byId = new Map(messages.map((message) => [identifier(message.id), message]));
+      const selectionsByHandoff = new Map<string, (typeof messages)[number][]>();
+      for (const selection of selections) {
+        const message = byId.get(identifier(selection.message_id));
+        if (!message) continue;
+        const reference = identifier(selection.handoff_id);
+        const group = selectionsByHandoff.get(reference) ?? [];
+        group.push(message);
+        selectionsByHandoff.set(reference, group);
+      }
+      const inputMessages: InputMessage[] = [];
+      const appendMessage = async (
+        message: (typeof messages)[number],
+        position = message.position,
+        handoff?: InputMessage["handoff"],
+      ) => {
         const outcome =
           message.ending === "partial" && message.task_id
             ? await this.db
@@ -2124,11 +2179,11 @@ export class TaskTransaction {
             : undefined;
         const otherAgent =
           message.author_kind === "agent" &&
-          (message.origin_kind === "contribution" ||
-            message.agent_id !== replyAgent(task.operation));
+          (message.origin_kind === "contribution" || message.agent_id !== agent);
         inputMessages.push({
           reference: identifier(message.id),
-          position: message.position,
+          position,
+          ...(handoff ? { handoff } : {}),
           role:
             message.author_kind === "researcher" || otherAgent
               ? ("user" as const)
@@ -2150,7 +2205,47 @@ export class TaskTransaction {
               }
             : {}),
         });
+      };
+      let segmentOwner = handoffs[0]?.from_agent_id ?? conversation.agent_id;
+      let priorReply = false;
+      let nextHandoff = 0;
+      const appendBoundaries = async (through: number) => {
+        for (let handoff = handoffs[nextHandoff]; handoff; handoff = handoffs[nextHandoff]) {
+          if (handoff.position === null || handoff.position > through) break;
+          nextHandoff++;
+          // The handoff proposal can be Virgilio’s only reply in that part.
+          if (handoff.from_agent_id === "virgilio") priorReply = true;
+          segmentOwner = handoff.to_agent_id ?? segmentOwner;
+          const segment = handoff.position;
+          if (segmentOwner !== agent) continue;
+          const reference = identifier(handoff.id);
+          const selected = selectionsByHandoff.get(reference) ?? [];
+          const context = handoffContext(handoff, priorReply, selected.length > 0);
+          if (selected.length) {
+            for (const message of selected.sort((a, b) => a.position - b.position))
+              await appendMessage(message, segment, { reference, text: context });
+          } else {
+            inputMessages.push({
+              position: segment,
+              reference,
+              role: "user",
+              text: context,
+              handoffMarker: true,
+            });
+          }
+        }
+      };
+      for (const message of messages) {
+        if (handoffs[nextHandoff]?.position !== undefined) await appendBoundaries(message.position);
+        if (!handoffs.length || segmentOwner === agent) await appendMessage(message);
+        if (
+          segmentOwner === "virgilio" &&
+          message.agent_id === "virgilio" &&
+          (message.origin_kind === "reply" || message.origin_kind === "synthesis")
+        )
+          priorReply = true;
       }
+      await appendBoundaries(Number.MAX_SAFE_INTEGER);
       const proposals =
         task.operation === "project_setup"
           ? await this.db
@@ -2227,6 +2322,34 @@ export class TaskTransaction {
           });
         }
       }
+      if (task.operation === "direct_guidance") {
+        const handoffProposals = await this.db
+          .selectFrom("handoffs as h")
+          .innerJoin("attempts as a", "a.id", "h.proposed_by_attempt_id")
+          .innerJoin("tasks as t", "t.id", "a.task_id")
+          .select(["h.id", "h.state", "h.invalid_reason", "t.reply_position"])
+          .where("h.conversation_id", "=", task.conversation_id)
+          .where("h.state", "!=", "accepted")
+          .orderBy("t.reply_position")
+          .execute();
+        for (const proposal of handoffProposals) {
+          const text = handoffProposalNote(proposal);
+          if (text && proposal.reply_position !== null)
+            notes.push({
+              kind: "handoff_proposal",
+              position: proposal.reply_position,
+              reference: identifier(proposal.id),
+              revision: proposal.state === "proposed" || proposal.state === "invalid" ? 1 : 2,
+              text,
+            });
+        }
+      }
+      const canHandoff =
+        planCapable &&
+        task.instruction_version >= 4 &&
+        conversation.agent_id === "virgilio" &&
+        !!(await this.destination(task.project_id, "josefa")) &&
+        !(await handoffBusy(this.db, task.conversation_id, task.id));
       const contribution = task.contribution_id
         ? await this.db
             .selectFrom("contributions")
@@ -2416,6 +2539,7 @@ export class TaskTransaction {
                     ...(planCapable ? [planTool(enabledConsultations)] : []),
                   ]
                 : []),
+              ...(canHandoff ? [handoffTool] : []),
               ...(suggestTitle ? [conversationTitleTool] : []),
             ],
             project: identifier(task.project_id),
@@ -2485,12 +2609,25 @@ export class TaskTransaction {
     // Stop won the committed revision: even an already queued successful result can only
     // acknowledge cessation. Keep received partial text, never publish it as a complete reply.
     const accepted = task.operation === "project_setup" ? acceptedSetupCalls(calls) : [];
+    let handoff =
+      task.kind === "reply" && task.operation === "direct_guidance" && task.instruction_version >= 4
+        ? readHandoffProposal(calls, !!(await this.destination(task.project_id, "josefa")))
+        : undefined;
+    if (
+      handoff &&
+      !("invalid" in handoff) &&
+      (await handoffBusy(this.db, task.conversation_id, task.id))
+    )
+      handoff = { invalid: "conversation_busy" };
     const proposedPlan =
-      task.operation === "direct_guidance" && task.instruction_version >= 3
+      !handoff && task.operation === "direct_guidance" && task.instruction_version >= 3
         ? readPlanProposal(calls, identifier(task.conversation_id))
         : undefined;
     const consultation =
-      !proposedPlan && task.operation === "direct_guidance" && task.instruction_version >= 2
+      !handoff &&
+      !proposedPlan &&
+      task.operation === "direct_guidance" &&
+      task.instruction_version >= 2
         ? decodeConsultationProposal(calls, this.context.mode)
         : undefined;
     const result: ProviderResult =
@@ -2503,7 +2640,8 @@ export class TaskTransaction {
             !text &&
             !accepted.length &&
             !consultation &&
-            !proposedPlan
+            !proposedPlan &&
+            !handoff
           ? { status: "failed", reason: "empty_reply", dispatched: true }
           : event.result;
     const notDispatched =
@@ -2676,16 +2814,36 @@ export class TaskTransaction {
       // A tool-only reply changes the next queued task's input as well as a textual reply.
       if (!text) await this.replaceWaiting(task.conversation_id);
     }
+    if (state === "completed" && handoff) {
+      if (!("invalid" in handoff)) await replaceHandoff(this.db, task.conversation_id, this.now);
+      const { owner_revision } = await this.db
+        .selectFrom("conversations")
+        .select("owner_revision")
+        .where("id", "=", task.conversation_id)
+        .executeTakeFirstOrThrow();
+      await saveHandoffProposal(
+        this.db,
+        task.conversation_id,
+        attempt.id,
+        owner_revision,
+        handoff,
+        this.now,
+      );
+      this.diagnostics.push({ event_name: "ohtia.handoff.proposed" });
+      if (!text) await this.replaceWaiting(task.conversation_id);
+    }
     if (state === "completed" && consultation) {
       const invalid = "invalid" in consultation ? consultation.invalid : null;
       const id = newId();
-      if (!invalid)
+      if (!invalid) {
+        await replaceHandoff(this.db, task.conversation_id, this.now);
         await this.db
           .updateTable("interventions")
           .set({ state: "replaced", decided_at: this.now, revision: sql`revision+1` })
           .where("state", "=", "proposed")
           .where("conversation_id", "=", task.conversation_id)
           .execute();
+      }
       await this.db
         .insertInto("interventions")
         .values({
@@ -2749,7 +2907,8 @@ export class TaskTransaction {
           this.now,
           { kind: "proposal", attempt: attempt.id },
         );
-        if (!saved.ok) invalid = planInvalidReason(saved.error.code);
+        if (saved.ok) await replaceHandoff(this.db, task.conversation_id, this.now);
+        else invalid = planInvalidReason(saved.error.code);
       }
       if (invalid)
         await this.db
@@ -2798,7 +2957,8 @@ export async function nextPosition(
 ): Promise<number> {
   const result = await sql<{ position: number }>`SELECT max(
     coalesce((SELECT max(position) FROM messages WHERE conversation_id=${conversation}),0),
-    coalesce((SELECT max(reply_position) FROM tasks WHERE conversation_id=${conversation}),0))+1 AS position`.execute(
+    coalesce((SELECT max(reply_position) FROM tasks WHERE conversation_id=${conversation}),0),
+    coalesce((SELECT max(position) FROM handoffs WHERE conversation_id=${conversation}),0))+1 AS position`.execute(
     db,
   );
   const position = result.rows[0]?.position;

@@ -145,7 +145,7 @@ The next action can be a consultation: one contribution that another enabled age
 
 **Input:** An authorized contribution purpose, selected evidence, enabled role/operation capabilities, expected outputs and remaining intervention limits.
 
-**Output:** A proposed contribution graph of two or more contributions, or a bounded handoff request, with role, question, immutable input requirements, artifact dependencies, required/optional coverage and allocations. Use the smallest suitable role set and explain why coordination helps.
+**Output:** A proposed contribution graph of two or more contributions, with role, question, immutable input requirements, artifact dependencies, required/optional coverage and allocations, or a proposed handoff, with the receiving agent, a note of what it needs to know and the reason. Use the smallest suitable role set and explain why coordination helps.
 
 The application validates intent before admission. Finish planning and release execution capacity before dependent inference; a waiting coordinator cannot hold the only inference slot. In-flight accepted inputs remain immutable.
 

@@ -70,6 +70,12 @@ import {
   objects as planProposalObjects,
   up as planProposals,
 } from "./migrations/0026_plan_proposals.mjs";
+import {
+  ownerColumn,
+  tables as handoffTables,
+  objects as handoffObjects,
+  up as handoffs,
+} from "./migrations/0027_handoffs.mjs";
 import { readResearch, researchRevisions, readPauseCounts } from "./research-reads.js";
 import type { Request, ResearchScope, ResearchEvent, ResearchOperation } from "@ohtia/contracts";
 import {
@@ -318,6 +324,7 @@ const names = [
   "0024_plan_coordination",
   "0025_contribution_synthesis",
   "0026_plan_proposals",
+  "0027_handoffs",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -544,6 +551,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
       ? Object.keys(workLimitTables).filter((name) => name !== "contributions")
       : []),
     ...(revision >= 24 ? ["intervention_events", "continuations"] : []),
+    ...(revision >= 27 ? Object.keys(handoffTables) : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -662,6 +670,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                   ", " +
                   titleColumns.origin +
                   (revision >= 20 ? ", " + agentColumn : "") +
+                  (revision >= 27 ? ", " + ownerColumn : "") +
                   ")"
                 : definition,
         ])
@@ -713,6 +722,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 9 ? Object.entries(usageTables) : []),
     ...(revision >= 11 ? Object.entries(runTables) : []),
     ...(revision >= 13 ? [["execution_limits_receipts", executionLimitsReceiptsSchema]] : []),
+    ...(revision >= 27 ? Object.entries(handoffTables) : []),
   ]) {
     const row = db
       .prepare("SELECT sql FROM sqlite_schema WHERE name=? AND type='table'")
@@ -750,6 +760,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 24 ? coordinationObjects : {}),
                 ...(revision >= 25 ? synthesisObjects : {}),
                 ...(revision >= 26 ? planProposalObjects : {}),
+                ...(revision >= 27 ? handoffObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1163,6 +1174,7 @@ export class DurableStore {
                 "0024_plan_coordination": { up: planCoordination },
                 "0025_contribution_synthesis": { up: contributionSynthesis },
                 "0026_plan_proposals": { up: planProposals },
+                "0027_handoffs": { up: handoffs },
               }),
           },
         });
@@ -2483,6 +2495,7 @@ export class DurableStore {
       "destination.read": "ohtia.destination.read",
       "pause.read": "ohtia.pause.read",
       "plan.read": "ohtia.plan.read",
+      "handoff.selection": "ohtia.handoff.selection_listed",
       "planEvent.list": "ohtia.plan.events_listed",
     } as const;
     if (Object.hasOwn(events, operation))
@@ -2616,6 +2629,9 @@ export class DurableStore {
         "development.runPlan": { event_name: "ohtia.development.plan_started" },
         "plan.addContributions": { event_name: "ohtia.plan.graph_recorded" },
         "plan.accept": { event_name: "ohtia.plan.accepted" },
+        "handoff.accept": { event_name: "ohtia.handoff.accepted" },
+        "handoff.decline": { event_name: "ohtia.handoff.declined" },
+        "handoff.return": { event_name: "ohtia.handoff.returned" },
         "plan.decline": { event_name: "ohtia.plan.declined" },
         "plan.finish": { event_name: "ohtia.plan.finished" },
         "plan.cancel": { event_name: "ohtia.plan.cancel_requested" },

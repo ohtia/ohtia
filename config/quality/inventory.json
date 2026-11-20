@@ -32,6 +32,7 @@
     "tests/durable-tasks.test.ts",
     "tests/execution-limits.test.ts",
     "tests/graphics-compatibility.test.ts",
+    "tests/handoffs.test.ts",
     "tests/josefa-search-strategy.test.ts",
     "tests/language-panel.test.ts",
     "tests/limits-panel.test.ts",

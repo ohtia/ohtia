@@ -1,4 +1,9 @@
-import { planInvalidReasons, type PlanInvalidReason } from "./research.js";
+import {
+  conversationBusyReasons,
+  planInvalidReasons,
+  type ConversationBusyReason,
+  type PlanInvalidReason,
+} from "./research.js";
 import {
   researchOperations,
   isResearchOperation,
@@ -153,6 +158,9 @@ export type WindowBoundsReceipt =
   | { readonly state: "not_found" | "pending" }
   | { readonly state: "recorded"; readonly outcome: RecordedWindowBoundsOutcome };
 export const errorActions = {
+  selection_invalid: "check_request",
+  owner_changed: "refresh_record",
+  conversation_busy: "retry_later",
   parts_incomplete: "resend_parts",
   project_not_in_setup: "refresh_record",
   proposal_not_waiting: "refresh_record",
@@ -225,12 +233,14 @@ export type PortError = {
       ? { readonly currentRevision: number }
       : K extends "plan_invalid"
         ? { readonly reason: PlanInvalidReason }
-        : Record<string, never>;
+        : K extends "conversation_busy"
+          ? { readonly reason: ConversationBusyReason }
+          : Record<string, never>;
   };
 }[ErrorCode];
 export type Outcome<T> =
   { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: PortError };
-export function failure(code: Exclude<ErrorCode, "stale_revision">): {
+export function failure(code: Exclude<ErrorCode, "stale_revision" | "conversation_busy">): {
   readonly ok: false;
   readonly error: PortError;
 } {
@@ -657,7 +667,10 @@ function error(value: Json | undefined): boolean {
       : code === "plan_invalid"
         ? exact(value.parameters, ["reason"]) &&
           planInvalidReasons.includes(value.parameters.reason as PlanInvalidReason)
-        : exact(value.parameters, []))
+        : code === "conversation_busy"
+          ? exact(value.parameters, ["reason"]) &&
+            conversationBusyReasons.includes(value.parameters.reason as ConversationBusyReason)
+          : exact(value.parameters, []))
   );
 }
 function outcome(value: Json | undefined, valid: (value: Json | undefined) => boolean): boolean {
@@ -727,6 +740,33 @@ export const operationErrorCodes = Object.freeze({
     "record_not_found",
     "uncertain",
     "operation_conflict",
+  ],
+  "handoff.selection": [...readErrors, "record_not_found", "owner_changed"],
+  "handoff.accept": [
+    ...researchMutationErrors,
+    "record_not_found",
+    "uncertain",
+    "operation_conflict",
+    "proposal_not_waiting",
+    "owner_changed",
+    "conversation_busy",
+  ],
+  "handoff.decline": [
+    ...researchMutationErrors,
+    "record_not_found",
+    "uncertain",
+    "operation_conflict",
+    "proposal_not_waiting",
+  ],
+  "handoff.return": [
+    ...researchMutationErrors,
+    "record_not_found",
+    "uncertain",
+    "operation_conflict",
+    "owner_changed",
+    "conversation_busy",
+    "selection_invalid",
+    "parts_incomplete",
   ],
   "plan.read": [...readErrors, "record_not_found"],
   "plan.accept": [

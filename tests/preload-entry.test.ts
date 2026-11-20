@@ -127,6 +127,50 @@ describe("sandbox preload composition", () => {
       h.bridge.foundation.readLayoutReceipt("layout") as never,
       h.bridge.foundation.claimLayoutFailureNotice() as never,
     );
+    const conversationId = "019a8000-0000-7000-8000-000000000202";
+    const proposalId = "019a8000-0000-7000-8000-000000000203";
+    const handoffs = [
+      h.bridge.foundation.acceptHandoff("accept-handoff", { proposalId, expectedOwnerRevision: 1 }),
+      h.bridge.foundation.declineHandoff("decline-handoff", { proposalId }),
+      h.bridge.foundation.returnHandoff("return-handoff", {
+        conversationId,
+        expectedOwnerRevision: 2,
+        selection: "",
+      }),
+      h.bridge.foundation.listHandoffSelection({
+        conversationId,
+        expectedOwnerRevision: 2,
+        after: 0,
+      }),
+    ];
+    expect(
+      h.ipcRenderer.send.mock.calls.slice(-4).map(([, text]) => JSON.parse(text).operation),
+    ).toEqual(["handoff.accept", "handoff.decline", "handoff.return", "handoff.selection"]);
+    const sent = h.ipcRenderer.send.mock.calls.slice(-4).map(([, text]) => JSON.parse(text));
+    sent.forEach((request, index) =>
+      h.ipcRenderer.emit(
+        desktopChannels.reply,
+        {},
+        JSON.stringify({
+          ...request,
+          kind: "result",
+          payload: {
+            ok: true,
+            value:
+              index === 3
+                ? {
+                    priorReply: true,
+                    messages: [
+                      { position: 4, agentId: "josefa", prefix: "Reply", truncated: false },
+                    ],
+                    next: 4,
+                  }
+                : { resultId: proposalId },
+          },
+        }),
+      ),
+    );
+    for (const handoff of handoffs) expect(await handoff.result).toMatchObject({ ok: true });
     const subscription = h.bridge.foundation.subscribeStatus(() => {});
     const appearance = h.bridge.foundation.subscribeAppearance(() => {});
     calls[0].cancel();

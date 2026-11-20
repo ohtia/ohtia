@@ -6,6 +6,8 @@ import type {
   ResearchResult,
 } from "./research.js";
 import {
+  handoffInvalidReasons,
+  type HandoffInvalidReason,
   planOutcomes,
   planInvalidReasons,
   type PlanInvalidReason,
@@ -15,6 +17,10 @@ import { isConnectionId } from "./connections.js";
 import { utf8Size, type PortCall, type Subscription, type Outcome } from "./port.js";
 
 export const researchOperations = [
+  "handoff.accept",
+  "handoff.decline",
+  "handoff.return",
+  "handoff.selection",
   "project.create",
   "project.open",
   "project.confirmSetup",
@@ -199,8 +205,41 @@ export interface TimelinePlan extends TimelineIdentity {
   readonly state: ConsultationState;
   readonly invalidReason: PlanInvalidReason | null;
 }
+export interface TimelineHandoffProposal extends TimelineIdentity {
+  readonly kind: "handoffProposal";
+  readonly rank: 2;
+  readonly taskId: string;
+  readonly expectedOwnerRevision: number;
+  readonly note: PortText | null;
+  readonly reason: string | null;
+  readonly state: ConsultationState;
+  readonly invalidReason: HandoffInvalidReason | null;
+}
+export interface TimelineHandoffDivider extends TimelineIdentity {
+  readonly kind: "handoffDivider";
+  readonly rank: 1;
+  readonly agentId: ReplyAgent;
+}
 export type TimelineItem =
-  TimelineMessage | TimelineTask | TimelineSetupProposal | TimelineConsultation | TimelinePlan;
+  | TimelineMessage
+  | TimelineTask
+  | TimelineSetupProposal
+  | TimelineConsultation
+  | TimelinePlan
+  | TimelineHandoffProposal
+  | TimelineHandoffDivider;
+export interface HandoffSelectionMessage {
+  readonly position: number;
+  readonly agentId: ReplyAgent | null;
+  readonly prefix: string;
+  readonly truncated: boolean;
+}
+export interface HandoffSelectionPage {
+  readonly priorReply: boolean;
+  readonly messages: readonly HandoffSelectionMessage[];
+  readonly next: number | null;
+}
+export const handoffSelectionPageSize = 8;
 export interface ConversationCursor {
   readonly latestAt: string;
   readonly id: string;
@@ -214,6 +253,7 @@ export function compareConversations(a: ConversationCursor, b: ConversationCurso
 export const conversationPreviewPrefixLimit = 1024;
 export type ConversationSummary = ConversationRecord &
   ConversationCursor & {
+    readonly ownerPosition: number | null;
     readonly latestPrefix: string;
     readonly latestTruncated: boolean;
     readonly latestLanguage: string | null;
@@ -401,6 +441,16 @@ export function validResearcherMessage(text: string): boolean {
   return text.trim().length > 0 && Array.from(text).length <= researcherMessageLimit;
 }
 export interface ResearchInputs {
+  "handoff.accept": ResearchPayloads["handoff.accept"];
+  "handoff.decline": ResearchPayloads["handoff.decline"];
+  "handoff.return": Omit<ResearchPayloads["handoff.return"], "selection"> & {
+    readonly selection: string | TextDescriptor;
+  };
+  "handoff.selection": {
+    readonly conversationId: string;
+    readonly expectedOwnerRevision: number;
+    readonly after: number;
+  };
   "pause.read": Record<string, never>;
   "contribution.startAgain": ResearchPayloads["contribution.startAgain"];
   "contribution.tryAgain": ResearchPayloads["contribution.tryAgain"];
@@ -450,6 +500,10 @@ export interface ResearchInputs {
   "reply.readParts": { readonly taskId: string; readonly fromSequence: number };
 }
 export interface ResearchOutputs {
+  "handoff.accept": ResearchResult;
+  "handoff.decline": ResearchResult;
+  "handoff.return": ResearchResult;
+  "handoff.selection": HandoffSelectionPage;
   "pause.read": PauseCounts;
   "contribution.startAgain": ResearchResult;
   "contribution.tryAgain": ResearchResult;
@@ -487,6 +541,19 @@ export interface ResearchOutputs {
   "reply.readParts": ReplyParts;
 }
 export interface ResearchPort {
+  acceptHandoff(
+    operationId: string,
+    input: ResearchInputs["handoff.accept"],
+  ): PortCall<ResearchResult>;
+  declineHandoff(
+    operationId: string,
+    input: ResearchInputs["handoff.decline"],
+  ): PortCall<ResearchResult>;
+  returnHandoff(
+    operationId: string,
+    input: ResearchInputs["handoff.return"],
+  ): PortCall<ResearchResult>;
+  listHandoffSelection(input: ResearchInputs["handoff.selection"]): PortCall<HandoffSelectionPage>;
   readPauses(): PortCall<PauseCounts>;
   cancelPlan(operationId: string, input: ResearchInputs["plan.cancel"]): PortCall<FinishPlanResult>;
   acceptPlan(operationId: string, input: ResearchInputs["plan.accept"]): PortCall<ResearchResult>;
@@ -581,6 +648,9 @@ export function isResearchOperation(value: string): value is ResearchOperation {
 }
 export function isResearchMutation(value: string): value is WindowResearchCommand {
   return [
+    "handoff.accept",
+    "handoff.decline",
+    "handoff.return",
     "project.create",
     "project.open",
     "project.confirmSetup",
@@ -741,6 +811,28 @@ function cursor(value: unknown): boolean {
 }
 export function researchInput(operation: ResearchOperation, value: unknown): boolean {
   switch (operation) {
+    case "handoff.accept":
+      return (
+        exact(value, ["proposalId", "expectedOwnerRevision"]) &&
+        isResearchId(value.proposalId) &&
+        integer(value.expectedOwnerRevision)
+      );
+    case "handoff.decline":
+      return exact(value, ["proposalId"]) && isResearchId(value.proposalId);
+    case "handoff.return":
+      return (
+        exact(value, ["conversationId", "expectedOwnerRevision", "selection"]) &&
+        isResearchId(value.conversationId) &&
+        integer(value.expectedOwnerRevision) &&
+        content(value.selection)
+      );
+    case "handoff.selection":
+      return (
+        exact(value, ["conversationId", "expectedOwnerRevision", "after"]) &&
+        isResearchId(value.conversationId) &&
+        integer(value.expectedOwnerRevision) &&
+        integer(value.after, 0)
+      );
     case "conversation.stop":
       return exact(value, ["conversationId"]) && isResearchId(value.conversationId);
     case "task.continueAll":
@@ -888,6 +980,8 @@ function conversation(value: unknown): boolean {
       "updatedAt",
       "revision",
       "agentId",
+      "ownerRevision",
+      "ownerPosition",
       "latestAt",
       "latestPrefix",
       "latestTruncated",
@@ -903,6 +997,8 @@ function conversation(value: unknown): boolean {
     date(value.updatedAt) &&
     integer(value.revision) &&
     isReplyAgent(value.agentId) &&
+    integer(value.ownerRevision) &&
+    nullable(value.ownerPosition, integer) &&
     date(value.latestAt) &&
     typeof value.latestPrefix === "string" &&
     Array.from(value.latestPrefix).length <= conversationPreviewPrefixLimit &&
@@ -957,6 +1053,41 @@ function item(value: unknown): boolean {
     !integer(value.revision)
   )
     return false;
+  if (value.kind === "handoffDivider")
+    return (
+      exact(value, ["id", "position", "rank", "revision", "kind", "agentId"]) &&
+      value.rank === 1 &&
+      value.revision === 1 &&
+      isReplyAgent(value.agentId)
+    );
+  if (value.kind === "handoffProposal")
+    return (
+      exact(value, [
+        "id",
+        "position",
+        "rank",
+        "revision",
+        "kind",
+        "taskId",
+        "expectedOwnerRevision",
+        "note",
+        "reason",
+        "state",
+        "invalidReason",
+      ]) &&
+      value.rank === 2 &&
+      isResearchId(value.taskId) &&
+      integer(value.expectedOwnerRevision) &&
+      value.revision === (value.state === "proposed" || value.state === "invalid" ? 1 : 2) &&
+      (value.state === "invalid"
+        ? handoffInvalidReasons.includes(value.invalidReason as HandoffInvalidReason) &&
+          value.note === null &&
+          value.reason === null
+        : ["proposed", "accepted", "declined", "replaced"].includes(value.state as string) &&
+          value.invalidReason === null &&
+          (typeof value.note === "string" || isTextReference(value.note)) &&
+          typeof value.reason === "string")
+    );
   if (value.kind === "plan")
     return (
       exact(value, [
@@ -1187,6 +1318,23 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
           opaque(d.operation) &&
           integer(d.maxAttemptDurationMs) &&
           isConnectionId(d.connection),
+      )
+    );
+  if (operation === "handoff.selection")
+    return (
+      exact(value, ["priorReply", "messages", "next"]) &&
+      typeof value.priorReply === "boolean" &&
+      Array.isArray(value.messages) &&
+      value.messages.length <= handoffSelectionPageSize &&
+      nullable(value.next, integer) &&
+      value.messages.every(
+        (entry) =>
+          exact(entry, ["position", "agentId", "prefix", "truncated"]) &&
+          integer(entry.position) &&
+          nullable(entry.agentId, isReplyAgent) &&
+          typeof entry.prefix === "string" &&
+          typeof entry.truncated === "boolean" &&
+          Array.from(entry.prefix).length <= conversationPreviewPrefixLimit,
       )
     );
   if (operation === "plan.read") return isPlanSnapshot(value);
@@ -1547,6 +1695,18 @@ export function researchResultMatches(
           event.sequence > (input.afterSequence as number) &&
           event.sequence <= (output.throughSequence as number) &&
           event.sequence > (events[index - 1]?.sequence ?? 0),
+      )
+    );
+  }
+  if (operation === "handoff.accept" || operation === "handoff.decline")
+    return output.resultId === input.proposalId;
+  if (operation === "handoff.selection") {
+    const messages = output.messages as readonly HandoffSelectionMessage[];
+    return (
+      (output.next === null || output.next === messages.at(-1)?.position) &&
+      messages.every(
+        ({ position }, index) =>
+          position > (messages[index - 1]?.position ?? (input.after as number)),
       )
     );
   }

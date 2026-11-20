@@ -1,4 +1,5 @@
 import { ConversationHistoryController } from "./conversation-history-controller.js";
+import { stagedCommand } from "./staged-command.js";
 import { ComposerController } from "./composer-controller.js";
 import {
   mergeTimeline,
@@ -8,6 +9,8 @@ import {
   type TimelineSetupProposal,
   type TimelineConsultation,
   type TimelinePlan,
+  type TimelineHandoffProposal,
+  type HandoffSelectionMessage,
   type PlanSnapshot,
   type PlanText,
   type ProviderDeclaration,
@@ -315,7 +318,11 @@ export class ConversationController {
     const { projectId } = this.state.scope;
     if (
       !projectId ||
-      !this.state.items.some((item) => item.kind === "consultation" && item.state === "proposed")
+      !this.state.items.some(
+        (item) =>
+          (item.kind === "consultation" && item.state === "proposed") ||
+          (item.kind === "handoffProposal" && item.state !== "invalid"),
+      )
     )
       return;
     const epoch = this.epoch;
@@ -379,6 +386,80 @@ export class ConversationController {
         await this.queue;
       }
     }
+    return result;
+  };
+  private refreshHandoff(proposal?: string): Promise<void> {
+    const epoch = this.epoch;
+    this.queue = this.queue
+      .then(async () => {
+        if (!this.live(epoch)) return;
+        await this.header(epoch);
+        if (proposal) await this.readIds([proposal], epoch);
+        await this.page(null, epoch);
+        if (this.live(epoch)) {
+          this.publish();
+          void this.composer.refreshDestination();
+        }
+      })
+      .catch(() => {
+        if (this.live(epoch)) this.reload();
+      });
+    return this.queue;
+  }
+  performHandoffAction = async (
+    id: string,
+    proposal: TimelineHandoffProposal,
+    action: "accept" | "decline",
+  ): Promise<Outcome<ResearchResult>> => {
+    const epoch = this.epoch;
+    const result = await (
+      action === "accept"
+        ? this.port.acceptHandoff(id, {
+            proposalId: proposal.id,
+            expectedOwnerRevision: proposal.expectedOwnerRevision,
+          })
+        : this.port.declineHandoff(id, { proposalId: proposal.id })
+    ).result.catch(() => failure("invalid_service_result"));
+    if (
+      this.live(epoch) &&
+      (result.ok ||
+        result.error.code === "owner_changed" ||
+        result.error.code === "proposal_not_waiting")
+    )
+      await this.refreshHandoff(proposal.id);
+    return result;
+  };
+  listHandoffMessages = async (
+    conversationId: string,
+    expectedOwnerRevision: number,
+    signal: AbortSignal,
+  ): Promise<Outcome<{ messages: HandoffSelectionMessage[]; priorReply: boolean }>> => {
+    let after = 0;
+    const messages: HandoffSelectionMessage[] = [];
+    while (!signal.aborted) {
+      const page = await this.port
+        .listHandoffSelection({ conversationId, expectedOwnerRevision, after })
+        .result.catch(() => failure("invalid_service_result"));
+      if (!page.ok) return page;
+      messages.push(...page.value.messages);
+      if (page.value.next === null)
+        return { ok: true, value: { messages, priorReply: page.value.priorReply } };
+      after = page.value.next;
+    }
+    return failure("cancelled");
+  };
+  returnHandoff = async (
+    id: string,
+    conversationId: string,
+    expectedOwnerRevision: number,
+    selection: string,
+  ): Promise<Outcome<ResearchResult>> => {
+    const epoch = this.epoch;
+    const result = await stagedCommand(this.port, id, selection, (content) =>
+      this.port.returnHandoff(id, { conversationId, expectedOwnerRevision, selection: content }),
+    );
+    if (this.live(epoch) && (result.ok || result.error.code === "owner_changed"))
+      await this.refreshHandoff();
     return result;
   };
   private pauseEpoch = -1;
@@ -918,6 +999,11 @@ export class ConversationController {
           typeof item.documentLanguage === "string"
             ? item.documentLanguage
             : await this.text(item.documentLanguage, epoch),
+        );
+      } else if (item.kind === "handoffProposal" && item.note !== null) {
+        texts.set(
+          item.id,
+          typeof item.note === "string" ? item.note : await this.text(item.note, epoch),
         );
       } else if (item.kind === "consultation" && item.request !== null) {
         texts.set(

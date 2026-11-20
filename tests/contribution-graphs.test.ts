@@ -671,10 +671,8 @@ it("migrates completed, failed, uncertain, cancelled, active and waiting consult
   await f.store.close();
   // A new proposal follows the completed or cancelled consultation queue.
   const connection = f.raw();
-  connection.exec(
-    "PRAGMA foreign_keys=OFF; PRAGMA legacy_alter_table=ON; DROP TRIGGER receipts_commands;",
-  );
-  connection.exec(dropWorkLimitsSql);
+  connection.exec("PRAGMA foreign_keys=OFF; PRAGMA legacy_alter_table=ON;");
+  connection.exec(dropWorkLimitsSql + "DROP TRIGGER receipts_commands;");
   for (const table of ["tasks", "contributions", "interventions"])
     connection.exec(`ALTER TABLE ${table} RENAME TO ${table}_with_graphs`);
   for (const definition of [...Object.values(consultationTables), consultationTasks])
@@ -2076,7 +2074,7 @@ it(
         version: 1,
         operation: "plan-migration-retry",
         source: 23,
-        target: 26,
+        target: 27,
       }),
     );
     await expect(f.store.open()).rejects.toThrow(/recovery/);

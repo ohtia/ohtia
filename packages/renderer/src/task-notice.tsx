@@ -199,6 +199,7 @@ export function TaskNotice({
   hasText,
   latest,
   setupFinal = false,
+  previousOwner,
   runningAgent,
 
   pauses,
@@ -213,6 +214,7 @@ export function TaskNotice({
   readonly hasText: boolean;
   readonly latest: boolean;
   readonly setupFinal?: boolean;
+  readonly previousOwner?: TimelineTask["agentId"] | undefined;
   readonly runningAgent?: string | undefined;
 
   readonly pauses?: PauseCounts;
@@ -222,6 +224,13 @@ export function TaskNotice({
   readonly announce?: (signature: string) => boolean;
 }) {
   const content = taskNoticeContent(task, locale, connection, hasText, runningAgent);
+  const handoff =
+    previousOwner && (task.state === "failed" || task.state === "uncertain")
+      ? message(locale, "handoff.previousReply", {
+          agent: contributorNames[task.agentId],
+          new_agent: contributorNames[previousOwner],
+        })
+      : undefined;
   const [announcement, setAnnouncement] = useState({
     text: "",
     role: "status" as "status" | "alert",
@@ -239,9 +248,12 @@ export function TaskNotice({
         task.waitingLimit,
         hasText,
         runningAgent ?? "",
+        previousOwner ?? "",
       ])
     : "";
-  const announcementText = content ? [content.text, content.usage].filter(Boolean).join(" ") : "";
+  const announcementText = content
+    ? [content.text, content.usage, handoff].filter(Boolean).join(" ")
+    : "";
   useEffect(() => {
     if (!signature || localAnnouncement.current === signature) return;
     localAnnouncement.current = signature;
@@ -359,8 +371,8 @@ export function TaskNotice({
     task.state === "failed" &&
     !["not_eligible", "input_too_large"].includes(task.outcomeReason ?? "");
   const fits = !task.consultation || task.consultationRetryFits === true;
-  const retry = !setupFinal && fits && retryableFailure;
-  const restart = !setupFinal && fits && latest && task.state === "uncertain";
+  const retry = !handoff && !setupFinal && fits && retryableFailure;
+  const restart = !handoff && !setupFinal && fits && latest && task.state === "uncertain";
   const resume = usage && (task.state === "blocked" || retryableFailure);
   const count = pauses
     ? (pauses.usage.find((p) => p.connection === task.connection)?.count ?? 0)
@@ -423,6 +435,7 @@ export function TaskNotice({
         <span>
           {content.text}
           {content.usage && <span className="task-usage">{content.usage}</span>}
+          {handoff && <span className="task-usage">{handoff}</span>}
         </span>
       </div>
       <div className="task-notice-actions">

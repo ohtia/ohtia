@@ -1,4 +1,5 @@
 import { PlanProposal, type PlanCardController } from "./plan-proposal.js";
+import { HandoffDivider, HandoffProposal } from "./handoff.js";
 import { ConsultationProposal } from "./consultation-proposal.js";
 import { SetupProposal } from "./setup-proposal.js";
 import { RecoveryFocusBoundary } from "./settings-notices.js";
@@ -96,6 +97,7 @@ export function ConversationView({
         | "composer"
         | "performSetupAction"
         | "performConsultationAction"
+        | "performHandoffAction"
         | "observeConsultationDestination"
         | "performTaskAction"
         | "connections"
@@ -109,6 +111,12 @@ export function ConversationView({
     Partial<Pick<CommandBridge, "openLink">>;
   readonly onOpenConnections?: () => void;
 }) {
+  const hasHandoffCard = state.items.some(
+    (item) => item.kind === "handoffProposal" && item.state !== "invalid",
+  );
+  useEffect(() => {
+    if (hasHandoffCard) return controller.observeConsultationDestination?.();
+  }, [hasHandoffCard, controller.observeConsultationDestination, state.scope.conversationId]);
   const viewport = useRef<HTMLDivElement>(null);
   const statusViewport = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
@@ -377,6 +385,8 @@ export function ConversationView({
                 item.kind === "message" ||
                 item.kind === "setupProposal" ||
                 item.kind === "consultation" ||
+                item.kind === "handoffProposal" ||
+                item.kind === "handoffDivider" ||
                 item.kind === "plan",
             ) &&
               state.replies.size === 0 && (
@@ -394,6 +404,34 @@ export function ConversationView({
                 </p>
               )}
             {state.items.map((item) => {
+              if (item.kind === "handoffDivider")
+                return (
+                  <div key={item.id} data-timeline-id={item.id}>
+                    <HandoffDivider agent={item.agentId} locale={locale} />
+                  </div>
+                );
+              if (item.kind === "handoffProposal")
+                return controller.performHandoffAction ? (
+                  <div key={item.id} data-timeline-id={item.id}>
+                    <HandoffProposal
+                      proposal={item}
+                      note={
+                        state.texts.get(item.id) ?? (typeof item.note === "string" ? item.note : "")
+                      }
+                      hasText={state.items.some(
+                        (saved) => saved.kind === "message" && saved.taskId === item.taskId,
+                      )}
+                      controller={{ performHandoffAction: controller.performHandoffAction }}
+                      documentLanguage={state.project?.documentLanguage}
+                      service={
+                        controller.connections?.find(
+                          ({ id }) => id === state.consultationDestination,
+                        )?.displayName
+                      }
+                      locale={locale}
+                    />
+                  </div>
+                ) : null;
               if (item.kind === "plan")
                 return planController ? (
                   <div key={item.id} data-timeline-id={item.id}>
@@ -551,6 +589,14 @@ export function ConversationView({
                           : state.conversation?.latestReplyTaskId === item.id
                       }
                       // Only tasks accepted before the document language was confirmed are setup tasks.
+                      previousOwner={
+                        !item.consultation &&
+                        !item.synthesis &&
+                        state.conversation?.ownerPosition &&
+                        item.position < state.conversation.ownerPosition
+                          ? state.conversation.agentId
+                          : undefined
+                      }
                       setupFinal={
                         item.language === null &&
                         !!state.project?.setupConfirmedAt &&

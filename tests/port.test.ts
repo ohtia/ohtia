@@ -70,7 +70,21 @@ describe("P3 shared producer/consumer conformance corpus", () => {
             ? staleRevision(42)
             : code === "plan_invalid"
               ? invalidPlan("reason_empty")
-              : failure(code as Exclude<keyof typeof errorActions, "stale_revision">);
+              : code === "conversation_busy"
+                ? {
+                    ok: false,
+                    error: {
+                      code,
+                      nextAction: "retry_later",
+                      parameters: { reason: "reply_active" },
+                    },
+                  }
+                : failure(
+                    code as Exclude<
+                      keyof typeof errorActions,
+                      "stale_revision" | "conversation_busy"
+                    >,
+                  );
         expect(decodeEnvelope({ ...request(), operation, kind: "result", payload }).ok).toBe(
           allowed.includes(code as never),
         );
@@ -274,6 +288,10 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
         "tryAgainSynthesis",
         "startAgainTask",
         "acceptConsultation",
+        "acceptHandoff",
+        "declineHandoff",
+        "returnHandoff",
+        "listHandoffSelection",
         "acceptPlan",
         "finishPlan",
         "cancelPlan",

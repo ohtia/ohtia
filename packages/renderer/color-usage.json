@@ -2,6 +2,47 @@
   "version": 1,
   "rules": [
     {
+      "selector": ".handoff-quoted-note",
+      "backgrounds": ["surface.page"],
+      "decorativeBorders": "border.subtle",
+      "minimum": 3
+    },
+    {
+      "selector": ".handoff-dialog",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7
+    },
+    {
+      "selector": ".handoff-select-all input, .handoff-selection input",
+      "backgrounds": ["surface.page", "surface.panel"],
+      "minimum": 3
+    },
+    {
+      "selector": ".handoff-divider-line",
+      "backgrounds": ["surface.panel", "surface.page"],
+      "minimum": 3
+    },
+    {
+      "selector": ".handoff-divider > .contributor-symbol",
+      "foreground": "voice.ohtia.content",
+      "backgrounds": ["surface.panel", "surface.page"],
+      "minimum": 7
+    },
+    {
+      "selector": ".handoff-selection",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.page"],
+      "decorativeBorders": "border.subtle",
+      "minimum": 7
+    },
+    {
+      "selector": ".handoff-selection [role=\"listitem\"] + [role=\"listitem\"]",
+      "backgrounds": ["surface.page"],
+      "decorativeBorders": "border.subtle",
+      "minimum": 3
+    },
+    {
       "selector": ":root",
       "foreground": "content.primary",
       "backgrounds": ["surface.page"],
