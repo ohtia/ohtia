@@ -10,6 +10,7 @@ import { type Generated, type Kysely, sql } from "kysely";
 import {
   failure,
   isConnectionId,
+  isPlanConnections,
   validResearcherMessage,
   validConversationTitle,
   isIdentifier,
@@ -283,6 +284,8 @@ const payloadKeys = {
   "project.create": [],
   "project.open": ["projectId"],
   "plan.addContributions": ["planId", "expectedGraphVersion", "contributions"],
+  "plan.accept": ["planId", "connections"],
+  "plan.decline": ["planId"],
   "plan.finish": ["planId"],
   "plan.cancel": ["planId"],
   "usagePause.resume": ["connection"],
@@ -440,6 +443,21 @@ export async function applyResearchCommand(
       const recorded = await tasks.recordGraphChange(added.value);
       if (!recorded.ok) return recorded;
       result = added.value;
+      break;
+    }
+    case "plan.accept":
+    case "plan.decline": {
+      if (!isEntityId(input.payload.planId)) return failure("invalid_message");
+      const connections = input.command === "plan.accept" ? input.payload.connections : undefined;
+      if (input.command === "plan.accept" && !isPlanConnections(connections))
+        return failure("invalid_message");
+      const decision = await tasks.decidePlan(
+        bytes(input.payload.planId),
+        input.operationId,
+        connections,
+      );
+      if (!decision.ok) return decision;
+      result = decision.value;
       break;
     }
     case "plan.cancel":

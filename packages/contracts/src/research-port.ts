@@ -5,7 +5,12 @@ import type {
   ResearchPayloads,
   ResearchResult,
 } from "./research.js";
-import { planOutcomes, type PlanOutcome } from "./research.js";
+import {
+  planOutcomes,
+  planInvalidReasons,
+  type PlanInvalidReason,
+  type PlanOutcome,
+} from "./research.js";
 import { isConnectionId } from "./connections.js";
 import { utf8Size, type PortCall, type Subscription, type Outcome } from "./port.js";
 
@@ -22,6 +27,8 @@ export const researchOperations = [
   "plan.finish",
   "plan.cancel",
   "plan.read",
+  "plan.accept",
+  "plan.decline",
   "planEvent.list",
   "consultation.accept",
   "consultation.decline",
@@ -104,6 +111,7 @@ export interface TimelineMessage extends TimelineIdentity {
   readonly rank: 1;
   readonly consultation?: true;
   readonly synthesisSources?: readonly SynthesisSource[];
+  readonly planContribution?: { readonly planId: string; readonly key: string };
   readonly authorKind: "researcher" | "agent";
   readonly agentId: ReplyAgent | null;
   readonly taskId: string | null;
@@ -182,8 +190,16 @@ export interface TimelineConsultation extends TimelineIdentity {
   readonly reason: string | null;
   readonly connection: string | null;
 }
+export interface TimelinePlan extends TimelineIdentity {
+  readonly kind: "plan";
+  readonly rank: 2;
+  readonly taskId: string | null;
+  readonly language: string | null;
+  readonly state: ConsultationState;
+  readonly invalidReason: PlanInvalidReason | null;
+}
 export type TimelineItem =
-  TimelineMessage | TimelineTask | TimelineSetupProposal | TimelineConsultation;
+  TimelineMessage | TimelineTask | TimelineSetupProposal | TimelineConsultation | TimelinePlan;
 export interface ConversationCursor {
   readonly latestAt: string;
   readonly id: string;
@@ -305,6 +321,9 @@ export interface PlanSnapshot {
   readonly outcome: PlanOutcome | null;
   readonly throughSequence: number;
   readonly needsAttention: boolean;
+  readonly state: Exclude<ConsultationState, "invalid">;
+  readonly connections: Readonly<Partial<Record<ReplyAgent, string>>>;
+  readonly maxRequests: number;
   readonly purpose: PlanText;
   readonly sharedContext: PlanText;
   readonly contributions: readonly {
@@ -373,6 +392,8 @@ export interface ResearchInputs {
   "plan.finish": ResearchPayloads["plan.finish"];
   "plan.cancel": ResearchPayloads["plan.cancel"];
   "plan.read": { readonly planId: string };
+  "plan.accept": ResearchPayloads["plan.accept"];
+  "plan.decline": ResearchPayloads["plan.decline"];
   "planEvent.list": { readonly planId: string; readonly afterSequence: number };
   "consultation.accept": ResearchPayloads["consultation.accept"];
   "task.tryAgain": ResearchPayloads["task.tryAgain"];
@@ -420,6 +441,8 @@ export interface ResearchOutputs {
   "plan.finish": FinishPlanResult;
   "plan.cancel": FinishPlanResult;
   "plan.read": PlanSnapshot;
+  "plan.accept": ResearchResult;
+  "plan.decline": ResearchResult;
   "planEvent.list": PlanEventPage;
   "consultation.accept": ResearchResult;
   "task.tryAgain": ResearchResult;
@@ -450,6 +473,8 @@ export interface ResearchOutputs {
 export interface ResearchPort {
   readPauses(): PortCall<PauseCounts>;
   cancelPlan(operationId: string, input: ResearchInputs["plan.cancel"]): PortCall<FinishPlanResult>;
+  acceptPlan(operationId: string, input: ResearchInputs["plan.accept"]): PortCall<ResearchResult>;
+  declinePlan(operationId: string, input: ResearchInputs["plan.decline"]): PortCall<ResearchResult>;
   readPlan(input: ResearchInputs["plan.read"]): PortCall<PlanSnapshot>;
   listPlanEvents(input: ResearchInputs["planEvent.list"]): PortCall<PlanEventPage>;
   finishPlan(operationId: string, input: ResearchInputs["plan.finish"]): PortCall<FinishPlanResult>;
@@ -551,6 +576,8 @@ export function isResearchMutation(value: string): value is WindowResearchComman
     "task.stop",
     "plan.finish",
     "plan.cancel",
+    "plan.accept",
+    "plan.decline",
     "consultation.accept",
     "consultation.decline",
     "contribution.tryAgain",
@@ -733,7 +760,14 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
         isResearchId(value.planId) &&
         integer(value.afterSequence, 0)
       );
+    case "plan.accept":
+      return (
+        exact(value, ["planId", "connections"]) &&
+        isResearchId(value.planId) &&
+        isPlanConnections(value.connections)
+      );
     case "plan.read":
+    case "plan.decline":
     case "plan.cancel":
     case "plan.finish":
       return exact(value, ["planId"]) && isResearchId(value.planId);
@@ -907,6 +941,28 @@ function item(value: unknown): boolean {
     !integer(value.revision)
   )
     return false;
+  if (value.kind === "plan")
+    return (
+      exact(value, [
+        "id",
+        "position",
+        "rank",
+        "revision",
+        "kind",
+        "taskId",
+        "language",
+        "state",
+        "invalidReason",
+      ]) &&
+      value.rank === 2 &&
+      nullable(value.taskId, isResearchId) &&
+      nullable(value.language, (language) => typeof language === "string") &&
+      (value.state === "invalid"
+        ? isResearchId(value.taskId) &&
+          planInvalidReasons.includes(value.invalidReason as PlanInvalidReason)
+        : ["proposed", "accepted", "declined", "replaced"].includes(value.state as string) &&
+          value.invalidReason === null)
+    );
   if (value.kind === "consultation")
     return (
       exact(value, [
@@ -990,6 +1046,7 @@ function item(value: unknown): boolean {
         "ending",
         ...(value.consultation === true ? ["consultation"] : []),
         ...(value.synthesisSources !== undefined ? ["synthesisSources"] : []),
+        ...(value.planContribution !== undefined ? ["planContribution"] : []),
       ]) &&
       value.rank === 1 &&
       value.revision === 1 &&
@@ -997,6 +1054,14 @@ function item(value: unknown): boolean {
         (value.agentId === "virgilio" &&
           value.consultation === undefined &&
           isSynthesisSources(value.synthesisSources))) &&
+      (value.planContribution === undefined ||
+        (value.authorKind === "agent" &&
+          value.consultation === undefined &&
+          value.synthesisSources === undefined &&
+          exact(value.planContribution, ["planId", "key"]) &&
+          isResearchId(value.planContribution.planId) &&
+          typeof value.planContribution.key === "string" &&
+          /^[a-z0-9-]{1,64}(?![\s\S])/.test(value.planContribution.key))) &&
       (typeof value.content === "string" || isTextReference(value.content)) &&
       (value.authorKind === "researcher"
         ? value.consultation === undefined &&
@@ -1110,7 +1175,7 @@ function isSynthesisSources(value: unknown): boolean {
       (source: unknown) =>
         exact(source, ["key", "agentId", "state", "messageId"]) &&
         typeof source.key === "string" &&
-        /^[a-z0-9-]{1,64}$/.test(source.key) &&
+        /^[a-z0-9-]{1,64}(?![\s\S])/.test(source.key) &&
         isReplyAgent(source.agentId) &&
         (source.state === "completed"
           ? isResearchId(source.messageId)
@@ -1270,6 +1335,16 @@ function isPlanText(value: unknown): value is PlanText {
       hash(value.sha256))
   );
 }
+export function isPlanConnections(
+  value: unknown,
+): value is ResearchInputs["plan.accept"]["connections"] {
+  return (
+    obj(value) &&
+    Object.entries(value).every(
+      ([agent, connection]) => isReplyAgent(agent) && isConnectionId(connection),
+    )
+  );
+}
 function isPlanSnapshot(value: unknown): value is PlanSnapshot {
   return (
     exact(value, [
@@ -1281,6 +1356,9 @@ function isPlanSnapshot(value: unknown): value is PlanSnapshot {
       "outcome",
       "throughSequence",
       "needsAttention",
+      "state",
+      "connections",
+      "maxRequests",
       "purpose",
       "sharedContext",
       "contributions",
@@ -1290,10 +1368,15 @@ function isPlanSnapshot(value: unknown): value is PlanSnapshot {
     isResearchId(value.projectId) &&
     isResearchId(value.conversationId) &&
     integer(value.revision) &&
-    integer(value.graphVersion) &&
+    integer(value.graphVersion, 0) &&
+    (value.state === "accepted" ? value.graphVersion > 0 : value.graphVersion === 0) &&
     (value.outcome === null || planOutcomes.some((outcome) => outcome === value.outcome)) &&
     integer(value.throughSequence, 0) &&
     typeof value.needsAttention === "boolean" &&
+    ["proposed", "accepted", "declined", "replaced"].includes(value.state as string) &&
+    isPlanConnections(value.connections) &&
+    (value.state === "accepted" || Object.keys(value.connections).length === 0) &&
+    integer(value.maxRequests) &&
     isPlanText(value.purpose) &&
     isPlanText(value.sharedContext) &&
     Array.isArray(value.contributions) &&
@@ -1317,7 +1400,7 @@ function isPlanSnapshot(value: unknown): value is PlanSnapshot {
         ]) &&
         isResearchId(node.id) &&
         typeof node.key === "string" &&
-        /^[a-z0-9-]{1,64}$/.test(node.key) &&
+        /^[a-z0-9-]{1,64}(?![\s\S])/.test(node.key) &&
         isPlanText(node.request) &&
         isPlanText(node.reason) &&
         [null, "destination_changed", "input_changed", "input_too_large"].some(

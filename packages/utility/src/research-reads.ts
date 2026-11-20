@@ -5,6 +5,7 @@ import {
   readPlanText,
   synthesisSources,
 } from "./plan-coordination.js";
+import { planInvalidReason } from "./plan-proposals.js";
 import { consultationRetryFits } from "./work-limits.js";
 import { sql, type Kysely } from "kysely";
 import {
@@ -19,6 +20,8 @@ import {
   type ResearchEvent,
   type ResearchScope,
   type TimelineItem,
+  consultationInvalidReasons,
+  type ConsultationInvalidReason,
 } from "@ohtia/contracts";
 import {
   bytes,
@@ -56,6 +59,13 @@ const taskPosition = sql<number>`CASE WHEN t.kind='synthesis' THEN t.reply_posit
     JOIN attempts a ON a.id=i.proposed_by_attempt_id JOIN tasks origin ON origin.id=a.task_id
     WHERE c.id=t.contribution_id)) END`;
 
+// Model proposals and the explicit development run have an identifiable chat position.
+const visibleIntervention = sql<boolean>`(i.proposed_by_attempt_id IS NOT NULL OR EXISTS (
+  SELECT 1 FROM command_receipts r WHERE r.operation_id=i.decided_by_operation_id
+    AND r.command='development.runPlan'))`;
+const interventionPosition = sql<number | null>`coalesce(t.reply_position,
+  (SELECT min(m.position) FROM messages m WHERE m.conversation_id=i.conversation_id))`;
+
 async function timelineItem(
   db: Kysely<ResearchSchema>,
   conversationId: string,
@@ -70,6 +80,7 @@ async function timelineItem(
       "tasks.document_language as language",
       "tasks.kind as task_kind",
       "tasks.operation as operation",
+      "tasks.contribution_id as contribution_id",
     ])
     .where("messages.conversation_id", "=", bytes(conversationId))
     .where("messages.id", "=", bytes(id))
@@ -77,9 +88,22 @@ async function timelineItem(
   if (row) {
     if (row.agent_id !== null && !isReplyAgent(row.agent_id))
       throw new Error("Unknown reply author.");
+    const node =
+      row.task_kind === "contribution" && row.contribution_id
+        ? await db
+            .selectFrom("contributions as c")
+            .innerJoin("interventions as i", "i.id", "c.intervention_id")
+            .select(["c.plan_key", "c.intervention_id"])
+            .where("c.id", "=", row.contribution_id)
+            .where(visibleIntervention)
+            .executeTakeFirst()
+        : undefined;
     return {
       id,
       kind: "message",
+      ...(node?.plan_key
+        ? { planContribution: { planId: identifier(node.intervention_id), key: node.plan_key } }
+        : {}),
       ...(row.task_kind === "consultation" ? ({ consultation: true } as const) : {}),
       ...(row.task_id && row.operation === "contribution_synthesis"
         ? { synthesisSources: await synthesisSources(db, row.task_id) }
@@ -116,6 +140,36 @@ async function timelineItem(
       state: proposal.state,
       invalidReason: proposal.invalid_reason,
     };
+  const plan = await db
+    .selectFrom("interventions as i")
+    .leftJoin("attempts as a", "a.id", "i.proposed_by_attempt_id")
+    .leftJoin("tasks as t", "t.id", "a.task_id")
+    .innerJoin("projects as p", "p.id", "i.project_id")
+    .select([
+      "i.state",
+      "i.invalid_reason",
+      "i.revision",
+      "t.id as taskId",
+      "p.document_language",
+      interventionPosition.as("position"),
+    ])
+    .where("i.kind", "=", "plan")
+    .where(visibleIntervention)
+    .where("i.conversation_id", "=", bytes(conversationId))
+    .where("i.id", "=", bytes(id))
+    .executeTakeFirst();
+  if (plan && plan.position !== null)
+    return {
+      id,
+      kind: "plan",
+      rank: 2,
+      revision: plan.revision,
+      position: plan.position,
+      taskId: plan.taskId ? identifier(plan.taskId) : null,
+      language: plan.document_language,
+      state: plan.state,
+      invalidReason: plan.state === "invalid" ? planInvalidReason(plan.invalid_reason) : null,
+    };
   const consultation = await db
     .selectFrom("interventions as i")
     .innerJoin("attempts as a", "a.id", "i.proposed_by_attempt_id")
@@ -143,6 +197,11 @@ async function timelineItem(
   if (consultation && consultation.reply_position !== null) {
     if (consultation.agent_id !== null && consultation.agent_id !== "josefa")
       throw new Error("Unknown consultation agent.");
+    if (
+      consultation.invalid_reason !== null &&
+      !consultationInvalidReasons.includes(consultation.invalid_reason as ConsultationInvalidReason)
+    )
+      throw new Error("Unknown consultation invalid reason.");
     return {
       id,
       kind: "consultation",
@@ -152,7 +211,7 @@ async function timelineItem(
       taskId: identifier(consultation.taskId),
       language: consultation.document_language,
       state: consultation.state,
-      invalidReason: consultation.invalid_reason,
+      invalidReason: consultation.invalid_reason as ConsultationInvalidReason | null,
       agentId: consultation.agent_id,
       request:
         consultation.request === null
@@ -529,9 +588,9 @@ export async function readResearch(
           SELECT id, position, 1 AS rank FROM messages WHERE conversation_id = ${bytes(p.conversationId)}
           UNION ALL SELECT t.id, ${taskPosition} AS position, 3 AS rank FROM tasks t WHERE t.conversation_id = ${bytes(p.conversationId)} AND (t.kind IN ('reply','consultation') OR (t.operation='contribution_synthesis' AND t.reply_position IS NOT NULL))
           UNION ALL SELECT p.id, t.reply_position AS position, 2 AS rank FROM project_setup_proposals p JOIN tasks t ON t.id=p.task_id WHERE t.conversation_id = ${bytes(p.conversationId)}
-          UNION ALL SELECT i.id, t.reply_position AS position, 2 AS rank
-            FROM interventions i JOIN attempts a ON a.id=i.proposed_by_attempt_id JOIN tasks t ON t.id=a.task_id
-            WHERE i.conversation_id = ${bytes(p.conversationId)} AND i.kind = 'consultation'
+          UNION ALL SELECT i.id, ${interventionPosition} AS position, 2 AS rank
+            FROM interventions i LEFT JOIN attempts a ON a.id=i.proposed_by_attempt_id LEFT JOIN tasks t ON t.id=a.task_id
+            WHERE i.conversation_id = ${bytes(p.conversationId)} AND ${visibleIntervention}
         ) ${before} ORDER BY position DESC, rank DESC, id DESC LIMIT ${p.count + 1}`.execute(db);
       const items: TimelineItem[] = [];
       for (const row of rows.rows.slice(0, p.count)) {
@@ -693,10 +752,10 @@ export async function researchRevisions(
         revision: setupRevision(row),
       });
     for (const row of await db
-      .selectFrom("interventions")
-      .select(["id", "revision"])
-      .where("kind", "=", "consultation")
-      .where("conversation_id", "=", bytes(scope.conversationId))
+      .selectFrom("interventions as i")
+      .select(["i.id", "i.revision"])
+      .where("i.conversation_id", "=", bytes(scope.conversationId))
+      .where(visibleIntervention)
       .execute())
       result.push({
         kind: "changed",

@@ -11,6 +11,14 @@ import { columns as titleColumns } from "../packages/utility/src/migrations/0018
 import { objects as limits } from "../packages/utility/src/migrations/0023_shared_work_limits.mjs";
 import { objects as josefaObjects } from "../packages/utility/src/migrations/0019_josefa_search_planning.mjs";
 
+import {
+  coordinationTables,
+  objects as coordination,
+} from "../packages/utility/src/migrations/0024_plan_coordination.mjs";
+import { objects as graph } from "../packages/utility/src/migrations/0022_contribution_graphs.mjs";
+
+import { priorInterventionFields } from "../packages/utility/src/migrations/0026_plan_proposals.mjs";
+
 const priorTaskTable = durableTaskTables.tasks.replace(
   ",\n    CHECK ((state=",
   `, ${replyColumns.charge},\n    CHECK ((state=`,
@@ -38,7 +46,26 @@ const attemptObjects = Object.entries({
   .filter(([name]) => name.startsWith("attempts_"))
   .map(([, definition]) => definition);
 
+export const dropPlanProposalSql = `
+  ALTER TABLE interventions RENAME TO interventions_with_plans;
+  ${coordinationTables.interventions};
+  INSERT INTO interventions(rowid,${priorInterventionFields})
+    SELECT rowid,${priorInterventionFields} FROM interventions_with_plans ORDER BY rowid;
+  DROP TABLE interventions_with_plans;
+  ${Object.entries(coordination)
+    .filter(([name]) => name.startsWith("interventions_"))
+    .map(([, definition]) => definition)
+    .join(";\n")};
+  DROP TRIGGER contributions_initial;
+  ${limits.contributions_initial};
+  DROP TRIGGER contribution_dependencies_initial;
+  ${graph.contribution_dependencies_initial};
+  DELETE FROM kysely_migration WHERE name='0026_plan_proposals';
+  DELETE FROM ohtia_migration_artifacts WHERE name='0026_plan_proposals';
+`;
+
 export const dropSynthesisAttemptSql = `
+  ${dropPlanProposalSql}
   ALTER TABLE attempts RENAME TO attempts_with_synthesis;
   ${priorAttempts};
   INSERT INTO attempts(rowid,${attemptFields})

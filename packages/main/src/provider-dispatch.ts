@@ -3,6 +3,7 @@ import {
   isProviderEvent,
   isProviderToolLabel,
   isConsultationTool,
+  isPlanTool,
   requestsConversationTitle,
   conversationTitlePolicy,
   conversationTitleInstructionSuffix,
@@ -49,7 +50,7 @@ interface Dispatched {
   textTimer: ReturnType<typeof setTimeout> | undefined;
   releasedAt?: number;
   conversationTitle: boolean;
-  consultationEnabled: boolean;
+  proposalToolsEnabled: boolean;
   readonly calls: Map<string | symbol, BufferedToolCall>;
   sampledWall: number;
   sampledMono: number;
@@ -230,7 +231,9 @@ export class ProviderDispatch {
       pendingText: "",
       textTimer: undefined,
       conversationTitle: requestsConversationTitle(request),
-      consultationEnabled: request.tools.some(isConsultationTool),
+      proposalToolsEnabled: request.tools.some(
+        (tool) => isConsultationTool(tool) || isPlanTool(tool),
+      ),
       calls: new Map(),
       sampledWall: this.wall(),
       sampledMono: this.monotonic(),
@@ -342,12 +345,15 @@ export class ProviderDispatch {
       try {
         const titleInstructions = conversationTitleInstructionSuffix(request.operation);
         const providerRequest =
-          (record.conversationTitle || record.consultationEnabled) &&
+          (record.conversationTitle || record.proposalToolsEnabled) &&
           !adapter.declaration.capabilities.tools
             ? {
                 ...request,
                 tools: request.tools.filter(
-                  (tool) => !isConversationTitleTool(tool) && !isConsultationTool(tool),
+                  (tool) =>
+                    !isConversationTitleTool(tool) &&
+                    !isConsultationTool(tool) &&
+                    !isPlanTool(tool),
                 ),
                 instructions: request.instructions.endsWith(titleInstructions)
                   ? request.instructions.slice(0, -titleInstructions.length)
@@ -356,7 +362,7 @@ export class ProviderDispatch {
             : request;
         if (providerRequest !== request) {
           record.conversationTitle = false;
-          record.consultationEnabled = false;
+          record.proposalToolsEnabled = false;
         }
         // Count the UTF-8 input items in the same units as the operation policy.
         record.inputBytes = providerRequest.input.reduce(

@@ -57,6 +57,9 @@ export const diagnosticCatalog = Object.freeze({
   "ohtia.work.reserved": event("data_service", "intervention.reserve", "DEBUG", "recorded", []),
   "ohtia.work.released": event("data_service", "intervention.release", "DEBUG", "recorded", []),
   "ohtia.work.settled": event("data_service", "intervention.settle", "DEBUG", "recorded", []),
+  "ohtia.plan.proposed": event("data_service", "plan.propose", "INFO", "recorded", []),
+  "ohtia.plan.accepted": event("data_service", "plan.accept", "INFO", "accepted", []),
+  "ohtia.plan.declined": event("data_service", "plan.decline", "INFO", "declined", []),
   "ohtia.consultation.proposed": event(
     "data_service",
     "consultation.propose",
@@ -218,6 +221,8 @@ export const diagnosticCatalog = Object.freeze({
     "setup_reply_active",
     "destination_changed",
     "consultation_unfinished",
+    "plan_unfinished",
+    "plan_invalid",
     "graph_version_conflict",
     "unknown_prerequisite",
     "self_dependency",

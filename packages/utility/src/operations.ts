@@ -1,4 +1,8 @@
-import { directGuidanceInstructions, directGuidanceInstructionsV2 } from "./direct-guidance.js";
+import {
+  directGuidanceInstructions,
+  directGuidanceInstructionsV2,
+  directGuidanceInstructionsV3,
+} from "./direct-guidance.js";
 import { searchStrategyInstructions, searchStrategyInstructionsV2 } from "./search-strategy.js";
 import { synthesisInstructions } from "./contribution-synthesis.js";
 import { setupInstructions, setupInstructionsV2 } from "./project-setup.js";
@@ -132,6 +136,13 @@ const policies: readonly OperationPolicy[] = Object.freeze([
     instruction_version: 2,
     instructions: directGuidanceInstructionsV2,
   }),
+  Object.freeze({
+    ...directGuidanceV1,
+    version: 3,
+    instruction_version: 3,
+    max_output_bytes: 160 * 1024,
+    instructions: directGuidanceInstructionsV3,
+  }),
   searchStrategyV1,
   Object.freeze({
     ...searchStrategyV1,
@@ -218,7 +229,7 @@ export function buildInput(
   messages: readonly InputMessage[],
   context: { readonly reference: string; readonly revision: number },
   notes: readonly {
-    readonly kind?: "consultation_proposal";
+    readonly kind?: "consultation_proposal" | "plan_proposal";
     readonly position: number;
     readonly reference: string;
     readonly revision: number;

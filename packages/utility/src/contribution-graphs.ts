@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { failure, type AddContributionsPayload, type Outcome, utf8Size } from "@ohtia/contracts";
 import { sql, type Kysely, type NotNull, type Selectable } from "kysely";
-import { consultableAgents, type ContributionRow } from "./consultations.js";
+import { consultableAgents, type ContributionRow, type InterventionRow } from "./consultations.js";
 import {
   operationPolicy,
   contributionSynthesisPolicy,
@@ -114,7 +114,7 @@ function scalarText(value: unknown): value is string {
 }
 
 function isPlanKey(value: unknown): value is string {
-  return typeof value === "string" && /^[a-z0-9-]{1,64}$/.test(value);
+  return typeof value === "string" && /^[a-z0-9-]{1,64}(?![\s\S])/.test(value);
 }
 
 /** Prerequisites precede their dependents. Map insertion order breaks ties. */
@@ -150,6 +150,14 @@ export async function addContributions(
   resolveConnection: (agent: ReplyAgent) => string,
   operationId: string,
   now: string,
+  approval?:
+    | { readonly kind: "proposal"; readonly attempt: Uint8Array }
+    | {
+        readonly kind: "acceptance";
+        readonly plan: Selectable<InterventionRow>;
+        readonly connections: Readonly<Partial<Record<ReplyAgent, string>>>;
+        readonly inFlightReply: Uint8Array | null;
+      },
 ): Promise<Outcome<Uint8Array>> {
   const requests: readonly unknown[] = payload.contributions;
   if (
@@ -159,10 +167,12 @@ export async function addContributions(
   )
     return failure("invalid_message");
   if (!requests.length) return failure("empty_plan");
+  if (approval && requests.length === 1) return failure("too_few_contributions");
   const creating = "conversationId" in payload;
   const targetId = creating ? payload.conversationId : payload.planId;
   if (!isEntityId(targetId)) return failure("invalid_message");
-  const id = creating ? newId() : bytes(targetId);
+  const acceptedProposal = approval?.kind === "acceptance" ? approval.plan : undefined;
+  const id = acceptedProposal?.id ?? (creating ? newId() : bytes(targetId));
   const existing = creating
     ? undefined
     : await db
@@ -209,6 +219,9 @@ export async function addContributions(
     if (!prerequisites || !parent) throw new Error("Stored dependency lacks a contribution.");
     prerequisites.push(parent);
   }
+  const proposedNodes = acceptedProposal ? await planContributions(db, id) : [];
+  const proposedEdges = acceptedProposal ? await holdingDependencies(db, id) : [];
+  const proposedIds = new Map(proposedNodes.map((row) => [row.plan_key, row.id]));
   const dedupe = new Set(previous.map((row) => Buffer.from(row.dedupe_key).toString("hex")));
   const version = payload.expectedGraphVersion + 1;
   const contributions: Array<{
@@ -239,15 +252,18 @@ export async function addContributions(
       (entry.required !== undefined && typeof entry.required !== "boolean") ||
       !Array.isArray(entry.prerequisites) ||
       !scalarText(entry.request) ||
-      !scalarText(entry.reason) ||
-      !entry.reason.trim() ||
-      Array.from(entry.reason).length > 500
+      (!approval &&
+        (!scalarText(entry.reason) ||
+          !entry.reason.trim() ||
+          Array.from(entry.reason).length > 500))
     )
       return failure("invalid_message");
     if (!isPlanKey(entry.planKey)) return failure("plan_key_invalid");
     if (byKey.has(entry.planKey)) return failure("plan_key_duplicate");
     if (!entry.request.trim()) return failure("request_empty");
     if (utf8Size(entry.request) > 8192) return failure("request_too_large");
+    if (!scalarText(entry.reason) || !entry.reason.trim()) return failure("reason_empty");
+    if (Array.from(entry.reason).length > 500) return failure("reason_too_long");
     const agent = enabled.find(({ id }) => id === entry.agent);
     const policy = agent && operationPolicy(agent.operation, agent.version, mode);
     if (existing && (!agent || !(await authorizedOperation(db, id, agent.id, agent.operation))))
@@ -257,7 +273,8 @@ export async function addContributions(
     if (!entry.prerequisites.every(isPlanKey)) return failure("unknown_prerequisite");
     const prerequisites = [...new Set(entry.prerequisites)];
     if (prerequisites.includes(entry.planKey)) return failure("self_dependency");
-    if (prerequisites.length !== entry.prerequisites.length) return failure("invalid_message");
+    if (!approval && prerequisites.length !== entry.prerequisites.length)
+      return failure("invalid_message");
     dependencyCount += prerequisites.length;
     if (dependencyCount > limits.max_dependencies) return failure("plan_too_large");
     const key = contributionKey(
@@ -269,7 +286,7 @@ export async function addContributions(
     );
     if (dedupe.has(key.toString("hex"))) return failure("duplicate_contribution");
     dedupe.add(key.toString("hex"));
-    const contributionId = newId();
+    const contributionId = proposedIds.get(entry.planKey) ?? newId();
     byKey.set(entry.planKey, contributionId);
     edges.set(entry.planKey, prerequisites);
     contributions.push({
@@ -287,7 +304,8 @@ export async function addContributions(
   for (const { plan_key: key } of contributions)
     if (edges.get(key)?.some((prerequisite) => !byKey.has(prerequisite)))
       return failure("unknown_prerequisite");
-  if (!topologicalOrder(edges)) return failure("cycle");
+  const order = topologicalOrder(edges);
+  if (!order) return failure("cycle");
 
   // Only the coordinator can add work. Prerequisite chains do not add delegation levels.
   if (
@@ -300,27 +318,83 @@ export async function addContributions(
   )
     return failure("limit_reached");
 
-  const dependencies = contributions.flatMap(({ id: contributionId, plan_key }) =>
-    (edges.get(plan_key) ?? []).map((prerequisite) => {
-      const prerequisiteId = byKey.get(prerequisite);
-      if (!prerequisiteId) throw new Error("Validated prerequisite lacks an identity.");
-      return {
-        id: newId(),
-        intervention_id: id,
-        contribution_id: contributionId,
-        prerequisite_id: prerequisiteId,
-        added_in_graph_version: version,
-        removed_in_graph_version: null,
-      };
-    }),
-  );
+  const dependencies = acceptedProposal
+    ? proposedEdges
+    : contributions.flatMap(({ id: contributionId, plan_key }) =>
+        (edges.get(plan_key) ?? []).map((prerequisite) => {
+          const prerequisiteId = byKey.get(prerequisite);
+          if (!prerequisiteId) throw new Error("Validated prerequisite lacks an identity.");
+          return {
+            id: newId(),
+            intervention_id: id,
+            contribution_id: contributionId,
+            prerequisite_id: prerequisiteId,
+            added_in_graph_version: version,
+            removed_in_graph_version: null,
+          };
+        }),
+      );
   const summary = canonicalJson({
     contributions: contributions.map(({ id }) => identifier(id)),
     dependencies: dependencies.map(({ id }) => identifier(id)),
   });
   if (utf8Size(summary) > 16384) return failure("input_too_large");
 
-  if (creating) {
+  const proposing = approval?.kind === "proposal";
+  const destinations = [
+    ...contributions.map(({ agent_id, operation }) => ({
+      agent_id,
+      operation,
+      connection: resolveConnection(agent_id),
+    })),
+    {
+      agent_id: "virgilio" as const,
+      operation: contributionSynthesisPolicy.operation,
+      connection: resolveConnection("virgilio"),
+    },
+  ];
+  if (approval?.kind === "acceptance") {
+    const agents = new Set(destinations.map(({ agent_id }) => agent_id));
+    if (
+      Object.keys(approval.connections).length !== agents.size ||
+      destinations.some(({ agent_id, connection }) => approval.connections[agent_id] !== connection)
+    )
+      return failure("destination_changed");
+    const initial = new Map<OperationPolicy, number>();
+    for (const [index, node] of contributions.entries()) {
+      const policy = policies[index];
+      if (policy && !edges.get(node.plan_key)?.length)
+        initial.set(policy, (initial.get(policy) ?? 0) + 1);
+    }
+    for (const [policy, needed] of initial) {
+      const { count } = await db
+        .selectFrom("tasks")
+        .select(({ fn }) => fn.countAll<number>().as("count"))
+        .where("operation", "=", policy.operation)
+        .where("state", "in", ["queued", "blocked"])
+        .executeTakeFirstOrThrow();
+      if (count + needed > policy.max_pending_tasks) return failure("pending_limit_reached");
+    }
+    await db
+      .updateTable("interventions")
+      .set({
+        state: "accepted",
+        graph_version: version,
+        decided_at: now,
+        decided_by_operation_id: operationId,
+        approved_during_attempt_id: approval.inFlightReply,
+        revision: sql`revision+1`,
+      })
+      .where("id", "=", id)
+      .execute();
+  } else if (creating) {
+    if (proposing)
+      await db
+        .updateTable("interventions")
+        .set({ state: "replaced", decided_at: now, revision: sql`revision+1` })
+        .where("conversation_id", "=", conversationId)
+        .where("state", "=", "proposed")
+        .execute();
     await db
       .insertInto("interventions")
       .values({
@@ -328,37 +402,18 @@ export async function addContributions(
         project_id: conversation.project_id,
         conversation_id: conversationId,
         kind: "plan",
-        state: "accepted",
+        state: proposing ? "proposed" : "accepted",
         invalid_reason: null,
-        proposed_by_attempt_id: null,
+        proposed_by_attempt_id: proposing ? approval.attempt : null,
         created_at: now,
-        decided_at: now,
-        decided_by_operation_id: operationId,
+        decided_at: proposing ? null : now,
+        decided_by_operation_id: proposing ? null : operationId,
         revision: 1,
-        graph_version: version,
+        graph_version: proposing ? 0 : version,
         purpose: payload.purpose,
         shared_context: payload.sharedContext,
       })
       .execute();
-    await authorizeWork(
-      db,
-      id,
-      limits,
-      [
-        ...contributions.map(({ agent_id, operation }) => ({
-          agent_id,
-          operation,
-          connection: resolveConnection(agent_id),
-        })),
-        {
-          agent_id: "virgilio",
-          operation: contributionSynthesisPolicy.operation,
-          connection: resolveConnection("virgilio"),
-        },
-      ],
-      now,
-    );
-    await reserveWork(db, id, null, contributionSynthesisPolicy, now);
   } else {
     await db
       .updateTable("interventions")
@@ -366,24 +421,36 @@ export async function addContributions(
       .where("id", "=", id)
       .execute();
   }
-  // Insert in researcher order. All endpoints must exist before adding edges.
+  if (creating && !proposing) {
+    await authorizeWork(db, id, limits, destinations, now);
+    await reserveWork(db, id, null, contributionSynthesisPolicy, now);
+  }
+  // Store the proposal in execution order. All endpoints must exist before adding edges.
+  if (proposing)
+    contributions.sort(
+      (left, right) => order.indexOf(left.plan_key) - order.indexOf(right.plan_key),
+    );
   for (const [index, contribution] of contributions.entries()) {
-    await db
-      .insertInto("contributions")
-      .values({
-        ...contribution,
-        intervention_id: id,
-        added_in_graph_version: version,
-        task_id: null,
-        created_at: now,
-      })
-      .execute();
+    if (!acceptedProposal)
+      await db
+        .insertInto("contributions")
+        .values({
+          ...contribution,
+          intervention_id: id,
+          added_in_graph_version: version,
+          task_id: null,
+          created_at: now,
+        })
+        .execute();
     const policy = policies[index];
+    if (proposing) continue;
     if (!policy) throw new Error("Validated contribution lacks its policy.");
     await reserveWork(db, id, contribution.id, policy, now);
   }
-  for (const dependency of dependencies)
-    await db.insertInto("contribution_dependencies").values(dependency).execute();
+  if (!acceptedProposal)
+    for (const dependency of dependencies)
+      await db.insertInto("contribution_dependencies").values(dependency).execute();
+  if (proposing) return { ok: true, value: id };
   await db
     .insertInto("graph_changes")
     .values({
@@ -392,7 +459,7 @@ export async function addContributions(
       graph_version: version,
       kind: creating ? "accepted" : "contributions_added",
       applied_by_operation_id: operationId,
-      proposed_by_attempt_id: null,
+      proposed_by_attempt_id: acceptedProposal?.proposed_by_attempt_id ?? null,
       summary,
       created_at: now,
     })

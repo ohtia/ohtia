@@ -2,8 +2,6 @@
 type: Specification
 title: "Virgilio: research guide"
 description: "Virgilio's direct guidance, consultations, bounded planning, attributed synthesis, context, evaluation requirements and visual presentation."
-generated:
-  by: codex/gpt-6.2-sol
 ---
 
 # Virgilio: research guide
@@ -143,6 +141,8 @@ The next action can be a consultation: one contribution that another enabled age
 
 ### Plan bounded collaboration
 
+**Operation:** `direct_guidance`, through its plan proposal; the researcher approves the concrete plan before any contribution runs.
+
 **Input:** An authorized contribution purpose, selected evidence, enabled role/operation capabilities, expected outputs and remaining intervention limits.
 
 **Output:** A proposed contribution graph of two or more contributions, or a bounded handoff request, with role, question, immutable input requirements, artifact dependencies, required/optional coverage and allocations. Use the smallest suitable role set and explain why coordination helps.
@@ -150,6 +150,8 @@ The next action can be a consultation: one contribution that another enabled age
 The application validates intent before admission. Finish planning and release execution capacity before dependent inference; a waiting coordinator cannot hold the only inference slot. In-flight accepted inputs remain immutable.
 
 ### Synthesize attributed contributions
+
+**Operation:** `contribution_synthesis`, a separate task that Ohtia starts when an approved plan’s work finishes.
 
 **Input:** Exact committed artifact versions and their coverage, the original question, unresolved dependencies and any declared synthesis allocation.
 
@@ -167,7 +169,7 @@ The result distinguishes guidance, a proposed plan and synthesis. A plan identif
 
 The researcher can set Virgilio's preferred enabled connection, model and native effort within each evaluated operation policy. Apply the canonical [inference preference and reproducibility rules](agent-collaboration.md#inference-preferences-and-reproducibility), including precedence, catalog uncertainty, immutable accepted configuration, observed settings and explicitly authorized fallback.
 
-Planning, direct guidance and synthesis each require their own evaluated operation policy. The same Virgilio identity may use different permitted bindings across operations; this does not transfer a provider session or create extra retry or planning budgets.
+Direct guidance, which includes planning, and synthesis each have their own versioned operation policy. The same Virgilio identity may use different permitted bindings across operations; this does not transfer a provider session or create extra retry or planning budgets.
 
 ## Memory, instructions and corrections
 

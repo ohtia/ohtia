@@ -196,6 +196,12 @@ it("validates changes before creating rows, receipts or work and replays the acc
   const initial = f.newPlan([parent]);
   const accepted = value(await f.add("accept", initial));
   expect(value(await f.add("accept", initial))).toEqual(accepted);
+  expect((await timeline(f)).some((item) => item.id === accepted.resultId)).toBe(false);
+  expect(
+    value(
+      await f.store.researchRevisions({ projectId: f.projectId, conversationId: f.conversationId }),
+    ),
+  ).not.toContainEqual(expect.objectContaining({ record: "timeline", id: accepted.resultId }));
   expect(await f.add("accept", { ...initial, purpose: "Changed" })).toEqual(
     failure("operation_conflict"),
   );
@@ -1681,7 +1687,20 @@ it(
   async () => {
     const f = await fixture();
     synthesisConnection(f, true);
-    value(await f.add("before-limit", f.newPlan([task("before-limit")])));
+    const { resultId: otherProjectId } = value(
+      await f.run({
+        command: "development.createProject",
+        operationId: "other-project",
+        payload: {},
+      }),
+    );
+    const [otherConversation] = value(await f.store.readConversations(otherProjectId));
+    value(
+      await f.add("before-limit", {
+        ...f.newPlan([task("before-limit")]),
+        conversationId: otherConversation!.id,
+      }),
+    );
     await f.settle(await f.next(), undefined, unresolved);
     const failed = await f.next();
     await f.settle(failed, { status: "failed", dispatched: true, reason: "provider_error" });
@@ -2028,7 +2047,7 @@ it(
         version: 1,
         operation: "plan-migration-retry",
         source: 23,
-        target: 25,
+        target: 26,
       }),
     );
     await expect(f.store.open()).rejects.toThrow(/recovery/);
@@ -2219,6 +2238,7 @@ it("runs the fixed development plan in an ordinary thesis through separate turns
     }),
   );
   expect(await timeline(f, conversationId)).toEqual([
+    expect.objectContaining({ kind: "plan", state: "accepted", rank: 2, position: 1, id: planId }),
     expect.objectContaining({
       rank: 1,
       position: 1,

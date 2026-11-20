@@ -1,3 +1,4 @@
+import { PlanProposal, type PlanCardController } from "./plan-proposal.js";
 import { ConsultationProposal } from "./consultation-proposal.js";
 import { SetupProposal } from "./setup-proposal.js";
 import { RecoveryFocusBoundary } from "./settings-notices.js";
@@ -87,6 +88,10 @@ export function ConversationView({
     Partial<
       Pick<
         ConversationController,
+        | "readPlanCard"
+        | "readPlanDestinations"
+        | "observePlanDestinations"
+        | "performPlanAction"
         | "composer"
         | "performSetupAction"
         | "performConsultationAction"
@@ -230,7 +235,7 @@ export function ConversationView({
         !viewport.current.closest("[hidden], [inert]")
       ) {
         follow.current = false;
-        message.scrollIntoView({ block: "nearest" });
+        message.scrollIntoView({ block: "start" });
         message.focus({ preventScroll: true });
         remember();
         setJump(true);
@@ -261,6 +266,27 @@ export function ConversationView({
       observer.disconnect();
     };
   }, [state.status]);
+  const planController: PlanCardController | null =
+    controller.readPlanCard &&
+    controller.readPlanDestinations &&
+    controller.observePlanDestinations &&
+    controller.performPlanAction &&
+    controller.connections
+      ? {
+          readPlanCard: controller.readPlanCard,
+          readPlanDestinations: controller.readPlanDestinations,
+          observePlanDestinations: controller.observePlanDestinations,
+          performPlanAction: controller.performPlanAction,
+          connections: controller.connections,
+        }
+      : null;
+  const reveal = (messageId: string) => {
+    const request = { conversationId: id, messageId };
+    setTarget(request);
+    void controller.revealMessage?.(messageId).then((found) => {
+      if (!found) setTarget((current) => (current === request ? null : current));
+    });
+  };
   const notice = (text: string, danger = false) => (
     <div
       className={`conversation-notice ${danger ? "danger" : "attention"}`}
@@ -346,7 +372,8 @@ export function ConversationView({
               (item) =>
                 item.kind === "message" ||
                 item.kind === "setupProposal" ||
-                item.kind === "consultation",
+                item.kind === "consultation" ||
+                item.kind === "plan",
             ) &&
               state.replies.size === 0 && (
                 <p className="conversation-empty">
@@ -363,6 +390,24 @@ export function ConversationView({
                 </p>
               )}
             {state.items.map((item) => {
+              if (item.kind === "plan")
+                return planController ? (
+                  <div key={item.id} data-timeline-id={item.id}>
+                    <PlanProposal
+                      proposal={item}
+                      locale={locale}
+                      controller={planController}
+                      hasText={state.items.some(
+                        (saved) =>
+                          saved.kind === "message" &&
+                          saved.agentId === "virgilio" &&
+                          saved.position === item.position &&
+                          saved.taskId === item.taskId,
+                      )}
+                      openExternalLink={commands.openExternalLink}
+                    />
+                  </div>
+                ) : null;
               if (item.kind === "consultation")
                 return controller.performConsultationAction &&
                   controller.observeConsultationDestination &&
@@ -533,6 +578,22 @@ export function ConversationView({
                       locale={locale}
                     />
                   )}
+                  {item.planContribution && (
+                    <p className="consultation-caption">
+                      <a
+                        className="primitive-link"
+                        href={`#message-${item.planContribution.planId}`}
+                        onClick={(event) => {
+                          if (controller.revealMessage && item.planContribution) {
+                            event.preventDefault();
+                            reveal(item.planContribution.planId);
+                          }
+                        }}
+                      >
+                        {message(locale, "plan.result", { key: item.planContribution.key })}
+                      </a>
+                    </p>
+                  )}
                   {(item.consultation || item.synthesisSources) && (
                     <p className="consultation-caption">
                       {message(
@@ -553,14 +614,7 @@ export function ConversationView({
                     <SynthesisReferences
                       sources={item.synthesisSources}
                       locale={locale}
-                      reveal={(messageId) => {
-                        const request = { conversationId: id, messageId };
-                        setTarget(request);
-                        void controller.revealMessage?.(messageId).then((found) => {
-                          if (!found)
-                            setTarget((current) => (current === request ? null : current));
-                        });
-                      }}
+                      reveal={reveal}
                     />
                   )}
                   <SavedMessageActions

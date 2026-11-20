@@ -14,6 +14,7 @@ export const providerMessageBytes = 2 * 1024 * 1024;
 export const providerDispatchBytes = 5 * 1024 * 1024;
 /** Fits the role and shared thesis route with the rendered context, including an 800-byte title. */
 const providerInstructionBytes = 10 * 1024;
+const planGuidanceInstructionBytes = 12 * 1024;
 /** ADR-0028's versioned permit validity: not a response deadline. Real-account checks measure it. */
 export const dispatchPermitPolicy = Object.freeze({ version: 1, validity_ms: 2000 });
 export const providerOperations = [
@@ -87,23 +88,30 @@ export interface ProviderRequestLimits {
   readonly max_inactivity_ms: number;
 }
 /** Everything main needs to send one attempt, never a credential. */
-/** Strict string-object schemas used by application-owned proposal tools. */
+/** Strict, bounded application-owned tool definitions. */
+interface ToolObject {
+  readonly type: "object";
+  readonly properties: Readonly<Record<string, ToolField>>;
+  readonly required: readonly string[];
+  readonly additionalProperties: false;
+}
+type ToolField =
+  | { readonly type: "string"; readonly description: string; readonly enum?: readonly string[] }
+  | { readonly type: "boolean"; readonly description: string }
+  | {
+      readonly type: "array";
+      readonly description: string;
+      readonly items: ToolObject | { readonly type: "string" };
+    };
 export interface ProviderTool {
   readonly namespace: string;
   readonly name: string;
   readonly description: string;
   readonly strict: true;
-  readonly parameters: {
-    readonly type: "object";
-    readonly properties: Readonly<
-      Record<
-        string,
-        { readonly type: "string"; readonly description: string; readonly enum?: readonly string[] }
-      >
-    >;
-    readonly required: readonly string[];
-    readonly additionalProperties: false;
-  };
+  readonly parameters: ToolObject;
+}
+export function isPlanTool(tool: { namespace: unknown; name: unknown }): boolean {
+  return tool.namespace === "ohtia" && tool.name === "propose_plan";
 }
 export function isConsultationTool(tool: { namespace: unknown; name: unknown }): boolean {
   return tool.namespace === "ohtia" && tool.name === "propose_consultation";
@@ -341,7 +349,12 @@ function isTool(value: unknown): value is ProviderTool {
     value.strict !== true
   )
     return false;
-  const p = value.parameters;
+  return isToolObject(
+    value.parameters,
+    isPlanTool({ namespace: value.namespace, name: value.name }),
+  );
+}
+function isToolObject(p: unknown, arrays: boolean): boolean {
   return (
     record(p) &&
     exact(p, ["type", "properties", "required", "additionalProperties"]) &&
@@ -356,18 +369,26 @@ function isTool(value: unknown): value is ProviderTool {
       (key) => typeof key === "string" && Object.hasOwn(p.properties as object, key),
     ) &&
     Object.entries(p.properties).every(
-      ([key, field]) =>
-        isIdentifier(key) &&
-        record(field) &&
-        (exact(field, ["type", "description"]) ||
-          (exact(field, ["type", "description", "enum"]) &&
-            Array.isArray(field.enum) &&
-            field.enum.length > 0 &&
-            field.enum.length <= 32 &&
-            field.enum.every(isProviderToolLabel))) &&
-        field.type === "string" &&
-        boundedText(field.description, 4096),
+      ([key, field]) => isIdentifier(key) && isToolField(field, arrays),
     )
+  );
+}
+function isToolField(field: unknown, arrays: boolean): boolean {
+  if (!record(field) || !boundedText(field.description, 4096)) return false;
+  if (field.type === "boolean") return exact(field, ["type", "description"]);
+  if (field.type === "string")
+    return (
+      exact(field, ["type", "description"]) ||
+      (exact(field, ["type", "description", "enum"]) &&
+        Array.isArray(field.enum) &&
+        field.enum.length > 0 &&
+        field.enum.length <= 32 &&
+        field.enum.every(isProviderToolLabel))
+    );
+  if (field.type !== "array" || !exact(field, ["type", "description", "items"])) return false;
+  return (
+    (record(field.items) && exact(field.items, ["type"]) && field.items.type === "string") ||
+    (arrays && isToolObject(field.items, false))
   );
 }
 export function isProviderRequestData(value: unknown): value is ProviderRequestData {
@@ -399,11 +420,20 @@ export function isProviderRequestData(value: unknown): value is ProviderRequestD
     isProviderModelSlug(value.model) &&
     typeof value.instructions === "string" &&
     value.instructions.length > 0 &&
-    boundedText(value.instructions, providerInstructionBytes) &&
+    boundedText(
+      value.instructions,
+      value.operation === "direct_guidance" && value.instruction_version >= 3
+        ? planGuidanceInstructionBytes
+        : providerInstructionBytes,
+    ) &&
     Array.isArray(value.input) &&
     value.input.length > 0 &&
     value.input.length <=
-      (value.operation === "direct_guidance" && value.instruction_version >= 2 ? 1501 : 1001) &&
+      (value.operation === "direct_guidance"
+        ? value.instruction_version >= 2
+          ? 1502
+          : 1002
+        : 1001) &&
     value.input.every(isInput) &&
     Array.isArray(value.tools) &&
     value.tools.length <= 32 &&
@@ -415,7 +445,12 @@ export function isProviderRequestData(value: unknown): value is ProviderRequestD
     (value.operation !== "search_strategy_planning" || value.tools.length === 0) &&
     (value.operation !== "development_test_synthesis" ||
       (value.connection === "fake" && value.tools.length === 0)) &&
-    value.tools.every(isTool) &&
+    value.tools.every(
+      (tool) =>
+        isTool(tool) &&
+        (!isPlanTool(tool) ||
+          (value.operation === "direct_guidance" && Number(value.instruction_version) >= 3)),
+    ) &&
     record(value.limits) &&
     exact(value.limits, ["max_output_bytes", "max_attempt_duration_ms", "max_inactivity_ms"]) &&
     Object.values(value.limits).every((item) => count(item) && item > 0)
@@ -641,7 +676,12 @@ export type TransferEntry =
   | {
       readonly kind: "note";
       readonly note:
-        "earlier_messages_omitted" | "partial_reply" | "setup_proposal" | "consultation_proposal";
+        | "earlier_messages_omitted"
+        | "partial_reply"
+        | "setup_proposal"
+        | "consultation_proposal"
+        | "plan_proposal"
+        | "plan_status";
       readonly reference: string;
       readonly revision: number;
     };
@@ -719,7 +759,9 @@ function isTransferEntry(value: unknown): value is TransferEntry {
     (value.note === "earlier_messages_omitted" ||
       value.note === "partial_reply" ||
       value.note === "setup_proposal" ||
-      value.note === "consultation_proposal")
+      value.note === "consultation_proposal" ||
+      value.note === "plan_proposal" ||
+      value.note === "plan_status")
   );
 }
 function isDevelopmentReport(value: unknown): value is DevelopmentReport {

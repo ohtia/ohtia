@@ -2,8 +2,6 @@
 type: Specification
 title: "Agent collaboration"
 description: "Virgilio, research specialists, bounded collaboration, inspectable memory, and human-approved editorial proposals."
-generated:
-  by: codex/gpt-6.2-sol
 sources:
   - id: openai-orchestration
     resource: "https://developers.openai.com/api/docs/guides/agents/orchestration"
@@ -145,7 +143,7 @@ Graph changes use expected-version, idempotent application commands. A repeated 
 
 ### Releasing the coordinator turn
 
-A Virgilio planning turn runs as an ordinary bounded inference task. Its terminal output can propose a graph change or a question for the researcher. The data service validates and commits that result and its coordination effects atomically. Eligible child tasks are accepted only when their immutable inputs and allocations are known; dependencies on future artifacts remain contribution intent until those artifacts exist. Activation rechecks current authorization and restrictions in the same transaction that accepts the child task. No provider or process starts before commit.
+Virgilio plans inside an ordinary bounded direct-guidance turn, and the researcher approves the concrete plan it proposes before any contribution task is accepted. Its terminal output can propose a graph change or a question for the researcher. The data service validates and commits that result and its coordination effects atomically. Eligible child tasks are accepted only when their immutable inputs and allocations are known; dependencies on future artifacts remain contribution intent until those artifacts exist. Activation rechecks current authorization and restrictions in the same transaction that accepts the child task. No provider or process starts before commit.
 
 Once the coordinator task has validly completed and its local/provider execution has ended under ADR-0051, its capacity is released. Waiting for contributions is represented by the intervention and graph, not by an inference attempt holding a slot. The application later accepts a new, budgeted coordinator task with the exact completed artifact manifest when synthesis is useful and authorized. This is a new contribution turn, not a retry that resets the old task's attempt allowance.
 
@@ -153,8 +151,8 @@ This sequence must work with the application and connection concurrency limits s
 
 ```mermaid
 flowchart LR
-    A[Researcher-authorized intervention] --> B[Bounded Virgilio planning task]
-    B --> C[Commit plan and finish execution]
+    A[Virgilio direct-guidance turn proposes a plan] --> B[Commit proposal and finish execution]
+    B --> C[Researcher approves the concrete plan]
     C --> D[Durable dependency wait without inference capacity]
     D --> E[Eligible specialist task]
     E --> F[Commit artifact and completion receipt]

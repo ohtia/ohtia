@@ -1,3 +1,4 @@
+import { planLimits } from "./work-limits.js";
 import { createHash } from "node:crypto";
 import { sql, type Generated, type Kysely, type Selectable, type NotNull } from "kysely";
 import {
@@ -55,7 +56,10 @@ export interface ContinuationRow {
 }
 
 export function acceptedPlans(db: Kysely<ResearchSchema>) {
-  return db.selectFrom("interventions").where("kind", "=", "plan").where("state", "=", "accepted");
+  return db
+    .selectFrom("interventions")
+    .where("interventions.kind", "=", "plan")
+    .where("interventions.state", "=", "accepted");
 }
 export function acceptedPlan(db: Kysely<ResearchSchema>, id: Uint8Array) {
   return acceptedPlans(db).selectAll().where("id", "=", id).executeTakeFirst();
@@ -380,7 +384,13 @@ export async function readPlanText(
   if (!isResearchId(id)) return failure("record_not_found");
   let value: string | null | undefined;
   if (field === "purpose" || field === "context") {
-    const row = await acceptedPlan(db, bytes(id));
+    const row = await db
+      .selectFrom("interventions")
+      .select(["purpose", "shared_context"])
+      .where("id", "=", bytes(id))
+      .where("kind", "=", "plan")
+      .where("state", "!=", "invalid")
+      .executeTakeFirst();
     value = field === "purpose" ? row?.purpose : row?.shared_context;
   } else {
     const row = await db
@@ -389,7 +399,7 @@ export async function readPlanText(
       .select(["c.request", "c.reason"])
       .where("c.id", "=", bytes(id))
       .where("i.kind", "=", "plan")
-      .where("i.state", "=", "accepted")
+      .where("i.state", "!=", "invalid")
       .executeTakeFirst();
     value = field === "request" ? row?.request : row?.reason;
   }
@@ -401,8 +411,26 @@ export async function readPlan(
   db: Kysely<ResearchSchema>,
   planId: string,
 ): Promise<Outcome<PlanSnapshot>> {
-  const plan = await acceptedPlan(db, bytes(planId));
-  if (!plan) return failure("record_not_found");
+  const plan = await db
+    .selectFrom("interventions")
+    .selectAll()
+    .where("id", "=", bytes(planId))
+    .where("kind", "=", "plan")
+    .executeTakeFirst();
+  if (!plan || plan.state === "invalid") return failure("record_not_found");
+  const limits = await db
+    .selectFrom("intervention_limits")
+    .select("max_requests")
+    .where("intervention_id", "=", plan.id)
+    .executeTakeFirst();
+  const destinations =
+    plan.state === "accepted"
+      ? await db
+          .selectFrom("intervention_operations")
+          .select(["agent_id", "connection"])
+          .where("intervention_id", "=", plan.id)
+          .execute()
+      : [];
   const nodes = await planContributions(db, plan.id);
   const edges = await holdingDependencies(db, plan.id);
   const throughSequence = await planSequence(db, plan.id);
@@ -426,7 +454,13 @@ export async function readPlan(
       graphVersion: plan.graph_version,
       outcome: plan.outcome,
       throughSequence,
+      state: plan.state,
+      connections: Object.fromEntries(
+        destinations.map(({ agent_id, connection }) => [agent_id, connection]),
+      ),
+      maxRequests: limits?.max_requests ?? planLimits.max_requests,
       needsAttention:
+        plan.state === "accepted" &&
         !plan.outcome &&
         !hasActive &&
         (throughSequence >= planEventLimit ||

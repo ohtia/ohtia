@@ -1,3 +1,4 @@
+import { planInvalidReasons, type PlanInvalidReason } from "./research.js";
 import {
   researchOperations,
   isResearchOperation,
@@ -158,6 +159,11 @@ export const errorActions = {
   setup_reply_active: "retry_later",
   destination_changed: "refresh_record",
   consultation_unfinished: "retry_later",
+  plan_unfinished: "retry_later",
+  plan_invalid: "check_request",
+  too_few_contributions: "check_request",
+  reason_empty: "check_request",
+  reason_too_long: "check_request",
   graph_version_conflict: "refresh_record",
   unknown_prerequisite: "check_request",
   self_dependency: "check_request",
@@ -217,7 +223,9 @@ export type PortError = {
     readonly nextAction: (typeof errorActions)[K];
     readonly parameters: K extends "stale_revision"
       ? { readonly currentRevision: number }
-      : Record<string, never>;
+      : K extends "plan_invalid"
+        ? { readonly reason: PlanInvalidReason }
+        : Record<string, never>;
   };
 }[ErrorCode];
 export type Outcome<T> =
@@ -229,6 +237,12 @@ export function failure(code: Exclude<ErrorCode, "stale_revision">): {
   return {
     ok: false,
     error: { code, nextAction: errorActions[code], parameters: {} } as PortError,
+  };
+}
+export function invalidPlan(reason: PlanInvalidReason): Outcome<never> {
+  return {
+    ok: false,
+    error: { code: "plan_invalid", nextAction: "check_request", parameters: { reason } },
   };
 }
 export function staleRevision(currentRevision: number): {
@@ -640,7 +654,10 @@ function error(value: Json | undefined): boolean {
     value.nextAction === errorActions[code] &&
     (code === "stale_revision"
       ? exact(value.parameters, ["currentRevision"]) && revision(value.parameters.currentRevision)
-      : exact(value.parameters, []))
+      : code === "plan_invalid"
+        ? exact(value.parameters, ["reason"]) &&
+          planInvalidReasons.includes(value.parameters.reason as PlanInvalidReason)
+        : exact(value.parameters, []))
   );
 }
 function outcome(value: Json | undefined, valid: (value: Json | undefined) => boolean): boolean {
@@ -712,6 +729,24 @@ export const operationErrorCodes = Object.freeze({
     "operation_conflict",
   ],
   "plan.read": [...readErrors, "record_not_found"],
+  "plan.accept": [
+    ...researchMutationErrors,
+    "uncertain",
+    "operation_conflict",
+    "record_not_found",
+    "proposal_not_waiting",
+    "destination_changed",
+    "plan_unfinished",
+    "plan_invalid",
+    "pending_limit_reached",
+  ],
+  "plan.decline": [
+    ...researchMutationErrors,
+    "uncertain",
+    "operation_conflict",
+    "record_not_found",
+    "proposal_not_waiting",
+  ],
   "planEvent.list": [...readErrors, "record_not_found"],
   "plan.cancel": [...researchMutationErrors, "record_not_found", "uncertain", "operation_conflict"],
   "plan.finish": [
@@ -729,6 +764,7 @@ export const operationErrorCodes = Object.freeze({
     "operation_conflict",
   ],
   "synthesis.tryAgain": [
+    "plan_unfinished",
     ...researchMutationErrors,
     "record_not_found",
     "uncertain",
@@ -757,6 +793,7 @@ export const operationErrorCodes = Object.freeze({
     "pending_limit_reached",
   ],
   "consultation.accept": [
+    "plan_unfinished",
     ...researchMutationErrors,
     "uncertain",
     "operation_conflict",

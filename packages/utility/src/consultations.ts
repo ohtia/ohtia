@@ -3,6 +3,7 @@ import {
   type ConsultationInvalidReason,
   type ConsultationState,
   type ProviderTool,
+  type PlanInvalidReason,
   type ProviderToolCall,
   type ReplyAgent,
 } from "@ohtia/contracts";
@@ -61,7 +62,7 @@ export interface InterventionRow {
   conversation_id: Uint8Array;
   kind: "consultation" | "plan";
   state: ConsultationState;
-  invalid_reason: ConsultationInvalidReason | null;
+  invalid_reason: ConsultationInvalidReason | PlanInvalidReason | null;
   proposed_by_attempt_id: Uint8Array | null;
   purpose: Generated<string | null>;
   shared_context: Generated<string | null>;
@@ -72,6 +73,7 @@ export interface InterventionRow {
   created_at: string;
   decided_at: string | null;
   decided_by_operation_id: string | null;
+  approved_during_attempt_id: Generated<Uint8Array | null>;
   revision: number;
 }
 
@@ -196,8 +198,9 @@ export function consultationNote(
         reason_too_long: "its reason was longer than 500 characters.",
         agent_unavailable: "it named an agent that isn't available.",
       } as const;
-      if (!proposal.invalid_reason) throw new Error("Invalid consultation lacks a reason.");
-      return `Note from Ohtia: at this point Ohtia did not accept your consultation proposal because ${explanations[proposal.invalid_reason]} The researcher was told.`;
+      if (!proposal.invalid_reason || !Object.hasOwn(explanations, proposal.invalid_reason))
+        throw new Error("Invalid consultation lacks a reason.");
+      return `Note from Ohtia: at this point Ohtia did not accept your consultation proposal because ${explanations[proposal.invalid_reason as keyof typeof explanations]} The researcher was told.`;
     }
   }
 }

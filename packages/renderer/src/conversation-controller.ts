@@ -7,6 +7,9 @@ import {
   type ProjectRecord,
   type TimelineSetupProposal,
   type TimelineConsultation,
+  type TimelinePlan,
+  type PlanSnapshot,
+  type PlanText,
   type ProviderDeclaration,
   type TimelineTask,
   failure,
@@ -27,6 +30,17 @@ import {
   type TimelineItem,
   type TextReference,
 } from "@ohtia/contracts";
+export type ReadPlanCard = Omit<PlanSnapshot, "purpose" | "sharedContext" | "contributions"> & {
+  readonly purpose: string;
+  readonly sharedContext: string;
+  readonly contributions: readonly (Omit<
+    PlanSnapshot["contributions"][number],
+    "request" | "reason"
+  > & {
+    readonly request: string;
+    readonly reason: string;
+  })[];
+};
 export type TaskAction = "resume" | "continue" | "retry" | "restart";
 type RenameNotice = "empty" | "spaces" | "long" | "stale" | "uncertain" | "failed";
 interface RenameState {
@@ -161,6 +175,93 @@ export class ConversationController {
       },
     );
   }
+  private readonly destinationListeners = new Set<() => void>();
+  observePlanDestinations = (refresh: () => void): (() => void) => {
+    this.destinationListeners.add(refresh);
+    const subscriptions = this.connections.map(({ id }) =>
+      this.port.subscribeConnection(id, (notice) => {
+        if (notice.ok) refresh();
+      }),
+    );
+    return () => {
+      this.destinationListeners.delete(refresh);
+      for (const subscription of subscriptions) subscription.dispose();
+    };
+  };
+  readPlanDestinations = async (
+    projectId: string,
+    agents: readonly ReplyAgent[],
+  ): Promise<PlanSnapshot["connections"]> => {
+    const pairs = await Promise.all(
+      agents.map(async (agentId) => {
+        const result = await this.port.readDestination({ projectId, agentId }).result;
+        return [agentId, result.ok ? result.value.destination?.connection : undefined] as const;
+      }),
+    );
+    return Object.fromEntries(pairs.filter((pair) => pair[1] !== undefined));
+  };
+  private planReads: Promise<unknown> = Promise.resolve();
+  readPlanCard = (planId: string, signal?: AbortSignal): Promise<ReadPlanCard> => {
+    const epoch = this.epoch;
+    // A card can reference more text parts than the port admits as pending per window.
+    const read = this.planReads.then(async () => {
+      const checkScope = () => {
+        if (!this.live(epoch) || signal?.aborted) throw new Error("Plan read abandoned.");
+      };
+      checkScope();
+      const result = await this.port.readPlan({ planId }).result;
+      if (!result.ok) throw new Error("Plan unavailable.");
+      checkScope();
+      const plan = result.value;
+      if (
+        plan.conversationId !== this.state.scope.conversationId ||
+        plan.projectId !== this.state.scope.projectId
+      )
+        throw new Error("Invalid plan scope.");
+      const resolve = (value: PlanText) => {
+        checkScope();
+        return typeof value === "string" ? Promise.resolve(value) : this.text(value, epoch);
+      };
+      const purpose = await resolve(plan.purpose);
+      const sharedContext = await resolve(plan.sharedContext);
+      const contributions: ReadPlanCard["contributions"][number][] = [];
+      for (const node of plan.contributions)
+        contributions.push({
+          ...node,
+          request: await resolve(node.request),
+          reason: await resolve(node.reason),
+        });
+      checkScope();
+      return { ...plan, purpose, sharedContext, contributions };
+    });
+    this.planReads = read.catch(() => undefined);
+    return read;
+  };
+  performPlanAction = async (
+    operationId: string,
+    proposal: TimelinePlan,
+    connections?: PlanSnapshot["connections"],
+  ) => {
+    const epoch = this.epoch;
+    const result = await (
+      connections
+        ? this.port.acceptPlan(operationId, { planId: proposal.id, connections })
+        : this.port.declinePlan(operationId, { planId: proposal.id })
+    ).result.catch(() => failure("invalid_service_result"));
+    if (this.live(epoch) && (result.ok || result.error.code === "proposal_not_waiting")) {
+      this.queue = this.queue
+        .then(async () => {
+          if (!this.live(epoch)) return;
+          await this.readIds([proposal.id], epoch);
+          if (this.live(epoch)) this.publish();
+        })
+        .catch(() => {
+          if (this.live(epoch)) this.reload();
+        });
+      await this.queue;
+    }
+    return result;
+  };
   private consultationRead = 0;
   refreshConsultationDestination = async (): Promise<void> => {
     const { projectId } = this.state.scope;
@@ -522,10 +623,13 @@ export class ConversationController {
         this.state.items.some(
           (item) =>
             item.kind === "task" &&
+            !item.synthesis &&
             ["queued", "blocked", "running", "cancelling"].includes(item.state),
         ),
       this.state.conversation?.runningTask?.state === "cancelling" ||
-        this.state.items.some((item) => item.kind === "task" && item.state === "cancelling"),
+        this.state.items.some(
+          (item) => item.kind === "task" && !item.synthesis && item.state === "cancelling",
+        ),
     );
     for (const listener of this.listeners) listener();
   }
@@ -995,6 +1099,7 @@ export class ConversationController {
   };
   private async event(event: ResearchEvent, epoch: number): Promise<void> {
     if (event.kind === "destinationChanged") {
+      for (const refresh of this.destinationListeners) refresh();
       void this.composer.refreshDestination();
       void this.refreshConsultationDestination();
       await this.readIds(

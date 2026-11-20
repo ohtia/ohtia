@@ -16,9 +16,12 @@ import { ConversationView } from "../packages/renderer/src/conversation-view.js"
 import {
   ConversationController,
   type ConversationState,
+  type ReadPlanCard,
 } from "../packages/renderer/src/conversation-controller.js";
 import {
   failure,
+  invalidPlan,
+  planInvalidReasons,
   staleRevision,
   compareConversations,
   chatgptConnection,
@@ -3039,6 +3042,7 @@ describe("consultation states and synchronization", () => {
       agentId: "josefa",
       consultation: true,
       replacesTaskId: null,
+      consultationRetryFits: true,
     });
     expect(await h.controller.performTaskAction("retry", "retry", task)).toEqual(
       failure("consultation_unfinished"),
@@ -3167,10 +3171,12 @@ describe("plan synthesis presentation", () => {
     expect(sources?.querySelectorAll("a")).toHaveLength(1);
     const link = sources?.querySelector("a");
     const contributionElement = document.getElementById("message-" + contribution.id);
-    if (contributionElement) contributionElement.scrollIntoView = vi.fn();
+    const scrollIntoView = vi.fn();
+    if (contributionElement) contributionElement.scrollIntoView = scrollIntoView;
     expect(link?.getAttribute("href")).toBe(`#message-${contribution.id}`);
     await act(async () => link?.click());
     expect(revealMessage).toHaveBeenCalledWith(contribution.id);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" });
     expect(document.activeElement?.id).toBe(`message-${contribution.id}`);
   });
 
@@ -3211,5 +3217,325 @@ describe("plan synthesis presentation", () => {
     await render(state([{ ...task, state: "failed", outcomeReason: "not_eligible" }]), controller);
     expect(buttonNamed("Try again")).toBeUndefined();
     h.controller.dispose();
+  });
+});
+
+describe("plan decision card", () => {
+  const proposal = {
+    id: id(2029),
+    kind: "plan",
+    rank: 2,
+    position: 1,
+    revision: 1,
+    taskId: id(2030),
+    language: "en",
+    state: "proposed",
+    invalidReason: null,
+  } as const;
+  const first = {
+    id: id(2031),
+    key: "vocabulary",
+    agentId: "josefa",
+    request: "**List** candidate terms.",
+    reason: "**This stays plain text.**",
+    required: true,
+    prerequisites: [],
+    state: "waiting",
+    taskId: null,
+    resultMessageId: null,
+    failureReason: null,
+    blockedBy: null,
+    restartHeld: false,
+  } as const;
+  const open = {
+    planId: proposal.id,
+    ...scope,
+    revision: 1,
+    graphVersion: 0,
+    outcome: null,
+    throughSequence: 0,
+    needsAttention: false,
+    state: "proposed" as const,
+    connections: {},
+    maxRequests: 24,
+    purpose: "**Compare search strategies.**",
+    sharedContext: "**Open catalogs** are available.",
+    contributions: [first, { ...first, id: id(2032), key: "second", prerequisites: [first.id] }],
+    continuation: null,
+  };
+  const connection = {
+    id: "openai",
+    displayName: "OpenAI",
+    kind: "api_key" as const,
+    usageUrl: null,
+  };
+
+  it("renders the approved content and displayed destinations, keeping the operation ID on retry", async () => {
+    const readPlanDestinations = vi.fn(async () => ({ josefa: "openai", virgilio: "chatgpt" }));
+    const readPlanCard = vi.fn(async () => open);
+    const performPlanAction = vi.fn(async () => failure("storage_failed"));
+    const controller = {
+      readPlanCard,
+      readPlanDestinations,
+      performPlanAction,
+      observePlanDestinations: vi.fn(() => () => {}),
+      connections: [connection, chatgptConnection],
+    } as unknown as ConversationController;
+    await render(state([proposal]), controller);
+    expect(container.querySelector("h3")?.textContent).toBe("Virgilio proposes a plan");
+    expect(container.textContent).toContain("Waiting for your answer");
+    expect(container.textContent).toContain("2 requests to OpenAI and 1 request to ChatGPT");
+    expect(container.querySelector(".plan-row strong")?.textContent).toBe("List");
+    expect(container.textContent).toContain("Request:");
+    expect(container.textContent).toContain("Reason:");
+    expect(container.textContent).toContain("**This stays plain text.**");
+    expect(container.textContent).toContain("**Compare search strategies.**");
+    const run = [...container.querySelectorAll("button")].find(
+      ({ textContent }) => textContent === "Run plan",
+    )!;
+    await act(async () => {
+      run.click();
+    });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Ohtia couldn’t run the plan.",
+    );
+    await act(async () => {
+      run.click();
+    });
+    expect(performPlanAction).toHaveBeenCalledTimes(2);
+    expect(performPlanAction.mock.calls[0]).toEqual(performPlanAction.mock.calls[1]);
+    expect(performPlanAction).toHaveBeenCalledWith(expect.any(String), proposal, {
+      josefa: "openai",
+      virgilio: "chatgpt",
+    });
+
+    const accepted = {
+      ...open,
+      state: "accepted" as const,
+      graphVersion: 1,
+      revision: 2,
+      connections: { josefa: "openai", virgilio: "chatgpt" },
+    };
+    const readAccepted = vi.fn(async () => accepted);
+    const callsBeforeAcceptance = readPlanDestinations.mock.calls.length;
+    await render(state([{ ...proposal, state: "accepted", revision: 2 }]), {
+      ...controller,
+      readPlanCard: readAccepted,
+    } as unknown as ConversationController);
+    expect(container.textContent).toContain("You ran this plan.");
+    expect(container.textContent).toContain("OpenAI");
+    expect(container.textContent).toContain("**This stays plain text.**");
+    expect(readPlanDestinations.mock.calls).toHaveLength(callsBeforeAcceptance);
+  });
+
+  it("shows a busy state and reloads a saved plan after a failed read", async () => {
+    const pending = deferred<Error>();
+    const readPlanCard = vi.fn((): Promise<ReadPlanCard> =>
+      pending.promise.then((error) => {
+        throw error;
+      }),
+    );
+    const accepted = { ...open, state: "accepted" as const, graphVersion: 1 };
+    await render(state([{ ...proposal, state: "accepted" }]), {
+      readPlanCard,
+      readPlanDestinations: vi.fn(async () => ({})),
+      observePlanDestinations: vi.fn(() => () => {}),
+      performPlanAction: vi.fn(),
+    } as unknown as ConversationController);
+    expect(container.querySelector('[aria-busy="true"]')?.textContent).toContain("Loading…");
+    await act(async () => {
+      pending.resolve(new Error("read failed"));
+    });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("It’s still saved.");
+    const reload = [...container.querySelectorAll("button")].find(
+      ({ textContent }) => textContent === "Reload plan",
+    )!;
+    readPlanCard.mockImplementationOnce(async () => {
+      return accepted;
+    });
+    await act(async () => {
+      reload.click();
+    });
+    expect(container.textContent).toContain("You ran this plan.");
+  });
+  it("renders every invalid-plan reason without requesting plan contents", async () => {
+    const readPlanCard = vi.fn();
+    const controller = {
+      readPlanCard,
+      readPlanDestinations: vi.fn(),
+      observePlanDestinations: vi.fn(),
+      performPlanAction: vi.fn(),
+    } as unknown as ConversationController;
+    for (const reason of planInvalidReasons) {
+      await render(state([{ ...proposal, state: "invalid", invalidReason: reason }]), controller);
+      const notice = container.querySelector(".setup-invalid [role=status]");
+      expect(notice?.textContent).toContain("Virgilio proposed a plan Ohtia can’t use.");
+      expect(notice?.textContent).toContain("You can ask him again.");
+      expect(notice?.textContent).not.toContain("{");
+      expect(buttonNamed("Run plan")).toBeUndefined();
+    }
+    expect(readPlanCard).not.toHaveBeenCalled();
+  });
+
+  it("rechecks services after a refusal and reads the decided card after a window race", async () => {
+    const replacement = { ...open, state: "replaced" as const, revision: 2 };
+    const readPlanCard = vi.fn(async (): Promise<ReadPlanCard> => open);
+    const readPlanDestinations = vi.fn(async () => ({ josefa: "openai", virgilio: "chatgpt" }));
+    const performPlanAction = vi.fn(async () => failure("destination_changed"));
+    const controller = {
+      readPlanCard,
+      readPlanDestinations,
+      performPlanAction,
+      observePlanDestinations: vi.fn(() => () => {}),
+      connections: [connection, chatgptConnection],
+    } as unknown as ConversationController;
+    await render(state([proposal]), controller);
+    readPlanDestinations.mockResolvedValue({ josefa: "chatgpt", virgilio: "chatgpt" });
+    await act(async () => buttonNamed("Run plan").click());
+    expect(container.textContent).toContain("An agent’s service changed");
+    expect(container.textContent).toContain(
+      "If everything goes well: 3 requests to ChatGPT. Plan limit: 24.",
+    );
+    performPlanAction.mockResolvedValueOnce(
+      invalidPlan("reason_empty") as ReturnType<typeof failure>,
+    );
+    await act(async () => buttonNamed("Run plan").click());
+    expect(container.textContent).toContain(
+      "Ohtia can’t run this plan now. A contribution had no reason.",
+    );
+    performPlanAction.mockResolvedValueOnce(failure("plan_unfinished"));
+    await act(async () => buttonNamed("Run plan").click());
+    expect(container.textContent).toContain("Another plan in this conversation hasn’t finished.");
+    performPlanAction.mockRejectedValueOnce(new Error("restart while declining"));
+    await act(async () => buttonNamed("Decline plan").click());
+    expect(container.querySelector("[role=alert]")?.textContent).toContain(
+      "Ohtia couldn’t decline the plan.",
+    );
+    readPlanCard.mockResolvedValue(replacement);
+    performPlanAction.mockResolvedValueOnce(failure("proposal_not_waiting"));
+    await act(async () => {
+      buttonNamed("Decline plan").focus();
+      buttonNamed("Decline plan").click();
+    });
+    expect(container.textContent).toContain("Replaced by a newer proposal.");
+    expect(container.textContent).not.toContain("If everything goes well");
+    expect(container.textContent).not.toContain("ChatGPT");
+    expect(container.textContent).toContain("**This stays plain text.**");
+    expect(container.querySelector("[role=alert]")).toBeNull();
+    expect(buttonNamed("Run plan")).toBeUndefined();
+    expect(document.activeElement?.id).toBe(`message-${proposal.id}`);
+  });
+
+  it("reads ordered plan text parts and reconciles a stale decision through the conversation controller", async () => {
+    const h = controllerHarness(false);
+    vi.stubGlobal("crypto", webcrypto);
+    let connectionChanged: Parameters<FoundationPort["subscribeConnection"]>[1] | undefined;
+    const dispose = vi.fn();
+    const request = "한글".repeat(700);
+    const reference = {
+      source: `plan_request_${first.id}`,
+      parts: 2,
+      bytes: Buffer.byteLength(request),
+      sha256: createHash("sha256").update(request).digest("hex"),
+    };
+    const readPlan = vi.fn(() =>
+      ok({ ...open, contributions: [{ ...first, request: reference }] }),
+    );
+    const readTextPart = vi.fn(({ index }) =>
+      ok({ text: index === 1 ? request.slice(0, 1000) : request.slice(1000) }),
+    );
+    const acceptPlan = vi.fn(() => call(failure("proposal_not_waiting")));
+    const declinePlan = vi.fn(() => ok({ resultId: proposal.id }));
+    Object.assign(h.port, {
+      readPlan,
+      readTextPart,
+      acceptPlan,
+      declinePlan,
+      readDestination: vi.fn(({ agentId }) =>
+        agentId === "virgilio"
+          ? ok({ destination: { connection: "chatgpt" } })
+          : call(failure("storage_failed")),
+      ),
+      subscribeConnection: vi.fn((_id, notify) => {
+        connectionChanged = notify;
+        return {
+          ready: Promise.resolve({ ok: true, value: { subscriptionId: "plan-connection" } }),
+          dispose,
+        };
+      }),
+    });
+    const refresh = vi.fn();
+    try {
+      h.controller.open(scope);
+      const reload = vi.spyOn(h.controller, "reload").mockImplementation(() => {});
+      await settle();
+      h.items.push(proposal);
+      expect(
+        await h.controller.readPlanDestinations(scope.projectId, ["josefa", "virgilio"]),
+      ).toEqual({ virgilio: "chatgpt" });
+      const stop = h.controller.observePlanDestinations(refresh);
+      connectionChanged?.({ ok: true, value: { kind: "state" } } as unknown as Parameters<
+        NonNullable<typeof connectionChanged>
+      >[0]);
+      h.emit({ ok: true, value: { kind: "destinationChanged", connection: "chatgpt" } });
+      await settle();
+      expect(refresh).toHaveBeenCalledTimes(2);
+      stop();
+      expect(dispose).toHaveBeenCalled();
+      expect((await h.controller.readPlanCard(proposal.id)).contributions[0]?.request).toBe(
+        request,
+      );
+      expect(readTextPart.mock.calls.map(([part]) => part.index)).toEqual([1, 2]);
+      const controller = new AbortController();
+      controller.abort();
+      await expect(h.controller.readPlanCard(proposal.id, controller.signal)).rejects.toThrow(
+        /abandoned/,
+      );
+      readPlan.mockImplementationOnce(
+        () => call(failure("storage_failed")) as ReturnType<typeof readPlan>,
+      );
+      await expect(h.controller.readPlanCard(proposal.id)).rejects.toThrow(/unavailable/);
+      readPlan.mockImplementationOnce(() =>
+        ok({ ...open, conversationId: id(3333), contributions: [] }),
+      );
+      await expect(h.controller.readPlanCard(proposal.id)).rejects.toThrow(/scope/);
+      expect(
+        await h.controller.performPlanAction("show-again", proposal, {
+          josefa: "openai",
+          virgilio: "chatgpt",
+        }),
+      ).toEqual(failure("proposal_not_waiting"));
+      expect(h.port.readTimeline).toHaveBeenCalledWith({
+        conversationId: scope.conversationId,
+        ids: [proposal.id],
+      });
+      expect(reload).not.toHaveBeenCalled();
+      expect(await h.controller.performPlanAction("decline", proposal)).toEqual({
+        ok: true,
+        value: { resultId: proposal.id },
+      });
+      expect(declinePlan).toHaveBeenCalledWith("decline", { planId: proposal.id });
+    } finally {
+      h.controller.dispose();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("links a contribution back to the plan card", async () => {
+    const revealMessage = vi.fn(async () => true);
+    const result = {
+      ...message(2181, "Candidate search terms."),
+      authorKind: "agent",
+      agentId: "josefa",
+      taskId: id(6000),
+      language: "en",
+      ending: "complete",
+      planContribution: { planId: proposal.id, key: first.key },
+    } as TimelineItem;
+    await render(state([result]), { revealMessage } as unknown as ConversationController);
+    const link = container.querySelector<HTMLAnchorElement>(`a[href="#message-${proposal.id}"]`);
+    expect(link?.textContent).toBe("Plan · vocabulary");
+    await act(async () => link?.click());
+    expect(revealMessage).toHaveBeenCalledWith(proposal.id);
   });
 });

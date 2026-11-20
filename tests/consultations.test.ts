@@ -1,12 +1,13 @@
 import { DurableProvider } from "../packages/utility/src/durable-provider.js";
 import { ProviderDispatch } from "../packages/main/src/provider-dispatch.js";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createFakeProvider } from "../packages/main/src/fake-provider.js";
 import { dispatchThrough } from "./fixtures/provider-conformance.js";
 import {
   conversationTitlePolicy,
   decodeProviderDispatch,
   decodeProviderEvent,
+  encodeEnvelope,
   failure,
   type ProviderEventMessage,
   type DiagnosticEvent,
@@ -22,7 +23,8 @@ import {
   decodeConsultationProposal,
 } from "../packages/utility/src/consultations.js";
 import { setupConnections, successful as value, proposeSetup } from "./fixtures/project-setup.js";
-import { preConsultationSql, storageFixture } from "./fixtures/storage.js";
+import { createStatusService } from "../packages/utility/src/status-service.js";
+import { Database, preConsultationSql, storageFixture } from "./fixtures/storage.js";
 
 const identity = {
   kind: "request",
@@ -99,8 +101,8 @@ async function fixture(
       decodeProviderDispatch(JSON.stringify(task.dispatch), "setup-tests")?.request,
     ).toMatchObject({
       operation: "direct_guidance",
-      policy_version: 2,
-      tools: [{ name: "propose_consultation" }],
+      policy_version: 3,
+      tools: [{ name: "propose_consultation" }, { name: "propose_plan" }],
     });
     expect(task.dispatch.request.instructions).toContain("open dependencies");
     expect(task.dispatch.request.instructions).toContain(
@@ -675,7 +677,7 @@ it("migrates populated revision 20 while preserving task acceptance order, charg
   await f.store.open();
   const migrated = f.raw();
   try {
-    expect(migrated.pragma("user_version", { simple: true })).toBe(25);
+    expect(migrated.pragma("user_version", { simple: true })).toBe(26);
     expect(read(migrated)).toEqual(before);
     expect(
       migrated.prepare("SELECT state,blocking_reason FROM tasks WHERE id=?").get(bytes(resultId)),
@@ -1042,4 +1044,504 @@ it("keeps proof of zero dispatch when Stop follows a data-service clock cut", as
       db.close();
     }
   }
+});
+
+describe("Virgilio plan proposals", () => {
+  const purpose = "Compare search strategies for two possible thesis questions.";
+  const sharedContext = "The researcher chose open catalogs. Institutional access is unknown.";
+  const first = {
+    key: "vocabulary",
+    agent: "josefa",
+    request: "**Prepare** vocabulary for the first question.",
+    reason: "The researcher needs a starting vocabulary.",
+    required: true,
+    depends_on: [],
+  };
+  const second = {
+    ...first,
+    key: "comparison",
+    request: "Compare the vocabulary with terms for the candidate second question.",
+    reason: "The plans must make their coverage comparable.",
+    depends_on: ["vocabulary"],
+  };
+  const planCall = (
+    contributions: readonly unknown[] = [first, second],
+    fields: Record<string, unknown> = {},
+  ): ProviderToolCall => ({
+    namespace: "ohtia",
+    name: "propose_plan",
+    arguments: JSON.stringify({ purpose, shared_context: sharedContext, contributions, ...fields }),
+  });
+  const record = async (
+    f: Awaited<ReturnType<typeof fixture>>,
+    calls: readonly ProviderToolCall[],
+  ) => {
+    await f.append("PRIVATE conversation detail that Josefa must not receive.");
+    const task = await f.prepare();
+    value(await f.store.recordTaskEvent(task.dispatch.request.attempt, completed, "", calls));
+    const proposal = (await f.timeline()).items.find(
+      (item) => item.kind === "plan" && item.taskId === task.taskId,
+    );
+    if (!proposal || proposal.kind !== "plan") throw new Error("Expected a plan timeline item.");
+    return { task, proposal };
+  };
+  async function read(f: Awaited<ReturnType<typeof fixture>>, planId: string) {
+    const result = value(
+      await f.store.readResearch({
+        ...identity,
+        operation: "plan.read",
+        payload: { planId },
+      }),
+    );
+    expect(researchOutput("plan.read", result)).toBe(true);
+    return result as import("../packages/contracts/src/index.js").PlanSnapshot;
+  }
+  async function planService(f: Awaited<ReturnType<typeof fixture>>) {
+    const generation = identity.serviceGeneration;
+    const sent: string[] = [];
+    const lost = vi.fn();
+    const service = createStatusService(
+      generation,
+      "en-US",
+      (text) => sent.push(text),
+      f.store,
+      lost,
+      "development",
+    );
+    service.receive(
+      JSON.stringify({
+        kind: "connection_state",
+        generation,
+        snapshot: {
+          connection: "chatgpt",
+          state: "connected",
+          reason: null,
+          probing: false,
+          probe_id: null,
+          model_list_revision: 1,
+          model_count: 1,
+        },
+      }),
+    );
+    service.receive(
+      JSON.stringify({
+        kind: "connection_models",
+        generation,
+        page: {
+          connection: "chatgpt",
+          model_list_revision: 1,
+          models: [{ id: "first", name: "First" }],
+          nextCursor: 1,
+          hasMore: false,
+        },
+      }),
+    );
+    service.activate("en-US");
+    await service.drain();
+    return {
+      service,
+      sent,
+      lost,
+      dispatches: () =>
+        sent.flatMap((message) => decodeProviderDispatch(message, generation)?.request ?? []),
+      receiveEvent(attempt: string, event: ProviderEventMessage["event"]) {
+        service.receive(
+          JSON.stringify({ kind: "provider_event", version: 1, generation, attempt, event }),
+        );
+      },
+    };
+  }
+
+  const planConnections = { josefa: "chatgpt", virgilio: "chatgpt" } as const;
+
+  it.each(["plan.accept", "plan.decline"] as const)(
+    "returns a receipt through IPC and applies the decision when running %s",
+    async (operation) => {
+      const f = await fixture();
+      const { proposal } = await record(f, [planCall()]);
+      const h = await planService(f);
+      try {
+        const accept = operation === "plan.accept";
+        const requestId = "plan-decision";
+        const request = {
+          ...identity,
+          requestId,
+          operationId: requestId,
+          operation,
+          payload: accept
+            ? { planId: proposal.id, connections: planConnections }
+            : { planId: proposal.id },
+        };
+        for (const id of [requestId, "repeat-plan-decision"]) {
+          h.service.receive(value(encodeEnvelope({ ...request, requestId: id })));
+          await h.service.drain();
+          expect(h.sent.map((message) => JSON.parse(message))).toContainEqual({
+            ...request,
+            requestId: id,
+            kind: "result",
+            payload: { ok: true, value: { resultId: proposal.id } },
+          });
+        }
+        expect((await read(f, proposal.id)).state).toBe(accept ? "accepted" : "declined");
+        expect(h.dispatches().map(({ operation }) => operation)).toEqual(
+          accept ? ["search_strategy_planning"] : [],
+        );
+        expect(h.lost).not.toHaveBeenCalled();
+      } finally {
+        h.service.dispose();
+      }
+    },
+  );
+
+  it.each(["usage", "result"] as const)(
+    "keeps a plan running when a short SQLite read overlaps a provider %s commit",
+    async (eventType) => {
+      const f = await fixture();
+      const { proposal } = await record(f, [planCall()]);
+      value(
+        await f.run({
+          command: "plan.accept",
+          operationId: "accept-before-reader",
+          payload: { planId: proposal.id, connections: planConnections },
+        }),
+      );
+      const h = await planService(f);
+      const reader = f.raw();
+      try {
+        const [contribution] = h.dispatches();
+        expect(contribution?.operation).toBe("search_strategy_planning");
+        const attempt = contribution!.attempt;
+        h.receiveEvent(attempt, { type: "text", sequence: 1, text: "Candidate search terms." });
+        await h.service.drain();
+        reader.exec("BEGIN");
+        reader.prepare("SELECT count(*) FROM tasks").get();
+        const prepare = Database.prototype.prepare;
+        const busyCodes: string[] = [];
+        const commit = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+          query,
+          ...args
+        ) {
+          const statement = prepare.call(this, query, ...args);
+          if (query === "COMMIT") {
+            const run = statement.run.bind(statement);
+            statement.run = (...bindings: unknown[]) => {
+              try {
+                return run(...bindings);
+              } catch (error) {
+                if (error instanceof Database.SqliteError) busyCodes.push(error.code);
+                if (reader.inTransaction) reader.exec("ROLLBACK");
+                throw error;
+              }
+            };
+          }
+          return statement;
+        });
+        try {
+          h.receiveEvent(
+            attempt,
+            eventType === "usage"
+              ? {
+                  type: "usage",
+                  sequence: 2,
+                  usage: {
+                    input_tokens: 100,
+                    cached_input_tokens: 0,
+                    output_tokens: 20,
+                    reasoning_tokens: 0,
+                  },
+                }
+              : { ...completed, sequence: 2 },
+          );
+          await h.service.drain();
+        } finally {
+          commit.mockRestore();
+        }
+        expect(busyCodes).toEqual(["SQLITE_BUSY"]);
+        expect(h.lost).not.toHaveBeenCalled();
+        if (eventType === "usage") {
+          expect(
+            reader
+              .prepare("SELECT output_tokens FROM attempts WHERE id = ?")
+              .pluck()
+              .get(bytes(attempt)),
+          ).toBe(20);
+          h.receiveEvent(attempt, { ...completed, sequence: 3 });
+          await h.service.drain();
+        }
+        const dependent = h.dispatches()[1];
+        expect(dependent?.operation).toBe("search_strategy_planning");
+        h.receiveEvent(dependent!.attempt, {
+          type: "text",
+          sequence: 1,
+          text: "Compare the terms.",
+        });
+        h.receiveEvent(dependent!.attempt, { ...completed, sequence: 2 });
+        await h.service.drain();
+        const synthesis = h.dispatches()[2];
+        expect(synthesis?.operation).toBe("contribution_synthesis");
+        h.receiveEvent(synthesis!.attempt, {
+          type: "text",
+          sequence: 1,
+          text: "Both results are available.",
+        });
+        h.receiveEvent(synthesis!.attempt, { ...completed, sequence: 2 });
+        await h.service.drain();
+        expect(h.dispatches()).toHaveLength(3);
+        const plan = await read(f, proposal.id);
+        expect(plan.outcome).toBe("complete");
+        expect(plan.continuation?.taskState).toBe("completed");
+        expect(h.lost).not.toHaveBeenCalled();
+      } finally {
+        if (reader.inTransaction) reader.exec("ROLLBACK");
+        reader.close();
+        h.service.dispose();
+      }
+    },
+  );
+
+  it("keeps invalid tool-only plans and their notes without replacing a valid proposal", async () => {
+    const f = await fixture();
+    const { proposal: open } = await record(f, [planCall()]);
+    expect(open).toMatchObject({ state: "proposed", rank: 2, revision: 1 });
+    for (const [calls, reason] of [
+      [[planCall([])], "empty_plan"],
+      [[planCall([first])], "too_few_contributions"],
+      [[planCall([first, { ...second, reason: undefined }])], "reason_empty"],
+      [[planCall([first, { ...second, reason: "한".repeat(501) }])], "reason_too_long"],
+      [[planCall(), call("One consultation")], "multiple_calls"],
+      [[planCall([first, { ...second, depends_on: ["missing"] }])], "unknown_prerequisite"],
+      [[planCall([], { contributions: Array(9).fill(first) })], "plan_too_large"],
+      [[planCall(undefined, { purpose: " " })], "purpose_empty"],
+      [[planCall(undefined, { purpose: "한".repeat(2001) })], "purpose_too_long"],
+      [[planCall(undefined, { shared_context: "한".repeat(11000) })], "shared_context_too_large"],
+      [[planCall([first, { ...second, request: " " }])], "request_empty"],
+      [[planCall([first, { ...second, request: "한".repeat(2731) }])], "request_too_large"],
+      [[planCall([first, { ...second, key: "bad\n" }])], "plan_key_invalid"],
+      [[planCall([first, { ...second, key: first.key, depends_on: [] }])], "plan_key_duplicate"],
+      [[planCall([first, { ...first, key: second.key }])], "duplicate_contribution"],
+      [[planCall([first, { ...second, depends_on: [second.key] }])], "self_dependency"],
+      [[planCall([{ ...first, depends_on: [second.key] }, second])], "cycle"],
+      [[planCall([first, { ...second, agent: "virgilio" }])], "agent_unavailable"],
+    ] as const) {
+      const { proposal } = await record(f, calls);
+      expect(proposal).toMatchObject({
+        state: "invalid",
+        invalidReason: reason,
+        rank: 2,
+        revision: 1,
+      });
+      expect((await read(f, open.id)).state).toBe("proposed");
+    }
+    const { task, proposal: newer } = await record(f, [planCall()]);
+    expect(
+      task.dispatch.request.input.some(({ text }) =>
+        text.includes("failed the check reason_empty"),
+      ),
+    ).toBe(true);
+    expect((await read(f, open.id)).state).toBe("replaced");
+    expect(
+      await f.run({
+        command: "plan.decline",
+        operationId: "stale-decline",
+        payload: { planId: open.id },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { code: "proposal_not_waiting", nextAction: "refresh_record" },
+    });
+    const decline = {
+      command: "plan.decline",
+      operationId: "decline-plan",
+      payload: { planId: newer.id },
+    } as const;
+    expect(value(await f.run(decline))).toEqual({ resultId: newer.id });
+    expect(value(await f.run(decline))).toEqual({ resultId: newer.id });
+    expect((await read(f, newer.id)).state).toBe("declined");
+    expect(value(await f.store.prepareTask())).toBeNull();
+  });
+
+  it("checks displayed connections, authorizes only the approved graph and withholds tools during it", async () => {
+    const f = await fixture();
+    const { task, proposal } = await record(f, [planCall([second, first])]);
+    const request = decodeProviderDispatch(JSON.stringify(task.dispatch), "setup-tests")?.request;
+    expect(request).toMatchObject({
+      policy_version: 3,
+      instruction_version: 3,
+      limits: { max_output_bytes: 160 * 1024 },
+      tools: [
+        { name: "propose_consultation" },
+        {
+          name: "propose_plan",
+          strict: true,
+          parameters: {
+            required: ["purpose", "shared_context", "contributions"],
+            properties: {
+              contributions: {
+                type: "array",
+                items: {
+                  additionalProperties: false,
+                  properties: { agent: { enum: ["josefa"] } },
+                  required: ["key", "agent", "request", "reason", "required", "depends_on"],
+                },
+              },
+            },
+          },
+        },
+      ],
+    });
+    expect((await read(f, proposal.id)).contributions.map(({ key }) => key)).toEqual([
+      "vocabulary",
+      "comparison",
+    ]);
+    expect(value(await f.store.prepareTask())).toBeNull();
+    const accept = {
+      command: "plan.accept",
+      operationId: "accept-plan",
+      payload: { planId: proposal.id, connections: { josefa: "chatgpt", virgilio: "chatgpt" } },
+    } as const;
+    f.destination("fake");
+    expect(await f.run(accept)).toMatchObject({
+      ok: false,
+      error: { code: "destination_changed" },
+    });
+    expect((await read(f, proposal.id)).state).toBe("proposed");
+    f.destination("chatgpt");
+    expect(value(await f.run(accept))).toEqual({ resultId: proposal.id });
+    expect(value(await f.run(accept))).toEqual({ resultId: proposal.id });
+    const db = f.raw();
+    try {
+      expect(
+        db
+          .prepare("SELECT decided_at, decided_by_operation_id FROM interventions WHERE id = ?")
+          .get(bytes(proposal.id)),
+      ).toMatchObject({ decided_at: expect.any(String), decided_by_operation_id: "accept-plan" });
+    } finally {
+      db.close();
+    }
+    expect(await read(f, proposal.id)).toMatchObject({
+      state: "accepted",
+      revision: 2,
+      connections: { josefa: "chatgpt", virgilio: "chatgpt" },
+      maxRequests: 24,
+      contributions: [{ request: first.request }, { request: second.request }],
+    });
+    await f.append("What can I prepare independently?");
+    const next = await f.prepare();
+    const specialist = next.kind === "contribution" ? next : null;
+    const guidance = specialist ? await f.prepare() : next;
+    expect(
+      guidance.dispatch.request.tools.some(
+        ({ name }) => name === "propose_plan" || name === "propose_consultation",
+      ),
+    ).toBe(false);
+    expect(
+      guidance.dispatch.request.input.filter(({ text }) =>
+        text.includes("and the researcher ran it"),
+      ),
+    ).toHaveLength(1);
+    expect(guidance.dispatch.request.input.at(-1)?.text).toContain(
+      "Plan state: running.\nContributions:\n- vocabulary (Josefa): working\n- comparison (Josefa): waiting",
+    );
+    value(
+      await f.store.recordTaskEvent(
+        guidance.dispatch.request.attempt,
+        completed,
+        "Clarify the comparison criteria.",
+      ),
+    );
+    const vocabulary = specialist ?? (await f.prepare());
+    expect(vocabulary.dispatch.request.input).toEqual([
+      { role: "user", text: expect.stringContaining(sharedContext) },
+    ]);
+    expect(vocabulary.dispatch.request.input[0]?.text).toContain(first.request);
+    expect(vocabulary.dispatch.request.input[0]?.text).not.toContain("PRIVATE");
+    value(
+      await f.store.recordTaskEvent(
+        vocabulary.dispatch.request.attempt,
+        completed,
+        "Candidate vocabulary.",
+      ),
+    );
+    const comparison = await f.prepare();
+    expect(comparison.dispatch.request.input).toEqual([
+      { role: "user", text: expect.stringContaining(second.request) },
+      { role: "user", text: expect.stringContaining("Candidate vocabulary.") },
+    ]);
+    value(
+      await f.store.recordTaskEvent(
+        comparison.dispatch.request.attempt,
+        completed,
+        "Access to catalogs remains unknown.",
+      ),
+    );
+    await f.append("Is the comparison ready?");
+    const whileSynthesizing = await f.prepare();
+    expect(whileSynthesizing.dispatch.request.input.at(-1)?.text).toContain(
+      "its contributions have ended and the synthesis is being written",
+    );
+    value(
+      await f.store.recordTaskEvent(
+        whileSynthesizing.dispatch.request.attempt,
+        completed,
+        "The synthesis is a separate reply.",
+      ),
+    );
+    const synthesis = await f.prepare();
+    expect(synthesis.dispatch.request.operation).toBe("contribution_synthesis");
+    expect(JSON.stringify(synthesis.dispatch.request.input)).toContain(
+      "Access to catalogs remains unknown.",
+    );
+    value(
+      await f.store.recordTaskEvent(
+        synthesis.dispatch.request.attempt,
+        completed,
+        "Compare access before committing to a design.",
+      ),
+    );
+    f.destination("fake");
+    expect((await read(f, proposal.id)).connections).toEqual(accept.payload.connections);
+    expect((await f.timeline()).items).toContainEqual(
+      expect.objectContaining({
+        kind: "message",
+        rank: 1,
+        planContribution: { planId: proposal.id, key: first.key },
+      }),
+    );
+  });
+  it("refuses a reply’s stale proposal after an intervening approved plan has already finished", async () => {
+    const f = await fixture();
+    const { proposal } = await record(f, [planCall()]);
+    await f.append("Keep clarifying the comparison while I review the plan.");
+    const olderReply = await f.prepare();
+    expect(olderReply.dispatch.request.tools).toContainEqual(
+      expect.objectContaining({ name: "propose_plan" }),
+    );
+    value(
+      await f.run({
+        command: "plan.accept",
+        operationId: "approve-during-reply",
+        payload: { planId: proposal.id, connections: { josefa: "chatgpt", virgilio: "chatgpt" } },
+      }),
+    );
+    for (const result of ["Candidate terms.", "Access remains unknown.", "Compare access first."]) {
+      const work = await f.prepare();
+      value(await f.store.recordTaskEvent(work.dispatch.request.attempt, completed, result));
+    }
+    expect((await read(f, proposal.id)).continuation?.taskState).toBe("completed");
+    value(
+      await f.store.recordTaskEvent(olderReply.dispatch.request.attempt, completed, "", [
+        planCall(),
+      ]),
+    );
+    expect((await f.timeline()).items).toContainEqual(
+      expect.objectContaining({
+        kind: "plan",
+        taskId: olderReply.taskId,
+        state: "invalid",
+        invalidReason: "plan_unfinished",
+      }),
+    );
+    const { proposal: later } = await record(f, [planCall()]);
+    expect(later.state).toBe("proposed");
+  });
 });

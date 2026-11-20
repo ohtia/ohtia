@@ -37,7 +37,7 @@ export function ConsultationProposal({
   const open = proposal.state === "proposed";
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<
-    "destinationChanged" | "unfinished" | "acceptFailed" | "declineFailed" | null
+    "destinationChanged" | "unfinished" | "planUnfinished" | "acceptFailed" | "declineFailed" | null
   >(null);
   const intents = useRef(new Map<Action, { id: string; connection: string | undefined }>());
   const root = useRef<HTMLDivElement>(null);
@@ -84,11 +84,13 @@ export function ConsultationProposal({
       setFeedback(
         result.error.code === "destination_changed"
           ? "destinationChanged"
-          : result.error.code === "consultation_unfinished"
-            ? "unfinished"
-            : action === "accept"
-              ? "acceptFailed"
-              : "declineFailed",
+          : result.error.code === "plan_unfinished"
+            ? "planUnfinished"
+            : result.error.code === "consultation_unfinished"
+              ? "unfinished"
+              : action === "accept"
+                ? "acceptFailed"
+                : "declineFailed",
       );
     } catch {
       setFeedback(action === "accept" ? "acceptFailed" : "declineFailed");
@@ -119,7 +121,8 @@ export function ConsultationProposal({
     );
   }
 
-  const warning = feedback === "destinationChanged" || feedback === "unfinished";
+  const warning =
+    feedback === "destinationChanged" || feedback === "unfinished" || feedback === "planUnfinished";
   const language = proposal.language ?? "";
   return (
     <div ref={root} tabIndex={-1} className="consultation-proposal">
@@ -194,7 +197,11 @@ export function ConsultationProposal({
               role={warning ? "status" : "alert"}
             >
               <LucideGlyph name={warning ? "triangle-alert" : "octagon-alert"} size={16} />
-              <span>{message(locale, `consultation.${feedback}`)}</span>
+              <span>
+                {feedback === "planUnfinished"
+                  ? message(locale, "plan.unfinished")
+                  : message(locale, `consultation.${feedback}`)}
+              </span>
             </div>
           )
         }
