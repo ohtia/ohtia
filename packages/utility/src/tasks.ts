@@ -10,6 +10,7 @@ import {
   addContributions,
   contributionKey,
   holdingDependencies,
+  latestAcceptedPlan,
   planContributions,
   planInput,
   readyInputs,
@@ -36,6 +37,20 @@ import {
   unfinishedPlans,
 } from "./plan-proposals.js";
 import {
+  recordPlanChangeProposal,
+  validatePlanChange,
+  writePlanChange,
+} from "./plan-redirection.js";
+import {
+  effectivePlan,
+  planChangeNote,
+  planChangeRevision,
+  planChangeTool,
+  readPlanChange,
+  storedPlanChange,
+} from "./plan-change-proposals.js";
+import { releaseRetiredWork } from "./work-limits.js";
+import {
   handoffBoundary,
   handoffBusy,
   handoffContext,
@@ -46,7 +61,11 @@ import {
   saveHandoffProposal,
 } from "./handoffs.js";
 import type { PlanEventKind, PlanEventPayload } from "@ohtia/contracts";
-import type { ContributionRow, InterventionRow } from "./consultations.js";
+import type {
+  ContributionCancellationReason,
+  ContributionRow,
+  InterventionRow,
+} from "./consultations.js";
 import {
   authorizeWork,
   authorizedOperation,
@@ -87,6 +106,7 @@ import {
   type ServiceConnections,
   failure,
   invalidPlan,
+  invalidPlanChange,
   connectionInferenceLimits,
   isProviderModelSlug,
   type DiagnosticEvent,
@@ -329,7 +349,11 @@ export class TaskTransaction {
       await revision.execute();
     }
   }
-  private async change(task: TaskRow, change: Partial<TaskRow>): Promise<void> {
+  private async change(
+    task: TaskRow,
+    change: Partial<TaskRow>,
+    cancellation?: ContributionCancellationReason,
+  ): Promise<void> {
     const changed = await this.db
       .updateTable("tasks")
       .set({ ...change, state_revision: task.state_revision + 1, updated_at: this.now })
@@ -358,7 +382,7 @@ export class TaskTransaction {
     if (task.contribution_id) {
       const contribution = await this.db
         .selectFrom("contributions")
-        .select("intervention_id")
+        .select(["intervention_id", "cancellation_reason"])
         .where("id", "=", task.contribution_id)
         .executeTakeFirstOrThrow();
       this.touchIntervention(contribution.intervention_id);
@@ -370,6 +394,26 @@ export class TaskTransaction {
         state === "cancelled"
       ) {
         if (await releaseTaskWork(this.db, task.id, this.now)) this.workReleased();
+        if (
+          contribution.cancellation_reason === "removed_by_researcher" ||
+          contribution.cancellation_reason === "superseded"
+        ) {
+          this.changedPlans.set(
+            identifier(contribution.intervention_id),
+            contribution.intervention_id,
+          );
+          this.admitSynthesis = true;
+          return;
+        }
+        const plan =
+          state === "cancelled" && !cancellation
+            ? await acceptedPlan(this.db, contribution.intervention_id)
+            : undefined;
+        const cancellationReason =
+          state === "cancelled"
+            ? (cancellation ??
+              (plan?.outcome === "cancelled" ? "plan_cancelled" : "stopped_by_researcher"))
+            : null;
         const result =
           state === "completed"
             ? await this.db
@@ -381,7 +425,11 @@ export class TaskTransaction {
             : undefined;
         await this.db
           .updateTable("contributions")
-          .set({ state, result_message_id: result?.id ?? null })
+          .set({
+            state,
+            result_message_id: result?.id ?? null,
+            cancellation_reason: cancellationReason,
+          })
           .where("id", "=", task.contribution_id)
           .where("task_id", "=", task.id)
           .execute();
@@ -423,7 +471,7 @@ export class TaskTransaction {
         : project.setup_confirmed_at === null
           ? "project_setup"
           : "direct_guidance",
-      project.is_development ? 1 : project.setup_confirmed_at === null ? 2 : 4,
+      project.is_development ? 1 : project.setup_confirmed_at === null ? 2 : 5,
       this.context.mode,
     );
     return policy ? { policy, connection: this.agentConnection(recipient) } : null;
@@ -662,6 +710,81 @@ export class TaskTransaction {
     return this.recordGraphChange(id);
   }
 
+  async decidePlanChange(
+    id: Uint8Array,
+    operationId: string,
+    applying: boolean,
+  ): Promise<Outcome<Uint8Array>> {
+    const proposal = await this.db
+      .selectFrom("graph_change_proposals")
+      .selectAll()
+      .where("id", "=", id)
+      .executeTakeFirst();
+    if (!proposal) return failure("record_not_found");
+    if (proposal.state !== "proposed") return failure("proposal_not_waiting");
+    const plan = await acceptedPlan(this.db, proposal.intervention_id);
+    if (!plan) return failure("record_not_found");
+    const checked = applying
+      ? await validatePlanChange(
+          this.db,
+          plan,
+          storedPlanChange(proposal.change),
+          this.context.mode,
+          { version: proposal.expected_graph_version, states: proposal.expected_states },
+        )
+      : undefined;
+    if (typeof checked === "string") return invalidPlanChange(checked);
+    const cancellations =
+      checked?.retired.filter(({ node }) => node.state !== "cancelled").length ?? 0;
+    if (checked && !(await hasEventRoom(this.db, plan.id, 1 + cancellations)))
+      return failure("event_limit_reached");
+    await this.db
+      .updateTable("graph_change_proposals")
+      .set({
+        state: applying ? "applied" : "declined",
+        decided_at: this.now,
+        decided_by_operation_id: operationId,
+      })
+      .where("id", "=", id)
+      .execute();
+    if (checked) {
+      for (const { node, replacement } of checked.retired) {
+        let alreadyCancelled = node.state === "cancelled";
+        if (node.task_id && node.state === "active") {
+          await this.control("task.stop", node.task_id, operationId, true);
+          const stopped = await this.db
+            .selectFrom("tasks")
+            .select("state")
+            .where("id", "=", node.task_id)
+            .executeTakeFirstOrThrow();
+          alreadyCancelled = stopped.state === "cancelled";
+        }
+        await this.db
+          .updateTable("contributions")
+          .set({
+            state: "cancelled",
+            cancellation_reason: replacement ? "superseded" : "removed_by_researcher",
+            superseded_by_contribution_id: replacement,
+            blocked_by_contribution_id: null,
+            failure_reason: null,
+            restart_held: 0,
+          })
+          .where("id", "=", node.id)
+          .execute();
+        if (await releaseRetiredWork(this.db, node.id, this.now)) this.workReleased();
+        if (!alreadyCancelled)
+          await this.planEvent(plan.id, "contribution_cancelled", {}, node.id, node.task_id);
+      }
+      await writePlanChange(this.db, plan, proposal, checked, operationId, this.now);
+      if (checked.added.length) this.diagnostics.push({ event_name: "ohtia.work.reserved" });
+      this.interventionRevised(plan.id);
+      const advanced = await this.recordGraphChange(plan.id);
+      if (!advanced.ok) return advanced;
+    }
+    this.touch(plan.conversation_id);
+    return { ok: true, value: proposal.id };
+  }
+
   private openPlans() {
     return acceptedPlans(this.db).select("id").where("outcome", "is", null);
   }
@@ -696,12 +819,18 @@ export class TaskTransaction {
   }
 
   private async cancelUnstartedContributions(
+    cancellation: ContributionCancellationReason,
     id?: Uint8Array,
     states: readonly ("waiting" | "blocked")[] = ["waiting", "blocked"],
   ): Promise<void> {
     let query = this.db
       .updateTable("contributions")
-      .set({ state: "cancelled", blocked_by_contribution_id: null, restart_held: 0 })
+      .set({
+        state: "cancelled",
+        cancellation_reason: cancellation,
+        blocked_by_contribution_id: null,
+        restart_held: 0,
+      })
       .where("state", "in", states);
     query = id
       ? query.where("intervention_id", "=", id)
@@ -744,10 +873,10 @@ export class TaskTransaction {
         await this.control("task.stop", continuation.task_id, operationId, true);
       return { ok: true, value: id };
     }
-    await this.cancelUnstartedContributions(id);
+    await this.cancelUnstartedContributions("plan_cancelled", id);
     for (const node of await planContributions(this.db, id))
       if (node.state === "active" && node.task_id)
-        await this.control("task.stop", node.task_id, operationId, true);
+        await this.control("task.stop", node.task_id, operationId, true, "plan_cancelled");
     if (await releasePendingWork(this.db, id, this.now, true)) this.workReleased();
     await this.endPlan(plan, "cancelled", operationId);
     return { ok: true, value: id };
@@ -819,6 +948,19 @@ export class TaskTransaction {
       .selectAll()
       .where("admission", "=", "waiting")
       .where((eb) =>
+        eb.not(
+          eb.exists(
+            eb
+              .selectFrom("contributions as c")
+              .innerJoin("tasks as t", "t.id", "c.task_id")
+              .select("c.id")
+              .whereRef("c.intervention_id", "=", "continuations.intervention_id")
+              .where("c.cancellation_reason", "in", ["removed_by_researcher", "superseded"])
+              .where("t.state", "=", "cancelling"),
+          ),
+        ),
+      )
+      .where((eb) =>
         eb.exists(
           eb
             .selectFrom("intervention_operations as o")
@@ -859,7 +1001,12 @@ export class TaskTransaction {
           : "configuration_unavailable";
       await this.db
         .updateTable("continuations")
-        .set({ admission: "admitted", task_id: taskId, restart_held: 0 })
+        .set({
+          admission: "admitted",
+          task_id: taskId,
+          restart_held: 0,
+          policy_version: policy.operation === "contribution_synthesis" ? 2 : row.policy_version,
+        })
         .where("id", "=", row.id)
         .execute();
       await this.db
@@ -912,12 +1059,23 @@ export class TaskTransaction {
           !contributions.some(({ state, required }) => required && state !== "completed")))
     )
       return failure("plan_state_changed");
-    if (capped) await this.cancelUnstartedContributions(id, ["waiting"]);
+    if (capped) await this.cancelUnstartedContributions("plan_finished", id, ["waiting"]);
     await this.clearPlanRestartHolds(id);
     const hasResult = contributions.some(({ state }) => state === "completed");
     if (await releasePendingWork(this.db, id, this.now, !hasResult)) this.workReleased();
     await this.endPlan(plan, hasResult ? "partial" : "failed", operationId);
     return { ok: true, value: id };
+  }
+
+  private stoppingRedirections(id: Uint8Array) {
+    return this.db
+      .selectFrom("contributions as c")
+      .innerJoin("tasks as t", "t.id", "c.task_id")
+      .select("c.superseded_by_contribution_id")
+      .where("c.intervention_id", "=", id)
+      .where("c.cancellation_reason", "in", ["removed_by_researcher", "superseded"])
+      .where("t.state", "=", "cancelling")
+      .execute();
   }
 
   /** Advance the accepted graph against committed task outcomes in the same transaction. */
@@ -933,6 +1091,22 @@ export class TaskTransaction {
     // Revision 22 could store synthetic plans, but had no accepted work envelopes for them.
     if (!plan || !(await interventionLimits(this.db, id))) return true;
     const nodes = await planContributions(this.db, id);
+    const stopping = await this.stoppingRedirections(id);
+    const waitingForStop = new Set<string>();
+    if (stopping.length) {
+      const history = await planContributions(this.db, id, true);
+      const supersessions = new Map(
+        history.map((node) => [identifier(node.id), node.superseded_by_contribution_id]),
+      );
+      for (const row of stopping) {
+        let replacement = row.superseded_by_contribution_id;
+        while (replacement) {
+          const key = identifier(replacement);
+          waitingForStop.add(key);
+          replacement = supersessions.get(key) ?? null;
+        }
+      }
+    }
     const byId = new Map(nodes.map((row) => [identifier(row.id), row]));
     const edges = new Map(nodes.map((row) => [identifier(row.id), [] as string[]]));
     for (const edge of await holdingDependencies(this.db, id)) {
@@ -950,7 +1124,8 @@ export class TaskTransaction {
     let withinCap = true;
     for (const key of order) {
       const node = nodeAt(key);
-      if (node.state !== "waiting" && node.state !== "blocked") continue;
+      if ((node.state !== "waiting" && node.state !== "blocked") || waitingForStop.has(key))
+        continue;
       const prerequisites = (edges.get(key) ?? []).map(nodeAt);
       if (node.ready_inputs !== null) {
         if (!node.restart_held && !(await this.activateContribution(plan, node))) withinCap = false;
@@ -1074,7 +1249,19 @@ export class TaskTransaction {
       return true;
     }
     if (await this.pendingLimitReached(policy)) return true;
-    await this.insertContributionTask(plan, node, policy, plan.decided_by_operation_id);
+    const approval = await this.db
+      .selectFrom("graph_changes")
+      .select("applied_by_operation_id")
+      .where("intervention_id", "=", plan.id)
+      .where("graph_version", "=", node.added_in_graph_version)
+      .where("kind", "=", "plan_changed")
+      .executeTakeFirst();
+    await this.insertContributionTask(
+      plan,
+      node,
+      policy,
+      approval?.applied_by_operation_id ?? plan.decided_by_operation_id,
+    );
     return true;
   }
 
@@ -1171,9 +1358,16 @@ export class TaskTransaction {
       .execute();
     await bindWork(this.db, node.id, taskId);
     node.state = "active";
+    const { contextSource, purposeSource } = await effectivePlan(this.db, plan);
     await this.db
       .updateTable("contributions")
-      .set({ task_id: taskId, state: node.state, failure_reason: null })
+      .set({
+        task_id: taskId,
+        state: node.state,
+        failure_reason: null,
+        context_proposal_id: contextSource === plan.id ? null : contextSource,
+        purpose_proposal_id: purposeSource === plan.id ? null : purposeSource,
+      })
       .where("id", "=", node.id)
       .execute();
     await this.planEvent(plan.id, "contribution_started", {}, node.id, taskId);
@@ -1339,7 +1533,7 @@ export class TaskTransaction {
       const plan = await this.db
         .selectFrom("contributions as c")
         .innerJoin("interventions as i", "i.id", "c.intervention_id")
-        .select(["i.id", "i.decided_by_operation_id"])
+        .select(["i.id", "i.decided_by_operation_id", "c.added_in_graph_version"])
         .where("c.id", "=", task.contribution_id)
         .where("c.task_id", "=", task.id)
         .where("i.kind", "=", "plan")
@@ -1347,6 +1541,15 @@ export class TaskTransaction {
         .where("i.outcome", "is", null)
         .executeTakeFirst();
       if (!plan) return false;
+      if (receipt.command === "planChange.apply")
+        return !!(await this.db
+          .selectFrom("graph_changes")
+          .select("id")
+          .where("intervention_id", "=", plan.id)
+          .where("graph_version", "=", plan.added_in_graph_version)
+          .where("proposal_id", "=", receipt.result_id)
+          .where("applied_by_operation_id", "=", receipt.operation_id)
+          .executeTakeFirst());
       if (
         receipt.command === "plan.accept" ||
         receipt.command === "plan.addContributions" ||
@@ -1529,6 +1732,8 @@ export class TaskTransaction {
       .values({
         ...task,
         id: replacement,
+        policy_version: policy.version,
+        instruction_version: policy.instruction_version,
         accepted_by_operation_id: operationId,
         replaces_task_id: task.id,
         charge_warning_accepted_at: task.state === "uncertain" ? this.now : null,
@@ -1543,7 +1748,7 @@ export class TaskTransaction {
     await this.change(task, {});
     await this.db
       .updateTable("continuations")
-      .set({ task_id: replacement })
+      .set({ task_id: replacement, policy_version: 2 })
       .where("id", "=", continuation.id)
       .execute();
     await bindSynthesisWork(this.db, continuation.intervention_id, replacement);
@@ -1572,6 +1777,7 @@ export class TaskTransaction {
     id: Uint8Array,
     operationId: string,
     stoppingAll = false,
+    cancellation?: ContributionCancellationReason,
   ): Promise<Outcome<Uint8Array>> {
     const task = await this.db
       .selectFrom("tasks")
@@ -1597,7 +1803,7 @@ export class TaskTransaction {
         task.state === "blocked" ||
         task.state === "waiting_capacity"
       ) {
-        await this.change(task, { state: "cancelled", blocking_reason: null });
+        await this.change(task, { state: "cancelled", blocking_reason: null }, cancellation);
         this.diagnostics.push({ event_name: "ohtia.task.cancelled" });
       } else if (task.state === "running" || task.state === "cancelling") {
         const attempt = await this.db
@@ -1626,7 +1832,7 @@ export class TaskTransaction {
             .execute();
           if (delegatedTask(task))
             await this.settleDelegatedAttempt(attempt, attempt.dispatch_permitted_at !== null);
-          await this.change(task, { state: "cancelled" });
+          await this.change(task, { state: "cancelled" }, cancellation);
           this.diagnostics.push({ event_name: "ohtia.task.cancelled" });
         } else if (task.state === "running") {
           await this.db
@@ -1654,6 +1860,7 @@ export class TaskTransaction {
       : undefined;
     if (contribution) {
       if (task.kind === "contribution") {
+        if (contribution.state === "cancelled") return failure("task_not_retryable");
         const plan = await this.db
           .selectFrom("interventions")
           .select("outcome")
@@ -1800,7 +2007,7 @@ export class TaskTransaction {
   async cancelAll(): Promise<void> {
     this.stopContinuationAdmission = true;
     await this.withdrawWaitingContinuations();
-    await this.cancelUnstartedContributions();
+    await this.cancelUnstartedContributions("stopped_by_researcher");
     const tasks = await this.db
       .selectFrom("tasks")
       .select("id")
@@ -1878,12 +2085,11 @@ export class TaskTransaction {
       if (cancelled && task.kind === "contribution" && task.contribution_id) {
         const owner = await this.db
           .selectFrom("contributions")
-          .select("intervention_id")
+          .select(["intervention_id", "cancellation_reason"])
           .where("id", "=", task.contribution_id)
           .executeTakeFirstOrThrow();
-        // Plan Stop already ended its plan. A stopping contribution in an open plan
-        // can only be the durable intent left by Cancel work and quit.
-        this.exitCancelledPlans.add(identifier(owner.intervention_id));
+        if (!owner.cancellation_reason)
+          this.exitCancelledPlans.add(identifier(owner.intervention_id));
       }
       const dispatched = attempt.dispatch_permitted_at !== null;
       await this.db
@@ -2304,6 +2510,27 @@ export class TaskTransaction {
         task.operation === "direct_guidance"
           ? await unfinishedPlan(this.db, task.conversation_id)
           : undefined;
+      const changeCapable = planCapable && task.instruction_version >= 5;
+      if (changeCapable) {
+        const changes = await this.db
+          .selectFrom("graph_change_proposals as p")
+          .innerJoin("interventions as i", "i.id", "p.intervention_id")
+          .innerJoin("attempts as a", "a.id", "p.proposed_by_attempt_id")
+          .innerJoin("tasks as t", "t.id", "a.task_id")
+          .select(["p.id", "p.state", "p.invalid_reason", "t.reply_position"])
+          .where("i.conversation_id", "=", task.conversation_id)
+          .orderBy("t.reply_position")
+          .execute();
+        for (const proposal of changes)
+          if (proposal.reply_position !== null)
+            notes.push({
+              kind: "plan_change_proposal",
+              position: proposal.reply_position,
+              reference: identifier(proposal.id),
+              revision: planChangeRevision(proposal.state),
+              text: planChangeNote(proposal),
+            });
+      }
       if (enabledConsultations.length || planCapable) {
         const consultations = await this.db
           .selectFrom("interventions as i")
@@ -2447,7 +2674,10 @@ export class TaskTransaction {
           ? {
               input: [
                 ...baseInput.input,
-                { role: "user" as const, text: await planStatusNote(this.db, activePlan) },
+                {
+                  role: "user" as const,
+                  text: await planStatusNote(this.db, activePlan, task.instruction_version),
+                },
               ],
               transfer: [
                 ...baseInput.transfer,
@@ -2455,7 +2685,7 @@ export class TaskTransaction {
                   kind: "note" as const,
                   note: "plan_status" as const,
                   reference: identifier(activePlan.id),
-                  revision: activePlan.revision,
+                  revision: changeCapable ? activePlan.graph_version : activePlan.revision,
                 },
               ],
             }
@@ -2557,6 +2787,9 @@ export class TaskTransaction {
                     ...(planCapable ? [planTool(enabledConsultations)] : []),
                   ]
                 : []),
+              ...(changeCapable && activePlan && !activePlan.outcome && enabledConsultations.length
+                ? [planChangeTool(enabledConsultations)]
+                : []),
               ...(canHandoff ? [handoffTool] : []),
               ...(suggestTitle ? [conversationTitleTool] : []),
             ],
@@ -2627,8 +2860,24 @@ export class TaskTransaction {
     // Stop won the committed revision: even an already queued successful result can only
     // acknowledge cessation. Keep received partial text, never publish it as a complete reply.
     const accepted = task.operation === "project_setup" ? acceptedSetupCalls(calls) : [];
+    const policy = operationPolicy(task.operation, task.policy_version, this.context.mode);
+    const planBinding =
+      task.operation === "direct_guidance" &&
+      task.instruction_version >= 5 &&
+      attempt.transfer_manifest
+        ? (JSON.parse(attempt.transfer_manifest) as TransferEntry[]).find(
+            (entry) => entry.kind === "note" && entry.note === "plan_status",
+          )
+        : undefined;
+    const changePlan =
+      planBinding?.kind === "note" && (await acceptedPlan(this.db, bytes(planBinding.reference)));
+    const redirection =
+      changePlan && policy ? readPlanChange(calls, policy.max_output_bytes) : undefined;
     let handoff =
-      task.kind === "reply" && task.operation === "direct_guidance" && task.instruction_version >= 4
+      !planBinding &&
+      task.kind === "reply" &&
+      task.operation === "direct_guidance" &&
+      task.instruction_version >= 4
         ? readHandoffProposal(calls, !!(await this.destination(task.project_id, "josefa")))
         : undefined;
     if (
@@ -2638,10 +2887,14 @@ export class TaskTransaction {
     )
       handoff = { invalid: "conversation_busy" };
     const proposedPlan =
-      !handoff && task.operation === "direct_guidance" && task.instruction_version >= 3
+      !planBinding &&
+      !handoff &&
+      task.operation === "direct_guidance" &&
+      task.instruction_version >= 3
         ? readPlanProposal(calls, identifier(task.conversation_id))
         : undefined;
     const consultation =
+      !planBinding &&
       !handoff &&
       !proposedPlan &&
       task.operation === "direct_guidance" &&
@@ -2659,6 +2912,7 @@ export class TaskTransaction {
             !accepted.length &&
             !consultation &&
             !proposedPlan &&
+            !redirection &&
             !handoff
           ? { status: "failed", reason: "empty_reply", dispatched: true }
           : event.result;
@@ -2707,7 +2961,6 @@ export class TaskTransaction {
         !notDispatched && attempt.dispatch_permitted_at !== null,
         event.result.status === "uncertain" ? undefined : work,
       );
-    const policy = operationPolicy(task.operation, task.policy_version, this.context.mode);
     const canReturnToPending = policy && attempt.attempt_number < policy.max_attempts;
     let taskState: TaskState =
       state === "completed"
@@ -2837,6 +3090,20 @@ export class TaskTransaction {
       // A tool-only reply changes the next queued task's input as well as a textual reply.
       if (!text) await this.replaceWaiting(task.conversation_id);
     }
+    if (state === "completed" && redirection && changePlan) {
+      await recordPlanChangeProposal(
+        this.db,
+        changePlan,
+        planBinding.revision,
+        attempt.id,
+        redirection,
+        this.context.mode,
+        this.now,
+      );
+      savedProposal = true;
+      this.diagnostics.push({ event_name: "ohtia.plan_change.proposed" });
+      if (!text) await this.replaceWaiting(task.conversation_id);
+    }
     if (state === "completed" && handoff) {
       if (!("invalid" in handoff)) await replaceHandoff(this.db, task.conversation_id, this.now);
       const { owner_revision } = await this.db
@@ -2935,6 +3202,7 @@ export class TaskTransaction {
         if (saved.ok) await replaceHandoff(this.db, task.conversation_id, this.now);
         else invalid = planInvalidReason(saved.error.code);
       }
+      const prior = invalid ? await latestAcceptedPlan(this.db, task.conversation_id) : undefined;
       if (invalid)
         await this.db
           .insertInto("interventions")
@@ -2943,6 +3211,7 @@ export class TaskTransaction {
             project_id: task.project_id,
             conversation_id: task.conversation_id,
             kind: "plan",
+            previous_plan_id: prior?.outcome ? prior.id : null,
             proposed_by_attempt_id: attempt.id,
             invalid_reason: invalid,
             state: "invalid",

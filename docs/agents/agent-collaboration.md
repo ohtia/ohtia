@@ -1,7 +1,7 @@
 ---
 type: Specification
 title: "Agent collaboration"
-description: "Virgilio, research specialists, bounded collaboration, conversation handoffs, inspectable memory, and human-approved editorial proposals."
+description: "Virgilio, research specialists, bounded collaboration, conversation handoffs, plan redirection, inspectable memory, and human-approved editorial proposals."
 sources:
   - id: openai-orchestration
     resource: "https://developers.openai.com/api/docs/guides/agents/orchestration"
@@ -120,7 +120,7 @@ A proposed handoff identifies its conversation, current and proposed response ow
 
 A handoff takes effect only after any active sending turn has ended and released capacity safely. Each agent receives the parts in which it answered and the note or selected messages explicitly passed to it. Handoffs preserve attribution and leave unknown research choices and dependencies explicit. It cannot move an in-flight attempt, give the recipient the sender's capability or bypass the quarantine that an uncertain attempt keeps; under [ADR-0051](../adr/adr-0051-research-agent-task-execution.md), an uncertain attempt of an adapter without background execution or a cancellation endpoint keeps none once its connection closes. Show the owner whose contribution is actually producing each response; a selector preview or unsatisfied handoff does not relabel existing messages. Returning to Virgilio changes the selected conversational owner through the same checks and starts inference only when a research action is authorized.
 
-A researcher redirection records a new version of the intended question/plan. It may alter only unactivated intent within the accepted envelope. Already accepted tasks keep their immutable input manifests; superseded work is explicitly cancelled through ADR-0051 before its result can be represented as addressing the new request. New material, destinations, capabilities or work beyond the envelope require a newly authorized intervention linked to the previous one. A late result retains its original question and versions, even when it remains useful as historical material.
+A researcher redirection records a new version of the intended question/plan. It may alter work that has not completed within the accepted envelope; running work it touches is stopped and superseded first. Completion, readiness, dependencies and progress then count only the current contributions, leaving out those it removed or superseded, whose records and disclosures remain. Already accepted tasks keep their immutable input manifests; superseded work is explicitly cancelled through ADR-0051 before its result can be represented as addressing the new request. New material, destinations, capabilities or work beyond the envelope require a newly authorized intervention linked to the previous one. A late result retains its original question and versions, even when it remains useful as historical material.
 
 ## Intervention and contribution records
 

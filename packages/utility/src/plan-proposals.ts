@@ -9,9 +9,13 @@ import {
 } from "@ohtia/contracts";
 import { sql, type Kysely, type Selectable } from "kysely";
 import { agentIdentity, type consultableAgents, type InterventionRow } from "./consultations.js";
-import { planContributions, waitingForPlanWork } from "./contribution-graphs.js";
+import {
+  planContributions,
+  holdingDependencies,
+  waitingForPlanWork,
+} from "./contribution-graphs.js";
 import { acceptedPlans } from "./plan-coordination.js";
-import type { ResearchSchema } from "./research.js";
+import { identifier, type ResearchSchema } from "./research.js";
 
 export function planTool(agents: ReturnType<typeof consultableAgents>): ProviderTool {
   return {
@@ -164,11 +168,18 @@ export function unfinishedPlan(db: Kysely<ResearchSchema>, conversationId: Uint8
 export async function planStatusNote(
   db: Kysely<ResearchSchema>,
   plan: Selectable<InterventionRow>,
+  instructionVersion = 4,
 ): Promise<string> {
-  const nodes = await planContributions(db, plan.id);
+  const nodes = await planContributions(db, plan.id, instructionVersion >= 5);
+  const current = nodes.filter(
+    (node) =>
+      !node.superseded_by_contribution_id && node.cancellation_reason !== "removed_by_researcher",
+  );
+  const keys = new Map(nodes.map((node) => [identifier(node.id), node.plan_key]));
+  const edges = instructionVersion >= 5 ? await holdingDependencies(db, plan.id) : [];
   const state = plan.outcome
     ? "its contributions have ended and the synthesis is being written"
-    : nodes.some(({ state }) => waitingForPlanWork(state))
+    : current.some(({ state }) => waitingForPlanWork(state))
       ? "running"
       : "waiting for the researcher to finish or stop it, because a required contribution did not complete";
   const labels = {
@@ -183,9 +194,22 @@ export async function planStatusNote(
   return [
     `Note from Ohtia: a plan that the researcher approved in this conversation hasn't finished. Plan state: ${state}.`,
     "Contributions:",
-    ...nodes.map(
-      (node) => `- ${node.plan_key} (${agentIdentity(node.agent_id).name}): ${labels[node.state]}`,
-    ),
+    ...nodes
+      .filter((node) => !node.superseded_by_contribution_id)
+      .map((node) => {
+        const agent = agentIdentity(node.agent_id).name;
+        const id = identifier(node.id);
+        const prerequisites = edges
+          .filter((edge) => identifier(edge.contribution_id) === id)
+          .map((edge) => keys.get(identifier(edge.prerequisite_id)))
+          .join(", ");
+        const requirement =
+          instructionVersion >= 5 ? (node.required ? ", required" : ", optional") : "";
+        const after = prerequisites ? ", after " + prerequisites : "";
+        const label =
+          node.cancellation_reason === "removed_by_researcher" ? "removed" : labels[node.state];
+        return `- ${node.plan_key} (${agent}${requirement}${after}): ${label}`;
+      }),
     "Results that have arrived appear in this conversation as messages from the agents that wrote them. Ohtia starts the synthesis as a separate reply when the plan's work finishes. Until the plan has finished, you cannot propose a consultation or another plan.",
   ].join("\n");
 }

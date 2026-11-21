@@ -1385,7 +1385,7 @@ it("commits one continuation with the result and exposes numbered events through
       outcome: "complete",
       requestsUsed: 1,
       continuation: {
-        policyVersion: 1,
+        policyVersion: 2,
         throughSequence: 4,
         taskState: "blocked",
         stopped: false,
@@ -2094,7 +2094,7 @@ it(
         version: 1,
         operation: "plan-migration-retry",
         source: 23,
-        target: 27,
+        target: 28,
       }),
     );
     await expect(f.store.open()).rejects.toThrow(/recovery/);
@@ -2406,8 +2406,8 @@ it("runs the fixed development plan in an ordinary thesis through separate turns
   const taskId = ready.continuation!.taskId!;
   expect(synthesis.request).toMatchObject({
     operation: "contribution_synthesis",
-    policy_version: 1,
-    instruction_version: 1,
+    policy_version: 2,
+    instruction_version: 2,
     connection: "chatgpt",
     document_language: "ko",
     tools: [],

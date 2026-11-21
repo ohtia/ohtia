@@ -8,19 +8,35 @@ import {
 } from "../packages/utility/src/migrations/0010_reply_control.mjs";
 import { objects as noticeObjects } from "../packages/utility/src/migrations/0016_task_notices.mjs";
 import { columns as titleColumns } from "../packages/utility/src/migrations/0018_conversation_titles.mjs";
-import { objects as limits } from "../packages/utility/src/migrations/0023_shared_work_limits.mjs";
+import {
+  tables as limitTables,
+  objects as limits,
+} from "../packages/utility/src/migrations/0023_shared_work_limits.mjs";
 import { objects as josefaObjects } from "../packages/utility/src/migrations/0019_josefa_search_planning.mjs";
 
 import {
   coordinationTables,
   objects as coordination,
 } from "../packages/utility/src/migrations/0024_plan_coordination.mjs";
-import { objects as graph } from "../packages/utility/src/migrations/0022_contribution_graphs.mjs";
+import {
+  tables as graphTables,
+  objects as graph,
+} from "../packages/utility/src/migrations/0022_contribution_graphs.mjs";
 
 import { objects as conversationAgents } from "../packages/utility/src/migrations/0020_conversation_agents.mjs";
 import { objects as research } from "../packages/utility/src/migrations/0007_research_records.mjs";
-import { objects as proposals } from "../packages/utility/src/migrations/0026_plan_proposals.mjs";
+import {
+  interventions as planInterventions,
+  objects as proposals,
+} from "../packages/utility/src/migrations/0026_plan_proposals.mjs";
 import { priorInterventionFields } from "../packages/utility/src/migrations/0026_plan_proposals.mjs";
+
+import { objects as handoffs } from "../packages/utility/src/migrations/0027_handoffs.mjs";
+import { objects as redirection } from "../packages/utility/src/migrations/0028_plan_redirection.mjs";
+import {
+  synthesisTables,
+  objects as synthesis,
+} from "../packages/utility/src/migrations/0025_contribution_synthesis.mjs";
 
 const priorTaskTable = durableTaskTables.tasks.replace(
   ",\n    CHECK ((state=",
@@ -49,7 +65,57 @@ const attemptObjects = Object.entries({
   .filter(([name]) => name.startsWith("attempts_"))
   .map(([, definition]) => definition);
 
+const priorRedirectionTables = {
+  interventions: [planInterventions, priorInterventionFields + ",approved_during_attempt_id"],
+  contributions: [
+    limitTables.contributions,
+    "id,intervention_id,agent_id,operation,request,reason,task_id,created_at,plan_key,required,state,blocked_by_contribution_id,failure_reason,result_message_id,ready_inputs,restart_held,policy_version,dedupe_key,added_in_graph_version",
+  ],
+  graph_changes: [
+    graphTables.graph_changes,
+    "id,intervention_id,graph_version,kind,applied_by_operation_id,proposed_by_attempt_id,summary,created_at",
+  ],
+  continuations: [
+    synthesisTables.continuations,
+    "id,intervention_id,graph_version,through_sequence,reason,policy_version,admission,restart_held,task_id,ready_key,created_at,stopped",
+  ],
+};
+const priorRedirectionObjects = {
+  ...graph,
+  ...limits,
+  ...coordination,
+  ...synthesis,
+  ...proposals,
+  ...handoffs,
+};
+export const preRedirectionSql = `
+  PRAGMA legacy_alter_table=ON;
+  DROP TRIGGER receipts_commands;
+  DROP TRIGGER tasks_initial;
+  ${Object.entries(priorRedirectionTables)
+    .map(
+      ([name, [definition, fields]]) => `
+    ALTER TABLE ${name} RENAME TO ${name}_with_redirection;
+    ${definition};
+    INSERT INTO ${name}(rowid,${fields})
+      SELECT rowid,${name === "continuations" ? fields.replace("policy_version", "1") : fields} FROM ${name}_with_redirection ORDER BY rowid;
+    DROP TABLE ${name}_with_redirection;
+  `,
+    )
+    .join("")}
+  DROP TABLE graph_change_proposals;
+  ${Object.keys(redirection)
+    .flatMap((name) => priorRedirectionObjects[name] ?? [])
+    .join(";\n")};
+  DELETE FROM kysely_migration WHERE name='0028_plan_redirection';
+  DELETE FROM ohtia_migration_artifacts WHERE name='0028_plan_redirection';
+  PRAGMA user_version=27;
+  PRAGMA legacy_alter_table=OFF;
+`;
+
 export const preHandoffSql = `
+  ${preRedirectionSql}
+  PRAGMA legacy_alter_table=ON;
   DROP TRIGGER conversations_initial;
   DROP TRIGGER conversations_changes;
   DROP TRIGGER tasks_reservation;

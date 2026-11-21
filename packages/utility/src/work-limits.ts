@@ -123,6 +123,22 @@ export function authorizedOperation(
     .executeTakeFirst();
 }
 
+export async function planRequestsUsed(
+  db: Kysely<ResearchSchema>,
+  id: Uint8Array,
+): Promise<number> {
+  const { requests } = await db
+    .selectFrom("work_allocations as w")
+    .innerJoin("attempts as a", (join) =>
+      join.onRef("a.task_id", "=", "w.task_id").onRef("a.attempt_number", "=", "w.attempt_number"),
+    )
+    .select(({ fn }) => fn.countAll<number>().as("requests"))
+    .where("w.intervention_id", "=", id)
+    .where("a.dispatch_permitted_at", "is not", null)
+    .executeTakeFirstOrThrow();
+  return requests;
+}
+
 const zero: Budget = { max_requests: 0, max_input_bytes: 0, max_output_bytes: 0, max_work_ms: 0 };
 
 /** Admission and insertion share the caller's immediate SQLite write transaction. */
@@ -131,6 +147,7 @@ export async function workFits(
   limits: Budget,
   policies: readonly ReservationPolicy[],
   interventionId?: Uint8Array,
+  retiring: readonly Uint8Array[] = [],
 ): Promise<boolean> {
   const use = interventionId
     ? await db
@@ -150,6 +167,16 @@ export async function workFits(
           ),
         ])
         .where("intervention_id", "=", interventionId)
+        .$if(retiring.length > 0, (query) =>
+          query.where((eb) =>
+            eb.or([
+              eb("state", "!=", "held"),
+              eb("contribution_id", "is", null),
+              eb("contribution_id", "not in", retiring),
+              outstandingAttempt,
+            ]),
+          ),
+        )
         .executeTakeFirstOrThrow()
     : { ...zero };
   for (const policy of policies) {
@@ -326,4 +353,22 @@ export async function consultationRetryFits(
     .executeTakeFirstOrThrow();
   const limits = await interventionLimits(db, row.intervention_id);
   return !!limits && workFits(db, limits, [policy], row.intervention_id);
+}
+
+/** A permitted, unsettled attempt may still consume its currently reserved share. */
+const outstandingAttempt = sql<boolean>`exists (
+  SELECT 1 FROM attempts a WHERE a.task_id=work_allocations.task_id
+    AND a.attempt_number=work_allocations.attempt_number AND a.dispatch_permitted_at IS NOT NULL
+    AND a.state IN ('running','waiting_user','stopping')
+)`;
+
+export async function releaseRetiredWork(db: Kysely<ResearchSchema>, id: Uint8Array, now: string) {
+  const result = await db
+    .updateTable("work_allocations")
+    .set({ state: "released", settled_at: now })
+    .where("contribution_id", "=", id)
+    .where("state", "=", "held")
+    .where(sql<boolean>`not ${outstandingAttempt}`)
+    .executeTakeFirst();
+  return result.numUpdatedRows > 0n;
 }

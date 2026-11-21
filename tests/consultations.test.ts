@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { DurableProvider } from "../packages/utility/src/durable-provider.js";
 import { ProviderDispatch } from "../packages/main/src/provider-dispatch.js";
 import { describe, expect, it, vi } from "vitest";
@@ -15,6 +16,7 @@ import {
   researchOutput,
   type ProviderToolCall,
   type ResearchCommand,
+  type ResearchOutputs,
 } from "../packages/contracts/src/index.js";
 import { bytes } from "../packages/utility/src/research.js";
 import { buildInput, operationPolicy } from "../packages/utility/src/operations.js";
@@ -24,6 +26,7 @@ import {
 } from "../packages/utility/src/consultations.js";
 import { setupConnections, successful as value, proposeSetup } from "./fixtures/project-setup.js";
 import { createStatusService } from "../packages/utility/src/status-service.js";
+import { preRedirectionSql } from "../tooling/storage-legacy-consultation-fixture.mjs";
 import { Database, preConsultationSql, storageFixture } from "./fixtures/storage.js";
 
 const identity = {
@@ -101,7 +104,7 @@ async function fixture(
       decodeProviderDispatch(JSON.stringify(task.dispatch), "setup-tests")?.request,
     ).toMatchObject({
       operation: "direct_guidance",
-      policy_version: 4,
+      policy_version: 5,
       tools: [
         { name: "propose_consultation" },
         { name: "propose_plan" },
@@ -687,7 +690,7 @@ it("migrates populated revision 20 while preserving task acceptance order, charg
   await f.store.open();
   const migrated = f.raw();
   try {
-    expect(migrated.pragma("user_version", { simple: true })).toBe(27);
+    expect(migrated.pragma("user_version", { simple: true })).toBe(28);
     expect(read(migrated)).toEqual(before);
     expect(
       migrated.prepare("SELECT state,blocking_reason FROM tasks WHERE id=?").get(bytes(resultId)),
@@ -1164,6 +1167,682 @@ describe("Virgilio plan proposals", () => {
 
   const planConnections = { josefa: "chatgpt", virgilio: "chatgpt" } as const;
 
+  const changeToolSpec = JSON.parse(
+    readFileSync("docs/epics/EPIC-003-research-agents/epic.md", "utf8")
+      .split("### SPEC-003-035: Plan redirection")[1]!
+      .split("```json")[1]!
+      .split("```")[0]!,
+  ) as Record<string, unknown>;
+
+  const redirect = (fields: Record<string, unknown>): ProviderToolCall => ({
+    namespace: "ohtia",
+    name: "propose_plan_change",
+    arguments: JSON.stringify({
+      new_purpose: "",
+      replace_shared_context: false,
+      shared_context: "",
+      remove: [],
+      replace: [],
+      add: [],
+      ...fields,
+    }),
+  });
+
+  async function recordChange(f: Awaited<ReturnType<typeof fixture>>, calls: ProviderToolCall[]) {
+    await f.append("Change the plan to use only what serves the revised research question.");
+    const guidance = await f.prepare();
+    expect(guidance.dispatch.request.operation).toBe("direct_guidance");
+    const tools = decodeProviderDispatch(JSON.stringify(guidance.dispatch), "setup-tests")?.request
+      .tools;
+    expect(tools).toHaveLength(1);
+    expect(tools?.[0]).toEqual({
+      ...Object.fromEntries(Object.entries(changeToolSpec).filter(([key]) => key !== "type")),
+      namespace: "ohtia",
+    });
+    value(await f.store.recordTaskEvent(guidance.dispatch.request.attempt, completed, "", calls));
+    const change = (await f.timeline()).items.find(
+      (item) => item.kind === "planChangeProposal" && item.taskId === guidance.taskId,
+    );
+    if (!change || change.kind !== "planChangeProposal") throw new Error("Expected a plan change.");
+    return change;
+  }
+
+  it("stops replaced work first and synthesizes the changed question with immutable results", async () => {
+    const f = await fixture();
+    const third = {
+      ...second,
+      key: "appendix",
+      request: "Prepare an appendix.",
+      depends_on: ["comparison"],
+    };
+    const { proposal } = await record(f, [planCall([first, second, third])]);
+    const accept = (planId: string) =>
+      f.run({
+        command: "plan.accept",
+        operationId: "approve-redirection-plan",
+        payload: { planId, connections: planConnections },
+      });
+    value(await accept(proposal.id));
+    const vocabulary = await f.prepare();
+    value(
+      await f.store.recordTaskEvent(
+        vocabulary.dispatch.request.attempt,
+        completed,
+        "Vocabulary for the first question.",
+      ),
+    );
+    const priorComparison = await f.prepare();
+    expect(priorComparison.dispatch.request.input[0]?.text).toContain(second.request);
+    const request = "Prepare a new comparison under the revised question. " + "한".repeat(1500);
+    const revisedPurpose = "Compare terms for the revised thesis question.";
+    const revisedContext = "The researcher confirmed use of open catalogs only.";
+    const change = await recordChange(f, [
+      redirect({
+        new_purpose: revisedPurpose,
+        replace_shared_context: true,
+        shared_context: revisedContext,
+        remove: ["appendix"],
+        replace: [
+          {
+            key: "comparison",
+            request,
+            reason: "Use the revised question.",
+            required: false,
+            depends_on: [],
+          },
+        ],
+      }),
+    ]);
+    expect(change).toMatchObject({ rank: 2, revision: 1, state: "proposed" });
+    const previewInput = {
+      ...identity,
+      operation: "planChange.read",
+      payload: { conversationId: f.conversationId, proposalId: change.id },
+    } as const;
+    const preview = value(await f.store.readResearch(previewInput));
+    expect(researchOutput("planChange.read", preview)).toBe(true);
+    const previewData = preview as ResearchOutputs["planChange.read"];
+    const replacementRow = previewData.replaced[0]!;
+    for (const key of ["comparison!", "comparison\ntrailing", "a".repeat(65)]) {
+      expect(
+        researchOutput("planChange.read", {
+          ...previewData,
+          replaced: [{ ...replacementRow, after: { ...replacementRow.after, key } }],
+        }),
+      ).toBe(false);
+    }
+    expect(
+      encodeEnvelope({ ...previewInput, kind: "result", payload: { ok: true, value: preview } }).ok,
+    ).toBe(true);
+    expect(preview).toMatchObject({
+      replaced: [
+        {
+          before: { key: "comparison", taskState: "running" },
+          after: {
+            request: { bytes: Buffer.byteLength(request), parts: 2 },
+            changed: ["request", "reason", "required", "prerequisites"],
+          },
+        },
+      ],
+      removed: [{ key: "appendix" }],
+      unchanged: [{ key: "vocabulary", state: "completed" }],
+    });
+    const apply = {
+      command: "planChange.apply",
+      operationId: "apply-redirection",
+      payload: { proposalId: change.id },
+    } as const;
+    expect(value(await f.run(apply))).toEqual({ resultId: change.id });
+    expect(value(await f.run(apply))).toEqual({ resultId: change.id });
+    expect(await read(f, proposal.id)).toMatchObject({
+      purpose: revisedPurpose,
+      sharedContext: revisedContext,
+      graphVersion: 2,
+      contributions: [
+        { key: "vocabulary", state: "completed" },
+        { key: "comparison", state: "waiting" },
+      ],
+    });
+    expect(value(await f.store.prepareTask())).toBeNull();
+    const db = f.raw();
+    try {
+      expect(
+        db
+          .prepare("SELECT purpose,shared_context FROM interventions WHERE id=?")
+          .get(bytes(proposal.id)),
+      ).toEqual({ purpose, shared_context: sharedContext });
+      expect(
+        db
+          .prepare(
+            "SELECT plan_key,cancellation_reason FROM contributions WHERE intervention_id=? ORDER BY rowid",
+          )
+          .all(bytes(proposal.id)),
+      ).toEqual([
+        { plan_key: "vocabulary", cancellation_reason: null },
+        { plan_key: "comparison", cancellation_reason: "superseded" },
+        { plan_key: "appendix", cancellation_reason: "removed_by_researcher" },
+        { plan_key: "comparison", cancellation_reason: null },
+      ]);
+    } finally {
+      db.close();
+    }
+    value(
+      await f.store.recordTaskEvent(
+        priorComparison.dispatch.request.attempt,
+        {
+          type: "result",
+          sequence: 2,
+          result: { status: "cancelled" },
+        },
+        "",
+      ),
+    );
+    const replacement = await f.prepare();
+    expect(replacement.acceptedByOperationId).toBe("apply-redirection");
+    expect(replacement.dispatch.request.input[0]?.text).toContain(revisedContext);
+    expect(replacement.dispatch.request.input[0]?.text).toContain(request);
+    expect(replacement.transfer).toContainEqual({ kind: "plan_context", reference: change.id });
+    value(
+      await f.store.recordTaskEvent(
+        replacement.dispatch.request.attempt,
+        completed,
+        "Comparison for the revised question.",
+      ),
+    );
+    const synthesis = await f.prepare();
+    expect(synthesis.dispatch.request).toMatchObject({
+      operation: "contribution_synthesis",
+      policy_version: 2,
+      instruction_version: 2,
+    });
+    const input = synthesis.dispatch.request.input.map(({ text }) => text).join("\n");
+    expect(input).toContain(revisedPurpose);
+    expect(input).toContain(purpose);
+    expect(input).toContain(first.request);
+    expect(input).toContain("Vocabulary for the first question.");
+    expect(input).toContain("removed by the researcher in a plan change; it has no result.");
+    expect(input).toContain(
+      "replaced in a plan change by the later contribution with the same key; it has no result.",
+    );
+    expect(input).not.toContain(third.request);
+    value(
+      await f.store.recordTaskEvent(
+        synthesis.dispatch.request.attempt,
+        completed,
+        "The original vocabulary has limited relevance.",
+      ),
+    );
+    const timeline = (await f.timeline()).items;
+    expect(timeline.find(({ id }) => id === change.id)).toMatchObject({
+      state: "applied",
+      revision: 2,
+    });
+    expect(
+      timeline.find((item) => item.kind === "message" && item.taskId === synthesis.taskId),
+    ).toMatchObject({
+      synthesisSources: [
+        { key: "vocabulary", state: "completed" },
+        { key: "comparison", state: "replaced" },
+        { key: "appendix", state: "removed" },
+        { key: "comparison", state: "completed" },
+      ],
+    });
+    const next = await record(f, [planCall()]);
+    const after = f.raw();
+    try {
+      const row = after
+        .prepare("SELECT previous_plan_id FROM interventions WHERE id=?")
+        .get(bytes(next.proposal.id)) as { previous_plan_id: Uint8Array };
+      expect(Buffer.from(row.previous_plan_id)).toEqual(bytes(proposal.id));
+    } finally {
+      after.close();
+    }
+    expect(
+      next.task.dispatch.request.input.some(
+        ({ text }) =>
+          text ===
+          "Note from Ohtia: at this point you proposed a plan change that the researcher applied.",
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps a stale proposal open and rejects incomplete graph repairs without writing", async () => {
+    const f = await fixture();
+    const { proposal } = await record(f, [planCall()]);
+    value(
+      await f.run({
+        command: "plan.accept",
+        operationId: "stale-plan",
+        payload: { planId: proposal.id, connections: planConnections },
+      }),
+    );
+    const vocabulary = await f.prepare();
+    const invalid = await recordChange(f, [redirect({ remove: ["vocabulary"] })]);
+    expect(invalid).toMatchObject({
+      rank: 2,
+      revision: 1,
+      state: "invalid",
+      invalidReason: "dependency_removed",
+    });
+    const valid = await recordChange(f, [
+      redirect({
+        replace: [
+          {
+            key: "vocabulary",
+            request: "Revisit candidate terms.",
+            reason: first.reason,
+            required: true,
+            depends_on: [],
+          },
+        ],
+      }),
+    ]);
+    value(
+      await f.store.recordTaskEvent(
+        vocabulary.dispatch.request.attempt,
+        completed,
+        "Candidate terms.",
+      ),
+    );
+    const apply = {
+      command: "planChange.apply",
+      operationId: "stale-apply",
+      payload: { proposalId: valid.id },
+    } as const;
+    expect(await f.run(apply)).toEqual({
+      ok: false,
+      error: {
+        code: "plan_change_invalid",
+        nextAction: "check_request",
+        parameters: { reason: "plan_moved_on" },
+      },
+    });
+    expect((await f.timeline()).items.find(({ id }) => id === valid.id)).toMatchObject({
+      state: "proposed",
+      revision: 1,
+    });
+    expect((await read(f, proposal.id)).graphVersion).toBe(1);
+    const db = f.raw();
+    try {
+      expect(
+        db
+          .prepare("SELECT result_id FROM command_receipts WHERE operation_id=?")
+          .get("stale-apply"),
+      ).toBeUndefined();
+    } finally {
+      db.close();
+    }
+    const decline = {
+      command: "planChange.decline",
+      operationId: "stale-decline",
+      payload: { proposalId: valid.id },
+    } as const;
+    expect(value(await f.run(decline))).toEqual({ resultId: valid.id });
+    expect((await f.timeline()).items.find(({ id }) => id === valid.id)).toMatchObject({
+      state: "declined",
+      revision: 2,
+    });
+  });
+
+  it("persists validation reasons with the first arguments while a valid proposal remains open", async () => {
+    const f = await fixture();
+    const { proposal } = await record(f, [planCall()]);
+    value(
+      await f.run({
+        command: "plan.accept",
+        operationId: "validation-plan",
+        payload: { planId: proposal.id, connections: planConnections },
+      }),
+    );
+    const active = await f.prepare();
+    const available = await recordChange(f, [redirect({ new_purpose: "A revised purpose." })]);
+    const candidate = { ...first, key: "new-work", request: "Prepare another comparison." };
+    const cases: [string, Record<string, unknown>][] = [
+      ["too_many_changes", { remove: Array.from({ length: 9 }, (_, index) => String(index)) }],
+      ["empty_change", {}],
+      ["empty_change", { new_purpose: purpose }],
+      ["empty_change", { replace_shared_context: true, shared_context: sharedContext }],
+      ["unknown_contribution", { remove: ["missing"] }],
+      ["agent_not_authorized", { add: [{ ...candidate, agent: "virgilio" }] }],
+      [
+        "plan_too_large",
+        {
+          add: Array.from({ length: 7 }, (_, index) => ({
+            ...candidate,
+            key: "new-" + String(index),
+            request: "Request " + String(index),
+          })),
+        },
+      ],
+      ["unknown_prerequisite", { add: [{ ...candidate, depends_on: ["missing"] }] }],
+      ["self_dependency", { add: [{ ...candidate, depends_on: ["new-work"] }] }],
+      [
+        "cycle",
+        {
+          replace: [
+            {
+              key: first.key,
+              request: first.request,
+              reason: first.reason,
+              required: true,
+              depends_on: ["comparison"],
+            },
+          ],
+        },
+      ],
+      ["duplicate_contribution", { add: [{ ...first, key: "new-work" }] }],
+      ["plan_key_invalid", { add: [{ ...candidate, key: "new!" }] }],
+      ["plan_key_duplicate", { add: [{ ...candidate, key: first.key }] }],
+      ["plan_key_duplicate", { remove: [first.key], add: [{ ...candidate, key: first.key }] }],
+      ["request_empty", { add: [{ ...candidate, request: " " }] }],
+      ["request_too_large", { add: [{ ...candidate, request: "x".repeat(8193) }] }],
+      ["purpose_empty", { new_purpose: " " }],
+      ["purpose_too_long", { new_purpose: "x".repeat(2001) }],
+      [
+        "shared_context_too_large",
+        { replace_shared_context: true, shared_context: "x".repeat(32769) },
+      ],
+      ["reason_empty", { add: [{ ...candidate, reason: " " }] }],
+      ["reason_too_long", { add: [{ ...candidate, reason: "x".repeat(501) }] }],
+    ];
+    for (const [invalidReason, args] of cases)
+      expect(await recordChange(f, [redirect(args)])).toMatchObject({
+        state: "invalid",
+        rank: 2,
+        revision: 1,
+        invalidReason,
+      });
+    const duplicate = await recordChange(f, [
+      redirect({ new_purpose: "First" }),
+      redirect({ new_purpose: "Second" }),
+    ]);
+    expect(duplicate).toMatchObject({ state: "invalid", invalidReason: "multiple_calls" });
+    const db = f.raw();
+    try {
+      const row = db
+        .prepare("SELECT change FROM graph_change_proposals WHERE id=?")
+        .get(bytes(duplicate.id)) as { change: string };
+      expect(JSON.parse(row.change)).toMatchObject({ new_purpose: "First" });
+    } finally {
+      db.close();
+    }
+    const newer = await recordChange(f, [redirect({ new_purpose: "Newer purpose." })]);
+    expect(
+      value(
+        await f.store.readResearch({
+          ...identity,
+          operation: "timeline.read",
+          payload: { conversationId: f.conversationId, ids: [available.id] },
+        }),
+      ),
+    ).toMatchObject({ items: [{ state: "replaced", rank: 2, revision: 2 }] });
+    expect(newer.state).toBe("proposed");
+    value(
+      await f.store.recordTaskEvent(active.dispatch.request.attempt, completed, "Original result."),
+    );
+    expect(await recordChange(f, [redirect({ remove: [first.key] })])).toMatchObject({
+      state: "invalid",
+      invalidReason: "contribution_completed",
+    });
+  });
+
+  it("records a continuation on removal and delays synthesis until the provider stops", async () => {
+    const f = await fixture();
+    const { proposal } = await record(f, [planCall()]);
+    value(
+      await f.run({
+        command: "plan.accept",
+        operationId: "ready-by-removal",
+        payload: { planId: proposal.id, connections: planConnections },
+      }),
+    );
+    const vocabulary = await f.prepare();
+    value(
+      await f.store.recordTaskEvent(
+        vocabulary.dispatch.request.attempt,
+        completed,
+        "Original result.",
+      ),
+    );
+    const comparison = await f.prepare();
+    const change = await recordChange(f, [redirect({ remove: ["comparison"] })]);
+    value(
+      await f.run({
+        command: "planChange.apply",
+        operationId: "remove-running",
+        payload: { proposalId: change.id },
+      }),
+    );
+    expect(await read(f, proposal.id)).toMatchObject({
+      outcome: "complete",
+      continuation: { admission: "waiting" },
+      contributions: [{ key: "vocabulary", state: "completed" }],
+    });
+    expect(value(await f.store.prepareTask())).toBeNull();
+    value(
+      await f.store.recordTaskEvent(
+        comparison.dispatch.request.attempt,
+        {
+          type: "result",
+          sequence: 2,
+          result: { status: "cancelled" },
+        },
+        "",
+      ),
+    );
+    const synthesis = await f.prepare();
+    expect(synthesis.kind).toBe("synthesis");
+  });
+
+  it("cancels work from a closed provider generation with one event", async () => {
+    const f = await fixture();
+    const { proposal } = await record(f, [planCall()]);
+    value(
+      await f.run({
+        command: "plan.accept",
+        operationId: "previous-generation",
+        payload: { planId: proposal.id, connections: planConnections },
+      }),
+    );
+    const previous = await f.prepare();
+    const change = await recordChange(f, [
+      redirect({
+        replace: [
+          {
+            key: first.key,
+            request: "Revisit the candidate terms.",
+            reason: first.reason,
+            required: true,
+            depends_on: [],
+          },
+        ],
+      }),
+    ]);
+    f.store.setTaskContext({
+      generation: "replacement-generation",
+      mode: "development",
+      connections: setupConnections(),
+    });
+    value(
+      await f.run({
+        command: "planChange.apply",
+        operationId: "previous-generation-stop",
+        payload: { proposalId: change.id },
+      }),
+    );
+    const db = f.raw();
+    try {
+      expect(
+        db
+          .prepare(
+            "SELECT kind FROM intervention_events WHERE task_id=? AND kind='contribution_cancelled'",
+          )
+          .all(bytes(previous.taskId)),
+      ).toEqual([{ kind: "contribution_cancelled" }]);
+    } finally {
+      db.close();
+    }
+    const replacement = await f.prepare();
+    expect(replacement.dispatch.request.input[0]?.text).toContain("Revisit the candidate terms.");
+  });
+
+  it("replaces a previously removed key and keeps a later over-cap decision open", async () => {
+    const f = await fixture();
+    const { proposal } = await record(f, [planCall()]);
+    value(
+      await f.run({
+        command: "plan.accept",
+        operationId: "keep-plan-open",
+        payload: { planId: proposal.id, connections: planConnections },
+      }),
+    );
+    await f.prepare();
+    const removal = await recordChange(f, [redirect({ remove: [second.key] })]);
+    value(
+      await f.run({
+        command: "planChange.apply",
+        operationId: "remove-waiting",
+        payload: { proposalId: removal.id },
+      }),
+    );
+    expect((await read(f, proposal.id)).contributions.map(({ key }) => key)).toEqual([first.key]);
+    const readPreview = (proposalId: string) =>
+      f.store.readResearch({
+        ...identity,
+        operation: "planChange.read",
+        payload: { conversationId: f.conversationId, proposalId },
+      });
+    const sameDependencies = await recordChange(f, [
+      redirect({
+        replace: [
+          {
+            key: second.key,
+            request: "Compare the revised questions.",
+            reason: second.reason,
+            required: second.required,
+            depends_on: second.depends_on,
+          },
+        ],
+      }),
+    ]);
+    expect(value(await readPreview(sameDependencies.id))).toMatchObject({
+      replaced: [
+        { before: { state: "cancelled", key: second.key }, after: { changed: ["request"] } },
+      ],
+    });
+    const replacement = await recordChange(f, [
+      redirect({
+        replace: [
+          {
+            key: second.key,
+            request: second.request,
+            reason: second.reason,
+            required: second.required,
+            depends_on: [],
+          },
+        ],
+      }),
+    ]);
+    expect(value(await readPreview(replacement.id))).toMatchObject({
+      replaced: [
+        { before: { state: "cancelled", key: second.key }, after: { changed: ["prerequisites"] } },
+      ],
+    });
+    value(
+      await f.run({
+        command: "planChange.apply",
+        operationId: "replace-removed",
+        payload: { proposalId: replacement.id },
+      }),
+    );
+    expect(value(await readPreview(replacement.id))).toMatchObject({
+      replaced: [
+        { before: { state: "cancelled", key: second.key }, after: { changed: ["prerequisites"] } },
+      ],
+    });
+    expect(
+      (await read(f, proposal.id)).contributions.map(({ key, state }) => ({ key, state })),
+    ).toEqual([
+      { key: first.key, state: "active" },
+      { key: second.key, state: "active" },
+    ]);
+    const capped = await recordChange(f, [
+      redirect({ new_purpose: "A revised purpose after the cap." }),
+    ]);
+    const db = f.raw();
+    try {
+      db.exec(
+        "WITH RECURSIVE events(n) AS (SELECT max(sequence)+1 FROM intervention_events UNION ALL SELECT n+1 FROM events WHERE n<512) " +
+          "INSERT INTO intervention_events SELECT randomblob(16),intervention_id,n,kind,NULL,NULL,payload,payload_sha256,created_at " +
+          "FROM events JOIN intervention_events ON sequence=1",
+      );
+      expect(
+        db
+          .prepare(
+            "SELECT summary FROM graph_changes WHERE kind='plan_changed' ORDER BY graph_version DESC LIMIT 1",
+          )
+          .pluck()
+          .get(),
+      ).toContain('"previousCancellationReason":"removed_by_researcher"');
+    } finally {
+      db.close();
+    }
+    expect(
+      await f.run({
+        command: "planChange.apply",
+        operationId: "event-limit",
+        payload: { proposalId: capped.id },
+      }),
+    ).toEqual(failure("event_limit_reached"));
+    expect((await f.timeline()).items.find(({ id }) => id === capped.id)).toMatchObject({
+      state: "proposed",
+      revision: 1,
+    });
+  });
+
+  it("migrates a populated revision 27 through the checkpoint path with cancellation reasons", async () => {
+    const f = await fixture();
+    const { proposal } = await record(f, [planCall()]);
+    value(
+      await f.run({
+        command: "plan.accept",
+        operationId: "accept-old-plan",
+        payload: { planId: proposal.id, connections: planConnections },
+      }),
+    );
+    value(
+      await f.run({
+        command: "plan.cancel",
+        operationId: "stop-old-plan",
+        payload: { planId: proposal.id },
+      }),
+    );
+    await f.store.close(true);
+    const old = f.raw();
+    try {
+      old.exec("PRAGMA foreign_keys=OFF; " + preRedirectionSql);
+      expect(old.pragma("user_version", { simple: true })).toBe(27);
+      expect(old.pragma("foreign_key_check")).toEqual([]);
+    } finally {
+      old.close();
+    }
+    await f.store.open();
+    const upgraded = f.raw();
+    try {
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(28);
+      expect(upgraded.pragma("foreign_key_check")).toEqual([]);
+      expect(
+        upgraded.prepare("SELECT cancellation_reason FROM contributions ORDER BY rowid").all(),
+      ).toEqual([
+        { cancellation_reason: "plan_cancelled" },
+        { cancellation_reason: "plan_cancelled" },
+      ]);
+    } finally {
+      upgraded.close();
+    }
+    expect(await read(f, proposal.id)).toMatchObject({ outcome: "cancelled", graphVersion: 1 });
+  });
+
   it.each(["plan.accept", "plan.decline"] as const)(
     "returns a receipt through IPC and applies the decision when running %s",
     async (operation) => {
@@ -1383,8 +2062,8 @@ describe("Virgilio plan proposals", () => {
     const { task, proposal } = await record(f, [planCall([second, first])]);
     const request = decodeProviderDispatch(JSON.stringify(task.dispatch), "setup-tests")?.request;
     expect(request).toMatchObject({
-      policy_version: 4,
-      instruction_version: 4,
+      policy_version: 5,
+      instruction_version: 5,
       limits: { max_output_bytes: 160 * 1024 },
       tools: [
         { name: "propose_consultation" },
@@ -1459,7 +2138,7 @@ describe("Virgilio plan proposals", () => {
       ),
     ).toHaveLength(1);
     expect(guidance.dispatch.request.input.at(-1)?.text).toContain(
-      "Plan state: running.\nContributions:\n- vocabulary (Josefa): working\n- comparison (Josefa): waiting",
+      "Plan state: running.\nContributions:\n- vocabulary (Josefa, required): working\n- comparison (Josefa, required, after vocabulary): waiting",
     );
     value(
       await f.store.recordTaskEvent(

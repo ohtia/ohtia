@@ -13,6 +13,9 @@ import {
   type TimelineHandoffProposal,
   type HandoffSelectionMessage,
   type PlanSnapshot,
+  type PlanChangePreview,
+  isSynthesisSources,
+  type SynthesisSource,
   type PlanText,
   type ProviderDeclaration,
   type TimelineTask,
@@ -88,6 +91,8 @@ export interface ConversationState {
   readonly newConversationRequest?: number | undefined;
   readonly items: readonly TimelineItem[];
   readonly texts: ReadonlyMap<string, string>;
+  readonly planChanges?: ReadonlyMap<string, PlanChangePreview>;
+  readonly synthesisSources?: ReadonlyMap<string, readonly SynthesisSource[]>;
   readonly replies: ReadonlyMap<string, { readonly sequence: number; readonly text: string }>;
   readonly next: TimelineCursor | null;
   readonly loadingEarlier: boolean;
@@ -274,6 +279,27 @@ export class ConversationController {
         .then(async () => {
           if (!this.live(epoch)) return;
           await this.readIds([proposal.id], epoch);
+          if (this.live(epoch)) this.publish();
+        })
+        .catch(() => {
+          if (this.live(epoch)) this.reload();
+        });
+      await this.queue;
+    }
+    return result;
+  };
+  performPlanChange = async (operationId: string, id: string, apply: boolean) => {
+    const epoch = this.epoch;
+    const result = await (
+      apply
+        ? this.port.applyPlanChange(operationId, { proposalId: id })
+        : this.port.declinePlanChange(operationId, { proposalId: id })
+    ).result.catch(() => failure("invalid_service_result"));
+    if (this.live(epoch) && (result.ok || result.error.code === "proposal_not_waiting")) {
+      this.queue = this.queue
+        .then(async () => {
+          if (!this.live(epoch)) return;
+          await this.readIds([id], epoch);
           if (this.live(epoch)) this.publish();
         })
         .catch(() => {
@@ -1005,6 +1031,8 @@ export class ConversationController {
     if (missing.length) await this.readIds([...new Set(missing)], epoch, announce);
     if (!this.live(epoch)) return;
     const texts = new Map(this.state.texts);
+    const planChanges = new Map(this.state.planChanges);
+    const synthesisSources = new Map(this.state.synthesisSources);
     for (const item of items)
       if (item.kind === "setupProposal") {
         texts.set(
@@ -1017,6 +1045,29 @@ export class ConversationController {
             ? item.documentLanguage
             : await this.text(item.documentLanguage, epoch),
         );
+      } else if (
+        item.kind === "planChangeProposal" &&
+        item.state !== "invalid" &&
+        this.state.scope.conversationId
+      ) {
+        const result = await this.port.readPlanChange({
+          conversationId: this.state.scope.conversationId,
+          proposalId: item.id,
+        }).result;
+        if (!this.live(epoch)) return;
+        if (!result.ok) throw new Error("Plan change preview unavailable.");
+        const preview = result.value;
+        planChanges.set(item.id, preview);
+        const references = [
+          preview.purpose,
+          preview.context,
+          ...[...preview.added, ...preview.replaced.map(({ after }) => after)].flatMap(
+            ({ request, reason }) => [request, reason],
+          ),
+        ];
+        for (const value of references)
+          if (value && typeof value !== "string" && !texts.has(value.source))
+            texts.set(value.source, await this.text(value, epoch));
       } else if (item.kind === "handoffProposal" && item.note !== null) {
         texts.set(
           item.id,
@@ -1027,11 +1078,21 @@ export class ConversationController {
           item.id,
           typeof item.request === "string" ? item.request : await this.text(item.request, epoch),
         );
-      } else if (item.kind === "message")
+      } else if (item.kind === "message") {
         texts.set(
           item.id,
           typeof item.content === "string" ? item.content : await this.text(item.content, epoch),
         );
+        if (
+          item.synthesisSources &&
+          !isSynthesisSources(item.synthesisSources) &&
+          !synthesisSources.has(item.id)
+        ) {
+          const records: unknown = JSON.parse(await this.text(item.synthesisSources, epoch));
+          if (!isSynthesisSources(records)) throw new Error("Invalid synthesis sources.");
+          synthesisSources.set(item.id, records);
+        }
+      }
     if (!this.live(epoch)) return;
     const previous = this.state.items;
     const known = new Map(previous.map((item) => [item.id, item]));
@@ -1081,6 +1142,8 @@ export class ConversationController {
       ...this.state,
       items: mergeTimeline(this.state.items, items),
       texts,
+      planChanges,
+      synthesisSources,
       replies,
       completed,
       completedAgent,

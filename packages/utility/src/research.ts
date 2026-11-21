@@ -60,6 +60,7 @@ export interface MessageRow {
   ending: "complete" | "partial" | null;
   created_at: string;
 }
+import type { PlanChangeProposalRow } from "./plan-change-proposals.js";
 import { decideHandoff, type HandoffRow } from "./handoffs.js";
 import type { SetupProposalRow } from "./project-setup.js";
 import {
@@ -79,6 +80,7 @@ export interface ResearchSchema extends TaskSchema {
   contributions: ContributionRow;
   contribution_dependencies: DependencyRow;
   graph_changes: GraphChangeRow;
+  graph_change_proposals: PlanChangeProposalRow;
   project_setup_proposals: SetupProposalRow;
   projects: ProjectRow;
   handoffs: HandoffRow;
@@ -294,6 +296,8 @@ const payloadKeys = {
   "project.open": ["projectId"],
   "plan.addContributions": ["planId", "expectedGraphVersion", "contributions"],
   "plan.accept": ["planId", "connections"],
+  "planChange.apply": ["proposalId"],
+  "planChange.decline": ["proposalId"],
   "plan.decline": ["planId"],
   "plan.finish": ["planId"],
   "plan.cancel": ["planId"],
@@ -460,6 +464,18 @@ export async function applyResearchCommand(
       const recorded = await tasks.recordGraphChange(added.value);
       if (!recorded.ok) return recorded;
       result = added.value;
+      break;
+    }
+    case "planChange.apply":
+    case "planChange.decline": {
+      if (!isEntityId(input.payload.proposalId)) return failure("invalid_message");
+      const decision = await tasks.decidePlanChange(
+        bytes(input.payload.proposalId),
+        input.operationId,
+        input.command === "planChange.apply",
+      );
+      if (!decision.ok) return decision;
+      result = decision.value;
       break;
     }
     case "plan.accept":

@@ -29,7 +29,7 @@ export type PlanCardController = Pick<
 const identity = (contributor: ReplyAgent) =>
   ({ kind: "ai", contributor, definitionVersion: "1" }) as const;
 
-function invalidMessage(locale: InterfaceLocale, reason: PlanInvalidReason): string {
+export function invalidPlanMessage(locale: InterfaceLocale, reason: PlanInvalidReason): string {
   switch (reason) {
     case "plan_too_large":
       return message(locale, "plan.invalid.plan_too_large", {
@@ -212,7 +212,7 @@ export function PlanProposal({
             danger: false,
             message: [
               message(locale, "plan.invalid"),
-              invalidMessage(locale, invalid),
+              invalidPlanMessage(locale, invalid),
               message(locale, "consultation.invalid.nextReply"),
             ].join(" "),
           }}
@@ -314,7 +314,7 @@ export function PlanProposal({
         };
       default:
         return {
-          message: `${message(locale, "plan.cannotRun")} ${invalidMessage(locale, feedback)}`,
+          message: `${message(locale, "plan.cannotRun")} ${invalidPlanMessage(locale, feedback)}`,
           danger: false,
         };
     }

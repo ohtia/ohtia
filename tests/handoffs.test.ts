@@ -184,7 +184,7 @@ describe("conversation handoffs", () => {
     const f = await fixture(log);
     await f.append("PRIVATE_BEFORE researcher chose public schools");
     const first = await f.prepare();
-    expect(first.dispatch.request).toMatchObject({ policy_version: 4, instruction_version: 4 });
+    expect(first.dispatch.request).toMatchObject({ policy_version: 5, instruction_version: 5 });
     expect(first.dispatch.request.tools).toContainEqual(handoffTool);
     expect(first.dispatch.request.instructions.split(section)).toHaveLength(2);
     const note =
@@ -525,7 +525,7 @@ describe("conversation handoffs", () => {
     });
     const db = f.raw();
     try {
-      expect(db.pragma("user_version", { simple: true })).toBe(27);
+      expect(db.pragma("user_version", { simple: true })).toBe(28);
       expect(
         db
           .prepare("SELECT count(*) FROM messages WHERE id IS NOT NULL AND conversation_id=?")

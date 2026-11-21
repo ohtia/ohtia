@@ -10,6 +10,8 @@ import {
   type HandoffInvalidReason,
   planOutcomes,
   planInvalidReasons,
+  planChangeInvalidReasons,
+  type PlanChangeInvalidReason,
   type PlanInvalidReason,
   type PlanOutcome,
 } from "./research.js";
@@ -35,6 +37,9 @@ export const researchOperations = [
   "plan.read",
   "plan.accept",
   "plan.decline",
+  "planChange.read",
+  "planChange.apply",
+  "planChange.decline",
   "planEvent.list",
   "consultation.accept",
   "consultation.decline",
@@ -110,14 +115,17 @@ export function isReplyAgent(value: unknown): value is ReplyAgent {
 
 export type SynthesisSource = { readonly key: string; readonly agentId: ReplyAgent } & (
   | { readonly state: "completed"; readonly messageId: string }
-  | { readonly state: "failed" | "blocked" | "cancelled" | "uncertain"; readonly messageId: null }
+  | {
+      readonly state: "failed" | "blocked" | "cancelled" | "uncertain" | "removed" | "replaced";
+      readonly messageId: null;
+    }
 );
 
 export interface TimelineMessage extends TimelineIdentity {
   readonly kind: "message";
   readonly rank: 1;
   readonly consultation?: true;
-  readonly synthesisSources?: readonly SynthesisSource[];
+  readonly synthesisSources?: readonly SynthesisSource[] | TextReference;
   readonly planContribution?: { readonly planId: string; readonly key: string };
   readonly authorKind: "researcher" | "agent";
   readonly agentId: ReplyAgent | null;
@@ -221,12 +229,54 @@ export interface TimelineHandoffDivider extends TimelineIdentity {
   readonly rank: 1;
   readonly agentId: ReplyAgent;
 }
+export interface PlanChangeRow {
+  readonly key: string;
+  readonly state: (typeof planContributionStates)[number];
+  readonly taskState: PlanTaskProgress["state"] | null;
+  readonly blockingReason: PlanTaskProgress["blockingReason"];
+  readonly waitingFor: readonly string[];
+  readonly blockedBy: string | null;
+  readonly restartHeld: boolean;
+  readonly connection: string;
+}
+export interface PlanChangeRequest {
+  readonly key: string;
+  readonly agentId: ReplyAgent;
+  readonly connection: string;
+  readonly required: boolean;
+  readonly prerequisites: readonly string[];
+  readonly request: PlanText;
+  readonly reason: PlanText;
+  readonly changed: readonly ("request" | "reason" | "required" | "prerequisites")[];
+}
+export interface PlanChangePreview {
+  readonly removed: readonly PlanChangeRow[];
+  readonly replaced: readonly {
+    readonly before: PlanChangeRow;
+    readonly after: PlanChangeRequest;
+  }[];
+  readonly added: readonly PlanChangeRequest[];
+  readonly unchanged: readonly PlanChangeRow[];
+  readonly purpose: PlanText | null;
+  readonly context: PlanText | null;
+  readonly additionalRequests: number;
+  readonly remainingRequests: number;
+  readonly maxRequests: number;
+}
+export interface TimelinePlanChangeProposal extends TimelineIdentity {
+  readonly kind: "planChangeProposal";
+  readonly rank: 2;
+  readonly taskId: string;
+  readonly state: "proposed" | "invalid" | "replaced" | "applied" | "declined";
+  readonly invalidReason: PlanChangeInvalidReason | null;
+}
 export type TimelineItem =
   | TimelineMessage
   | TimelineTask
   | TimelineSetupProposal
   | TimelineConsultation
   | TimelinePlan
+  | TimelinePlanChangeProposal
   | TimelineHandoffProposal
   | TimelineHandoffDivider;
 export interface HandoffSelectionMessage {
@@ -403,7 +453,7 @@ export interface PlanSnapshot {
     readonly graphVersion: number;
     readonly throughSequence: number;
     readonly reason: "required_set_complete" | "finished_partial";
-    readonly policyVersion: 1;
+    readonly policyVersion: 1 | 2;
     readonly admission: (typeof continuationAdmissions)[number];
     readonly restartHeld: boolean;
     readonly taskId: string | null;
@@ -476,6 +526,9 @@ export interface ResearchInputs {
   "plan.read": { readonly planId: string };
   "plan.accept": ResearchPayloads["plan.accept"];
   "plan.decline": ResearchPayloads["plan.decline"];
+  "planChange.read": { readonly conversationId: string; readonly proposalId: string };
+  "planChange.apply": ResearchPayloads["planChange.apply"];
+  "planChange.decline": ResearchPayloads["planChange.decline"];
   "planEvent.list": { readonly planId: string; readonly afterSequence: number };
   "consultation.accept": ResearchPayloads["consultation.accept"];
   "task.tryAgain": ResearchPayloads["task.tryAgain"];
@@ -530,6 +583,9 @@ export interface ResearchOutputs {
   "plan.read": PlanSnapshot;
   "plan.accept": ResearchResult;
   "plan.decline": ResearchResult;
+  "planChange.read": PlanChangePreview & { readonly proposalId: string };
+  "planChange.apply": ResearchResult;
+  "planChange.decline": ResearchResult;
   "planEvent.list": PlanEventPage;
   "consultation.accept": ResearchResult;
   "task.tryAgain": ResearchResult;
@@ -576,6 +632,17 @@ export interface ResearchPort {
   cancelPlan(operationId: string, input: ResearchInputs["plan.cancel"]): PortCall<FinishPlanResult>;
   acceptPlan(operationId: string, input: ResearchInputs["plan.accept"]): PortCall<ResearchResult>;
   declinePlan(operationId: string, input: ResearchInputs["plan.decline"]): PortCall<ResearchResult>;
+  readPlanChange(
+    input: ResearchInputs["planChange.read"],
+  ): PortCall<ResearchOutputs["planChange.read"]>;
+  applyPlanChange(
+    operationId: string,
+    input: ResearchInputs["planChange.apply"],
+  ): PortCall<ResearchResult>;
+  declinePlanChange(
+    operationId: string,
+    input: ResearchInputs["planChange.decline"],
+  ): PortCall<ResearchResult>;
   readPlan(input: ResearchInputs["plan.read"]): PortCall<PlanSnapshot>;
   listPlanEvents(input: ResearchInputs["planEvent.list"]): PortCall<PlanEventPage>;
   finishPlan(operationId: string, input: ResearchInputs["plan.finish"]): PortCall<FinishPlanResult>;
@@ -685,6 +752,8 @@ export function isResearchMutation(value: string): value is WindowResearchComman
     "plan.cancel",
     "plan.accept",
     "plan.decline",
+    "planChange.apply",
+    "planChange.decline",
     "consultation.accept",
     "consultation.decline",
     "contribution.tryAgain",
@@ -906,6 +975,14 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
         isResearchId(value.proposalId) &&
         isConnectionId(value.connection)
       );
+    case "planChange.read":
+      return (
+        exact(value, ["conversationId", "proposalId"]) &&
+        isResearchId(value.conversationId) &&
+        isResearchId(value.proposalId)
+      );
+    case "planChange.apply":
+    case "planChange.decline":
     case "consultation.decline":
     case "project.confirmSetup":
     case "project.rejectSetup":
@@ -1117,6 +1194,26 @@ function item(value: unknown): boolean {
           (typeof value.note === "string" || isTextReference(value.note)) &&
           typeof value.reason === "string")
     );
+  if (value.kind === "planChangeProposal")
+    return (
+      exact(value, [
+        "id",
+        "position",
+        "rank",
+        "revision",
+        "kind",
+        "taskId",
+        "state",
+        "invalidReason",
+      ]) &&
+      value.rank === 2 &&
+      isResearchId(value.taskId) &&
+      value.revision === (value.state === "proposed" || value.state === "invalid" ? 1 : 2) &&
+      (value.state === "invalid"
+        ? planChangeInvalidReasons.includes(value.invalidReason as PlanChangeInvalidReason)
+        : ["proposed", "applied", "declined", "replaced"].some((state) => state === value.state) &&
+          value.invalidReason === null)
+    );
   if (value.kind === "plan")
     return (
       exact(value, [
@@ -1229,7 +1326,8 @@ function item(value: unknown): boolean {
       (value.synthesisSources === undefined ||
         (value.agentId === "virgilio" &&
           value.consultation === undefined &&
-          isSynthesisSources(value.synthesisSources))) &&
+          (isSynthesisSources(value.synthesisSources) ||
+            isTextReference(value.synthesisSources)))) &&
       (value.planContribution === undefined ||
         (value.authorKind === "agent" &&
           value.consultation === undefined &&
@@ -1299,11 +1397,17 @@ function item(value: unknown): boolean {
     value.rank === 3
   );
 }
-function isSynthesisSources(value: unknown): boolean {
+function uniqueCurrentSynthesisKeys(sources: readonly SynthesisSource[]): boolean {
+  const keys = sources
+    .filter(({ state }) => state !== "removed" && state !== "replaced")
+    .map(({ key }) => key);
+  return new Set(keys).size === keys.length;
+}
+export function isSynthesisSources(value: unknown): value is readonly SynthesisSource[] {
   return (
     Array.isArray(value) &&
     value.length > 0 &&
-    value.length <= 8 &&
+    value.length <= planEventLimit + 8 &&
     value.every(
       (source: unknown) =>
         exact(source, ["key", "agentId", "state", "messageId"]) &&
@@ -1312,11 +1416,11 @@ function isSynthesisSources(value: unknown): boolean {
         isReplyAgent(source.agentId) &&
         (source.state === "completed"
           ? isResearchId(source.messageId)
-          : ["failed", "blocked", "cancelled", "uncertain"].some(
+          : ["failed", "blocked", "cancelled", "uncertain", "removed", "replaced"].some(
               (state) => state === source.state,
             ) && source.messageId === null),
     ) &&
-    new Set(value.map((source: SynthesisSource) => source.key)).size === value.length
+    uniqueCurrentSynthesisKeys(value as SynthesisSource[])
   );
 }
 
@@ -1367,6 +1471,7 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
       )
     );
   if (operation === "plan.read") return isPlanSnapshot(value);
+  if (operation === "planChange.read") return isPlanChangePreview(value);
   if (operation === "planEvent.list")
     return (
       exact(value, ["planId", "throughSequence", "events"]) &&
@@ -1647,6 +1752,106 @@ function isPlanSnapshot(value: unknown): value is PlanSnapshot {
     (value.continuation === null || isContinuationSnapshot(value.continuation))
   );
 }
+function planKey(value: unknown): boolean {
+  return typeof value === "string" && /^[a-z0-9-]{1,64}(?![\s\S])/.test(value);
+}
+function keys(value: unknown): boolean {
+  return Array.isArray(value) && value.length <= 8 && value.every(planKey);
+}
+function isPlanChangeRow(value: unknown): boolean {
+  return (
+    exact(value, [
+      "key",
+      "state",
+      "taskState",
+      "blockingReason",
+      "waitingFor",
+      "blockedBy",
+      "restartHeld",
+      "connection",
+    ]) &&
+    planKey(value.key) &&
+    planContributionStates.some((state) => state === value.state) &&
+    (value.taskState === null || planSynthesisStates.some((state) => state === value.taskState)) &&
+    (value.blockingReason === null ||
+      [
+        "connection_disabled",
+        "configuration_unavailable",
+        "usage_limit_reached",
+        "restart_paused",
+      ].some((reason) => reason === value.blockingReason)) &&
+    keys(value.waitingFor) &&
+    nullable(value.blockedBy, planKey) &&
+    typeof value.restartHeld === "boolean" &&
+    isConnectionId(value.connection)
+  );
+}
+function isPlanChangeRequest(value: unknown): boolean {
+  return (
+    exact(value, [
+      "key",
+      "agentId",
+      "connection",
+      "required",
+      "prerequisites",
+      "request",
+      "reason",
+      "changed",
+    ]) &&
+    planKey(value.key) &&
+    isReplyAgent(value.agentId) &&
+    isConnectionId(value.connection) &&
+    typeof value.required === "boolean" &&
+    keys(value.prerequisites) &&
+    isPlanText(value.request) &&
+    isPlanText(value.reason) &&
+    Array.isArray(value.changed) &&
+    value.changed.length <= 4 &&
+    value.changed.every(
+      (field: unknown) =>
+        typeof field === "string" &&
+        ["request", "reason", "required", "prerequisites"].includes(field),
+    )
+  );
+}
+function isPlanChangePreview(value: unknown): boolean {
+  return (
+    exact(value, [
+      "proposalId",
+      "removed",
+      "replaced",
+      "added",
+      "unchanged",
+      "purpose",
+      "context",
+      "additionalRequests",
+      "remainingRequests",
+      "maxRequests",
+    ]) &&
+    isResearchId(value.proposalId) &&
+    Array.isArray(value.removed) &&
+    value.removed.every(isPlanChangeRow) &&
+    Array.isArray(value.replaced) &&
+    value.replaced.every(
+      (entry) =>
+        exact(entry, ["before", "after"]) &&
+        isPlanChangeRow(entry.before) &&
+        isPlanChangeRequest(entry.after),
+    ) &&
+    Array.isArray(value.added) &&
+    value.added.every(isPlanChangeRequest) &&
+    Array.isArray(value.unchanged) &&
+    value.unchanged.every(isPlanChangeRow) &&
+    value.removed.length + value.replaced.length + value.unchanged.length <= 16 &&
+    value.removed.length + value.replaced.length + value.added.length <= 8 &&
+    nullable(value.purpose, isPlanText) &&
+    nullable(value.context, isPlanText) &&
+    integer(value.additionalRequests, 0) &&
+    integer(value.remainingRequests, 0) &&
+    integer(value.maxRequests) &&
+    value.remainingRequests <= value.maxRequests
+  );
+}
 function isContinuationSnapshot(value: unknown): boolean {
   return (
     exact(value, [
@@ -1666,7 +1871,7 @@ function isContinuationSnapshot(value: unknown): boolean {
     integer(value.graphVersion) &&
     integer(value.throughSequence) &&
     (value.reason === "required_set_complete" || value.reason === "finished_partial") &&
-    value.policyVersion === 1 &&
+    (value.policyVersion === 1 || value.policyVersion === 2) &&
     continuationAdmissions.some((admission) => admission === value.admission) &&
     typeof value.restartHeld === "boolean" &&
     (!value.restartHeld || value.admission === "waiting") &&
@@ -1748,6 +1953,7 @@ export function researchResultMatches(
   if (operation === "plan.finish" || operation === "plan.cancel")
     return output.resultId === input.planId;
   if (operation === "plan.read") return output.planId === input.planId;
+  if (operation === "planChange.read") return output.proposalId === input.proposalId;
   if (operation === "planEvent.list") {
     const events = output.events as readonly PlanEvent[];
     return (
@@ -1760,7 +1966,12 @@ export function researchResultMatches(
       )
     );
   }
-  if (operation === "handoff.accept" || operation === "handoff.decline")
+  if (
+    operation === "handoff.accept" ||
+    operation === "handoff.decline" ||
+    operation === "planChange.apply" ||
+    operation === "planChange.decline"
+  )
     return output.resultId === input.proposalId;
   if (operation === "handoff.selection") {
     const messages = output.messages as readonly HandoffSelectionMessage[];

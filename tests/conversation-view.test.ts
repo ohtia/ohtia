@@ -9,6 +9,7 @@ import {
   HandoffProposal,
   HandoffReturnControl,
 } from "../packages/renderer/src/handoff.js";
+import { PlanChangeProposal } from "../packages/renderer/src/plan-change-proposal.js";
 import { TaskNotice, taskNoticeContent } from "../packages/renderer/src/task-notice.js";
 import {
   ConversationHistory,
@@ -27,6 +28,7 @@ import {
 import {
   failure,
   invalidPlan,
+  invalidPlanChange,
   planInvalidReasons,
   staleRevision,
   compareConversations,
@@ -41,7 +43,10 @@ import {
   type ResearchEvent,
   type ResearchOutputs,
   type ResearchResult,
+  type PlanChangePreview,
+  type PlanChangeRow,
   type PlanTaskProgress,
+  type TimelinePlanChangeProposal,
   type TimelineItem,
   type ConversationSummary,
 } from "../packages/contracts/src/index.js";
@@ -4573,4 +4578,372 @@ it("refreshes ownership and timeline after decisions and reads paged return prev
     harness.controller.dispose();
     vi.unstubAllGlobals();
   }
+});
+
+it("shows the approved replacement fields and repeats Apply with its original operation ID", async () => {
+  const decide = vi
+    .fn()
+    .mockResolvedValueOnce(failure("storage_failed"))
+    .mockResolvedValueOnce(invalidPlanChange("plan_moved_on"));
+  const item = {
+    kind: "planChangeProposal",
+    id: id(700),
+    taskId: id(701),
+    position: 20,
+    rank: 2,
+    revision: 1,
+    state: "proposed",
+    invalidReason: null,
+  } as const;
+  const before = {
+    key: "comparison",
+    state: "active",
+    taskState: "running",
+    blockingReason: null,
+    blockedBy: null,
+    waitingFor: [],
+    restartHeld: false,
+    connection: "chatgpt",
+  } as const;
+  await act(async () =>
+    root.render(
+      h(PlanChangeProposal, {
+        proposal: item,
+        locale: "en-US",
+        language: "en",
+        hasText: true,
+        texts: new Map(),
+        connectionName: () => "ChatGPT",
+        decide,
+        preview: {
+          removed: [],
+          added: [],
+          unchanged: [],
+          purpose: "Revised question",
+          context: null,
+          additionalRequests: 2,
+          remainingRequests: 21,
+          maxRequests: 24,
+          replaced: [
+            {
+              before,
+              after: {
+                agentId: "josefa",
+                connection: "chatgpt",
+                key: "comparison",
+                required: false,
+                prerequisites: [],
+                changed: ["request", "required", "prerequisites"],
+                request: "Compare the terms from open catalogs.",
+                reason: "A focused comparison.",
+              },
+            },
+          ],
+        },
+      }),
+    ),
+  );
+  expect(container.textContent).toContain("Waiting for your answer");
+  expect(container.textContent).toContain("Stops when you apply this change.");
+  expect(container.textContent).toContain("Optional (changed)");
+  expect(container.textContent).toContain("After: none (changed)");
+  expect(container.textContent).toContain("Request (changed):");
+  expect(container.textContent).toContain("Reason:");
+  const apply = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Apply change",
+  );
+  expect(apply).toBeDefined();
+  await act(async () => apply?.click());
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Ohtia couldn’t apply");
+  await act(async () => apply?.click());
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(
+    "The plan has moved on since Virgilio proposed this. Ask him again.",
+  );
+  expect(decide).toHaveBeenCalledTimes(2);
+  expect(decide.mock.calls[0]).toEqual(decide.mock.calls[1]);
+});
+
+describe("plan change timeline", () => {
+  const proposal: TimelinePlanChangeProposal = {
+    kind: "planChangeProposal",
+    id: id(9700),
+    taskId: id(9701),
+    position: 20,
+    rank: 2,
+    revision: 1,
+    state: "proposed",
+    invalidReason: null,
+  };
+  const baseRow: PlanChangeRow = {
+    key: "background",
+    connection: "chatgpt",
+    state: "waiting",
+    taskState: null,
+    blockingReason: null,
+    waitingFor: [],
+    blockedBy: null,
+    restartHeld: false,
+  };
+  const emptyPreview: PlanChangePreview = {
+    removed: [],
+    replaced: [],
+    added: [],
+    unchanged: [],
+    purpose: null,
+    context: null,
+    additionalRequests: 2,
+    remainingRequests: 21,
+    maxRequests: 24,
+  };
+
+  it("renders invalid proposals as notices without approval controls", async () => {
+    const controller = { performPlanChange: vi.fn() } as unknown as ConversationController;
+    for (const [reason, detail] of [
+      ["too_many_changes", "The proposal had more than 8 changes."],
+      ["dependency_removed", "A waiting contribution still depended on one it removed."],
+      ["cycle", "Some contributions depended on each other in a loop."],
+      ["plan_moved_on", "The plan has moved on since Virgilio proposed this. Ask him again."],
+    ] as const) {
+      await render(state([{ ...proposal, state: "invalid", invalidReason: reason }]), controller);
+      const status = container.querySelector('[role="status"]');
+      expect(status?.textContent).toContain(detail);
+      if (reason !== "plan_moved_on")
+        expect(status?.textContent).toContain("You can ask him again.");
+      expect(container.querySelector(".action-proposal")).toBeNull();
+    }
+  });
+
+  it("discloses stopped, added and unchanged work and restores focus after declining", async () => {
+    const decide = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Synthetic transport failure"))
+      .mockResolvedValueOnce(failure("event_limit_reached"))
+      .mockResolvedValueOnce({ ok: true, value: { resultId: proposal.id } });
+    const preview: PlanChangePreview = {
+      ...emptyPreview,
+      removed: [{ ...baseRow, state: "active", taskState: "running" }],
+      replaced: [
+        {
+          before: { ...baseRow, key: "screening", state: "failed" },
+          after: {
+            key: "screening",
+            agentId: "josefa",
+            connection: "chatgpt",
+            required: true,
+            prerequisites: ["keywords"],
+            request: "Use the screening criteria.",
+            reason: "New scope.",
+            changed: ["required", "prerequisites", "reason"],
+          },
+        },
+      ],
+      added: [
+        {
+          key: "terminology",
+          agentId: "josefa",
+          connection: "chatgpt",
+          required: true,
+          prerequisites: ["keywords"],
+          request: "Compare terminology.",
+          reason: "Vocabulary matters.",
+          changed: [],
+        },
+        {
+          key: "optional",
+          agentId: "josefa",
+          connection: "chatgpt",
+          required: false,
+          prerequisites: [],
+          request: "List optional indexes.",
+          reason: "For later use.",
+          changed: [],
+        },
+      ],
+      unchanged: [
+        { ...baseRow, key: "keywords", state: "completed" },
+        { ...baseRow, key: "waiting", waitingFor: ["screening"] },
+        { ...baseRow, key: "blocked", state: "blocked", blockedBy: "screening" },
+        { ...baseRow, key: "uncertain", state: "uncertain" },
+        { ...baseRow, key: "cancelled", state: "cancelled" },
+        { ...baseRow, key: "restart", restartHeld: true },
+      ],
+      purpose: "Focus on terminology.",
+      context: "Use the synthetic case.",
+    };
+    const controller = { performPlanChange: decide } as unknown as ConversationController;
+    const show = (item: TimelinePlanChangeProposal, changePreview = preview) =>
+      render({ ...state([item]), planChanges: new Map([[item.id, changePreview]]) }, controller);
+    await show(proposal);
+    const card = container.querySelector(".action-proposal");
+    for (const text of [
+      "Removed:",
+      "Stops when you apply this change.",
+      "screening · Failed",
+      "Added:",
+      "Required (changed)",
+      "After: keywords (changed)",
+      "After: keywords",
+      "Reason (changed):",
+      "Request:Compare terminology.",
+      "optional · Optional",
+      "Unchanged:",
+      "keywords · Done",
+      "waiting · Waiting for screening",
+      "blocked · Blocked by screening",
+      "uncertain · Uncertain",
+      "cancelled · Cancelled",
+      "restart · Paused: Ohtia stopped before it started",
+      "Focus on terminology.",
+      "Use the synthetic case.",
+    ])
+      expect(card?.textContent).toContain(text);
+
+    const decline = buttonNamed("Decline change");
+    decline.focus();
+    await act(async () => {
+      decline.click();
+      decline.click();
+    });
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(card?.querySelector('[role="alert"]')?.textContent).toContain("Ohtia couldn’t decline");
+    await act(async () => decline.click());
+    expect(card?.querySelector('[role="status"]')?.textContent).toContain(
+      "most changes Ohtia records",
+    );
+    await act(async () => decline.click());
+    expect(decide.mock.calls[0]).toEqual(decide.mock.calls[2]);
+    await show({ ...proposal, state: "declined", revision: 2 });
+    expect(container.textContent).toContain("You declined this change.");
+    expect(document.activeElement).toBe(container.querySelector(".action-proposal")?.parentElement);
+    expect(container.querySelector(".action-proposal button")).toBeNull();
+
+    await show(
+      { ...proposal, state: "replaced", revision: 2 },
+      {
+        ...emptyPreview,
+        unchanged: [
+          { ...baseRow, key: "stopping", state: "active", taskState: "cancelling" },
+          {
+            ...baseRow,
+            key: "offline",
+            state: "active",
+            taskState: "blocked",
+            blockingReason: "connection_disabled",
+          },
+          {
+            ...baseRow,
+            key: "paused",
+            state: "active",
+            taskState: "blocked",
+            blockingReason: "usage_limit_reached",
+          },
+          { ...baseRow, key: "ready" },
+        ],
+      },
+    );
+    for (const text of [
+      "Replaced by a newer proposal.",
+      "Stopping",
+      "Waiting: ChatGPT isn’t connected",
+      "Paused: ChatGPT requests are paused",
+      "Waiting to start",
+    ])
+      expect(container.querySelector(".action-proposal")?.textContent).toContain(text);
+  });
+
+  it("hydrates multipart plan changes and synthesis references and refreshes decisions", async () => {
+    const harness = controllerHarness(false);
+    const context = "The synthetic project uses local catalogs. ".repeat(140);
+    const reference = (source: string, text: string) => ({
+      source,
+      parts: text.length > 4096 ? 2 : 1,
+      bytes: Buffer.byteLength(text),
+      sha256: createHash("sha256").update(text).digest("hex"),
+    });
+    const contextPart = reference("plan_change_context", context);
+    const sources = JSON.stringify([
+      { key: "background", agentId: "josefa", state: "removed", messageId: null },
+      { key: "screening", agentId: "josefa", state: "replaced", messageId: null },
+    ]);
+    const synthesisPart = reference("synthesis_sources", sources);
+    const guidance: TimelineItem = {
+      ...message(proposal.position, "Here is the updated plan."),
+      authorKind: "agent",
+      agentId: "virgilio",
+      taskId: proposal.taskId,
+      language: "en",
+      ending: "complete",
+    } as TimelineItem;
+    const synthesis: TimelineItem = {
+      ...guidance,
+      id: id(9720),
+      position: 21,
+      taskId: id(9721),
+      content: "This is the synthesis.",
+      synthesisSources: synthesisPart,
+    } as TimelineItem;
+    const preview = { ...emptyPreview, proposalId: proposal.id, context: contextPart };
+    const previewRead = vi.fn(() => ok(preview));
+    const apply = vi.fn(() => {
+      harness.items[1] = { ...proposal, state: "applied", revision: 2 };
+      return ok({ resultId: proposal.id });
+    });
+    const decline = vi.fn(() => {
+      harness.items[1] = { ...proposal, state: "replaced", revision: 3 };
+      return call(failure("proposal_not_waiting"));
+    });
+    const readTextPart = vi.fn(({ source, index }: { source: string; index: number }) => {
+      const text = source === contextPart.source ? context : sources;
+      return ok({ text: text.slice((index - 1) * 4096, index * 4096) });
+    });
+    harness.items.splice(0, harness.items.length, guidance, proposal, synthesis);
+    Object.assign(harness.port, {
+      readTextPart,
+      readPlanChange: previewRead,
+      applyPlanChange: apply,
+      declinePlanChange: decline,
+    });
+    try {
+      harness.controller.open(scope);
+      await vi.waitFor(() =>
+        expect(harness.controller.snapshot().texts.get(contextPart.source)).toBe(context),
+      );
+      const snapshot = harness.controller.snapshot();
+      expect(previewRead).toHaveBeenCalledWith({
+        conversationId: scope.conversationId,
+        proposalId: proposal.id,
+      });
+      expect(readTextPart).toHaveBeenCalledWith({ source: contextPart.source, index: 2 });
+      expect(readTextPart).toHaveBeenCalledWith({ source: synthesisPart.source, index: 1 });
+      await render(snapshot, harness.controller);
+      expect(container.querySelector(".action-proposal")?.textContent).toContain(context);
+      expect(container.querySelector(".synthesis-references")?.textContent).toBe(
+        "Based on: background · Josefa (removed) and screening · Josefa (replaced)",
+      );
+      await act(async () => buttonNamed("Apply change").click());
+      expect(apply).toHaveBeenCalledWith(expect.any(String), { proposalId: proposal.id });
+      await render(harness.controller.snapshot(), harness.controller);
+      expect(container.textContent).toContain("Applied to the plan.");
+      await act(async () => {
+        await expect(
+          harness.controller.performPlanChange("stale-decline", proposal.id, false),
+        ).resolves.toEqual(failure("proposal_not_waiting"));
+      });
+      expect(decline).toHaveBeenCalledWith("stale-decline", { proposalId: proposal.id });
+      expect(harness.controller.snapshot().items).toContainEqual({
+        ...proposal,
+        state: "replaced",
+        revision: 3,
+      });
+
+      const reload = vi.spyOn(harness.controller, "reload").mockImplementation(() => {});
+      vi.mocked(harness.port.readTimeline).mockReturnValueOnce(call(failure("storage_failed")));
+      await act(async () => {
+        await harness.controller.performPlanChange("refresh-failed", proposal.id, true);
+      });
+      expect(reload).toHaveBeenCalledOnce();
+    } finally {
+      await act(async () => harness.controller.dispose());
+    }
+  });
 });

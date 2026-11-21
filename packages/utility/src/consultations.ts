@@ -68,6 +68,7 @@ export interface InterventionRow {
   purpose: Generated<string | null>;
   shared_context: Generated<string | null>;
   graph_version: Generated<number>;
+  previous_plan_id: Generated<Uint8Array | null>;
   outcome: Generated<PlanOutcome | null>;
   finished_at: Generated<string | null>;
   finished_by_operation_id: Generated<string | null>;
@@ -77,6 +78,13 @@ export interface InterventionRow {
   approved_during_attempt_id: Generated<Uint8Array | null>;
   revision: number;
 }
+
+export type ContributionCancellationReason =
+  | "removed_by_researcher"
+  | "superseded"
+  | "plan_cancelled"
+  | "plan_finished"
+  | "stopped_by_researcher";
 
 export interface ContributionRow {
   id: Uint8Array;
@@ -92,6 +100,10 @@ export interface ContributionRow {
   failure_reason: Generated<"input_too_large" | "input_changed" | "destination_changed" | null>;
   ready_inputs: Generated<string | null>;
   result_message_id: Generated<Uint8Array | null>;
+  superseded_by_contribution_id: Generated<Uint8Array | null>;
+  cancellation_reason: Generated<ContributionCancellationReason | null>;
+  context_proposal_id: Generated<Uint8Array | null>;
+  purpose_proposal_id: Generated<Uint8Array | null>;
   restart_held: Generated<number>;
   dedupe_key: Uint8Array;
   policy_version: Generated<number>;
