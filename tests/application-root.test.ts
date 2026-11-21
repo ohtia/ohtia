@@ -21,6 +21,7 @@ import {
   type LayoutRecord,
   type LayoutChange,
   type ProjectSummary,
+  type ConversationSummary,
   type ResearchEvent,
   type FoundationPort,
   type Outcome,
@@ -1385,6 +1386,102 @@ it("opens history in the chat panel, restores its draft, and reveals a lazy conv
   expect(container.querySelector("textarea")?.value).toBe("");
 });
 
+it("marks only history rows with unseen replies and clears a row when its chat is viewed", async () => {
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const t = raceFixture();
+  const projectId = t.ids[0]!;
+  const interviews = "019a8000-0000-7000-8000-000000000111";
+  const references = "019a8000-0000-7000-8000-000000000112";
+  const createdAt = "2026-11-17T10:00:00.000Z";
+  const rows = (
+    [
+      { id: references, title: "References", status: null },
+      { id: interviews, title: "Interviews", status: "attention" },
+      { id: projectId, title: "Overview", status: null },
+    ] as const
+  ).map((row): ConversationSummary => ({
+    ...row,
+    projectId,
+    createdAt,
+    updatedAt: createdAt,
+    latestAt: createdAt,
+    revision: 1,
+    ownerRevision: 1,
+    ownerPosition: null,
+    latestPrefix: "",
+    latestLanguage: null,
+    latestTruncated: false,
+    agentId: "virgilio",
+    runningTask: null,
+    latestReplyTaskId: null,
+  }));
+  let receive: (event: Outcome<ResearchEvent>) => void = () => {};
+  Object.assign(t.port, {
+    subscribeResearch: (_scope: ResearchScope, listener: typeof receive) => {
+      receive = listener;
+      return {
+        ready: Promise.resolve({ ok: true, value: { subscriptionId: "history-activity" } }),
+        dispose() {},
+      };
+    },
+    readConversations: ({ ids }: { ids: readonly string[] }) =>
+      call({
+        ok: true,
+        value: { items: rows.filter((row) => ids.includes(row.id)), remaining: [] },
+      }),
+    listConversations: () => call({ ok: true, value: { items: rows, next: null, hasMore: false } }),
+    listProjectAttention: () =>
+      call({ ok: true, value: { items: [projectId], next: null, hasMore: false, revision: 1 } }),
+  });
+
+  await mount(t);
+  const show = '[aria-label^="Show conversation history"]';
+  const back = '[aria-label="Return to conversation"]';
+  const row = (title: string) =>
+    [...container.querySelectorAll<HTMLButtonElement>(".chat-history-row")].find(
+      (item) => item.querySelector(".chat-history-title")?.textContent === title,
+    )!;
+  const mark = (title: string) => row(title).querySelector('[data-status="unread"]')?.textContent;
+  const finish = (conversationId: string) =>
+    act(async () =>
+      receive({
+        ok: true,
+        value: { kind: "replyFinished", projectId, conversationId, agentId: "virgilio" },
+      }),
+    );
+  const count = () => container.querySelector(`${show} .activity-badge-new`)?.textContent;
+
+  await finish(interviews);
+  expect(count()).toBe("1");
+  await click(show);
+  expect(mark("Interviews")).toBe("New reply");
+  expect(mark("Overview")).toBeUndefined();
+  expect(mark("References")).toBeUndefined();
+  expect(row("Interviews").querySelector('[data-status="attention"]')?.textContent).toBe(
+    "Needs your attention",
+  );
+
+  await finish(references);
+  await finish(interviews);
+  expect(mark("References")).toBe("New reply");
+  expect(mark("Interviews")).toBe("New replies");
+  expect(
+    [...container.querySelectorAll(".chat-history-title")].map((title) => title.textContent),
+  ).toEqual(["References", "Interviews", "Overview"]);
+  await click(back);
+  expect(count()).toBe("2");
+  await click(show);
+
+  await act(async () => row("Interviews").click());
+  expect(count()).toBe("1");
+  await click(show);
+  expect(mark("Interviews")).toBeUndefined();
+  expect(mark("References")).toBe("New reply");
+  expect(row("Interviews").querySelector('[data-status="attention"]')?.textContent).toBe(
+    "Needs your attention",
+  );
+});
+
 it("keeps hidden chat closed and groups reply announcements by window and conversation", async () => {
   vi.useFakeTimers();
   vi.spyOn(document, "hasFocus").mockReturnValue(true);
@@ -1575,6 +1672,51 @@ it("retries an incomplete conversation-attention snapshot at the same project re
   activity.event({ kind: "projectAttention", revision: 5 });
   await vi.advanceTimersByTimeAsync(250);
   expect(listProjectAttention).toHaveBeenCalledTimes(2);
+});
+
+it("keeps unread row snapshots independent between windows and across project switches", () => {
+  const { ids } = raceFixture();
+  const [projectId, otherProjectId] = ids;
+  const conversationId = "019a8000-0000-7000-8000-000000000111";
+  const first = new ActivityController({} as FoundationPort);
+  const second = new ActivityController({} as FoundationPort);
+  disposals.push(
+    () => first.dispose(),
+    () => second.dispose(),
+  );
+  const finish = (activity: ActivityController, project: string, conversation: string) =>
+    activity.event({
+      kind: "replyFinished",
+      projectId: project,
+      conversationId: conversation,
+      agentId: "virgilio",
+    });
+  first.open({ projectId: projectId!, conversationId: null });
+  second.open({ projectId: projectId!, conversationId: null });
+  finish(first, projectId!, conversationId);
+  finish(second, projectId!, conversationId);
+  const previous = first.snapshot().unreadReplies;
+  finish(first, projectId!, conversationId);
+  expect(first.snapshot().unreadReplies.get(conversationId)).toBe(2);
+  expect(previous.get(conversationId)).toBe(1);
+  expect(second.snapshot().unreadReplies.get(conversationId)).toBe(1);
+
+  first.open({ projectId: projectId!, conversationId });
+  first.presentation(true, false);
+  expect(first.snapshot().unreadReplies.get(conversationId)).toBe(2);
+  first.presentation(true, true);
+  expect(first.snapshot().unreadReplies.size).toBe(0);
+  expect(second.snapshot().unreadReplies.get(conversationId)).toBe(1);
+
+  finish(second, projectId!, conversationId);
+  second.open({ projectId: otherProjectId!, conversationId: null });
+  finish(second, otherProjectId!, otherProjectId!);
+  finish(second, otherProjectId!, otherProjectId!);
+  expect(second.snapshot().history.replies).toBe(1);
+  expect([...second.snapshot().unreadReplies]).toEqual([[otherProjectId, 2]]);
+  second.open({ projectId: projectId!, conversationId: null });
+  expect(second.snapshot().history.replies).toBe(1);
+  expect([...second.snapshot().unreadReplies]).toEqual([[conversationId, 2]]);
 });
 
 it("does not include the previous project's replies in the next project's announcement", async () => {

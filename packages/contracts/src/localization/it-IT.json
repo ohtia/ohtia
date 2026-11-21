@@ -294,6 +294,7 @@
     "history.replying": "Risposta in corso…",
     "history.waiting": "In attesa",
     "history.attention": "Richiede la tua attenzione",
+    "history.unreadReplies": "{count, plural, one {Nuova risposta} many {Nuove risposte} other {Nuove risposte}}",
     "history.loading": "Caricamento delle conversazioni…",
     "history.loadOlder": "Carica le conversazioni precedenti",
     "history.olderLoading": "Caricamento delle conversazioni precedenti…",

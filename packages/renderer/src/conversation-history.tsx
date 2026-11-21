@@ -47,11 +47,13 @@ function HistoryRow({
   row,
   locale,
   current,
+  unreadCount,
   select,
 }: {
   row: ConversationSummary;
   locale: InterfaceLocale;
   current: boolean;
+  unreadCount: number;
   select: (id: string) => void;
 }) {
   const preview = useMemo(
@@ -87,6 +89,12 @@ function HistoryRow({
             {preview}
           </bdi>
         )}
+        {unreadCount > 0 && (
+          <span className="chat-history-status" data-status="unread">
+            <span className="chat-history-unread-dot" aria-hidden="true" />
+            {message(locale, "history.unreadReplies", { count: unreadCount })}
+          </span>
+        )}
         {row.status && (
           <span className="chat-history-status" data-status={row.status}>
             <LucideGlyph name={statusIcons[row.status]} size={16} />
@@ -103,12 +111,14 @@ export function ConversationHistory({
   controller,
   select,
   current,
+  unreadReplies,
   locale,
 }: {
   state: ReturnType<ConversationHistoryController["snapshot"]>;
   controller: ConversationHistoryController;
   select: (id: string) => void;
   current: string | null;
+  unreadReplies?: ReadonlyMap<string, number>;
   locale: InterfaceLocale;
 }) {
   const pending = useRef<HTMLButtonElement | null>(null);
@@ -154,6 +164,7 @@ export function ConversationHistory({
               row={row}
               locale={locale}
               current={row.id === current}
+              unreadCount={unreadReplies?.get(row.id) ?? 0}
               select={select}
             />
           ))}

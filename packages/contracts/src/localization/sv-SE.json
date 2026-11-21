@@ -294,6 +294,7 @@
     "history.replying": "Svarar…",
     "history.waiting": "Väntar",
     "history.attention": "Kräver din uppmärksamhet",
+    "history.unreadReplies": "{count, plural, one {Nytt svar} other {Nya svar}}",
     "history.loading": "Läser in konversationer…",
     "history.loadOlder": "Läs in äldre konversationer",
     "history.olderLoading": "Läser in äldre konversationer…",

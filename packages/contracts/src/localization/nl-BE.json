@@ -294,6 +294,7 @@
     "history.replying": "Bezig met antwoorden…",
     "history.waiting": "In afwachting",
     "history.attention": "Vereist je aandacht",
+    "history.unreadReplies": "{count, plural, one {Nieuw antwoord} other {Nieuwe antwoorden}}",
     "history.loading": "Gesprekken laden…",
     "history.loadOlder": "Oudere gesprekken laden",
     "history.olderLoading": "Oudere gesprekken laden…",

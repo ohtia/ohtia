@@ -294,6 +294,7 @@
     "history.replying": "Responent…",
     "history.waiting": "En espera",
     "history.attention": "Requereix la teva atenció",
+    "history.unreadReplies": "{count, plural, one {Resposta nova} many {Respostes noves} other {Respostes noves}}",
     "history.loading": "S’estan carregant les converses…",
     "history.loadOlder": "Carrega converses anteriors",
     "history.olderLoading": "S’estan carregant les converses anteriors…",

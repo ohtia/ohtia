@@ -10,10 +10,12 @@ import type {
 } from "@ohtia/contracts";
 
 type AlertSource = "conversation" | "plan";
+const noUnreadReplies: ReadonlyMap<string, number> = new Map();
 export interface ActivityState {
   readonly projects: ReadonlySet<string>;
   readonly chat: { readonly replies: number; readonly attention: number };
   readonly history: { readonly replies: number; readonly attention: number };
+  readonly unreadReplies: ReadonlyMap<string, number>;
   readonly replyAnnouncement?: {
     readonly key: number;
     readonly count: number;
@@ -26,7 +28,7 @@ export class ActivityController {
   private scope: ResearchScope = { projectId: null, conversationId: null };
   private visible = false;
   private focused = false;
-  private readonly unreadByProject = new Map<string, Map<string, number>>();
+  private readonly unreadByProject = new Map<string, ReadonlyMap<string, number>>();
   private attended = new Map<string, boolean>();
   private projects = new Set<string>();
   private revision: number | undefined;
@@ -44,6 +46,7 @@ export class ActivityController {
     alerts: [],
     chat: { replies: 0, attention: 0 },
     history: { replies: 0, attention: 0 },
+    unreadReplies: noUnreadReplies,
   };
 
   constructor(private readonly port: FoundationPort) {}
@@ -61,10 +64,11 @@ export class ActivityController {
   ): void {
     const project = this.scope.projectId;
     const current = this.scope.conversationId;
-    const unread = project ? this.unreadByProject.get(project) : undefined;
+    const unreadReplies =
+      (project ? this.unreadByProject.get(project) : undefined) ?? noUnreadReplies;
     let replies = 0;
     let conversations = 0;
-    for (const [id, count] of unread ?? []) {
+    for (const [id, count] of unreadReplies) {
       replies += count;
       if (id !== current) conversations++;
     }
@@ -77,13 +81,21 @@ export class ActivityController {
     if (
       !announcement &&
       this.state.projects === this.projects &&
+      this.state.unreadReplies === unreadReplies &&
       this.state.chat.replies === chat.replies &&
       this.state.chat.attention === chat.attention &&
       this.state.history.replies === history.replies &&
       this.state.history.attention === history.attention
     )
       return;
-    this.state = { ...this.state, ...announcement, projects: this.projects, chat, history };
+    this.state = {
+      ...this.state,
+      ...announcement,
+      projects: this.projects,
+      chat,
+      history,
+      unreadReplies,
+    };
     for (const listener of this.listeners) listener();
   }
 
@@ -93,12 +105,14 @@ export class ActivityController {
 
   private clearViewed(): boolean {
     const { projectId, conversationId } = this.scope;
-    return (
-      this.viewing() &&
-      !!projectId &&
-      !!conversationId &&
-      (this.unreadByProject.get(projectId)?.delete(conversationId) ?? false)
-    );
+    if (!this.viewing() || !projectId || !conversationId) return false;
+    const unread = this.unreadByProject.get(projectId);
+    if (!unread?.has(conversationId)) return false;
+    const remaining = new Map(unread);
+    remaining.delete(conversationId);
+    if (remaining.size) this.unreadByProject.set(projectId, remaining);
+    else this.unreadByProject.delete(projectId);
+    return true;
   }
 
   presentation(visible: boolean, focused: boolean): void {
@@ -199,12 +213,9 @@ export class ActivityController {
       this.publish({ replyAnnouncement: { key: ++this.key, count: 1, agent } });
       return;
     }
-    let unread = this.unreadByProject.get(project);
-    if (!unread) {
-      unread = new Map();
-      this.unreadByProject.set(project, unread);
-    }
+    const unread = new Map(this.unreadByProject.get(project));
     unread.set(conversation, (unread.get(conversation) ?? 0) + 1);
+    this.unreadByProject.set(project, unread);
     this.pending++;
     this.timer ??= setTimeout(() => {
       this.timer = undefined;

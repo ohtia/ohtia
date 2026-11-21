@@ -205,6 +205,15 @@
       },
       "effective_model_evidence": "The implementation rollout matched by CODEX_THREAD_ID records gpt-6.2-sol with effort high in turn_context.",
       "human_linguistic_review": null
+    },
+    {
+      "scope": "history.unreadReplies for issue #340 in every supported locale",
+      "producer": {
+        "agent": "codex",
+        "effective_model": null
+      },
+      "effective_model_evidence": "The implementation session does not expose a confirmed effective model identifier.",
+      "human_linguistic_review": null
     }
   ]
 }
