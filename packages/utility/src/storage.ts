@@ -77,6 +77,11 @@ import {
   up as handoffs,
 } from "./migrations/0027_handoffs.mjs";
 import {
+  tables as redirectionTables,
+  objects as redirectionObjects,
+  up as planRedirection,
+} from "./migrations/0028_plan_redirection.mjs";
+import {
   ResearchAttention,
   conversationAttention,
   type ResearchActivity,
@@ -330,6 +335,7 @@ const names = [
   "0025_contribution_synthesis",
   "0026_plan_proposals",
   "0027_handoffs",
+  "0028_plan_redirection",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -557,6 +563,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
       : []),
     ...(revision >= 24 ? ["intervention_events", "continuations"] : []),
     ...(revision >= 27 ? Object.keys(handoffTables) : []),
+    ...(revision >= 28 ? ["graph_change_proposals"] : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -714,8 +721,13 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 interventions:
                   revision >= 26 ? planProposalInterventions : coordinationTables.interventions,
                 intervention_events: coordinationTables.intervention_events,
+                ...(revision >= 28 ? redirectionTables : {}),
                 continuations:
-                  revision >= 25 ? synthesisTables.continuations : coordinationTables.continuations,
+                  revision >= 28
+                    ? redirectionTables.continuations
+                    : revision >= 25
+                      ? synthesisTables.continuations
+                      : coordinationTables.continuations,
               }
             : revision >= 23
               ? { ...graphTables, ...workLimitTables }
@@ -766,6 +778,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 25 ? synthesisObjects : {}),
                 ...(revision >= 26 ? planProposalObjects : {}),
                 ...(revision >= 27 ? handoffObjects : {}),
+                ...(revision >= 28 ? redirectionObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1134,7 +1147,7 @@ export class DurableStore {
     const operation = randomUUID();
     writeSynced(this.gate, { version: 1, operation, source, target }, retrySource);
     await this.checkpoint(db, source, operation);
-    const rebuildsTables = source < 24;
+    const rebuildsTables = source < 28;
     const selected = this.database;
     if (!selected) throw new Error("Missing migration connection.");
     await selected.connection().execute(async (connection) => {
@@ -1182,6 +1195,7 @@ export class DurableStore {
                 "0025_contribution_synthesis": { up: contributionSynthesis },
                 "0026_plan_proposals": { up: planProposals },
                 "0027_handoffs": { up: handoffs },
+                "0028_plan_redirection": { up: planRedirection },
               }),
           },
         });
@@ -2503,6 +2517,7 @@ export class DurableStore {
       "destination.read": "ohtia.destination.read",
       "pause.read": "ohtia.pause.read",
       "plan.read": "ohtia.plan.read",
+      "planChange.read": "ohtia.plan_change.read",
       "handoff.selection": "ohtia.handoff.selection_listed",
       "planEvent.list": "ohtia.plan.events_listed",
     } as const;
@@ -2668,6 +2683,8 @@ export class DurableStore {
         "synthesis.tryAgain": { event_name: "ohtia.synthesis.retry_requested" },
         "development.runPlan": { event_name: "ohtia.development.plan_started" },
         "plan.addContributions": { event_name: "ohtia.plan.graph_recorded" },
+        "planChange.apply": { event_name: "ohtia.plan_change.applied" },
+        "planChange.decline": { event_name: "ohtia.plan_change.declined" },
         "plan.accept": { event_name: "ohtia.plan.accepted" },
         "handoff.accept": { event_name: "ohtia.handoff.accepted" },
         "handoff.decline": { event_name: "ohtia.handoff.declined" },

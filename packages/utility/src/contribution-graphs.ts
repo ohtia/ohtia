@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { failure, type AddContributionsPayload, type Outcome, utf8Size } from "@ohtia/contracts";
-import { sql, type Kysely, type NotNull, type Selectable } from "kysely";
+import { sql, type Generated, type Kysely, type NotNull, type Selectable } from "kysely";
 import { consultableAgents, type ContributionRow, type InterventionRow } from "./consultations.js";
 import {
   operationPolicy,
@@ -25,6 +25,7 @@ import {
   newId,
   type ResearchSchema,
 } from "./research.js";
+import { effectivePlan, storedPlanChange } from "./plan-change-proposals.js";
 import type { RuntimeMode } from "./tasks.js";
 
 export interface DependencyRow {
@@ -40,7 +41,8 @@ export interface GraphChangeRow {
   id: Uint8Array;
   intervention_id: Uint8Array;
   graph_version: number;
-  kind: "accepted" | "contributions_added";
+  kind: "accepted" | "contributions_added" | "plan_changed";
+  proposal_id: Generated<Uint8Array | null>;
   applied_by_operation_id: string;
   proposed_by_attempt_id: Uint8Array | null;
   summary: string;
@@ -65,7 +67,7 @@ const testAgents = [
 ] as const;
 type PlanAgent = ReturnType<typeof consultableAgents>[number] | (typeof testAgents)[number];
 
-function agents(mode: RuntimeMode, synthetic: boolean): readonly PlanAgent[] {
+export function planAgents(mode: RuntimeMode, synthetic: boolean): readonly PlanAgent[] {
   return synthetic ? (mode === "development" ? testAgents : []) : consultableAgents(mode);
 }
 
@@ -89,12 +91,21 @@ export function contributionKey(
     .digest();
 }
 
-export function planContributions(db: Kysely<ResearchSchema>, id: Uint8Array) {
+export function planContributions(
+  db: Kysely<ResearchSchema>,
+  id: Uint8Array,
+  includeHistory = false,
+) {
   return db
     .selectFrom("contributions")
     .selectAll()
     .where("intervention_id", "=", id)
     .where("plan_key", "is not", null)
+    .$if(!includeHistory, (query) =>
+      query
+        .where("superseded_by_contribution_id", "is", null)
+        .where(sql<boolean>`cancellation_reason IS NOT 'removed_by_researcher'`),
+    )
     .$narrowType<{ plan_key: NotNull }>()
     .orderBy(sql`rowid`)
     .execute();
@@ -113,7 +124,7 @@ function scalarText(value: unknown): value is string {
   return typeof value === "string" && !/[\0\uD800-\uDFFF]/u.test(value);
 }
 
-function isPlanKey(value: unknown): value is string {
+export function isPlanKey(value: unknown): value is string {
   return typeof value === "string" && /^[a-z0-9-]{1,64}(?![\s\S])/.test(value);
 }
 
@@ -203,13 +214,20 @@ export async function addContributions(
   if (!conversation) return failure("record_not_found");
   if (!conversation.is_development && !conversation.setup_confirmed_at)
     return failure("agent_unavailable");
-  const enabled = agents(mode, !!conversation.is_development);
+  const enabled = planAgents(mode, !!conversation.is_development);
   const limits = existing ? await interventionLimits(db, id) : planLimits;
   if (!limits) return failure("limit_reached");
   const previous = existing ? await planContributions(db, id) : [];
   if (previous.length + requests.length > limits.max_contributions)
     return failure("plan_too_large");
   const byKey = new Map(previous.map((row) => [row.plan_key, row.id]));
+  const retiredKeys = existing
+    ? new Set(
+        (await planContributions(db, id, true))
+          .filter((node) => node.cancellation_reason === "removed_by_researcher")
+          .map((node) => node.plan_key),
+      )
+    : new Set<string>();
   const keysById = new Map(previous.map((row) => [identifier(row.id), row.plan_key]));
   const edges = new Map<string, string[]>(previous.map((row) => [row.plan_key, []]));
   for (const dependency of existing ? await holdingDependencies(db, id) : []) {
@@ -259,7 +277,8 @@ export async function addContributions(
     )
       return failure("invalid_message");
     if (!isPlanKey(entry.planKey)) return failure("plan_key_invalid");
-    if (byKey.has(entry.planKey)) return failure("plan_key_duplicate");
+    if (byKey.has(entry.planKey) || retiredKeys.has(entry.planKey))
+      return failure("plan_key_duplicate");
     if (!entry.request.trim()) return failure("request_empty");
     if (utf8Size(entry.request) > 8192) return failure("request_too_large");
     if (!scalarText(entry.reason) || !entry.reason.trim()) return failure("reason_empty");
@@ -395,6 +414,7 @@ export async function addContributions(
         .where("conversation_id", "=", conversationId)
         .where("state", "=", "proposed")
         .execute();
+    const prior = await latestAcceptedPlan(db, conversationId);
     await db
       .insertInto("interventions")
       .values({
@@ -410,6 +430,7 @@ export async function addContributions(
         decided_by_operation_id: proposing ? null : operationId,
         revision: 1,
         graph_version: proposing ? 0 : version,
+        previous_plan_id: prior?.outcome ? prior.id : null,
         purpose: payload.purpose,
         shared_context: payload.sharedContext,
       })
@@ -523,17 +544,33 @@ export async function planInput(
   if (contribution.plan_key === null) throw new Error("Plan contribution lacks a key.");
   const plan = await db
     .selectFrom("interventions")
-    .select("shared_context")
+    .select(["id", "purpose", "shared_context"])
     .where("id", "=", contribution.intervention_id)
     .executeTakeFirstOrThrow();
-  const context = plan.shared_context
-    ? `Context for every contribution of the plan:\n${plan.shared_context}\n\n`
+  const source = contribution.context_proposal_id
+    ? await db
+        .selectFrom("graph_change_proposals")
+        .select(["id", "change"])
+        .where("id", "=", contribution.context_proposal_id)
+        .executeTakeFirstOrThrow()
+    : undefined;
+  const effective = contribution.task_id
+    ? {
+        context: source
+          ? storedPlanChange(source.change).shared_context
+          : (plan.shared_context ?? ""),
+        contextSource: source?.id ?? plan.id,
+      }
+    : await effectivePlan(db, plan);
+  const context = effective.context
+    ? `Context for every contribution of the plan:\n${effective.context}\n\n`
     : "";
   const input: InputMessage[] = [
     {
       role: "user",
       reference: identifier(contribution.id),
       transferKind: "contribution_request",
+      planContext: identifier(effective.contextSource),
       text:
         "This request comes from a plan by Virgilio, the research guide. The researcher approved it and cannot answer questions in this reply.\n\n" +
         context +
@@ -571,4 +608,15 @@ export async function planInput(
 
 export function waitingForPlanWork(state: Selectable<ContributionRow>["state"]): boolean {
   return state === "waiting" || state === "active";
+}
+
+export function latestAcceptedPlan(db: Kysely<ResearchSchema>, conversation: Uint8Array) {
+  return db
+    .selectFrom("interventions")
+    .selectAll()
+    .where("conversation_id", "=", conversation)
+    .where("kind", "=", "plan")
+    .where("state", "=", "accepted")
+    .orderBy(sql`rowid DESC`)
+    .executeTakeFirst();
 }

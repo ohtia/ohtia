@@ -3,6 +3,8 @@ import {
   planInvalidReasons,
   type ConversationBusyReason,
   type PlanInvalidReason,
+  type PlanChangeInvalidReason,
+  planChangeInvalidReasons,
 } from "./research.js";
 import {
   researchOperations,
@@ -169,6 +171,7 @@ export const errorActions = {
   consultation_unfinished: "retry_later",
   plan_unfinished: "retry_later",
   plan_invalid: "check_request",
+  plan_change_invalid: "check_request",
   too_few_contributions: "check_request",
   reason_empty: "check_request",
   reason_too_long: "check_request",
@@ -233,9 +236,11 @@ export type PortError = {
       ? { readonly currentRevision: number }
       : K extends "plan_invalid"
         ? { readonly reason: PlanInvalidReason }
-        : K extends "conversation_busy"
-          ? { readonly reason: ConversationBusyReason }
-          : Record<string, never>;
+        : K extends "plan_change_invalid"
+          ? { readonly reason: PlanChangeInvalidReason }
+          : K extends "conversation_busy"
+            ? { readonly reason: ConversationBusyReason }
+            : Record<string, never>;
   };
 }[ErrorCode];
 export type Outcome<T> =
@@ -253,6 +258,12 @@ export function invalidPlan(reason: PlanInvalidReason): Outcome<never> {
   return {
     ok: false,
     error: { code: "plan_invalid", nextAction: "check_request", parameters: { reason } },
+  };
+}
+export function invalidPlanChange(reason: PlanChangeInvalidReason): Outcome<never> {
+  return {
+    ok: false,
+    error: { code: "plan_change_invalid", nextAction: "check_request", parameters: { reason } },
   };
 }
 export function staleRevision(currentRevision: number): {
@@ -667,10 +678,13 @@ function error(value: Json | undefined): boolean {
       : code === "plan_invalid"
         ? exact(value.parameters, ["reason"]) &&
           planInvalidReasons.includes(value.parameters.reason as PlanInvalidReason)
-        : code === "conversation_busy"
+        : code === "plan_change_invalid"
           ? exact(value.parameters, ["reason"]) &&
-            conversationBusyReasons.includes(value.parameters.reason as ConversationBusyReason)
-          : exact(value.parameters, []))
+            planChangeInvalidReasons.includes(value.parameters.reason as PlanChangeInvalidReason)
+          : code === "conversation_busy"
+            ? exact(value.parameters, ["reason"]) &&
+              conversationBusyReasons.includes(value.parameters.reason as ConversationBusyReason)
+            : exact(value.parameters, []))
   );
 }
 function outcome(value: Json | undefined, valid: (value: Json | undefined) => boolean): boolean {
@@ -781,6 +795,23 @@ export const operationErrorCodes = Object.freeze({
     "pending_limit_reached",
   ],
   "plan.decline": [
+    ...researchMutationErrors,
+    "uncertain",
+    "operation_conflict",
+    "record_not_found",
+    "proposal_not_waiting",
+  ],
+  "planChange.read": [...readErrors, "record_not_found"],
+  "planChange.apply": [
+    ...researchMutationErrors,
+    "uncertain",
+    "operation_conflict",
+    "record_not_found",
+    "proposal_not_waiting",
+    "plan_change_invalid",
+    "event_limit_reached",
+  ],
+  "planChange.decline": [
     ...researchMutationErrors,
     "uncertain",
     "operation_conflict",

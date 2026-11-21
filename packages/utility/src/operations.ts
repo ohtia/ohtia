@@ -3,13 +3,14 @@ import {
   directGuidanceInstructionsV2,
   directGuidanceInstructionsV3,
   directGuidanceInstructionsV4,
+  directGuidanceInstructionsV5,
 } from "./direct-guidance.js";
 import {
   searchStrategyInstructions,
   searchStrategyInstructionsV2,
   searchStrategyInstructionsV3,
 } from "./search-strategy.js";
-import { synthesisInstructions } from "./contribution-synthesis.js";
+import { synthesisInstructions, synthesisInstructionsV2 } from "./contribution-synthesis.js";
 import { setupInstructions, setupInstructionsV2 } from "./project-setup.js";
 import {
   utf8Size,
@@ -124,7 +125,7 @@ export const testSynthesisPolicy = Object.freeze({
   instructions: "Synthesize the supplied test contributions and preserve unresolved questions.",
 });
 
-export const contributionSynthesisPolicy = Object.freeze({
+const contributionSynthesisV1 = Object.freeze({
   ...directGuidanceV1,
   operation: "contribution_synthesis",
   max_pending_tasks: 20,
@@ -132,6 +133,13 @@ export const contributionSynthesisPolicy = Object.freeze({
   max_input_items: 50,
   instructions: synthesisInstructions,
 } satisfies OperationPolicy);
+
+export const contributionSynthesisPolicy = Object.freeze({
+  ...contributionSynthesisV1,
+  version: 2,
+  instruction_version: 2,
+  instructions: synthesisInstructionsV2,
+});
 
 const policies: readonly OperationPolicy[] = Object.freeze([
   directGuidanceV1,
@@ -155,6 +163,13 @@ const policies: readonly OperationPolicy[] = Object.freeze([
     max_output_bytes: 160 * 1024,
     instructions: directGuidanceInstructionsV4,
   }),
+  Object.freeze({
+    ...directGuidanceV1,
+    version: 5,
+    instruction_version: 5,
+    max_output_bytes: 160 * 1024,
+    instructions: directGuidanceInstructionsV5,
+  }),
   searchStrategyV1,
   Object.freeze({
     ...searchStrategyV1,
@@ -177,6 +192,7 @@ const policies: readonly OperationPolicy[] = Object.freeze([
   }),
   developmentTestV1,
   testSynthesisPolicy,
+  contributionSynthesisV1,
   contributionSynthesisPolicy,
   Object.freeze({
     ...developmentTestV1,
@@ -224,6 +240,7 @@ export const omittedMessagesNote = "Earlier messages in this conversation are no
 export interface InputMessage {
   /** An identifier recorded in the transfer list, never the text. */
   readonly reference: string;
+  readonly planContext?: string;
   readonly transferKind?: Exclude<
     Extract<TransferEntry, { readonly reference: string }>["kind"],
     "note" | "message"
@@ -249,7 +266,8 @@ export function buildInput(
   messages: readonly InputMessage[],
   context: { readonly reference: string; readonly revision: number },
   notes: readonly {
-    readonly kind?: "consultation_proposal" | "plan_proposal" | "handoff_proposal";
+    readonly kind?:
+      "consultation_proposal" | "plan_proposal" | "handoff_proposal" | "plan_change_proposal";
     readonly position: number;
     readonly reference: string;
     readonly revision: number;
@@ -328,6 +346,9 @@ export function buildInput(
         message.handoffMarker
           ? contextEntry(message.reference)
           : { kind: message.transferKind ?? "message", reference: message.reference },
+        ...(message.planContext
+          ? [{ kind: "plan_context" as const, reference: message.planContext }]
+          : []),
         ...(message.partial
           ? [
               {

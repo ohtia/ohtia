@@ -212,6 +212,24 @@ describe("sandbox preload composition", () => {
       planId,
       connections: { josefa: "openai", virgilio: "chatgpt" },
     });
+    const planChanges = [
+      h.bridge.foundation.readPlanChange({ conversationId, proposalId }),
+      h.bridge.foundation.applyPlanChange("apply-change", { proposalId }),
+      h.bridge.foundation.declinePlanChange("decline-change", { proposalId }),
+    ];
+    const changeRequests = h.ipcRenderer.send.mock.calls.slice(-3).map(([channel, text]) => {
+      expect(channel).toBe(desktopChannels.port);
+      return JSON.parse(text);
+    });
+    expect(changeRequests).toMatchObject([
+      {
+        operation: "planChange.read",
+        operationId: expect.any(String),
+        payload: { conversationId, proposalId },
+      },
+      { operation: "planChange.apply", operationId: "apply-change", payload: { proposalId } },
+      { operation: "planChange.decline", operationId: "decline-change", payload: { proposalId } },
+    ]);
     const retrySynthesis = h.bridge.foundation.tryAgainSynthesis("try-synthesis", {
       taskId: "019a8000-0000-7000-8000-000000000501",
     });
@@ -225,6 +243,9 @@ describe("sandbox preload composition", () => {
     h.window.dispatchEvent(new Event("unload"));
     expect(await retrySynthesis.result).toMatchObject({ ok: false, error: { code: "uncertain" } });
     for (const call of planCalls) expect(await call.result).toMatchObject({ ok: false });
+    await expect(planChanges[0].result).resolves.toMatchObject({ error: { code: "disposed" } });
+    for (const call of planChanges.slice(1))
+      await expect(call.result).resolves.toMatchObject({ error: { code: "uncertain" } });
     expect(await fresh.result).toMatchObject({ ok: false, error: { code: "disposed" } });
     expect(h.ipcRenderer.listenerCount(desktopChannels.ended)).toBe(0);
     expect(h.ipcRenderer.listenerCount(desktopChannels.reconnect)).toBe(0);

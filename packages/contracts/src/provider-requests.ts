@@ -15,6 +15,7 @@ export const providerDispatchBytes = 5 * 1024 * 1024;
 /** Fits the role and shared thesis route with the rendered context, including an 800-byte title. */
 const providerInstructionBytes = 10 * 1024;
 const planGuidanceInstructionBytes = 12 * 1024;
+const redirectionInstructionBytes = 13 * 1024;
 /** ADR-0028's versioned permit validity: not a response deadline. Real-account checks measure it. */
 export const dispatchPermitPolicy = Object.freeze({ version: 1, validity_ms: 2000 });
 export const providerOperations = [
@@ -113,8 +114,13 @@ export interface ProviderTool {
 export function isHandoffTool(tool: { namespace: unknown; name: unknown }): boolean {
   return tool.namespace === "ohtia" && tool.name === "propose_handoff";
 }
+export function isPlanChangeTool(tool: { namespace: unknown; name: unknown }): boolean {
+  return tool.namespace === "ohtia" && tool.name === "propose_plan_change";
+}
 export function isCollaborationProposal(tool: { namespace: unknown; name: unknown }): boolean {
-  return isConsultationTool(tool) || isPlanTool(tool) || isHandoffTool(tool);
+  return (
+    isConsultationTool(tool) || isPlanTool(tool) || isHandoffTool(tool) || isPlanChangeTool(tool)
+  );
 }
 export function isPlanTool(tool: { namespace: unknown; name: unknown }): boolean {
   return tool.namespace === "ohtia" && tool.name === "propose_plan";
@@ -357,7 +363,8 @@ function isTool(value: unknown): value is ProviderTool {
     return false;
   return isToolObject(
     value.parameters,
-    isPlanTool({ namespace: value.namespace, name: value.name }),
+    isPlanTool(value as unknown as ProviderTool) ||
+      isPlanChangeTool(value as unknown as ProviderTool),
   );
 }
 function isToolObject(p: unknown, arrays: boolean): boolean {
@@ -429,7 +436,9 @@ export function isProviderRequestData(value: unknown): value is ProviderRequestD
     boundedText(
       value.instructions,
       value.operation === "direct_guidance" && value.instruction_version >= 3
-        ? planGuidanceInstructionBytes
+        ? value.instruction_version >= 5
+          ? redirectionInstructionBytes
+          : planGuidanceInstructionBytes
         : providerInstructionBytes,
     ) &&
     Array.isArray(value.input) &&
@@ -456,6 +465,10 @@ export function isProviderRequestData(value: unknown): value is ProviderRequestD
         isTool(tool) &&
         (!isHandoffTool(tool) ||
           (value.operation === "direct_guidance" && Number(value.instruction_version) >= 4)) &&
+        (!isPlanChangeTool(tool) ||
+          (value.operation === "direct_guidance" &&
+            Number(value.instruction_version) >= 5 &&
+            (value.tools as ProviderTool[]).filter(isCollaborationProposal).length === 1)) &&
         (!isPlanTool(tool) ||
           (value.operation === "direct_guidance" && Number(value.instruction_version) >= 3)),
     ) &&
@@ -689,6 +702,7 @@ export type TransferEntry =
         | "setup_proposal"
         | "consultation_proposal"
         | "plan_proposal"
+        | "plan_change_proposal"
         | "handoff_proposal"
         | "handoff_context"
         | "plan_status";
@@ -771,6 +785,7 @@ function isTransferEntry(value: unknown): value is TransferEntry {
       value.note === "setup_proposal" ||
       value.note === "consultation_proposal" ||
       value.note === "plan_proposal" ||
+      value.note === "plan_change_proposal" ||
       value.note === "handoff_proposal" ||
       value.note === "handoff_context" ||
       value.note === "plan_status")

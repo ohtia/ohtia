@@ -15,6 +15,7 @@ import {
   portLimits,
   staleRevision,
   invalidPlan,
+  invalidPlanChange,
   supportedLocales,
   utf8Size,
   validateJsonBounds,
@@ -70,21 +71,23 @@ describe("P3 shared producer/consumer conformance corpus", () => {
             ? staleRevision(42)
             : code === "plan_invalid"
               ? invalidPlan("reason_empty")
-              : code === "conversation_busy"
-                ? {
-                    ok: false,
-                    error: {
-                      code,
-                      nextAction: "retry_later",
-                      parameters: { reason: "reply_active" },
-                    },
-                  }
-                : failure(
-                    code as Exclude<
-                      keyof typeof errorActions,
-                      "stale_revision" | "conversation_busy"
-                    >,
-                  );
+              : code === "plan_change_invalid"
+                ? invalidPlanChange("plan_moved_on")
+                : code === "conversation_busy"
+                  ? {
+                      ok: false,
+                      error: {
+                        code,
+                        nextAction: "retry_later",
+                        parameters: { reason: "reply_active" },
+                      },
+                    }
+                  : failure(
+                      code as Exclude<
+                        keyof typeof errorActions,
+                        "stale_revision" | "conversation_busy"
+                      >,
+                    );
         expect(decodeEnvelope({ ...request(), operation, kind: "result", payload }).ok).toBe(
           allowed.includes(code as never),
         );
@@ -293,6 +296,9 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
         "returnHandoff",
         "listHandoffSelection",
         "acceptPlan",
+        "applyPlanChange",
+        "declinePlanChange",
+        "readPlanChange",
         "finishPlan",
         "cancelPlan",
         "readPlan",

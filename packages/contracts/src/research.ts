@@ -69,6 +69,35 @@ export const planInvalidReasons = [
 ] as const;
 export type PlanInvalidReason = (typeof planInvalidReasons)[number];
 
+export const planChangeInvalidReasons = [
+  "multiple_calls",
+  "too_many_changes",
+  "empty_change",
+  "unknown_contribution",
+  "contribution_completed",
+  "dependency_removed",
+  "agent_not_authorized",
+  "empty_plan",
+  "plan_too_large",
+  "limit_reached",
+  "unknown_prerequisite",
+  "self_dependency",
+  "cycle",
+  "duplicate_contribution",
+  "plan_key_invalid",
+  "plan_key_duplicate",
+  "request_empty",
+  "request_too_large",
+  "purpose_empty",
+  "purpose_too_long",
+  "shared_context_too_large",
+  "reason_empty",
+  "reason_too_long",
+  "plan_moved_on",
+] as const;
+export type PlanChangeInvalidReason = (typeof planChangeInvalidReasons)[number];
+export const planChangeLimit = 8;
+
 export interface PlanContributionRequest {
   readonly planKey: string;
   readonly agent: string;
@@ -126,6 +155,8 @@ export interface ResearchPayloads {
     readonly planId: string;
     readonly connections: Readonly<Partial<Record<ReplyAgent, string>>>;
   };
+  readonly "planChange.apply": { readonly proposalId: string };
+  readonly "planChange.decline": { readonly proposalId: string };
   readonly "plan.decline": { readonly planId: string };
   readonly "consultation.accept": { readonly proposalId: string; readonly connection: string };
   readonly "consultation.decline": { readonly proposalId: string };
@@ -188,6 +219,8 @@ export const researchCommands = [
   "task.tryAgain",
   "plan.accept",
   "plan.decline",
+  "planChange.apply",
+  "planChange.decline",
   "consultation.accept",
   "consultation.decline",
   "contribution.tryAgain",

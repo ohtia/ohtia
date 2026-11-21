@@ -4,6 +4,7 @@ import {
   isProviderToolLabel,
   isCollaborationProposal,
   isHandoffTool,
+  isPlanChangeTool,
   requestsConversationTitle,
   conversationTitlePolicy,
   conversationTitleInstructionSuffix,
@@ -52,6 +53,7 @@ interface Dispatched {
   conversationTitle: boolean;
   proposalToolsEnabled: boolean;
   handoffToolEnabled: boolean;
+  planChangeToolEnabled: boolean;
   readonly calls: Map<string | symbol, BufferedToolCall>;
   sampledWall: number;
   sampledMono: number;
@@ -234,6 +236,7 @@ export class ProviderDispatch {
       conversationTitle: requestsConversationTitle(request),
       proposalToolsEnabled: request.tools.some(isCollaborationProposal),
       handoffToolEnabled: request.tools.some(isHandoffTool),
+      planChangeToolEnabled: request.tools.some(isPlanChangeTool),
       calls: new Map(),
       sampledWall: this.wall(),
       sampledMono: this.monotonic(),
@@ -361,6 +364,7 @@ export class ProviderDispatch {
           record.conversationTitle = false;
           record.proposalToolsEnabled = false;
           record.handoffToolEnabled = false;
+          record.planChangeToolEnabled = false;
         }
         // Count the UTF-8 input items in the same units as the operation policy.
         record.inputBytes = providerRequest.input.reduce(
@@ -436,8 +440,12 @@ export class ProviderDispatch {
     if (record.done || record.closing) return;
     this.flushText(record);
     if (this.records.get(record.attempt) !== record) return;
-    if (!record.handoffToolEnabled)
-      for (const [id, call] of record.calls) if (isHandoffTool(call)) record.calls.delete(id);
+    for (const [id, call] of record.calls)
+      if (
+        (!record.handoffToolEnabled && isHandoffTool(call)) ||
+        (!record.planChangeToolEnabled && isPlanChangeTool(call))
+      )
+        record.calls.delete(id);
     if (result.status === "completed" && record.conversationTitle) {
       const title = titleSuggestion(record.calls.values());
       if (title !== undefined) result = { status: "completed", conversation_title: title };

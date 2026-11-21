@@ -1,3 +1,4 @@
+import { PlanChangeProposal } from "./plan-change-proposal.js";
 import { PlanProposal, type PlanCardController } from "./plan-proposal.js";
 import { HandoffDivider, HandoffProposal } from "./handoff.js";
 import { ConsultationProposal } from "./consultation-proposal.js";
@@ -18,6 +19,7 @@ import {
   type CommandBridge,
   type InterfaceLocale,
   type SynthesisSource,
+  isSynthesisSources,
 } from "@ohtia/contracts";
 import { MessageMarkdown } from "./research-presentation.js";
 import { contributorNames, VoiceLabel } from "./contributor-identity.js";
@@ -44,12 +46,12 @@ function SynthesisReferences({
 }) {
   const list = new Intl.ListFormat(locale, { style: "long", type: "conjunction" });
   const parts = list.formatToParts(sources.map(({ key }) => key));
-  const entries = new Map(sources.map((source) => [source.key, source]));
+  let sourceIndex = 0;
   return (
     <p className="synthesis-references" lang={locale} dir="auto">
       {message(locale, "synthesis.basedOn")}{" "}
       {parts.map((part, index) => {
-        const source = part.type === "element" ? entries.get(part.value) : undefined;
+        const source = part.type === "element" ? sources[sourceIndex++] : undefined;
         if (!source) return <Fragment key={index}>{part.value}</Fragment>;
         const label = `${source.key} · ${contributorNames[source.agentId]}`;
         if (source.state !== "completed")
@@ -94,6 +96,7 @@ export function ConversationView({
         | "hasSharedPlanAttention"
         | "readPlanDestinations"
         | "observePlanDestinations"
+        | "performPlanChange"
         | "performPlanAction"
         | "performPlanProgressAction"
         | "composer"
@@ -393,6 +396,7 @@ export function ConversationView({
                 item.kind === "setupProposal" ||
                 item.kind === "consultation" ||
                 item.kind === "handoffProposal" ||
+                item.kind === "planChangeProposal" ||
                 item.kind === "handoffDivider" ||
                 item.kind === "plan",
             ) &&
@@ -436,6 +440,28 @@ export function ConversationView({
                         )?.displayName
                       }
                       locale={locale}
+                    />
+                  </div>
+                ) : null;
+              if (item.kind === "planChangeProposal")
+                return controller.performPlanChange ? (
+                  <div key={item.id} data-timeline-id={item.id}>
+                    <PlanChangeProposal
+                      proposal={item}
+                      preview={state.planChanges?.get(item.id)}
+                      locale={locale}
+                      texts={state.texts}
+                      language={state.project?.documentLanguage ?? ""}
+                      hasText={state.items.some(
+                        (saved) =>
+                          saved.kind === "message" &&
+                          saved.position === item.position &&
+                          saved.taskId === item.taskId,
+                      )}
+                      connectionName={(id) =>
+                        controller.connections?.find((route) => route.id === id)?.displayName ?? id
+                      }
+                      decide={controller.performPlanChange}
                     />
                   </div>
                 ) : null;
@@ -628,6 +654,9 @@ export function ConversationView({
                   </article>
                 );
               }
+              const sources = isSynthesisSources(item.synthesisSources)
+                ? item.synthesisSources
+                : state.synthesisSources?.get(item.id);
               const researcher = item.authorKind === "researcher";
               const agent = item.agentId;
               return (
@@ -678,12 +707,8 @@ export function ConversationView({
                       openExternalLink={commands.openExternalLink}
                     />
                   </div>
-                  {item.synthesisSources && (
-                    <SynthesisReferences
-                      sources={item.synthesisSources}
-                      locale={locale}
-                      reveal={reveal}
-                    />
+                  {sources && (
+                    <SynthesisReferences sources={sources} locale={locale} reveal={reveal} />
                   )}
                   <SavedMessageActions
                     key={`${id ?? ""}/${item.id}`}

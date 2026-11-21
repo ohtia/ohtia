@@ -5,6 +5,11 @@ import {
   readPlanText,
   synthesisSources,
 } from "./plan-coordination.js";
+import {
+  readPlanChangePart,
+  readPlanChangePreview,
+  readPlanChangeTimelineItem,
+} from "./plan-change-reads.js";
 import { handoffBoundary, returnableMessages, type HandoffRow } from "./handoffs.js";
 import { planInvalidReason } from "./plan-proposals.js";
 import { consultationRetryFits } from "./work-limits.js";
@@ -96,6 +101,11 @@ async function timelineItem(
             .where(visibleIntervention)
             .executeTakeFirst()
         : undefined;
+    const sources =
+      row.task_id && row.operation === "contribution_synthesis"
+        ? await synthesisSources(db, row.task_id)
+        : undefined;
+    const sourceText = sources && storedText(JSON.stringify(sources), `synthesis_sources_${id}`);
     return {
       id,
       kind: "message",
@@ -103,8 +113,8 @@ async function timelineItem(
         ? { planContribution: { planId: identifier(node.intervention_id), key: node.plan_key } }
         : {}),
       ...(row.task_kind === "consultation" ? ({ consultation: true } as const) : {}),
-      ...(row.task_id && row.operation === "contribution_synthesis"
-        ? { synthesisSources: await synthesisSources(db, row.task_id) }
+      ...(sources
+        ? { synthesisSources: typeof sourceText === "object" ? sourceText : sources }
         : {}),
       rank: 1,
       revision: 1,
@@ -220,6 +230,8 @@ async function timelineItem(
     };
   }
   // The originating attempt identifies the divider so the accepted card keeps its own ID.
+  const change = await readPlanChangeTimelineItem(db, conversationId, id);
+  if (change) return change;
   const handoff = await db
     .selectFrom("handoffs as h")
     .leftJoin("attempts as a", "a.id", "h.proposed_by_attempt_id")
@@ -534,6 +546,8 @@ export async function readResearch(
         ? failure("invalid_service_result")
         : { ok: true, value: { priorReply, messages: [], next: null } };
     }
+    case "planChange.read":
+      return readPlanChangePreview(db, request.payload.conversationId, request.payload.proposalId);
     case "plan.read":
       return readPlan(db, request.payload.planId);
     case "planEvent.list":
@@ -716,6 +730,10 @@ export async function readResearch(
           SELECT id, position, 1 AS rank FROM messages WHERE conversation_id = ${bytes(p.conversationId)}
           UNION ALL SELECT coalesce(proposed_by_attempt_id,id), position, 1 AS rank FROM handoffs
             WHERE conversation_id = ${bytes(p.conversationId)} AND state='accepted'
+          UNION ALL SELECT p.id, t.reply_position, 2 AS rank
+            FROM graph_change_proposals p JOIN interventions i ON i.id=p.intervention_id
+            JOIN attempts a ON a.id=p.proposed_by_attempt_id JOIN tasks t ON t.id=a.task_id
+            WHERE i.conversation_id = ${bytes(p.conversationId)}
           UNION ALL SELECT h.id, t.reply_position, 2 AS rank
             FROM handoffs h JOIN attempts a ON a.id=h.proposed_by_attempt_id JOIN tasks t ON t.id=a.task_id
             WHERE h.conversation_id = ${bytes(p.conversationId)}
@@ -767,6 +785,8 @@ export async function readResearch(
       return { ok: true, value: { items, remaining: p.ids.slice(consumed) } };
     }
     case "text.readPart": {
+      if (request.payload.source.startsWith("plan_change_"))
+        return readPlanChangePart(db, request.payload.source, request.payload.index);
       if (request.payload.source.startsWith("plan_"))
         return readPlanText(db, request.payload.source, request.payload.index);
       const handoff = /^handoff_([0-9a-f-]+)$/.exec(request.payload.source);
@@ -810,6 +830,20 @@ export async function readResearch(
         return typeof text === "string"
           ? { ok: true, value: { text } }
           : failure("record_not_found");
+      }
+      const synthesis = /^synthesis_sources_([0-9a-f-]+)$/.exec(request.payload.source);
+      if (synthesis?.[1]) {
+        const row = await db
+          .selectFrom("messages as m")
+          .innerJoin("tasks as t", "t.id", "m.task_id")
+          .select("t.id")
+          .where("m.id", "=", bytes(synthesis[1]))
+          .where("t.operation", "=", "contribution_synthesis")
+          .executeTakeFirst();
+        const text =
+          row &&
+          splitText(JSON.stringify(await synthesisSources(db, row.id)))[request.payload.index - 1];
+        return text === undefined ? failure("record_not_found") : { ok: true, value: { text } };
       }
       const match = /^message_([0-9a-f-]+)$/.exec(request.payload.source);
       if (!match?.[1]) return failure("record_not_found");

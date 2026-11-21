@@ -1,4 +1,5 @@
-import { planLimits } from "./work-limits.js";
+import { effectivePlan, storedPlanChange } from "./plan-change-proposals.js";
+import { authorizedOperation, planLimits, planRequestsUsed } from "./work-limits.js";
 import { createHash } from "node:crypto";
 import { sql, type Generated, type Kysely, type Selectable, type NotNull } from "kysely";
 import {
@@ -48,7 +49,7 @@ export interface ContinuationRow {
   graph_version: number;
   through_sequence: number;
   reason: "required_set_complete" | "finished_partial";
-  policy_version: 1;
+  policy_version: 1 | 2;
   admission: "waiting" | "admitted" | "withdrawn";
   restart_held: number;
   stopped: Generated<number>;
@@ -65,7 +66,8 @@ export const planNeedsAttention = sql<number>`i.kind='plan' AND i.state='accepte
     OR (
       NOT EXISTS (SELECT 1 FROM contributions c WHERE c.intervention_id=i.id AND c.state='waiting')
       AND EXISTS (SELECT 1 FROM contributions c WHERE c.intervention_id=i.id
-        AND c.required=1 AND c.state<>'completed')
+        AND c.required=1 AND c.state<>'completed' AND c.superseded_by_contribution_id IS NULL
+        AND c.cancellation_reason IS NOT 'removed_by_researcher')
     )
   )`;
 
@@ -164,6 +166,7 @@ export async function createContinuation(
       .executeTakeFirst()
   )
     return;
+  const synthesis = await authorizedOperation(db, plan.id, "virgilio", "contribution_synthesis");
   const id = newId();
   const sequence =
     (await planSequence(db, plan.id)) ||
@@ -181,7 +184,7 @@ export async function createContinuation(
       graph_version: plan.graph_version,
       through_sequence: sequence,
       reason,
-      policy_version: 1,
+      policy_version: synthesis ? 2 : 1,
       admission: withdrawn ? "withdrawn" : "waiting",
       task_id: null,
       ready_key: readyKey,
@@ -252,12 +255,26 @@ export async function synthesisInput(
   )
     throw new Error("Synthesis lacks its finalized plan.");
 
+  const effective =
+    policy.version >= 2
+      ? await effectivePlan(db, plan)
+      : {
+          purpose: plan.purpose,
+          context: plan.shared_context,
+          purposeSource: plan.id,
+          contextSource: plan.id,
+        };
+  const contextLabel =
+    effective.contextSource === plan.id
+      ? "Context for every contribution of the plan:"
+      : "Current shared context of the plan:";
   const planText = [
     "The researcher approved this plan, and no contribution of it is still working. Write its synthesis.",
-    `Purpose of the plan:\n${plan.purpose}`,
-    ...(plan.shared_context
-      ? [`Context for every contribution of the plan:\n${plan.shared_context}`]
+    `Purpose of the plan:\n${effective.purpose}`,
+    ...(effective.purpose !== plan.purpose
+      ? [`Original purpose of the plan:\n${plan.purpose}`]
       : []),
+    ...(effective.context ? [`${contextLabel}\n${effective.context}`] : []),
     `Plan outcome: ${outcome}`,
   ].join("\n\n");
   const input: BuiltInput["input"][number][] = [{ role: "user", text: planText }];
@@ -265,13 +282,36 @@ export async function synthesisInput(
     { kind: "instructions", operation: policy.operation, version: policy.instruction_version },
     { kind: "plan_context", reference: identifier(plan.id) },
   ];
-  const nodes = await planContributions(db, plan.id);
+  for (const reference of new Set([effective.purposeSource, effective.contextSource]))
+    if (reference !== plan.id)
+      transfer.push({ kind: "plan_context", reference: identifier(reference) });
+  const nodes = await planContributions(db, plan.id, policy.version >= 2);
   const keys = new Map(nodes.map((node) => [identifier(node.id), node.plan_key]));
+  let retiredLines: string[] = [];
+  const flushRetired = () => {
+    if (retiredLines.length) input.push({ role: "user", text: retiredLines.join("\n") });
+    retiredLines = [];
+  };
   for (const node of nodes) {
     const { name, role } = agentIdentity(node.agent_id);
+    const requirement = node.required ? "required" : "optional";
+    const header = `Contribution ${node.plan_key} by ${name}, ${role} (${requirement}): `;
+    const retirement =
+      node.cancellation_reason === "removed_by_researcher"
+        ? "removed by the researcher in a plan change; it has no result."
+        : node.cancellation_reason === "superseded"
+          ? "replaced in a plan change by the later contribution with the same key; it has no result."
+          : null;
+    if (retirement) {
+      transfer.push({ kind: "contribution_state", reference: identifier(node.id) });
+      retiredLines.push(header + retirement);
+      continue;
+    }
+    flushRetired();
     const request = `Request:\n${node.request}`;
     let stateLine: string;
     let result: string | undefined;
+    let originalPurpose: string | undefined;
     transfer.push({ kind: "contribution_state", reference: identifier(node.id) });
     switch (node.state) {
       case "completed": {
@@ -281,9 +321,28 @@ export async function synthesisInput(
           .select("content")
           .where("id", "=", node.result_message_id)
           .executeTakeFirstOrThrow();
+        transfer.push({ kind: "message", reference: identifier(node.result_message_id) });
+        if (policy.version >= 2) {
+          const source =
+            node.purpose_proposal_id &&
+            (await db
+              .selectFrom("graph_change_proposals")
+              .select("change")
+              .where("id", "=", node.purpose_proposal_id)
+              .executeTakeFirstOrThrow());
+          const purpose = source ? storedPlanChange(source.change).new_purpose : plan.purpose;
+          if (purpose !== effective.purpose) {
+            originalPurpose =
+              "Purpose when contribution " + node.plan_key + " started:\n" + purpose;
+            if (node.purpose_proposal_id)
+              transfer.push({
+                kind: "plan_context",
+                reference: identifier(node.purpose_proposal_id),
+              });
+          }
+        }
         stateLine = "completed.";
         result = `Result:\n${message.content}`;
-        transfer.push({ kind: "message", reference: identifier(node.result_message_id) });
         break;
       }
       case "failed":
@@ -318,16 +377,13 @@ export async function synthesisInput(
       default:
         throw new Error("Synthesis cannot receive work that is still pending.");
     }
-    const requirement = node.required ? "required" : "optional";
     input.push({
       role: "user",
-      text: [
-        `Contribution ${node.plan_key} by ${name}, ${role} (${requirement}): ${stateLine}`,
-        request,
-        ...(result === undefined ? [] : [result]),
-      ].join("\n\n"),
+      text: [header + stateLine, request, ...(result === undefined ? [] : [result])].join("\n\n"),
     });
+    if (originalPurpose) input.push({ role: "user", text: originalPurpose });
   }
+  flushRetired();
   if (
     input.length > policy.max_input_items ||
     input.reduce((total, { text }) => total + utf8Size(text), 0) > policy.max_input_bytes
@@ -353,7 +409,10 @@ export async function synthesisSources(
   const plan = transfer.find((entry) => entry.kind === "plan_context");
   if (plan?.kind !== "plan_context") throw new Error("Synthesis transfer lacks its plan.");
   const nodes = new Map(
-    (await planContributions(db, bytes(plan.reference))).map((node) => [identifier(node.id), node]),
+    (await planContributions(db, bytes(plan.reference), true)).map((node) => [
+      identifier(node.id),
+      node,
+    ]),
   );
   return transfer.flatMap((entry, index): SynthesisSource[] => {
     if (entry.kind !== "contribution_state") return [];
@@ -372,11 +431,17 @@ export async function synthesisSources(
     }
     if (node.state === "active" || node.state === "waiting" || next?.kind === "message")
       throw new Error("Synthesis transfer contains an invalid contribution state.");
-    return [{ ...source, state: node.state, messageId: null }];
+    const state =
+      node.cancellation_reason === "removed_by_researcher"
+        ? "removed"
+        : node.cancellation_reason === "superseded"
+          ? "replaced"
+          : node.state;
+    return [{ ...source, state, messageId: null }];
   });
 }
 
-function planText(text: string, source: string): PlanText {
+export function planText(text: string, source: string): PlanText {
   const bytes = Buffer.byteLength(text);
   return Buffer.byteLength(JSON.stringify(text)) <= 512
     ? text
@@ -473,6 +538,7 @@ export async function readPlan(
     .where("kind", "=", "plan")
     .executeTakeFirst();
   if (!plan || plan.state === "invalid") return failure("record_not_found");
+  const effective = await effectivePlan(db, plan);
   const limits = await db
     .selectFrom("intervention_limits")
     .select("max_requests")
@@ -491,15 +557,7 @@ export async function readPlan(
   const throughSequence = await planSequence(db, plan.id);
   const continuation = await planContinuation(db, plan.id);
   const task = await readPlanTask(db, continuation?.task_id ?? null, "virgilio");
-  const usage = await db
-    .selectFrom("work_allocations as w")
-    .innerJoin("attempts as a", (join) =>
-      join.onRef("a.task_id", "=", "w.task_id").onRef("a.attempt_number", "=", "w.attempt_number"),
-    )
-    .select(({ fn }) => fn.countAll<number>().as("requests"))
-    .where("w.intervention_id", "=", plan.id)
-    .where("a.dispatch_permitted_at", "is not", null)
-    .executeTakeFirstOrThrow();
+  const requestsUsed = await planRequestsUsed(db, plan.id);
   const nodeId = (id: Uint8Array | null) => (id ? identifier(id) : null);
 
   return {
@@ -517,10 +575,20 @@ export async function readPlan(
         destinations.map(({ agent_id, connection }) => [agent_id, connection]),
       ),
       maxRequests: limits?.max_requests ?? planLimits.max_requests,
-      requestsUsed: usage.requests,
+      requestsUsed,
       needsAttention: !!plan.needs_attention,
-      purpose: planText(plan.purpose ?? "", `plan_purpose_${planId}`),
-      sharedContext: planText(plan.shared_context ?? "", `plan_context_${planId}`),
+      purpose: planText(
+        effective.purpose,
+        effective.purposeSource === plan.id
+          ? `plan_purpose_${planId}`
+          : `plan_change_purpose_${identifier(effective.purposeSource)}`,
+      ),
+      sharedContext: planText(
+        effective.context,
+        effective.contextSource === plan.id
+          ? `plan_context_${planId}`
+          : `plan_change_context_${identifier(effective.contextSource)}`,
+      ),
       contributions: await Promise.all(
         nodes.map(async (node) => ({
           request: planText(node.request, `plan_request_${identifier(node.id)}`),

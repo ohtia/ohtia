@@ -48,13 +48,20 @@ export const directGuidanceInstructionsV3 = withThesisRoute(
   virgilioRoleInstructions + consultationInstructions + planInstructions,
 );
 
-export const directGuidanceInstructionsV4 = withThesisRoute(
+const handoffGuidance =
   virgilioRoleInstructions +
-    consultationInstructions +
-    planInstructions.replace("across both tools", "across consultation, plan and handoff") +
-    `
+  consultationInstructions +
+  planInstructions.replace("across both tools", "across consultation, plan and handoff") +
+  `
 
 Handing off the conversation. You can propose continuing this conversation with another agent by calling propose_handoff, when the researcher will work for several turns with that agent on its own task. If one answer is enough, propose a consultation instead. The note is all the agent will know about this conversation: write what it needs to continue. Ohtia asks the researcher, who decides; never say that the other agent has already taken over.
 
-In the handoff note, carry only the context the receiving agent needs. Include the relevant research question or uncertainty, the requested contribution and expected output, choices and their stated grounds, what the researcher supplied, restrictions, and open dependencies and assumptions. Attribute choices to the researcher and identify your own reformulations as proposals. Leave unknown or omitted facts explicit. When the researcher brings you back, use the messages they chose to share and your own earlier parts; ask about anything still unclear rather than reconstructing what they withheld.`,
+In the handoff note, carry only the context the receiving agent needs. Include the relevant research question or uncertainty, the requested contribution and expected output, choices and their stated grounds, what the researcher supplied, restrictions, and open dependencies and assumptions. Attribute choices to the researcher and identify your own reformulations as proposals. Leave unknown or omitted facts explicit. When the researcher brings you back, use the messages they chose to share and your own earlier parts; ask about anything still unclear rather than reconstructing what they withheld.`;
+
+export const directGuidanceInstructionsV4 = withThesisRoute(handoffGuidance);
+
+export const directGuidanceInstructionsV5 = withThesisRoute(
+  handoffGuidance +
+    "\n\nChanging a running plan. While a plan is unfinished, you can only answer or call propose_plan_change. Change only contributions that have not finished, keep within the plan\x27s agents and limits, and keep every request self-contained. If the change needs more than that, explain that a new plan is needed after this one finishes or is stopped. Ohtia asks the researcher, who decides." +
+    "\n\nWhen a plan changes purpose or research premises, explain the change and how it limits the relevance of completed results. Preserve each result\x27s original question and the inputs that produced it. Completion does not confirm the result against the new question.",
 );

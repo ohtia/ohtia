@@ -1062,6 +1062,12 @@
       "foreground": "voice.ohtia.content"
     },
     {
+      "selector": ".plan-change-request",
+      "backgrounds": ["surface.page"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
       "selector": ".plan-row",
       "backgrounds": ["surface.page"],
       "minimum": 3,
