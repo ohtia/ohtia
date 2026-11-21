@@ -1710,7 +1710,7 @@ it("upgrades a schema-15 setup proposal without losing decisions or notice retry
     }),
   );
   const db = f.raw();
-  expect(db.pragma("user_version", { simple: true })).toBe(28);
+  expect(db.pragma("user_version", { simple: true })).toBe(29);
   expect(
     db
       .prepare("SELECT state FROM project_setup_proposals WHERE id=?")
@@ -1932,7 +1932,10 @@ describe("confirmed project direct guidance", () => {
       "Write your ordinary research reply first. If the researcher's messages establish a topic, then call suggest_conversation_title exactly once in the same response.",
     );
     expect(sent.instructions).toContain("If the conversation contains only a greeting");
-    expect(sent.input).toEqual([{ role: "user", text: topic }]);
+    expect(sent.input).toEqual([
+      { role: "user", text: "Project memory: no entries yet." },
+      { role: "user", text: `[M1] ${topic}` },
+    ]);
     const named = await f.read();
     expect(named).toMatchObject({ title, updatedAt: opening.updatedAt });
     expect(named.revision).toBeGreaterThan(opening.revision);
@@ -1976,9 +1979,10 @@ describe("confirmed project direct guidance", () => {
     value(await f.append(content));
     const topic = await f.reply({ status: "completed", conversation_title: "Redes de cuidado" });
     expect(topic.sent.input).toEqual([
-      { role: "user", text: "Hola" },
+      { role: "user", text: "Project memory: no entries yet." },
+      { role: "user", text: "[M1] Hola" },
       { role: "assistant", text: greeting.text },
-      { role: "user", text: content },
+      { role: "user", text: `[M2] ${content}` },
     ]);
     expect((await f.read()).title).toBe("Redes de cuidado");
     value(await f.append("Ahora tengo otra pregunta."));
@@ -2173,21 +2177,23 @@ describe("confirmed project direct guidance", () => {
       .replace("{document_language}", "es-AR");
     expect(decoded?.request).toMatchObject({
       operation: "direct_guidance",
-      instruction_version: 5,
+      instruction_version: 6,
       instructions: expect.stringContaining(thesisRoute),
       tools: [
         { name: "propose_consultation", strict: true },
         { name: "propose_plan", strict: true },
         { name: "propose_handoff", strict: true },
+        { name: "update_memory", strict: true },
       ],
       input: [
-        { role: "user", text: "Synthetic setup request" },
-        { role: "user", text: context },
-        { role: "user", text: question },
+        { role: "user", text: "Project memory: no entries yet." },
+        { role: "user", text: "[M1] Synthetic setup request" },
+        { role: "user", text: `[M2] ${context}` },
+        { role: "user", text: `[M3] ${question}` },
       ],
     });
     expect(decoded?.request.instructions).toContain(expectedRole);
-    expect(task.transfer.slice(-2)).toEqual([
+    expect(task.transfer.filter(({ kind }) => kind === "message").slice(-2)).toEqual([
       { kind: "message", reference: contextId },
       { kind: "message", reference: questionId },
     ]);
@@ -2202,16 +2208,17 @@ describe("confirmed project direct guidance", () => {
     expect(request).toMatchObject({
       operation: "direct_guidance",
       model: "first",
-      policy_version: 5,
-      instruction_version: 5,
+      policy_version: 6,
+      instruction_version: 6,
       document_language: "es-AR",
       tools: [
         { name: "propose_consultation", strict: true },
         { name: "propose_plan", strict: true },
         { name: "propose_handoff", strict: true },
+        { name: "update_memory", strict: true },
       ],
       limits: {
-        max_output_bytes: 163840,
+        max_output_bytes: 196608,
         max_attempt_duration_ms: 600000,
         max_inactivity_ms: 120000,
       },
@@ -2330,8 +2337,12 @@ describe("confirmed project direct guidance", () => {
       task.dispatch,
     );
     expect(task.dispatch.request.input).toEqual([
+      { role: "user", text: "Project memory: no entries yet." },
       { role: "user", text: "Earlier messages in this conversation are not included." },
-      ...Array.from({ length: 3 }, () => ({ role: "user", text: "😀".repeat(20000) })),
+      ...Array.from({ length: 3 }, (_, index) => ({
+        role: "user",
+        text: `[M${index + 1}] ` + "😀".repeat(20000),
+      })),
     ]);
     expect(
       task.transfer.filter((entry) => entry.kind === "message").map((entry) => entry.reference),

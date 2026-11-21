@@ -5,6 +5,7 @@ import {
   isCollaborationProposal,
   isHandoffTool,
   isPlanChangeTool,
+  isMemoryTool,
   requestsConversationTitle,
   conversationTitlePolicy,
   conversationTitleInstructionSuffix,
@@ -54,6 +55,7 @@ interface Dispatched {
   proposalToolsEnabled: boolean;
   handoffToolEnabled: boolean;
   planChangeToolEnabled: boolean;
+  memoryToolEnabled: boolean;
   readonly calls: Map<string | symbol, BufferedToolCall>;
   sampledWall: number;
   sampledMono: number;
@@ -237,6 +239,7 @@ export class ProviderDispatch {
       proposalToolsEnabled: request.tools.some(isCollaborationProposal),
       handoffToolEnabled: request.tools.some(isHandoffTool),
       planChangeToolEnabled: request.tools.some(isPlanChangeTool),
+      memoryToolEnabled: request.tools.some(isMemoryTool),
       calls: new Map(),
       sampledWall: this.wall(),
       sampledMono: this.monotonic(),
@@ -348,12 +351,15 @@ export class ProviderDispatch {
       try {
         const titleInstructions = conversationTitleInstructionSuffix(request.operation);
         const providerRequest =
-          (record.conversationTitle || record.proposalToolsEnabled) &&
+          (record.conversationTitle || record.proposalToolsEnabled || record.memoryToolEnabled) &&
           !adapter.declaration.capabilities.tools
             ? {
                 ...request,
                 tools: request.tools.filter(
-                  (tool) => !isConversationTitleTool(tool) && !isCollaborationProposal(tool),
+                  (tool) =>
+                    !isConversationTitleTool(tool) &&
+                    !isCollaborationProposal(tool) &&
+                    !isMemoryTool(tool),
                 ),
                 instructions: request.instructions.endsWith(titleInstructions)
                   ? request.instructions.slice(0, -titleInstructions.length)
@@ -365,6 +371,7 @@ export class ProviderDispatch {
           record.proposalToolsEnabled = false;
           record.handoffToolEnabled = false;
           record.planChangeToolEnabled = false;
+          record.memoryToolEnabled = false;
         }
         // Count the UTF-8 input items in the same units as the operation policy.
         record.inputBytes = providerRequest.input.reduce(
@@ -443,7 +450,8 @@ export class ProviderDispatch {
     for (const [id, call] of record.calls)
       if (
         (!record.handoffToolEnabled && isHandoffTool(call)) ||
-        (!record.planChangeToolEnabled && isPlanChangeTool(call))
+        (!record.planChangeToolEnabled && isPlanChangeTool(call)) ||
+        (!record.memoryToolEnabled && isMemoryTool(call))
       )
         record.calls.delete(id);
     if (result.status === "completed" && record.conversationTitle) {

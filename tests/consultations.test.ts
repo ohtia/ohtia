@@ -104,11 +104,12 @@ async function fixture(
       decodeProviderDispatch(JSON.stringify(task.dispatch), "setup-tests")?.request,
     ).toMatchObject({
       operation: "direct_guidance",
-      policy_version: 5,
+      policy_version: 6,
       tools: [
         { name: "propose_consultation" },
         { name: "propose_plan" },
         { name: "propose_handoff" },
+        { name: "update_memory" },
       ],
     });
     expect(task.dispatch.request.instructions).toContain("open dependencies");
@@ -175,9 +176,10 @@ describe("consultations", () => {
     expect(josefa.acceptedByOperationId).toBe("ask-josefa");
     expect(josefa.dispatch.request).toMatchObject({
       operation: "search_strategy_planning",
-      policy_version: 2,
+      policy_version: 4,
       tools: [],
       input: [
+        { role: "user", text: "Project memory: no entries yet." },
         {
           role: "user",
           text:
@@ -200,7 +202,9 @@ describe("consultations", () => {
     expect(next.acceptedByOperationId).toBe("followup");
     expect(next.dispatch.request.input.at(-1)).toEqual({
       role: "user",
-      text: "Message from Josefa, the reference librarian:\n\nCatalog access is unknown.",
+      text: expect.stringMatching(
+        /^\[M[1-9][0-9]*\] Message from Josefa, the reference librarian:\n\nCatalog access is unknown\.$/,
+      ),
     });
     expect(next.dispatch.request.input).toContainEqual({
       role: "user",
@@ -482,7 +486,7 @@ describe("consultation recovery and context", () => {
     const followup = await f.prepare();
     expect(followup.acceptedByOperationId).toBe("followup");
     expect(followup.dispatch.request.operation).toBe("direct_guidance");
-    expect(followup.dispatch.request.input.at(-1)?.text).toBe("Please explain the proposal.");
+    expect(followup.dispatch.request.input.at(-1)?.text).toBe("[M3] Please explain the proposal.");
     value(
       await f.run({
         command: "task.stop",
@@ -690,7 +694,7 @@ it("migrates populated revision 20 while preserving task acceptance order, charg
   await f.store.open();
   const migrated = f.raw();
   try {
-    expect(migrated.pragma("user_version", { simple: true })).toBe(28);
+    expect(migrated.pragma("user_version", { simple: true })).toBe(29);
     expect(read(migrated)).toEqual(before);
     expect(
       migrated.prepare("SELECT state,blocking_reason FROM tasks WHERE id=?").get(bytes(resultId)),
@@ -1194,7 +1198,7 @@ describe("Virgilio plan proposals", () => {
     expect(guidance.dispatch.request.operation).toBe("direct_guidance");
     const tools = decodeProviderDispatch(JSON.stringify(guidance.dispatch), "setup-tests")?.request
       .tools;
-    expect(tools).toHaveLength(1);
+    expect(tools?.map(({ name }) => name)).toEqual(["propose_plan_change", "update_memory"]);
     expect(tools?.[0]).toEqual({
       ...Object.fromEntries(Object.entries(changeToolSpec).filter(([key]) => key !== "type")),
       namespace: "ohtia",
@@ -1232,7 +1236,7 @@ describe("Virgilio plan proposals", () => {
       ),
     );
     const priorComparison = await f.prepare();
-    expect(priorComparison.dispatch.request.input[0]?.text).toContain(second.request);
+    expect(priorComparison.dispatch.request.input[1]?.text).toContain(second.request);
     const request = "Prepare a new comparison under the revised question. " + "한".repeat(1500);
     const revisedPurpose = "Compare terms for the revised thesis question.";
     const revisedContext = "The researcher confirmed use of open catalogs only.";
@@ -1339,8 +1343,8 @@ describe("Virgilio plan proposals", () => {
     );
     const replacement = await f.prepare();
     expect(replacement.acceptedByOperationId).toBe("apply-redirection");
-    expect(replacement.dispatch.request.input[0]?.text).toContain(revisedContext);
-    expect(replacement.dispatch.request.input[0]?.text).toContain(request);
+    expect(replacement.dispatch.request.input[1]?.text).toContain(revisedContext);
+    expect(replacement.dispatch.request.input[1]?.text).toContain(request);
     expect(replacement.transfer).toContainEqual({ kind: "plan_context", reference: change.id });
     value(
       await f.store.recordTaskEvent(
@@ -1352,8 +1356,8 @@ describe("Virgilio plan proposals", () => {
     const synthesis = await f.prepare();
     expect(synthesis.dispatch.request).toMatchObject({
       operation: "contribution_synthesis",
-      policy_version: 2,
-      instruction_version: 2,
+      policy_version: 3,
+      instruction_version: 3,
     });
     const input = synthesis.dispatch.request.input.map(({ text }) => text).join("\n");
     expect(input).toContain(revisedPurpose);
@@ -1683,7 +1687,7 @@ describe("Virgilio plan proposals", () => {
       db.close();
     }
     const replacement = await f.prepare();
-    expect(replacement.dispatch.request.input[0]?.text).toContain("Revisit the candidate terms.");
+    expect(replacement.dispatch.request.input[1]?.text).toContain("Revisit the candidate terms.");
   });
 
   it("replaces a previously removed key and keeps a later over-cap decision open", async () => {
@@ -1829,7 +1833,7 @@ describe("Virgilio plan proposals", () => {
     await f.store.open();
     const upgraded = f.raw();
     try {
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(28);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(29);
       expect(upgraded.pragma("foreign_key_check")).toEqual([]);
       expect(
         upgraded.prepare("SELECT cancellation_reason FROM contributions ORDER BY rowid").all(),
@@ -2062,9 +2066,9 @@ describe("Virgilio plan proposals", () => {
     const { task, proposal } = await record(f, [planCall([second, first])]);
     const request = decodeProviderDispatch(JSON.stringify(task.dispatch), "setup-tests")?.request;
     expect(request).toMatchObject({
-      policy_version: 5,
-      instruction_version: 5,
-      limits: { max_output_bytes: 160 * 1024 },
+      policy_version: 6,
+      instruction_version: 6,
+      limits: { max_output_bytes: 192 * 1024 },
       tools: [
         { name: "propose_consultation" },
         {
@@ -2085,6 +2089,7 @@ describe("Virgilio plan proposals", () => {
           },
         },
         { name: "propose_handoff" },
+        { name: "update_memory" },
       ],
     });
     expect((await read(f, proposal.id)).contributions.map(({ key }) => key)).toEqual([
@@ -2149,10 +2154,11 @@ describe("Virgilio plan proposals", () => {
     );
     const vocabulary = specialist ?? (await f.prepare());
     expect(vocabulary.dispatch.request.input).toEqual([
+      { role: "user", text: "Project memory: no entries yet." },
       { role: "user", text: expect.stringContaining(sharedContext) },
     ]);
-    expect(vocabulary.dispatch.request.input[0]?.text).toContain(first.request);
-    expect(vocabulary.dispatch.request.input[0]?.text).not.toContain("PRIVATE");
+    expect(vocabulary.dispatch.request.input[1]?.text).toContain(first.request);
+    expect(vocabulary.dispatch.request.input[1]?.text).not.toContain("PRIVATE");
     value(
       await f.store.recordTaskEvent(
         vocabulary.dispatch.request.attempt,
@@ -2162,6 +2168,7 @@ describe("Virgilio plan proposals", () => {
     );
     const comparison = await f.prepare();
     expect(comparison.dispatch.request.input).toEqual([
+      { role: "user", text: "Project memory: no entries yet." },
       { role: "user", text: expect.stringContaining(second.request) },
       { role: "user", text: expect.stringContaining("Candidate vocabulary.") },
     ]);

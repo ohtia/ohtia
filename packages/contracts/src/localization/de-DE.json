@@ -419,7 +419,7 @@
     "handoff.accepted": "Angenommen. Josefa übernimmt ab hier.",
     "handoff.declined": "Sie haben die Übergabe abgelehnt. Das Gespräch bleibt bei Virgilio.",
     "handoff.note": "Notiz für Josefa",
-    "handoff.scope": "Josefa sieht nur diese Notiz und die Nachrichten, die Sie nach der Übergabe schreiben. Virgilio sieht diese Nachrichten nur, wenn Sie ihn zurückholen.",
+    "handoff.scope": "Josefa sieht nur diese Notiz, den Projektspeicher und die Nachrichten, die nach dem Wechsel zu ihr geschrieben werden. Virgilio sieht sie erst, wenn Sie ihn wieder hinzuholen.",
     "handoff.accept": "Mit Josefa fortfahren",
     "handoff.decline": "Übergabe ablehnen",
     "handoff.divider": "{agent} übernimmt ab hier",
@@ -571,7 +571,7 @@
     "consultation.replaced": "Durch einen neueren Vorschlag ersetzt.",
     "consultation.request": "Anfrage an Josefa",
     "consultation.reason": "Grund",
-    "consultation.scope": "Josefa erhält nur diese Anfrage sowie Titel, Typ und Sprache des Projekts.",
+    "consultation.scope": "Josefa erhält diese Anfrage, Titel, Typ und Sprache des Projekts sowie den Projektspeicher.",
     "consultation.ask": "Josefa fragen",
     "consultation.decline": "Anfrage ablehnen",
     "consultation.destinationUnavailable": "Josefas Dienst konnte nicht ermittelt werden.",
@@ -649,6 +649,19 @@
     "project.settingUp": "Abschlussarbeit · Wird eingerichtet · {created}",
     "project.chooseWelcome": "Wähle ein Projekt in der Projektauswahl oder starte ein neues und richte es mit Virgilio ein. In den Einstellungen kannst du auch Sprache, Erscheinungsbild, Zoom und Layout anpassen.",
     "project.chooseChat": "Wähle ein Projekt in der Projektauswahl, um mit Virgilio zu sprechen.",
-    "project.openExistingFailed": "Ohtia konnte das Projekt nicht öffnen. Es ist weiterhin gespeichert."
+    "project.openExistingFailed": "Ohtia konnte das Projekt nicht öffnen. Es ist weiterhin gespeichert.",
+    "memory.updated": "Projektspeicher aktualisiert: {changes}",
+    "memory.added": "{count, plural, one {# hinzugefügt} other {# hinzugefügt}}",
+    "memory.edited": "{count, plural, one {# bearbeitet} other {# bearbeitet}}",
+    "memory.merged": "{count, plural, one {# zusammengeführt} other {# zusammengeführt}}",
+    "memory.withdrawn": "{count, plural, one {# zurückgezogen} other {# zurückgezogen}}",
+    "memory.rejected": "Projektspeicher nicht aktualisiert: {count, plural, one {# Änderung entsprach nicht den Regeln von Ohtia.} other {# Änderungen entsprachen nicht den Regeln von Ohtia.}}",
+    "memory.undo": "Speicheränderungen rückgängig machen",
+    "memory.undone": "Speicheränderungen rückgängig gemacht.",
+    "memory.undoUnavailable": "Ohtia kann diese Änderungen nicht rückgängig machen, weil seitdem ein Eintrag geändert wurde.",
+    "memory.full": "Der Projektspeicher ist voll. Kürzen Sie Einträge oder ziehen Sie sie zurück und machen Sie diese Änderungen dann rückgängig.",
+    "memory.review": "Diese Antwort beruht auf einem früheren Stand des Projektspeichers.",
+    "memory.undoFailed": "Ohtia konnte die Speicheränderungen nicht rückgängig machen.",
+    "memory.planScope": "Jeder Beitrag erhält auch Titel, Typ und Sprache des Projekts sowie den Projektspeicher."
   }
 }

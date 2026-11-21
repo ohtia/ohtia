@@ -419,7 +419,7 @@
     "handoff.accepted": "수락했습니다. 이제 Josefa가 대화를 이어갑니다.",
     "handoff.declined": "인계를 거절했습니다. Virgilio와 대화를 계속합니다.",
     "handoff.note": "Josefa에게 전달할 메모",
-    "handoff.scope": "Josefa는 이 메모와 대화를 이어가기로 한 뒤 작성한 메시지만 볼 수 있습니다. Virgilio를 다시 불러오기 전에는 Virgilio가 그 메시지를 볼 수 없습니다.",
+    "handoff.scope": "Josefa는 이 메모와 프로젝트 메모리, 그리고 Josefa와 대화를 계속한 뒤에 작성된 메시지만 볼 수 있습니다. Virgilio는 대화에 다시 참여해야 이 메시지를 볼 수 있습니다.",
     "handoff.accept": "Josefa와 대화 이어가기",
     "handoff.decline": "인계 거절",
     "handoff.divider": "이제 {agent}의 차례입니다",
@@ -571,7 +571,7 @@
     "consultation.replaced": "더 최근 제안으로 대체되었습니다.",
     "consultation.request": "Josefa에게 보낼 요청",
     "consultation.reason": "이유",
-    "consultation.scope": "Josefa는 이 요청과 프로젝트의 제목, 유형, 언어만 받습니다.",
+    "consultation.scope": "Josefa에게 이 요청, 프로젝트의 제목, 유형, 언어와 프로젝트 메모리가 전달됩니다.",
     "consultation.ask": "Josefa에게 묻기",
     "consultation.decline": "자문 거절",
     "consultation.destinationUnavailable": "Josefa의 서비스를 확인할 수 없습니다.",
@@ -649,6 +649,19 @@
     "project.settingUp": "학위논문 · 설정 중 · {created}",
     "project.chooseWelcome": "프로젝트 선택기에서 프로젝트를 선택하거나 새 프로젝트를 시작하여 Virgilio와 함께 설정하세요. 설정에서 언어, 모양, 확대/축소 및 레이아웃도 조정할 수 있습니다.",
     "project.chooseChat": "Virgilio와 대화하려면 프로젝트 선택기에서 프로젝트를 선택하세요.",
-    "project.openExistingFailed": "Ohtia가 프로젝트를 열지 못했습니다. 프로젝트는 그대로 저장되어 있습니다."
+    "project.openExistingFailed": "Ohtia가 프로젝트를 열지 못했습니다. 프로젝트는 그대로 저장되어 있습니다.",
+    "memory.updated": "메모리 업데이트: {changes}",
+    "memory.added": "{count, plural, other {#개 추가}}",
+    "memory.edited": "{count, plural, other {#개 수정}}",
+    "memory.merged": "{count, plural, other {#개 병합}}",
+    "memory.withdrawn": "{count, plural, other {#개 철회}}",
+    "memory.rejected": "메모리를 업데이트하지 못했습니다. {count, plural, other {변경 #개가 Ohtia의 규칙에 맞지 않았습니다.}}",
+    "memory.undo": "메모리 변경 실행 취소",
+    "memory.undone": "메모리 변경을 취소했습니다.",
+    "memory.undoUnavailable": "이후에 항목이 변경되어 Ohtia에서 이 변경 사항을 취소할 수 없습니다.",
+    "memory.full": "프로젝트 메모리가 가득 찼습니다. 항목을 줄이거나 철회한 후 변경을 취소하세요.",
+    "memory.review": "이 답변은 이후에 변경된 프로젝트 메모리를 바탕으로 작성되었습니다.",
+    "memory.undoFailed": "Ohtia에서 메모리 변경을 취소하지 못했습니다.",
+    "memory.planScope": "각 기여 작업에는 프로젝트의 제목, 유형, 언어와 프로젝트 메모리도 전달됩니다."
   }
 }

@@ -117,6 +117,9 @@ export function isHandoffTool(tool: { namespace: unknown; name: unknown }): bool
 export function isPlanChangeTool(tool: { namespace: unknown; name: unknown }): boolean {
   return tool.namespace === "ohtia" && tool.name === "propose_plan_change";
 }
+export function isMemoryTool(tool: { namespace: unknown; name: unknown }): boolean {
+  return tool.namespace === "ohtia" && tool.name === "update_memory";
+}
 export function isCollaborationProposal(tool: { namespace: unknown; name: unknown }): boolean {
   return (
     isConsultationTool(tool) || isPlanTool(tool) || isHandoffTool(tool) || isPlanChangeTool(tool)
@@ -341,14 +344,14 @@ export function isProviderEvent(value: unknown): value is ProviderEvent {
       return false;
   }
 }
-function isInput(value: unknown): value is ProviderInputItem {
+function isInput(value: unknown, maxBytes: number): value is ProviderInputItem {
   return (
     record(value) &&
     exact(value, ["role", "text"]) &&
     (value.role === "user" || value.role === "assistant") &&
     typeof value.text === "string" &&
     value.text.length > 0 &&
-    boundedText(value.text, researcherMessageLimit * 4)
+    boundedText(value.text, maxBytes)
   );
 }
 function isTool(value: unknown): value is ProviderTool {
@@ -364,7 +367,8 @@ function isTool(value: unknown): value is ProviderTool {
   return isToolObject(
     value.parameters,
     isPlanTool(value as unknown as ProviderTool) ||
-      isPlanChangeTool(value as unknown as ProviderTool),
+      isPlanChangeTool(value as unknown as ProviderTool) ||
+      isMemoryTool(value as unknown as ProviderTool),
   );
 }
 function isToolObject(p: unknown, arrays: boolean): boolean {
@@ -405,8 +409,15 @@ function isToolField(field: unknown, arrays: boolean): boolean {
   );
 }
 export function isProviderRequestData(value: unknown): value is ProviderRequestData {
+  if (!record(value)) return false;
+  const version = value.instruction_version;
+  const withMemory =
+    typeof version === "number" &&
+    ((value.operation === "direct_guidance" && version >= 6) ||
+      (value.operation === "search_strategy_planning" && version >= 4) ||
+      (value.operation === "contribution_synthesis" && version >= 3));
+  const memoryInstructionAllowance = withMemory ? 2 * 1024 : 0;
   return (
-    record(value) &&
     exact(value, [
       "attempt",
       "operation",
@@ -435,11 +446,11 @@ export function isProviderRequestData(value: unknown): value is ProviderRequestD
     value.instructions.length > 0 &&
     boundedText(
       value.instructions,
-      value.operation === "direct_guidance" && value.instruction_version >= 3
+      (value.operation === "direct_guidance" && value.instruction_version >= 3
         ? value.instruction_version >= 5
           ? redirectionInstructionBytes
           : planGuidanceInstructionBytes
-        : providerInstructionBytes,
+        : providerInstructionBytes) + memoryInstructionAllowance,
     ) &&
     Array.isArray(value.input) &&
     value.input.length > 0 &&
@@ -449,9 +460,13 @@ export function isProviderRequestData(value: unknown): value is ProviderRequestD
           ? 1502
           : 1002
         : 1001) &&
-    value.input.every(isInput) &&
+    value.input.every((item) =>
+      isInput(item, withMemory ? 256 * 1024 : researcherMessageLimit * 4),
+    ) &&
     Array.isArray(value.tools) &&
     value.tools.length <= 32 &&
+    (value.tools as ProviderTool[]).filter((tool) => record(tool) && isMemoryTool(tool)).length ===
+      (value.operation === "direct_guidance" && value.instruction_version >= 6 ? 1 : 0) &&
     (value.operation !== "contribution_synthesis" ||
       (value.input.length <= 50 &&
         value.input.every(({ role }) => role === "user") &&
@@ -685,6 +700,8 @@ export type TransferEntry =
       readonly operation: ProviderOperation;
       readonly version: number;
     }
+  | { readonly kind: "memory_version"; readonly reference: string; readonly label?: string }
+  | { readonly kind: "memory_message"; readonly reference: string; readonly label: string }
   | {
       readonly kind:
         | "message"
@@ -705,7 +722,8 @@ export type TransferEntry =
         | "plan_change_proposal"
         | "handoff_proposal"
         | "handoff_context"
-        | "plan_status";
+        | "plan_status"
+        | "memory_rejections";
       readonly reference: string;
       readonly revision: number;
     };
@@ -759,6 +777,16 @@ export interface DevelopmentReportMessage {
 }
 function isTransferEntry(value: unknown): value is TransferEntry {
   if (!record(value)) return false;
+  if (value.kind === "memory_version" || value.kind === "memory_message")
+    return (
+      isIdentifier(value.reference) &&
+      ((value.kind === "memory_version" && exact(value, ["kind", "reference"])) ||
+        (exact(value, ["kind", "reference", "label"]) &&
+          typeof value.label === "string" &&
+          (value.kind === "memory_version" ? /^E[1-9][0-9]*$/ : /^M[1-9][0-9]*$/).test(
+            value.label,
+          )))
+    );
   if (value.kind === "instructions")
     return (
       exact(value, ["kind", "operation", "version"]) &&
@@ -788,7 +816,8 @@ function isTransferEntry(value: unknown): value is TransferEntry {
       value.note === "plan_change_proposal" ||
       value.note === "handoff_proposal" ||
       value.note === "handoff_context" ||
-      value.note === "plan_status")
+      value.note === "plan_status" ||
+      value.note === "memory_rejections")
   );
 }
 function isDevelopmentReport(value: unknown): value is DevelopmentReport {
@@ -841,7 +870,7 @@ function isDevelopmentReport(value: unknown): value is DevelopmentReport {
         isProviderResult(value.result) &&
         isUsage(value.usage) &&
         Array.isArray(value.transfer) &&
-        value.transfer.length <= 1502 &&
+        value.transfer.length <= 2105 &&
         value.transfer.every(isTransferEntry) &&
         count(value.events) &&
         count(value.duration_ms) &&

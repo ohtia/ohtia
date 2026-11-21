@@ -233,6 +233,12 @@ function taskProgress(
           : {}),
       };
     case "failed":
+      if (!synthesis && task.outcomeReason === "input_too_large")
+        return {
+          label: message(locale, "plan.progress.failed"),
+          icon: "octagon-alert",
+          reason: message(locale, "plan.progress.notSentSize"),
+        };
       return {
         label: message(locale, "plan.progress.failed"),
         icon: "octagon-alert",

@@ -160,6 +160,8 @@ export type WindowBoundsReceipt =
   | { readonly state: "not_found" | "pending" }
   | { readonly state: "recorded"; readonly outcome: RecordedWindowBoundsOutcome };
 export const errorActions = {
+  memory_full: "check_request",
+  undo_unavailable: "refresh_record",
   selection_invalid: "check_request",
   owner_changed: "refresh_record",
   conversation_busy: "retry_later",
@@ -800,6 +802,14 @@ export const operationErrorCodes = Object.freeze({
     "operation_conflict",
     "record_not_found",
     "proposal_not_waiting",
+  ],
+  "memory.undo": [
+    ...researchMutationErrors,
+    "uncertain",
+    "operation_conflict",
+    "record_not_found",
+    "memory_full",
+    "undo_unavailable",
   ],
   "planChange.read": [...readErrors, "record_not_found"],
   "planChange.apply": [

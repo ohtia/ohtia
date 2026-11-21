@@ -49,7 +49,7 @@ export interface ContinuationRow {
   graph_version: number;
   through_sequence: number;
   reason: "required_set_complete" | "finished_partial";
-  policy_version: 1 | 2;
+  policy_version: 1 | 2 | 3;
   admission: "waiting" | "admitted" | "withdrawn";
   restart_held: number;
   stopped: Generated<number>;
@@ -184,7 +184,7 @@ export async function createContinuation(
       graph_version: plan.graph_version,
       through_sequence: sequence,
       reason,
-      policy_version: synthesis ? 2 : 1,
+      policy_version: synthesis ? 3 : 1,
       admission: withdrawn ? "withdrawn" : "waiting",
       task_id: null,
       ready_key: readyKey,
@@ -245,6 +245,7 @@ export async function synthesisInput(
   plan: Selectable<InterventionRow>,
   continuation: Pick<ContinuationRow, "reason" | "graph_version">,
   policy: OperationPolicy,
+  memory?: BuiltInput,
 ): Promise<BuiltInput | undefined> {
   const outcome = continuation.reason === "finished_partial" ? "partial" : "complete";
   if (
@@ -277,9 +278,13 @@ export async function synthesisInput(
     ...(effective.context ? [`${contextLabel}\n${effective.context}`] : []),
     `Plan outcome: ${outcome}`,
   ].join("\n\n");
-  const input: BuiltInput["input"][number][] = [{ role: "user", text: planText }];
+  const input: BuiltInput["input"][number][] = [
+    ...(memory?.input ?? []),
+    { role: "user", text: planText },
+  ];
   const transfer: TransferEntry[] = [
     { kind: "instructions", operation: policy.operation, version: policy.instruction_version },
+    ...(memory?.transfer ?? []),
     { kind: "plan_context", reference: identifier(plan.id) },
   ];
   for (const reference of new Set([effective.purposeSource, effective.contextSource]))

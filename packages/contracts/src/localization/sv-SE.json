@@ -419,7 +419,7 @@
     "handoff.accepted": "Godkänt. Josefa fortsätter härifrån.",
     "handoff.declined": "Du avböjde överlämningen. Samtalet fortsätter med Virgilio.",
     "handoff.note": "Anteckning till Josefa",
-    "handoff.scope": "Josefa ser bara den här anteckningen och de meddelanden som skrivs efter att du fortsätter med henne. Virgilio ser dem bara om du tar tillbaka honom.",
+    "handoff.scope": "Josefa ser bara denna anteckning, projektminnet och meddelandena som skrivs efter att du fortsätter med henne. Virgilio ser dem bara om du tar tillbaka honom.",
     "handoff.accept": "Fortsätt med Josefa",
     "handoff.decline": "Avböj överlämningen",
     "handoff.divider": "{agent} fortsätter härifrån",
@@ -571,7 +571,7 @@
     "consultation.replaced": "Ersatt av ett nyare förslag.",
     "consultation.request": "Förfrågan till Josefa",
     "consultation.reason": "Skäl",
-    "consultation.scope": "Josefa får bara den här förfrågan och projektets titel, typ och språk.",
+    "consultation.scope": "Josefa får denna begäran, projektets titel, typ och språk samt projektminnet.",
     "consultation.ask": "Fråga Josefa",
     "consultation.decline": "Avböj konsultationen",
     "consultation.destinationUnavailable": "Det gick inte att läsa vilken tjänst Josefa använder.",
@@ -649,6 +649,19 @@
     "project.settingUp": "Avhandling · Konfigureras · {created}",
     "project.chooseWelcome": "Välj ett projekt i projektväljaren eller starta ett nytt och konfigurera det med Virgilio. Du kan också justera språk, utseende, zoom och layout i Inställningar.",
     "project.chooseChat": "Välj ett projekt i projektväljaren för att prata med Virgilio.",
-    "project.openExistingFailed": "Ohtia kunde inte öppna projektet. Det finns fortfarande sparat."
+    "project.openExistingFailed": "Ohtia kunde inte öppna projektet. Det finns fortfarande sparat.",
+    "memory.updated": "Minnet uppdaterat: {changes}",
+    "memory.added": "{count, plural, one {# tillagd} other {# tillagda}}",
+    "memory.edited": "{count, plural, one {# redigerad} other {# redigerade}}",
+    "memory.merged": "{count, plural, one {# sammanslagen} other {# sammanslagna}}",
+    "memory.withdrawn": "{count, plural, one {# tillbakadragen} other {# tillbakadragna}}",
+    "memory.rejected": "Minnet uppdaterades inte: {count, plural, one {# ändring följde inte Ohtias regler.} other {# ändringar följde inte Ohtias regler.}}",
+    "memory.undo": "Ångra minnesändringar",
+    "memory.undone": "Minnesändringarna ångrades.",
+    "memory.undoUnavailable": "Ohtia kan inte ångra ändringarna eftersom en post har ändrats sedan dess.",
+    "memory.full": "Projektminnet är fullt. Förkorta eller dra tillbaka poster och ångra sedan ändringarna.",
+    "memory.review": "Svaret bygger på en tidigare version av projektminnet.",
+    "memory.undoFailed": "Ohtia kunde inte ångra minnesändringarna.",
+    "memory.planScope": "Varje bidrag får också projektets titel, typ och språk samt projektminnet."
   }
 }

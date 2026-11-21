@@ -45,7 +45,9 @@ export function responsesBody(
     description:
       name === conversationTitlePolicy.namespace
         ? "Optional metadata for the current reply."
-        : "Actions that Ohtia shows to the researcher for confirmation.",
+        : request.tools.some((tool) => tool.namespace === name && tool.name === "update_memory")
+          ? "Research action proposals and reversible project memory updates."
+          : "Actions that Ohtia shows to the researcher for confirmation.",
     tools: request.tools
       .filter((tool) => tool.namespace === name)
       .map((tool) => ({

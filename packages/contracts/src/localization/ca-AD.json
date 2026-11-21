@@ -419,7 +419,7 @@
     "handoff.accepted": "Acceptat. La Josefa continua a partir d’aquí.",
     "handoff.declined": "Has rebutjat el traspàs. La conversa continua amb en Virgilio.",
     "handoff.note": "Nota per a la Josefa",
-    "handoff.scope": "La Josefa només veurà aquesta nota i els missatges escrits després que continuïs amb ella. En Virgilio no els veurà tret que el tornis a incorporar.",
+    "handoff.scope": "La Josefa només veurà aquesta nota, la memòria del projecte i els missatges escrits després de continuar amb ella. En Virgilio no els veurà si no el tornes a incorporar.",
     "handoff.accept": "Continua amb la Josefa",
     "handoff.decline": "Rebutja el traspàs",
     "handoff.divider": "{agent} continua a partir d’aquí",
@@ -571,7 +571,7 @@
     "consultation.replaced": "Una proposta més recent l’ha substituïda.",
     "consultation.request": "Sol·licitud per a la Josefa",
     "consultation.reason": "Motiu",
-    "consultation.scope": "La Josefa només rebrà aquesta sol·licitud i el títol, el tipus i la llengua del projecte.",
+    "consultation.scope": "La Josefa rebrà aquesta sol·licitud, el títol, el tipus i la llengua del projecte, així com la seva memòria.",
     "consultation.ask": "Consulta la Josefa",
     "consultation.decline": "Rebutja la consulta",
     "consultation.destinationUnavailable": "No s’ha pogut llegir el servei de la Josefa.",
@@ -649,6 +649,19 @@
     "project.settingUp": "Tesi · En configuració · {created}",
     "project.chooseWelcome": "Tria un projecte al selector de projectes o comença’n un de nou i configura’l amb Virgilio. També pots ajustar l’idioma, l’aparença, el zoom i la disposició a Configuració.",
     "project.chooseChat": "Tria un projecte al selector de projectes per parlar amb Virgilio.",
-    "project.openExistingFailed": "Ohtia no ha pogut obrir el projecte. Continua desat."
+    "project.openExistingFailed": "Ohtia no ha pogut obrir el projecte. Continua desat.",
+    "memory.updated": "Memòria actualitzada: {changes}",
+    "memory.added": "{count, plural, one {# entrada afegida} many {# entrades afegides} other {# entrades afegides}}",
+    "memory.edited": "{count, plural, one {# entrada editada} many {# entrades editades} other {# entrades editades}}",
+    "memory.merged": "{count, plural, one {# entrada combinada} many {# entrades combinades} other {# entrades combinades}}",
+    "memory.withdrawn": "{count, plural, one {# entrada retirada} many {# entrades retirades} other {# entrades retirades}}",
+    "memory.rejected": "Memòria sense actualitzar: {count, plural, one {# canvi no complia les regles d’Ohtia.} many {# canvis no complien les regles d’Ohtia.} other {# canvis no complien les regles d’Ohtia.}}",
+    "memory.undo": "Desfés els canvis a la memòria",
+    "memory.undone": "S’han desfet els canvis a la memòria.",
+    "memory.undoUnavailable": "Ohtia no pot desfer aquests canvis perquè una entrada ha canviat després.",
+    "memory.full": "La memòria del projecte és plena. Escurça o retira entrades i després desfés aquests canvis.",
+    "memory.review": "Aquesta resposta es basa en una versió anterior de la memòria del projecte.",
+    "memory.undoFailed": "Ohtia no ha pogut desfer els canvis a la memòria.",
+    "memory.planScope": "Cada contribució també rep el títol, el tipus i la llengua del projecte, així com la seva memòria."
   }
 }

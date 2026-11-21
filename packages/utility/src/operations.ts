@@ -4,13 +4,19 @@ import {
   directGuidanceInstructionsV3,
   directGuidanceInstructionsV4,
   directGuidanceInstructionsV5,
+  directGuidanceInstructionsV6,
 } from "./direct-guidance.js";
 import {
   searchStrategyInstructions,
   searchStrategyInstructionsV2,
   searchStrategyInstructionsV3,
+  searchStrategyInstructionsV4,
 } from "./search-strategy.js";
-import { synthesisInstructions, synthesisInstructionsV2 } from "./contribution-synthesis.js";
+import {
+  synthesisInstructions,
+  synthesisInstructionsV2,
+  synthesisInstructionsV3,
+} from "./contribution-synthesis.js";
 import { setupInstructions, setupInstructionsV2 } from "./project-setup.js";
 import {
   utf8Size,
@@ -134,12 +140,27 @@ const contributionSynthesisV1 = Object.freeze({
   instructions: synthesisInstructions,
 } satisfies OperationPolicy);
 
-export const contributionSynthesisPolicy = Object.freeze({
+const contributionSynthesisV2 = Object.freeze({
   ...contributionSynthesisV1,
   version: 2,
   instruction_version: 2,
   instructions: synthesisInstructionsV2,
 });
+
+export const contributionSynthesisPolicy = Object.freeze({
+  ...contributionSynthesisV2,
+  version: 3,
+  instruction_version: 3,
+  instructions: synthesisInstructionsV3,
+});
+
+export function receivesProjectMemory(policy: OperationPolicy): boolean {
+  return (
+    (policy.operation === "direct_guidance" && policy.instruction_version >= 6) ||
+    (policy.operation === "search_strategy_planning" && policy.instruction_version >= 4) ||
+    (policy.operation === "contribution_synthesis" && policy.instruction_version >= 3)
+  );
+}
 
 const policies: readonly OperationPolicy[] = Object.freeze([
   directGuidanceV1,
@@ -170,7 +191,20 @@ const policies: readonly OperationPolicy[] = Object.freeze([
     max_output_bytes: 160 * 1024,
     instructions: directGuidanceInstructionsV5,
   }),
+  Object.freeze({
+    ...directGuidanceV1,
+    version: 6,
+    instruction_version: 6,
+    max_output_bytes: 192 * 1024,
+    instructions: directGuidanceInstructionsV6,
+  }),
   searchStrategyV1,
+  Object.freeze({
+    ...searchStrategyV1,
+    version: 4,
+    instruction_version: 4,
+    instructions: searchStrategyInstructionsV4,
+  }),
   Object.freeze({
     ...searchStrategyV1,
     version: 3,
@@ -193,6 +227,7 @@ const policies: readonly OperationPolicy[] = Object.freeze([
   developmentTestV1,
   testSynthesisPolicy,
   contributionSynthesisV1,
+  contributionSynthesisV2,
   contributionSynthesisPolicy,
   Object.freeze({
     ...developmentTestV1,
@@ -243,7 +278,7 @@ export interface InputMessage {
   readonly planContext?: string;
   readonly transferKind?: Exclude<
     Extract<TransferEntry, { readonly reference: string }>["kind"],
-    "note" | "message"
+    "note" | "message" | "memory_message" | "memory_version"
   >;
   readonly position?: number;
   readonly handoff?: { readonly reference: string; readonly text: string };
@@ -267,27 +302,38 @@ export function buildInput(
   context: { readonly reference: string; readonly revision: number },
   notes: readonly {
     readonly kind?:
-      "consultation_proposal" | "plan_proposal" | "handoff_proposal" | "plan_change_proposal";
+      | "consultation_proposal"
+      | "plan_proposal"
+      | "handoff_proposal"
+      | "plan_change_proposal"
+      | "memory_rejections";
     readonly position: number;
     readonly reference: string;
     readonly revision: number;
     readonly text: string;
   }[] = [],
+  memory?: BuiltInput,
 ): BuiltInput | undefined {
   const chosen: InputMessage[] = [];
-  let bytes = 0;
-  let items = 0;
+  let bytes = utf8Size(memory?.input[0]?.text ?? "");
+  let items = memory?.input.length ?? 0;
+  let labels = 0;
+  const labelled = policy.operation === "direct_guidance" && policy.instruction_version >= 6;
+  const isSource = (message: InputMessage) =>
+    labelled && message.role === "user" && !message.handoffMarker && !message.transferKind;
   const handoffs = new Set<string>();
   for (const message of [...messages].reverse()) {
     const header =
       message.handoff && !handoffs.has(message.handoff.reference) ? message.handoff : undefined;
-    const size = utf8Size(message.text) + (header ? utf8Size(header.text) : 0);
+    const labelSize = isSource(message) ? `[M${String(labels + 1)}] `.length : 0;
+    const size = utf8Size(message.text) + (header ? utf8Size(header.text) : 0) + labelSize;
     const count = header ? 2 : 1;
     if (items + count > policy.max_input_items || bytes + size > policy.max_input_bytes) break;
     if (header) handoffs.add(header.reference);
     chosen.unshift(message);
     bytes += size;
     items += count;
+    if (labelSize) labels++;
   }
   // An input whose newest message alone exceeds the limits has nothing to answer.
   if (!chosen.length) return;
@@ -305,7 +351,9 @@ export function buildInput(
     message.handoff && message.handoff.reference !== chosen[index - 1]?.handoff?.reference
       ? message.handoff
       : undefined;
+  labels = 0;
   const projected = chosen.map((message, index) => ({
+    label: isSource(message) ? `M${String(++labels)}` : null,
     message,
     header: firstInSelection(message, index),
     notes: after(message, index),
@@ -318,10 +366,11 @@ export function buildInput(
   });
   return {
     input: [
+      ...(memory?.input ?? []),
       ...(omitted ? [{ role: "user" as const, text: omittedMessagesNote }] : []),
-      ...projected.flatMap(({ message, header, notes }) => [
+      ...projected.flatMap(({ message, header, notes, label }) => [
         ...(header ? [{ role: "user" as const, text: header.text }] : []),
-        { role: message.role, text: message.text },
+        { role: message.role, text: label ? `[${label}] ${message.text}` : message.text },
         ...(message.partial
           ? [
               {
@@ -338,14 +387,18 @@ export function buildInput(
     ],
     transfer: [
       { kind: "instructions", operation: policy.operation, version: policy.instruction_version },
+      ...(memory?.transfer ?? []),
       ...(omitted
         ? [{ kind: "note" as const, note: "earlier_messages_omitted" as const, ...context }]
         : []),
-      ...projected.flatMap(({ message, header, notes }): TransferEntry[] => [
+      ...projected.flatMap(({ message, header, notes, label }): TransferEntry[] => [
         ...(header ? [contextEntry(header.reference)] : []),
         message.handoffMarker
           ? contextEntry(message.reference)
           : { kind: message.transferKind ?? "message", reference: message.reference },
+        ...(label
+          ? [{ kind: "memory_message" as const, reference: message.reference, label }]
+          : []),
         ...(message.planContext
           ? [{ kind: "plan_context" as const, reference: message.planContext }]
           : []),

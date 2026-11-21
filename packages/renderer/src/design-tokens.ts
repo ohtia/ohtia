@@ -133,6 +133,7 @@ export const iconMappings = {
   "Proposed or pending": "circle-dashed",
   "Rejected, or a declined or replaced proposal": "circle-x",
   "Requires review": "refresh-cw",
+  "Memory changes": "notebook-pen",
   "Restricted use": "lock",
   "Saved": "check",
   "Send message": "arrow-up",

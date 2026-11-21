@@ -419,7 +419,7 @@
     "handoff.accepted": "Geaccepteerd. Josefa neemt het vanaf hier over.",
     "handoff.declined": "Je hebt de overdracht geweigerd. Het gesprek blijft bij Virgilio.",
     "handoff.note": "Notitie voor Josefa",
-    "handoff.scope": "Josefa ziet alleen deze notitie en de berichten die worden geschreven nadat je met haar verdergaat. Virgilio ziet die berichten alleen als je hem terughaalt.",
+    "handoff.scope": "Josefa ziet alleen deze notitie, het projectgeheugen en de berichten die je schrijft nadat je met haar verdergaat. Virgilio ziet ze pas als je hem weer bij het gesprek betrekt.",
     "handoff.accept": "Verder met Josefa",
     "handoff.decline": "Overdracht weigeren",
     "handoff.divider": "{agent} neemt het vanaf hier over",
@@ -571,7 +571,7 @@
     "consultation.replaced": "Vervangen door een nieuwer voorstel.",
     "consultation.request": "Verzoek aan Josefa",
     "consultation.reason": "Reden",
-    "consultation.scope": "Josefa ontvangt alleen dit verzoek en de titel, het type en de taal van het project.",
+    "consultation.scope": "Josefa ontvangt dit verzoek, de titel, het type en de taal van het project, en het projectgeheugen.",
     "consultation.ask": "Vraag Josefa",
     "consultation.decline": "Weiger de raadpleging",
     "consultation.destinationUnavailable": "De dienst van Josefa kon niet worden vastgesteld.",
@@ -649,6 +649,19 @@
     "project.settingUp": "Scriptie · Wordt ingesteld · {created}",
     "project.chooseWelcome": "Kies een project in de projectkiezer of start een nieuw project en stel het in met Virgilio. In Instellingen kun je ook taal, uiterlijk, zoom en indeling aanpassen.",
     "project.chooseChat": "Kies een project in de projectkiezer om met Virgilio te praten.",
-    "project.openExistingFailed": "Ohtia kon het project niet openen. Het is nog steeds opgeslagen."
+    "project.openExistingFailed": "Ohtia kon het project niet openen. Het is nog steeds opgeslagen.",
+    "memory.updated": "Geheugen bijgewerkt: {changes}",
+    "memory.added": "{count, plural, one {# toegevoegd} other {# toegevoegd}}",
+    "memory.edited": "{count, plural, one {# bewerkt} other {# bewerkt}}",
+    "memory.merged": "{count, plural, one {# samengevoegd} other {# samengevoegd}}",
+    "memory.withdrawn": "{count, plural, one {# ingetrokken} other {# ingetrokken}}",
+    "memory.rejected": "Geheugen niet bijgewerkt: {count, plural, one {# wijziging voldeed niet aan de regels van Ohtia.} other {# wijzigingen voldeden niet aan de regels van Ohtia.}}",
+    "memory.undo": "Geheugenwijzigingen ongedaan maken",
+    "memory.undone": "Geheugenwijzigingen ongedaan gemaakt.",
+    "memory.undoUnavailable": "Ohtia kan deze wijzigingen niet ongedaan maken omdat er sindsdien een item is gewijzigd.",
+    "memory.full": "Het projectgeheugen is vol. Verkort of verwijder items en maak daarna deze wijzigingen ongedaan.",
+    "memory.review": "Dit antwoord is gebaseerd op een eerdere versie van het projectgeheugen.",
+    "memory.undoFailed": "Ohtia kon de geheugenwijzigingen niet ongedaan maken.",
+    "memory.planScope": "Elke bijdrage ontvangt ook de titel, het type en de taal van het project, en het projectgeheugen."
   }
 }

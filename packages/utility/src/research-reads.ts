@@ -75,6 +75,56 @@ async function timelineItem(
   id: string,
   context: TaskContext,
 ): Promise<TimelineItem | undefined> {
+  const memoryChange = await db
+    .selectFrom("memory_reply_changes as c")
+    .innerJoin("tasks as t", "t.id", "c.task_id")
+    .select([
+      "c.task_id",
+      "t.reply_position",
+      "c.added",
+      "c.edited",
+      "c.merged",
+      "c.withdrawn",
+      "c.rejected",
+      "c.undo_operation_id",
+    ])
+    .where("c.id", "=", bytes(id))
+    .where("t.conversation_id", "=", bytes(conversationId))
+    .executeTakeFirst();
+  if (memoryChange) {
+    const { task_id, reply_position, undo_operation_id, ...counts } = memoryChange;
+    if (reply_position === null) throw new Error("Memory change lacks its reply position.");
+    return {
+      id,
+      kind: "memoryChange",
+      rank: 3,
+      revision: undo_operation_id ? 2 : 1,
+      taskId: identifier(task_id),
+      position: reply_position,
+      canUndo:
+        !undo_operation_id && counts.added + counts.edited + counts.merged + counts.withdrawn > 0,
+      ...counts,
+    };
+  }
+  const memoryReview = await db
+    .selectFrom("memory_reply_reviews as r")
+    .innerJoin("tasks as t", "t.id", "r.task_id")
+    .select(["t.id", "t.reply_position"])
+    .where("r.id", "=", bytes(id))
+    .where("t.conversation_id", "=", bytes(conversationId))
+    .executeTakeFirst();
+  if (memoryReview) {
+    if (memoryReview.reply_position === null)
+      throw new Error("Memory review lacks its reply position.");
+    return {
+      id,
+      kind: "memoryReview",
+      rank: 4,
+      revision: 1,
+      taskId: identifier(memoryReview.id),
+      position: memoryReview.reply_position,
+    };
+  }
   const row = await db
     .selectFrom("messages")
     .leftJoin("tasks", "tasks.id", "messages.task_id")
@@ -738,6 +788,10 @@ export async function readResearch(
             FROM handoffs h JOIN attempts a ON a.id=h.proposed_by_attempt_id JOIN tasks t ON t.id=a.task_id
             WHERE h.conversation_id = ${bytes(p.conversationId)}
           UNION ALL SELECT t.id, ${taskPosition} AS position, 3 AS rank FROM tasks t WHERE t.conversation_id = ${bytes(p.conversationId)} AND (t.kind IN ('reply','consultation') OR (t.operation='contribution_synthesis' AND t.reply_position IS NOT NULL))
+          UNION ALL SELECT c.id, t.reply_position, 3
+            FROM memory_reply_changes c JOIN tasks t ON t.id=c.task_id WHERE t.conversation_id=${bytes(p.conversationId)}
+          UNION ALL SELECT r.id, t.reply_position, 4
+            FROM memory_reply_reviews r JOIN tasks t ON t.id=r.task_id WHERE t.conversation_id=${bytes(p.conversationId)}
           UNION ALL SELECT p.id, t.reply_position AS position, 2 AS rank FROM project_setup_proposals p JOIN tasks t ON t.id=p.task_id WHERE t.conversation_id = ${bytes(p.conversationId)}
           UNION ALL SELECT i.id, ${interventionPosition} AS position, 2 AS rank
             FROM interventions i LEFT JOIN attempts a ON a.id=i.proposed_by_attempt_id LEFT JOIN tasks t ON t.id=a.task_id
@@ -982,6 +1036,21 @@ export async function researchRevisions(
         record: "timeline",
         id: identifier(row.id),
         revision: row.state_revision,
+      });
+  }
+  if (scope.conversationId) {
+    const memory = await sql<{ id: Uint8Array; revision: number }>`
+      SELECT c.id, CASE WHEN c.undo_operation_id IS NULL THEN 1 ELSE 2 END AS revision
+      FROM memory_reply_changes c JOIN tasks t ON t.id=c.task_id WHERE t.conversation_id=${bytes(scope.conversationId)}
+      UNION ALL
+      SELECT r.id, 1 FROM memory_reply_reviews r JOIN tasks t ON t.id=r.task_id
+      WHERE t.conversation_id=${bytes(scope.conversationId)}`.execute(db);
+    for (const row of memory.rows)
+      result.push({
+        kind: "changed",
+        record: "timeline",
+        id: identifier(row.id),
+        revision: row.revision,
       });
   }
   return [...result, ...(await planRevisions(db, scope))];

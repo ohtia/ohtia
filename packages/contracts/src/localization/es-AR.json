@@ -419,7 +419,7 @@
     "handoff.accepted": "Aceptado. Josefa continúa desde aquí.",
     "handoff.declined": "Rechazaste el traspaso. La conversación sigue con Virgilio.",
     "handoff.note": "Nota para Josefa",
-    "handoff.scope": "Josefa solo verá esta nota y los mensajes escritos después de que continúes con ella. Virgilio no los verá a menos que vuelvas a incorporarlo.",
+    "handoff.scope": "Josefa solo verá esta nota, la memoria del proyecto y los mensajes escritos después de continuar con ella. Virgilio no los verá a menos que vuelvas a incorporarlo.",
     "handoff.accept": "Continuar con Josefa",
     "handoff.decline": "Rechazar el traspaso",
     "handoff.divider": "{agent} continúa desde aquí",
@@ -571,7 +571,7 @@
     "consultation.replaced": "Una propuesta posterior la reemplazó.",
     "consultation.request": "Solicitud para Josefa",
     "consultation.reason": "Motivo",
-    "consultation.scope": "Josefa solo recibirá esta solicitud y el título, el tipo y el idioma del proyecto.",
+    "consultation.scope": "Josefa recibirá esta solicitud, el título, el tipo y el idioma del proyecto, así como su memoria.",
     "consultation.ask": "Consultar a Josefa",
     "consultation.decline": "Rechazar la consulta",
     "consultation.destinationUnavailable": "No se pudo consultar el servicio de Josefa.",
@@ -649,6 +649,19 @@
     "project.settingUp": "Tesis · En configuración · {created}",
     "project.chooseWelcome": "Elige un proyecto en el selector de proyectos o inicia uno nuevo y configúralo con Virgilio. También puedes ajustar el idioma, la apariencia, el zoom y la distribución en Configuración.",
     "project.chooseChat": "Elige un proyecto en el selector de proyectos para hablar con Virgilio.",
-    "project.openExistingFailed": "Ohtia no pudo abrir el proyecto. Sigue guardado."
+    "project.openExistingFailed": "Ohtia no pudo abrir el proyecto. Sigue guardado.",
+    "memory.updated": "Memoria actualizada: {changes}",
+    "memory.added": "{count, plural, one {# entrada añadida} many {# entradas añadidas} other {# entradas añadidas}}",
+    "memory.edited": "{count, plural, one {# entrada editada} many {# entradas editadas} other {# entradas editadas}}",
+    "memory.merged": "{count, plural, one {# entrada combinada} many {# entradas combinadas} other {# entradas combinadas}}",
+    "memory.withdrawn": "{count, plural, one {# entrada retirada} many {# entradas retiradas} other {# entradas retiradas}}",
+    "memory.rejected": "Memoria sin actualizar: {count, plural, one {# cambio incumplió las reglas de Ohtia.} many {# cambios incumplieron las reglas de Ohtia.} other {# cambios incumplieron las reglas de Ohtia.}}",
+    "memory.undo": "Deshacer cambios en la memoria",
+    "memory.undone": "Se deshicieron los cambios en la memoria.",
+    "memory.undoUnavailable": "Ohtia no puede deshacer estos cambios porque una entrada cambió después.",
+    "memory.full": "La memoria del proyecto está llena. Acorta o retira entradas y luego deshaz estos cambios.",
+    "memory.review": "Esta respuesta se basó en una versión anterior de la memoria del proyecto.",
+    "memory.undoFailed": "Ohtia no pudo deshacer los cambios en la memoria.",
+    "memory.planScope": "Cada contribución también recibe el título, el tipo y el idioma del proyecto, así como su memoria."
   }
 }

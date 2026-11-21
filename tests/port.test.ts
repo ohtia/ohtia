@@ -297,6 +297,7 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
         "listHandoffSelection",
         "acceptPlan",
         "applyPlanChange",
+        "undoMemory",
         "declinePlanChange",
         "readPlanChange",
         "finishPlan",

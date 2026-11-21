@@ -89,6 +89,13 @@ import {
   setupTool,
   setupTextProjection,
 } from "./project-setup.js";
+import { memoryCalls, memoryTool } from "./memory-tool.js";
+import {
+  applyMemoryCalls,
+  markMemoryReviews,
+  memoryRejectionNotes,
+  projectMemoryInput,
+} from "./project-memory.js";
 import type { ProviderToolCall } from "@ohtia/contracts";
 import type { LanguageRegistry } from "./research.js";
 import { randomUUID } from "node:crypto";
@@ -121,6 +128,7 @@ import { bytes, identifier, newId, type ResearchSchema } from "./research.js";
 import {
   buildInput,
   operationPolicy,
+  receivesProjectMemory,
   recordedOperationPolicy,
   replyAgent,
   testSynthesisPolicy,
@@ -461,7 +469,7 @@ export class TaskTransaction {
       .executeTakeFirstOrThrow();
     if (recipient === "josefa") {
       if (project.is_development || project.setup_confirmed_at === null) return null;
-      const policy = operationPolicy("search_strategy_planning", 3, this.context.mode);
+      const policy = operationPolicy("search_strategy_planning", 4, this.context.mode);
       return policy ? { policy, connection: this.agentConnection(recipient) } : null;
     }
     if (recipient !== "virgilio") return null;
@@ -471,7 +479,7 @@ export class TaskTransaction {
         : project.setup_confirmed_at === null
           ? "project_setup"
           : "direct_guidance",
-      project.is_development ? 1 : project.setup_confirmed_at === null ? 2 : 5,
+      project.is_development ? 1 : project.setup_confirmed_at === null ? 2 : 6,
       this.context.mode,
     );
     return policy ? { policy, connection: this.agentConnection(recipient) } : null;
@@ -1005,7 +1013,10 @@ export class TaskTransaction {
           admission: "admitted",
           task_id: taskId,
           restart_held: 0,
-          policy_version: policy.operation === "contribution_synthesis" ? 2 : row.policy_version,
+          policy_version:
+            policy.operation === "contribution_synthesis"
+              ? contributionSynthesisPolicy.version
+              : row.policy_version,
         })
         .where("id", "=", row.id)
         .execute();
@@ -1748,7 +1759,7 @@ export class TaskTransaction {
     await this.change(task, {});
     await this.db
       .updateTable("continuations")
-      .set({ task_id: replacement, policy_version: 2 })
+      .set({ task_id: replacement, policy_version: policy.version })
       .where("id", "=", continuation.id)
       .execute();
     await bindSynthesisWork(this.db, continuation.intervention_id, replacement);
@@ -1881,7 +1892,8 @@ export class TaskTransaction {
       .executeTakeFirst();
     if (
       retry
-        ? task.state !== "failed" || lastAttempt?.outcome_reason === "not_eligible"
+        ? task.state !== "failed" ||
+          ["not_eligible", "input_too_large"].includes(lastAttempt?.outcome_reason ?? "")
         : task.state !== "uncertain"
     )
       return failure("task_not_retryable");
@@ -2511,6 +2523,8 @@ export class TaskTransaction {
           ? await unfinishedPlan(this.db, task.conversation_id)
           : undefined;
       const changeCapable = planCapable && task.instruction_version >= 5;
+      const memoryCapable = planCapable && task.instruction_version >= 6;
+      if (memoryCapable) notes.push(...(await memoryRejectionNotes(this.db, task.conversation_id)));
       if (changeCapable) {
         const changes = await this.db
           .selectFrom("graph_change_proposals as p")
@@ -2631,12 +2645,14 @@ export class TaskTransaction {
               },
             )
           : policy.instructions;
+      const memory = receivesProjectMemory(policy)
+        ? await projectMemoryInput(this.db, task.project_id, memoryCapable)
+        : undefined;
       const contributionInput =
         task.kind === "contribution" && contribution
-          ? await planInput(this.db, contribution, policy)
+          ? await planInput(this.db, contribution, policy, memory)
           : undefined;
-      if (task.kind === "contribution" && !contributionInput)
-        throw new Error("Activated contribution lacks its validated input.");
+      const contributionOverflow = task.kind === "contribution" && !contributionInput;
       const owner =
         task.kind === "synthesis"
           ? await this.db
@@ -2648,27 +2664,30 @@ export class TaskTransaction {
       const plan = owner ? await acceptedPlan(this.db, owner.intervention_id) : undefined;
       if (owner && !plan) throw new Error("Synthesis lacks its accepted plan.");
       const synthesis = plan && owner && task.operation === "contribution_synthesis";
-      const baseInput = synthesis
-        ? await synthesisInput(this.db, plan, owner, policy)
-        : buildInput(
-            policy,
-            (plan ? await legacySynthesisInput(this.db, plan) : contributionInput) ??
-              (contribution
-                ? [
-                    {
-                      role: "user",
-                      reference: identifier(contribution.id),
-                      text: consultationInput(contribution.request),
-                      transferKind: "consultation_request",
-                    },
-                  ]
-                : inputMessages),
-            {
-              reference: identifier(conversation.id),
-              revision: conversation.revision,
-            },
-            notes,
-          );
+      const baseInput = contributionOverflow
+        ? undefined
+        : synthesis
+          ? await synthesisInput(this.db, plan, owner, policy, memory)
+          : buildInput(
+              policy,
+              (plan ? await legacySynthesisInput(this.db, plan) : contributionInput) ??
+                (contribution
+                  ? [
+                      {
+                        role: "user",
+                        reference: identifier(contribution.id),
+                        text: consultationInput(contribution.request),
+                        transferKind: "consultation_request",
+                      },
+                    ]
+                  : inputMessages),
+              {
+                reference: identifier(conversation.id),
+                revision: conversation.revision,
+              },
+              notes,
+              memory,
+            );
       const built =
         baseInput && activePlan
           ? {
@@ -2721,7 +2740,7 @@ export class TaskTransaction {
         .execute();
       if (!model || !built || exhausted) {
         const reason =
-          synthesis && !built
+          (synthesis || contributionOverflow) && !built
             ? "input_too_large"
             : !model
               ? "provider_unavailable"
@@ -2738,6 +2757,11 @@ export class TaskTransaction {
             { id: attemptId, task_id: task.id, attempt_number: previous.length + 1 },
             false,
           );
+        if (contributionOverflow)
+          this.diagnostics.push({
+            event_name: "ohtia.contribution.input_too_large",
+            error_code: "input_too_large",
+          });
         this.diagnostics.push({ event_name: "ohtia.task.failed" });
         if (synthesis && task.reply_position === null)
           await this.change(task, { state: "failed", reply_position: position });
@@ -2791,6 +2815,7 @@ export class TaskTransaction {
                 ? [planChangeTool(enabledConsultations)]
                 : []),
               ...(canHandoff ? [handoffTool] : []),
+              ...(memoryCapable ? [memoryTool] : []),
               ...(suggestTitle ? [conversationTitleTool] : []),
             ],
             project: identifier(task.project_id),
@@ -2860,6 +2885,12 @@ export class TaskTransaction {
     // Stop won the committed revision: even an already queued successful result can only
     // acknowledge cessation. Keep received partial text, never publish it as a complete reply.
     const accepted = task.operation === "project_setup" ? acceptedSetupCalls(calls) : [];
+    const manifest = JSON.parse(attempt.transfer_manifest ?? "[]") as TransferEntry[];
+    const updates =
+      task.operation === "direct_guidance" && task.instruction_version >= 6
+        ? memoryCalls(calls)
+        : [];
+    const hasMemoryChanges = updates.some((changes) => changes.length > 0);
     const policy = operationPolicy(task.operation, task.policy_version, this.context.mode);
     const planBinding =
       task.operation === "direct_guidance" &&
@@ -2872,7 +2903,9 @@ export class TaskTransaction {
     const changePlan =
       planBinding?.kind === "note" && (await acceptedPlan(this.db, bytes(planBinding.reference)));
     const redirection =
-      changePlan && policy ? readPlanChange(calls, policy.max_output_bytes) : undefined;
+      changePlan && policy
+        ? readPlanChange(calls, Math.min(policy.max_output_bytes, 160 * 1024))
+        : undefined;
     let handoff =
       !planBinding &&
       task.kind === "reply" &&
@@ -2910,6 +2943,7 @@ export class TaskTransaction {
         : event.result.status === "completed" &&
             !text &&
             !accepted.length &&
+            !hasMemoryChanges &&
             !consultation &&
             !proposedPlan &&
             !redirection &&
@@ -3006,6 +3040,17 @@ export class TaskTransaction {
         this.diagnostics.push({ event_name: "ohtia.usage_pause.opened" });
       }
     }
+    const savedMemory = state === "completed" && !notDispatched && hasMemoryChanges;
+    if (savedMemory) {
+      await applyMemoryCalls(
+        this.db,
+        { id: task.id, attempt: attempt.id, project: task.project_id },
+        manifest,
+        updates,
+      );
+      this.diagnostics.push({ event_name: "ohtia.memory.recorded" });
+      if (!text) await this.replaceWaiting(task.conversation_id);
+    }
     let savedReplyAgent: ReplyAgent | undefined;
     if (text && !notDispatched) {
       if (task.reply_position === null) throw new Error("Running task lacks a reply reservation.");
@@ -3039,6 +3084,9 @@ export class TaskTransaction {
           task.kind !== "reply" ? task.reply_position : undefined,
         );
     }
+    if (savedMemory) await markMemoryReviews(this.db, task.project_id);
+    else if (savedReplyAgent && manifest.some((entry) => entry.kind === "memory_version"))
+      await markMemoryReviews(this.db, task.project_id, task.id);
     if (
       result.status === "completed" &&
       (task.operation === "direct_guidance" || task.operation === "project_setup") &&
@@ -3159,12 +3207,13 @@ export class TaskTransaction {
             dedupe_key: contributionKey(
               consultation.values.agent_id,
               consultation.values.operation,
-              2,
+              task.instruction_version >= 6 ? 4 : 2,
               consultation.values.request,
               [],
             ),
             id: newId(),
             intervention_id: id,
+            policy_version: task.instruction_version >= 6 ? 4 : 2,
             task_id: null,
             created_at: this.now,
           })
@@ -3227,7 +3276,7 @@ export class TaskTransaction {
     }
     // A proposal or its validation notice can be the whole reply.
     // Save one event when the turn includes both text and a proposal.
-    if (savedReplyAgent || (savedProposal && !notDispatched))
+    if (savedReplyAgent || ((savedProposal || savedMemory) && !notDispatched))
       this.finishedReplies.push({
         kind: "replyFinished",
         projectId: identifier(task.project_id),

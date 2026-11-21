@@ -187,21 +187,29 @@ describe("Josefa search strategy", () => {
         .map((line) => line.slice(2))
         .join("\n");
       const route = specifiedInstructions("SPEC-003-044", 0);
+      const memory =
+        epic
+          .split("**Josefa's instructions, version 4,**")[1]!
+          .split("```text\n")[1]!
+          .split("\n  ```")[0]!
+          .trim() +
+        "\n\nAttributed memory cannot update canonical workflow state or carry milestone review to revised work.";
       expect(dispatch.request).toMatchObject({
         operation: "search_strategy_planning",
         document_language: "es-AR",
-        policy_version: 3,
-        instruction_version: 3,
+        policy_version: 4,
+        instruction_version: 4,
         tools: [],
         model: "first",
         instructions:
           role.replace(
             "When the purpose and inputs justify a plan",
-            handoff + "\n\nWhen the purpose and inputs justify a plan",
+            handoff + "\n\n" + memory + "\n\nWhen the purpose and inputs justify a plan",
           ) +
           "\n\n" +
           route,
         input: [
+          { role: "user", text: "Project memory: no entries yet." },
           { role: "user", text: "Synthetic setup request" },
           { role: "user", text: content },
         ],
@@ -281,7 +289,7 @@ describe("Josefa search strategy", () => {
       ).toMatchObject({
         result: { status: "completed" },
         transfer: [
-          { kind: "instructions", operation: "search_strategy_planning", version: 3 },
+          { kind: "instructions", operation: "search_strategy_planning", version: 4 },
           { kind: "message", reference: messages[0]!.id },
           { kind: "message", reference: messages[1]!.id },
         ],
@@ -391,6 +399,7 @@ describe("Josefa search strategy", () => {
       );
     const first = value(await f.store.prepareTask())!;
     expect(first.dispatch.request.input).toEqual([
+      { role: "user", text: "Project memory: no entries yet." },
       { role: "user", text: omittedMessagesNote },
       ...old.slice(1).map((text) => ({ role: "user", text })),
     ]);
@@ -413,6 +422,7 @@ describe("Josefa search strategy", () => {
     );
     const second = value(await f.store.prepareTask())!;
     expect(second.dispatch.request.input).toEqual([
+      { role: "user", text: "Project memory: no entries yet." },
       { role: "user", text: omittedMessagesNote },
       ...old.slice(1).map((text) => ({ role: "user", text })),
       { role: "assistant", text: partial },
@@ -653,9 +663,12 @@ it("backfills a revision 19 conversation and keeps the selected Josefa's direct 
     const dispatch = dispatches[0]!;
     expect(dispatch.request).toMatchObject({
       operation: "search_strategy_planning",
-      policy_version: 3,
-      instruction_version: 3,
-      input: [{ role: "user", text: "Plan a search for peer tutoring" }],
+      policy_version: 4,
+      instruction_version: 4,
+      input: [
+        { role: "user", text: "Project memory: no entries yet." },
+        { role: "user", text: "Plan a search for peer tutoring" },
+      ],
       tools: [],
     });
     const fake = createFakeProvider();
@@ -690,13 +703,13 @@ it("backfills a revision 19 conversation and keeps the selected Josefa's direct 
     ]);
     const migrated = f.raw();
     try {
-      expect(migrated.pragma("user_version", { simple: true })).toBe(28);
+      expect(migrated.pragma("user_version", { simple: true })).toBe(29);
       const transfer = migrated
         .prepare("SELECT transfer_manifest FROM attempts WHERE id=?")
         .pluck()
         .get(bytes(dispatch.request.attempt)) as string;
       expect(JSON.parse(transfer)).toEqual([
-        { kind: "instructions", operation: "search_strategy_planning", version: 3 },
+        { kind: "instructions", operation: "search_strategy_planning", version: 4 },
         { kind: "message", reference: messages[0]!.id },
       ]);
       expect(() =>

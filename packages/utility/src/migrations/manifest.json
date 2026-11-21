@@ -110,5 +110,9 @@
   {
     "name": "0028_plan_redirection",
     "sha256": "eddf00aaac93b4d43729c2a274956ac5a0d9b12b90cb7b0c1f86293397d2e112"
+  },
+  {
+    "name": "0029_project_memory",
+    "sha256": "4bed5762063f055b0067a0ab0a3592059b7aa59093f7c2a89bea6e217fcc7b91"
   }
 ]

@@ -82,6 +82,11 @@ import {
   up as planRedirection,
 } from "./migrations/0028_plan_redirection.mjs";
 import {
+  tables as memoryTables,
+  objects as memoryObjects,
+  up as projectMemory,
+} from "./migrations/0029_project_memory.mjs";
+import {
   ResearchAttention,
   conversationAttention,
   type ResearchActivity,
@@ -336,6 +341,7 @@ const names = [
   "0026_plan_proposals",
   "0027_handoffs",
   "0028_plan_redirection",
+  "0029_project_memory",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -564,6 +570,9 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 24 ? ["intervention_events", "continuations"] : []),
     ...(revision >= 27 ? Object.keys(handoffTables) : []),
     ...(revision >= 28 ? ["graph_change_proposals"] : []),
+    ...(revision >= 29
+      ? Object.keys(memoryTables).filter((name) => name.startsWith("memory_"))
+      : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -728,6 +737,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                     : revision >= 25
                       ? synthesisTables.continuations
                       : coordinationTables.continuations,
+                ...(revision >= 29 ? memoryTables : {}),
               }
             : revision >= 23
               ? { ...graphTables, ...workLimitTables }
@@ -779,6 +789,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 26 ? planProposalObjects : {}),
                 ...(revision >= 27 ? handoffObjects : {}),
                 ...(revision >= 28 ? redirectionObjects : {}),
+                ...(revision >= 29 ? memoryObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1147,7 +1158,7 @@ export class DurableStore {
     const operation = randomUUID();
     writeSynced(this.gate, { version: 1, operation, source, target }, retrySource);
     await this.checkpoint(db, source, operation);
-    const rebuildsTables = source < 28;
+    const rebuildsTables = source < 29;
     const selected = this.database;
     if (!selected) throw new Error("Missing migration connection.");
     await selected.connection().execute(async (connection) => {
@@ -1196,6 +1207,7 @@ export class DurableStore {
                 "0026_plan_proposals": { up: planProposals },
                 "0027_handoffs": { up: handoffs },
                 "0028_plan_redirection": { up: planRedirection },
+                "0029_project_memory": { up: projectMemory },
               }),
           },
         });
@@ -2685,6 +2697,7 @@ export class DurableStore {
         "plan.addContributions": { event_name: "ohtia.plan.graph_recorded" },
         "planChange.apply": { event_name: "ohtia.plan_change.applied" },
         "planChange.decline": { event_name: "ohtia.plan_change.declined" },
+        "memory.undo": { event_name: "ohtia.memory.undone" },
         "plan.accept": { event_name: "ohtia.plan.accepted" },
         "handoff.accept": { event_name: "ohtia.handoff.accepted" },
         "handoff.decline": { event_name: "ohtia.handoff.declined" },

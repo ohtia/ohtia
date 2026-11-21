@@ -38,6 +38,7 @@ export const researchOperations = [
   "plan.accept",
   "plan.decline",
   "planChange.read",
+  "memory.undo",
   "planChange.apply",
   "planChange.decline",
   "planEvent.list",
@@ -270,7 +271,25 @@ export interface TimelinePlanChangeProposal extends TimelineIdentity {
   readonly state: "proposed" | "invalid" | "replaced" | "applied" | "declined";
   readonly invalidReason: PlanChangeInvalidReason | null;
 }
+export interface TimelineMemoryChange extends TimelineIdentity {
+  readonly kind: "memoryChange";
+  readonly rank: 3;
+  readonly taskId: string;
+  readonly added: number;
+  readonly edited: number;
+  readonly merged: number;
+  readonly withdrawn: number;
+  readonly rejected: number;
+  readonly canUndo: boolean;
+}
+export interface TimelineMemoryReview extends TimelineIdentity {
+  readonly kind: "memoryReview";
+  readonly rank: 4;
+  readonly taskId: string;
+}
 export type TimelineItem =
+  | TimelineMemoryChange
+  | TimelineMemoryReview
   | TimelineMessage
   | TimelineTask
   | TimelineSetupProposal
@@ -453,7 +472,7 @@ export interface PlanSnapshot {
     readonly graphVersion: number;
     readonly throughSequence: number;
     readonly reason: "required_set_complete" | "finished_partial";
-    readonly policyVersion: 1 | 2;
+    readonly policyVersion: 1 | 2 | 3;
     readonly admission: (typeof continuationAdmissions)[number];
     readonly restartHeld: boolean;
     readonly taskId: string | null;
@@ -527,6 +546,7 @@ export interface ResearchInputs {
   "plan.accept": ResearchPayloads["plan.accept"];
   "plan.decline": ResearchPayloads["plan.decline"];
   "planChange.read": { readonly conversationId: string; readonly proposalId: string };
+  "memory.undo": ResearchPayloads["memory.undo"];
   "planChange.apply": ResearchPayloads["planChange.apply"];
   "planChange.decline": ResearchPayloads["planChange.decline"];
   "planEvent.list": { readonly planId: string; readonly afterSequence: number };
@@ -584,6 +604,7 @@ export interface ResearchOutputs {
   "plan.accept": ResearchResult;
   "plan.decline": ResearchResult;
   "planChange.read": PlanChangePreview & { readonly proposalId: string };
+  "memory.undo": ResearchResult;
   "planChange.apply": ResearchResult;
   "planChange.decline": ResearchResult;
   "planEvent.list": PlanEventPage;
@@ -683,6 +704,7 @@ export interface ResearchPort {
     operationId: string,
     input: ResearchInputs["conversation.stop"],
   ): PortCall<ResearchResult>;
+  undoMemory(operationId: string, input: ResearchInputs["memory.undo"]): PortCall<ResearchResult>;
   stopTask(operationId: string, input: ResearchInputs["task.stop"]): PortCall<ResearchResult>;
   readDestination(
     input: ResearchInputs["destination.read"],
@@ -752,6 +774,7 @@ export function isResearchMutation(value: string): value is WindowResearchComman
     "plan.cancel",
     "plan.accept",
     "plan.decline",
+    "memory.undo",
     "planChange.apply",
     "planChange.decline",
     "consultation.accept",
@@ -940,6 +963,7 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
     case "task.tryAgain":
     case "task.startAgain":
     case "task.stop":
+    case "memory.undo":
       return exact(value, ["taskId"]) && isResearchId(value.taskId);
     case "destination.read":
       return (
@@ -1159,6 +1183,47 @@ function item(value: unknown): boolean {
     !integer(value.revision)
   )
     return false;
+  if (value.kind === "memoryReview")
+    return (
+      exact(value, ["id", "position", "rank", "revision", "kind", "taskId"]) &&
+      value.rank === 4 &&
+      value.revision === 1 &&
+      isResearchId(value.taskId)
+    );
+  if (value.kind === "memoryChange") {
+    if (
+      !exact(value, [
+        "id",
+        "position",
+        "rank",
+        "revision",
+        "kind",
+        "taskId",
+        "added",
+        "edited",
+        "merged",
+        "withdrawn",
+        "rejected",
+        "canUndo",
+      ]) ||
+      !isResearchId(value.taskId) ||
+      value.rank !== 3 ||
+      !(value.revision === 1 || value.revision === 2) ||
+      !integer(value.added, 0) ||
+      !integer(value.edited, 0) ||
+      !integer(value.merged, 0) ||
+      !integer(value.withdrawn, 0) ||
+      !integer(value.rejected, 0)
+    )
+      return false;
+    const applied = value.added + value.edited + value.merged + value.withdrawn;
+    return (
+      applied <= 3 &&
+      (applied > 0 || value.rejected > 0) &&
+      (value.revision === 1 || applied > 0) &&
+      value.canUndo === (applied > 0 && value.revision === 1)
+    );
+  }
   if (value.kind === "handoffDivider")
     return (
       exact(value, ["id", "position", "rank", "revision", "kind", "agentId"]) &&
@@ -1871,7 +1936,7 @@ function isContinuationSnapshot(value: unknown): boolean {
     integer(value.graphVersion) &&
     integer(value.throughSequence) &&
     (value.reason === "required_set_complete" || value.reason === "finished_partial") &&
-    (value.policyVersion === 1 || value.policyVersion === 2) &&
+    (value.policyVersion === 1 || value.policyVersion === 2 || value.policyVersion === 3) &&
     continuationAdmissions.some((admission) => admission === value.admission) &&
     typeof value.restartHeld === "boolean" &&
     (!value.restartHeld || value.admission === "waiting") &&
@@ -1973,6 +2038,7 @@ export function researchResultMatches(
     operation === "planChange.decline"
   )
     return output.resultId === input.proposalId;
+  if (operation === "memory.undo") return output.resultId === input.taskId;
   if (operation === "handoff.selection") {
     const messages = output.messages as readonly HandoffSelectionMessage[];
     return (

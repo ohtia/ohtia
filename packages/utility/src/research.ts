@@ -70,7 +70,8 @@ import {
 } from "./contribution-graphs.js";
 import type { ContinuationRow, PlanEventRow } from "./plan-coordination.js";
 import type { ContributionRow, InterventionRow } from "./consultations.js";
-export interface ResearchSchema extends TaskSchema {
+import { undoMemory, type MemorySchema } from "./project-memory.js";
+export interface ResearchSchema extends TaskSchema, MemorySchema {
   intervention_events: PlanEventRow;
   continuations: ContinuationRow;
   intervention_limits: InterventionLimitsRow;
@@ -298,6 +299,7 @@ const payloadKeys = {
   "plan.accept": ["planId", "connections"],
   "planChange.apply": ["proposalId"],
   "planChange.decline": ["proposalId"],
+  "memory.undo": ["taskId"],
   "plan.decline": ["planId"],
   "plan.finish": ["planId"],
   "plan.cancel": ["planId"],
@@ -367,6 +369,13 @@ export async function applyResearchCommand(
   const now = new Date().toISOString();
   let result: Uint8Array;
   switch (input.command) {
+    case "memory.undo": {
+      if (!isEntityId(input.payload.taskId)) return failure("invalid_message");
+      const undone = await undoMemory(db, bytes(input.payload.taskId), input.operationId);
+      if (!undone.ok) return undone;
+      result = undone.value;
+      break;
+    }
     case "handoff.accept":
     case "handoff.decline":
     case "handoff.return": {

@@ -797,6 +797,18 @@
       "minimum": 7
     },
     {
+      "selector": ".memory-caption",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7
+    },
+    {
+      "selector": ".memory-rejection",
+      "foreground": "attention.content",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7
+    },
+    {
       "selector": ".conversation-empty",
       "foreground": "content.secondary",
       "backgrounds": ["surface.panel"],

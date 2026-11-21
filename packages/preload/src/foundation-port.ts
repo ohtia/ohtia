@@ -540,6 +540,7 @@ export function createFoundationPort(
     listHandoffSelection: (input) => call("handoff.selection", input),
     cancelPlan: (id, input) => call("plan.cancel", input, id),
     readPlanChange: (input) => call("planChange.read", input),
+    undoMemory: (id, input) => call("memory.undo", input, id),
     applyPlanChange: (id, input) => call("planChange.apply", input, id),
     declinePlanChange: (id, input) => call("planChange.decline", input, id),
     acceptPlan: (id, input) => call("plan.accept", input, id),

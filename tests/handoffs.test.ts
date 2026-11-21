@@ -184,7 +184,7 @@ describe("conversation handoffs", () => {
     const f = await fixture(log);
     await f.append("PRIVATE_BEFORE researcher chose public schools");
     const first = await f.prepare();
-    expect(first.dispatch.request).toMatchObject({ policy_version: 5, instruction_version: 5 });
+    expect(first.dispatch.request).toMatchObject({ policy_version: 6, instruction_version: 6 });
     expect(first.dispatch.request.tools).toContainEqual(handoffTool);
     expect(first.dispatch.request.instructions.split(section)).toHaveLength(2);
     const note =
@@ -293,11 +293,12 @@ describe("conversation handoffs", () => {
     const josefa = await f.prepare();
     expect(josefa.dispatch.request).toMatchObject({
       operation: "search_strategy_planning",
-      instruction_version: 3,
+      instruction_version: 4,
       tools: [],
     });
     expect(josefa.dispatch.request.instructions.split(section)).toHaveLength(2);
     expect(josefa.dispatch.request.input).toEqual([
+      { role: "user", text: "Project memory: no entries yet." },
       {
         role: "user",
         text: `Virgilio, the research guide, handed this conversation to you with this note. The researcher did not write it.\n\nNote:\n${note}`,
@@ -478,11 +479,12 @@ describe("conversation handoffs", () => {
     await f.append("The design is still unknown.", conversationId);
     const request = (await f.prepare()).dispatch.request;
     expect(request.input).toEqual([
+      { role: "user", text: "Project memory: no entries yet." },
       {
         role: "user",
         text: "The researcher asked you to continue this conversation, which started with Josefa, the reference librarian, and chose not to show you any of its messages.",
       },
-      { role: "user", text: "The design is still unknown." },
+      { role: "user", text: "[M1] The design is still unknown." },
     ]);
     value(await f.store.recordTaskEvent(request.attempt, completed, "", [propose()]));
     const proposed = (await f.timeline(conversationId)).find(
@@ -525,7 +527,7 @@ describe("conversation handoffs", () => {
     });
     const db = f.raw();
     try {
-      expect(db.pragma("user_version", { simple: true })).toBe(28);
+      expect(db.pragma("user_version", { simple: true })).toBe(29);
       expect(
         db
           .prepare("SELECT count(*) FROM messages WHERE id IS NOT NULL AND conversation_id=?")

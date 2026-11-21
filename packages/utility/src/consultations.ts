@@ -20,7 +20,7 @@ const consultationCatalog = [
     role: "the reference librarian",
     capability: "prepares search strategy plans",
     operation: "search_strategy_planning",
-    version: 2,
+    version: 4,
   },
 ] as const;
 
