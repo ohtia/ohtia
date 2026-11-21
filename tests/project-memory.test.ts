@@ -500,29 +500,54 @@ describe("attributed project memory through durable replies", () => {
   it("uses the labelled UTF-8 item for limits and does not persist rejected changes", async () => {
     const f = await fixture();
     const text = "🌍".repeat(2000);
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 8; i++) {
       const task = await f.begin(`Observation ${i}`);
       await f.finish(task, [update(change({ text }))]);
     }
-    expect(f.query("SELECT count(*) AS count FROM memory_entries")).toEqual([{ count: 4 }]);
+    const fill = await f.begin("Fill the last bytes of memory.");
+    const prefix = "\n[E9] - Note · recorded by Virgilio: ";
+    const remaining = 64 * 1024 - Buffer.byteLength(fill.dispatch.request.input[0]!.text + prefix);
+    expect(remaining).toBeGreaterThan(0);
+    expect(remaining).toBeLessThan(2000);
+    await f.finish(fill, [update(change({ text: "a".repeat(remaining) }), change({ text: "b" }))]);
+    expect(f.query("SELECT count(*) AS count FROM memory_entries")).toEqual([{ count: 9 }]);
     expect(f.query("SELECT code FROM memory_change_rejections")).toEqual([{ code: "memory_full" }]);
     const next = await f.begin("What did you retain?");
+    const memory = next.dispatch.request.input[0]!.text;
+    expect(Buffer.byteLength(memory)).toBe(64 * 1024);
+    expect(next.transfer.filter(({ kind }) => kind === "memory_version")).toHaveLength(9);
     expect(
       next.dispatch.request.input.some(({ text }) =>
         text.endsWith("The project memory is full: merge or withdraw entries before you add more."),
       ),
     ).toBe(true);
+    await f.finish(next, [], "Nine active notes.");
+    value(
+      await f.run({
+        command: "conversation.start",
+        operationId: "josefa-full-memory",
+        payload: {
+          projectId: f.projectId,
+          agentId: "josefa",
+          content: "Where should I look?",
+        },
+      }),
+    );
+    const josefa = await f.prepare();
+    expect(josefa.dispatch.request.operation).toBe("search_strategy_planning");
+    expect(josefa.dispatch.request.input[0]?.text).toBe(memory.replace(/^\[E\d+\] /gm, ""));
+    expect(josefa.transfer.filter(({ kind }) => kind === "memory_version")).toHaveLength(9);
   });
 
   it("refuses an undo that would overflow and retains the withdrawn version", async () => {
     const f = await fixture();
     const large = "🌍".repeat(2000);
-    const initial = await f.begin("Store four long entries.");
-    await f.finish(initial, [
-      update(change({ text: large }), change({ text: large }), change({ text: large })),
-    ]);
-    const fourth = await f.begin("Add one more.");
-    await f.finish(fourth, [update(change({ text: large }))]);
+    for (const count of [3, 3, 2]) {
+      const batch = await f.begin(`Store ${count} long entries.`);
+      await f.finish(batch, [
+        update(...Array.from({ length: count }, () => change({ text: large }))),
+      ]);
+    }
     const withdraw = await f.begin("Withdraw the first entry.");
     await f.finish(withdraw, [update(change({ action: "withdraw", entries: ["E1"] }))]);
     const fill = await f.begin("Use the space for another entry.");
@@ -539,7 +564,7 @@ describe("attributed project memory through durable replies", () => {
     value(await f.undo(fill.taskId));
     value(await f.undo(withdraw.taskId));
     expect(f.query("SELECT state,count(*) AS count FROM memory_entries GROUP BY state")).toEqual([
-      { state: "active", count: 4 },
+      { state: "active", count: 8 },
       { state: "withdrawn", count: 1 },
     ]);
   });

@@ -117,7 +117,7 @@ function renderMemory(
 
 function fits(entries: Iterable<Entry>): boolean {
   const rendered = renderMemory(entries, true);
-  return rendered.entries.length <= 100 && utf8Size(rendered.text) <= 32 * 1024;
+  return rendered.entries.length <= 100 && utf8Size(rendered.text) <= 64 * 1024;
 }
 
 async function currentMemory(db: Kysely<ResearchSchema>, project: Uint8Array) {
