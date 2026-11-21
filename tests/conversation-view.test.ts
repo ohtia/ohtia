@@ -2496,6 +2496,7 @@ describe("conversation history", () => {
           },
           controller: history,
           current: row.id,
+          unreadReplies: new Map([[row.id, 2]]),
           locale: "de-DE",
           select: harness.controller.switchConversation,
         }),
@@ -2510,8 +2511,13 @@ describe("conversation history", () => {
       "Evidence " + "한".repeat(111) + "…",
     );
     expect(button?.querySelector(".chat-history-preview")?.getAttribute("lang")).toBe("ko-KR");
-    expect(button?.querySelector(".chat-history-status")?.textContent).toBe(
+    expect(button?.querySelector('[data-status="attention"]')?.textContent).toBe(
       "Erfordert Ihre Aufmerksamkeit",
+    );
+    const unread = button?.querySelector('[data-status="unread"]');
+    expect(unread?.textContent).toBe("Neue Antworten");
+    expect(unread?.querySelector(".chat-history-unread-dot")?.getAttribute("aria-hidden")).toBe(
+      "true",
     );
     const now = new Date(2026, 10, 18, 14, 3);
     expect(historyTime(now.toISOString(), "en-US", now)).toBe("2:03 PM");

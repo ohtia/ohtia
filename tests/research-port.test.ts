@@ -1,9 +1,13 @@
+import { ActivityController } from "../packages/renderer/src/activity-controller.js";
+import { createFakeProvider } from "../packages/main/src/fake-provider.js";
+import { ProviderDispatch } from "../packages/main/src/provider-dispatch.js";
 import { ProjectController } from "../packages/renderer/src/project-controller.js";
 import { bytes, newId } from "../packages/utility/src/research.js";
 import { stagedCommand } from "../packages/renderer/src/staged-command.js";
 import { proposeSetup } from "./fixtures/project-setup.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  decodeProviderDispatch,
   decodeText,
   encodeEnvelope,
   failure,
@@ -1721,6 +1725,100 @@ it("transfers 300 selected positions as staged text through preload and the data
   } finally {
     saved.close();
   }
+});
+
+it("counts finished fake-provider replies per conversation through the research port", async () => {
+  const h = await harness();
+  const scope = { projectId: h.projectId, conversationId: null };
+  const activity = new ActivityController(h.port);
+  activity.open(scope);
+  controls.push(() => activity.dispose());
+  const subscription = h.port.subscribeResearch(scope, (event) => {
+    if (event.ok) activity.event(event.value);
+  });
+  controls.push(() => subscription.dispose());
+  value(await subscription.ready);
+  const fake = createFakeProvider();
+  const dispatch = new ProviderDispatch(
+    [
+      {
+        ...fake,
+        declaration: {
+          ...fake.declaration,
+          connection: { ...fake.declaration.connection, id: "chatgpt" },
+        },
+      },
+    ],
+    { state: () => "connected", send: (_generation, text) => h.service.receive(text) },
+  );
+  controls.push(() => dispatch.dispose());
+  dispatch.begin("service");
+  const send = (message: object) =>
+    h.service.receive(JSON.stringify({ generation: "service", ...message }));
+  send({
+    kind: "connection_state",
+    snapshot: {
+      connection: "chatgpt",
+      state: "connected",
+      reason: null,
+      probing: false,
+      probe_id: null,
+      model_list_revision: 1,
+      model_count: 1,
+    },
+  });
+  send({
+    kind: "connection_models",
+    page: {
+      connection: "chatgpt",
+      model_list_revision: 1,
+      models: [{ id: "model", name: "Model" }],
+      nextCursor: 1,
+      hasMore: false,
+    },
+  });
+  let dispatched = 0;
+  const finishReply = async () => {
+    await h.service.drain();
+    const requests = h.sent.flatMap((text) => decodeProviderDispatch(text, "service") ?? []);
+    expect(requests).toHaveLength(++dispatched);
+    await dispatch.receive(requests.at(-1)!);
+    await dispatch.drain();
+    await h.service.drain();
+  };
+
+  const other = value(
+    await h.port.startConversation("unread-other", {
+      projectId: h.projectId,
+      content: "Synthetic first question.",
+    }).result,
+  ).resultId;
+  await finishReply();
+  for (const [id, operation] of [
+    [h.conversationId, "unread-original"],
+    [other, "unread-other-again"],
+  ]) {
+    value(
+      await h.port.appendMessage(operation!, {
+        conversationId: id!,
+        content: "Synthetic follow-up.",
+      }).result,
+    );
+    await finishReply();
+  }
+  await vi.waitFor(() =>
+    expect(activity.snapshot().unreadReplies).toEqual(
+      new Map([
+        [other, 2],
+        [h.conversationId, 1],
+      ]),
+    ),
+  );
+  expect(activity.snapshot().history.replies).toBe(2);
+  activity.open({ ...scope, conversationId: other });
+  activity.presentation(true, true);
+  expect(activity.snapshot().unreadReplies).toEqual(new Map([[h.conversationId, 1]]));
+  expect(activity.snapshot().history.replies).toBe(1);
 });
 
 it("publishes durable project attention across windows and keeps finished replies scoped", async () => {

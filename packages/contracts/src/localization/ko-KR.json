@@ -294,6 +294,7 @@
     "history.replying": "답변 중…",
     "history.waiting": "대기 중",
     "history.attention": "확인이 필요합니다",
+    "history.unreadReplies": "{count, plural, other {새 답변}}",
     "history.loading": "대화를 불러오는 중…",
     "history.loadOlder": "이전 대화 불러오기",
     "history.olderLoading": "이전 대화를 불러오는 중…",

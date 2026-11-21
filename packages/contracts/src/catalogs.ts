@@ -431,6 +431,7 @@ export const messageContracts = {
   "history.replying": { params: {} },
   "history.waiting": { params: {} },
   "history.attention": { params: {} },
+  "history.unreadReplies": { params: { count: "number" }, forms: { count: { kind: "plural" } } },
   "history.loading": { params: {} },
   "history.loadOlder": { params: {} },
   "history.olderLoading": { params: {} },

@@ -651,6 +651,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                               controller={conversation.history}
                               select={conversation.switchConversation}
                               current={conversationState.scope.conversationId}
+                              unreadReplies={activity.unreadReplies}
                               locale={bootstrap.locale}
                             />
                           </div>

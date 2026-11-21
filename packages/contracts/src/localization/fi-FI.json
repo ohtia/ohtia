@@ -294,6 +294,7 @@
     "history.replying": "Vastaa…",
     "history.waiting": "Odottaa",
     "history.attention": "Vaatii huomiotasi",
+    "history.unreadReplies": "{count, plural, one {Uusi vastaus} other {Uusia vastauksia}}",
     "history.loading": "Ladataan keskusteluja…",
     "history.loadOlder": "Lataa vanhempia keskusteluja",
     "history.olderLoading": "Ladataan vanhempia keskusteluja…",
