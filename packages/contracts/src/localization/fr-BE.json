@@ -419,7 +419,7 @@
     "handoff.accepted": "Accepté. Josefa prend la suite à partir d’ici.",
     "handoff.declined": "Vous avez refusé le transfert. La conversation reste avec Virgilio.",
     "handoff.note": "Note pour Josefa",
-    "handoff.scope": "Josefa ne verra que cette note et les messages écrits après avoir continué avec elle. Virgilio ne les verra que si vous le faites revenir.",
+    "handoff.scope": "Josefa ne verra que cette note, la mémoire du projet et les messages écrits après avoir repris la conversation avec elle. Virgilio ne les verra que si vous le réinvitez.",
     "handoff.accept": "Continuer avec Josefa",
     "handoff.decline": "Refuser le transfert",
     "handoff.divider": "{agent} prend la suite à partir d’ici",
@@ -571,7 +571,7 @@
     "consultation.replaced": "Remplacée par une proposition plus récente.",
     "consultation.request": "Demande à Josefa",
     "consultation.reason": "Motif",
-    "consultation.scope": "Josefa recevra uniquement cette demande ainsi que le titre, le type et la langue du projet.",
+    "consultation.scope": "Josefa recevra cette demande, le titre, le type et la langue du projet, ainsi que sa mémoire.",
     "consultation.ask": "Consulter Josefa",
     "consultation.decline": "Refuser la consultation",
     "consultation.destinationUnavailable": "Le service de Josefa n’a pas pu être déterminé.",
@@ -649,6 +649,19 @@
     "project.settingUp": "Thèse · Configuration en cours · {created}",
     "project.chooseWelcome": "Choisissez un projet dans le sélecteur de projets ou créez-en un et configurez-le avec Virgilio. Vous pouvez aussi régler la langue, l’apparence, le zoom et la disposition dans les paramètres.",
     "project.chooseChat": "Choisissez un projet dans le sélecteur de projets pour parler avec Virgilio.",
-    "project.openExistingFailed": "Ohtia n’a pas pu ouvrir le projet. Il est toujours enregistré."
+    "project.openExistingFailed": "Ohtia n’a pas pu ouvrir le projet. Il est toujours enregistré.",
+    "memory.updated": "Mémoire mise à jour : {changes}",
+    "memory.added": "{count, plural, one {# élément ajouté} many {# éléments ajoutés} other {# éléments ajoutés}}",
+    "memory.edited": "{count, plural, one {# élément modifié} many {# éléments modifiés} other {# éléments modifiés}}",
+    "memory.merged": "{count, plural, one {# élément fusionné} many {# éléments fusionnés} other {# éléments fusionnés}}",
+    "memory.withdrawn": "{count, plural, one {# élément retiré} many {# éléments retirés} other {# éléments retirés}}",
+    "memory.rejected": "Mémoire non mise à jour : {count, plural, one {# modification ne respectait pas les règles d’Ohtia.} many {# modifications ne respectaient pas les règles d’Ohtia.} other {# modifications ne respectaient pas les règles d’Ohtia.}}",
+    "memory.undo": "Annuler les modifications de la mémoire",
+    "memory.undone": "Modifications de la mémoire annulées.",
+    "memory.undoUnavailable": "Ohtia ne peut pas annuler ces modifications, car une entrée a changé depuis.",
+    "memory.full": "La mémoire du projet est pleine. Raccourcissez ou retirez des entrées, puis annulez ces modifications.",
+    "memory.review": "Cette réponse repose sur un état antérieur de la mémoire du projet.",
+    "memory.undoFailed": "Ohtia n’a pas pu annuler les modifications de la mémoire.",
+    "memory.planScope": "Chaque contribution reçoit aussi le titre, le type et la langue du projet, ainsi que sa mémoire."
   }
 }

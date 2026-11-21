@@ -1,3 +1,4 @@
+import { MemoryChangeLine, MemoryReviewLine } from "./project-memory.js";
 import { PlanChangeProposal } from "./plan-change-proposal.js";
 import { PlanProposal, type PlanCardController } from "./plan-proposal.js";
 import { HandoffDivider, HandoffProposal } from "./handoff.js";
@@ -97,6 +98,7 @@ export function ConversationView({
         | "readPlanDestinations"
         | "observePlanDestinations"
         | "performPlanChange"
+        | "performMemoryUndo"
         | "performPlanAction"
         | "performPlanProgressAction"
         | "composer"
@@ -393,6 +395,7 @@ export function ConversationView({
             {!state.items.some(
               (item) =>
                 item.kind === "message" ||
+                item.kind === "memoryChange" ||
                 item.kind === "setupProposal" ||
                 item.kind === "consultation" ||
                 item.kind === "handoffProposal" ||
@@ -415,6 +418,29 @@ export function ConversationView({
                 </p>
               )}
             {state.items.map((item) => {
+              if (item.kind === "memoryChange")
+                return (
+                  <MemoryChangeLine
+                    key={item.id}
+                    item={item}
+                    locale={locale}
+                    undo={controller.performMemoryUndo}
+                    showVoice={
+                      !state.items.some(
+                        (other) =>
+                          other.id !== item.id &&
+                          other.position === item.position &&
+                          (other.kind === "message" ||
+                            other.kind === "plan" ||
+                            other.kind === "consultation" ||
+                            other.kind === "handoffProposal" ||
+                            other.kind === "planChangeProposal"),
+                      )
+                    }
+                  />
+                );
+              if (item.kind === "memoryReview")
+                return <MemoryReviewLine key={item.id} item={item} locale={locale} />;
               if (item.kind === "handoffDivider")
                 return (
                   <div key={item.id} data-timeline-id={item.id}>

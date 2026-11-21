@@ -270,6 +270,12 @@
       "sha256": "fb3881ebc561007e8eaded60827f2c9365f70d5910794105b8efb1b2cafb0d35"
     },
     {
+      "name": "notebook-pen",
+      "file": "notebook-pen.svg",
+      "archive_member": "package/icons/notebook-pen.svg",
+      "sha256": "62092bf6743552395fb78583dea1b712e0429b931448d3131d77da5367c73e86"
+    },
+    {
       "name": "octagon-alert",
       "file": "octagon-alert.svg",
       "archive_member": "package/icons/octagon-alert.svg",

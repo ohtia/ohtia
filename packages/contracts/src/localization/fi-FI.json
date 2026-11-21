@@ -419,7 +419,7 @@
     "handoff.accepted": "Hyväksytty. Josefa jatkaa tästä.",
     "handoff.declined": "Hylkäsit siirron. Keskustelu jatkuu Virgilion kanssa.",
     "handoff.note": "Muistiinpano Josefalle",
-    "handoff.scope": "Josefa näkee vain tämän muistiinpanon ja viestit, jotka kirjoitetaan sen jälkeen, kun jatkat hänen kanssaan. Virgilio näkee ne vain, jos tuot hänet takaisin.",
+    "handoff.scope": "Josefa näkee vain tämän muistiinpanon, projektin muistin ja viestit, jotka kirjoitetaan, kun jatkat hänen kanssaan. Virgilio näkee ne vain, jos tuot hänet takaisin.",
     "handoff.accept": "Jatka Josefan kanssa",
     "handoff.decline": "Hylkää siirto",
     "handoff.divider": "{agent} jatkaa tästä",
@@ -571,7 +571,7 @@
     "consultation.replaced": "Korvattu uudemmalla ehdotuksella.",
     "consultation.request": "Pyyntö Josefalle",
     "consultation.reason": "Perustelu",
-    "consultation.scope": "Josefa saa vain tämän pyynnön sekä projektin nimen, tyypin ja kielen.",
+    "consultation.scope": "Josefa saa tämän pyynnön, projektin nimen, tyypin ja kielen sekä projektin muistin.",
     "consultation.ask": "Kysy Josefalta",
     "consultation.decline": "Hylkää kuuleminen",
     "consultation.destinationUnavailable": "Josefan palvelua ei voitu selvittää.",
@@ -649,6 +649,19 @@
     "project.settingUp": "Opinnäyte · Määritetään · {created}",
     "project.chooseWelcome": "Valitse projekti projektivalitsimesta tai aloita uusi ja määritä se Virgilion kanssa. Asetuksissa voit myös säätää kieltä, ulkoasua, zoomausta ja asettelua.",
     "project.chooseChat": "Valitse projekti projektivalitsimesta keskustellaksesi Virgilion kanssa.",
-    "project.openExistingFailed": "Ohtia ei voinut avata projektia. Se on edelleen tallessa."
+    "project.openExistingFailed": "Ohtia ei voinut avata projektia. Se on edelleen tallessa.",
+    "memory.updated": "Muisti päivitetty: {changes}",
+    "memory.added": "{count, plural, one {# lisätty} other {# lisätty}}",
+    "memory.edited": "{count, plural, one {# muokattu} other {# muokattu}}",
+    "memory.merged": "{count, plural, one {# yhdistetty} other {# yhdistetty}}",
+    "memory.withdrawn": "{count, plural, one {# poistettu käytöstä} other {# poistettu käytöstä}}",
+    "memory.rejected": "Muistia ei päivitetty: {count, plural, one {# muutos ei noudattanut Ohtian sääntöjä.} other {# muutosta ei noudattanut Ohtian sääntöjä.}}",
+    "memory.undo": "Kumoa muistin muutokset",
+    "memory.undone": "Muistin muutokset kumottiin.",
+    "memory.undoUnavailable": "Ohtia ei voi kumota muutoksia, koska yhtä merkintää on muutettu sen jälkeen.",
+    "memory.full": "Projektin muisti on täynnä. Lyhennä merkintöjä tai poista niitä käytöstä ja kumoa muutokset sitten.",
+    "memory.review": "Vastaus perustuu projektin muistin aiempaan versioon.",
+    "memory.undoFailed": "Ohtia ei voinut kumota muistin muutoksia.",
+    "memory.planScope": "Jokainen osatehtävä saa myös projektin nimen, tyypin ja kielen sekä projektin muistin."
   }
 }

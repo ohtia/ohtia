@@ -363,6 +363,7 @@ export function PlanProposal({
                 ]
               : []
           }
+          {...(plan ? { contextNote: message(locale, "memory.planScope") } : {})}
           details={
             progress && plan ? (
               <PlanProgress

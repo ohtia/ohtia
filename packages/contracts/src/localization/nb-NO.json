@@ -419,7 +419,7 @@
     "handoff.accepted": "Godtatt. Josefa fortsetter herfra.",
     "handoff.declined": "Du avslo overføringen. Samtalen fortsetter med Virgilio.",
     "handoff.note": "Notat til Josefa",
-    "handoff.scope": "Josefa ser bare dette notatet og meldingene som skrives etter at du fortsetter med henne. Virgilio ser dem bare hvis du henter ham tilbake.",
+    "handoff.scope": "Josefa ser bare dette notatet, prosjektminnet og meldingene som skrives etter at du fortsetter med henne. Virgilio ser dem bare hvis du tar ham tilbake.",
     "handoff.accept": "Fortsett med Josefa",
     "handoff.decline": "Avslå overføringen",
     "handoff.divider": "{agent} fortsetter herfra",
@@ -571,7 +571,7 @@
     "consultation.replaced": "Erstattet av et nyere forslag.",
     "consultation.request": "Forespørsel til Josefa",
     "consultation.reason": "Begrunnelse",
-    "consultation.scope": "Josefa mottar bare denne forespørselen og prosjektets tittel, type og språk.",
+    "consultation.scope": "Josefa får denne forespørselen, prosjektets tittel, type og språk samt prosjektminnet.",
     "consultation.ask": "Spør Josefa",
     "consultation.decline": "Avslå konsultasjonen",
     "consultation.destinationUnavailable": "Kunne ikke finne Josefas tjeneste.",
@@ -649,6 +649,19 @@
     "project.settingUp": "Avhandling · Under oppsett · {created}",
     "project.chooseWelcome": "Velg et prosjekt i prosjektvelgeren, eller start et nytt og sett det opp med Virgilio. Du kan også justere språk, utseende, zoom og oppsett i Innstillinger.",
     "project.chooseChat": "Velg et prosjekt i prosjektvelgeren for å snakke med Virgilio.",
-    "project.openExistingFailed": "Ohtia kunne ikke åpne prosjektet. Det er fortsatt lagret."
+    "project.openExistingFailed": "Ohtia kunne ikke åpne prosjektet. Det er fortsatt lagret.",
+    "memory.updated": "Minne oppdatert: {changes}",
+    "memory.added": "{count, plural, one {# lagt til} other {# lagt til}}",
+    "memory.edited": "{count, plural, one {# redigert} other {# redigert}}",
+    "memory.merged": "{count, plural, one {# slått sammen} other {# slått sammen}}",
+    "memory.withdrawn": "{count, plural, one {# trukket tilbake} other {# trukket tilbake}}",
+    "memory.rejected": "Minne ikke oppdatert: {count, plural, one {# endring oppfylte ikke Ohtias regler.} other {# endringer oppfylte ikke Ohtias regler.}}",
+    "memory.undo": "Angre minneendringer",
+    "memory.undone": "Minneendringene ble angret.",
+    "memory.undoUnavailable": "Ohtia kan ikke angre endringene fordi en oppføring har blitt endret siden.",
+    "memory.full": "Prosjektminnet er fullt. Forkort eller trekk tilbake oppføringer, og angre deretter endringene.",
+    "memory.review": "Svaret bygger på en tidligere versjon av prosjektminnet.",
+    "memory.undoFailed": "Ohtia kunne ikke angre minneendringene.",
+    "memory.planScope": "Hvert bidrag får også prosjektets tittel, type og språk samt prosjektminnet."
   }
 }

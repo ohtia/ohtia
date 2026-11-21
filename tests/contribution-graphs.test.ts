@@ -1385,7 +1385,7 @@ it("commits one continuation with the result and exposes numbered events through
       outcome: "complete",
       requestsUsed: 1,
       continuation: {
-        policyVersion: 2,
+        policyVersion: 3,
         throughSequence: 4,
         taskState: "blocked",
         stopped: false,
@@ -2094,7 +2094,7 @@ it(
         version: 1,
         operation: "plan-migration-retry",
         source: 23,
-        target: 28,
+        target: 29,
       }),
     );
     await expect(f.store.open()).rejects.toThrow(/recovery/);
@@ -2406,13 +2406,14 @@ it("runs the fixed development plan in an ordinary thesis through separate turns
   const taskId = ready.continuation!.taskId!;
   expect(synthesis.request).toMatchObject({
     operation: "contribution_synthesis",
-    policy_version: 2,
-    instruction_version: 2,
+    policy_version: 3,
+    instruction_version: 3,
     connection: "chatgpt",
     document_language: "ko",
     tools: [],
     limits: { max_output_bytes: 65536, max_attempt_duration_ms: 600000, max_inactivity_ms: 120000 },
     input: [
+      { role: "user", text: "Project memory: no entries yet." },
       {
         role: "user",
         text: "The researcher approved this plan, and no contribution of it is still working. Write its synthesis.\n\nPurpose of the plan:\nPrepare a search strategy for the project's working title, and a second one that extends it to neighboring disciplines.\n\nContext for every contribution of the plan:\nThis plan is a development test of Ohtia. Base each strategy only on the project's working title and document language.\n\nPlan outcome: complete",
@@ -2565,6 +2566,7 @@ it("sends the partial plan with exact terminal reasons and preserves its input a
   expect(value(await f.finish(planId))).toMatchObject({ outcome: "partial" });
   const first = await f.next();
   expect(first.dispatch.request.input.map(({ text }) => text)).toEqual([
+    "Project memory: no entries yet.",
     "The researcher approved this plan, and no contribution of it is still working. Write its synthesis.\n\nPurpose of the plan:\nWhich questions remain open?\n\nPlan outcome: partial",
     "Contribution complete by Josefa, the reference librarian (required): completed.\n\nRequest:\nInvestigate complete.\n\nResult:\n" +
       unresolved,
@@ -2640,8 +2642,8 @@ it("preserves all eight maximal contributions across the provider envelope and r
   );
   for (let index = 0; index < 8; index++) await f.settle(await f.next(), undefined, result);
   const synthesis = await f.next();
-  expect(synthesis.dispatch.request.input).toHaveLength(9);
-  expect(synthesis.dispatch.request.input.slice(1).every(({ text }) => text.endsWith(result))).toBe(
+  expect(synthesis.dispatch.request.input).toHaveLength(10);
+  expect(synthesis.dispatch.request.input.slice(2).every(({ text }) => text.endsWith(result))).toBe(
     true,
   );
   const wire = JSON.stringify(synthesis.dispatch);

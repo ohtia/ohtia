@@ -1,6 +1,8 @@
 ---
 type: Specification
 title: Ohtia design system
+generated:
+  by: codex/gpt-6.2-sol
 description: Visual identity, tokens, symbol and character, typography, composition, accessibility, localization, components and patterns of Ohtia's interface.
 tags:
   - design
@@ -40,8 +42,6 @@ sources:
   - id: lucide
     resource: https://github.com/lucide-icons/lucide/tree/1ef60af944de207e0d5176905a0759ba12e6ee8d
     title: Lucide — Repository at the examined commit
-generated:
-  by: codex/gpt-6.2-sol
 ---
 
 # Ohtia design system
@@ -560,6 +560,7 @@ Fixed mappings:
 | Proposed or pending                          | `circle-dashed`        |
 | Rejected, or a declined or replaced proposal | `circle-x`             |
 | Requires review                              | `refresh-cw`           |
+| Memory changes                               | `notebook-pen`         |
 | Restricted use                               | `lock`                 |
 | Saved                                        | `check`                |
 | Send message                                 | `arrow-up`             |

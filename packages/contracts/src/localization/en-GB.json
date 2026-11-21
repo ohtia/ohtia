@@ -419,7 +419,7 @@
     "handoff.accepted": "Accepted. Josefa continues from here.",
     "handoff.declined": "You declined this handoff. The conversation stays with Virgilio.",
     "handoff.note": "Note for Josefa",
-    "handoff.scope": "Josefa will see only this note and the messages written after you continue with her. Virgilio will not see them unless you bring him back.",
+    "handoff.scope": "Josefa will see only this note, the project memory and the messages written after you continue with her. Virgilio will not see them unless you bring him back.",
     "handoff.accept": "Continue with Josefa",
     "handoff.decline": "Decline handoff",
     "handoff.divider": "{agent} continues from here",
@@ -571,7 +571,7 @@
     "consultation.replaced": "Replaced by a newer proposal.",
     "consultation.request": "Request for Josefa",
     "consultation.reason": "Why",
-    "consultation.scope": "Josefa will receive only this request and the project’s title, type and language.",
+    "consultation.scope": "Josefa will receive this request, the project’s title, type and language, and the project memory.",
     "consultation.ask": "Ask Josefa",
     "consultation.decline": "Decline consultation",
     "consultation.destinationUnavailable": "Josefa’s service could not be read.",
@@ -649,6 +649,19 @@
     "project.settingUp": "Thesis · Setting up · {created}",
     "project.chooseWelcome": "Choose a project in the project selector, or start a new one and set it up with Virgilio. You can also adjust language, appearance, zoom and layout in Settings.",
     "project.chooseChat": "Choose a project in the project selector to talk with Virgilio.",
-    "project.openExistingFailed": "Ohtia couldn’t open the project. It’s still saved."
+    "project.openExistingFailed": "Ohtia couldn’t open the project. It’s still saved.",
+    "memory.updated": "Memory updated: {changes}",
+    "memory.added": "{count, plural, one {# added} other {# added}}",
+    "memory.edited": "{count, plural, one {# edited} other {# edited}}",
+    "memory.merged": "{count, plural, one {# merged} other {# merged}}",
+    "memory.withdrawn": "{count, plural, one {# withdrawn} other {# withdrawn}}",
+    "memory.rejected": "Memory not updated: {count, plural, one {# change didn’t fit Ohtia’s rules.} other {# changes didn’t fit Ohtia’s rules.}}",
+    "memory.undo": "Undo memory changes",
+    "memory.undone": "Memory changes undone.",
+    "memory.undoUnavailable": "Ohtia can’t undo these changes because an entry has changed since.",
+    "memory.full": "The project memory is full. Shorten or withdraw entries, then undo these changes.",
+    "memory.review": "Based on project memory that has changed since this reply.",
+    "memory.undoFailed": "Ohtia couldn’t undo the memory changes.",
+    "memory.planScope": "Each contribution also receives the project’s title, type and language, and the project memory."
   }
 }

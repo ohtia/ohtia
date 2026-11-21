@@ -18,6 +18,7 @@ import {
 } from "../packages/renderer/src/conversation-history.js";
 import { conversationPreview } from "../packages/renderer/src/message-markdown.js";
 import { ConversationHistoryController } from "../packages/renderer/src/conversation-history-controller.js";
+import { MemoryChangeLine, MemoryReviewLine } from "../packages/renderer/src/project-memory.js";
 import { ConversationView } from "../packages/renderer/src/conversation-view.js";
 import {
   ConversationController,
@@ -3869,6 +3870,25 @@ describe("plan decision card", () => {
       "Not sent: its request and the results it depends on are longer than Ohtia allows.",
     );
     expect(buttonNamed("Try again")).toBeUndefined();
+
+    h.update({
+      contributions: [
+        {
+          ...first,
+          state: "failed",
+          taskId: id(2090),
+          task: work({ state: "failed", outcomeReason: "input_too_large" }),
+        },
+        second,
+        third,
+      ],
+    });
+    await h.show();
+    expect(container.textContent).toContain(
+      "Not sent: its request and the results it depends on are longer than Ohtia allows.",
+    );
+    expect(container.textContent).not.toContain("ChatGPT reported an error.");
+    expect(buttonNamed("Try again")).toBeUndefined();
   });
 
   it("shows synthesis admission, restart holds, failures, recovery and durable stops after the plan outcome", async () => {
@@ -4952,4 +4972,132 @@ describe("plan change timeline", () => {
       await act(async () => harness.controller.dispose());
     }
   });
+});
+
+it("renders the localized memory summary and restores keyboard focus after undo", async () => {
+  const item = {
+    id: id(88),
+    taskId: id(89),
+    kind: "memoryChange",
+    rank: 3,
+    revision: 1,
+    position: 8,
+    added: 1,
+    edited: 0,
+    merged: 2,
+    withdrawn: 0,
+    rejected: 1,
+    canUndo: true,
+  } as const;
+  const harness = controllerHarness(false);
+  const reply = {
+    ...message(7, "An earlier reply used the former project memory."),
+    kind: "message",
+    authorKind: "agent",
+    agentId: "virgilio",
+    taskId: id(94),
+    language: "en",
+    ending: "complete",
+  } as const;
+  const review = {
+    id: id(95),
+    taskId: reply.taskId,
+    kind: "memoryReview",
+    rank: 4,
+    revision: 1,
+    position: reply.position,
+  } as const;
+  harness.items.splice(0, harness.items.length, reply, review, item);
+  const undo = vi.fn(() => {
+    harness.items[2] = { ...item, revision: 2, canUndo: false };
+    return ok({ resultId: item.taskId });
+  });
+  harness.port.undoMemory = undo;
+  try {
+    harness.controller.open(scope);
+    await vi.waitFor(() => expect(harness.controller.snapshot().items).toHaveLength(3));
+    await render(harness.controller.snapshot(), harness.controller);
+    expect(container.textContent).toContain("Memory updated: 1 added and 2 merged");
+    expect(container.textContent).toContain(
+      "Memory not updated: 1 change didn’t fit Ohtia’s rules.",
+    );
+    expect(container.textContent).toContain(
+      "Based on project memory that has changed since this reply.",
+    );
+    const memory = container.querySelector(".memory-reply")!;
+    const button = memory.querySelector("button")!;
+    expect(button.textContent).toBe("Undo memory changes");
+    button.focus();
+    await act(async () => button.click());
+    expect(undo).toHaveBeenCalledWith(expect.any(String), { taskId: item.taskId });
+    expect(harness.controller.snapshot().items).toContainEqual({
+      ...item,
+      revision: 2,
+      canUndo: false,
+    });
+    expect(memory.querySelector("button")).toBeNull();
+    expect(memory.querySelector('[role="status"]')?.textContent).toBe("Memory changes undone.");
+    expect(document.activeElement).toBe(memory.querySelector(".memory-caption"));
+
+    const reload = vi.spyOn(harness.controller, "reload").mockImplementation(() => {});
+    vi.mocked(harness.port.readTimeline).mockReturnValueOnce(call(failure("storage_failed")));
+    await act(async () => {
+      await harness.controller.performMemoryUndo("refresh-failed", item.taskId, item.id);
+    });
+    expect(reload).toHaveBeenCalledOnce();
+  } finally {
+    await act(async () => harness.controller.dispose());
+  }
+});
+
+it("shows memory undo conflicts and stale reply captions with their accessible status", async () => {
+  const item = {
+    id: id(90),
+    taskId: id(91),
+    kind: "memoryChange",
+    rank: 3,
+    revision: 1,
+    position: 8,
+    added: 0,
+    edited: 1,
+    merged: 0,
+    withdrawn: 0,
+    rejected: 3,
+    canUndo: true,
+  } as const;
+  const render = (undo: Parameters<typeof MemoryChangeLine>[0]["undo"]) =>
+    root.render(
+      h(
+        "div",
+        null,
+        h(MemoryChangeLine, { item, locale: "en-US", undo, showVoice: false }),
+        h(MemoryReviewLine, {
+          locale: "en-US",
+          item: {
+            id: id(92),
+            taskId: id(91),
+            position: 8,
+            rank: 4,
+            revision: 1,
+            kind: "memoryReview",
+          },
+        }),
+      ),
+    );
+  await act(async () => render(async () => failure("undo_unavailable")));
+  await act(async () => container.querySelector("button")!.click());
+  expect(container.querySelector('.conversation-notice[role="status"]')?.textContent).toBe(
+    "Ohtia can’t undo these changes because an entry has changed since.",
+  );
+  expect(container.textContent).toContain(
+    "Memory not updated: 3 changes didn’t fit Ohtia’s rules.",
+  );
+  expect(container.textContent).toContain(
+    "Based on project memory that has changed since this reply.",
+  );
+  await act(async () => render(async () => failure("memory_full")));
+  await act(async () => container.querySelector("button")!.click());
+  expect(container.querySelector('.conversation-notice[role="status"]')?.textContent).toBe(
+    "The project memory is full. Shorten or withdraw entries, then undo these changes.",
+  );
 });

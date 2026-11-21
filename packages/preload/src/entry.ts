@@ -364,6 +364,7 @@ const bridge: DesktopBridge = {
     readPauses: () => connection.client.port.readPauses(),
     cancelPlan: (id, input) => connection.client.port.cancelPlan(id, input),
     readPlanChange: (input) => connection.client.port.readPlanChange(input),
+    undoMemory: (id, input) => connection.client.port.undoMemory(id, input),
     applyPlanChange: (id, input) => connection.client.port.applyPlanChange(id, input),
     declinePlanChange: (id, input) => connection.client.port.declinePlanChange(id, input),
     acceptPlan: (id, input) => connection.client.port.acceptPlan(id, input),

@@ -230,6 +230,41 @@ describe("sandbox preload composition", () => {
       { operation: "planChange.apply", operationId: "apply-change", payload: { proposalId } },
       { operation: "planChange.decline", operationId: "decline-change", payload: { proposalId } },
     ]);
+    const undoMemory = h.bridge.foundation.undoMemory("memory-undo", { taskId: proposalId });
+    const undoRequest = JSON.parse(h.ipcRenderer.send.mock.calls.at(-1)![1]);
+    expect(undoRequest).toMatchObject({
+      operation: "memory.undo",
+      operationId: "memory-undo",
+      payload: { taskId: proposalId },
+    });
+    h.ipcRenderer.emit(
+      desktopChannels.reply,
+      {},
+      JSON.stringify({
+        ...undoRequest,
+        kind: "result",
+        payload: { ok: true, value: { resultId: proposalId } },
+      }),
+    );
+    await expect(undoMemory.result).resolves.toEqual({ ok: true, value: { resultId: proposalId } });
+
+    const otherUndo = h.bridge.foundation.undoMemory("memory-undo-mismatch", {
+      taskId: proposalId,
+    });
+    const otherUndoRequest = JSON.parse(h.ipcRenderer.send.mock.calls.at(-1)![1]);
+    h.ipcRenderer.emit(
+      desktopChannels.reply,
+      {},
+      JSON.stringify({
+        ...otherUndoRequest,
+        kind: "result",
+        payload: { ok: true, value: { resultId: conversationId } },
+      }),
+    );
+    await expect(otherUndo.result).resolves.toMatchObject({
+      error: { code: "invalid_service_result" },
+    });
+
     const retrySynthesis = h.bridge.foundation.tryAgainSynthesis("try-synthesis", {
       taskId: "019a8000-0000-7000-8000-000000000501",
     });

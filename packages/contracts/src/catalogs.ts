@@ -26,6 +26,19 @@ import caES from "./localization/ca-ES.json" with { type: "json" };
 import koKR from "./localization/ko-KR.json" with { type: "json" };
 
 export const messageContracts = {
+  "memory.updated": { params: { changes: "string" } },
+  "memory.added": { params: { count: "number" }, forms: { count: { kind: "plural" } } },
+  "memory.edited": { params: { count: "number" }, forms: { count: { kind: "plural" } } },
+  "memory.merged": { params: { count: "number" }, forms: { count: { kind: "plural" } } },
+  "memory.withdrawn": { params: { count: "number" }, forms: { count: { kind: "plural" } } },
+  "memory.rejected": { params: { count: "number" }, forms: { count: { kind: "plural" } } },
+  "memory.undo": { params: {} },
+  "memory.undone": { params: {} },
+  "memory.undoUnavailable": { params: {} },
+  "memory.full": { params: {} },
+  "memory.review": { params: {} },
+  "memory.undoFailed": { params: {} },
+  "memory.planScope": { params: {} },
   "project.createUncertainBody": { params: {} },
   "project.createUncertainTitle": { params: {} },
   "command.project.new": { params: {} },

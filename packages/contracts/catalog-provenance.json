@@ -214,6 +214,15 @@
       },
       "effective_model_evidence": "The implementation session does not expose a confirmed effective model identifier.",
       "human_linguistic_review": null
+    },
+    {
+      "scope": "memory.* messages and updated consultation.scope and handoff.scope for STORY-003-032 in every supported locale",
+      "producer": {
+        "agent": "codex",
+        "effective_model": "gpt-6.2-sol"
+      },
+      "effective_model_evidence": "The active implementation turn records gpt-6.2-sol in its session context.",
+      "human_linguistic_review": null
     }
   ]
 }

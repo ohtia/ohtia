@@ -5,6 +5,8 @@ import { consultableAgents, type ContributionRow, type InterventionRow } from ".
 import {
   operationPolicy,
   contributionSynthesisPolicy,
+  receivesProjectMemory,
+  type BuiltInput,
   type InputMessage,
   type OperationPolicy,
 } from "./operations.js";
@@ -27,6 +29,7 @@ import {
 } from "./research.js";
 import { effectivePlan, storedPlanChange } from "./plan-change-proposals.js";
 import type { RuntimeMode } from "./tasks.js";
+import { projectMemoryInput } from "./project-memory.js";
 
 export interface DependencyRow {
   id: Uint8Array;
@@ -540,11 +543,12 @@ export async function planInput(
   db: Kysely<ResearchSchema>,
   contribution: Selectable<ContributionRow>,
   policy: OperationPolicy,
+  memory?: BuiltInput,
 ): Promise<InputMessage[] | undefined> {
   if (contribution.plan_key === null) throw new Error("Plan contribution lacks a key.");
   const plan = await db
     .selectFrom("interventions")
-    .select(["id", "purpose", "shared_context"])
+    .select(["id", "project_id", "purpose", "shared_context"])
     .where("id", "=", contribution.intervention_id)
     .executeTakeFirstOrThrow();
   const source = contribution.context_proposal_id
@@ -598,9 +602,15 @@ export async function planInput(
       text: `Result of contribution ${result.plan_key} by ${agent.name}, ${agent.role}:\n${result.content}`,
     });
   }
+  const memoryItem =
+    memory ??
+    (receivesProjectMemory(policy)
+      ? await projectMemoryInput(db, plan.project_id, false)
+      : undefined);
+  const budgeted = [...(memoryItem?.input ?? []), ...input];
   if (
-    input.length > policy.max_input_items ||
-    input.reduce((sum, item) => sum + utf8Size(item.text), 0) > policy.max_input_bytes
+    budgeted.length > policy.max_input_items ||
+    budgeted.reduce((sum, item) => sum + utf8Size(item.text), 0) > policy.max_input_bytes
   )
     return;
   return input;

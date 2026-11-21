@@ -32,7 +32,10 @@ import {
 import { priorInterventionFields } from "../packages/utility/src/migrations/0026_plan_proposals.mjs";
 
 import { objects as handoffs } from "../packages/utility/src/migrations/0027_handoffs.mjs";
-import { objects as redirection } from "../packages/utility/src/migrations/0028_plan_redirection.mjs";
+import {
+  tables as redirectionTables,
+  objects as redirection,
+} from "../packages/utility/src/migrations/0028_plan_redirection.mjs";
 import {
   synthesisTables,
   objects as synthesis,
@@ -88,7 +91,52 @@ const priorRedirectionObjects = {
   ...proposals,
   ...handoffs,
 };
+import { tables as memoryTables } from "../packages/utility/src/migrations/0029_project_memory.mjs";
+
+export const preMemorySql = `
+  PRAGMA legacy_alter_table=ON;
+  DROP TRIGGER receipts_commands;
+  DROP TRIGGER tasks_initial;
+  ${Object.keys(memoryTables)
+    .filter((name) => name.startsWith("memory_"))
+    .reverse()
+    .map((name) => `DROP TABLE ${name};`)
+    .join("\n")}
+  ${["contributions", "continuations"]
+    .map((name) => {
+      const columns = memoryTables[name].includes("policy_version")
+        ? name === "contributions"
+          ? "id,intervention_id,agent_id,operation,request,reason,task_id,created_at,plan_key,required,state,blocked_by_contribution_id,failure_reason,result_message_id,ready_inputs,restart_held,policy_version,dedupe_key,added_in_graph_version,superseded_by_contribution_id,cancellation_reason,context_proposal_id,purpose_proposal_id"
+          : "id,intervention_id,graph_version,through_sequence,reason,policy_version,admission,restart_held,task_id,ready_key,created_at,stopped"
+        : "";
+      return `
+      ALTER TABLE ${name} RENAME TO ${name}_with_memory;
+      ${redirectionTables[name]};
+      INSERT INTO ${name}(rowid,${columns}) SELECT rowid,
+        ${columns.replace("policy_version", "CASE policy_version WHEN " + (name === "contributions" ? "4 THEN 2" : "3 THEN 2") + " ELSE policy_version END")}
+        FROM ${name}_with_memory ORDER BY rowid;
+      DROP TABLE ${name}_with_memory;
+    `;
+    })
+    .join("")}
+  ${Object.entries(redirection)
+    .filter(
+      ([name]) =>
+        name === "receipts_commands" ||
+        name === "tasks_initial" ||
+        name.startsWith("contributions_") ||
+        name.startsWith("continuations_"),
+    )
+    .map(([, definition]) => definition)
+    .join(";\n")};
+  DELETE FROM kysely_migration WHERE name='0029_project_memory';
+  DELETE FROM ohtia_migration_artifacts WHERE name='0029_project_memory';
+  PRAGMA user_version=28;
+  PRAGMA legacy_alter_table=OFF;
+`;
+
 export const preRedirectionSql = `
+  ${preMemorySql}
   PRAGMA legacy_alter_table=ON;
   DROP TRIGGER receipts_commands;
   DROP TRIGGER tasks_initial;

@@ -288,6 +288,25 @@ export class ConversationController {
     }
     return result;
   };
+  performMemoryUndo = async (operationId: string, taskId: string, itemId: string) => {
+    const epoch = this.epoch;
+    const result = await this.port
+      .undoMemory(operationId, { taskId })
+      .result.catch(() => failure("invalid_service_result"));
+    if (result.ok && this.live(epoch)) {
+      this.queue = this.queue
+        .then(async () => {
+          if (!this.live(epoch)) return;
+          await this.readIds([itemId], epoch);
+          if (this.live(epoch)) this.publish();
+        })
+        .catch(() => {
+          if (this.live(epoch)) this.reload();
+        });
+      await this.queue;
+    }
+    return result;
+  };
   performPlanChange = async (operationId: string, id: string, apply: boolean) => {
     const epoch = this.epoch;
     const result = await (

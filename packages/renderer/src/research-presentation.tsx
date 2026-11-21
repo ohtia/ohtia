@@ -1043,6 +1043,7 @@ export interface ActionProposalCardProps {
   readonly announceState?: boolean;
   readonly busy?: boolean;
   readonly note?: string;
+  readonly contextNote?: string;
   readonly actions?: readonly {
     readonly label: string;
     readonly onPress: () => void;
@@ -1073,6 +1074,7 @@ export function ActionProposalCard({
   announceState,
   busy,
   note,
+  contextNote,
   actions,
   disabledReason,
   feedback,
@@ -1120,6 +1122,7 @@ export function ActionProposalCard({
             ))}
           </dl>
         )}
+        {contextNote && <p className="action-proposal-note">{contextNote}</p>}
         {details}
         {note && <p className="action-proposal-note">{note}</p>}
         {state === "open" && actions && (

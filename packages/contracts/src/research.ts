@@ -155,6 +155,7 @@ export interface ResearchPayloads {
     readonly planId: string;
     readonly connections: Readonly<Partial<Record<ReplyAgent, string>>>;
   };
+  readonly "memory.undo": { readonly taskId: string };
   readonly "planChange.apply": { readonly proposalId: string };
   readonly "planChange.decline": { readonly proposalId: string };
   readonly "plan.decline": { readonly planId: string };
@@ -219,6 +220,7 @@ export const researchCommands = [
   "task.tryAgain",
   "plan.accept",
   "plan.decline",
+  "memory.undo",
   "planChange.apply",
   "planChange.decline",
   "consultation.accept",

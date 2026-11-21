@@ -419,7 +419,7 @@
     "handoff.accepted": "Accepteret. Josefa fortsætter herfra.",
     "handoff.declined": "Du afviste overdragelsen. Samtalen fortsætter med Virgilio.",
     "handoff.note": "Note til Josefa",
-    "handoff.scope": "Josefa ser kun denne note og de beskeder, der skrives, efter at du fortsætter med hende. Virgilio ser dem kun, hvis du henter ham tilbage.",
+    "handoff.scope": "Josefa ser kun denne note, projekthukommelsen og de beskeder, der skrives, efter at du fortsætter med hende. Virgilio ser dem kun, hvis du henter ham tilbage.",
     "handoff.accept": "Fortsæt med Josefa",
     "handoff.decline": "Afvis overdragelsen",
     "handoff.divider": "{agent} fortsætter herfra",
@@ -571,7 +571,7 @@
     "consultation.replaced": "Erstattet af et nyere forslag.",
     "consultation.request": "Anmodning til Josefa",
     "consultation.reason": "Begrundelse",
-    "consultation.scope": "Josefa modtager kun denne anmodning og projektets titel, type og sprog.",
+    "consultation.scope": "Josefa får denne anmodning, projektets titel, type og sprog samt projekthukommelsen.",
     "consultation.ask": "Spørg Josefa",
     "consultation.decline": "Afslå konsultationen",
     "consultation.destinationUnavailable": "Kunne ikke finde Josefas tjeneste.",
@@ -649,6 +649,19 @@
     "project.settingUp": "Afhandling · Under opsætning · {created}",
     "project.chooseWelcome": "Vælg et projekt i projektvælgeren, eller start et nyt og sæt det op med Virgilio. Du kan også justere sprog, udseende, zoom og layout i Indstillinger.",
     "project.chooseChat": "Vælg et projekt i projektvælgeren for at tale med Virgilio.",
-    "project.openExistingFailed": "Ohtia kunne ikke åbne projektet. Det er stadig gemt."
+    "project.openExistingFailed": "Ohtia kunne ikke åbne projektet. Det er stadig gemt.",
+    "memory.updated": "Hukommelse opdateret: {changes}",
+    "memory.added": "{count, plural, one {# tilføjet} other {# tilføjet}}",
+    "memory.edited": "{count, plural, one {# redigeret} other {# redigeret}}",
+    "memory.merged": "{count, plural, one {# flettet} other {# flettet}}",
+    "memory.withdrawn": "{count, plural, one {# trukket tilbage} other {# trukket tilbage}}",
+    "memory.rejected": "Hukommelse ikke opdateret: {count, plural, one {# ændring overholdt ikke Ohtias regler.} other {# ændringer overholdt ikke Ohtias regler.}}",
+    "memory.undo": "Fortryd ændringer i hukommelsen",
+    "memory.undone": "Ændringer i hukommelsen fortrudt.",
+    "memory.undoUnavailable": "Ohtia kan ikke fortryde ændringerne, fordi en post er blevet ændret siden.",
+    "memory.full": "Projekthukommelsen er fuld. Forkort eller træk poster tilbage, og fortryd derefter ændringerne.",
+    "memory.review": "Svaret bygger på en tidligere version af projekthukommelsen.",
+    "memory.undoFailed": "Ohtia kunne ikke fortryde ændringerne i hukommelsen.",
+    "memory.planScope": "Hvert bidrag får også projektets titel, type og sprog samt projekthukommelsen."
   }
 }

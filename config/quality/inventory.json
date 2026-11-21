@@ -48,6 +48,7 @@
     "tests/preload-entry.test.ts",
     "tests/presentation-broker.test.ts",
     "tests/primitives.test.ts",
+    "tests/project-memory.test.ts",
     "tests/project-opening.test.ts",
     "tests/project-selector.test.ts",
     "tests/project-setup.test.ts",
