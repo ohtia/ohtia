@@ -1,12 +1,13 @@
 import { createCoverageInstrumenter } from "../tooling/quality-instrumenter.mjs";
 import vm from "node:vm";
+import { EventEmitter } from "node:events";
 import { transformWithOxc } from "vite";
 import { createRequire } from "node:module";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   accountShards,
   assertDeclaredCases,
@@ -30,6 +31,7 @@ import {
 } from "../tooling/quality.mjs";
 import { fixturePath, differentTarget } from "./fixtures/platform.js";
 import { playwrightCases } from "../tooling/quality-playwright.mjs";
+import { runStorageComponent } from "../tooling/storage-component-runner.mjs";
 
 // Use the selected coverage provider's own pinned instrumenter for execution-boundary fixtures.
 const instrumentRequire = createRequire(import.meta.resolve("@vitest/coverage-istanbul"));
@@ -835,4 +837,61 @@ it("rejects stale native provenance even when reports agree with their caller-su
   ).toThrow(/workflowSha256/);
   fs.writeFileSync(path.join(root, "own.ts"), "const a=2;\n");
   expect(() => assertCheckoutIdentity(root, identity)).toThrow(/sourceSha256/);
+});
+
+describe("native storage component deadline", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function launch(caseIds: string[]) {
+    vi.useFakeTimers();
+    const child = Object.assign(new EventEmitter(), { kill: vi.fn(), postMessage: vi.fn() });
+    const result = runStorageComponent(
+      { utilityProcess: { fork: () => child } },
+      {
+        helper: "test-runner",
+        args: [],
+        mode: "cases",
+        interrupted: false,
+        caseIds,
+        scratch: "",
+        env: {},
+      },
+    );
+    return {
+      child,
+      result,
+      send: (message: object) => child.emit("message", JSON.stringify(message)),
+    };
+  }
+
+  it("allows a progressing batch to finish when its cases together exceed 60 seconds", async () => {
+    const { child, result, send } = launch(["first-case", "second-case"]);
+    send({ kind: "case-started", id: "first-case" });
+    vi.advanceTimersByTime(45_000);
+    send({ kind: "case-started", id: "second-case" });
+    vi.advanceTimersByTime(45_000);
+    const complete = { kind: "complete", results: ["first-case", "second-case"] };
+    send(complete);
+    child.emit("exit", 0);
+    await expect(result).resolves.toEqual({ code: 0, paused: false, messages: [complete] });
+    expect(child.postMessage).toHaveBeenCalledExactlyOnceWith("ack");
+    vi.advanceTimersByTime(60_000);
+    expect(child.kill).not.toHaveBeenCalled();
+  });
+
+  it("times out the active case even if duplicate or unknown progress arrives", async () => {
+    const { child, result, send } = launch(["expected-case"]);
+    const failure = expect(result).rejects.toThrow(
+      'Native storage case "expected-case" exceeded its bound.',
+    );
+    send({ kind: "case-started", id: "expected-case" });
+    vi.advanceTimersByTime(30_000);
+    send({ kind: "case-started", id: "expected-case" });
+    send({ kind: "case-started", id: "unknown-case" });
+    vi.advanceTimersByTime(30_000);
+    await failure;
+    expect(child.kill).toHaveBeenCalledTimes(1);
+  });
 });

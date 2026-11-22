@@ -2332,6 +2332,8 @@
     "tests/quality-gates.test.ts::native OS/CPU/profile partitions > rejects profile as complete native evidence::case-0",
     "tests/quality-gates.test.ts::native OS/CPU/profile partitions > rejects universal-one-slice as complete native evidence::case-0",
     "tests/quality-gates.test.ts::native OS/CPU/profile partitions > retains all six declared targets, required Linux display/filesystem profiles and macOS majors::case-0",
+    "tests/quality-gates.test.ts::native storage component deadline > allows a progressing batch to finish when its cases together exceed 60 seconds::case-0",
+    "tests/quality-gates.test.ts::native storage component deadline > times out the active case even if duplicate or unknown progress arrives::case-0",
     "tests/quality-gates.test.ts::normalizes fixture metadata paths and chooses a genuinely different negative target on every declared CPU::case-0",
     "tests/quality-gates.test.ts::rejects missing Playwright reports and expected-failure/skipped mandatory cases::case-0",
     "tests/quality-gates.test.ts::rejects stale native provenance even when reports agree with their caller-supplied identity::case-0",
