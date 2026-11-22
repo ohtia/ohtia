@@ -67,6 +67,7 @@
 }
 
 .memory-text {
+  max-inline-size: none;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
