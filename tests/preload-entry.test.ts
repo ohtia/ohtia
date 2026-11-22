@@ -789,6 +789,16 @@ it("validates the native window request lease and closed results before crossing
 
 it("exposes the named presentation methods and preserves mutation uncertainty across service cessation", async () => {
   const h = await load();
+  const quote = { operationId: "quote-length", expectedRevision: 0, value: 0 };
+  expect(
+    await h.bridge.foundation.replaceSourceQuote({ ...quote, value: -1 }).result,
+  ).toMatchObject({
+    error: { code: "invalid_message" },
+  });
+  expect(await h.bridge.foundation.replaceSourceQuote(quote, "old-service").result).toMatchObject({
+    error: { code: "service_unavailable" },
+  });
+  expect(h.ipcRenderer.send).not.toHaveBeenCalled();
   const calls = [
     h.bridge.foundation.readPresentation(),
     h.bridge.foundation.replaceCharacter({
@@ -801,6 +811,14 @@ it("exposes the named presentation methods and preserves mutation uncertainty ac
     h.bridge.foundation.adjustZoom("relative", "increase"),
     h.bridge.foundation.readZoomReceipt("zoom"),
     h.bridge.foundation.applyZoom(),
+    h.bridge.foundation.replaceSourceQuote(quote),
+    h.bridge.foundation.readSourceQuoteReceipt("quote-length"),
+    h.bridge.foundation.replaceEntryText({
+      operationId: "entry-length",
+      expectedRevision: 0,
+      value: 0,
+    }),
+    h.bridge.foundation.readEntryTextReceipt("entry-length"),
   ];
   expect(h.ipcRenderer.send.mock.calls.map(([, text]) => JSON.parse(text).operation)).toEqual([
     "presentation.read",
@@ -810,11 +828,15 @@ it("exposes the named presentation methods and preserves mutation uncertainty ac
     "zoom.adjust",
     "zoom.receipt",
     "zoom.apply",
+    "sourceQuote.replace",
+    "sourceQuote.receipt",
+    "entryText.replace",
+    "entryText.receipt",
   ]);
   h.ipcRenderer.emit(desktopChannels.ended, {}, "service-1");
   for (const [index, call] of calls.entries())
     expect(await call.result).toMatchObject({
-      error: { code: [1, 3, 4].includes(index) ? "uncertain" : "disposed" },
+      error: { code: [1, 3, 4, 7, 9].includes(index) ? "uncertain" : "disposed" },
     });
   h.window.dispatchEvent(new Event("unload"));
   expect(h.ipcRenderer.listenerCount(desktopChannels.reply)).toBe(0);

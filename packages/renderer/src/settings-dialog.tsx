@@ -1,3 +1,5 @@
+import { MemoryLengthField } from "./memory-length-field.js";
+import { memoryLengthSettings } from "./settings-controller.js";
 import { LimitsPanel } from "./limits-panel.js";
 import type { LimitsController } from "./limits-controller.js";
 import { connectionInferenceLimits, type ConnectionSnapshot } from "@ohtia/contracts";
@@ -146,11 +148,11 @@ export function SettingsDialog({
     state.settings[feature].phase === "submitting" ||
     (state.settings[feature].phase === "uncertain" && !state.settings[feature].canChoose) ||
     (state.settings[feature].phase === "conflict" && state.readFailed);
-  const status = (feature: SettingFeature) => {
+  const status = (feature: SettingFeature, visible = true) => {
     const phase = state.settings[feature].phase;
     return (
       <span className="settings-save-state" role="status">
-        {(phase === "confirmed" || phase === "submitting") && (
+        {visible && (phase === "confirmed" || phase === "submitting") && (
           <>
             <Icon name={phase === "confirmed" ? "check" : "circle-dashed"} />
             {text(phase === "confirmed" ? "saved" : "saving")}
@@ -200,7 +202,11 @@ export function SettingsDialog({
       onClose={() => {
         // Explicit blur preserves commit-on-leaving before Escape unmounts the field.
         const focused = document.activeElement;
-        if (focused instanceof HTMLInputElement && focused.closest(".limits-panel")) focused.blur();
+        if (
+          focused instanceof HTMLInputElement &&
+          focused.closest(".limits-panel, .project-memory-settings")
+        )
+          focused.blur();
         onClose();
       }}
       title={text("settings.title")}
@@ -594,6 +600,32 @@ export function SettingsDialog({
                 : []
             }
           />
+        )}
+        {open && (
+          <section className="project-memory-settings" aria-labelledby={`${id}-memory-title`}>
+            <h2 id={`${id}-memory-title`}>{text("memory.title")}</h2>
+            {memoryLengthSettings.map((feature) => (
+              <div
+                key={feature}
+                id={`${id}-${feature}-controls`}
+                className="memory-length-settings"
+              >
+                <MemoryLengthField
+                  feature={feature}
+                  locale={locale}
+                  setting={state.settings[feature]}
+                  record={state.current?.[feature]}
+                  blocked={blocked(feature) || state.settings[feature].checkingReceipt}
+                  disabled={!available || !state.current}
+                  onChoose={(value) => {
+                    void controller.choose(feature, value);
+                  }}
+                  status={(visible) => status(feature, visible)}
+                />
+                {notices(feature)}
+              </div>
+            ))}
+          </section>
         )}
         {sections.map((section) => (
           <section key={section.id} aria-labelledby={`${id}-${section.id}`}>

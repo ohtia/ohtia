@@ -10,9 +10,20 @@ export function isZoomBoundaryError(value: unknown): value is ZoomBoundaryError 
   return typeof value === "string" && zoomBoundaryErrors.some((code) => code === value);
 }
 export type ZoomIntent = "increase" | "decrease" | "reset";
+export const defaultSourceQuoteLength = 144;
+export const defaultEntryTextLength = 288;
+
+export function isMemoryDisplayLength(value: unknown): value is number {
+  return (
+    typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && !Object.is(value, -0)
+  );
+}
+
 export interface PresentationValues {
   character: CharacterPresentation;
   zoom: InterfaceZoom;
+  sourceQuote: number;
+  entryText: number;
 }
 export type PresentationFeature = keyof PresentationValues;
 export interface PresentationRecord<T> {
@@ -37,7 +48,10 @@ export type PresentationReceipt<T> =
             readonly ok: false;
             readonly error: Extract<
               PortError,
-              { readonly code: "stale_revision" | (T extends number ? ZoomBoundaryError : never) }
+              {
+                readonly code:
+                  "stale_revision" | (T extends InterfaceZoom ? ZoomBoundaryError : never);
+              }
             >;
           };
     };
@@ -46,6 +60,8 @@ export interface PresentationSnapshot {
   readonly appearance: AppearanceRecord;
   readonly character: PresentationRecord<CharacterPresentation>;
   readonly zoom: PresentationRecord<InterfaceZoom>;
+  readonly sourceQuote: PresentationRecord<number>;
+  readonly entryText: PresentationRecord<number>;
 }
 export function isCharacterPresentation(value: unknown): value is CharacterPresentation {
   return value === "animated" || value === "static" || value === "hidden";

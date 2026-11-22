@@ -81,6 +81,7 @@ export function LimitsPanel({
       <input
         ref={field}
         id={`${id}-field`}
+        className="settings-number-input"
         type="number"
         min={1}
         max={50}

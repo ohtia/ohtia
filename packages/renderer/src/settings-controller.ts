@@ -1,5 +1,8 @@
 import {
+  defaultEntryTextLength,
+  defaultSourceQuoteLength,
   isAppearance,
+  isMemoryDisplayLength,
   isCharacterPresentation,
   isInterfaceZoom,
   type Appearance,
@@ -9,7 +12,6 @@ import {
   type Outcome,
   type PresentationRecord,
   type PresentationSnapshot,
-  type PresentationReceipt,
   type SavedPresentationRecord,
   type Subscription,
   type ZoomIntent,
@@ -21,6 +23,8 @@ export interface SettingsValues {
   appearance: Appearance;
   character: CharacterPresentation;
   zoom: InterfaceZoom;
+  sourceQuote: number;
+  entryText: number;
 }
 export type SettingFeature = keyof SettingsValues;
 export type SettingValue = SettingsValues[SettingFeature];
@@ -30,6 +34,7 @@ export interface SettingState {
   readonly displayFailed: boolean;
   readonly changedFromWindow: boolean;
   readonly canChoose: boolean;
+  readonly checkingReceipt: boolean;
 }
 export interface SettingsState {
   readonly current?: PresentationSnapshot;
@@ -46,14 +51,30 @@ interface Pending {
   readonly value: SettingValue;
   readonly intent?: ZoomIntent;
 }
-const features = ["appearance", "character", "zoom"] as const;
+const appliedSettings = ["appearance", "character", "zoom"] as const;
+export const memoryLengthSettings = ["sourceQuote", "entryText"] as const;
+export type MemoryLengthSetting = (typeof memoryLengthSettings)[number];
+export const settingsFeatures = [...appliedSettings, ...memoryLengthSettings] as const;
 function initial(draft: SettingValue): SettingState {
-  return { draft, phase: "idle", displayFailed: false, changedFromWindow: false, canChoose: false };
+  return {
+    draft,
+    phase: "idle",
+    displayFailed: false,
+    changedFromWindow: false,
+    canChoose: false,
+    checkingReceipt: false,
+  };
 }
 /** Window-owned preference lifetime; opening or closing a dialog never cancels an admitted write. */
 export class SettingsController {
   private state: SettingsState = {
-    settings: { appearance: initial("system"), character: initial("static"), zoom: initial(100) },
+    settings: {
+      appearance: initial("system"),
+      character: initial("static"),
+      zoom: initial(100),
+      sourceQuote: initial(defaultSourceQuoteLength),
+      entryText: initial(defaultEntryTextLength),
+    },
     readFailed: false,
     effectiveZoom: 100,
     zoomBusy: false,
@@ -61,7 +82,6 @@ export class SettingsController {
   };
   private listeners = new Set<() => void>();
   private pending = new Map<SettingFeature, Pending>();
-  private checking = new Set<SettingFeature>();
   private last = new Map<
     SettingFeature,
     { id: string; value: SettingValue; intent?: ZoomIntent }
@@ -105,7 +125,8 @@ export class SettingsController {
   setViewOpen(open: boolean): void {
     if (this.disposed) return;
     this.viewOpen = open;
-    if (!open) for (const feature of features) this.setting(feature, { changedFromWindow: false });
+    if (!open)
+      for (const feature of settingsFeatures) this.setting(feature, { changedFromWindow: false });
   }
   private setting(feature: SettingFeature, patch: Partial<SettingState>): void {
     this.update({
@@ -165,7 +186,7 @@ export class SettingsController {
     const sameGeneration = !!current && current.serviceGeneration === snapshot.serviceGeneration;
     if (current && !sameGeneration) this.retiredGenerations.add(current.serviceGeneration);
     const next = { ...snapshot };
-    for (const feature of features) {
+    for (const feature of settingsFeatures) {
       const record = snapshot[feature];
       if (sameGeneration && record.revision < current[feature].revision) {
         // Preserve newer records independently when a snapshot was captured before another receipt.
@@ -204,7 +225,7 @@ export class SettingsController {
       current: next,
       ...(current && next.zoom.revision > current.zoom.revision ? { zoomBusy: false } : {}),
     });
-    for (const feature of features) this.applyRecord(feature, next);
+    for (const feature of appliedSettings) this.applyRecord(feature, next);
   }
   private async read(epoch = this.epoch): Promise<void> {
     const result = await this.port.readPresentation().result;
@@ -241,7 +262,7 @@ export class SettingsController {
     this.recovering = false;
     if (!ready.ok) this.subscriptionFailed = true;
     if (this.subscriptionFailed) this.update({ readFailed: true });
-    for (const feature of features)
+    for (const feature of settingsFeatures)
       if (this.state.settings[feature].phase === "uncertain") await this.check(feature);
   }
   async choose<K extends SettingFeature>(
@@ -254,13 +275,15 @@ export class SettingsController {
     if (
       this.disposed ||
       !current ||
-      this.checking.has(feature) ||
+      this.state.settings[feature].checkingReceipt ||
       (this.pending.has(feature) && !state.canChoose) ||
       !(feature === "appearance"
         ? isAppearance(value)
         : feature === "character"
           ? isCharacterPresentation(value)
-          : isInterfaceZoom(value))
+          : feature === "zoom"
+            ? isInterfaceZoom(value)
+            : isMemoryDisplayLength(value))
     )
       return false;
     const command: Pending = {
@@ -291,12 +314,16 @@ export class SettingsController {
               { ...change, value: value as CharacterPresentation },
               command.generation,
             ).result
-          : intent
-            ? await this.port.adjustZoom(command.id, intent, command.generation).result
-            : await this.port.replaceZoom(
-                { ...change, value: value as InterfaceZoom },
-                command.generation,
-              ).result;
+          : feature === "zoom"
+            ? intent
+              ? await this.port.adjustZoom(command.id, intent, command.generation).result
+              : await this.port.replaceZoom(
+                  { ...change, value: value as InterfaceZoom },
+                  command.generation,
+                ).result
+            : await this.port[
+                feature === "sourceQuote" ? "replaceSourceQuote" : "replaceEntryText"
+              ]({ ...change, value: value as number }, command.generation).result;
     await this.outcome(feature, command, result);
     return result.ok;
   }
@@ -359,18 +386,22 @@ export class SettingsController {
     if (
       this.disposed ||
       !command ||
-      this.checking.has(feature) ||
+      this.state.settings[feature].checkingReceipt ||
       this.state.settings[feature].phase !== "uncertain"
     )
       return;
-    this.checking.add(feature);
+    this.setting(feature, { checkingReceipt: true });
     try {
-      const receipt: Outcome<PresentationReceipt<SettingValue>> = await (
+      const receipt = await (
         feature === "appearance"
           ? this.port.readAppearanceReceipt(command.id)
           : feature === "character"
             ? this.port.readCharacterReceipt(command.id)
-            : this.port.readZoomReceipt(command.id)
+            : feature === "zoom"
+              ? this.port.readZoomReceipt(command.id)
+              : this.port[
+                  feature === "sourceQuote" ? "readSourceQuoteReceipt" : "readEntryTextReceipt"
+                ](command.id)
       ).result;
       if (this.isDisposed() || this.pending.get(feature) !== command) return;
       if (receipt.ok && receipt.value.state === "recorded")
@@ -383,7 +414,7 @@ export class SettingsController {
       )
         this.setting(feature, { canChoose: true });
     } finally {
-      this.checking.delete(feature);
+      this.setting(feature, { checkingReceipt: false });
     }
   }
   async retry(feature: SettingFeature): Promise<boolean> {
@@ -394,7 +425,13 @@ export class SettingsController {
       : false;
   }
   applyAgain(feature: SettingFeature): void {
-    if (this.state.current && !this.disposed) this.applyRecord(feature, this.state.current, true);
+    if (
+      feature !== "sourceQuote" &&
+      feature !== "entryText" &&
+      this.state.current &&
+      !this.disposed
+    )
+      this.applyRecord(feature, this.state.current, true);
   }
   dispose(): void {
     this.disposed = true;

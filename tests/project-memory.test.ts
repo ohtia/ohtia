@@ -912,6 +912,83 @@ describe("attributed project memory through durable replies", () => {
     ).toEqual(failure("task_not_retryable"));
   });
 
+  it("reads a long memory source through scoped timeline text parts without changing the records", async () => {
+    const f = await fixture();
+    const text = "😀".repeat(2200) + " final source text";
+    const source = await f.queue(text);
+    const entry = value(
+      await f.run({
+        command: "memory.add",
+        operationId: "long-source-entry",
+        payload: {
+          projectId: f.projectId,
+          kind: "note",
+          text: "Memory text remains whole.",
+          sourceMessageId: source.resultId,
+        },
+      }),
+    );
+    const records = f.query("SELECT * FROM memory_entry_versions ORDER BY rowid");
+    const messages = f.query("SELECT * FROM messages ORDER BY rowid");
+    const page = value(
+      await f.store.readResearch(
+        memoryRequest(
+          "memory.list",
+          {
+            projectId: f.projectId,
+            after: null,
+          },
+          "quote-list",
+        ),
+      ),
+    ) as ResearchOutputs["memory.list"];
+    expect(page.entries[0]).toMatchObject({
+      id: entry.resultId,
+      text: "Memory text remains whole.",
+      source: {
+        messageId: source.resultId,
+        conversationId: f.conversationId,
+        prefix: "😀".repeat(1024),
+        truncated: true,
+      },
+    });
+    const projected = page.entries[0]!.source!;
+    const read = async (conversationId: string) =>
+      f.store.readResearch(
+        memoryRequest(
+          "timeline.read",
+          {
+            conversationId,
+            ids: [projected.messageId],
+          },
+          "quote-timeline",
+        ),
+      );
+    expect(await read(f.projectId)).toEqual(failure("record_not_found"));
+    const timeline = value(
+      await read(projected.conversationId),
+    ) as ResearchOutputs["timeline.read"];
+    const message = timeline.items[0];
+    if (!message || message.kind !== "message" || typeof message.content === "string")
+      throw new Error("Expected multipart source text.");
+    expect(message.id).toBe(projected.messageId);
+    expect(message.content.parts).toBeGreaterThan(1);
+    let assembled = "";
+    for (let index = 1; index <= message.content.parts; index++) {
+      const request = memoryRequest(
+        "text.readPart",
+        { source: message.content.source, index },
+        "quote-part",
+      );
+      const payload = await f.store.readResearch(request);
+      expect(encodeEnvelope({ ...request, kind: "result", payload }).ok).toBe(true);
+      assembled += (value(payload) as ResearchOutputs["text.readPart"]).text;
+    }
+    expect(assembled).toBe(text);
+    expect(f.query("SELECT * FROM memory_entry_versions ORDER BY rowid")).toEqual(records);
+    expect(f.query("SELECT * FROM messages ORDER BY rowid")).toEqual(messages);
+  });
+
   it("opens a populated revision 28 through the checkpoint migration and preserves project history", async () => {
     const f = await fixture();
     await f.store.close(true);
@@ -924,7 +1001,7 @@ describe("attributed project memory through durable replies", () => {
       previous.close();
     }
     await f.store.open();
-    expect(f.query("PRAGMA user_version")).toEqual([{ user_version: 31 }]);
+    expect(f.query("PRAGMA user_version")).toEqual([{ user_version: 33 }]);
     expect(f.query("PRAGMA foreign_key_check")).toEqual([]);
     expect(value(await f.store.readConversations(f.projectId))[0]?.id).toBe(f.conversationId);
   });

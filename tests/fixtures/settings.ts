@@ -24,6 +24,8 @@ export function snapshot(): PresentationSnapshot {
     serviceGeneration: "service-1",
     appearance: { schemaVersion: 1, revision: 0, value: "system", source: "default" },
     character: { schemaVersion: 1, revision: 0, value: "animated", source: "default" },
+    sourceQuote: { schemaVersion: 1, revision: 0, value: 144, source: "default" },
+    entryText: { schemaVersion: 1, revision: 0, value: 288, source: "default" },
     zoom: { schemaVersion: 1, revision: 0, value: 100, source: "default" },
   };
 }
@@ -34,7 +36,7 @@ export function harness() {
   const stop = vi.fn();
   const apply = vi.fn();
   const replace = (
-    feature: "appearance" | "character" | "zoom",
+    feature: "appearance" | "character" | "zoom" | "sourceQuote" | "entryText",
     command: AppearanceChange | PresentationChange<string | number>,
   ) => {
     const value = {
@@ -83,6 +85,16 @@ export function harness() {
     }),
     replaceAppearance: vi.fn((command: AppearanceChange) => replace("appearance", command)),
     replaceCharacter: vi.fn((command: PresentationChange<string>) => replace("character", command)),
+    replaceSourceQuote: vi.fn((command: PresentationChange<number>) =>
+      replace("sourceQuote", command),
+    ),
+    readSourceQuoteReceipt: vi.fn(() =>
+      call({ ok: true as const, value: { state: "not_found" as const } }),
+    ),
+    replaceEntryText: vi.fn((command: PresentationChange<number>) => replace("entryText", command)),
+    readEntryTextReceipt: vi.fn(() =>
+      call({ ok: true as const, value: { state: "not_found" as const } }),
+    ),
     replaceZoom: vi.fn((command: PresentationChange<number>) => replace("zoom", command)),
     adjustZoom: vi.fn((operationId: string, intent: string) =>
       replace("zoom", {

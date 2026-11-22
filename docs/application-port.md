@@ -2,8 +2,6 @@
 type: Specification
 title: Bounded foundation application port
 description: Versioned application configuration, service recovery, provider connections and bounded research operations with durable task controls, global pause counts, scoped events and text parts across the desktop boundary.
-generated:
-  by: codex/gpt-6.1-sol
 sources:
   - id: chromium-keyboard-suppression
     resource: https://github.com/chromium/chromium/blob/156.0.8078.48/content/browser/renderer_host/render_widget_host_impl.cc
@@ -130,7 +128,7 @@ Effect-bearing named broker requests and About reads share the same per-frame an
 
 The [native command acceptance helper](../tooling/command-acceptance.mjs), invoked by `desktop:test`, checks the actual assembled metadata, menu availability, offline dialogs, clipboard, keyboard route, focus, raster bounds and native viewport/zoom geometry. Its result retains omissions for physical keyboard layouts, OS IMEs and manual assistive journeys. Synthetic input vectors cover shifted punctuation and Hangul command-key values; they do not qualify an OS keyboard layout. A shifted slash invokes Keyboard shortcuts rather than silently becoming Help; the separate Help chord can be unproducible on such layouts. AZERTY top-row Ctrl+0 is likewise not silently remapped to Ctrl+Shift+0; these layout gaps require qualification and remain reachable through the menus when their handlers are delivered. [Native interface qualification](epics/EPIC-002-basic-interface/STORY-002-010-native-interface-qualification.md) owns the broader integrated qualification; deterministic adapter tests and catalog screenshots remain separate evidence.
 
-The [Settings preference consumer](settings.md#named-preference-boundary) adds generation-bound presentation snapshots, character and zoom receipts, application-wide zoom admission and a rendering-only zoom retry to this same port.
+The [Settings preference consumer](settings.md#named-preference-boundary) adds generation-bound presentation snapshots, named replacement and receipt operations for characters, zoom, source quote length and entry text length, application-wide zoom admission and a rendering-only zoom retry to this same port.
 
 ## Native window command bridge
 

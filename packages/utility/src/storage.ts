@@ -168,7 +168,10 @@ import { Kysely, SqliteDialect, sql } from "kysely";
 import { Migrator } from "kysely/migration";
 import {
   decodePresentationChange,
+  defaultEntryTextLength,
+  defaultSourceQuoteLength,
   isCharacterPresentation,
+  isMemoryDisplayLength,
   isInterfaceZoom,
   nextInterfaceZoom,
   isZoomBoundaryError,
@@ -242,6 +245,16 @@ import {
   up as presentationReceipts,
   schema as presentationReceiptsSchema,
 } from "./migrations/0005_presentation_receipts.mjs";
+import {
+  up as sourceQuotePreference,
+  preferencesSchema as sourceQuotePreferencesSchema,
+  receiptsSchema as sourceQuoteReceiptsSchema,
+} from "./migrations/0032_source_quote_preference.mjs";
+import {
+  up as entryTextPreference,
+  preferencesSchema as entryTextPreferencesSchema,
+  receiptsSchema as entryTextReceiptsSchema,
+} from "./migrations/0033_entry_text_preference.mjs";
 
 interface PresentationReceiptRow extends Omit<Receipt, "value"> {
   feature: PresentationFeature;
@@ -268,6 +281,35 @@ interface LocaleReceiptRow extends Omit<Receipt, "value"> {
 interface LayoutReceiptRow extends Omit<Receipt, "value"> {
   value: string;
 }
+const presentationPreferences: {
+  readonly [K in PresentationFeature]: {
+    readonly key: string;
+    readonly initial: PresentationValues[K];
+    readonly fallback: PresentationValues[K];
+    readonly valid: (value: unknown) => boolean;
+  };
+} = {
+  character: {
+    key: "character_presentation",
+    initial: "animated",
+    fallback: "static",
+    valid: isCharacterPresentation,
+  },
+  zoom: { key: "interface_zoom", initial: 100, fallback: 100, valid: isInterfaceZoom },
+  sourceQuote: {
+    key: "project_memory_source_quote_length",
+    initial: defaultSourceQuoteLength,
+    fallback: defaultSourceQuoteLength,
+    valid: isMemoryDisplayLength,
+  },
+  entryText: {
+    key: "project_memory_entry_text_length",
+    initial: defaultEntryTextLength,
+    fallback: defaultEntryTextLength,
+    valid: isMemoryDisplayLength,
+  },
+};
+
 interface Schema extends ResearchSchema {
   execution_limits_receipts: { operation_id: string; value: number; result_revision: number };
   presentation_receipts: PresentationReceiptRow;
@@ -354,6 +396,8 @@ const names = [
   "0029_project_memory",
   "0030_researcher_memory",
   "0031_reply_usage",
+  "0032_source_quote_preference",
+  "0033_entry_text_preference",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -676,11 +720,29 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
   }
   const normalize = (value: string) => value.trim().replace(/\s+/g, " ");
   for (const [table, expectedSql] of [
-    ["application_preferences", preferencesSchema],
+    [
+      "application_preferences",
+      revision >= 33
+        ? entryTextPreferencesSchema
+        : revision >= 32
+          ? sourceQuotePreferencesSchema
+          : preferencesSchema,
+    ],
     ...(revision >= 2 ? [["appearance_receipts", receiptsSchema]] : []),
     ...(revision >= 3 ? [["locale_receipts", localeReceiptsSchema]] : []),
     ...(revision >= 4 ? [["layout_receipts", layoutReceiptsSchema]] : []),
-    ...(revision >= 5 ? [["presentation_receipts", presentationReceiptsSchema]] : []),
+    ...(revision >= 5
+      ? [
+          [
+            "presentation_receipts",
+            revision >= 33
+              ? entryTextReceiptsSchema
+              : revision >= 32
+                ? sourceQuoteReceiptsSchema
+                : presentationReceiptsSchema,
+          ],
+        ]
+      : []),
     ...(revision >= 6 ? [["window_bounds_receipts", boundsReceiptsSchema]] : []),
     ...(revision >= 7
       ? Object.entries(researchTables).map(([name, definition]) => [
@@ -1228,6 +1290,8 @@ export class DurableStore {
                 "0029_project_memory": { up: projectMemory },
                 "0030_researcher_memory": { up: researcherMemory },
                 "0031_reply_usage": { up: replyUsage },
+                "0032_source_quote_preference": { up: sourceQuotePreference },
+                "0033_entry_text_preference": { up: entryTextPreference },
               }),
           },
         });
@@ -2242,8 +2306,8 @@ export class DurableStore {
     feature: K,
     row: Preferences | undefined,
   ): Outcome<PresentationRecord<PresentationValues[K]>> {
-    const initial = (feature === "character" ? "animated" : 100) as PresentationValues[K];
-    const fallback = (feature === "character" ? "static" : 100) as PresentationValues[K];
+    const initial = presentationPreferences[feature].initial;
+    const fallback = presentationPreferences[feature].fallback;
     if (!row)
       return {
         ok: true,
@@ -2257,9 +2321,7 @@ export class DurableStore {
     } catch {
       /* Retain rejected evidence. */
     }
-    const valid =
-      row.schema_version === 1 &&
-      (feature === "character" ? isCharacterPresentation(value) : isInterfaceZoom(value));
+    const valid = row.schema_version === 1 && presentationPreferences[feature].valid(value);
     return {
       ok: true,
       value: {
@@ -2281,7 +2343,7 @@ export class DurableStore {
         await this.database
           .selectFrom("application_preferences")
           .selectAll()
-          .where("key", "=", feature === "character" ? "character_presentation" : "interface_zoom")
+          .where("key", "=", presentationPreferences[feature].key)
           .executeTakeFirst(),
       );
     } catch {
@@ -2307,7 +2369,7 @@ export class DurableStore {
     const boundary = row.error_code !== null;
     if (
       row.feature !== feature ||
-      !(feature === "character" ? isCharacterPresentation(value) : isInterfaceZoom(value)) ||
+      !presentationPreferences[feature].valid(value) ||
       !isIdentifier(row.operation_id) ||
       ![0, 1].includes(row.accepted) ||
       !Number.isSafeInteger(row.expected_revision) ||
@@ -2381,14 +2443,14 @@ export class DurableStore {
   ): Promise<Outcome<SavedPresentationRecord<PresentationValues[K]>>> {
     if (!this.ready || !this.database) return failure(this.active ? "busy" : "service_unavailable");
     if (
-      (feature !== "character" && feature !== "zoom") ||
+      !Object.hasOwn(presentationPreferences, feature) ||
       (intent !== null &&
         (feature !== "zoom" || !["increase", "decrease", "reset"].includes(intent)))
     )
       return failure("invalid_message");
     const decoded = decodePresentationChange(feature, command);
     if (!decoded.ok) return decoded;
-    command = decoded.value as PresentationChange<PresentationValues[K]>;
+    command = decoded.value;
     this.active = true;
     let commitAttempted = false;
     const attempted = () => commitAttempted;
@@ -2406,7 +2468,7 @@ export class DurableStore {
               .where("operation_id", "=", command.operationId)
               .executeTakeFirst(),
           );
-          const key = feature === "character" ? "character_presentation" : "interface_zoom";
+          const key = presentationPreferences[feature].key;
           const current = this.presentationRecord(
             feature,
             await transaction

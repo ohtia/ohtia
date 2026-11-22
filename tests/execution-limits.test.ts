@@ -294,7 +294,7 @@ describe("execution limit contract and storage", () => {
     source.close();
     await f.store.open();
     const db = f.raw();
-    expect(db.pragma("user_version", { simple: true })).toBe(31);
+    expect(db.pragma("user_version", { simple: true })).toBe(33);
     expect(db.prepare("SELECT state,blocking_reason FROM tasks").all()).toEqual([
       { state: "queued", blocking_reason: null },
     ]);

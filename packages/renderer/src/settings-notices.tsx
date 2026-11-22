@@ -1,21 +1,27 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { message, type InterfaceLocale, type SimpleMessageKey } from "@ohtia/contracts";
+import {
+  formatNumber,
+  message,
+  type InterfaceLocale,
+  type SimpleMessageKey,
+} from "@ohtia/contracts";
 import { LucideGlyph as Icon } from "./iconography.js";
 import {
+  settingsFeatures,
   type SettingsState,
   type SettingFeature,
   type SettingValue,
   SettingsController,
 } from "./settings-controller.js";
 export function settingName(locale: InterfaceLocale, feature: SettingFeature): string {
-  return message(
-    locale,
-    feature === "appearance"
-      ? "help.appearance"
-      : feature === "character"
-        ? "help.characters"
-        : "help.zoom",
-  );
+  const labels = {
+    appearance: "help.appearance",
+    character: "help.characters",
+    zoom: "help.zoom",
+    sourceQuote: "memory.sourceQuoteLength",
+    entryText: "memory.entryTextLength",
+  } as const;
+  return message(locale, labels[feature]);
 }
 export function settingLabel(
   locale: InterfaceLocale,
@@ -26,7 +32,9 @@ export function settingLabel(
     ? message(locale, `command.theme.${value as "system" | "light" | "dark"}`)
     : feature === "character"
       ? message(locale, `settings.${value as "animated" | "static" | "hidden"}`)
-      : new Intl.NumberFormat(locale, { style: "percent" }).format(Number(value) / 100);
+      : feature === "zoom"
+        ? new Intl.NumberFormat(locale, { style: "percent" }).format(Number(value) / 100)
+        : formatNumber(locale, Number(value));
 }
 export function RecoveryFocusBoundary({
   children,
@@ -278,7 +286,7 @@ export function SettingsFeedback({
   const hasNotices =
     state.readFailed ||
     state.zoomBusy ||
-    (["appearance", "character", "zoom"] as const).some((feature) => {
+    settingsFeatures.some((feature) => {
       const setting = state.settings[feature];
       return (
         setting.phase === "rejected" ||
@@ -311,7 +319,7 @@ export function SettingsFeedback({
           {message(locale, "command.settings.open")}
         </button>
       )}
-      {(["appearance", "character", "zoom"] as const).map((feature) => (
+      {settingsFeatures.map((feature) => (
         <SettingsNotices
           key={feature}
           feature={feature}

@@ -230,7 +230,6 @@
 }
 @media (pointer: coarse) {
   .settings-content button,
-  .limits-panel input,
   .settings-layout-option,
   .settings-character-option {
     min-block-size: var(--component-target-coarse);
@@ -365,6 +364,11 @@
   margin-block-start: var(--space-2);
 }
 
+.memory-length-settings {
+  display: grid;
+  gap: var(--space-2);
+}
+
 .settings-group-heading {
   display: flex;
   flex-wrap: wrap;
@@ -372,7 +376,7 @@
   align-items: baseline;
   justify-content: space-between;
 }
-.limits-panel input {
+.settings-number-input {
   inline-size: 100%;
   box-sizing: border-box;
   min-inline-size: var(--space-0);
@@ -383,6 +387,12 @@
   border: var(--border-width-default) solid var(--border-control);
   border-radius: var(--radius-medium);
   font: inherit;
+}
+@media (pointer: coarse) {
+  .settings-number-input {
+    min-inline-size: var(--component-target-coarse);
+    min-block-size: var(--component-target-coarse);
+  }
 }
 .limits-notice-actions {
   display: flex;

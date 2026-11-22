@@ -203,6 +203,10 @@ export function createStatusService(
     if (!character.ok) return character;
     const zoom = await storage.readPresentationPreference("zoom");
     if (!zoom.ok) return zoom;
+    const sourceQuote = await storage.readPresentationPreference("sourceQuote");
+    if (!sourceQuote.ok) return sourceQuote;
+    const entryText = await storage.readPresentationPreference("entryText");
+    if (!entryText.ok) return entryText;
     return {
       ok: true,
       value: {
@@ -210,6 +214,8 @@ export function createStatusService(
         appearance: appearance.value,
         character: character.value,
         zoom: zoom.value,
+        sourceQuote: sourceQuote.value,
+        entryText: entryText.value,
       },
     };
   };
@@ -290,27 +296,37 @@ export function createStatusService(
       });
     else if (value.operation === "presentation.read")
       emit({ ...value, kind: "result", payload: await presentationSnapshot() });
-    else if (value.operation === "character.receipt" || value.operation === "zoom.receipt")
+    else if (
+      value.operation === "character.receipt" ||
+      value.operation === "zoom.receipt" ||
+      value.operation === "sourceQuote.receipt" ||
+      value.operation === "entryText.receipt"
+    )
       emit({
         ...value,
         kind: "result",
         payload: await storage.readPresentationReceipt(
-          value.operation === "character.receipt" ? "character" : "zoom",
+          (
+            {
+              "character.receipt": "character",
+              "zoom.receipt": "zoom",
+              "sourceQuote.receipt": "sourceQuote",
+              "entryText.receipt": "entryText",
+            } as const
+          )[value.operation],
           value.payload.targetOperationId,
         ),
       });
     else if (
       value.operation === "character.replace" ||
+      value.operation === "sourceQuote.replace" ||
+      value.operation === "entryText.replace" ||
       value.operation === "zoom.replace" ||
       value.operation === "zoom.commit"
     ) {
       const result =
-        value.operation === "character.replace"
-          ? await storage.replacePresentationPreference("character", {
-              operationId: value.operationId,
-              ...value.payload,
-            })
-          : await storage.replacePresentationPreference(
+        value.operation === "zoom.replace" || value.operation === "zoom.commit"
+          ? await storage.replacePresentationPreference(
               "zoom",
               {
                 operationId: value.operationId,
@@ -318,6 +334,16 @@ export function createStatusService(
                 value: value.payload.value,
               },
               value.operation === "zoom.commit" ? value.payload.intent : null,
+            )
+          : await storage.replacePresentationPreference(
+              (
+                {
+                  "character.replace": "character",
+                  "sourceQuote.replace": "sourceQuote",
+                  "entryText.replace": "entryText",
+                } as const
+              )[value.operation],
+              { operationId: value.operationId, ...value.payload },
             );
       emit({ ...value, kind: "result", payload: result });
       if (result.ok || result.error.code === "uncertain") await presentationEvent();
@@ -674,6 +700,8 @@ export function createStatusService(
               value.operation === "layout.replace" ||
               value.operation === "bounds.replace" ||
               value.operation === "character.replace" ||
+              value.operation === "sourceQuote.replace" ||
+              value.operation === "entryText.replace" ||
               value.operation === "zoom.replace" ||
               value.operation === "zoom.commit"
               ? "uncertain"

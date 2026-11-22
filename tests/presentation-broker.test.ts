@@ -22,6 +22,8 @@ function snapshot(revision = 0, percent = 100): PresentationSnapshot {
     serviceGeneration: "service-1",
     appearance: { schemaVersion: 1, revision: 0, value: "system", source: "default" },
     character: { schemaVersion: 1, revision: 0, value: "animated", source: "default" },
+    sourceQuote: { schemaVersion: 1, revision: 0, value: 144, source: "default" },
+    entryText: { schemaVersion: 1, revision: 0, value: 288, source: "default" },
     zoom: {
       schemaVersion: 1,
       revision,

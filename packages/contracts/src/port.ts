@@ -29,7 +29,10 @@ import {
 } from "./connections.js";
 import { isWindowBounds, type WindowBounds } from "./window-bounds.js";
 import {
+  defaultEntryTextLength,
+  defaultSourceQuoteLength,
   isCharacterPresentation,
+  isMemoryDisplayLength,
   isInterfaceZoom,
   zoomBoundaryErrors,
   type CharacterPresentation,
@@ -38,6 +41,8 @@ import {
   type SavedPresentationRecord,
   type PresentationReceipt,
   type PresentationSnapshot,
+  type PresentationValues,
+  type PresentationFeature,
   type ZoomIntent,
 } from "./presentation.js";
 import { isWorkspaceLayout, type WorkspaceLayout } from "./layout.js";
@@ -324,6 +329,10 @@ export interface OperationInputs extends ResearchInputs {
   "bounds.receipt": { readonly targetOperationId: string };
   "presentation.read": Record<string, never>;
   "presentation.subscribe": { readonly subscriptionId: string };
+  "sourceQuote.replace": { readonly expectedRevision: number; readonly value: number };
+  "entryText.replace": { readonly expectedRevision: number; readonly value: number };
+  "sourceQuote.receipt": { readonly targetOperationId: string };
+  "entryText.receipt": { readonly targetOperationId: string };
   "character.replace": { readonly expectedRevision: number; readonly value: CharacterPresentation };
   "character.receipt": { readonly targetOperationId: string };
   "zoom.replace": { readonly expectedRevision: number; readonly value: InterfaceZoom };
@@ -367,6 +376,10 @@ export interface OperationOutputs extends ResearchOutputs {
   "bounds.receipt": WindowBoundsReceipt;
   "presentation.read": PresentationSnapshot;
   "presentation.subscribe": { readonly subscriptionId: string };
+  "sourceQuote.replace": SavedPresentationRecord<number>;
+  "entryText.replace": SavedPresentationRecord<number>;
+  "sourceQuote.receipt": PresentationReceipt<number>;
+  "entryText.receipt": PresentationReceipt<number>;
   "character.replace": SavedPresentationRecord<CharacterPresentation>;
   "character.receipt": PresentationReceipt<CharacterPresentation>;
   "zoom.replace": SavedPresentationRecord<InterfaceZoom>;
@@ -483,6 +496,16 @@ export interface FoundationPort extends ResearchPort {
   ): Subscription;
   readPresentation(): PortCall<PresentationSnapshot>;
   subscribePresentation(listener: (notice: Outcome<PresentationSnapshot>) => void): Subscription;
+  replaceSourceQuote(
+    change: PresentationChange<number>,
+    expectedServiceGeneration?: string,
+  ): PortCall<SavedPresentationRecord<number>>;
+  readSourceQuoteReceipt(operationId: string): PortCall<PresentationReceipt<number>>;
+  replaceEntryText(
+    change: PresentationChange<number>,
+    expectedServiceGeneration?: string,
+  ): PortCall<SavedPresentationRecord<number>>;
+  readEntryTextReceipt(operationId: string): PortCall<PresentationReceipt<number>>;
   replaceCharacter(
     change: PresentationChange<CharacterPresentation>,
     expectedServiceGeneration?: string,
@@ -617,6 +640,12 @@ function characterRecord(value: Json | undefined): boolean {
 function zoomRecord(value: Json | undefined): boolean {
   return presentationRecord(value, isInterfaceZoom, 100, 100);
 }
+function memoryLengthRecord(value: Json | undefined, fallback: number): boolean {
+  return presentationRecord(value, isMemoryDisplayLength, fallback, fallback);
+}
+function savedMemoryLength(value: Json | undefined, fallback: number): boolean {
+  return memoryLengthRecord(value, fallback) && object(value) && value.source === "saved";
+}
 function savedCharacter(value: Json | undefined): boolean {
   return characterRecord(value) && object(value) && value.source === "saved";
 }
@@ -625,11 +654,20 @@ function savedZoom(value: Json | undefined): boolean {
 }
 function presentationSnapshot(value: Json | undefined): boolean {
   return (
-    exact(value, ["serviceGeneration", "appearance", "character", "zoom"]) &&
+    exact(value, [
+      "serviceGeneration",
+      "appearance",
+      "character",
+      "zoom",
+      "sourceQuote",
+      "entryText",
+    ]) &&
     isIdentifier(value.serviceGeneration) &&
     appearance(value.appearance) &&
     characterRecord(value.character) &&
-    zoomRecord(value.zoom)
+    zoomRecord(value.zoom) &&
+    memoryLengthRecord(value.sourceQuote, defaultSourceQuoteLength) &&
+    memoryLengthRecord(value.entryText, defaultEntryTextLength)
   );
 }
 function savedAppearance(value: Json | undefined): boolean {
@@ -1014,6 +1052,10 @@ export const operationErrorCodes = Object.freeze({
   "bounds.receipt": readErrors,
   "presentation.read": [...readErrors, "preference_invalid"],
   "presentation.subscribe": [...readErrors, "sequence_gap", "preference_invalid"],
+  "sourceQuote.replace": replaceErrors,
+  "entryText.replace": replaceErrors,
+  "sourceQuote.receipt": readErrors,
+  "entryText.receipt": readErrors,
   "character.replace": replaceErrors,
   "character.receipt": readErrors,
   "zoom.replace": replaceErrors,
@@ -1098,6 +1140,8 @@ function input(operation: Operation, value: Json | undefined): boolean {
       return exact(value, []);
     case "limits.replace":
       return exact(value, ["value"]) && isInferenceLimit(value.value);
+    case "entryText.replace":
+    case "sourceQuote.replace":
     case "character.replace":
     case "zoom.replace":
       return (
@@ -1106,7 +1150,9 @@ function input(operation: Operation, value: Json | undefined): boolean {
         value.expectedRevision < Number.MAX_SAFE_INTEGER &&
         (operation === "character.replace"
           ? isCharacterPresentation(value.value)
-          : isInterfaceZoom(value.value))
+          : operation === "zoom.replace"
+            ? isInterfaceZoom(value.value)
+            : isMemoryDisplayLength(value.value))
       );
     case "zoom.commit":
       return (
@@ -1147,6 +1193,8 @@ function input(operation: Operation, value: Json | undefined): boolean {
         (value.value === "system" || oneOf(value.value, supportedLocales))
       );
     case "limits.receipt":
+    case "entryText.receipt":
+    case "sourceQuote.receipt":
     case "character.receipt":
     case "zoom.receipt":
     case "locale.receipt":
@@ -1183,6 +1231,14 @@ function output(operation: Operation, value: Json | undefined): boolean {
       return receipt(value, savedBounds);
     case "presentation.read":
       return presentationSnapshot(value);
+    case "sourceQuote.replace":
+      return savedMemoryLength(value, defaultSourceQuoteLength);
+    case "entryText.replace":
+      return savedMemoryLength(value, defaultEntryTextLength);
+    case "sourceQuote.receipt":
+      return receipt(value, (record) => savedMemoryLength(record, defaultSourceQuoteLength));
+    case "entryText.receipt":
+      return receipt(value, (record) => savedMemoryLength(record, defaultEntryTextLength));
     case "character.replace":
       return savedCharacter(value);
     case "character.receipt":
@@ -1326,6 +1382,10 @@ const operations: readonly Operation[] = [
 
   "presentation.read",
   "presentation.subscribe",
+  "sourceQuote.replace",
+  "entryText.replace",
+  "sourceQuote.receipt",
+  "entryText.receipt",
   "character.replace",
   "character.receipt",
   "zoom.replace",
@@ -1608,23 +1668,18 @@ export function decodeWindowBoundsChange(raw: unknown): Outcome<WindowBoundsChan
   }
   return failure("invalid_message");
 }
-export function decodePresentationChange<K extends "character" | "zoom">(
+export function decodePresentationChange<K extends PresentationFeature>(
   feature: K,
   raw: unknown,
-): Outcome<PresentationChange<K extends "character" ? CharacterPresentation : InterfaceZoom>> {
+): Outcome<PresentationChange<PresentationValues[K]>> {
   try {
     const value = boundedJson(raw);
     if (exact(value, ["operationId", "expectedRevision", "value"])) {
       const { operationId, ...payload } = value;
-      if (
-        isIdentifier(operationId) &&
-        input(feature === "character" ? "character.replace" : "zoom.replace", payload)
-      )
+      if (isIdentifier(operationId) && input(`${feature}.replace`, payload))
         return {
           ok: true,
-          value: value as unknown as PresentationChange<
-            K extends "character" ? CharacterPresentation : InterfaceZoom
-          >,
+          value: value as unknown as PresentationChange<PresentationValues[K]>,
         };
     }
   } catch {

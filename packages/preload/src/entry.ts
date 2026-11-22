@@ -413,6 +413,12 @@ const bridge: DesktopBridge = {
     subscribeConnection,
     readPresentation: () => connection.client.port.readPresentation(),
     subscribePresentation,
+    replaceSourceQuote: (change, generation) =>
+      connection.client.port.replaceSourceQuote(change, generation),
+    readSourceQuoteReceipt: (id) => connection.client.port.readSourceQuoteReceipt(id),
+    replaceEntryText: (change, generation) =>
+      connection.client.port.replaceEntryText(change, generation),
+    readEntryTextReceipt: (id) => connection.client.port.readEntryTextReceipt(id),
     replaceCharacter: (change, generation) =>
       connection.client.port.replaceCharacter(change, generation),
     readCharacterReceipt: (id) => connection.client.port.readCharacterReceipt(id),

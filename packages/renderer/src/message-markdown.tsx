@@ -5,6 +5,7 @@ import { gfmTableFromMarkdown } from "mdast-util-gfm-table";
 import { isExternalMessageLink, message, type InterfaceLocale } from "@ohtia/contracts";
 import { LucideGlyph } from "./iconography.js";
 import { Tooltip } from "./layers.js";
+import { clippedText } from "./text-preview.js";
 import "./message-markdown.css";
 
 type Root = ReturnType<typeof fromMarkdown>;
@@ -634,8 +635,8 @@ function parseMessage(text: string) {
   return { ...literal, tree };
 }
 
-export function conversationPreview(prefix: string, truncated: boolean): string {
-  const parsed = parseMessage(prefix);
+function messagePlainText(source: string): string {
+  const parsed = parseMessage(source);
   function text(node: Node): string {
     switch (node.type) {
       case "definition":
@@ -653,13 +654,21 @@ export function conversationPreview(prefix: string, truncated: boolean): string 
     }
     return "";
   }
-  const plain = Array.from(
-    text(parsed.tree)
-      .replace(/[\s\p{White_Space}]+/gu, " ")
-      .trim(),
-  );
+  return text(parsed.tree)
+    .replace(/[\s\p{White_Space}]+/gu, " ")
+    .trim();
+}
+
+export function conversationPreview(prefix: string, truncated: boolean): string {
+  const plain = Array.from(messagePlainText(prefix));
   const limit = 120;
   return plain.slice(0, limit).join("") + (plain.length > limit || truncated ? "…" : "");
+}
+
+export function sourceQuotation(source: string, limit: number): string {
+  const plain = messagePlainText(source);
+  const prefix = clippedText(plain, limit);
+  return prefix === undefined ? plain : prefix + "…";
 }
 
 /** A closed React element mapping. No HTML renderer, sanitizer or remote resource resolver. */

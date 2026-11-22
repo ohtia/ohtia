@@ -8,6 +8,10 @@ import { failure } from "../packages/contracts/src/index.js";
 import { defaultWorkspaceLayout } from "../packages/renderer/src/workspace-geometry.js";
 import { request } from "./fixtures/port-corpus.js";
 import {
+  preEntryTextSql,
+  preSourceQuoteSql,
+} from "../tooling/storage-legacy-consultation-fixture.mjs";
+import {
   createStatusService,
   DurableStore,
   initializeStorage,
@@ -40,13 +44,13 @@ describe("durable preference and migration recovery", () => {
     await store.close();
     expectClosed();
     const newer = raw();
-    newer.pragma("user_version=32");
+    newer.pragma("user_version=34");
     newer.close();
     close.mockClear();
     await expect(store.open()).rejects.toThrow(/Unsupported/);
     expectClosed();
     const current = raw();
-    current.pragma("user_version=31");
+    current.pragma("user_version=33");
     current.close();
     close.mockClear();
     await store.open();
@@ -499,12 +503,12 @@ describe("durable preference and migration recovery", () => {
     await store.open();
     await store.close();
     const db = raw();
-    db.pragma("user_version=32");
+    db.pragma("user_version=34");
     db.close();
     await expect(store.open()).rejects.toThrow(/Unsupported/);
     expect(checkpoints(root)).toHaveLength(1);
     const again = raw();
-    again.pragma("user_version=31");
+    again.pragma("user_version=33");
     again.exec("UPDATE ohtia_migration_artifacts SET sha256='" + "a".repeat(64) + "'");
     again.close();
     await expect(store.open()).rejects.toThrow(/identity/);
@@ -1248,7 +1252,7 @@ describe("layout migration and uncertain commit boundary", () => {
       ),
     );
     expect(entries).toContainEqual(
-      expect.objectContaining({ sourceRevision: 3, targetRevision: 31 }),
+      expect.objectContaining({ sourceRevision: 3, targetRevision: 33 }),
     );
   });
   it("rolls back both rows before commit and reconciles a lost acknowledgement after a real commit", async () => {
@@ -1449,7 +1453,7 @@ describe("file-backed native window preferences", () => {
           fs.readFileSync(path.join(root, "recovery/migrations", name, "manifest.json"), "utf8"),
         ),
       ),
-    ).toContainEqual(expect.objectContaining({ sourceRevision: 5, targetRevision: 31 }));
+    ).toContainEqual(expect.objectContaining({ sourceRevision: 5, targetRevision: 33 }));
   });
 });
 
@@ -1853,4 +1857,183 @@ it("reports unreadable presentation receipts and admission loss without changing
       .get(),
   ).toBe(0);
   intact.close();
+});
+
+it("defaults both memory display preferences, preserves older receipts and persists independent changes across windows and restart", async () => {
+  const { store, raw } = fixture();
+  await store.open();
+  const defaultQuote = { schemaVersion: 1, revision: 0, value: 144, source: "default" };
+  const defaultEntry = { ...defaultQuote, value: 288 };
+  expect(await store.readPresentationPreference("entryText")).toEqual({
+    ok: true,
+    value: defaultEntry,
+  });
+  expect(await store.readPresentationPreference("sourceQuote")).toEqual({
+    ok: true,
+    value: defaultQuote,
+  });
+  const oldReceipt = await store.replacePresentationPreference("character", {
+    operationId: "old-character",
+    expectedRevision: 0,
+    value: "hidden",
+  });
+  expect(oldReceipt.ok).toBe(true);
+  await store.close();
+  const db = raw();
+  db.exec(preSourceQuoteSql);
+  db.close();
+  await store.open();
+  expect(await store.readPresentationPreference("sourceQuote")).toEqual({
+    ok: true,
+    value: defaultQuote,
+  });
+  expect(await store.readPresentationReceipt("character", "old-character")).toEqual({
+    ok: true,
+    value: { state: "recorded", outcome: oldReceipt },
+  });
+
+  const sent: string[] = [];
+  const service = createStatusService("service-1", "en-US", (text) => sent.push(text), store);
+  service.activate("en-US");
+  try {
+    for (const windowGeneration of ["window-1", "window-2"]) {
+      service.receive(
+        JSON.stringify(
+          presentationRequest(
+            "presentation.subscribe",
+            { subscriptionId: "presentation" },
+            { windowGeneration, operationId: windowGeneration, requestId: windowGeneration },
+          ),
+        ),
+      );
+    }
+    await service.drain();
+    sent.length = 0;
+    service.receive(
+      JSON.stringify(
+        presentationRequest(
+          "sourceQuote.replace",
+          { expectedRevision: 0, value: 0 },
+          { operationId: "full-quote" },
+        ),
+      ),
+    );
+    await service.drain();
+    const events = sent
+      .map((text) => JSON.parse(text))
+      .filter((message) => message.kind === "event");
+    expect(events.map((event) => event.windowGeneration)).toEqual(["window-1", "window-2"]);
+    const savedQuote = { ...defaultQuote, value: 0, revision: 1, source: "saved" };
+    expect(events.map((event) => event.payload.sourceQuote)).toEqual([savedQuote, savedQuote]);
+    expect(events.map((event) => event.payload.entryText)).toEqual([defaultEntry, defaultEntry]);
+
+    sent.length = 0;
+    service.receive(
+      JSON.stringify(
+        presentationRequest(
+          "sourceQuote.receipt",
+          { targetOperationId: "full-quote" },
+          { requestId: "quote-receipt" },
+        ),
+      ),
+    );
+    service.receive(
+      JSON.stringify(
+        presentationRequest(
+          "zoom.replace",
+          { expectedRevision: 0, value: 125 },
+          { operationId: "independent-zoom", requestId: "independent-zoom" },
+        ),
+      ),
+    );
+    await service.drain();
+    const replies = sent.map((text) => JSON.parse(text));
+    expect(replies.find((reply) => reply.requestId === "quote-receipt")).toMatchObject({
+      payload: { ok: true, value: { state: "recorded", outcome: { ok: true, value: savedQuote } } },
+    });
+    expect(replies.find((reply) => reply.requestId === "independent-zoom")).toMatchObject({
+      payload: { ok: true, value: { value: 125, revision: 1 } },
+    });
+    expect(
+      replies.filter((reply) => reply.kind === "event").map((reply) => reply.payload.sourceQuote),
+    ).toEqual([savedQuote, savedQuote]);
+  } finally {
+    service.dispose();
+  }
+  await store.close();
+  const version32 = raw();
+  version32.exec(preEntryTextSql);
+  version32.close();
+  await store.open();
+  const saved = await store.readPresentationPreference("sourceQuote");
+  expect(saved).toMatchObject({ ok: true, value: { value: 0, revision: 1, source: "saved" } });
+  expect(await store.readPresentationReceipt("sourceQuote", "full-quote")).toEqual({
+    ok: true,
+    value: { state: "recorded", outcome: saved },
+  });
+  expect(await store.readPresentationPreference("character")).toEqual(oldReceipt);
+  expect(await store.readPresentationPreference("entryText")).toEqual({
+    ok: true,
+    value: defaultEntry,
+  });
+
+  const restarted = createStatusService("service-1", "en-US", (text) => sent.push(text), store);
+  restarted.activate("en-US");
+  try {
+    for (const windowGeneration of ["window-1", "window-2"]) {
+      restarted.receive(
+        JSON.stringify(
+          presentationRequest(
+            "presentation.subscribe",
+            { subscriptionId: "presentation" },
+            { windowGeneration, operationId: windowGeneration, requestId: windowGeneration },
+          ),
+        ),
+      );
+    }
+    await restarted.drain();
+    sent.length = 0;
+    restarted.receive(
+      JSON.stringify(
+        presentationRequest(
+          "entryText.replace",
+          { expectedRevision: 0, value: 0 },
+          { operationId: "full-entry", requestId: "entry-replace" },
+        ),
+      ),
+    );
+    await restarted.drain();
+    const savedEntry = { ...defaultEntry, value: 0, revision: 1, source: "saved" };
+    const events = sent
+      .map((text) => JSON.parse(text))
+      .filter((message) => message.kind === "event");
+    expect(events.map((event) => event.windowGeneration)).toEqual(["window-1", "window-2"]);
+    expect(events.map((event) => event.payload.entryText)).toEqual([savedEntry, savedEntry]);
+    expect(events.map((event) => event.payload.sourceQuote.value)).toEqual([0, 0]);
+
+    restarted.receive(
+      JSON.stringify(
+        presentationRequest(
+          "entryText.receipt",
+          { targetOperationId: "full-entry" },
+          { requestId: "entry-receipt" },
+        ),
+      ),
+    );
+    await restarted.drain();
+    expect(
+      sent.map((text) => JSON.parse(text)).find((reply) => reply.requestId === "entry-receipt"),
+    ).toMatchObject({
+      payload: { ok: true, value: { state: "recorded", outcome: { ok: true, value: savedEntry } } },
+    });
+  } finally {
+    restarted.dispose();
+  }
+  await store.close();
+  await store.open();
+  expect(await store.readPresentationPreference("sourceQuote")).toEqual(saved);
+  expect(await store.readPresentationPreference("entryText")).toMatchObject({
+    ok: true,
+    value: { value: 0, revision: 1, source: "saved" },
+  });
 });

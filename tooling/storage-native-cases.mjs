@@ -97,6 +97,7 @@ function pause() {
   throw new Error("Interruption control was not terminated.");
 }
 async function test(id, action) {
+  send({ kind: "case-started", id });
   const root = path.join(output, id);
   fs.mkdirSync(root);
   try {

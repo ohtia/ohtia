@@ -6,6 +6,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { _electron, expect } from "@playwright/test";
 import { openWorkspaceSettings, verifyWorkspaceComposition } from "./command-workspace.mjs";
 import { verifyPackagedSettings } from "./settings-acceptance.mjs";
+import { runStorageComponent } from "./storage-component-runner.mjs";
 import {
   verifyMissingLocatedDatabase,
   waitForReplacedLocalePublication,
@@ -202,52 +203,15 @@ async function open(page, expected = "storage_ready") {
 async function component(mode, directory, expectedInterruption = false) {
   enterPhase(`component-${mode}`);
   const helper = fileURLToPath(new URL("./storage-native-cases.mjs", import.meta.url));
-  return application.evaluate(
-    async ({ utilityProcess }, input) => {
-      const child = utilityProcess.fork(
-        input.helper,
-        [input.profile, input.app, input.directory, input.mode],
-        {
-          serviceName: "Ohtia storage acceptance",
-          stdio: "ignore",
-          execArgv: [],
-          cwd: input.scratch,
-          env: input.env,
-        },
-      );
-      const messages = [];
-      return new Promise((resolve, reject) => {
-        let paused = false;
-        const timer = setTimeout(() => {
-          child.kill();
-          reject(new Error("Native storage case exceeded its bound."));
-        }, 60000);
-        child.on("message", (message) => {
-          const value = JSON.parse(message);
-          messages.push(value);
-          if (value.kind === "complete" || value.kind === "failed") child.postMessage("ack");
-          if (value.kind === "paused" && input.interrupted) {
-            paused = true;
-            child.kill();
-          }
-        });
-        child.once("exit", (code) => {
-          clearTimeout(timer);
-          resolve({ code, paused, messages });
-        });
-      });
-    },
-    {
-      helper,
-      profile: profileFile,
-      app: launch.app,
-      directory,
-      mode,
-      interrupted: expectedInterruption,
-      scratch: launch.profile.scratch_root,
-      env: launch.env,
-    },
-  );
+  return application.evaluate(runStorageComponent, {
+    helper,
+    args: [profileFile, launch.app, directory, mode],
+    mode,
+    interrupted: expectedInterruption,
+    caseIds: mode === "cases" ? inventory.component_cases : [],
+    scratch: launch.profile.scratch_root,
+    env: launch.env,
+  });
 }
 try {
   let page = await start();

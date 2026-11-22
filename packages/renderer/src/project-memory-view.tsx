@@ -1,7 +1,9 @@
 import {
+  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -26,14 +28,16 @@ import {
   type Outcome,
   type MemoryPage,
   type MemoryVersion,
+  type PortCall,
   type PortText,
 } from "@ohtia/contracts";
 import type { ConversationController } from "./conversation-controller.js";
 import { ContributorSymbol } from "./contributor-identity.js";
 import { LucideGlyph } from "./iconography.js";
 import { Dialog } from "./layers.js";
-import { conversationPreview } from "./message-markdown.js";
+import { sourceQuotation } from "./message-markdown.js";
 import { stagedCommand } from "./staged-command.js";
+import { clippedText } from "./text-preview.js";
 import "./project-memory.css";
 
 type MemoryPort = Pick<
@@ -41,12 +45,14 @@ type MemoryPort = Pick<
   | "listMemory"
   | "readMemoryHistory"
   | "readTextPart"
+  | "readTimeline"
   | "sendTextPart"
   | "addMemory"
   | "editMemory"
   | "withdrawMemory"
 >;
 type Entry = Omit<MemoryEntry, "text"> & { readonly text: string };
+type MemorySource = NonNullable<MemoryEntry["source"]>;
 type Version = Omit<MemoryVersion, "text"> & { readonly text: string };
 export interface MemoryDraftSource {
   readonly messageId: string;
@@ -150,19 +156,38 @@ function freshDraft(source?: MemoryDraftSource): Draft {
     : { kind: "note", text: "", ...(source ? { source } : {}) };
 }
 
+async function readWhileCurrent<T>(request: PortCall<T>, signal: AbortSignal): Promise<Outcome<T>> {
+  const cancel = () => {
+    request.cancel();
+  };
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    const result = await request.result;
+    signal.throwIfAborted();
+    return result;
+  } finally {
+    signal.removeEventListener("abort", cancel);
+  }
+}
+
 export async function readMemoryText(
   port: Pick<MemoryPort, "readTextPart">,
   content: PortText,
   signal: AbortSignal,
 ): Promise<string> {
+  signal.throwIfAborted();
   if (typeof content === "string") return content;
   let text = "";
   for (let index = 1; index <= content.parts; index++) {
     if (signal.aborted) throw signal.reason;
-    const part = await port.readTextPart({ source: content.source, index }).result;
+    const part = await readWhileCurrent(
+      port.readTextPart({ source: content.source, index }),
+      signal,
+    );
     if (!part.ok) throw new Error("Memory text part unavailable.");
     text += part.value.text;
   }
+  signal.throwIfAborted();
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   const sha256 = [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
@@ -347,6 +372,162 @@ function EntryHistory({
   );
 }
 
+class MemorySourceReader {
+  // Keep source reads from consuming the window's entire pending request budget.
+  private tail = Promise.resolve();
+
+  constructor(private readonly port: MemoryPort) {}
+
+  read(conversationId: string, messageId: string, signal: AbortSignal): Promise<string> {
+    const next = this.tail.then(async () => {
+      signal.throwIfAborted();
+      // Later Markdown can change how the prefix renders, even for a short display limit.
+      const result = await readWhileCurrent(
+        this.port.readTimeline({ conversationId, ids: [messageId] }),
+        signal,
+      );
+      const item = result.ok ? result.value.items[0] : undefined;
+      if (item?.kind !== "message" || item.id !== messageId)
+        throw new Error("Memory source message unavailable.");
+      return readMemoryText(this.port, item.content, signal);
+    });
+    this.tail = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+}
+
+function MemoryQuotation({
+  source,
+  limit,
+  locale,
+  reader,
+  goToMessage,
+}: {
+  readonly source: MemorySource;
+  readonly limit: number;
+  readonly locale: InterfaceLocale;
+  readonly reader: MemorySourceReader;
+  readonly goToMessage: (source: MemorySource) => void;
+}) {
+  const { conversationId, messageId, prefix, truncated } = source;
+  const [read, setRead] = useState<{ text: string } | "failed">();
+  const [attempt, setAttempt] = useState(0);
+  const link = useRef<HTMLAnchorElement>(null);
+  useEffect(() => {
+    if (!truncated) return;
+    const load = new AbortController();
+    void reader.read(conversationId, messageId, load.signal).then(
+      (text) => {
+        if (!load.signal.aborted) setRead({ text });
+      },
+      () => {
+        if (!load.signal.aborted) setRead("failed");
+      },
+    );
+    return () => {
+      load.abort();
+    };
+  }, [reader, conversationId, messageId, truncated, attempt]);
+
+  const sourceText = truncated ? (typeof read === "object" ? read.text : undefined) : prefix;
+  const quote = useMemo(
+    () => (sourceText === undefined ? undefined : sourceQuotation(sourceText, limit)),
+    [sourceText, limit],
+  );
+  return (
+    <div className="memory-source">
+      {quote !== undefined ? (
+        <q lang="" dir="auto">
+          {quote}
+        </q>
+      ) : read === "failed" ? (
+        <div className="memory-state">
+          <Notice danger>{message(locale, "memory.sourceQuoteFailed")}</Notice>
+          <button
+            className="memory-link"
+            type="button"
+            onClick={() => {
+              link.current?.focus();
+              setRead(undefined);
+              setAttempt(attempt + 1);
+            }}
+          >
+            {message(locale, "memory.reloadSourceQuote")}
+          </button>
+        </div>
+      ) : (
+        <p role="status">{message(locale, "memory.sourceQuoteLoading")}</p>
+      )}
+      <a
+        ref={link}
+        className="memory-link"
+        href={`#message-${messageId}`}
+        onClick={(event) => {
+          event.preventDefault();
+          goToMessage(source);
+        }}
+      >
+        {message(locale, "memory.goToMessage")}
+      </a>
+    </div>
+  );
+}
+
+function MemoryEntryText({
+  id,
+  text,
+  version,
+  limit,
+  locale,
+  onDisclosureRemoved,
+}: {
+  readonly id: string;
+  readonly text: string;
+  readonly version: number;
+  readonly limit: number;
+  readonly locale: InterfaceLocale;
+  readonly onDisclosureRemoved: (bodyId: string) => void;
+}) {
+  const [expandedVersion, setExpandedVersion] = useState<number>();
+  const expanded = expandedVersion === version;
+  const prefix = clippedText(text, limit);
+  const disclose = useCallback(
+    (button: HTMLButtonElement | null) => {
+      if (!button) return;
+      return () => {
+        if (button === document.activeElement) onDisclosureRemoved(id);
+      };
+    },
+    [id, onDisclosureRemoved],
+  );
+  return (
+    <>
+      <p id={id} className="memory-text" lang="" dir="auto" tabIndex={-1}>
+        {expanded || prefix === undefined ? text : prefix + "…"}
+      </p>
+      {prefix !== undefined && (
+        <div className="memory-actions">
+          <button
+            ref={disclose}
+            className="memory-link"
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={id}
+            onClick={() => {
+              setExpandedVersion(expanded ? undefined : version);
+            }}
+          >
+            {message(locale, expanded ? "memory.showLessEntryText" : "memory.showFullEntryText")}
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function ProjectMemoryView({
   projectId,
   locale,
@@ -354,6 +535,8 @@ export function ProjectMemoryView({
   observe,
   draftRequest,
   drafts,
+  sourceQuoteLength,
+  entryTextLength,
   goToMessage,
 }: {
   readonly projectId: string;
@@ -363,8 +546,11 @@ export function ProjectMemoryView({
   readonly draftRequest:
     { readonly sequence: number; readonly source?: MemoryDraftSource } | undefined;
   readonly drafts: ProjectMemoryDrafts;
-  readonly goToMessage: (source: NonNullable<MemoryEntry["source"]>) => void;
+  readonly sourceQuoteLength: number;
+  readonly entryTextLength: number;
+  readonly goToMessage: (source: MemorySource) => void;
 }) {
+  const sourceReader = useMemo(() => new MemorySourceReader(port), [port]);
   const [memory, setMemory] = useState<NonNullable<Awaited<ReturnType<typeof readList>>>>();
   const revision = useRef<number | undefined>(undefined);
   const [epoch, setEpoch] = useState(0);
@@ -392,6 +578,13 @@ export function ProjectMemoryView({
   const textField = useRef<HTMLTextAreaElement>(null);
   const noticeId = useId();
   const descriptionId = useId();
+  const recoverDisclosureFocus = useCallback((bodyId: string) => {
+    // Regrouping remounts the entry under another list. Look for its new body after the commit.
+    queueMicrotask(() => {
+      if (document.activeElement === document.body)
+        (document.getElementById(bodyId) ?? add.current)?.focus();
+    });
+  }, []);
   const [showWithdrawn, setShowWithdrawn] = useState(false);
   const [histories, setHistories] = useState<ReadonlySet<string>>(() => new Set());
   const focusDraft = useRef(false);
@@ -577,26 +770,24 @@ export function ProjectMemoryView({
     const historyOpen = histories.has(entry.id);
     return (
       <li className="memory-entry" key={entry.id}>
-        <p className="memory-text" lang="" dir="auto">
-          {entry.text}
-        </p>
+        <MemoryEntryText
+          id={`${descriptionId}-${entry.id}`}
+          text={entry.text}
+          version={entry.number}
+          limit={entryTextLength}
+          locale={locale}
+          onDisclosureRemoved={recoverDisclosureFocus}
+        />
         <MemoryAttribution locale={locale} version={entry} originalAuthor={entry.originalAuthor} />
         {source && (
-          <div className="memory-source">
-            <q lang="" dir="auto">
-              {conversationPreview(source.prefix, source.truncated)}
-            </q>
-            <a
-              className="memory-link"
-              href={`#message-${source.messageId}`}
-              onClick={(event) => {
-                event.preventDefault();
-                goToMessage(source);
-              }}
-            >
-              {message(locale, "memory.goToMessage")}
-            </a>
-          </div>
+          <MemoryQuotation
+            key={`${projectId}/${source.conversationId}/${source.messageId}`}
+            source={source}
+            limit={sourceQuoteLength}
+            locale={locale}
+            reader={sourceReader}
+            goToMessage={goToMessage}
+          />
         )}
         <div className="memory-actions">
           {entry.state === "active" && (

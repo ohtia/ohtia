@@ -160,7 +160,7 @@ describe("project opening", () => {
       original.map((p) => [p.id, p.createdAt, p.createdAt, p.updatedAt]),
     );
     const upgraded = fixture.raw();
-    expect(upgraded.pragma("user_version", { simple: true })).toBe(31);
+    expect(upgraded.pragma("user_version", { simple: true })).toBe(33);
     upgraded.close();
   });
 

@@ -5,6 +5,8 @@ import { ConversationController } from "./conversation-controller.js";
 import type { ComponentProps, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
+  defaultEntryTextLength,
+  defaultSourceQuoteLength,
   message,
   type FoundationPort,
   type CommandBridge,
@@ -29,6 +31,8 @@ export interface WorkspaceSettingsBinding {
   readonly preferences: LayoutPreferences;
   readonly decoration: DecorationState;
   readonly zoom: number;
+  readonly sourceQuoteLength: number;
+  readonly entryTextLength: number;
   readonly layoutFailure: boolean;
   readonly onDismissLayoutFailure: () => void;
   readonly onWorkspaceChange: (
@@ -314,6 +318,8 @@ export function SettingsSurfaces({
                     preferences,
                     decoration,
                     zoom: state.effectiveZoom,
+                    sourceQuoteLength: state.current?.sourceQuote.value ?? defaultSourceQuoteLength,
+                    entryTextLength: state.current?.entryText.value ?? defaultEntryTextLength,
                     layoutFailure,
                     onDismissLayoutFailure: () => {
                       setLayoutFailure(false);

@@ -67,4 +67,4 @@ okf_version: "0.2"
 - [EPICs](epics/index.md) — Published delivery specifications and their native GitHub story sub-issues.
 - [Command discovery](command-discovery.md) — Discover available window commands with IME-safe activation and inspect platform and component shortcuts.
 - [Shared interface localization](localization.md) — Author complete typed catalogs and use the durable application-wide language preference without changing research content.
-- [Settings and presentation preferences](settings.md) — Compose Settings with presentation and inference controls, durable receipts and window-owned layout.
+- [Settings and presentation preferences](settings.md) — Compose Settings with presentation, project memory and inference controls, durable receipts and window-owned layout.

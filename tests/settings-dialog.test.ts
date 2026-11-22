@@ -10,6 +10,7 @@ import {
   type FoundationPort,
   type InterfaceLocale,
   type Outcome,
+  type PresentationSnapshot,
   type SavedPresentationRecord,
   type InterfaceZoom,
   type SystemMotion,
@@ -171,6 +172,19 @@ describe("compact Settings dialog", () => {
       expect(container.querySelectorAll('input[type="radio"]')).toHaveLength(6);
       expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(3);
       expect(container.textContent).toContain(message(locale, "settings.immediate"));
+      const quote = container.querySelector('[id$="-sourceQuote-controls"]');
+      const entry = container.querySelector('[id$="-entryText-controls"]');
+      expect(container.querySelector(".project-memory-settings h2")?.textContent).toBe(
+        message(locale, "memory.title"),
+      );
+      expect(quote?.querySelector("label")?.textContent).toBe(
+        message(locale, "memory.sourceQuoteLength"),
+      );
+      expect(quote?.textContent).toContain(message(locale, "memory.sourceQuoteHelp"));
+      expect(entry?.querySelector("label")?.textContent).toBe(
+        message(locale, "memory.entryTextLength"),
+      );
+      expect(entry?.textContent).toContain(message(locale, "memory.entryTextHelp"));
       expect(container.textContent).not.toContain("{setting}");
       expect(container.querySelector('button[type="submit"]')).toBeNull();
     },
@@ -1211,4 +1225,188 @@ it("retains modal recovery ownership through deactivation-shaped blur and releas
   expect(anchor.isConnected).toBe(true);
   await act(async () => container.querySelector<HTMLButtonElement>("#leave-feedback")!.focus());
   expect(container.querySelector(".settings-feedback > button")).toBeNull();
+});
+
+it("saves project memory quote length by keyboard or blur and preserves the confirmed value on failed saves", async () => {
+  const t = await mount();
+  const input = container.querySelector<HTMLInputElement>('[id$="-sourceQuote-controls"] input')!;
+  expect(input.labels?.[0]?.textContent).toBe("Source quote length (characters)");
+  expect(document.getElementById(input.getAttribute("aria-describedby")!)?.textContent).toBe(
+    "Enter 0 to show the full source message.",
+  );
+  expect(input.value).toBe("144");
+  const status = container.querySelector('[id$="-sourceQuote-controls"] .settings-save-state');
+  expect(status).not.toBeNull();
+  const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  const change = async (value: string, blur = false, field = input) => {
+    await act(async () => {
+      field.focus();
+      set.call(field, value);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      if (blur) field.blur();
+      else
+        field.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+        );
+    });
+  };
+  for (const bad of ["", "-1", "1.5", "9007199254740992", "1e3"]) {
+    await change(bad);
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(container.querySelector('[id$="-sourceQuote-controls"] .settings-save-state')).toBe(
+      status,
+    );
+    const alert = container.querySelector('[id$="-sourceQuote-controls"] [role=alert]')!;
+    expect(input.getAttribute("aria-describedby")?.split(" ")).toContain(alert.id);
+  }
+  expect(t.port.replaceSourceQuote).not.toHaveBeenCalled();
+  await change("0");
+  expect(t.controller.snapshot().current?.sourceQuote.value).toBe(0);
+  expect(input.value).toBe("0");
+  expect(container.querySelector('[id$="-sourceQuote-controls"] .settings-save-state')).toBe(
+    status,
+  );
+  expect(status?.textContent).toContain("Saved");
+
+  t.port.replaceSourceQuote.mockReturnValueOnce(call(failure("storage_failed")) as never);
+  await change("1500", true);
+  expect(input.value).toBe("0");
+  expect(t.controller.snapshot().current?.sourceQuote.value).toBe(0);
+  expect(
+    container.querySelector('[id$="-sourceQuote-controls"] [role=alert]')?.textContent,
+  ).toContain("could not be saved");
+  await act(async () => {
+    [...container.querySelectorAll<HTMLButtonElement>('[id$="-sourceQuote-controls"] button')]
+      .find((button) => button.textContent?.trim() === "Try again")!
+      .click();
+  });
+  expect(t.controller.snapshot().current?.sourceQuote.value).toBe(1500);
+
+  t.port.replaceSourceQuote.mockReturnValueOnce(call(failure("uncertain")) as never);
+  await change("1700");
+  const original = t.port.replaceSourceQuote.mock.calls.at(-1)![0];
+  expect(t.port.readSourceQuoteReceipt).toHaveBeenLastCalledWith(original.operationId);
+  expect(t.controller.snapshot().current?.sourceQuote.value).toBe(1500);
+  expect(
+    container.querySelector('[id$="-sourceQuote-controls"] [role=status]:not(.settings-save-state)')
+      ?.textContent,
+  ).toContain("It is not yet known");
+  const resolved = {
+    schemaVersion: 1 as const,
+    revision: 3,
+    value: 1700,
+    source: "saved" as const,
+  };
+  t.port.readSourceQuoteReceipt.mockReturnValueOnce(
+    call({
+      ok: true,
+      value: { state: "recorded", outcome: { ok: true, value: resolved } },
+    }) as never,
+  );
+  const refresh = deferred<Outcome<PresentationSnapshot>>();
+  t.port.readPresentation.mockReturnValueOnce({ result: refresh.promise, cancel: vi.fn() });
+  const sentCount = t.port.replaceSourceQuote.mock.calls.length;
+  await act(async () => {
+    [...container.querySelectorAll<HTMLButtonElement>('[id$="-sourceQuote-controls"] button')]
+      .find((button) => button.textContent?.trim() === "Check")!
+      .click();
+  });
+  expect(t.controller.snapshot().current?.sourceQuote.value).toBe(1700);
+  expect(input.readOnly).toBe(true);
+  await act(async () => refresh.resolve({ ok: true, value: t.controller.snapshot().current! }));
+  expect(input.readOnly).toBe(false);
+  expect(t.port.replaceSourceQuote).toHaveBeenCalledTimes(sentCount);
+
+  await act(async () =>
+    t.notify({
+      ok: true,
+      value: {
+        ...t.controller.snapshot().current!,
+        sourceQuote: { schemaVersion: 1, revision: 4, value: 144, source: "invalid_fallback" },
+      },
+    }),
+  );
+  await act(async () => {
+    input.focus();
+    input.blur();
+  });
+  expect(t.port.replaceSourceQuote).toHaveBeenCalledTimes(sentCount);
+  expect(t.controller.snapshot().current?.sourceQuote.source).toBe("invalid_fallback");
+  await act(async () => {
+    input.focus();
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(t.port.replaceSourceQuote).toHaveBeenCalledTimes(sentCount + 1);
+  expect(t.controller.snapshot().current?.sourceQuote).toMatchObject({
+    source: "saved",
+    value: 144,
+  });
+
+  t.port.replaceSourceQuote.mockReturnValueOnce(call(failure("uncertain")) as never);
+  await change("1750");
+  const recovered = t.controller.snapshot().current!;
+  await act(async () =>
+    t.notify({ ok: true, value: { ...recovered, serviceGeneration: "service-2" } }),
+  );
+  await act(async () => {
+    [...container.querySelectorAll<HTMLButtonElement>('[id$="-sourceQuote-controls"] button')]
+      .find((button) => button.textContent?.trim() === "Check")!
+      .click();
+  });
+  expect(document.activeElement).toBe(input);
+  expect(input.readOnly).toBe(false);
+  expect(input.value).toBe("1750");
+  await act(async () => input.blur());
+  expect(t.port.replaceSourceQuote).toHaveBeenCalledTimes(sentCount + 2);
+  expect(t.controller.snapshot().current?.sourceQuote.value).toBe(144);
+
+  const pendingCheck = deferred<Outcome<{ state: "not_found" }>>();
+  t.port.readSourceQuoteReceipt.mockReturnValueOnce({
+    result: pendingCheck.promise,
+    cancel: vi.fn(),
+  });
+  await act(async () => {
+    [...container.querySelectorAll<HTMLButtonElement>('[id$="-sourceQuote-controls"] button')]
+      .find((button) => button.textContent?.trim() === "Check")!
+      .click();
+  });
+  expect(input.readOnly).toBe(true);
+  expect(document.activeElement).toBe(input);
+  expect(t.port.replaceSourceQuote).toHaveBeenCalledTimes(sentCount + 2);
+  await act(async () => pendingCheck.resolve({ ok: true, value: { state: "not_found" } }));
+  expect(input.readOnly).toBe(false);
+  await change("1751", true);
+  expect(t.controller.snapshot().current?.sourceQuote.value).toBe(1751);
+  expect(t.port.replaceSourceQuote).toHaveBeenCalledTimes(sentCount + 3);
+
+  const entry = container.querySelector<HTMLInputElement>('[id$="-entryText-controls"] input')!;
+  expect(entry.value).toBe("288");
+  expect(entry.labels?.[0]?.textContent).toBe("Entry text length (characters)");
+  await change("1.5", false, entry);
+  expect(entry.getAttribute("aria-invalid")).toBe("true");
+  expect(t.port.replaceEntryText).not.toHaveBeenCalled();
+  t.port.replaceEntryText.mockReturnValueOnce(call(failure("uncertain")) as never);
+  await change("0", true, entry);
+  expect(t.controller.snapshot().current?.entryText.value).toBe(288);
+  expect(t.port.readEntryTextReceipt).toHaveBeenLastCalledWith(
+    t.port.replaceEntryText.mock.calls.at(-1)![0].operationId,
+  );
+  const record = { schemaVersion: 1 as const, revision: 1, value: 0, source: "saved" as const };
+  t.port.readEntryTextReceipt.mockReturnValueOnce(
+    call({ ok: true, value: { state: "recorded", outcome: { ok: true, value: record } } }) as never,
+  );
+  t.port.readPresentation.mockReturnValueOnce(
+    call({ ok: true, value: { ...t.controller.snapshot().current!, entryText: record } }),
+  );
+  await act(async () => {
+    [...container.querySelectorAll<HTMLButtonElement>('[id$="-entryText-controls"] button')]
+      .find((button) => button.textContent?.trim() === "Check")!
+      .click();
+  });
+  expect(entry.value).toBe("0");
+  expect(input.value).toBe("1751");
 });
