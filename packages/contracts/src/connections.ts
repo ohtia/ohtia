@@ -28,6 +28,7 @@ export interface ProviderDeclaration {
     readonly modelSelection: boolean;
     readonly effortSelection: boolean;
     readonly usageReporting: boolean;
+    readonly late_usage: "none" | "reported";
   };
   readonly signInModes: readonly ("provider_login" | "api_key")[];
   readonly connection: {
@@ -47,6 +48,8 @@ export interface ConnectionSnapshot {
   readonly reason: ConnectionReason | null;
   readonly display_name: string;
   readonly account_email: string | null;
+  /** Opaque version of the current account view, unrelated to the credential or fingerprint. */
+  readonly account_revision?: string;
   readonly last_account_email: string | null;
   readonly probing: boolean;
   readonly probe_id: string | null;
@@ -112,6 +115,7 @@ export function isConnectionSnapshot(value: unknown): value is ConnectionSnapsho
       "reason",
       "display_name",
       "account_email",
+      ...(Object.hasOwn(value, "account_revision") ? ["account_revision"] : []),
       "last_account_email",
       "probing",
       "probe_id",
@@ -119,6 +123,12 @@ export function isConnectionSnapshot(value: unknown): value is ConnectionSnapsho
       "model_count",
     ]) &&
     snapshotFields(value)
+  );
+}
+export function isAccountRevision(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value)
   );
 }
 function snapshotFields(value: Record<string, unknown>): boolean {
@@ -134,6 +144,8 @@ function snapshotFields(value: Record<string, unknown>): boolean {
     value.display_name.length > 0 &&
     (value.account_email === null ||
       (typeof value.account_email === "string" && value.account_email.length > 0)) &&
+    (!Object.hasOwn(value, "account_revision") ||
+      (value.state === "connected" && isAccountRevision(value.account_revision))) &&
     (value.last_account_email === null ||
       (typeof value.last_account_email === "string" && value.last_account_email.length > 0)) &&
     typeof value.probing === "boolean" &&
@@ -190,14 +202,16 @@ export function isProviderDeclaration(value: unknown): value is ProviderDeclarat
     "modelSelection",
     "effortSelection",
     "usageReporting",
-  ];
+  ] as const;
+  const caps = value.capabilities;
   return (
     isConnectionId(value.id) &&
     typeof value.version === "string" &&
     /^\d+\.\d+\.\d+$/.test(value.version) &&
-    record(value.capabilities) &&
-    exact(value.capabilities, capabilities) &&
-    Object.values(value.capabilities).every((v) => typeof v === "boolean") &&
+    record(caps) &&
+    exact(caps, [...capabilities, "late_usage"]) &&
+    capabilities.every((key) => typeof caps[key] === "boolean") &&
+    (caps.late_usage === "none" || caps.late_usage === "reported") &&
     Array.isArray(value.signInModes) &&
     value.signInModes.length > 0 &&
     new Set(value.signInModes).size === value.signInModes.length &&

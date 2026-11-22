@@ -40,6 +40,8 @@ interface Connection {
     | undefined;
   lastProbe: string | null;
   models: readonly ProviderModel[] | undefined;
+  reportedFingerprint?: string | undefined;
+  accountView?: { readonly fingerprint: string; readonly revision: string } | undefined;
   revision: number;
 }
 // Reserve the largest legal envelope identities, so every stored entry fits in a real page.
@@ -128,9 +130,11 @@ export class ConnectionManager {
   }
   snapshot(id: string): ConnectionSnapshot | undefined {
     const c = this.connections.get(id);
+    const revision = this.account(id).revision;
     return c
       ? {
           connection: id,
+          ...(revision ? { account_revision: revision } : {}),
           state: c.storeUnavailable || c.deleteFailed ? "error" : c.state,
           reason: c.storeUnavailable || c.deleteFailed ? "store_unavailable" : c.reason,
           display_name: c.adapter.declaration.connection.displayName,
@@ -146,6 +150,20 @@ export class ConnectionManager {
         }
       : undefined;
   }
+  account(id: string) {
+    const connection = this.connections.get(id);
+    const fingerprint =
+      connection?.state === "connected" && !connection.storeUnavailable && !connection.deleteFailed
+        ? connection.adapter.accountFingerprint?.()
+        : undefined;
+    if (connection && fingerprint !== connection.accountView?.fingerprint)
+      connection.accountView = fingerprint ? { fingerprint, revision: randomUUID() } : undefined;
+    return {
+      kind: connection?.adapter.declaration.connection.kind ?? "subscription",
+      fingerprint,
+      revision: connection?.accountView?.revision,
+    };
+  }
   private isDisposed(): boolean {
     return this.disposed;
   }
@@ -158,6 +176,8 @@ export class ConnectionManager {
     if (this.disposed) return;
     const snapshot = this.snapshot(id);
     if (!snapshot) return;
+    const connection = this.connections.get(id);
+    if (connection) connection.reportedFingerprint = this.account(id).fingerprint;
     const event: ConnectionEvent = outcome
       ? { ...snapshot, kind: "probe_result", outcome }
       : { ...snapshot, kind: "state" };
@@ -172,7 +192,11 @@ export class ConnectionManager {
     if (generation !== c.generation) return { ok: true, value: this.requireSnapshot(id) };
     const before = JSON.stringify(this.snapshot(id));
     this.reconcileCredentials(c, stored);
-    if (before !== JSON.stringify(this.snapshot(id))) this.emit(id);
+    if (
+      before !== JSON.stringify(this.snapshot(id)) ||
+      c.reportedFingerprint !== this.account(id).fingerprint
+    )
+      this.emit(id);
     this.diagnostic?.({ event_name: "ohtia.connection.read" });
     return { ok: true, value: this.requireSnapshot(id) };
   }

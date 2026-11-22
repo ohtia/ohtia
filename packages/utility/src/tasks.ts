@@ -1,3 +1,5 @@
+import { recordEndUsage, reportRow, usageDeadline, type UsageReportRow } from "./reply-usage.js";
+import type { LateUsageReport } from "@ohtia/contracts";
 import {
   consultableAgents,
   consultationTool,
@@ -249,7 +251,12 @@ export interface TaskSchema {
   service_runs: { generation: string; started_at: string; clean_stop_at: string | null };
   usage_limit_pauses: UsagePauseRow;
   tasks: TaskRow;
-  attempts: AttemptRow & { conversation_title_policy: Generated<number | null> };
+  attempts: AttemptRow & {
+    conversation_title_policy: Generated<number | null>;
+    usage_report_deadline_at: Generated<string | null>;
+    account_fingerprint: Generated<Uint8Array | null>;
+  };
+  usage_reports: UsageReportRow;
   application_preferences: { key: string; schema_version: number; revision: number; value: string };
 }
 function delegatedTask(task: TaskRow): boolean {
@@ -364,7 +371,7 @@ export class TaskTransaction {
   ): Promise<void> {
     const changed = await this.db
       .updateTable("tasks")
-      .set({ ...change, state_revision: task.state_revision + 1, updated_at: this.now })
+      .set({ updated_at: this.now, ...change, state_revision: task.state_revision + 1 })
       .where("id", "=", task.id)
       .where("state_revision", "=", task.state_revision)
       .executeTakeFirstOrThrow();
@@ -1756,7 +1763,8 @@ export class TaskTransaction {
         updated_at: this.now,
       })
       .execute();
-    await this.change(task, {});
+    // Superseding the notice advances its revision while preserving when this reply ended.
+    await this.change(task, { updated_at: task.updated_at });
     await this.db
       .updateTable("continuations")
       .set({ task_id: replacement, policy_version: policy.version })
@@ -1835,12 +1843,11 @@ export class TaskTransaction {
               state: "cancelled",
               outcome_reason: "cancelled_by_researcher",
               finished_at: this.now,
-              ...(!delegatedTask(task) || attempt.dispatch_permitted_at === null
-                ? unknownUsage
-                : {}),
+              usage_report_deadline_at: usageDeadline(this.now),
             })
             .where("id", "=", attempt.id)
             .execute();
+          await recordEndUsage(this.db, attempt, this.now);
           if (delegatedTask(task))
             await this.settleDelegatedAttempt(attempt, attempt.dispatch_permitted_at !== null);
           await this.change(task, { state: "cancelled" }, cancellation);
@@ -2110,10 +2117,11 @@ export class TaskTransaction {
           state: cancelled || !dispatched ? "cancelled" : "uncertain",
           outcome_reason: cancelled ? "cancelled_by_researcher" : "service_restarted",
           finished_at: this.now,
-          ...(!delegatedTask(task) || !dispatched ? unknownUsage : {}),
+          usage_report_deadline_at: usageDeadline(this.now),
         })
         .where("id", "=", attempt.id)
         .execute();
+      await recordEndUsage(this.db, attempt, this.now);
       if (delegatedTask(task)) await this.settleDelegatedAttempt(attempt, dispatched);
       const policy = recordedOperationPolicy(task.operation, task.policy_version);
       const state: TaskState = cancelled
@@ -2749,7 +2757,12 @@ export class TaskTransaction {
                 : "permit_expired";
         await this.db
           .updateTable("attempts")
-          .set({ state: "failed", outcome_reason: reason, finished_at: this.now })
+          .set({
+            state: "failed",
+            outcome_reason: reason,
+            finished_at: this.now,
+            usage_report_deadline_at: usageDeadline(this.now),
+          })
           .where("id", "=", attemptId)
           .execute();
         if (delegatedTask(task))
@@ -2838,6 +2851,77 @@ export class TaskTransaction {
     }
     return null;
   }
+  async lateUsage(
+    attemptId: string,
+    report: LateUsageReport,
+    clockUnreliable: boolean,
+    brokerTerminalAt?: string,
+  ) {
+    const attempt = await this.db
+      .selectFrom("attempts")
+      .selectAll()
+      .where("id", "=", bytes(attemptId))
+      .executeTakeFirst();
+    const reject = (
+      code: "attempt_unavailable" | "revision_conflict" | "window_closed" | "clock_unreliable",
+    ) => {
+      this.diagnostics.push({ event_name: "ohtia.usage.late_rejected", error_code: code });
+      return { accepted: false, code } as const;
+    };
+    if (
+      !attempt ||
+      !attempt.dispatch_permitted_at ||
+      !attempt.finished_at ||
+      !attempt.usage_report_deadline_at
+    )
+      return reject("attempt_unavailable");
+
+    const row = reportRow(attempt.id, "late", report, this.now);
+    const replay = await this.db
+      .selectFrom("usage_reports")
+      .select(["report_sha256", "accepted_at"])
+      .where("attempt_id", "=", attempt.id)
+      .where("revision", "=", report.revision)
+      .executeTakeFirst();
+    if (replay)
+      return Buffer.from(replay.report_sha256).equals(row.report_sha256)
+        ? ({ accepted: true, acceptedAt: replay.accepted_at } as const)
+        : reject("revision_conflict");
+
+    const latest = await this.db
+      .selectFrom("usage_reports")
+      .select(["revision", "accepted_at"])
+      .where("attempt_id", "=", attempt.id)
+      .orderBy("revision", "desc")
+      .executeTakeFirst();
+    const run = await this.db
+      .selectFrom("service_runs")
+      .select("started_at")
+      .where("generation", "=", this.context.generation)
+      .executeTakeFirst();
+    if (
+      clockUnreliable ||
+      this.now < attempt.finished_at ||
+      (brokerTerminalAt !== undefined && this.now < brokerTerminalAt) ||
+      attempt.finished_at < attempt.dispatch_permitted_at ||
+      (latest && this.now < latest.accepted_at) ||
+      (run && this.now < run.started_at)
+    )
+      return reject("clock_unreliable");
+    // A recovery transaction can record quarantine after main has already ended the request.
+    // Both clocks constrain settlement. The earlier deadline still applies after a restart.
+    if (
+      this.now >= attempt.usage_report_deadline_at ||
+      (brokerTerminalAt !== undefined && this.now >= usageDeadline(brokerTerminalAt))
+    )
+      return reject("window_closed");
+    if (latest && latest.revision >= report.revision) return reject("revision_conflict");
+
+    await this.db.insertInto("usage_reports").values(row).execute();
+    await this.db.updateTable("attempts").set(report.usage).where("id", "=", attempt.id).execute();
+    this.diagnostics.push({ event_name: "ohtia.usage.late_accepted" });
+    return { accepted: true, acceptedAt: row.accepted_at } as const;
+  }
   async event(
     attemptId: string,
     event: ProviderEvent,
@@ -2846,6 +2930,7 @@ export class TaskTransaction {
     registry?: () => LanguageRegistry,
     work?: ProviderWorkUsage,
   ): Promise<RecordedTaskEvent> {
+    if (event.type === "late_usage") return { recorded: false };
     const attempt = await this.db
       .selectFrom("attempts")
       .selectAll()
@@ -2870,11 +2955,17 @@ export class TaskTransaction {
         .updateTable("attempts")
         .set({
           observed_model: event.model ?? attempt.observed_model,
-          provider_request_id: event.provider_request_id,
+          provider_request_id: event.provider_request_id ?? attempt.provider_request_id,
+          ...(event.account_fingerprint
+            ? {
+                account_fingerprint: Buffer.from(event.account_fingerprint, "hex"),
+              }
+            : {}),
         })
         .where("id", "=", attempt.id)
         .execute();
-      await this.change(task, {});
+      if (!event.account_fingerprint || event.model !== null || event.provider_request_id !== null)
+        await this.change(task, {});
       return { recorded: true };
     }
     if (event.type === "usage") {
@@ -2952,9 +3043,8 @@ export class TaskTransaction {
           : event.result;
     const notDispatched =
       (result.status === "failed" && !result.dispatched) ||
-      (delegatedTask(task) &&
-        ((event.result.status === "failed" && !event.result.dispatched) ||
-          work?.dispatched === false));
+      (event.result.status === "failed" && !event.result.dispatched) ||
+      work?.dispatched === false;
     let state: AttemptState = result.status;
     const reason: AttemptReason | null =
       result.status === "failed" || result.status === "uncertain"
@@ -2974,21 +3064,18 @@ export class TaskTransaction {
         state,
         outcome_reason: reason,
         finished_at: this.now,
-        ...(notDispatched ? { dispatch_permitted_at: null } : {}),
-        ...((
-          delegatedTask(task)
-            ? notDispatched
-            : state === "cancelled" ||
-              state === "uncertain" ||
-              reason === "deadline_exceeded" ||
-              reason === "inactivity_timeout" ||
-              reason === "output_limit_exceeded"
-        )
-          ? unknownUsage
+        usage_report_deadline_at: usageDeadline(this.now),
+        ...(notDispatched
+          ? {
+              dispatch_permitted_at: null,
+              account_fingerprint: null,
+              ...unknownUsage,
+            }
           : {}),
       })
       .where("id", "=", attempt.id)
       .execute();
+    if (!notDispatched) await recordEndUsage(this.db, attempt, this.now);
     if (delegatedTask(task))
       await this.settleDelegatedAttempt(
         attempt,

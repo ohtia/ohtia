@@ -318,6 +318,12 @@
       "sha256": "8c4a1c1daadd43cabe41603041a608e5c4c082228cb03c2d537caed0e2477ff0"
     },
     {
+      "name": "receipt-text",
+      "file": "receipt-text.svg",
+      "archive_member": "package/icons/receipt-text.svg",
+      "sha256": "8e128ff063288e4c8cd8db504d7004dbee2cc201d3264a95b3da99bd24531b2c"
+    },
+    {
       "name": "refresh-cw",
       "file": "refresh-cw.svg",
       "archive_member": "package/icons/refresh-cw.svg",

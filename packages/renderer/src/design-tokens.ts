@@ -135,6 +135,7 @@ export const iconMappings = {
   "Rejected, or a declined or replaced proposal": "circle-x",
   "Requires review": "refresh-cw",
   "Add memory entry, memory changes": "notebook-pen",
+  "Show reply details": "receipt-text",
   "Restricted use": "lock",
   "Saved": "check",
   "Send message": "arrow-up",

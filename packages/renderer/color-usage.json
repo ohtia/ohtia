@@ -785,6 +785,19 @@
       "minimum": 7
     },
     {
+      "selector": ".reply-details",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".reply-details dt",
+      "foreground": "content.secondary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
       "selector": ".conversation-notice",
       "foreground": "content.primary",
       "backgrounds": ["attention.surface"],

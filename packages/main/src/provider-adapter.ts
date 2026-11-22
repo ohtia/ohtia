@@ -5,6 +5,8 @@ import type {
   ProviderEventBody,
   ProviderRequestData,
   ProviderToolCall,
+  LateUsageReport,
+  LateUsageDecision,
 } from "@ohtia/contracts";
 import type { CredentialStore, StoredSession, CredentialWrite } from "./credential-store.js";
 export type SignInResult = {
@@ -41,7 +43,9 @@ export interface ProviderRequestControl {
    * The last guard before the body leaves: false means nothing may be sent, and the dispatcher has
    * already produced the attempt's result. The adapter calls it once, after attaching the credential.
    */
-  release(): boolean;
+  release(fingerprint?: string): boolean;
+  /** Present only for adapters that can settle usage after their transport closes. */
+  reportLateUsage?(report: LateUsageReport): Promise<LateUsageDecision>;
   /** Forward one provider event; the first `result` ends the attempt and later events are dropped. */
   emit(event: AdapterEvent): void;
   /** Aborted by an interrupt or by the end of the data-service generation that dispatched it. */
@@ -75,6 +79,7 @@ export interface ProviderAdapter {
   /** Cancel only the pending sign-in, preserving any previously validated session. */
   cancelSignIn?(): Promise<CredentialWrite>;
   accountEmail?(): string | null;
+  accountFingerprint?(): string | undefined;
   lastAccountEmail?(): string | null;
   onStateChange?(
     listener: (state: "connected" | "expired" | "error", reason: ConnectionReason | null) => void,

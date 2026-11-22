@@ -551,10 +551,10 @@ export function createStatusService(
           const type = providerEvent.event.type;
           enqueueProvider(
             async () => {
-              if (!(await durable.receive(providerEvent)))
+              if (!(await durable.receive(providerEvent, enabled)))
                 throw new Error("Invalid provider event order.");
             },
-            type === "started" || type === "usage" || type === "result",
+            type === "started" || type === "usage" || type === "result" || type === "late_usage",
           );
         }
 

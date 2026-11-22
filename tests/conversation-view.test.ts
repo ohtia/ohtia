@@ -44,6 +44,7 @@ import {
   type InterfaceLocale,
   portLimits,
   type FoundationPort,
+  type ReplyDetails,
   type Outcome,
   type ResearchEvent,
   type ResearchInputs,
@@ -132,6 +133,7 @@ async function render(
   controller = {} as ConversationController,
   locale: InterfaceLocale = "en-US",
   onOpenConnections?: () => void,
+  detailsPort?: import("../packages/renderer/src/reply-details.js").ReplyDetailsPort,
 ) {
   await act(async () =>
     root.render(
@@ -145,6 +147,7 @@ async function render(
         },
         locale,
         ...(onOpenConnections ? { onOpenConnections } : {}),
+        ...(detailsPort ? { detailsPort } : {}),
         commands: { copyMessage: async () => true, openExternalLink: async () => true },
       }),
     ),
@@ -5569,4 +5572,200 @@ it("shows add-to-memory last on saved project messages and omits it during setup
   } finally {
     f.controller.dispose();
   }
+});
+
+it("discloses saved and unsaved reply details with loading, recovery and localized unknowns", async () => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const savedId = id(400);
+  const savedTask = id(401);
+  const agent = {
+    ...message(400, "Saved reply"),
+    id: savedId,
+    authorKind: "agent",
+    agentId: "virgilio",
+    taskId: savedTask,
+  } as TimelineItem;
+  const pending = deferred<Outcome<ReplyDetails>>();
+  const details: ReplyDetails = {
+    agentId: "virgilio",
+    operation: "direct_guidance",
+    instructionVersion: 6,
+    connectionId: "chatgpt",
+    connectionKind: "subscription",
+    account: "same",
+    accountRevision: "019a8000-0000-4000-8000-000000000049",
+    requestedModel: "Model",
+    observedModel: null,
+    attempts: 1,
+    startedAt: "2026-11-15T10:12:00.000Z",
+    endedAt: "2026-11-15T10:12:45.000Z",
+    durationMs: 45000,
+    tokens: {
+      input_tokens: 14,
+      cached_input_tokens: 0,
+      output_tokens: null,
+      reasoning_tokens: null,
+    },
+    usage: "incomplete",
+    memory: [],
+  };
+  const readReplyDetails = vi
+    .fn(() => ok(details))
+    .mockReturnValueOnce({ result: pending.promise, cancel() {} });
+  const port = {
+    readReplyDetails,
+    readConnection: vi.fn(() =>
+      ok({
+        state: "connected",
+        account_email: "reader@example.org",
+        account_revision: details.accountRevision,
+        display_name: "ChatGPT",
+      }),
+    ),
+    readMemoryHistory: vi.fn(),
+    readTextPart: vi.fn(),
+  } as unknown as import("../packages/renderer/src/reply-details.js").ReplyDetailsPort;
+  const items = [
+    agent,
+    reviewTask({ id: savedTask, replyMessageId: savedId }),
+    reviewTask({ id: id(601), state: "queued", dispatched: false }),
+    reviewTask({ id: id(602), state: "running" }),
+    reviewTask({
+      id: id(603),
+      state: "cancelled",
+      outcomeReason: "cancelled_by_researcher",
+      dispatched: false,
+    }),
+    reviewTask({ id: id(604), state: "failed", consultation: true }),
+    reviewTask({ id: id(605), state: "uncertain", synthesis: true }),
+  ];
+  await render(state(items), {} as ConversationController, "en-US", undefined, port);
+  const show = () => [
+    ...container.querySelectorAll<HTMLButtonElement>('[aria-label="Show details"]'),
+  ];
+  expect(show()).toHaveLength(4);
+  const button = show()[0]!;
+  expect(
+    button.parentElement?.previousElementSibling
+      ?.querySelector("button")
+      ?.getAttribute("aria-label"),
+  ).toBe("Copy message");
+  expect(button.hasAttribute("aria-expanded")).toBe(false);
+  await act(async () => {
+    button.focus();
+    button.click();
+  });
+  expect(container.querySelector(".reply-details")?.getAttribute("aria-busy")).toBe("true");
+  expect(container.querySelector(".reply-details")?.textContent).toContain("Loading…");
+  await act(async () => pending.resolve(failure("storage_failed")));
+  expect(container.querySelector(".reply-details [role=alert]")?.textContent).toContain(
+    "The reply is still saved.",
+  );
+  const reload = container.querySelector<HTMLButtonElement>(".reply-details-reload")!;
+  await act(async () => {
+    reload.focus();
+    reload.click();
+  });
+  expect(document.activeElement).toBe(button);
+  expect(readReplyDetails).toHaveBeenLastCalledWith({
+    projectId: scope.projectId,
+    taskId: savedTask,
+  });
+  const values = () =>
+    [...container.querySelectorAll(".reply-details dd")].map((dd) => dd.textContent);
+  expect(values()).toEqual(
+    expect.arrayContaining([
+      "Direct guidance · version 6",
+      "Sent with the account connected now (reader@example.org).",
+      "45 sec",
+      "Unknown",
+      "0",
+      "Incomplete: ChatGPT reported usage only up to the interruption.",
+      "0 entries",
+    ]),
+  );
+  await act(async () => button.click());
+  for (const notice of show().slice(1)) {
+    expect(notice.parentElement?.parentElement?.lastElementChild).toBe(notice.parentElement);
+    await act(async () => notice.click());
+    expect(container.querySelector(".task-notice .reply-details")).toBeTruthy();
+    await act(async () => notice.click());
+  }
+  for (const [locale, label, unknown] of [
+    ["de-DE", "Details anzeigen", "Unbekannt"],
+    ["ko-KR", "세부 정보 표시", "알 수 없음"],
+  ] as const) {
+    await render(state([agent]), {} as ConversationController, locale, undefined, port);
+    const trigger = container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!;
+    await act(async () => trigger.click());
+    expect(values()).toContain(unknown);
+    await act(async () => trigger.click());
+  }
+  await render(state([agent]), {} as ConversationController, "en-US", undefined, port);
+  port.readConnection = (() =>
+    ok({
+      state: "connected",
+      display_name: "ChatGPT",
+      account_revision: "019a8000-0000-4000-8000-000000000050",
+      account_email: "new@example.org",
+    })) as typeof port.readConnection;
+  readReplyDetails.mockReturnValueOnce(ok(details)).mockReturnValueOnce(
+    ok({
+      ...details,
+      account: "different",
+      accountRevision: "019a8000-0000-4000-8000-000000000050",
+    }),
+  );
+  const accountTrigger = show()[0]!;
+  await act(async () => accountTrigger.click());
+  expect(values()).toContain("Sent with a different ChatGPT account than the one connected now.");
+  expect(values().join("\n")).not.toContain("new@example.org");
+  await act(async () => accountTrigger.click());
+  port.readConnection = (() =>
+    ok({
+      state: "connected",
+      display_name: "ChatGPT",
+      account_revision: details.accountRevision,
+      account_email: "reader@example.org",
+    })) as typeof port.readConnection;
+  const registered = deferred<Outcome<{ subscriptionId: string }>>();
+  port.subscribeConnection = () => ({ ready: registered.promise, dispose() {} });
+  readReplyDetails
+    .mockReturnValueOnce(ok(details))
+    .mockReturnValueOnce(ok({ ...details, account: "disconnected", accountRevision: null }));
+  await act(async () => accountTrigger.click());
+  expect(container.querySelector(".reply-details")?.getAttribute("aria-busy")).toBe("true");
+  await act(async () =>
+    registered.resolve({ ok: true, value: { subscriptionId: "shown-account" } }),
+  );
+  expect(values()).toContain("Sent with a ChatGPT account that is no longer connected.");
+  expect(values().join("\n")).not.toContain("reader@example.org");
+  await act(async () => accountTrigger.click());
+  delete port.subscribeConnection;
+  for (const [account, accountLine] of [
+    ["same", "Sent with the key connected now."],
+    ["different", "Sent with your Fake API key that has since been replaced."],
+    ["disconnected", "Sent with your Fake API key that is no longer connected."],
+  ] as const) {
+    readReplyDetails.mockReturnValueOnce(
+      ok({ ...details, account, connectionId: "fake", connectionKind: "api_key", usage: "late" }),
+    );
+    const trigger = show()[0]!;
+    await act(async () => trigger.click());
+    expect(values()).toEqual(
+      expect.arrayContaining([
+        "Fake · API key",
+        accountLine,
+        "Reported by Fake after the reply ended",
+      ]),
+    );
+    await act(async () => trigger.click());
+  }
+  vi.unstubAllGlobals();
 });

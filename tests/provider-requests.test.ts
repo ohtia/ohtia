@@ -1708,6 +1708,7 @@ it("tags only reports produced after a correlated refresh request, and stale rep
   const manager = {
     ids: () => ["chatgpt"],
     snapshot: () => snapshot,
+    account: () => ({ kind: "subscription", fingerprint: "a".repeat(64) }),
     listModels: () => ({
       ok: true,
       value: {
@@ -1763,6 +1764,11 @@ it("tags only reports produced after a correlated refresh request, and stale rep
     .map((text) => JSON.parse(text))
     .find((message) => message.kind === "connection_state");
   expect(fresh.refresh_id).toBe("refresh-2");
+  expect(fresh.snapshot).toMatchObject({
+    connection_kind: "subscription",
+    account_fingerprint: "a".repeat(64),
+  });
+  expect(fresh.snapshot).not.toHaveProperty("account_email");
   connections.receive(fresh);
   expect(connections.awaitingModels("chatgpt")).toBe(true);
   for (const message of sent.map((text) => JSON.parse(text)))

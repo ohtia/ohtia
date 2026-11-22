@@ -82,6 +82,7 @@ export function fakeChatGPT(
     service?: string;
     userData?: string;
     entries?: Map<string, string>;
+    accessToken?: (account: string, revision: number) => string;
   } = {},
 ) {
   const entries = options.entries ?? new Map<string, string>();
@@ -182,7 +183,7 @@ export function fakeChatGPT(
         : sign("RSA-SHA256", Buffer.from(input), privateKey).toString("base64url");
       revision++;
       return Response.json({
-        access_token: `access-${account}-${revision}`,
+        access_token: options.accessToken?.(account, revision) ?? `access-${account}-${revision}`,
         refresh_token: `refresh-${account}-${revision}`,
         token_type: "Bearer",
         expires_in: 3600,

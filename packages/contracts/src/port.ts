@@ -999,6 +999,7 @@ export const operationErrorCodes = Object.freeze({
   "research.subscribe": [...readErrors, "record_not_found", "sequence_gap"],
   "text.part": [...readErrors],
   "text.readPart": [...readErrors, "record_not_found"],
+  "reply.details": [...readErrors, "record_not_found"],
   "reply.readParts": [...readErrors, "record_not_found"],
 
   "connection.read": readErrors,

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import http from "node:http";
 import net from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -1152,4 +1153,51 @@ it("awaits the real socket close receipt before acknowledging a cut response", a
       }),
     );
   }
+});
+
+it("fingerprints the attached access token subject and excludes it from public snapshots and diagnostics", async () => {
+  const subject = "MARK236_SYNTHETIC_ACCESS_SUBJECT";
+  const header = Buffer.from('{"alg":"RS256"}').toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ sub: subject })).toString("base64url");
+  const token = `${header}.${payload}.synthetic-signature`;
+  const f = await signedIn({ accessToken: () => token });
+  const diagnostics: unknown[] = [];
+  f.responses = () => streamResponse(syntheticReply);
+  const events = await dispatchThrough(f.manager, f.adapter, conformanceRequest("chatgpt"), {
+    diagnostic: (event) => diagnostics.push(event),
+  });
+  const expected = createHash("sha256")
+    .update(`ohtia-account-v1\nchatgpt\n${subject}`, "utf8")
+    .digest("hex");
+  expect(f.responseRequests[0]?.headers.Authorization).toBe(`Bearer ${token}`);
+  expect(events[0]).toMatchObject({ type: "started", account_fingerprint: expected });
+  expect(f.manager.account("chatgpt")).toMatchObject({
+    kind: "subscription",
+    fingerprint: expected,
+  });
+  expect(f.adapter.declaration.capabilities.late_usage).toBe("none");
+  expect(result(events)).toEqual({ status: "completed" });
+  expect(JSON.stringify(events)).not.toContain(subject);
+  expect(JSON.stringify(events)).not.toContain(token);
+  const providerError = "MARK236_CHATGPT_ERROR_ECHO";
+  const beforeRenewal = refreshes(f);
+  f.responses = () => Response.json({ detail: providerError }, { status: 401 });
+  const expired = await dispatchThrough(
+    f.manager,
+    f.adapter,
+    conformanceRequest("chatgpt", "renew-after-401"),
+    {
+      diagnostic: (event) => diagnostics.push(event),
+    },
+  );
+  expect(result(expired)).toMatchObject({ status: "failed", reason: "connection_expired" });
+  expect(refreshes(f)).toBe(beforeRenewal + 1);
+  expect(JSON.stringify(expired)).not.toContain(providerError);
+  const publicEvidence = JSON.stringify([
+    diagnostics,
+    f.diagnostics,
+    f.manager.snapshot("chatgpt"),
+  ]);
+  for (const marker of [expected, subject, token, providerError])
+    expect(publicEvidence).not.toContain(marker);
 });
