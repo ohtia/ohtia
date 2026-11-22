@@ -48,9 +48,23 @@ export const presentationSnapshot = {
   serviceGeneration: "service-1",
   appearance,
   character: { schemaVersion: 1, revision: 1, value: "static", source: "saved" },
+  sourceQuote: { schemaVersion: 1, revision: 0, value: 144, source: "default" },
+  entryText: { schemaVersion: 1, revision: 0, value: 288, source: "default" },
   zoom: { schemaVersion: 1, revision: 2, value: 125, source: "saved" },
 };
 export const acceptedEnvelopes: readonly unknown[] = [
+  request({ operation: "sourceQuote.replace", payload: { expectedRevision: 0, value: 0 } }),
+  request({
+    operation: "sourceQuote.replace",
+    payload: { expectedRevision: 1, value: Number.MAX_SAFE_INTEGER },
+  }),
+  request({ operation: "sourceQuote.receipt", payload: { targetOperationId: "operation-1" } }),
+  request({ operation: "entryText.replace", payload: { expectedRevision: 0, value: 0 } }),
+  request({
+    operation: "entryText.replace",
+    payload: { expectedRevision: 1, value: Number.MAX_SAFE_INTEGER },
+  }),
+  request({ operation: "entryText.receipt", payload: { targetOperationId: "operation-1" } }),
   request({ operation: "limits.read", payload: {} }),
   request({ operation: "limits.replace", payload: { value: 1 } }),
   request({ operation: "limits.replace", payload: { value: 50 } }),
@@ -294,6 +308,11 @@ export const acceptedEnvelopes: readonly unknown[] = [
 });
 export const rejectedEnvelopes: readonly { name: string; value: unknown; code: string }[] = [
   ...[
+    ...(["sourceQuote.replace", "entryText.replace"] as const).flatMap((operation) =>
+      [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, "0", null].map((value) =>
+        request({ operation, payload: { expectedRevision: 0, value } } as never),
+      ),
+    ),
     request({
       operation: "character.replace",
       payload: { expectedRevision: 0, value: "running" },

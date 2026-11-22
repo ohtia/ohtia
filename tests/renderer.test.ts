@@ -306,6 +306,8 @@ it("runs the status-window recovery actions with preserved focus and a shared lo
           serviceGeneration: "service-1",
           appearance: { schemaVersion: 1, revision: 0, source: "default", value: "system" },
           character: { schemaVersion: 1, revision: 0, source: "default", value: "animated" },
+          sourceQuote: { schemaVersion: 1, revision: 0, source: "default", value: 144 },
+          entryText: { schemaVersion: 1, revision: 0, value: 288, source: "default" },
           zoom: { schemaVersion: 1, revision: 0, source: "default", value: 100 },
         },
       }),

@@ -111,6 +111,11 @@
   justify-items: start;
 }
 
+.memory-source q {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
 .memory-link {
   display: inline-flex;
   align-items: center;
@@ -123,6 +128,13 @@
   text-decoration: underline;
   font: inherit;
   cursor: pointer;
+}
+
+@media (pointer: coarse) {
+  .memory-link {
+    min-inline-size: var(--component-target-coarse);
+    min-block-size: var(--component-target-coarse);
+  }
 }
 
 .memory-link:hover {

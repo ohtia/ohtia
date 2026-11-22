@@ -93,7 +93,45 @@ const priorRedirectionObjects = {
 };
 import { tables as memoryTables } from "../packages/utility/src/migrations/0029_project_memory.mjs";
 
+import { schema as applicationPreferencesSchema } from "../packages/utility/src/migrations/0001_initial.mjs";
+import { schema as presentationReceiptSchema } from "../packages/utility/src/migrations/0005_presentation_receipts.mjs";
+
+import {
+  preferencesSchema as quotePreferencesSchema,
+  receiptsSchema as quoteReceiptsSchema,
+} from "../packages/utility/src/migrations/0032_source_quote_preference.mjs";
+
+export const preEntryTextSql = `
+  ALTER TABLE presentation_receipts RENAME TO presentation_receipts_with_entry_text;
+  ${quoteReceiptsSchema};
+  INSERT INTO presentation_receipts SELECT * FROM presentation_receipts_with_entry_text WHERE feature<>'entryText';
+  DROP TABLE presentation_receipts_with_entry_text;
+  ALTER TABLE application_preferences RENAME TO application_preferences_with_entry_text;
+  ${quotePreferencesSchema};
+  INSERT INTO application_preferences SELECT * FROM application_preferences_with_entry_text WHERE key<>'project_memory_entry_text_length';
+  DROP TABLE application_preferences_with_entry_text;
+  DELETE FROM kysely_migration WHERE name='0033_entry_text_preference';
+  DELETE FROM ohtia_migration_artifacts WHERE name='0033_entry_text_preference';
+  PRAGMA user_version=32;
+`;
+
+export const preSourceQuoteSql = `
+  ${preEntryTextSql}
+  ALTER TABLE presentation_receipts RENAME TO presentation_receipts_with_source_quote;
+  ${presentationReceiptSchema};
+  INSERT INTO presentation_receipts SELECT * FROM presentation_receipts_with_source_quote WHERE feature<>'sourceQuote';
+  DROP TABLE presentation_receipts_with_source_quote;
+  ALTER TABLE application_preferences RENAME TO application_preferences_with_source_quote;
+  ${applicationPreferencesSchema};
+  INSERT INTO application_preferences SELECT * FROM application_preferences_with_source_quote WHERE key<>'project_memory_source_quote_length';
+  DROP TABLE application_preferences_with_source_quote;
+  DELETE FROM kysely_migration WHERE name='0032_source_quote_preference';
+  DELETE FROM ohtia_migration_artifacts WHERE name='0032_source_quote_preference';
+  PRAGMA user_version=31;
+`;
+
 export const preReplyUsageSql = `
+  ${preSourceQuoteSql}
   DROP TRIGGER usage_reports_changes;
   DROP TRIGGER usage_reports_delete;
   DROP TABLE usage_reports;

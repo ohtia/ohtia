@@ -122,5 +122,13 @@
   {
     "name": "0031_reply_usage",
     "sha256": "a830ed34444cae696ed51b7b83d9095b7549ca96d6ee7c3e4f5d4f1d9bab06f6"
+  },
+  {
+    "name": "0032_source_quote_preference",
+    "sha256": "f4b1fe40c82c1fb150abd38e984afdac13aff737f517098cebbc7a55f2ce5f5b"
+  },
+  {
+    "name": "0033_entry_text_preference",
+    "sha256": "d094e2d824f3411db5159375f0519c1a99cb959e7cd9c59f577aac75e20f32de"
   }
 ]

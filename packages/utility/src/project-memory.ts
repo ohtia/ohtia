@@ -361,11 +361,15 @@ export async function listProjectMemory(
     let query = db
       .selectFrom("memory_version_sources as s")
       .innerJoin("messages as m", "m.id", "s.message_id")
+      .innerJoin("conversations as c", "c.id", "m.conversation_id")
+      .where("c.project_id", "=", project)
       .select([
         "m.id",
         "m.conversation_id",
         sql<string>`substr(m.content,1,${conversationPreviewPrefixLimit})`.as("prefix"),
-        sql<number>`length(m.content)>${conversationPreviewPrefixLimit}`.as("truncated"),
+        sql<number>`length(m.content)>${conversationPreviewPrefixLimit} OR instr(m.content,char(0))>0`.as(
+          "truncated",
+        ),
       ])
       .where("s.version_id", "=", row.id)
       .orderBy("m.id", "desc");

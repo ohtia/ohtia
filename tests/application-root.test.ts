@@ -1,4 +1,11 @@
 // @vitest-environment jsdom
+import { createHash } from "node:crypto";
+import {
+  ProjectMemoryDrafts,
+  ProjectMemoryView,
+} from "../packages/renderer/src/project-memory-view.js";
+import { conversationPreview } from "../packages/renderer/src/message-markdown.js";
+import { splitText } from "@ohtia/contracts";
 import { ActivityController } from "../packages/renderer/src/activity-controller.js";
 import { act, createElement as h } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -1751,22 +1758,29 @@ it("opens project memory from chat and navigates to a source message in its own 
   const sourceId = "019a8000-0000-7000-8000-000000000236";
   const entryId = "019a8000-0000-7000-8000-000000000237";
   const date = "2026-11-21T12:00:00.000Z";
+  const entryPrefix = "Archive  records\n" + "😀".repeat(271);
+  expect(Array.from(entryPrefix)).toHaveLength(288);
+  const entryText = entryPrefix + " remaining";
+  let entryVersion = 1;
+  let entryKind = "decision";
+  let entryState = "active";
+  let receive: (notice: Outcome<ResearchEvent>) => void = () => {};
   const listMemory = vi.fn(() =>
     call({
       ok: true,
       value: {
         projectId,
-        revision: 1,
-        active: 1,
+        revision: entryVersion,
+        active: entryState === "active" ? 1 : 0,
         bytes: 140,
         next: null,
         entries: [
           {
             id: entryId,
-            number: 1,
-            kind: "decision",
-            text: "Use the archive.",
-            state: "active",
+            number: entryVersion,
+            kind: entryKind,
+            text: entryText,
+            state: entryState,
             change: "added",
             author: "virgilio",
             originalAuthor: "virgilio",
@@ -1774,7 +1788,7 @@ it("opens project memory from chat and navigates to a source message in its own 
             source: {
               messageId: sourceId,
               conversationId: otherConversation,
-              prefix: "The municipal archive.",
+              prefix: "🧪".repeat(280),
               truncated: false,
             },
           },
@@ -1786,6 +1800,32 @@ it("opens project memory from chat and navigates to a source message in its own 
   Object.assign(t.port, {
     listMemory,
     addMemory,
+    subscribeResearch: (_scope: ResearchScope, listener: typeof receive) => {
+      receive = listener;
+      return {
+        ready: Promise.resolve({ ok: true, value: { subscriptionId: "memory-limits" } }),
+        dispose() {},
+      };
+    },
+    readMemoryHistory: () =>
+      call({
+        ok: true,
+        value: {
+          entryId,
+          versions: [
+            {
+              number: 1,
+              kind: "decision",
+              text: entryText,
+              state: "active",
+              change: "added",
+              author: "virgilio",
+              date,
+            },
+          ],
+          next: null,
+        },
+      }),
     listTimelineBefore: ({ conversationId }: { conversationId: string }) =>
       call({
         ok: true,
@@ -1804,7 +1844,7 @@ it("opens project memory from chat and navigates to a source message in its own 
               language: null,
               ending: null,
               id: conversationId === projectId ? textId : sourceId,
-              content: conversationId === projectId ? "My work." : "The municipal archive.",
+              content: conversationId === projectId ? "My work." : "🧪".repeat(280),
             },
           ],
         },
@@ -1846,6 +1886,73 @@ it("opens project memory from chat and navigates to a source message in its own 
   const memory = container.querySelector<HTMLElement>("#project-memory")!;
   expect(memory.querySelector("textarea")?.value).toBe("My work.");
   expect(memory.querySelector("select")?.value).toBe("decision");
+  let displayedText = memory.querySelector(".memory-entry .memory-text")!;
+  expect(displayedText.textContent).toBe(entryPrefix + "…");
+  const expand = memory.querySelector<HTMLButtonElement>(".memory-entry button[aria-expanded]")!;
+  expect(expand.textContent).toBe("Show full entry text");
+  expect(expand.getAttribute("aria-controls")).toBe(displayedText.id);
+  await act(async () => {
+    expand.focus();
+    expand.click();
+  });
+  expect(displayedText.textContent).toBe(entryText);
+  expect(expand.textContent).toBe("Show less");
+  expect(expand.getAttribute("aria-expanded")).toBe("true");
+  expect(document.activeElement).toBe(expand);
+  await act(async () => expand.click());
+  expect(displayedText.textContent).toBe(entryPrefix + "…");
+  await act(async () => expand.click());
+  const publishEntryVersion = () => {
+    receive({
+      ok: true,
+      value: { kind: "changed", record: "memory", id: projectId, revision: ++entryVersion },
+    });
+  };
+  await act(async () => publishEntryVersion());
+  expect(listMemory.mock.calls.length).toBeGreaterThan(1);
+  expect(document.activeElement).toBe(expand);
+  expect(expand.getAttribute("aria-expanded")).toBe("false");
+  expect(displayedText.textContent).toBe(entryPrefix + "…");
+  await act(async () => {
+    entryKind = "focus";
+    publishEntryVersion();
+  });
+  const relocated = memory.querySelector(".memory-entry .memory-text")!;
+  expect(relocated).not.toBe(displayedText);
+  displayedText = relocated;
+  expect(displayedText.closest(".memory-group")?.querySelector("h2")?.textContent).toBe("Focus");
+  expect(document.activeElement).toBe(displayedText);
+  await act(async () => {
+    memory.querySelector<HTMLButtonElement>(".memory-entry button[aria-expanded]")?.focus();
+  });
+
+  expect(memory.querySelector("q")?.textContent).toBe("🧪".repeat(144) + "…");
+  await act(async () =>
+    t.settings.notify({
+      ok: true,
+      value: {
+        ...t.settings.current,
+        sourceQuote: { schemaVersion: 1, revision: 1, value: 0, source: "saved" },
+      },
+    }),
+  );
+  expect(memory.querySelector("q")?.textContent).toBe("🧪".repeat(280));
+  expect(displayedText.textContent).toBe(entryPrefix + "…");
+  await act(async () =>
+    t.settings.notify({
+      ok: true,
+      value: {
+        ...t.settings.current,
+        entryText: { schemaVersion: 1, revision: 1, value: 0, source: "saved" },
+      },
+    }),
+  );
+  expect(displayedText.textContent).toBe(entryText);
+  expect(memory.querySelector(".memory-entry button[aria-expanded]")).toBeNull();
+  expect(document.activeElement).toBe(displayedText);
+  expect(memory.querySelector("q")?.textContent).toBe("🧪".repeat(280));
+  expect(memory.querySelector("textarea")?.value).toBe("My work.");
+  expect(memory.querySelector("select")?.value).toBe("decision");
   await click('#project-memory button[type="submit"]');
   expect(addMemory).toHaveBeenCalledWith(expect.any(String), {
     projectId,
@@ -1853,10 +1960,202 @@ it("opens project memory from chat and navigates to a source message in its own 
     text: "My work.",
     sourceMessageId: textId,
   });
+  await act(async () =>
+    t.settings.notify({
+      ok: true,
+      value: {
+        ...t.settings.current,
+        entryText: {
+          schemaVersion: 1,
+          revision: 2,
+          value: Array.from(entryText).length,
+          source: "saved",
+        },
+      },
+    }),
+  );
+  expect(displayedText.textContent).toBe(entryText);
+  expect(memory.querySelector(".memory-entry button[aria-expanded]")).toBeNull();
+  await act(async () =>
+    t.settings.notify({
+      ok: true,
+      value: {
+        ...t.settings.current,
+        entryText: { schemaVersion: 1, revision: 3, value: 12, source: "saved" },
+      },
+    }),
+  );
+  expect(displayedText.textContent).toBe("Archive  rec…");
+  const action = (name: string) =>
+    Array.from(memory.querySelectorAll("button")).find((button) => button.textContent === name)!;
+  await act(async () => action("Show entry history").click());
+  expect(memory.querySelector(".memory-history .memory-text")?.textContent).toBe(entryText);
+  await act(async () => action("Edit entry").click());
+  expect(memory.querySelector("textarea")?.value).toBe(entryText);
+  await act(async () => action("Discard changes").click());
   await click("#project-memory a");
   expect(container.querySelector(".workspace-chat h2")?.textContent).toContain("Municipal records");
   expect(document.activeElement?.id).toBe(`message-${sourceId}`);
   expect(container.querySelector("[role=tab][aria-selected=true]")?.textContent).toBe(
     "Project memory",
   );
+  await act(async () => {
+    memory.querySelector<HTMLButtonElement>(".memory-entry button[aria-expanded]")?.focus();
+    entryState = "withdrawn";
+    publishEntryVersion();
+  });
+  expect(memory.querySelector(".memory-entry")).toBeNull();
+  expect(document.activeElement).toBe(memory.querySelector(".project-memory-tools > button"));
+});
+
+it("loads the full scoped message, recovers a failed quote and discards an obsolete source read", async () => {
+  const currentProject = "project-1";
+  const otherProject = "project-2";
+  const oldSource = "source-1";
+  const newSource = "source-2";
+  const conversationId = "conversation-1";
+  const markup = "**😀🧪**   " + "x".repeat(9000) + "   final text";
+  const parts = splitText(markup);
+  const descriptor = {
+    source: `message_${oldSource}`,
+    bytes: Buffer.byteLength(markup),
+    sha256: createHash("sha256").update(markup).digest("hex"),
+    parts: parts.length,
+  };
+  vi.stubGlobal("crypto", {
+    subtle: {
+      digest: (_algorithm: string, input: Uint8Array) =>
+        Promise.resolve(Uint8Array.from(createHash("sha256").update(input).digest()).buffer),
+    },
+  });
+  const timeline: ResearchOutputs["timeline.read"] = {
+    items: [
+      {
+        id: oldSource,
+        kind: "message",
+        rank: 1,
+        revision: 1,
+        position: 1,
+        authorKind: "researcher",
+        agentId: null,
+        taskId: null,
+        language: null,
+        ending: null,
+        content: descriptor,
+      },
+    ],
+    remaining: [],
+  };
+  const readTimeline = vi.fn(() => call({ ok: true, value: timeline }));
+  const readTextPart = vi.fn(({ index }: { index: number }) =>
+    call({ ok: true, value: { text: parts[index - 1]! } }),
+  );
+  readTextPart.mockReturnValueOnce(call(failure("service_unavailable")) as never);
+  const listMemory = vi.fn(({ projectId }: { projectId: string }) =>
+    call({
+      ok: true,
+      value: {
+        projectId,
+        revision: 1,
+        active: 1,
+        next: null,
+        bytes: 1,
+        entries: [
+          {
+            id: "entry",
+            number: 1,
+            kind: "decision",
+            text: "The memory entry is fully visible.",
+            state: "active",
+            change: "added",
+            author: "researcher",
+            originalAuthor: "researcher",
+            date: "2026-11-21T12:00:00.000Z",
+            source:
+              projectId === currentProject
+                ? {
+                    messageId: oldSource,
+                    conversationId,
+                    prefix: markup.slice(0, 1024),
+                    truncated: true,
+                  }
+                : {
+                    messageId: newSource,
+                    conversationId: "other-conversation",
+                    prefix: "Current source",
+                    truncated: false,
+                  },
+          },
+        ],
+      },
+    }),
+  );
+  const port = { listMemory, readTimeline, readTextPart } as unknown as FoundationPort;
+  const drafts = new ProjectMemoryDrafts();
+  const observe = () => () => {};
+  const goToMessage = vi.fn();
+  const render = async (projectId: string, limit: number) => {
+    await act(async () =>
+      root.render(
+        h(ProjectMemoryView, {
+          key: projectId,
+          projectId,
+          locale: "en-US",
+          port,
+          drafts,
+          observe,
+          goToMessage,
+          sourceQuoteLength: limit,
+          entryTextLength: 288,
+          draftRequest: undefined,
+        }),
+      ),
+    );
+  };
+  await render(currentProject, 0);
+  expect(container.querySelector(".memory-source q")).toBeNull();
+  expect(container.querySelector(".memory-source [role=alert]")?.textContent).toContain(
+    "couldn’t load",
+  );
+  expect(container.querySelector(".memory-source a")?.getAttribute("href")).toBe(
+    `#message-${oldSource}`,
+  );
+  await click(".memory-source button");
+  expect(container.querySelector("q")?.textContent).toBe(
+    "😀🧪 " + "x".repeat(9000) + " final text",
+  );
+  expect(readTimeline).toHaveBeenLastCalledWith({ conversationId, ids: [oldSource] });
+  expect(readTextPart).toHaveBeenCalledTimes(parts.length + 1);
+  expect(container.querySelector(".memory-text")?.textContent).toBe(
+    "The memory entry is fully visible.",
+  );
+
+  await render(currentProject, 1200);
+  expect(Array.from(container.querySelector("q")!.textContent!)).toHaveLength(1201);
+  expect(container.querySelector("q")?.textContent).toMatch(/^😀🧪 x+…$/u);
+  await render(currentProject, 1);
+  expect(container.querySelector("q")?.textContent).toBe("😀…");
+  expect(conversationPreview(markup, false)).toBe("😀🧪 " + "x".repeat(117) + "…");
+  expect(readTimeline).toHaveBeenCalledTimes(2);
+
+  const late = deferred<Outcome<ResearchOutputs["timeline.read"]>>();
+  const cancel = vi.fn();
+  await render(otherProject, 0);
+  readTimeline.mockReturnValueOnce({ result: late.promise, cancel } as never);
+  await render(currentProject, 0);
+  expect(container.querySelector(".memory-source [role=status]")?.textContent).toBe(
+    "Loading source quotation…",
+  );
+  await click(".memory-source a");
+  expect(goToMessage).toHaveBeenCalledWith(
+    expect.objectContaining({ messageId: oldSource, conversationId }),
+  );
+  await render(otherProject, 0);
+  expect(cancel).toHaveBeenCalledOnce();
+  await act(async () => late.resolve({ ok: true, value: timeline }));
+  expect(container.querySelector("q")?.textContent).toBe("Current source");
+  expect(container.querySelector(".memory-source a")?.getAttribute("href")).toBe(
+    `#message-${newSource}`,
+  );
+  expect(readTextPart).toHaveBeenCalledTimes(parts.length + 1);
 });

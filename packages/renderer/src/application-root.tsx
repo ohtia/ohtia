@@ -480,7 +480,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
         onLocale={applyLocale.current}
         returnFocusRef={returnFocus}
       >
-        {(commands, binding, openConnections) => (
+        {(commands, { sourceQuoteLength, entryTextLength, ...binding }, openConnections) => (
           <>
             <Dialog
               role={newProjectState.dialog === "failed" ? "alertdialog" : "dialog"}
@@ -557,6 +557,8 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                             port={bridge.foundation}
                             observe={conversation.observe}
                             drafts={memoryDrafts}
+                            sourceQuoteLength={sourceQuoteLength}
+                            entryTextLength={entryTextLength}
                             draftRequest={
                               activeMemoryRequest?.source ? activeMemoryRequest : undefined
                             }

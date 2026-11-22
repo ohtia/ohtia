@@ -178,6 +178,8 @@ export function createFoundationPort(
             entry.request.operation === "locale.replace" ||
             entry.request.operation === "layout.replace" ||
             entry.request.operation === "character.replace" ||
+            entry.request.operation === "sourceQuote.replace" ||
+            entry.request.operation === "entryText.replace" ||
             entry.request.operation === "zoom.replace" ||
             entry.request.operation === "zoom.adjust"
             ? "uncertain"
@@ -261,6 +263,8 @@ export function createFoundationPort(
             entry.request.operation === "locale.replace" ||
             entry.request.operation === "layout.replace" ||
             entry.request.operation === "character.replace" ||
+            entry.request.operation === "sourceQuote.replace" ||
+            entry.request.operation === "entryText.replace" ||
             entry.request.operation === "zoom.replace" ||
             entry.request.operation === "zoom.adjust"
             ? "uncertain"
@@ -318,6 +322,8 @@ export function createFoundationPort(
         (entry.request.operation === "appearance.replace" ||
           entry.request.operation === "locale.replace" ||
           entry.request.operation === "character.replace" ||
+          entry.request.operation === "sourceQuote.replace" ||
+          entry.request.operation === "entryText.replace" ||
           entry.request.operation === "zoom.replace") &&
         (message.operation !== entry.request.operation ||
           message.payload.value.revision !== entry.request.payload.expectedRevision + 1 ||
@@ -410,6 +416,8 @@ export function createFoundationPort(
               operation === "locale.replace" ||
               operation === "layout.replace" ||
               operation === "character.replace" ||
+              operation === "sourceQuote.replace" ||
+              operation === "entryText.replace" ||
               operation === "zoom.replace" ||
               operation === "zoom.adjust"
               ? "uncertain"
@@ -441,6 +449,8 @@ export function createFoundationPort(
               operation === "locale.replace" ||
               operation === "layout.replace" ||
               operation === "character.replace" ||
+              operation === "sourceQuote.replace" ||
+              operation === "entryText.replace" ||
               operation === "zoom.replace" ||
               operation === "zoom.adjust"
               ? "uncertain"
@@ -462,6 +472,8 @@ export function createFoundationPort(
               operation === "locale.replace" ||
               operation === "layout.replace" ||
               operation === "character.replace" ||
+              operation === "sourceQuote.replace" ||
+              operation === "entryText.replace" ||
               operation === "zoom.replace" ||
               operation === "zoom.adjust"
               ? "uncertain"
@@ -525,6 +537,26 @@ export function createFoundationPort(
       },
     };
   }
+  function replaceMemoryLength(
+    feature: "sourceQuote" | "entryText",
+    change: Parameters<FoundationPort["replaceSourceQuote"]>[0],
+    expectedServiceGeneration?: string,
+  ) {
+    if (
+      expectedServiceGeneration !== undefined &&
+      expectedServiceGeneration !== generations.serviceGeneration
+    )
+      return { result: Promise.resolve(failure("service_unavailable")), cancel() {} };
+    const decoded = decodePresentationChange(feature, change);
+    return decoded.ok
+      ? call(
+          `${feature}.replace`,
+          { expectedRevision: decoded.value.expectedRevision, value: decoded.value.value },
+          decoded.value.operationId,
+        )
+      : { result: Promise.resolve(decoded), cancel() {} };
+  }
+
   const port: FoundationPort = Object.freeze<FoundationPort>({
     createProject: (id) => call("project.create", {}, id),
     openProject: (id, input) => call("project.open", input, id),
@@ -588,6 +620,11 @@ export function createFoundationPort(
       subscribe("connection", listener as Stream["listener"], connection),
     readPresentation: () => call("presentation.read", {}),
     subscribePresentation: (listener) => subscribe("presentation", listener as Stream["listener"]),
+    replaceSourceQuote: (change, generation) =>
+      replaceMemoryLength("sourceQuote", change, generation),
+    readSourceQuoteReceipt: (id) => call("sourceQuote.receipt", { targetOperationId: id }),
+    replaceEntryText: (change, generation) => replaceMemoryLength("entryText", change, generation),
+    readEntryTextReceipt: (id) => call("entryText.receipt", { targetOperationId: id }),
     replaceCharacter: (change, expectedServiceGeneration) => {
       if (
         expectedServiceGeneration !== undefined &&
@@ -707,6 +744,8 @@ export function createFoundationPort(
               entry.request.operation === "locale.replace" ||
               entry.request.operation === "layout.replace" ||
               entry.request.operation === "character.replace" ||
+              entry.request.operation === "sourceQuote.replace" ||
+              entry.request.operation === "entryText.replace" ||
               entry.request.operation === "zoom.replace" ||
               entry.request.operation === "zoom.adjust"
               ? "uncertain"

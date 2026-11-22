@@ -865,7 +865,7 @@
       "decorativeBorders": "border.subtle"
     },
     {
-      "selector": ".limits-panel input",
+      "selector": ".settings-number-input",
       "foreground": "content.primary",
       "backgrounds": ["surface.panel"],
       "minimum": 7

@@ -763,6 +763,8 @@ export class ServiceSupervisor {
             work.request.operation === "layout.replace" ||
             work.request.operation === "bounds.replace" ||
             work.request.operation === "character.replace" ||
+            work.request.operation === "sourceQuote.replace" ||
+            work.request.operation === "entryText.replace" ||
             work.request.operation === "zoom.replace" ||
             work.request.operation === "zoom.commit" ||
             work.request.operation === "zoom.adjust"

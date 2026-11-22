@@ -125,6 +125,8 @@ export function inspectWorkspace(root) {
             "migrations/0029_project_memory.mjs",
             "migrations/0030_researcher_memory.mjs",
             "migrations/0031_reply_usage.mjs",
+            "migrations/0032_source_quote_preference.mjs",
+            "migrations/0033_entry_text_preference.mjs",
             "migrations/0015_project_setup.mjs",
             "migrations/0009_usage_limit_pauses.mjs",
             "migrations/0005_presentation_receipts.mjs",

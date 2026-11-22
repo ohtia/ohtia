@@ -1876,6 +1876,8 @@ it.each(["throwing", "ineffective"] as const)(
       serviceGeneration: peer.generation,
       appearance: { schemaVersion: 1, revision: 0, value: "system", source: "default" },
       character: { schemaVersion: 1, revision: 0, value: "animated", source: "default" },
+      sourceQuote: { schemaVersion: 1, revision: 0, value: 144, source: "default" },
+      entryText: { schemaVersion: 1, revision: 0, value: 288, source: "default" },
       zoom: { schemaVersion: 1, revision: 1, value: 125, source: "saved" },
     });
     h.window.minimized = true;
