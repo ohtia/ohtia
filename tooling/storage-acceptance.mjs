@@ -526,8 +526,10 @@ try {
   await page.screenshot({ path: path.join(output, "storage-320.png"), fullPage: true });
   record("keyboard-reflow-accessibility", { tree });
   const cases = await component("cases", path.join(output, "components"));
-  expect(cases.code).toBe(0);
   const complete = cases.messages.find((value) => value.kind === "complete");
+  const failed = cases.messages.find((value) => value.kind === "failed");
+  const failures = (failed ?? complete)?.results.filter((value) => value.result !== "pass");
+  expect(cases.code, JSON.stringify({ error: failed?.error, cases: failures })).toBe(0);
   expect(complete).toBeDefined();
   expect(complete.results.every((value) => value.result === "pass")).toBe(true);
   expect(complete.results.map((value) => value.id).sort()).toEqual(

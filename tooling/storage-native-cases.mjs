@@ -1,3 +1,4 @@
+import { ServiceConnections, chatgptConnection } from "../packages/contracts/dist/index.js";
 import { preConsultationSql } from "./storage-legacy-consultation-fixture.mjs";
 import { objects as initialResearchObjects } from "../packages/utility/src/migrations/0007_research_records.mjs";
 import { objects as initialTaskObjects } from "../packages/utility/src/migrations/0008_durable_ai_tasks.mjs";
@@ -235,7 +236,7 @@ async function run() {
   await test("research-records", async (root) => {
     const store = new DurableStore(options(root));
     const accepted = (result) => {
-      assert.equal(result.ok, true);
+      assert.equal(result.ok, true, JSON.stringify(result.error));
       return result.value;
     };
     try {
@@ -289,15 +290,59 @@ async function run() {
         payload: { projectId: project.resultId, content: "Synthetic first message" },
       };
       assert.equal((await store.executeResearchCommand(start)).error.code, "project_in_setup");
-      store.setTaskContext({
-        generation: "native-setup",
-        mode: "qualification",
-        connections: {
-          available: () => true,
-          awaitingModels: () => false,
-          read: () => ({ models: [{ id: "synthetic-model", name: "Synthetic" }] }),
-        },
-      });
+      const connections = new ServiceConnections();
+      const generation = "native-setup";
+      const { id: connection, kind: connectionKind } = chatgptConnection;
+      const model = { id: "synthetic-model", name: "Synthetic" };
+      store.setTaskContext({ generation, mode: "qualification", connections });
+      assert(
+        connections.receive({
+          kind: "connection_state",
+          generation,
+          snapshot: {
+            connection,
+            state: "connected",
+            reason: null,
+            probing: false,
+            probe_id: null,
+            model_list_revision: 1,
+            model_count: 1,
+            model_report_id: "native-model-catalog",
+            model_read_at: new Date().toISOString(),
+            account_fingerprint: "a".repeat(64),
+            connection_kind: connectionKind,
+          },
+        }),
+      );
+      assert(
+        connections.receive({
+          kind: "connection_models",
+          generation,
+          page: {
+            connection,
+            model_list_revision: 1,
+            models: [model],
+            nextCursor: 1,
+            hasMore: false,
+          },
+        }),
+      );
+      assert(accepted(await store.storeModelReport(connection)));
+      accepted(
+        await store.executeResearchCommand({
+          command: "agentPreference.replace",
+          operationId: "research-default-model",
+          payload: {
+            target: "default",
+            expectedRevision: 0,
+            connection,
+            model: model.id,
+            effort: null,
+            inherit: false,
+            source: "first_connection",
+          },
+        }),
+      );
       accepted(
         await store.executeResearchCommand({
           command: "message.append",
@@ -307,6 +352,7 @@ async function run() {
       );
       const setupTask = accepted(await store.prepareTask());
       assert(setupTask);
+      assert.equal(setupTask.dispatch.request.model, model.id);
       const setupResult = accepted(
         await store.recordTaskEvent(
           setupTask.dispatch.request.attempt,
@@ -380,7 +426,7 @@ async function run() {
         upgraded.prepare("SELECT * FROM application_preferences ORDER BY key").all(),
         preferences,
       );
-      assert.equal(upgraded.prepare("SELECT count(*) FROM command_receipts").pluck().get(), 6);
+      assert.equal(upgraded.prepare("SELECT count(*) FROM command_receipts").pluck().get(), 7);
       upgraded.close();
       const registry = path.join(app, "iana-language-subtag-registry.txt");
       assert.equal(

@@ -25,6 +25,8 @@ const sample: ReplyDetails = {
   accountRevision: "019a8000-0000-4000-8000-000000000042",
   requestedModel: "GPT synthetic",
   observedModel: "GPT synthetic 한국어",
+  requestedEffort: "high",
+  observedEffort: "low",
   attempts: 1,
   startedAt: "2026-11-10T14:41:07.000Z",
   endedAt: "2026-11-10T14:41:52.000Z",
