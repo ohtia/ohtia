@@ -309,6 +309,7 @@ describe("review regression contracts", () => {
         "forced-color-adjust: none",
         "app-region: inherit",
         "touch-action: inherit",
+        "scrollbar-gutter: var(--content-disabled)",
         "text-overflow: clip",
         "transform: scale(0)",
         "outline-style: none",

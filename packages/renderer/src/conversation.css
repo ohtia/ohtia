@@ -17,6 +17,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   overflow-anchor: none;
+  scrollbar-gutter: stable;
   scroll-padding: calc(var(--focus-width) + var(--focus-offset));
   padding: var(--space-2);
   display: flex;

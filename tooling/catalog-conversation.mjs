@@ -137,11 +137,13 @@ export async function verifyConversationSpecimen(page, url, engine, output) {
               fullPage: true,
             });
           }
-          await details.locator(".reply-details-memory > summary").click();
-          await details.locator(".reply-details-memory li summary").click();
-          await expect(details.locator(".reply-details-memory li")).toContainText(
-            "Synthetic memory version.",
-          );
+          const memory = details.locator(".reply-details-memory");
+          await memory.locator(":scope > summary").click();
+          await expect(memory).toHaveJSProperty("open", true);
+          const version = memory.locator("li details");
+          await version.locator("summary").click();
+          await expect(version).toHaveJSProperty("open", true);
+          await expect(version.locator("p")).toHaveText("Synthetic memory version.");
           await trigger.focus();
           await page.keyboard.press("Enter");
           await expect(details).toHaveCount(0);
