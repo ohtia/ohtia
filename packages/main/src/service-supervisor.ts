@@ -243,6 +243,9 @@ export class ServiceSupervisor {
         const full = manager.snapshot(connection);
         if (!full) continue;
         const account = manager.account(connection);
+        const report = manager.modelListReport(connection);
+        const currentList =
+          report && full.model_list_revision !== null && report.fingerprint === account.fingerprint;
         const snapshot = {
           connection_kind: account.kind,
           ...(account.fingerprint ? { account_fingerprint: account.fingerprint } : {}),
@@ -252,8 +255,9 @@ export class ServiceSupervisor {
           reason: full.reason,
           probing: full.probing,
           probe_id: full.probe_id,
-          model_list_revision: full.model_list_revision,
-          model_count: full.model_count,
+          model_list_revision: currentList ? full.model_list_revision : null,
+          model_count: currentList ? full.model_count : 0,
+          ...(currentList ? { model_report_id: report.id, model_read_at: report.date } : {}),
         };
         const refresh_id = this.modelRefreshes.get(connection);
         this.child.send(

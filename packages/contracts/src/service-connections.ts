@@ -12,12 +12,21 @@ export type ServiceConnectionSnapshot = Omit<
   "last_account_email" | "account_email" | "display_name"
 > & {
   readonly account_fingerprint?: string;
+  readonly model_report_id?: string;
+  readonly model_read_at?: string;
   readonly connection_kind?: "subscription" | "api_key";
 };
 function serviceSnapshot(value: unknown): value is ServiceConnectionSnapshot {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const { account_fingerprint, connection_kind, ...snapshot } = value as Record<string, unknown>;
+  const { account_fingerprint, connection_kind, model_report_id, model_read_at, ...snapshot } =
+    value as Record<string, unknown>;
   return (
+    (model_report_id === undefined
+      ? model_read_at === undefined
+      : isIdentifier(model_report_id) &&
+        typeof model_read_at === "string" &&
+        Number.isFinite(Date.parse(model_read_at)) &&
+        snapshot.model_list_revision !== null) &&
     (!Object.hasOwn(value, "account_fingerprint") || isAccountFingerprint(account_fingerprint)) &&
     (!Object.hasOwn(value, "connection_kind") ||
       connection_kind === "subscription" ||
@@ -99,7 +108,9 @@ export class ServiceConnections {
       const previous = this.records.get(report.snapshot.connection);
       const sameRevision =
         previous !== undefined &&
-        previous.snapshot.model_list_revision === report.snapshot.model_list_revision;
+        previous.snapshot.model_list_revision === report.snapshot.model_list_revision &&
+        previous.snapshot.account_fingerprint === report.snapshot.account_fingerprint &&
+        previous.snapshot.model_report_id === report.snapshot.model_report_id;
       this.records.set(report.snapshot.connection, {
         snapshot: report.snapshot,
         models: sameRevision ? previous.models : null,
@@ -134,6 +145,24 @@ export class ServiceConnections {
     | undefined {
     const record = this.records.get(connection);
     return record ? { state: record.snapshot.state, models: record.models } : undefined;
+  }
+  connectionIds(): readonly string[] {
+    return [...this.records.keys()];
+  }
+  completedList(connection: string) {
+    const record = this.records.get(connection);
+    if (!record?.models || record.snapshot.state !== "connected") return undefined;
+    const { model_report_id, model_read_at, account_fingerprint, connection_kind } =
+      record.snapshot;
+    if (!model_report_id || !model_read_at) return undefined;
+    return {
+      connection,
+      reportId: model_report_id,
+      readAt: model_read_at,
+      fingerprint: account_fingerprint,
+      kind: connection_kind ?? "subscription",
+      models: record.models,
+    };
   }
   account(connection: string) {
     const record = this.records.get(connection);

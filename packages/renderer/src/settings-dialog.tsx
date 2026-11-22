@@ -1,5 +1,14 @@
 import { MemoryLengthField } from "./memory-length-field.js";
 import { memoryLengthSettings } from "./settings-controller.js";
+import type { ConnectionEvent } from "@ohtia/contracts";
+import { windowConnectionSubscription } from "./connection-subscription.js";
+import {
+  AgentsSettings,
+  FirstModelChoice,
+  useAgentSettings,
+  type AgentSettingsObserver,
+} from "./agents-settings.js";
+import { chatgptConnection, type ProviderDeclaration } from "@ohtia/contracts";
 import { LimitsPanel } from "./limits-panel.js";
 import type { LimitsController } from "./limits-controller.js";
 import { connectionInferenceLimits, type ConnectionSnapshot } from "@ohtia/contracts";
@@ -9,6 +18,7 @@ import {
   useEffect,
   useCallback,
   useId,
+  useMemo,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -68,11 +78,17 @@ function useSystemPreference(query: string, active: boolean): boolean {
   }, [query, active]);
   return matches;
 }
-function focusSetting(id: string, feature: SettingFeature | "layout" | "connections"): void {
+const defaultConnections = [chatgptConnection];
+function focusSetting(
+  id: string,
+  feature: SettingFeature | "layout" | "connections" | "agents",
+): void {
   const group = document.getElementById(`${id}-${feature}-controls`);
   (
     group?.querySelector<HTMLElement>("input:checked") ??
-    group?.querySelector<HTMLElement>("input,button") ??
+    group?.querySelector<HTMLElement>(
+      "input:not(:disabled),select:not(:disabled),button:not(:disabled)",
+    ) ??
     group
   )?.focus();
 }
@@ -92,9 +108,13 @@ export function SettingsDialog({
   feedback,
   requestedFocus,
   returnFocusRef,
+  connections = defaultConnections,
+  observeResearch,
 }: {
+  readonly connections?: readonly ProviderDeclaration["connection"][];
+  readonly observeResearch?: AgentSettingsObserver | undefined;
   readonly returnFocusRef?: Readonly<RefObject<HTMLElement | null>>;
-  readonly requestedFocus?: SettingFeature | "connections" | undefined;
+  readonly requestedFocus?: SettingFeature | "connections" | "agents" | undefined;
   readonly feedback?: ReactNode;
   readonly open: boolean;
   readonly onClose: () => void;
@@ -124,9 +144,15 @@ export function SettingsDialog({
     if (open && workspaceState.persistence.save.state === "uncertain")
       void workspace.reconcilePreferences();
   }, [open, workspace, workspaceState.persistence.save.state]);
-  const [connection, setConnection] = useState<ConnectionSnapshot>();
+  const [snapshots, setSnapshots] = useState<Record<string, ConnectionSnapshot | undefined>>({});
+  const [probeResults, setProbeResults] = useState<
+    Record<string, Extract<ConnectionEvent, { kind: "probe_result" }>>
+  >({});
+  const subscribeConnection = useMemo(() => windowConnectionSubscription(port), [port]);
+  const connection = snapshots.chatgpt;
+  const agentSettings = useAgentSettings(port, open && available, observeResearch);
   useEffect(() => {
-    if (!open) setConnection(undefined);
+    if (!open) setSnapshots({});
   }, [open]);
   const id = useId();
   useEffect(() => {
@@ -574,11 +600,58 @@ export function SettingsDialog({
             tabIndex={-1}
             aria-label={message(locale, "connection.title")}
           >
-            <ConnectionsPanel
-              onConnection={setConnection}
-              port={port}
-              locale={locale}
-              available={available}
+            {connections.length > 1 && <h3>{message(locale, "connection.title")}</h3>}
+            {connections.map((service) => (
+              <ConnectionsPanel
+                key={service.id}
+                connection={service.id}
+                embedded={connections.length > 1}
+                subscribeConnection={subscribeConnection}
+                onProbeResult={(result) => {
+                  setProbeResults((prior) =>
+                    prior[result.connection] === result
+                      ? prior
+                      : { ...prior, [result.connection]: result },
+                  );
+                }}
+                onConnection={(snapshot) => {
+                  setSnapshots((previous) => ({ ...previous, [service.id]: snapshot }));
+                }}
+                onCatalogRead={() => {
+                  if (!observeResearch && typeof port.listAgentPreferences === "function")
+                    void agentSettings.read();
+                }}
+                renderAfterState={(snapshot, justConnected) => (
+                  <FirstModelChoice
+                    {...{ snapshot, port, locale }}
+                    settings={agentSettings}
+                    showConnected={
+                      justConnected &&
+                      agentSettings.data?.preferences.some(
+                        (row) =>
+                          row.target === "default" && row.connection !== service.id && !!row.model,
+                      ) === true
+                    }
+                  />
+                )}
+                port={port}
+                locale={locale}
+                available={available}
+              />
+            ))}
+          </div>
+        )}
+        {open && typeof port.listAgentPreferences === "function" && (
+          <div
+            id={`${id}-agents-controls`}
+            role="region"
+            tabIndex={-1}
+            aria-label={message(locale, "agents.title")}
+          >
+            <AgentsSettings
+              {...{ port, locale, connections, snapshots }}
+              settings={agentSettings}
+              probeResults={probeResults}
             />
           </div>
         )}

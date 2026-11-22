@@ -1,3 +1,4 @@
+import { seedDefaultModel } from "./fixtures/storage.js";
 import { objects as exitReceiptObjects } from "../packages/utility/src/migrations/0012_application_exit.mjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -63,6 +64,7 @@ async function tasks() {
     },
   });
   f.store.setTaskContext({ generation: "run", mode: "development", connections });
+  seedDefaultModel(f.raw, connections.read("chatgpt")!.models![0]!.id);
   const project = value(
     await f.store.executeResearchCommand({
       command: "development.createProject",
@@ -83,6 +85,7 @@ async function tasks() {
 async function windowPair() {
   const f = storageFixture();
   await f.store.open();
+  seedDefaultModel(f.raw, "model");
   const receivers = new Map<string, (text: unknown) => void>();
   const messages: Record<string, any>[] = [];
   const service = createStatusService(
@@ -133,6 +136,7 @@ describe("execution limit contract and storage", () => {
     async (invalid) => {
       const f = storageFixture();
       await f.store.open();
+      seedDefaultModel(f.raw, "model");
       const before = value(await f.store.readExecutionLimits());
       expect(
         decodeEnvelope(
@@ -251,6 +255,7 @@ describe("execution limit contract and storage", () => {
     async (phase) => {
       const f = storageFixture();
       await f.store.open();
+      seedDefaultModel(f.raw, "model");
       const prepare = Database.prototype.prepare;
       const spy = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
         text,
@@ -272,6 +277,7 @@ describe("execution limit contract and storage", () => {
       spy.mockRestore();
       await f.store.close();
       await f.store.open();
+      seedDefaultModel(f.raw, "model");
       const receipt = value(await f.store.readExecutionLimitsReceipt("lost"));
       expect(receipt.state).toBe(phase === "after" ? "recorded" : "not_found");
       expect(value(await f.store.readExecutionLimits()).max_concurrent_inference).toBe(
@@ -293,8 +299,9 @@ describe("execution limit contract and storage", () => {
     source.exec(exitReceiptObjects.receipts_commands);
     source.close();
     await f.store.open();
+    seedDefaultModel(f.raw, "model");
     const db = f.raw();
-    expect(db.pragma("user_version", { simple: true })).toBe(33);
+    expect(db.pragma("user_version", { simple: true })).toBe(34);
     expect(db.prepare("SELECT state,blocking_reason FROM tasks").all()).toEqual([
       { state: "queued", blocking_reason: null },
     ]);
@@ -309,6 +316,7 @@ describe("execution limit contract and storage", () => {
       (await f.store.replaceExecutionLimits({ operationId: "unavailable", value: 2 })).ok,
     ).toBe(false);
     await f.store.open();
+    seedDefaultModel(f.raw, "model");
     expect((await f.store.readExecutionLimitsReceipt("!")).ok).toBe(false);
     const db = f.raw();
     db.exec(
@@ -370,6 +378,7 @@ describe("execution limit contract and storage", () => {
   it("rolls back both preference and receipt when the insert fails", async () => {
     const f = storageFixture();
     await f.store.open();
+    seedDefaultModel(f.raw, "model");
     const before = value(await f.store.readExecutionLimits());
     const db = f.raw();
     db.exec(

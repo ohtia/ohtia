@@ -8,6 +8,10 @@ import {
   failure,
   staleRevision,
   type FoundationPort,
+  type AgentPreferences,
+  type ConnectionEvent,
+  type ProviderDeclaration,
+  chatgptConnection,
   type InterfaceLocale,
   type Outcome,
   type PresentationSnapshot,
@@ -69,7 +73,12 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   media.clear();
 });
-async function mount(locale: InterfaceLocale = "en-US", motion?: SystemMotionBridge) {
+async function mount(
+  locale: InterfaceLocale = "en-US",
+  motion?: SystemMotionBridge,
+  override: Partial<FoundationPort> = {},
+  connections?: readonly ProviderDeclaration["connection"][],
+) {
   const t = harness();
   const localeSnapshot = {
     serviceGeneration: "service-1",
@@ -96,6 +105,7 @@ async function mount(locale: InterfaceLocale = "en-US", motion?: SystemMotionBri
           source: "saved",
         },
       }),
+    ...override,
   } as unknown as FoundationPort;
   const language = new LanguageController(
     port,
@@ -147,6 +157,7 @@ async function mount(locale: InterfaceLocale = "en-US", motion?: SystemMotionBri
       workspace,
       workspaceState: workspaceState ?? liveState,
       platform: "linux",
+      ...(connections ? { connections } : {}),
     });
   }
   const render = async (open = true, workspaceState?: WorkspaceState, available = true) => {
@@ -162,6 +173,218 @@ async function click(selector: string) {
   await act(async () => container.querySelector<HTMLElement>(selector)!.click());
 }
 describe("compact Settings dialog", () => {
+  it("keeps the default model when another service connects and refreshes its catalog", async () => {
+    const other = {
+      id: "anthropic",
+      displayName: "Anthropic",
+      kind: "api_key",
+      usageUrl: null,
+    } as const;
+    const current = {
+      connection: "chatgpt",
+      display_name: "ChatGPT",
+      state: "connected",
+      account_email: "researcher@example.test",
+      last_account_email: null,
+      reason: null,
+      probing: false,
+      probe_id: null,
+      model_list_revision: 1,
+      model_count: 1,
+    } as const;
+    const next = {
+      ...current,
+      connection: other.id,
+      display_name: other.displayName,
+      account_email: null,
+      state: "disconnected",
+      model_list_revision: null,
+      model_count: 0,
+    } as const;
+    const preferences: AgentPreferences = {
+      preferences: [
+        {
+          target: "default",
+          revision: 1,
+          model: "first",
+          modelName: "First model",
+          connection: "chatgpt",
+          effort: null,
+          inherit: false,
+          source: "researcher",
+          seedPending: false,
+        },
+      ],
+      lists: [
+        {
+          connection: "chatgpt",
+          kind: "subscription",
+          count: 1,
+          list_revision: 1,
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    };
+    let receive: ((event: Outcome<ConnectionEvent>) => void) | undefined;
+    const subscribeConnection: FoundationPort["subscribeConnection"] = vi.fn(
+      (_connection, listener) => {
+        receive = listener;
+        return {
+          ready: Promise.resolve({ ok: true, value: { subscriptionId: "connection" } }),
+          dispose() {},
+        };
+      },
+    );
+    const listAgentPreferences: FoundationPort["listAgentPreferences"] = vi.fn(() =>
+      call({ ok: true, value: preferences }),
+    );
+    const replaceAgentPreference: FoundationPort["replaceAgentPreference"] = vi.fn(() =>
+      call(failure("invalid_message")),
+    );
+    await mount(
+      "en-US",
+      undefined,
+      {
+        subscribeConnection,
+        readConnection: (id) => call({ ok: true, value: id === "chatgpt" ? current : next }),
+        listAgentPreferences,
+        listProviderModels: () =>
+          call({
+            ok: true,
+            value: {
+              connection: "chatgpt",
+              list_revision: 1,
+              nextCursor: 1,
+              hasMore: false,
+              models: [{ id: "first", name: "First model" }],
+            },
+          }),
+        listConnectionModels: () =>
+          call({
+            ok: true,
+            value: {
+              connection: other.id,
+              model_list_revision: 1,
+              nextCursor: 1,
+              hasMore: false,
+              models: [{ id: "second", name: "Second model" }],
+            },
+          }),
+        replaceAgentPreference,
+      },
+      [chatgptConnection, other],
+    );
+    expect(subscribeConnection).toHaveBeenCalledExactlyOnceWith("*", expect.any(Function));
+
+    const connected = {
+      ...next,
+      state: "connected",
+      model_list_revision: 1,
+      model_count: 1,
+    } as const;
+    await act(async () => receive?.({ ok: true, value: { ...connected, kind: "state" } }));
+    const row = [...container.querySelectorAll(".connection-row")].find(
+      (node) => node.querySelector("h4")?.textContent === "Anthropic",
+    )!;
+    expect(row.querySelector('[role="status"].connection-info')?.textContent).toContain(
+      "Anthropic is connected. Agents keep their current models",
+    );
+    const agents = container.querySelector('[id$="-agents-controls"]')!;
+    expect([...agents.querySelectorAll("select")][1]?.value).toBe("first");
+    expect(replaceAgentPreference).not.toHaveBeenCalled();
+    const reads = vi.mocked(listAgentPreferences).mock.calls.length;
+    await act(async () =>
+      receive?.({
+        ok: true,
+        value: { ...connected, kind: "probe_result", outcome: "listed" },
+      }),
+    );
+    expect(vi.mocked(listAgentPreferences).mock.calls.length).toBeGreaterThan(reads);
+    expect(row.textContent).toContain("Second model");
+  });
+
+  it("preserves memory controls and returns focus after the first model read recovers", async () => {
+    const snapshot = {
+      connection: "chatgpt",
+      display_name: "ChatGPT",
+      state: "connected",
+      account_email: "researcher@example.test",
+      last_account_email: null,
+      reason: null,
+      probing: false,
+      probe_id: null,
+      model_list_revision: 1,
+      model_count: 1,
+    } as const;
+    let preferences: AgentPreferences = {
+      preferences: [],
+      lists: [
+        {
+          connection: "chatgpt",
+          kind: "subscription",
+          list_revision: 1,
+          count: 1,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    };
+    let failRead = false;
+    const model = { id: "first", name: "First model", effortSupport: "unknown" } as const;
+    const replace: FoundationPort["replaceAgentPreference"] = vi.fn((_id, choice) => {
+      preferences = {
+        ...preferences,
+        preferences: [{ ...choice, revision: 1, seedPending: false, modelName: model.name }],
+      };
+      failRead = true;
+      return call({ ok: true, value: { resultId: "019a8000-0000-7000-8000-000000000204" } });
+    });
+    await mount("en-US", undefined, {
+      readConnection: () => call({ ok: true, value: snapshot }),
+      subscribeConnection: () => ({
+        ready: Promise.resolve({ ok: true, value: { subscriptionId: "connection" } }),
+        dispose() {},
+      }),
+      listAgentPreferences: () =>
+        call(failRead ? failure("service_unavailable") : { ok: true, value: preferences }),
+      listProviderModels: () =>
+        call({
+          ok: true,
+          value: {
+            connection: "chatgpt",
+            list_revision: 1,
+            models: [model],
+            nextCursor: 1,
+            hasMore: false,
+          },
+        }),
+      replaceAgentPreference: replace,
+    });
+    expect(container.querySelector('[id$="-sourceQuote-controls"] input')).toBeTruthy();
+    expect(container.querySelector('[id$="-entryText-controls"] input')).toBeTruthy();
+    const group = container.querySelector(".connection-row .agent-choice")!;
+    expect(group.querySelector("select")?.value).toBe(model.id);
+    const submit = group.querySelector("button")!;
+    await act(async () => {
+      submit.focus();
+      submit.click();
+    });
+    expect(group.textContent).toContain("Saved");
+    expect(submit.getAttribute("aria-disabled")).toBe("true");
+    expect(replace).toHaveBeenCalledOnce();
+
+    failRead = false;
+    const retry = [...group.querySelectorAll("button")].find(
+      (item) => item.textContent === "Retry",
+    )!;
+    await act(async () => {
+      retry.focus();
+      retry.click();
+    });
+    expect(container.querySelector(".connection-row .agent-choice")).toBeNull();
+    expect(document.activeElement).toBe(container.querySelector(".connection-actions button"));
+    expect(replace).toHaveBeenCalledOnce();
+  });
+
   it.each(supportedLocales)(
     "renders all controls and autonyms in %s without untranslated placeholders",
     async (locale) => {
@@ -350,6 +573,37 @@ describe("Settings command composition", () => {
     const t = harness();
     let receive: (intent: unknown) => void = () => {};
     const published: import("@ohtia/contracts").CommandSnapshot[] = [];
+    let researchNotice: Parameters<FoundationPort["subscribeResearch"]>[1] | undefined;
+    const models = [
+      { id: "first", name: "First model", effortSupport: "unknown" },
+      { id: "second", name: "Second model", effortSupport: "unknown" },
+    ] as const;
+    let agentPreferences: AgentPreferences = {
+      preferences: [
+        {
+          target: "default",
+          revision: 1,
+          model: "first",
+          modelName: "First model",
+          connection: "chatgpt",
+          effort: null,
+          inherit: false,
+          source: "researcher",
+          seedPending: false,
+        },
+      ],
+      lists: [
+        {
+          connection: "chatgpt",
+          kind: "subscription",
+          count: 2,
+          list_revision: 1,
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    };
+    const readAgentPreferences = vi.fn(() => call({ ok: true, value: agentPreferences }));
+
     const localeSnapshot = {
       serviceGeneration: "service-1",
       record: { schemaVersion: 1, revision: 0, value: "system", source: "default" },
@@ -376,6 +630,20 @@ describe("Settings command composition", () => {
     const port = {
       ...t.port,
       readExecutionLimits: () => call({ ok: true as const, value: limitsCurrent }),
+      subscribeResearch: (_scope: unknown, receive: NonNullable<typeof researchNotice>) => {
+        researchNotice = receive;
+        return {
+          ready: Promise.resolve({ ok: true, value: { subscriptionId: "research" } }),
+          dispose() {},
+        };
+      },
+      listAgentPreferences: readAgentPreferences,
+      listProviderModels: () =>
+        call({
+          ok: true,
+          value: { connection: "chatgpt", list_revision: 1, nextCursor: 2, hasMore: false, models },
+        }),
+
       replaceExecutionLimits: replaceLimits,
       readExecutionLimitsReceipt: limitsReceipt,
       readConnection: () =>
@@ -441,7 +709,13 @@ describe("Settings command composition", () => {
     } as unknown as import("@ohtia/contracts").CommandBridge;
     await act(async () =>
       root.render(
-        h(SettingsSurfaces, { port, bridge, locale: "en-US", available: true, onLocale: vi.fn() }),
+        h(SettingsSurfaces, {
+          port,
+          bridge,
+          locale: "en-US",
+          available: true,
+          onLocale: vi.fn(),
+        }),
       ),
     );
     const intent = async (command: string, sequence: number) => {
@@ -873,6 +1147,59 @@ describe("Settings command composition", () => {
     );
     expect(container.querySelector("dialog[open] .limits-feedback > button")).toBeNull();
     await click("dialog[open] [data-close]");
+    const existing = container.querySelector("dialog[open]");
+    if (existing) await click("dialog[open] [data-close]");
+    await act(async () =>
+      root.render(
+        h(SettingsSurfaces, {
+          port,
+          bridge,
+          locale: "en-US",
+          available: true,
+          onLocale: vi.fn(),
+          children: (_commands, _binding, _openConnections, openAgents) =>
+            h("button", { id: "open-agents", onClick: openAgents }, "Open Agents settings"),
+        }),
+      ),
+    );
+    await click("#open-agents");
+    const agents = container.querySelector('[id$="-agents-controls"]')!;
+    expect(agents.closest("dialog[open]")).toBeTruthy();
+    expect(agents.contains(document.activeElement)).toBe(true);
+    expect(agents.textContent).toContain("Default model");
+    expect(container.querySelectorAll("dialog[open]")).toHaveLength(1);
+    const reads = readAgentPreferences.mock.calls.length;
+    agentPreferences = {
+      ...agentPreferences,
+      preferences: [
+        {
+          ...agentPreferences.preferences[0]!,
+          revision: 2,
+          model: "second",
+          modelName: "Second model",
+        },
+      ],
+    };
+    await act(async () =>
+      researchNotice?.({
+        ok: true,
+        value: {
+          kind: "agentPreferenceChanged",
+          target: "default",
+          revision: 2,
+          source: "replace",
+        },
+      }),
+    );
+    expect(agents.textContent).toContain(
+      "Another window changed Default model to ChatGPT · Second model.",
+    );
+    for (const value of [
+      { kind: "providerModelsChanged", connection: "chatgpt", list_revision: 1 },
+      { kind: "destinationChanged", connection: "chatgpt" },
+    ] as const)
+      await act(async () => researchNotice?.({ ok: true, value }));
+    expect(readAgentPreferences.mock.calls.length).toBeGreaterThanOrEqual(reads + 3);
     disposals.push(() => t.controller.dispose());
   }, 60000);
 });

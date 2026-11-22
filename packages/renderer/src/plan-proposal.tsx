@@ -60,6 +60,7 @@ export function PlanProposal({
   pauses,
   revealResult,
   onOpenConnections,
+  onOpenAgents,
 }: {
   readonly proposal: TimelinePlan;
   readonly locale: InterfaceLocale;
@@ -69,6 +70,7 @@ export function PlanProposal({
   readonly pauses?: PauseCounts;
   readonly revealResult: (id: string) => void;
   readonly onOpenConnections?: () => void;
+  readonly onOpenAgents?: () => void;
 }) {
   const {
     readPlanCard,
@@ -100,6 +102,19 @@ export function PlanProposal({
   useEffect(() => {
     if (plan?.state === "proposed") viewedOpenPlan.current = true;
   }, [plan?.state]);
+  const waitingForModel =
+    plan?.state === "accepted" &&
+    (plan.continuation?.task?.blockingReason === "configuration_unavailable" ||
+      plan.contributions.some(({ task }) => task?.blockingReason === "configuration_unavailable"));
+  useEffect(() => {
+    if (!waitingForModel) return;
+    const reread = () => {
+      setReload((version) => version + 1);
+    };
+    const stop = observePlanDestinations(reread);
+    reread();
+    return stop;
+  }, [observePlanDestinations, waitingForModel]);
   const projectId = plan?.projectId;
   const agentList = plan
     ? [...new Set<ReplyAgent>(["virgilio", ...plan.contributions.map(({ agentId }) => agentId)])]
@@ -381,6 +396,7 @@ export function PlanProposal({
                   ? { perform: controller.performPlanProgressAction }
                   : {})}
                 {...(onOpenConnections ? { onOpenConnections } : {})}
+                {...(onOpenAgents ? { onOpenAgents } : {})}
                 refresh={() => {
                   setReload((value) => value + 1);
                 }}

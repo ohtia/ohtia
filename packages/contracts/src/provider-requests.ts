@@ -101,6 +101,7 @@ export type ProviderEventBody =
       readonly provider_request_id: string | null;
       readonly account_fingerprint?: string;
       readonly model: string | null;
+      readonly effort?: string | null;
     }
   | { readonly type: "activity" }
   | { readonly type: "text"; readonly text: string }
@@ -223,6 +224,8 @@ export interface ProviderRequestData {
   readonly document_language: string | null;
   readonly connection: string;
   readonly model: string;
+  readonly effort?: string;
+  readonly catalog_account_fingerprint?: string;
   readonly instructions: string;
   readonly input: readonly ProviderInputItem[];
   readonly tools: readonly ProviderTool[];
@@ -310,6 +313,9 @@ export function isProviderModelSlug(value: unknown): value is string {
     /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value)
   );
 }
+export function isProviderEffort(value: unknown): value is string {
+  return boundedText(value, 128) && value.length > 0;
+}
 function isUsage(value: unknown): value is ProviderUsage {
   return (
     record(value) &&
@@ -355,13 +361,15 @@ export function isProviderEvent(value: unknown): value is ProviderEvent {
           "type",
           "provider_request_id",
           "model",
+          ...(Object.hasOwn(value, "effort") ? ["effort"] : []),
           ...(Object.hasOwn(value, "account_fingerprint") ? ["account_fingerprint"] : []),
         ]) &&
         (!Object.hasOwn(value, "account_fingerprint") ||
           isAccountFingerprint(value.account_fingerprint)) &&
         (value.provider_request_id === null ||
           (boundedText(value.provider_request_id, 256) && value.provider_request_id.length > 0)) &&
-        (value.model === null || isProviderModelSlug(value.model))
+        (value.model === null || isProviderModelSlug(value.model)) &&
+        (!Object.hasOwn(value, "effort") || value.effort === null || isProviderEffort(value.effort))
       );
     case "activity":
       return exact(value, ["sequence", "type"]);
@@ -490,6 +498,10 @@ export function isProviderRequestData(value: unknown): value is ProviderRequestD
       "document_language",
       "connection",
       "model",
+      ...(Object.hasOwn(value, "effort") ? ["effort"] : []),
+      ...(Object.hasOwn(value, "catalog_account_fingerprint")
+        ? ["catalog_account_fingerprint"]
+        : []),
       "instructions",
       "input",
       "tools",
@@ -505,6 +517,9 @@ export function isProviderRequestData(value: unknown): value is ProviderRequestD
     providerOperations.includes(value.operation as ProviderOperation) &&
     isConnectionId(value.connection) &&
     isProviderModelSlug(value.model) &&
+    (!Object.hasOwn(value, "catalog_account_fingerprint") ||
+      isAccountFingerprint(value.catalog_account_fingerprint)) &&
+    (!Object.hasOwn(value, "effort") || isProviderEffort(value.effort)) &&
     typeof value.instructions === "string" &&
     value.instructions.length > 0 &&
     boundedText(

@@ -87,6 +87,7 @@ export function ConversationView({
   locale,
   commands,
   onOpenConnections,
+  onOpenAgents,
   sharedReplyAnnouncements = false,
   onOpenMemory,
   onAddMemory,
@@ -122,6 +123,7 @@ export function ConversationView({
   readonly commands: Pick<CommandBridge, "copyMessage" | "openExternalLink"> &
     Partial<Pick<CommandBridge, "openLink">>;
   readonly onOpenConnections?: () => void;
+  readonly onOpenAgents?: () => void;
   readonly sharedReplyAnnouncements?: boolean;
   readonly onOpenMemory?: () => void;
   readonly onAddMemory?: (source: { messageId: string; researcherText?: string }) => void;
@@ -525,6 +527,7 @@ export function ConversationView({
                       controller={planController}
                       {...(state.pauses ? { pauses: state.pauses } : {})}
                       {...(onOpenConnections ? { onOpenConnections } : {})}
+                      {...(onOpenAgents ? { onOpenAgents } : {})}
                       revealResult={reveal}
                       hasText={state.items.some(
                         (saved) =>
@@ -717,6 +720,7 @@ export function ConversationView({
                       }}
                       commands={{ openLink: commands.openLink ?? (() => Promise.resolve(false)) }}
                       {...(onOpenConnections ? { onOpenConnections } : {})}
+                      {...(onOpenAgents ? { onOpenAgents } : {})}
                     />
                   </article>
                 );

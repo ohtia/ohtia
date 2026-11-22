@@ -1,6 +1,7 @@
 {
   "version": 1,
   "vitest": [
+    "tests/agent-preferences.test.ts",
     "tests/application-exit.test.ts",
     "tests/application-root.test.ts",
     "tests/blocked-tasks.test.ts",

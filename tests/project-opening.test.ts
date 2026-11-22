@@ -1,3 +1,4 @@
+import { seedDefaultModel } from "./fixtures/storage.js";
 import { setupConnections } from "./fixtures/project-setup.js";
 import { describe, expect, it } from "vitest";
 import { type Outcome, type Request, policyId, failure } from "@ohtia/contracts";
@@ -79,6 +80,7 @@ describe("project opening", () => {
       mode: "development",
       connections: setupConnections(),
     });
+    seedDefaultModel(fixture.raw, "first", "First");
     const a = value(
       await fixture.store.executeResearchCommand({
         command: "project.create",
@@ -160,7 +162,7 @@ describe("project opening", () => {
       original.map((p) => [p.id, p.createdAt, p.createdAt, p.updatedAt]),
     );
     const upgraded = fixture.raw();
-    expect(upgraded.pragma("user_version", { simple: true })).toBe(33);
+    expect(upgraded.pragma("user_version", { simple: true })).toBe(34);
     upgraded.close();
   });
 

@@ -1,3 +1,4 @@
+import { seedDefaultModel, setSyntheticAgentModel } from "./fixtures/storage.js";
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -75,6 +76,7 @@ async function fixture(limit = 3) {
     mode: "development",
     connections: setupConnections(),
   });
+  seedDefaultModel(f.raw, "first", "First");
   value(await f.store.replaceExecutionLimits({ operationId: "set-limit", value: limit }));
   const run = (command: ResearchCommand) => f.store.executeResearchCommand(command);
   const project = value(
@@ -126,13 +128,19 @@ async function fixture(limit = 3) {
         text,
       )
       .then(value);
-  const resolve = (agent: "josefa" | "virgilio", connection: string) =>
+  const resolve = (agent: "josefa" | "virgilio", connection: string) => {
     f.store.setTaskContext({
       generation: "setup-tests",
       mode: "development",
       connections: setupConnections(),
-      resolveAgentConnection: (id) => (id === agent ? connection : "chatgpt"),
     });
+    setSyntheticAgentModel(
+      f.raw,
+      agent,
+      connection,
+      connection === "chatgpt" ? "first" : "fake-model",
+    );
+  };
   return {
     ...f,
     run,
@@ -1266,9 +1274,14 @@ function synthesisConnection(
     generation: "setup-tests",
     mode: "development",
     connections,
-    resolveAgentConnection: (agent) =>
-      agent === "virgilio" || fakeContributions ? "fake" : "chatgpt",
   });
+  setSyntheticAgentModel(f.raw, "virgilio", "fake", "fake-model");
+  setSyntheticAgentModel(
+    f.raw,
+    "josefa",
+    fakeContributions ? "fake" : "chatgpt",
+    fakeContributions ? "fake-model" : "first",
+  );
 }
 
 const readPlan = async (f: Awaited<ReturnType<typeof fixture>>, planId: string) =>
@@ -2094,7 +2107,7 @@ it(
         version: 1,
         operation: "plan-migration-retry",
         source: 23,
-        target: 33,
+        target: 34,
       }),
     );
     await expect(f.store.open()).rejects.toThrow(/recovery/);
@@ -2153,6 +2166,7 @@ it(
     });
     expect(value(await restored.store.readPauses()).restart).toBe(2);
     expect(await restored.prepare()).toBeNull();
+    synthesisConnection(restored, true);
     value(await continuePlans(restored, "continue-after-restore"));
     expect(value(await restored.store.readPauses()).restart).toBe(0);
     expect(await restored.next()).not.toBeNull();
@@ -2732,7 +2746,7 @@ it("preserves all eight maximal contributions across the provider envelope and r
   expect(await retry(taskId, "input-too-large")).toEqual(failure("task_not_retryable"));
 });
 
-it("refreshes an empty model catalog before dispatching an accepted synthesis retry", async () => {
+it("keeps an accepted synthesis blocked until its chosen model returns", async () => {
   const f = await fixture(1);
   const { resultId: planId } = value(await f.add("needs-catalog", f.newPlan([task("root")])));
   await f.settle(await f.next(), undefined, unresolved);
@@ -2763,34 +2777,27 @@ it("refreshes an empty model catalog before dispatching an accepted synthesis re
       hasMore: false,
     },
   });
-  const refresh = vi.fn(() => connections.beginModelRefresh("chatgpt", "refresh-synthesis"));
   f.store.setTaskContext({
     generation: "setup-tests",
     mode: "development",
     connections,
-    requestModelRefresh: refresh,
   });
   expect(await f.prepare()).toBeNull();
-  const { taskId } = (await readPlan(f, planId)).continuation!;
-  expect((await timeline(f)).find(({ id }) => id === taskId)).toMatchObject({
-    state: "failed",
-    outcomeReason: "provider_unavailable",
-    dispatched: false,
+  const continuation = (await readPlan(f, planId)).continuation!;
+  expect(continuation.task).toMatchObject({
+    state: "blocked",
+    blockingReason: "configuration_unavailable",
   });
-  const { resultId: replacement } = value(
+  expect(
     await f.run({
       command: "synthesis.tryAgain",
-      operationId: "refresh-models",
-      payload: { taskId: taskId! },
+      operationId: "blocked",
+      payload: { taskId: continuation.taskId! },
     }),
-  );
-  expect(refresh).toHaveBeenCalledExactlyOnceWith("chatgpt");
-  expect(await f.prepare()).toBeNull();
-
+  ).toEqual(failure("task_not_retryable"));
   connections.receive({
     kind: "connection_state",
     generation: "setup-tests",
-    refresh_id: "refresh-synthesis",
     snapshot: { ...emptySnapshot, model_list_revision: 3, model_count: 1 },
   });
   connections.receive({
@@ -2799,14 +2806,14 @@ it("refreshes an empty model catalog before dispatching an accepted synthesis re
     page: {
       connection: "chatgpt",
       model_list_revision: 3,
-      models: [{ id: "fresh-model", name: "Fresh" }],
+      models: [{ id: "first", name: "First" }],
       nextCursor: 1,
       hasMore: false,
     },
   });
   expect(await f.next()).toMatchObject({
-    taskId: replacement,
-    dispatch: { request: { model: "fresh-model" } },
+    taskId: continuation.taskId,
+    dispatch: { request: { model: "first" } },
   });
 });
 
@@ -2882,4 +2889,131 @@ it("retains a plan stop when a running synthesis ends uncertain", async () => {
       payload: { taskId: synthesis.taskId },
     }),
   ).toEqual(failure("task_not_retryable"));
+});
+
+it("cancels a blocked contribution when its saved destination changes and retries on the approved service", async () => {
+  const f = await fixture();
+  const connections = new ServiceConnections();
+  const generation = "destination-settings";
+  f.store.setTaskContext({ generation, mode: "development", connections });
+  const report = async (connection: string, model: string) => {
+    connections.receive({
+      kind: "connection_state",
+      generation,
+      snapshot: {
+        connection,
+        state: "connected",
+        reason: null,
+        probing: false,
+        probe_id: null,
+        model_list_revision: 1,
+        model_count: 1,
+        model_report_id: connection + "-report",
+        model_read_at: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    connections.receive({
+      kind: "connection_models",
+      generation,
+      page: {
+        connection,
+        model_list_revision: 1,
+        models: [{ id: model, name: model }],
+        nextCursor: 1,
+        hasMore: false,
+      },
+    });
+    value(await f.store.storeModelReport(connection));
+  };
+  await report("anthropic", "other");
+  const { resultId: plan } = value(
+    await f.add(
+      "approve",
+      f.newPlan([
+        task("research", { required: true }),
+        task("dependent", { prerequisites: ["research"] }),
+      ]),
+    ),
+  );
+  const original = f.query("SELECT id,state FROM tasks WHERE kind='contribution'")[0]!;
+  expect(original.state).toBe("blocked");
+  const taskId = identifier(original.id as Uint8Array);
+  const next = {
+    target: "josefa",
+    expectedRevision: 0,
+    connection: "anthropic",
+    model: "other",
+    effort: null,
+    inherit: false,
+    source: "researcher",
+  } as const;
+  value(await f.run({ command: "agentPreference.replace", operationId: "move", payload: next }));
+  expect(
+    f.query("SELECT state,configuration_failure FROM tasks WHERE kind='contribution'"),
+  ).toEqual([{ state: "cancelled", configuration_failure: "destination_changed" }]);
+  expect(f.states(plan)).toEqual([
+    ["research", "failed", null, "destination_changed"],
+    ["dependent", "blocked", "research", null],
+  ]);
+  const retry = (operationId: string) =>
+    f.run({
+      command: "contribution.tryAgain",
+      operationId,
+      payload: { taskId },
+    });
+  expect(await retry("retry-before-restore")).toEqual(failure("destination_changed"));
+  await report("chatgpt", "first");
+  value(
+    await f.run({
+      command: "agentPreference.replace",
+      operationId: "restore",
+      payload: { ...next, expectedRevision: 1, connection: "chatgpt", model: "first" },
+    }),
+  );
+  value(await retry("retry-after-restore"));
+  expect(f.states(plan)[0]).toEqual(["research", "active", null, null]);
+  const research = await f.next();
+  expect(research.dispatch.request).toMatchObject({ connection: "chatgpt", model: "first" });
+  await f.settle(research, undefined, unresolved);
+
+  const dependent = await f.next();
+  const coordinator = { ...next, target: "virgilio" } as const;
+  value(
+    await f.run({
+      command: "agentPreference.replace",
+      operationId: "move-coordinator",
+      payload: coordinator,
+    }),
+  );
+  await f.settle(dependent, undefined, unresolved);
+  const cancelled = (await readPlan(f, plan)).continuation;
+  expect(cancelled).toMatchObject({
+    taskState: "cancelled",
+    task: { outcomeReason: "destination_changed" },
+  });
+  expect(f.query("SELECT failure_reason FROM continuations")).toEqual([
+    { failure_reason: "destination_changed" },
+  ]);
+  const synthesisId = cancelled?.taskId;
+  expect(synthesisId).toBeDefined();
+  const retrySynthesis = (operationId: string) =>
+    f.run({
+      command: "synthesis.tryAgain",
+      operationId,
+      payload: { taskId: synthesisId! },
+    });
+  expect(await retrySynthesis("synthesis-before-restore")).toEqual(failure("destination_changed"));
+  value(
+    await f.run({
+      command: "agentPreference.replace",
+      operationId: "restore-coordinator",
+      payload: { ...coordinator, expectedRevision: 1, connection: "chatgpt", model: "first" },
+    }),
+  );
+  value(await retrySynthesis("synthesis-after-restore"));
+  expect((await f.next()).dispatch.request).toMatchObject({
+    connection: "chatgpt",
+    model: "first",
+    operation: "contribution_synthesis",
+  });
 });

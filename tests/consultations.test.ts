@@ -1,3 +1,4 @@
+import { seedDefaultModel, setSyntheticAgentModel } from "./fixtures/storage.js";
 import { readFileSync } from "node:fs";
 import { DurableProvider } from "../packages/utility/src/durable-provider.js";
 import { ProviderDispatch } from "../packages/main/src/provider-dispatch.js";
@@ -59,6 +60,7 @@ async function fixture(
     mode: "development",
     connections: setupConnections(),
   });
+  seedDefaultModel(f.raw, "first", "First");
   const run = (command: ResearchCommand) => f.store.executeResearchCommand(command);
   const projectId = value(
     await run({ command: "project.create", operationId: "create-thesis", payload: {} }),
@@ -123,13 +125,19 @@ async function fixture(
     if (!proposal || proposal.kind !== "consultation") throw new Error("Expected a consultation.");
     return proposal;
   };
-  const destination = (connection: string) =>
+  const destination = (connection: string) => {
     f.store.setTaskContext({
       mode: "development",
       generation: "setup-tests",
       connections: setupConnections(),
-      resolveAgentConnection: (agent) => (agent === "josefa" ? connection : "chatgpt"),
     });
+    setSyntheticAgentModel(
+      f.raw,
+      "josefa",
+      connection,
+      connection === "chatgpt" ? "first" : "fake-model",
+    );
+  };
   return { ...f, run, append, prepare, timeline, propose, projectId, conversationId, destination };
 }
 
@@ -694,7 +702,7 @@ it("migrates populated revision 20 while preserving task acceptance order, charg
   await f.store.open();
   const migrated = f.raw();
   try {
-    expect(migrated.pragma("user_version", { simple: true })).toBe(33);
+    expect(migrated.pragma("user_version", { simple: true })).toBe(34);
     expect(read(migrated)).toEqual(before);
     expect(
       migrated.prepare("SELECT state,blocking_reason FROM tasks WHERE id=?").get(bytes(resultId)),
@@ -1833,7 +1841,7 @@ describe("Virgilio plan proposals", () => {
     await f.store.open();
     const upgraded = f.raw();
     try {
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(33);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(34);
       expect(upgraded.pragma("foreign_key_check")).toEqual([]);
       expect(
         upgraded.prepare("SELECT cancellation_reason FROM contributions ORDER BY rowid").all(),

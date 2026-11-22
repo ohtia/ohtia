@@ -61,9 +61,24 @@ export function taskNoticeContent(
   if (task.state === "running")
     return hasText ? null : status(message(locale, "taskNotice.replying", { service }));
   if (task.state === "cancelling") return status(text("stopping"));
+  if (task.outcomeReason === "destination_changed")
+    return status(message(locale, "agents.destinationChanged", { agent, service }));
   if (task.state === "blocked") {
+    if (task.blockingReason === "configuration_unavailable")
+      return status(
+        task.modelName
+          ? message(locale, "agents.missingModel", { agent, model: task.modelName })
+          : task.modelUnavailable
+            ? message(locale, "agents.noModel", { agent })
+            : message(locale, "taskNotice.waiting"),
+      );
     if (task.blockingReason === "connection_disabled")
-      return status(message(locale, "taskNotice.disconnected", { service, agent }));
+      return status(
+        message(locale, "taskNotice.disconnected", { service, agent }) +
+          (task.consultation || task.synthesis
+            ? ""
+            : " " + message(locale, "agents.chooseAnother")),
+      );
     if (task.blockingReason === "restart_paused") return status(text("restart"));
   }
   if (task.blockingReason === "usage_limit_reached" || task.outcomeReason === "usage_limit_reached")
@@ -208,6 +223,7 @@ export function TaskNotice({
   controller,
   commands,
   onOpenConnections,
+  onOpenAgents,
   announce,
 }: {
   readonly task: TimelineTask;
@@ -224,6 +240,7 @@ export function TaskNotice({
   readonly controller: Pick<ConversationController, "performTaskAction">;
   readonly commands: Pick<CommandBridge, "openLink">;
   readonly onOpenConnections?: () => void;
+  readonly onOpenAgents?: () => void;
   readonly announce?: (signature: string) => boolean;
 }) {
   const disclosure = useReplyDetails(locale, details);
@@ -248,6 +265,8 @@ export function TaskNotice({
         task.state,
         task.outcomeReason,
         task.blockingReason,
+        task.modelUnavailable ?? null,
+        task.modelName ?? null,
         task.waitingForModels,
         task.waitingLimit,
         hasText,
@@ -372,7 +391,7 @@ export function TaskNotice({
     task.blockingReason === "usage_limit_reached" || task.outcomeReason === "usage_limit_reached";
   const retryableFailure =
     latest &&
-    task.state === "failed" &&
+    (task.state === "failed" || task.outcomeReason === "destination_changed") &&
     !["not_eligible", "input_too_large"].includes(task.outcomeReason ?? "");
   const fits = !task.consultation || task.consultationRetryFits === true;
   const retry = !handoff && !setupFinal && fits && retryableFailure;
@@ -461,6 +480,16 @@ export function TaskNotice({
             </span>
           </a>
         )}
+        {onOpenAgents &&
+          ((task.blockingReason === "configuration_unavailable" &&
+            task.modelUnavailable !== false) ||
+            (task.blockingReason === "connection_disabled" &&
+              !task.consultation &&
+              !task.synthesis)) && (
+            <button type="button" className="primitive-button" onClick={onOpenAgents}>
+              {message(locale, "agents.open")}
+            </button>
+          )}
         {openConnections && (
           <button type="button" className="primitive-button" onClick={onOpenConnections}>
             {message(locale, "taskNotice.openConnections")}

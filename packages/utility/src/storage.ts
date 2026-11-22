@@ -1,4 +1,14 @@
 import {
+  up as agentPreferences,
+  tables as agentPreferenceTables,
+  objects as agentPreferenceObjects,
+  taskColumns,
+  effortColumns,
+  continuationColumn,
+  addColumns,
+  contributions as preferenceContributions,
+} from "./migrations/0034_agent_preferences.mjs";
+import {
   up as executionLimitsReceipts,
   schema as executionLimitsReceiptsSchema,
 } from "./migrations/0013_execution_limits_receipts.mjs";
@@ -398,6 +408,7 @@ const names = [
   "0031_reply_usage",
   "0032_source_quote_preference",
   "0033_entry_text_preference",
+  "0034_agent_preferences",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -630,6 +641,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
       ? Object.keys(memoryTables).filter((name) => name.startsWith("memory_"))
       : []),
     ...(revision >= 31 ? ["usage_reports"] : []),
+    ...(revision >= 34 ? Object.keys(agentPreferenceTables) : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -776,13 +788,21 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
           name,
           revision >= 21 && name === "tasks"
             ? revision >= 24
-              ? coordinationTables.tasks
+              ? revision >= 34
+                ? addColumns(coordinationTables.tasks, taskColumns, ",\n    CHECK ((kind=")
+                : coordinationTables.tasks
               : revision >= 22
                 ? graphTasks
                 : consultationTasks
             : revision >= 25 && name === "attempts"
               ? revision >= 31
-                ? usageAttempts
+                ? revision >= 34
+                  ? addColumns(
+                      usageAttempts,
+                      effortColumns,
+                      ",\n    UNIQUE (task_id,attempt_number)",
+                    )
+                  : usageAttempts
                 : synthesisTables.attempts
               : revision >= 10 && name === "tasks"
                 ? definition.replace(
@@ -815,6 +835,16 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                       ? synthesisTables.continuations
                       : coordinationTables.continuations,
                 ...(revision >= 29 ? memoryTables : {}),
+                ...(revision >= 34
+                  ? {
+                      contributions: preferenceContributions,
+                      continuations: addColumns(
+                        memoryTables.continuations,
+                        { failure_reason: continuationColumn.slice("failure_reason ".length) },
+                        ",\n      FOREIGN KEY",
+                      ),
+                    }
+                  : {}),
               }
             : revision >= 23
               ? { ...graphTables, ...workLimitTables }
@@ -828,6 +858,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 13 ? [["execution_limits_receipts", executionLimitsReceiptsSchema]] : []),
     ...(revision >= 27 ? Object.entries(handoffTables) : []),
     ...(revision >= 31 ? [["usage_reports", usageReports]] : []),
+    ...(revision >= 34 ? Object.entries(agentPreferenceTables) : []),
   ]) {
     const row = db
       .prepare("SELECT sql FROM sqlite_schema WHERE name=? AND type='table'")
@@ -870,6 +901,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 29 ? memoryObjects : {}),
                 ...(revision >= 30 ? researcherMemoryObjects : {}),
                 ...(revision >= 31 ? replyUsageObjects : {}),
+                ...(revision >= 34 ? agentPreferenceObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1238,7 +1270,7 @@ export class DurableStore {
     const operation = randomUUID();
     writeSynced(this.gate, { version: 1, operation, source, target }, retrySource);
     await this.checkpoint(db, source, operation);
-    const rebuildsTables = source < 29;
+    const rebuildsTables = source < 34;
     const selected = this.database;
     if (!selected) throw new Error("Missing migration connection.");
     await selected.connection().execute(async (connection) => {
@@ -1292,6 +1324,7 @@ export class DurableStore {
                 "0031_reply_usage": { up: replyUsage },
                 "0032_source_quote_preference": { up: sourceQuotePreference },
                 "0033_entry_text_preference": { up: entryTextPreference },
+                "0034_agent_preferences": { up: agentPreferences },
               }),
           },
         });
@@ -2605,6 +2638,8 @@ export class DurableStore {
       "text.part": "ohtia.text.staged",
       "text.readPart": "ohtia.text.read",
       "reply.details": "ohtia.reply.details_read",
+      "agentPreference.list": "ohtia.agent_preference.listed",
+      "providerModel.list": "ohtia.provider_model.listed",
       "reply.readParts": "ohtia.reply.read",
       "timeline.listBefore": "ohtia.timeline.listed",
       "timeline.read": "ohtia.timeline.read",
@@ -2782,6 +2817,7 @@ export class DurableStore {
         "plan.addContributions": { event_name: "ohtia.plan.graph_recorded" },
         "planChange.apply": { event_name: "ohtia.plan_change.applied" },
         "planChange.decline": { event_name: "ohtia.plan_change.declined" },
+        "agentPreference.replace": { event_name: "ohtia.agent_preference.replaced" },
         "memory.add": { event_name: "ohtia.memory.added" },
         "memory.edit": { event_name: "ohtia.memory.edited" },
         "memory.withdraw": { event_name: "ohtia.memory.withdrawn" },
@@ -2848,6 +2884,12 @@ export class DurableStore {
     } finally {
       this.active = false;
     }
+  }
+  storeModelReport(connection: string) {
+    const catalog = this.taskContext.connections.completedList(connection);
+    return this.taskTransaction((tasks) =>
+      catalog ? tasks.persistModelReport(catalog) : Promise.resolve(null),
+    );
   }
   runningTaskCount(): Promise<Outcome<number>> {
     return this.taskTransaction((tasks) => tasks.runningCount());

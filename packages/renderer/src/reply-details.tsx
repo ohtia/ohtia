@@ -1,3 +1,4 @@
+import { windowConnectionSubscription } from "./connection-subscription.js";
 import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import {
   formatDate,
@@ -64,7 +65,7 @@ export function useReplyDetails(locale: InterfaceLocale, source?: DetailsSource)
       if (!result.ok) throw new Error("Reply details unavailable.");
       let details = result.value;
       if (details.account !== null && port.subscribeConnection) {
-        subscription = port.subscribeConnection(details.connectionId, (notice) => {
+        subscription = windowConnectionSubscription(port)(details.connectionId, (notice) => {
           if (!active || !notice.ok) return;
           lastAccountState = notice.value;
           if (shown && accountChanged(notice.value, shown)) refresh();
@@ -236,6 +237,11 @@ function DetailValues({
       : ([[message(locale, "replyDetails.account"), account] as const] as [string, ReactNode][])),
     [message(locale, "replyDetails.requestedModel"), details.requestedModel ?? unknown],
     [message(locale, "replyDetails.observedModel"), details.observedModel ?? unknown],
+    [
+      message(locale, "replyDetails.requestedEffort"),
+      details.requestedEffort ?? message(locale, "agents.modelDefault"),
+    ],
+    [message(locale, "replyDetails.observedEffort"), details.observedEffort ?? unknown],
     [message(locale, "replyDetails.attempts"), number(details.attempts)],
     [message(locale, "replyDetails.started"), date(details.startedAt)],
     [message(locale, "replyDetails.ended"), date(details.endedAt)],

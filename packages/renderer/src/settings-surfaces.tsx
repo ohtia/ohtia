@@ -1,3 +1,4 @@
+import type { AgentPreferenceTarget } from "@ohtia/contracts";
 import type { NewProjectController } from "./new-project-controller.js";
 import { LimitsFeedback } from "./limits-panel.js";
 import { LimitsController } from "./limits-controller.js";
@@ -58,6 +59,7 @@ export function SettingsSurfaces({
     commands: CommandController | undefined,
     binding: WorkspaceSettingsBinding,
     openConnections: () => void,
+    openAgents: () => void,
   ) => ReactNode;
   readonly composeWorkspace?: boolean;
   readonly research?: ConversationController;
@@ -108,7 +110,26 @@ export function SettingsSurfaces({
     [],
   );
   const [layoutFailure, setLayoutFailure] = useState(false);
-  const [requestedFocus, setRequestedFocus] = useState<SettingFeature | "connections">();
+  const [requestedFocus, setRequestedFocus] = useState<SettingFeature | "connections" | "agents">();
+  const sourceResearch = research ?? ownResearch;
+  const observeAgentSettings = useCallback(
+    (refresh: (target?: AgentPreferenceTarget, revision?: number) => void) =>
+      sourceResearch?.observe((notice) => {
+        if (notice === "ready") refresh();
+        else if (notice.ok && notice.value.kind === "agentPreferenceChanged")
+          refresh(
+            notice.value.source === "replace" ? notice.value.target : undefined,
+            notice.value.revision,
+          );
+        else if (
+          notice.ok &&
+          (notice.value.kind === "providerModelsChanged" ||
+            notice.value.kind === "destinationChanged")
+        )
+          refresh();
+      }) ?? (() => {}),
+    [sourceResearch],
+  );
   const language = useMemo(
     () =>
       new LanguageController(
@@ -330,6 +351,10 @@ export function SettingsSurfaces({
                     setRequestedFocus("connections");
                     void commands?.invoke("settings.open");
                   },
+                  () => {
+                    setRequestedFocus("agents");
+                    void commands?.invoke("settings.open");
+                  },
                 ),
             }
           : {})}
@@ -372,6 +397,8 @@ export function SettingsSurfaces({
                   close();
                 }}
                 requestedFocus={requestedFocus}
+                {...(sourceResearch ? { connections: sourceResearch.connections } : {})}
+                observeResearch={observeAgentSettings}
                 returnFocusRef={returnFocusRef}
                 port={port}
                 locale={locale}

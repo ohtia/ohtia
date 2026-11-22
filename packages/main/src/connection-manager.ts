@@ -43,6 +43,7 @@ interface Connection {
   reportedFingerprint?: string | undefined;
   accountView?: { readonly fingerprint: string; readonly revision: string } | undefined;
   revision: number;
+  listReport?: { id: string; date: string; fingerprint: string | undefined };
 }
 // Reserve the largest legal envelope identities, so every stored entry fits in a real page.
 const largestId = "x".repeat(portLimits.identifier_bytes);
@@ -149,6 +150,28 @@ export class ConnectionManager {
           model_count: c.models?.length ?? 0,
         }
       : undefined;
+  }
+  mayDispatchModel(
+    id: string,
+    modelId: string,
+    effort?: string,
+    expectedAccount?: string,
+  ): boolean {
+    const connection = this.connections.get(id);
+    const account = this.account(id).fingerprint;
+    if (expectedAccount !== undefined && expectedAccount !== account) return false;
+    if (!connection?.listReport || connection.listReport.fingerprint !== account)
+      return expectedAccount !== undefined && expectedAccount === account;
+    const model = connection.models?.find((entry) => entry.id === modelId);
+    return (
+      !!model &&
+      (effort === undefined ||
+        (model.effortSupport === "supported" &&
+          model.effortLevels?.some((level) => level.name === effort && level.supported) === true))
+    );
+  }
+  modelListReport(id: string) {
+    return this.connections.get(id)?.listReport;
   }
   account(id: string) {
     const connection = this.connections.get(id);
@@ -309,6 +332,8 @@ export class ConnectionManager {
           c.storeUnavailable = false;
           if (result.resetModels) {
             c.models = undefined;
+            delete c.listReport;
+            this.modelReads.delete(id);
             c.lastProbe = null;
           }
         }
@@ -391,7 +416,13 @@ export class ConnectionManager {
     if (!connection || this.disposed || connection.state !== "connected" || connection.probe)
       return;
     const last = this.modelReads.get(id);
-    if (!force && last !== undefined && now - last <= 24 * 60 * 60 * 1000) return;
+    if (
+      !force &&
+      last !== undefined &&
+      connection.listReport?.fingerprint === this.account(id).fingerprint &&
+      now - last <= 24 * 60 * 60 * 1000
+    )
+      return;
     // Only storeModels marks a successful read fresh. An active probe prevents overlap, and
     // main's periodic check bounds retries of a stale catalog after a temporary failure.
     this.probe(id);
@@ -402,12 +433,17 @@ export class ConnectionManager {
     if (c.probe) return { ok: true, value: this.requireSnapshot(id) };
     const abort = new AbortController();
     const probeId = randomUUID();
+    let probingAccount: string | undefined;
     const finish = (outcome: "listed" | "unreachable", models?: readonly ProviderModel[]) => {
       if (this.disposed || c.probe?.id !== probeId) return;
       clearTimeout(c.probe.timer);
       c.probe = undefined;
       c.lastProbe = probeId;
-      if (outcome === "listed" && !this.storeModels(id, models)) outcome = "unreachable";
+      if (
+        outcome === "listed" &&
+        (probingAccount !== this.account(id).fingerprint || !this.storeModels(id, models))
+      )
+        outcome = "unreachable";
       abort.abort();
       this.diagnostic?.(
         outcome === "listed"
@@ -446,6 +482,7 @@ export class ConnectionManager {
             return;
           }
           try {
+            probingAccount = this.account(id).fingerprint;
             finish("listed", await c.adapter.probe(stored.value, abort.signal));
           } catch {
             finish("unreachable");
@@ -472,12 +509,15 @@ export class ConnectionManager {
     if (!c || this.disposed || c.revision === Number.MAX_SAFE_INTEGER) return false;
     // Construct an exact projection; provider metadata and arbitrary errors never cross the port.
     const models: ProviderModel[] = [];
+    const seen = new Set<string>();
     const revision = c.revision + 1;
     if (!Array.isArray(input)) return false;
     try {
       for (const model of input) {
-        if (!isProviderModel(model)) return false;
-        const copy = { id: model.id, name: model.name };
+        if (!isProviderModel(model) || seen.has(model.id)) return false;
+        seen.add(model.id);
+        if (model.retiring) continue;
+        const copy = structuredClone(model);
         if (
           !modelPageFits({
             connection: id,
@@ -494,7 +534,13 @@ export class ConnectionManager {
       return false;
     }
     c.models = Object.freeze(models);
-    this.modelReads.set(id, Date.now());
+    const now = Date.now();
+    c.listReport = {
+      id: randomUUID(),
+      date: new Date(now).toISOString(),
+      fingerprint: this.account(id).fingerprint,
+    };
+    this.modelReads.set(id, now);
     c.revision = revision;
     return true;
   }

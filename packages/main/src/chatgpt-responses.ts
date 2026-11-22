@@ -1,4 +1,5 @@
 import {
+  isProviderEffort,
   isProviderModelSlug,
   conversationTitlePolicy,
   type ProviderFailureReason,
@@ -12,6 +13,11 @@ import type { ProviderRequestControl } from "./provider-adapter.js";
 import { object } from "./chatgpt-sign-in.js";
 
 export const responsesEndpoint = "https://api.openai.com/v1/responses";
+// This endpoint accepts a narrower effort vocabulary than some account catalogs advertise.
+const responsesEfforts = new Set(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
+export function isResponsesEffort(effort: string): boolean {
+  return responsesEfforts.has(effort);
+}
 /**
  * Fields a request never carries: those Sign in with ChatGPT rejects, and those that would bring in
  * conversation state or prompts the provider keeps. The conformance suite checks every request.
@@ -34,7 +40,7 @@ export const forbiddenResponseFields = Object.freeze([
   "truncation",
   "user",
 ]);
-/** Only what Ohtia builds: instructions, input and, from STORY-003-014, Ohtia's own tools. */
+/** Serialize Ohtia's request, including an explicit reasoning effort when chosen. */
 export function responsesBody(
   request: ProviderRequestData,
   route: "tools" | "additional_tools" = "tools",
@@ -60,6 +66,7 @@ export function responsesBody(
   }));
   return {
     model: request.model,
+    ...(request.effort === undefined ? {} : { reasoning: { effort: request.effort } }),
     instructions: request.instructions,
     input: [
       ...(route === "additional_tools" && namespaces.length
@@ -295,18 +302,25 @@ export async function readResponseStream(
 ): Promise<void> {
   const requestId = response.headers.get("x-request-id");
   let started = false;
+  let observedEffort: string | undefined;
   let streamedText = false;
   const isAborted = () => control.signal.aborted;
   const calls = new Set<string>();
   const ended = new Set<string>();
-  const start = (model: unknown) => {
-    if (started) return;
+  const start = (metadata?: Record<string, unknown>) => {
+    const reasoning = metadata?.reasoning;
+    const effort =
+      object(reasoning) && isProviderEffort(reasoning.effort) ? reasoning.effort : undefined;
+    if (started && (effort === undefined || effort === observedEffort)) return;
     started = true;
+    observedEffort = effort;
+    const model = metadata?.model;
     control.emit({
       type: "started",
       provider_request_id:
         requestId && /^[A-Za-z0-9_.:-]{1,256}$/.test(requestId) ? requestId : null,
       model: isProviderModelSlug(model) ? model : null,
+      ...(effort === undefined ? {} : { effort }),
     });
   };
   const fail = async (code: unknown, fallback: "provider_error") => {
@@ -342,8 +356,12 @@ export async function readResponseStream(
     if (!object(value) || typeof value.type !== "string") return "invalid";
     const body = object(value.response) ? value.response : undefined;
     start(
-      value.type === "response.created" || value.type === "response.in_progress"
-        ? body?.model
+      value.type === "response.created" ||
+        value.type === "response.in_progress" ||
+        value.type === "response.completed" ||
+        value.type === "response.failed" ||
+        value.type === "response.incomplete"
+        ? body
         : undefined,
     );
     const usage = () => {

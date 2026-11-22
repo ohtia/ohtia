@@ -1,3 +1,4 @@
+import { seedDefaultModel } from "./fixtures/storage.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   decodeDevelopmentAction,
@@ -395,6 +396,7 @@ describe("data-service dispatch control", () => {
   it("checks the connection, records the transfer list and issues a single-use permit", async () => {
     const fixture = storageFixture();
     await fixture.store.open();
+    seedDefaultModel(fixture.raw, "first");
     const sent: string[] = [];
     let clock = 0;
     const connections = connectionsWith("connected");
@@ -1009,6 +1011,7 @@ describe("the development command through the data service and main", () => {
   async function running() {
     const fixture = storageFixture();
     await fixture.store.open();
+    seedDefaultModel(fixture.raw, "first");
     const f = fakeChatGPT();
     disposers.push(() => {
       f.manager.dispose();
@@ -1708,6 +1711,11 @@ it("tags only reports produced after a correlated refresh request, and stale rep
   const manager = {
     ids: () => ["chatgpt"],
     snapshot: () => snapshot,
+    modelListReport: () => ({
+      id: "report-1",
+      date: "2026-01-01T00:00:00.000Z",
+      fingerprint: "a".repeat(64),
+    }),
     account: () => ({ kind: "subscription", fingerprint: "a".repeat(64) }),
     listModels: () => ({
       ok: true,

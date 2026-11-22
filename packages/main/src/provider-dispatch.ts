@@ -141,7 +141,12 @@ export class ProviderDispatch {
     adapters: readonly ProviderAdapter[],
     private readonly options: {
       readonly state: (connection: string) => ConnectionState | undefined;
-      /** Post one message to the data service of that generation. */
+      readonly mayDispatchModel?: (
+        connection: string,
+        model: string,
+        effort?: string,
+        expectedAccount?: string,
+      ) => boolean;
       readonly send: (generation: string, text: string) => void;
       readonly diagnostic?: (event: DiagnosticEvent, generation: string) => void;
       readonly wallClock?: () => number;
@@ -356,6 +361,18 @@ export class ProviderDispatch {
           // The connection can end while the transport connects, as when the researcher signs out.
           if (this.options.state(request.connection) !== "connected") {
             refuse("connection_expired");
+            return false;
+          }
+          if (
+            this.options.mayDispatchModel &&
+            !this.options.mayDispatchModel(
+              request.connection,
+              request.model,
+              request.effort,
+              request.catalog_account_fingerprint,
+            )
+          ) {
+            refuse("permit_expired");
             return false;
           }
           clearTimeout(expiry);
@@ -723,6 +740,7 @@ export class ProviderDispatch {
         ? {
             type: body.type,
             model: body.model,
+            ...(body.effort === undefined ? {} : { effort: body.effort }),
             provider_request_id: body.provider_request_id,
             sequence: 1,
           }

@@ -2,6 +2,7 @@ import { accountFingerprint } from "./account-fingerprint.js";
 import { chatgptConnection } from "@ohtia/contracts";
 import { randomUUID } from "node:crypto";
 import {
+  isProviderEffort,
   type ConnectionReason,
   type DiagnosticEvent,
   type ProviderModel,
@@ -22,6 +23,7 @@ import {
   closeResponseTransport,
   responsesBody,
   responsesEndpoint,
+  isResponsesEffort,
   isTransportFailure,
   type ResponsesTransport,
 } from "./chatgpt-responses.js";
@@ -68,6 +70,33 @@ function accessSubject(access: string): string | undefined {
   } catch {
     // An unrecognized access token format has no usable account fingerprint.
   }
+}
+
+function modelEffort(
+  model: Record<string, unknown>,
+): Pick<ProviderModel, "effortSupport" | "effortLevels" | "defaultEffort"> {
+  const advertised = model.supported_reasoning_levels;
+  if (advertised === undefined) return { effortSupport: "unknown" };
+  if (!Array.isArray(advertised) || advertised.length > 32) {
+    throw new Error("Invalid model effort levels.");
+  }
+  const levels = new Set<string>();
+  for (const entry of advertised as unknown[]) {
+    if (!object(entry) || !isProviderEffort(entry.effort) || levels.has(entry.effort)) {
+      throw new Error("Invalid model effort level.");
+    }
+    levels.add(entry.effort);
+  }
+  const available = [...levels].filter(isResponsesEffort);
+  if (!available.length) return { effortSupport: "unsupported" };
+  const defaultEffort = model.default_reasoning_level;
+  return {
+    effortSupport: "supported",
+    effortLevels: available.map((name) => ({ name, supported: true })),
+    ...(typeof defaultEffort === "string" && available.includes(defaultEffort)
+      ? { defaultEffort }
+      : {}),
+  };
 }
 
 const rejected = (): SignInResult => ({ state: "error", reason: "sign_in_rejected" });
@@ -153,7 +182,7 @@ export class ChatGPTProvider implements ProviderAdapter {
       // Sign in with ChatGPT stores no response: every request carries all its context.
       resumption: false,
       modelSelection: true,
-      effortSelection: false,
+      effortSelection: true,
       usageReporting: true,
       late_usage: "none",
     },
@@ -730,10 +759,20 @@ export class ChatGPTProvider implements ProviderAdapter {
     if (!object(body) || !Array.isArray(body.models)) throw new Error("Invalid model list.");
     const models: ProviderModel[] = [];
     for (const model of body.models as unknown[]) {
-      if (!object(model)) throw new Error("Invalid model.");
+      if (
+        !object(model) ||
+        !nonempty(model.visibility) ||
+        !nonempty(model.slug) ||
+        !nonempty(model.display_name)
+      )
+        throw new Error("Invalid model.");
       if (model.visibility !== "list") continue;
-      if (!nonempty(model.slug) || !nonempty(model.display_name)) throw new Error("Invalid model.");
-      models.push({ id: model.slug, name: model.display_name });
+      models.push({
+        id: model.slug,
+        name: model.display_name,
+        ...modelEffort(model),
+        origin: "service",
+      });
     }
     return models;
   }

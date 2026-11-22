@@ -1,3 +1,4 @@
+import { seedDefaultModel } from "./fixtures/storage.js";
 import fs from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -58,6 +59,7 @@ async function fixture(
   }
   await f.store.open();
   f.store.setTaskContext(context());
+  seedDefaultModel(f.raw, "first", "First");
   const projectId = value(
     await f.store.executeResearchCommand({
       command: "project.create",
@@ -578,6 +580,7 @@ describe("Josefa search strategy", () => {
     legacy.exec(preJosefaSql + "PRAGMA user_version=18;");
     legacy.close();
     await f.store.open();
+    seedDefaultModel(f.raw, "first");
     f.store.setTaskContext(context());
     value(
       await f.store.executeResearchCommand({
@@ -622,6 +625,7 @@ it("backfills a revision 19 conversation and keeps the selected Josefa's direct 
     legacy.close();
   }
   await f.store.open();
+  seedDefaultModel(f.raw, "first");
   const installed = { ...context(), mode: "installed" as const };
   f.store.setTaskContext(installed);
   const sent: string[] = [];
@@ -703,7 +707,7 @@ it("backfills a revision 19 conversation and keeps the selected Josefa's direct 
     ]);
     const migrated = f.raw();
     try {
-      expect(migrated.pragma("user_version", { simple: true })).toBe(33);
+      expect(migrated.pragma("user_version", { simple: true })).toBe(34);
       const transfer = migrated
         .prepare("SELECT transfer_manifest FROM attempts WHERE id=?")
         .pluck()

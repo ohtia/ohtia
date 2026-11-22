@@ -1,3 +1,4 @@
+import { replaceAgentPreference, type AgentPreferenceSchema } from "./agent-preferences.js";
 import type {
   InterventionLimitsRow,
   InterventionOperationRow,
@@ -71,7 +72,7 @@ import {
 import type { ContinuationRow, PlanEventRow } from "./plan-coordination.js";
 import type { ContributionRow, InterventionRow } from "./consultations.js";
 import { changeResearcherMemory, undoMemory, type MemorySchema } from "./project-memory.js";
-export interface ResearchSchema extends TaskSchema, MemorySchema {
+export interface ResearchSchema extends TaskSchema, MemorySchema, AgentPreferenceSchema {
   intervention_events: PlanEventRow;
   continuations: ContinuationRow;
   intervention_limits: InterventionLimitsRow;
@@ -278,6 +279,15 @@ function message(row: MessageRow): MessageRecord {
   };
 }
 const payloadKeys = {
+  "agentPreference.replace": [
+    "target",
+    "expectedRevision",
+    "connection",
+    "model",
+    "effort",
+    "inherit",
+    "source",
+  ],
   "handoff.accept": ["proposalId", "expectedOwnerRevision"],
   "handoff.decline": ["proposalId"],
   "handoff.return": ["conversationId", "expectedOwnerRevision", "selection"],
@@ -374,6 +384,13 @@ export async function applyResearchCommand(
   const now = new Date().toISOString();
   let result: Uint8Array;
   switch (input.command) {
+    case "agentPreference.replace": {
+      const saved = await replaceAgentPreference(db, tasks.context.connections, input.payload);
+      if (!saved.ok) return saved;
+      await tasks.reresolvePreferences(input.payload.target);
+      result = saved.value.id;
+      break;
+    }
     case "memory.add":
     case "memory.edit":
     case "memory.withdraw": {
@@ -461,7 +478,7 @@ export async function applyResearchCommand(
           ],
         },
         tasks.context.mode,
-        (agent) => tasks.agentConnection(agent),
+        await tasks.agentConnections(),
         input.operationId,
         now,
       );
@@ -477,7 +494,7 @@ export async function applyResearchCommand(
         db,
         input.payload,
         tasks.context.mode,
-        (agent) => tasks.agentConnection(agent),
+        await tasks.agentConnections(),
         input.operationId,
         now,
       );

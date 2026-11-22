@@ -1,3 +1,4 @@
+import type { ReplaceAgentPreference } from "./connections.js";
 import type { ConversationAgent, ReplyAgent } from "./research-port.js";
 
 /** Internal data-service contract. Window exposure belongs to STORY-003-010. */
@@ -136,6 +137,7 @@ export const conversationBusyReasons = [
 export type ConversationBusyReason = (typeof conversationBusyReasons)[number];
 
 export interface ResearchPayloads {
+  readonly "agentPreference.replace": ReplaceAgentPreference;
   readonly "handoff.accept": {
     readonly proposalId: string;
     readonly expectedOwnerRevision: number;
@@ -221,6 +223,7 @@ export interface FinishPlanResult extends ResearchResult {
   readonly outcome: PlanOutcome;
 }
 export const researchCommands = [
+  "agentPreference.replace",
   "handoff.accept",
   "handoff.decline",
   "handoff.return",

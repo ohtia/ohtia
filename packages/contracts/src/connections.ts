@@ -38,9 +38,63 @@ export interface ProviderDeclaration {
     readonly usageUrl: string | null;
   };
 }
+export type EffortSupport = "supported" | "unsupported" | "unknown";
 export interface ProviderModel {
   readonly id: string;
   readonly name: string;
+  readonly effortSupport?: EffortSupport;
+  readonly effortLevels?: readonly {
+    readonly name: string;
+    readonly supported: boolean;
+  }[];
+  readonly defaultEffort?: string;
+  readonly maxOutput?: number;
+  readonly origin?: "service" | "catalog";
+  readonly retiring?: boolean;
+}
+export const agentPreferenceTargets = ["default", "virgilio", "josefa"] as const;
+export type AgentPreferenceTarget = (typeof agentPreferenceTargets)[number];
+export interface ReplaceAgentPreference {
+  readonly target: AgentPreferenceTarget;
+  readonly expectedRevision: number;
+  readonly connection: string | null;
+  readonly model: string | null;
+  readonly effort: string | null;
+  readonly inherit: boolean;
+  readonly source: "researcher" | "first_connection";
+}
+export interface AgentPreference {
+  readonly target: AgentPreferenceTarget;
+  readonly revision: number;
+  readonly connection: string | null;
+  readonly model: string | null;
+  readonly modelName: string | null;
+  readonly effort: string | null;
+  readonly inherit: boolean;
+  readonly source: "researcher" | "first_connection" | "migration";
+  readonly seedPending: boolean;
+}
+export interface ProviderModelListInfo {
+  readonly connection: string;
+  readonly kind: "subscription" | "api_key";
+  readonly list_revision: number;
+  readonly count: number;
+  readonly updatedAt: string;
+  readonly current?: boolean;
+}
+export interface AgentPreferences {
+  readonly receipt?: "recorded" | "not_found";
+  readonly preferences: readonly AgentPreference[];
+  readonly lists: readonly ProviderModelListInfo[];
+}
+export interface ProviderModelPageInput {
+  readonly connection: string;
+  readonly list_revision: number;
+  readonly cursor: number;
+  readonly count: number;
+}
+export interface ProviderModelPage extends Omit<ModelPage, "model_list_revision"> {
+  readonly list_revision: number;
 }
 export interface ConnectionSnapshot {
   readonly connection: string;
@@ -96,14 +150,180 @@ function exact(value: Record<string, unknown>, keys: readonly string[]): boolean
 function integer(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;
 }
-export function isProviderModel(value: unknown): value is ProviderModel {
+const modelDetails = [
+  "effortSupport",
+  "effortLevels",
+  "defaultEffort",
+  "maxOutput",
+  "origin",
+  "retiring",
+];
+function present(value: Record<string, unknown>, key: string, check: (value: unknown) => boolean) {
+  return !Object.hasOwn(value, key) || check(value[key]);
+}
+function name(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+function modelId(value: unknown): value is string {
+  return name(value) && value.length <= 256 && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
+}
+function choice(value: unknown): value is string {
+  return name(value) && value.length <= 128;
+}
+type EffortLevel = NonNullable<ProviderModel["effortLevels"]>[number];
+function isEffortLevel(value: unknown): value is EffortLevel {
   return (
     record(value) &&
-    exact(value, ["id", "name"]) &&
-    typeof value.id === "string" &&
-    value.id.length > 0 &&
-    typeof value.name === "string" &&
-    value.name.length > 0
+    exact(value, ["name", "supported"]) &&
+    choice(value.name) &&
+    typeof value.supported === "boolean"
+  );
+}
+function isEffortLevels(value: unknown): value is readonly EffortLevel[] {
+  if (!Array.isArray(value) || value.length > 32) return false;
+  const items: unknown[] = value;
+  return items.every(isEffortLevel) && new Set(items.map(({ name }) => name)).size === items.length;
+}
+export function isProviderModel(value: unknown): value is ProviderModel {
+  if (!record(value)) return false;
+  const levels = isEffortLevels(value.effortLevels) ? value.effortLevels : undefined;
+  return (
+    exact(value, ["id", "name", ...modelDetails.filter((key) => Object.hasOwn(value, key))]) &&
+    modelId(value.id) &&
+    name(value.name) &&
+    present(
+      value,
+      "effortSupport",
+      (support) => support === "supported" || support === "unsupported" || support === "unknown",
+    ) &&
+    present(
+      value,
+      "effortLevels",
+      () =>
+        !!levels &&
+        (value.effortSupport === "supported" || levels.every((level) => !level.supported)),
+    ) &&
+    present(
+      value,
+      "defaultEffort",
+      (level) => choice(level) && !!levels?.some((item) => item.name === level && item.supported),
+    ) &&
+    present(value, "maxOutput", (maximum) => integer(maximum) && maximum !== 0) &&
+    present(value, "origin", (origin) => origin === "service" || origin === "catalog") &&
+    present(value, "retiring", (retiring) => typeof retiring === "boolean")
+  );
+}
+function preferenceChoice(value: Record<string, unknown>): boolean {
+  return (
+    agentPreferenceTargets.includes(value.target as AgentPreferenceTarget) &&
+    (value.connection === null || isConnectionId(value.connection)) &&
+    (value.model === null || modelId(value.model)) &&
+    (value.effort === null || choice(value.effort)) &&
+    typeof value.inherit === "boolean" &&
+    (value.inherit
+      ? value.target !== "default" && value.connection === null && value.model === null
+      : (value.connection === null) === (value.model === null))
+  );
+}
+export function isReplaceAgentPreference(value: unknown): value is ReplaceAgentPreference {
+  return (
+    record(value) &&
+    exact(value, [
+      "target",
+      "expectedRevision",
+      "connection",
+      "model",
+      "effort",
+      "inherit",
+      "source",
+    ]) &&
+    preferenceChoice(value) &&
+    integer(value.expectedRevision) &&
+    (value.inherit || value.model !== null) &&
+    (value.source === "researcher" ||
+      (value.source === "first_connection" &&
+        value.target === "default" &&
+        value.expectedRevision === 0))
+  );
+}
+export function isAgentPreferences(value: unknown): value is AgentPreferences {
+  return (
+    record(value) &&
+    exact(value, [
+      "preferences",
+      "lists",
+      ...(Object.hasOwn(value, "receipt") ? ["receipt"] : []),
+    ]) &&
+    (!Object.hasOwn(value, "receipt") ||
+      value.receipt === "recorded" ||
+      value.receipt === "not_found") &&
+    Array.isArray(value.preferences) &&
+    value.preferences.length <= agentPreferenceTargets.length &&
+    value.preferences.every(
+      (item) =>
+        record(item) &&
+        exact(item, [
+          "target",
+          "revision",
+          "connection",
+          "model",
+          "modelName",
+          "effort",
+          "inherit",
+          "source",
+          "seedPending",
+        ]) &&
+        preferenceChoice(item) &&
+        integer(item.revision) &&
+        item.revision > 0 &&
+        (item.modelName === null || name(item.modelName)) &&
+        (item.source === "researcher" ||
+          item.source === "first_connection" ||
+          item.source === "migration") &&
+        typeof item.seedPending === "boolean",
+    ) &&
+    Array.isArray(value.lists) &&
+    value.lists.every(
+      (item) =>
+        record(item) &&
+        exact(item, [
+          "connection",
+          "kind",
+          "list_revision",
+          "count",
+          "updatedAt",
+          ...(Object.hasOwn(item, "current") ? ["current"] : []),
+        ]) &&
+        (!Object.hasOwn(item, "current") || typeof item.current === "boolean") &&
+        isConnectionId(item.connection) &&
+        (item.kind === "subscription" || item.kind === "api_key") &&
+        integer(item.list_revision) &&
+        item.list_revision > 0 &&
+        integer(item.count) &&
+        typeof item.updatedAt === "string" &&
+        Number.isFinite(Date.parse(item.updatedAt)),
+    )
+  );
+}
+export function isProviderModelPageInput(value: unknown): value is ProviderModelPageInput {
+  return (
+    record(value) &&
+    exact(value, ["connection", "list_revision", "cursor", "count"]) &&
+    isConnectionId(value.connection) &&
+    integer(value.list_revision) &&
+    value.list_revision > 0 &&
+    integer(value.cursor) &&
+    integer(value.count) &&
+    value.count > 0 &&
+    value.count <= 128
+  );
+}
+export function isProviderModelPage(value: unknown): value is ProviderModelPage {
+  if (!record(value)) return false;
+  const { list_revision, ...rest } = value;
+  return (
+    isModelPage({ ...rest, model_list_revision: list_revision }) &&
+    (rest.models as unknown[]).length <= 128
   );
 }
 export function isConnectionSnapshot(value: unknown): value is ConnectionSnapshot {

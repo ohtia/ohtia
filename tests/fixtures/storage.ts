@@ -1,3 +1,4 @@
+import { newId } from "../../packages/utility/src/research.js";
 import { preConsultationSql } from "../../tooling/storage-legacy-consultation-fixture.mjs";
 export { preConsultationSql };
 import { objects as initialResearchObjects } from "../../packages/utility/src/migrations/0007_research_records.mjs";
@@ -110,4 +111,44 @@ export function storageFixture(emitDiagnostic?: StorageOptions["emitDiagnostic"]
   stores.push(store);
   const raw = () => new Database(path.join(root, "ohtia.db3"), { nativeBinding: binding });
   return { root, options, store, raw };
+}
+
+export function seedDefaultModel(
+  raw: ReturnType<typeof storageFixture>["raw"],
+  model: string,
+  name = model,
+  connection = "chatgpt",
+): void {
+  const db = raw();
+  try {
+    db.prepare(
+      `INSERT INTO agent_inference_preferences
+      (id,target,connection,model,model_name,inherit,revision,source,seed_pending)
+      VALUES (?,'default',?,?,?,0,1,'researcher',0)
+      ON CONFLICT(target) DO UPDATE SET connection=excluded.connection, model=excluded.model,
+      model_name=excluded.model_name, seed_pending=0, revision=revision+1 WHERE seed_pending=1`,
+    ).run(Buffer.from(newId()), connection, model, name);
+  } finally {
+    db.close();
+  }
+}
+
+export function setSyntheticAgentModel(
+  raw: ReturnType<typeof storageFixture>["raw"],
+  agent: "virgilio" | "josefa",
+  connection: string,
+  model: string,
+): void {
+  const db = raw();
+  try {
+    db.prepare(
+      `INSERT INTO agent_inference_preferences
+      (id,target,connection,model,model_name,inherit,revision,source,seed_pending)
+      VALUES (?,?,?,?,?,0,1,'researcher',0)
+      ON CONFLICT(target) DO UPDATE SET connection=excluded.connection,model=excluded.model,
+      model_name=excluded.model_name,revision=revision+1`,
+    ).run(Buffer.from(newId()), agent, connection, model, model);
+  } finally {
+    db.close();
+  }
 }

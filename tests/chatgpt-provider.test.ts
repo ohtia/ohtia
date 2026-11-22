@@ -1,4 +1,8 @@
-import { providerConformance } from "./fixtures/provider-conformance.js";
+import {
+  conformanceRequest,
+  dispatchThrough,
+  providerConformance,
+} from "./fixtures/provider-conformance.js";
 import { createFakeProvider } from "../packages/main/src/fake-provider.js";
 import fs from "node:fs";
 import os from "node:os";
@@ -67,6 +71,29 @@ providerConformance(
     bodies: () => conformanceBodies(),
   },
 );
+
+it("sends an explicit effort and forwards the reported effort without guessing from the request", async () => {
+  const f = fixture();
+  await f.login();
+  f.responses = () =>
+    streamResponse([
+      sse({ type: "response.created", response: { model: "first" } }),
+      sse({ type: "response.output_text.delta", delta: "Synthetic reply." }),
+      sse({
+        type: "response.completed",
+        response: { model: "first", reasoning: { effort: "medium" } },
+      }),
+    ]);
+  const request = conformanceRequest("chatgpt");
+  const events = await dispatchThrough(f.manager, f.adapter, { ...request, effort: "high" });
+  expect(f.responseRequests[0]?.body.reasoning).toEqual({ effort: "high" });
+  const started = events.filter((event) => event.type === "started");
+  expect(started.some((event) => event.effort === "high")).toBe(false);
+  expect(started.at(-1)).toMatchObject({ model: "first", effort: "medium" });
+  expect(events.at(-1)).toMatchObject({ type: "result", result: { status: "completed" } });
+  await dispatchThrough(f.manager, f.adapter, request);
+  expect(f.responseRequests[1]?.body).not.toHaveProperty("reasoning");
+});
 
 describe("ChatGPT sign-in", () => {
   it("declares subscription metadata and stores validated registration separately from restartable session", async () => {
@@ -419,6 +446,93 @@ describe("ChatGPT renewal and probes", () => {
     });
     expect(await f.store.readSession()).toEqual(old);
     expect(f.manager.snapshot("chatgpt")?.state).toBe("connected");
+  });
+  it("uses advertised reasoning levels in order and retains the catalog after malformed effort", async () => {
+    const f = fixture();
+    await f.login();
+    expect(f.adapter.declaration.capabilities.effortSelection).toBe(true);
+    const supported = {
+      slug: "first",
+      display_name: "First",
+      visibility: "list",
+      supported_reasoning_levels: [
+        { effort: "high", description: "Only the effort identifier is used" },
+        { effort: "ultra" },
+        { effort: "max" },
+        { effort: "low" },
+      ],
+      default_reasoning_level: "low",
+    };
+    const unsupported = {
+      slug: "second",
+      display_name: "Second",
+      visibility: "list",
+      supported_reasoning_levels: [],
+    };
+    const unknown = { slug: "third", display_name: "Third", visibility: "list" };
+    const unavailable = {
+      slug: "fourth",
+      display_name: "Fourth",
+      visibility: "list",
+      supported_reasoning_levels: [{ effort: "ultra" }],
+      default_reasoning_level: "ultra",
+    };
+    const unusableDefault = {
+      ...supported,
+      slug: "fifth",
+      display_name: "Fifth",
+      default_reasoning_level: "ultra",
+    };
+    f.models = { models: [supported, unsupported, unknown, unavailable, unusableDefault] };
+    const probe = async () => {
+      f.manager.probe("chatgpt");
+      await vi.waitFor(() => expect(f.manager.snapshot("chatgpt")?.probing).toBe(false));
+    };
+    const list = () =>
+      f.manager.listModels({
+        connection: "chatgpt",
+        model_list_revision: 1,
+        cursor: 0,
+        count: 128,
+      });
+    await probe();
+    const complete = list();
+    expect(complete).toMatchObject({
+      ok: true,
+      value: {
+        models: [
+          {
+            id: "first",
+            origin: "service",
+            effortSupport: "supported",
+            defaultEffort: "low",
+            effortLevels: [
+              { name: "high", supported: true },
+              { name: "max", supported: true },
+              { name: "low", supported: true },
+            ],
+          },
+          { id: "second", effortSupport: "unsupported" },
+          { id: "third", effortSupport: "unknown" },
+          { id: "fourth", effortSupport: "unsupported" },
+          {
+            id: "fifth",
+            effortSupport: "supported",
+            effortLevels: [
+              { name: "high", supported: true },
+              { name: "max", supported: true },
+              { name: "low", supported: true },
+            ],
+          },
+        ],
+      },
+    });
+    expect(complete.ok && complete.value.models[4]).not.toHaveProperty("defaultEffort");
+    for (const malformed of [false, [{ effort: 7 }], [{ effort: "low" }, { effort: "low" }]]) {
+      f.models = { models: [{ ...supported, supported_reasoning_levels: malformed }] };
+      await probe();
+      expect(list()).toEqual(complete);
+    }
   });
   it("bounds a chunked provider body before parsing", async () => {
     await expect(providerJSON(new Response("x".repeat(4 * 1024 * 1024 + 1)))).rejects.toThrow(

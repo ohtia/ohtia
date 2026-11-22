@@ -130,5 +130,9 @@
   {
     "name": "0033_entry_text_preference",
     "sha256": "d094e2d824f3411db5159375f0519c1a99cb959e7cd9c59f577aac75e20f32de"
+  },
+  {
+    "name": "0034_agent_preferences",
+    "sha256": "9b2140af409e31daeb0f45aa90a48b48327914ba56a89eec7cde20f3a5dad817"
   }
 ]

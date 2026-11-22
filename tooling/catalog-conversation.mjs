@@ -30,6 +30,7 @@ async function verifyBlockSpacing(panel) {
 
 /** Real browser layout and CSP checks; every effect stays in the synthetic specimen. */
 export async function verifyConversationSpecimen(page, url, engine, output) {
+  const { message } = await import("../packages/contracts/dist/index.js");
   const watch = await watchCatalogPage(page, url, "Conversation", engine);
   const cases = [];
   try {
@@ -119,7 +120,14 @@ export async function verifyConversationSpecimen(page, url, engine, output) {
           await expect(trigger).not.toHaveAttribute("aria-expanded");
           await page.keyboard.press("Enter");
           const details = panel.locator(".reply-details");
-          await expect(details.locator("dl > dt")).toHaveCount(16);
+          await expect(details.locator("dl > dt")).toHaveCount(18);
+          for (const [key, effort] of [
+            ["replyDetails.requestedEffort", "high"],
+            ["replyDetails.observedEffort", "low"],
+          ]) {
+            const term = details.getByText(message(locale, key), { exact: true });
+            await expect(term.locator("xpath=following-sibling::dd[1]")).toHaveText(effort);
+          }
           await expect(details).not.toHaveAttribute("aria-busy");
           await expect(details).toContainText("GPT synthetic 한국어");
           expect(
@@ -230,7 +238,7 @@ export async function verifyConversationSpecimen(page, url, engine, output) {
     const detailsTrigger = page.locator(".reply-details-toggle");
     await detailsTrigger.focus();
     await page.keyboard.press("Enter");
-    await expect(page.locator(".reply-details dd")).toHaveCount(16);
+    await expect(page.locator(".reply-details dd")).toHaveCount(18);
     await expect(page.locator(".reply-details h3")).toContainText("⟦");
     expect(
       await page.locator(".reply-details").evaluate((e) => e.scrollWidth <= e.clientWidth),

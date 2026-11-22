@@ -91,7 +91,51 @@ const priorRedirectionObjects = {
   ...proposals,
   ...handoffs,
 };
-import { tables as memoryTables } from "../packages/utility/src/migrations/0029_project_memory.mjs";
+import {
+  tables as memoryTables,
+  objects as memory,
+} from "../packages/utility/src/migrations/0029_project_memory.mjs";
+import { objects as researcherMemory } from "../packages/utility/src/migrations/0030_researcher_memory.mjs";
+import {
+  objects as agentPreferences,
+  taskColumns,
+  effortColumns,
+} from "../packages/utility/src/migrations/0034_agent_preferences.mjs";
+
+export const preAgentPreferencesSql = `
+  PRAGMA legacy_alter_table=ON;
+  ${Object.keys(agentPreferences)
+    .filter((name) => !name.startsWith("contributions_"))
+    .map((name) => "DROP TRIGGER " + name + ";")
+    .join("\n")}
+  ALTER TABLE contributions RENAME TO contributions_with_agent_preferences;
+  ${memoryTables.contributions};
+  INSERT INTO contributions(rowid,${["id", "intervention_id", "agent_id", "operation", "request", "reason", "task_id", "created_at", "plan_key", "required", "state", "blocked_by_contribution_id", "failure_reason", "result_message_id", "ready_inputs", "restart_held", "policy_version", "dedupe_key", "added_in_graph_version", "superseded_by_contribution_id", "cancellation_reason", "context_proposal_id", "purpose_proposal_id"].join(",")})
+    SELECT rowid,* FROM contributions_with_agent_preferences ORDER BY rowid;
+  DROP TABLE contributions_with_agent_preferences;
+  ${Object.keys(taskColumns)
+    .map((name) => "ALTER TABLE tasks DROP COLUMN " + name + ";")
+    .join("\n")}
+  ${Object.keys(effortColumns)
+    .map((name) => "ALTER TABLE attempts DROP COLUMN " + name + ";")
+    .join("\n")}
+  ALTER TABLE continuations DROP COLUMN failure_reason;
+  ${Object.keys(agentPreferences)
+    .filter((name) => name.startsWith("contributions_"))
+    .map((name) => memory[name] + ";")
+    .join("\n")}
+  ${memory.tasks_initial};
+  ${synthesis.tasks_changes};
+  ${memory.continuations_changes};
+  ${researcherMemory.receipts_commands};
+  DROP TABLE provider_models;
+  DROP TABLE provider_model_lists;
+  DROP TABLE agent_inference_preferences;
+  DELETE FROM kysely_migration WHERE name='0034_agent_preferences';
+  DELETE FROM ohtia_migration_artifacts WHERE name='0034_agent_preferences';
+  PRAGMA legacy_alter_table=OFF;
+  PRAGMA user_version=33;
+`;
 
 import { schema as applicationPreferencesSchema } from "../packages/utility/src/migrations/0001_initial.mjs";
 import { schema as presentationReceiptSchema } from "../packages/utility/src/migrations/0005_presentation_receipts.mjs";
@@ -102,6 +146,7 @@ import {
 } from "../packages/utility/src/migrations/0032_source_quote_preference.mjs";
 
 export const preEntryTextSql = `
+  ${preAgentPreferencesSql}
   ALTER TABLE presentation_receipts RENAME TO presentation_receipts_with_entry_text;
   ${quoteReceiptsSchema};
   INSERT INTO presentation_receipts SELECT * FROM presentation_receipts_with_entry_text WHERE feature<>'entryText';

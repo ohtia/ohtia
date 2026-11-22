@@ -112,6 +112,8 @@ export async function readReplyDetails(
               : "different",
       requestedModel: model(attempt?.requested_model),
       observedModel: model(attempt?.observed_model),
+      requestedEffort: dispatched?.requested_effort ?? null,
+      observedEffort: attempt?.observed_effort ?? null,
       attempts: attempts.length,
       startedAt,
       endedAt,
