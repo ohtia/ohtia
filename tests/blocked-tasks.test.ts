@@ -1,3 +1,4 @@
+import { seedDefaultModel } from "./fixtures/storage.js";
 import { preConsultationSql, legacyTaskInitialFrom20Sql } from "./fixtures/storage.js";
 import { objects as setupReceiptObjects } from "../packages/utility/src/migrations/0015_project_setup.mjs";
 import { objects as composerReceiptObjects } from "../packages/utility/src/migrations/0014_message_composer.mjs";
@@ -67,6 +68,7 @@ async function setup() {
   });
   const context = { generation, connections, mode: "development" as const };
   fixture.store.setTaskContext(context);
+  seedDefaultModel(fixture.raw, "test-model", "Test model");
   let sequence = 0;
   const project = () =>
     fixture.store.executeResearchCommand({
@@ -332,7 +334,7 @@ describe("blocked work and connection usage pauses", () => {
       "development",
     );
     service.activate("en-US");
-    for (const state of ["connected", "connecting", "connected"])
+    for (const state of ["connected", "connecting", "connected"]) {
       service.receive(
         JSON.stringify({
           kind: "connection_state",
@@ -343,11 +345,26 @@ describe("blocked work and connection usage pauses", () => {
             reason: null,
             probing: false,
             probe_id: null,
-            model_list_revision: null,
-            model_count: 0,
+            model_list_revision: state === "connected" ? 1 : null,
+            model_count: state === "connected" ? 1 : 0,
           },
         }),
       );
+      if (state === "connected")
+        service.receive(
+          JSON.stringify({
+            kind: "connection_models",
+            generation: f.generation,
+            page: {
+              connection: "chatgpt",
+              model_list_revision: 1,
+              models: [{ id: "test-model", name: "Test model" }],
+              nextCursor: 1,
+              hasMore: false,
+            },
+          }),
+        );
+    }
     await service.drain();
     expect(observed).toContain("connection_disabled");
     expect(observed.at(-1)).toBeNull();
@@ -390,6 +407,7 @@ describe("blocked work and connection usage pauses", () => {
     expect(f.rows().at(-1)!.blocking_reason).toBe("connection_disabled");
     await f.store.close(true);
     await f.store.open();
+    seedDefaultModel(f.raw, "test-model");
     f.state("connected");
     value(await f.store.reconcileTaskConnections());
     expect(f.rows().at(-1)!.blocking_reason).toBe("usage_limit_reached");
@@ -566,6 +584,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
     it("holds unfinished work during its first upgrade", async () => {
       const f = await source();
       await f.store.open();
+      seedDefaultModel(f.raw, "test-model");
       expect(f.rows().map((t) => t.state)).toEqual(["uncertain", "blocked", "blocked"]);
       value(await f.continueAll());
       expect(f.rows().map((t) => t.state)).toEqual(["uncertain", "queued", "queued"]);
@@ -626,6 +645,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
           expect(f.rows().at(-1)!.blocking_reason).toBe("restart_paused");
         }
         await f.store.retry();
+        seedDefaultModel(f.raw, "test-model");
         const limits = f.raw();
         limits.exec(
           "UPDATE application_preferences SET value=json_set(value,'$.max_concurrent_inference',1),revision=revision+1 WHERE key='execution_limits'",
@@ -639,6 +659,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
         expect(await f.prepare()).toBeNull();
         await f.store.close();
         await f.store.open();
+        seedDefaultModel(f.raw, "test-model");
         f.state("disconnected");
         value(await f.store.reconcileTaskConnections());
         f.state("connected");
@@ -679,10 +700,11 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 33,
+          target: 34,
         }),
       );
       await f.store.retry();
+      seedDefaultModel(f.raw, "test-model");
       expect(f.rows().map((t) => t.state)).toEqual([
         "cancelled",
         "cancelled",
@@ -731,7 +753,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 33,
+          target: 34,
         }),
       );
       await exhausted.store.retry();
@@ -759,10 +781,11 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 33,
+          target: 34,
         }),
       );
       await f.store.retry();
+      seedDefaultModel(f.raw, "test-model");
       value(await f.append(id));
       expect(f.rows().at(-1)!.blocking_reason).toBe("restart_paused");
       f.state("disconnected");
@@ -1005,10 +1028,12 @@ describe("reply control composed with connection and usage pauses", () => {
       if (recovery) {
         fs.writeFileSync(
           path.join(f.root, "migration-pending.json"),
-          JSON.stringify({ version: 1, operation: "composed-recovery", source: 9, target: 33 }),
+          JSON.stringify({ version: 1, operation: "composed-recovery", source: 9, target: 34 }),
         );
         await f.store.retry();
+        seedDefaultModel(f.raw, "test-model");
       } else await f.store.open();
+      seedDefaultModel(f.raw, "test-model");
       expect(f.rows().find((row) => row.state === "blocked")!.blocking_reason).toBe(
         "restart_paused",
       );
@@ -1021,13 +1046,14 @@ describe("reply control composed with connection and usage pauses", () => {
       expect(value(await f.resume("resume-after-reply-migration"))).toEqual(resumed);
       expect(await f.prepare()).not.toBeNull();
       const upgraded = f.raw();
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(33);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(34);
       expect(
         upgraded
-          .prepare("SELECT name FROM kysely_migration ORDER BY name DESC LIMIT 21")
+          .prepare("SELECT name FROM kysely_migration ORDER BY name DESC LIMIT 22")
           .pluck()
           .all(),
       ).toEqual([
+        "0034_agent_preferences",
         "0033_entry_text_preference",
         "0032_source_quote_preference",
         "0031_reply_usage",
@@ -1073,9 +1099,10 @@ it.each(["continue-all", "resume-requests"] as const)(
       await f.store.close();
       fs.writeFileSync(
         path.join(f.root, "migration-pending.json"),
-        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 33 }),
+        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 34 }),
       );
       await f.store.retry();
+      seedDefaultModel(f.raw, "test-model");
     }
     const sent: Record<string, unknown>[] = [];
     const provider = new DurableProvider({

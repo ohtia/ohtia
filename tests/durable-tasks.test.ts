@@ -1,3 +1,4 @@
+import { seedDefaultModel } from "./fixtures/storage.js";
 import { preConsultationSql, legacyTaskInitialFrom20Sql } from "./fixtures/storage.js";
 import { describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
@@ -61,6 +62,7 @@ async function setup(
     },
   });
   fixture.store.setTaskContext({ generation, mode: "development", connections });
+  if (models[0]) seedDefaultModel(fixture.raw, models[0].id, models[0].name);
   const projectId = value(
     await fixture.store.executeResearchCommand({
       command: "development.createProject",
@@ -289,21 +291,16 @@ describe("durable provider tasks on real SQLite", () => {
   });
 
   it.each([{ models: [] }, { models: [{ id: "invalid model slug", name: "Invalid model" }] }])(
-    "fails without dispatch or a work unit when no usable visible model is available: $models",
+    "blocks without dispatch or a work unit when no usable visible model is available: $models",
     async ({ models }) => {
       const { append, prepare, raw } = await setup(models);
       value(await append("Question"));
       expect(await prepare()).toBeNull();
       const db = raw();
-      expect(
-        db.prepare("SELECT state,outcome_reason,dispatch_permitted_at FROM attempts").get(),
-      ).toEqual({
-        state: "failed",
-        outcome_reason: "provider_unavailable",
-        dispatch_permitted_at: null,
-      });
-      expect(db.prepare("SELECT state,reply_position FROM tasks").get()).toEqual({
-        state: "failed",
+      expect(db.prepare("SELECT count(*) FROM attempts").pluck().get()).toBe(0);
+      expect(db.prepare("SELECT state, blocking_reason, reply_position FROM tasks").get()).toEqual({
+        state: "blocked",
+        blocking_reason: "configuration_unavailable",
         reply_position: null,
       });
       db.close();
@@ -623,7 +620,7 @@ describe("durable task migration preservation", () => {
         max_concurrent_inference: expectedInference,
         max_concurrent_local_processing: 1,
       });
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(33);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(34);
       upgraded.close();
     },
   );
@@ -763,7 +760,7 @@ it("emits only closed content-free task diagnostics after durable transactions",
   );
 });
 
-it("waits for catalog pages but fails an initial catalog read that ended without a model", async () => {
+it("waits for catalog pages and blocks after an initial read without a model", async () => {
   const { store, append, prepare, connections, generation, raw } = await setup();
   value(await append("Question"));
   const report = (probing: boolean, revision: number | null, count = 0) =>
@@ -789,12 +786,10 @@ it("waits for catalog pages but fails an initial catalog read that ended without
   expect(db.prepare("SELECT count(*) FROM attempts").pluck().get()).toBe(0);
   report(false, null);
   expect(await prepare()).toBeNull();
-  expect(
-    db.prepare("SELECT state,outcome_reason,dispatch_permitted_at FROM attempts").get(),
-  ).toEqual({
-    state: "failed",
-    outcome_reason: "provider_unavailable",
-    dispatch_permitted_at: null,
+  expect(db.prepare("SELECT count(*) FROM attempts").pluck().get()).toBe(0);
+  expect(db.prepare("SELECT state,blocking_reason FROM tasks").get()).toEqual({
+    state: "blocked",
+    blocking_reason: "configuration_unavailable",
   });
   expect(value(await store.readProjects())).toHaveLength(1);
   db.close();
@@ -1187,7 +1182,7 @@ function recoveryGate(f: Awaited<ReturnType<typeof setup>>): string {
   const gate = path.join(f.root, "migration-pending.json");
   fs.writeFileSync(
     gate,
-    JSON.stringify({ version: 1, operation: "synthetic-recovery", source: 9, target: 33 }),
+    JSON.stringify({ version: 1, operation: "synthetic-recovery", source: 9, target: 34 }),
   );
   return gate;
 }
@@ -1213,6 +1208,7 @@ describe("reply-control migration and shared recovery handoff", () => {
     );
     await sourceNine(f);
     await f.store.open();
+    seedDefaultModel(f.raw, "first-model");
     const db = f.raw();
     expect(db.prepare("SELECT ending FROM messages ORDER BY position").all()).toEqual([
       { ending: null },
@@ -1235,6 +1231,7 @@ describe("reply-control migration and shared recovery handoff", () => {
     value(await f.append("Pending"));
     await sourceNine(f);
     await f.store.open();
+    seedDefaultModel(f.raw, "first-model");
     const db = f.raw();
     expect(db.prepare("SELECT state,blocking_reason FROM tasks").get()).toEqual({
       state: "blocked",
@@ -1260,10 +1257,12 @@ describe("reply-control migration and shared recovery handoff", () => {
       else await f.store.close();
       const gate = recoveryGate(f);
       await f.store.retry();
+      seedDefaultModel(f.raw, "first-model");
       expect(fs.existsSync(gate)).toBe(false);
       expect(await f.prepare()).toBeNull();
       await f.store.close();
       await f.store.open();
+      seedDefaultModel(f.raw, "first-model");
       expect(await f.prepare()).toBeNull();
       value(await f.append("Newer pending"));
       expect(await f.prepare()).toBeNull();
@@ -1325,6 +1324,7 @@ describe("reply-control migration and shared recovery handoff", () => {
       await sourceNine(f);
       recoveryGate(f);
       await f.store.retry();
+      seedDefaultModel(f.raw, "first-model");
       const after = f.raw();
       expect(after.prepare("SELECT state FROM tasks").pluck().get()).toBe(
         kind === "dispatched" ? "uncertain" : kind === "cancelling" ? "cancelled" : "blocked",
@@ -1374,6 +1374,7 @@ describe("reply-control migration and shared recovery handoff", () => {
     db.close();
     fail.mockRestore();
     await f.store.retry();
+    seedDefaultModel(f.raw, "first-model");
     expect(fs.existsSync(gate)).toBe(false);
     expect(await f.prepare()).toBeNull();
   });
@@ -1402,6 +1403,7 @@ describe("reply-control migration and shared recovery handoff", () => {
     await f.store.close();
     await expect(f.store.open()).rejects.toThrow(/recovery/);
     await f.store.retry();
+    seedDefaultModel(f.raw, "first-model");
     expect(await f.prepare()).toBeNull();
     value(
       await f.store.executeResearchCommand({
@@ -1777,6 +1779,7 @@ it("settles usage once per revision across retry and restart without changing re
     await f.store.close();
     now(4);
     await f.store.open();
+    seedDefaultModel(f.raw, "first-model");
     const afterRestart = research();
     const correction = { ...firstReport, revision: 3, usage: { ...usage, output_tokens: 4 } };
     expect(value(await f.store.recordLateUsage(attempt, correction))).toMatchObject({

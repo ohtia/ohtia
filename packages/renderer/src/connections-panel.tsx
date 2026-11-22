@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useMemo, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import {
   message,
   type FoundationPort,
@@ -20,18 +20,39 @@ export function ConnectionsPanel({
   locale,
   available,
   onConnection,
+  connection = "chatgpt",
+  renderAfterState,
+  onCatalogRead,
+  onProbeResult,
+  subscribeConnection,
+  embedded = false,
 }: {
+  readonly connection?: string;
+  readonly renderAfterState?: (snapshot: ConnectionSnapshot, justConnected: boolean) => ReactNode;
+  readonly embedded?: boolean;
+  readonly onCatalogRead?: () => void;
+  readonly onProbeResult?: (event: Extract<ConnectionEvent, { kind: "probe_result" }>) => void;
+  readonly subscribeConnection?: FoundationPort["subscribeConnection"];
   readonly onConnection?: (snapshot: ConnectionSnapshot | undefined) => void;
   readonly port: FoundationPort;
   readonly locale: InterfaceLocale;
   readonly available: boolean;
 }) {
+  const onProbe = useRef(onProbeResult);
+  onProbe.current = onProbeResult;
+  const subscribe = useMemo(
+    () => subscribeConnection ?? port.subscribeConnection.bind(port),
+    [port, subscribeConnection],
+  );
+  const onCatalog = useRef(onCatalogRead);
+  onCatalog.current = onCatalogRead;
   const connectionObserver = useRef(onConnection);
   connectionObserver.current = onConnection;
   const id = useId();
   const [snapshot, setSnapshot] = useState<ConnectionSnapshot>();
   const [probe, setProbe] = useState<ProbeResult>();
   const [failed, setFailed] = useState(false);
+  const [justConnected, setJustConnected] = useState(false);
   const [pending, setPending] = useState(false);
   const [recovery, setRecovery] = useState(0);
   const actions = useRef<HTMLDivElement>(null);
@@ -47,6 +68,9 @@ export function ConnectionsPanel({
     if (latest.current?.state !== value.state && focused && actions.current?.contains(focused))
       restore.current = true;
     connectionObserver.current?.(value);
+    if (value.state === "connected" && latest.current && latest.current.state !== "connected")
+      setJustConnected(true);
+    if (value.state !== "connected") setJustConnected(false);
     latest.current = value;
     setSnapshot(value);
     setFailed(false);
@@ -120,7 +144,7 @@ export function ConnectionsPanel({
         stopped = true;
       };
     }
-    const stream = port.subscribeConnection("chatgpt", (notice) => {
+    const stream = subscribe(connection, (notice) => {
       if (!active()) return;
       eventVersion++;
       if (!notice.ok) {
@@ -145,6 +169,10 @@ export function ConnectionsPanel({
         if (event.outcome === "listed") void models(event);
         else setProbe({ kind: "unreachable" });
       }
+      if (event.kind === "probe_result") {
+        onProbe.current?.(event);
+        if (event.outcome === "listed") onCatalog.current?.();
+      }
     });
     void stream.ready.then(async (result) => {
       if (!active()) return;
@@ -156,7 +184,7 @@ export function ConnectionsPanel({
         return;
       }
       const version = eventVersion;
-      const resultRead = await run(port.readConnection("chatgpt"));
+      const resultRead = await run(port.readConnection(connection));
       if (!active() || version !== eventVersion) return;
       if (resultRead.ok) accept(resultRead.value);
       else setFailed(true);
@@ -169,7 +197,7 @@ export function ConnectionsPanel({
       for (const call of calls.current) call.cancel();
       calls.current.clear();
     };
-  }, [port, available, accept, recovery]);
+  }, [port, connection, available, accept, recovery, subscribe]);
   const act = async (kind: "connect" | "another" | "disconnect" | "probe") => {
     if (!available || pending) return;
     const lifetime = generation.current;
@@ -178,11 +206,11 @@ export function ConnectionsPanel({
     setProbe(undefined);
     const call =
       kind === "disconnect"
-        ? port.disconnectConnection("chatgpt")
+        ? port.disconnectConnection(connection)
         : kind === "probe"
-          ? port.probeConnection("chatgpt")
+          ? port.probeConnection(connection)
           : port.connectConnection(
-              "chatgpt",
+              connection,
               kind === "another" ? { new_registration: true } : undefined,
             );
     calls.current.add(call);
@@ -207,7 +235,9 @@ export function ConnectionsPanel({
   if (!snapshot)
     return (
       <section aria-labelledby={`${id}-title`}>
-        <h3 id={`${id}-title`}>{title}</h3>
+        <h3 id={`${id}-title`} hidden={embedded}>
+          {title}
+        </h3>
         <p role="status">{!available || failed ? message(locale, "settings.unavailable") : ""}</p>
         {available && failed && (
           <div ref={actions} className="connection-actions">
@@ -272,7 +302,9 @@ export function ConnectionsPanel({
   const disabled = !available || pending || failed;
   return (
     <section className="settings-connections" aria-labelledby={`${id}-title`}>
-      <h3 id={`${id}-title`}>{title}</h3>
+      <h3 id={`${id}-title`} hidden={embedded}>
+        {title}
+      </h3>
       <div className="connection-row" aria-labelledby={`${id}-service`}>
         <h4 id={`${id}-service`}>{service}</h4>
         <div
@@ -282,6 +314,7 @@ export function ConnectionsPanel({
           {attention && <Icon name="triangle-alert" />}
           <p>{stateText}</p>
         </div>
+        {renderAfterState?.(snapshot, justConnected)}
         {remembered &&
           (snapshot.state !== "disconnected" || snapshot.reason === "sign_in_timeout") && (
             <p>{emailText("connection.lastAccount")}</p>

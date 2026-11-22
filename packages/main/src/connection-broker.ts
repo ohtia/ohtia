@@ -30,7 +30,7 @@ export class ConnectionBroker {
   ) {
     this.stop = manager.subscribe((event) => {
       for (const stream of this.streams.values()) {
-        if (stream.connection !== event.connection) continue;
+        if (stream.connection !== "*" && stream.connection !== event.connection) continue;
         this.deliver(stream.work, {
           protocol: 1,
           policy: policyId,
@@ -65,7 +65,10 @@ export class ConnectionBroker {
     switch (request.operation) {
       case "connection.subscribe": {
         this.diagnostic?.({ event_name: "ohtia.connection.subscribe" });
-        if (!this.manager.snapshot(request.payload.connection)) {
+        if (
+          request.payload.connection !== "*" &&
+          !this.manager.snapshot(request.payload.connection)
+        ) {
           finish(failure("invalid_message"));
           break;
         }

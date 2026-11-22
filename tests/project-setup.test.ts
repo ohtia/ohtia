@@ -1,3 +1,4 @@
+import { seedDefaultModel } from "./fixtures/storage.js";
 import fs from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
@@ -78,6 +79,7 @@ async function setup(development = false, emitDiagnostic?: (event: DiagnosticEve
     connections: setupConnections(),
   };
   f.store.setTaskContext(context);
+  seedDefaultModel(f.raw, "first", "First");
   const projectId = value(
     await f.store.executeResearchCommand({
       command: development ? "development.createProject" : "project.create",
@@ -1202,6 +1204,7 @@ describe.each(["fake", "chatgpt"] as const)("%s tool/output conformance", (provi
 it("exercises create-project, send and human decisions through development actions", async () => {
   const f = storageFixture();
   await f.store.open();
+  seedDefaultModel(f.raw, "first");
   const sent: string[] = [];
   const provider = new DurableProvider({
     storage: f.store,
@@ -1601,6 +1604,7 @@ it("rolls back setup finalization when its registry cannot be read and retries w
   const store = new DurableStore({ ...f.options, languageRegistry: file });
   stores.push(store);
   await store.open();
+  seedDefaultModel(f.raw, "first");
   store.setTaskContext({
     generation: "setup-tests",
     mode: "development",
@@ -1674,6 +1678,7 @@ it("upgrades a schema-15 setup proposal without losing decisions or notice retry
   stores.push(reopened);
   await reopened.open();
   reopened.setTaskContext(f.context);
+  seedDefaultModel(f.raw, "first");
   expect(f.proposals()).toContainEqual(proposal);
   value(
     await reopened.executeResearchCommand({
@@ -1710,7 +1715,7 @@ it("upgrades a schema-15 setup proposal without losing decisions or notice retry
     }),
   );
   const db = f.raw();
-  expect(db.pragma("user_version", { simple: true })).toBe(33);
+  expect(db.pragma("user_version", { simple: true })).toBe(34);
   expect(
     db
       .prepare("SELECT state FROM project_setup_proposals WHERE id=?")
@@ -2090,6 +2095,7 @@ describe("confirmed project direct guidance", () => {
     stores.push(upgraded);
     await upgraded.open();
     upgraded.setTaskContext(f.context);
+    seedDefaultModel(f.raw, "first");
     value(
       await upgraded.executeResearchCommand({
         command: "message.append",

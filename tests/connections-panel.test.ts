@@ -12,8 +12,17 @@ import {
   type ConnectionEvent,
   type Outcome,
   type ModelPage,
+  type AgentPreferences,
+  type ProviderModelPageInput,
+  type ReplaceAgentPreference,
 } from "@ohtia/contracts";
+import {
+  AgentsSettings,
+  FirstModelChoice,
+  useAgentSettings,
+} from "../packages/renderer/src/agents-settings.js";
 import { ConnectionsPanel } from "../packages/renderer/src/connections-panel.js";
+import { windowConnectionSubscription } from "../packages/renderer/src/connection-subscription.js";
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const roots: Root[] = [];
 afterEach(async () => {
@@ -381,4 +390,708 @@ it("does not restore stale Retry focus after the researcher moves elsewhere", as
   await f.event({ state: "connected", account_email: "one@example.test" });
   expect(document.activeElement).toBe(elsewhere);
   expect(f.container.textContent).toContain("Connected · one@example.test");
+});
+
+it("confirms the first default model inline with the complete stored catalog", async () => {
+  const snapshot = {
+    ...initial,
+    state: "connected" as const,
+    model_count: 2,
+    model_list_revision: 1,
+  };
+  let preferences: AgentPreferences = {
+    preferences: [],
+    lists: [
+      {
+        connection: "chatgpt",
+        kind: "subscription",
+        count: 2,
+        list_revision: 1,
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+  };
+  const models = [
+    { id: "first", name: "First model" },
+    { id: "second", name: "Second model" },
+  ];
+  const call = <T>(value: T) => ({
+    result: Promise.resolve({ ok: true as const, value }),
+    cancel() {},
+  });
+  const select = vi.fn(
+    (input: ProviderModelPageInput): ReturnType<FoundationPort["listProviderModels"]> =>
+      call({
+        connection: input.connection,
+        list_revision: 1,
+        models: [models[input.cursor]!],
+        nextCursor: input.cursor + 1,
+        hasMore: input.cursor === 0,
+      }),
+  );
+  const replace = vi.fn(
+    (
+      _operation: string,
+      choice: ReplaceAgentPreference,
+    ): ReturnType<FoundationPort["replaceAgentPreference"]> => {
+      preferences = {
+        ...preferences,
+        preferences: [
+          {
+            target: "default",
+            revision: 1,
+            connection: choice.connection,
+            model: choice.model,
+            modelName: "First model",
+            effort: null,
+            inherit: false,
+            source: choice.source,
+            seedPending: false,
+          },
+        ],
+      };
+      return call({ resultId: "019a8000-0000-7000-8000-000000000001" });
+    },
+  );
+  let receiptAvailable = false;
+  const port = {
+    listAgentPreferences: (operationId?: string) =>
+      operationId && !receiptAvailable
+        ? { result: Promise.resolve(failure("service_unavailable")), cancel() {} }
+        : call(operationId ? { ...preferences, receipt: "not_found" } : preferences),
+    listProviderModels: select,
+    replaceAgentPreference: replace,
+    readConnection: () => call(snapshot),
+    subscribeConnection: () => ({
+      ready: Promise.resolve({ ok: true, value: { subscriptionId: "test" } }),
+      dispose() {},
+    }),
+  } as unknown as FoundationPort;
+  function Host() {
+    const settings = useAgentSettings(port, true);
+    return createElement(ConnectionsPanel, {
+      port,
+      available: true,
+      locale: "en-US",
+      renderAfterState: (value) =>
+        createElement(FirstModelChoice, {
+          port,
+          settings,
+          locale: "en-US",
+          showConnected: false,
+          snapshot: value,
+        }),
+    });
+  }
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(container);
+  roots.push(root);
+  const readFailure = failure("storage_failed");
+  select.mockImplementationOnce(() => ({ result: Promise.resolve(readFailure), cancel() {} }));
+  await act(async () => {
+    root.render(createElement(Host));
+  });
+  const retry = () => container.querySelector<HTMLButtonElement>(".agent-choice-feedback button")!;
+  const repeat = Promise.withResolvers<typeof readFailure>();
+  select.mockImplementationOnce(() => ({ result: repeat.promise, cancel() {} }));
+  await act(async () => {
+    retry().focus();
+    retry().click();
+  });
+  expect(document.activeElement).toBe(container.querySelector(".connection-actions button"));
+  await act(async () => {
+    repeat.resolve(readFailure);
+  });
+  expect(document.activeElement).toBe(container.querySelector(".connection-actions button"));
+  select.mockClear();
+  await act(async () => retry().click());
+  const group = container.querySelector<HTMLElement>('[role="group"]')!;
+  expect(group.querySelector("h4")?.textContent).toBe(
+    "Which default model should your agents use?",
+  );
+  const selector = group.querySelector("select")!;
+  expect(document.activeElement).toBe(selector);
+  expect([...selector.options].map(({ text }) => text)).toEqual(["First model", "Second model"]);
+  expect(selector.value).toBe("first");
+  const actions = group.closest(".connection-row")?.querySelector(".connection-actions");
+  expect(actions?.textContent).toContain("Test connection");
+  expect(group.compareDocumentPosition(actions!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(select.mock.calls.map(([input]) => input.cursor)).toEqual([0, 1]);
+  expect(replace).not.toHaveBeenCalled();
+  replace.mockImplementationOnce(() => ({
+    result: Promise.resolve(failure("uncertain")),
+    cancel() {},
+  }));
+  const submit = group.querySelector("button")!;
+  await act(async () => submit.click());
+  expect(submit.getAttribute("aria-disabled")).toBe("true");
+  await act(async () => submit.click());
+  expect(replace).toHaveBeenCalledOnce();
+  receiptAvailable = true;
+  const button = (label: string) =>
+    [...group.querySelectorAll("button")].find((node) => node.textContent === label)!;
+  await act(async () => button("Check").click());
+  await act(async () => button("Try again").click());
+  expect(replace).toHaveBeenCalledTimes(2);
+  expect(replace).toHaveBeenLastCalledWith(
+    expect.any(String),
+    expect.objectContaining({
+      connection: "chatgpt",
+      model: "first",
+      source: "first_connection",
+    }),
+  );
+  expect(container.querySelector('[role="group"]')).toBeNull();
+});
+
+it("shares and recovers the window connection stream across observers", async () => {
+  const listeners: ((result: Outcome<ConnectionEvent>) => void)[] = [];
+  const dispose = vi.fn();
+  const upstream = vi.fn(
+    (_connection: string, listener: (result: Outcome<ConnectionEvent>) => void) => {
+      listeners.push(listener);
+      return {
+        ready: Promise.resolve({ ok: true as const, value: { subscriptionId: "window" } }),
+        dispose,
+      };
+    },
+  );
+  const subscribe = windowConnectionSubscription({
+    subscribeConnection: upstream,
+  } as unknown as FoundationPort);
+  const panel = vi.fn();
+  const conversation = vi.fn();
+  const first = subscribe("chatgpt", panel);
+  const second = subscribe("chatgpt", conversation);
+  expect(upstream).toHaveBeenCalledOnce();
+  expect(upstream).toHaveBeenCalledWith("*", expect.any(Function));
+  await first.ready;
+  listeners[0]!(failure("sequence_gap"));
+  expect(panel).toHaveBeenCalledWith(failure("sequence_gap"));
+  expect(conversation).toHaveBeenCalledWith(failure("sequence_gap"));
+  first.dispose();
+  const retry = subscribe("chatgpt", panel);
+  await retry.ready;
+  expect(upstream).toHaveBeenCalledTimes(2);
+  const update = { ok: true as const, value: { ...initial, kind: "state" as const } };
+  listeners[1]!(update);
+  expect(panel).toHaveBeenLastCalledWith(update);
+  expect(conversation).toHaveBeenLastCalledWith(update);
+  second.dispose();
+  retry.dispose();
+  expect(dispose).toHaveBeenCalledTimes(2);
+});
+
+it("waits for a model choice before changing the service for an agent", async () => {
+  const services = [
+    { id: "chatgpt", displayName: "ChatGPT", kind: "subscription", usageUrl: null },
+    { id: "anthropic", displayName: "Anthropic", kind: "api_key", usageUrl: null },
+  ] as const;
+  const snapshots = {
+    chatgpt: {
+      ...initial,
+      display_name: "ChatGPT",
+      state: "connected" as const,
+      account_email: "researcher@example.org",
+      model_list_revision: 1,
+      model_count: 1,
+    },
+    anthropic: {
+      ...initial,
+      connection: "anthropic",
+      display_name: "Anthropic",
+      state: "connected" as const,
+      model_list_revision: 1,
+      model_count: 1,
+    },
+  };
+  const defaultChoice = {
+    target: "default",
+    revision: 1,
+    connection: "chatgpt",
+    model: "first",
+    modelName: "First model",
+    effort: null,
+    inherit: false,
+    source: "researcher",
+    seedPending: false,
+  } as const;
+  const listDate = "2026-01-01T00:00:00.000Z";
+  let preferences: AgentPreferences = {
+    preferences: [defaultChoice],
+    lists: services.map(({ id, kind }) => ({
+      connection: id,
+      kind,
+      count: 1,
+      list_revision: 1,
+      updatedAt: listDate,
+    })),
+  };
+  const call = <T>(value: T) => ({
+    result: Promise.resolve({ ok: true as const, value }),
+    cancel() {},
+  });
+  const acknowledgement = Promise.withResolvers<{ ok: true; value: { resultId: string } }>();
+  const replace = vi.fn(
+    (
+      _operation: string,
+      choice: ReplaceAgentPreference,
+    ): ReturnType<FoundationPort["replaceAgentPreference"]> => {
+      preferences = {
+        ...preferences,
+        preferences: [
+          defaultChoice,
+          {
+            ...choice,
+            revision: choice.expectedRevision + 1,
+            modelName: choice.inherit
+              ? null
+              : choice.model === "basic"
+                ? "Basic model"
+                : "Other model",
+            seedPending: false,
+          },
+        ],
+      };
+      return { result: acknowledgement.promise, cancel() {} };
+    },
+  );
+  const listAgentPreferences = vi.fn((): ReturnType<FoundationPort["listAgentPreferences"]> =>
+    call(preferences),
+  );
+  const pendingRead = Promise.withResolvers<Outcome<AgentPreferences>>();
+  const changedRead = Promise.withResolvers<Outcome<AgentPreferences>>();
+  type Target = ReplaceAgentPreference["target"];
+  let notify: ((target?: Target, revision?: number) => void) | undefined;
+  const observe = (listener: NonNullable<typeof notify>) => {
+    notify = (target, revision) => {
+      const row = preferences.preferences.find((item) => item.target === target);
+      listener(target, revision ?? row?.revision);
+    };
+    return () => {
+      notify = undefined;
+    };
+  };
+  const probe = vi.fn((connection: string) =>
+    connection === "anthropic"
+      ? call(snapshots.anthropic)
+      : { result: Promise.resolve(failure("service_unavailable")), cancel() {} },
+  );
+  const port = {
+    listAgentPreferences,
+    replaceAgentPreference: replace,
+    listProviderModels: (input: ProviderModelPageInput) => {
+      if (input.connection === "anthropic" && input.list_revision === 1)
+        return { result: Promise.resolve(staleRevision(2)), cancel() {} };
+      const models =
+        input.connection === "chatgpt"
+          ? [{ id: "first", name: "First model", effortSupport: "unknown" }]
+          : [
+              {
+                id: "other",
+                name: "Other model",
+                effortSupport: "supported",
+                effortLevels: [{ name: "high", supported: true }],
+              },
+              { id: "basic", name: "Basic model", effortSupport: "unsupported" },
+              {
+                id: "supported",
+                name: "Supported model",
+                effortSupport: "supported",
+                effortLevels: [{ name: "high", supported: true }],
+              },
+            ];
+      return call({
+        connection: input.connection,
+        list_revision: input.list_revision,
+        nextCursor: models.length,
+        hasMore: false,
+        models,
+      });
+    },
+    probeConnection: probe,
+    subscribeConnection: () => ({
+      ready: Promise.resolve({ ok: true, value: { subscriptionId: "test" } }),
+      dispose() {},
+    }),
+  } as unknown as FoundationPort;
+  function Host({
+    probeResults,
+  }: {
+    probeResults?: Record<string, Extract<ConnectionEvent, { kind: "probe_result" }>>;
+  }) {
+    const settings = useAgentSettings(port, true, observe);
+    return createElement(AgentsSettings, {
+      port,
+      settings,
+      locale: "en-US",
+      connections: services,
+      snapshots,
+      ...(probeResults ? { probeResults } : {}),
+    });
+  }
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(container);
+  roots.push(root);
+  await act(async () => {
+    root.render(createElement(Host));
+  });
+  const josefa = [...container.querySelectorAll('[role="group"]')].find((group) =>
+    group.querySelector("h4")?.textContent?.includes("Josefa"),
+  )!;
+  const [service, model, effort] = [...josefa.querySelectorAll("select")];
+  expect(model!.selectedOptions[0]?.textContent).toBe("Default · ChatGPT · First model");
+  expect(effort!.disabled).toBe(true);
+  await act(async () => {
+    service!.value = "anthropic";
+    service!.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(model!.selectedOptions[0]?.textContent).toBe("Choose a model");
+  expect(josefa.textContent).toContain("Choose a model first.");
+  expect(replace).not.toHaveBeenCalled();
+  await act(async () => {
+    model!.value = "other";
+    model!.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(replace).toHaveBeenCalledExactlyOnceWith(
+    expect.any(String),
+    expect.objectContaining({
+      target: "josefa",
+      connection: "anthropic",
+      model: "other",
+      inherit: false,
+    }),
+  );
+  expect(model!.selectedOptions[0]?.textContent).toBe("Other model");
+  expect(model!.getAttribute("aria-disabled")).toBe("true");
+  const read = (result: Promise<Outcome<AgentPreferences>>) => ({
+    result,
+    cancel() {},
+  });
+  listAgentPreferences
+    .mockImplementationOnce(() => read(pendingRead.promise))
+    .mockImplementationOnce(() => read(changedRead.promise));
+  await act(async () => {
+    acknowledgement.resolve({
+      ok: true,
+      value: { resultId: "019a8000-0000-7000-8000-000000000001" },
+    });
+  });
+  await act(async () => {
+    notify?.("josefa");
+  });
+  await act(async () => {
+    pendingRead.resolve({ ok: true, value: preferences });
+  });
+  expect(model!.selectedOptions[0]?.textContent).toBe("Other model");
+  expect(model!.getAttribute("aria-disabled")).toBe("true");
+  await act(async () => {
+    changedRead.resolve({ ok: true, value: preferences });
+  });
+  expect(model!.getAttribute("aria-disabled")).toBeNull();
+  expect(effort!.disabled).toBe(false);
+  expect([...effort!.options].map(({ text }) => text)).toEqual(["Model default", "high"]);
+
+  listAgentPreferences.mockImplementationOnce(() => ({
+    result: Promise.resolve(failure("service_unavailable")),
+    cancel() {},
+  }));
+  await act(async () => {
+    effort!.value = "high";
+    effort!.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(replace).toHaveBeenCalledTimes(2);
+  expect(effort!.value).toBe("high");
+  expect(effort!.getAttribute("aria-disabled")).toBe("true");
+  expect(josefa.textContent).toContain("Saved");
+  expect(josefa.textContent).not.toContain("not yet known");
+  const retryRead = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Retry",
+  );
+  const beforeReset = preferences.preferences.find(({ target }) => target === "josefa")!;
+  preferences = {
+    ...preferences,
+    preferences: [
+      defaultChoice,
+      { ...beforeReset, revision: beforeReset.revision + 1, effort: null },
+    ],
+  };
+  await act(async () => retryRead!.click());
+  expect(effort!.getAttribute("aria-disabled")).toBeNull();
+  expect(effort!.value).toBe("");
+  expect(josefa.textContent).not.toContain("Another window changed Effort for Josefa");
+  expect(replace).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    effort!.value = "high";
+    effort!.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(effort!.value).toBe("high");
+
+  await act(async () => {
+    model!.value = "basic";
+    model!.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(replace).toHaveBeenLastCalledWith(
+    expect.any(String),
+    expect.objectContaining({
+      model: "basic",
+      effort: null,
+    }),
+  );
+  expect(effort!.disabled).toBe(true);
+  expect(josefa.textContent).toContain("This model doesn’t support effort levels.");
+
+  const refresh = (name: string) =>
+    [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Refresh " + name + " model list"),
+    )!;
+  await act(async () => refresh("ChatGPT").click());
+  expect(probe).toHaveBeenCalledWith("chatgpt");
+  expect(container.textContent).toContain(
+    "Ohtia couldn’t update the model list. Your choices are kept.",
+  );
+  await act(async () => refresh("Anthropic").click());
+  expect(probe).toHaveBeenCalledWith("anthropic");
+  expect(container.textContent).toContain("Updating the model list from Anthropic…");
+  expect(refresh("Anthropic").getAttribute("aria-disabled")).toBe("true");
+  await act(async () => {
+    root.render(
+      createElement(Host, {
+        probeResults: {
+          anthropic: { ...snapshots.anthropic, kind: "probe_result", outcome: "listed" },
+        },
+      }),
+    );
+  });
+  expect(refresh("Anthropic").getAttribute("aria-disabled")).toBeNull();
+  expect(model!.value).toBe("basic");
+
+  const chooseModel = (choice: string) =>
+    act(async () => {
+      model!.value = choice;
+      model!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  const chooseAction = (label: string) =>
+    [...josefa.querySelectorAll("button")].find((candidate) => candidate.textContent === label)!;
+  replace.mockImplementationOnce(() => ({
+    result: Promise.resolve(failure("record_not_found")),
+    cancel() {},
+  }));
+  await chooseModel(":default");
+  expect(model!.value).toBe("basic");
+  expect(josefa.querySelector('[role="alert"]')?.textContent).toContain("Basic model");
+  await act(async () => chooseAction("Try again").click());
+  expect(model!.selectedOptions[0]?.textContent).toBe("Default · ChatGPT · First model");
+  expect(replace).toHaveBeenLastCalledWith(
+    expect.any(String),
+    expect.objectContaining({
+      model: null,
+      connection: null,
+      inherit: true,
+    }),
+  );
+
+  replace.mockImplementationOnce(() => ({
+    result: Promise.resolve(staleRevision(5)),
+    cancel() {},
+  }));
+  await chooseModel("first");
+  expect(josefa.textContent).toContain("Another window saved Model for Josefa meanwhile.");
+  await act(async () => chooseAction("Choose again").click());
+  expect(document.activeElement).toBe(model);
+  expect(model!.value).toBe(":default");
+
+  const own = preferences.preferences.find((row) => row.target === "josefa")!;
+  preferences = {
+    ...preferences,
+    preferences: [
+      defaultChoice,
+      {
+        ...own,
+        revision: own.revision + 1,
+        model: "basic",
+        modelName: "Basic model",
+        inherit: false,
+        connection: "anthropic",
+      },
+    ],
+  };
+  await act(async () => {
+    notify?.("josefa");
+  });
+  expect(josefa.textContent).toContain(
+    "Another window changed Service for Josefa to Anthropic · API key.",
+  );
+  expect(model!.value).toBe("basic");
+
+  const currentRead = Promise.withResolvers<Outcome<AgentPreferences>>();
+  listAgentPreferences.mockImplementationOnce(() => read(currentRead.promise));
+  await chooseModel("other");
+  const savedLocally = preferences.preferences.find((row) => row.target === "josefa")!;
+  preferences = {
+    ...preferences,
+    preferences: [
+      defaultChoice,
+      { ...savedLocally, revision: savedLocally.revision + 1, effort: "high" },
+    ],
+  };
+  await act(async () => {
+    notify?.("josefa");
+  });
+  expect(josefa.textContent).toContain("Another window changed Effort for Josefa to high.");
+  await act(async () => {
+    currentRead.resolve({ ok: true, value: preferences });
+  });
+  const reported = preferences.preferences.find(({ target }) => target === "josefa")!;
+  preferences = {
+    ...preferences,
+    preferences: [defaultChoice, { ...reported, revision: reported.revision + 1, effort: null }],
+  };
+  await act(async () => {
+    notify?.();
+  });
+  expect(josefa.textContent).not.toContain("Another window changed Effort for Josefa");
+
+  const updateFromWindow = async (next: Partial<AgentPreferences["preferences"][number]>) => {
+    const row = preferences.preferences.find(({ target }) => target === "josefa")!;
+    preferences = {
+      ...preferences,
+      preferences: [defaultChoice, { ...row, ...next, revision: row.revision + 1 }],
+    };
+    await act(async () => {
+      notify?.("josefa");
+    });
+  };
+  await updateFromWindow({
+    inherit: true,
+    connection: null,
+    model: null,
+    modelName: null,
+    effort: null,
+  });
+  await updateFromWindow({
+    inherit: false,
+    connection: "chatgpt",
+    model: "first",
+    modelName: "First model",
+  });
+  expect(josefa.textContent).toContain("Another window changed Model for Josefa to First model.");
+  await updateFromWindow({ inherit: true, connection: null, model: null, modelName: null });
+  expect(josefa.textContent).toContain(
+    "Another window changed Model for Josefa to Default · ChatGPT · First model.",
+  );
+
+  const delayedDefault = Promise.withResolvers<Outcome<AgentPreferences>>();
+  listAgentPreferences.mockImplementationOnce(() => read(delayedDefault.promise));
+  const old = preferences;
+  await act(async () => {
+    notify?.("default", 2);
+  });
+  const inherited = preferences.preferences.find(({ target }) => target === "josefa")!;
+  preferences = {
+    ...preferences,
+    preferences: [
+      { ...defaultChoice, revision: 2, model: "other-default", modelName: "New default" },
+      {
+        ...inherited,
+        revision: inherited.revision + 1,
+        connection: "chatgpt",
+        model: "first",
+        modelName: "First model",
+        inherit: false,
+      },
+    ],
+  };
+  await act(async () => {
+    notify?.("josefa");
+  });
+  expect(container.textContent).toContain(
+    "Another window changed Default model to ChatGPT · New default.",
+  );
+  expect(josefa.textContent).toContain("Another window changed Model for Josefa to First model.");
+  await act(async () => {
+    delayedDefault.resolve({ ok: true, value: old });
+  });
+  expect(container.textContent).toContain(
+    "Another window changed Default model to ChatGPT · New default.",
+  );
+
+  const agent = preferences.preferences.find(({ target }) => target === "josefa")!;
+  const newDefault = {
+    ...defaultChoice,
+    revision: 3,
+    connection: "anthropic",
+    model: "other",
+    modelName: "Other model",
+  };
+  const inheriting = {
+    ...agent,
+    revision: agent.revision + 1,
+    connection: null,
+    model: null,
+    modelName: null,
+    inherit: true,
+    effort: null,
+  };
+  preferences = { ...preferences, preferences: [newDefault, inheriting] };
+  await act(async () => {
+    notify?.();
+  });
+  preferences = {
+    ...preferences,
+    preferences: [
+      { ...newDefault, revision: 4, model: "supported", modelName: "Supported model" },
+      { ...inheriting, revision: inheriting.revision + 1, effort: "high" },
+    ],
+  };
+  await act(async () => {
+    notify?.("josefa");
+  });
+  expect(josefa.textContent).toContain("Another window changed Effort for Josefa to high.");
+  expect(josefa.textContent).not.toContain(
+    "Another window changed Model for Josefa to Default · Anthropic · Supported model.",
+  );
+  const last = preferences.preferences.find(({ target }) => target === "josefa")!;
+  const announced = last.revision + 1;
+  preferences = {
+    ...preferences,
+    preferences: [preferences.preferences[0]!, { ...last, revision: announced + 1, effort: null }],
+  };
+  await act(async () => {
+    notify?.("josefa", announced);
+  });
+  expect(josefa.textContent).not.toContain("Another window changed Effort for Josefa");
+
+  const ownModel = {
+    ...last,
+    revision: announced + 2,
+    connection: "chatgpt",
+    model: "first",
+    modelName: "First model",
+    inherit: false,
+    effort: null,
+  };
+  preferences = { ...preferences, preferences: [ownModel] };
+  await act(async () => {
+    notify?.();
+  });
+  preferences = {
+    ...preferences,
+    preferences: [
+      {
+        ...ownModel,
+        revision: ownModel.revision + 1,
+        connection: null,
+        model: null,
+        modelName: null,
+        inherit: true,
+      },
+    ],
+  };
+  await act(async () => {
+    notify?.("josefa", ownModel.revision + 1);
+  });
+  expect(josefa.textContent).toContain(
+    "Another window changed Model for Josefa to Use the default.",
+  );
 });

@@ -134,6 +134,7 @@ async function render(
   locale: InterfaceLocale = "en-US",
   onOpenConnections?: () => void,
   detailsPort?: import("../packages/renderer/src/reply-details.js").ReplyDetailsPort,
+  onOpenAgents?: () => void,
 ) {
   await act(async () =>
     root.render(
@@ -147,6 +148,7 @@ async function render(
         },
         locale,
         ...(onOpenConnections ? { onOpenConnections } : {}),
+        ...(onOpenAgents ? { onOpenAgents } : {}),
         ...(detailsPort ? { detailsPort } : {}),
         commands: { copyMessage: async () => true, openExternalLink: async () => true },
       }),
@@ -1312,6 +1314,7 @@ describe("task notices", () => {
     await act(async () =>
       root.render(
         h(TaskNotice, {
+          key: t.id,
           task: t,
           locale: "en-US",
           connection,
@@ -1327,6 +1330,39 @@ describe("task notices", () => {
     );
     return perform;
   }
+  it("updates model-blocked notices with account evidence and opens Agents", async () => {
+    const onOpenAgents = vi.fn();
+    const onOpenConnections = vi.fn();
+    const missing = task({
+      state: "blocked",
+      outcomeReason: null,
+      blockingReason: "configuration_unavailable",
+    });
+    await show(missing, { onOpenAgents, onOpenConnections });
+    expect(container.textContent).toContain("Waiting to start.");
+    await show({ ...missing, modelUnavailable: true }, { onOpenAgents });
+    expect(container.textContent).toContain("Virgilio has no model chosen.");
+    await show({ ...missing, modelUnavailable: true, modelName: "Stored model" }, { onOpenAgents });
+    expect(container.textContent).toContain(
+      "Virgilio’s model “Stored model” isn’t available in your account now.",
+    );
+    const open = buttonNamed("Open Agents settings");
+    expect(open?.closest(".conversation-notice")).toBeNull();
+    await act(async () => open.click());
+    expect(onOpenAgents).toHaveBeenCalledOnce();
+
+    const disconnected = { ...missing, blockingReason: "connection_disabled" };
+    await show(disconnected, { onOpenAgents, onOpenConnections });
+    expect(container.textContent).toContain("Choose another model in Settings › Agents.");
+    expect(buttonNamed("Open Agents settings")).toBeDefined();
+    await show(
+      { ...disconnected, id: id(992), synthesis: true },
+      { onOpenAgents, onOpenConnections },
+    );
+    expect(container.textContent).not.toContain("Choose another model in Settings › Agents.");
+    expect(buttonNamed("Open Agents settings")).toBeUndefined();
+  });
+
   it.each([
     ["provider_unavailable", "Synthetic service isn’t available right now."],
     ["provider_error", "Synthetic service reported an error."],
@@ -3579,12 +3615,20 @@ describe("plan decision card", () => {
     >(async () => ({ ok: true, value: { resultId: accepted.planId } }));
     const revealMessage = vi.fn(async () => true);
     const onOpenConnections = vi.fn();
+    const onOpenAgents = vi.fn();
+    let refreshDestination: (() => void) | undefined;
+    const observePlanDestinations = (refresh: () => void) => {
+      refreshDestination = refresh;
+      return () => {
+        refreshDestination = undefined;
+      };
+    };
     const hasSharedPlanAttention = vi.fn((_planId: string, _revision: number) => false);
     const controller = {
       readPlanCard,
       hasSharedPlanAttention,
       readPlanDestinations: vi.fn(async () => ({})),
-      observePlanDestinations: vi.fn(() => () => {}),
+      observePlanDestinations,
       performPlanAction: vi.fn(),
       performPlanProgressAction,
       revealMessage,
@@ -3595,6 +3639,11 @@ describe("plan decision card", () => {
       performPlanProgressAction,
       revealMessage,
       onOpenConnections,
+      onOpenAgents,
+      refresh: (patch: Partial<ReadPlanCard>) => {
+        displayed = { ...displayed, ...patch };
+        refreshDestination?.();
+      },
       update: (patch: Partial<ReadPlanCard>) => {
         displayed = { ...accepted, ...patch, revision: ++revision };
         return revision;
@@ -3608,6 +3657,8 @@ describe("plan decision card", () => {
           controller,
           locale,
           onOpenConnections,
+          undefined,
+          onOpenAgents,
         ),
     };
   }
@@ -3897,6 +3948,56 @@ describe("plan decision card", () => {
     );
     expect(container.textContent).not.toContain("ChatGPT reported an error.");
     expect(buttonNamed("Try again")).toBeUndefined();
+  });
+
+  it("refreshes model-blocked plan work and retries a synthesis on its approved destination", async () => {
+    const f = progressHarness();
+    const taskId = id(2131);
+    const unavailable = work({ state: "blocked", blockingReason: "configuration_unavailable" });
+    const active = { ...first, state: "active" as const, taskId, task: unavailable };
+    f.update({ contributions: [active, second, third] });
+    await f.show();
+    expect(container.textContent).toContain("Waiting to start");
+    await act(async () =>
+      f.refresh({
+        contributions: [
+          { ...active, task: { ...unavailable, modelUnavailable: true } },
+          second,
+          third,
+        ],
+      }),
+    );
+    expect(container.textContent).toContain("Waiting: Josefa has no usable model");
+    await act(async () => buttonNamed("Open Agents settings").click());
+    expect(f.onOpenAgents).toHaveBeenCalledOnce();
+
+    const synthesis = work({ ...unavailable, agentId: "virgilio", modelUnavailable: true });
+    f.update({ outcome: "partial", continuation: continuation(synthesis) });
+    await f.show();
+    expect(container.textContent).toContain("Waiting: Virgilio has no usable model");
+    await act(async () => buttonNamed("Open Agents settings").click());
+    expect(f.onOpenAgents).toHaveBeenCalledTimes(2);
+    f.update({
+      outcome: "partial",
+      continuation: continuation(
+        work({
+          agentId: "virgilio",
+          state: "cancelled",
+          outcomeReason: "destination_changed",
+        }),
+      ),
+    });
+    await f.show();
+    expect(container.textContent).toContain("Not sent: Virgilio now uses a different service");
+    f.performPlanProgressAction.mockResolvedValueOnce(failure("destination_changed"));
+    await act(async () => buttonNamed("Try again").click());
+    expect(f.performPlanProgressAction).toHaveBeenLastCalledWith(expect.any(String), {
+      kind: "retrySynthesis",
+      taskId: id(2101),
+    });
+    expect(container.querySelector(".action-proposal [role=status]")?.textContent).toContain(
+      "Nothing was sent: Virgilio now uses a different service than the one you approved. Choose ChatGPT for Virgilio",
+    );
   });
 
   it("shows synthesis admission, restart holds, failures, recovery and durable stops after the plan outcome", async () => {
@@ -4249,9 +4350,10 @@ describe("plan decision card", () => {
         await h.controller.readPlanDestinations(scope.projectId, ["josefa", "virgilio"]),
       ).toEqual({ virgilio: "chatgpt" });
       const stop = h.controller.observePlanDestinations(refresh);
-      connectionChanged?.({ ok: true, value: { kind: "state" } } as unknown as Parameters<
-        NonNullable<typeof connectionChanged>
-      >[0]);
+      connectionChanged?.({
+        ok: true,
+        value: { kind: "state", connection: "chatgpt" },
+      } as unknown as Parameters<NonNullable<typeof connectionChanged>>[0]);
       h.emit({ ok: true, value: { kind: "destinationChanged", connection: "chatgpt" } });
       await settle();
       expect(refresh).toHaveBeenCalledTimes(2);
@@ -5602,6 +5704,8 @@ it("discloses saved and unsaved reply details with loading, recovery and localiz
     accountRevision: "019a8000-0000-4000-8000-000000000049",
     requestedModel: "Model",
     observedModel: null,
+    requestedEffort: "high",
+    observedEffort: "low",
     attempts: 1,
     startedAt: "2026-11-15T10:12:00.000Z",
     endedAt: "2026-11-15T10:12:45.000Z",
@@ -5617,7 +5721,9 @@ it("discloses saved and unsaved reply details with loading, recovery and localiz
   };
   const readReplyDetails = vi
     .fn(() => ok(details))
-    .mockReturnValueOnce({ result: pending.promise, cancel() {} });
+    .mockReturnValueOnce({ result: pending.promise, cancel() {} })
+    .mockReturnValueOnce(ok(details))
+    .mockReturnValueOnce(ok({ ...details, requestedEffort: null, observedEffort: null }));
   const port = {
     readReplyDetails,
     readConnection: vi.fn(() =>
@@ -5679,6 +5785,14 @@ it("discloses saved and unsaved reply details with loading, recovery and localiz
   });
   const values = () =>
     [...container.querySelectorAll(".reply-details dd")].map((dd) => dd.textContent);
+  const detailTerms = () =>
+    Object.fromEntries(
+      [...container.querySelectorAll(".reply-details dt")].map((term) => [
+        term.textContent,
+        term.nextElementSibling?.textContent,
+      ]),
+    );
+  expect(detailTerms()).toMatchObject({ "Requested effort": "high", "Observed effort": "low" });
   expect(values()).toEqual(
     expect.arrayContaining([
       "Direct guidance · version 6",
@@ -5691,10 +5805,16 @@ it("discloses saved and unsaved reply details with loading, recovery and localiz
     ]),
   );
   await act(async () => button.click());
-  for (const notice of show().slice(1)) {
+  for (const [index, notice] of show().slice(1).entries()) {
     expect(notice.parentElement?.parentElement?.lastElementChild).toBe(notice.parentElement);
     await act(async () => notice.click());
     expect(container.querySelector(".task-notice .reply-details")).toBeTruthy();
+    if (index === 0) {
+      expect(detailTerms()).toMatchObject({
+        "Requested effort": "Model default",
+        "Observed effort": "Unknown",
+      });
+    }
     await act(async () => notice.click());
   }
   for (const [locale, label, unknown] of [

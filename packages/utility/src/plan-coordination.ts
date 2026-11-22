@@ -1,3 +1,4 @@
+import { inferenceModelUnavailable } from "./agent-preferences.js";
 import { effectivePlan, storedPlanChange } from "./plan-change-proposals.js";
 import { authorizedOperation, planLimits, planRequestsUsed } from "./work-limits.js";
 import { createHash } from "node:crypto";
@@ -6,6 +7,7 @@ import {
   failure,
   utf8Size,
   type TransferEntry,
+  type ServiceConnections,
   type SynthesisSource,
   isPlanEventPayload,
   planEventLimit,
@@ -53,6 +55,7 @@ export interface ContinuationRow {
   admission: "waiting" | "admitted" | "withdrawn";
   restart_held: number;
   stopped: Generated<number>;
+  failure_reason: Generated<"destination_changed" | null>;
   task_id: Uint8Array | null;
   ready_key: Uint8Array;
   created_at: string;
@@ -495,11 +498,20 @@ async function readPlanTask(
   db: Kysely<ResearchSchema>,
   id: Uint8Array | null,
   agentId: PlanTaskProgress["agentId"],
+  connections: ServiceConnections,
 ): Promise<PlanTaskProgress | null> {
   if (!id) return null;
   const task = await db
     .selectFrom("tasks")
-    .select(["state", "blocking_reason", "connection", "operation", "policy_version"])
+    .select([
+      "state",
+      "blocking_reason",
+      "connection",
+      "operation",
+      "policy_version",
+      "configuration_failure",
+      "resolved_model",
+    ])
     .select((eb) => [
       eb
         .selectFrom("attempts")
@@ -514,7 +526,12 @@ async function readPlanTask(
     .executeTakeFirstOrThrow();
   const policy = recordedOperationPolicy(task.operation, task.policy_version);
   if (!policy) throw new Error("Plan task policy unavailable.");
+  const modelUnavailable =
+    task.blocking_reason === "configuration_unavailable"
+      ? await inferenceModelUnavailable(db, connections, task)
+      : undefined;
   return {
+    ...(modelUnavailable !== undefined ? { modelUnavailable } : {}),
     agentId,
     state:
       task.state === "waiting_capacity"
@@ -524,7 +541,7 @@ async function readPlanTask(
         : task.state,
     connection: task.connection,
     blockingReason: task.blocking_reason,
-    outcomeReason: task.outcomeReason,
+    outcomeReason: task.configuration_failure ?? task.outcomeReason,
     replyMessageId: task.messageId ? identifier(task.messageId) : null,
     maxAttemptDurationMs: policy.max_attempt_duration_ms,
     maxInactivityMs: policy.max_inactivity_ms,
@@ -534,6 +551,7 @@ async function readPlanTask(
 export async function readPlan(
   db: Kysely<ResearchSchema>,
   planId: string,
+  connections: ServiceConnections,
 ): Promise<Outcome<PlanSnapshot>> {
   const plan = await db
     .selectFrom("interventions as i")
@@ -561,7 +579,7 @@ export async function readPlan(
   const edges = await holdingDependencies(db, plan.id);
   const throughSequence = await planSequence(db, plan.id);
   const continuation = await planContinuation(db, plan.id);
-  const task = await readPlanTask(db, continuation?.task_id ?? null, "virgilio");
+  const task = await readPlanTask(db, continuation?.task_id ?? null, "virgilio", connections);
   const requestsUsed = await planRequestsUsed(db, plan.id);
   const nodeId = (id: Uint8Array | null) => (id ? identifier(id) : null);
 
@@ -605,7 +623,7 @@ export async function readPlan(
           required: !!node.required,
           state: node.state,
           taskId: nodeId(node.task_id),
-          task: await readPlanTask(db, node.task_id, node.agent_id),
+          task: await readPlanTask(db, node.task_id, node.agent_id, connections),
           resultMessageId: nodeId(node.result_message_id),
           blockedBy: nodeId(node.blocked_by_contribution_id),
           restartHeld: !!node.restart_held,

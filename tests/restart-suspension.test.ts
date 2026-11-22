@@ -1,3 +1,4 @@
+import { seedDefaultModel } from "./fixtures/storage.js";
 import fs from "node:fs";
 import path from "node:path";
 import { EventEmitter } from "node:events";
@@ -70,6 +71,7 @@ async function setup() {
   const context = { generation: "run", mode: "development" as const, connections };
   f.store.setTaskContext(context);
   await f.store.open();
+  seedDefaultModel(f.raw, connections.read("chatgpt")!.models![0]!.id);
   const command = async (projectId?: string, conversationId?: string) =>
     value(
       await f.store.executeResearchCommand(
@@ -216,7 +218,7 @@ describe("restart admission and durable service runs", () => {
     await f.store.close(true);
     fs.writeFileSync(
       path.join(f.root, "migration-pending.json"),
-      JSON.stringify({ version: 1, operation: "diagnostic-recovery", source: 10, target: 33 }),
+      JSON.stringify({ version: 1, operation: "diagnostic-recovery", source: 10, target: 34 }),
     );
     const events: string[] = [];
     const recovered = new DurableStore({
@@ -463,7 +465,7 @@ describe("restart admission and durable service runs", () => {
       const gate = path.join(f.root, "migration-pending.json");
       fs.writeFileSync(
         gate,
-        JSON.stringify({ version: 1, operation: "recovery", source: 10, target: 33 }),
+        JSON.stringify({ version: 1, operation: "recovery", source: 10, target: 34 }),
       );
       await expect(f.store.open()).rejects.toThrow(/recovery/);
       if (failure === "before-commit") {
@@ -832,6 +834,49 @@ describe("suspension boundaries", () => {
       dispatch.dispose();
     },
   );
+
+  it("refuses a released permit if its account-bound model is no longer usable", async () => {
+    const notices: string[] = [];
+    const mayDispatchModel = vi.fn(() => false);
+    const adapter = createFakeProvider({
+      send: async (_request, control) => {
+        expect(control.release()).toBe(false);
+      },
+    });
+    const dispatch = new ProviderDispatch([adapter], {
+      state: () => "connected",
+      mayDispatchModel,
+      send: (_generation, text) => notices.push(text),
+      wallClock: () => 1000,
+      monotonic: () => 0,
+    });
+    try {
+      dispatch.begin("run");
+      const request = {
+        ...conformanceRequest("fake"),
+        effort: "high",
+        catalog_account_fingerprint: "a".repeat(64),
+      };
+      await dispatch.receive({
+        kind: "provider_dispatch",
+        version: 1,
+        generation: "run",
+        request,
+        permit: { id: "permit", attempt: request.attempt, issued_at: 1000 },
+      });
+      expect(mayDispatchModel).toHaveBeenCalledExactlyOnceWith(
+        "fake",
+        request.model,
+        "high",
+        request.catalog_account_fingerprint,
+      );
+      expect(notices.map((text) => JSON.parse(text).event.result)).toEqual([
+        { status: "failed", reason: "permit_expired", dispatched: false },
+      ]);
+    } finally {
+      dispatch.dispose();
+    }
+  });
 
   it.each([1000, 2000])(
     "counts %s ms asleep once for requests admitted after suspend",

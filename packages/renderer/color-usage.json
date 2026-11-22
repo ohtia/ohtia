@@ -385,6 +385,12 @@
       "decorativeBorders": "border.subtle"
     },
     {
+      "selector": ".agent-settings .agent-choice",
+      "backgrounds": ["surface.page"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
       "selector": ".settings-content section",
       "backgrounds": ["surface.page"],
       "minimum": 3,

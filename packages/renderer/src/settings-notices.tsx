@@ -45,7 +45,7 @@ export function RecoveryFocusBoundary({
   onBlurOutside,
 }: {
   readonly children: ReactNode;
-  readonly onRecover: () => void;
+  readonly onRecover: (boundary: HTMLDivElement | null) => void;
   readonly className?: string;
   readonly hidden?: boolean;
   readonly onFocusWithin?: () => void;
@@ -57,7 +57,8 @@ export function RecoveryFocusBoundary({
     const previous = focused.current;
     if (previous && !previous.isConnected) {
       focused.current = null;
-      if (previous.ownerDocument.activeElement === previous.ownerDocument.body) onRecover();
+      if (previous.ownerDocument.activeElement === previous.ownerDocument.body)
+        onRecover(root.current);
     }
   });
   return (

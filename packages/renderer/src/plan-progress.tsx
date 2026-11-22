@@ -39,6 +39,7 @@ type RowAction = {
   readonly restart?: Connection;
 };
 type RowProgress = Status & {
+  readonly agentsSettings?: true;
   readonly formattedLabel?: ReactNode;
   readonly reason?: string;
   readonly action?: RowAction;
@@ -214,6 +215,23 @@ function taskProgress(
         result: task.replyMessageId,
       };
     case "cancelled":
+      if (task.outcomeReason === "destination_changed" && service)
+        return {
+          label: message(locale, "plan.progress.failed"),
+          icon: "octagon-alert",
+          reason: message(locale, "agents.destinationChanged", {
+            agent: contributorNames[task.agentId],
+            service: service.displayName,
+          }),
+          ...(mayRetry
+            ? {
+                action: {
+                  label: message(locale, "taskNotice.tryAgain"),
+                  command: { kind: synthesis ? "retrySynthesis" : "retryTask", taskId },
+                },
+              }
+            : {}),
+        };
       return {
         label: message(locale, synthesis ? "plan.progress.stopped" : "plan.progress.cancelled"),
         icon: "circle-stop",
@@ -264,6 +282,14 @@ function taskProgress(
           : {}),
       };
     case "blocked":
+      if (task.blockingReason === "configuration_unavailable")
+        return {
+          label: task.modelUnavailable
+            ? message(locale, "agents.planWaiting", { agent: contributorNames[task.agentId] })
+            : message(locale, "plan.progress.waitingToStart"),
+          icon: "triangle-alert",
+          ...(task.modelUnavailable !== false ? { agentsSettings: true as const } : {}),
+        };
       if (task.blockingReason === "restart_paused") return restartPause(locale, pauses);
       if (task.blockingReason === "connection_disabled" && service)
         return {
@@ -321,7 +347,7 @@ function contributionProgress(
   if (node.state === "failed" && node.failureReason) {
     const reason =
       node.failureReason === "destination_changed"
-        ? message(locale, "plan.progress.notSentDestination", {
+        ? message(locale, "agents.destinationChanged", {
             agent: contributorNames[node.agentId],
             service: service?.displayName ?? plan.connections[node.agentId] ?? "",
           })
@@ -339,7 +365,9 @@ function contributionProgress(
         ? {
             action: {
               label: message(locale, "taskNotice.tryAgain"),
-              command: { kind: "retryContribution", contributionId: node.id },
+              command: node.taskId
+                ? { kind: "retryTask", taskId: node.taskId }
+                : { kind: "retryContribution", contributionId: node.id },
             },
           }
         : {}),
@@ -457,6 +485,7 @@ export function PlanProgress({
   root,
   revealResult,
   onOpenConnections,
+  onOpenAgents,
   contributionHeading,
   requestDetails,
   synthesisHeading,
@@ -473,6 +502,7 @@ export function PlanProgress({
   readonly root: RefObject<HTMLDivElement | null>;
   readonly revealResult: (id: string) => void;
   readonly onOpenConnections?: () => void;
+  readonly onOpenAgents?: () => void;
   readonly contributionHeading: (node: Contribution) => ReactNode;
   readonly requestDetails: (node: Contribution) => ReactNode;
   readonly synthesisHeading: ReactNode;
@@ -531,7 +561,15 @@ export function PlanProgress({
               plan.connections[contribution.agentId] ??
               "",
           }
-        : undefined;
+        : action.kind === "retrySynthesis"
+          ? {
+              agent: contributorNames.virgilio,
+              service:
+                service("virgilio", plan.continuation?.task)?.displayName ??
+                plan.connections.virgilio ??
+                "",
+            }
+          : undefined;
       setRefusal({ code: result.error.code, action, ...(destination ? { destination } : {}) });
     } catch {
       setRefusal({ code: "invalid_service_result", action });
@@ -584,7 +622,7 @@ export function PlanProgress({
           dialogOpen={!!confirm}
         />
         {status.reason && <p className="plan-failure-reason">{status.reason}</p>}
-        {(result || action || toggle || status.icon === "unplug") && (
+        {(result || action || toggle || status.agentsSettings || status.icon === "unplug") && (
           <div className="plan-row-actions">
             {result && (
               <a
@@ -598,6 +636,9 @@ export function PlanProgress({
                 {message(locale, "plan.progress.goToResult")}
               </a>
             )}
+            {status.agentsSettings &&
+              onOpenAgents &&
+              button(message(locale, "agents.open"), onOpenAgents)}
             {status.icon === "unplug" &&
               onOpenConnections &&
               button(message(locale, "taskNotice.openConnections"), onOpenConnections)}

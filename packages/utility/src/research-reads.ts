@@ -1,3 +1,5 @@
+import { inferenceModelUnavailable } from "./agent-preferences.js";
+import { listProviderModels, readAgentPreferences } from "./agent-preferences.js";
 import {
   listPlanEvents,
   planRevisions,
@@ -374,6 +376,10 @@ async function timelineItem(
           .where("task_id", "=", task.id)
           .executeTakeFirst()
       : undefined;
+  const modelUnavailable =
+    task.blocking_reason === "configuration_unavailable"
+      ? await inferenceModelUnavailable(db, context.connections, task)
+      : undefined;
   return {
     id,
     kind: "task",
@@ -399,7 +405,11 @@ async function timelineItem(
     state: task.state === "waiting_capacity" ? "queued" : task.state,
     connection: task.connection,
     blockingReason: task.blocking_reason,
-    outcomeReason: attempt?.outcome_reason ?? null,
+    outcomeReason: task.configuration_failure ?? attempt?.outcome_reason ?? null,
+    ...(modelUnavailable !== undefined ? { modelUnavailable } : {}),
+    ...(modelUnavailable && task.resolved_model_name
+      ? { modelName: task.resolved_model_name }
+      : {}),
     replyMessageId: saved ? identifier(saved.id) : null,
     waitingForModels:
       task.state === "queued" && context.connections.awaitingModels(task.connection),
@@ -534,6 +544,20 @@ export async function readResearch(
   attention: ResearchAttention,
 ): Promise<Outcome<unknown>> {
   switch (request.operation) {
+    case "agentPreference.list": {
+      const { operationId } = request.payload;
+      const preferences = await readAgentPreferences(db, context.connections);
+      if (!operationId) return { ok: true, value: preferences };
+      const receipt = await db
+        .selectFrom("command_receipts")
+        .select("operation_id")
+        .where("operation_id", "=", operationId)
+        .where("command", "=", "agentPreference.replace")
+        .executeTakeFirst();
+      return { ok: true, value: { ...preferences, receipt: receipt ? "recorded" : "not_found" } };
+    }
+    case "providerModel.list":
+      return listProviderModels(db, request.payload, (page) => fitsResearchResult(request, page));
     case "reply.details":
       return readReplyDetails(db, request.payload, context);
     case "memory.list":
@@ -612,7 +636,7 @@ export async function readResearch(
     case "planChange.read":
       return readPlanChangePreview(db, request.payload.conversationId, request.payload.proposalId);
     case "plan.read":
-      return readPlan(db, request.payload.planId);
+      return readPlan(db, request.payload.planId, context.connections);
     case "planEvent.list":
       return listPlanEvents(db, request.payload.planId, request.payload.afterSequence);
     case "pause.read":
@@ -626,6 +650,7 @@ export async function readResearch(
         .executeTakeFirst();
       if (!project) return failure("record_not_found");
       let agent = "agentId" in p ? p.agentId : undefined;
+      let modelUnavailable = false;
       if ("conversationId" in p) {
         const conversation = await db
           .selectFrom("conversations")
@@ -635,6 +660,16 @@ export async function readResearch(
           .executeTakeFirst();
         if (!conversation) return failure("record_not_found");
         agent = conversation.agent_id;
+        const blocked = await db
+          .selectFrom("tasks")
+          .select(["connection", "resolved_model"])
+          .where("conversation_id", "=", bytes(p.conversationId))
+          .where("kind", "=", "reply")
+          .where("state", "=", "blocked")
+          .where("blocking_reason", "=", "configuration_unavailable")
+          .executeTakeFirst();
+        modelUnavailable =
+          !!blocked && (await inferenceModelUnavailable(db, context.connections, blocked)) === true;
       }
       const destination = await new TaskTransaction(db, context).destination(project.id, agent);
       return {
@@ -645,6 +680,7 @@ export async function readResearch(
                 operation: destination.policy.operation,
                 maxAttemptDurationMs: destination.policy.max_attempt_duration_ms,
                 connection: destination.connection,
+                ...(modelUnavailable ? { modelUnavailable } : {}),
               }
             : null,
         },

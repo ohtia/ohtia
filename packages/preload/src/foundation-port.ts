@@ -194,7 +194,9 @@ export function createFoundationPort(
     if (
       !stream.active ||
       stream.topic !== event.topic ||
-      (event.topic === "connection" && event.payload.connection !== stream.connection) ||
+      (event.topic === "connection" &&
+        stream.connection !== "*" &&
+        event.payload.connection !== stream.connection) ||
       event.sequence !== stream.sequence + 1 ||
       ((event.topic === "appearance" || event.topic === "locale") &&
         (event.topic === "locale" ? event.payload.record.revision : event.payload.revision) <=
@@ -296,6 +298,31 @@ export function createFoundationPort(
           settle(entry, failure("invalid_service_result"));
           return;
         }
+      }
+      if (
+        entry.request.operation === "providerModel.list" &&
+        message.operation === "providerModel.list"
+      ) {
+        const page = message.payload.value;
+        const input = entry.request.payload;
+        if (
+          page.connection !== input.connection ||
+          page.list_revision !== input.list_revision ||
+          page.models.length > input.count ||
+          page.nextCursor !== input.cursor + page.models.length ||
+          (page.hasMore && !page.models.length)
+        ) {
+          settle(entry, failure("invalid_service_result"));
+          return;
+        }
+      }
+      if (
+        entry.request.operation === "agentPreference.list" &&
+        message.operation === "agentPreference.list" &&
+        Boolean(entry.request.payload.operationId) !== (message.payload.value.receipt !== undefined)
+      ) {
+        settle(entry, failure("invalid_service_result"));
+        return;
       }
       if (entry.request.operation === "connection.listModels") {
         const value = message.payload.value as OperationOutputs["connection.listModels"];
@@ -605,6 +632,11 @@ export function createFoundationPort(
     readTimeline: (input) => call("timeline.read", input),
     sendTextPart: (id, input) => call("text.part", input, id),
     readTextPart: (input) => call("text.readPart", input),
+    listAgentPreferences: (operationId) =>
+      call("agentPreference.list", operationId ? { operationId } : {}),
+    replaceAgentPreference: (operationId, input) =>
+      call("agentPreference.replace", input, operationId),
+    listProviderModels: (input) => call("providerModel.list", input),
     readReplyDetails: (input) => call("reply.details", input),
     readReplyParts: (input) => call("reply.readParts", input),
     subscribeResearch: (scope, listener) =>

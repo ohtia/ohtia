@@ -72,6 +72,140 @@ describe("sandbox preload composition", () => {
     expect(h.error).toBeInstanceOf(Error);
     expect(h.contextBridge.exposeInMainWorld).not.toHaveBeenCalled();
   });
+  it("correlates model pages and agent preference receipts on the fixed desktop port", async () => {
+    const { ipcRenderer, bridge } = await load();
+    const port = bridge.foundation;
+    const reference = "019a8000-0000-7000-8000-000000000204";
+    const model = {
+      id: "model-a",
+      name: "Model A",
+      effortSupport: "supported",
+      effortLevels: [{ name: "high", supported: true }],
+      defaultEffort: "high",
+      maxOutput: 5000,
+      origin: "catalog",
+      retiring: false,
+    } as const;
+    const row = {
+      target: "default",
+      revision: 1,
+      connection: "chatgpt",
+      model: model.id,
+      modelName: model.name,
+      effort: null,
+      inherit: false,
+      source: "first_connection",
+      seedPending: false,
+    };
+    const saved = {
+      preferences: [row],
+      lists: [
+        {
+          connection: "chatgpt",
+          kind: "subscription",
+          list_revision: 1,
+          count: 1,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          current: true,
+        },
+      ],
+    };
+    const send = (operation: string, value: object) => {
+      const [channel, text] = ipcRenderer.send.mock.calls.at(-1)!;
+      expect(channel).toBe(desktopChannels.port);
+      const request = JSON.parse(text);
+      expect(request.operation).toBe(operation);
+      ipcRenderer.emit(
+        desktopChannels.reply,
+        {},
+        JSON.stringify({
+          ...request,
+          kind: "result",
+          payload: { ok: true, value },
+        }),
+      );
+      return request;
+    };
+    const read = port.listAgentPreferences();
+    expect(send("agentPreference.list", saved).payload).toEqual({});
+    expect(await read.result).toEqual({ ok: true, value: saved });
+    const choice = {
+      target: "default",
+      expectedRevision: 0,
+      connection: "chatgpt",
+      model: model.id,
+      effort: null,
+      inherit: false,
+      source: "first_connection",
+    } as const;
+    const write = port.replaceAgentPreference("first-model", choice);
+    expect(send("agentPreference.replace", { resultId: reference })).toMatchObject({
+      operationId: "first-model",
+      payload: choice,
+    });
+    expect(await write.result).toEqual({ ok: true, value: { resultId: reference } });
+    const checked = port.listAgentPreferences("first-model");
+    expect(send("agentPreference.list", { ...saved, receipt: "recorded" }).payload).toEqual({
+      operationId: "first-model",
+    });
+    expect(await checked.result).toMatchObject({ ok: true, value: { receipt: "recorded" } });
+    const uncorrelated = port.listAgentPreferences("first-model");
+    send("agentPreference.list", saved);
+    expect(await uncorrelated.result).toEqual(failure("invalid_service_result"));
+
+    const observed = vi.fn();
+    const stream = port.subscribeResearch({ projectId: null, conversationId: null }, observed);
+    const request = JSON.parse(ipcRenderer.send.mock.calls.at(-1)![1]);
+    send("research.subscribe", { subscriptionId: request.payload.subscriptionId });
+    expect(await stream.ready).toMatchObject({ ok: true });
+    for (const [index, payload] of [
+      { kind: "agentPreferenceChanged", target: "default", revision: 1, source: "replace" },
+      { kind: "providerModelsChanged", connection: "chatgpt", list_revision: 1 },
+      { kind: "destinationChanged", connection: "chatgpt" },
+    ].entries()) {
+      ipcRenderer.emit(
+        desktopChannels.reply,
+        {},
+        JSON.stringify({
+          protocol: request.protocol,
+          policy: request.policy,
+          kind: "event",
+          windowGeneration: request.windowGeneration,
+          serviceGeneration: request.serviceGeneration,
+          subscriptionId: request.payload.subscriptionId,
+          sequence: index + 1,
+          topic: "research",
+          payload,
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(observed).toHaveBeenLastCalledWith({ ok: true, value: payload });
+    }
+    stream.dispose();
+
+    const input = { connection: "chatgpt", list_revision: 1, cursor: 0, count: 1 };
+    const response = {
+      connection: input.connection,
+      list_revision: 1,
+      models: [model],
+      nextCursor: 1,
+      hasMore: false,
+    };
+    const page = port.listProviderModels(input);
+    expect(send("providerModel.list", response).payload).toEqual(input);
+    expect(await page.result).toEqual({ ok: true, value: response });
+    for (const invalid of [
+      { ...response, connection: "anthropic" },
+      { ...response, list_revision: 2 },
+      { ...response, nextCursor: 3 },
+      { ...response, models: [model, { ...model, id: "model-b" }], nextCursor: 2 },
+      { ...response, models: [], nextCursor: 0, hasMore: true },
+    ]) {
+      const page = port.listProviderModels(input);
+      send("providerModel.list", invalid);
+      expect(await page.result).toEqual(failure("invalid_service_result"));
+    }
+  });
   it("exposes only named operations, forwards them on fixed channels and validates bootstrap snapshots", async () => {
     const h = await load();
     expect(h.error).toBeUndefined();

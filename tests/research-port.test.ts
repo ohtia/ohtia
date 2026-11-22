@@ -1,3 +1,4 @@
+import { seedDefaultModel } from "./fixtures/storage.js";
 import diagnosticCases from "../config/desktop/diagnostic-cases.json" with { type: "json" };
 import fs from "node:fs";
 import path from "node:path";
@@ -53,9 +54,10 @@ afterEach(() => {
   for (const dispose of controls.splice(0)) dispose();
   vi.useRealTimers();
 });
-async function harness() {
+async function harness(model?: string) {
   const fixture = storageFixture();
   await fixture.store.open();
+  if (model) seedDefaultModel(fixture.raw, model);
   const listeners = new Map<string, (text: unknown) => void>();
   let id = 0;
   const sent: string[] = [];
@@ -377,6 +379,16 @@ describe("research timeline and bounded reads", () => {
       state: "queued",
     } as const;
     expect(mergeTimeline([consultation], [replacement])).toEqual([superseded, replacement]);
+
+    const blocked = {
+      ...consultation,
+      state: "blocked",
+      blockingReason: "configuration_unavailable",
+      outcomeReason: null,
+    } as const;
+    const unavailable = { ...blocked, modelUnavailable: true, modelName: "Stored model" };
+    expect(mergeTimeline([blocked], [unavailable])).toEqual([unavailable]);
+    expect(mergeTimeline([unavailable], [blocked])).toEqual([blocked]);
   });
   it("a window without an open project receives only shared record events", async () => {
     const h = await harness();
@@ -431,7 +443,7 @@ describe("research timeline and bounded reads", () => {
       ).toBe(false);
   });
   it("streams a real task through the research subscription and reads equal-position items without loss", async () => {
-    const h = await harness();
+    const h = await harness("first-model");
     const project = value(
       await h.store.executeResearchCommand({
         command: "development.createProject",
@@ -1102,8 +1114,8 @@ it("carries pause reads, continuation, resume and guarded retry commands through
   );
 });
 
-it("refreshes an empty model catalog on Try again and holds the new task until main reports", async () => {
-  const h = await harness();
+it("keeps a reply blocked when a model disappears and starts it when the chosen model returns", async () => {
+  const h = await harness("preferred-model");
   const projectId = value(
     await h.store.executeResearchCommand({
       command: "development.createProject",
@@ -1118,15 +1130,10 @@ it("refreshes an empty model catalog on Try again and holds the new task until m
       events.push(event),
     ).ready,
   );
-  const report = (
-    models: { id: string; name: string }[],
-    revision: number,
-    refresh_id?: string,
-  ) => {
+  const report = (models: { id: string; name: string }[], revision: number) => {
     h.service.receive(
       JSON.stringify({
         kind: "connection_state",
-        ...(refresh_id ? { refresh_id } : {}),
         generation: "service",
         snapshot: {
           connection: "chatgpt",
@@ -1162,49 +1169,28 @@ it("refreshes an empty model catalog on Try again and holds the new task until m
   );
   const timeline = () =>
     h.port.listTimelineBefore({ conversationId: conversation.id, cursor: null, count: 50 }).result;
-  const failed = value(await timeline()).items.find((item) => item.kind === "task")!;
-  expect(failed).toMatchObject({ state: "failed", outcomeReason: "provider_unavailable" });
-  const retried = value(
-    await h.port.tryAgainTask("retry-empty-model", { taskId: failed.id }).result,
+  const blocked = value(await timeline()).items.find((item) => item.kind === "task")!;
+  expect(blocked).toMatchObject({ state: "blocked", blockingReason: "configuration_unavailable" });
+  expect(await h.port.tryAgainTask("retry-blocked", { taskId: blocked.id }).result).toEqual(
+    failure("task_not_retryable"),
   );
-  expect(
-    value(await h.port.tryAgainTask("retry-empty-model", { taskId: failed.id }).result),
-  ).toEqual(retried);
-  const refresh = h.sent
-    .map((text) => JSON.parse(text))
-    .find((message) => message.kind === "model_list_refresh");
-  expect(refresh).toEqual({
-    kind: "model_list_refresh",
-    refresh_id: expect.any(String),
-    version: 1,
-    generation: "service",
-    connection: "chatgpt",
-  });
-  expect(value(await timeline()).items.find((item) => item.id === retried.resultId)).toMatchObject({
-    state: "queued",
-  });
-  // Old in-flight reports cannot acknowledge this specific human-requested refresh.
-  report([], 1);
+  report([{ id: "other-model", name: "Other model" }], 2);
   await h.service.drain();
-  expect(value(await timeline()).items.find((item) => item.id === retried.resultId)).toMatchObject({
-    state: "queued",
-    waitingForModels: true,
+  expect(value(await timeline()).items.find((item) => item.id === blocked.id)).toMatchObject({
+    state: "blocked",
   });
-  report([{ id: "new-model", name: "New model" }], 2, refresh.refresh_id);
+  report([{ id: "preferred-model", name: "Preferred model" }], 3);
   await h.service.drain();
-  expect(value(await timeline()).items.find((item) => item.id === retried.resultId)).toMatchObject({
+  expect(value(await timeline()).items.find((item) => item.id === blocked.id)).toMatchObject({
     state: "running",
   });
-  expect(await h.port.tryAgainTask("stale-retry", { taskId: failed.id }).result).toEqual(
-    failure("newer_task_exists"),
-  );
   await vi.waitFor(() =>
     expect(events.some((event) => event.value?.kind === "destinationChanged")).toBe(true),
   );
 });
 
 it("notifies a window with another project when a usage pause holds and stops work", async () => {
-  const h = await harness();
+  const h = await harness("first-model");
   const events: any[] = [];
   value(
     await h.port.subscribeResearch({ projectId: h.projectId, conversationId: null }, (event) =>
@@ -1301,7 +1287,7 @@ it("notifies a window with another project when a usage pause holds and stops wo
 });
 
 it("projects conversation activity and the saturated general or connection limit independently of loaded history", async () => {
-  const h = await harness();
+  const h = await harness("model");
   h.service.receive(
     JSON.stringify({
       kind: "connection_state",
@@ -1742,7 +1728,7 @@ it("transfers 300 selected positions as staged text through preload and the data
 });
 
 it("counts finished fake-provider replies per conversation through the research port", async () => {
-  const h = await harness();
+  const h = await harness("model");
   const scope = { projectId: h.projectId, conversationId: null };
   const activity = new ActivityController(h.port);
   activity.open(scope);
@@ -1836,7 +1822,7 @@ it("counts finished fake-provider replies per conversation through the research 
 });
 
 it("publishes durable project attention across windows and keeps finished replies scoped", async () => {
-  const h = await harness();
+  const h = await harness("model");
   const send = (message: object) =>
     h.service.receive(JSON.stringify({ generation: "service", ...message }));
   send({
@@ -1996,7 +1982,7 @@ it("publishes durable project attention across windows and keeps finished replie
 });
 
 it(diagnosticCases.shared_cases[0]!, async () => {
-  const h = await harness();
+  const h = await harness("synthetic-model");
   const writer = new DiagnosticWriter({
     root: h.root,
     version: "0.0.0",
@@ -2462,6 +2448,7 @@ it(diagnosticCases.shared_cases[0]!, async () => {
   await h.store.close();
   const old = h.raw();
   try {
+    old.pragma("foreign_keys=OFF");
     old.exec(preReplyUsageSql);
   } finally {
     old.close();
@@ -2476,7 +2463,7 @@ it(diagnosticCases.shared_cases[0]!, async () => {
 });
 
 it("settles usage from a quarantined dispatch only after storage admission", async () => {
-  const h = await harness();
+  const h = await harness("model");
   let peer = h.service;
   let late: ((report: LateUsageReport) => Promise<LateUsageDecision>) | undefined;
   const fake = createFakeProvider({

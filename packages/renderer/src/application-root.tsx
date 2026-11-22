@@ -480,7 +480,12 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
         onLocale={applyLocale.current}
         returnFocusRef={returnFocus}
       >
-        {(commands, { sourceQuoteLength, entryTextLength, ...binding }, openConnections) => (
+        {(
+          commands,
+          { sourceQuoteLength, entryTextLength, ...binding },
+          openConnections,
+          openAgents,
+        ) => (
           <>
             <Dialog
               role={newProjectState.dialog === "failed" ? "alertdialog" : "dialog"}
@@ -716,6 +721,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                               sourceRequest={activeSourceRequest}
                               controller={conversation}
                               onOpenConnections={openConnections}
+                              onOpenAgents={openAgents}
                               commands={bridge.commands}
                               detailsPort={bridge.foundation}
                               locale={bootstrap.locale}

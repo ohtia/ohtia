@@ -76,6 +76,11 @@ export class ResearchService {
       payload,
     });
   }
+  sharedChange(
+    event: Extract<ResearchEvent, { kind: "agentPreferenceChanged" | "providerModelsChanged" }>,
+  ): void {
+    for (const stream of this.streams.values()) this.event(stream, event);
+  }
   connectionChanged(connection: string): void {
     for (const stream of this.streams.values())
       this.event(stream, { kind: "destinationChanged", connection });
@@ -269,6 +274,15 @@ export class ResearchService {
         payloadHash,
       );
       respond(result, true);
+      if (result.ok && request.operation === "agentPreference.replace") {
+        const { target, expectedRevision } = request.payload;
+        this.sharedChange({
+          kind: "agentPreferenceChanged",
+          source: "replace",
+          target,
+          revision: expectedRevision + 1,
+        });
+      }
       try {
         await this.provider.pump();
         await this.publish();

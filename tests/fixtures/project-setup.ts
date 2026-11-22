@@ -2,7 +2,7 @@ import { ServiceConnections, type Outcome } from "../../packages/contracts/src/i
 import { setupTool, type SetupValues } from "../../packages/utility/src/project-setup.js";
 import type { DurableStore } from "../../packages/utility/src/storage.js";
 import { bytes } from "../../packages/utility/src/research.js";
-import type { storageFixture } from "./storage.js";
+import { seedDefaultModel, type storageFixture } from "./storage.js";
 
 export function successful<T>(outcome: Outcome<T>): T {
   if (!outcome.ok) throw new Error(outcome.error.code);
@@ -49,6 +49,7 @@ export async function proposeSetup(
     mode: "development",
     connections: setupConnections(),
   });
+  seedDefaultModel(raw, "first", "First");
   const conversations = successful(await store.readConversations(projectId));
   const conversation = conversations[0];
   if (!conversation) throw new Error("Missing setup conversation.");

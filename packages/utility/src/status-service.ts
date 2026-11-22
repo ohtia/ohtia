@@ -115,6 +115,19 @@ export function createStatusService(
   if (storage && durable)
     research = new ResearchService(storage, generation, emit, durable, loseProvider);
   // Provider failures end this generation's admission, including failures after a window command commits.
+  async function persistCatalog(connection: string): Promise<void> {
+    if (!storage?.ready) return;
+    const outcome = await storage.storeModelReport(connection);
+    if (!outcome.ok) throw new Error("Model list storage failed.");
+    if (!outcome.value) return;
+    research?.sharedChange({
+      kind: "providerModelsChanged",
+      connection,
+      list_revision: outcome.value.listRevision,
+    });
+    for (const change of outcome.value.changed)
+      research?.sharedChange({ kind: "agentPreferenceChanged", ...change });
+  }
   const enqueueProvider = (operation: () => unknown, publish = true): void => {
     queue = queue
       .then(async () => {
@@ -474,7 +487,11 @@ export function createStatusService(
       if (!isInterfaceLocale(resolvedLocale) || !storage?.ready || disposed || providerFailed)
         throw new Error("Invalid storage activation.");
       enabled = true;
-      if (durable) enqueueProvider(() => durable.pump());
+      if (durable)
+        enqueueProvider(async () => {
+          for (const connection of connections.connectionIds()) await persistCatalog(connection);
+          await durable.pump();
+        });
       status = { ...status, engine: "verified", interfaceLocale: resolvedLocale };
       for (const stream of streams.values())
         if (stream.topic === "status")
@@ -561,6 +578,8 @@ export function createStatusService(
         }
         enqueueProvider(async () => {
           if (!connections.receive(report)) throw new Error("Invalid connection report.");
+          if (report.kind === "connection_models" && !report.page.hasMore)
+            await persistCatalog(report.page.connection);
           if (report.kind === "connection_state" || !report.page.hasMore)
             research?.connectionChanged(
               report.kind === "connection_state"

@@ -20,10 +20,24 @@ import {
   type ProviderOperation,
   type ProviderUsage,
 } from "./provider-requests.js";
-import { isAccountRevision, isConnectionId } from "./connections.js";
+import {
+  agentPreferenceTargets,
+  isAccountRevision,
+  isConnectionId,
+  isAgentPreferences,
+  isProviderModelPageInput,
+  isProviderModelPage,
+  isReplaceAgentPreference,
+  type AgentPreferences,
+  type ProviderModelPageInput,
+  type ProviderModelPage,
+} from "./connections.js";
 import { utf8Size, type PortCall, type Subscription, type Outcome } from "./port.js";
 
 export const researchOperations = [
+  "agentPreference.list",
+  "agentPreference.replace",
+  "providerModel.list",
   "handoff.accept",
   "handoff.decline",
   "handoff.return",
@@ -208,6 +222,8 @@ export interface TimelineTask extends TimelineIdentity {
   readonly blockingReason: string | null;
   readonly outcomeReason: string | null;
   readonly replyMessageId: string | null;
+  readonly modelName?: string;
+  readonly modelUnavailable?: boolean;
   /** Advisory connection readiness, refreshed independently of the durable task revision. */
   readonly waitingForModels: boolean;
   /** The currently saturated inference limit, or null when capacity is available. */
@@ -427,6 +443,8 @@ export interface ReplyDetails {
   readonly account: "same" | "different" | "disconnected" | "unknown" | null;
   readonly requestedModel: string | null;
   readonly observedModel: string | null;
+  readonly requestedEffort?: string | null;
+  readonly observedEffort?: string | null;
   readonly attempts: number;
   readonly startedAt: string | null;
   readonly endedAt: string;
@@ -512,6 +530,7 @@ export type PlanTaskProgress = Pick<
   | "connection"
   | "blockingReason"
   | "outcomeReason"
+  | "modelUnavailable"
   | "replyMessageId"
   | "maxAttemptDurationMs"
   | "maxInactivityMs"
@@ -569,6 +588,17 @@ export type ResearchEvent =
       readonly revision: number;
     }
   | { readonly kind: "inferenceActivity" }
+  | {
+      readonly kind: "agentPreferenceChanged";
+      readonly target: import("./connections.js").AgentPreferenceTarget;
+      readonly revision: number;
+      readonly source?: "replace";
+    }
+  | {
+      readonly kind: "providerModelsChanged";
+      readonly connection: string;
+      readonly list_revision: number;
+    }
   | { readonly kind: "destinationChanged"; readonly connection: string }
   | { readonly kind: "pauseCounts"; readonly revision: number }
   | { readonly kind: "projectAttention"; readonly revision: number }
@@ -598,6 +628,7 @@ export type ResearchEvent =
       readonly text: string;
     };
 export interface MessageDestination {
+  readonly modelUnavailable?: boolean;
   readonly operation: string;
   readonly maxAttemptDurationMs: number;
   readonly connection: string;
@@ -607,6 +638,9 @@ export function validResearcherMessage(text: string): boolean {
   return text.trim().length > 0 && Array.from(text).length <= researcherMessageLimit;
 }
 export interface ResearchInputs {
+  "agentPreference.list": { readonly operationId?: string };
+  "agentPreference.replace": ResearchPayloads["agentPreference.replace"];
+  "providerModel.list": ProviderModelPageInput;
   "handoff.accept": ResearchPayloads["handoff.accept"];
   "handoff.decline": ResearchPayloads["handoff.decline"];
   "handoff.return": Omit<ResearchPayloads["handoff.return"], "selection"> & {
@@ -685,6 +719,9 @@ export interface ResearchInputs {
   "reply.readParts": { readonly taskId: string; readonly fromSequence: number };
 }
 export interface ResearchOutputs {
+  "agentPreference.list": AgentPreferences;
+  "agentPreference.replace": ResearchResult;
+  "providerModel.list": ProviderModelPage;
   "handoff.accept": ResearchResult;
   "handoff.decline": ResearchResult;
   "handoff.return": ResearchResult;
@@ -737,6 +774,12 @@ export interface ResearchOutputs {
   "reply.details": ReplyDetails;
 }
 export interface ResearchPort {
+  listAgentPreferences(operationId?: string): PortCall<AgentPreferences>;
+  replaceAgentPreference(
+    operationId: string,
+    input: ResearchInputs["agentPreference.replace"],
+  ): PortCall<ResearchResult>;
+  listProviderModels(input: ProviderModelPageInput): PortCall<ProviderModelPage>;
   acceptHandoff(
     operationId: string,
     input: ResearchInputs["handoff.accept"],
@@ -868,6 +911,7 @@ export function isResearchOperation(value: string): value is ResearchOperation {
 }
 export function isResearchMutation(value: string): value is WindowResearchCommand {
   return [
+    "agentPreference.replace",
     "handoff.accept",
     "handoff.decline",
     "handoff.return",
@@ -927,6 +971,24 @@ export function mergeTimeline(
           : { consultationRetryFits: item.consultationRetryFits }),
       });
     else if (
+      previous.kind === "task" &&
+      item.kind === "task" &&
+      previous.revision === item.revision &&
+      previous.blockingReason === "configuration_unavailable" &&
+      item.blockingReason === "configuration_unavailable"
+    ) {
+      const prior = { ...previous };
+      delete prior.modelName;
+      delete prior.modelUnavailable;
+      items.set(item.id, {
+        ...prior,
+        ...(item.modelName === undefined ? {} : { modelName: item.modelName }),
+        ...(item.modelUnavailable === undefined ? {} : { modelUnavailable: item.modelUnavailable }),
+        ...(item.consultationRetryFits === undefined
+          ? {}
+          : { consultationRetryFits: item.consultationRetryFits }),
+      });
+    } else if (
       previous.kind === "task" &&
       item.kind === "task" &&
       previous.revision === item.revision &&
@@ -1037,6 +1099,12 @@ function cursor(value: unknown): boolean {
 }
 export function researchInput(operation: ResearchOperation, value: unknown): boolean {
   switch (operation) {
+    case "agentPreference.list":
+      return exact(value, []) || (exact(value, ["operationId"]) && opaque(value.operationId));
+    case "agentPreference.replace":
+      return isReplaceAgentPreference(value);
+    case "providerModel.list":
+      return isProviderModelPageInput(value);
     case "handoff.accept":
       return (
         exact(value, ["proposalId", "expectedOwnerRevision"]) &&
@@ -1584,6 +1652,8 @@ function item(value: unknown): boolean {
       "outcomeReason",
       "replyMessageId",
       "waitingForModels",
+      ...(Object.hasOwn(value, "modelName") ? ["modelName"] : []),
+      ...(Object.hasOwn(value, "modelUnavailable") ? ["modelUnavailable"] : []),
       "waitingLimit",
       "dispatched",
       "superseded",
@@ -1609,6 +1679,7 @@ function item(value: unknown): boolean {
       (nullable(value.replacesTaskId, isResearchId) &&
         typeof value.consultationRetryFits === "boolean")) &&
     isTaskProgress(value) &&
+    (!Object.hasOwn(value, "modelName") || typeof value.modelName === "string") &&
     typeof value.waitingForModels === "boolean" &&
     nullable(value.waitingLimit, integer) &&
     typeof value.dispatched === "boolean" &&
@@ -1667,10 +1738,16 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
       nullable(
         value.destination,
         (d) =>
-          exact(d, ["operation", "maxAttemptDurationMs", "connection"]) &&
+          exact(d, [
+            "operation",
+            "maxAttemptDurationMs",
+            "connection",
+            ...(obj(d) && Object.hasOwn(d, "modelUnavailable") ? ["modelUnavailable"] : []),
+          ]) &&
           opaque(d.operation) &&
           integer(d.maxAttemptDurationMs) &&
-          isConnectionId(d.connection),
+          isConnectionId(d.connection) &&
+          (!Object.hasOwn(d, "modelUnavailable") || typeof d.modelUnavailable === "boolean"),
       )
     );
   if (operation === "handoff.selection")
@@ -1690,6 +1767,8 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
           Array.from(entry.prefix).length <= conversationPreviewPrefixLimit,
       )
     );
+  if (operation === "agentPreference.list") return isAgentPreferences(value);
+  if (operation === "providerModel.list") return isProviderModelPage(value);
   if (operation === "plan.read") return isPlanSnapshot(value);
   if (operation === "planChange.read") return isPlanChangePreview(value);
   if (operation === "planEvent.list")
@@ -1747,6 +1826,8 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
         "accountRevision",
         "requestedModel",
         "observedModel",
+        ...(obj(value) && Object.hasOwn(value, "requestedEffort") ? ["requestedEffort"] : []),
+        ...(obj(value) && Object.hasOwn(value, "observedEffort") ? ["observedEffort"] : []),
         "attempts",
         "startedAt",
         "endedAt",
@@ -1767,6 +1848,16 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
         value.requestedModel,
         (name) => typeof name === "string" && utf8Size(name) <= 1024,
       ) &&
+      (!Object.hasOwn(value, "requestedEffort") ||
+        nullable(
+          value.requestedEffort,
+          (level) => typeof level === "string" && utf8Size(level) <= 128,
+        )) &&
+      (!Object.hasOwn(value, "observedEffort") ||
+        nullable(
+          value.observedEffort,
+          (level) => typeof level === "string" && utf8Size(level) <= 128,
+        )) &&
       nullable(value.observedModel, (name) => typeof name === "string" && utf8Size(name) <= 1024) &&
       integer(value.attempts, 0) &&
       nullable(value.startedAt, date) &&
@@ -1947,15 +2038,18 @@ function isTaskProgress(
           "deadline_exceeded",
           "cancelled_by_researcher",
           "service_restarted",
+          "destination_changed",
         ].includes(x),
     ) &&
     nullable(value.replyMessageId, isResearchId) &&
+    (!Object.hasOwn(value, "modelUnavailable") || typeof value.modelUnavailable === "boolean") &&
     integer(value.maxAttemptDurationMs) &&
     integer(value.maxInactivityMs)
   );
 }
 function isPlanTaskProgress(value: unknown): value is PlanTaskProgress {
   return (
+    obj(value) &&
     exact(value, [
       "agentId",
       "state",
@@ -1965,7 +2059,9 @@ function isPlanTaskProgress(value: unknown): value is PlanTaskProgress {
       "replyMessageId",
       "maxAttemptDurationMs",
       "maxInactivityMs",
-    ]) && isTaskProgress(value)
+      ...(Object.hasOwn(value, "modelUnavailable") ? ["modelUnavailable"] : []),
+    ]) &&
+    isTaskProgress(value)
   );
 }
 function isPlanSnapshot(value: unknown): value is PlanSnapshot {
@@ -2231,6 +2327,24 @@ export function isResearchEvent(value: unknown): value is ResearchEvent {
       isResearchId(value.planId) &&
       integer(value.throughSequence, 0) &&
       integer(value.revision)
+    );
+  if (value.kind === "agentPreferenceChanged")
+    return (
+      exact(value, [
+        "kind",
+        "target",
+        "revision",
+        ...(Object.hasOwn(value, "source") ? ["source"] : []),
+      ]) &&
+      (!Object.hasOwn(value, "source") || value.source === "replace") &&
+      agentPreferenceTargets.some((target) => value.target === target) &&
+      integer(value.revision)
+    );
+  if (value.kind === "providerModelsChanged")
+    return (
+      exact(value, ["kind", "connection", "list_revision"]) &&
+      isConnectionId(value.connection) &&
+      integer(value.list_revision)
     );
   if (value.kind === "destinationChanged")
     return exact(value, ["kind", "connection"]) && isConnectionId(value.connection);

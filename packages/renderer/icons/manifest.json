@@ -228,6 +228,12 @@
       "sha256": "e597bbc28747b1d4a25b0d8123cc7ddf8fb659b854a57fce0a8871e1b954ccdc"
     },
     {
+      "name": "list-restart",
+      "file": "list-restart.svg",
+      "archive_member": "package/icons/list-restart.svg",
+      "sha256": "e69deae0fd325cb5746f8f902f789078a233b850d83ab738317da0766eeff204"
+    },
+    {
       "name": "lock",
       "file": "lock.svg",
       "archive_member": "package/icons/lock.svg",

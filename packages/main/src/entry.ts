@@ -969,6 +969,8 @@ async function start(): Promise<void> {
   const manager = connections.manager;
   providerDispatch = new ProviderDispatch(adapters, {
     state: (connection) => manager.snapshot(connection)?.state,
+    mayDispatchModel: (connection, model, effort, expectedAccount) =>
+      manager.mayDispatchModel(connection, model, effort, expectedAccount),
     send: (target, text) => {
       if (service?.generation === target) service.postProvider(text);
     },
@@ -1019,11 +1021,14 @@ async function start(): Promise<void> {
       if (service?.available) service.reportConnections(manager);
       developmentCommand?.flush();
     });
-  const connectionStates = new Map<string, string>();
+  const connectionStates = new Map<string, { state: string; account: string | undefined }>();
   manager.subscribe((event) => {
     const before = connectionStates.get(event.connection);
-    connectionStates.set(event.connection, event.state);
-    if (event.state === "connected" && before !== "connected")
+    connectionStates.set(event.connection, { state: event.state, account: event.account_revision });
+    if (
+      event.state === "connected" &&
+      (before?.state !== "connected" || before.account !== event.account_revision)
+    )
       manager.refreshModels(event.connection, true);
     if (service?.available) service.reportConnections(manager);
   });

@@ -399,3 +399,64 @@
   flex-wrap: wrap;
   gap: var(--space-2);
 }
+
+.agent-focus-recovery {
+  display: contents;
+}
+
+.agent-choice {
+  display: grid;
+  gap: var(--space-2);
+  min-inline-size: var(--space-0);
+}
+
+.agent-choice label {
+  display: grid;
+  gap: var(--space-1);
+  min-inline-size: var(--space-0);
+}
+
+.agent-choice select {
+  min-inline-size: var(--space-0);
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-medium);
+  font: inherit;
+}
+
+.agent-settings .agent-choice + .agent-choice {
+  margin-block-start: var(--space-4);
+}
+
+.agent-choice > button {
+  justify-self: start;
+}
+
+.agent-choice-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.agent-settings .agent-choice {
+  border-block-start: var(--border-width-default) solid var(--border-subtle);
+  padding-block-start: var(--space-3);
+}
+
+.agent-choice-feedback {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+}
+
+.agent-model-name {
+  display: none;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 360px) {
+  .agent-model-name {
+    display: block;
+  }
+}

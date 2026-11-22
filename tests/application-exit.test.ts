@@ -1,3 +1,4 @@
+import { seedDefaultModel } from "./fixtures/storage.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   decodeApplicationExit,
@@ -210,6 +211,7 @@ async function fixture() {
   const context = { generation: "run", mode: "development" as const, connections };
   f.store.setTaskContext(context);
   await f.store.open();
+  seedDefaultModel(f.raw, connections.read("chatgpt")!.models![0]!.id);
   let n = 0;
   const project = value(
     await f.store.executeResearchCommand({

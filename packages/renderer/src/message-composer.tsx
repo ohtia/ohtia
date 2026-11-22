@@ -348,34 +348,38 @@ export function MessageComposer({
       )}
       {state.destination && (
         <p className="composer-destination">
-          {message(
-            locale,
-            state.connectionState !== "connected"
-              ? "taskNotice.destinationDisconnected"
-              : state.usagePaused
-                ? state.destination.declaration.kind === "subscription"
-                  ? "taskNotice.destinationPaused.subscription"
-                  : "taskNotice.destinationPaused.apiKey"
-                : state.destination.declaration.kind === "subscription"
-                  ? "composer.subscription"
-                  : "composer.apiKey",
-            {
-              service: state.destination.declaration.displayName,
-              ...(state.connectionState === "connected" &&
-              !state.usagePaused &&
-              state.destination.declaration.kind === "subscription"
-                ? { email: state.destination.email || message(locale, "identity.unknown") }
-                : {}),
-            },
-          )}
-          {state.connectionState === "connected" && !state.usagePaused && (
-            <>
-              {" · "}
-              {message(locale, "composer.destinationLimit", {
-                limit: formatOperationDuration(locale, state.destination.maxAttemptDurationMs),
-              })}
-            </>
-          )}
+          {state.destination.modelUnavailable
+            ? message(locale, "agents.destination", { agent: contributorNames[state.agentId] })
+            : message(
+                locale,
+                state.connectionState !== "connected"
+                  ? "taskNotice.destinationDisconnected"
+                  : state.usagePaused
+                    ? state.destination.declaration.kind === "subscription"
+                      ? "taskNotice.destinationPaused.subscription"
+                      : "taskNotice.destinationPaused.apiKey"
+                    : state.destination.declaration.kind === "subscription"
+                      ? "composer.subscription"
+                      : "composer.apiKey",
+                {
+                  service: state.destination.declaration.displayName,
+                  ...(state.connectionState === "connected" &&
+                  !state.usagePaused &&
+                  state.destination.declaration.kind === "subscription"
+                    ? { email: state.destination.email || message(locale, "identity.unknown") }
+                    : {}),
+                },
+              )}
+          {!state.destination.modelUnavailable &&
+            state.connectionState === "connected" &&
+            !state.usagePaused && (
+              <>
+                {" · "}
+                {message(locale, "composer.destinationLimit", {
+                  limit: formatOperationDuration(locale, state.destination.maxAttemptDurationMs),
+                })}
+              </>
+            )}
         </p>
       )}
       <p className="primitive-announcement" role="status" aria-live="polite" aria-atomic="true">

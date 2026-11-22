@@ -1,3 +1,4 @@
+import { windowConnectionSubscription } from "./connection-subscription.js";
 import { ActivityController } from "./activity-controller.js";
 import { ConversationHistoryController } from "./conversation-history-controller.js";
 import { stagedCommand } from "./staged-command.js";
@@ -205,7 +206,7 @@ export class ConversationController {
   observePlanDestinations = (refresh: () => void): (() => void) => {
     this.destinationListeners.add(refresh);
     const subscriptions = this.connections.map(({ id }) =>
-      this.port.subscribeConnection(id, (notice) => {
+      windowConnectionSubscription(this.port)(id, (notice) => {
         if (notice.ok) refresh();
       }),
     );
@@ -394,7 +395,7 @@ export class ConversationController {
     const scope = this.state.scope;
     let observing = true;
     const subscriptions = this.connections.map(({ id }) =>
-      this.port.subscribeConnection(id, (notice) => {
+      windowConnectionSubscription(this.port)(id, (notice) => {
         if (
           observing &&
           notice.ok &&
@@ -1129,7 +1130,9 @@ export class ConversationController {
         (old.revision < item.revision ||
           (old.revision === item.revision &&
             (old.waitingForModels !== item.waitingForModels ||
-              old.waitingLimit !== item.waitingLimit)));
+              old.waitingLimit !== item.waitingLimit ||
+              old.modelUnavailable !== item.modelUnavailable ||
+              old.modelName !== item.modelName)));
       if (announce || recoveredChange || introduced.has(item.id))
         this.noticeUpdates.set(
           item.id,
@@ -1347,13 +1350,21 @@ export class ConversationController {
       }
       return;
     }
-    if (event.kind === "destinationChanged") {
+    if (
+      event.kind === "destinationChanged" ||
+      event.kind === "agentPreferenceChanged" ||
+      event.kind === "providerModelsChanged"
+    ) {
       for (const refresh of this.destinationListeners) refresh();
       void this.composer.refreshDestination();
       void this.refreshConsultationDestination();
       await this.readIds(
         this.state.items
-          .filter((item) => item.kind === "task" && item.state === "queued")
+          .filter(
+            (item) =>
+              item.kind === "task" &&
+              (item.state === "queued" || item.blockingReason === "configuration_unavailable"),
+          )
           .map((item) => item.id),
         epoch,
         true,

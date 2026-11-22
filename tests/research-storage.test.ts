@@ -514,7 +514,7 @@ describe("migration 0007 and database-owned rules", () => {
     db.close();
     await store.open();
     const upgraded = raw();
-    expect(upgraded.pragma("user_version", { simple: true })).toBe(33);
+    expect(upgraded.pragma("user_version", { simple: true })).toBe(34);
     expect(upgraded.prepare("SELECT * FROM application_preferences ORDER BY key").all()).toEqual(
       before,
     );
@@ -527,7 +527,7 @@ describe("migration 0007 and database-owned rules", () => {
           fs.readFileSync(path.join(root, "recovery/migrations", s, "manifest.json"), "utf8"),
         ),
       ),
-    ).toContainEqual(expect.objectContaining({ sourceRevision: 6, targetRevision: 33 }));
+    ).toContainEqual(expect.objectContaining({ sourceRevision: 6, targetRevision: 34 }));
     expect(value(await store.readProjects())).toEqual([]);
     upgraded.close();
   });

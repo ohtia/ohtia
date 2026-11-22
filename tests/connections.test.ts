@@ -1162,15 +1162,49 @@ it("retains failed deletion while cancelling an adapter without a cancellation h
 
 it("refreshes a connected model catalog when older than one day and preserves it on failure", async () => {
   const adapter = createFakeProvider({
+    connect: () =>
+      Promise.resolve({
+        state: "connected",
+        session: { credential: "synthetic-session", reason: null },
+        resetModels: true,
+      }),
     probe: () => Promise.reject(new Error("synthetic-private-error")),
   });
-  const manager = new ConnectionManager([adapter]);
+  const accountA = "a".repeat(64);
+  const accountB = "b".repeat(64);
+  let account = accountA;
+  const manager = new ConnectionManager([{ ...adapter, accountFingerprint: () => account }]);
   try {
     manager.connect("fake");
     await vi.waitFor(() => {
       expect(manager.snapshot("fake")?.state).toBe("connected");
     });
-    manager.storeModels("fake", [{ id: "cached", name: "Cached" }]);
+    expect(manager.mayDispatchModel("fake", "cached", undefined, accountA)).toBe(true);
+    expect(manager.mayDispatchModel("fake", "cached")).toBe(false);
+    expect(manager.modelListReport("missing")).toBeUndefined();
+    manager.storeModels("fake", [
+      { id: "retired", name: "Retired", retiring: true },
+      {
+        id: "cached",
+        name: "Cached",
+        effortSupport: "supported",
+        effortLevels: [
+          { name: "high", supported: true },
+          { name: "offered", supported: false },
+        ],
+      },
+    ]);
+    expect(manager.modelListReport("fake")).toMatchObject({ fingerprint: accountA });
+    expect(manager.mayDispatchModel("fake", "cached")).toBe(true);
+    expect(manager.mayDispatchModel("fake", "cached", "offered", accountA)).toBe(false);
+    expect(manager.mayDispatchModel("fake", "retired", undefined, accountA)).toBe(false);
+    expect(manager.mayDispatchModel("fake", "cached", "high", accountA)).toBe(true);
+    expect(manager.mayDispatchModel("fake", "cached", "low", accountA)).toBe(false);
+    expect(manager.mayDispatchModel("fake", "removed", undefined, accountA)).toBe(false);
+    account = accountB;
+    expect(manager.mayDispatchModel("fake", "cached", undefined, accountA)).toBe(false);
+    expect(manager.mayDispatchModel("fake", "cached", undefined, accountB)).toBe(true);
+    account = accountA;
     const probe = vi.spyOn(manager, "probe");
     const now = Date.now();
     manager.refreshModels("fake", false, now);
@@ -1196,6 +1230,14 @@ it("refreshes a connected model catalog when older than one day and preserves it
     });
     manager.refreshModels("fake", true, now + 24 * 60 * 60 * 1000 + 60_002);
     expect(probe).toHaveBeenCalledTimes(3);
+    await manager.disconnect("fake");
+    manager.connect("fake", { new_registration: true });
+    await vi.waitFor(() => expect(manager.snapshot("fake")?.state).toBe("connected"));
+    expect(manager.snapshot("fake")?.model_list_revision).toBeNull();
+    expect(manager.modelListReport("fake")).toBeUndefined();
+    expect(manager.mayDispatchModel("fake", "cached", undefined, accountA)).toBe(true);
+    manager.refreshModels("fake", false, Date.now());
+    expect(probe).toHaveBeenCalledTimes(4);
   } finally {
     manager.dispose();
   }

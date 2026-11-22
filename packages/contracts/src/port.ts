@@ -1037,6 +1037,15 @@ export const operationErrorCodes = Object.freeze({
   "research.subscribe": [...readErrors, "record_not_found", "sequence_gap"],
   "text.part": [...readErrors],
   "text.readPart": [...readErrors, "record_not_found"],
+  "agentPreference.list": readErrors,
+  "agentPreference.replace": [
+    ...readErrors,
+    "uncertain",
+    "operation_conflict",
+    "stale_revision",
+    "record_not_found",
+  ],
+  "providerModel.list": [...readErrors, "stale_revision", "record_not_found"],
   "reply.details": [...readErrors, "record_not_found"],
   "reply.readParts": [...readErrors, "record_not_found"],
 
@@ -1114,7 +1123,7 @@ function input(operation: Operation, value: Json | undefined): boolean {
     case "connection.subscribe":
       return (
         exact(value, ["connection", "subscriptionId"]) &&
-        isConnectionId(value.connection) &&
+        (value.connection === "*" || isConnectionId(value.connection)) &&
         isIdentifier(value.subscriptionId)
       );
     case "connection.listModels":
