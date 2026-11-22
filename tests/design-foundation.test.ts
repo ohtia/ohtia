@@ -170,6 +170,26 @@ describe("review regression contracts", () => {
     }
     dom.window.close();
   });
+  it("lifts the reading measure from project memory entry and history text only", () => {
+    const css = ["design-tokens.css", "foundation.css", "project-memory.css"]
+      .map((name) =>
+        fs.readFileSync(`packages/renderer/src/${name}`, "utf8").replace(/^@import.*$/gm, ""),
+      )
+      .join("\n");
+    const dom = new JSDOM(
+      `<style>${css}</style><div class="project-memory"><p id="entry" class="memory-text">Entry</p><p id="attribution" class="memory-attribution">Author</p><ol class="memory-history"><li><p id="version" class="memory-text">Version</p></li></ol><form id="editor" class="memory-form"></form></div>`,
+    );
+    for (const [id, maximum] of [
+      ["entry", "none"],
+      ["version", "none"],
+      ["attribution", "var(--measure-reading)"],
+      ["editor", "var(--measure-reading)"],
+    ]) {
+      const style = dom.window.getComputedStyle(dom.window.document.getElementById(id)!);
+      expect(style.getPropertyValue("max-inline-size"), id).toBe(maximum);
+    }
+    dom.window.close();
+  });
   it("rejects actual consumer color mutations and unresolved CSS variables through the build gate", () => {
     const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "ohtia-consumer-"));
     try {

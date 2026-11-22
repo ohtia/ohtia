@@ -3,7 +3,7 @@ type: Specification
 title: Workspace layout
 description: Deterministic workspace geometry, accessible panel controls, project memory navigation, desktop layout preferences and interaction acceptance scenarios.
 generated:
-  by: codex/gpt-6.2-sol
+  by: claude-code/claude-opus-5-5
 ---
 
 # Workspace layout
@@ -116,7 +116,7 @@ Without an open project, the fixed Navigator tab shows a first-run welcome: the 
 
 The explorer uses semantic lists and native buttons, not a partial tree role. Groups expose expansion state and independent loading/error/retry behavior. Selecting material opens or activates one tab for its stable identity, reveals documents and preserves conversation selection. Selecting Project memory opens or activates the one Project memory tab of the open project, reveals documents and preserves conversation selection. Tabs use manual keyboard activation: arrows and Home/End move focus, Enter/Space activate, and Delete requests closing a closable tab. Close buttons are siblings of tab controls, not nested buttons. Overflow scrolls the tab row only. Closing an active tab selects its right neighbor, otherwise left; closing the last closable tab selects the fixed Navigator. Closing never deletes material or cancels work. Pending edits offer Save and close/Keep open/Discard and close with initial focus on Keep open; failed or unavailable save/discard blocks closing and preserves the buffer.
 
-The Project memory tab uses `component.workspace.document.padding` inside the separator guard. Its list, tools and source quotations follow the chosen documents panel width. Quotations wrap as the researcher narrows the panel. Entry text and the inline editor retain `measure.reading`.
+The Project memory tab uses `component.workspace.document.padding` inside the separator guard. Its list, tools, entry text (including each version in the entry history) and source quotations follow the chosen documents panel width. Entry text and quotations wrap as the researcher narrows the panel. The inline editor retains `measure.reading`.
 
 Project and conversation forms preserve input, operation identity and expected versions through controlled failures and uncertainty. Creating a conversation reveals chat only when the captured project selection is still current. History and conversation selection preserve document tabs/versions, unsent input, reading anchors and active work. Rename conflicts retain the draft title; a late generated title cannot overwrite a newer manual title. Archive/delete actions require declared domain capabilities and their explicit confirmation/retention contract; the presentation layer cannot invent deletion or silently stop active work.
 
