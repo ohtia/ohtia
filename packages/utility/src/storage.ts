@@ -87,6 +87,10 @@ import {
   up as projectMemory,
 } from "./migrations/0029_project_memory.mjs";
 import {
+  objects as researcherMemoryObjects,
+  up as researcherMemory,
+} from "./migrations/0030_researcher_memory.mjs";
+import {
   ResearchAttention,
   conversationAttention,
   type ResearchActivity,
@@ -342,6 +346,7 @@ const names = [
   "0027_handoffs",
   "0028_plan_redirection",
   "0029_project_memory",
+  "0030_researcher_memory",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -790,6 +795,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 27 ? handoffObjects : {}),
                 ...(revision >= 28 ? redirectionObjects : {}),
                 ...(revision >= 29 ? memoryObjects : {}),
+                ...(revision >= 30 ? researcherMemoryObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1208,6 +1214,7 @@ export class DurableStore {
                 "0027_handoffs": { up: handoffs },
                 "0028_plan_redirection": { up: planRedirection },
                 "0029_project_memory": { up: projectMemory },
+                "0030_researcher_memory": { up: researcherMemory },
               }),
           },
         });
@@ -2530,6 +2537,8 @@ export class DurableStore {
       "pause.read": "ohtia.pause.read",
       "plan.read": "ohtia.plan.read",
       "planChange.read": "ohtia.plan_change.read",
+      "memory.list": "ohtia.memory.listed",
+      "memory.history": "ohtia.memory.history_read",
       "handoff.selection": "ohtia.handoff.selection_listed",
       "planEvent.list": "ohtia.plan.events_listed",
     } as const;
@@ -2697,6 +2706,9 @@ export class DurableStore {
         "plan.addContributions": { event_name: "ohtia.plan.graph_recorded" },
         "planChange.apply": { event_name: "ohtia.plan_change.applied" },
         "planChange.decline": { event_name: "ohtia.plan_change.declined" },
+        "memory.add": { event_name: "ohtia.memory.added" },
+        "memory.edit": { event_name: "ohtia.memory.edited" },
+        "memory.withdraw": { event_name: "ohtia.memory.withdrawn" },
         "memory.undo": { event_name: "ohtia.memory.undone" },
         "plan.accept": { event_name: "ohtia.plan.accepted" },
         "handoff.accept": { event_name: "ohtia.handoff.accepted" },

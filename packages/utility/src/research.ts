@@ -70,7 +70,7 @@ import {
 } from "./contribution-graphs.js";
 import type { ContinuationRow, PlanEventRow } from "./plan-coordination.js";
 import type { ContributionRow, InterventionRow } from "./consultations.js";
-import { undoMemory, type MemorySchema } from "./project-memory.js";
+import { changeResearcherMemory, undoMemory, type MemorySchema } from "./project-memory.js";
 export interface ResearchSchema extends TaskSchema, MemorySchema {
   intervention_events: PlanEventRow;
   continuations: ContinuationRow;
@@ -299,6 +299,9 @@ const payloadKeys = {
   "plan.accept": ["planId", "connections"],
   "planChange.apply": ["proposalId"],
   "planChange.decline": ["proposalId"],
+  "memory.add": ["projectId", "kind", "text"],
+  "memory.edit": ["entryId", "expectedVersion", "kind", "text"],
+  "memory.withdraw": ["entryId", "expectedVersion"],
   "memory.undo": ["taskId"],
   "plan.decline": ["planId"],
   "plan.finish": ["planId"],
@@ -360,7 +363,9 @@ export async function applyResearchCommand(
         : input.command === "plan.addContributions" &&
             Object.hasOwn(input.payload, "conversationId")
           ? ["conversationId", "expectedGraphVersion", "purpose", "sharedContext", "contributions"]
-          : payloadKeys[input.command];
+          : input.command === "memory.add" && Object.hasOwn(input.payload, "sourceMessageId")
+            ? [...payloadKeys["memory.add"], "sourceMessageId"]
+            : payloadKeys[input.command];
   if (
     Object.keys(input.payload).length !== keys.length ||
     !keys.every((key) => Object.hasOwn(input.payload, key))
@@ -369,6 +374,14 @@ export async function applyResearchCommand(
   const now = new Date().toISOString();
   let result: Uint8Array;
   switch (input.command) {
+    case "memory.add":
+    case "memory.edit":
+    case "memory.withdraw": {
+      const changed = await changeResearcherMemory(db, input);
+      if (!changed.ok) return changed;
+      result = changed.value;
+      break;
+    }
     case "memory.undo": {
       if (!isEntityId(input.payload.taskId)) return failure("invalid_message");
       const undone = await undoMemory(db, bytes(input.payload.taskId), input.operationId);

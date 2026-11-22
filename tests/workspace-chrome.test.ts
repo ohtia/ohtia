@@ -719,3 +719,46 @@ it("keeps hidden chat and layout preferences unchanged when switching existing p
   expect(saved).toHaveLength(writes);
   expect(focus).not.toHaveBeenCalled();
 });
+
+it("opens one fixed project memory tab and preserves manual tab activation", async () => {
+  const settings = store();
+  const projectScope = "019a8000-0000-7000-8000-000000000235";
+  const props = {
+    projectScope,
+    chat: h("p", null, "Current conversation"),
+    memory: h("p", null, "Saved memory"),
+  };
+  await render(settings.preferences, props);
+  expect(container.querySelectorAll("[role=tab]")).toHaveLength(1);
+  await click("Project memory");
+  const memoryTab = container.querySelector<HTMLButtonElement>("[role=tab][aria-selected=true]")!;
+  expect(memoryTab.textContent).toBe("Project memory");
+  expect(document.activeElement).toBe(memoryTab);
+  const navigator = container.querySelector<HTMLButtonElement>("[role=tab][aria-selected=false]")!;
+  await act(async () =>
+    memoryTab.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true })),
+  );
+  expect(document.activeElement).toBe(navigator);
+  expect(memoryTab.getAttribute("aria-selected")).toBe("true");
+  await act(async () => navigator.click());
+  expect(navigator.getAttribute("aria-selected")).toBe("true");
+  expect(container.querySelector("[role=tabpanel]:not([hidden])")?.textContent).not.toContain(
+    "Saved memory",
+  );
+  await render(settings.preferences, { ...props, memoryRequest: 1 });
+  expect(memoryTab.getAttribute("aria-selected")).toBe("true");
+  expect(container.querySelectorAll("[role=tab]")).toHaveLength(2);
+  expect(container.textContent).toContain("Current conversation");
+  expect(container.textContent).toContain("Sources and documents");
+  await act(async () => navigator.click());
+  await render(settings.preferences, {
+    ...props,
+    projectScope: "019a8000-0000-7000-8000-000000000236",
+    memoryRequest: 2,
+  });
+  expect(container.querySelector("[role=tab][aria-selected=true]")?.textContent).toBe(
+    "Project memory",
+  );
+  await render(settings.preferences, { ...props, memoryRequest: 1 });
+  expect(container.querySelector("[role=tab][aria-selected=true]")?.textContent).toBe("Navigator");
+});

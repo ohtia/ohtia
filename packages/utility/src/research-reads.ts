@@ -44,6 +44,12 @@ import { recordedOperationPolicy, replyAgent } from "./operations.js";
 import { conversationAttention, type ResearchAttention } from "./research-attention.js";
 import { taskPosition } from "./research-task-position.js";
 import { setupRevision } from "./project-setup.js";
+import {
+  listProjectMemory,
+  memoryRevision,
+  readMemoryHistory,
+  readMemoryText,
+} from "./project-memory.js";
 import { storedText } from "./research-text.js";
 
 /** Test the actual envelope as well as its payload: containers, node count, strings and bytes compose. */
@@ -527,6 +533,10 @@ export async function readResearch(
   attention: ResearchAttention,
 ): Promise<Outcome<unknown>> {
   switch (request.operation) {
+    case "memory.list":
+      return listProjectMemory(db, request, (page) => fitsResearchResult(request, page));
+    case "memory.history":
+      return readMemoryHistory(db, request, (page) => fitsResearchResult(request, page));
     case "handoff.selection": {
       const { conversationId, expectedOwnerRevision, after } = request.payload;
       const id = bytes(conversationId);
@@ -839,6 +849,12 @@ export async function readResearch(
       return { ok: true, value: { items, remaining: p.ids.slice(consumed) } };
     }
     case "text.readPart": {
+      if (request.payload.source.startsWith("memory_"))
+        return readMemoryText(
+          db,
+          request.payload.source.slice("memory_".length),
+          request.payload.index,
+        );
       if (request.payload.source.startsWith("plan_change_"))
         return readPlanChangePart(db, request.payload.source, request.payload.index);
       if (request.payload.source.startsWith("plan_"))
@@ -1052,6 +1068,10 @@ export async function researchRevisions(
         id: identifier(row.id),
         revision: row.revision,
       });
+  }
+  if (scope.projectId) {
+    const revision = await memoryRevision(db, bytes(scope.projectId));
+    if (revision) result.push({ kind: "changed", record: "memory", id: scope.projectId, revision });
   }
   return [...result, ...(await planRevisions(db, scope))];
 }

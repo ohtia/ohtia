@@ -123,6 +123,7 @@ export function inspectWorkspace(root) {
             "migrations/0027_handoffs.mjs",
             "migrations/0028_plan_redirection.mjs",
             "migrations/0029_project_memory.mjs",
+            "migrations/0030_researcher_memory.mjs",
             "migrations/0015_project_setup.mjs",
             "migrations/0009_usage_limit_pauses.mjs",
             "migrations/0005_presentation_receipts.mjs",

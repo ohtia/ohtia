@@ -223,6 +223,15 @@
       },
       "effective_model_evidence": "The active implementation turn records gpt-6.2-sol in its session context.",
       "human_linguistic_review": null
+    },
+    {
+      "scope": "Project memory view, editing and history messages for STORY-003-033, including memory.undoUnavailable",
+      "producer": {
+        "agent": "codex",
+        "effective_model": "gpt-6.2-sol"
+      },
+      "effective_model_evidence": "The implementing thread’s turn context records gpt-6.2-sol with high effort.",
+      "human_linguistic_review": null
     }
   ]
 }

@@ -160,6 +160,7 @@ export type WindowBoundsReceipt =
   | { readonly state: "not_found" | "pending" }
   | { readonly state: "recorded"; readonly outcome: RecordedWindowBoundsOutcome };
 export const errorActions = {
+  entry_invalid: "check_request",
   memory_full: "check_request",
   undo_unavailable: "refresh_record",
   selection_invalid: "check_request",
@@ -747,6 +748,13 @@ const replaceErrors = [
 const researchMutationErrors = readErrors.filter(
   (code) => !["timeout", "cancelled", "disposed", "invalid_service_result"].includes(code),
 );
+const memoryWriteErrors = [
+  ...researchMutationErrors,
+  "uncertain",
+  "operation_conflict",
+  "record_not_found",
+] as const;
+const memoryTextErrors = ["memory_full", "entry_invalid", "parts_incomplete"] as const;
 export const operationErrorCodes = Object.freeze({
   "limits.read": [...readErrors, "preference_invalid"],
   "limits.replace": replaceErrors.filter((code) => code !== "stale_revision"),
@@ -803,6 +811,11 @@ export const operationErrorCodes = Object.freeze({
     "record_not_found",
     "proposal_not_waiting",
   ],
+  "memory.add": [...memoryWriteErrors, ...memoryTextErrors],
+  "memory.edit": [...memoryWriteErrors, ...memoryTextErrors, "stale_revision"],
+  "memory.withdraw": [...memoryWriteErrors, "stale_revision"],
+  "memory.list": [...readErrors, "record_not_found"],
+  "memory.history": [...readErrors, "record_not_found"],
   "memory.undo": [
     ...researchMutationErrors,
     "uncertain",

@@ -129,6 +129,8 @@ export const preMemorySql = `
     )
     .map(([, definition]) => definition)
     .join(";\n")};
+  DELETE FROM kysely_migration WHERE name='0030_researcher_memory';
+  DELETE FROM ohtia_migration_artifacts WHERE name='0030_researcher_memory';
   DELETE FROM kysely_migration WHERE name='0029_project_memory';
   DELETE FROM ohtia_migration_artifacts WHERE name='0029_project_memory';
   PRAGMA user_version=28;

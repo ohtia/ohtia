@@ -14,6 +14,11 @@ import {
 } from "./conversation-history.js";
 import { AgentBand } from "./agent-selector.js";
 import { HandoffReturnControl } from "./handoff.js";
+import {
+  ProjectMemoryDrafts,
+  ProjectMemoryView,
+  type MemoryDraftSource,
+} from "./project-memory-view.js";
 import { ConversationView } from "./conversation-view.js";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
@@ -63,6 +68,7 @@ export function ApplicationRoot({ bridge }: { readonly bridge: DesktopBridge }) 
 }
 function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
   const [createdProject, setCreatedProject] = useState<string>();
+  const [memoryDrafts] = useState(() => new ProjectMemoryDrafts());
   const { conversation, projects } = useMemo(() => {
     const conversation = new ConversationController(bridge.foundation, undefined, (scope) => {
       projects.rememberStarted(scope);
@@ -180,6 +186,39 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
       ),
     [bridge.foundation, projects],
   );
+  const [memoryRequests, requestMemory] = useState<
+    ReadonlyMap<
+      string,
+      {
+        readonly sequence: number;
+        readonly source?: MemoryDraftSource;
+      }
+    >
+  >(() => new Map());
+  const memorySequence = useRef(0);
+  const [sourceRequest, setSourceRequest] = useState<{
+    projectId: string;
+    conversationId: string;
+    messageId: string;
+  }>();
+  const currentProjectId = conversationState.scope.projectId;
+  const activeMemoryRequest = currentProjectId ? memoryRequests.get(currentProjectId) : undefined;
+  const activeSourceRequest =
+    sourceRequest?.projectId === currentProjectId ? sourceRequest : undefined;
+  function openMemory(source?: MemoryDraftSource) {
+    if (!currentProjectId) return;
+    const sequence = ++memorySequence.current;
+    const handled = memoryDrafts.snapshot(currentProjectId).handledSequence;
+    requestMemory((previous) => {
+      const request = previous.get(currentProjectId);
+      const pending = request?.sequence === handled ? undefined : request?.source;
+      const requestedSource = source ?? pending;
+      return new Map(previous).set(currentProjectId, {
+        sequence,
+        ...(requestedSource ? { source: requestedSource } : {}),
+      });
+    });
+  }
   const activeProject =
     conversationState.project ?? projects.project(conversationState.scope.projectId);
   const projectDescriptionId = useId();
@@ -508,6 +547,37 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                 <WorkspaceChrome
                   {...binding}
                   chatActivity={activity.chat}
+                  {...(activeProject?.setupConfirmedAt && currentProjectId
+                    ? {
+                        memory: (
+                          <ProjectMemoryView
+                            key={currentProjectId}
+                            locale={bootstrap.locale}
+                            projectId={currentProjectId}
+                            port={bridge.foundation}
+                            observe={conversation.observe}
+                            drafts={memoryDrafts}
+                            draftRequest={
+                              activeMemoryRequest?.source ? activeMemoryRequest : undefined
+                            }
+                            goToMessage={(source) => {
+                              conversation.switchConversation(source.conversationId);
+                              setSourceRequest({
+                                projectId: currentProjectId,
+                                conversationId: source.conversationId,
+                                messageId: source.messageId,
+                              });
+                            }}
+                          />
+                        ),
+                        ...(activeMemoryRequest
+                          ? { memoryRequest: activeMemoryRequest.sequence }
+                          : {}),
+                        ...(activeSourceRequest
+                          ? { revealSourceRequest: activeSourceRequest }
+                          : {}),
+                      }
+                    : {})}
                   onChatVisibility={onChatVisibility}
                   projectSelector={
                     <ProjectSelector
@@ -637,6 +707,11 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                             <ConversationView
                               state={conversationState}
                               sharedReplyAnnouncements
+                              onOpenMemory={() => {
+                                openMemory();
+                              }}
+                              onAddMemory={openMemory}
+                              sourceRequest={activeSourceRequest}
                               controller={conversation}
                               onOpenConnections={openConnections}
                               commands={bridge.commands}
