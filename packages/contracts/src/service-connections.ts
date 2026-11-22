@@ -136,11 +136,15 @@ export class ServiceConnections {
     return record ? { state: record.snapshot.state, models: record.models } : undefined;
   }
   account(connection: string) {
-    const snapshot = this.records.get(connection)?.snapshot;
+    const record = this.records.get(connection);
+    if (!record)
+      return { kind: "subscription" as const, fingerprint: undefined, revision: undefined };
+    const { snapshot } = record;
+    const connected = snapshot.state === "connected";
     return {
-      kind: snapshot?.connection_kind ?? "subscription",
-      fingerprint: snapshot?.state === "connected" ? snapshot.account_fingerprint : undefined,
-      revision: snapshot?.state === "connected" ? snapshot.account_revision : undefined,
+      kind: snapshot.connection_kind ?? "subscription",
+      fingerprint: connected ? snapshot.account_fingerprint : undefined,
+      revision: connected ? snapshot.account_revision : undefined,
     };
   }
   /** Wait for an in-flight catalog read or its remaining pages, not forever after a failed read. */

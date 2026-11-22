@@ -5767,5 +5767,76 @@ it("discloses saved and unsaved reply details with loading, recovery and localiz
     );
     await act(async () => trigger.click());
   }
+
+  const entryId = id(610);
+  const memoryVersion = {
+    number: 3,
+    kind: "note",
+    text: "Exact memory version used by the reply.",
+    state: "active",
+    change: "edited",
+    author: "researcher",
+    date: details.endedAt,
+  } as const;
+  const history = vi.mocked(port.readMemoryHistory);
+  const cancel = vi.fn();
+  history.mockReturnValueOnce({
+    result: Promise.resolve({
+      ok: true,
+      value: {
+        entryId,
+        versions: [{ ...memoryVersion, number: 2, text: "An older memory version." }],
+        next: null,
+      },
+    }),
+    cancel,
+  });
+  history.mockReturnValueOnce(
+    ok({
+      entryId,
+      versions: [memoryVersion, { ...memoryVersion, number: 2, text: "An older memory version." }],
+      next: null,
+    }),
+  );
+  readReplyDetails.mockReturnValueOnce(
+    ok({
+      ...details,
+      connectionId: "fake",
+      account: null,
+      accountRevision: null,
+      operation: "development_test_synthesis",
+      requestedModel: null,
+      startedAt: null,
+      durationMs: null,
+      memory: [{ entryId, version: 3, versionId: id(613) }],
+    }),
+  );
+  const memoryTrigger = show()[0]!;
+  await act(async () => memoryTrigger.click());
+  expect(values()).toContain("Development test · version 6");
+  const memory = container.querySelector<HTMLDetailsElement>(".reply-details-memory")!;
+  expect(memory.querySelector("summary")?.textContent).toBe("1 entry");
+  const version = memory.querySelector<HTMLDetailsElement>("li details")!;
+  expect(version.querySelector("summary")?.textContent).toBe("Entry 1 · version 3");
+  expect(history).not.toHaveBeenCalled();
+  async function toggleVersion(open: boolean) {
+    await act(async () => {
+      const toggled = new Promise<void>((resolve) =>
+        version.addEventListener("toggle", () => resolve(), { once: true }),
+      );
+      version.open = open;
+      await toggled;
+    });
+  }
+  await toggleVersion(true);
+  expect(history).toHaveBeenLastCalledWith({ projectId: scope.projectId, entryId, before: 4 });
+  expect(version.querySelector("[role=alert]")?.textContent).toContain("It’s still saved.");
+  expect(version.textContent).not.toContain("An older memory version.");
+  await toggleVersion(false);
+  expect(cancel).toHaveBeenCalledOnce();
+  await toggleVersion(true);
+  expect(version.textContent).toContain(memoryVersion.text);
+  expect(version.textContent).not.toContain("An older memory version.");
+  await act(async () => memoryTrigger.click());
   vi.unstubAllGlobals();
 });

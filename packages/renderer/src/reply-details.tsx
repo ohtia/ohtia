@@ -328,7 +328,7 @@ function MemoryVersion({
       entryId: version.entryId,
       before: version.version + 1,
     });
-    async function load() {
+    async function loadMemoryVersion() {
       const result = await read.result;
       const stored =
         result.ok && result.value.versions.find(({ number }) => number === version.version);
@@ -336,7 +336,7 @@ function MemoryVersion({
       const content = await readMemoryText(port, stored.text, abort.signal);
       if (!abort.signal.aborted) setText(content);
     }
-    void load().catch(() => {
+    void loadMemoryVersion().catch(() => {
       if (!abort.signal.aborted) setFailed(true);
     });
     return () => {
