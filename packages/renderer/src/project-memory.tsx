@@ -17,11 +17,13 @@ export function MemoryChangeLine({
   locale,
   undo,
   showVoice,
+  openMemory,
 }: {
   readonly item: TimelineMemoryChange;
   readonly locale: InterfaceLocale;
   readonly undo: Undo | undefined;
   readonly showVoice: boolean;
+  readonly openMemory?: (() => void) | undefined;
 }) {
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
@@ -94,6 +96,18 @@ export function MemoryChangeLine({
           />
           <span>{message(locale, feedback)}</span>
         </div>
+      )}
+      {counts.length > 0 && openMemory && (
+        <a
+          className="memory-link"
+          href="#project-memory"
+          onClick={(event) => {
+            event.preventDefault();
+            openMemory();
+          }}
+        >
+          {message(locale, "memory.open")}
+        </a>
       )}
       {canUndo && undo && (
         <button

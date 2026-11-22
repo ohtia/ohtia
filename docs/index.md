@@ -21,10 +21,10 @@ okf_version: "0.2"
 - [Character presentation API](character-presentation.md) — Compose controlled character modes, cancellable presentation batches and static contributor attribution without preference or research authority.
 - [Research presentation API](research-presentation.md) — Compose controlled research and action proposals, accessible task notices and restricted conversation Markdown without storage or provider authority.
 - [Renderer design foundations](design-foundations.md) — Generate canonical design tokens and verify bundled typography, icons and static branding before building the renderer.
-- [Ohtia design system](design-system.md) — Visual identity, tokens, symbol and character, typography, composition, accessibility, localization, components and patterns of Ohtia's interface.
+- [Ohtia design system](design-system.md) — Visual identity, tokens, symbol and character, typography, composition, accessibility, localization, component patterns and workspace icon mappings.
 - [Workspace controller API](workspace-controller.md) — Compose deterministic per-window workspace geometry with the named layout preference and receipt boundary.
 - [Workspace chrome API](workspace-chrome.md) — Compose the first-run workspace with controlled commands, deterministic layout, accessible resizing and qualified window insets.
-- [Workspace layout](workspace-layout.md) — Deterministic workspace geometry, accessible panel controls, desktop layout preferences and interaction acceptance scenarios.
+- [Workspace layout](workspace-layout.md) — Deterministic workspace geometry, accessible panel controls, project memory navigation, desktop layout preferences and interaction acceptance scenarios.
 - [Data model](data-model.md) — Source entities, research-project relationships, and versioned Markdown manuscripts in SQLite.
 - [Draft format](draft-format.md) — Manuscript Markdown profile with citations, mathematics, tables, figures, cross-references and stable anchors.
 

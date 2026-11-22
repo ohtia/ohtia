@@ -1,6 +1,17 @@
+import { createHash } from "node:crypto";
+import { ResearchService } from "../packages/utility/src/research-service.js";
+import type { DurableProvider } from "../packages/utility/src/durable-provider.js";
 import { describe, expect, it } from "vitest";
 import {
   decodeDevelopmentReport,
+  decodeText,
+  encodeEnvelope,
+  splitText,
+  utf8Size,
+  type Request,
+  type ResearchInputs,
+  type ResearchOperation,
+  staleRevision,
   decodeProviderDispatch,
   providerMessageVersion,
   type TransferEntry,
@@ -190,7 +201,294 @@ async function acceptPlanNearInputLimit(f: Awaited<ReturnType<typeof fixture>>) 
   }
 }
 
+function memoryRequest<K extends ResearchOperation>(
+  operation: K,
+  payload: ResearchInputs[K],
+  operationId: string,
+  windowGeneration = "window",
+): Request {
+  return {
+    kind: "request",
+    protocol: 1,
+    policy: policyId,
+    requestId: crypto.randomUUID(),
+    operationId,
+    windowGeneration,
+    serviceGeneration: generation,
+    operation,
+    payload,
+  } as Request;
+}
+
 describe("attributed project memory through durable replies", () => {
+  it("keeps researched text, attribution and receipts across staged edits, conflicts and withdrawal", async () => {
+    const f = await fixture();
+    const original = await f.begin("Choose **municipal registers**.");
+    const source = original.transfer.findLast((item) => item.kind === "memory_message");
+    if (!source || source.kind !== "memory_message") throw new Error("Expected a labelled source.");
+    await f.finish(
+      original,
+      [
+        update(
+          change({
+            kind: "decision",
+            sources: [source.label],
+            text: "Use municipal registers.",
+          }),
+        ),
+      ],
+      "I saved the decision.",
+    );
+    const previous = await f.begin("Explain that decision.");
+    await f.finish(previous, [], "The registers cover the district.");
+    const unknownProject = "019a8000-0000-7000-8000-000000000123";
+    const envelopes: unknown[] = [];
+    const service = new ResearchService(
+      f.store,
+      generation,
+      (envelope) => envelopes.push(envelope),
+      { pump: async () => {} } as DurableProvider,
+      () => {
+        throw new Error("Unexpected provider failure.");
+      },
+    );
+    async function send<K extends ResearchOperation>(
+      operation: K,
+      payload: ResearchInputs[K],
+      intent: string,
+      window = "window",
+    ) {
+      const request = memoryRequest(operation, payload, intent, window);
+      const encoded = value(encodeEnvelope(request));
+      expect(value(decodeText(encoded))).toEqual(request);
+      await service.dispatch(request);
+      const response = envelopes.findLast(
+        (item) => (item as { requestId?: string }).requestId === request.requestId,
+      );
+      const decoded = value(decodeText(value(encodeEnvelope(response))));
+      expect(decoded.kind).toBe("result");
+      return (decoded as { payload: unknown }).payload;
+    }
+    try {
+      await send(
+        "research.subscribe",
+        { projectId: f.projectId, conversationId: f.conversationId, subscriptionId: "one" },
+        "subscribe-1",
+      );
+      await send(
+        "research.subscribe",
+        { projectId: f.projectId, conversationId: null, subscriptionId: "two" },
+        "subscribe-2",
+        "other",
+      );
+      const list = async () =>
+        value(
+          await f.store.readResearch(
+            memoryRequest("memory.list", { projectId: f.projectId, after: null }, "list"),
+          ),
+        ) as ResearchOutputs["memory.list"];
+      const first = await list();
+      const entry = first.entries[0]!;
+      expect(first).toMatchObject({ revision: 1, active: 1 });
+      expect(entry).toMatchObject({
+        originalAuthor: "virgilio",
+        author: "virgilio",
+        source: {
+          messageId: source.reference,
+          prefix: "Choose **municipal registers**.",
+        },
+      });
+      const initialTasks = f.query("SELECT * FROM tasks ORDER BY rowid");
+      const text = "🧪".repeat(2000);
+      const parts = splitText(text);
+      const sha256 = createHash("sha256").update(text).digest("hex");
+      const descriptor = { parts: parts.length, bytes: utf8Size(text), sha256 };
+      const edit = { entryId: entry.id, expectedVersion: 1, kind: "focus", text: descriptor };
+      expect(await send("memory.edit", edit, "edit")).toEqual(failure("parts_incomplete"));
+      for (const [index, part] of parts.entries())
+        expect(
+          await send(
+            "text.part",
+            { index: index + 1, count: parts.length, bytes: descriptor.bytes, sha256, text: part },
+            "edit",
+          ),
+        ).toMatchObject({ ok: true });
+      expect(await send("memory.edit", edit, "edit")).toEqual({
+        ok: true,
+        value: { resultId: entry.id },
+      });
+      expect(await send("memory.edit", edit, "edit")).toEqual({
+        ok: true,
+        value: { resultId: entry.id },
+      });
+      expect(
+        await send("memory.edit", { ...edit, text: "Keep my draft" }, "other-edit", "other"),
+      ).toEqual(staleRevision(2));
+      expect(
+        await send("memory.withdraw", { entryId: entry.id, expectedVersion: 1 }, "old-withdraw"),
+      ).toEqual(staleRevision(2));
+      for (const [kind, invalid] of [
+        ["invalid", "Some text"],
+        ["note", "   "],
+        ["note", "x".repeat(2001)],
+      ])
+        expect(
+          await send(
+            "memory.add",
+            { projectId: f.projectId, kind: kind!, text: invalid! },
+            "invalid",
+          ),
+        ).toEqual(failure("entry_invalid"));
+      expect(
+        await send(
+          "memory.history",
+          { projectId: unknownProject, entryId: entry.id, before: null },
+          "wrong-project",
+        ),
+      ).toEqual(failure("record_not_found"));
+      const after = await list();
+      expect(after).toMatchObject({ revision: 2, active: 1 });
+      expect(after.entries[0]).toMatchObject({
+        author: "researcher",
+        originalAuthor: "virgilio",
+        source: { messageId: source.reference },
+        text: descriptor,
+      });
+      const reference = after.entries[0]!.text;
+      if (typeof reference === "string") throw new Error("Expected a text reference.");
+      for (const [index, part] of parts.entries())
+        expect(
+          await send("text.readPart", { source: reference.source, index: index + 1 }, "read-part"),
+        ).toEqual({ ok: true, value: { text: part } });
+      for (const windowGeneration of ["window", "other"])
+        expect(envelopes).toContainEqual(
+          expect.objectContaining({
+            kind: "event",
+            windowGeneration,
+            payload: { kind: "changed", record: "memory", id: f.projectId, revision: 2 },
+          }),
+        );
+      expect(await f.timeline()).toContainEqual(
+        expect.objectContaining({
+          kind: "memoryReview",
+          taskId: previous.taskId,
+        }),
+      );
+      expect(
+        await send(
+          "memory.add",
+          {
+            projectId: f.projectId,
+            kind: "note",
+            sourceMessageId: source.reference,
+            text: "Research log",
+          },
+          "add",
+        ),
+      ).toMatchObject({ ok: true });
+      expect(
+        await send("memory.withdraw", { entryId: entry.id, expectedVersion: 2 }, "withdraw"),
+      ).toEqual({ ok: true, value: { resultId: entry.id } });
+      expect(
+        await send(
+          "memory.history",
+          { projectId: f.projectId, entryId: entry.id, before: null },
+          "history",
+        ),
+      ).toMatchObject({
+        ok: true,
+        value: {
+          versions: [
+            {
+              number: 3,
+              author: "researcher",
+              state: "withdrawn",
+              change: "withdrawn",
+              text: descriptor,
+            },
+            {
+              number: 2,
+              author: "researcher",
+              state: "active",
+              change: "edited",
+              text: descriptor,
+            },
+            {
+              number: 1,
+              author: "virgilio",
+              state: "active",
+              change: "added",
+              text: "Use municipal registers.",
+            },
+          ],
+          next: null,
+        },
+      });
+      expect(await list()).toMatchObject({ revision: 4, active: 1 });
+      expect(f.query("SELECT * FROM tasks ORDER BY rowid")).toEqual(initialTasks);
+      expect(
+        f.query(
+          "SELECT operation_id FROM command_receipts WHERE command LIKE 'memory.%' ORDER BY rowid",
+        ),
+      ).toEqual([{ operation_id: "edit" }, { operation_id: "add" }, { operation_id: "withdraw" }]);
+    } finally {
+      service.dispose();
+      await f.store.close();
+    }
+  });
+
+  it("paginates escaped inline memory within the wire budget and rejects an overfull write", async () => {
+    const f = await fixture();
+    const escaped = "\u0001".repeat(1999) + "x";
+    const add = (n: number, text: string) =>
+      f.run({
+        command: "memory.add",
+        operationId: `budget-add-${n}`,
+        payload: { projectId: f.projectId, kind: "note", text },
+      });
+    const entryIds = [];
+    for (let n = 1; n <= 3; n++) entryIds.push(value(await add(n, escaped)).resultId);
+    const entryId = entryIds[0]!;
+    for (let expectedVersion = 1; expectedVersion <= 3; expectedVersion++)
+      value(
+        await f.run({
+          command: "memory.edit",
+          operationId: `budget-edit-${expectedVersion}`,
+          payload: { entryId, expectedVersion, kind: "note", text: escaped },
+        }),
+      );
+    async function read<K extends "memory.list" | "memory.history">(
+      operation: K,
+      payload: ResearchInputs[K],
+    ) {
+      const request = memoryRequest(operation, payload, "budget-read");
+      const response = await f.store.readResearch(request);
+      expect(encodeEnvelope({ ...request, kind: "result", payload: response }).ok).toBe(true);
+      return value(response) as ResearchOutputs[K];
+    }
+    const first = await read("memory.list", { projectId: f.projectId, after: null });
+    expect(first.entries).toHaveLength(2);
+    expect(first.next).toBe(entryIds[1]);
+    const second = await read("memory.list", { projectId: f.projectId, after: first.next });
+    expect(second.entries.map(({ id }) => id)).toEqual(entryIds.slice(2));
+    expect(second.next).toBeNull();
+    const newest = await read("memory.history", { projectId: f.projectId, entryId, before: null });
+    expect(newest.versions.map(({ number }) => number)).toEqual([4, 3]);
+    const older = await read("memory.history", {
+      projectId: f.projectId,
+      entryId,
+      before: newest.next,
+    });
+    expect(older.versions.map(({ number }) => number)).toEqual([2, 1]);
+    for (let n = 4; n <= 10; n++) value(await add(n, "🧪".repeat(2000)));
+    expect(await add(11, "🧪".repeat(2000))).toEqual(failure("memory_full"));
+    const after = await read("memory.list", { projectId: f.projectId, after: null });
+    expect(after).toMatchObject({ revision: 13, active: 10 });
+    expect(
+      f.query("SELECT operation_id FROM command_receipts WHERE operation_id='budget-add-11'"),
+    ).toEqual([]);
+  });
+
   it("labels only visible sources, keeps proposals independent, and includes memory in Josefa's handoff", async () => {
     const f = await fixture();
     const original = await f.begin("I decided to use municipal registers.");
@@ -626,7 +924,7 @@ describe("attributed project memory through durable replies", () => {
       previous.close();
     }
     await f.store.open();
-    expect(f.query("PRAGMA user_version")).toEqual([{ user_version: 29 }]);
+    expect(f.query("PRAGMA user_version")).toEqual([{ user_version: 30 }]);
     expect(f.query("PRAGMA foreign_key_check")).toEqual([]);
     expect(value(await f.store.readConversations(f.projectId))[0]?.id).toBe(f.conversationId);
   });

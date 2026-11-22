@@ -1,7 +1,6 @@
 import { isMemoryTool, type ProviderTool, type ProviderToolCall } from "@ohtia/contracts";
 
-export const memoryKinds = ["goal", "decision", "focus", "open_question", "note"] as const;
-export type MemoryKind = (typeof memoryKinds)[number];
+import { memoryKinds, type MemoryKind } from "@ohtia/contracts";
 const memoryActions = ["add", "edit", "merge", "withdraw"] as const;
 export type MemoryAction = (typeof memoryActions)[number];
 

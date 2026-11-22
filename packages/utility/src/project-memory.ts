@@ -1,8 +1,29 @@
-import { failure, utf8Size, type Outcome, type TransferEntry } from "@ohtia/contracts";
+import {
+  failure,
+  staleRevision,
+  utf8Size,
+  splitText,
+  memoryKinds,
+  memoryByteLimit,
+  memoryEntryLimit,
+  memoryTextLimit,
+  memoryPageSize,
+  conversationPreviewPrefixLimit,
+  type MemoryEntry,
+  type MemoryHistory,
+  type MemoryPage,
+  type MemoryVersion,
+  type MemoryKind,
+  type Outcome,
+  type Request,
+  type ResearchCommand,
+  type TransferEntry,
+} from "@ohtia/contracts";
 import { sql, type Kysely } from "kysely";
-import { memoryKinds, type MemoryChange, type MemoryKind } from "./memory-tool.js";
+import type { MemoryChange } from "./memory-tool.js";
+import { storedText } from "./research-text.js";
 import type { BuiltInput } from "./operations.js";
-import { bytes, identifier, newId, type ResearchSchema } from "./research.js";
+import { bytes, identifier, isEntityId, newId, type ResearchSchema } from "./research.js";
 
 type Author = "researcher" | "virgilio";
 type State = "active" | "withdrawn";
@@ -71,6 +92,7 @@ interface Entry {
   readonly number: number;
   readonly state: State;
   readonly originalAuthor: Author;
+  readonly change?: Change;
   readonly author: Author;
   readonly kind: MemoryKind;
   readonly text: string;
@@ -105,9 +127,13 @@ function renderMemory(
       const author =
         entry.originalAuthor === "researcher"
           ? "written by the researcher"
-          : attributed(entry.kind)
-            ? "from the researcher's message, worded by Virgilio"
-            : "recorded by Virgilio";
+          : entry.author === "researcher" && entry.change === "edited"
+            ? "recorded by Virgilio, edited by the researcher"
+            : entry.change === "undone"
+              ? "Virgilio (restored)"
+              : attributed(entry.kind)
+                ? "from the researcher's message, worded by Virgilio"
+                : "recorded by Virgilio";
       const label = labelled ? `[E${String(index + 1)}] ` : "";
       return `${label}- ${kindNames[entry.kind]} · ${author}: ${entry.text}`;
     }),
@@ -117,7 +143,7 @@ function renderMemory(
 
 function fits(entries: Iterable<Entry>): boolean {
   const rendered = renderMemory(entries, true);
-  return rendered.entries.length <= 100 && utf8Size(rendered.text) <= 64 * 1024;
+  return rendered.entries.length <= memoryEntryLimit && utf8Size(rendered.text) <= memoryByteLimit;
 }
 
 async function currentMemory(db: Kysely<ResearchSchema>, project: Uint8Array) {
@@ -133,12 +159,291 @@ async function currentMemory(db: Kysely<ResearchSchema>, project: Uint8Array) {
       "v.text",
       "e.author as originalAuthor",
       "v.author",
+      "v.change",
     ])
     .where("e.project_id", "=", project)
     .where("e.state", "=", "active")
     .orderBy(sql`e.rowid`)
     .execute();
-  return new Map(rows.map((row) => [identifier(row.id), row]));
+  return new Map<string, Entry>(rows.map((row) => [identifier(row.id), row]));
+}
+
+export async function memoryRevision(
+  db: Kysely<ResearchSchema>,
+  project: Uint8Array,
+): Promise<number> {
+  const { count } = await db
+    .selectFrom("memory_entries as e")
+    .innerJoin("memory_entry_versions as v", "v.id", "e.current_version_id")
+    .select(sql<number>`coalesce(sum(v.number), 0)`.as("count"))
+    .where("e.project_id", "=", project)
+    .executeTakeFirstOrThrow();
+  return count;
+}
+
+async function confirmedProject(db: Kysely<ResearchSchema>, id: Uint8Array): Promise<boolean> {
+  return !!(await db
+    .selectFrom("projects")
+    .select("id")
+    .where("id", "=", id)
+    .where("setup_confirmed_at", "is not", null)
+    .executeTakeFirst());
+}
+
+type ResearcherMemoryCommand = Extract<
+  ResearchCommand,
+  { command: "memory.add" | "memory.edit" | "memory.withdraw" }
+>;
+
+export async function changeResearcherMemory(
+  db: Kysely<ResearchSchema>,
+  command: ResearcherMemoryCommand,
+): Promise<Outcome<Uint8Array>> {
+  const payload = command.payload;
+  if (
+    "text" in payload &&
+    (typeof payload.text !== "string" ||
+      !payload.text.trim() ||
+      Array.from(payload.text).length > memoryTextLimit ||
+      !memoryKinds.includes(payload.kind as MemoryKind))
+  )
+    return failure("entry_invalid");
+
+  let project: Uint8Array;
+  let write: VersionWrite;
+  if (command.command === "memory.add") {
+    const { projectId, sourceMessageId, kind, text } = command.payload;
+    if (!isEntityId(projectId) || (sourceMessageId !== undefined && !isEntityId(sourceMessageId)))
+      return failure("invalid_message");
+    project = bytes(projectId);
+    if (!(await confirmedProject(db, project))) return failure("record_not_found");
+    const source =
+      sourceMessageId === undefined
+        ? undefined
+        : await db
+            .selectFrom("messages as m")
+            .innerJoin("conversations as c", "c.id", "m.conversation_id")
+            .select("m.id")
+            .where("m.id", "=", bytes(sourceMessageId))
+            .where("c.project_id", "=", project)
+            .executeTakeFirst();
+    if (sourceMessageId && !source) return failure("record_not_found");
+    write = {
+      entry: {
+        id: newId(),
+        version: newId(),
+        number: 1,
+        state: "active",
+        originalAuthor: "researcher",
+        author: "researcher",
+        kind: kind as MemoryKind,
+        text,
+      },
+      change: "added",
+      sources: source ? [source.id] : [],
+    };
+  } else {
+    const { entryId, expectedVersion } = command.payload;
+    if (!isEntityId(entryId) || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1)
+      return failure("invalid_message");
+    const current = await db
+      .selectFrom("memory_entries as e")
+      .innerJoin("memory_entry_versions as v", "v.id", "e.current_version_id")
+      .innerJoin("projects as p", "p.id", "e.project_id")
+      .select([
+        "e.id",
+        "e.project_id",
+        "e.state",
+        "e.author as originalAuthor",
+        "v.id as version",
+        "v.number",
+        "v.author",
+        "v.kind",
+        "v.text",
+      ])
+      .where("e.id", "=", bytes(entryId))
+      .where("p.setup_confirmed_at", "is not", null)
+      .executeTakeFirst();
+    if (!current) return failure("record_not_found");
+    if (current.number !== expectedVersion) return staleRevision(current.number);
+    if (current.state !== "active") return failure("record_not_found");
+    project = current.project_id;
+    write = {
+      entry:
+        command.command === "memory.edit"
+          ? nextVersion(current, {
+              author: "researcher",
+              change: "edited",
+              kind: command.payload.kind as MemoryKind,
+              text: command.payload.text,
+            })
+          : nextVersion(current, { author: "researcher", state: "withdrawn" }),
+      change: command.command === "memory.edit" ? "edited" : "withdrawn",
+      sources: await sourcesOf(db, current.version),
+    };
+  }
+  if (write.entry.state === "active") {
+    const memory = await currentMemory(db, project);
+    memory.set(identifier(write.entry.id), write.entry);
+    if (!fits(memory.values())) return failure("memory_full");
+  }
+  await writeVersion(db, project, write, { attempt_id: null, operation_id: command.operationId });
+  await markMemoryReviews(db, project);
+  return { ok: true, value: write.entry.id };
+}
+
+function memoryVersions(db: Kysely<ResearchSchema>) {
+  return db
+    .selectFrom("memory_entries as e")
+    .innerJoin("memory_entry_versions as v", "e.id", "v.entry_id")
+    .leftJoin("attempts as a", "a.id", "v.attempt_id")
+    .leftJoin("command_receipts as r", "r.operation_id", "v.operation_id")
+    .select(["v.id", "v.number", "v.kind", "v.text", "v.state", "v.change", "v.author"])
+    .select(sql<string>`coalesce(a.finished_at,r.created_at)`.as("date"));
+}
+function memoryVersion(
+  row: Awaited<ReturnType<ReturnType<typeof memoryVersions>["execute"]>>[number],
+): MemoryVersion {
+  return {
+    number: row.number,
+    kind: row.kind,
+    text: storedText(row.text, `memory_${identifier(row.id)}`),
+    state: row.state,
+    change: row.change,
+    author: row.author,
+    date: row.date,
+  };
+}
+type MemoryListRequest = Extract<Request, { operation: "memory.list" }>;
+type MemoryHistoryRequest = Extract<Request, { operation: "memory.history" }>;
+
+export async function listProjectMemory(
+  db: Kysely<ResearchSchema>,
+  request: MemoryListRequest,
+  fitsPage: (page: MemoryPage) => boolean,
+): Promise<Outcome<MemoryPage>> {
+  const { projectId, after } = request.payload;
+  const project = bytes(projectId);
+  if (!(await confirmedProject(db, project))) return failure("record_not_found");
+  let afterRow = 0;
+  if (after) {
+    const cursor = await db
+      .selectFrom("memory_entries")
+      .select(sql<number>`rowid`.as("sequence"))
+      .where("id", "=", bytes(after))
+      .where("project_id", "=", project)
+      .executeTakeFirst();
+    if (!cursor) return failure("record_not_found");
+    afterRow = cursor.sequence;
+  }
+  const rows = await memoryVersions(db)
+    .select(["e.id as entryId", "e.author as originalAuthor"])
+    .where("e.project_id", "=", project)
+    .whereRef("v.id", "=", "e.current_version_id")
+    .where(sql<number>`e.rowid`, ">", afterRow)
+    .orderBy(sql`e.rowid`)
+    .limit(memoryPageSize + 1)
+    .execute();
+  const { text, entries: active } = renderMemory((await currentMemory(db, project)).values(), true);
+  let page: MemoryPage = {
+    projectId,
+    entries: [],
+    next: null,
+    bytes: active.length ? utf8Size(text) : 0,
+    active: active.length,
+    revision: await memoryRevision(db, project),
+  };
+  for (const [index, row] of rows.slice(0, memoryPageSize).entries()) {
+    const showSource =
+      row.state === "active" && (row.author === "researcher" || attributed(row.kind));
+    const researcherSource =
+      row.originalAuthor === "virgilio" && row.author === "virgilio" && attributed(row.kind);
+    let query = db
+      .selectFrom("memory_version_sources as s")
+      .innerJoin("messages as m", "m.id", "s.message_id")
+      .select([
+        "m.id",
+        "m.conversation_id",
+        sql<string>`substr(m.content,1,${conversationPreviewPrefixLimit})`.as("prefix"),
+        sql<number>`length(m.content)>${conversationPreviewPrefixLimit}`.as("truncated"),
+      ])
+      .where("s.version_id", "=", row.id)
+      .orderBy("m.id", "desc");
+    if (researcherSource) query = query.where("m.author_kind", "=", "researcher");
+    const source = showSource ? await query.executeTakeFirst() : undefined;
+    const entry: MemoryEntry = {
+      ...memoryVersion(row),
+      id: identifier(row.entryId),
+      originalAuthor: row.originalAuthor,
+      source: source
+        ? {
+            messageId: identifier(source.id),
+            conversationId: identifier(source.conversation_id),
+            prefix: source.prefix,
+            truncated: !!source.truncated,
+          }
+        : null,
+    };
+    const candidate = {
+      ...page,
+      entries: [...page.entries, entry],
+      next: index + 1 < rows.length ? entry.id : null,
+    };
+    if (!fitsPage(candidate)) {
+      if (index === 0) return failure("invalid_service_result");
+      break;
+    }
+    page = candidate;
+  }
+  return { ok: true, value: page };
+}
+
+export async function readMemoryHistory(
+  db: Kysely<ResearchSchema>,
+  request: MemoryHistoryRequest,
+  fitsPage: (page: MemoryHistory) => boolean,
+): Promise<Outcome<MemoryHistory>> {
+  const { projectId, entryId, before } = request.payload;
+  const project = bytes(projectId);
+  const entry = bytes(entryId);
+  const current = await db
+    .selectFrom("memory_entries")
+    .select("id")
+    .where("project_id", "=", project)
+    .where("id", "=", entry)
+    .executeTakeFirst();
+  if (!current || !(await confirmedProject(db, project))) return failure("record_not_found");
+  let query = memoryVersions(db)
+    .where("e.id", "=", entry)
+    .orderBy("v.number", "desc")
+    .limit(memoryPageSize + 1);
+  if (before !== null) query = query.where("v.number", "<", before);
+  const rows = await query.execute();
+  let page: MemoryHistory = { entryId, versions: [], next: null };
+  for (const [index, row] of rows.slice(0, memoryPageSize).entries()) {
+    const candidate = {
+      ...page,
+      versions: [...page.versions, memoryVersion(row)],
+      next: index + 1 < rows.length ? row.number : null,
+    };
+    if (!fitsPage(candidate)) {
+      if (index === 0) return failure("invalid_service_result");
+      break;
+    }
+    page = candidate;
+  }
+  return { ok: true, value: page };
+}
+
+export async function readMemoryText(db: Kysely<ResearchSchema>, id: string, index: number) {
+  if (!isEntityId(id)) return failure("record_not_found");
+  const version = await db
+    .selectFrom("memory_entry_versions")
+    .select("text")
+    .where("id", "=", bytes(id))
+    .executeTakeFirst();
+  const text = version && splitText(version.text)[index - 1];
+  return text === undefined ? failure("record_not_found") : { ok: true as const, value: { text } };
 }
 
 export async function projectMemoryInput(
@@ -285,7 +590,7 @@ export async function applyMemoryCalls(
     if (action === "merge" && (attributed(kind) || targets.some((entry) => attributed(entry.kind))))
       return "goal_or_decision_merge";
     if (!withdraw && !text.trim()) return "text_empty";
-    if (!withdraw && Array.from(text).length > 2000) return "text_too_long";
+    if (!withdraw && Array.from(text).length > memoryTextLimit) return "text_too_long";
     if (sourceReferences.length > 8) return "too_many_sources";
     const sources = [...new Set(sourceReferences)].map(bytes);
     const editsAttributedEntry =
@@ -520,6 +825,7 @@ export async function undoMemory(
       state: before?.state ?? "withdrawn",
       originalAuthor: version.originalAuthor,
       author: "researcher",
+      change: "undone",
       kind: content.kind,
       text: content.text,
     };

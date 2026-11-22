@@ -703,7 +703,7 @@ it("backfills a revision 19 conversation and keeps the selected Josefa's direct 
     ]);
     const migrated = f.raw();
     try {
-      expect(migrated.pragma("user_version", { simple: true })).toBe(29);
+      expect(migrated.pragma("user_version", { simple: true })).toBe(30);
       const transfer = migrated
         .prepare("SELECT transfer_manifest FROM attempts WHERE id=?")
         .pluck()

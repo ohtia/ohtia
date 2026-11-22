@@ -87,6 +87,9 @@ export function ConversationView({
   commands,
   onOpenConnections,
   sharedReplyAnnouncements = false,
+  onOpenMemory,
+  onAddMemory,
+  sourceRequest,
 }: {
   readonly state: ConversationState;
   readonly controller: Pick<ConversationController, "reload" | "loadEarlier"> &
@@ -118,6 +121,9 @@ export function ConversationView({
     Partial<Pick<CommandBridge, "openLink">>;
   readonly onOpenConnections?: () => void;
   readonly sharedReplyAnnouncements?: boolean;
+  readonly onOpenMemory?: () => void;
+  readonly onAddMemory?: (source: { messageId: string; researcherText?: string }) => void;
+  readonly sourceRequest?: { conversationId: string; messageId: string } | undefined;
 }) {
   const hasHandoffCard = state.items.some(
     (item) => item.kind === "handoffProposal" && item.state !== "invalid",
@@ -141,6 +147,21 @@ export function ConversationView({
     null,
   );
   const id = state.scope.conversationId;
+  const handledSource = useRef<typeof sourceRequest>(undefined);
+  useEffect(() => {
+    if (
+      !sourceRequest ||
+      sourceRequest === handledSource.current ||
+      sourceRequest.conversationId !== id ||
+      state.status !== "ready"
+    )
+      return;
+    handledSource.current = sourceRequest;
+    setTarget(sourceRequest);
+    void controller.revealMessage?.(sourceRequest.messageId).then((found) => {
+      if (!found) setTarget((current) => (current === sourceRequest ? null : current));
+    });
+  }, [sourceRequest, id, state.status, controller.revealMessage]);
   const draftAgent = useSyncExternalStore(
     controller.composer?.subscribe ?? subscribeWithoutComposer,
     controller.composer?.selectedAgent ?? defaultDraftAgent,
@@ -425,6 +446,7 @@ export function ConversationView({
                     item={item}
                     locale={locale}
                     undo={controller.performMemoryUndo}
+                    openMemory={onOpenMemory}
                     showVoice={
                       !state.items.some(
                         (other) =>
@@ -741,6 +763,18 @@ export function ConversationView({
                     messageId={item.id}
                     locale={locale}
                     commands={commands}
+                    {...(state.project?.setupConfirmedAt && onAddMemory
+                      ? {
+                          onAddMemory: () => {
+                            onAddMemory({
+                              messageId: item.id,
+                              ...(researcher
+                                ? { researcherText: state.texts.get(item.id) ?? "" }
+                                : {}),
+                            });
+                          },
+                        }
+                      : {})}
                     {...(researcher && controller.composer
                       ? {
                           onReuse: () => controller.composer?.reuse(state.texts.get(item.id) ?? ""),
@@ -810,7 +844,9 @@ function SavedMessageActions({
   locale,
   commands,
   onReuse,
+  onAddMemory,
 }: {
+  readonly onAddMemory?: () => void;
   readonly onReuse?: () => void;
   readonly messageId: string;
   readonly locale: InterfaceLocale;
@@ -873,6 +909,18 @@ function SavedMessageActions({
               onClick={onReuse}
             >
               <LucideGlyph name="text-cursor-input" size={16} />
+            </button>
+          </Tooltip>
+        )}
+        {onAddMemory && (
+          <Tooltip label={message(locale, "memory.addEntry")}>
+            <button
+              type="button"
+              className="primitive-button primitive-quiet"
+              aria-label={message(locale, "memory.addEntry")}
+              onClick={onAddMemory}
+            >
+              <LucideGlyph name="notebook-pen" size={16} />
             </button>
           </Tooltip>
         )}

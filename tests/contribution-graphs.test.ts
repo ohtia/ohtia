@@ -2094,7 +2094,7 @@ it(
         version: 1,
         operation: "plan-migration-retry",
         source: 23,
-        target: 29,
+        target: 30,
       }),
     );
     await expect(f.store.open()).rejects.toThrow(/recovery/);

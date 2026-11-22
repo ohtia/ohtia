@@ -155,6 +155,19 @@ export interface ResearchPayloads {
     readonly planId: string;
     readonly connections: Readonly<Partial<Record<ReplyAgent, string>>>;
   };
+  readonly "memory.add": {
+    readonly projectId: string;
+    readonly kind: string;
+    readonly text: string;
+    readonly sourceMessageId?: string;
+  };
+  readonly "memory.edit": {
+    readonly entryId: string;
+    readonly expectedVersion: number;
+    readonly kind: string;
+    readonly text: string;
+  };
+  readonly "memory.withdraw": { readonly entryId: string; readonly expectedVersion: number };
   readonly "memory.undo": { readonly taskId: string };
   readonly "planChange.apply": { readonly proposalId: string };
   readonly "planChange.decline": { readonly proposalId: string };
@@ -220,6 +233,9 @@ export const researchCommands = [
   "task.tryAgain",
   "plan.accept",
   "plan.decline",
+  "memory.add",
+  "memory.edit",
+  "memory.withdraw",
   "memory.undo",
   "planChange.apply",
   "planChange.decline",

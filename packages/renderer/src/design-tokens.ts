@@ -121,6 +121,7 @@ export const designMetrics = {
 } as const;
 export const iconMappings = {
   "Navigator": "signpost",
+  "Project memory": "notebook-text",
   "Supervisor": "user-round",
   "Thesis": "graduation-cap",
   "Open project or chosen agent in a selector": "check",
@@ -133,7 +134,7 @@ export const iconMappings = {
   "Proposed or pending": "circle-dashed",
   "Rejected, or a declined or replaced proposal": "circle-x",
   "Requires review": "refresh-cw",
-  "Memory changes": "notebook-pen",
+  "Add memory entry, memory changes": "notebook-pen",
   "Restricted use": "lock",
   "Saved": "check",
   "Send message": "arrow-up",

@@ -232,6 +232,20 @@ export class ResearchService {
           payload = { ...request.payload, content: text.value };
         } else this.staging.discard(request.windowGeneration, request.operationId);
       }
+      if (request.operation === "memory.add" || request.operation === "memory.edit") {
+        if (typeof request.payload.text !== "string") {
+          const text = this.staging.take(
+            request.windowGeneration,
+            request.operationId,
+            request.payload.text,
+          );
+          if (!text.ok) {
+            respond(text);
+            return true;
+          }
+          payload = { ...request.payload, text: text.value };
+        } else this.staging.discard(request.windowGeneration, request.operationId);
+      }
       if (request.operation === "handoff.return") {
         if (typeof request.payload.selection !== "string") {
           const selection = this.staging.take(

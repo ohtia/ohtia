@@ -18,6 +18,10 @@ import {
 } from "../packages/renderer/src/conversation-history.js";
 import { conversationPreview } from "../packages/renderer/src/message-markdown.js";
 import { ConversationHistoryController } from "../packages/renderer/src/conversation-history-controller.js";
+import {
+  ProjectMemoryDrafts,
+  ProjectMemoryView,
+} from "../packages/renderer/src/project-memory-view.js";
 import { MemoryChangeLine, MemoryReviewLine } from "../packages/renderer/src/project-memory.js";
 import { ConversationView } from "../packages/renderer/src/conversation-view.js";
 import {
@@ -42,6 +46,7 @@ import {
   type FoundationPort,
   type Outcome,
   type ResearchEvent,
+  type ResearchInputs,
   type ResearchOutputs,
   type ResearchResult,
   type PlanChangePreview,
@@ -5087,7 +5092,7 @@ it("shows memory undo conflicts and stale reply captions with their accessible s
   await act(async () => render(async () => failure("undo_unavailable")));
   await act(async () => container.querySelector("button")!.click());
   expect(container.querySelector('.conversation-notice[role="status"]')?.textContent).toBe(
-    "Ohtia can’t undo these changes because an entry has changed since.",
+    "Ohtia can’t undo these changes because an entry has changed since. Edit it in the project memory instead.",
   );
   expect(container.textContent).toContain(
     "Memory not updated: 3 changes didn’t fit Ohtia’s rules.",
@@ -5100,4 +5105,468 @@ it("shows memory undo conflicts and stale reply captions with their accessible s
   expect(container.querySelector('.conversation-notice[role="status"]')?.textContent).toBe(
     "The project memory is full. Shorten or withdraw entries, then undo these changes.",
   );
+});
+
+it("preserves a sourced memory draft through a second window revision and recovers history after a sequence gap", async () => {
+  const projectId = scope.projectId;
+  const entryId = id(1);
+  const messageId = id(2);
+  const version = {
+    number: 1,
+    kind: "decision",
+    text: "Use municipal registers.",
+    state: "active",
+    change: "added",
+    author: "virgilio",
+    date: "2026-11-03T12:00:00.000Z",
+  } as const;
+  let revision = 1;
+  let currentText: string = version.text;
+  const port = {
+    listMemory: vi.fn(() =>
+      ok({
+        projectId,
+        revision,
+        entries: [
+          {
+            ...version,
+            text: currentText,
+            id: entryId,
+            number: revision,
+            originalAuthor: "virgilio",
+            source: {
+              messageId,
+              conversationId: scope.conversationId,
+              prefix: "Use **municipal registers**.",
+              truncated: false,
+            },
+          },
+        ],
+        next: null,
+        bytes: 100,
+        active: 1,
+      } satisfies ResearchOutputs["memory.list"]),
+    ),
+    readMemoryHistory: vi.fn(() => ok({ entryId, versions: [version], next: null })),
+    readTextPart: vi.fn(),
+    sendTextPart: vi.fn(),
+    addMemory: vi.fn(() => ok({ resultId: entryId })),
+    editMemory: vi
+      .fn()
+      .mockImplementationOnce(() => call(staleRevision(3)))
+      .mockImplementation(() => ok({ resultId: entryId })),
+    withdrawMemory: vi
+      .fn()
+      .mockImplementationOnce(() => call(staleRevision(4)))
+      .mockImplementationOnce(() => call(failure("uncertain")))
+      .mockImplementationOnce(() => call(failure("storage_failed")))
+      .mockImplementation(() => ok({ resultId: entryId })),
+  };
+  let observe: ((notice: Outcome<ResearchEvent> | "ready") => void) | undefined;
+  const goToMessage = vi.fn();
+  const props = {
+    projectId,
+    port,
+    locale: "en-US" as const,
+    goToMessage,
+    observe: (listener: NonNullable<typeof observe>) => {
+      observe = listener;
+      return () => {
+        observe = undefined;
+      };
+    },
+    draftRequest: undefined,
+    drafts: new ProjectMemoryDrafts(),
+  };
+  await act(async () => root.render(h(ProjectMemoryView, props)));
+  const button = (label: string) =>
+    [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (element) => element.textContent?.trim() === label,
+    )!;
+  expect(container.textContent).toContain("From your message · worded by Virgilio");
+  expect(container.querySelector("q")?.textContent).toBe("Use municipal registers.");
+  await act(async () => container.querySelector<HTMLAnchorElement>("q + a")!.click());
+  expect(goToMessage).toHaveBeenCalledWith(expect.objectContaining({ messageId }));
+  await act(async () => button("Show entry history").click());
+  expect(button("Hide entry history").hasAttribute("aria-expanded")).toBe(false);
+  expect(container.textContent).toContain("Added · Recorded by Virgilio");
+  await act(async () => button("Edit entry").click());
+  expect(container.querySelector("textarea")?.value).toBe("Use municipal registers.");
+  await act(async () => button("Add memory entry…").click());
+  currentText = "Use the municipal archive.";
+  await act(async () =>
+    observe!({
+      ok: true,
+      value: { kind: "changed", record: "memory", id: projectId, revision: ++revision },
+    }),
+  );
+  await act(async () => button("Edit entry").click());
+  expect(container.querySelector("textarea")?.value).toBe(currentText);
+  const text = container.querySelector("textarea")!;
+  expect(document.activeElement).toBe(text);
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      text,
+      "Retain this draft.",
+    );
+    text.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  revision = 3;
+  await act(async () =>
+    observe!({ ok: true, value: { kind: "changed", record: "memory", id: projectId, revision } }),
+  );
+  expect(port.listMemory).toHaveBeenCalledTimes(3);
+  expect(port.readMemoryHistory).toHaveBeenCalledTimes(3);
+  await act(async () => button("Save entry").click());
+  expect(container.querySelector("[role=status]")?.textContent).toContain(
+    "This entry changed in another window.",
+  );
+  expect(container.querySelector("textarea")?.value).toBe("Retain this draft.");
+  await act(async () => button("Save entry").click());
+  expect(
+    port.editMemory.mock.calls.map(([, payload]) => [payload.expectedVersion, payload.text]),
+  ).toEqual([
+    [2, "Retain this draft."],
+    [3, "Retain this draft."],
+  ]);
+  expect(container.querySelector("textarea")).toBeNull();
+  await act(async () => observe!(failure("sequence_gap")));
+  expect(port.readMemoryHistory).toHaveBeenCalledTimes(6);
+  await act(async () =>
+    root.render(
+      h(ProjectMemoryView, {
+        ...props,
+        draftRequest: { sequence: 1, source: { messageId, researcherText: "My words." } },
+      }),
+    ),
+  );
+  expect(container.querySelector("select")?.value).toBe("decision");
+  expect(container.querySelector("textarea")?.value).toBe("My words.");
+  await act(async () => button("Save entry").click());
+  expect(port.addMemory).toHaveBeenCalledWith(expect.any(String), {
+    projectId,
+    sourceMessageId: messageId,
+    kind: "decision",
+    text: "My words.",
+  });
+  await act(async () => button("Withdraw entry").click());
+  expect(document.activeElement).toBe(container.querySelector("dialog [data-close]"));
+  expect(port.withdrawMemory).not.toHaveBeenCalled();
+  const dialog = container.querySelector("dialog")!;
+  const confirm = [...dialog.querySelectorAll("button")].find(
+    (element) => element.textContent?.trim() === "Withdraw entry",
+  )!;
+  await act(async () => confirm.click());
+  expect(port.withdrawMemory).toHaveBeenCalledWith(expect.any(String), {
+    entryId,
+    expectedVersion: 3,
+  });
+  expect(dialog.textContent).toContain("Confirm again to withdraw that version.");
+  await act(async () => confirm.click());
+  expect(port.withdrawMemory.mock.calls[1]?.[1]).toEqual({ entryId, expectedVersion: 4 });
+  expect(dialog.textContent).toContain("couldn’t confirm that this entry was withdrawn");
+  await act(async () => confirm.click());
+  expect(port.withdrawMemory.mock.calls[2]).toEqual(port.withdrawMemory.mock.calls[1]);
+  expect(dialog.textContent).toContain("couldn’t withdraw this entry.");
+  await act(async () => confirm.click());
+  expect(port.withdrawMemory.mock.calls[3]?.[0]).not.toBe(port.withdrawMemory.mock.calls[2]?.[0]);
+  expect(container.querySelector("dialog[open]")).toBeNull();
+});
+
+it("retains project memory drafts and their exact source through navigation and an uncertain save", async () => {
+  const projectId = scope.projectId;
+  const drafts = new ProjectMemoryDrafts();
+  const port = {
+    listMemory: vi.fn(({ projectId: current }: ResearchInputs["memory.list"]) =>
+      ok({ projectId: current, revision: 0, entries: [], next: null, bytes: 0, active: 0 }),
+    ),
+    readMemoryHistory: vi.fn(),
+    readTextPart: vi.fn(),
+    sendTextPart: vi.fn(),
+    addMemory: vi.fn(),
+    editMemory: vi.fn(),
+    withdrawMemory: vi.fn(),
+  };
+  const props = {
+    drafts,
+    port,
+    locale: "en-US" as const,
+    observe: () => () => {},
+    goToMessage() {},
+  };
+  const first = { sequence: 1, source: { messageId: id(901), researcherText: "My own decision." } };
+  const second = { sequence: 2, source: { messageId: id(902) } };
+  const select = (request: typeof first | typeof second | undefined, current = projectId) =>
+    act(async () =>
+      root.render(
+        h(ProjectMemoryView, { ...props, key: current, projectId: current, draftRequest: request }),
+      ),
+    );
+  const form = () => container.querySelector("textarea")!;
+  const button = (label: string) =>
+    [...container.querySelectorAll("button")].find(
+      (element) => element.textContent?.trim() === label,
+    )!;
+  function type(text: string) {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      form(),
+      text,
+    );
+    form().dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  await select(first);
+  expect(form().value).toBe("My own decision.");
+  await act(async () => type("A preserved draft."));
+  await select(second);
+  expect(container.querySelector("select")?.value).toBe("note");
+  expect(form().value).toBe("");
+  await act(async () => button("Save entry").click());
+  expect(container.querySelector("[role=status]")?.textContent).toContain("Enter the entry text");
+  await act(async () => type("x".repeat(2001)));
+  expect(container.querySelector("[role=status]")?.textContent).toContain("Remove 1 character");
+  await act(async () => type("Sourced from the agent."));
+  let resolve!: (result: Outcome<ResearchResult>) => void;
+  port.addMemory
+    .mockImplementationOnce(() => ({
+      result: new Promise<Outcome<ResearchResult>>((done) => {
+        resolve = done;
+      }),
+      cancel() {},
+    }))
+    .mockImplementationOnce(() => call(failure("memory_full")))
+    .mockImplementationOnce(() => ok({ resultId: id(903) }));
+  await act(async () => button("Save entry").click());
+  await select(undefined, id(1002));
+  expect(form()).toBeNull();
+  await act(async () => resolve(failure("uncertain")));
+  await select(second);
+  expect(form().value).toBe("Sourced from the agent.");
+  expect(container.textContent).toContain("couldn’t confirm that this entry was saved");
+  await act(async () => button("Save entry").click());
+  expect(port.addMemory.mock.calls[1]).toEqual(port.addMemory.mock.calls[0]);
+  expect(port.addMemory.mock.calls[1]?.[1]).toMatchObject({
+    sourceMessageId: second.source.messageId,
+  });
+  expect(container.textContent).toContain("The project memory is full.");
+  await act(async () => button("Save entry").click());
+  expect(port.addMemory.mock.calls[2]?.[0]).not.toBe(port.addMemory.mock.calls[1]?.[0]);
+  await select(undefined, id(1002));
+  await select(second);
+  expect(form()).toBeNull();
+  await select({ ...first, sequence: 3 });
+  expect(form().value).toBe("A preserved draft.");
+  await select({ sequence: 4, source: { messageId: id(904), researcherText: "x".repeat(2001) } });
+  expect(container.querySelector("select")?.value).toBe("note");
+  expect(form().value).toBe("");
+  await act(async () => button("Discard changes").click());
+  expect(form()).toBeNull();
+});
+
+it("recovers memory and history failures and keeps withdrawn entries inspectable", async () => {
+  const entryId = id(601);
+  const projectId = scope.projectId;
+  const date = "2026-11-09T12:00:00.000Z";
+  const stored = "🧪".repeat(1200);
+  const parts = ["🧪".repeat(1024), "🧪".repeat(176)];
+  const body = {
+    source: "memory_body",
+    bytes: 4800,
+    parts: 2,
+    sha256: createHash("sha256").update(stored).digest("hex"),
+  };
+  const added = {
+    number: 1,
+    kind: "note",
+    text: "The original.",
+    state: "active",
+    change: "added",
+    author: "virgilio",
+    date,
+  } as const;
+  const entry = {
+    ...added,
+    id: entryId,
+    originalAuthor: "virgilio",
+    source: null,
+    number: 4,
+    state: "withdrawn",
+    change: "undone",
+    author: "researcher",
+    text: body,
+  } as const;
+  const one = deferred<Outcome<ResearchOutputs["memory.list"]>>();
+  const two = deferred<Outcome<ResearchOutputs["memory.history"]>>();
+  const port = {
+    listMemory: vi
+      .fn()
+      .mockImplementationOnce(() => ({ result: one.promise, cancel() {} }))
+      .mockImplementation(() =>
+        ok({ projectId, revision: 4, entries: [entry], next: null, bytes: 0, active: 0 }),
+      ),
+    readTextPart: vi.fn(({ index }: ResearchInputs["text.readPart"]) =>
+      ok({ text: parts[index - 1]! }),
+    ),
+    readMemoryHistory: vi
+      .fn()
+      .mockImplementationOnce(() => ({ result: two.promise, cancel() {} }))
+      .mockImplementation(() =>
+        ok({
+          entryId,
+          versions: [
+            { ...entry, text: body },
+            { ...added, number: 3, change: "undone", author: "researcher" },
+            { ...added, number: 2, change: "merged_into", state: "withdrawn" },
+            added,
+          ],
+          next: null,
+        }),
+      ),
+    sendTextPart: vi.fn(),
+    addMemory: vi.fn(),
+    editMemory: vi.fn(),
+    withdrawMemory: vi.fn(),
+  };
+  vi.stubGlobal("crypto", {
+    subtle: {
+      digest: (_algorithm: string, bytes: Uint8Array) =>
+        Promise.resolve(Uint8Array.from(createHash("sha256").update(bytes).digest()).buffer),
+    },
+  });
+  try {
+    await act(async () =>
+      root.render(
+        h(ProjectMemoryView, {
+          projectId,
+          port,
+          locale: "en-US",
+          drafts: new ProjectMemoryDrafts(),
+          observe: () => () => {},
+          goToMessage() {},
+          draftRequest: undefined,
+        }),
+      ),
+    );
+    function button(label: string) {
+      return [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+        (element) => element.textContent?.trim() === label,
+      )!;
+    }
+    expect(container.querySelector("[aria-busy=true]")?.textContent).toContain("Loading…");
+    await act(async () => one.resolve(failure("storage_failed")));
+    expect(container.querySelector("[role=alert]")?.textContent).toContain(
+      "couldn’t load the project memory",
+    );
+    expect(container.querySelector("[role=alert] button")).toBeNull();
+    await act(async () => button("Reload project memory").click());
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain("0% of the memory’s space used · 0 of 100 entries");
+    });
+    expect(container.textContent).toContain("Nothing saved yet.");
+    await act(async () => button("Show withdrawn entries (1)").click());
+    expect(button("Hide withdrawn entries (1)").hasAttribute("aria-expanded")).toBe(false);
+    expect(button("Edit entry")).toBeUndefined();
+    expect(button("Withdraw entry")).toBeUndefined();
+    expect(container.textContent).toContain(stored);
+    expect(container.textContent).toContain("Recorded by Virgilio · edited by you");
+    await act(async () => button("Show entry history").click());
+    expect(container.querySelector("[aria-busy=true]")?.textContent).toBe("Loading…");
+    await act(async () => two.resolve(failure("storage_failed")));
+    expect(container.querySelector("[role=alert]")?.textContent).toContain(
+      "couldn’t load the entry history",
+    );
+    await act(async () => button("Reload entry history").click());
+    await vi.waitFor(() => {
+      expect(container.querySelectorAll(".memory-history li")).toHaveLength(4);
+    });
+    const heads = [...container.querySelectorAll(".memory-history .memory-attribution")].map(
+      (label) => label.textContent,
+    );
+    expect(heads).toEqual([
+      "Withdrawn by Undo · Written by you · Nov 9, 2026",
+      "Restored by Undo · Written by you · Nov 9, 2026",
+      "Merged into another entry · Recorded by Virgilio · Nov 9, 2026",
+      "Added · Recorded by Virgilio · Nov 9, 2026",
+    ]);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("shows add-to-memory last on saved project messages and omits it during setup", async () => {
+  const f = controllerHarness();
+  await settle();
+  const onAddMemory = vi.fn();
+  const onOpenMemory = vi.fn();
+  const researcher = message(1, "A human decision.");
+  const agent = {
+    ...message(2, "A reply."),
+    authorKind: "agent",
+    agentId: "virgilio",
+    taskId: id(3),
+  } as TimelineItem;
+  const change = {
+    kind: "memoryChange",
+    rank: 3,
+    id: id(4),
+    position: 2,
+    revision: 1,
+    taskId: id(3),
+    added: 1,
+    edited: 0,
+    merged: 0,
+    withdrawn: 0,
+    rejected: 0,
+    canUndo: true,
+  } as const;
+  const project = {
+    id: scope.projectId,
+    projectType: "thesis",
+    title: "Synthetic thesis",
+    documentLanguage: "en",
+    isDevelopment: false,
+    createdAt: summary.createdAt,
+    updatedAt: summary.updatedAt,
+    lastOpenedAt: summary.updatedAt,
+  } as const;
+  const select = (setupConfirmedAt: string | null) =>
+    act(async () =>
+      root.render(
+        h(ConversationView, {
+          state: {
+            ...state([researcher, agent, change]),
+            conversation: summary,
+            project: { ...project, setupConfirmedAt },
+          },
+          controller: f.controller,
+          locale: "en-US",
+          onAddMemory,
+          onOpenMemory,
+          commands: { copyMessage: async () => true, openExternalLink: async () => true },
+        }),
+      ),
+    );
+  const actionRows = () =>
+    [...container.querySelectorAll(".conversation-actions")].map((row) =>
+      [...row.querySelectorAll("button")].map((action) => action.getAttribute("aria-label")),
+    );
+  try {
+    await select(null);
+    expect(actionRows().flat()).not.toContain("Add memory entry…");
+    await select(summary.createdAt);
+    expect(actionRows()).toEqual([
+      ["Copy message", "Reuse message", "Add memory entry…"],
+      ["Copy message", "Add memory entry…"],
+    ]);
+    const add = container.querySelectorAll<HTMLButtonElement>("[aria-label='Add memory entry…']");
+    await act(async () => add[0]!.click());
+    await act(async () => add[1]!.click());
+    expect(onAddMemory.mock.calls).toEqual([
+      [{ messageId: researcher.id, researcherText: "A human decision." }],
+      [{ messageId: agent.id }],
+    ]);
+    await act(async () => container.querySelector<HTMLAnchorElement>(".memory-reply a")!.click());
+    expect(onOpenMemory).toHaveBeenCalledOnce();
+  } finally {
+    f.controller.dispose();
+  }
 });

@@ -59,6 +59,9 @@ export interface WorkspaceWindowInsets {
 }
 export interface WorkspaceChromeProps {
   readonly chat?: ReactNode;
+  readonly memory?: ReactNode;
+  readonly memoryRequest?: number;
+  readonly revealSourceRequest?: object;
   readonly projectSelector?: ReactNode;
   readonly hasProjects?: boolean | undefined;
   readonly project?: ProjectRecord | undefined;
@@ -190,6 +193,9 @@ export function ShortcutControl({
 /** Real chrome; storage, command ownership and confirmed presentation inputs stay with composition. */
 export function WorkspaceChrome({
   chat,
+  memory,
+  memoryRequest,
+  revealSourceRequest,
   chatTitle,
   chatActivity,
   onChatVisibility,
@@ -238,6 +244,74 @@ export function WorkspaceChrome({
   }, []);
   const id = useId();
   const panelId = (panel: WorkspacePanel) => `${id}-${panel}`;
+  const [memoryTabs, setMemoryTabs] = useState<ReadonlyMap<string, boolean>>(() => new Map());
+  const memoryOpen = !!memory && !!projectScope && memoryTabs.has(projectScope);
+  const memorySelected = memoryOpen && memoryTabs.get(projectScope) === true;
+  const selectedTab = memorySelected ? "memory" : "navigator";
+  const handledMemoryRequests = useRef(new Map<string, number>());
+  const handledSourceRequest = useRef<object | undefined>(undefined);
+  const memoryTabRef = useRef<HTMLButtonElement>(null);
+  const navigatorTabRef = useRef<HTMLButtonElement>(null);
+  const [focusMemory, setFocusMemory] = useState(false);
+
+  const openMemory = useCallback(() => {
+    if (!projectScope) return;
+    const layout = controller.current;
+    if (!layout) return;
+    if (layout.state.geometry.mode === "narrow") layout.select("documents");
+    else if (!layout.state.geometry.visible.documents) layout.visibility("documents");
+    setMemoryTabs((previous) => new Map(previous).set(projectScope, true));
+    setFocusMemory(true);
+  }, [projectScope]);
+
+  useLayoutEffect(() => {
+    if (
+      !memory ||
+      !memoryRequest ||
+      !projectScope ||
+      handledMemoryRequests.current.get(projectScope) === memoryRequest ||
+      !state ||
+      state.initializing ||
+      preferences.busy
+    )
+      return;
+    handledMemoryRequests.current.set(projectScope, memoryRequest);
+    openMemory();
+  }, [memory, memoryRequest, openMemory, preferences, projectScope, state]);
+
+  useLayoutEffect(() => {
+    if (!focusMemory || !memorySelected || !state?.geometry.visible.documents) return;
+    const tab = memoryTabRef.current;
+    if (
+      tab &&
+      !tab.closest("[hidden], [inert]") &&
+      !tab.closest(".workspace-documents")?.contains(document.activeElement)
+    )
+      tab.focus({ preventScroll: true });
+    setFocusMemory(false);
+  }, [focusMemory, memorySelected, state]);
+
+  useLayoutEffect(() => {
+    const layout = controller.current;
+    if (
+      !revealSourceRequest ||
+      handledSourceRequest.current === revealSourceRequest ||
+      !layout ||
+      !state ||
+      state.initializing ||
+      preferences.busy
+    )
+      return;
+    handledSourceRequest.current = revealSourceRequest;
+    if (layout.state.geometry.mode === "narrow") layout.select("chat");
+    else if (!layout.state.geometry.visible.chat) layout.visibility("chat");
+  }, [preferences, revealSourceRequest, state]);
+
+  function selectDocumentTab(active: boolean) {
+    if (projectScope && memoryOpen)
+      setMemoryTabs((previous) => new Map(previous).set(projectScope, active));
+  }
+
   const text = (key: SimpleMessageKey) => message(locale, key);
   useEffect(
     () =>
@@ -870,17 +944,65 @@ export function WorkspaceChrome({
                   >
                     <button
                       type="button"
+                      ref={navigatorTabRef}
                       id={`${id}-navigator-tab`}
                       role="tab"
-                      aria-selected="true"
+                      tabIndex={memorySelected ? -1 : 0}
+                      aria-selected={!memorySelected}
+                      onClick={() => {
+                        selectDocumentTab(false);
+                      }}
+                      onKeyDown={(event) => {
+                        if (memoryOpen && ["ArrowLeft", "ArrowRight", "End"].includes(event.key)) {
+                          event.preventDefault();
+                          memoryTabRef.current?.focus();
+                        }
+                      }}
                       aria-controls={`${id}-navigator`}
                     >
                       <LucideGlyph name="signpost" size={16} />
                       {text("workspace.navigator")}
                     </button>
+                    {memoryOpen && (
+                      <button
+                        type="button"
+                        ref={memoryTabRef}
+                        id={`${id}-memory-tab`}
+                        role="tab"
+                        tabIndex={memorySelected ? 0 : -1}
+                        aria-selected={memorySelected}
+                        aria-controls={`${id}-memory`}
+                        onClick={() => {
+                          selectDocumentTab(true);
+                        }}
+                        onKeyDown={(event) => {
+                          if (["ArrowLeft", "ArrowRight", "Home"].includes(event.key)) {
+                            event.preventDefault();
+                            navigatorTabRef.current?.focus();
+                          }
+                        }}
+                      >
+                        <LucideGlyph name="notebook-text" size={16} />
+                        {text("memory.title")}
+                      </button>
+                    )}
+                  </div>
+                )}
+                {panel === "documents" && memoryOpen && (
+                  <div
+                    className="workspace-panel-scroll"
+                    role="tabpanel"
+                    id={`${id}-memory`}
+                    hidden={!memorySelected}
+                    inert={!memorySelected}
+                    tabIndex={0}
+                    aria-labelledby={`${id}-memory-tab`}
+                  >
+                    {memory}
                   </div>
                 )}
                 <div
+                  hidden={panel === "documents" && selectedTab === "memory"}
                   className="workspace-panel-scroll"
                   role={panel === "documents" ? "tabpanel" : "region"}
                   id={panel === "documents" ? `${id}-navigator` : undefined}
@@ -929,6 +1051,22 @@ export function WorkspaceChrome({
                         <ShortcutControl id="about.open" commands={commands} locale={locale} text />
                       </div>
                     </div>
+                  ) : panel === "explorer" && memory ? (
+                    <>
+                      <button
+                        type="button"
+                        className="workspace-memory-entry primitive-button primitive-quiet"
+                        aria-current={memorySelected || undefined}
+                        onClick={openMemory}
+                      >
+                        <LucideGlyph name="notebook-text" size={16} />
+                        {text("memory.title")}
+                      </button>
+                      <p className="workspace-empty workspace-memory-empty">
+                        <LucideGlyph name={panelIcons.explorer} size={20} />
+                        {text("setup.explorer")}
+                      </p>
+                    </>
                   ) : panel === "chat" && chat ? (
                     chat
                   ) : (

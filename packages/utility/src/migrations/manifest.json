@@ -114,5 +114,9 @@
   {
     "name": "0029_project_memory",
     "sha256": "4bed5762063f055b0067a0ab0a3592059b7aa59093f7c2a89bea6e217fcc7b91"
+  },
+  {
+    "name": "0030_researcher_memory",
+    "sha256": "9cef4a3706d47dfff7f5fad48890e235b94fc30004eba0e2351978c5cedea056"
   }
 ]

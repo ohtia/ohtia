@@ -265,6 +265,80 @@ describe("sandbox preload composition", () => {
       error: { code: "invalid_service_result" },
     });
 
+    const entryId = "019a8000-0000-7000-8000-000000000235";
+    const memory = [
+      [
+        "memory.add",
+        h.bridge.foundation.addMemory("memory-add", {
+          projectId: conversationId,
+          kind: "note",
+          text: "Memory",
+        }),
+        { resultId: entryId },
+      ],
+      [
+        "memory.edit",
+        h.bridge.foundation.editMemory("memory-edit", {
+          entryId,
+          expectedVersion: 1,
+          kind: "note",
+          text: "Edited",
+        }),
+        { resultId: entryId },
+      ],
+      [
+        "memory.withdraw",
+        h.bridge.foundation.withdrawMemory("memory-withdraw", { entryId, expectedVersion: 2 }),
+        { resultId: entryId },
+      ],
+      [
+        "memory.list",
+        h.bridge.foundation.listMemory({ projectId: conversationId, after: null }),
+        {
+          projectId: conversationId,
+          revision: 3,
+          entries: [],
+          next: null,
+          bytes: 0,
+          active: 0,
+        },
+      ],
+      [
+        "memory.history",
+        h.bridge.foundation.readMemoryHistory({ projectId: conversationId, entryId, before: null }),
+        {
+          entryId,
+          versions: [3, 2, 1].map((number) => ({
+            number,
+            kind: "note",
+            text: "Memory",
+            state: number === 3 ? "withdrawn" : "active",
+            change: number === 3 ? "withdrawn" : number === 2 ? "edited" : "added",
+            author: "researcher",
+            date: "2026-11-21T09:00:00.000Z",
+          })),
+          next: null,
+        },
+      ],
+    ] as const;
+    const memoryWires = h.ipcRenderer.send.mock.calls.slice(-memory.length);
+    for (const [index, [operation, memoryCall, value]] of memory.entries()) {
+      const [channel, wire] = memoryWires[index]!;
+      expect(channel).toBe(desktopChannels.port);
+      const request = JSON.parse(wire);
+      expect(request.operation).toBe(operation);
+      h.ipcRenderer.emit(
+        desktopChannels.reply,
+        {},
+        JSON.stringify({
+          ...request,
+          kind: "result",
+          payload: { ok: true, value },
+        }),
+      );
+      await expect(memoryCall.result).resolves.toEqual({ ok: true, value });
+    }
+
     const retrySynthesis = h.bridge.foundation.tryAgainSynthesis("try-synthesis", {
       taskId: "019a8000-0000-7000-8000-000000000501",
     });

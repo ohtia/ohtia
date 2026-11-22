@@ -38,6 +38,11 @@ export const researchOperations = [
   "plan.accept",
   "plan.decline",
   "planChange.read",
+  "memory.add",
+  "memory.edit",
+  "memory.withdraw",
+  "memory.list",
+  "memory.history",
   "memory.undo",
   "planChange.apply",
   "planChange.decline",
@@ -81,6 +86,53 @@ export interface TextPart {
   readonly bytes: number;
   readonly sha256: string;
   readonly text: string;
+}
+export const memoryKinds = ["goal", "decision", "focus", "open_question", "note"] as const;
+export type MemoryKind = (typeof memoryKinds)[number];
+export const memoryEntryLimit = 100;
+export const memoryByteLimit = 64 * 1024;
+export const memoryTextLimit = 2000;
+export const memoryPageSize = 8;
+export const memoryChanges = [
+  "added",
+  "edited",
+  "merged",
+  "merged_into",
+  "withdrawn",
+  "undone",
+] as const;
+export type MemoryAuthor = "researcher" | "virgilio";
+export interface MemoryVersion {
+  readonly number: number;
+  readonly kind: MemoryKind;
+  readonly text: PortText;
+  readonly state: "active" | "withdrawn";
+  readonly change: (typeof memoryChanges)[number];
+  readonly author: MemoryAuthor;
+  readonly date: string;
+}
+export interface MemoryEntry extends MemoryVersion {
+  readonly id: string;
+  readonly originalAuthor: MemoryAuthor;
+  readonly source: {
+    readonly messageId: string;
+    readonly conversationId: string;
+    readonly prefix: string;
+    readonly truncated: boolean;
+  } | null;
+}
+export interface MemoryPage {
+  readonly projectId: string;
+  readonly revision: number;
+  readonly entries: readonly MemoryEntry[];
+  readonly next: string | null;
+  readonly bytes: number;
+  readonly active: number;
+}
+export interface MemoryHistory {
+  readonly entryId: string;
+  readonly versions: readonly MemoryVersion[];
+  readonly next: number | null;
 }
 export interface ProjectCursor {
   readonly lastOpenedAt: string;
@@ -506,7 +558,8 @@ export type ResearchEvent =
     }
   | {
       readonly kind: "changed";
-      readonly record: "project" | "conversation" | "timeline" | "usagePause" | "executionLimits";
+      readonly record:
+        "project" | "conversation" | "timeline" | "usagePause" | "executionLimits" | "memory";
       readonly id: string;
       readonly revision: number;
     }
@@ -546,6 +599,19 @@ export interface ResearchInputs {
   "plan.accept": ResearchPayloads["plan.accept"];
   "plan.decline": ResearchPayloads["plan.decline"];
   "planChange.read": { readonly conversationId: string; readonly proposalId: string };
+  "memory.add": Omit<ResearchPayloads["memory.add"], "text"> & {
+    readonly text: string | TextDescriptor;
+  };
+  "memory.edit": Omit<ResearchPayloads["memory.edit"], "text"> & {
+    readonly text: string | TextDescriptor;
+  };
+  "memory.withdraw": ResearchPayloads["memory.withdraw"];
+  "memory.list": { readonly projectId: string; readonly after: string | null };
+  "memory.history": {
+    readonly projectId: string;
+    readonly entryId: string;
+    readonly before: number | null;
+  };
   "memory.undo": ResearchPayloads["memory.undo"];
   "planChange.apply": ResearchPayloads["planChange.apply"];
   "planChange.decline": ResearchPayloads["planChange.decline"];
@@ -604,6 +670,11 @@ export interface ResearchOutputs {
   "plan.accept": ResearchResult;
   "plan.decline": ResearchResult;
   "planChange.read": PlanChangePreview & { readonly proposalId: string };
+  "memory.add": ResearchResult;
+  "memory.edit": ResearchResult;
+  "memory.withdraw": ResearchResult;
+  "memory.list": MemoryPage;
+  "memory.history": MemoryHistory;
   "memory.undo": ResearchResult;
   "planChange.apply": ResearchResult;
   "planChange.decline": ResearchResult;
@@ -704,6 +775,14 @@ export interface ResearchPort {
     operationId: string,
     input: ResearchInputs["conversation.stop"],
   ): PortCall<ResearchResult>;
+  addMemory(operationId: string, input: ResearchInputs["memory.add"]): PortCall<ResearchResult>;
+  editMemory(operationId: string, input: ResearchInputs["memory.edit"]): PortCall<ResearchResult>;
+  withdrawMemory(
+    operationId: string,
+    input: ResearchInputs["memory.withdraw"],
+  ): PortCall<ResearchResult>;
+  listMemory(input: ResearchInputs["memory.list"]): PortCall<MemoryPage>;
+  readMemoryHistory(input: ResearchInputs["memory.history"]): PortCall<MemoryHistory>;
   undoMemory(operationId: string, input: ResearchInputs["memory.undo"]): PortCall<ResearchResult>;
   stopTask(operationId: string, input: ResearchInputs["task.stop"]): PortCall<ResearchResult>;
   readDestination(
@@ -774,6 +853,9 @@ export function isResearchMutation(value: string): value is WindowResearchComman
     "plan.cancel",
     "plan.accept",
     "plan.decline",
+    "memory.add",
+    "memory.edit",
+    "memory.withdraw",
     "memory.undo",
     "planChange.apply",
     "planChange.decline",
@@ -945,6 +1027,42 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
         isResearchId(value.conversationId) &&
         integer(value.expectedOwnerRevision) &&
         integer(value.after, 0)
+      );
+    case "memory.add":
+      return (
+        (exact(value, ["projectId", "kind", "text"]) ||
+          (exact(value, ["projectId", "kind", "text", "sourceMessageId"]) &&
+            isResearchId(value.sourceMessageId))) &&
+        isResearchId(value.projectId) &&
+        typeof value.kind === "string" &&
+        content(value.text)
+      );
+    case "memory.edit":
+      return (
+        exact(value, ["entryId", "expectedVersion", "kind", "text"]) &&
+        isResearchId(value.entryId) &&
+        integer(value.expectedVersion) &&
+        typeof value.kind === "string" &&
+        content(value.text)
+      );
+    case "memory.withdraw":
+      return (
+        exact(value, ["entryId", "expectedVersion"]) &&
+        isResearchId(value.entryId) &&
+        integer(value.expectedVersion)
+      );
+    case "memory.list":
+      return (
+        exact(value, ["projectId", "after"]) &&
+        isResearchId(value.projectId) &&
+        nullable(value.after, isResearchId)
+      );
+    case "memory.history":
+      return (
+        exact(value, ["projectId", "entryId", "before"]) &&
+        isResearchId(value.projectId) &&
+        isResearchId(value.entryId) &&
+        nullable(value.before, integer)
       );
     case "conversation.stop":
       return exact(value, ["conversationId"]) && isResearchId(value.conversationId);
@@ -1552,6 +1670,27 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
       isResearchId(value.resultId) &&
       planOutcomes.includes(value.outcome as PlanOutcome)
     );
+  if (operation === "memory.list")
+    return (
+      exact(value, ["projectId", "revision", "entries", "next", "bytes", "active"]) &&
+      isResearchId(value.projectId) &&
+      integer(value.revision, 0) &&
+      integer(value.bytes, 0, memoryByteLimit) &&
+      integer(value.active, 0, memoryEntryLimit) &&
+      nullable(value.next, isResearchId) &&
+      Array.isArray(value.entries) &&
+      value.entries.length <= memoryPageSize &&
+      value.entries.every(isMemoryEntry)
+    );
+  if (operation === "memory.history")
+    return (
+      exact(value, ["entryId", "versions", "next"]) &&
+      isResearchId(value.entryId) &&
+      nullable(value.next, integer) &&
+      Array.isArray(value.versions) &&
+      value.versions.length <= memoryPageSize &&
+      value.versions.every(isMemoryVersion)
+    );
   if (isResearchMutation(operation))
     return exact(value, ["resultId"]) && isResearchId(value.resultId);
   if (operation === "research.subscribe")
@@ -1953,6 +2092,43 @@ function isContinuationSnapshot(value: unknown): boolean {
 function attentionSubject(value: unknown): boolean {
   return exact(value, ["id", "revision"]) && isResearchId(value.id) && integer(value.revision);
 }
+const memoryVersionKeys = ["number", "kind", "text", "state", "change", "author", "date"];
+function memoryAuthor(value: unknown): boolean {
+  return value === "researcher" || value === "virgilio";
+}
+function memoryVersionFields(value: Record<string, unknown>): boolean {
+  return (
+    integer(value.number) &&
+    memoryKinds.includes(value.kind as MemoryKind) &&
+    (typeof value.text === "string" || isTextReference(value.text)) &&
+    (value.state === "active" || value.state === "withdrawn") &&
+    memoryChanges.includes(value.change as MemoryVersion["change"]) &&
+    memoryAuthor(value.author) &&
+    date(value.date)
+  );
+}
+function isMemoryVersion(value: unknown): boolean {
+  return exact(value, memoryVersionKeys) && memoryVersionFields(value);
+}
+function isMemoryEntry(value: unknown): boolean {
+  return (
+    exact(value, [...memoryVersionKeys, "id", "originalAuthor", "source"]) &&
+    isResearchId(value.id) &&
+    memoryVersionFields(value) &&
+    memoryAuthor(value.originalAuthor) &&
+    nullable(
+      value.source,
+      (source) =>
+        exact(source, ["messageId", "conversationId", "prefix", "truncated"]) &&
+        isResearchId(source.messageId) &&
+        isResearchId(source.conversationId) &&
+        typeof source.prefix === "string" &&
+        Array.from(source.prefix).length <= conversationPreviewPrefixLimit &&
+        typeof source.truncated === "boolean",
+    )
+  );
+}
+
 export function isResearchEvent(value: unknown): value is ResearchEvent {
   if (!obj(value)) return false;
   if (value.kind === "planChanged")
@@ -2000,7 +2176,7 @@ export function isResearchEvent(value: unknown): value is ResearchEvent {
     exact(value, ["kind", "record", "id", "revision"]) &&
     value.kind === "changed" &&
     typeof value.record === "string" &&
-    ["project", "conversation", "timeline", "usagePause", "executionLimits"].includes(
+    ["project", "conversation", "timeline", "usagePause", "executionLimits", "memory"].includes(
       value.record,
     ) &&
     (isResearchId(value.id) || (value.record === "executionLimits" && opaque(value.id))) &&
@@ -2038,6 +2214,29 @@ export function researchResultMatches(
     operation === "planChange.decline"
   )
     return output.resultId === input.proposalId;
+  if (operation === "memory.list") {
+    const entries = output.entries as readonly MemoryEntry[];
+    const ids = entries.map(({ id }) => id);
+    return (
+      output.projectId === input.projectId &&
+      !ids.includes(input.after as string) &&
+      new Set(ids).size === ids.length &&
+      (output.next === null || output.next === ids.at(-1))
+    );
+  }
+  if (operation === "memory.history") {
+    const versions = output.versions as readonly MemoryVersion[];
+    return (
+      output.entryId === input.entryId &&
+      versions.every(
+        ({ number }, index) =>
+          number < (versions[index - 1]?.number ?? (input.before as number | null) ?? Infinity),
+      ) &&
+      (output.next === null || output.next === versions.at(-1)?.number)
+    );
+  }
+  if (operation === "memory.edit" || operation === "memory.withdraw")
+    return output.resultId === input.entryId;
   if (operation === "memory.undo") return output.resultId === input.taskId;
   if (operation === "handoff.selection") {
     const messages = output.messages as readonly HandoffSelectionMessage[];

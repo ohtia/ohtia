@@ -694,7 +694,7 @@ it("migrates populated revision 20 while preserving task acceptance order, charg
   await f.store.open();
   const migrated = f.raw();
   try {
-    expect(migrated.pragma("user_version", { simple: true })).toBe(29);
+    expect(migrated.pragma("user_version", { simple: true })).toBe(30);
     expect(read(migrated)).toEqual(before);
     expect(
       migrated.prepare("SELECT state,blocking_reason FROM tasks WHERE id=?").get(bytes(resultId)),
@@ -1833,7 +1833,7 @@ describe("Virgilio plan proposals", () => {
     await f.store.open();
     const upgraded = f.raw();
     try {
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(29);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(30);
       expect(upgraded.pragma("foreign_key_check")).toEqual([]);
       expect(
         upgraded.prepare("SELECT cancellation_reason FROM contributions ORDER BY rowid").all(),

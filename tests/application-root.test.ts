@@ -1742,3 +1742,121 @@ it("does not include the previous project's replies in the next project's announ
   activity.open({ projectId: ids[0]!, conversationId: null });
   expect(activity.snapshot().chat.replies).toBe(1);
 });
+
+it("opens project memory from chat and navigates to a source message in its own conversation", async () => {
+  const t = raceFixture();
+  const projectId = t.ids[0]!;
+  const otherConversation = "019a8000-0000-7000-8000-000000000234";
+  const textId = "019a8000-0000-7000-8000-000000000235";
+  const sourceId = "019a8000-0000-7000-8000-000000000236";
+  const entryId = "019a8000-0000-7000-8000-000000000237";
+  const date = "2026-11-21T12:00:00.000Z";
+  const listMemory = vi.fn(() =>
+    call({
+      ok: true,
+      value: {
+        projectId,
+        revision: 1,
+        active: 1,
+        bytes: 140,
+        next: null,
+        entries: [
+          {
+            id: entryId,
+            number: 1,
+            kind: "decision",
+            text: "Use the archive.",
+            state: "active",
+            change: "added",
+            author: "virgilio",
+            originalAuthor: "virgilio",
+            date,
+            source: {
+              messageId: sourceId,
+              conversationId: otherConversation,
+              prefix: "The municipal archive.",
+              truncated: false,
+            },
+          },
+        ],
+      },
+    }),
+  );
+  const addMemory = vi.fn(() => call({ ok: true, value: { resultId: entryId } }));
+  Object.assign(t.port, {
+    listMemory,
+    addMemory,
+    listTimelineBefore: ({ conversationId }: { conversationId: string }) =>
+      call({
+        ok: true,
+        value: {
+          next: null,
+          hasMore: false,
+          items: [
+            {
+              kind: "message",
+              rank: 1,
+              revision: 1,
+              position: 1,
+              authorKind: "researcher",
+              agentId: null,
+              taskId: null,
+              language: null,
+              ending: null,
+              id: conversationId === projectId ? textId : sourceId,
+              content: conversationId === projectId ? "My work." : "The municipal archive.",
+            },
+          ],
+        },
+      }),
+    readConversations: ({ ids }: { ids: string[] }) =>
+      call({
+        ok: true,
+        value: {
+          remaining: [],
+          items: ids.map((id) => ({
+            id,
+            projectId,
+            title: id === otherConversation ? "Municipal records" : "Working conversation",
+            createdAt: date,
+            updatedAt: date,
+            latestAt: date,
+            revision: 1,
+            ownerRevision: 1,
+            agentId: "virgilio",
+            ownerPosition: null,
+            latestPrefix: "",
+            latestTruncated: false,
+            latestLanguage: null,
+            status: null,
+            latestReplyTaskId: null,
+            runningTask: null,
+          })),
+        },
+      }),
+  });
+  vi.mocked(t.bridge.bootstrap.read).mockResolvedValue({
+    version: 1,
+    locale: "en-US",
+    state: "storage_ready",
+    openConversation: { projectId, conversationId: projectId },
+  });
+  await mount(t);
+  await click('.workspace-chat [aria-label="Add memory entry…"]');
+  const memory = container.querySelector<HTMLElement>("#project-memory")!;
+  expect(memory.querySelector("textarea")?.value).toBe("My work.");
+  expect(memory.querySelector("select")?.value).toBe("decision");
+  await click('#project-memory button[type="submit"]');
+  expect(addMemory).toHaveBeenCalledWith(expect.any(String), {
+    projectId,
+    kind: "decision",
+    text: "My work.",
+    sourceMessageId: textId,
+  });
+  await click("#project-memory a");
+  expect(container.querySelector(".workspace-chat h2")?.textContent).toContain("Municipal records");
+  expect(document.activeElement?.id).toBe(`message-${sourceId}`);
+  expect(container.querySelector("[role=tab][aria-selected=true]")?.textContent).toBe(
+    "Project memory",
+  );
+});
