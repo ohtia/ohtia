@@ -118,5 +118,9 @@
   {
     "name": "0030_researcher_memory",
     "sha256": "9cef4a3706d47dfff7f5fad48890e235b94fc30004eba0e2351978c5cedea056"
+  },
+  {
+    "name": "0031_reply_usage",
+    "sha256": "a830ed34444cae696ed51b7b83d9095b7549ca96d6ee7c3e4f5d4f1d9bab06f6"
   }
 ]

@@ -1,8 +1,6 @@
 ---
 type: Specification
 title: Ohtia design system
-generated:
-  by: codex/gpt-6.2-sol
 description: Visual identity, tokens, symbol and character, typography, composition, accessibility, localization, component patterns and workspace icon mappings.
 tags:
   - design
@@ -562,6 +560,7 @@ Fixed mappings:
 | Rejected, or a declined or replaced proposal | `circle-x`             |
 | Requires review                              | `refresh-cw`           |
 | Add memory entry, memory changes             | `notebook-pen`         |
+| Show reply details                           | `receipt-text`         |
 | Restricted use                               | `lock`                 |
 | Saved                                        | `check`                |
 | Send message                                 | `arrow-up`             |

@@ -15,7 +15,12 @@ import {
   type PlanInvalidReason,
   type PlanOutcome,
 } from "./research.js";
-import { isConnectionId } from "./connections.js";
+import {
+  providerOperations,
+  type ProviderOperation,
+  type ProviderUsage,
+} from "./provider-requests.js";
+import { isAccountRevision, isConnectionId } from "./connections.js";
 import { utf8Size, type PortCall, type Subscription, type Outcome } from "./port.js";
 
 export const researchOperations = [
@@ -68,6 +73,7 @@ export const researchOperations = [
   "text.part",
   "text.readPart",
   "reply.readParts",
+  "reply.details",
 ] as const;
 export type ResearchOperation = (typeof researchOperations)[number];
 export type WindowResearchCommand = Extract<ResearchOperation, keyof ResearchPayloads>;
@@ -411,6 +417,28 @@ export interface ReplyPart {
   readonly sequence: number;
   readonly text: string;
 }
+export interface ReplyDetails {
+  readonly agentId: ReplyAgent;
+  readonly operation: ProviderOperation;
+  readonly instructionVersion: number;
+  readonly connectionId: string;
+  readonly connectionKind: "subscription" | "api_key";
+  readonly accountRevision: string | null;
+  readonly account: "same" | "different" | "disconnected" | "unknown" | null;
+  readonly requestedModel: string | null;
+  readonly observedModel: string | null;
+  readonly attempts: number;
+  readonly startedAt: string | null;
+  readonly endedAt: string;
+  readonly durationMs: number | null;
+  readonly tokens: ProviderUsage;
+  readonly usage: "reported" | "late" | "estimated" | "unreported" | "incomplete";
+  readonly memory: readonly {
+    readonly entryId: string;
+    readonly version: number;
+    readonly versionId: string;
+  }[];
+}
 export interface ReplyParts {
   readonly parts: readonly ReplyPart[];
   readonly latestSequence: number;
@@ -653,6 +681,7 @@ export interface ResearchInputs {
   "research.subscribe": ResearchScope & { readonly subscriptionId: string };
   "text.part": TextPart;
   "text.readPart": { readonly source: string; readonly index: number };
+  "reply.details": { readonly projectId: string; readonly taskId: string };
   "reply.readParts": { readonly taskId: string; readonly fromSequence: number };
 }
 export interface ResearchOutputs {
@@ -705,6 +734,7 @@ export interface ResearchOutputs {
   "text.part": { readonly accepted: true };
   "text.readPart": { readonly text: string };
   "reply.readParts": ReplyParts;
+  "reply.details": ReplyDetails;
 }
 export interface ResearchPort {
   acceptHandoff(
@@ -826,6 +856,7 @@ export interface ResearchPort {
   readTimeline(input: ResearchInputs["timeline.read"]): PortCall<ResearchOutputs["timeline.read"]>;
   sendTextPart(operationId: string, input: TextPart): PortCall<ResearchOutputs["text.part"]>;
   readTextPart(input: ResearchInputs["text.readPart"]): PortCall<ResearchOutputs["text.readPart"]>;
+  readReplyDetails(input: ResearchInputs["reply.details"]): PortCall<ReplyDetails>;
   readReplyParts(input: ResearchInputs["reply.readParts"]): PortCall<ReplyParts>;
   subscribeResearch(
     scope: ResearchScope,
@@ -1204,6 +1235,12 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
     case "text.readPart":
       return (
         exact(value, ["source", "index"]) && opaque(value.source) && integer(value.index, 1, 64)
+      );
+    case "reply.details":
+      return (
+        exact(value, ["projectId", "taskId"]) &&
+        isResearchId(value.projectId) &&
+        isResearchId(value.taskId)
       );
     case "reply.readParts":
       return (
@@ -1698,6 +1735,63 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
   if (operation === "text.part") return exact(value, ["accepted"]) && value.accepted === true;
   if (operation === "text.readPart")
     return exact(value, ["text"]) && typeof value.text === "string";
+  if (operation === "reply.details")
+    return (
+      exact(value, [
+        "agentId",
+        "operation",
+        "instructionVersion",
+        "connectionId",
+        "connectionKind",
+        "account",
+        "accountRevision",
+        "requestedModel",
+        "observedModel",
+        "attempts",
+        "startedAt",
+        "endedAt",
+        "durationMs",
+        "tokens",
+        "usage",
+        "memory",
+      ]) &&
+      isReplyAgent(value.agentId) &&
+      providerOperations.includes(value.operation as ProviderOperation) &&
+      integer(value.instructionVersion) &&
+      isConnectionId(value.connectionId) &&
+      (value.connectionKind === "subscription" || value.connectionKind === "api_key") &&
+      (value.account === null ||
+        ["same", "different", "disconnected", "unknown"].some((s) => s === value.account)) &&
+      nullable(value.accountRevision, isAccountRevision) &&
+      nullable(
+        value.requestedModel,
+        (name) => typeof name === "string" && utf8Size(name) <= 1024,
+      ) &&
+      nullable(value.observedModel, (name) => typeof name === "string" && utf8Size(name) <= 1024) &&
+      integer(value.attempts, 0) &&
+      nullable(value.startedAt, date) &&
+      date(value.endedAt) &&
+      nullable(value.durationMs, (ms) => integer(ms, 0)) &&
+      exact(value.tokens, [
+        "input_tokens",
+        "cached_input_tokens",
+        "output_tokens",
+        "reasoning_tokens",
+      ]) &&
+      Object.values(value.tokens).every((count) => nullable(count, (n) => integer(n, 0))) &&
+      ["reported", "late", "estimated", "unreported", "incomplete"].some(
+        (origin) => origin === value.usage,
+      ) &&
+      Array.isArray(value.memory) &&
+      value.memory.length <= memoryEntryLimit &&
+      value.memory.every(
+        (entry: unknown) =>
+          exact(entry, ["entryId", "version", "versionId"]) &&
+          isResearchId(entry.entryId) &&
+          integer(entry.version) &&
+          isResearchId(entry.versionId),
+      )
+    );
   if (operation === "reply.readParts")
     return (
       exact(value, ["parts", "latestSequence"]) &&

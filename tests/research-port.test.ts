@@ -1,13 +1,21 @@
+import diagnosticCases from "../config/desktop/diagnostic-cases.json" with { type: "json" };
+import fs from "node:fs";
+import path from "node:path";
+import { DiagnosticWriter } from "../packages/main/src/diagnostic-writer.js";
+import { forbiddenResponseFields, responsesBody } from "../packages/main/src/chatgpt-responses.js";
 import { ActivityController } from "../packages/renderer/src/activity-controller.js";
 import { createFakeProvider } from "../packages/main/src/fake-provider.js";
 import { ProviderDispatch } from "../packages/main/src/provider-dispatch.js";
+import { ConnectionManager } from "../packages/main/src/connection-manager.js";
+import { ServiceSupervisor } from "../packages/main/src/service-supervisor.js";
 import { ProjectController } from "../packages/renderer/src/project-controller.js";
-import { bytes, newId } from "../packages/utility/src/research.js";
+import { bytes, identifier, newId } from "../packages/utility/src/research.js";
 import { stagedCommand } from "../packages/renderer/src/staged-command.js";
 import { proposeSetup } from "./fixtures/project-setup.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   decodeProviderDispatch,
+  decodeLateUsageReceipt,
   decodeText,
   encodeEnvelope,
   failure,
@@ -22,12 +30,18 @@ import {
   type ProviderEvent,
   type ConversationCursor,
   type DiagnosticEvent,
+  type LateUsageReport,
+  type LateUsageDecision,
+  type ProviderRequestData,
+  type ProviderResult,
+  type TransferEntry,
 } from "../packages/contracts/src/index.js";
 import { TextStaging, digest } from "../packages/utility/src/research-text.js";
 import { createStatusService } from "../packages/utility/src/status-service.js";
 import { createFoundationPort } from "../packages/preload/src/foundation-port.js";
 import { parseDevelopmentSwitches } from "../packages/main/src/development-command.js";
 import { storageFixture } from "./fixtures/storage.js";
+import { preReplyUsageSql } from "../tooling/storage-legacy-consultation-fixture.mjs";
 
 const entity = (n: number) => `019a8000-0000-7000-8000-${String(n).padStart(12, "0")}`;
 const value = <T>(result: Outcome<T>): T => {
@@ -1979,4 +1993,618 @@ it("publishes durable project attention across windows and keeps finished replie
       payload: { cursor: null, count: 1 },
     }),
   ).toEqual({ ok: true, value: { items: [projectId], next: null, hasMore: false, revision: 1 } });
+});
+
+it(diagnosticCases.shared_cases[0]!, async () => {
+  const h = await harness();
+  const writer = new DiagnosticWriter({
+    root: h.root,
+    version: "0.0.0",
+    threshold: "DEBUG",
+    assertAdmission: () => {},
+  });
+  controls.push(() => {
+    void writer.close();
+  });
+  const diag = (event: DiagnosticEvent) => {
+    void writer.append(event);
+  };
+  Object.assign(h.options, { emitDiagnostic: diag });
+  const markers = {
+    credential: "MARK236_CREDENTIAL_SYNTHETIC",
+    privateProject: "MARK236_OTHER_PROJECT",
+    firstMessage: "MARK236_RESEARCH_MESSAGE",
+    title: "MARK236_TITLE",
+    memory: "MARK236_MEMORY_VERSION",
+    handoff: "MARK236_HANDOFF_NOTE",
+    selected: "MARK236_SELECTED_REPLY",
+    hidden: "MARK236_UNSELECTED_JOSEFA_INPUT",
+    failure: "MARK236_PROVIDER_PRIVATE_ERROR",
+    tool: "MARK236_AGENT_MEMORY_TOOL",
+  };
+  const outputs: string[] = [];
+  for (const stream of [process.stdout, process.stderr]) {
+    const write = stream.write.bind(stream);
+    vi.spyOn(stream, "write").mockImplementation(((
+      chunk: Uint8Array | string,
+      ...args: unknown[]
+    ) => {
+      outputs.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+      return Reflect.apply(write, stream, [chunk, ...args]);
+    }) as typeof stream.write);
+  }
+  const captured = new Map<string, ProviderRequestData>();
+  let late: ((report: LateUsageReport) => Promise<LateUsageDecision>) | undefined;
+  let planned:
+    | "complete"
+    | "memory"
+    | "handoff"
+    | "josefa"
+    | "throw"
+    | "empty"
+    | Extract<ProviderResult, { status: "failed"; dispatched: true }> = "complete";
+  const fake = createFakeProvider({
+    kind: "api_key",
+    connect: async () => ({
+      state: "connected",
+      session: { credential: markers.credential + "-reconnected", reason: null },
+    }),
+    send: async (request, control) => {
+      if (!control.release()) throw new Error("Synthetic request was never dispatched.");
+      captured.set(request.attempt, request);
+      late = control.reportLateUsage;
+      control.emit({ type: "started", provider_request_id: null, model: "synthetic-model" });
+      if (planned === "throw") throw new Error(markers.failure);
+      if (typeof planned === "object" || planned === "empty") {
+        if (planned !== "empty") control.emit({ type: "text", text: "Synthetic partial reply." });
+        control.emit({
+          type: "usage",
+          usage: {
+            input_tokens: 11,
+            cached_input_tokens: null,
+            output_tokens: 3,
+            reasoning_tokens: null,
+          },
+        });
+        control.emit({
+          type: "result",
+          result: planned === "empty" ? { status: "completed" } : planned,
+        });
+        return;
+      }
+      if (planned === "memory") {
+        control.emit({
+          type: "tool_call",
+          namespace: "ohtia",
+          name: "update_memory",
+          arguments: JSON.stringify({
+            changes: [
+              { action: "add", entries: [], kind: "note", text: markers.tool, sources: [] },
+            ],
+          }),
+        });
+      }
+      if (planned === "handoff") {
+        control.emit({
+          type: "tool_call",
+          namespace: "ohtia",
+          name: "propose_handoff",
+          arguments: JSON.stringify({
+            agent: "josefa",
+            note: markers.handoff,
+            reason: "Examine wider scope.",
+          }),
+        });
+      }
+      control.emit({
+        type: "text",
+        text: planned === "josefa" ? markers.selected : "Synthetic reply.",
+      });
+      control.emit({ type: "result", result: { status: "completed" } });
+    },
+  });
+  await fake.credentials.write({ credential: markers.credential, reason: null });
+  const initialFingerprint = fake.accountFingerprint?.();
+  const adapter = {
+    ...fake,
+    declaration: {
+      ...fake.declaration,
+      connection: { ...fake.declaration.connection, id: "chatgpt" },
+    },
+  };
+  const manager = new ConnectionManager([adapter], diag);
+  controls.push(() => manager.dispose());
+  let readChild!: (text: unknown) => void;
+  const supervisor = new ServiceSupervisor(
+    {
+      send: (text) => h.service.receive(text),
+      kill: () => {},
+      messages: (read) => {
+        readChild = read;
+      },
+      exited: () => {},
+    },
+    "service",
+    () => {},
+  );
+  readChild(JSON.stringify({ kind: "ready", generation: "service" }));
+  await manager.read("chatgpt");
+  expect(manager.storeModels("chatgpt", [{ id: "synthetic-model", name: "Synthetic model" }])).toBe(
+    true,
+  );
+  const account = () => expect(supervisor.reportConnections(manager)).toBe(true);
+  const dispatch = new ProviderDispatch([adapter], {
+    state: (id) => manager.snapshot(id)?.state,
+    send: (_generation, text) => h.service.receive(text),
+    diagnostic: diag,
+  });
+  controls.push(() => dispatch.dispose());
+  dispatch.begin("service");
+  account();
+  let attempts = 0;
+  async function finish(phase: typeof planned = "complete") {
+    planned = phase;
+    await h.service.drain();
+    const dispatches = h.sent.flatMap((text) => decodeProviderDispatch(text, "service") ?? []);
+    expect(dispatches).toHaveLength(++attempts);
+    await dispatch.receive(dispatches.at(-1)!);
+    await h.service.drain();
+    return dispatches.at(-1)!.request.attempt;
+  }
+  async function timeline(conversationId = h.conversationId) {
+    return value(
+      await h.port.listTimelineBefore({ conversationId, cursor: null, count: 50 }).result,
+    ).items;
+  }
+  const otherProject = value(await h.port.createProject("other-project").result).resultId;
+  const db = h.raw();
+  try {
+    db.prepare(
+      "UPDATE projects SET title=?,document_language='en',setup_confirmed_at=created_at WHERE id=?",
+    ).run("Other project", bytes(otherProject));
+  } finally {
+    db.close();
+  }
+  const other = value(
+    await h.port.startConversation("other-conversation", {
+      projectId: otherProject,
+      content: markers.privateProject,
+    }).result,
+  ).resultId;
+  await finish();
+  const firstMessage = value(
+    await h.port.appendMessage("first-marker", {
+      conversationId: h.conversationId,
+      content: markers.firstMessage,
+    }).result,
+  ).resultId;
+  const firstAttempt = await finish("memory");
+  const firstMessageTask = (await timeline()).find((item) => item.kind === "task")!;
+  const input = { projectId: h.projectId, taskId: firstMessageTask.id };
+  expect(value(await h.port.readReplyDetails(input).result)).toMatchObject({
+    account: "same",
+    connectionKind: "api_key",
+    usage: "unreported",
+    observedModel: "Synthetic model",
+    instructionVersion: 6,
+  });
+  expect(await h.port.readReplyDetails({ ...input, projectId: otherProject }).result).toEqual(
+    failure("record_not_found"),
+  );
+  const lateReport = {
+    revision: 1,
+    estimated: false,
+    usage: {
+      input_tokens: 37,
+      cached_input_tokens: null,
+      output_tokens: 5,
+      reasoning_tokens: null,
+    },
+  };
+  expect(late).toBeTypeOf("function");
+  const settle = async (report = lateReport) => {
+    const decision = late?.(report);
+    await h.service.drain();
+    const receipt = h.sent
+      .map((text) => decodeLateUsageReceipt(text, "service"))
+      .filter(Boolean)
+      .at(-1);
+    expect(receipt).toBeDefined();
+    if (receipt) dispatch.usageReceipt(receipt);
+    return decision;
+  };
+  const receipt = await settle();
+  expect(receipt).toMatchObject({ accepted: true });
+  expect(await settle()).toEqual(receipt);
+  expect(value(await h.port.readReplyDetails(input).result)).toMatchObject({
+    tokens: lateReport.usage,
+    usage: "late",
+  });
+  await fake.credentials.write({ credential: markers.credential + "2", reason: null });
+  expect(fake.accountFingerprint?.()).not.toBe(initialFingerprint);
+  await manager.read("chatgpt");
+  account();
+  expect(value(await h.port.readReplyDetails(input).result).account).toBe("different");
+  await manager.disconnect("chatgpt");
+  account();
+  expect(value(await h.port.readReplyDetails(input).result).account).toBe("disconnected");
+  manager.connect("chatgpt");
+  await vi.waitFor(() => expect(manager.snapshot("chatgpt")?.state).toBe("connected"));
+  manager.storeModels("chatgpt", [{ id: "synthetic-model", name: "Synthetic model" }]);
+  account();
+
+  const memoryId = value(
+    await h.port.addMemory("marker-memory", {
+      projectId: h.projectId,
+      sourceMessageId: firstMessage,
+      kind: "decision",
+      text: markers.memory,
+    }).result,
+  ).resultId;
+  expect(
+    await h.port.editMemory("stale-marker-edit", {
+      entryId: memoryId,
+      expectedVersion: 2,
+      kind: "decision",
+      text: "Stale change",
+    }).result,
+  ).toMatchObject({ ok: false, error: { code: "stale_revision" } });
+  const source = value(
+    await h.port.readConversations({ ids: [h.conversationId], projectId: h.projectId }).result,
+  ).items[0]!;
+  value(
+    await h.port.renameConversation("marker-title", {
+      conversationId: h.conversationId,
+      title: markers.title,
+      expectedUpdatedAt: source.updatedAt,
+    }).result,
+  );
+
+  const newConversation = value(
+    await h.port.startConversation("marker-new-conversation", {
+      projectId: h.projectId,
+      content: "Independent conversation in this project.",
+    }).result,
+  ).resultId;
+  await finish();
+  await h.port.appendMessage("request-handoff", {
+    conversationId: h.conversationId,
+    content: "Delegate the search.",
+  }).result;
+  await finish("handoff");
+  const proposal = (await timeline()).find((item) => item.kind === "handoffProposal")!;
+  expect(proposal).toMatchObject({ state: "proposed" });
+  expect(
+    value(
+      await h.port.readConversations({ ids: [h.conversationId], projectId: h.projectId }).result,
+    ).items[0]?.agentId,
+  ).toBe("virgilio");
+  value(
+    await h.port.acceptHandoff("accept-marker-handoff", {
+      proposalId: proposal.id,
+      expectedOwnerRevision: 1,
+    }).result,
+  );
+  value(
+    await h.port.appendMessage("josefa-marker", {
+      conversationId: h.conversationId,
+      content: markers.hidden,
+    }).result,
+  );
+  await finish("josefa");
+  const josefaItems = await timeline();
+  const selected = josefaItems.find(
+    (item) => item.kind === "message" && item.content === markers.selected,
+  )!;
+  const hidden = josefaItems.find(
+    (item) => item.kind === "message" && item.content === markers.hidden,
+  )!;
+  value(
+    await h.port.returnHandoff("marker-return", {
+      conversationId: h.conversationId,
+      expectedOwnerRevision: 2,
+      selection: String(selected.position),
+    }).result,
+  );
+  value(
+    await h.port.appendMessage("after-return-marker", {
+      conversationId: h.conversationId,
+      content: "Review Josefa’s selection.",
+    }).result,
+  );
+  await finish();
+  value(
+    await h.port.appendMessage("other-marker-again", {
+      conversationId: other,
+      content: "Search on a separate project.",
+    }).result,
+  );
+  await finish();
+  value(
+    await h.port.appendMessage("provider-failure-marker", {
+      conversationId: newConversation,
+      content: "Run through a marked provider failure.",
+    }).result,
+  );
+  await finish({ status: "failed", dispatched: true, reason: "provider_error" });
+  const cut = (await timeline(newConversation)).find(
+    (item) => item.kind === "task" && item.state === "failed",
+  )!;
+  expect(
+    value(await h.port.readReplyDetails({ projectId: h.projectId, taskId: cut.id }).result).usage,
+  ).toBe("incomplete");
+  expect(await settle({ ...lateReport, revision: 2 })).toMatchObject({ accepted: true });
+  expect(
+    value(await h.port.readReplyDetails({ projectId: h.projectId, taskId: cut.id }).result).usage,
+  ).toBe("incomplete");
+  value(await h.port.listProjectAttention({ cursor: null, count: 10 }).result);
+  value(
+    await h.port.appendMessage("provider-thrown-marker", {
+      conversationId: newConversation,
+      content: "Run through an adapter failure.",
+    }).result,
+  );
+  await finish("throw");
+  value(
+    await h.port.appendMessage("marked-empty", {
+      conversationId: h.conversationId,
+      content: "Complete a stream without message text.",
+    }).result,
+  );
+  await finish("empty");
+  const empty = (await timeline()).find(
+    (item) => item.kind === "task" && item.outcomeReason === "empty_reply",
+  )!;
+  expect(
+    value(await h.port.readReplyDetails({ projectId: h.projectId, taskId: empty.id }).result).usage,
+  ).toBe("reported");
+  for (const reason of [
+    "not_eligible",
+    "connection_expired",
+    "request_rejected",
+    "usage_limit_reached",
+  ] as const) {
+    value(
+      await h.port.appendMessage(`marked-${reason}`, {
+        conversationId: h.conversationId,
+        content: "Stream a reply ending in a provider error.",
+      }).result,
+    );
+    await finish({ status: "failed", dispatched: true, reason });
+    const cut = (await timeline()).find(
+      (item) => item.kind === "task" && item.outcomeReason === reason,
+    )!;
+    expect(
+      value(await h.port.readReplyDetails({ projectId: h.projectId, taskId: cut.id }).result).usage,
+    ).toBe("incomplete");
+  }
+  expect(h.lost).not.toHaveBeenCalled();
+
+  const raw = h.raw();
+  try {
+    const rows = raw
+      .prepare("SELECT id FROM messages WHERE content=?")
+      .get(markers.privateProject) as { id: Uint8Array };
+    const otherMessage = identifier(rows.id);
+    const version = raw
+      .prepare("SELECT id FROM memory_entry_versions WHERE entry_id=? AND number=1")
+      .get(bytes(memoryId)) as { id: Uint8Array };
+    const versionId = identifier(version.id);
+    const toolVersion = raw
+      .prepare("SELECT id FROM memory_entry_versions WHERE text=?")
+      .get(markers.tool) as { id: Uint8Array };
+    const toolVersionId = identifier(toolVersion.id);
+    const manifests = raw.prepare("SELECT id,transfer_manifest FROM attempts").all() as {
+      id: Uint8Array;
+      transfer_manifest: string;
+    }[];
+    for (const row of manifests) {
+      const attemptId = identifier(row.id);
+      const request = captured.get(attemptId)!;
+      const wire = responsesBody(request);
+      for (const field of forbiddenResponseFields) expect(wire).not.toHaveProperty(field);
+      expect(wire).toMatchObject({ store: false });
+      const records = JSON.parse(row.transfer_manifest) as TransferEntry[];
+      const content = JSON.stringify(wire);
+      const accepts = (marker: string, reference: string, ...kinds: string[]) => {
+        expect(content.includes(marker)).toBe(
+          records.some(
+            (entry) =>
+              "reference" in entry && entry.reference === reference && kinds.includes(entry.kind),
+          ),
+        );
+      };
+      accepts(markers.privateProject, otherMessage, "message");
+      accepts(markers.firstMessage, firstMessage, "message");
+      accepts(markers.memory, versionId, "memory_version");
+      accepts(markers.tool, toolVersionId, "memory_version");
+      accepts(markers.handoff, proposal.id, "note");
+      accepts(markers.selected, selected.id, "message");
+      accepts(markers.hidden, hidden.id, "message");
+      if (request.project === otherProject)
+        expect(content).not.toMatch(
+          /MARK236_(MEMORY_VERSION|HANDOFF_NOTE|SELECTED_REPLY|RESEARCH_MESSAGE)/,
+        );
+    }
+    const fingerprint = raw
+      .prepare("SELECT lower(hex(account_fingerprint)) AS fingerprint FROM attempts WHERE id=?")
+      .get(bytes(firstAttempt));
+    expect(fingerprint).toEqual({ fingerprint: initialFingerprint });
+    expect(JSON.stringify(raw.prepare("SELECT * FROM command_receipts").all())).not.toContain(
+      initialFingerprint,
+    );
+    for (const output of h.sent.filter((text) => decodeText(text).ok))
+      expect(output).not.toContain(initialFingerprint);
+  } finally {
+    raw.close();
+  }
+  await writer.close();
+  const logs = fs
+    .readdirSync(path.join(h.root, "logs"))
+    .map((name) => fs.readFileSync(path.join(h.root, "logs", name), "utf8"))
+    .join("");
+  expect(logs).toContain("ohtia.reply.details_read");
+  expect(logs).toContain("ohtia.usage.late_accepted");
+  for (const marker of [...Object.values(markers), initialFingerprint!]) {
+    expect(logs).not.toContain(marker);
+    expect(outputs.join("")).not.toContain(marker);
+  }
+  const inspectDatabases = () =>
+    fs.readdirSync(h.root, { recursive: true }).flatMap((entry) => {
+      const file = path.join(h.root, String(entry));
+      if (!/ohtia\.db3(-wal)?$/.test(file)) return [];
+      const bytes = fs.readFileSync(file);
+      expect(bytes.includes(markers.credential)).toBe(false);
+      return [{ file, bytes }];
+    });
+  expect(inspectDatabases().some(({ bytes }) => bytes.includes(markers.memory))).toBe(true);
+  h.service.dispose();
+  await h.store.close();
+  const old = h.raw();
+  try {
+    old.exec(preReplyUsageSql);
+  } finally {
+    old.close();
+  }
+  await h.store.open();
+  const recovery = path.join(h.root, "recovery", "migrations") + path.sep;
+  expect(
+    inspectDatabases().some(
+      ({ file, bytes }) => file.startsWith(recovery) && bytes.includes(markers.memory),
+    ),
+  ).toBe(true);
+});
+
+it("settles usage from a quarantined dispatch only after storage admission", async () => {
+  const h = await harness();
+  let peer = h.service;
+  let late: ((report: LateUsageReport) => Promise<LateUsageDecision>) | undefined;
+  const fake = createFakeProvider({
+    send: (_request, control) => {
+      expect(control.release()).toBe(true);
+      late = control.reportLateUsage;
+      return new Promise<void>((resolve) => {
+        control.signal.addEventListener(
+          "abort",
+          () => {
+            resolve();
+          },
+          { once: true },
+        );
+      });
+    },
+  });
+  const dispatch = new ProviderDispatch(
+    [
+      {
+        ...fake,
+        declaration: {
+          ...fake.declaration,
+          connection: { ...fake.declaration.connection, id: "chatgpt" },
+        },
+      },
+    ],
+    { state: () => "connected", send: (_g, text) => peer.receive(text) },
+  );
+  controls.push(() => dispatch.dispose());
+  dispatch.begin("service");
+  peer.receive(
+    JSON.stringify({
+      kind: "connection_state",
+      generation: "service",
+      snapshot: {
+        connection: "chatgpt",
+        state: "connected",
+        reason: null,
+        probing: false,
+        probe_id: null,
+        model_list_revision: 1,
+        model_count: 1,
+      },
+    }),
+  );
+  peer.receive(
+    JSON.stringify({
+      kind: "connection_models",
+      generation: "service",
+      page: {
+        connection: "chatgpt",
+        model_list_revision: 1,
+        models: [{ id: "model", name: "Model" }],
+        nextCursor: 1,
+        hasMore: false,
+      },
+    }),
+  );
+  value(
+    await h.port.appendMessage("quarantined-reply", {
+      conversationId: h.conversationId,
+      content: "Synthetic restart.",
+    }).result,
+  );
+  await peer.drain();
+  const request = h.sent.flatMap((text) => decodeProviderDispatch(text, "service") ?? []).at(-1)!;
+  const dispatched = dispatch.receive(request);
+  await vi.waitFor(() => expect(late).toBeTypeOf("function"));
+  const endedAt = Date.now();
+  dispatch.end("service");
+  vi.useFakeTimers({ toFake: ["Date"] });
+  await dispatched;
+  peer.dispose();
+  await h.store.close();
+  peer = createStatusService(
+    "replacement",
+    "en-US",
+    (text) => {
+      const receipt = decodeLateUsageReceipt(text, "replacement");
+      if (receipt) dispatch.usageReceipt(receipt);
+    },
+    h.store,
+    h.lost,
+    "development",
+  );
+  controls.push(() => peer.dispose());
+  dispatch.begin("replacement");
+  const report = {
+    revision: 1,
+    estimated: false,
+    usage: { input_tokens: 5, cached_input_tokens: null, output_tokens: 1, reasoning_tokens: null },
+  };
+  const missing = late!(report);
+  await peer.drain();
+  expect(await missing).toEqual({ accepted: false, code: "receipt_unavailable" });
+  vi.setSystemTime(endedAt + 8 * 60_000);
+  await h.store.open();
+  // A ready store still awaits explicit activation from the broker.
+  const waiting = late!(report);
+  await peer.drain();
+  expect(await waiting).toEqual({ accepted: false, code: "receipt_unavailable" });
+  peer.activate("en-US");
+  const settled = late!(report);
+  await peer.drain();
+  const accepted = await settled;
+  expect(accepted).toMatchObject({ accepted: true });
+  vi.setSystemTime(endedAt + 16 * 60_000);
+  const expired = late!({ ...report, revision: 2 });
+  await peer.drain();
+  expect(await expired).toEqual({ accepted: false, code: "window_closed" });
+  const replay = late!(report);
+  await peer.drain();
+  expect(await replay).toEqual(accepted);
+  const db = h.raw();
+  try {
+    expect(
+      db
+        .prepare("SELECT state, finished_at, usage_report_deadline_at, input_tokens FROM attempts")
+        .get(),
+    ).toMatchObject({
+      state: "uncertain",
+      finished_at: expect.any(String),
+      usage_report_deadline_at: expect.any(String),
+      input_tokens: 5,
+    });
+  } finally {
+    db.close();
+  }
+  expect(h.lost).not.toHaveBeenCalled();
 });

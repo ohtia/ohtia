@@ -715,6 +715,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                               controller={conversation}
                               onOpenConnections={openConnections}
                               commands={bridge.commands}
+                              detailsPort={bridge.foundation}
                               locale={bootstrap.locale}
                             />
                           </div>

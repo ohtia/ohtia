@@ -91,6 +91,12 @@ import {
   up as researcherMemory,
 } from "./migrations/0030_researcher_memory.mjs";
 import {
+  attempts as usageAttempts,
+  usageReports,
+  objects as replyUsageObjects,
+  up as replyUsage,
+} from "./migrations/0031_reply_usage.mjs";
+import {
   ResearchAttention,
   conversationAttention,
   type ResearchActivity,
@@ -347,6 +353,7 @@ const names = [
   "0028_plan_redirection",
   "0029_project_memory",
   "0030_researcher_memory",
+  "0031_reply_usage",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -578,6 +585,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 29
       ? Object.keys(memoryTables).filter((name) => name.startsWith("memory_"))
       : []),
+    ...(revision >= 31 ? ["usage_reports"] : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -711,7 +719,9 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ? graphTasks
                 : consultationTasks
             : revision >= 25 && name === "attempts"
-              ? synthesisTables.attempts
+              ? revision >= 31
+                ? usageAttempts
+                : synthesisTables.attempts
               : revision >= 10 && name === "tasks"
                 ? definition.replace(
                     ",\n    CHECK ((state=",
@@ -755,6 +765,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 11 ? Object.entries(runTables) : []),
     ...(revision >= 13 ? [["execution_limits_receipts", executionLimitsReceiptsSchema]] : []),
     ...(revision >= 27 ? Object.entries(handoffTables) : []),
+    ...(revision >= 31 ? [["usage_reports", usageReports]] : []),
   ]) {
     const row = db
       .prepare("SELECT sql FROM sqlite_schema WHERE name=? AND type='table'")
@@ -796,6 +807,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 28 ? redirectionObjects : {}),
                 ...(revision >= 29 ? memoryObjects : {}),
                 ...(revision >= 30 ? researcherMemoryObjects : {}),
+                ...(revision >= 31 ? replyUsageObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1215,6 +1227,7 @@ export class DurableStore {
                 "0028_plan_redirection": { up: planRedirection },
                 "0029_project_memory": { up: projectMemory },
                 "0030_researcher_memory": { up: researcherMemory },
+                "0031_reply_usage": { up: replyUsage },
               }),
           },
         });
@@ -2529,6 +2542,7 @@ export class DurableStore {
       "research.subscribe": "ohtia.research.subscribed",
       "text.part": "ohtia.text.staged",
       "text.readPart": "ohtia.text.read",
+      "reply.details": "ohtia.reply.details_read",
       "reply.readParts": "ohtia.reply.read",
       "timeline.listBefore": "ohtia.timeline.listed",
       "timeline.read": "ohtia.timeline.read",
@@ -2794,6 +2808,20 @@ export class DurableStore {
         new URL("./iana-language-subtag-registry.txt", import.meta.url),
     );
     return this.languageRegistry;
+  }
+  private usageClockFloor = "";
+  recordLateUsage(
+    attempt: string,
+    report: import("@ohtia/contracts").LateUsageReport,
+    clockUnreliable = false,
+    brokerTerminalAt?: string,
+  ) {
+    const now = new Date().toISOString();
+    const unreliable = clockUnreliable || now < this.usageClockFloor;
+    if (now > this.usageClockFloor) this.usageClockFloor = now;
+    return this.taskTransaction((tasks) =>
+      tasks.lateUsage(attempt, report, unreliable, brokerTerminalAt),
+    );
   }
   recordTaskEvent(
     attempt: string,

@@ -264,6 +264,7 @@ export function checkColorUsage(model, sources, usage) {
             (property === "app-region" && /^(drag|no-drag)$/.test(value)) ||
             (property === "touch-action" && value === "none") ||
             (property === "overflow-anchor" && value === "none") ||
+            (property === "scrollbar-gutter" && value === "stable") ||
             (forced &&
               keyIsForcedBadge(rule.selector) &&
               property === "forced-color-adjust" &&

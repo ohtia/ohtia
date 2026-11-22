@@ -1,3 +1,4 @@
+import { isAccountFingerprint } from "./provider-requests.js";
 import { validateJsonBounds, portLimits, utf8Size, isIdentifier } from "./port.js";
 import {
   isConnectionSnapshot,
@@ -9,17 +10,23 @@ import {
 export type ServiceConnectionSnapshot = Omit<
   ConnectionSnapshot,
   "last_account_email" | "account_email" | "display_name"
->;
+> & {
+  readonly account_fingerprint?: string;
+  readonly connection_kind?: "subscription" | "api_key";
+};
 function serviceSnapshot(value: unknown): value is ServiceConnectionSnapshot {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const { account_fingerprint, connection_kind, ...snapshot } = value as Record<string, unknown>;
   return (
-    !!value &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
+    (!Object.hasOwn(value, "account_fingerprint") || isAccountFingerprint(account_fingerprint)) &&
+    (!Object.hasOwn(value, "connection_kind") ||
+      connection_kind === "subscription" ||
+      connection_kind === "api_key") &&
     !Object.hasOwn(value, "last_account_email") &&
     !Object.hasOwn(value, "account_email") &&
     !Object.hasOwn(value, "display_name") &&
     isConnectionSnapshot({
-      ...value,
+      ...snapshot,
       display_name: "Service",
       last_account_email: null,
       account_email: null,
@@ -127,6 +134,18 @@ export class ServiceConnections {
     | undefined {
     const record = this.records.get(connection);
     return record ? { state: record.snapshot.state, models: record.models } : undefined;
+  }
+  account(connection: string) {
+    const record = this.records.get(connection);
+    if (!record)
+      return { kind: "subscription" as const, fingerprint: undefined, revision: undefined };
+    const { snapshot } = record;
+    const connected = snapshot.state === "connected";
+    return {
+      kind: snapshot.connection_kind ?? "subscription",
+      fingerprint: connected ? snapshot.account_fingerprint : undefined,
+      revision: connected ? snapshot.account_revision : undefined,
+    };
   }
   /** Wait for an in-flight catalog read or its remaining pages, not forever after a failed read. */
   awaitingModels(connection: string): boolean {

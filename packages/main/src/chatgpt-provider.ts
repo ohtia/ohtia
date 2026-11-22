@@ -1,3 +1,4 @@
+import { accountFingerprint } from "./account-fingerprint.js";
 import { chatgptConnection } from "@ohtia/contracts";
 import { randomUUID } from "node:crypto";
 import {
@@ -58,6 +59,17 @@ const revoked = new Set([
   "refresh_token_invalidated",
   "refresh_token_reused",
 ]);
+function accessSubject(access: string): string | undefined {
+  const [header, payload, signature, ...extra] = access.split(".");
+  if (!header || !payload || !signature || extra.length) return;
+  try {
+    const claims: unknown = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    if (object(claims) && nonempty(claims.sub)) return claims.sub;
+  } catch {
+    // An unrecognized access token format has no usable account fingerprint.
+  }
+}
+
 const rejected = (): SignInResult => ({ state: "error", reason: "sign_in_rejected" });
 function decode<T>(text: string, check: (value: unknown) => value is T): T | undefined {
   try {
@@ -127,7 +139,7 @@ function stored(value: Session): StoredSession {
 }
 /** One main-process owner; the only persistent account email is in chatgpt-registration. */
 export class ChatGPTProvider implements ProviderAdapter {
-  readonly declaration = {
+  readonly declaration: ProviderAdapter["declaration"] = {
     id: "chatgpt",
     version: "1.0.0",
     signInModes: ["provider_login"] as const,
@@ -143,6 +155,7 @@ export class ChatGPTProvider implements ProviderAdapter {
       modelSelection: true,
       effortSelection: false,
       usageReporting: true,
+      late_usage: "none",
     },
     connection: chatgptConnection,
   };
@@ -264,6 +277,10 @@ export class ChatGPTProvider implements ProviderAdapter {
     } catch {
       return { status: "unavailable" };
     }
+  }
+  accountFingerprint(): string | undefined {
+    const subject = this.current && accessSubject(this.current.access);
+    return subject ? accountFingerprint(this.declaration.connection.id, subject) : undefined;
   }
   accountEmail(): string | null {
     return this.current ? this.currentEmail : null;
@@ -648,7 +665,12 @@ export class ChatGPTProvider implements ProviderAdapter {
           },
           () => {
             // A sign-out or another sign-in since this request began withdraws its credential.
-            if (this.active(generation)) return control.release();
+            if (this.active(generation)) {
+              const subject = accessSubject(value.access);
+              return control.release(
+                subject ? accountFingerprint(this.declaration.connection.id, subject) : undefined,
+              );
+            }
             control.emit({
               type: "result",
               result: { status: "failed", reason: "connection_expired", dispatched: false },

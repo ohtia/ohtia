@@ -171,6 +171,20 @@ describe("sandbox preload composition", () => {
       ),
     );
     for (const handoff of handoffs) expect(await handoff.result).toMatchObject({ ok: true });
+    const projectId = "019a8000-0000-7000-8000-000000000204";
+    const replyInput = { projectId, taskId: proposalId };
+    const replyDetails = h.bridge.foundation.readReplyDetails(replyInput);
+    const [replyChannel, replyText] = h.ipcRenderer.send.mock.calls.at(-1)!;
+    expect(replyChannel).toBe(desktopChannels.port);
+    const replyRequest = JSON.parse(replyText);
+    expect(replyRequest).toMatchObject({ operation: "reply.details", payload: replyInput });
+    const replyFailure = failure("storage_failed");
+    h.ipcRenderer.emit(
+      desktopChannels.reply,
+      {},
+      JSON.stringify({ ...replyRequest, kind: "result", payload: replyFailure }),
+    );
+    expect(await replyDetails.result).toEqual(replyFailure);
     const subscription = h.bridge.foundation.subscribeStatus(() => {});
     const appearance = h.bridge.foundation.subscribeAppearance(() => {});
     calls[0].cancel();

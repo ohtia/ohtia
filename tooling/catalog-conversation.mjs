@@ -102,12 +102,53 @@ export async function verifyConversationSpecimen(page, url, engine, output) {
           await page.keyboard.press("Enter");
           await expect(page.locator("output")).toContainText("open https://example.org/");
           await expect(panel.locator('[aria-busy="true"] button')).toHaveCount(0);
-          await expect(panel.locator(".conversation-actions button")).toHaveCount(2);
+          await expect(panel.locator(".conversation-actions button")).toHaveCount(3);
           await panel.locator(".conversation-actions button").first().focus();
           await page.keyboard.press("Enter");
           await expect(panel.locator(".conversation-copy-status").first()).not.toBeEmpty();
           await expect(panel.locator(".conversation-actions button").first()).toBeFocused();
           await page.keyboard.press("Escape");
+
+          const trigger = panel.locator(".reply-details-toggle");
+          await panel
+            .locator(".conversation-message.agent .conversation-actions button")
+            .first()
+            .focus();
+          await page.keyboard.press("Tab");
+          await expect(trigger).toBeFocused();
+          await expect(trigger).not.toHaveAttribute("aria-expanded");
+          await page.keyboard.press("Enter");
+          const details = panel.locator(".reply-details");
+          await expect(details.locator("dl > dt")).toHaveCount(16);
+          await expect(details).not.toHaveAttribute("aria-busy");
+          await expect(details).toContainText("GPT synthetic 한국어");
+          expect(
+            await details.evaluate((element) => {
+              const grid = element.querySelector("dl");
+              return (
+                element.scrollWidth <= element.clientWidth &&
+                getComputedStyle(grid).gridTemplateColumns.split(" ").length === 2
+              );
+            }),
+          ).toBe(true);
+          if (width === 280) {
+            await captureCatalog(page, {
+              path: path.join(output, `${engine}-reply-details-${width}-${theme}-${locale}.png`),
+              fullPage: true,
+            });
+          }
+          const memory = details.locator(".reply-details-memory");
+          await memory.locator(":scope > summary").click();
+          await expect(memory).toHaveJSProperty("open", true);
+          const version = memory.locator("li details");
+          await version.locator("summary").click();
+          await expect(version).toHaveJSProperty("open", true);
+          await expect(version.locator("p")).toHaveText("Synthetic memory version.");
+          await trigger.focus();
+          await page.keyboard.press("Enter");
+          await expect(details).toHaveCount(0);
+          await expect(trigger).toBeFocused();
+          await panel.locator(".conversation-actions button").first().focus();
           cases.push({ width, theme, locale });
           await captureCatalog(page, {
             path: path.join(output, `${engine}-conversation-${width}-${theme}-${locale}.png`),
@@ -186,8 +227,17 @@ export async function verifyConversationSpecimen(page, url, engine, output) {
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
       ),
     ).toBe(true);
+    const detailsTrigger = page.locator(".reply-details-toggle");
+    await detailsTrigger.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".reply-details dd")).toHaveCount(16);
+    await expect(page.locator(".reply-details h3")).toContainText("⟦");
+    expect(
+      await page.locator(".reply-details").evaluate((e) => e.scrollWidth <= e.clientWidth),
+    ).toBe(true);
     if (engine === "chromium") {
       await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
+      await expect(detailsTrigger).toBeFocused();
       await page.locator(".message-code-box").focus();
       await page.keyboard.press("Tab");
       await page.keyboard.press("Shift+Tab");
@@ -202,6 +252,7 @@ export async function verifyConversationSpecimen(page, url, engine, output) {
       cases,
       wideCases,
       copyFeedbackExpiry: true,
+      replyDetails: true,
       blockSpacing: true,
       pseudolocalization: true,
       copyFailure: true,

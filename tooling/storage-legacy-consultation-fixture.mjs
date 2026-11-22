@@ -93,7 +93,21 @@ const priorRedirectionObjects = {
 };
 import { tables as memoryTables } from "../packages/utility/src/migrations/0029_project_memory.mjs";
 
+export const preReplyUsageSql = `
+  DROP TRIGGER usage_reports_changes;
+  DROP TRIGGER usage_reports_delete;
+  DROP TABLE usage_reports;
+  DROP TRIGGER attempts_changes;
+  ALTER TABLE attempts DROP COLUMN account_fingerprint;
+  ALTER TABLE attempts DROP COLUMN usage_report_deadline_at;
+  ${limits.attempts_changes};
+  DELETE FROM kysely_migration WHERE name='0031_reply_usage';
+  DELETE FROM ohtia_migration_artifacts WHERE name='0031_reply_usage';
+  PRAGMA user_version=30;
+`;
+
 export const preMemorySql = `
+  ${preReplyUsageSql}
   PRAGMA legacy_alter_table=ON;
   DROP TRIGGER receipts_commands;
   DROP TRIGGER tasks_initial;

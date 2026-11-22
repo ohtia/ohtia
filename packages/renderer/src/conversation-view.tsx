@@ -5,6 +5,7 @@ import { HandoffDivider, HandoffProposal } from "./handoff.js";
 import { ConsultationProposal } from "./consultation-proposal.js";
 import { SetupProposal } from "./setup-proposal.js";
 import { RecoveryFocusBoundary } from "./settings-notices.js";
+import { useReplyDetails, type ReplyDetailsPort } from "./reply-details.js";
 import { TaskNotice, taskNoticeContent } from "./task-notice.js";
 import { MessageComposer } from "./message-composer.js";
 import {
@@ -89,6 +90,7 @@ export function ConversationView({
   sharedReplyAnnouncements = false,
   onOpenMemory,
   onAddMemory,
+  detailsPort,
   sourceRequest,
 }: {
   readonly state: ConversationState;
@@ -123,6 +125,7 @@ export function ConversationView({
   readonly sharedReplyAnnouncements?: boolean;
   readonly onOpenMemory?: () => void;
   readonly onAddMemory?: (source: { messageId: string; researcherText?: string }) => void;
+  readonly detailsPort?: ReplyDetailsPort;
   readonly sourceRequest?: { conversationId: string; messageId: string } | undefined;
 }) {
   const hasHandoffCard = state.items.some(
@@ -664,6 +667,22 @@ export function ConversationView({
                       locale={locale}
                       connection={connection}
                       hasText={!!saved || !!text}
+                      details={
+                        detailsPort &&
+                        state.scope.projectId &&
+                        !item.replyMessageId &&
+                        !saved &&
+                        (item.state === "failed" ||
+                          item.state === "cancelled" ||
+                          item.state === "uncertain")
+                          ? {
+                              port: detailsPort,
+                              projectId: state.scope.projectId,
+                              taskId: item.id,
+                              service: connection.displayName,
+                            }
+                          : undefined
+                      }
                       latest={
                         item.consultation || item.synthesis
                           ? !item.superseded && !item.synthesisStopped
@@ -763,6 +782,16 @@ export function ConversationView({
                     messageId={item.id}
                     locale={locale}
                     commands={commands}
+                    details={
+                      detailsPort && state.scope.projectId && agent && item.taskId
+                        ? {
+                            port: detailsPort,
+                            projectId: state.scope.projectId,
+                            taskId: item.taskId,
+                            connections: controller.connections,
+                          }
+                        : undefined
+                    }
                     {...(state.project?.setupConfirmedAt && onAddMemory
                       ? {
                           onAddMemory: () => {
@@ -845,13 +874,16 @@ function SavedMessageActions({
   commands,
   onReuse,
   onAddMemory,
+  details,
 }: {
+  readonly details?: import("./reply-details.js").DetailsSource | undefined;
   readonly onAddMemory?: () => void;
   readonly onReuse?: () => void;
   readonly messageId: string;
   readonly locale: InterfaceLocale;
   readonly commands: Pick<CommandBridge, "copyMessage">;
 }) {
+  const disclosure = useReplyDetails(locale, details);
   const [status, setStatus] = useState<"idle" | "copying" | "copied" | "failed">("idle");
   const pending = useRef(false);
   const alive = useRef(true);
@@ -900,6 +932,7 @@ function SavedMessageActions({
             <LucideGlyph name="copy" size={16} />
           </button>
         </Tooltip>
+        {disclosure.button}
         {onReuse && (
           <Tooltip label={message(locale, "composer.reuse")}>
             <button
@@ -933,6 +966,7 @@ function SavedMessageActions({
           )}
         </span>
       </div>
+      {disclosure.panel}
       {status === "failed" && (
         <div className="conversation-notice danger" role="alert">
           <LucideGlyph name="octagon-alert" size={16} />

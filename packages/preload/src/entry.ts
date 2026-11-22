@@ -401,6 +401,7 @@ const bridge: DesktopBridge = {
     readTimeline: (input) => connection.client.port.readTimeline(input),
     sendTextPart: (id, input) => connection.client.port.sendTextPart(id, input),
     readTextPart: (input) => connection.client.port.readTextPart(input),
+    readReplyDetails: (input) => connection.client.port.readReplyDetails(input),
     readReplyParts: (input) => connection.client.port.readReplyParts(input),
     subscribeResearch,
 

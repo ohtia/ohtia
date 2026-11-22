@@ -150,7 +150,11 @@ function freshDraft(source?: MemoryDraftSource): Draft {
     : { kind: "note", text: "", ...(source ? { source } : {}) };
 }
 
-async function readText(port: MemoryPort, content: PortText, signal: AbortSignal): Promise<string> {
+export async function readMemoryText(
+  port: Pick<MemoryPort, "readTextPart">,
+  content: PortText,
+  signal: AbortSignal,
+): Promise<string> {
   if (typeof content === "string") return content;
   let text = "";
   for (let index = 1; index <= content.parts; index++) {
@@ -179,7 +183,7 @@ async function readList(port: MemoryPort, projectId: string, signal: AbortSignal
     if (summary && summary.revision !== page.value.revision) return null;
     summary = page.value;
     for (const entry of page.value.entries)
-      entries.push({ ...entry, text: await readText(port, entry.text, signal) });
+      entries.push({ ...entry, text: await readMemoryText(port, entry.text, signal) });
     after = page.value.next;
   } while (after);
   return { revision: summary.revision, active: summary.active, bytes: summary.bytes, entries };
@@ -202,7 +206,7 @@ async function readHistory(
     }).result;
     if (!page.ok) throw new Error("Memory history unavailable.");
     for (const version of page.value.versions)
-      versions.push({ ...version, text: await readText(port, version.text, signal) });
+      versions.push({ ...version, text: await readMemoryText(port, version.text, signal) });
     before = page.value.next;
   } while (before);
   return versions;

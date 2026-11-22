@@ -10,6 +10,7 @@ import {
   type PauseCounts,
   type CommandBridge,
 } from "@ohtia/contracts";
+import { useReplyDetails, type DetailsSource } from "./reply-details.js";
 import { contributorNames, VoiceLabel } from "./contributor-identity.js";
 import { LucideGlyph } from "./iconography.js";
 import { Dialog } from "./layers.js";
@@ -197,6 +198,7 @@ export function TaskNotice({
   locale,
   connection,
   hasText,
+  details,
   latest,
   setupFinal = false,
   previousOwner,
@@ -212,6 +214,7 @@ export function TaskNotice({
   readonly locale: InterfaceLocale;
   readonly connection: ProviderDeclaration["connection"];
   readonly hasText: boolean;
+  readonly details?: DetailsSource | undefined;
   readonly latest: boolean;
   readonly setupFinal?: boolean;
   readonly previousOwner?: TimelineTask["agentId"] | undefined;
@@ -223,6 +226,7 @@ export function TaskNotice({
   readonly onOpenConnections?: () => void;
   readonly announce?: (signature: string) => boolean;
 }) {
+  const disclosure = useReplyDetails(locale, details);
   const content = taskNoticeContent(task, locale, connection, hasText, runningAgent);
   const handoff =
     previousOwner && (task.state === "failed" || task.state === "uncertain")
@@ -496,7 +500,9 @@ export function TaskNotice({
             {message(locale, "taskNotice.startAgain")}
           </button>
         )}
+        {disclosure.button}
       </div>
+      {disclosure.panel}
       {feedback && (
         <div
           className={`conversation-notice ${feedback === "actionFailed" ? "danger" : "attention"}`}

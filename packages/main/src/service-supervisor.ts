@@ -10,6 +10,8 @@ import {
   decodeEnvelope,
   decodeDevelopmentReport,
   decodeProviderDispatch,
+  decodeLateUsageReceipt,
+  type LateUsageReceipt,
   decodeProviderInterrupt,
   decodeServiceWake,
   type ServiceWakeMessage,
@@ -57,6 +59,7 @@ export interface ProviderChannel {
   dispatch(message: ProviderDispatchMessage): void;
   interrupt(message: ProviderInterruptMessage): void;
   report?(message: DevelopmentReportMessage): void;
+  usageReceipt?(message: LateUsageReceipt): void;
 }
 interface Work {
   readonly request: Request;
@@ -239,7 +242,11 @@ export class ServiceSupervisor {
       for (const connection of manager.ids()) {
         const full = manager.snapshot(connection);
         if (!full) continue;
+        const account = manager.account(connection);
         const snapshot = {
+          connection_kind: account.kind,
+          ...(account.fingerprint ? { account_fingerprint: account.fingerprint } : {}),
+          ...(account.revision ? { account_revision: account.revision } : {}),
           connection: full.connection,
           state: full.state,
           reason: full.reason,
@@ -475,7 +482,11 @@ export class ServiceSupervisor {
         dispatch || interrupt || report
           ? undefined
           : decodeModelListRefresh(input, this.generation);
-      if (dispatch || interrupt || report || refresh) {
+      const usageReceipt =
+        dispatch || interrupt || report || refresh
+          ? undefined
+          : decodeLateUsageReceipt(input, this.generation);
+      if (dispatch || interrupt || report || refresh || usageReceipt) {
         if (!this.ready) {
           this.fault("protocol_rejected");
           return;
@@ -483,6 +494,7 @@ export class ServiceSupervisor {
         if (dispatch) this.provider?.dispatch(dispatch);
         else if (interrupt) this.provider?.interrupt(interrupt);
         else if (report) this.provider?.report?.(report);
+        else if (usageReceipt) this.provider?.usageReceipt?.(usageReceipt);
         else if (refresh) {
           this.modelRefreshes.set(refresh.connection, refresh.refresh_id);
           this.provider?.refreshModels?.(refresh);

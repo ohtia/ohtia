@@ -50,6 +50,7 @@ import {
   readMemoryHistory,
   readMemoryText,
 } from "./project-memory.js";
+import { readReplyDetails } from "./reply-details.js";
 import { storedText } from "./research-text.js";
 
 /** Test the actual envelope as well as its payload: containers, node count, strings and bytes compose. */
@@ -533,6 +534,8 @@ export async function readResearch(
   attention: ResearchAttention,
 ): Promise<Outcome<unknown>> {
   switch (request.operation) {
+    case "reply.details":
+      return readReplyDetails(db, request.payload, context);
     case "memory.list":
       return listProjectMemory(db, request, (page) => fitsResearchResult(request, page));
     case "memory.history":

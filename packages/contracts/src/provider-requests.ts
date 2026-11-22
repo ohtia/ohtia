@@ -67,16 +67,51 @@ export interface ProviderUsage {
   readonly output_tokens: number | null;
   readonly reasoning_tokens: number | null;
 }
+export interface LateUsageReport {
+  readonly revision: number;
+  readonly usage: ProviderUsage;
+  readonly estimated: boolean;
+}
+export const lateUsageRejections = [
+  "attempt_unavailable",
+  "revision_conflict",
+  "window_closed",
+  "clock_unreliable",
+] as const;
+export type LateUsageDecision =
+  | { readonly accepted: true; readonly acceptedAt: string }
+  | {
+      readonly accepted: false;
+      readonly code: (typeof lateUsageRejections)[number] | "receipt_unavailable";
+    };
+export interface LateUsageReceipt {
+  readonly kind: "provider_usage_receipt";
+  readonly version: typeof providerMessageVersion;
+  readonly generation: string;
+  readonly attempt: string;
+  readonly report_id: string;
+  readonly decision: LateUsageDecision;
+}
+export function isAccountFingerprint(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+}
 export type ProviderEventBody =
   | {
       readonly type: "started";
       readonly provider_request_id: string | null;
+      readonly account_fingerprint?: string;
       readonly model: string | null;
     }
   | { readonly type: "activity" }
   | { readonly type: "text"; readonly text: string }
   | ({ readonly type: "tool_call" } & ProviderToolCall)
   | { readonly type: "usage"; readonly usage: ProviderUsage }
+  | ({
+      readonly type: "late_usage";
+      readonly report_id: string;
+      readonly terminal_at: string;
+      readonly clock_unreliable?: true;
+    } & LateUsageReport)
   | { readonly type: "result"; readonly result: ProviderResult };
 export type ProviderEvent = ProviderEventBody & { readonly sequence: number };
 export interface ProviderInputItem {
@@ -315,7 +350,15 @@ export function isProviderEvent(value: unknown): value is ProviderEvent {
   switch (value.type) {
     case "started":
       return (
-        exact(value, ["sequence", "type", "provider_request_id", "model"]) &&
+        exact(value, [
+          "sequence",
+          "type",
+          "provider_request_id",
+          "model",
+          ...(Object.hasOwn(value, "account_fingerprint") ? ["account_fingerprint"] : []),
+        ]) &&
+        (!Object.hasOwn(value, "account_fingerprint") ||
+          isAccountFingerprint(value.account_fingerprint)) &&
         (value.provider_request_id === null ||
           (boundedText(value.provider_request_id, 256) && value.provider_request_id.length > 0)) &&
         (value.model === null || isProviderModelSlug(value.model))
@@ -335,6 +378,26 @@ export function isProviderEvent(value: unknown): value is ProviderEvent {
         (value.namespace === null || isProviderToolLabel(value.namespace)) &&
         isProviderToolLabel(value.name) &&
         boundedText(value.arguments, providerMessageBytes / 2)
+      );
+    case "late_usage":
+      return (
+        exact(value, [
+          "sequence",
+          "type",
+          "report_id",
+          "terminal_at",
+          "revision",
+          "usage",
+          "estimated",
+          ...(Object.hasOwn(value, "clock_unreliable") ? ["clock_unreliable"] : []),
+        ]) &&
+        (!Object.hasOwn(value, "clock_unreliable") || value.clock_unreliable === true) &&
+        isIdentifier(value.report_id) &&
+        isProviderTimestamp(value.terminal_at) &&
+        count(value.revision) &&
+        value.revision > 0 &&
+        isUsage(value.usage) &&
+        typeof value.estimated === "boolean"
       );
     case "usage":
       return exact(value, ["sequence", "type", "usage"]) && isUsage(value.usage);
@@ -579,11 +642,43 @@ export function decodeProviderEvent(
     ]) &&
     isIdentifier(value.attempt) &&
     isProviderEvent(value.event) &&
+    (value.event.type !== "late_usage" || isResearchId(value.attempt)) &&
     (!Object.hasOwn(value, "work") ||
       (value.event.type === "result" && isProviderWorkUsage(value.work, value.event.result)))
   )
     return value as unknown as ProviderEventMessage;
   return;
+}
+function isProviderTimestamp(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value) &&
+    Number.isFinite(Date.parse(value))
+  );
+}
+export function decodeLateUsageReceipt(
+  text: unknown,
+  generation: string,
+): LateUsageReceipt | undefined {
+  const value = parse(text);
+  if (
+    !header(value, "provider_usage_receipt", generation) ||
+    !exact(value, ["kind", "version", "generation", "attempt", "report_id", "decision"]) ||
+    !isResearchId(value.attempt) ||
+    !isIdentifier(value.report_id) ||
+    !record(value.decision)
+  )
+    return;
+  const decision = value.decision;
+  if (
+    decision.accepted === true
+      ? exact(decision, ["accepted", "acceptedAt"]) && isProviderTimestamp(decision.acceptedAt)
+      : decision.accepted === false &&
+        exact(decision, ["accepted", "code"]) &&
+        (decision.code === "receipt_unavailable" ||
+          lateUsageRejections.some((code) => code === decision.code))
+  )
+    return value as unknown as LateUsageReceipt;
 }
 export function decodeProviderInterrupt(
   text: unknown,

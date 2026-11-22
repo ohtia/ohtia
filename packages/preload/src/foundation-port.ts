@@ -573,6 +573,7 @@ export function createFoundationPort(
     readTimeline: (input) => call("timeline.read", input),
     sendTextPart: (id, input) => call("text.part", input, id),
     readTextPart: (input) => call("text.readPart", input),
+    readReplyDetails: (input) => call("reply.details", input),
     readReplyParts: (input) => call("reply.readParts", input),
     subscribeResearch: (scope, listener) =>
       subscribe("research", listener as Stream["listener"], undefined, scope),

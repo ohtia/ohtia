@@ -2094,7 +2094,7 @@ it(
         version: 1,
         operation: "plan-migration-retry",
         source: 23,
-        target: 30,
+        target: 31,
       }),
     );
     await expect(f.store.open()).rejects.toThrow(/recovery/);
@@ -2582,7 +2582,37 @@ it("sends the partial plan with exact terminal reasons and preserves its input a
     });
   expect(await retry(first.taskId, "working")).toEqual(failure("task_not_retryable"));
   await f.settle(first, { status: "failed", reason: "provider_error", dispatched: true });
-  const replacement = value(await retry(first.taskId, "replace"));
+  const readDetails = () =>
+    f.store.readResearch(
+      planPortRequest("reply.details", {
+        projectId: first.dispatch.request.project,
+        taskId: first.taskId,
+      }),
+    );
+  const before = value(await readDetails());
+  const originalTime = f.query("SELECT updated_at FROM tasks WHERE id=?", first.taskId);
+  let replacement: { readonly resultId: string };
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(Date.now() + 60_000);
+    replacement = value(await retry(first.taskId, "replace"));
+    expect(f.query("SELECT updated_at FROM tasks WHERE id=?", first.taskId)).toEqual(originalTime);
+    expect(value(await readDetails())).toEqual(before);
+    const db = f.raw();
+    try {
+      // Prior revisions stamped the old row and its replacement with the same time.
+      db.prepare(
+        `UPDATE tasks SET
+        updated_at=(SELECT created_at FROM tasks WHERE id=?),
+        state_revision=state_revision+1 WHERE id=?`,
+      ).run(bytes(replacement.resultId), bytes(first.taskId));
+    } finally {
+      db.close();
+    }
+    expect(value(await readDetails())).toEqual(before);
+  } finally {
+    vi.useRealTimers();
+  }
   expect(value(await retry(first.taskId, "replace"))).toEqual(replacement);
   expect(await retry(first.taskId, "stale")).toEqual(failure("newer_task_exists"));
   expect((await timeline(f)).find(({ id }) => id === first.taskId)).toMatchObject({

@@ -890,6 +890,7 @@ function startService(mode?: "open" | "retry" | "restore" | "blocked"): void {
     dispatch: (message) => {
       void providerDispatch?.receive(message);
     },
+    usageReceipt: (message) => providerDispatch?.usageReceipt(message),
     interrupt: (message) => {
       providerDispatch?.interrupt(message);
     },

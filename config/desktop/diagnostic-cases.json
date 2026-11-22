@@ -15,6 +15,9 @@
     "native-denied-io",
     "automatic-capture-stderr-errors"
   ],
+  "shared_cases": [
+    "sweeps private reply markers across dispatch, details, research records and diagnostic output"
+  ],
   "graphical_cases": [
     "broker-startup-and-worker-events",
     "logging-failure-preserves-save",

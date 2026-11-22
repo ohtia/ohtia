@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import {
   dispatchPermitPolicy,
   isProviderEvent,
+  isAccountFingerprint,
   isProviderToolLabel,
   isCollaborationProposal,
   isHandoffTool,
@@ -12,6 +14,10 @@ import {
   isConversationTitleTool,
   validConversationTitle,
   providerMessageVersion,
+  portLimits,
+  type LateUsageDecision,
+  type LateUsageReceipt,
+  type LateUsageReport,
   providerTextChunk,
   providerTextPieces,
   utf8Size,
@@ -51,6 +57,7 @@ interface Dispatched {
   pendingText: string;
   textTimer: ReturnType<typeof setTimeout> | undefined;
   releasedAt?: number;
+  terminalClock?: { wall: number; monotonic: number };
   conversationTitle: boolean;
   proposalToolsEnabled: boolean;
   handoffToolEnabled: boolean;
@@ -113,6 +120,13 @@ export class ProviderDispatch {
   private active: string | undefined;
   private resumedAt = -Infinity;
   private pendingWake: ServiceWakeMessage | undefined;
+  private readonly pendingUsage = new Map<
+    string,
+    {
+      attempt: string;
+      complete: (decision: LateUsageDecision) => void;
+    }
+  >();
   private readonly closingRequests = new Set<Promise<void>>();
   get ceased(): boolean {
     return this.closingRequests.size === 0;
@@ -174,7 +188,7 @@ export class ProviderDispatch {
     )
       this.pendingWake = undefined;
   }
-  /** A new data service takes over; nothing of an earlier generation is sent or forwarded again. */
+  /** A new data service takes over; earlier generations lose all execution authority. */
   begin(generation: string): void {
     this.end();
     this.active = generation;
@@ -183,12 +197,15 @@ export class ProviderDispatch {
   end(generation?: string): void {
     if (generation !== undefined && generation !== this.active) return;
     for (const record of this.records.values()) {
+      record.terminalClock ??= { wall: this.wall(), monotonic: this.monotonic() };
       record.done = true;
       clearTimeout(record.timer);
       clearTimeout(record.textTimer);
       record.abort.abort();
     }
     this.records.clear();
+    for (const pending of this.pendingUsage.values())
+      pending.complete({ accepted: false, code: "receipt_unavailable" });
     this.used.clear();
     this.active = undefined;
     this.pendingWake = undefined;
@@ -310,6 +327,11 @@ export class ProviderDispatch {
         clearTimeout(expiry);
       });
       const control: ProviderRequestControl = {
+        ...(adapter.declaration.capabilities.late_usage === "reported"
+          ? {
+              reportLateUsage: (report: LateUsageReport) => this.reportLateUsage(record, report),
+            }
+          : {}),
         signal: record.abort.signal,
         emit: (event) => {
           // Before the body leaves, only a not-dispatched failure can describe this attempt.
@@ -324,7 +346,7 @@ export class ProviderDispatch {
             return;
           this.emit(record, event);
         },
-        release: () => {
+        release: (fingerprint) => {
           if (record.done || record.closing || this.expired(record) || record.released)
             return false;
           if (!fresh()) {
@@ -339,6 +361,14 @@ export class ProviderDispatch {
           clearTimeout(expiry);
           record.released = true;
           record.releasedAt = this.elapsed(record);
+          if (isAccountFingerprint(fingerprint))
+            this.sendEvent(record, {
+              type: "started",
+              sequence: ++record.sequence,
+              account_fingerprint: fingerprint,
+              model: null,
+              provider_request_id: null,
+            });
           this.options.diagnostic?.({ event_name: "ohtia.provider.dispatched" }, record.generation);
           if (record.conversationTitle)
             this.options.diagnostic?.(
@@ -477,6 +507,7 @@ export class ProviderDispatch {
       result = { status: "failed", reason: "invalid_output", dispatched: true };
     if (result.status !== "completed") record.calls.clear();
     record.closing = result;
+    record.terminalClock ??= { wall: this.wall(), monotonic: this.monotonic() };
     clearTimeout(record.timer);
     record.abort.abort();
   }
@@ -685,7 +716,17 @@ export class ProviderDispatch {
   }
   private forward(record: Dispatched, body: ProviderEventBody): void {
     if (this.expired(record)) return;
-    const sequenced = { ...body, sequence: 1 };
+    // Account metadata is attached by the dispatch guard. Usage after closure is a separate path.
+    if (body.type === "late_usage") return;
+    const sequenced =
+      body.type === "started"
+        ? {
+            type: body.type,
+            model: body.model,
+            provider_request_id: body.provider_request_id,
+            sequence: 1,
+          }
+        : { ...body, sequence: 1 };
     if (!isProviderEvent(sequenced)) {
       // An adapter defect must not forge a malformed event or leave the attempt open.
       this.finish(
@@ -706,13 +747,69 @@ export class ProviderDispatch {
     this.arm(record);
     this.sendEvent(record, { ...sequenced, sequence: ++record.sequence });
   }
-  private sendEvent(record: Dispatched, event: ProviderEvent): void {
+  usageReceipt(receipt: LateUsageReceipt): void {
+    const pending = this.pendingUsage.get(receipt.report_id);
+    if (receipt.generation === this.active && pending?.attempt === receipt.attempt)
+      pending.complete(receipt.decision);
+  }
+  private reportLateUsage(record: Dispatched, report: LateUsageReport): Promise<LateUsageDecision> {
+    const unavailable = { accepted: false, code: "attempt_unavailable" } as const;
+    const generation = this.active;
+    if (
+      !generation ||
+      !record.done ||
+      !record.released ||
+      (record.closing?.status === "failed" && !record.closing.dispatched) ||
+      this.pendingUsage.size >= portLimits.pending_global
+    )
+      return Promise.resolve(unavailable);
+    const ended = record.terminalClock;
+    if (!ended) return Promise.resolve(unavailable);
+    const wall = this.wall();
+    // Wall time covers sleep. The monotonic sample also detects a wall-clock setback.
+    const unreliable =
+      wall < ended.wall || this.monotonic() - ended.monotonic > wall - ended.wall + 1000;
+    const reportId = randomUUID();
+    const event = {
+      ...report,
+      type: "late_usage",
+      report_id: reportId,
+      terminal_at: new Date(ended.wall).toISOString(),
+      sequence: record.sequence + 1,
+      ...(unreliable ? { clock_unreliable: true } : {}),
+    } as const;
+    if (!isProviderEvent(event)) return Promise.resolve(unavailable);
+    const missingReceipt = { accepted: false, code: "receipt_unavailable" } as const;
+    return new Promise((resolve) => {
+      const complete = (decision: LateUsageDecision) => {
+        clearTimeout(timer);
+        this.pendingUsage.delete(reportId);
+        resolve(decision);
+      };
+      const timer = setTimeout(() => {
+        complete(missingReceipt);
+      }, portLimits.request_deadline_ms);
+      timer.unref();
+      this.pendingUsage.set(reportId, { attempt: record.attempt, complete });
+      try {
+        // Settlement can cross a data-service restart. Only the original attempt is addressed.
+        this.sendEvent(record, event, generation);
+      } catch {
+        complete(missingReceipt);
+      }
+    });
+  }
+  private sendEvent(
+    record: Dispatched,
+    event: ProviderEvent,
+    generation = record.generation,
+  ): void {
     this.options.send(
-      record.generation,
+      generation,
       JSON.stringify({
         kind: "provider_event",
         version: providerMessageVersion,
-        generation: record.generation,
+        generation,
         attempt: record.attempt,
         event,
       }),

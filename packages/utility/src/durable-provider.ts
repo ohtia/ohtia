@@ -403,10 +403,31 @@ export class DurableProvider {
       attempt,
     });
   }
-  async receive(message: ProviderEventMessage): Promise<boolean> {
-    const stream = this.streams.get(message.attempt);
-    if (this.disposed || message.generation !== this.options.context.generation || !stream)
+  async receive(message: ProviderEventMessage, settlementEnabled = true): Promise<boolean> {
+    if (this.disposed || message.generation !== this.options.context.generation) return true;
+    if (message.event.type === "late_usage") {
+      const outcome = settlementEnabled
+        ? await this.options.storage.recordLateUsage(
+            message.attempt,
+            message.event,
+            message.event.clock_unreliable,
+            message.event.terminal_at,
+          )
+        : undefined;
+      // Accounting may arrive before migration or recovery has admitted storage.
+      // Report the missing receipt without closing the execution service.
+      this.send({
+        kind: "provider_usage_receipt",
+        version: providerMessageVersion,
+        generation: message.generation,
+        attempt: message.attempt,
+        report_id: message.event.report_id,
+        decision: outcome?.ok ? outcome.value : { accepted: false, code: "receipt_unavailable" },
+      });
       return true;
+    }
+    const stream = this.streams.get(message.attempt);
+    if (!stream) return true;
     if (message.event.sequence !== stream.sequence + 1) return false;
     const now = this.elapsed(stream);
     stream.longestSilence = Math.max(stream.longestSilence, now - stream.last);
@@ -474,7 +495,7 @@ export class DurableProvider {
       event,
       stream.text,
       stream.calls,
-      stream.taskKind === "reply" ? undefined : message.work,
+      message.work,
     );
     if (!saved.ok) throw new Error("Provider event could not be stored.");
     if (!saved.value.recorded) return true;
@@ -489,16 +510,7 @@ export class DurableProvider {
         });
       const result = saved.value.result;
       if (!result) throw new Error("Terminal provider outcome was not recorded.");
-      if (
-        stream.taskKind === "reply" &&
-        (result.status === "cancelled" ||
-          result.status === "uncertain" ||
-          (result.status === "failed" &&
-            ["deadline_exceeded", "inactivity_timeout", "output_limit_exceeded"].includes(
-              result.reason,
-            )))
-      )
-        stream.usage = unknownUsage;
+
       this.finished(message.attempt, stream, result, now);
       await this.pump();
     }

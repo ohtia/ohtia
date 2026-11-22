@@ -1,5 +1,6 @@
 import { preConsultationSql, legacyTaskInitialFrom20Sql } from "./fixtures/storage.js";
 import { describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -9,10 +10,13 @@ import {
   type DiagnosticEvent,
   decodeDiagnosticEvent,
   makeDiagnosticRecord,
+  policyId,
+  type ReplyDetails,
 } from "../packages/contracts/src/index.js";
 import { DurableProvider, utf8Beginning } from "../packages/utility/src/durable-provider.js";
 import { objects as researchObjects } from "../packages/utility/src/migrations/0007_research_records.mjs";
 import { Database, storageFixture, stores } from "./fixtures/storage.js";
+import { identifier } from "../packages/utility/src/research.js";
 import { DurableStore } from "../packages/utility/dist/index.js";
 
 function value<T>(outcome: Outcome<T>): T {
@@ -619,7 +623,7 @@ describe("durable task migration preservation", () => {
         max_concurrent_inference: expectedInference,
         max_concurrent_local_processing: 1,
       });
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(30);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(31);
       upgraded.close();
     },
   );
@@ -845,9 +849,9 @@ it("stores observed identity and usage with the reply and handles main's output-
     requested_model: "first-model",
     observed_model: "observed-model",
     provider_request_id: "request-reported",
-    input_tokens: null,
-    cached_input_tokens: null,
-    output_tokens: null,
+    input_tokens: 10,
+    cached_input_tokens: 0,
+    output_tokens: 4,
     reasoning_tokens: null,
     state: "failed",
     outcome_reason: "output_limit_exceeded",
@@ -1135,7 +1139,7 @@ describe("reply control and partial provenance", () => {
       db.close();
     },
   );
-  it("keeps unknown usage after a cut and saves no empty partial", async () => {
+  it("keeps reported usage after a cut and saves no empty partial", async () => {
     const f = await setup();
     value(await f.append("Question"));
     const first = (await f.prepare())!;
@@ -1159,8 +1163,8 @@ describe("reply control and partial provenance", () => {
     );
     const db = f.raw();
     expect(db.prepare("SELECT input_tokens,output_tokens FROM attempts").get()).toEqual({
-      input_tokens: null,
-      output_tokens: null,
+      input_tokens: 3,
+      output_tokens: 2,
     });
     expect(value(await f.store.readMessages(f.conversation.id))).toHaveLength(1);
     db.close();
@@ -1183,7 +1187,7 @@ function recoveryGate(f: Awaited<ReturnType<typeof setup>>): string {
   const gate = path.join(f.root, "migration-pending.json");
   fs.writeFileSync(
     gate,
-    JSON.stringify({ version: 1, operation: "synthetic-recovery", source: 9, target: 30 }),
+    JSON.stringify({ version: 1, operation: "synthetic-recovery", source: 9, target: 31 }),
   );
   return gate;
 }
@@ -1678,3 +1682,210 @@ it.each([true, false])(
     db.close();
   },
 );
+
+it("settles usage once per revision across retry and restart without changing research", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  const start = Date.now();
+  const diagnostics: DiagnosticEvent[] = [];
+  const f = await setup(undefined, (event) => diagnostics.push(event));
+  const now = (minutes: number) => vi.setSystemTime(start + minutes * 60_000);
+  try {
+    value(await f.append("Synthetic usage question"));
+    const first = (await f.prepare())!;
+    const attempt = first.request.attempt;
+    const query = (statement: string) => {
+      const db = f.raw();
+      try {
+        return db.prepare(statement).all();
+      } finally {
+        db.close();
+      }
+    };
+    const usage = {
+      input_tokens: 8,
+      cached_input_tokens: null,
+      output_tokens: 3,
+      reasoning_tokens: null,
+    };
+    const firstReport = { revision: 2, usage, estimated: false };
+    expect(value(await f.store.recordLateUsage(attempt, firstReport))).toMatchObject({
+      accepted: false,
+      code: "attempt_unavailable",
+    });
+    expect(query("SELECT usage_report_deadline_at FROM attempts")).toEqual([
+      { usage_report_deadline_at: null },
+    ]);
+    now(1);
+    value(await f.store.recordTaskEvent(attempt, { type: "usage", sequence: 1, usage }, ""));
+    value(
+      await f.store.recordTaskEvent(
+        attempt,
+        {
+          type: "result",
+          sequence: 2,
+          result: { status: "failed", dispatched: true, reason: "provider_error" },
+        },
+        "",
+      ),
+    );
+    const deadline = new Date(start + 16 * 60_000).toISOString();
+    expect(query("SELECT usage_report_deadline_at FROM attempts")).toEqual([
+      { usage_report_deadline_at: deadline },
+    ]);
+
+    const taskId = (
+      query("SELECT lower(hex(id)) AS id FROM tasks")[0] as { id: string }
+    ).id.replace(/^(........)(....)(....)(....)(............)$/, "$1-$2-$3-$4-$5");
+    now(2);
+    value(
+      await f.store.executeResearchCommand({
+        command: "task.tryAgain",
+        operationId: "retry-for-usage",
+        payload: { taskId },
+      }),
+    );
+    const retry = (await f.prepare())!;
+    expect(retry.request.attempt).not.toBe(attempt);
+    const research = () =>
+      ["tasks", "messages", "command_receipts", "interventions", "work_allocations"].map((table) =>
+        query("SELECT * FROM " + table),
+      );
+    const unchanged = research();
+    now(3);
+    const receipt = value(await f.store.recordLateUsage(attempt, firstReport));
+    expect(receipt).toEqual({ accepted: true, acceptedAt: new Date().toISOString() });
+    expect(value(await f.store.recordLateUsage(attempt, firstReport))).toEqual(receipt);
+    expect(
+      value(await f.store.recordLateUsage(attempt, { ...firstReport, estimated: true })),
+    ).toEqual({ accepted: false, code: "revision_conflict" });
+    expect(value(await f.store.recordLateUsage(retry.request.attempt, firstReport))).toEqual({
+      accepted: false,
+      code: "attempt_unavailable",
+    });
+    const hash = createHash("sha256")
+      .update(
+        '{"attemptId":"' +
+          attempt +
+          '","cachedInputTokens":null,"estimated":false,"inputTokens":8,"origin":"late","outputTokens":3,"reasoningTokens":null,"revision":2}',
+      )
+      .digest("hex");
+    expect(
+      query("SELECT lower(hex(report_sha256)) AS hash FROM usage_reports WHERE revision=2"),
+    ).toEqual([{ hash }]);
+
+    expect(research()).toEqual(unchanged);
+    await f.store.close();
+    now(4);
+    await f.store.open();
+    const afterRestart = research();
+    const correction = { ...firstReport, revision: 3, usage: { ...usage, output_tokens: 4 } };
+    expect(value(await f.store.recordLateUsage(attempt, correction))).toMatchObject({
+      accepted: true,
+    });
+    expect(
+      query("SELECT usage_report_deadline_at,output_tokens FROM attempts ORDER BY attempt_number"),
+    ).toEqual([
+      { usage_report_deadline_at: deadline, output_tokens: 4 },
+      {
+        usage_report_deadline_at: new Date(start + 19 * 60_000).toISOString(),
+        output_tokens: null,
+      },
+    ]);
+    now(2.5);
+    expect(value(await f.store.recordLateUsage(attempt, { ...correction, revision: 4 }))).toEqual({
+      accepted: false,
+      code: "clock_unreliable",
+    });
+    now(16);
+    expect(value(await f.store.recordLateUsage(attempt, { ...correction, revision: 4 }))).toEqual({
+      accepted: false,
+      code: "window_closed",
+    });
+    expect(value(await f.store.recordLateUsage(attempt, firstReport))).toEqual(receipt);
+    expect(research()).toEqual(afterRestart);
+    expect(diagnostics).toContainEqual({
+      event_name: "ohtia.usage.late_rejected",
+      error_code: "clock_unreliable",
+    });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("uses the reply end time and no account when the provider proves it never sent", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    const f = await setup();
+    const lookup = () => {
+      const db = f.raw();
+      try {
+        const row = db
+          .prepare(
+            "SELECT tasks.id, attempts.usage_report_deadline_at AS deadline, attempts.dispatch_permitted_at AS permit FROM tasks JOIN attempts ON attempts.task_id=tasks.id ORDER BY tasks.id DESC LIMIT 1",
+          )
+          .get() as { id: Uint8Array; deadline: string | null; permit: string | null };
+        return { taskId: identifier(row.id), deadline: row.deadline, permit: row.permit };
+      } finally {
+        db.close();
+      }
+    };
+    const details = async (taskId: string) =>
+      value(
+        await f.store.readResearch({
+          operation: "reply.details",
+          kind: "request",
+          policy: policyId,
+          protocol: 1,
+          operationId: "read-usage",
+          requestId: "read-usage",
+          windowGeneration: "window",
+          serviceGeneration: f.generation,
+          payload: { taskId, projectId: f.projectId },
+        }),
+      ) as ReplyDetails;
+    const stop = (taskId: string, operationId: string) =>
+      f.store.executeResearchCommand({ command: "task.stop", operationId, payload: { taskId } });
+
+    value(await f.append("Stop an authorised attempt before release."));
+    const first = (await f.prepare())!;
+    const { taskId } = lookup();
+    value(await stop(taskId, "stop-before-release"));
+    expect(lookup()).toMatchObject({ deadline: null, permit: expect.any(String) });
+    value(
+      await f.store.recordTaskEvent(
+        first.request.attempt,
+        { type: "result", sequence: 1, result: { status: "cancelled" } },
+        "",
+        [],
+        { dispatched: false, input_bytes: 0, output_bytes: 0, work_ms: 0 },
+      ),
+    );
+    expect(lookup()).toMatchObject({ deadline: expect.any(String), permit: null });
+    expect(await details(taskId)).toMatchObject({ account: null, startedAt: null, memory: [] });
+
+    value(await f.start("Stop later, while blocked after an attempted connection."));
+    const blocked = (await f.prepare())!;
+    const blockedTask = lookup().taskId;
+    value(
+      await f.store.recordTaskEvent(
+        blocked.request.attempt,
+        {
+          type: "result",
+          sequence: 1,
+          result: { status: "failed", dispatched: false, reason: "connection_expired" },
+        },
+        "",
+      ),
+    );
+    vi.setSystemTime(Date.now() + 180_000);
+    value(await stop(blockedTask, "stop-while-blocked"));
+    expect(await details(blockedTask)).toMatchObject({
+      account: null,
+      startedAt: null,
+      endedAt: new Date().toISOString(),
+      attempts: 1,
+    });
+  } finally {
+    vi.useRealTimers();
+  }
+});
