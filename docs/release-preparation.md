@@ -151,3 +151,5 @@ done
 ```
 
 The attestation identifies the workflow run and its run commit; the digest file and the reserved tag identify the selected commit. When `hash` selected an older commit, these are different commits.
+
+To make the release public, follow [Release publication](release-publication.md).
