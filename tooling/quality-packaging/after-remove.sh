@@ -6,7 +6,8 @@ export PATH
 policy=/etc/apparmor.d/ohtia
 profiles=$(cat /sys/kernel/security/apparmor/profiles)
 if [ -e "$policy" ]; then
-  [ -f "$policy" ] && [ ! -L "$policy" ]
+  [ -f "$policy" ]
+  [ ! -L "$policy" ]
   [ "$(stat -c %U "$policy")" = root ]
   if printf '%s\n' "$profiles" | grep -q '^ohtia '; then
     apparmor_parser --remove "$policy"

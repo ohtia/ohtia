@@ -142,6 +142,7 @@
     "scripts/tests/test_linux_profiles.py",
     "scripts/tests/test_localization_qualification.py",
     "scripts/tests/test_macos_contributor.py",
+    "scripts/tests/test_package_scripts.py",
     "scripts/tests/test_package_workspace.py",
     "scripts/tests/test_plasma_session.py",
     "scripts/tests/test_quality_delivery.py",
@@ -351,6 +352,16 @@
       "id": "test_github_pr.TrustAndTransportTests.test_log_download_bounds_and_failures_use_real_child_processes",
       "platforms": ["win32"],
       "reason": "POSIX process/shell contract"
+    },
+    {
+      "id": "test_package_scripts.PackageScriptExecutionTests.test_debian_preinstall_refuses_wrong_distribution_or_version",
+      "platforms": ["win32"],
+      "reason": "POSIX package-script execution with synthetic filesystem and host commands"
+    },
+    {
+      "id": "test_package_scripts.PackageScriptExecutionTests.test_payload_checks_refuse_wrong_file_types_and_symlinks",
+      "platforms": ["win32"],
+      "reason": "POSIX package-script execution with synthetic filesystem and host commands"
     },
     {
       "id": "test_linux_e2e.LinuxE2ETests.test_root_is_denied_before_preparation",
