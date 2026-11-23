@@ -26,7 +26,10 @@ export function displayEmail(value: unknown): value is string {
   );
 }
 /** Bound untrusted provider bodies before decoding, including chunked responses. */
-export async function providerJSON(response: Response): Promise<unknown> {
+export async function providerJSON(
+  response: Response,
+  maxBytes = 4 * 1024 * 1024,
+): Promise<unknown> {
   if (!response.body) throw new Error("Missing provider response.");
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -36,7 +39,7 @@ export async function providerJSON(response: Response): Promise<unknown> {
       const next = await reader.read();
       if (next.done) break;
       size += next.value.byteLength;
-      if (size > 4 * 1024 * 1024) throw new Error("Provider response exceeded its bound.");
+      if (size > maxBytes) throw new Error("Provider response exceeded its bound.");
       chunks.push(next.value);
     }
     return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;

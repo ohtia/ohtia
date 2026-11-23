@@ -119,7 +119,10 @@ import {
   invalidPlan,
   invalidPlanChange,
   connectionInferenceLimit,
+  apiKeyConnections,
+  isApiKeyConnection,
   isUsagePauseConnection,
+  usagePauseConnections,
   type UsagePauseConnection,
   type ProviderFailureReason,
   isProviderModelSlug,
@@ -1610,16 +1613,20 @@ export class TaskTransaction {
       .where("resumed_at", "is", null)
       .executeTakeFirst();
   }
-  async retryNotBefore(connection: string): Promise<string | undefined> {
-    if (connection !== "anthropic_api_key") return;
-    const row = await this.db
+  async retryDeadlines(connections: readonly string[] = apiKeyConnections) {
+    const rows = await this.db
       .selectFrom("attempts as a")
       .innerJoin("tasks as t", "t.id", "a.task_id")
-      .select(({ fn }) => fn.max<string>("a.retry_not_before_at").as("deadline"))
+      .select(({ fn }) => ["t.connection", fn.max<string>("a.retry_not_before_at").as("deadline")])
       .where("a.retry_not_before_at", ">", this.now)
-      .where("t.connection", "=", connection)
-      .executeTakeFirst();
-    return row?.deadline ?? undefined;
+      .where("t.connection", "in", connections)
+      .groupBy("t.connection")
+      .execute();
+    return new Map(rows.map(({ connection, deadline }) => [connection, deadline]));
+  }
+  async retryNotBefore(connection: string): Promise<string | undefined> {
+    if (!isApiKeyConnection(connection)) return;
+    return (await this.retryDeadlines([connection])).get(connection);
   }
   private async connectionBlock(connection: string): Promise<BlockingReason | null> {
     if (!this.context.connections.available(connection)) return "connection_disabled";
@@ -2386,8 +2393,8 @@ export class TaskTransaction {
       .selectFrom("tasks")
       .selectAll()
       .where("state", "in", ["running", "cancelling", "uncertain"])
-      // ChatGPT and the development fake have no background work to quarantine after main
-      // closes their connection. Keep the recorded outcome uncertain without occupying capacity.
+      // These adapters have no background work to quarantine after main closes the connection.
+      // Keep the recorded outcome uncertain without occupying capacity.
       .where((eb) =>
         eb.or([
           eb("state", "!=", "uncertain"),
@@ -2395,8 +2402,8 @@ export class TaskTransaction {
             "connection",
             "not in",
             this.context.mode === "development"
-              ? ["chatgpt", "anthropic_api_key", "fake"]
-              : ["chatgpt", "anthropic_api_key"],
+              ? [...usagePauseConnections, "fake"]
+              : usagePauseConnections,
           ),
         ]),
       )
@@ -2461,7 +2468,7 @@ export class TaskTransaction {
       .orderBy(sql`tasks.rowid`)
       .execute();
     const queuedConversations = new Set<string>();
-    const anthropicRetry = await this.retryNotBefore("anthropic_api_key");
+    const retries = await this.retryDeadlines();
     for (const task of candidates) {
       const conversationKey = identifier(task.conversation_id);
       if (task.kind === "reply" || task.kind === "consultation") {
@@ -2489,7 +2496,7 @@ export class TaskTransaction {
         this.context.connections.awaitingModels(task.connection)
       )
         continue;
-      if (task.connection === "anthropic_api_key" && anthropicRetry) continue;
+      if (retries.has(task.connection)) continue;
       const connectionLimit = connectionInferenceLimit(task.connection, limit);
       if (
         occupied.filter((other) => other.connection === task.connection).length >= connectionLimit
@@ -3309,7 +3316,7 @@ export class TaskTransaction {
     }
     const pausesConnection =
       (reason === "usage_limit_reached" && task.connection === "chatgpt") ||
-      (reason === "billing_limit_reached" && task.connection === "anthropic_api_key");
+      (reason === "billing_limit_reached" && isApiKeyConnection(task.connection));
     if (pausesConnection && isUsagePauseConnection(task.connection)) {
       if (!(await this.usagePause(task.connection))) {
         await this.db

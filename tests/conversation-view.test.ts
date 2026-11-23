@@ -38,6 +38,7 @@ import {
   staleRevision,
   compareConversations,
   chatgptConnection,
+  openaiApiKeyConnection,
   type TimelineTask,
   type TimelineConsultation,
   type TimelineHandoffProposal,
@@ -1440,47 +1441,52 @@ describe("task notices", () => {
         }
     },
   );
-  it("shows Anthropic-specific limits and the live countdown without automatically retrying", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-11-22T12:00:00.000Z"));
-    try {
-      const showReason = (outcomeReason: TimelineTask["outcomeReason"], hasText = false) =>
-        show(task({ outcomeReason, connection: "anthropic_api_key" }), { hasText });
-      await showReason("max_output_reached");
-      expect(container.textContent).toContain(
-        "The reply reached the maximum length Synthetic service allows for this model.",
-      );
-      await showReason("max_output_reached", true);
-      expect(container.textContent).toContain(
-        "Incomplete — maximum length Synthetic service allows",
-      );
-      await showReason("refused");
-      expect(container.textContent).toContain("Synthetic service declined to answer this request.");
-      await showReason("rate_limited");
-      expect(container.textContent).toContain(
-        "Synthetic service limited how many requests this key can send right now.",
-      );
-      expect(buttonNamed("Try again")).toBeDefined();
-      await showReason("model_unavailable");
-      expect(container.textContent).toContain("Synthetic service couldn’t find Virgilio’s model");
-      const retry = await show(
-        task({
-          state: "queued",
-          connection: "anthropic_api_key",
-          outcomeReason: null,
-          retryNotBeforeAt: "2026-11-22T12:00:02.000Z",
-        }),
-      );
-      expect(container.textContent).toContain("Synthetic service asked Ohtia to wait 2 sec");
-      await act(async () => vi.advanceTimersByTimeAsync(1000));
-      expect(container.textContent).toContain("Synthetic service asked Ohtia to wait 1 sec");
-      await act(async () => vi.advanceTimersByTimeAsync(1000));
-      expect(container.textContent).not.toContain("Synthetic service asked Ohtia to wait");
-      expect(retry).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+  it.each(["anthropic_api_key", "openai_api_key"])(
+    "shows %s limits and the live countdown without automatically retrying",
+    async (connection) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-11-22T12:00:00.000Z"));
+      try {
+        const showReason = (outcomeReason: TimelineTask["outcomeReason"], hasText = false) =>
+          show(task({ outcomeReason, connection }), { hasText });
+        await showReason("max_output_reached");
+        expect(container.textContent).toContain(
+          "The reply reached the maximum length Synthetic service allows for this model.",
+        );
+        await showReason("max_output_reached", true);
+        expect(container.textContent).toContain(
+          "Incomplete — maximum length Synthetic service allows",
+        );
+        await showReason("refused");
+        expect(container.textContent).toContain(
+          "Synthetic service declined to answer this request.",
+        );
+        await showReason("rate_limited");
+        expect(container.textContent).toContain(
+          "Synthetic service limited how many requests this key can send right now.",
+        );
+        expect(buttonNamed("Try again")).toBeDefined();
+        await showReason("model_unavailable");
+        expect(container.textContent).toContain("Synthetic service couldn’t find Virgilio’s model");
+        const retry = await show(
+          task({
+            state: "queued",
+            connection,
+            outcomeReason: null,
+            retryNotBeforeAt: "2026-11-22T12:00:02.000Z",
+          }),
+        );
+        expect(container.textContent).toContain("Synthetic service asked Ohtia to wait 2 sec");
+        await act(async () => vi.advanceTimersByTimeAsync(1000));
+        expect(container.textContent).toContain("Synthetic service asked Ohtia to wait 1 sec");
+        await act(async () => vi.advanceTimersByTimeAsync(1000));
+        expect(container.textContent).not.toContain("Synthetic service asked Ohtia to wait");
+        expect(retry).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("keeps stopped partial text's single notice, hides coalesced tasks and labels before-dispatch cancellation", async () => {
     await show(task({ state: "cancelled", outcomeReason: "cancelled_by_researcher" }), {
@@ -5805,6 +5811,91 @@ it("shows add-to-memory last on saved project messages and omits it during setup
     f.controller.dispose();
   }
 });
+
+it.each([false, true])(
+  "shows unknown OpenAI usage after Stop with saved text = %s",
+  async (hasText) => {
+    const taskId = id(380);
+    const replyId = id(381);
+    const stopped = reviewTask({
+      id: taskId,
+      state: "cancelled",
+      outcomeReason: "cancelled_by_researcher",
+      agentId: "josefa",
+      connection: "openai_api_key",
+      replyMessageId: hasText ? replyId : null,
+    });
+    const reply = {
+      ...message(381, "Saved part of the library reply"),
+      id: replyId,
+      authorKind: "agent",
+      agentId: "josefa",
+      taskId,
+      ending: "partial",
+    } as TimelineItem;
+    const readReplyDetails = vi.fn(() =>
+      ok({
+        agentId: "josefa",
+        operation: "search_strategy_planning",
+        instructionVersion: 1,
+        connectionId: "openai_api_key",
+        connectionKind: "api_key",
+        account: "unknown",
+        requestedModel: "gpt-6.1-sol",
+        observedModel: null,
+        requestedEffort: null,
+        observedEffort: null,
+        attempts: 1,
+        startedAt: null,
+        endedAt: null,
+        durationMs: null,
+        tokens: {
+          input_tokens: null,
+          cached_input_tokens: null,
+          output_tokens: null,
+          reasoning_tokens: null,
+        },
+        usage: "unreported",
+        memory: [],
+      }),
+    );
+    const port = {
+      readReplyDetails,
+    } as unknown as import("../packages/renderer/src/reply-details.js").ReplyDetailsPort;
+    const controller = {
+      connections: [openaiApiKeyConnection],
+    } as unknown as ConversationController;
+    await render(
+      state(hasText ? [reply, stopped] : [stopped]),
+      controller,
+      "en-US",
+      undefined,
+      port,
+    );
+    expect(container.querySelector(".conversation-notice")?.textContent).toContain(
+      hasText ? "Incomplete — stopped by you" : "Stopped.",
+    );
+    expect(container.querySelector(".task-usage")?.textContent).toContain("full usage is unknown.");
+    const source = hasText ? replyId : taskId;
+    const trigger = container.querySelector<HTMLButtonElement>(
+      `[data-timeline-id="${source}"] [aria-label="Show details"]`,
+    )!;
+    await act(async () => trigger.click());
+    expect(readReplyDetails).toHaveBeenCalledWith({ projectId: scope.projectId, taskId });
+    const details = Object.fromEntries(
+      [...container.querySelectorAll(".reply-details dt")].map((term) => [
+        term.textContent,
+        term.nextElementSibling?.textContent,
+      ]),
+    );
+    expect(details).toMatchObject({ Usage: "Not reported by OpenAI" });
+    expect(
+      Object.entries(details).filter(
+        ([label, value]) => label.toLowerCase().includes("tokens") && value === "Unknown",
+      ),
+    ).toHaveLength(4);
+  },
+);
 
 it("discloses saved and unsaved reply details with loading, recovery and localized unknowns", async () => {
   vi.stubGlobal(

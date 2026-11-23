@@ -219,11 +219,14 @@ async function mount(t: ReturnType<typeof fixture>) {
 }
 
 describe("integrated application authority", () => {
-  it("offers Anthropic key entry through the default application Settings", async () => {
+  it.each([
+    ["anthropic_api_key", "Anthropic"],
+    ["openai_api_key", "OpenAI"],
+  ])("offers %s key entry through the default application Settings", async (id, service) => {
     const t = fixture();
     const snapshot = (connection: string, state: ConnectionEvent["state"]) => ({
       connection,
-      display_name: connection === "anthropic_api_key" ? "Anthropic" : "ChatGPT",
+      display_name: connection === id ? service : "ChatGPT",
       state,
       reason: null,
       probing: false,
@@ -236,11 +239,14 @@ describe("integrated application authority", () => {
     const readConnection = vi.fn((connection: string) =>
       call({ ok: true, value: snapshot(connection, "disconnected") }),
     );
-    let receive: (event: Outcome<ConnectionEvent>) => void;
+    const listeners = new Map<string, (event: Outcome<ConnectionEvent>) => void>();
     Object.assign(t.port, {
       readConnection,
-      subscribeConnection: (_connection: string, listener: typeof receive) => {
-        receive = listener;
+      subscribeConnection: (
+        connection: string,
+        listener: (event: Outcome<ConnectionEvent>) => void,
+      ) => {
+        listeners.set(connection, listener);
         return {
           ready: Promise.resolve({ ok: true, value: { subscriptionId: "connections" } }),
           dispose() {},
@@ -251,29 +257,32 @@ describe("integrated application authority", () => {
     await t.intent("settings.open");
     const dialog = container.querySelector(".settings-dialog[open]")!;
     const add = [...dialog.querySelectorAll("button")].find(
-      ({ textContent }) => textContent === "Add Anthropic API key",
+      ({ textContent }) => textContent === "Add " + service + " API key",
     );
-    expect(readConnection).toHaveBeenCalledWith("anthropic_api_key");
+    expect(readConnection).toHaveBeenCalledWith(id);
     expect(add).toBeDefined();
     await act(async () => add!.click());
     const field = dialog.querySelector<HTMLInputElement>('input[type="password"]');
-    expect(field?.labels?.[0]?.textContent).toBe("Anthropic API key");
+    expect(field?.labels?.[0]?.textContent).toBe(service + " API key");
     expect(document.activeElement).toBe(field);
     const limits = dialog.querySelector(".limits-panel")!;
-    const cost = "More replies at once can spend your Anthropic key’s credit faster.";
+    const cost = "More replies at once can spend your " + service + " key’s credit faster.";
     const plan = "More replies at once can use more of your ChatGPT plan at the same time.";
     expect(limits.textContent).not.toContain(cost);
     const notify = (connection: string, state: ConnectionEvent["state"]) =>
       act(async () =>
-        receive({ ok: true, value: { ...snapshot(connection, state), kind: "state" } }),
+        listeners.get("*")?.({
+          ok: true,
+          value: { ...snapshot(connection, state), kind: "state" },
+        }),
       );
-    await notify("anthropic_api_key", "connected");
+    await notify(id, "connected");
     expect(limits.textContent).toContain(cost);
     expect(limits.textContent).not.toContain(plan);
     await notify("chatgpt", "connected");
     expect(limits.textContent).toContain(cost);
     expect(limits.textContent).toContain(plan);
-    await notify("anthropic_api_key", "disconnected");
+    await notify(id, "disconnected");
     expect(limits.textContent).not.toContain(cost);
     expect(limits.textContent).toContain(plan);
   });

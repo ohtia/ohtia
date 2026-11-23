@@ -10,6 +10,7 @@ export const credentialAccounts = [
   "anthropic-api-key",
   "anthropic-api-key-dates",
   "openai-api-key",
+  "openai-api-key-dates",
 ] as const;
 export type CredentialAccount = (typeof credentialAccounts)[number];
 export interface StoredSession {
@@ -21,7 +22,7 @@ export interface StoredApiKey {
   readonly instance: string;
   readonly connectedAt?: string;
 }
-type ApiKeyAccount = Extract<CredentialAccount, "anthropic-api-key">;
+export type ApiKeyAccount = Extract<CredentialAccount, "anthropic-api-key" | "openai-api-key">;
 function decodeApiKey(text: string): Omit<StoredApiKey, "connectedAt"> | undefined {
   try {
     const value = JSON.parse(text) as Partial<StoredApiKey> | null;
@@ -158,7 +159,7 @@ export class CredentialStore {
         if (raw === null) return { status: "absent" };
         const stored = decodeApiKey(raw);
         if (!stored) return { status: "unusable" };
-        const dates = keyDates(await this.entry("anthropic-api-key-dates").getPassword());
+        const dates = keyDates(await this.entry(`${account}-dates`).getPassword());
         const connectedAt = dates[stored.instance];
         return { status: "stored", value: { ...stored, ...(connectedAt ? { connectedAt } : {}) } };
       } catch {
@@ -170,7 +171,7 @@ export class CredentialStore {
     return this.serial(async () => {
       try {
         await this.entry(account).deleteCredential();
-        await this.entry("anthropic-api-key-dates")
+        await this.entry(`${account}-dates`)
           .deleteCredential()
           .catch(() => {});
         return { status: "stored" };
@@ -185,7 +186,7 @@ export class CredentialStore {
         const entry = this.entry(account);
         const raw = await entry.getPassword();
         const previous = raw === null ? undefined : decodeApiKey(raw);
-        const dates = this.entry("anthropic-api-key-dates");
+        const dates = this.entry(`${account}-dates`);
         const previousDate = previous && keyDates(await dates.getPassword())[previous.instance];
         const instance = randomBytes(16).toString("hex");
         const connectedAt = new Date().toISOString();

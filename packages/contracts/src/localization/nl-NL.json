@@ -57,6 +57,8 @@
     "agents.refresh": "Modellijst van {service} vernieuwen",
     "agents.refreshing": "Modellijst van {service} wordt bijgewerkt…",
     "agents.listAge": "Modellijst van {service}, bijgewerkt {age}",
+    "agents.catalogUnlisted": "Modellen die Ohtia nog niet heeft gecontroleerd, staan niet in de lijst.",
+    "agents.catalogAge": "Modelgegevens uit de catalogus van Ohtia (gecontroleerd op {date}). Beschikbaarheid volgens je {service}-account, bijgewerkt {age}.",
     "agents.refreshFailed": "Ohtia kon de modellijst niet bijwerken. Je keuzes blijven behouden.",
     "agents.noModel": "Er is geen model gekozen voor {agent}. Kies een model via Instellingen › Agenten.",
     "agents.missingModel": "Het model “{model}” van {agent} is momenteel niet beschikbaar in je account. Kies een ander model via Instellingen › Agenten.",

@@ -475,10 +475,15 @@ export function isProviderDeclaration(value: unknown): value is ProviderDeclarat
   );
 }
 
-export const usagePauseConnections = ["chatgpt", "anthropic_api_key"] as const;
+export const apiKeyConnections = ["anthropic_api_key", "openai_api_key"] as const;
+export type ApiKeyConnection = (typeof apiKeyConnections)[number];
+export function isApiKeyConnection(value: unknown): value is ApiKeyConnection {
+  return apiKeyConnections.some((connection) => connection === value);
+}
+export const usagePauseConnections = ["chatgpt", ...apiKeyConnections] as const;
 export type UsagePauseConnection = (typeof usagePauseConnections)[number];
 export function isUsagePauseConnection(value: unknown): value is UsagePauseConnection {
-  return value === "chatgpt" || value === "anthropic_api_key";
+  return value === "chatgpt" || isApiKeyConnection(value);
 }
 /** Declared slots and the default for adapters without a concurrency declaration. */
 export const connectionInferenceLimits: Readonly<Record<string, number>> = Object.freeze({
@@ -487,7 +492,7 @@ export const connectionInferenceLimits: Readonly<Record<string, number>> = Objec
 });
 
 export function connectionInferenceLimit(connection: string, overall: number): number {
-  if (connection === "anthropic_api_key") return overall;
+  if (isApiKeyConnection(connection)) return overall;
   return Object.hasOwn(connectionInferenceLimits, connection)
     ? (connectionInferenceLimits[connection] ?? 1)
     : 1;
@@ -508,7 +513,17 @@ export const anthropicApiKeyConnection = Object.freeze({
   usageUrl: null,
 } as const satisfies ProviderDeclaration["connection"]);
 
+export const openaiApiKeyConnection = Object.freeze({
+  id: "openai_api_key",
+  displayName: "OpenAI",
+  kind: "api_key",
+  usageUrl: null,
+} as const satisfies ProviderDeclaration["connection"]);
+
+export const openaiCatalogCheckedOn = "2026-11-09";
+
 export const defaultProviderConnections = Object.freeze([
   chatgptConnection,
   anthropicApiKeyConnection,
+  openaiApiKeyConnection,
 ]);

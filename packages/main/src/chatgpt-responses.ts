@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import {
   isProviderEffort,
   isProviderModelSlug,
   conversationTitlePolicy,
   type ProviderFailureReason,
   type ProviderRequestData,
+  type ProviderTool,
   type ProviderUsage,
 } from "@ohtia/contracts";
 import {
@@ -44,18 +46,22 @@ export const forbiddenResponseFields = Object.freeze([
 /** Serialize Ohtia's request, including an explicit reasoning effort when chosen. */
 export function responsesBody(
   request: ProviderRequestData,
-  route: "tools" | "additional_tools" = "tools",
+  route: "tools" | "additional_tools" | "api_key" = "tools",
 ): Record<string, unknown> {
-  const namespaces = [...new Set(request.tools.map((tool) => tool.namespace))].map((name) => ({
+  const tools =
+    route === "api_key"
+      ? request.tools.map((tool) => ({ ...tool, namespace: "ohtia" }))
+      : request.tools;
+  const namespaces = [...new Set(tools.map((tool) => tool.namespace))].map((name) => ({
     type: "namespace",
     name,
     description:
       name === conversationTitlePolicy.namespace
         ? "Optional metadata for the current reply."
-        : request.tools.some((tool) => tool.namespace === name && tool.name === "update_memory")
+        : tools.some((tool) => tool.namespace === name && tool.name === "update_memory")
           ? "Research action proposals and reversible project memory updates."
           : "Actions that Ohtia shows to the researcher for confirmation.",
-    tools: request.tools
+    tools: tools
       .filter((tool) => tool.namespace === name)
       .map((tool) => ({
         type: "function",
@@ -75,7 +81,8 @@ export function responsesBody(
         : []),
       ...request.input.map((item) => ({ role: item.role, content: item.text })),
     ],
-    ...(route === "tools" && namespaces.length ? { tools: namespaces } : {}),
+    ...(route !== "additional_tools" && namespaces.length ? { tools: namespaces } : {}),
+    ...(route === "api_key" ? { tool_choice: "auto" } : {}),
     store: false,
     stream: true,
   };
@@ -168,6 +175,8 @@ export function reportedUsage(value: unknown): ProviderUsage | undefined {
   };
 }
 const eventBytes = 4 * 1024 * 1024;
+const argumentsDigest = (text: string) =>
+  createHash("sha256").update(text, "utf16le").digest("hex");
 
 function* completedAssistantText(output: unknown): Iterable<string> {
   if (!Array.isArray(output)) return;
@@ -185,6 +194,29 @@ function* completedAssistantText(output: unknown): Iterable<string> {
     }
   }
 }
+function validResponseOutput(
+  output: unknown,
+  validCall: (item: Record<string, unknown>) => boolean,
+): boolean {
+  return (
+    Array.isArray(output) &&
+    (output as unknown[]).every((item) => {
+      if (!object(item) || typeof item.type !== "string") return false;
+      if (item.type === "function_call") return validCall(item);
+      if (item.type !== "message") return true;
+      return (
+        item.role === "assistant" &&
+        Array.isArray(item.content) &&
+        (item.content as unknown[]).every(
+          (part) =>
+            object(part) &&
+            typeof part.type === "string" &&
+            (part.type !== "output_text" || typeof part.text === "string"),
+        )
+      );
+    })
+  );
+}
 /**
  * Read a Responses stream. Success requires `response.completed`; an end without a final event is
  * uncertain; an event Ohtia cannot parse fails as invalid output, keeping the text already sent.
@@ -192,16 +224,29 @@ function* completedAssistantText(output: unknown): Iterable<string> {
 export async function readResponseStream(
   response: Response,
   control: ProviderRequestControl,
-  hooks: {
-    readonly classified: (classified: Classified) => void | Promise<void>;
-  },
+  hooks:
+    | { readonly classified: (classified: Classified) => void | Promise<void> }
+    | { readonly apiTools: readonly ProviderTool[] },
 ): Promise<void> {
   const requestId = response.headers.get("x-request-id");
+  const apiTools = "apiTools" in hooks ? hooks.apiTools : undefined;
+  // The wire has one namespace. An omitted namespace can only resolve to a tool we sent.
+  const requestedTool = (name: unknown, namespace: unknown) =>
+    namespace === "ohtia" || namespace === undefined || namespace === null
+      ? apiTools?.find((tool) => tool.name === name)
+      : undefined;
   let started = false;
   let observedEffort: string | undefined;
   let streamedText = false;
   const isAborted = () => control.signal.aborted;
-  const calls = new Set<string>();
+  const calls = new Map<
+    string,
+    {
+      readonly name: string;
+      readonly callId: string | undefined;
+      digest?: string;
+    }
+  >();
   const ended = new Set<string>();
   const start = (metadata?: Record<string, unknown>) => {
     const reasoning = metadata?.reasoning;
@@ -219,9 +264,10 @@ export async function readResponseStream(
       ...(effort === undefined ? {} : { effort }),
     });
   };
-  const fail = async (code: unknown, fallback: "provider_error") => {
-    const classified = classifyCode(code);
-    if (classified) await hooks.classified(classified);
+  const fail = async (code: unknown, fallback: "provider_error" | "max_output_reached") => {
+    if (apiTools && isAborted()) return;
+    const classified = "classified" in hooks ? classifyCode(code) : undefined;
+    if (classified && "classified" in hooks) await hooks.classified(classified);
     control.emit({
       type: "result",
       result: { status: "failed", reason: classified?.reason ?? fallback, dispatched: true },
@@ -236,6 +282,7 @@ export async function readResponseStream(
   /** Returns true once the stream has reached its final event. */
   const handle = async (block: string): Promise<boolean | "invalid"> => {
     if (isAborted()) return true;
+    if (apiTools && Buffer.byteLength(block, "utf8") > eventBytes) return "invalid";
     const data: string[] = [];
     for (const line of block.split("\n")) {
       if (line.startsWith("data:")) data.push(line.slice(line.startsWith("data: ") ? 6 : 5));
@@ -251,18 +298,64 @@ export async function readResponseStream(
     }
     if (!object(value) || typeof value.type !== "string") return "invalid";
     const body = object(value.response) ? value.response : undefined;
+    const completed = value.type === "response.completed";
+    const terminal =
+      completed || value.type === "response.failed" || value.type === "response.incomplete";
     start(
-      value.type === "response.created" ||
-        value.type === "response.in_progress" ||
-        value.type === "response.completed" ||
-        value.type === "response.failed" ||
-        value.type === "response.incomplete"
+      value.type === "response.created" || value.type === "response.in_progress" || terminal
         ? body
         : undefined,
     );
-    const usage = () => {
+    if (terminal) {
+      // Usage is independently reported even when the terminal output cannot be accepted.
       const reported = reportedUsage(body?.usage);
       if (reported) control.emit({ type: "usage", usage: reported });
+      if (apiTools) {
+        const confirmed = new Set<string>();
+        const validCall = (item: Record<string, unknown>) => {
+          if (
+            typeof item.arguments !== "string" ||
+            !requestedTool(item.name, item.namespace) ||
+            (item.id != null && typeof item.id !== "string") ||
+            (item.call_id != null && typeof item.call_id !== "string") ||
+            (item.id == null && item.call_id == null)
+          )
+            return false;
+          if (!completed) return true;
+          // A terminal item can omit the stream item id. Its call id still identifies the call.
+          const id =
+            typeof item.id === "string"
+              ? item.id
+              : [...calls].find(([, call]) => call.callId === item.call_id)?.[0];
+          const call = id === undefined ? undefined : calls.get(id);
+          if (
+            id === undefined ||
+            !call ||
+            call.name !== item.name ||
+            (item.call_id != null && call.callId !== undefined && item.call_id !== call.callId) ||
+            call.digest !== argumentsDigest(item.arguments) ||
+            confirmed.has(id)
+          )
+            return false;
+          confirmed.add(id);
+          return true;
+        };
+        if (
+          !body ||
+          (body.output !== undefined && !validResponseOutput(body.output, validCall)) ||
+          (completed && confirmed.size !== calls.size)
+        )
+          return "invalid";
+      }
+    }
+    const terminalText = () => {
+      // The final response can carry text even when no text deltas arrived.
+      if (!streamedText) {
+        for (const text of completedAssistantText(body?.output)) {
+          control.emit({ type: "text", text });
+          if (isAborted()) break;
+        }
+      }
     };
     switch (value.type) {
       case "response.output_text.delta":
@@ -274,6 +367,7 @@ export async function readResponseStream(
         return false;
       case "response.output_item.added": {
         const item = value.item;
+        if (apiTools && (!object(item) || typeof item.type !== "string")) return "invalid";
         if (!object(item) || item.type !== "function_call") {
           control.emit({ type: "activity" });
           return false;
@@ -284,14 +378,21 @@ export async function readResponseStream(
             item.namespace !== null &&
             typeof item.namespace !== "string") ||
           typeof item.name !== "string" ||
-          calls.has(item.id)
+          calls.has(item.id) ||
+          (apiTools && item.arguments !== undefined && typeof item.arguments !== "string")
         )
           return "invalid";
-        calls.add(item.id);
+        const namespace = typeof item.namespace === "string" ? item.namespace : null;
+        const apiTool = requestedTool(item.name, item.namespace);
+        if (apiTools && !apiTool) return "invalid";
+        calls.set(item.id, {
+          name: item.name,
+          callId: typeof item.call_id === "string" ? item.call_id : undefined,
+        });
         control.emit({
           type: "tool_start",
           id: item.id,
-          namespace: typeof item.namespace === "string" ? item.namespace : null,
+          namespace: apiTool?.namespace ?? namespace,
           name: item.name,
         });
         if (typeof item.arguments === "string" && item.arguments)
@@ -308,40 +409,42 @@ export async function readResponseStream(
           return "invalid";
         control.emit({ type: "tool_arguments", id: value.item_id, text: value.delta });
         return false;
-      case "response.function_call_arguments.done":
-        if (
-          typeof value.item_id !== "string" ||
-          !calls.has(value.item_id) ||
-          ended.has(value.item_id)
-        )
-          return "invalid";
-        ended.add(value.item_id);
+      case "response.function_call_arguments.done": {
+        const id = value.item_id;
+        if (typeof id !== "string" || ended.has(id)) return "invalid";
+        const call = calls.get(id);
+        const args = typeof value.arguments === "string" ? value.arguments : undefined;
+        if (!call || (apiTools && args === undefined)) return "invalid";
+        ended.add(id);
         control.emit({
           type: "tool_end",
-          id: value.item_id,
-          ...(typeof value.arguments === "string" ? { arguments: value.arguments } : {}),
+          id,
+          ...(args === undefined ? {} : { arguments: args }),
         });
+        // Main owns the bounded argument buffer. Keep only a digest for terminal reconciliation.
+        if (apiTools && args !== undefined && !isAborted()) call.digest = argumentsDigest(args);
         return false;
+      }
       case "response.completed":
         if (!body) return "invalid";
-        usage();
-        // The completed response can carry text even when no text deltas arrived.
-        if (!streamedText) {
-          for (const text of completedAssistantText(body.output)) {
-            control.emit({ type: "text", text });
-            if (isAborted()) return true;
-          }
-        }
-        control.emit({ type: "result", result: { status: "completed" } });
+        terminalText();
+        if (!isAborted()) control.emit({ type: "result", result: { status: "completed" } });
         return true;
       case "response.failed":
-        usage();
+        if (apiTools) terminalText();
         await fail(object(body?.error) ? body.error.code : undefined, "provider_error");
         return true;
-      case "response.incomplete":
-        usage();
-        await fail(undefined, "provider_error");
+      case "response.incomplete": {
+        if (apiTools) terminalText();
+        const details = body?.incomplete_details;
+        await fail(
+          undefined,
+          apiTools && object(details) && details.reason === "max_output_tokens"
+            ? "max_output_reached"
+            : "provider_error",
+        );
         return true;
+      }
       case "error":
         await fail(
           value.code ?? (object(value.error) ? value.error.code : undefined),

@@ -2107,7 +2107,7 @@ it(
         version: 1,
         operation: "plan-migration-retry",
         source: 23,
-        target: 35,
+        target: 36,
       }),
     );
     await expect(f.store.open()).rejects.toThrow(/recovery/);
@@ -2891,41 +2891,107 @@ it("retains a plan stop when a running synthesis ends uncertain", async () => {
   ).toEqual(failure("task_not_retryable"));
 });
 
+async function reportPlanModels(
+  f: Awaited<ReturnType<typeof fixture>>,
+  connections: ServiceConnections,
+  generation: string,
+  connection: string,
+  model: string,
+) {
+  connections.receive({
+    kind: "connection_state",
+    generation,
+    snapshot: {
+      connection,
+      state: "connected",
+      connection_kind: connection === "openai_api_key" ? "api_key" : "subscription",
+      reason: null,
+      probing: false,
+      probe_id: null,
+      model_list_revision: 1,
+      model_count: 1,
+      model_report_id: connection + "-report",
+      model_read_at: "2026-01-01T00:00:00.000Z",
+    },
+  });
+  connections.receive({
+    kind: "connection_models",
+    generation,
+    page: {
+      connection,
+      model_list_revision: 1,
+      models: [{ id: model, name: model }],
+      nextCursor: 1,
+      hasMore: false,
+    },
+  });
+  value(await f.store.storeModelReport(connection));
+}
+
+it("routes Josefa to the OpenAI API and Virgilio to ChatGPT in the same plan", async () => {
+  const f = await fixture();
+  const projectId = await confirmedProject(f);
+  const connections = new ServiceConnections();
+  const generation = "mixed-plan";
+  f.store.setTaskContext({ generation, mode: "development", connections });
+  await reportPlanModels(f, connections, generation, "chatgpt", "first");
+  await reportPlanModels(f, connections, generation, "openai_api_key", "gpt-6.1-sol");
+  value(
+    await f.run({
+      command: "agentPreference.replace",
+      operationId: "choose-josefa-model",
+      payload: {
+        target: "josefa",
+        expectedRevision: 0,
+        connection: "openai_api_key",
+        model: "gpt-6.1-sol",
+        effort: null,
+        inherit: false,
+        source: "researcher",
+      },
+    }),
+  );
+  const conversationId = value(await f.store.readConversations(projectId))[0]!.id;
+  value(
+    await f.run({
+      command: "message.append",
+      operationId: "mixed-plan-question",
+      payload: { conversationId, content: "What sources should we compare?" },
+    }),
+  );
+  const coordinator = await f.next();
+  expect(coordinator.dispatch.request).toMatchObject({
+    connection: "chatgpt",
+    operation: "direct_guidance",
+  });
+  await f.settle(coordinator, undefined, "We can start by comparing available catalog terms.");
+  const { resultId: plan } = value(
+    await f.add("mixed-plan", {
+      ...f.newPlan([task("research", { required: true })]),
+      conversationId,
+    }),
+  );
+  const research = await f.next();
+  expect(research.dispatch.request).toMatchObject({
+    connection: "openai_api_key",
+    model: "gpt-6.1-sol",
+    operation: "search_strategy_planning",
+  });
+  await f.settle(research, undefined, unresolved);
+  expect((await f.next()).dispatch.request).toMatchObject({
+    connection: "chatgpt",
+    model: "first",
+    operation: "contribution_synthesis",
+  });
+  expect((await readPlan(f, plan)).contributions[0]?.agentId).toBe("josefa");
+});
+
 it("cancels a blocked contribution when its saved destination changes and retries on the approved service", async () => {
   const f = await fixture();
   const connections = new ServiceConnections();
   const generation = "destination-settings";
   f.store.setTaskContext({ generation, mode: "development", connections });
-  const report = async (connection: string, model: string) => {
-    connections.receive({
-      kind: "connection_state",
-      generation,
-      snapshot: {
-        connection,
-        state: "connected",
-        reason: null,
-        probing: false,
-        probe_id: null,
-        model_list_revision: 1,
-        model_count: 1,
-        model_report_id: connection + "-report",
-        model_read_at: "2026-01-01T00:00:00.000Z",
-      },
-    });
-    connections.receive({
-      kind: "connection_models",
-      generation,
-      page: {
-        connection,
-        model_list_revision: 1,
-        models: [{ id: model, name: model }],
-        nextCursor: 1,
-        hasMore: false,
-      },
-    });
-    value(await f.store.storeModelReport(connection));
-  };
-  await report("anthropic", "other");
+  await reportPlanModels(f, connections, generation, "openai_api_key", "gpt-6.1-sol");
   const { resultId: plan } = value(
     await f.add(
       "approve",
@@ -2941,8 +3007,8 @@ it("cancels a blocked contribution when its saved destination changes and retrie
   const next = {
     target: "josefa",
     expectedRevision: 0,
-    connection: "anthropic",
-    model: "other",
+    connection: "openai_api_key",
+    model: "gpt-6.1-sol",
     effort: null,
     inherit: false,
     source: "researcher",
@@ -2962,7 +3028,7 @@ it("cancels a blocked contribution when its saved destination changes and retrie
       payload: { taskId },
     });
   expect(await retry("retry-before-restore")).toEqual(failure("destination_changed"));
-  await report("chatgpt", "first");
+  await reportPlanModels(f, connections, generation, "chatgpt", "first");
   value(
     await f.run({
       command: "agentPreference.replace",

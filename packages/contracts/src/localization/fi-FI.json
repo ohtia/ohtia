@@ -57,6 +57,8 @@
     "agents.refresh": "Päivitä palvelun {service} malliluettelo",
     "agents.refreshing": "Päivitetään palvelun {service} malliluetteloa…",
     "agents.listAge": "Palvelun {service} malliluettelo, päivitetty {age}",
+    "agents.catalogUnlisted": "Malleja, joita Ohtia ei ole vielä tarkistanut, ei näytetä luettelossa.",
+    "agents.catalogAge": "Mallien tiedot ovat Ohtian luettelosta (tarkistettu {date}). Saatavuus {service}-tilisi mukaan, päivitetty {age}.",
     "agents.refreshFailed": "Ohtia ei voinut päivittää malliluetteloa. Valintasi säilyvät.",
     "agents.noModel": "Agentille {agent} ei ole valittu mallia. Valitse malli kohdassa Asetukset › Agentit.",
     "agents.missingModel": "Agentin {agent} malli “{model}” ei ole nyt käytettävissä tililläsi. Valitse toinen malli kohdassa Asetukset › Agentit.",

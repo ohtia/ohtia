@@ -621,7 +621,7 @@ describe("durable task migration preservation", () => {
         max_concurrent_inference: expectedInference,
         max_concurrent_local_processing: 1,
       });
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(35);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(36);
       upgraded.close();
     },
   );
@@ -1183,7 +1183,7 @@ function recoveryGate(f: Awaited<ReturnType<typeof setup>>): string {
   const gate = path.join(f.root, "migration-pending.json");
   fs.writeFileSync(
     gate,
-    JSON.stringify({ version: 1, operation: "synthetic-recovery", source: 9, target: 35 }),
+    JSON.stringify({ version: 1, operation: "synthetic-recovery", source: 9, target: 36 }),
   );
   return gate;
 }
@@ -1894,99 +1894,98 @@ it("uses the reply end time and no account when the provider proves it never sen
   }
 });
 
-describe("Anthropic terminal outcomes in SQLite", () => {
-  it("keeps a Retry-After wait across restart and reopens admission at its recorded time", async () => {
-    const f = await setup(
-      [{ id: "first-model", name: "First model" }],
-      undefined,
-      "anthropic_api_key",
-    );
-    value(await f.append("First Anthropic request"));
-    const dispatched = (await f.prepare())!;
-    value(await f.start("Another conversation"));
-    const deadline = new Date(Date.now() + 30_000).toISOString();
-    value(
-      await f.store.recordTaskEvent(
-        dispatched.request.attempt,
-        {
-          type: "result",
-          sequence: 1,
-          result: {
-            status: "failed",
-            dispatched: true,
-            reason: "rate_limited",
-            retry_not_before_at: deadline,
+describe.each(["anthropic_api_key", "openai_api_key"] as const)(
+  "%s persistent limits",
+  (connection) => {
+    it("keeps a Retry-After wait across restart and reopens admission at its recorded time", async () => {
+      const f = await setup([{ id: "first-model", name: "First model" }], undefined, connection);
+      value(await f.append("First paid request"));
+      const dispatched = (await f.prepare())!;
+      value(await f.start("Another conversation"));
+      const deadline = new Date(Date.now() + 30_000).toISOString();
+      value(
+        await f.store.recordTaskEvent(
+          dispatched.request.attempt,
+          {
+            type: "result",
+            sequence: 1,
+            result: {
+              status: "failed",
+              dispatched: true,
+              reason: "rate_limited",
+              retry_not_before_at: deadline,
+            },
           },
-        },
-        "",
-      ),
-    );
-    expect(value(await f.store.providerRetryDeadline())).toBe(deadline);
-    expect(await f.prepare()).toBeNull();
-    await f.store.close();
-    await f.store.open();
-    value(
-      await f.store.executeResearchCommand({
-        command: "task.continueAll",
-        operationId: "continue-after-restart",
-        payload: {},
-      }),
-    );
-    expect(value(await f.store.providerRetryDeadline())).toBe(deadline);
-    expect(await f.prepare()).toBeNull();
-    vi.useFakeTimers({ toFake: ["Date"] });
-    try {
-      vi.setSystemTime(new Date(deadline));
-      expect(value(await f.store.providerRetryDeadline())).toBeUndefined();
-      expect(await f.prepare()).not.toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+          "",
+        ),
+      );
+      expect(value(await f.store.providerRetryDeadline())).toBe(deadline);
+      expect(await f.prepare()).toBeNull();
+      await f.store.close();
+      await f.store.open();
+      value(
+        await f.store.executeResearchCommand({
+          command: "task.continueAll",
+          operationId: "continue-after-restart",
+          payload: {},
+        }),
+      );
+      expect(value(await f.store.providerRetryDeadline())).toBe(deadline);
+      expect(await f.prepare()).toBeNull();
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        vi.setSystemTime(new Date(deadline));
+        expect(value(await f.store.providerRetryDeadline())).toBeUndefined();
+        expect(await f.prepare()).not.toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
 
-  it("retains the billing pause until an explicit resume and leaves the failed request terminal", async () => {
-    const f = await setup(
-      [{ id: "first-model", name: "First model" }],
-      undefined,
-      "anthropic_api_key",
-    );
-    value(await f.append("First Anthropic request"));
-    const dispatched = (await f.prepare())!;
-    value(await f.start("Waiting request"));
-    value(
-      await f.store.recordTaskEvent(
-        dispatched.request.attempt,
-        {
-          type: "result",
-          sequence: 1,
-          result: { status: "failed", dispatched: true, reason: "billing_limit_reached" },
-        },
-        "",
-      ),
-    );
-    expect(await f.prepare()).toBeNull();
-    const raw = f.raw();
-    try {
-      expect(raw.prepare("SELECT connection, resumed_at FROM usage_limit_pauses").all()).toEqual([
-        { connection: "anthropic_api_key", resumed_at: null },
-      ]);
-      expect(raw.prepare("SELECT state, blocking_reason FROM tasks ORDER BY rowid").all()).toEqual([
-        { state: "failed", blocking_reason: null },
-        { state: "blocked", blocking_reason: "usage_limit_reached" },
-      ]);
-    } finally {
-      raw.close();
-    }
-    value(
-      await f.store.executeResearchCommand({
-        command: "usagePause.resume",
-        operationId: "resume-anthropic",
-        payload: { connection: "anthropic_api_key" },
-      }),
-    );
-    expect((await f.prepare())?.request.attempt).not.toBe(dispatched.request.attempt);
-  });
+    it("retains the billing pause until an explicit resume and leaves the failed request terminal", async () => {
+      const f = await setup([{ id: "first-model", name: "First model" }], undefined, connection);
+      value(await f.append("First paid request"));
+      const dispatched = (await f.prepare())!;
+      value(await f.start("Waiting request"));
+      value(
+        await f.store.recordTaskEvent(
+          dispatched.request.attempt,
+          {
+            type: "result",
+            sequence: 1,
+            result: { status: "failed", dispatched: true, reason: "billing_limit_reached" },
+          },
+          "",
+        ),
+      );
+      expect(await f.prepare()).toBeNull();
+      const raw = f.raw();
+      try {
+        expect(raw.prepare("SELECT connection, resumed_at FROM usage_limit_pauses").all()).toEqual([
+          { connection, resumed_at: null },
+        ]);
+        expect(
+          raw.prepare("SELECT state, blocking_reason FROM tasks ORDER BY rowid").all(),
+        ).toEqual([
+          { state: "failed", blocking_reason: null },
+          { state: "blocked", blocking_reason: "usage_limit_reached" },
+        ]);
+      } finally {
+        raw.close();
+      }
+      value(
+        await f.store.executeResearchCommand({
+          command: "usagePause.resume",
+          operationId: "resume-api-key",
+          payload: { connection },
+        }),
+      );
+      expect((await f.prepare())?.request.attempt).not.toBe(dispatched.request.attempt);
+    });
+  },
+);
 
+describe("Anthropic terminal outcomes in SQLite", () => {
   it("discards refusal text, stores only a category and treats a provider length stop as full usage", async () => {
     const f = await setup(
       [{ id: "first-model", name: "First model" }],

@@ -129,6 +129,7 @@ export function inspectWorkspace(root) {
             "migrations/0033_entry_text_preference.mjs",
             "migrations/0034_agent_preferences.mjs",
             "migrations/0035_anthropic_outcomes.mjs",
+            "migrations/0036_openai_usage_pauses.mjs",
             "migrations/0015_project_setup.mjs",
             "migrations/0009_usage_limit_pauses.mjs",
             "migrations/0005_presentation_receipts.mjs",

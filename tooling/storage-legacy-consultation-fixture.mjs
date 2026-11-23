@@ -131,6 +131,8 @@ export const preAnthropicOutcomesSql = `
   DROP TABLE usage_limit_pauses_with_anthropic;
   ${Object.values(usagePauseObjects).join(";\n")};
   ALTER TABLE provider_models DROP COLUMN max_input;
+  DELETE FROM kysely_migration WHERE name='0036_openai_usage_pauses';
+  DELETE FROM ohtia_migration_artifacts WHERE name='0036_openai_usage_pauses';
   DELETE FROM kysely_migration WHERE name='0035_anthropic_outcomes';
   DELETE FROM ohtia_migration_artifacts WHERE name='0035_anthropic_outcomes';
   PRAGMA legacy_alter_table=OFF;

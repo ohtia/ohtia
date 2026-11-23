@@ -25,7 +25,8 @@ import {
   nodeProviderTransport,
 } from "./provider-https.js";
 import { accountFingerprint } from "./account-fingerprint.js";
-import type { CredentialStore, StoredApiKey, StoredSession } from "./credential-store.js";
+import { ApiKeySession } from "./api-key-session.js";
+import type { CredentialStore, StoredSession } from "./credential-store.js";
 import type { ApiKeyCheck, ProviderAdapter, ProviderRequestControl } from "./provider-adapter.js";
 
 export const anthropicConnection = anthropicApiKeyConnection.id;
@@ -439,9 +440,6 @@ async function receive(
   return { status: "uncertain", reason: "connection_lost" };
 }
 
-function session(value: StoredApiKey): StoredSession {
-  return { credential: value.key, reason: null };
-}
 export class AnthropicProvider implements ProviderAdapter {
   readonly declaration = {
     id: "anthropic",
@@ -463,9 +461,7 @@ export class AnthropicProvider implements ProviderAdapter {
     },
   } as const;
 
-  private current: StoredApiKey | undefined;
-  private expired: string | undefined;
-  private onExpired: ((state: "expired", reason: "key_needs_workspace" | null) => void) | undefined;
+  private readonly session: ApiKeySession;
   constructor(
     private readonly options: {
       readonly store: CredentialStore;
@@ -473,39 +469,23 @@ export class AnthropicProvider implements ProviderAdapter {
       readonly refresh: () => void;
       readonly fetch?: typeof globalThis.fetch;
     },
-  ) {}
+  ) {
+    this.session = new ApiKeySession(options.store, credentialAccount, anthropicConnection);
+    this.credentials = this.session.credentials;
+  }
 
-  accountFingerprint(): string | undefined {
-    return this.current && accountFingerprint(anthropicConnection, this.current.instance);
+  readonly credentials: ProviderAdapter["credentials"];
+  accountFingerprint() {
+    return this.session.accountFingerprint();
   }
-  onStateChange(listener: NonNullable<AnthropicProvider["onExpired"]>) {
-    this.onExpired = listener;
-    return () => {
-      this.onExpired = undefined;
-    };
+  onStateChange(listener: Parameters<ApiKeySession["onStateChange"]>[0]) {
+    return this.session.onStateChange(listener);
   }
-  readonly credentials = {
-    read: async () => {
-      const stored = await this.options.store.readApiKey(credentialAccount);
-      if (stored.status !== "stored") {
-        this.current = undefined;
-        return stored;
-      }
-      this.current = stored.value;
-      return { status: "stored", value: session(stored.value) } as const;
-    },
-    write: () => Promise.resolve({ status: "unavailable" } as const),
-    delete: async () => {
-      const result = await this.options.store.deleteApiKey(credentialAccount);
-      if (result.status === "stored") this.current = undefined;
-      return result;
-    },
-  };
-  connect(): ReturnType<ProviderAdapter["connect"]> {
-    return Promise.resolve({ state: "error", reason: null });
+  connect(signal: AbortSignal): ReturnType<ProviderAdapter["connect"]> {
+    return this.session.connect(signal);
   }
   readonly apiKey = {
-    connectedAt: () => this.current?.connectedAt,
+    connectedAt: () => this.session.connectedAt(),
     check: async (key: string, signal: AbortSignal): Promise<ApiKeyCheck> => {
       try {
         return { models: await listModels(key, signal, this.options.fetch) };
@@ -513,13 +493,7 @@ export class AnthropicProvider implements ProviderAdapter {
         return { reason: checkReason(error) };
       }
     },
-    save: async (key: string) => {
-      const result = await this.options.store.writeApiKey(credentialAccount, key);
-      if (result.status !== "stored") return { status: "unavailable" } as const;
-      this.current = result.value;
-      this.expired = undefined;
-      return { status: "stored" } as const;
-    },
+    save: (key: string) => this.session.save(key),
   };
   probe(stored: StoredSession, signal: AbortSignal): Promise<readonly ProviderModel[]> {
     return listModels(stored.credential, signal, this.options.fetch);
@@ -527,8 +501,8 @@ export class AnthropicProvider implements ProviderAdapter {
   readonly requests = {
     prepare: () => Promise.resolve("ready" as const),
     send: async (request: ProviderRequestData, control: ProviderRequestControl) => {
-      const stored = this.current;
-      if (!stored || stored.instance === this.expired) {
+      const stored = this.session.current();
+      if (!stored) {
         control.emit({
           type: "result",
           result: { status: "failed", reason: "connection_expired", dispatched: false },
@@ -554,11 +528,7 @@ export class AnthropicProvider implements ProviderAdapter {
           "messages",
           this.options.fetch,
           () => {
-            if (
-              stored.instance !== this.current?.instance ||
-              stored.instance === this.expired ||
-              control.signal.aborted
-            ) {
+            if (!this.session.isCurrent(stored) || control.signal.aborted) {
               dispatch.superseded = true;
               return false;
             }
@@ -587,18 +557,12 @@ export class AnthropicProvider implements ProviderAdapter {
           };
         else if (isApiError(error) && typeof error.status === "number") {
           result = requestError(error, stored.key, received);
-          if (
-            result.status === "failed" &&
-            result.reason === "connection_expired" &&
-            stored.instance === this.current?.instance
-          ) {
-            this.expired = stored.instance;
-            this.onExpired?.("expired", workspaceRequired(error) ? "key_needs_workspace" : null);
-          }
+          if (result.status === "failed" && result.reason === "connection_expired")
+            this.session.expire(stored, workspaceRequired(error) ? "key_needs_workspace" : null);
           if (
             result.status === "failed" &&
             result.reason === "model_unavailable" &&
-            stored.instance === this.current?.instance
+            this.session.isCurrent(stored)
           )
             this.options.refresh();
         } else if (error instanceof APIConnectionError && isTransportFailure(error.cause))

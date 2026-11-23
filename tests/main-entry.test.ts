@@ -2017,6 +2017,7 @@ it.each(["installed", "qualification"] as const)(
     expect(h.supervisors[0].reportConnections.mock.results.at(-1)?.value).toEqual([
       "chatgpt",
       "anthropic_api_key",
+      "openai_api_key",
     ]);
     const event = h.event();
     h.ipcMain.emit(h.constants.desktopChannels.session, event);
@@ -2048,6 +2049,7 @@ it("routes development connection calls and controls in main and reports every s
   expect(h.supervisors[0].reportConnections.mock.results.at(-1)?.value).toEqual([
     "chatgpt",
     "anthropic_api_key",
+    "openai_api_key",
     "fake",
   ]);
   const event = h.event();
@@ -2069,11 +2071,13 @@ it("routes development connection calls and controls in main and reports every s
   send("connection.subscribe", { connection: "fake", subscriptionId: "conn-stream" }, "subscribe");
   const before = h.supervisors[0].reportConnections.mock.calls.length;
   send("connection.connect", { connection: "fake" }, "connect");
-  send(
-    "connection.replaceKey",
-    { connection: "anthropic_api_key", key: "synthetic-replacement" },
-    "replace-key",
-  );
+  const apiKeys = ["anthropic_api_key", "openai_api_key"];
+  for (const connection of apiKeys)
+    send(
+      "connection.replaceKey",
+      { connection, key: "synthetic-replacement" },
+      "replace-" + connection,
+    );
   await vi.advanceTimersByTimeAsync(0);
   expect(h.supervisors[0].reportConnections.mock.calls.length).toBeGreaterThan(before);
   const replies = h.window.webContents.mainFrame.send.mock.calls.map(([, text]: [string, string]) =>
@@ -2093,19 +2097,17 @@ it("routes development connection calls and controls in main and reports every s
       payload: expect.objectContaining({ state: "connected" }),
     }),
   );
-  expect(replies).toContainEqual(
-    expect.objectContaining({
-      kind: "result",
-      requestId: "replace-key",
-      payload: {
-        ok: true,
-        value: expect.objectContaining({
-          connection: "anthropic_api_key",
-          state: "disconnected",
-        }),
-      },
-    }),
-  );
+  for (const connection of apiKeys)
+    expect(replies).toContainEqual(
+      expect.objectContaining({
+        kind: "result",
+        requestId: "replace-" + connection,
+        payload: {
+          ok: true,
+          value: expect.objectContaining({ connection, state: "disconnected" }),
+        },
+      }),
+    );
   const encoded = h.constants.encodeEnvelope({
     protocol: 1,
     policy: h.constants.policyId,

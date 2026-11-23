@@ -217,7 +217,7 @@ export function requestsConversationTitle(
   );
 }
 export interface ProviderToolCall {
-  /** Null is an unnamespaced provider call; it cannot match a namespaced permitted tool. */
+  /** Adapter-normalized namespace. Null cannot match a namespaced permitted tool. */
   readonly namespace: string | null;
   readonly name: string;
   /** Complete JSON arguments, kept exactly as received. */

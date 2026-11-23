@@ -57,6 +57,8 @@
     "agents.refresh": "Opdater modellisten for {service}",
     "agents.refreshing": "Opdaterer modellisten fra {service}…",
     "agents.listAge": "Modelliste fra {service}, opdateret {age}",
+    "agents.catalogUnlisted": "Modeller, som Ohtia endnu ikke har kontrolleret, vises ikke på listen.",
+    "agents.catalogAge": "Modeloplysninger fra Ohtias katalog (kontrolleret {date}). Tilgængelighed ifølge din {service}-konto, opdateret {age}.",
     "agents.refreshFailed": "Ohtia kunne ikke opdatere modellisten. Dine valg er bevaret.",
     "agents.noModel": "Der er ikke valgt en model til {agent}. Vælg en i Indstillinger › Agenter.",
     "agents.missingModel": "Modellen “{model}” til {agent} er ikke tilgængelig på din konto lige nu. Vælg en anden i Indstillinger › Agenter.",
