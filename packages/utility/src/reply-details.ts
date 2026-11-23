@@ -65,7 +65,7 @@ export async function readReplyDetails(
     attempt?.state === "uncertain" ||
     (attempt?.state === "failed" &&
       attempt.dispatch_permitted_at !== null &&
-      attempt.outcome_reason !== "empty_reply");
+      !["empty_reply", "max_output_reached", "refused"].includes(attempt.outcome_reason ?? ""));
   const manifest = JSON.parse(dispatched?.transfer_manifest ?? "[]") as TransferEntry[];
   const versionIds = manifest.flatMap((entry) =>
     entry.kind === "memory_version" ? [bytes(entry.reference)] : [],
@@ -114,6 +114,7 @@ export async function readReplyDetails(
       observedModel: model(attempt?.observed_model),
       requestedEffort: dispatched?.requested_effort ?? null,
       observedEffort: attempt?.observed_effort ?? null,
+      ...(attempt?.refusal_category ? { refusalCategory: attempt.refusal_category } : {}),
       attempts: attempts.length,
       startedAt,
       endedAt,

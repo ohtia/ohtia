@@ -1,4 +1,5 @@
 import { copyMessage, openExternalMessageLink } from "./message-actions.js";
+import { AnthropicProvider, anthropicConnection } from "./anthropic-provider.js";
 import { ChatGPTProvider } from "./chatgpt-provider.js";
 import { ConnectionManager } from "./connection-manager.js";
 import { ApplicationExit } from "./application-exit.js";
@@ -948,6 +949,11 @@ async function start(): Promise<void> {
   const connectionDiagnostic = (event: DiagnosticEvent) => {
     void diagnostics?.append(event);
   };
+  const anthropic = new AnthropicProvider({
+    store: credentials,
+    model: (id) => connections?.manager.model(anthropicConnection, id),
+    refresh: () => connections?.manager.refreshModels(anthropicConnection, true),
+  });
   const adapters = [
     new ChatGPTProvider({
       store: credentials,
@@ -955,6 +961,7 @@ async function start(): Promise<void> {
       completedText: () => message(locale, "connection.browserComplete"),
       diagnostic: connectionDiagnostic,
     }),
+    anthropic,
     ...(developmentProvider ? [developmentProvider.createFakeProvider()] : []),
   ];
   if (acceptance && developmentProvider)
@@ -1029,7 +1036,7 @@ async function start(): Promise<void> {
       event.state === "connected" &&
       (before?.state !== "connected" || before.account !== event.account_revision)
     )
-      manager.refreshModels(event.connection, true);
+      manager.refreshModels(event.connection, event.model_list_revision === null);
     if (service?.available) service.reportConnections(manager);
   });
   const refreshModels = setInterval(() => {

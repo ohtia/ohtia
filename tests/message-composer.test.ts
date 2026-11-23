@@ -602,6 +602,25 @@ it.each(["subscription", "api_key"] as const)(
       await f.controller.refreshDestination();
     });
     expect(f.destination.mock.calls.at(-1)).toEqual([{ projectId, agentId: "virgilio" }]);
+    if (kind === "api_key") {
+      f.destination.mockReturnValueOnce(
+        call({
+          ok: true,
+          value: {
+            destination: {
+              operation: "development_test",
+              maxAttemptDurationMs: 600_000,
+              connection: "fake",
+              retryNotBeforeAt: new Date(Date.now() + 60_000).toISOString(),
+            },
+          },
+        }) as never,
+      );
+      await act(async () => f.controller.refreshDestination());
+      expect(container.querySelector(".composer-destination")?.textContent).toBe(
+        "Fake service asked Ohtia to wait. Messages will wait.",
+      );
+    }
   },
 );
 it("asks before reuse, focuses the footer close button and only replaces with explicit confirmation", async () => {

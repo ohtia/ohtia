@@ -332,6 +332,11 @@ export const diagnosticCatalog = Object.freeze({
     "sign_in_timeout",
     "plan_use_not_allowed",
     "sign_in_rejected",
+    "key_rejected",
+    "key_not_permitted",
+    "key_needs_workspace",
+    "key_check_unreachable",
+    "key_check_unavailable",
   ]),
   "ohtia.connection.subscribe": event("broker", "connection.subscribe", "DEBUG", "accepted", []),
   "ohtia.connection.list_models": event(
@@ -343,6 +348,7 @@ export const diagnosticCatalog = Object.freeze({
   ),
   "ohtia.connection.read": event("broker", "connection.read", "DEBUG", "success", []),
   "ohtia.connection.connect": event("broker", "connection.connect", "INFO", "accepted", []),
+  "ohtia.connection.replace_key": event("broker", "connection.replaceKey", "INFO", "accepted", []),
   "ohtia.connection.disconnect": event("broker", "connection.disconnect", "INFO", "completed", []),
   "ohtia.connection.probe_listed": event("broker", "connection.probe", "INFO", "listed", []),
   "ohtia.connection.probe_unreachable": event("broker", "connection.probe", "WARN", "unreachable", [
@@ -365,6 +371,12 @@ export const diagnosticCatalog = Object.freeze({
     "connection_expired",
     "provider_unavailable",
     "request_rejected",
+    "refused",
+    "rate_limited",
+    "max_output_reached",
+    "model_unavailable",
+    "billing_limit_reached",
+
     "provider_error",
     "invalid_output",
     "output_limit_exceeded",

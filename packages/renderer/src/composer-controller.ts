@@ -1,6 +1,6 @@
 import { stagedCommand } from "./staged-command.js";
 import {
-  chatgptConnection,
+  defaultProviderConnections,
   validResearcherMessage,
   type FoundationPort,
   type MessageDestination,
@@ -85,9 +85,7 @@ export class ComposerController {
   constructor(
     private readonly port: FoundationPort,
     private readonly nextId: () => string = () => crypto.randomUUID(),
-    private readonly declarations: readonly ProviderDeclaration["connection"][] = [
-      chatgptConnection,
-    ],
+    private readonly declarations: readonly ProviderDeclaration["connection"][] = defaultProviderConnections,
     private readonly restoreObservation?: () => void,
     private readonly conversationStarted?: (
       scope: ResearchScope,

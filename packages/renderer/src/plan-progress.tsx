@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   formatNumber,
+  isUsagePauseConnection,
   message,
   type ErrorCode,
   type InterfaceLocale,
@@ -21,7 +22,7 @@ import {
 import { contributorNames } from "./contributor-identity.js";
 import { LucideGlyph, type LucideName } from "./iconography.js";
 import { Dialog } from "./layers.js";
-import { failedTaskContent } from "./task-notice.js";
+import { failedTaskContent, ProviderMessageLine, rateLimitWait } from "./task-notice.js";
 import type {
   ConversationController,
   PlanProgressAction,
@@ -42,6 +43,8 @@ type RowProgress = Status & {
   readonly agentsSettings?: true;
   readonly formattedLabel?: ReactNode;
   readonly reason?: string;
+  readonly providerLine?: ReactNode;
+  readonly resumeAction?: RowAction;
   readonly action?: RowAction;
   readonly result?: string | null;
 };
@@ -204,6 +207,13 @@ function taskProgress(
   },
 ): RowProgress {
   switch (task.state) {
+    case "queued":
+      if (service && task.retryNotBeforeAt && Date.parse(task.retryNotBeforeAt) > Date.now())
+        return {
+          label: rateLimitWait(locale, service.displayName, task.retryNotBeforeAt),
+          icon: "circle-pause",
+        };
+      return { label: message(locale, "plan.progress.waitingToStart"), icon: "circle-dashed" };
     case "running":
       return { label: message(locale, "plan.progress.working"), icon: "pen-line" };
     case "cancelling":
@@ -257,19 +267,46 @@ function taskProgress(
           icon: "octagon-alert",
           reason: message(locale, "plan.progress.notSentSize"),
         };
+      const notice =
+        service &&
+        failedTaskContent(
+          { ...task, ...(synthesis ? { synthesis: true } : {}) },
+          locale,
+          service,
+          !!task.replyMessageId,
+        );
+      const billing = task.outcomeReason === "billing_limit_reached";
+      const connection = task.connection;
+      let resumeAction: RowAction | undefined;
+      if (billing && service && isUsagePauseConnection(connection)) {
+        const pause = pauses?.usage.find((item) => item.connection === connection);
+        if (!pauses || pause)
+          resumeAction = {
+            label: message(locale, "taskNotice.resume", {
+              service: service.displayName,
+              n: pause ? formatNumber(locale, pause.count) : "—",
+            }),
+            command: { kind: "resume", connection },
+            disabled: !pause,
+          };
+      }
       return {
         label: message(locale, "plan.progress.failed"),
-        icon: "octagon-alert",
-        ...(service
+        icon: billing ? "triangle-alert" : "octagon-alert",
+        ...(task.outcomeReason === "model_unavailable" ? { agentsSettings: true } : {}),
+        ...(notice ? { reason: notice.text } : {}),
+        ...(notice?.providerMessage && service
           ? {
-              reason: failedTaskContent(
-                { ...task, ...(synthesis ? { synthesis: true } : {}) },
-                locale,
-                service,
-                !!task.replyMessageId,
-              ).text,
+              providerLine: (
+                <ProviderMessageLine
+                  locale={locale}
+                  service={service.displayName}
+                  text={notice.providerMessage}
+                />
+              ),
             }
           : {}),
+        ...(resumeAction ? { resumeAction } : {}),
         ...(mayRetry &&
         task.outcomeReason !== "not_eligible" &&
         (!synthesis || task.outcomeReason !== "input_too_large")
@@ -299,7 +336,7 @@ function taskProgress(
       if (
         task.blockingReason === "usage_limit_reached" &&
         service &&
-        task.connection === "chatgpt"
+        isUsagePauseConnection(task.connection)
       ) {
         const count = pauses?.usage.find(({ connection }) => connection === task.connection)?.count;
         return {
@@ -315,8 +352,6 @@ function taskProgress(
           },
         };
       }
-      break;
-    case "queued":
       break;
   }
   return { label: message(locale, "plan.progress.waitingToStart"), icon: "circle-dashed" };
@@ -606,7 +641,7 @@ export function PlanProgress({
   );
 
   function row(status: RowProgress, name: string, toggle?: ReactNode) {
-    const { action, result } = status;
+    const { action, result, resumeAction } = status;
     return (
       <>
         <p className="action-proposal-state plan-row-state" data-icon={status.icon}>
@@ -622,7 +657,13 @@ export function PlanProgress({
           dialogOpen={!!confirm}
         />
         {status.reason && <p className="plan-failure-reason">{status.reason}</p>}
-        {(result || action || toggle || status.agentsSettings || status.icon === "unplug") && (
+        {status.providerLine && <p className="plan-failure-reason">{status.providerLine}</p>}
+        {(result ||
+          action ||
+          resumeAction ||
+          toggle ||
+          status.agentsSettings ||
+          status.icon === "unplug") && (
           <div className="plan-row-actions">
             {result && (
               <a
@@ -642,6 +683,14 @@ export function PlanProgress({
             {status.icon === "unplug" &&
               onOpenConnections &&
               button(message(locale, "taskNotice.openConnections"), onOpenConnections)}
+            {resumeAction &&
+              button(
+                resumeAction.label,
+                () => {
+                  void run(resumeAction.command);
+                },
+                !perform || resumeAction.disabled,
+              )}
             {action &&
               button(
                 action.label,

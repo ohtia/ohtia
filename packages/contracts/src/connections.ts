@@ -7,7 +7,16 @@ export const connectionStates = [
   "error",
 ] as const;
 export type ConnectionState = (typeof connectionStates)[number];
+export const keyCheckReasons = [
+  "key_rejected",
+  "key_not_permitted",
+  "key_needs_workspace",
+  "key_check_unreachable",
+  "key_check_unavailable",
+] as const;
+export type KeyCheckReason = (typeof keyCheckReasons)[number];
 export const connectionReasons = [
+  ...keyCheckReasons,
   "store_unavailable",
   "sign_in_timeout",
   "plan_use_not_allowed",
@@ -49,6 +58,7 @@ export interface ProviderModel {
   }[];
   readonly defaultEffort?: string;
   readonly maxOutput?: number;
+  readonly maxInput?: number;
   readonly origin?: "service" | "catalog";
   readonly retiring?: boolean;
 }
@@ -105,6 +115,8 @@ export interface ConnectionSnapshot {
   /** Opaque version of the current account view, unrelated to the credential or fingerprint. */
   readonly account_revision?: string;
   readonly last_account_email: string | null;
+  readonly checking_key?: boolean;
+  readonly connected_at?: string;
   readonly probing: boolean;
   readonly probe_id: string | null;
   readonly model_list_revision: number | null;
@@ -135,6 +147,10 @@ export function connectionReasonMatches(
   state: ConnectionState,
   reason: ConnectionReason | null,
 ): boolean {
+  if (reason !== null && (keyCheckReasons as readonly string[]).includes(reason))
+    return (
+      state === "disconnected" || state === "connected" || state === "expired" || state === "error"
+    );
   return (
     reason === null || (reason === "sign_in_timeout" ? state === "disconnected" : state === "error")
   );
@@ -155,6 +171,7 @@ const modelDetails = [
   "effortLevels",
   "defaultEffort",
   "maxOutput",
+  "maxInput",
   "origin",
   "retiring",
 ];
@@ -208,6 +225,7 @@ export function isProviderModel(value: unknown): value is ProviderModel {
       "defaultEffort",
       (level) => choice(level) && !!levels?.some((item) => item.name === level && item.supported),
     ) &&
+    present(value, "maxInput", (maximum) => integer(maximum) && maximum !== 0) &&
     present(value, "maxOutput", (maximum) => integer(maximum) && maximum !== 0) &&
     present(value, "origin", (origin) => origin === "service" || origin === "catalog") &&
     present(value, "retiring", (retiring) => typeof retiring === "boolean")
@@ -337,6 +355,8 @@ export function isConnectionSnapshot(value: unknown): value is ConnectionSnapsho
       "account_email",
       ...(Object.hasOwn(value, "account_revision") ? ["account_revision"] : []),
       "last_account_email",
+      ...(Object.hasOwn(value, "checking_key") ? ["checking_key"] : []),
+      ...(Object.hasOwn(value, "connected_at") ? ["connected_at"] : []),
       "probing",
       "probe_id",
       "model_list_revision",
@@ -368,6 +388,13 @@ function snapshotFields(value: Record<string, unknown>): boolean {
       (value.state === "connected" && isAccountRevision(value.account_revision))) &&
     (value.last_account_email === null ||
       (typeof value.last_account_email === "string" && value.last_account_email.length > 0)) &&
+    present(value, "checking_key", (checking) => typeof checking === "boolean") &&
+    present(
+      value,
+      "connected_at",
+      (at) =>
+        value.state === "connected" && typeof at === "string" && Number.isFinite(Date.parse(at)),
+    ) &&
     typeof value.probing === "boolean" &&
     (value.probe_id === null ||
       (typeof value.probe_id === "string" &&
@@ -448,11 +475,23 @@ export function isProviderDeclaration(value: unknown): value is ProviderDeclarat
   );
 }
 
-/** Declared inference slots; undeclared connections retain ADR-0011's limit of one. */
+export const usagePauseConnections = ["chatgpt", "anthropic_api_key"] as const;
+export type UsagePauseConnection = (typeof usagePauseConnections)[number];
+export function isUsagePauseConnection(value: unknown): value is UsagePauseConnection {
+  return value === "chatgpt" || value === "anthropic_api_key";
+}
+/** Declared slots and the default for adapters without a concurrency declaration. */
 export const connectionInferenceLimits: Readonly<Record<string, number>> = Object.freeze({
   chatgpt: 3,
   fake: 1,
 });
+
+export function connectionInferenceLimit(connection: string, overall: number): number {
+  if (connection === "anthropic_api_key") return overall;
+  return Object.hasOwn(connectionInferenceLimits, connection)
+    ? (connectionInferenceLimits[connection] ?? 1)
+    : 1;
+}
 
 /** Connection metadata shared by the adapter declaration and its destination presentation. */
 export const chatgptConnection = Object.freeze({
@@ -461,3 +500,15 @@ export const chatgptConnection = Object.freeze({
   kind: "subscription",
   usageUrl: "https://chatgpt.com/settings/usage",
 } as const satisfies ProviderDeclaration["connection"]);
+
+export const anthropicApiKeyConnection = Object.freeze({
+  id: "anthropic_api_key",
+  displayName: "Anthropic",
+  kind: "api_key",
+  usageUrl: null,
+} as const satisfies ProviderDeclaration["connection"]);
+
+export const defaultProviderConnections = Object.freeze([
+  chatgptConnection,
+  anthropicApiKeyConnection,
+]);

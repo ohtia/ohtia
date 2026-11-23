@@ -2,10 +2,6 @@
 type: DecisionRecord
 title: ADR-0048 — Provider access routes and credential store
 description: Connect language-model services through Sign in with ChatGPT and Anthropic and OpenAI API keys, with every credential held by main in the operating-system credential store.
-generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: keyring
     resource: https://github.com/Brooooooklyn/keyring-node/tree/52184fbebffeef8a061234f60f313c479b954f9f
@@ -37,7 +33,7 @@ A computer without a usable operating-system credential store cannot connect a s
 
 The installed and qualification modes share the native single-instance lock, while every development checkout has its own redirected lock and credential service. No two admitted processes share a session or registration, so renewal needs no interprocess lock. Each new or moved checkout signs in once and receives API keys again. Entries belonging to a removed or moved checkout remain in the store and are never read by its replacement.
 
-The native addon must remain pinned, inspected and licensed in every package. The fake adapter is a separate development/test module excluded from installed and qualification artifacts. No credentials, provider error text or arbitrary provider metadata enter diagnostics, the renderer, the service channel or project records.
+The native addon must remain pinned, inspected and licensed in every package. The fake adapter is a separate development/test module excluded from installed and qualification artifacts. Credentials remain in main and the operating-system credential store. Diagnostics and project records exclude provider error text and arbitrary provider metadata. The [Anthropic request rejection notice](../epics/EPIC-003-research-agents/epic.md#spec-003-041-anthropic-api-key) may carry a bounded provider message through memory for the matching task. The message is available only through the scoped notice read. The [Anthropic SDK decision](adr-0055-anthropic-messages-sdk.md) covers the request transport and the companion credential date.
 
 [^keyring]: The reviewed API provides asynchronous entries and an explicit Secret Service selection that fails rather than using the kernel-keyring fallback.
 

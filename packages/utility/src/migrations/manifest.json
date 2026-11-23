@@ -134,5 +134,9 @@
   {
     "name": "0034_agent_preferences",
     "sha256": "9b2140af409e31daeb0f45aa90a48b48327914ba56a89eec7cde20f3a5dad817"
+  },
+  {
+    "name": "0035_anthropic_outcomes",
+    "sha256": "9d3a6dbf59612b1d04d032431ee0d58ae987a4fae9cbf424e24ac4a3ad0b9220"
   }
 ]

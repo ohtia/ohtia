@@ -9,6 +9,7 @@ import fs from "node:fs";
 import * as crypto from "node:crypto";
 import { type Generated, type Kysely, sql } from "kysely";
 import {
+  isUsagePauseConnection,
   failure,
   isConnectionId,
   isPlanConnections,
@@ -129,9 +130,6 @@ function text(value: unknown): value is string {
     typeof value === "string" &&
     !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value)
   );
-}
-function isUsageConnection(value: unknown): value is "chatgpt" {
-  return value === "chatgpt";
 }
 function object(value: unknown): value is Record<string, unknown> {
   return (
@@ -591,7 +589,7 @@ export async function applyResearchCommand(
       break;
     }
     case "usagePause.resume": {
-      if (!isUsageConnection(input.payload.connection)) return failure("invalid_message");
+      if (!isUsagePauseConnection(input.payload.connection)) return failure("invalid_message");
       result = newId();
       await tasks.resumeUsage(input.payload.connection, input.operationId);
       break;

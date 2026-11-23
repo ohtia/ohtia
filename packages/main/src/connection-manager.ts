@@ -7,6 +7,8 @@ import {
   portLimits,
   isProviderDeclaration,
   isProviderModel,
+  isProviderApiKey,
+  type KeyCheckReason,
   type ConnectionSnapshot,
   type ConnectionEvent,
   type ConnectionState,
@@ -28,6 +30,7 @@ interface Connection {
   storeUnavailable: boolean;
   deleteFailed: boolean;
   probeWork: boolean;
+  checkingKey?: boolean;
   generation: number;
   action: AbortController | undefined;
   signInTimer: ReturnType<typeof setTimeout> | undefined;
@@ -132,6 +135,10 @@ export class ConnectionManager {
   snapshot(id: string): ConnectionSnapshot | undefined {
     const c = this.connections.get(id);
     const revision = this.account(id).revision;
+    const connectedAt =
+      c?.state === "connected" && !c.storeUnavailable && !c.deleteFailed
+        ? c.adapter.apiKey?.connectedAt()
+        : undefined;
     return c
       ? {
           connection: id,
@@ -144,12 +151,23 @@ export class ConnectionManager {
               ? (c.adapter.accountEmail?.() ?? null)
               : null,
           last_account_email: c.storeUnavailable ? null : (c.adapter.lastAccountEmail?.() ?? null),
+          ...(connectedAt ? { connected_at: connectedAt } : {}),
+          ...(c.checkingKey ? { checking_key: true } : {}),
           probing: !!c.probe,
           probe_id: c.probe?.id ?? c.lastProbe,
           model_list_revision: c.models === undefined ? null : c.revision,
           model_count: c.models?.length ?? 0,
         }
       : undefined;
+  }
+  model(id: string, model: string): ProviderModel | undefined {
+    const connection = this.connections.get(id);
+    if (
+      !connection?.listReport ||
+      connection.listReport.fingerprint !== this.account(id).fingerprint
+    )
+      return;
+    return connection.models?.find((entry) => entry.id === model);
   }
   mayDispatchModel(
     id: string,
@@ -162,7 +180,7 @@ export class ConnectionManager {
     if (expectedAccount !== undefined && expectedAccount !== account) return false;
     if (!connection?.listReport || connection.listReport.fingerprint !== account)
       return expectedAccount !== undefined && expectedAccount === account;
-    const model = connection.models?.find((entry) => entry.id === modelId);
+    const model = this.model(id, modelId);
     return (
       !!model &&
       (effort === undefined ||
@@ -255,10 +273,12 @@ export class ConnectionManager {
   }
   connect(
     id: string,
-    options?: { readonly new_registration?: boolean },
+    options?: { readonly new_registration?: boolean; readonly key?: string },
   ): Outcome<ConnectionSnapshot> {
     const c = this.connections.get(id);
     if (!c || this.disposed) return failure("invalid_message");
+    if (c.adapter.apiKey) return this.startKeyCheck(id, c, options?.key, false);
+    if (options?.key !== undefined) return failure("invalid_message");
     if (!c.storeUnavailable && (c.state === "connected" || c.state === "connecting"))
       return { ok: true, value: this.requireSnapshot(id) };
     this.cancelProbe(id, c);
@@ -356,6 +376,100 @@ export class ConnectionManager {
       });
     return { ok: true, value: this.requireSnapshot(id) };
   }
+  replaceKey(id: string, key: string): Outcome<ConnectionSnapshot> {
+    const c = this.connections.get(id);
+    return c && !this.disposed ? this.startKeyCheck(id, c, key, true) : failure("invalid_message");
+  }
+  private startKeyCheck(
+    id: string,
+    c: Connection,
+    key: string | undefined,
+    replace: boolean,
+  ): Outcome<ConnectionSnapshot> {
+    const apiKey = c.adapter.apiKey;
+    if (!apiKey || !isProviderApiKey(key)) return failure("invalid_message");
+    const currentSnapshot = () => ({ ok: true as const, value: this.requireSnapshot(id) });
+    if (c.checkingKey || (!replace && c.state === "connected" && !c.storeUnavailable))
+      return currentSnapshot();
+    if (replace && c.state !== "connected" && c.state !== "expired") return currentSnapshot();
+
+    this.cancelProbe(id, c);
+    c.action?.abort();
+    const action = new AbortController();
+    const generation = ++c.generation;
+    c.action = action;
+    c.checkingKey = true;
+    c.reason = null;
+    c.initialized = true;
+    c.deleteFailed = false;
+    c.storeUnavailable = false;
+    if (!replace) c.state = "connecting";
+    const finish = (
+      reason: KeyCheckReason | "store_unavailable" | null,
+      models?: readonly ProviderModel[],
+    ) => {
+      if (!this.current(c, generation) || !c.checkingKey) return;
+      this.clearSignIn(c);
+      c.action = undefined;
+      c.checkingKey = false;
+      if (!reason) {
+        c.state = "connected";
+        c.reason = null;
+        c.models = undefined;
+        c.lastProbe = null;
+        delete c.listReport;
+        this.modelReads.delete(id);
+        if (models) this.applyModels(id, c, models);
+        this.diagnostic?.({ event_name: "ohtia.connection.connected" });
+      } else {
+        if (!replace) c.state = "disconnected";
+        c.storeUnavailable = reason === "store_unavailable";
+        c.reason = reason;
+        this.diagnostic?.({ event_name: "ohtia.connection.failed", error_code: reason });
+      }
+      this.emit(id);
+    };
+    let waitingForStore = true;
+    c.signInTimer = setTimeout(() => {
+      action.abort();
+      finish(waitingForStore ? "store_unavailable" : "key_check_unreachable");
+    }, portLimits.connection_probe_ms);
+    this.emit(id);
+    this.diagnostic?.({
+      event_name: replace ? "ohtia.connection.replace_key" : "ohtia.connection.connect",
+    });
+
+    const interrupted = () => action.signal.aborted;
+    void Promise.resolve()
+      .then(async () => {
+        const stored = await c.adapter.credentials.read();
+        if (interrupted()) return;
+        if (stored.status === "unavailable") {
+          finish("store_unavailable");
+          return;
+        }
+        waitingForStore = false;
+        const checked = await apiKey.check(key, action.signal);
+        if (interrupted()) return;
+        if ("reason" in checked) {
+          finish(checked.reason);
+          return;
+        }
+        const models = this.validateModels(id, c, checked.models);
+        if (!models) {
+          finish("key_check_unavailable");
+          return;
+        }
+        // The provider deadline covers its answer. A native write already started cannot be cancelled.
+        this.clearSignIn(c);
+        const written = await apiKey.save(key);
+        finish(written.status === "stored" ? null : "store_unavailable", models);
+      })
+      .catch(() => {
+        finish("key_check_unavailable");
+      });
+    return currentSnapshot();
+  }
   private clearSignIn(c: Connection): void {
     clearTimeout(c.signInTimer);
     c.signInTimer = undefined;
@@ -391,6 +505,7 @@ export class ConnectionManager {
     this.clearSignIn(c);
     c.action?.abort();
     c.action = undefined;
+    c.checkingKey = false;
     const generation = ++c.generation;
     // Revoke task admission before an OS unlock or deletion can wait.
     c.state = "disconnected";
@@ -430,7 +545,7 @@ export class ConnectionManager {
   probe(id: string): Outcome<ConnectionSnapshot> {
     const c = this.connections.get(id);
     if (!c || this.disposed) return failure("invalid_message");
-    if (c.probe) return { ok: true, value: this.requireSnapshot(id) };
+    if (c.probe || c.checkingKey) return { ok: true, value: this.requireSnapshot(id) };
     const abort = new AbortController();
     const probeId = randomUUID();
     let probingAccount: string | undefined;
@@ -506,15 +621,26 @@ export class ConnectionManager {
   }
   storeModels(id: string, input: unknown): boolean {
     const c = this.connections.get(id);
-    if (!c || this.disposed || c.revision === Number.MAX_SAFE_INTEGER) return false;
+    if (!c || this.disposed) return false;
+    const models = this.validateModels(id, c, input);
+    if (!models) return false;
+    this.applyModels(id, c, models);
+    return true;
+  }
+  private validateModels(
+    id: string,
+    c: Connection,
+    input: unknown,
+  ): readonly ProviderModel[] | undefined {
+    if (c.revision === Number.MAX_SAFE_INTEGER) return;
     // Construct an exact projection; provider metadata and arbitrary errors never cross the port.
     const models: ProviderModel[] = [];
     const seen = new Set<string>();
     const revision = c.revision + 1;
-    if (!Array.isArray(input)) return false;
+    if (!Array.isArray(input)) return;
     try {
       for (const model of input) {
-        if (!isProviderModel(model) || seen.has(model.id)) return false;
+        if (!isProviderModel(model) || seen.has(model.id)) return;
         seen.add(model.id);
         if (model.retiring) continue;
         const copy = structuredClone(model);
@@ -527,13 +653,16 @@ export class ConnectionManager {
             hasMore: true,
           })
         )
-          return false;
+          return;
         models.push(Object.freeze(copy));
       }
     } catch {
-      return false;
+      return;
     }
-    c.models = Object.freeze(models);
+    return Object.freeze(models);
+  }
+  private applyModels(id: string, c: Connection, models: readonly ProviderModel[]): void {
+    c.models = models;
     const now = Date.now();
     c.listReport = {
       id: randomUUID(),
@@ -541,8 +670,7 @@ export class ConnectionManager {
       fingerprint: this.account(id).fingerprint,
     };
     this.modelReads.set(id, now);
-    c.revision = revision;
-    return true;
+    c.revision++;
   }
   listModels(input: ModelPageInput): Outcome<ModelPage> {
     const c = this.connections.get(input.connection);

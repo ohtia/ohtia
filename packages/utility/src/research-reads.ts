@@ -350,6 +350,10 @@ async function timelineItem(
     .where("t.id", "=", bytes(id))
     .executeTakeFirst();
   if (!task) return undefined;
+  const transaction = new TaskTransaction(db, context);
+  const retryNotBeforeAt =
+    task.state === "queued" ? await transaction.retryNotBefore(task.connection) : undefined;
+  const providerMessage = context.providerMessages?.get(id);
   const attempt = await db
     .selectFrom("attempts")
     .selectAll()
@@ -407,16 +411,18 @@ async function timelineItem(
     blockingReason: task.blocking_reason,
     outcomeReason: task.configuration_failure ?? attempt?.outcome_reason ?? null,
     ...(modelUnavailable !== undefined ? { modelUnavailable } : {}),
-    ...(modelUnavailable && task.resolved_model_name
+    ...((modelUnavailable || attempt?.outcome_reason === "model_unavailable") &&
+    task.resolved_model_name
       ? { modelName: task.resolved_model_name }
       : {}),
+    ...(providerMessage && attempt?.outcome_reason === "request_rejected"
+      ? { providerMessage }
+      : {}),
+    ...(retryNotBeforeAt ? { retryNotBeforeAt } : {}),
     replyMessageId: saved ? identifier(saved.id) : null,
     waitingForModels:
       task.state === "queued" && context.connections.awaitingModels(task.connection),
-    waitingLimit:
-      task.state === "queued"
-        ? await new TaskTransaction(db, context).waitingLimit(task.connection)
-        : null,
+    waitingLimit: task.state === "queued" ? await transaction.waitingLimit(task.connection) : null,
     dispatched:
       attempt?.dispatch_permitted_at !== null && attempt?.dispatch_permitted_at !== undefined,
     superseded:
@@ -636,7 +642,12 @@ export async function readResearch(
     case "planChange.read":
       return readPlanChangePreview(db, request.payload.conversationId, request.payload.proposalId);
     case "plan.read":
-      return readPlan(db, request.payload.planId, context.connections);
+      return readPlan(db, request.payload.planId, context.connections, {
+        providerMessages: context.providerMessages,
+        retryNotBeforeAt: await new TaskTransaction(db, context).retryNotBefore(
+          "anthropic_api_key",
+        ),
+      });
     case "planEvent.list":
       return listPlanEvents(db, request.payload.planId, request.payload.afterSequence);
     case "pause.read":
@@ -671,7 +682,11 @@ export async function readResearch(
         modelUnavailable =
           !!blocked && (await inferenceModelUnavailable(db, context.connections, blocked)) === true;
       }
-      const destination = await new TaskTransaction(db, context).destination(project.id, agent);
+      const tasks = new TaskTransaction(db, context);
+      const destination = await tasks.destination(project.id, agent);
+      const retryNotBeforeAt = destination
+        ? await tasks.retryNotBefore(destination.connection)
+        : undefined;
       return {
         ok: true,
         value: {
@@ -681,6 +696,7 @@ export async function readResearch(
                 maxAttemptDurationMs: destination.policy.max_attempt_duration_ms,
                 connection: destination.connection,
                 ...(modelUnavailable ? { modelUnavailable } : {}),
+                ...(retryNotBeforeAt ? { retryNotBeforeAt } : {}),
               }
             : null,
         },

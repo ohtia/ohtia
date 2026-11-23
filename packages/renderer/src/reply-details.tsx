@@ -243,6 +243,14 @@ function DetailValues({
     ],
     [message(locale, "replyDetails.observedEffort"), details.observedEffort ?? unknown],
     [message(locale, "replyDetails.attempts"), number(details.attempts)],
+    ...(details.refusalCategory
+      ? [
+          [
+            message(locale, "replyDetails.refusalCategory"),
+            <bdi key="category">{details.refusalCategory}</bdi>,
+          ] as [string, ReactNode],
+        ]
+      : []),
     [message(locale, "replyDetails.started"), date(details.startedAt)],
     [message(locale, "replyDetails.ended"), date(details.endedAt)],
     [

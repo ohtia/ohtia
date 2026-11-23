@@ -1,6 +1,18 @@
-import { useCallback, useMemo, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useMemo,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import {
   message,
+  formatDate,
+  isProviderApiKey,
+  keyCheckReasons,
   type FoundationPort,
   type InterfaceLocale,
   type ConnectionSnapshot,
@@ -14,13 +26,14 @@ import { RecoveryFocusBoundary } from "./settings-notices.js";
 type ProbeResult =
   | { readonly kind: "listed"; readonly models: readonly string[] }
   | { readonly kind: "unreachable" };
-/** A subscription row consumes only main's public state and complete revision-bound model pages. */
+/** Each connection row consumes only main's public state and complete revision-bound model pages. */
 export function ConnectionsPanel({
   port,
   locale,
   available,
   onConnection,
   connection = "chatgpt",
+  kind = "subscription",
   renderAfterState,
   onCatalogRead,
   onProbeResult,
@@ -28,6 +41,7 @@ export function ConnectionsPanel({
   embedded = false,
 }: {
   readonly connection?: string;
+  readonly kind?: "subscription" | "api_key";
   readonly renderAfterState?: (snapshot: ConnectionSnapshot, justConnected: boolean) => ReactNode;
   readonly embedded?: boolean;
   readonly onCatalogRead?: () => void;
@@ -65,7 +79,13 @@ export function ConnectionsPanel({
     const focused = document.activeElement;
     if (retryFocus.current && focused !== retryFocus.current) restore.current = false;
     retryFocus.current = null;
-    if (latest.current?.state !== value.state && focused && actions.current?.contains(focused))
+    if (
+      latest.current?.state !== value.state &&
+      !value.checking_key &&
+      focused &&
+      focused !== actions.current &&
+      actions.current?.contains(focused)
+    )
       restore.current = true;
     connectionObserver.current?.(value);
     if (value.state === "connected" && latest.current && latest.current.state !== "connected")
@@ -78,10 +98,10 @@ export function ConnectionsPanel({
   useEffect(() => {
     const target = actions.current?.querySelector<HTMLButtonElement>("button");
     if (restore.current && target) {
-      target.focus();
+      if (kind !== "api_key" || document.activeElement === document.body) target.focus();
       restore.current = false;
     }
-  }, [snapshot, failed]);
+  }, [snapshot, failed, kind]);
   useEffect(() => {
     const lifetime = ++generation.current;
     let eventVersion = 0;
@@ -198,7 +218,10 @@ export function ConnectionsPanel({
       calls.current.clear();
     };
   }, [port, connection, available, accept, recovery, subscribe]);
-  const act = async (kind: "connect" | "another" | "disconnect" | "probe") => {
+  const act = async (
+    kind: "connect" | "another" | "disconnect" | "probe" | "saveKey" | "replaceKey",
+    key?: string,
+  ) => {
     if (!available || pending) return;
     const lifetime = generation.current;
     const before = latest.current;
@@ -209,10 +232,12 @@ export function ConnectionsPanel({
         ? port.disconnectConnection(connection)
         : kind === "probe"
           ? port.probeConnection(connection)
-          : port.connectConnection(
-              connection,
-              kind === "another" ? { new_registration: true } : undefined,
-            );
+          : kind === "replaceKey" && key
+            ? port.replaceConnectionKey(connection, key)
+            : port.connectConnection(
+                connection,
+                kind === "another" ? { new_registration: true } : key ? { key } : undefined,
+              );
     calls.current.add(call);
     try {
       const result = await call.result;
@@ -283,8 +308,28 @@ export function ConnectionsPanel({
       </>
     );
   };
+  const apiKey = kind === "api_key";
   let stateText: string | ReturnType<typeof emailText>;
-  if (connecting) stateText = message(locale, "connection.waiting", { service });
+  if (apiKey) {
+    if (snapshot.reason === "store_unavailable")
+      stateText = message(locale, "connection.apiKey.storeUnavailable", { service });
+    else if (snapshot.state === "expired")
+      stateText = message(
+        locale,
+        snapshot.reason === "key_needs_workspace"
+          ? "connection.apiKey.workspace"
+          : "connection.apiKey.expired",
+        { service },
+      );
+    else if (connected)
+      stateText = snapshot.connected_at
+        ? message(locale, "connection.apiKey.connected", {
+            service,
+            date: formatDate(locale, new Date(snapshot.connected_at), { dateStyle: "medium" }),
+          })
+        : message(locale, "connection.apiKey.connectedWithoutDate", { service });
+    else stateText = message(locale, "connection.notConnected");
+  } else if (connecting) stateText = message(locale, "connection.waiting", { service });
   else if (connected) stateText = emailText("connection.connected");
   else if (snapshot.state === "expired")
     stateText = message(locale, "connection.expired", { service });
@@ -307,13 +352,15 @@ export function ConnectionsPanel({
       </h3>
       <div className="connection-row" aria-labelledby={`${id}-service`}>
         <h4 id={`${id}-service`}>{service}</h4>
-        <div
-          className={attention ? "connection-notice connection-attention" : "connection-state"}
-          role="status"
-        >
-          {attention && <Icon name="triangle-alert" />}
-          <p>{stateText}</p>
-        </div>
+        {!!stateText && (
+          <div
+            className={attention ? "connection-notice connection-attention" : "connection-state"}
+            role="status"
+          >
+            {attention && <Icon name="triangle-alert" />}
+            <p>{stateText}</p>
+          </div>
+        )}
         {renderAfterState?.(snapshot, justConnected)}
         {remembered &&
           (snapshot.state !== "disconnected" || snapshot.reason === "sign_in_timeout") && (
@@ -323,28 +370,14 @@ export function ConnectionsPanel({
           <RecoveryFocusBoundary
             onRecover={() => actions.current?.querySelector<HTMLButtonElement>("button")?.focus()}
           >
-            <div ref={actions} className="connection-actions">
-              {connecting ? (
-                <button
-                  type="button"
-                  aria-disabled={disabled}
-                  onClick={() => {
-                    if (!disabled) void act("disconnect");
-                  }}
-                >
-                  {message(locale, "connection.cancel")}
-                </button>
-              ) : connected ? (
-                <>
-                  <button
-                    type="button"
-                    aria-disabled={disabled || snapshot.probing}
-                    onClick={() => {
-                      if (!disabled && !snapshot.probing) void act("probe");
-                    }}
-                  >
-                    {message(locale, "connection.test")}
-                  </button>
+            {apiKey ? (
+              <ApiKeyControls
+                {...{ snapshot, disabled, actions, locale, act }}
+                enterKey={(key, replace) => act(replace ? "replaceKey" : "saveKey", key)}
+              />
+            ) : (
+              <div ref={actions} className="connection-actions">
+                {connecting ? (
                   <button
                     type="button"
                     aria-disabled={disabled}
@@ -352,43 +385,67 @@ export function ConnectionsPanel({
                       if (!disabled) void act("disconnect");
                     }}
                   >
-                    {message(locale, "connection.signOut", { service })}
+                    {message(locale, "connection.cancel")}
                   </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    data-primary="true"
-                    className="primitive-primary"
-                    aria-disabled={disabled}
-                    onClick={() => {
-                      if (!disabled) void act("connect");
-                    }}
-                  >
-                    {snapshot.reason === "plan_use_not_allowed"
-                      ? message(locale, "connection.allowPlan")
-                      : remembered
-                        ? emailText("connection.signInAs")
-                        : message(locale, "connection.signIn", { service })}
-                    {browserIcon}
-                  </button>
-                  {remembered && (
+                ) : connected ? (
+                  <>
+                    <button
+                      type="button"
+                      aria-disabled={disabled || snapshot.probing}
+                      onClick={() => {
+                        if (!disabled && !snapshot.probing) void act("probe");
+                      }}
+                    >
+                      {message(locale, "connection.test")}
+                    </button>
                     <button
                       type="button"
                       aria-disabled={disabled}
                       onClick={() => {
-                        if (!disabled) void act("another");
+                        if (!disabled) void act("disconnect");
                       }}
                     >
-                      {message(locale, "connection.anotherAccount")}
+                      {message(locale, "connection.signOut", { service })}
                     </button>
-                  )}
-                </>
-              )}
-            </div>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      data-primary="true"
+                      className="primitive-primary"
+                      aria-disabled={disabled}
+                      onClick={() => {
+                        if (!disabled) void act("connect");
+                      }}
+                    >
+                      {snapshot.reason === "plan_use_not_allowed"
+                        ? message(locale, "connection.allowPlan")
+                        : remembered
+                          ? emailText("connection.signInAs")
+                          : message(locale, "connection.signIn", { service })}
+                      {browserIcon}
+                    </button>
+                    {remembered && (
+                      <button
+                        type="button"
+                        aria-disabled={disabled}
+                        onClick={() => {
+                          if (!disabled) void act("another");
+                        }}
+                      >
+                        {message(locale, "connection.anotherAccount")}
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </RecoveryFocusBoundary>
           <div className="connection-feedback" role="status" aria-atomic="true">
+            {apiKey && snapshot.checking_key && (
+              <p>{message(locale, "connection.apiKey.checking", { service })}</p>
+            )}
             {!failed && snapshot.probing && (
               <p>{message(locale, "connection.testing", { service })}</p>
             )}
@@ -400,7 +457,11 @@ export function ConnectionsPanel({
                 <div>
                   {probe.kind === "listed" ? (
                     <>
-                      <p>{message(locale, "connection.works", { service })}</p>
+                      <p>
+                        {message(locale, apiKey ? "connection.apiKey.works" : "connection.works", {
+                          service,
+                        })}
+                      </p>
                       <p>
                         {message(locale, "connection.models", {
                           models: new Intl.ListFormat(locale, {
@@ -409,10 +470,16 @@ export function ConnectionsPanel({
                           }).format(probe.models),
                         })}
                       </p>
-                      <p>{message(locale, "connection.unknownPlan", { service })}</p>
+                      {!apiKey && <p>{message(locale, "connection.unknownPlan", { service })}</p>}
                     </>
                   ) : (
-                    <p>{message(locale, "connection.unreachable", { service })}</p>
+                    <p>
+                      {message(
+                        locale,
+                        apiKey ? "connection.apiKey.unreachable" : "connection.unreachable",
+                        { service },
+                      )}
+                    </p>
                   )}
                 </div>
               </div>
@@ -434,5 +501,197 @@ export function ConnectionsPanel({
         </div>
       </div>
     </section>
+  );
+}
+
+const keyErrors = {
+  key_rejected: "connection.apiKey.rejected",
+  key_not_permitted: "connection.apiKey.notPermitted",
+  key_needs_workspace: "connection.apiKey.workspace",
+  key_check_unreachable: "connection.apiKey.checkUnreachable",
+  key_check_unavailable: "connection.apiKey.checkUnavailable",
+} as const;
+
+function ApiKeyControls({
+  snapshot,
+  disabled,
+  actions,
+  locale,
+  act,
+  enterKey,
+}: {
+  readonly snapshot: ConnectionSnapshot;
+  readonly disabled: boolean;
+  readonly actions: RefObject<HTMLDivElement | null>;
+  readonly locale: InterfaceLocale;
+  readonly act: (kind: "disconnect" | "probe") => Promise<void>;
+  readonly enterKey: (key: string, replace: boolean) => Promise<void>;
+}) {
+  const id = useId();
+  const [mode, setMode] = useState<"key" | "disconnect">();
+  const keyField = useRef<HTMLInputElement>(null);
+  const keep = useRef<HTMLButtonElement>(null);
+  const restore = useRef<"key" | "disconnect" | undefined>(undefined);
+  const service = snapshot.display_name;
+  const connected = snapshot.state === "connected";
+  const replace = connected || snapshot.state === "expired";
+  const checking = snapshot.checking_key === true;
+  const dismiss = () => {
+    if (keyField.current) keyField.current.value = "";
+    restore.current = mode;
+    setMode(undefined);
+  };
+  useEffect(() => {
+    if (mode === "key") keyField.current?.focus();
+    else if (mode === "disconnect") keep.current?.focus();
+  }, [mode]);
+  useEffect(() => {
+    if (!mode && restore.current && !checking && !disabled) {
+      const target = restore.current === "key" ? "[data-key-entry]" : "[data-disconnect]";
+      if (document.activeElement === actions.current || document.activeElement === document.body)
+        (
+          actions.current?.querySelector<HTMLButtonElement>(target) ??
+          actions.current?.querySelector<HTMLButtonElement>("button")
+        )?.focus();
+      restore.current = undefined;
+    }
+  }, [mode, checking, disabled, actions, snapshot.state]);
+  const error = keyCheckReasons.find((reason) => reason === snapshot.reason);
+  return (
+    <>
+      <div
+        ref={actions}
+        tabIndex={-1}
+        className="connection-actions"
+        onKeyDown={(event) => {
+          if (mode && event.key === "Escape" && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            event.stopPropagation();
+            dismiss();
+          }
+        }}
+      >
+        {!checking &&
+          (mode === "key" ? (
+            <form
+              className="connection-key-form primitive-field"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const key = keyField.current?.value.trim() ?? "";
+                if (disabled || !isProviderApiKey(key)) return;
+                actions.current?.focus();
+                dismiss();
+                void enterKey(key, replace);
+              }}
+            >
+              <p id={id + "-charge"}>
+                {message(locale, "connection.apiKey.charging", { service })}
+              </p>
+              <label htmlFor={id + "-key"}>
+                {message(locale, "connection.apiKey.label", { service })}
+              </label>
+              <input
+                ref={keyField}
+                id={id + "-key"}
+                aria-describedby={id + "-charge"}
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                minLength={1}
+                maxLength={1024}
+                required
+                pattern="[!-~]+"
+              />
+              <div className="connection-actions">
+                <button
+                  className="primitive-primary"
+                  data-primary="true"
+                  type="submit"
+                  disabled={disabled}
+                >
+                  {message(locale, "connection.apiKey.save")}
+                </button>
+                <button type="button" onClick={dismiss}>
+                  {message(locale, "connection.apiKey.close")}
+                </button>
+              </div>
+            </form>
+          ) : mode === "disconnect" && connected ? (
+            <div
+              role="group"
+              aria-labelledby={id + "-disconnect"}
+              aria-describedby={id + "-consequence"}
+            >
+              <p id={id + "-disconnect"}>
+                {message(locale, "connection.apiKey.disconnectTitle", { service })}
+              </p>
+              <p id={id + "-consequence"}>
+                {message(locale, "connection.apiKey.disconnectBody", { service })}
+              </p>
+              <div className="connection-actions">
+                <button type="button" ref={keep} onClick={dismiss}>
+                  {message(locale, "connection.apiKey.keep")}
+                </button>
+                <button
+                  type="button"
+                  className="primitive-destructive"
+                  aria-disabled={disabled}
+                  onClick={() => {
+                    if (disabled) return;
+                    dismiss();
+                    void act("disconnect");
+                  }}
+                >
+                  {message(locale, "connection.apiKey.disconnect", { service })}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {connected && (
+                <button
+                  type="button"
+                  aria-disabled={disabled || snapshot.probing}
+                  onClick={() => {
+                    if (!disabled && !snapshot.probing) void act("probe");
+                  }}
+                >
+                  {message(locale, "connection.test")}
+                </button>
+              )}
+              <button
+                type="button"
+                data-key-entry
+                aria-disabled={disabled}
+                onClick={() => {
+                  if (!disabled) setMode("key");
+                }}
+              >
+                {replace
+                  ? message(locale, "connection.apiKey.replace")
+                  : message(locale, "connection.apiKey.add", { service })}
+              </button>
+              {connected && (
+                <button
+                  type="button"
+                  data-disconnect
+                  aria-disabled={disabled}
+                  onClick={() => {
+                    if (!disabled) setMode("disconnect");
+                  }}
+                >
+                  {message(locale, "connection.apiKey.disconnect", { service })}
+                </button>
+              )}
+            </>
+          ))}
+      </div>
+      {error && !(snapshot.state === "expired" && error === "key_needs_workspace") && (
+        <div className="connection-notice connection-danger" role="alert">
+          <Icon name="octagon-alert" />
+          <p>{message(locale, keyErrors[error], { service })}</p>
+        </div>
+      )}
+    </>
   );
 }

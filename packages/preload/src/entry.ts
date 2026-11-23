@@ -410,6 +410,7 @@ const bridge: DesktopBridge = {
 
     readConnection: (id) => connection.client.port.readConnection(id),
     connectConnection: (id, options) => connection.client.port.connectConnection(id, options),
+    replaceConnectionKey: (id, key) => connection.client.port.replaceConnectionKey(id, key),
     disconnectConnection: (id) => connection.client.port.disconnectConnection(id),
     probeConnection: (id) => connection.client.port.probeConnection(id),
     listConnectionModels: (input) => connection.client.port.listConnectionModels(input),

@@ -28,6 +28,11 @@ export const providerOperations = [
 ] as const;
 export type ProviderOperation = (typeof providerOperations)[number];
 export const providerFailureReasons = [
+  "refused",
+  "rate_limited",
+  "max_output_reached",
+  "model_unavailable",
+  "billing_limit_reached",
   "usage_limit_reached",
   "not_eligible",
   "connection_expired",
@@ -56,6 +61,9 @@ export type ProviderResult =
       readonly status: "failed";
       readonly reason: Exclude<ProviderFailureReason, "connection_lost" | "permit_expired">;
       readonly dispatched: true;
+      readonly refusal_category?: string;
+      readonly retry_not_before_at?: string;
+      readonly provider_message?: string;
     }
   | { readonly status: "failed"; readonly reason: NotDispatchedReason; readonly dispatched: false }
   | { readonly status: "cancelled" }
@@ -338,7 +346,32 @@ export function isProviderResult(value: unknown): value is ProviderResult {
       return exact(value, ["status", "reason"]) && value.reason === "connection_lost";
     case "failed":
       return (
-        exact(value, ["status", "reason", "dispatched"]) &&
+        exact(value, [
+          "status",
+          "reason",
+          "dispatched",
+          ...(Object.hasOwn(value, "refusal_category") ? ["refusal_category"] : []),
+          ...(Object.hasOwn(value, "retry_not_before_at") ? ["retry_not_before_at"] : []),
+          ...(Object.hasOwn(value, "provider_message") ? ["provider_message"] : []),
+        ]) &&
+        (!Object.hasOwn(value, "refusal_category") ||
+          (value.dispatched === true &&
+            value.reason === "refused" &&
+            typeof value.refusal_category === "string" &&
+            /^[a-z0-9_]{1,64}$/.test(value.refusal_category))) &&
+        (!Object.hasOwn(value, "retry_not_before_at") ||
+          (value.dispatched === true &&
+            value.reason === "rate_limited" &&
+            typeof value.retry_not_before_at === "string" &&
+            /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value.retry_not_before_at) &&
+            Number.isFinite(Date.parse(value.retry_not_before_at)) &&
+            new Date(value.retry_not_before_at).toISOString() === value.retry_not_before_at)) &&
+        (!Object.hasOwn(value, "provider_message") ||
+          (value.dispatched === true &&
+            value.reason === "request_rejected" &&
+            typeof value.provider_message === "string" &&
+            value.provider_message.length > 0 &&
+            utf8Size(value.provider_message) <= 4096)) &&
         (value.dispatched === false
           ? notDispatchedReasons.includes(value.reason as NotDispatchedReason)
           : value.dispatched === true &&

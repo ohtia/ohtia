@@ -713,6 +713,11 @@
       "minimum": 7
     },
     {
+      "selector": ".connection-actions > [role=\"group\"]",
+      "backgrounds": ["surface.page"],
+      "minimum": 3
+    },
+    {
       "selector": ".connection-attention",
       "foreground": "attention.content",
       "backgrounds": ["attention.surface"],

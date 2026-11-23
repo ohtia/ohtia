@@ -494,11 +494,16 @@ export async function readPlanText(
   return text === undefined ? failure("record_not_found") : { ok: true, value: { text } };
 }
 
+type PlanProviderNotices = {
+  readonly providerMessages: ReadonlyMap<string, string> | undefined;
+  readonly retryNotBeforeAt: string | undefined;
+};
 async function readPlanTask(
   db: Kysely<ResearchSchema>,
   id: Uint8Array | null,
   agentId: PlanTaskProgress["agentId"],
   connections: ServiceConnections,
+  notices?: PlanProviderNotices,
 ): Promise<PlanTaskProgress | null> {
   if (!id) return null;
   const task = await db
@@ -510,6 +515,7 @@ async function readPlanTask(
       "operation",
       "policy_version",
       "configuration_failure",
+      "resolved_model_name",
       "resolved_model",
     ])
     .select((eb) => [
@@ -530,7 +536,20 @@ async function readPlanTask(
     task.blocking_reason === "configuration_unavailable"
       ? await inferenceModelUnavailable(db, connections, task)
       : undefined;
+  const providerMessage =
+    task.outcomeReason === "request_rejected"
+      ? notices?.providerMessages?.get(identifier(id))
+      : undefined;
   return {
+    ...(providerMessage ? { providerMessage } : {}),
+    ...(task.outcomeReason === "model_unavailable" && task.resolved_model_name
+      ? { modelName: task.resolved_model_name }
+      : {}),
+    ...(task.state === "queued" &&
+    task.connection === "anthropic_api_key" &&
+    notices?.retryNotBeforeAt
+      ? { retryNotBeforeAt: notices.retryNotBeforeAt }
+      : {}),
     ...(modelUnavailable !== undefined ? { modelUnavailable } : {}),
     agentId,
     state:
@@ -552,6 +571,7 @@ export async function readPlan(
   db: Kysely<ResearchSchema>,
   planId: string,
   connections: ServiceConnections,
+  notices?: PlanProviderNotices,
 ): Promise<Outcome<PlanSnapshot>> {
   const plan = await db
     .selectFrom("interventions as i")
@@ -579,7 +599,13 @@ export async function readPlan(
   const edges = await holdingDependencies(db, plan.id);
   const throughSequence = await planSequence(db, plan.id);
   const continuation = await planContinuation(db, plan.id);
-  const task = await readPlanTask(db, continuation?.task_id ?? null, "virgilio", connections);
+  const task = await readPlanTask(
+    db,
+    continuation?.task_id ?? null,
+    "virgilio",
+    connections,
+    notices,
+  );
   const requestsUsed = await planRequestsUsed(db, plan.id);
   const nodeId = (id: Uint8Array | null) => (id ? identifier(id) : null);
 
@@ -623,7 +649,7 @@ export async function readPlan(
           required: !!node.required,
           state: node.state,
           taskId: nodeId(node.task_id),
-          task: await readPlanTask(db, node.task_id, node.agent_id, connections),
+          task: await readPlanTask(db, node.task_id, node.agent_id, connections, notices),
           resultMessageId: nodeId(node.result_message_id),
           blockedBy: nodeId(node.blocked_by_contribution_id),
           restartHeld: !!node.restart_held,
