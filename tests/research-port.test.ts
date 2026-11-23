@@ -2616,11 +2616,20 @@ it("sweeps Anthropic key and request markers across the real adapter and the dat
           conversationId: h.conversationId,
         }).result,
       ).destination;
-    expect(await destination()).toMatchObject({
-      retryNotBeforeAt: new Date(Date.now() + 2000).toISOString(),
-    });
+    const retryNotBeforeAt = new Date(Date.now() + 2000).toISOString();
+    expect(await destination()).toMatchObject({ retryNotBeforeAt });
     await append("anthropic-wait-for-eligibility");
     expect(pending()).toHaveLength(2);
+    const waitingTimeline = value(
+      await h.port.listTimelineBefore({
+        conversationId: h.conversationId,
+        cursor: null,
+        count: 50,
+      }).result,
+    );
+    expect(waitingTimeline.items).toContainEqual(
+      expect.objectContaining({ kind: "task", state: "queued", retryNotBeforeAt }),
+    );
     await vi.advanceTimersByTimeAsync(1999);
     await h.service.drain();
     expect(pending()).toHaveLength(2);

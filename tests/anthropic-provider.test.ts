@@ -665,6 +665,38 @@ describe("Anthropic API-key connection and Messages adapter", () => {
     h.manager.dispose();
   });
 
+  it("treats corrupt credentials and native failures separately from missing keys", async () => {
+    const account = "anthropic-api-key";
+    const getPassword = vi.fn<() => Promise<string | null>>();
+    const setPassword = vi.fn<(value: string) => Promise<void>>();
+    const deleteCredential = vi.fn<() => Promise<boolean>>();
+    const store = new CredentialStore({
+      service: "Synthetic",
+      userData: "/unused",
+      platform: "linux",
+      entry: () => ({ getPassword, setPassword, deleteCredential }),
+    });
+    const instance = "1".repeat(32);
+    const damaged = new Error("Synthetic credential store failure");
+
+    getPassword.mockResolvedValueOnce(null);
+    expect(await store.readApiKey(account)).toEqual({ status: "absent" });
+    getPassword.mockResolvedValueOnce(JSON.stringify({ key, instance: "not-an-instance" }));
+    expect(await store.readApiKey(account)).toEqual({ status: "unusable" });
+    getPassword
+      .mockResolvedValueOnce(JSON.stringify({ key, instance }))
+      .mockResolvedValueOnce("invalid date metadata");
+    expect(await store.readApiKey(account)).toEqual({ status: "stored", value: { key, instance } });
+    getPassword.mockRejectedValueOnce(damaged);
+    expect(await store.readApiKey(account)).toEqual({ status: "unavailable" });
+
+    getPassword.mockResolvedValueOnce(null);
+    setPassword.mockResolvedValueOnce(undefined).mockRejectedValueOnce(damaged);
+    expect(await store.writeApiKey(account, replacement)).toEqual({ status: "unavailable" });
+    deleteCredential.mockRejectedValueOnce(damaged);
+    expect(await store.deleteApiKey(account)).toEqual({ status: "unavailable" });
+  });
+
   it("admits the Messages body after TLS and distinguishes a dropped request from a refused dispatch", async () => {
     let disconnect: "before" | "after" | undefined;
     const order: string[] = [];

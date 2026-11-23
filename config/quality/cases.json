@@ -51,6 +51,7 @@
     "tests/anthropic-provider.test.ts::Anthropic API-key connection and Messages adapter > reports a keyring read timeout without contacting Anthropic or saving the key::case-0",
     "tests/anthropic-provider.test.ts::Anthropic API-key connection and Messages adapter > streams only application tools and preserves their original namespace and name::case-0",
     "tests/anthropic-provider.test.ts::Anthropic API-key connection and Messages adapter > times out a replacement and preserves the old key, state, catalog and account identity::case-0",
+    "tests/anthropic-provider.test.ts::Anthropic API-key connection and Messages adapter > treats corrupt credentials and native failures separately from missing keys::case-0",
     "tests/anthropic-provider.test.ts::Anthropic API-key connection and Messages adapter > uses only the stored key and fixed SDK headers, opts out of telemetry, and joins text history::case-0",
     "tests/anthropic-provider.test.ts::Anthropic API-key connection and Messages adapter > validates the key inputs only on the two main-only operations::case-0",
     "tests/application-exit.test.ts::application exit authority > bypasses a pending dialog for system shutdown and bounds only the initial service handshake::case-0",
