@@ -138,5 +138,9 @@
   {
     "name": "0035_anthropic_outcomes",
     "sha256": "9d3a6dbf59612b1d04d032431ee0d58ae987a4fae9cbf424e24ac4a3ad0b9220"
+  },
+  {
+    "name": "0036_openai_usage_pauses",
+    "sha256": "e32299f22032dd5bd59fdd32ed8a0958e3624ac32cb7dcbf10a6b12264dcae4c"
   }
 ]

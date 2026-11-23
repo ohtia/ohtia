@@ -40,6 +40,7 @@ export async function dispatchThrough(
   request: ProviderRequestData,
   options: {
     readonly diagnostic?: (event: DiagnosticEvent, generation: string) => void;
+    readonly checkModel?: boolean;
     readonly interrupt?: (dispatch: ProviderDispatch, events: readonly ProviderEvent[]) => void;
   } = {},
 ): Promise<ProviderEvent[]> {
@@ -47,6 +48,12 @@ export async function dispatchThrough(
   const dispatch = new ProviderDispatch([adapter], {
     diagnostic: options.diagnostic,
     state: (id) => manager.snapshot(id)?.state,
+    ...(options.checkModel
+      ? {
+          mayDispatchModel: (connection, model, effort, account) =>
+            manager.mayDispatchModel(connection, model, effort, account),
+        }
+      : {}),
     send: (generation, text) => {
       const decoded = decodeProviderEvent(text, generation);
       expect(decoded).toBeDefined();

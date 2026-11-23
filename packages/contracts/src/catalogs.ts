@@ -50,6 +50,8 @@ export const messageContracts = {
   "agents.refresh": { params: { service: "string" } },
   "agents.refreshing": { params: { service: "string" } },
   "agents.listAge": { params: { service: "string", age: "string" } },
+  "agents.catalogUnlisted": { params: {} },
+  "agents.catalogAge": { params: { date: "string", service: "string", age: "string" } },
   "agents.refreshFailed": { params: {} },
   "agents.noModel": { params: { agent: "string" } },
   "agents.missingModel": { params: { agent: "string", model: "string" } },

@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   message,
+  openaiApiKeyConnection,
   supportedLocales,
   staleRevision,
   failure,
@@ -554,6 +555,87 @@ it("confirms the first default model inline with the complete stored catalog", a
     }),
   );
   expect(container.querySelector('[role="group"]')).toBeNull();
+});
+
+it("shows the OpenAI catalog date and refreshes account age on both settings surfaces", async () => {
+  const { id: connection, displayName } = openaiApiKeyConnection;
+  const updatedAt = "2026-11-22T12:00:00.000Z";
+  const snapshot = {
+    ...initial,
+    connection,
+    display_name: displayName,
+    state: "connected" as const,
+    model_count: 1,
+    model_list_revision: 1,
+  };
+  const result = <T>(value: T) => ({
+    result: Promise.resolve({ ok: true as const, value }),
+    cancel() {},
+  });
+  const port = {
+    listAgentPreferences: () =>
+      result({
+        preferences: [],
+        lists: [{ connection, kind: "api_key", count: 1, list_revision: 1, updatedAt }],
+      }),
+    listProviderModels: () =>
+      result({
+        connection,
+        list_revision: 1,
+        nextCursor: 1,
+        hasMore: false,
+        models: [{ id: "gpt-6-astra", name: "GPT-6 Astra", origin: "catalog" }],
+      }),
+  } as unknown as FoundationPort;
+  function Host() {
+    const settings = useAgentSettings(port, true);
+    return createElement(
+      "div",
+      null,
+      createElement(FirstModelChoice, {
+        port,
+        settings,
+        snapshot,
+        locale: "en-GB",
+        showConnected: false,
+      }),
+      createElement(AgentsSettings, {
+        port,
+        settings,
+        locale: "en-GB",
+        connections: [openaiApiKeyConnection],
+        snapshots: { [connection]: snapshot },
+      }),
+    );
+  }
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(container);
+  roots.push(root);
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(new Date(updatedAt));
+    await act(async () => root.render(createElement(Host)));
+    const selector = container.querySelector("select")!;
+    expect(selector.value).toBe("gpt-6-astra");
+    const description = document.getElementById(selector.getAttribute("aria-describedby")!);
+    expect(description?.textContent).toContain("Models Ohtia hasn’t checked yet aren’t listed.");
+    const source =
+      "Model details from Ohtia’s catalog (checked 9 Nov 2026). Availability from your OpenAI account, updated ";
+    const origins = [...container.querySelectorAll("p")].filter((line) =>
+      line.textContent?.startsWith(source),
+    );
+    expect(origins).toHaveLength(2);
+    expect(description?.contains(origins[0]!)).toBe(true);
+    const previous = origins[0]?.textContent;
+    await act(async () => vi.advanceTimersByTimeAsync(120_000));
+    expect(origins[0]?.textContent).not.toBe(previous);
+    expect(origins.map((line) => line.textContent?.slice(source.length))).toEqual([
+      expect.stringContaining("2 min"),
+      expect.stringContaining("2 min"),
+    ]);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("shares and recovers the window connection stream across observers", async () => {
@@ -1205,36 +1287,38 @@ it("keeps focus outside the key-entry row when a check finishes", async () => {
   expect(document.activeElement).toBe(outside);
   expect(f.replaceKey).not.toHaveBeenCalled();
 });
-it("keeps API-key disconnect confirmation inline and places initial focus on Keep connection", async () => {
-  const f = await mount(
-    {
-      connection: "anthropic_api_key",
-      state: "connected",
-      connected_at: "2026-11-22T10:00:00.000Z",
-    },
-    "en-US",
-    false,
-    "api_key",
-  );
-  expect(f.container.textContent).toContain("Synthetic service · API key · Connected Nov 22, 2026");
-  await f.click("Disconnect Synthetic service");
-  const group = f.container.querySelector('[role="group"]')!;
-  expect(group.getAttribute("aria-labelledby")).toBeTruthy();
-  expect(group.getAttribute("aria-describedby")).toBeTruthy();
-  expect(document.activeElement?.textContent).toBe("Keep connection");
-  expect(f.container.querySelector("dialog")).toBeNull();
-  await f.click("Keep connection");
-  expect(f.disconnect).not.toHaveBeenCalled();
-  await f.click("Replace key");
-  const field = f.container.querySelector<HTMLInputElement>('input[type="password"]')!;
-  field.value = "synthetic-replacement";
-  await act(async () => field.form!.requestSubmit());
-  expect(f.replaceKey).toHaveBeenCalledExactlyOnceWith(
-    "anthropic_api_key",
-    "synthetic-replacement",
-  );
-  expect(field.value).toBe("");
-  await f.click("Disconnect Synthetic service");
-  await f.click("Disconnect Synthetic service");
-  expect(f.disconnect).toHaveBeenCalledExactlyOnceWith("anthropic_api_key");
-});
+it.each(["anthropic_api_key", "openai_api_key"])(
+  "keeps %s disconnect confirmation inline and places initial focus on Keep connection",
+  async (connection) => {
+    const f = await mount(
+      {
+        connection,
+        state: "connected",
+        connected_at: "2026-11-22T10:00:00.000Z",
+      },
+      "en-US",
+      false,
+      "api_key",
+    );
+    expect(f.container.textContent).toContain(
+      "Synthetic service · API key · Connected Nov 22, 2026",
+    );
+    await f.click("Disconnect Synthetic service");
+    const group = f.container.querySelector('[role="group"]')!;
+    expect(group.getAttribute("aria-labelledby")).toBeTruthy();
+    expect(group.getAttribute("aria-describedby")).toBeTruthy();
+    expect(document.activeElement?.textContent).toBe("Keep connection");
+    expect(f.container.querySelector("dialog")).toBeNull();
+    await f.click("Keep connection");
+    expect(f.disconnect).not.toHaveBeenCalled();
+    await f.click("Replace key");
+    const field = f.container.querySelector<HTMLInputElement>('input[type="password"]')!;
+    field.value = "synthetic-replacement";
+    await act(async () => field.form!.requestSubmit());
+    expect(f.replaceKey).toHaveBeenCalledExactlyOnceWith(connection, "synthetic-replacement");
+    expect(field.value).toBe("");
+    await f.click("Disconnect Synthetic service");
+    await f.click("Disconnect Synthetic service");
+    expect(f.disconnect).toHaveBeenCalledExactlyOnceWith(connection);
+  },
+);

@@ -57,6 +57,8 @@
     "agents.refresh": "Actualitza la llista de models de {service}",
     "agents.refreshing": "S’està actualitzant la llista de models de {service}…",
     "agents.listAge": "Llista de models de {service}, actualitzada {age}",
+    "agents.catalogUnlisted": "Els models que l’Ohtia encara no ha verificat no apareixen a la llista.",
+    "agents.catalogAge": "Dades dels models del catàleg de l’Ohtia (verificades el {date}). Disponibilitat segons el teu compte de {service}, actualitzada {age}.",
     "agents.refreshFailed": "Ohtia no ha pogut actualitzar la llista de models. Les teves tries es conserven.",
     "agents.noModel": "{agent} no té cap model seleccionat. Tria’n un a Configuració › Agents.",
     "agents.missingModel": "El model “{model}” de {agent} no està disponible al teu compte ara mateix. Tria’n un altre a Configuració › Agents.",

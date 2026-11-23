@@ -3,6 +3,9 @@ import { contributorNames, VoiceLabel } from "./contributor-identity.js";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import {
   agentPreferenceTargets,
+  formatDate,
+  openaiApiKeyConnection,
+  openaiCatalogCheckedOn,
   message,
   type AgentPreferences,
   type AgentPreferenceTarget,
@@ -428,6 +431,8 @@ export function FirstModelChoice({
     !saved?.model &&
     !saved?.seedPending &&
     !!list?.count;
+  const openaiCatalog = snapshot.connection === openaiApiKeyConnection.id;
+  const now = useModelListClock(canAsk && openaiCatalog);
   const catalog = useModels(
     port,
     canAsk ? snapshot.connection : undefined,
@@ -490,6 +495,7 @@ export function FirstModelChoice({
         {message(locale, "agents.model")}
         <select
           ref={control}
+          aria-describedby={openaiCatalog ? title + "-catalog" : undefined}
           title={model.name}
           value={model.id}
           aria-disabled={locked || undefined}
@@ -507,6 +513,12 @@ export function FirstModelChoice({
           {model.name}
         </small>
       </label>
+      {openaiCatalog && (
+        <div id={title + "-catalog"}>
+          <p>{message(locale, "agents.catalogUnlisted")}</p>
+          <p>{catalogAge(locale, snapshot.display_name, list.updatedAt, now)}</p>
+        </div>
+      )}
       <button
         type="button"
         className="primitive-button primitive-primary"
@@ -925,6 +937,33 @@ function PreferenceControls({
   );
 }
 
+function useModelListClock(active: boolean) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!active) return;
+    const update = () => {
+      setNow(Date.now());
+    };
+    update();
+    const timer = setInterval(update, 30_000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [active]);
+  return now;
+}
+
+function catalogAge(locale: InterfaceLocale, service: string, updatedAt: string, now: number) {
+  return message(locale, "agents.catalogAge", {
+    date: formatDate(locale, new Date(openaiCatalogCheckedOn), {
+      dateStyle: "medium",
+      timeZone: "UTC",
+    }),
+    service,
+    age: relativeAge(locale, updatedAt, now),
+  });
+}
+
 export function AgentsSettings({
   port,
   settings,
@@ -944,15 +983,7 @@ export function AgentsSettings({
 }) {
   const id = useId();
   const [refreshes, setRefreshes] = useState<Partial<Record<string, "updating" | "failed">>>({});
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(Date.now());
-    }, 30_000);
-    return () => {
-      clearInterval(timer);
-    };
-  }, []);
+  const now = useModelListClock(true);
   const lastProbeResults = useRef(probeResults);
   useEffect(() => {
     const prior = lastProbeResults.current;
@@ -1011,14 +1042,20 @@ export function AgentsSettings({
           const state = refreshes[service.id];
           return (
             <div key={service.id} className="agent-choice">
-              {list && (
-                <p>
-                  {message(locale, "agents.listAge", {
-                    ...params,
-                    age: relativeAge(locale, list.updatedAt, now),
-                  })}
-                </p>
-              )}
+              {list &&
+                (service.id === openaiApiKeyConnection.id ? (
+                  <>
+                    <p>{message(locale, "agents.catalogUnlisted")}</p>
+                    <p>{catalogAge(locale, service.displayName, list.updatedAt, now)}</p>
+                  </>
+                ) : (
+                  <p>
+                    {message(locale, "agents.listAge", {
+                      ...params,
+                      age: relativeAge(locale, list.updatedAt, now),
+                    })}
+                  </p>
+                ))}
               {state === "updating" && (
                 <p role="status">{message(locale, "agents.refreshing", params)}</p>
               )}

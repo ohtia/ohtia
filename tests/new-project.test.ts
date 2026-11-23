@@ -56,6 +56,7 @@ function fixture(chatgpt: ConnectionState = "connected") {
   const connectionResults = new Map<string, Outcome<{ state: ConnectionState }>>([
     ["chatgpt", { ok: true, value: { state: chatgpt } }],
     ["anthropic_api_key", { ok: true, value: { state: "disconnected" } }],
+    ["openai_api_key", { ok: true, value: { state: "disconnected" } }],
   ]);
   const port = {
     readConnection: vi.fn((id: string) =>

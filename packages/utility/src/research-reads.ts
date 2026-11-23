@@ -644,9 +644,7 @@ export async function readResearch(
     case "plan.read":
       return readPlan(db, request.payload.planId, context.connections, {
         providerMessages: context.providerMessages,
-        retryNotBeforeAt: await new TaskTransaction(db, context).retryNotBefore(
-          "anthropic_api_key",
-        ),
+        retryDeadlines: await new TaskTransaction(db, context).retryDeadlines(),
       });
     case "planEvent.list":
       return listPlanEvents(db, request.payload.planId, request.payload.afterSequence);

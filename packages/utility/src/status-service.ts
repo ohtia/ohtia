@@ -1,6 +1,7 @@
 import { ResearchService } from "./research-service.js";
 import { DurableProvider } from "./durable-provider.js";
 import {
+  apiKeyConnections,
   decodeConnectionReport,
   providerMessageVersion,
   decodeApplicationExit,
@@ -69,12 +70,12 @@ export function createStatusService(
         context,
         send,
         rateLimitChanged: () => {
-          research?.connectionChanged("anthropic_api_key");
+          for (const connection of apiKeyConnections) research?.connectionChanged(connection);
         },
         retryReady: () => {
           enqueueProvider(async () => {
             if (enabled && durable) await durable.pump();
-            research?.connectionChanged("anthropic_api_key");
+            for (const connection of apiKeyConnections) research?.connectionChanged(connection);
           });
         },
         reply: (task, sequence, text) => research?.reply(task, sequence, text),

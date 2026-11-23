@@ -496,7 +496,7 @@ export async function readPlanText(
 
 type PlanProviderNotices = {
   readonly providerMessages: ReadonlyMap<string, string> | undefined;
-  readonly retryNotBeforeAt: string | undefined;
+  readonly retryDeadlines: ReadonlyMap<string, string>;
 };
 async function readPlanTask(
   db: Kysely<ResearchSchema>,
@@ -540,16 +540,14 @@ async function readPlanTask(
     task.outcomeReason === "request_rejected"
       ? notices?.providerMessages?.get(identifier(id))
       : undefined;
+  const retryNotBeforeAt =
+    task.state === "queued" ? notices?.retryDeadlines.get(task.connection) : undefined;
   return {
     ...(providerMessage ? { providerMessage } : {}),
     ...(task.outcomeReason === "model_unavailable" && task.resolved_model_name
       ? { modelName: task.resolved_model_name }
       : {}),
-    ...(task.state === "queued" &&
-    task.connection === "anthropic_api_key" &&
-    notices?.retryNotBeforeAt
-      ? { retryNotBeforeAt: notices.retryNotBeforeAt }
-      : {}),
+    ...(retryNotBeforeAt ? { retryNotBeforeAt } : {}),
     ...(modelUnavailable !== undefined ? { modelUnavailable } : {}),
     agentId,
     state:

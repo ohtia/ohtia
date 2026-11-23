@@ -57,6 +57,8 @@
     "agents.refresh": "Actualizar la lista de modelos de {service}",
     "agents.refreshing": "Actualizando la lista de modelos de {service}…",
     "agents.listAge": "Lista de modelos de {service}, actualizada {age}",
+    "agents.catalogUnlisted": "No se muestran los modelos que Ohtia aún no ha verificado.",
+    "agents.catalogAge": "Datos de los modelos del catálogo de Ohtia (verificados el {date}). Disponibilidad según tu cuenta de {service}, actualizada {age}.",
     "agents.refreshFailed": "Ohtia no pudo actualizar la lista de modelos. Tus elecciones se conservan.",
     "agents.noModel": "{agent} no tiene ningún modelo seleccionado. Elige uno en Ajustes › Agentes.",
     "agents.missingModel": "El modelo “{model}” de {agent} no está disponible en tu cuenta en este momento. Elige otro en Ajustes › Agentes.",

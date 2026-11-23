@@ -1,4 +1,9 @@
 import {
+  usageTable as openaiUsageTable,
+  usageObjects as openaiUsageObjects,
+  up as openaiUsagePauses,
+} from "./migrations/0036_openai_usage_pauses.mjs";
+import {
   tables as anthropicTables,
   objects as anthropicObjects,
   maxInput as providerMaxInput,
@@ -416,6 +421,7 @@ const names = [
   "0033_entry_text_preference",
   "0034_agent_preferences",
   "0035_anthropic_outcomes",
+  "0036_openai_usage_pauses",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -863,7 +869,12 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
         ? Object.entries(consultationTables)
         : []),
     ...(revision >= 35
-      ? [["usage_limit_pauses", anthropicTables.usage_limit_pauses]]
+      ? [
+          [
+            "usage_limit_pauses",
+            revision >= 36 ? openaiUsageTable : anthropicTables.usage_limit_pauses,
+          ],
+        ]
       : revision >= 9
         ? Object.entries(usageTables)
         : []),
@@ -928,6 +939,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 31 ? replyUsageObjects : {}),
                 ...(revision >= 34 ? agentPreferenceObjects : {}),
                 ...(revision >= 35 ? anthropicObjects : {}),
+                ...(revision >= 36 ? openaiUsageObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1352,6 +1364,7 @@ export class DurableStore {
                 "0033_entry_text_preference": { up: entryTextPreference },
                 "0034_agent_preferences": { up: agentPreferences },
                 "0035_anthropic_outcomes": { up: anthropicOutcomes },
+                "0036_openai_usage_pauses": { up: openaiUsagePauses },
               }),
           },
         });
@@ -2928,7 +2941,9 @@ export class DurableStore {
     return this.taskTransaction((tasks) => tasks.reconcileConnections());
   }
   providerRetryDeadline(): Promise<Outcome<string | undefined>> {
-    return this.taskTransaction((tasks) => tasks.retryNotBefore("anthropic_api_key"));
+    return this.taskTransaction(
+      async (tasks) => [...(await tasks.retryDeadlines()).values()].sort()[0],
+    );
   }
   async prepareTask(): Promise<Outcome<PreparedTask | null>> {
     // Readmission and dispatch are separate commits: each advances its task revision once.
