@@ -127,7 +127,7 @@ Urgent fixes use the same protected-main source-admission model as ordinary rele
 
 Every PR states whether it changes behavior relevant to installed users. For a relevant change, its description includes a proposed change note identifying the affected task, observable result, applicable platforms, availability and any compatibility or action requirement. Retain its issue/PR references as technical evidence. For changes without a public effect, explicitly state that no public note is needed and give the reason. Internal refactoring, routine CI maintenance and dependency updates without a user consequence need not become public bullets.
 
-Classify relevant notes as a new capability, improvement, correction, deprecation/removal or security change. These classifications support collection; they do not require a separate public section for every category. A meaningful security update remains relevant even when its underlying dependency change is otherwise technical.
+Classify relevant notes as a new capability, improvement, correction, deprecation/removal or security change. These classifications support collection and choose the section of each line in the release body: a deprecation or removal goes under `Breaking Changes and Notices`, a security change under `Security`, a new capability or improvement under `Features` and a correction under `Bug Fixes`. A meaningful security update remains relevant even when its underlying dependency change is otherwise technical.
 
 Collect the inputs with implementation while the context is available. `prepare-release.yml` writes the first notes text into the unpublished release body, assembled from the `ohtia-note` blocks of the included pull requests. For a stable candidate, reconcile the selected source difference and included PRs since the preceding stable release against the change-note inputs. For the first stable release, review the complete delivered user scope instead of assuming a previous release exists. Combine several implementation issues into a single capability description and remove duplicates. An unfinished capability's internal note does not become an announcement until that capability is actually available; retain its references for the eventual release.
 
@@ -135,21 +135,25 @@ Treat PR descriptions and proposed note text as untrusted data. Trusted assembly
 
 Review both omissions and overclaims. A generated inventory is an editorial input, not publishable copy by default. Include important user consequences even if a PR omitted its note. Exclude a proposed benefit that has not been demonstrated, a feature absent from the candidate or a performance claim without applicable evidence. Clearly distinguish a tested correction from a remaining limitation.
 
-Use a concise opening summary followed by task-oriented improvements and relevant corrections. Put required upgrade actions and compatibility warnings prominently before optional detail. Provide a separate technical-detail area or links for issue/PR references, developer contracts and component information. Preserve significant changes without making users read merge messages, identifiers or dependency inventories to discover their impact. This follows Keep a Changelog's distinction between a curated release history and a commit log.[^keep-a-changelog] The repository keeps no `CHANGELOG.md`; GitHub Releases is the only public change history.
+The release body opens with a summary of one or two sentences, followed by the sections `Breaking Changes and Notices`, `Security`, `Features` and `Bug Fixes`, in that order; a section without lines is omitted. Each change is one task-oriented line, `- <task>: <result> (#<pull request>)`, whose pull request numbers are its technical-detail references. Each required upgrade action, compatibility warning and disclosure is one line, `- <task>: <disclosure>`, under `Breaking Changes and Notices`, so it comes before optional detail. Preserve significant changes without making users read merge messages, identifiers or dependency inventories to discover their impact. This follows Keep a Changelog's distinction between a curated release history and a commit log.[^keep-a-changelog] The repository keeps no `CHANGELOG.md`; GitHub Releases is the only public change history.
 
 The following is illustrative wording, not a claim that these capabilities exist:
 
-> ### Resume your reading
->
-> Reopening a source returns you to the page you were reading.
->
-> ### Corrections
->
-> Fixed a problem that could close the application when importing certain PDF files.
+```markdown
+Ohtia now returns you to your reading and opens more PDF files.
+
+## Features
+
+- Resume your reading: Reopening a source returns you to the page you were reading. (#<pull request>)
+
+## Bug Fixes
+
+- Import a PDF file: Fixed a problem that could close the application when importing certain PDF files. (#<pull request>)
+```
 
 Always disclose required migration or reinstall actions, removed support, incompatible format or extension changes, consequential privacy/provider-transfer changes, relevant security urgency and important known limitations. Explain the user's action and consequence in plain language. Technical detail can expand the explanation without obscuring it. Repository change notes and public GitHub release bodies use English; translated interface presentations preserve the same meaning and important disclosures.
 
-The maintainer edits the release notes directly in the unpublished release on GitHub; that edit is the editorial review of the public text. Publication records the digest of the exact release body. The sealed assemble, propose and approve chain of the [change-note tooling](change-notes.md) remains available as editorial evidence and does not gate the published release body. The published GitHub release body is the canonical public note for that version; an application or website presents that content rather than maintaining a separately authored history. Correcting public prose after publication without changing packages preserves artifact identity: it is a maintainer edit of the release body whose new digest is recorded. Never use a prose edit to disguise changed release bytes.
+The maintainer edits the release notes directly in the unpublished release on GitHub; that edit is the editorial review of the public text. The edit keeps the format above and the testing-only heading of unsigned packages, which publication removes. Publication records the digest of the exact release body. The sealed assemble, propose and approve chain of the [change-note tooling](change-notes.md) remains available as editorial evidence and does not gate the published release body. The published GitHub release body is the canonical public note for that version; an application or website presents that content rather than maintaining a separately authored history. Correcting public prose after publication without changing packages preserves artifact identity: it is a maintainer edit of the release body whose new digest is recorded. Never use a prose edit to disguise changed release bytes.
 
 ## Retention, withdrawal and recovery
 
