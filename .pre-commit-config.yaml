@@ -42,7 +42,7 @@ repos:
         always_run: true
 
   - repo: https://github.com/rbubley/mirrors-prettier
-    rev: v3.9.10
+    rev: v3.10.1
     hooks:
       - id: prettier
         types_or: [javascript, jsx, ts, tsx, markdown, yaml, json, css, scss, html]

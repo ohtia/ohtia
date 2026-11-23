@@ -4,8 +4,6 @@ title: "ADR-0004 — Node, pnpm, ESLint and Prettier toolchain"
 description: "Use a locked TypeScript workspace with reproducible tools, a native Windows contributor shell and separate type, lint and format checks."
 generated:
   by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
 sources:
   - id: node
     resource: "https://github.com/nodejs/Release/blob/main/schedule.json"
@@ -31,7 +29,7 @@ Multiple package managers, tool versions and implicit global dependencies hide i
 
 Use Node `26.12.*` for developer/build tooling, a pnpm `12.14.*` workspace and one committed lockfile for JavaScript/TypeScript packages. npm, Yarn and Bun are alternatives; retaining pnpm makes the package dependency graph and frozen resolution explicit without claiming exclusivity or measured speed superiority.[^node][^pnpm]
 
-Use ESLint `10.13.*` with typescript-eslint `8.71.*` for semantic lint and Prettier `3.9.*` for formatting.[^lint] The TypeScript compiler selected in [ADR-0002](adr-0002-typescript-product-and-local-ipc.md) runs as a separate type-checking gate. The selected versions have published engine/peer compatibility; exact patches and transitive versions are locked and must pass an integrated clean build. Do not equate version availability with tested Ohtia compatibility.
+Use ESLint `10.13.*` with typescript-eslint `8.71.*` for semantic lint and Prettier `3.10.*` for formatting.[^lint] The TypeScript compiler selected in [ADR-0002](adr-0002-typescript-product-and-local-ipc.md) runs as a separate type-checking gate. The selected versions have published engine/peer compatibility; exact patches and transitive versions are locked and must pass an integrated clean build. Do not equate version availability with tested Ohtia compatibility.
 
 Use PowerShell `7.6.*` (`pwsh.exe`, native x64 or ARM64) as the primary Windows contributor shell. Invoke without user profiles, preserve native command exit codes and use UTF-8 text. Windows PowerShell, Git Bash, cmd and WSL are supplemental paths, not substitutes for the native contributor acceptance journey. Honor effective organizational/user execution policy; never add Bypass/Unrestricted flags or change machine-wide policy. If AllSigned applies, supply reviewed signed scripts or report the enabling condition rather than weakening policy. Use its pinned portable ZIP in a worktree-local tooling root as the primary bootstrap, without routine elevation or Microsoft Update registration. Resolve the exact executable there rather than accepting an unrelated PATH installation. Do not silently replace its patch through Store, MSI or update-manager defaults; tool updates follow reviewed pin changes. Exact patches and distribution digests belong in the [foundation manifest](../../config/desktop/toolchain.json); the target contract identifies invocation and native facilities.[^powershell]
 
