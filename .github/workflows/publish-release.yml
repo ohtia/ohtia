@@ -1,0 +1,77 @@
+name: Publish release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version of the prepared unpublished release, such as 0.1.0
+        required: true
+        type: string
+
+permissions: {}
+
+# Publication is serialized across every version and surface; a second run waits.
+concurrency:
+  group: publish-release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check the prepared release
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: write # Reads the unpublished release and downloads its assets; GitHub shows unpublished releases only to tokens with write access. This job changes nothing.
+    outputs:
+      commit: ${{ steps.check.outputs.commit }}
+      release: ${{ steps.check.outputs.release }}
+      body: ${{ steps.check.outputs.body }}
+      final: ${{ steps.check.outputs.final }}
+      digests: ${{ steps.check.outputs.digests }}
+    steps:
+      - name: Check out the workflow revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+
+      - name: Verify every asset against the digest file
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OHTIA_RELEASE_VERSION: ${{ inputs.version }}
+        run: python3 scripts/release_publish.py check
+
+  publish:
+    name: Publish the release
+    needs: check
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    environment: release-signing
+    permissions:
+      contents: write # Removes the unsigned assets and the testing-only heading, uploads the notes digest and makes the release public, which creates v<version>.
+    steps:
+      - name: Check out the workflow revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+
+      - name: Publish the approved release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OHTIA_RELEASE_VERSION: ${{ inputs.version }}
+          OHTIA_RELEASE_COMMIT: ${{ needs.check.outputs.commit }}
+          OHTIA_RELEASE_ID: ${{ needs.check.outputs.release }}
+          OHTIA_RELEASE_BODY_SHA256: ${{ needs.check.outputs.body }}
+          OHTIA_RELEASE_FINAL_SHA256: ${{ needs.check.outputs.final }}
+          OHTIA_RELEASE_DIGESTS_SHA256: ${{ needs.check.outputs.digests }}
+        run: python3 scripts/release_publish.py publish
