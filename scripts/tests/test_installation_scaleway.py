@@ -22,6 +22,7 @@ import installation_scaleway as scaleway
 PROJECT = "11111111-1111-4111-8111-111111111111"
 FEDORA = "22222222-2222-4222-8222-222222222222"
 DEBIAN = "33333333-3333-4333-8333-333333333333"
+FEDORA45 = "44444444-4444-4444-8444-444444444444"
 SHA = "a" * 40
 TOKEN = "synthetic-private-credential-marker"
 ENVIRONMENT = {
@@ -42,6 +43,7 @@ ENVIRONMENT = {
     "SCW_ARM_INSTANCE_TYPE": "BASIC2-A8C-32G",
     "SCW_ARM_DISK_GB": "32",
     "SCW_ARM_FEDORA44_IMAGE_ID": FEDORA,
+    "SCW_ARM_FEDORA45_IMAGE_ID": FEDORA45,
     "SCW_ARM_DEBIAN13_IMAGE_ID": DEBIAN,
     "SCW_SECRET_KEY": TOKEN,
     "PATH": "/usr/bin:/bin",
@@ -77,7 +79,11 @@ class ScalewayTests(unittest.TestCase):
                 "type": "instance_sbs",
                 "compatible_commercial_types": ["BASIC2-A8C-32G"],
             }
-            for label, image in [("fedora_44", FEDORA), ("debian_trixie", DEBIAN)]
+            for label, image in [
+                ("fedora_44", FEDORA),
+                ("fedora_45", FEDORA45),
+                ("debian_trixie", DEBIAN),
+            ]
         ]
 
     def connection(self, body=b'{"ok":true}', status=200, encoding="identity"):
@@ -151,6 +157,7 @@ class ScalewayTests(unittest.TestCase):
             "SCW_ARM_INSTANCE_TYPE": "ARM\nInjected: value",
             "SCW_ARM_DISK_GB": "0",
             "SCW_ARM_FEDORA44_IMAGE_ID": "https://attacker.example",
+            "SCW_ARM_FEDORA45_IMAGE_ID": "not-a-uuid",
             "SCW_ARM_DEBIAN13_IMAGE_ID": FEDORA,
         }
         for key, value in invalid.items():
@@ -363,7 +370,7 @@ class ScalewayTests(unittest.TestCase):
         with patch.object(scaleway, "get", side_effect=[self.catalog, *self.images]) as get:
             result = scaleway.profile(self.settings)
         self.assertTrue(all(not call.kwargs for call in get.call_args_list))
-        self.assertEqual([image["id"] for image in result["images"]], [FEDORA, DEBIAN])
+        self.assertEqual([image["id"] for image in result["images"]], [FEDORA, FEDORA45, DEBIAN])
         self.assertEqual(result["disk_gb"], 32)
         self.assertEqual(result["disk_bytes"], 32_000_000_000)
         self.assertNotIn("price", json.dumps(result))

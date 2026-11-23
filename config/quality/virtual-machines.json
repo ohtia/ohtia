@@ -18,6 +18,16 @@
       "filesystem": "btrfs",
       "format": "rpm"
     },
+    "fedora-45": {
+      "image": {
+        "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/45/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-45-1.4.x86_64.qcow2",
+        "sha256": "50bdc5e70f6a24f540932d15411c1c6ae9fcfa40fb990d876d83c5cc823b2ad0",
+        "checksum_source": "https://dl.fedoraproject.org/pub/fedora/linux/releases/45/Cloud/x86_64/images/Fedora-Cloud-45-1.4-x86_64-CHECKSUM",
+        "inspection": "published-checksum-metadata"
+      },
+      "filesystem": "btrfs",
+      "format": "rpm"
+    },
     "debian-13": {
       "image": {
         "url": "https://cloud.debian.org/images/cloud/trixie/20261026-2643/debian-13-generic-amd64-20261026-2643.qcow2",

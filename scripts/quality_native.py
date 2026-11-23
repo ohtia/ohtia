@@ -22,6 +22,7 @@ from pathlib import Path
 
 import desktop_runtime
 import linux_desktop
+import linux_profiles
 import quality_delivery as delivery
 import quality_processes as process_observer
 import scaleway_bootstrap as package_inventory
@@ -152,27 +153,26 @@ def host_matches(cell: dict, *, external_guard: dict | None = None) -> dict:
     )
     if sys.platform == "linux":
         release = platform.freedesktop_os_release()
-        if cell["profile"] in {"fedora-44", "debian-13"}:
+        if cell["profile"] in delivery.vm_guests():
             delivery.require(
                 os.environ.get("OHTIA_QUALITY_VM") == cell["id"] or external_guard is not None,
                 "Use this distribution's admitted native guest.",
             )
-            expected_id, version_id = (
-                ("fedora", "44") if cell["profile"] == "fedora-44" else ("debian", "13")
-            )
+            expected_id, version_id = linux_profiles.parse(cell["profile"])
             delivery.require(
                 release.get("ID") == expected_id and release.get("VERSION_ID") == version_id,
                 "Wrong native guest distribution.",
             )
             if expected_id == "fedora":
                 delivery.require(
-                    ".fc44" in platform.release()
+                    linux_profiles.kernel_marker(cell["profile"]) in platform.release()
                     and command(["getenforce"], capture=True).strip() == "Enforcing",
                     "Provisioned Fedora requires its vendor kernel and enforcing SELinux.",
                 )
             else:
                 delivery.require(
-                    "deb13" in platform.release(), "Debian requires its own vendor kernel."
+                    linux_profiles.kernel_marker(cell["profile"]) in platform.release(),
+                    "Debian requires its own vendor kernel.",
                 )
                 if external_guard is not None:
                     delivery.require(
@@ -341,7 +341,7 @@ def configuration(cell: dict, prepared: Path, output: Path, version: str) -> dic
         "afterRemove": str(resources / "after-remove-native.sh"),
         "fpm": [
             "--before-install",
-            str(resources / "before-fedora.sh"),
+            str(fedora_before_install(cell, output.parent)),
             "--version",
             native_version,
             "--iteration",
@@ -360,6 +360,25 @@ def configuration(cell: dict, prepared: Path, output: Path, version: str) -> dic
         ],
     }
     return config
+
+
+def fedora_before_install(cell: dict, directory: Path) -> Path:
+    """Return the RPM's pre-install check, written for the Fedora release of the cell's profile.
+
+    Only a cell that builds an RPM writes the check, beside its package output; the check of
+    any other cell names no release and so refuses every installation.
+    """
+    template_file = ROOT / "tooling/quality-packaging/before-fedora.sh"
+    if "rpm" not in cell.get("formats", []):
+        return template_file
+    profile = cell.get("profile", "")
+    release = linux_profiles.version(profile) if linux_profiles.is_fedora(profile) else "none"
+    template = template_file.read_text()
+    script = directory / "before-fedora.sh"
+    script.write_text(
+        template.replace("export PATH\n", f"export PATH\nOHTIA_FEDORA_VERSION={release}\n", 1)
+    )
+    return script
 
 
 def construct_package(cell: dict, work: Path, version: str) -> Path:
@@ -963,7 +982,7 @@ def os_package_record(cell: dict, output: Path) -> dict:
     """Retain the Linux package list with the list function and limits of the ARM guest."""
     limits = delivery.read(ROOT / "config/installation/scaleway.json")["limits"]
     data = package_inventory.package_inventory(
-        "rpm" if cell["profile"] == "fedora-44" else "dpkg",
+        linux_profiles.package_tool(cell["profile"]),
         limits["package_inventory_bytes"],
         limits["package_inventory_seconds"],
     )

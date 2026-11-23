@@ -9,14 +9,16 @@ import subprocess
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
+import linux_profiles
+
 DESKTOPS = ("gnome", "kde")
-PROFILES = ("ubuntu-26.04", "fedora-44", "debian-13")
+PROFILES = linux_profiles.declared()
 CURRENT_DESKTOP = {"gnome": "GNOME", "kde": "KDE"}
 COMPOSITORS = {"gnome": "gnome-shell", "kde": "kwin_wayland"}
 KDE_IDENTITY = {
     "ubuntu-26.04": "kubuntu-desktop",
     "debian-13": "task-kde-desktop",
-    "fedora-44": "fedora-release-identity-kde-desktop",
+    **{profile: "fedora-release-identity-kde-desktop" for profile in linux_profiles.fedora()},
 }
 FEDORA_VARIANTS = {"gnome": "workstation", "kde": "kde"}
 # Executable names of display managers that the official desktop sets can install. Fedora's
@@ -65,7 +67,7 @@ def require(condition: bool, message: str) -> None:
 
 def manager(profile: str) -> str:
     require(profile in PROFILES, "Unknown Linux distribution profile.")
-    return "dnf" if profile == "fedora-44" else "apt-get"
+    return "dnf" if linux_profiles.is_fedora(profile) else "apt-get"
 
 
 def cell_id(target: str, profile: str, desktop: str | None = None) -> str:
@@ -164,11 +166,12 @@ def identity_errors(
     errors = []
     if desktop not in DESKTOPS:
         return ["Unknown Linux desktop."]
-    if profile == "fedora-44" and release.get("VARIANT_ID") != FEDORA_VARIANTS[desktop]:
+    if linux_profiles.is_fedora(profile) and release.get("VARIANT_ID") != FEDORA_VARIANTS[desktop]:
+        name = linux_profiles.os_release_name(profile)
         errors.append(
-            "Fedora 44 KDE requires VARIANT_ID=kde."
+            f"{name} KDE requires VARIANT_ID=kde."
             if desktop == "kde"
-            else "Fedora 44 GNOME requires the Workstation identity."
+            else f"{name} GNOME requires the Workstation identity."
         )
     identity = KDE_IDENTITY[profile]
     if desktop == "kde":
@@ -205,11 +208,12 @@ def detect_desktop(profile: str, release: Mapping[str, str]) -> str:
     """Name the installed official desktop of a contributor machine, refusing a mixture."""
     kde = package_installed(profile, KDE_IDENTITY[profile])
     gnome = package_installed(profile, "gnome-shell")
-    if profile == "fedora-44":
+    if linux_profiles.is_fedora(profile):
         variant = release.get("VARIANT_ID")
+        name = linux_profiles.os_release_name(profile)
         require(
             variant in FEDORA_VARIANTS.values(),
-            "Use Fedora 44 Workstation or Fedora 44 KDE; another Fedora edition is not a qualified route.",
+            f"Use {name} Workstation or {name} KDE; another Fedora edition is not a qualified route.",
         )
         selected = "kde" if variant == "kde" else "gnome"
         require(

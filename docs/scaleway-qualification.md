@@ -2,6 +2,8 @@
 type: Reference
 title: Ephemeral ARM installation qualification
 description: Define protected authority, bounded diagnostics and recovery for unsigned native ARM qualification on ephemeral Scaleway leases.
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: cloud-init-errors
     resource: https://github.com/canonical/cloud-init/blob/25.1.4/cloudinit/cmd/main.py
@@ -46,7 +48,8 @@ The complete repository-variable map is:
 - `SCW_ARM_ZONE`: availability zone.
 - `SCW_ARM_INSTANCE_TYPE`: ARM machine type.
 - `SCW_ARM_DISK_GB`: total decimal disk capacity.
-- `SCW_ARM_FEDORA44_IMAGE_ID`: Fedora local image.
+- `SCW_ARM_FEDORA44_IMAGE_ID`: Fedora 44 local image.
+- `SCW_ARM_FEDORA45_IMAGE_ID`: Fedora 45 local image.
 - `SCW_ARM_DEBIAN13_IMAGE_ID`: Debian local image.
 - `SCW_CYCLE_ENABLED`: creation control.
 - `SCW_RECOVERY_ENABLED`: independent recovery control.

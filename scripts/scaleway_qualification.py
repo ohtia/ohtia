@@ -15,6 +15,7 @@ import sys
 import time
 from pathlib import Path
 
+import linux_profiles
 import scaleway_bootstrap as bootstrap
 import scaleway_cycle as cycle
 import scaleway_evidence as evidence_archive
@@ -108,6 +109,7 @@ def prepare(gh: GitHub, profile: str, directory: Path, build_directory: Path) ->
 
 def cloud_config(intent: dict, resources: dict, public_key: str) -> bytes:
     profile = intent["profile"]
+    fedora = linux_profiles.is_fedora(profile)
     common = ["python3", "sudo", "binutils", "gnome-shell", "gnome-session", "unzip"]
     packages = common + (
         [
@@ -132,7 +134,7 @@ def cloud_config(intent: dict, resources: dict, public_key: str) -> bytes:
             "mesa-libgbm",
             "xdg-utils",
         ]
-        if profile == "fedora-44"
+        if fedora
         else [
             "python3-gi",
             "libatomic1",
@@ -172,11 +174,11 @@ def cloud_config(intent: dict, resources: dict, public_key: str) -> bytes:
         # The official KDE set installs without recommended or weak dependencies, never GNOME.
         commands += cycle.linux_desktop.kde_install_commands(profile, packages)
         packages = []
-    elif profile == "fedora-44":
+    elif fedora:
         commands.append(
             ["dnf", "-y", "install", "--allowerasing", "fedora-release-identity-workstation"]
         )
-    if profile == "fedora-44":
+    if fedora:
         commands.append(["systemctl", "start", "auditd"])
     commands += [
         ["mkdir", "-p", INCOMING],

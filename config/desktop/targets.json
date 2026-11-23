@@ -6,7 +6,7 @@
       "os": "linux",
       "arch": "x64",
       "aliases": ["x64", "amd64", "x86_64"],
-      "baseline": "Ubuntu 26.04 LTS, Fedora 44 and Debian 13, each with GNOME and KDE Plasma; required x86-64 profiles are enumerated",
+      "baseline": "Ubuntu 26.04 LTS, Fedora 44, Fedora 45 and Debian 13, each with GNOME and KDE Plasma; required x86-64 profiles are enumerated",
       "filesystems": ["ext4", "btrfs"],
       "display": "Native GNOME and KDE Plasma 6 Wayland on every profile; an X11 session is unqualified; actual Ozone backend must be observed",
       "quality_packages": ["deb", "rpm"],
@@ -54,6 +54,26 @@
           "desktops": ["gnome", "kde"]
         },
         {
+          "id": "fedora-45",
+          "package": "rpm",
+          "libc_minimum": "2.44",
+          "kernel": "Vendor-maintained Fedora 45 kernel; exact native build recorded by 018",
+          "filesystems": ["btrfs"],
+          "security_policy": "SELinux enforcing with targeted policy and active Chromium sandbox; no permissive or global policy fallback",
+          "display": "Native GNOME and KDE Plasma 6 Wayland; automatic native Ozone selection must actually select Wayland",
+          "hosted_candidates": [],
+          "required_facility": "Native Fedora 45 Workstation environment with GNOME Wayland, or Fedora 45 KDE with Plasma 6 Wayland, with enforcing SELinux and local Btrfs. Use authenticated Workstation ISO installation or independently verified official signed Workstation or KDE identity package provisioning on a native provider image; retain the actual provenance and do not claim an ISO boot for the latter route.",
+          "qualification_image": {
+            "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/45/Workstation/x86_64/iso/Fedora-Workstation-Live-45-1.4.x86_64.iso",
+            "sha256": "68338c6bfe4f0d64151f2e47efe9f44a8855ad05b460e56b844fb3fa2c9a3beb",
+            "inspection": "published-metadata-only",
+            "checksum_source": "https://dl.fedoraproject.org/pub/fedora/linux/releases/45/Workstation/x86_64/iso/Fedora-Workstation-45-1.4-x86_64-CHECKSUM",
+            "admission": "018 verifies the Fedora OpenPGP checksum signature and actual ISO bytes before provisioning; D1a does not claim that verification or native execution"
+          },
+          "display_backends": ["wayland"],
+          "desktops": ["gnome", "kde"]
+        },
+        {
           "id": "debian-13",
           "package": "deb",
           "libc_minimum": "2.41",
@@ -74,7 +94,7 @@
       "os": "linux",
       "arch": "arm64",
       "aliases": ["arm64", "aarch64"],
-      "baseline": "Ubuntu 26.04 LTS, Fedora 44 and Debian 13, each with GNOME and KDE Plasma; required ARM64 profiles are enumerated",
+      "baseline": "Ubuntu 26.04 LTS, Fedora 44, Fedora 45 and Debian 13, each with GNOME and KDE Plasma; required ARM64 profiles are enumerated",
       "filesystems": ["ext4", "btrfs"],
       "display": "Native GNOME and KDE Plasma 6 Wayland on every profile; an X11 session is unqualified; actual Ozone backend must be observed",
       "quality_packages": ["deb", "rpm"],
@@ -116,6 +136,26 @@
             "sha256": "162ba3c552a2d241c7c63ec26777af0255ee1b5a135adc0be986ceed999933ef",
             "inspection": "published-metadata-only",
             "checksum_source": "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Workstation/aarch64/iso/Fedora-Workstation-44-1.7-aarch64-CHECKSUM",
+            "admission": "018 verifies the Fedora OpenPGP checksum signature and actual ISO bytes before provisioning; D1a does not claim that verification or native execution"
+          },
+          "display_backends": ["wayland"],
+          "desktops": ["gnome", "kde"]
+        },
+        {
+          "id": "fedora-45",
+          "package": "rpm",
+          "libc_minimum": "2.44",
+          "kernel": "Vendor-maintained Fedora 45 kernel; exact native build recorded by 018",
+          "filesystems": ["btrfs"],
+          "security_policy": "SELinux enforcing with targeted policy and active Chromium sandbox; no permissive or global policy fallback",
+          "display": "Native GNOME and KDE Plasma 6 Wayland; automatic native Ozone selection must actually select Wayland",
+          "hosted_candidates": [],
+          "required_facility": "Native Fedora 45 Workstation environment with GNOME Wayland, or Fedora 45 KDE with Plasma 6 Wayland, with enforcing SELinux and local Btrfs. Use authenticated Workstation ISO installation or independently verified official signed Workstation or KDE identity package provisioning on a native provider image; retain the actual provenance and do not claim an ISO boot for the latter route.",
+          "qualification_image": {
+            "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/45/Workstation/aarch64/iso/Fedora-Workstation-Live-45-1.4.aarch64.iso",
+            "sha256": "ad73a977709d417f5b7dda4147fc071396b9d8d2bdcca2df615aa3aab7673710",
+            "inspection": "published-metadata-only",
+            "checksum_source": "https://dl.fedoraproject.org/pub/fedora/linux/releases/45/Workstation/aarch64/iso/Fedora-Workstation-45-1.4-aarch64-CHECKSUM",
             "admission": "018 verifies the Fedora OpenPGP checksum signature and actual ISO bytes before provisioning; D1a does not claim that verification or native execution"
           },
           "display_backends": ["wayland"],

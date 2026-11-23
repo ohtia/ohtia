@@ -11,7 +11,10 @@ import subprocess
 import sys
 import time
 import uuid
+from pathlib import Path
 from urllib.parse import urlencode
+
+PROFILES = Path(__file__).resolve().parents[1] / "config/installation/scaleway.json"
 
 HOST = "api.scaleway.com"
 MAXIMUM_RESPONSE_BYTES = 2 * 1024 * 1024
@@ -141,11 +144,12 @@ def configuration() -> dict:
     )
     disk = os.environ.get("SCW_ARM_DISK_GB", "")
     require(re.fullmatch(r"[1-9][0-9]{0,4}", disk) is not None, "invalid_disk_size")
+    profiles = json.loads(PROFILES.read_text(encoding="utf-8"))["profiles"].values()
     images = {
-        "fedora_44": canonical_uuid(os.environ.get("SCW_ARM_FEDORA44_IMAGE_ID", "")),
-        "debian_trixie": canonical_uuid(os.environ.get("SCW_ARM_DEBIAN13_IMAGE_ID", "")),
+        profile["image_label"]: canonical_uuid(os.environ.get(profile["image_variable"], ""))
+        for profile in profiles
     }
-    require(len(set(images.values())) == 2, "duplicate_images")
+    require(len(set(images.values())) == len(images), "duplicate_images")
     return {
         "project_id": project,
         "zone": zone,

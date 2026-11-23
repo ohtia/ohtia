@@ -212,7 +212,7 @@ class VirtualMachineTests(unittest.TestCase):
         self.assertEqual(policy["host_runner"], "ubuntu-26.04")
         self.assertEqual(policy["architecture"], "x64")
         self.assertEqual(policy["pending_architectures"], ["arm64"])
-        self.assertEqual(set(policy["guests"]), {"fedora-44", "debian-13"})
+        self.assertEqual(set(policy["guests"]), {"fedora-44", "fedora-45", "debian-13"})
         for guest in policy["guests"].values():
             image = guest["image"]
             self.assertTrue(image["url"].startswith("https://"))

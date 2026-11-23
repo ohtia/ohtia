@@ -17,6 +17,7 @@ import urllib.request
 from pathlib import Path
 
 import linux_desktop
+import linux_profiles
 import quality_delivery as delivery
 
 ROOT = delivery.ROOT
@@ -59,7 +60,8 @@ def download(record: dict, destination: Path) -> None:
 
 
 def cloud_config(profile: str, public_key: str, *, desktop: str) -> str:
-    delivery.require(profile in {"fedora-44", "debian-13"}, "Unknown native guest.")
+    delivery.require(profile in delivery.vm_guests(), "Unknown native guest.")
+    fedora = linux_profiles.is_fedora(profile)
     packages = (
         [
             "python3",
@@ -90,7 +92,7 @@ def cloud_config(profile: str, public_key: str, *, desktop: str) -> str:
             "7zip",
             "unzip",
         ]
-        if profile == "fedora-44"
+        if fedora
         else [
             "python3",
             "binutils",
@@ -127,11 +129,11 @@ def cloud_config(profile: str, public_key: str, *, desktop: str) -> str:
         # The official KDE set installs without recommended or weak dependencies, never GNOME.
         commands += linux_desktop.kde_install_commands(profile, packages)
         packages = []
-    elif profile == "fedora-44":
+    elif fedora:
         commands.append(
             ["dnf", "-y", "install", "--allowerasing", "fedora-release-identity-workstation"]
         )
-    if profile == "fedora-44":
+    if fedora:
         commands += [
             ["systemctl", "start", "auditd"],
             [
@@ -361,7 +363,7 @@ def main() -> int:
         disk = attempt / "guest.qcow2"
         run(["qemu-img", "create", "-f", "qcow2", "-F", "qcow2", "-b", image, disk, "16G"])
         home = attempt / "home.qcow2"
-        if cell["profile"] == "fedora-44":
+        if linux_profiles.is_fedora(cell["profile"]):
             run(["qemu-img", "create", "-f", "qcow2", home, "10G"])
         key = attempt / "ssh-key"
         run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key])

@@ -234,6 +234,42 @@
         "Set up frozen workspace"
       ]
     },
+    "native (linux-x64-fedora-45-gnome)": {
+      "steps": [
+        "Set up job",
+        "Check out source with full Git history",
+        "Set up Python",
+        "Record tested revision",
+        "Prepare native Linux dependencies",
+        "Prepare native VM acceleration",
+        "Build and smoke-test native packages",
+        "Retain native quality artifacts",
+        "Complete job"
+      ],
+      "optional_steps": [
+        "Post Set up Python",
+        "Post Check out source with full Git history",
+        "Set up frozen workspace"
+      ]
+    },
+    "native (linux-x64-fedora-45-kde)": {
+      "steps": [
+        "Set up job",
+        "Check out source with full Git history",
+        "Set up Python",
+        "Record tested revision",
+        "Prepare native Linux dependencies",
+        "Prepare native VM acceleration",
+        "Build and smoke-test native packages",
+        "Retain native quality artifacts",
+        "Complete job"
+      ],
+      "optional_steps": [
+        "Post Set up Python",
+        "Post Check out source with full Git history",
+        "Set up frozen workspace"
+      ]
+    },
     "native (linux-x64-debian-13-gnome)": {
       "steps": [
         "Set up job",

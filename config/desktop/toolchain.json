@@ -439,6 +439,11 @@
               "sonames": ["libcrypt.so.1"],
               "packages": ["libxcrypt-compat"],
               "reason": "The pinned FPM Ruby helper requires the legacy libcrypt ABI; verify the signed vendor provider on the native host."
+            },
+            "fedora-45": {
+              "sonames": ["libcrypt.so.1"],
+              "packages": ["libxcrypt-compat"],
+              "reason": "The pinned FPM Ruby helper requires the legacy libcrypt ABI; verify the signed vendor provider on the native host."
             }
           }
         },

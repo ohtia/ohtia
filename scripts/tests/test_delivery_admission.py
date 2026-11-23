@@ -22,19 +22,19 @@ class AdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(admission.AdmissionError, "^" + code + "$"):
             fixture.admit(context)
 
-    def test_required_scope_derives_twelve_linux_cells_with_both_desktops(self):
+    def test_required_scope_derives_sixteen_linux_cells_with_both_desktops(self):
         f = Fixture()
         self.assertEqual(f.admit().report()["status"], "admitted")
-        self.assertEqual(len(f.cells["cells"]), 15)
+        self.assertEqual(len(f.cells["cells"]), 19)
         linux = [c for c in f.cells["cells"] if c["target"].startswith("linux-")]
-        self.assertEqual(len(linux), 12)
+        self.assertEqual(len(linux), 16)
         self.assertEqual({c["display"] for c in linux}, {"wayland"})
         self.assertEqual(
             {c["id"] for c in linux},
             {
                 f"{target}-{profile}-{desktop}"
                 for target in ("linux-x64", "linux-arm64")
-                for profile in ("ubuntu-26-04", "fedora-44", "debian-13")
+                for profile in ("ubuntu-26-04", "fedora-44", "fedora-45", "debian-13")
                 for desktop in ("gnome", "kde")
             },
         )
@@ -48,7 +48,7 @@ class AdmissionTests(unittest.TestCase):
         self.assertEqual(f.admit().report()["status"], "admitted")
         installs = {}
         for target in ("linux-x64", "linux-arm64"):
-            for profile in ("ubuntu-26.04", "fedora-44", "debian-13"):
+            for profile in ("ubuntu-26.04", "fedora-44", "fedora-45", "debian-13"):
                 cells = [
                     c
                     for c in f.cells["cells"]
@@ -76,6 +76,29 @@ class AdmissionTests(unittest.TestCase):
         ubuntu = next(c for c in f.cells["cells"] if c["id"] == "linux-x64-ubuntu-26-04-gnome")
         debian = next(c for c in f.cells["cells"] if c["id"] == "linux-x64-debian-13-gnome")
         debian["assignments"]["install"] = copy.deepcopy(ubuntu["assignments"]["install"])
+        f.refresh()
+        self.denied(f, "artifact_assignment")
+
+    def test_every_declared_fedora_release_needs_exactly_its_own_package_group(self):
+        targets, policy, _ = admission.configuration()
+        admission.require_fedora_groups(targets, policy)
+        groups = policy["profiles"]
+        for name, profiles in (
+            ("missing", {k: v for k, v in groups.items() if k != "fedora-45-rpm"}),
+            ("retired", {**groups, "fedora-43-rpm": groups["fedora-44-rpm"]}),
+        ):
+            with (
+                self.subTest(case=name),
+                self.assertRaisesRegex(admission.AdmissionError, "^fedora_package_groups$"),
+            ):
+                admission.require_fedora_groups(targets, {**policy, "profiles": profiles})
+
+    def test_a_fedora_package_is_never_assigned_to_another_fedora_release(self):
+        f = Fixture()
+        older = next(c for c in f.cells["cells"] if c["id"] == "linux-x64-fedora-44-gnome")
+        newer = next(c for c in f.cells["cells"] if c["id"] == "linux-x64-fedora-45-gnome")
+        self.assertNotEqual(older["assignments"]["install"], newer["assignments"]["install"])
+        newer["assignments"]["install"] = copy.deepcopy(older["assignments"]["install"])
         f.refresh()
         self.denied(f, "artifact_assignment")
 
@@ -179,7 +202,7 @@ class AdmissionTests(unittest.TestCase):
             False,
         )
         f = Fixture(optional=("darwin-x64", "win32-arm64"))
-        self.assertEqual(len(f.cells["cells"]), 18)
+        self.assertEqual(len(f.cells["cells"]), 22)
         f.admit()
         context = f.context()
         f.cells["cells"].pop()
@@ -417,7 +440,7 @@ class AdmissionTests(unittest.TestCase):
         )
         self.denied(f, "invalid_waiver")
         f = Fixture()
-        f.claim("linux-x64", "fedora-rpm", "native_package_signing").update(
+        f.claim("linux-x64", "fedora-44-rpm", "native_package_signing").update(
             state="not_required", evidence=[]
         )
         self.denied(f, "invalid_waiver")
@@ -832,7 +855,7 @@ class AdmissionTests(unittest.TestCase):
     def test_every_declared_native_signing_step_needs_its_own_covered_receipt(self):
         f = Fixture(public=True)
         artifact = next(
-            a for a in f.artifacts["inventories"][0]["artifacts"] if a["profile"] == "fedora-rpm"
+            a for a in f.artifacts["inventories"][0]["artifacts"] if a["profile"] == "fedora-44-rpm"
         )
         artifact["signing"].append("second-signing-step")
         f.refresh()
@@ -940,7 +963,7 @@ class AdmissionTests(unittest.TestCase):
                     cell = next(
                         r
                         for r in f.objects
-                        if r["kind"] == "native_runtime" and r["profile"] == "fedora-rpm"
+                        if r["kind"] == "native_runtime" and r["profile"] == "fedora-44-rpm"
                     )
                     f.mutate_record(
                         signer, lambda r: r.update(execution=copy.deepcopy(cell["execution"]))

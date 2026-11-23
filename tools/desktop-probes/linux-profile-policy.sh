@@ -3,8 +3,10 @@ verify_distribution_profile() {
   ID=
   VERSION_ID=
   . /etc/os-release
+  # Every Fedora profile names its release; the generator admits only declared profiles.
   case "$OHTIA_NATIVE_DISTRIBUTION_PROFILE:$ID:$VERSION_ID" in
-    ubuntu-26.04:ubuntu:26.04|debian-13:debian:13|fedora-44:fedora:44) ;;
+    ubuntu-26.04:ubuntu:26.04|debian-13:debian:13) ;;
+    fedora-*:fedora:*) test "$OHTIA_NATIVE_DISTRIBUTION_PROFILE" = "fedora-$VERSION_ID" || return 1 ;;
     *) return 1 ;;
   esac
 }

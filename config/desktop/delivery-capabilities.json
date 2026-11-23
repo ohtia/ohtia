@@ -25,7 +25,14 @@
       "update": "deb",
       "native_signing": "not_required"
     },
-    "fedora-rpm": {
+    "fedora-44-rpm": {
+      "os": "linux",
+      "formats": ["rpm"],
+      "install": "rpm",
+      "update": "rpm",
+      "native_signing": "openpgp-rpm"
+    },
+    "fedora-45-rpm": {
       "os": "linux",
       "formats": ["rpm"],
       "install": "rpm",

@@ -319,6 +319,96 @@ class QualificationAdmissionTests(unittest.TestCase):
                 ):
                     contract.check_targets(missing)
 
+    def test_the_two_most_recent_fedora_releases_are_the_declared_fedora_profiles(self):
+        data = record("targets")
+        contract.check_targets(data)
+        for index in (0, 1):
+            profiles = data["targets"][index]["distribution_profiles"]
+            fedora = sorted(p["id"] for p in profiles if p["id"].startswith("fedora-"))
+            self.assertEqual(fedora, ["fedora-44", "fedora-45"])
+
+        def fedora_profiles(changed):
+            mutated = copy.deepcopy(data)
+            for row in mutated["targets"][:2]:
+                row["distribution_profiles"] = changed(row["distribution_profiles"])
+            return mutated
+
+        def renamed(old, new):
+            def change(profiles):
+                result = copy.deepcopy(profiles)
+                for profile in result:
+                    if profile["id"] == old:
+                        text = json.dumps(profile).replace(old.split("-")[1], new.split("-")[1])
+                        profile.clear()
+                        profile.update(json.loads(text))
+                return result
+
+            return change
+
+        cases = {
+            "one Fedora release": lambda ps: [p for p in ps if p["id"] != "fedora-45"],
+            "four Fedora releases": lambda ps: [
+                *ps,
+                *(
+                    json.loads(
+                        json.dumps(next(p for p in ps if p["id"] == "fedora-45")).replace(
+                            "45", release
+                        )
+                    )
+                    for release in ("46", "47")
+                ),
+            ],
+            "a gap between releases": renamed("fedora-45", "fedora-47"),
+            "an older glibc on the newer release": lambda ps: [
+                {**p, "libc_minimum": "2.42"} if p["id"] == "fedora-45" else p for p in ps
+            ],
+        }
+        for name, change in cases.items():
+            with self.subTest(case=name), self.assertRaises(contract.ContractError):
+                contract.check_targets(fedora_profiles(change))
+        # A third, older release stays while its retirement notice runs.
+        notice = fedora_profiles(
+            lambda ps: [
+                *ps,
+                json.loads(
+                    json.dumps(next(p for p in ps if p["id"] == "fedora-45")).replace("45", "46")
+                ),
+            ]
+        )
+        contract.check_targets(notice)
+        image = fedora_profiles(
+            lambda ps: [
+                {
+                    **p,
+                    "qualification_image": {
+                        **p["qualification_image"],
+                        "url": p["qualification_image"]["url"].replace("/45/", "/44/"),
+                    },
+                }
+                if p["id"] == "fedora-45"
+                else p
+                for p in ps
+            ]
+        )
+        with (
+            self.subTest(case="an image of another release"),
+            self.assertRaises(contract.ContractError),
+        ):
+            contract.check_targets(image)
+        one_cpu = copy.deepcopy(data)
+        arm = one_cpu["targets"][1]["distribution_profiles"]
+        newer = json.dumps(next(p for p in arm if p["id"] == "fedora-45")).replace("45", "46")
+        for profile in arm:
+            if profile["id"] == "fedora-44":
+                profile.clear()
+                profile.update(json.loads(newer))
+        arm.sort(key=lambda p: p["id"])
+        with (
+            self.subTest(case="other releases on one CPU"),
+            self.assertRaises(contract.ContractError),
+        ):
+            contract.check_targets(one_cpu)
+
     def test_retired_ubuntu_profile_and_x11_backend_are_rejected(self):
         for index in (0, 1):
             data = record("targets")
@@ -326,7 +416,7 @@ class QualificationAdmissionTests(unittest.TestCase):
             profiles.append({**copy.deepcopy(profiles[0]), "id": "ubuntu-24.04"})
             with self.subTest(target=index), self.assertRaises(contract.ContractError):
                 contract.check_targets(data)
-            for profile_index in range(3):
+            for profile_index in range(4):
                 data = record("targets")
                 profile = data["targets"][index]["distribution_profiles"][profile_index]
                 profile["display_backends"] = ["wayland", "x11"]

@@ -11,6 +11,8 @@ import json
 import re
 from pathlib import Path
 
+import linux_profiles
+
 ROOT = Path(__file__).resolve().parent.parent
 DECLARATION = Path("config/release/platforms.json")
 EXTENSIONS = {"deb": "deb", "rpm": "rpm", "nsis": "exe", "dmg": "dmg", "zip": "zip"}
@@ -19,7 +21,6 @@ PLATFORM_TARGETS = {
     "windows": {"win32-x64", "win32-arm64"},
     "macos": {"darwin-x64", "darwin-arm64"},
 }
-LINUX_PROFILES = {"ubuntu-26.04": "deb", "debian-13": "deb", "fedora-44": "rpm"}
 RUNNER = re.compile(r"[a-z0-9][a-z0-9.-]*")
 
 
@@ -79,7 +80,14 @@ def load(root: Path | None = None) -> list[dict]:
                     isinstance(package, dict)
                     and set(package) == ({"profile", "format"} if linux else {"format"})
                     and package["format"] in EXTENSIONS
-                    and (not linux or LINUX_PROFILES.get(package["profile"]) == package["format"])
+                    and (
+                        not linux
+                        or (
+                            package["profile"] in linux_profiles.declared()
+                            and linux_profiles.package_format(package["profile"])
+                            == package["format"]
+                        )
+                    )
                     and (package.get("profile"), package["format"]) not in seen,
                     "Invalid release package.",
                 )

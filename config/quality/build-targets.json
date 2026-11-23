@@ -109,6 +109,28 @@
       "formats": ["rpm"]
     },
     {
+      "id": "linux-x64-fedora-45-gnome",
+      "runner": "ubuntu-26.04",
+      "target": "linux-x64",
+      "profile": "fedora-45",
+      "desktop": "gnome",
+      "backend": "wayland",
+      "launcher": "kvm",
+      "filesystem": "btrfs",
+      "formats": ["rpm"]
+    },
+    {
+      "id": "linux-x64-fedora-45-kde",
+      "runner": "ubuntu-26.04",
+      "target": "linux-x64",
+      "profile": "fedora-45",
+      "desktop": "kde",
+      "backend": "wayland",
+      "launcher": "kvm",
+      "filesystem": "btrfs",
+      "formats": ["rpm"]
+    },
+    {
       "id": "linux-x64-debian-13-gnome",
       "runner": "ubuntu-26.04",
       "target": "linux-x64",

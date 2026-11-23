@@ -23,6 +23,7 @@ from pathlib import Path, PurePosixPath
 import application_version
 import desktop_runtime
 import linux_desktop
+import linux_profiles
 import quality_native
 import workspace
 
@@ -177,7 +178,7 @@ def native_profile(target, profile, backend, desktop=None):
             linux_desktop.require_identity(profile, desktop, release)
         except linux_desktop.DesktopError as exc:
             raise ValueError(str(exc)) from None
-        if profile == "fedora-44":
+        if linux_profiles.is_fedora(profile):
             require(
                 command(["getenforce"], capture=True) == "Enforcing",
                 "Fedora with enforcing SELinux required.",

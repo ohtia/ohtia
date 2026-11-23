@@ -8,7 +8,7 @@ on:
         description: Native Linux profile
         required: true
         type: choice
-        options: [fedora-44, debian-13]
+        options: [fedora-44, fedora-45, debian-13]
       desktop:
         description: Native Linux desktop of the cell
         required: true
@@ -151,6 +151,7 @@ jobs:
       SCW_ARM_INSTANCE_TYPE: ${{ vars.SCW_ARM_INSTANCE_TYPE }}
       SCW_ARM_DISK_GB: ${{ vars.SCW_ARM_DISK_GB }}
       SCW_ARM_FEDORA44_IMAGE_ID: ${{ vars.SCW_ARM_FEDORA44_IMAGE_ID }}
+      SCW_ARM_FEDORA45_IMAGE_ID: ${{ vars.SCW_ARM_FEDORA45_IMAGE_ID }}
       SCW_ARM_DEBIAN13_IMAGE_ID: ${{ vars.SCW_ARM_DEBIAN13_IMAGE_ID }}
       SCW_CREATOR_KEY_EXPIRES_AT: ${{ vars.SCW_CREATOR_KEY_EXPIRES_AT }}
       SCW_CLEANUP_KEY_EXPIRES_AT: ${{ vars.SCW_CLEANUP_KEY_EXPIRES_AT }}

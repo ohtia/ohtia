@@ -17,6 +17,7 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
 
 import desktop_probes as probes
+import linux_profiles
 from probe_process import run_owned
 
 ROOT = probes.ROOT
@@ -71,13 +72,10 @@ def check_helpers(tools: dict, installed: Path) -> dict:
 def linux_profile(package_format: str, profile: str | None = None) -> str:
     """Bind trusted maintainer scripts to an explicitly admitted distribution policy."""
     if profile is None:
-        profile = "fedora-44" if package_format == "rpm" else "ubuntu-26.04"
-    expected = {
-        "ubuntu-26.04": "deb",
-        "debian-13": "deb",
-        "fedora-44": "rpm",
-    }
-    if expected.get(profile) != package_format:
+        profile = linux_profiles.fedora()[0] if package_format == "rpm" else "ubuntu-26.04"
+    if profile not in linux_profiles.declared() or (
+        linux_profiles.package_format(profile) != package_format
+    ):
         raise probes.ProbeError("Unsupported distribution/package policy for maintainer scripts.")
     return profile
 
@@ -200,7 +198,7 @@ def package(admission_file: Path, attempt: Path, package_format: str, version: s
     data = probes.admission(admission_file)
     if os.name != "posix" or data["target"] not in {"linux-x64", "linux-arm64"}:
         raise probes.ProbeError("This fixture packages only admitted native Linux targets.")
-    expected_format = "rpm" if data["profile"] == "fedora-44" else "deb"
+    expected_format = linux_profiles.package_format(data["profile"])
     if package_format != expected_format:
         raise probes.ProbeError("Build the declared distribution's native package format.")
     if attempt.resolve() != attempt or attempt.parent != Path(data["scratch_root"]):

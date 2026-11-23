@@ -183,7 +183,7 @@ class AdmissionTests(unittest.TestCase):
             self.admit()
 
     def test_kde_is_a_declared_desktop_of_each_linux_profile(self):
-        for profile in ("ubuntu-26.04", "fedora-44", "debian-13"):
+        for profile in ("ubuntu-26.04", "fedora-44", "fedora-45", "debian-13"):
             with self.subTest(profile=profile):
                 self.data.update({"profile": profile, "desktop": "kde"})
                 self.assertEqual(self.admit()["desktop"], "kde")
@@ -1059,7 +1059,7 @@ print(json.dumps(result))
         result = probes.report([])
         self.assertFalse(result["complete"])
         self.assertEqual(result["qualified_targets"], [])
-        self.assertEqual(len(result["missing_profiles"]), 15)
+        self.assertEqual(len(result["missing_profiles"]), 19)
 
     def test_malformed_required_scope_cannot_report_success_without_native_records(self):
         original = probes.read_json(probes.ROOT / "config/desktop/targets.json")
@@ -1620,7 +1620,7 @@ class ReportTests(unittest.TestCase):
             if tuple(probes.read_json(directory / "admitted.json")[key] for key in probes.SCOPE)
             in required
         ]
-        self.assertEqual(len(records), 15)
+        self.assertEqual(len(records), 19)
         result = probes.report(records)
         self.assertTrue(result["complete"], result["failures"])
         self.assertEqual(result["missing_profiles"], [])
