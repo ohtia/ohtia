@@ -430,13 +430,18 @@ def prepared_record(directory: Path, cell: dict) -> dict:
     }
 
 
+# Quality packages are unsigned development builds. RPM 6, as on Fedora 45, refuses an unsigned
+# package by default; these installs keep the package digest checks and require no signature.
+UNSIGNED_RPM = ("--define", "_pkgverify_level digest")
+
+
 def unpack_package(file: Path, kind: str, destination: Path) -> Path:
     destination.mkdir()
     if kind == "deb":
         command(["sudo", "dpkg", "--install", file])
         return Path("/opt/ohtia")
     if kind == "rpm":
-        command(["sudo", "rpm", "--install", file])
+        command(["sudo", "rpm", "--install", *UNSIGNED_RPM, file])
         return Path("/opt/ohtia")
     if kind == "nsis":
         command([file, "/S", f"/D={destination}"])

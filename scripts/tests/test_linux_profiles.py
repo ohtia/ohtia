@@ -8,11 +8,13 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import linux_profiles  # noqa: E402
 import quality_native  # noqa: E402
+import scaleway_bootstrap  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -138,6 +140,23 @@ class FedoraPackageCheckTests(unittest.TestCase):
                 result = subprocess.run(["sh", "-c", script], check=False)
                 with self.subTest(profile=profile, host=f"{host_id}-{host_version}"):
                     self.assertEqual(result.returncode == 0, accepted)
+
+    def test_unsigned_test_rpms_install_with_digest_checks_only(self):
+        """RPM 6, as on Fedora 45, refuses an unsigned package unless the policy is digest."""
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(quality_native, "command") as command,
+        ):
+            quality_native.unpack_package(Path("ohtia.rpm"), "rpm", Path(directory) / "unpacked")
+        self.assertEqual(
+            command.call_args.args[0],
+            ["sudo", "rpm", "--install", "--define", "_pkgverify_level digest", Path("ohtia.rpm")],
+        )
+        source = (ROOT / "scripts/scaleway_bootstrap.py").read_text()
+        self.assertIn(
+            'run("rpm", "--install", "--define", "_pkgverify_level digest", package)', source
+        )
+        self.assertTrue(callable(scaleway_bootstrap.fedora_profile))
 
     def test_a_cell_without_an_rpm_writes_no_check(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -3632,6 +3632,7 @@
     "test_linux_profiles.FedoraPackageCheckTests.test_each_rpm_accepts_only_its_own_fedora_release",
     "test_linux_profiles.FedoraPackageCheckTests.test_each_rpm_checks_the_release_of_its_own_profile",
     "test_linux_profiles.FedoraPackageCheckTests.test_the_native_fixture_policy_accepts_only_the_profile_release",
+    "test_linux_profiles.FedoraPackageCheckTests.test_unsigned_test_rpms_install_with_digest_checks_only",
     "test_linux_profiles.LinuxProfileTests.test_no_code_names_a_fedora_release",
     "test_linux_profiles.LinuxProfileTests.test_profile_properties_follow_the_distribution",
     "test_linux_profiles.LinuxProfileTests.test_the_manifest_declares_two_consecutive_fedora_releases",

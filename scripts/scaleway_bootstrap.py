@@ -608,7 +608,9 @@ def install() -> None:
     )
     package = str(incoming / build["package"]["file"])
     if fedora_profile(guard["intent"]["profile"]):
-        run("rpm", "--install", package)
+        # The qualification package is unsigned: keep its digest checks without a signature,
+        # which RPM 6 otherwise requires.
+        run("rpm", "--install", "--define", "_pkgverify_level digest", package)
     else:
         run("dpkg", "--install", package)
     source = Path("/home/ohtia/source")
