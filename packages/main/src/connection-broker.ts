@@ -80,6 +80,9 @@ export class ConnectionBroker {
       case "connection.connect":
         finish(this.manager.connect(request.payload.connection, request.payload));
         break;
+      case "connection.replaceKey":
+        finish(this.manager.replaceKey(request.payload.connection, request.payload.key));
+        break;
       case "connection.probe":
         finish(this.manager.probe(request.payload.connection));
         break;

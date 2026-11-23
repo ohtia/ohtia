@@ -5,7 +5,8 @@ import { stagedCommand } from "./staged-command.js";
 import { ComposerController } from "./composer-controller.js";
 import {
   mergeTimeline,
-  chatgptConnection,
+  defaultProviderConnections,
+  isUsagePauseConnection,
   type PauseCounts,
   type ProjectRecord,
   type TimelineSetupProposal,
@@ -181,7 +182,7 @@ export class ConversationController {
   private readonly renames = new Map<string, RenameState>();
   constructor(
     private readonly port: FoundationPort,
-    readonly connections: readonly ProviderDeclaration["connection"][] = [chatgptConnection],
+    readonly connections: readonly ProviderDeclaration["connection"][] = defaultProviderConnections,
     onConversationStarted?: (scope: ResearchScope) => void,
   ) {
     this.activity = new ActivityController(port);
@@ -534,11 +535,13 @@ export class ConversationController {
     task: TimelineTask,
   ): Promise<Outcome<import("@ohtia/contracts").ResearchResult>> {
     const conversationId = this.state.scope.conversationId;
+    if (action === "resume" && !isUsagePauseConnection(task.connection))
+      return failure("invalid_message");
     let result: Outcome<import("@ohtia/contracts").ResearchResult>;
     try {
       result = await (
-        action === "resume"
-          ? this.port.resumeUsagePause(operationId, { connection: task.connection as "chatgpt" })
+        action === "resume" && isUsagePauseConnection(task.connection)
+          ? this.port.resumeUsagePause(operationId, { connection: task.connection })
           : action === "continue"
             ? this.port.continueAllTasks(operationId)
             : task.synthesis
@@ -1131,6 +1134,7 @@ export class ConversationController {
           (old.revision === item.revision &&
             (old.waitingForModels !== item.waitingForModels ||
               old.waitingLimit !== item.waitingLimit ||
+              old.retryNotBeforeAt !== item.retryNotBeforeAt ||
               old.modelUnavailable !== item.modelUnavailable ||
               old.modelName !== item.modelName)));
       if (announce || recoveredChange || introduced.has(item.id))
@@ -1155,11 +1159,17 @@ export class ConversationController {
         completedAgent = item.agentId;
       }
     const replies = new Map(this.state.replies);
-    for (const item of items)
-      if (item.kind === "message" && item.taskId) {
-        replies.delete(item.taskId);
-        this.pendingReplies.delete(item.taskId);
-      }
+    for (const item of items) {
+      const taskId =
+        item.kind === "message"
+          ? item.taskId
+          : item.kind === "task" && item.state === "failed" && item.outcomeReason === "refused"
+            ? item.id
+            : null;
+      if (!taskId) continue;
+      replies.delete(taskId);
+      this.pendingReplies.delete(taskId);
+    }
     this.state = {
       ...this.state,
       items: mergeTimeline(this.state.items, items),

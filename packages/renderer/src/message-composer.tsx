@@ -358,9 +358,12 @@ export function MessageComposer({
                     ? state.destination.declaration.kind === "subscription"
                       ? "taskNotice.destinationPaused.subscription"
                       : "taskNotice.destinationPaused.apiKey"
-                    : state.destination.declaration.kind === "subscription"
-                      ? "composer.subscription"
-                      : "composer.apiKey",
+                    : state.destination.retryNotBeforeAt &&
+                        Date.parse(state.destination.retryNotBeforeAt) > Date.now()
+                      ? "taskNotice.destinationRateWait"
+                      : state.destination.declaration.kind === "subscription"
+                        ? "composer.subscription"
+                        : "composer.apiKey",
                 {
                   service: state.destination.declaration.displayName,
                   ...(state.connectionState === "connected" &&
@@ -372,7 +375,11 @@ export function MessageComposer({
               )}
           {!state.destination.modelUnavailable &&
             state.connectionState === "connected" &&
-            !state.usagePaused && (
+            !state.usagePaused &&
+            !(
+              state.destination.retryNotBeforeAt &&
+              Date.parse(state.destination.retryNotBeforeAt) > Date.now()
+            ) && (
               <>
                 {" · "}
                 {message(locale, "composer.destinationLimit", {

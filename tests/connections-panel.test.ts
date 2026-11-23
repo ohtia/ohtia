@@ -45,12 +45,14 @@ async function mount(
   snapshot: Partial<ConnectionSnapshot> = {},
   locale: (typeof supportedLocales)[number] = "en-US",
   initialTimeout = false,
+  kind: "subscription" | "api_key" = "subscription",
 ) {
   let current = { ...initial, ...snapshot };
   let receive!: (notice: Outcome<ConnectionEvent>) => void;
   const call = <T>(value: Outcome<T>) => ({ result: Promise.resolve(value), cancel: vi.fn() });
   const dispose = vi.fn();
   const connect = vi.fn(() => call({ ok: true, value: current }));
+  const replaceKey = vi.fn(() => call({ ok: true, value: current }));
   const disconnect = vi.fn(() => call({ ok: true, value: current }));
   const probe = vi.fn(() => call({ ok: true, value: current }));
   const list = vi.fn(() =>
@@ -84,6 +86,7 @@ async function mount(
     readConnection: read,
     subscribeConnection: subscribe,
     connectConnection: connect,
+    replaceConnectionKey: replaceKey,
     disconnectConnection: disconnect,
     probeConnection: probe,
     listConnectionModels: list,
@@ -93,12 +96,21 @@ async function mount(
   const root = createRoot(container);
   roots.push(root);
   await act(async () =>
-    root.render(createElement(ConnectionsPanel, { port, locale, available: true })),
+    root.render(
+      createElement(ConnectionsPanel, {
+        port,
+        locale,
+        available: true,
+        kind,
+        connection: current.connection,
+      }),
+    ),
   );
   return {
     container,
     port,
     connect,
+    replaceKey,
     disconnect,
     probe,
     list,
@@ -1094,4 +1106,135 @@ it("waits for a model choice before changing the service for an agent", async ()
   expect(josefa.textContent).toContain(
     "Another window changed Model for Josefa to Use the default.",
   );
+});
+
+it("clears an API key on Escape and sends the masked value only on form submit", async () => {
+  const f = await mount({ connection: "anthropic_api_key" }, "en-US", false, "api_key");
+  const add = "Add Synthetic service API key";
+  await f.click(add);
+  const field = f.container.querySelector<HTMLInputElement>('input[type="password"]')!;
+  expect(document.activeElement).toBe(field);
+  expect(f.container.textContent).not.toContain(add);
+  field.value = "synthetic-discard";
+  await act(async () =>
+    field.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    ),
+  );
+  expect(field.value).toBe("");
+  expect(f.connect).not.toHaveBeenCalled();
+  expect(document.activeElement?.textContent).toBe(add);
+  await f.click(add);
+  const key = f.container.querySelector<HTMLInputElement>('input[type="password"]')!;
+  key.value = "synthetic-submit";
+  const feedback = f.container.querySelector(".connection-feedback")!;
+  const actions = key.closest(".connection-actions")!;
+  f.connect.mockReturnValueOnce({
+    result: Promise.resolve({
+      ok: true,
+      value: {
+        ...initial,
+        connection: "anthropic_api_key",
+        state: "connecting",
+        checking_key: true,
+      },
+    }),
+    cancel: vi.fn(),
+  });
+  await act(async () => key.form!.requestSubmit());
+  expect(f.connect).toHaveBeenCalledExactlyOnceWith("anthropic_api_key", {
+    key: "synthetic-submit",
+  });
+  expect(key.value).toBe("");
+  expect(f.container.querySelector('input[type="password"]')).toBeNull();
+  expect(f.container.querySelector(".connection-feedback")).toBe(feedback);
+  expect(feedback.getAttribute("role")).toBe("status");
+  expect(feedback.textContent).toContain("Checking the key with Synthetic service…");
+  expect(document.activeElement).toBe(actions);
+  await f.event({ state: "disconnected", checking_key: false, reason: "key_not_permitted" });
+  expect(feedback.textContent).not.toContain("Checking the key");
+  expect(document.activeElement?.textContent).toBe(add);
+  expect(f.container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Synthetic service didn’t let this key see its models.",
+  );
+});
+it("keeps focus outside the key-entry row when a check finishes", async () => {
+  const f = await mount({ connection: "anthropic_api_key" }, "en-US", false, "api_key");
+  const outside = document.createElement("button");
+  outside.textContent = "Outside Settings";
+  document.body.append(outside);
+  await f.click("Add Synthetic service API key");
+  const key = f.container.querySelector<HTMLInputElement>('input[type="password"]')!;
+  key.value = "synthetic-submit";
+  f.connect.mockReturnValueOnce({
+    result: Promise.resolve({
+      ok: true,
+      value: {
+        ...initial,
+        connection: "anthropic_api_key",
+        state: "connecting",
+        checking_key: true,
+      },
+    }),
+    cancel: vi.fn(),
+  });
+  await act(async () => key.form!.requestSubmit());
+  outside.focus();
+  await f.event({ state: "disconnected", checking_key: false, reason: "key_rejected" });
+  expect(f.container.querySelector('[role="alert"]')?.textContent).toContain("rejected this key");
+  expect(document.activeElement).toBe(outside);
+
+  await f.event({ state: "connected", reason: null });
+  const test = [...f.container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Test connection",
+  )!;
+  test.focus();
+  await f.event({ state: "expired" });
+  expect(f.container.textContent).toContain("Synthetic service no longer accepts this key.");
+  expect(document.activeElement?.textContent).toBe("Replace key");
+
+  await f.event({ state: "connected" });
+  await f.click("Replace key");
+  const openField = f.container.querySelector<HTMLInputElement>('input[type="password"]')!;
+  openField.value = "synthetic-unsent";
+  await f.event({ state: "expired" });
+  expect(document.activeElement).toBe(openField);
+  expect(openField.value).toBe("synthetic-unsent");
+  outside.focus();
+  await f.event({ state: "connected" });
+  expect(document.activeElement).toBe(outside);
+  expect(f.replaceKey).not.toHaveBeenCalled();
+});
+it("keeps API-key disconnect confirmation inline and places initial focus on Keep connection", async () => {
+  const f = await mount(
+    {
+      connection: "anthropic_api_key",
+      state: "connected",
+      connected_at: "2026-11-22T10:00:00.000Z",
+    },
+    "en-US",
+    false,
+    "api_key",
+  );
+  expect(f.container.textContent).toContain("Synthetic service · API key · Connected Nov 22, 2026");
+  await f.click("Disconnect Synthetic service");
+  const group = f.container.querySelector('[role="group"]')!;
+  expect(group.getAttribute("aria-labelledby")).toBeTruthy();
+  expect(group.getAttribute("aria-describedby")).toBeTruthy();
+  expect(document.activeElement?.textContent).toBe("Keep connection");
+  expect(f.container.querySelector("dialog")).toBeNull();
+  await f.click("Keep connection");
+  expect(f.disconnect).not.toHaveBeenCalled();
+  await f.click("Replace key");
+  const field = f.container.querySelector<HTMLInputElement>('input[type="password"]')!;
+  field.value = "synthetic-replacement";
+  await act(async () => field.form!.requestSubmit());
+  expect(f.replaceKey).toHaveBeenCalledExactlyOnceWith(
+    "anthropic_api_key",
+    "synthetic-replacement",
+  );
+  expect(field.value).toBe("");
+  await f.click("Disconnect Synthetic service");
+  await f.click("Disconnect Synthetic service");
+  expect(f.disconnect).toHaveBeenCalledExactlyOnceWith("anthropic_api_key");
 });

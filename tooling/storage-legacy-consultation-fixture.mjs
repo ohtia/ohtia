@@ -102,7 +102,43 @@ import {
   effortColumns,
 } from "../packages/utility/src/migrations/0034_agent_preferences.mjs";
 
+import {
+  attempts as usageAttempts,
+  objects as replyUsageObjects,
+} from "../packages/utility/src/migrations/0031_reply_usage.mjs";
+import {
+  tables as usagePauseTables,
+  objects as usagePauseObjects,
+} from "../packages/utility/src/migrations/0009_usage_limit_pauses.mjs";
+import { addColumns } from "../packages/utility/src/migrations/0034_agent_preferences.mjs";
+
+const preferenceAttemptFields =
+  attemptFields + ",usage_report_deadline_at,account_fingerprint,requested_effort,observed_effort";
+export const preAnthropicOutcomesSql = `
+  PRAGMA legacy_alter_table=ON;
+  ALTER TABLE attempts RENAME TO attempts_with_anthropic_outcomes;
+  ${addColumns(usageAttempts, effortColumns, ",\n    UNIQUE (task_id,attempt_number)")};
+  INSERT INTO attempts (rowid,${preferenceAttemptFields})
+    SELECT rowid,${preferenceAttemptFields} FROM attempts_with_anthropic_outcomes ORDER BY rowid;
+  DROP TABLE attempts_with_anthropic_outcomes;
+  ${durableTaskObjects.attempts_one_active};
+  ${durableTaskObjects.attempts_initial};
+  ${replyUsageObjects.attempts_changes};
+  ${durableTaskObjects.attempts_delete};
+  ALTER TABLE usage_limit_pauses RENAME TO usage_limit_pauses_with_anthropic;
+  ${usagePauseTables.usage_limit_pauses};
+  INSERT INTO usage_limit_pauses SELECT * FROM usage_limit_pauses_with_anthropic;
+  DROP TABLE usage_limit_pauses_with_anthropic;
+  ${Object.values(usagePauseObjects).join(";\n")};
+  ALTER TABLE provider_models DROP COLUMN max_input;
+  DELETE FROM kysely_migration WHERE name='0035_anthropic_outcomes';
+  DELETE FROM ohtia_migration_artifacts WHERE name='0035_anthropic_outcomes';
+  PRAGMA legacy_alter_table=OFF;
+  PRAGMA user_version=34;
+`;
+
 export const preAgentPreferencesSql = `
+  ${preAnthropicOutcomesSql}
   PRAGMA legacy_alter_table=ON;
   ${Object.keys(agentPreferences)
     .filter((name) => !name.startsWith("contributions_"))

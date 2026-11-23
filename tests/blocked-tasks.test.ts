@@ -700,7 +700,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 34,
+          target: 35,
         }),
       );
       await f.store.retry();
@@ -753,7 +753,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 34,
+          target: 35,
         }),
       );
       await exhausted.store.retry();
@@ -781,7 +781,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
                   : sourceKind === "limits"
                     ? 12
                     : 8,
-          target: 34,
+          target: 35,
         }),
       );
       await f.store.retry();
@@ -1028,7 +1028,7 @@ describe("reply control composed with connection and usage pauses", () => {
       if (recovery) {
         fs.writeFileSync(
           path.join(f.root, "migration-pending.json"),
-          JSON.stringify({ version: 1, operation: "composed-recovery", source: 9, target: 34 }),
+          JSON.stringify({ version: 1, operation: "composed-recovery", source: 9, target: 35 }),
         );
         await f.store.retry();
         seedDefaultModel(f.raw, "test-model");
@@ -1046,13 +1046,14 @@ describe("reply control composed with connection and usage pauses", () => {
       expect(value(await f.resume("resume-after-reply-migration"))).toEqual(resumed);
       expect(await f.prepare()).not.toBeNull();
       const upgraded = f.raw();
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(34);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(35);
       expect(
         upgraded
-          .prepare("SELECT name FROM kysely_migration ORDER BY name DESC LIMIT 22")
+          .prepare("SELECT name FROM kysely_migration ORDER BY name DESC LIMIT 23")
           .pluck()
           .all(),
       ).toEqual([
+        "0035_anthropic_outcomes",
         "0034_agent_preferences",
         "0033_entry_text_preference",
         "0032_source_quote_preference",
@@ -1099,7 +1100,7 @@ it.each(["continue-all", "resume-requests"] as const)(
       await f.store.close();
       fs.writeFileSync(
         path.join(f.root, "migration-pending.json"),
-        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 34 }),
+        JSON.stringify({ version: 1, operation: "control-acknowledgement", source: 9, target: 35 }),
       );
       await f.store.retry();
       seedDefaultModel(f.raw, "test-model");

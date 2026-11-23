@@ -1004,7 +1004,17 @@ it("exposes connection calls and revokes bounded logical subscriptions on reconn
               nextCursor: 0,
               hasMore: false,
             }
-          : snapshot;
+          : {
+              ...snapshot,
+              connection: request.payload.connection,
+              ...(request.operation === "connection.replaceKey"
+                ? {
+                    state: "connected",
+                    checking_key: true,
+                    connected_at: "2026-11-22T12:00:00.000Z",
+                  }
+                : {}),
+            };
     h.ipcRenderer.emit(
       desktopChannels.reply,
       {},
@@ -1014,6 +1024,7 @@ it("exposes connection calls and revokes bounded logical subscriptions on reconn
   for (const call of [
     h.bridge.foundation.readConnection("fake"),
     h.bridge.foundation.connectConnection("fake"),
+    h.bridge.foundation.replaceConnectionKey("anthropic_api_key", "synthetic-replacement"),
     h.bridge.foundation.disconnectConnection("fake"),
     h.bridge.foundation.probeConnection("fake"),
     h.bridge.foundation.listConnectionModels({
@@ -1024,6 +1035,14 @@ it("exposes connection calls and revokes bounded logical subscriptions on reconn
     }),
   ])
     expect((await call.result).ok).toBe(true);
+  expect(
+    h.ipcRenderer.send.mock.calls.map(([, text]: [string, string]) => JSON.parse(text)),
+  ).toContainEqual(
+    expect.objectContaining({
+      operation: "connection.replaceKey",
+      payload: { connection: "anthropic_api_key", key: "synthetic-replacement" },
+    }),
+  );
   const listener = vi.fn();
   const first = h.bridge.foundation.subscribeConnection("fake", listener);
   expect((await first.ready).ok).toBe(true);

@@ -45,6 +45,7 @@ interface Stream {
 export class DurableProvider {
   private readonly streams = new Map<string, Stream>();
   private disposed = false;
+  private retryTimer: ReturnType<typeof setTimeout> | undefined;
   private exitControl: ApplicationExitControl | undefined;
   private exitCancelledFor: string | undefined;
   private exitFailedFor: string | undefined;
@@ -93,6 +94,8 @@ export class DurableProvider {
       readonly storage: DurableStore;
       readonly context: TaskContext;
       readonly send: (text: string) => void;
+      readonly retryReady?: () => void;
+      readonly rateLimitChanged?: () => void;
       readonly reply?: (taskId: string, sequence: number, text: string) => void;
       readonly monotonic?: () => number;
       readonly wallClock?: () => number;
@@ -344,7 +347,11 @@ export class DurableProvider {
       for (const attempt of stopping.value) this.interrupt(attempt);
       while (this.canPump() && !this.exitControl) {
         const prepared = await this.options.storage.prepareTask();
-        if (!prepared.ok || !prepared.value) return;
+        if (!prepared.ok) return;
+        if (!prepared.value) {
+          if (this.options.retryReady) await this.scheduleRetry();
+          return;
+        }
         const message = prepared.value.dispatch;
         const policy = operationPolicy(
           message.request.operation,
@@ -391,6 +398,14 @@ export class DurableProvider {
     } finally {
       await this.publishExit();
     }
+  }
+  private async scheduleRetry(): Promise<void> {
+    clearTimeout(this.retryTimer);
+    const deadline = await this.options.storage.providerRetryDeadline();
+    if (!deadline.ok || !deadline.value || this.disposed) return;
+    const delay = Math.min(Math.max(0, Date.parse(deadline.value) - this.wall()), 2_147_483_647);
+    this.retryTimer = setTimeout(() => this.options.retryReady?.(), delay);
+    this.retryTimer.unref();
   }
   interrupt(attempt: string): void {
     const stream = this.streams.get(attempt);
@@ -511,6 +526,13 @@ export class DurableProvider {
       const result = saved.value.result;
       if (!result) throw new Error("Terminal provider outcome was not recorded.");
 
+      this.options.context.providerMessages?.delete(stream.taskId);
+      if (result.status === "failed" && result.dispatched) {
+        if (result.reason === "request_rejected" && result.provider_message)
+          this.options.context.providerMessages?.set(stream.taskId, result.provider_message);
+        if (result.reason === "rate_limited" && result.retry_not_before_at)
+          this.options.rateLimitChanged?.();
+      }
       this.finished(message.attempt, stream, result, now);
       await this.pump();
     }
@@ -520,7 +542,10 @@ export class DurableProvider {
     this.report(stream.operationId, {
       type: "finished",
       attempt,
-      result,
+      result:
+        result.status === "failed" && result.dispatched && result.provider_message
+          ? { status: "failed", reason: result.reason, dispatched: true }
+          : result,
       usage: stream.usage,
       transfer: stream.transfer,
       events: stream.sequence,
@@ -537,6 +562,7 @@ export class DurableProvider {
   }
   dispose(): void {
     this.disposed = true;
+    clearTimeout(this.retryTimer);
     this.streams.clear();
   }
 }

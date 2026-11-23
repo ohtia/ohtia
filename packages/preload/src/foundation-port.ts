@@ -645,6 +645,7 @@ export function createFoundationPort(
     readConnection: (connection) => call("connection.read", { connection }),
     connectConnection: (connection, options) =>
       call("connection.connect", { connection, ...options }),
+    replaceConnectionKey: (connection, key) => call("connection.replaceKey", { connection, key }),
     disconnectConnection: (connection) => call("connection.disconnect", { connection }),
     probeConnection: (connection) => call("connection.probe", { connection }),
     listConnectionModels: (input) => call("connection.listModels", input),

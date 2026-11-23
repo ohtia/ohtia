@@ -118,7 +118,10 @@ import {
   failure,
   invalidPlan,
   invalidPlanChange,
-  connectionInferenceLimits,
+  connectionInferenceLimit,
+  isUsagePauseConnection,
+  type UsagePauseConnection,
+  type ProviderFailureReason,
   isProviderModelSlug,
   type DiagnosticEvent,
   providerMessageVersion,
@@ -182,22 +185,7 @@ export type AttemptState =
   | "cancelled"
   | "uncertain";
 export type AttemptReason =
-  | "usage_limit_reached"
-  | "not_eligible"
-  | "connection_expired"
-  | "provider_unavailable"
-  | "request_rejected"
-  | "provider_error"
-  | "invalid_output"
-  | "output_limit_exceeded"
-  | "connection_lost"
-  | "empty_reply"
-  | "input_too_large"
-  | "permit_expired"
-  | "inactivity_timeout"
-  | "deadline_exceeded"
-  | "cancelled_by_researcher"
-  | "service_restarted";
+  ProviderFailureReason | "input_too_large" | "cancelled_by_researcher" | "service_restarted";
 export interface TaskRow {
   id: Uint8Array;
   project_id: Uint8Array;
@@ -231,6 +219,8 @@ export interface AttemptRow extends ProviderUsage {
   service_generation: string;
   state: AttemptState;
   outcome_reason: AttemptReason | null;
+  refusal_category: Generated<string | null>;
+  retry_not_before_at: Generated<string | null>;
   requested_model: string | null;
   observed_model: string | null;
   requested_effort: Generated<string | null>;
@@ -249,7 +239,7 @@ export type RecordedTaskEvent =
 
 export interface UsagePauseRow {
   id: Uint8Array;
-  connection: "chatgpt";
+  connection: UsagePauseConnection;
   source_attempt_id: Uint8Array;
   paused_at: string;
   resumed_at: string | null;
@@ -288,6 +278,7 @@ export interface TaskContext {
   readonly mode: RuntimeMode;
   readonly generation: string;
   readonly connections: ServiceConnections;
+  readonly providerMessages?: Map<string, string>;
   readonly requestModelRefresh?: (connection: string) => void;
   readonly resolveAgentConnection?: (agent: ReplyAgent) => string;
 }
@@ -1611,12 +1602,24 @@ export class TaskTransaction {
     this.touch(conversation);
   }
   private async usagePause(connection: string) {
+    if (!isUsagePauseConnection(connection)) return;
     return this.db
       .selectFrom("usage_limit_pauses")
       .selectAll()
-      .where("connection", "=", connection as "chatgpt")
+      .where("connection", "=", connection)
       .where("resumed_at", "is", null)
       .executeTakeFirst();
+  }
+  async retryNotBefore(connection: string): Promise<string | undefined> {
+    if (connection !== "anthropic_api_key") return;
+    const row = await this.db
+      .selectFrom("attempts as a")
+      .innerJoin("tasks as t", "t.id", "a.task_id")
+      .select(({ fn }) => fn.max<string>("a.retry_not_before_at").as("deadline"))
+      .where("a.retry_not_before_at", ">", this.now)
+      .where("t.connection", "=", connection)
+      .executeTakeFirst();
+    return row?.deadline ?? undefined;
   }
   private async connectionBlock(connection: string): Promise<BlockingReason | null> {
     if (!this.context.connections.available(connection)) return "connection_disabled";
@@ -1823,7 +1826,7 @@ export class TaskTransaction {
       }
     }
   }
-  async resumeUsage(connection: "chatgpt", operationId: string): Promise<void> {
+  async resumeUsage(connection: UsagePauseConnection, operationId: string): Promise<void> {
     const pause = await this.usagePause(connection);
     if (!pause) return;
     await this.db
@@ -2391,7 +2394,9 @@ export class TaskTransaction {
           eb(
             "connection",
             "not in",
-            this.context.mode === "development" ? ["chatgpt", "fake"] : ["chatgpt"],
+            this.context.mode === "development"
+              ? ["chatgpt", "anthropic_api_key", "fake"]
+              : ["chatgpt", "anthropic_api_key"],
           ),
         ]),
       )
@@ -2401,9 +2406,7 @@ export class TaskTransaction {
   async waitingLimit(connection: string): Promise<number | null> {
     const { limit, occupied } = await this.capacity();
     if (occupied.length >= limit) return limit;
-    const connectionLimit = Object.hasOwn(connectionInferenceLimits, connection)
-      ? (connectionInferenceLimits[connection] ?? 1)
-      : 1;
+    const connectionLimit = connectionInferenceLimit(connection, limit);
     return occupied.filter((other) => other.connection === connection).length >= connectionLimit
       ? connectionLimit
       : null;
@@ -2458,6 +2461,7 @@ export class TaskTransaction {
       .orderBy(sql`tasks.rowid`)
       .execute();
     const queuedConversations = new Set<string>();
+    const anthropicRetry = await this.retryNotBefore("anthropic_api_key");
     for (const task of candidates) {
       const conversationKey = identifier(task.conversation_id);
       if (task.kind === "reply" || task.kind === "consultation") {
@@ -2485,10 +2489,8 @@ export class TaskTransaction {
         this.context.connections.awaitingModels(task.connection)
       )
         continue;
-      // ChatGPT declares three concurrent requests. Other adapters retain the ADR-0011 default.
-      const connectionLimit = Object.hasOwn(connectionInferenceLimits, task.connection)
-        ? (connectionInferenceLimits[task.connection] ?? 1)
-        : 1;
+      if (task.connection === "anthropic_api_key" && anthropicRetry) continue;
+      const connectionLimit = connectionInferenceLimit(task.connection, limit);
       if (
         occupied.filter((other) => other.connection === task.connection).length >= connectionLimit
       )
@@ -3249,6 +3251,14 @@ export class TaskTransaction {
       .set({
         state,
         outcome_reason: reason,
+        refusal_category:
+          result.status === "failed" && result.dispatched && reason === "refused"
+            ? (result.refusal_category ?? null)
+            : null,
+        retry_not_before_at:
+          result.status === "failed" && result.dispatched && reason === "rate_limited"
+            ? (result.retry_not_before_at ?? null)
+            : null,
         finished_at: this.now,
         usage_report_deadline_at: usageDeadline(this.now),
         ...(notDispatched
@@ -3297,13 +3307,16 @@ export class TaskTransaction {
         if (disconnected) blockingReason = "connection_disabled";
       }
     }
-    if (reason === "usage_limit_reached" && task.connection === "chatgpt") {
+    const pausesConnection =
+      (reason === "usage_limit_reached" && task.connection === "chatgpt") ||
+      (reason === "billing_limit_reached" && task.connection === "anthropic_api_key");
+    if (pausesConnection && isUsagePauseConnection(task.connection)) {
       if (!(await this.usagePause(task.connection))) {
         await this.db
           .insertInto("usage_limit_pauses")
           .values({
             id: newId(),
-            connection: "chatgpt",
+            connection: task.connection,
             source_attempt_id: attempt.id,
             paused_at: this.now,
             resumed_at: null,
@@ -3325,7 +3338,11 @@ export class TaskTransaction {
       if (!text) await this.replaceWaiting(task.conversation_id);
     }
     let savedReplyAgent: ReplyAgent | undefined;
-    if (text && !notDispatched) {
+    if (
+      text &&
+      !notDispatched &&
+      !(event.result.status === "failed" && event.result.reason === "refused")
+    ) {
       if (task.reply_position === null) throw new Error("Running task lacks a reply reservation.");
       const contributor =
         task.kind === "contribution" && task.contribution_id
@@ -3557,8 +3574,7 @@ export class TaskTransaction {
         agentId: savedReplyAgent ?? replyAgent(task.operation),
       });
     await this.change(task, { state: taskState, blocking_reason: blockingReason });
-    if (reason === "usage_limit_reached" && task.connection === "chatgpt")
-      await this.reconcileConnections();
+    if (pausesConnection) await this.reconcileConnections();
     this.diagnostics.push({
       event_name:
         taskState === "completed"

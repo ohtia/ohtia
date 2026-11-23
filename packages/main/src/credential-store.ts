@@ -8,12 +8,52 @@ export const credentialAccounts = [
   "chatgpt-session-key",
   "chatgpt-registration",
   "anthropic-api-key",
+  "anthropic-api-key-dates",
   "openai-api-key",
 ] as const;
 export type CredentialAccount = (typeof credentialAccounts)[number];
 export interface StoredSession {
   readonly credential: string;
   readonly reason: Extract<ConnectionReason, "plan_use_not_allowed" | "sign_in_rejected"> | null;
+}
+export interface StoredApiKey {
+  readonly key: string;
+  readonly instance: string;
+  readonly connectedAt?: string;
+}
+type ApiKeyAccount = Extract<CredentialAccount, "anthropic-api-key">;
+function decodeApiKey(text: string): Omit<StoredApiKey, "connectedAt"> | undefined {
+  try {
+    const value = JSON.parse(text) as Partial<StoredApiKey> | null;
+    if (
+      value &&
+      typeof value.key === "string" &&
+      /^[!-~]{1,1024}$/.test(value.key) &&
+      typeof value.instance === "string" &&
+      /^[0-9a-f]{32}$/.test(value.instance)
+    )
+      return { key: value.key, instance: value.instance };
+  } catch {
+    // Corrupt entries cannot authorize a request.
+  }
+  return undefined;
+}
+function keyDates(text: string | null): Record<string, string> {
+  try {
+    const value: unknown = JSON.parse(text ?? "{}");
+    if (value && typeof value === "object" && !Array.isArray(value))
+      return Object.fromEntries(
+        Object.entries(value).filter(
+          ([instance, date]) =>
+            /^[0-9a-f]{32}$/.test(instance) &&
+            typeof date === "string" &&
+            Number.isFinite(Date.parse(date)),
+        ),
+      );
+  } catch {
+    // Connection dates are optional presentation metadata if the entry is damaged.
+  }
+  return {};
 }
 export type CredentialRead<T> =
   | { readonly status: "stored"; readonly value: T }
@@ -106,6 +146,59 @@ export class CredentialStore {
       try {
         await this.entry(account).deleteCredential();
         return { status: "stored" };
+      } catch {
+        return { status: "unavailable" };
+      }
+    });
+  }
+  readApiKey(account: ApiKeyAccount): Promise<CredentialRead<StoredApiKey>> {
+    return this.serial(async () => {
+      try {
+        const raw = await this.entry(account).getPassword();
+        if (raw === null) return { status: "absent" };
+        const stored = decodeApiKey(raw);
+        if (!stored) return { status: "unusable" };
+        const dates = keyDates(await this.entry("anthropic-api-key-dates").getPassword());
+        const connectedAt = dates[stored.instance];
+        return { status: "stored", value: { ...stored, ...(connectedAt ? { connectedAt } : {}) } };
+      } catch {
+        return { status: "unavailable" };
+      }
+    });
+  }
+  deleteApiKey(account: ApiKeyAccount): Promise<CredentialWrite> {
+    return this.serial(async () => {
+      try {
+        await this.entry(account).deleteCredential();
+        await this.entry("anthropic-api-key-dates")
+          .deleteCredential()
+          .catch(() => {});
+        return { status: "stored" };
+      } catch {
+        return { status: "unavailable" };
+      }
+    });
+  }
+  writeApiKey(account: ApiKeyAccount, key: string): Promise<CredentialRead<StoredApiKey>> {
+    return this.serial(async () => {
+      try {
+        const entry = this.entry(account);
+        const raw = await entry.getPassword();
+        const previous = raw === null ? undefined : decodeApiKey(raw);
+        const dates = this.entry("anthropic-api-key-dates");
+        const previousDate = previous && keyDates(await dates.getPassword())[previous.instance];
+        const instance = randomBytes(16).toString("hex");
+        const connectedAt = new Date().toISOString();
+        // Prepare both dates before replacing the key, so a failed replacement leaves
+        // the old key and date usable. The instance identifies the committed key.
+        await dates.setPassword(
+          JSON.stringify({
+            ...(previous && previousDate ? { [previous.instance]: previousDate } : {}),
+            [instance]: connectedAt,
+          }),
+        );
+        await entry.setPassword(JSON.stringify({ key, instance }));
+        return { status: "stored", value: { key, instance, connectedAt } };
       } catch {
         return { status: "unavailable" };
       }

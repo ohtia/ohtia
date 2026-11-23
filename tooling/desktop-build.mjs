@@ -233,31 +233,37 @@ export async function buildDesktop(root, { development = false } = {}) {
     );
     notices.push({ component, license: metadata.license });
   }
-  // Follow only the installed parser runtime graph; type-only packages ship no executable code.
-  const markdownSeen = new Set();
-  function markdownNotice(component, resolver) {
-    if (markdownSeen.has(component) || component.startsWith("@types/")) return;
-    markdownSeen.add(component);
-    let source = path.dirname(resolver.resolve(component));
+  // Follow the installed runtime graph of the bundled parser and provider SDK.
+  const bundledSeen = new Set();
+  function bundledNotice(component, resolver, bundledDependencies) {
+    if (bundledSeen.has(component) || component.startsWith("@types/")) return;
+    bundledSeen.add(component);
+    let source;
+    try {
+      source = path.dirname(resolver.resolve(component + "/package.json"));
+    } catch {
+      source = path.dirname(resolver.resolve(component));
+    }
     while (!fs.existsSync(path.join(source, "package.json"))) {
       const parent = path.dirname(source);
-      if (source === parent) throw new Error("Missing Markdown dependency metadata.");
+      if (source === parent) throw new Error("Missing bundled dependency metadata.");
       source = parent;
     }
     const metadata = JSON.parse(fs.readFileSync(path.join(source, "package.json"), "utf8"));
     if (metadata.name !== component || typeof metadata.license !== "string")
-      throw new Error("Invalid Markdown dependency notice.");
+      throw new Error("Invalid bundled dependency notice.");
     const license = ["license", "license.md", "LICENSE", "LICENSE.md"].find((name) =>
       fs.existsSync(path.join(source, name)),
     );
-    if (!license) throw new Error("Missing Markdown dependency license.");
+    if (!license) throw new Error("Missing bundled dependency license.");
     fs.copyFileSync(
       path.join(source, license),
       path.join(licenses, `${component.replaceAll("/", "-")}-LICENSE`),
     );
     notices.push({ component, license: metadata.license });
     const next = createRequire(path.join(source, "package.json"));
-    for (const name of Object.keys(metadata.dependencies ?? {})) markdownNotice(name, next);
+    for (const name of bundledDependencies ?? Object.keys(metadata.dependencies ?? {}))
+      bundledNotice(name, next);
   }
   const rendererResolver = createRequire(path.join(root, "packages/renderer/package.json"));
   for (const component of [
@@ -265,7 +271,10 @@ export async function buildDesktop(root, { development = false } = {}) {
     "micromark-extension-gfm-table",
     "mdast-util-gfm-table",
   ])
-    markdownNotice(component, rendererResolver);
+    bundledNotice(component, rendererResolver);
+  // Main imports the base client and the Models and Messages resources. Webhooks and schema helper
+  // dependencies belong to SDK resources that are outside the installed main graph.
+  bundledNotice("@anthropic-ai/sdk", mainRequire, ["@opentelemetry/api"]);
   const fonts = JSON.parse(
     fs.readFileSync(path.join(root, "packages/renderer/fonts/manifest.json"), "utf8"),
   );

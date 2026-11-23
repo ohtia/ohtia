@@ -298,6 +298,7 @@ function serviceFixture(mode: "installed" | "development" = "installed") {
     readExecutionLimitsReceipt: vi.fn(async () => ({ ok: true, value: { state: "not_found" } })),
     stoppingAttempts: vi.fn(async () => ({ ok: true, value: [] })),
     prepareTask: vi.fn(async () => ({ ok: true, value: null })),
+    providerRetryDeadline: vi.fn(async () => ({ ok: true, value: null })),
     readAppearance: vi.fn(async () => ({ ok: true, value })),
     replaceAppearance: vi.fn(async () => ({ ok: true, value })),
     readReceipt: vi.fn(async () => ({ ok: true, value: { state: "absent" } })),

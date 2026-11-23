@@ -1,4 +1,10 @@
 import {
+  tables as anthropicTables,
+  objects as anthropicObjects,
+  maxInput as providerMaxInput,
+  up as anthropicOutcomes,
+} from "./migrations/0035_anthropic_outcomes.mjs";
+import {
   up as agentPreferences,
   tables as agentPreferenceTables,
   objects as agentPreferenceObjects,
@@ -409,6 +415,7 @@ const names = [
   "0032_source_quote_preference",
   "0033_entry_text_preference",
   "0034_agent_preferences",
+  "0035_anthropic_outcomes",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -795,15 +802,17 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ? graphTasks
                 : consultationTasks
             : revision >= 25 && name === "attempts"
-              ? revision >= 31
-                ? revision >= 34
-                  ? addColumns(
-                      usageAttempts,
-                      effortColumns,
-                      ",\n    UNIQUE (task_id,attempt_number)",
-                    )
-                  : usageAttempts
-                : synthesisTables.attempts
+              ? revision >= 35
+                ? anthropicTables.attempts
+                : revision >= 31
+                  ? revision >= 34
+                    ? addColumns(
+                        usageAttempts,
+                        effortColumns,
+                        ",\n    UNIQUE (task_id,attempt_number)",
+                      )
+                    : usageAttempts
+                  : synthesisTables.attempts
               : revision >= 10 && name === "tasks"
                 ? definition.replace(
                     ",\n    CHECK ((state=",
@@ -853,12 +862,28 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
       : revision >= 21
         ? Object.entries(consultationTables)
         : []),
-    ...(revision >= 9 ? Object.entries(usageTables) : []),
+    ...(revision >= 35
+      ? [["usage_limit_pauses", anthropicTables.usage_limit_pauses]]
+      : revision >= 9
+        ? Object.entries(usageTables)
+        : []),
     ...(revision >= 11 ? Object.entries(runTables) : []),
     ...(revision >= 13 ? [["execution_limits_receipts", executionLimitsReceiptsSchema]] : []),
     ...(revision >= 27 ? Object.entries(handoffTables) : []),
     ...(revision >= 31 ? [["usage_reports", usageReports]] : []),
-    ...(revision >= 34 ? Object.entries(agentPreferenceTables) : []),
+    ...(revision >= 34
+      ? Object.entries({
+          ...agentPreferenceTables,
+          ...(revision >= 35
+            ? {
+                provider_models: agentPreferenceTables.provider_models.replace(
+                  ",\n    PRIMARY KEY",
+                  ", " + providerMaxInput + ",\n    PRIMARY KEY",
+                ),
+              }
+            : {}),
+        })
+      : []),
   ]) {
     const row = db
       .prepare("SELECT sql FROM sqlite_schema WHERE name=? AND type='table'")
@@ -902,6 +927,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 30 ? researcherMemoryObjects : {}),
                 ...(revision >= 31 ? replyUsageObjects : {}),
                 ...(revision >= 34 ? agentPreferenceObjects : {}),
+                ...(revision >= 35 ? anthropicObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1270,7 +1296,7 @@ export class DurableStore {
     const operation = randomUUID();
     writeSynced(this.gate, { version: 1, operation, source, target }, retrySource);
     await this.checkpoint(db, source, operation);
-    const rebuildsTables = source < 34;
+    const rebuildsTables = source < 35;
     const selected = this.database;
     if (!selected) throw new Error("Missing migration connection.");
     await selected.connection().execute(async (connection) => {
@@ -1325,6 +1351,7 @@ export class DurableStore {
                 "0032_source_quote_preference": { up: sourceQuotePreference },
                 "0033_entry_text_preference": { up: entryTextPreference },
                 "0034_agent_preferences": { up: agentPreferences },
+                "0035_anthropic_outcomes": { up: anthropicOutcomes },
               }),
           },
         });
@@ -2899,6 +2926,9 @@ export class DurableStore {
   }
   reconcileTaskConnections(): Promise<Outcome<void>> {
     return this.taskTransaction((tasks) => tasks.reconcileConnections());
+  }
+  providerRetryDeadline(): Promise<Outcome<string | undefined>> {
+    return this.taskTransaction((tasks) => tasks.retryNotBefore("anthropic_api_key"));
   }
   async prepareTask(): Promise<Outcome<PreparedTask | null>> {
     // Readmission and dispatch are separate commits: each advances its task revision once.

@@ -45,6 +45,7 @@ export function createStatusService(
     generation,
     mode,
     connections,
+    providerMessages: new Map(),
     requestModelRefresh: (connection: string) => {
       const refresh_id = `models_${String(++modelRefreshSequence)}`;
       connections.beginModelRefresh(connection, refresh_id);
@@ -67,6 +68,15 @@ export function createStatusService(
         storage,
         context,
         send,
+        rateLimitChanged: () => {
+          research?.connectionChanged("anthropic_api_key");
+        },
+        retryReady: () => {
+          enqueueProvider(async () => {
+            if (enabled && durable) await durable.pump();
+            research?.connectionChanged("anthropic_api_key");
+          });
+        },
         reply: (task, sequence, text) => research?.reply(task, sequence, text),
       })
     : undefined;

@@ -49,6 +49,7 @@ export interface AgentPreferenceSchema {
     effort_levels: string;
     default_effort: string | null;
     max_output: number | null;
+    max_input: number | null;
     origin: "service" | "catalog";
   };
 }
@@ -64,6 +65,7 @@ function modelEntry(row: ModelRow): ProviderModel {
     effortSupport: row.effort_support,
     effortLevels: JSON.parse(row.effort_levels) as NonNullable<ProviderModel["effortLevels"]>,
     ...(row.default_effort !== null ? { defaultEffort: row.default_effort } : {}),
+    ...(row.max_input !== null ? { maxInput: row.max_input } : {}),
     ...(row.max_output !== null ? { maxOutput: row.max_output } : {}),
     origin: row.origin,
   };
@@ -231,6 +233,7 @@ export async function storeProviderModels(db: Kysely<AgentPreferenceSchema>, cat
         effort_levels: JSON.stringify(model.effortLevels ?? []),
         default_effort: model.defaultEffort ?? null,
         max_output: model.maxOutput ?? null,
+        max_input: model.maxInput ?? null,
         origin: model.origin ?? "service",
       })
       .execute();

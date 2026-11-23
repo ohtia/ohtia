@@ -3,7 +3,7 @@ import {
   type FoundationPort,
   type ResearchScope,
   type ProviderDeclaration,
-  chatgptConnection,
+  defaultProviderConnections,
 } from "@ohtia/contracts";
 
 export interface NewProjectState {
@@ -21,9 +21,7 @@ export class NewProjectController {
     private readonly port: FoundationPort,
     private readonly onCreated: (scope: ResearchScope, selectionRevision: number) => void,
     private readonly nextId: () => string = () => crypto.randomUUID(),
-    private readonly connections: readonly ProviderDeclaration["connection"][] = [
-      chatgptConnection,
-    ],
+    private readonly connections: readonly ProviderDeclaration["connection"][] = defaultProviderConnections,
     private readonly selectionRevision: () => number = () => 0,
   ) {}
   snapshot = (): NewProjectState => this.state;

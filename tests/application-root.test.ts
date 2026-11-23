@@ -25,6 +25,7 @@ import {
   type DesktopBridge,
   type CommandIntent,
   type CommandSnapshot,
+  type ConnectionEvent,
   type LayoutRecord,
   type LayoutChange,
   type ProjectSummary,
@@ -218,6 +219,65 @@ async function mount(t: ReturnType<typeof fixture>) {
 }
 
 describe("integrated application authority", () => {
+  it("offers Anthropic key entry through the default application Settings", async () => {
+    const t = fixture();
+    const snapshot = (connection: string, state: ConnectionEvent["state"]) => ({
+      connection,
+      display_name: connection === "anthropic_api_key" ? "Anthropic" : "ChatGPT",
+      state,
+      reason: null,
+      probing: false,
+      probe_id: null,
+      model_list_revision: null,
+      model_count: 0,
+      account_email: null,
+      last_account_email: null,
+    });
+    const readConnection = vi.fn((connection: string) =>
+      call({ ok: true, value: snapshot(connection, "disconnected") }),
+    );
+    let receive: (event: Outcome<ConnectionEvent>) => void;
+    Object.assign(t.port, {
+      readConnection,
+      subscribeConnection: (_connection: string, listener: typeof receive) => {
+        receive = listener;
+        return {
+          ready: Promise.resolve({ ok: true, value: { subscriptionId: "connections" } }),
+          dispose() {},
+        };
+      },
+    });
+    await mount(t);
+    await t.intent("settings.open");
+    const dialog = container.querySelector(".settings-dialog[open]")!;
+    const add = [...dialog.querySelectorAll("button")].find(
+      ({ textContent }) => textContent === "Add Anthropic API key",
+    );
+    expect(readConnection).toHaveBeenCalledWith("anthropic_api_key");
+    expect(add).toBeDefined();
+    await act(async () => add!.click());
+    const field = dialog.querySelector<HTMLInputElement>('input[type="password"]');
+    expect(field?.labels?.[0]?.textContent).toBe("Anthropic API key");
+    expect(document.activeElement).toBe(field);
+    const limits = dialog.querySelector(".limits-panel")!;
+    const cost = "More replies at once can spend your Anthropic key’s credit faster.";
+    const plan = "More replies at once can use more of your ChatGPT plan at the same time.";
+    expect(limits.textContent).not.toContain(cost);
+    const notify = (connection: string, state: ConnectionEvent["state"]) =>
+      act(async () =>
+        receive({ ok: true, value: { ...snapshot(connection, state), kind: "state" } }),
+      );
+    await notify("anthropic_api_key", "connected");
+    expect(limits.textContent).toContain(cost);
+    expect(limits.textContent).not.toContain(plan);
+    await notify("chatgpt", "connected");
+    expect(limits.textContent).toContain(cost);
+    expect(limits.textContent).toContain(plan);
+    await notify("anthropic_api_key", "disconnected");
+    expect(limits.textContent).not.toContain(cost);
+    expect(limits.textContent).toContain(plan);
+  });
+
   it("keeps the open Settings dialog, input focus and reading position when storage becomes available in another window", async () => {
     const t = fixture();
     vi.mocked(t.bridge.bootstrap.read).mockResolvedValue({

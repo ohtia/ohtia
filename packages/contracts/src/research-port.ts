@@ -17,6 +17,7 @@ import {
 } from "./research.js";
 import {
   providerOperations,
+  providerFailureReasons,
   type ProviderOperation,
   type ProviderUsage,
 } from "./provider-requests.js";
@@ -24,6 +25,7 @@ import {
   agentPreferenceTargets,
   isAccountRevision,
   isConnectionId,
+  isUsagePauseConnection,
   isAgentPreferences,
   isProviderModelPageInput,
   isProviderModelPage,
@@ -223,6 +225,8 @@ export interface TimelineTask extends TimelineIdentity {
   readonly outcomeReason: string | null;
   readonly replyMessageId: string | null;
   readonly modelName?: string;
+  readonly retryNotBeforeAt?: string;
+  readonly providerMessage?: string;
   readonly modelUnavailable?: boolean;
   /** Advisory connection readiness, refreshed independently of the durable task revision. */
   readonly waitingForModels: boolean;
@@ -445,6 +449,7 @@ export interface ReplyDetails {
   readonly observedModel: string | null;
   readonly requestedEffort?: string | null;
   readonly observedEffort?: string | null;
+  readonly refusalCategory?: string;
   readonly attempts: number;
   readonly startedAt: string | null;
   readonly endedAt: string;
@@ -531,6 +536,9 @@ export type PlanTaskProgress = Pick<
   | "blockingReason"
   | "outcomeReason"
   | "modelUnavailable"
+  | "modelName"
+  | "retryNotBeforeAt"
+  | "providerMessage"
   | "replyMessageId"
   | "maxAttemptDurationMs"
   | "maxInactivityMs"
@@ -628,6 +636,7 @@ export type ResearchEvent =
       readonly text: string;
     };
 export interface MessageDestination {
+  readonly retryNotBeforeAt?: string;
   readonly modelUnavailable?: boolean;
   readonly operation: string;
   readonly maxAttemptDurationMs: number;
@@ -994,15 +1003,19 @@ export function mergeTimeline(
       previous.revision === item.revision &&
       ((previous.state === "queued" && item.state === "queued") ||
         item.consultationRetryFits !== previous.consultationRetryFits)
-    )
+    ) {
+      const prior = { ...previous };
+      delete prior.retryNotBeforeAt;
       items.set(item.id, {
-        ...previous,
+        ...prior,
         waitingForModels: item.waitingForModels,
         waitingLimit: item.waitingLimit,
+        ...(item.retryNotBeforeAt ? { retryNotBeforeAt: item.retryNotBeforeAt } : {}),
         ...(item.consultationRetryFits === undefined
           ? {}
           : { consultationRetryFits: item.consultationRetryFits }),
       });
+    }
   }
   for (const task of items.values()) {
     if (task.kind !== "task" || !task.consultation || !task.replacesTaskId) continue;
@@ -1169,7 +1182,7 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
     case "pause.read":
       return exact(value, []);
     case "usagePause.resume":
-      return exact(value, ["connection"]) && value.connection === "chatgpt";
+      return exact(value, ["connection"]) && isUsagePauseConnection(value.connection);
     case "contribution.tryAgain":
       return (
         (exact(value, ["taskId"]) && isResearchId(value.taskId)) ||
@@ -1652,7 +1665,7 @@ function item(value: unknown): boolean {
       "outcomeReason",
       "replyMessageId",
       "waitingForModels",
-      ...(Object.hasOwn(value, "modelName") ? ["modelName"] : []),
+      ...anthropicNoticeKeys(value),
       ...(Object.hasOwn(value, "modelUnavailable") ? ["modelUnavailable"] : []),
       "waitingLimit",
       "dispatched",
@@ -1742,11 +1755,13 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
             "operation",
             "maxAttemptDurationMs",
             "connection",
+            ...(obj(d) && Object.hasOwn(d, "retryNotBeforeAt") ? ["retryNotBeforeAt"] : []),
             ...(obj(d) && Object.hasOwn(d, "modelUnavailable") ? ["modelUnavailable"] : []),
           ]) &&
           opaque(d.operation) &&
           integer(d.maxAttemptDurationMs) &&
           isConnectionId(d.connection) &&
+          (!Object.hasOwn(d, "retryNotBeforeAt") || date(d.retryNotBeforeAt)) &&
           (!Object.hasOwn(d, "modelUnavailable") || typeof d.modelUnavailable === "boolean"),
       )
     );
@@ -1828,6 +1843,7 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
         "observedModel",
         ...(obj(value) && Object.hasOwn(value, "requestedEffort") ? ["requestedEffort"] : []),
         ...(obj(value) && Object.hasOwn(value, "observedEffort") ? ["observedEffort"] : []),
+        ...(obj(value) && Object.hasOwn(value, "refusalCategory") ? ["refusalCategory"] : []),
         "attempts",
         "startedAt",
         "endedAt",
@@ -1859,6 +1875,9 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
           (level) => typeof level === "string" && utf8Size(level) <= 128,
         )) &&
       nullable(value.observedModel, (name) => typeof name === "string" && utf8Size(name) <= 1024) &&
+      (!Object.hasOwn(value, "refusalCategory") ||
+        (typeof value.refusalCategory === "string" &&
+          /^[a-z0-9_]{1,64}$/.test(value.refusalCategory))) &&
       integer(value.attempts, 0) &&
       nullable(value.startedAt, date) &&
       date(value.endedAt) &&
@@ -1997,6 +2016,11 @@ export function isPlanConnections(
     )
   );
 }
+function anthropicNoticeKeys(value: Record<string, unknown>): string[] {
+  return ["modelName", "retryNotBeforeAt", "providerMessage"].filter((key) =>
+    Object.hasOwn(value, key),
+  );
+}
 function isTaskProgress(
   value: Record<string, unknown>,
 ): value is PlanTaskProgress & Record<string, unknown> {
@@ -2022,25 +2046,21 @@ function isTaskProgress(
       (x) =>
         typeof x === "string" &&
         [
-          "usage_limit_reached",
-          "not_eligible",
-          "connection_expired",
-          "provider_unavailable",
-          "request_rejected",
-          "provider_error",
-          "invalid_output",
-          "output_limit_exceeded",
-          "connection_lost",
-          "empty_reply",
+          ...providerFailureReasons,
           "input_too_large",
-          "permit_expired",
-          "inactivity_timeout",
-          "deadline_exceeded",
           "cancelled_by_researcher",
           "service_restarted",
           "destination_changed",
         ].includes(x),
     ) &&
+    (!Object.hasOwn(value, "modelName") || typeof value.modelName === "string") &&
+    (!Object.hasOwn(value, "retryNotBeforeAt") ||
+      (value.state === "queued" && date(value.retryNotBeforeAt))) &&
+    (!Object.hasOwn(value, "providerMessage") ||
+      (value.outcomeReason === "request_rejected" &&
+        typeof value.providerMessage === "string" &&
+        value.providerMessage.length > 0 &&
+        utf8Size(value.providerMessage) <= 4096)) &&
     nullable(value.replyMessageId, isResearchId) &&
     (!Object.hasOwn(value, "modelUnavailable") || typeof value.modelUnavailable === "boolean") &&
     integer(value.maxAttemptDurationMs) &&
@@ -2059,6 +2079,7 @@ function isPlanTaskProgress(value: unknown): value is PlanTaskProgress {
       "replyMessageId",
       "maxAttemptDurationMs",
       "maxInactivityMs",
+      ...anthropicNoticeKeys(value),
       ...(Object.hasOwn(value, "modelUnavailable") ? ["modelUnavailable"] : []),
     ]) &&
     isTaskProgress(value)

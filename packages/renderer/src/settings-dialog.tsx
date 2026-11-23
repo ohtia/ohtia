@@ -8,7 +8,7 @@ import {
   useAgentSettings,
   type AgentSettingsObserver,
 } from "./agents-settings.js";
-import { chatgptConnection, type ProviderDeclaration } from "@ohtia/contracts";
+import { defaultProviderConnections, type ProviderDeclaration } from "@ohtia/contracts";
 import { LimitsPanel } from "./limits-panel.js";
 import type { LimitsController } from "./limits-controller.js";
 import { connectionInferenceLimits, type ConnectionSnapshot } from "@ohtia/contracts";
@@ -78,7 +78,6 @@ function useSystemPreference(query: string, active: boolean): boolean {
   }, [query, active]);
   return matches;
 }
-const defaultConnections = [chatgptConnection];
 function focusSetting(
   id: string,
   feature: SettingFeature | "layout" | "connections" | "agents",
@@ -108,7 +107,7 @@ export function SettingsDialog({
   feedback,
   requestedFocus,
   returnFocusRef,
-  connections = defaultConnections,
+  connections = defaultProviderConnections,
   observeResearch,
 }: {
   readonly connections?: readonly ProviderDeclaration["connection"][];
@@ -149,7 +148,6 @@ export function SettingsDialog({
     Record<string, Extract<ConnectionEvent, { kind: "probe_result" }>>
   >({});
   const subscribeConnection = useMemo(() => windowConnectionSubscription(port), [port]);
-  const connection = snapshots.chatgpt;
   const agentSettings = useAgentSettings(port, open && available, observeResearch);
   useEffect(() => {
     if (!open) setSnapshots({});
@@ -605,6 +603,7 @@ export function SettingsDialog({
               <ConnectionsPanel
                 key={service.id}
                 connection={service.id}
+                kind={service.kind}
                 embedded={connections.length > 1}
                 subscribeConnection={subscribeConnection}
                 onProbeResult={(result) => {
@@ -660,18 +659,14 @@ export function SettingsDialog({
             controller={limits}
             locale={locale}
             available={available}
-            connections={
-              connection?.state === "connected"
-                ? [
-                    {
-                      id: connection.connection,
-                      name: connection.display_name,
-                      kind: "subscription",
-                      limit: connectionInferenceLimits[connection.connection],
-                    },
-                  ]
-                : []
-            }
+            connections={connections
+              .filter(({ id }) => snapshots[id]?.state === "connected")
+              .map(({ id, displayName, kind }) => ({
+                id,
+                name: displayName,
+                kind,
+                limit: connectionInferenceLimits[id],
+              }))}
           />
         )}
         {open && (

@@ -321,7 +321,12 @@ export interface OperationInputs extends ResearchInputs {
   "connection.subscribe": { readonly connection: string; readonly subscriptionId: string };
   "connection.probe": { readonly connection: string };
   "connection.listModels": ModelPageInput;
-  "connection.connect": { readonly connection: string; readonly new_registration?: boolean };
+  "connection.connect": {
+    readonly connection: string;
+    readonly new_registration?: boolean;
+    readonly key?: string;
+  };
+  "connection.replaceKey": { readonly connection: string; readonly key: string };
   "connection.disconnect": { readonly connection: string };
 
   "bounds.read": Record<string, never>;
@@ -369,6 +374,7 @@ export interface OperationOutputs extends ResearchOutputs {
   "connection.probe": ConnectionSnapshot;
   "connection.listModels": ModelPage;
   "connection.connect": ConnectionSnapshot;
+  "connection.replaceKey": ConnectionSnapshot;
   "connection.disconnect": ConnectionSnapshot;
 
   "bounds.read": WindowBoundsRecord;
@@ -485,8 +491,9 @@ export interface FoundationPort extends ResearchPort {
   readConnection(connection: string): PortCall<ConnectionSnapshot>;
   connectConnection(
     connection: string,
-    options?: { readonly new_registration?: boolean },
+    options?: { readonly new_registration?: boolean; readonly key?: string },
   ): PortCall<ConnectionSnapshot>;
+  replaceConnectionKey(connection: string, key: string): PortCall<ConnectionSnapshot>;
   disconnectConnection(connection: string): PortCall<ConnectionSnapshot>;
   probeConnection(connection: string): PortCall<ConnectionSnapshot>;
   listConnectionModels(input: ModelPageInput): PortCall<ModelPage>;
@@ -1054,6 +1061,7 @@ export const operationErrorCodes = Object.freeze({
   "connection.probe": readErrors,
   "connection.listModels": [...readErrors, "stale_revision"],
   "connection.connect": readErrors,
+  "connection.replaceKey": readErrors,
   "connection.disconnect": readErrors,
 
   "bounds.read": [...readErrors, "preference_invalid"],
@@ -1106,12 +1114,22 @@ function executionLimits(value: Json | undefined): boolean {
     revision(value.running)
   );
 }
+export function isProviderApiKey(value: unknown): value is string {
+  return typeof value === "string" && /^[!-~]{1,1024}$/.test(value);
+}
 function input(operation: Operation, value: Json | undefined): boolean {
   if (isResearchOperation(operation)) return researchInput(operation, value);
   switch (operation) {
+    case "connection.replaceKey":
+      return (
+        exact(value, ["connection", "key"]) &&
+        isConnectionId(value.connection) &&
+        isProviderApiKey(value.key)
+      );
     case "connection.connect":
       return (
         (exact(value, ["connection"]) ||
+          (exact(value, ["connection", "key"]) && isProviderApiKey(value.key)) ||
           (exact(value, ["connection", "new_registration"]) &&
             typeof value.new_registration === "boolean")) &&
         isConnectionId(value.connection)
@@ -1225,6 +1243,7 @@ function output(operation: Operation, value: Json | undefined): boolean {
   switch (operation) {
     case "connection.read":
     case "connection.connect":
+    case "connection.replaceKey":
     case "connection.disconnect":
     case "connection.probe":
       return isConnectionSnapshot(value);
@@ -1387,6 +1406,7 @@ const operations: readonly Operation[] = [
   "connection.probe",
   "connection.listModels",
   "connection.connect",
+  "connection.replaceKey",
   "connection.disconnect",
 
   "presentation.read",

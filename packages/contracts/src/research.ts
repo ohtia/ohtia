@@ -1,3 +1,4 @@
+import type { UsagePauseConnection } from "./connections.js";
 import type { ReplaceAgentPreference } from "./connections.js";
 import type { ConversationAgent, ReplyAgent } from "./research-port.js";
 
@@ -183,7 +184,7 @@ export interface ResearchPayloads {
   readonly "task.tryAgain": { readonly taskId: string };
   /** Invoking this human command acknowledges possible duplicate charges. */
   readonly "task.startAgain": { readonly taskId: string };
-  readonly "usagePause.resume": { readonly connection: "chatgpt" };
+  readonly "usagePause.resume": { readonly connection: UsagePauseConnection };
   readonly "task.continueAll": Record<string, never>;
   readonly "task.cancelAll": Record<string, never>;
   readonly "synthesis.tryAgain": ResearchPayloads["task.startAgain"];

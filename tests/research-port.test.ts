@@ -3,6 +3,8 @@ import diagnosticCases from "../config/desktop/diagnostic-cases.json" with { typ
 import fs from "node:fs";
 import path from "node:path";
 import { DiagnosticWriter } from "../packages/main/src/diagnostic-writer.js";
+import { AnthropicProvider, anthropicConnection } from "../packages/main/src/anthropic-provider.js";
+import { CredentialStore } from "../packages/main/src/credential-store.js";
 import { forbiddenResponseFields, responsesBody } from "../packages/main/src/chatgpt-responses.js";
 import { ActivityController } from "../packages/renderer/src/activity-controller.js";
 import { createFakeProvider } from "../packages/main/src/fake-provider.js";
@@ -54,10 +56,10 @@ afterEach(() => {
   for (const dispose of controls.splice(0)) dispose();
   vi.useRealTimers();
 });
-async function harness(model?: string) {
+async function harness(model?: string, connection?: string) {
   const fixture = storageFixture();
   await fixture.store.open();
-  if (model) seedDefaultModel(fixture.raw, model);
+  if (model) seedDefaultModel(fixture.raw, model, model, connection);
   const listeners = new Map<string, (text: unknown) => void>();
   let id = 0;
   const sent: string[] = [];
@@ -2460,6 +2462,201 @@ it(diagnosticCases.shared_cases[0]!, async () => {
       ({ file, bytes }) => file.startsWith(recovery) && bytes.includes(markers.memory),
     ),
   ).toBe(true);
+});
+
+it("sweeps Anthropic key and request markers across the real adapter and the data-service boundary", async () => {
+  const h = await harness("synthetic-claude", anthropicConnection);
+  const key = "synthetic-anthropic-test-key";
+  const prompt = "MARK238_PRIVATE_RESEARCH_REQUEST";
+  const rejected = "MARK238_PRIVATE_PROVIDER_ERROR";
+  const entries = new Map<string, string>();
+  const store = new CredentialStore({
+    service: "Synthetic",
+    userData: h.root,
+    platform: "linux",
+    entry: (_service, account) => ({
+      getPassword: async () => entries.get(account) ?? null,
+      setPassword: async (text) => {
+        entries.set(account, text);
+      },
+      deleteCredential: async () => entries.delete(account),
+    }),
+  });
+  const writer = new DiagnosticWriter({
+    root: h.root,
+    version: "0.0.0",
+    threshold: "DEBUG",
+    assertAdmission: () => {},
+  });
+  controls.push(() => {
+    void writer.close();
+  });
+  const diagnostic = (event: DiagnosticEvent) => {
+    void writer.append(event);
+  };
+  Object.assign(h.options, { emitDiagnostic: diagnostic });
+  const requests: string[] = [];
+  const transport = vi.fn<typeof fetch>(async (input, init) => {
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer " + key);
+    if (new URL(String(input)).pathname === "/v1/models")
+      return Response.json({
+        data: [
+          {
+            id: "synthetic-claude",
+            display_name: "Synthetic Claude",
+            lifecycle: "active",
+            max_tokens: 8192,
+            max_input_tokens: 200000,
+            capabilities: null,
+          },
+        ],
+        has_more: false,
+      });
+    requests.push(String(init?.body));
+    if (requests.length === 2)
+      return Response.json(
+        { error: { type: "rate_limit_error", message: "Synthetic rate limit" } },
+        { status: 429, headers: { "retry-after": "2" } },
+      );
+    return Response.json(
+      { error: { type: "invalid_request_error", message: rejected } },
+      { status: 400 },
+    );
+  });
+  const provider = new AnthropicProvider({
+    store,
+    fetch: transport,
+    model: (id) => manager.model(anthropicConnection, id),
+    refresh: () => {},
+  });
+  const manager = new ConnectionManager([provider], diagnostic);
+  controls.push(() => manager.dispose());
+  const toService: string[] = [];
+  const send = (text: string) => {
+    toService.push(text);
+    h.service.receive(text);
+  };
+  let readChild!: (text: unknown) => void;
+  const supervisor = new ServiceSupervisor(
+    {
+      send,
+      kill: () => {},
+      messages: (read) => {
+        readChild = read;
+      },
+      exited: () => {},
+    },
+    "service",
+    () => {},
+  );
+  readChild(JSON.stringify({ kind: "ready", generation: "service" }));
+  value(manager.connect(anthropicConnection, { key }));
+  await vi.waitFor(() => expect(manager.snapshot(anthropicConnection)?.state).toBe("connected"));
+  expect(supervisor.reportConnections(manager)).toBe(true);
+  const dispatch = new ProviderDispatch([provider], {
+    state: (id) => manager.snapshot(id)?.state,
+    mayDispatchModel: (id, model, effort, account) =>
+      manager.mayDispatchModel(id, model, effort, account),
+    send: (_, text) => send(text),
+    diagnostic,
+  });
+  controls.push(() => dispatch.dispose());
+  dispatch.begin("service");
+  value(
+    await h.port.appendMessage("anthropic-private-markers", {
+      conversationId: h.conversationId,
+      content: prompt,
+    }).result,
+  );
+  await h.service.drain();
+  const attempts = h.sent.flatMap((text) => decodeProviderDispatch(text, "service") ?? []);
+  expect(attempts).toHaveLength(1);
+  await dispatch.receive(attempts[0]!);
+  await h.service.drain();
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toContain(prompt);
+  expect(requests[0]).not.toContain(key);
+  expect([...toService, ...h.sent].join("")).not.toContain(key);
+  const timeline = value(
+    await h.port.listTimelineBefore({
+      conversationId: h.conversationId,
+      cursor: null,
+      count: 50,
+    }).result,
+  );
+  expect(timeline.items).toContainEqual(
+    expect.objectContaining({
+      kind: "task",
+      outcomeReason: "request_rejected",
+      providerMessage: rejected,
+    }),
+  );
+  vi.useFakeTimers();
+  try {
+    const append = async (operation: string) => {
+      value(
+        await h.port.appendMessage(operation, {
+          conversationId: h.conversationId,
+          content: "Synthetic follow-up request.",
+        }).result,
+      );
+      await h.service.drain();
+    };
+    const pending = () => h.sent.flatMap((text) => decodeProviderDispatch(text, "service") ?? []);
+    await append("anthropic-rate-limit");
+    const attempt = pending()[1];
+    expect(attempt).toBeDefined();
+    await dispatch.receive(attempt!);
+    await h.service.drain();
+    expect(requests).toHaveLength(2);
+    const destination = async () =>
+      value(
+        await h.port.readDestination({
+          projectId: h.projectId,
+          conversationId: h.conversationId,
+        }).result,
+      ).destination;
+    const retryNotBeforeAt = new Date(Date.now() + 2000).toISOString();
+    expect(await destination()).toMatchObject({ retryNotBeforeAt });
+    await append("anthropic-wait-for-eligibility");
+    expect(pending()).toHaveLength(2);
+    const waitingTimeline = value(
+      await h.port.listTimelineBefore({
+        conversationId: h.conversationId,
+        cursor: null,
+        count: 50,
+      }).result,
+    );
+    expect(waitingTimeline.items).toContainEqual(
+      expect.objectContaining({ kind: "task", state: "queued", retryNotBeforeAt }),
+    );
+    await vi.advanceTimersByTimeAsync(1999);
+    await h.service.drain();
+    expect(pending()).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    await h.service.drain();
+    expect(pending()).toHaveLength(3);
+    expect(await destination()).not.toHaveProperty("retryNotBeforeAt");
+    expect(requests).toHaveLength(2);
+  } finally {
+    vi.useRealTimers();
+  }
+  await writer.close();
+  const logs = fs
+    .readdirSync(path.join(h.root, "logs"))
+    .map((name) => fs.readFileSync(path.join(h.root, "logs", name), "utf8"))
+    .join("");
+  expect(logs).toContain("ohtia.connection.connected");
+  for (const marker of [key, prompt, rejected]) expect(logs).not.toContain(marker);
+  const databases = fs
+    .readdirSync(h.root, { recursive: true })
+    .filter((name) => /ohtia\.db3(-wal)?$/.test(String(name)));
+  expect(databases.length).toBeGreaterThan(0);
+  for (const name of databases) {
+    const bytes = fs.readFileSync(path.join(h.root, String(name)));
+    expect(bytes.includes(key)).toBe(false);
+    expect(bytes.includes(rejected)).toBe(false);
+  }
 });
 
 it("settles usage from a quarantined dispatch only after storage admission", async () => {

@@ -27,7 +27,7 @@
   },
   "main": {
     "packages": ["@ohtia/contracts"],
-    "external": ["electron", "@napi-rs/keyring"],
+    "external": ["electron", "@napi-rs/keyring", "@anthropic-ai/sdk"],
     "builtins": [
       "node:path",
       "node:fs",

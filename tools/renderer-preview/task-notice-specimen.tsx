@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import {
+  anthropicApiKeyConnection,
   catalogs,
   chatgptConnection,
   failure,
@@ -14,9 +15,7 @@ const id = (n: number) => `019a8000-0000-7000-8000-${String(n).padStart(12, "0")
 export function TaskNoticeSpecimen() {
   const params = new URLSearchParams(location.search);
   const locale = (params.get("locale") ?? "en-US") as InterfaceLocale;
-  const connection = params.has("apiKey")
-    ? { id: "fake", displayName: "Synthetic API", kind: "api_key" as const, usageUrl: null }
-    : chatgptConnection;
+  const connection = params.has("apiKey") ? anthropicApiKeyConnection : chatgptConnection;
   useMemo(() => {
     document.documentElement.lang = locale;
     document.documentElement.dataset.appearance = params.get("theme") ?? "light";

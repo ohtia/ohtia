@@ -28,6 +28,7 @@ function value<T>(outcome: Outcome<T>): T {
 async function setup(
   models = [{ id: "first-model", name: "First model" }],
   emitDiagnostic?: (event: DiagnosticEvent) => void,
+  connection = "chatgpt",
 ) {
   const fixture = storageFixture();
   if (emitDiagnostic) {
@@ -41,7 +42,7 @@ async function setup(
     kind: "connection_state",
     generation,
     snapshot: {
-      connection: "chatgpt",
+      connection,
       state: "connected",
       reason: null,
       probing: false,
@@ -54,7 +55,7 @@ async function setup(
     kind: "connection_models",
     generation,
     page: {
-      connection: "chatgpt",
+      connection,
       model_list_revision: 1,
       models,
       nextCursor: models.length,
@@ -62,7 +63,7 @@ async function setup(
     },
   });
   fixture.store.setTaskContext({ generation, mode: "development", connections });
-  if (models[0]) seedDefaultModel(fixture.raw, models[0].id, models[0].name);
+  if (models[0]) seedDefaultModel(fixture.raw, models[0].id, models[0].name, connection);
   const projectId = value(
     await fixture.store.executeResearchCommand({
       command: "development.createProject",
@@ -620,7 +621,7 @@ describe("durable task migration preservation", () => {
         max_concurrent_inference: expectedInference,
         max_concurrent_local_processing: 1,
       });
-      expect(upgraded.pragma("user_version", { simple: true })).toBe(34);
+      expect(upgraded.pragma("user_version", { simple: true })).toBe(35);
       upgraded.close();
     },
   );
@@ -1182,7 +1183,7 @@ function recoveryGate(f: Awaited<ReturnType<typeof setup>>): string {
   const gate = path.join(f.root, "migration-pending.json");
   fs.writeFileSync(
     gate,
-    JSON.stringify({ version: 1, operation: "synthetic-recovery", source: 9, target: 34 }),
+    JSON.stringify({ version: 1, operation: "synthetic-recovery", source: 9, target: 35 }),
   );
   return gate;
 }
@@ -1891,4 +1892,252 @@ it("uses the reply end time and no account when the provider proves it never sen
   } finally {
     vi.useRealTimers();
   }
+});
+
+describe("Anthropic terminal outcomes in SQLite", () => {
+  it("keeps a Retry-After wait across restart and reopens admission at its recorded time", async () => {
+    const f = await setup(
+      [{ id: "first-model", name: "First model" }],
+      undefined,
+      "anthropic_api_key",
+    );
+    value(await f.append("First Anthropic request"));
+    const dispatched = (await f.prepare())!;
+    value(await f.start("Another conversation"));
+    const deadline = new Date(Date.now() + 30_000).toISOString();
+    value(
+      await f.store.recordTaskEvent(
+        dispatched.request.attempt,
+        {
+          type: "result",
+          sequence: 1,
+          result: {
+            status: "failed",
+            dispatched: true,
+            reason: "rate_limited",
+            retry_not_before_at: deadline,
+          },
+        },
+        "",
+      ),
+    );
+    expect(value(await f.store.providerRetryDeadline())).toBe(deadline);
+    expect(await f.prepare()).toBeNull();
+    await f.store.close();
+    await f.store.open();
+    value(
+      await f.store.executeResearchCommand({
+        command: "task.continueAll",
+        operationId: "continue-after-restart",
+        payload: {},
+      }),
+    );
+    expect(value(await f.store.providerRetryDeadline())).toBe(deadline);
+    expect(await f.prepare()).toBeNull();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(deadline));
+      expect(value(await f.store.providerRetryDeadline())).toBeUndefined();
+      expect(await f.prepare()).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retains the billing pause until an explicit resume and leaves the failed request terminal", async () => {
+    const f = await setup(
+      [{ id: "first-model", name: "First model" }],
+      undefined,
+      "anthropic_api_key",
+    );
+    value(await f.append("First Anthropic request"));
+    const dispatched = (await f.prepare())!;
+    value(await f.start("Waiting request"));
+    value(
+      await f.store.recordTaskEvent(
+        dispatched.request.attempt,
+        {
+          type: "result",
+          sequence: 1,
+          result: { status: "failed", dispatched: true, reason: "billing_limit_reached" },
+        },
+        "",
+      ),
+    );
+    expect(await f.prepare()).toBeNull();
+    const raw = f.raw();
+    try {
+      expect(raw.prepare("SELECT connection, resumed_at FROM usage_limit_pauses").all()).toEqual([
+        { connection: "anthropic_api_key", resumed_at: null },
+      ]);
+      expect(raw.prepare("SELECT state, blocking_reason FROM tasks ORDER BY rowid").all()).toEqual([
+        { state: "failed", blocking_reason: null },
+        { state: "blocked", blocking_reason: "usage_limit_reached" },
+      ]);
+    } finally {
+      raw.close();
+    }
+    value(
+      await f.store.executeResearchCommand({
+        command: "usagePause.resume",
+        operationId: "resume-anthropic",
+        payload: { connection: "anthropic_api_key" },
+      }),
+    );
+    expect((await f.prepare())?.request.attempt).not.toBe(dispatched.request.attempt);
+  });
+
+  it("discards refusal text, stores only a category and treats a provider length stop as full usage", async () => {
+    const f = await setup(
+      [{ id: "first-model", name: "First model" }],
+      undefined,
+      "anthropic_api_key",
+    );
+    value(await f.append("Refusal request"));
+    const first = (await f.prepare())!;
+    value(
+      await f.store.recordTaskEvent(
+        first.request.attempt,
+        {
+          type: "result",
+          sequence: 1,
+          result: {
+            status: "failed",
+            dispatched: true,
+            reason: "refused",
+            refusal_category: "fixture_policy",
+          },
+        },
+        "Unpublishable partial reply",
+      ),
+    );
+    value(await f.append("Length request"));
+    const second = (await f.prepare())!;
+    value(
+      await f.store.recordTaskEvent(
+        second.request.attempt,
+        {
+          type: "usage",
+          sequence: 1,
+          usage: {
+            input_tokens: 3,
+            cached_input_tokens: 1,
+            output_tokens: 5,
+            reasoning_tokens: null,
+          },
+        },
+        "",
+      ),
+    );
+    value(
+      await f.store.recordTaskEvent(
+        second.request.attempt,
+        {
+          type: "result",
+          sequence: 2,
+          result: { status: "failed", dispatched: true, reason: "max_output_reached" },
+        },
+        "Truncated at provider length",
+      ),
+    );
+    const raw = f.raw();
+    try {
+      expect(
+        raw.prepare("SELECT content, ending FROM messages WHERE author_kind='agent'").all(),
+      ).toEqual([{ content: "Truncated at provider length", ending: "partial" }]);
+      const rows = raw.prepare("SELECT task_id FROM attempts ORDER BY rowid").all() as {
+        task_id: Uint8Array;
+      }[];
+      const detail = async (index: number) =>
+        value(
+          await f.store.readResearch({
+            operation: "reply.details",
+            kind: "request",
+            protocol: 1,
+            policy: policyId,
+            operationId: "read-details",
+            requestId: "read-details",
+            windowGeneration: "window",
+            serviceGeneration: f.generation,
+            payload: { taskId: identifier(rows[index]!.task_id), projectId: f.projectId },
+          }),
+        ) as ReplyDetails;
+      expect(await detail(0)).toMatchObject({ refusalCategory: "fixture_policy" });
+      expect(await detail(1)).toMatchObject({ usage: "reported", tokens: { output_tokens: 5 } });
+    } finally {
+      raw.close();
+    }
+  });
+  it("serves a rejected request's provider message in memory and removes it on restart", async () => {
+    const diagnostics: DiagnosticEvent[] = [];
+    const f = await setup(
+      [{ id: "first-model", name: "First model" }],
+      (event) => {
+        diagnostics.push(event);
+      },
+      "anthropic_api_key",
+    );
+    const marker = "Synthetic private provider error message";
+    const context = {
+      generation: f.generation,
+      mode: "development" as const,
+      connections: f.connections,
+      providerMessages: new Map<string, string>(),
+    };
+    let dispatch: ProviderDispatchMessage | undefined;
+    const provider = new DurableProvider({
+      storage: f.store,
+      context,
+      send: (text) => {
+        const wire = JSON.parse(text) as ProviderDispatchMessage;
+        if (wire.kind === "provider_dispatch") dispatch = wire;
+      },
+    });
+    value(await f.append("Trigger a request rejection"));
+    await provider.pump();
+    expect(dispatch).toBeDefined();
+    await provider.receive({
+      kind: "provider_event",
+      version: 1,
+      generation: f.generation,
+      attempt: dispatch!.request.attempt,
+      event: {
+        type: "result",
+        sequence: 1,
+        result: {
+          status: "failed",
+          dispatched: true,
+          reason: "request_rejected",
+          provider_message: marker,
+        },
+      },
+    });
+    const raw = f.raw();
+    const taskId = identifier(raw.prepare("SELECT id FROM tasks").pluck().get() as Uint8Array);
+    raw.close();
+    const readTask = async () =>
+      value(
+        await f.store.readResearch({
+          kind: "request",
+          operation: "timeline.read",
+          policy: policyId,
+          protocol: 1,
+          requestId: "timeline",
+          operationId: "timeline",
+          windowGeneration: "window",
+          serviceGeneration: f.generation,
+          payload: { conversationId: f.conversation.id, ids: [taskId] },
+        }),
+      );
+    expect(await readTask()).toMatchObject({
+      items: [{ outcomeReason: "request_rejected", providerMessage: marker }],
+    });
+    expect(JSON.stringify(diagnostics)).not.toContain(marker);
+    provider.dispose();
+    await f.store.close();
+    await f.store.open();
+    f.store.setTaskContext({ ...context, providerMessages: new Map() });
+    expect(await readTask()).toMatchObject({ items: [{ outcomeReason: "request_rejected" }] });
+    expect(JSON.stringify(await readTask())).not.toContain(marker);
+  });
 });

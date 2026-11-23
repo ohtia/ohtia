@@ -1361,6 +1361,34 @@ describe("task notices", () => {
     );
     expect(container.textContent).not.toContain("Choose another model in Settings › Agents.");
     expect(buttonNamed("Open Agents settings")).toBeUndefined();
+
+    const retry = await show(
+      task({ outcomeReason: "model_unavailable", modelName: "Stored model" }),
+      { onOpenAgents },
+    );
+    expect(buttonNamed("Open Agents settings")).toBeDefined();
+    await act(async () => buttonNamed("Try again").click());
+    expect(retry).toHaveBeenCalledWith(
+      expect.any(String),
+      "retry",
+      expect.objectContaining({ id: id(991) }),
+    );
+  });
+
+  it("sets an unknown language only on the provider's plain text in both copies of a rejection", async () => {
+    const text = "Réponse <strong>refusée</strong>";
+    await show(task({ outcomeReason: "request_rejected", providerMessage: text }), {
+      locale: "de-DE",
+    });
+    const alert = container.querySelector('[role="alert"]')!;
+    const notice = container.querySelector(".conversation-notice")!;
+    expect(alert.getAttribute("lang")).toBe("de-DE");
+    for (const element of [alert, notice]) {
+      const provider = element.querySelector('bdi[lang=""][dir="auto"]')!;
+      expect(provider.textContent).toBe(text);
+      expect(provider.previousSibling?.textContent).toBe("Meldung von Synthetic service: ");
+      expect(provider.querySelector("strong")).toBeNull();
+    }
   });
 
   it.each([
@@ -1412,6 +1440,48 @@ describe("task notices", () => {
         }
     },
   );
+  it("shows Anthropic-specific limits and the live countdown without automatically retrying", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-22T12:00:00.000Z"));
+    try {
+      const showReason = (outcomeReason: TimelineTask["outcomeReason"], hasText = false) =>
+        show(task({ outcomeReason, connection: "anthropic_api_key" }), { hasText });
+      await showReason("max_output_reached");
+      expect(container.textContent).toContain(
+        "The reply reached the maximum length Synthetic service allows for this model.",
+      );
+      await showReason("max_output_reached", true);
+      expect(container.textContent).toContain(
+        "Incomplete — maximum length Synthetic service allows",
+      );
+      await showReason("refused");
+      expect(container.textContent).toContain("Synthetic service declined to answer this request.");
+      await showReason("rate_limited");
+      expect(container.textContent).toContain(
+        "Synthetic service limited how many requests this key can send right now.",
+      );
+      expect(buttonNamed("Try again")).toBeDefined();
+      await showReason("model_unavailable");
+      expect(container.textContent).toContain("Synthetic service couldn’t find Virgilio’s model");
+      const retry = await show(
+        task({
+          state: "queued",
+          connection: "anthropic_api_key",
+          outcomeReason: null,
+          retryNotBeforeAt: "2026-11-22T12:00:02.000Z",
+        }),
+      );
+      expect(container.textContent).toContain("Synthetic service asked Ohtia to wait 2 sec");
+      await act(async () => vi.advanceTimersByTimeAsync(1000));
+      expect(container.textContent).toContain("Synthetic service asked Ohtia to wait 1 sec");
+      await act(async () => vi.advanceTimersByTimeAsync(1000));
+      expect(container.textContent).not.toContain("Synthetic service asked Ohtia to wait");
+      expect(retry).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps stopped partial text's single notice, hides coalesced tasks and labels before-dispatch cancellation", async () => {
     await show(task({ state: "cancelled", outcomeReason: "cancelled_by_researcher" }), {
       hasText: true,
@@ -3625,6 +3695,10 @@ describe("plan decision card", () => {
     };
     const hasSharedPlanAttention = vi.fn((_planId: string, _revision: number) => false);
     const controller = {
+      connections: [
+        chatgptConnection,
+        { id: "anthropic_api_key", displayName: "Anthropic", kind: "api_key" },
+      ],
       readPlanCard,
       hasSharedPlanAttention,
       readPlanDestinations: vi.fn(async () => ({})),
@@ -3648,11 +3722,18 @@ describe("plan decision card", () => {
         displayed = { ...accepted, ...patch, revision: ++revision };
         return revision;
       },
-      show: (locale: InterfaceLocale = "en-US") =>
+      show: (
+        locale: InterfaceLocale = "en-US",
+        pauses: ConversationState["pauses"] = {
+          revision: 1,
+          restart: 3,
+          usage: [{ connection: "chatgpt", count: 2 }],
+        },
+      ) =>
         render(
           {
             ...state([{ ...proposal, revision: displayed.revision, state: "accepted" }, saved]),
-            pauses: { revision: 1, restart: 3, usage: [{ connection: "chatgpt", count: 2 }] },
+            pauses,
           },
           controller,
           locale,
@@ -3792,6 +3873,16 @@ describe("plan decision card", () => {
     };
     await change(work({ state: "queued" }));
     status(0, "circle-dashed", "Waiting to start");
+    await change(
+      work({
+        state: "queued",
+        connection: "anthropic_api_key",
+        retryNotBeforeAt: new Date(Date.now() + 60_000).toISOString(),
+      }),
+    );
+    const waiting = container.querySelector(".plan-row-state");
+    expect(waiting?.getAttribute("data-icon")).toBe("circle-pause");
+    expect(waiting?.textContent).toContain("Waiting: Anthropic asked Ohtia to wait");
     await change(work({ state: "blocked", blockingReason: "connection_disabled" }));
     status(0, "unplug", "Waiting: ChatGPT isn’t connected");
     await act(async () => buttonNamed("Open Connections").click());
@@ -3849,6 +3940,20 @@ describe("plan decision card", () => {
       kind: "retryTask",
       taskId,
     });
+    await change(work({ state: "failed", outcomeReason: "model_unavailable" }), "failed");
+    expect(buttonNamed("Open Agents settings")).toBeDefined();
+    await act(async () => buttonNamed("Try again").click());
+    expect(h.performPlanProgressAction).toHaveBeenLastCalledWith(expect.any(String), {
+      kind: "retryTask",
+      taskId,
+    });
+    await change(
+      work({ state: "failed", outcomeReason: "request_rejected", providerMessage: "Refusée" }),
+      "failed",
+    );
+    expect(
+      container.querySelector('.plan-failure-reason bdi[lang=""][dir="auto"]')?.textContent,
+    ).toBe("Refusée");
     await change(work({ state: "failed", outcomeReason: "not_eligible" }), "failed");
     expect(buttonNamed("Try again")).toBeUndefined();
     h.update({
@@ -4039,6 +4144,31 @@ describe("plan decision card", () => {
     expect(container.textContent).toContain(
       "The plan’s results were longer than Ohtia can send for a synthesis.",
     );
+    h.update({
+      outcome: "partial",
+      continuation: synthesisWork({
+        connection: "anthropic_api_key",
+        state: "failed",
+        outcomeReason: "billing_limit_reached",
+      }),
+    });
+    await h.show("en-US", {
+      revision: 1,
+      restart: 3,
+      usage: [{ connection: "anthropic_api_key", count: 1 }],
+    });
+    await act(async () => buttonNamed("Resume Anthropic requests (1)").click());
+    expect(h.performPlanProgressAction).toHaveBeenLastCalledWith(expect.any(String), {
+      kind: "resume",
+      connection: "anthropic_api_key",
+    });
+    await h.show("en-US", { revision: 2, restart: 3, usage: [] });
+    expect(buttonNamed("Resume Anthropic requests (1)")).toBeUndefined();
+    await act(async () => buttonNamed("Try again").click());
+    expect(h.performPlanProgressAction).toHaveBeenLastCalledWith(expect.any(String), {
+      kind: "retrySynthesis",
+      taskId: id(2101),
+    });
     await show(synthesisWork({ state: "failed", outcomeReason: "provider_unavailable" }));
     h.performPlanProgressAction.mockResolvedValueOnce(failure("plan_unfinished"));
     await act(async () => buttonNamed("Try again").click());
@@ -5717,6 +5847,7 @@ it("discloses saved and unsaved reply details with loading, recovery and localiz
       reasoning_tokens: null,
     },
     usage: "incomplete",
+    refusalCategory: "fixture_policy",
     memory: [],
   };
   const readReplyDetails = vi
@@ -5792,7 +5923,11 @@ it("discloses saved and unsaved reply details with loading, recovery and localiz
         term.nextElementSibling?.textContent,
       ]),
     );
-  expect(detailTerms()).toMatchObject({ "Requested effort": "high", "Observed effort": "low" });
+  expect(detailTerms()).toMatchObject({
+    "Requested effort": "high",
+    "Observed effort": "low",
+    "Refusal category": "fixture_policy",
+  });
   expect(values()).toEqual(
     expect.arrayContaining([
       "Direct guidance · version 6",

@@ -224,6 +224,8 @@ describe("durable agent preferences", () => {
     const models = Array.from({ length: 1500 }, (_, index) => ({
       id: "model-" + index,
       name: "Model " + index + " é".repeat(80),
+      maxInput: 200_000 + index,
+      maxOutput: 8192,
       effortSupport: "supported" as const,
       effortLevels: [{ name: "high", supported: true }],
     }));
@@ -241,6 +243,7 @@ describe("durable agent preferences", () => {
       const outcome = await store.readResearch(input);
       expect(encodeEnvelope({ ...input, kind: "result", payload: outcome }).ok).toBe(true);
       const page = value(outcome) as ProviderModelPage;
+      expect(page.models).toMatchObject(models.slice(cursor, page.nextCursor));
       ids.push(...page.models.map(({ id }) => id));
       expect(page.nextCursor).toBeGreaterThan(cursor);
       cursor = page.nextCursor;

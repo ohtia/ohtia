@@ -9,6 +9,7 @@ import {
   type ProviderDeclaration,
   type PauseCounts,
   type CommandBridge,
+  isUsagePauseConnection,
 } from "@ohtia/contracts";
 import { useReplyDetails, type DetailsSource } from "./reply-details.js";
 import { contributorNames, VoiceLabel } from "./contributor-identity.js";
@@ -21,7 +22,32 @@ export interface TaskNoticeContent {
   readonly tone: "status" | "attention" | "danger";
   readonly role: "status" | "alert";
   readonly usage?: string;
+  readonly providerMessage?: string;
 }
+export function ProviderMessageLine({
+  locale,
+  service,
+  text,
+}: {
+  readonly locale: InterfaceLocale;
+  readonly service: string;
+  readonly text: string;
+}) {
+  const [before, after] = message(locale, "taskNotice.providerSaid", {
+    service,
+    provider_message: "\ufffc",
+  }).split("\ufffc");
+  return (
+    <>
+      {before}
+      <bdi lang="" dir="auto">
+        {text}
+      </bdi>
+      {after}
+    </>
+  );
+}
+
 export function formatOperationDuration(locale: InterfaceLocale, milliseconds: number): string {
   return new Intl.NumberFormat(locale, {
     style: "unit",
@@ -29,6 +55,15 @@ export function formatOperationDuration(locale: InterfaceLocale, milliseconds: n
     unitDisplay: "short",
     maximumFractionDigits: 0,
   }).format(milliseconds / 60000);
+}
+
+export function rateLimitWait(locale: InterfaceLocale, service: string, deadline: string): string {
+  const wait = new Intl.NumberFormat(locale, {
+    style: "unit",
+    unit: "second",
+    unitDisplay: "short",
+  }).format(Math.max(0, Math.ceil((Date.parse(deadline) - Date.now()) / 1000)));
+  return message(locale, "taskNotice.rateWait", { service, wait });
 }
 
 export function taskNoticeContent(
@@ -50,13 +85,15 @@ export function taskNoticeContent(
   if (task.state === "completed" || (task.state === "cancelled" && task.superseded)) return null;
   if (task.state === "queued")
     return status(
-      runningAgent
-        ? message(locale, "taskNotice.waitingAgent", { running_agent: runningAgent })
-        : task.waitingForModels
-          ? message(locale, "taskNotice.modelsLoading", { service })
-          : task.waitingLimit !== null
-            ? message(locale, "taskNotice.waitingLimit", { running_limit: task.waitingLimit })
-            : message(locale, "taskNotice.waiting"),
+      task.retryNotBeforeAt && Date.parse(task.retryNotBeforeAt) > Date.now()
+        ? rateLimitWait(locale, service, task.retryNotBeforeAt)
+        : runningAgent
+          ? message(locale, "taskNotice.waitingAgent", { running_agent: runningAgent })
+          : task.waitingForModels
+            ? message(locale, "taskNotice.modelsLoading", { service })
+            : task.waitingLimit !== null
+              ? message(locale, "taskNotice.waitingLimit", { running_limit: task.waitingLimit })
+              : message(locale, "taskNotice.waiting"),
     );
   if (task.state === "running")
     return hasText ? null : status(message(locale, "taskNotice.replying", { service }));
@@ -81,7 +118,10 @@ export function taskNoticeContent(
       );
     if (task.blockingReason === "restart_paused") return status(text("restart"));
   }
-  if (task.blockingReason === "usage_limit_reached" || task.outcomeReason === "usage_limit_reached")
+  if (
+    task.blockingReason === "usage_limit_reached" ||
+    ["usage_limit_reached", "billing_limit_reached"].includes(task.outcomeReason ?? "")
+  )
     return {
       text: message(
         locale,
@@ -126,7 +166,10 @@ export function failedTaskContent(
   const agent = contributorNames[task.agentId];
   const limit = formatOperationDuration(locale, task.maxAttemptDurationMs);
   const inactivity = formatOperationDuration(locale, task.maxInactivityMs);
-  if (task.blockingReason === "usage_limit_reached" || task.outcomeReason === "usage_limit_reached")
+  if (
+    task.blockingReason === "usage_limit_reached" ||
+    ["usage_limit_reached", "billing_limit_reached"].includes(task.outcomeReason ?? "")
+  )
     return {
       text: message(
         locale,
@@ -136,6 +179,34 @@ export function failedTaskContent(
         { service },
       ),
       tone: "attention",
+      role: "alert",
+    };
+  if (task.outcomeReason === "max_output_reached")
+    return {
+      text: message(locale, hasText ? "taskNotice.partialMaxOutput" : "taskNotice.maxOutput", {
+        service,
+      }),
+      tone: hasText ? "status" : "danger",
+      role: hasText ? "status" : "alert",
+    };
+  if (task.outcomeReason === "refused" || task.outcomeReason === "rate_limited")
+    return {
+      text: message(
+        locale,
+        task.outcomeReason === "refused" ? "taskNotice.refused" : "taskNotice.rateLimited",
+        { service },
+      ),
+      tone: "danger",
+      role: "alert",
+    };
+  if (task.outcomeReason === "model_unavailable")
+    return {
+      text: message(locale, "taskNotice.modelUnavailable", {
+        service,
+        agent,
+        model: task.modelName ?? message(locale, "replyDetails.unknown"),
+      }),
+      tone: "danger",
       role: "alert",
     };
   if (task.synthesis && task.outcomeReason === "input_too_large")
@@ -205,7 +276,14 @@ export function failedTaskContent(
                             : "taskNotice.providerError",
                       { service },
                     );
-  return { text: failed, tone: "danger", role: "alert" };
+  return {
+    text: failed,
+    tone: "danger",
+    role: "alert",
+    ...(reason === "request_rejected" && task.providerMessage
+      ? { providerMessage: task.providerMessage }
+      : {}),
+  };
 }
 
 export function TaskNotice({
@@ -244,6 +322,18 @@ export function TaskNotice({
   readonly announce?: (signature: string) => boolean;
 }) {
   const disclosure = useReplyDetails(locale, details);
+  const [, setWaitTick] = useState(0);
+  useEffect(() => {
+    if (!task.retryNotBeforeAt || task.state !== "queued") return;
+    const deadline = Date.parse(task.retryNotBeforeAt);
+    const timer = setInterval(() => {
+      setWaitTick((tick) => tick + 1);
+      if (deadline <= Date.now()) clearInterval(timer);
+    }, 1000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [task.retryNotBeforeAt, task.state]);
   const content = taskNoticeContent(task, locale, connection, hasText, runningAgent);
   const handoff =
     previousOwner && (task.state === "failed" || task.state === "uncertain")
@@ -269,6 +359,8 @@ export function TaskNotice({
         task.modelName ?? null,
         task.waitingForModels,
         task.waitingLimit,
+        task.retryNotBeforeAt,
+        content.providerMessage,
         hasText,
         runningAgent ?? "",
         previousOwner ?? "",
@@ -388,7 +480,8 @@ export function TaskNotice({
   }
   if (!content) return null;
   const usage =
-    task.blockingReason === "usage_limit_reached" || task.outcomeReason === "usage_limit_reached";
+    task.blockingReason === "usage_limit_reached" ||
+    ["usage_limit_reached", "billing_limit_reached"].includes(task.outcomeReason ?? "");
   const retryableFailure =
     latest &&
     (task.state === "failed" || task.outcomeReason === "destination_changed") &&
@@ -396,7 +489,11 @@ export function TaskNotice({
   const fits = !task.consultation || task.consultationRetryFits === true;
   const retry = !handoff && !setupFinal && fits && retryableFailure;
   const restart = !handoff && !setupFinal && fits && latest && task.state === "uncertain";
-  const resume = usage && (task.state === "blocked" || retryableFailure);
+  const resume =
+    usage &&
+    isUsagePauseConnection(task.connection) &&
+    (task.state === "blocked" || (latest && task.state === "failed")) &&
+    (!pauses || pauses.usage.some((pause) => pause.connection === task.connection));
   const count = pauses
     ? (pauses.usage.find((p) => p.connection === task.connection)?.count ?? 0)
     : undefined;
@@ -442,7 +539,21 @@ export function TaskNotice({
         lang={announcement.locale}
         aria-atomic="true"
       >
-        {announcing && announcement.role === "alert" ? announcement.text : ""}
+        {announcing && announcement.role === "alert" && (
+          <>
+            {announcement.text}
+            {content.providerMessage && (
+              <>
+                {" "}
+                <ProviderMessageLine
+                  locale={locale}
+                  service={connection.displayName}
+                  text={content.providerMessage}
+                />
+              </>
+            )}
+          </>
+        )}
       </div>
       <div className={`conversation-notice ${content.tone}`} aria-hidden={announcing || undefined}>
         <LucideGlyph
@@ -457,6 +568,15 @@ export function TaskNotice({
         />
         <span>
           {content.text}
+          {content.providerMessage && (
+            <span className="task-usage">
+              <ProviderMessageLine
+                locale={locale}
+                service={connection.displayName}
+                text={content.providerMessage}
+              />
+            </span>
+          )}
           {content.usage && <span className="task-usage">{content.usage}</span>}
           {handoff && <span className="task-usage">{handoff}</span>}
         </span>
@@ -481,8 +601,9 @@ export function TaskNotice({
           </a>
         )}
         {onOpenAgents &&
-          ((task.blockingReason === "configuration_unavailable" &&
-            task.modelUnavailable !== false) ||
+          (task.outcomeReason === "model_unavailable" ||
+            (task.blockingReason === "configuration_unavailable" &&
+              task.modelUnavailable !== false) ||
             (task.blockingReason === "connection_disabled" &&
               !task.consultation &&
               !task.synthesis)) && (

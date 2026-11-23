@@ -51,10 +51,16 @@ const project = {
   createdAt: "2026-11-17T10:00:00Z",
   updatedAt: "2026-11-17T10:00:00Z",
 };
-function fixture(connection: ConnectionState = "connected") {
+function fixture(chatgpt: ConnectionState = "connected") {
   const listeners = new Set<(notice: Outcome<ResearchEvent>) => void>();
+  const connectionResults = new Map<string, Outcome<{ state: ConnectionState }>>([
+    ["chatgpt", { ok: true, value: { state: chatgpt } }],
+    ["anthropic_api_key", { ok: true, value: { state: "disconnected" } }],
+  ]);
   const port = {
-    readConnection: vi.fn(() => call({ ok: true, value: { state: connection } })),
+    readConnection: vi.fn((id: string) =>
+      call(connectionResults.get(id) ?? failure("invalid_message")),
+    ),
     createProject: vi.fn(() => call({ ok: true, value: { resultId: projectId } })),
     listConversations: vi.fn(() =>
       call({ ok: true, value: { items: [{ id: conversationId }], next: null, hasMore: false } }),
@@ -113,6 +119,7 @@ function fixture(connection: ConnectionState = "connected") {
   };
   return {
     port,
+    connectionResults,
     bridge: port as unknown as FoundationPort,
     emit(notice: Outcome<ResearchEvent>) {
       for (const listener of [...listeners]) listener(notice);
@@ -216,9 +223,10 @@ describe("new project creation intent", () => {
   });
   it("fails closed when connection reads fail and does not apply late results after disposal", async () => {
     const f = fixture();
-    f.port.readConnection.mockReturnValueOnce(call(failure("service_unavailable")) as never);
+    f.connectionResults.set("chatgpt", failure("service_unavailable"));
     const c = new NewProjectController(f.bridge, vi.fn());
     expect(await c.start()).toBe(false);
+    expect(c.snapshot().dialog).toBe("failed");
     expect(f.port.createProject).not.toHaveBeenCalled();
     c.dispose();
     const g = fixture(),
@@ -710,10 +718,11 @@ it("rechecks the connection after a failed creation while retaining the same cre
   const c = new NewProjectController(f.bridge, opened, () => "same-creation");
   expect(await c.start()).toBe(false);
   c.close();
-  f.port.readConnection.mockReturnValueOnce(call({ ok: true, value: { state: "disconnected" } }));
+  f.connectionResults.set("chatgpt", { ok: true, value: { state: "disconnected" } });
   expect(await c.start()).toBe(false);
   expect(c.snapshot().dialog).toBe("connection");
   expect(f.port.createProject).toHaveBeenCalledOnce();
+  f.connectionResults.set("anthropic_api_key", { ok: true, value: { state: "connected" } });
   expect(await c.start()).toBe(true);
   expect(f.port.createProject.mock.calls).toEqual([["same-creation"], ["same-creation"]]);
   c.dispose();
