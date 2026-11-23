@@ -2,6 +2,8 @@
 type: Playbook
 title: Scaleway qualification access preflight
 description: Check protected GitHub Actions read access and ARM image compatibility without creating cloud resources or claiming native qualification.
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: instance-api
     resource: https://www.scaleway.com/en/developers/api/instance/v1/instances
@@ -36,7 +38,7 @@ The [qualification configuration map](scaleway-qualification.md#configuration-pl
 - `SCW_ARM_ZONE`: selected provider availability zone.
 - `SCW_ARM_INSTANCE_TYPE`: selected ARM64 SKU.
 - `SCW_ARM_DISK_GB`: planned total decimal GB, recorded together with its exact byte count. This setting does not allocate or validate storage.[^storage-units]
-- `SCW_ARM_FEDORA44_IMAGE_ID` and `SCW_ARM_DEBIAN13_IMAGE_ID`: zone-specific ARM64 bootable SBS local-image UUIDs with the expected OS labels.
+- `SCW_ARM_FEDORA44_IMAGE_ID`, `SCW_ARM_FEDORA45_IMAGE_ID` and `SCW_ARM_DEBIAN13_IMAGE_ID`: zone-specific ARM64 bootable SBS local-image UUIDs with the expected OS labels.
 
 Use Marketplace local-image identities rather than global-image or snapshot identities. A replacement image requires review and a fresh observation; the checker does not resolve a moving label silently.[^marketplace-api] The version-2 report consumes decimal GB and never reinterprets the legacy GiB variable. Deploy its matching configuration before running the new reader.
 

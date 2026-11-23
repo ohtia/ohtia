@@ -382,12 +382,25 @@ def read_inventory(maximum: int) -> bytes:
         return stream.read(maximum + 1)
 
 
+def fedora_profile(profile: object) -> bool:
+    """Name a Fedora profile of the host-admitted guard, which runs on its own release.
+
+    This file runs alone on the guest, so it reads the profile id, `fedora-<release>`, instead
+    of the target manifest; the host admitted the profile before writing the guard.
+    """
+    return isinstance(profile, str) and re.fullmatch(r"fedora-[0-9]+", profile) is not None
+
+
 def packages() -> dict:
     """Record the guest's package list once; later calls report the retained first observation."""
     if os.getuid() != 0:
         raise ValueError("package_inventory_root_required")
     guard = json.loads(GUARD.read_bytes())
-    manager = {"fedora-44": "rpm", "debian-13": "dpkg"}.get(guard["intent"]["profile"])
+    manager = (
+        "rpm"
+        if fedora_profile(guard["intent"]["profile"])
+        else ("dpkg" if guard["intent"]["profile"] == "debian-13" else None)
+    )
     maximum, seconds = guard["package_inventory_bytes"], guard["package_inventory_seconds"]
     if type(maximum) is not int or type(seconds) is not int or maximum <= 0 or seconds <= 0:
         raise ValueError("package_inventory_failed")
@@ -476,7 +489,7 @@ def prepare() -> None:
     home = Path(account.pw_dir)
     if home != Path("/home/ohtia") or home.is_symlink():
         raise ValueError("guest_home_identity")
-    if profile == "fedora-44":
+    if fedora_profile(profile):
         if run("getenforce") != "Enforcing":
             raise ValueError("selinux_not_enforcing")
         run("mkfs.btrfs", disk["path"])
@@ -489,7 +502,7 @@ def prepare() -> None:
     run("mount", disk["path"], str(home))
     os.chown(home, account.pw_uid, account.pw_gid)
     home.chmod(0o700)
-    if profile == "fedora-44":
+    if fedora_profile(profile):
         run("restorecon", "-RF", str(home))
     run("loginctl", "enable-linger", "ohtia")
     commands = required_commands(guard["intent"]["build"]["cell"].get("desktop"))
@@ -594,8 +607,10 @@ def install() -> None:
         "extract",
     )
     package = str(incoming / build["package"]["file"])
-    if guard["intent"]["profile"] == "fedora-44":
-        run("rpm", "--install", package)
+    if fedora_profile(guard["intent"]["profile"]):
+        # The qualification package is unsigned: keep its digest checks without a signature,
+        # which RPM 6 otherwise requires.
+        run("rpm", "--install", "--define", "_pkgverify_level digest", package)
     else:
         run("dpkg", "--install", package)
     source = Path("/home/ohtia/source")

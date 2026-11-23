@@ -67,7 +67,8 @@ class NativeTests(unittest.TestCase):
             if cell["target"].startswith("linux-")
         ]
         self.assertEqual(
-            {cell["profile"] for cell in linux}, {"ubuntu-26.04", "fedora-44", "debian-13"}
+            {cell["profile"] for cell in linux},
+            {"ubuntu-26.04", "fedora-44", "fedora-45", "debian-13"},
         )
         for cell in linux:
             with self.subTest(cell=cell["id"]), tempfile.TemporaryDirectory() as temporary:
@@ -77,7 +78,7 @@ class NativeTests(unittest.TestCase):
                 ) as listed:
                     record = native.os_package_record(cell, output)
                 listed.assert_called_once_with(
-                    "rpm" if cell["profile"] == "fedora-44" else "dpkg",
+                    "rpm" if cell["profile"].startswith("fedora-") else "dpkg",
                     limits["package_inventory_bytes"],
                     limits["package_inventory_seconds"],
                 )

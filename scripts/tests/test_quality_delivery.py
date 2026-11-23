@@ -173,8 +173,8 @@ class DeliveryTests(unittest.TestCase):
 
     def test_complete_required_matrix_and_formats(self):
         cells = self.plan["cells"]
-        self.assertEqual(len(cells), 12)
-        self.assertEqual(sum(len(cell["formats"]) for cell in cells), 14)
+        self.assertEqual(len(cells), 14)
+        self.assertEqual(sum(len(cell["formats"]) for cell in cells), 16)
         self.assertEqual(
             {c["backend"] for c in cells if c["target"].startswith("linux-")}, {"wayland"}
         )
@@ -190,6 +190,7 @@ class DeliveryTests(unittest.TestCase):
                     ("linux-x64", "ubuntu-26.04"),
                     ("linux-arm64", "ubuntu-26.04"),
                     ("linux-x64", "fedora-44"),
+                    ("linux-x64", "fedora-45"),
                     ("linux-x64", "debian-13"),
                 )
                 for desktop in ("gnome", "kde")
@@ -437,6 +438,28 @@ class DeliveryTests(unittest.TestCase):
             with self.subTest(change=value), self.assertRaises(delivery.DeliveryError):
                 delivery.cells(manifest, invalid)
 
+    def test_native_vm_guests_must_match_the_declared_fedora_and_debian_profiles(self):
+        manifest = delivery.read(delivery.ROOT / "config/desktop/targets.json")
+        matrix = delivery.read(delivery.ROOT / "config/quality/build-targets.json")
+        delivery.cells(manifest, matrix)
+        retired = copy.deepcopy(manifest)
+        for target in retired["targets"]:
+            if target["os"] == "linux":
+                target["distribution_profiles"] = [
+                    p for p in target["distribution_profiles"] if p["id"] != "fedora-45"
+                ]
+        with self.assertRaisesRegex(delivery.DeliveryError, "native VM guests differ"):
+            delivery.cells(retired, matrix)
+        guests = delivery.read(delivery.ROOT / "config/quality/virtual-machines.json")["guests"]
+        for missing in ("fedora-45", "debian-13"):
+            reduced = set(guests) - {missing}
+            with (
+                self.subTest(missing=missing),
+                patch.object(delivery, "vm_guests", return_value=reduced),
+                self.assertRaisesRegex(delivery.DeliveryError, "native VM guests differ"),
+            ):
+                delivery.cells(manifest, matrix)
+
     def test_cell_identifiers_name_target_profile_and_desktop(self):
         cells = delivery.read(delivery.ROOT / "config/quality/build-targets.json")["cells"]
         for cell in cells:
@@ -460,7 +483,7 @@ class DeliveryTests(unittest.TestCase):
         text = (delivery.ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         quality = delivery.read(delivery.ROOT / "config/quality/build-targets.json")
         delivery.require_workflow_matrix(text, quality)
-        self.assertEqual(len(delivery.workflow_matrix(text)), 12)
+        self.assertEqual(len(delivery.workflow_matrix(text)), 14)
         kde = next(c for c in quality["cells"] if c["id"] == "linux-x64-ubuntu-26-04-kde")
         for old, new in (
             ("id: linux-x64-ubuntu-26-04-kde", "id: ubuntu-26-04-x64-kde"),

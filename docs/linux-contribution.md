@@ -4,6 +4,8 @@ title: Native Linux contribution
 description: Prepare a declared Linux contributor environment with consented vendor packages, pinned checkout-local tools, read-only diagnosis and isolated native execution.
 generated:
   by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 sources:
   - id: ubuntu-packages
     resource: https://packages.ubuntu.com/resolute/libgtk-3-0t64
@@ -27,7 +29,7 @@ Use this procedure for [STORY-001-009](epics/EPIC-001-desktop-foundation/STORY-0
 
 - Ubuntu 26.04 LTS: ext4 and enabled AppArmor, on native GNOME Wayland or on KDE Plasma 6 Wayland with the official `kubuntu-desktop` metapackage. An XWayland connection does not establish this session.
 - Debian 13: ext4, enabled AppArmor and native unprivileged user namespaces, on native GNOME Wayland or on KDE Plasma 6 Wayland with the official KDE task (`task-kde-desktop`).
-- Fedora 44 Workstation or Fedora 44 KDE: Btrfs, native GNOME or KDE Plasma 6 Wayland, its vendor kernel and enforcing SELinux. Another Fedora edition or desktop requires its own qualification.
+- Fedora 44 or Fedora 45, Workstation or KDE: Btrfs, native GNOME or KDE Plasma 6 Wayland, its vendor kernel and enforcing SELinux. Another Fedora edition or desktop requires its own qualification.
 
 The entry detects the desktop from its official identity: Fedora's `VARIANT_ID`, or on Ubuntu and Debian the KDE metapackage or `gnome-shell`. It refuses a machine with both or neither, because a mixed desktop is not a qualified profile. A provider image still identifying as Cloud is refused even when GNOME is installed; use the inspected official Workstation provisioning route in [native qualification](native-qualification.md#provision-an-independent-native-profile) before this entry.
 

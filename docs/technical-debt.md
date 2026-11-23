@@ -67,7 +67,7 @@ Each entry has a stable `TD-NNN` identifier, an owning issue, affected paths, co
 
 ### Desired technical state
 
-Recurring quality CI runs Fedora 44 and Debian 13 in native ARM64 VMs with their own kernels and the profiles established by [native foundation qualification](native-foundation-report.md). Each runs on GNOME and on KDE Plasma Wayland; Fedora uses Btrfs and enforcing SELinux, and Debian uses ext4. Each cell produces identifiable packages and complete packaged runtime, storage, diagnostics and shutdown evidence.
+Recurring quality CI runs Fedora 44, Fedora 45 and Debian 13 in native ARM64 VMs with their own kernels and the profiles established by [native foundation qualification](native-foundation-report.md). Each runs on GNOME and on KDE Plasma Wayland; Fedora uses Btrfs and enforcing SELinux, and Debian uses ext4. Each cell produces identifiable packages and complete packaged runtime, storage, diagnostics and shutdown evidence.
 
 ### Current compromise
 

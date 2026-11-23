@@ -59,6 +59,12 @@
       "filesystem": "btrfs",
       "format": "rpm"
     },
+    "fedora-45": {
+      "image_variable": "SCW_ARM_FEDORA45_IMAGE_ID",
+      "image_label": "fedora_45",
+      "filesystem": "btrfs",
+      "format": "rpm"
+    },
     "debian-13": {
       "image_variable": "SCW_ARM_DEBIAN13_IMAGE_ID",
       "image_label": "debian_trixie",

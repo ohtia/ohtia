@@ -25,6 +25,7 @@ from pathlib import Path
 import application_version
 import desktop_runtime
 import linux_desktop
+import linux_profiles
 import plasma_session
 import quality_native
 import workspace
@@ -350,7 +351,7 @@ def doctor(
             lambda: Path("/proc/sys/kernel/unprivileged_userns_clone").read_text().strip() == "1",
             "The Debian kernel has disabled unprivileged user namespaces. Have the administrator restore the qualified vendor policy, then repeat doctor; never disable the Chromium sandbox.",
         )
-    if profile["id"] == "fedora-44":
+    if linux_profiles.is_fedora(profile["id"]):
         check(
             "selinux",
             lambda: observe(["getenforce"]).stdout.strip() == "Enforcing",

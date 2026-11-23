@@ -13,6 +13,7 @@ from pathlib import Path
 
 import application_version
 import linux_desktop
+import linux_profiles
 import scaleway_bootstrap as package_inventory
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +51,11 @@ def read(file: Path) -> dict:
     value = json.loads(file.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
     require(isinstance(value, dict), "Expected an evidence object.")
     return value
+
+
+def vm_guests() -> set[str]:
+    """Return the Linux profiles that run as native guests of a hosted x64 runner."""
+    return set(read(ROOT / "config/quality/virtual-machines.json")["guests"])
 
 
 def digest(file: Path) -> str:
@@ -91,8 +97,22 @@ def cells(manifest: dict, quality: dict | None = None) -> list[dict]:
         "macos-26",
         "xcode-27",
     }
+    # Every Fedora profile and Debian 13 run as native VM guests (ADR-0056), each with a
+    # GNOME and a KDE Plasma cell beside the eight hosted cells.
+    fedora = {
+        profile["id"]
+        for target in targets
+        if target.get("os") == "linux"
+        for profile in target.get("distribution_profiles", [])
+        if linux_profiles.is_fedora(profile["id"])
+    }
     require(
-        len(result) == 12 and {c["runner"] for c in result} == required_runners,
+        vm_guests() == {*fedora, "debian-13"},
+        "The native VM guests differ from the declared Fedora and Debian profiles.",
+    )
+    guest_cells = len(vm_guests()) * len(linux_desktop.DESKTOPS)
+    require(
+        len(result) == 8 + guest_cells and {c["runner"] for c in result} == required_runners,
         "Missing or nonstandard required hosted runner.",
     )
     require(len({c["id"] for c in result}) == len(result), "Duplicate native cell.")
@@ -123,8 +143,8 @@ def cells(manifest: dict, quality: dict | None = None) -> list[dict]:
             "Invalid package inventory.",
         )
         runner = cell["runner"]
-        if cell["profile"] in {"fedora-44", "debian-13"}:
-            expected_format = "rpm" if cell["profile"] == "fedora-44" else "deb"
+        if cell["profile"] in vm_guests():
+            expected_format = linux_profiles.package_format(cell["profile"])
             require(
                 cell["runner"] == "ubuntu-26.04"
                 and cell["target"] == "linux-x64"

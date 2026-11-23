@@ -136,7 +136,24 @@ def configuration():
     targets = json.loads((ROOT / "config/desktop/targets.json").read_bytes())
     policy = json.loads((ROOT / "config/desktop/delivery-capabilities.json").read_bytes())
     limits["installer_bytes"] = numeric["budgets"]["update_package_bytes"]["value"]
+    require_fedora_groups(targets, policy)
     return targets, policy, limits
+
+
+def require_fedora_groups(targets, policy):
+    """Require exactly one RPM group per declared Fedora profile, none for a retired release."""
+    fedora = {
+        profile["id"]
+        for target in targets["targets"]
+        if target["os"] == "linux"
+        for profile in target["distribution_profiles"]
+        if profile["id"].startswith("fedora-")
+    }
+    require(
+        {name for name in policy["profiles"] if name.startswith("fedora-")}
+        == {f"{profile}-rpm" for profile in fedora},
+        "fedora_package_groups",
+    )
 
 
 def policy_digest(targets, policy, limits):
@@ -188,12 +205,13 @@ def cell_specs(targets, selected):
             continue
         if target["os"] == "linux":
             for profile in target["distribution_profiles"]:
+                # Each Fedora release has its own RPM (ADR-0056), so its group names the release.
                 group = (
                     "ubuntu-deb"
                     if profile["id"].startswith("ubuntu-")
                     else "debian-deb"
                     if profile["id"].startswith("debian-")
-                    else "fedora-rpm"
+                    else f"{profile['id']}-rpm"
                 )
                 for display in profile["display_backends"]:
                     for desktop in profile["desktops"]:

@@ -158,6 +158,16 @@ def check_targets(record: dict[str, Any]) -> None:
     require(
         {row.get("id") for row in rows} == TARGETS, "Required native target missing or duplicated"
     )
+    fedora_sets = {
+        frozenset(
+            str(profile.get("id"))
+            for profile in row.get("distribution_profiles", [])
+            if isinstance(profile, dict) and str(profile.get("id")).startswith("fedora-")
+        )
+        for row in rows
+        if row.get("os") == "linux" and isinstance(row.get("distribution_profiles"), list)
+    }
+    require(len(fedora_sets) == 1, "Every Linux CPU requires the same Fedora releases")
     for row in rows:
         require(row["id"] == f"{row.get('os')}-{row.get('arch')}", "Target identity mismatch")
         require(
@@ -197,12 +207,33 @@ def check_targets(record: dict[str, Any]) -> None:
                 "Linux runtime must use the reviewed native display selection",
             )
             profiles = row.get("distribution_profiles", [])
-            expected_profiles = {"ubuntu-26.04", "fedora-44", "debian-13"}
+            ids = [p.get("id") for p in profiles] if isinstance(profiles, list) else []
+            # ADR-0056: the two most recent Fedora releases as consecutive exact profiles, and a
+            # third, the oldest, only while its retirement notice runs.
+            fedora_releases = sorted(
+                int(match[1])
+                for match in (re.fullmatch(r"fedora-([1-9][0-9]*)", str(i)) for i in ids)
+                if match
+            )
             require(
-                isinstance(profiles, list)
-                and len(profiles) == len(expected_profiles)
-                and {p.get("id") for p in profiles} == expected_profiles,
+                len(ids) == len(set(ids)) == 2 + len(fedora_releases)
+                and {"ubuntu-26.04", "debian-13"} <= set(ids)
+                and len(fedora_releases) in (2, 3)
+                and fedora_releases
+                == list(range(fedora_releases[0], fedora_releases[0] + len(fedora_releases))),
                 "Declared Linux distribution profiles are required on their selected CPU",
+            )
+            fedora_libc = [
+                tuple(int(part) for part in str(p.get("libc_minimum", "")).split("."))
+                for p in sorted(
+                    (p for p in profiles if str(p["id"]).startswith("fedora-")),
+                    key=lambda p: int(p["id"].removeprefix("fedora-")),
+                )
+                if re.fullmatch(r"2\.[0-9]+", str(p.get("libc_minimum", "")))
+            ]
+            require(
+                len(fedora_libc) == len(fedora_releases) and fedora_libc == sorted(fedora_libc),
+                "Each Fedora profile requires a glibc minimum no older than its predecessor's",
             )
             expected_arch = (
                 {"deb": "amd64", "rpm": "x86_64"}
@@ -215,12 +246,10 @@ def check_targets(record: dict[str, Any]) -> None:
             )
             for profile in profiles:
                 ubuntu = profile["id"] == "ubuntu-26.04"
-                fedora = profile["id"] == "fedora-44"
-                libc = {
-                    "fedora-44": "2.43",
-                    "ubuntu-26.04": "2.43",
-                    "debian-13": "2.41",
-                }[profile["id"]]
+                fedora = str(profile["id"]).startswith("fedora-")
+                libc = {"ubuntu-26.04": "2.43", "debian-13": "2.41"}.get(
+                    profile["id"], profile.get("libc_minimum")
+                )
                 require(
                     profile.get("package") == ("rpm" if fedora else "deb")
                     and profile.get("filesystems") == (["btrfs"] if fedora else ["ext4"])
@@ -249,11 +278,18 @@ def check_targets(record: dict[str, Any]) -> None:
                     image = profile.get("qualification_image", {})
                     check_artifact(image)
                     arch = expected_arch["rpm"]
-                    source_root = f"https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Workstation/{arch}/iso/"
+                    release = profile["id"].removeprefix("fedora-")
+                    source_root = f"https://dl.fedoraproject.org/pub/fedora/linux/releases/{release}/Workstation/{arch}/iso/"
+                    compose = re.fullmatch(
+                        re.escape(source_root)
+                        + rf"Fedora-Workstation-Live-{release}-([1-9][0-9]*\.[0-9]+)\.{arch}\.iso",
+                        str(image.get("url")),
+                    )
                     require(
-                        image["url"] == source_root + f"Fedora-Workstation-Live-44-1.7.{arch}.iso"
+                        compose is not None
                         and image.get("checksum_source")
-                        == source_root + f"Fedora-Workstation-44-1.7-{arch}-CHECKSUM"
+                        == source_root
+                        + f"Fedora-Workstation-{release}-{compose[1]}-{arch}-CHECKSUM"
                         and bool(profile.get("required_facility"))
                         and bool(image.get("admission")),
                         "Fedora provisioning image/checksum identity and admission are required",

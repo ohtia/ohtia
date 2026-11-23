@@ -180,6 +180,12 @@ jobs:
           - id: linux-x64-fedora-44-kde
             runner: ubuntu-26.04
             launcher: kvm
+          - id: linux-x64-fedora-45-gnome
+            runner: ubuntu-26.04
+            launcher: kvm
+          - id: linux-x64-fedora-45-kde
+            runner: ubuntu-26.04
+            launcher: kvm
           - id: linux-x64-debian-13-gnome
             runner: ubuntu-26.04
             launcher: kvm

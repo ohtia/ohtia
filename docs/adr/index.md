@@ -49,6 +49,7 @@ The conventions for this register are defined in [Architecture decisions](../arc
 
 - [ADR-0045 — Personally signed source history after an approved baseline](adr-0045-personally-signed-source-history.md) — Deprecated source-history signature decision, replaced by ADR-0049 main source selection without historical signature checks.
 - [ADR-0046 — Required KDE Plasma desktop and native cell identifiers](adr-0046-required-kde-plasma-desktop-and-native-cell-identifiers.md) — Require KDE Plasma 6 beside GNOME on every Linux profile and CPU, and name every native cell by its target, profile and Linux desktop.
+- [ADR-0056 — The two most recent Fedora releases](adr-0056-two-most-recent-fedora-releases.md) — Support the two most recent Fedora releases as exact Linux profiles, each with its own RPM and native cells, adding each new release and retiring the oldest.
 
 ## Interface foundations
 

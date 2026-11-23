@@ -19,6 +19,7 @@ RELEASES = {
     "ubuntu-26.04": {"ID": "ubuntu", "VERSION_ID": "26.04"},
     "debian-13": {"ID": "debian", "VERSION_ID": "13"},
     "fedora-44": {"ID": "fedora", "VERSION_ID": "44"},
+    "fedora-45": {"ID": "fedora", "VERSION_ID": "45"},
 }
 
 
@@ -39,13 +40,13 @@ class LinuxDesktopTests(unittest.TestCase):
     def test_official_kde_identity_of_each_distribution_is_admitted(self):
         for profile, package in desktop.KDE_IDENTITY.items():
             with self.subTest(profile=profile):
-                release = {"VARIANT_ID": "kde"} if profile == "fedora-44" else {}
+                release = {"VARIANT_ID": "kde"} if profile.startswith("fedora-") else {}
                 self.assertEqual(self.errors(profile, "kde", release, packages=[package]), [])
 
     def test_gnome_identity_of_each_distribution_is_admitted(self):
         for profile in desktop.PROFILES:
             with self.subTest(profile=profile):
-                release = {"VARIANT_ID": "workstation"} if profile == "fedora-44" else {}
+                release = {"VARIANT_ID": "workstation"} if profile.startswith("fedora-") else {}
                 self.assertEqual(
                     self.errors(profile, "gnome", release, packages=["gnome-shell"]), []
                 )
