@@ -3,7 +3,7 @@ type: Playbook
 title: Durable foundation storage
 description: Persist project opening order, conversation agents and title provenance, preferences, research tasks and setup proposals with durable receipts, recovery, bounded transfers and pause-count invalidation.
 generated:
-  by: codex/gpt-6.2-sol
+  by: claude-code/claude-opus-5-5
 ---
 
 # Durable foundation storage
@@ -99,6 +99,10 @@ In the development runtime, `--ohtia-dev-command=create-project` prints an ordin
 ## Execution-limit receipts
 
 Migration `0013_execution_limits_receipts` adds the inference preference’s receipt table through the same checkpoint, recovery gate and explicit continuation path as the preceding task migrations. The ordered storage registry and artifact manifest define the admitted revisions and current target. Each accepted replacement writes the preference revision and its receipt in one immediate transaction; an insert failure rolls both back. The table stores only `operation_id`, the whole-number `value` from 1 to 50, and `result_revision`. Running counts are read from tasks and never persisted in receipts. [Settings](settings.md#inference-concurrency) owns the control and [the application port](application-port.md#envelopes-and-named-operations) owns its named operations.
+
+## Update-check preference
+
+Migration `0037_update_check_preference` rebuilds `application_preferences` to admit the `update_check` key and adds `update_check_receipts`, through the same checkpoint, recovery gate and explicit continuation path as the preceding preference migrations. It copies every existing preference unchanged. The receipt table has the appearance receipt's columns, with `value` stored as the integer 0 or 1. Each accepted replacement writes the preference revision and its receipt in one immediate transaction. [Settings](settings.md#update-check-on-startup) owns the preference and [the application port](application-port.md#envelopes-and-named-operations) owns its named operations.
 
 ## Migration and recovery
 

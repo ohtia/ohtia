@@ -1001,7 +1001,7 @@ describe("attributed project memory through durable replies", () => {
       previous.close();
     }
     await f.store.open();
-    expect(f.query("PRAGMA user_version")).toEqual([{ user_version: 36 }]);
+    expect(f.query("PRAGMA user_version")).toEqual([{ user_version: 37 }]);
     expect(f.query("PRAGMA foreign_key_check")).toEqual([]);
     expect(value(await f.store.readConversations(f.projectId))[0]?.id).toBe(f.conversationId);
   });

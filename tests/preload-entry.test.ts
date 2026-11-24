@@ -779,6 +779,72 @@ it("exposes only sequenced, valid native motion and bounds and releases its list
   h.window.dispatchEvent(new Event("unload"));
   expect(h.ipcRenderer.listenerCount(desktopChannels.systemMotion)).toBe(0);
 });
+it("delivers only sequenced, valid update states and releases its listeners", async () => {
+  const h = await load();
+  expect(Object.keys(h.bridge.update)).toEqual(["subscribeState"]);
+  const before = h.ipcRenderer.send.mock.calls.length;
+  void h.bridge.foundation.readUpdateCheck();
+  void h.bridge.foundation.replaceUpdateCheck({
+    operationId: "update-off",
+    expectedRevision: 0,
+    value: false,
+  });
+  void h.bridge.foundation.readUpdateCheckReceipt("update-off");
+  void h.bridge.foundation.readUpdate();
+  void h.bridge.foundation.checkForUpdate();
+  expect(
+    h.ipcRenderer.send.mock.calls.slice(before).map(([, text]) => JSON.parse(text).operation),
+  ).toEqual([
+    "updateCheck.read",
+    "updateCheck.replace",
+    "updateCheck.receipt",
+    "update.read",
+    "update.check",
+  ]);
+  const state = { installedVersion: "0.2.0", check: "checking", failure: null, available: null };
+  const seen: unknown[] = [];
+  const stop = h.bridge.update.subscribeState((value) => seen.push(value));
+  h.ipcRenderer.emit(desktopChannels.updateState, {}, { sequence: 2, state });
+  for (const stale of [
+    { sequence: 2, state: { ...state, check: "idle" } },
+    { sequence: 1, state: { ...state, check: "idle" } },
+    { sequence: 3, state: { ...state, check: "failed" } },
+    { sequence: 3, state, extra: true },
+    {
+      sequence: 3,
+      state: { ...state, available: { version: "x", notes: [], notesTruncated: false } },
+    },
+    "checking",
+  ])
+    h.ipcRenderer.emit(desktopChannels.updateState, {}, stale);
+  expect(seen).toEqual([{ sequence: 2, state }]);
+  const checked = {
+    ...state,
+    check: "checked",
+    available: { version: "0.3.0", notes: ["<b>Notes</b>"], notesTruncated: false },
+  };
+  h.ipcRenderer.emit(desktopChannels.updateState, {}, { sequence: 3, state: checked });
+  expect(seen).toEqual([
+    { sequence: 2, state },
+    { sequence: 3, state: checked },
+  ]);
+  stop();
+  h.ipcRenderer.emit(desktopChannels.updateState, {}, { sequence: 4, state });
+  expect(seen).toHaveLength(2);
+  const failing = vi.fn(() => {
+    throw new Error("renderer listener failure");
+  });
+  h.bridge.update.subscribeState(failing);
+  h.ipcRenderer.emit(desktopChannels.updateState, {}, { sequence: 5, state });
+  h.ipcRenderer.emit(desktopChannels.updateState, {}, { sequence: 6, state });
+  expect(failing).toHaveBeenCalledOnce();
+  expect(() => h.bridge.update.subscribeState("listener" as never)).toThrow(TypeError);
+  for (let index = 0; index < portLimits.subscriptions_per_window; index++)
+    h.bridge.update.subscribeState(() => {});
+  expect(() => h.bridge.update.subscribeState(() => {})).toThrow(/limit/);
+  h.window.dispatchEvent(new Event("unload"));
+  expect(h.ipcRenderer.listenerCount(desktopChannels.updateState)).toBe(0);
+});
 it("treats a refused or malformed initial motion read as unknown", async () => {
   for (const motion of [null, { sequence: 0, value: "reduce", extra: 1 }, { value: "reduce" }]) {
     const h = await load(undefined, motion);

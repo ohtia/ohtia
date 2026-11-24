@@ -8,6 +8,8 @@ import { observeServicePower } from "./service-power.js";
 import { ProviderDispatch } from "./provider-dispatch.js";
 import type { DevelopmentCommand } from "./development-command.js";
 import { ConnectionBroker } from "./connection-broker.js";
+import { UpdateBroker } from "./update-broker.js";
+import { requestLatestRelease } from "./update-check.js";
 import { nativeCredentialStore } from "./native-credentials.js";
 declare const __OHTIA_DEVELOPMENT_BUILD__: boolean;
 import {
@@ -193,6 +195,16 @@ const settings = path.join(context.configuration_root, "Ohtia", "settings");
 const requestBudget = new RequestBudget();
 const admission = new PortAdmission(requestBudget);
 let layoutFailureAnnounced = false;
+// SPEC-001-040: only an installed final release asks GitHub; development and qualification never do.
+const updates = new UpdateBroker({
+  installedVersion: app.getVersion(),
+  permitted: context.mode === "installed",
+  requester: requestLatestRelease(),
+  publish: (notice) => {
+    for (const window of windows.keys())
+      if (!window.isDestroyed()) window.webContents.send(desktopChannels.updateState, notice);
+  },
+});
 const publisher = new LocatorPublisher();
 const windows = new Map<
   BrowserWindow,
@@ -829,6 +841,10 @@ function startService(mode?: "open" | "retry" | "restore" | "blocked"): void {
             return;
           }
           presentationBroker.initialize(active);
+          // Only a successful read decides; a passing failure leaves a later generation to retry.
+          void active.request("updateCheck.read", {}).then((saved) => {
+            if (saved.ok) updates.startup(saved.value.value);
+          });
           const placement = windowPlacement(
             saved.value.value,
             screen.getAllDisplays().map((display) => display.workArea),
@@ -1228,6 +1244,7 @@ async function start(): Promise<void> {
       if (reply.ok) deliver(reply.value);
       return;
     }
+    if (updates.handle({ ...accepted.value, deliver })) return;
     if (connections?.handle({ ...accepted.value, deliver })) return;
     if (!service) {
       accepted.value.release();
@@ -1585,6 +1602,7 @@ app.on("before-quit", (event) => {
     providerDispatch?.dispose();
     connections?.dispose();
     cleanExit = true;
+    updates.dispose();
     motionObserver?.dispose();
     if (metricTimer) clearInterval(metricTimer);
     clearTimeout(startup);

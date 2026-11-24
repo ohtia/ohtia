@@ -20,6 +20,7 @@ afterEach(() => {
   vi.doUnmock("../packages/main/src/service-supervisor.js");
   vi.doUnmock("../packages/main/src/diagnostic-writer.js");
   vi.doUnmock("../packages/main/src/system-motion.js");
+  vi.doUnmock("../packages/main/src/update-check.js");
 });
 async function launch(
   options: {
@@ -857,6 +858,67 @@ describe("broker composition with synthetic Electron adapters", () => {
     expect(h.supervisors[0].disposeWindow).toHaveBeenCalled();
     await expect(h.action("not-a-bootstrap-action")).rejects.toThrow(/admission/);
   });
+  const enabled = {
+    ok: true,
+    value: { schemaVersion: 1, revision: 0, value: true, source: "default" },
+  };
+  it.each([
+    ["installed", enabled, 1],
+    [
+      "installed",
+      { ok: true, value: { schemaVersion: 1, revision: 1, value: false, source: "saved" } },
+      0,
+    ],
+    ["installed", { ok: false, error: { code: "busy" } }, 0],
+    ["development", enabled, 0],
+    ["qualification", enabled, 0],
+  ] as const)(
+    "checks for a newer version only after a successful enabled read (%s build)",
+    async (mode, saved, requests) => {
+      const signals: AbortSignal[] = [];
+      vi.doMock("../packages/main/src/update-check.js", async (importOriginal) => ({
+        ...(await importOriginal<typeof import("../packages/main/src/update-check.js")>()),
+        requestLatestRelease: () => (signal: AbortSignal) => {
+          signals.push(signal);
+          return new Promise(() => {});
+        },
+      }));
+      const h = await launch({ mode, locator: "located", version: "0.2.0" });
+      const supervisor = h.supervisors[0]!;
+      const original = supervisor.request.getMockImplementation()!;
+      supervisor.request.mockImplementation(async (operation: string, ...rest: unknown[]) =>
+        operation === "updateCheck.read" ? saved : original(operation, ...(rest as [])),
+      );
+      supervisor.storageChanged({ generation: supervisor.generation, state: "storage_ready" });
+      for (let i = 0; i < 32; i++) await Promise.resolve();
+      expect(supervisor.request).toHaveBeenCalledWith("updateCheck.read", {});
+      expect(signals).toHaveLength(requests);
+      const pushes = h.window.webContents.send.mock.calls.filter(
+        ([channel]: [string]) => channel === h.constants.desktopChannels.updateState,
+      );
+      expect(pushes).toEqual(
+        requests
+          ? [
+              [
+                h.constants.desktopChannels.updateState,
+                {
+                  sequence: 1,
+                  state: {
+                    installedVersion: "0.2.0",
+                    check: "checking",
+                    failure: null,
+                    available: null,
+                  },
+                },
+              ],
+            ]
+          : [],
+      );
+      h.app.emit("before-quit", { preventDefault: vi.fn() });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(signals.every((signal) => signal.aborted)).toBe(true);
+    },
+  );
   it("serves sequenced Linux portal motion to trusted windows and stops observing at a clean exit", async () => {
     const h = await launch({ platform: "linux" });
     expect(h.motion.started).toBe(1);

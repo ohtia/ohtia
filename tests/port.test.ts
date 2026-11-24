@@ -358,6 +358,11 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
         "readAppearanceReceipt",
         "subscribeStatus",
         "subscribeAppearance",
+        "readUpdateCheck",
+        "replaceUpdateCheck",
+        "readUpdateCheckReceipt",
+        "readUpdate",
+        "checkForUpdate",
       ].sort(),
     );
     for (const invalid of [
@@ -372,6 +377,69 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
     const read = c.port.readStatus();
     c.respond(status);
     expect(await read.result).toEqual({ ok: true, value: status });
+    c.dispose();
+  });
+  it("sends the update operations with exact payloads and refuses an invalid or stale change locally", async () => {
+    const c = client();
+    for (const invalid of [
+      null,
+      { operationId: "op", expectedRevision: 0, value: "false" },
+      { operationId: "op", expectedRevision: -1, value: false },
+      { operationId: "op", expectedRevision: 0, value: false, url: "x" },
+    ])
+      expect(await c.port.replaceUpdateCheck(invalid as never).result).toEqual(
+        failure("invalid_message"),
+      );
+    expect(
+      await c.port.replaceUpdateCheck(
+        { operationId: "op", expectedRevision: 0, value: false },
+        "old-service",
+      ).result,
+    ).toEqual(failure("service_unavailable"));
+    expect(c.sent).toHaveLength(0);
+    const record = { schemaVersion: 1, revision: 1, value: false, source: "saved" };
+    const read = c.port.readUpdateCheck();
+    c.respond({ ...record, revision: 0, value: true, source: "default" });
+    expect(await read.result).toMatchObject({ ok: true, value: { source: "default" } });
+    const replace = c.port.replaceUpdateCheck({
+      operationId: "update-off",
+      expectedRevision: 0,
+      value: false,
+    });
+    expect(c.sent.at(-1)).toMatchObject({
+      operation: "updateCheck.replace",
+      operationId: "update-off",
+      payload: { expectedRevision: 0, value: false },
+    });
+    c.respond(record);
+    expect(await replace.result).toEqual({ ok: true, value: record });
+    const mismatched = c.port.replaceUpdateCheck({
+      operationId: "update-on",
+      expectedRevision: 1,
+      value: true,
+    });
+    c.respond({ ...record, revision: 2 });
+    expect(await mismatched.result).toEqual(failure("uncertain"));
+    const receipt = c.port.readUpdateCheckReceipt("update-off");
+    expect(c.sent.at(-1)).toMatchObject({
+      operation: "updateCheck.receipt",
+      payload: { targetOperationId: "update-off" },
+    });
+    c.respond({ state: "not_found" });
+    expect(await receipt.result).toEqual({ ok: true, value: { state: "not_found" } });
+    const state = {
+      sequence: 1,
+      state: { installedVersion: "0.2.0", check: "checking", failure: null, available: null },
+    };
+    for (const [call, operation] of [
+      [() => c.port.readUpdate(), "update.read"],
+      [() => c.port.checkForUpdate(), "update.check"],
+    ] as const) {
+      const pending = call();
+      expect(c.sent.at(-1)).toMatchObject({ operation, payload: {} });
+      c.respond(state);
+      expect(await pending.result).toEqual({ ok: true, value: state });
+    }
     c.dispose();
   });
   it("ipc-saturation: bounds pending calls before sending and frees completed slots", async () => {

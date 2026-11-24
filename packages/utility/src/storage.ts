@@ -233,8 +233,16 @@ import {
   type InterfaceLocale,
   type Outcome,
   type SavedAppearanceRecord,
+  decodeUpdateCheckChange,
+  updateCheckFallback,
+  type UpdateCheckChange,
+  type UpdateCheckRecord,
+  type UpdateCheckReceipt,
+  type SavedUpdateCheckRecord,
 } from "@ohtia/contracts";
 import {
+  applyUpdateCheckCommand,
+  type RecordedUpdateCheckCommand,
   applyAppearanceCommand,
   applyLocaleCommand,
   type LocaleCommand,
@@ -276,6 +284,11 @@ import {
   preferencesSchema as entryTextPreferencesSchema,
   receiptsSchema as entryTextReceiptsSchema,
 } from "./migrations/0033_entry_text_preference.mjs";
+import {
+  up as updateCheckPreference,
+  preferencesSchema as updateCheckPreferencesSchema,
+  receiptsSchema as updateCheckReceiptsSchema,
+} from "./migrations/0037_update_check_preference.mjs";
 
 interface PresentationReceiptRow extends Omit<Receipt, "value"> {
   feature: PresentationFeature;
@@ -331,7 +344,11 @@ const presentationPreferences: {
   },
 };
 
+interface UpdateCheckReceiptRow extends Omit<Receipt, "value"> {
+  value: number;
+}
 interface Schema extends ResearchSchema {
+  update_check_receipts: UpdateCheckReceiptRow;
   execution_limits_receipts: { operation_id: string; value: number; result_revision: number };
   presentation_receipts: PresentationReceiptRow;
   locale_receipts: LocaleReceiptRow;
@@ -422,6 +439,7 @@ const names = [
   "0034_agent_preferences",
   "0035_anthropic_outcomes",
   "0036_openai_usage_pauses",
+  "0037_update_check_preference",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -655,6 +673,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
       : []),
     ...(revision >= 31 ? ["usage_reports"] : []),
     ...(revision >= 34 ? Object.keys(agentPreferenceTables) : []),
+    ...(revision >= 37 ? ["update_check_receipts"] : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -727,6 +746,17 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
           ],
         }
       : {}),
+    ...(revision >= 37
+      ? {
+          update_check_receipts: [
+            "operation_id",
+            "expected_revision",
+            "value",
+            "accepted",
+            "result_revision",
+          ],
+        }
+      : {}),
     ...(revision >= 6
       ? {
           window_bounds_receipts: [
@@ -747,11 +777,13 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
   for (const [table, expectedSql] of [
     [
       "application_preferences",
-      revision >= 33
-        ? entryTextPreferencesSchema
-        : revision >= 32
-          ? sourceQuotePreferencesSchema
-          : preferencesSchema,
+      revision >= 37
+        ? updateCheckPreferencesSchema
+        : revision >= 33
+          ? entryTextPreferencesSchema
+          : revision >= 32
+            ? sourceQuotePreferencesSchema
+            : preferencesSchema,
     ],
     ...(revision >= 2 ? [["appearance_receipts", receiptsSchema]] : []),
     ...(revision >= 3 ? [["locale_receipts", localeReceiptsSchema]] : []),
@@ -880,6 +912,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
         : []),
     ...(revision >= 11 ? Object.entries(runTables) : []),
     ...(revision >= 13 ? [["execution_limits_receipts", executionLimitsReceiptsSchema]] : []),
+    ...(revision >= 37 ? [["update_check_receipts", updateCheckReceiptsSchema]] : []),
     ...(revision >= 27 ? Object.entries(handoffTables) : []),
     ...(revision >= 31 ? [["usage_reports", usageReports]] : []),
     ...(revision >= 34
@@ -1365,6 +1398,7 @@ export class DurableStore {
                 "0034_agent_preferences": { up: agentPreferences },
                 "0035_anthropic_outcomes": { up: anthropicOutcomes },
                 "0036_openai_usage_pauses": { up: openaiUsagePauses },
+                "0037_update_check_preference": { up: updateCheckPreference },
               }),
           },
         });
@@ -1937,6 +1971,195 @@ export class DurableStore {
                 operation_id: command.operationId,
                 expected_revision: command.expectedRevision,
                 value: command.value,
+                accepted: recorded.outcome.ok ? 1 : 0,
+                result_revision: recorded.outcome.ok
+                  ? recorded.outcome.value.revision
+                  : recorded.outcome.error.parameters.currentRevision,
+              })
+              .execute();
+          this.assert();
+          commitAttempted = true;
+          await sql`COMMIT`.execute(transaction);
+          return result;
+        } catch (error) {
+          if (this.native?.inTransaction) {
+            try {
+              await sql`ROLLBACK`.execute(transaction);
+            } catch {
+              this.admitted = false;
+            }
+          }
+          throw error;
+        }
+      });
+    } catch {
+      try {
+        this.assert();
+      } catch {
+        this.admitted = false;
+      }
+      return failure(attempted() ? "uncertain" : "storage_failed");
+    } finally {
+      this.active = false;
+    }
+  }
+  async readUpdateCheck(): Promise<Outcome<UpdateCheckRecord>> {
+    if (!this.ready || !this.database) return failure("service_unavailable");
+    try {
+      this.assert();
+      return this.updateCheck(
+        await this.database
+          .selectFrom("application_preferences")
+          .selectAll()
+          .where("key", "=", "update_check")
+          .executeTakeFirst(),
+      );
+    } catch {
+      this.admitted = false;
+      return failure("storage_failed");
+    }
+  }
+  private updateCheck(row: Preferences | undefined): Outcome<UpdateCheckRecord> {
+    if (!row)
+      return { ok: true, value: { schemaVersion: 1, revision: 0, value: true, source: "default" } };
+    if (!Number.isSafeInteger(row.revision) || row.revision < 1)
+      return failure("preference_invalid");
+    const valid = row.schema_version === 1 && (row.value === "true" || row.value === "false");
+    return {
+      ok: true,
+      value: {
+        schemaVersion: 1,
+        revision: row.revision,
+        value: valid ? row.value === "true" : updateCheckFallback,
+        source: valid ? "saved" : "invalid_fallback",
+      },
+    };
+  }
+  private updateCheckReceipt(
+    row: UpdateCheckReceiptRow | undefined,
+  ): RecordedUpdateCheckCommand | undefined {
+    if (!row) return;
+    if (
+      !isIdentifier(row.operation_id) ||
+      ![0, 1].includes(row.value) ||
+      ![0, 1].includes(row.accepted) ||
+      !Number.isSafeInteger(row.expected_revision) ||
+      row.expected_revision < 0 ||
+      !Number.isSafeInteger(row.result_revision) ||
+      row.result_revision < (row.accepted ? 1 : 0) ||
+      (row.accepted === 1
+        ? row.result_revision !== row.expected_revision + 1
+        : row.result_revision === row.expected_revision)
+    )
+      throw new Error("Invalid command receipt.");
+    const value = row.value === 1;
+    return {
+      expectedRevision: row.expected_revision,
+      value,
+      outcome: row.accepted
+        ? {
+            ok: true,
+            value: { schemaVersion: 1, revision: row.result_revision, value, source: "saved" },
+          }
+        : staleRevision(row.result_revision),
+    };
+  }
+  async readUpdateCheckReceipt(operation: string): Promise<Outcome<UpdateCheckReceipt>> {
+    if (!this.ready || !this.database) return failure("service_unavailable");
+    if (!isIdentifier(operation)) return failure("invalid_message");
+    try {
+      this.assert();
+      const result = this.updateCheckReceipt(
+        await this.database
+          .selectFrom("update_check_receipts")
+          .selectAll()
+          .where("operation_id", "=", operation)
+          .executeTakeFirst(),
+      );
+      return {
+        ok: true,
+        value: result ? { state: "recorded", outcome: result.outcome } : { state: "not_found" },
+      };
+    } catch {
+      this.admitted = false;
+      return failure("storage_failed");
+    }
+  }
+  async replaceUpdateCheck(raw: UpdateCheckChange): Promise<Outcome<SavedUpdateCheckRecord>> {
+    if (!this.ready || !this.database) return failure(this.active ? "busy" : "service_unavailable");
+    const decoded = decodeUpdateCheckChange(raw);
+    if (!decoded.ok) return decoded;
+    const command = decoded.value;
+    this.active = true;
+    let commitAttempted = false;
+    const attempted = () => commitAttempted;
+    try {
+      this.assert();
+      return await this.database.connection().execute(async (transaction) => {
+        await sql`BEGIN IMMEDIATE`.execute(transaction);
+        try {
+          const receipt = this.updateCheckReceipt(
+            await transaction
+              .selectFrom("update_check_receipts")
+              .selectAll()
+              .where("operation_id", "=", command.operationId)
+              .executeTakeFirst(),
+          );
+          const current = this.updateCheck(
+            await transaction
+              .selectFrom("application_preferences")
+              .selectAll()
+              .where("key", "=", "update_check")
+              .executeTakeFirst(),
+          );
+          let replaced: SavedUpdateCheckRecord | undefined;
+          let recorded: RecordedUpdateCheckCommand | undefined;
+          const result = applyUpdateCheckCommand(
+            {
+              readReceipt: () => receipt,
+              readUpdateCheck: () => current,
+              replaceUpdateCheck: (value) => {
+                if (!current.ok || current.value.revision >= Number.MAX_SAFE_INTEGER)
+                  throw new Error("Revision exhausted.");
+                replaced = {
+                  schemaVersion: 1,
+                  revision: current.value.revision + 1,
+                  value,
+                  source: "saved",
+                };
+                return replaced;
+              },
+              recordReceipt: (_operation, value) => {
+                recorded = value;
+              },
+            },
+            command,
+          );
+          const saved = replaced;
+          if (saved)
+            await transaction
+              .insertInto("application_preferences")
+              .values({
+                key: "update_check",
+                schema_version: 1,
+                revision: saved.revision,
+                value: JSON.stringify(saved.value),
+              })
+              .onConflict((conflict) =>
+                conflict.column("key").doUpdateSet({
+                  schema_version: 1,
+                  revision: saved.revision,
+                  value: JSON.stringify(saved.value),
+                }),
+              )
+              .execute();
+          if (recorded)
+            await transaction
+              .insertInto("update_check_receipts")
+              .values({
+                operation_id: command.operationId,
+                expected_revision: command.expectedRevision,
+                value: command.value ? 1 : 0,
                 accepted: recorded.outcome.ok ? 1 : 0,
                 result_revision: recorded.outcome.ok
                   ? recorded.outcome.value.revision

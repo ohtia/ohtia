@@ -23,3 +23,10 @@ export {
 } from "./layout-command.js";
 
 export * from "./window-bounds-command.js";
+
+export {
+  applyUpdateCheckCommand,
+  type UpdateCheckCommand,
+  type RecordedUpdateCheckCommand,
+  type UpdateCheckTransaction,
+} from "./update-check-command.js";
