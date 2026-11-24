@@ -6,6 +6,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fontTools.ttLib import TTFont
 
@@ -96,6 +97,14 @@ def validate_fonts(root, locale_text=""):
             record["source"].startswith("https://")
             and (record.get("distribution") or record.get("upstream_commit")),
             "Missing upstream font identity",
+        )
+        homepage = record.get("homepage")
+        require(
+            isinstance(homepage, str)
+            and not re.search(r"\s", homepage)
+            and urlsplit(homepage).scheme == "https"
+            and bool(urlsplit(homepage).hostname),
+            "Missing font project homepage",
         )
         with TTFont(file) as font:
             points = set(font.getBestCmap())

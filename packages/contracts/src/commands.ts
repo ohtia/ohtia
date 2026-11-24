@@ -277,6 +277,8 @@ export type CommandResult =
 export interface AboutNotice {
   readonly component: string;
   readonly license: string;
+  /** Project page opened by main in the default browser; never sent back by the renderer. */
+  readonly url: string;
 }
 export interface AboutInformation {
   readonly product: "Ohtia";
@@ -390,6 +392,7 @@ export interface CommandBridge {
   windowAction(request: WindowCommandRequest): Promise<WindowCommandResult>;
   copyVersionInformation(locale: InterfaceLocale): Promise<boolean>;
   openLink(link: ProjectLink): Promise<boolean>;
+  openNoticeLink(component: string): Promise<boolean>;
   openExternalLink(url: string): Promise<boolean>;
   copyMessage(messageId: string): Promise<boolean>;
 }
@@ -466,10 +469,21 @@ export function isAboutInformation(value: unknown): value is AboutInformation {
   return value.notices.every(
     (notice: unknown) =>
       plain(notice) &&
-      keys(notice, "component,license") &&
+      keys(notice, "component,license,url") &&
       [notice.component, notice.license].every(
         (text) => typeof text === "string" && text.length > 0 && text.length <= 65536,
-      ),
+      ) &&
+      isNoticeUrl(notice.url),
+  );
+}
+/** The canonical `https:` form the build emits: lowercase host, no credentials or port, ASCII path. */
+export function isNoticeUrl(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length <= 4096 &&
+    /^https:\/\/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\/[\x21-\x7e]*$/.test(
+      value,
+    )
   );
 }
 

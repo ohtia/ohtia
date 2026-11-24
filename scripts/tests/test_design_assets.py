@@ -55,6 +55,23 @@ class DesignAssetsTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Unmanifested or missing"):
                 assets.validate_fonts(root)
 
+    def test_font_without_https_project_homepage_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copytree(ROOT / "packages/renderer/fonts", root / "packages/renderer/fonts")
+            manifest = root / "packages/renderer/fonts/manifest.json"
+            original = json.loads(manifest.read_text())
+            for homepage in (None, "", "http://github.com/IBM/plex", "https://", "https://a b"):
+                record = json.loads(json.dumps(original))
+                if homepage is None:
+                    del record["fonts"][0]["homepage"]
+                else:
+                    record["fonts"][0]["homepage"] = homepage
+                manifest.write_text(json.dumps(record))
+                with self.subTest(homepage=homepage):
+                    with self.assertRaisesRegex(ValueError, "font project homepage"):
+                        assets.validate_fonts(root)
+
     def test_missing_icon_or_altered_original_image_fails(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

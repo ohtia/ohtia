@@ -100,7 +100,8 @@
   gap: var(--space-3);
   margin-block-start: var(--space-4);
 }
-.about-links a {
+.about-links a,
+.about-notices a {
   color: var(--content-primary);
   text-decoration: underline;
 }

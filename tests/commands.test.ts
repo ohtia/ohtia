@@ -30,6 +30,7 @@ import {
   readAboutInformation,
   versionInformation,
 } from "../packages/main/src/about.js";
+import { noticeUrl } from "../tooling/desktop-build.mjs";
 import { checkColorUsage } from "../tooling/design-usage.mjs";
 import { checkTokens } from "../tooling/design-tokens.mjs";
 const context = { windowGeneration: "window-one", platform: "linux" as const };
@@ -218,7 +219,9 @@ describe("closed command boundary decoding", () => {
       );
       fs.writeFileSync(
         path.join(directory, "notices.json"),
-        JSON.stringify([{ component: "React", license: "MIT" }]),
+        JSON.stringify([
+          { component: "React", license: "MIT", url: "https://github.com/facebook/react" },
+        ]),
       );
       const info = readAboutInformation(directory, "0.0.0-dev.8.2", "linux", "x64");
       expect(info.build).toBe(
@@ -265,7 +268,23 @@ describe("closed command boundary decoding", () => {
         { ...info, product: "Other" },
         { ...info, architecture: "private CPU" },
         { ...info, version: "" },
-        { ...info, notices: [{ component: "injected", license: "MIT", extra: true }] },
+        {
+          ...info,
+          notices: [
+            { component: "injected", license: "MIT", url: "https://example.com/", extra: true },
+          ],
+        },
+        { ...info, notices: [{ component: "React", license: "MIT" }] },
+        ...[
+          "http://github.com/facebook/react",
+          "javascript:alert(1)",
+          "file:///tmp/react",
+          "https://user:secret@github.com/facebook/react",
+          "https://GitHub.com/facebook/react",
+          "github.com/facebook/react",
+          "",
+          42,
+        ].map((url) => ({ ...info, notices: [{ component: "React", license: "MIT", url }] })),
       ])
         expect(isAboutInformation(value)).toBe(false);
       fs.writeFileSync(path.join(directory, "notices.json"), "{}");
@@ -273,6 +292,53 @@ describe("closed command boundary decoding", () => {
     } finally {
       fs.rmSync(directory, { recursive: true, force: true });
     }
+  });
+  it("resolves each bundled notice to the browsable https project its package declares", () => {
+    const cases: [unknown, string][] = [
+      [
+        { repository: "git+https://github.com/kysely-org/kysely.git" },
+        "https://github.com/kysely-org/kysely",
+      ],
+      [
+        { repository: { type: "git", url: "git://github.com/WiseLibs/better-sqlite3.git" } },
+        "https://github.com/WiseLibs/better-sqlite3",
+      ],
+      [
+        {
+          repository: {
+            type: "git",
+            url: "https://github.com/facebook/react.git",
+            directory: "packages/react",
+          },
+        },
+        "https://github.com/facebook/react",
+      ],
+      [{ repository: "github:electron/electron" }, "https://github.com/electron/electron"],
+      [{ repository: "github:owner/repo.git" }, "https://github.com/owner/repo"],
+      [{ repository: "owner/repo.git" }, "https://github.com/owner/repo"],
+      [
+        { repository: "micromark/micromark", homepage: "https://example.com/" },
+        "https://github.com/micromark/micromark",
+      ],
+      [{ homepage: "https://lucide.dev" }, "https://lucide.dev/"],
+    ];
+    for (const [metadata, url] of cases) expect(noticeUrl(metadata)).toBe(url);
+    for (const metadata of [
+      {},
+      { homepage: 42 },
+      { repository: {}, homepage: "https://example.com/" },
+      { repository: "git+ssh://git@github.com/owner/repo.git", homepage: "https://example.com/" },
+      { repository: "gitlab:owner/repo" },
+      { repository: "http://github.com/owner/repo" },
+      { repository: "https://user@github.com/owner/repo" },
+      { repository: "https://example.com:8443/project.git" },
+      { homepage: "https://example.com./" },
+      { homepage: `https://example.com/${"a".repeat(4096)}` },
+      { homepage: "http://example.com/" },
+      { homepage: "javascript:alert(1)" },
+      { homepage: "owner/repo" },
+    ])
+      expect(() => noticeUrl(metadata)).toThrow(/project URL/);
   });
   it("admits only explicit subtle decorative borders and retains control/focus contrast enforcement", () => {
     const model = checkTokens();

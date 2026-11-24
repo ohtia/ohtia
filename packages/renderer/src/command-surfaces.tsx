@@ -127,6 +127,7 @@ export function AboutDialog({
   onCopy,
   onClose,
   onOpenLink,
+  onOpenNoticeLink,
   actionFailed = false,
   feedback,
   returnFocusRef,
@@ -146,6 +147,7 @@ export function AboutDialog({
   onCopy: () => void;
   onClose: () => void;
   onOpenLink: (link: ProjectLink) => void;
+  onOpenNoticeLink: (component: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const noticesId = useId();
@@ -227,7 +229,16 @@ export function AboutDialog({
           >
             {info.notices.map((notice) => (
               <li key={notice.component}>
-                {notice.component} · {notice.license}
+                <a
+                  href={notice.url}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    onOpenNoticeLink(notice.component);
+                  }}
+                >
+                  {notice.component}
+                </a>{" "}
+                · {notice.license}
               </li>
             ))}
           </ul>
@@ -958,9 +969,14 @@ export function CommandSurfaces({
     void controller?.invoke(id);
   };
   const openLink = (link: ProjectLink) => {
+    settleLink(bridge.openLink(link));
+  };
+  const openNoticeLink = (component: string) => {
+    settleLink(bridge.openNoticeLink(component));
+  };
+  const settleLink = (opening: Promise<boolean>) => {
     const incarnation = current.current.incarnation;
-    void bridge
-      .openLink(link)
+    void opening
       .then((ok) => {
         if (current.current.live && incarnation === current.current.incarnation) setFailure(!ok);
       })
@@ -1172,6 +1188,7 @@ export function CommandSurfaces({
         }}
         onClose={close}
         onOpenLink={openLink}
+        onOpenNoticeLink={openNoticeLink}
       />
     </>
   );

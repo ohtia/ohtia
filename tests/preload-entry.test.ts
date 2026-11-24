@@ -816,6 +816,8 @@ it("keeps named command bridge inputs/results bounded and strips native event au
   const count = h.ipcRenderer.invoke.mock.calls.length;
   expect(await h.bridge.commands.perform("research.confirm" as never)).toBe(false);
   expect(await h.bridge.commands.openLink("https://example.invalid" as never)).toBe(false);
+  for (const component of ["", "x".repeat(65537), 42, null])
+    expect(await h.bridge.commands.openNoticeLink(component as never)).toBe(false);
   expect(await h.bridge.commands.copyVersionInformation("xx-XX" as never)).toBe(false);
   expect(await h.bridge.commands.publish({} as never)).toBe(false);
   expect(h.ipcRenderer.invoke).toHaveBeenCalledTimes(count);
@@ -832,6 +834,12 @@ it("keeps named command bridge inputs/results bounded and strips native event au
   );
   expect(await h.bridge.commands.openLink("repository")).toBe(true);
   expect(await h.bridge.commands.openLink("chatgptUsage")).toBe(true);
+  expect(await h.bridge.commands.openNoticeLink("React")).toBe(true);
+  expect(h.ipcRenderer.invoke).toHaveBeenLastCalledWith(
+    desktopChannels.commands,
+    "open_notice_link",
+    "React",
+  );
   h.ipcRenderer.invoke.mockResolvedValueOnce({} as never);
   await expect(h.bridge.commands.about()).rejects.toThrow(/About information/);
   const about = {

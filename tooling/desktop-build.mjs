@@ -4,6 +4,39 @@ import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { build } from "vite";
 import { inspectProviderArtifact, productGraph } from "./product-graph.mjs";
+import { isNoticeUrl } from "../packages/contracts/dist/index.js";
+
+/**
+ * Resolve the browsable https project page a bundled package declares: `repository` first, and
+ * `homepage` only when `repository` is absent. A declaration that does not yield the URL form About
+ * accepts fails the build.
+ */
+export function noticeUrl(metadata) {
+  const fromRepository = metadata.repository !== undefined;
+  const declared = !fromRepository
+    ? metadata.homepage
+    : typeof metadata.repository === "string"
+      ? metadata.repository
+      : metadata.repository?.url;
+  if (typeof declared !== "string") throw new Error("Missing bundled dependency project URL.");
+  let value = declared.trim();
+  if (fromRepository) {
+    const shorthand = /^(?:github:)?([\w.-]+)\/([\w.-]+)$/.exec(value);
+    value = (
+      shorthand
+        ? `https://github.com/${shorthand[1]}/${shorthand[2]}`
+        : value.replace(/^git\+/, "").replace(/^git:\/\//, "https://")
+    ).replace(/\.git$/, "");
+  }
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("Invalid bundled dependency project URL.");
+  }
+  if (!isNoticeUrl(url.href)) throw new Error("Invalid bundled dependency project URL.");
+  return url.href;
+}
 
 export async function buildDesktop(root, { development = false } = {}) {
   const output = path.join(root, "artifacts/desktop-app");
@@ -231,7 +264,7 @@ export async function buildDesktop(root, { development = false } = {}) {
       path.join(source, name),
       path.join(licenses, `${component.replaceAll("/", "-")}-LICENSE`),
     );
-    notices.push({ component, license: metadata.license });
+    notices.push({ component, license: metadata.license, url: noticeUrl(metadata) });
   }
   // Follow the installed runtime graph of the bundled parser and provider SDK.
   const bundledSeen = new Set();
@@ -260,7 +293,7 @@ export async function buildDesktop(root, { development = false } = {}) {
       path.join(source, license),
       path.join(licenses, `${component.replaceAll("/", "-")}-LICENSE`),
     );
-    notices.push({ component, license: metadata.license });
+    notices.push({ component, license: metadata.license, url: noticeUrl(metadata) });
     const next = createRequire(path.join(source, "package.json"));
     for (const name of bundledDependencies ?? Object.keys(metadata.dependencies ?? {}))
       bundledNotice(name, next);
@@ -280,8 +313,16 @@ export async function buildDesktop(root, { development = false } = {}) {
   );
   for (const font of fonts.fonts)
     if (!notices.some((notice) => notice.component === font.family))
-      notices.push({ component: font.family, license: font.license });
-  notices.push({ component: "Lucide", license: "ISC / MIT" });
+      notices.push({
+        component: font.family,
+        license: font.license,
+        url: noticeUrl({ homepage: font.homepage }),
+      });
+  notices.push({
+    component: "Lucide",
+    license: "ISC / MIT",
+    url: noticeUrl({ homepage: "https://github.com/lucide-icons/lucide" }),
+  });
   fs.writeFileSync(path.join(output, "notices.json"), JSON.stringify(notices));
   const inventory = {};
   for (const name of fs.readdirSync(output, { recursive: true })) {
