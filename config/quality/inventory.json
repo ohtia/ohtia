@@ -120,6 +120,7 @@
   ],
   "python": [
     "scripts/tests/test_application_version.py",
+    "scripts/tests/test_apt_repository.py",
     "scripts/tests/test_change_notes.py",
     "scripts/tests/test_ci_linux_dependencies.py",
     "scripts/tests/test_delivery_admission.py",
@@ -973,6 +974,66 @@
       "id": "test_ci_linux_dependencies.LinuxDependenciesTests.test_real_budget_stops_stalled_and_continuously_progressing_process_groups",
       "platforms": ["win32", "darwin"],
       "reason": "Hosted Linux provisioning uses GNU timeout and Linux process-state observations."
+    },
+    {
+      "id": "test_apt_repository.AptRepositoryTests.test_the_action_publishes_a_signed_flat_repository_for_each_distribution",
+      "platforms": ["win32", "darwin"],
+      "reason": "The apt repository action runs on the Ubuntu runner with its dpkg-dev, GnuPG and jq; macOS and Windows provide no dpkg-scanpackages or apt."
+    },
+    {
+      "id": "test_apt_repository.AptRepositoryTests.test_apt_accepts_the_repository_with_the_committed_key_and_offers_the_version",
+      "platforms": ["win32", "darwin"],
+      "reason": "The apt repository action runs on the Ubuntu runner with its dpkg-dev, GnuPG and jq; macOS and Windows provide no dpkg-scanpackages or apt."
+    },
+    {
+      "id": "test_apt_repository.AptRepositoryTests.test_apt_refuses_an_invalid_signature_and_a_package_altered_after_indexing",
+      "platforms": ["win32", "darwin"],
+      "reason": "The apt repository action runs on the Ubuntu runner with its dpkg-dev, GnuPG and jq; macOS and Windows provide no dpkg-scanpackages or apt."
+    },
+    {
+      "id": "test_apt_repository.AptRepositoryTests.test_an_interrupted_upload_keeps_the_previous_index_and_reports_it",
+      "platforms": ["win32", "darwin"],
+      "reason": "The apt repository action runs on the Ubuntu runner with its dpkg-dev, GnuPG and jq; macOS and Windows provide no dpkg-scanpackages or apt."
+    },
+    {
+      "id": "test_apt_repository.AptRepositoryTests.test_served_bytes_that_differ_from_the_release_are_reported",
+      "platforms": ["win32", "darwin"],
+      "reason": "The apt repository action runs on the Ubuntu runner with its dpkg-dev, GnuPG and jq; macOS and Windows provide no dpkg-scanpackages or apt."
+    },
+    {
+      "id": "test_apt_repository.AptRepositoryTests.test_a_new_version_keeps_the_previous_packages_and_removes_older_ones",
+      "platforms": ["win32", "darwin"],
+      "reason": "The apt repository action runs on the Ubuntu runner with its dpkg-dev, GnuPG and jq; macOS and Windows provide no dpkg-scanpackages or apt."
+    },
+    {
+      "id": "test_apt_repository.AptRepositoryTests.test_the_stable_zone_is_bound_to_the_approved_digests",
+      "platforms": ["win32", "darwin"],
+      "reason": "The apt repository action runs on the Ubuntu runner with its dpkg-dev, GnuPG and jq; macOS and Windows provide no dpkg-scanpackages or apt."
+    },
+    {
+      "id": "test_apt_repository.AptRepositoryTests.test_a_release_that_differs_from_its_digests_or_run_is_refused",
+      "platforms": ["win32", "darwin"],
+      "reason": "The apt repository action runs on the Ubuntu runner with its dpkg-dev, GnuPG and jq; macOS and Windows provide no dpkg-scanpackages or apt."
+    },
+    {
+      "id": "test_apt_repository.AptRepositoryTests.test_a_subkey_that_is_not_the_release_subkey_is_refused_before_signing",
+      "platforms": ["win32", "darwin"],
+      "reason": "The apt repository action runs on the Ubuntu runner with its dpkg-dev, GnuPG and jq; macOS and Windows provide no dpkg-scanpackages or apt."
+    },
+    {
+      "id": "test_apt_repository.AptRepositoryTests.test_a_rerun_of_the_same_version_keeps_the_previous_version",
+      "platforms": ["win32", "darwin"],
+      "reason": "The apt repository action runs on the Ubuntu runner with its dpkg-dev, GnuPG and jq; macOS and Windows provide no dpkg-scanpackages or apt."
+    },
+    {
+      "id": "test_apt_repository.AptRepositoryTests.test_two_profiles_of_one_distribution_are_refused",
+      "platforms": ["win32", "darwin"],
+      "reason": "The apt repository action runs on the Ubuntu runner with its dpkg-dev, GnuPG and jq; macOS and Windows provide no dpkg-scanpackages or apt."
+    },
+    {
+      "id": "test_apt_repository.AptRepositoryTests.test_a_previous_index_without_its_packages_by_digest_removes_nothing",
+      "platforms": ["win32", "darwin"],
+      "reason": "The apt repository action runs on the Ubuntu runner with its dpkg-dev, GnuPG and jq; macOS and Windows provide no dpkg-scanpackages or apt."
     }
   ],
   "vitest_inapplicable": [

@@ -382,7 +382,10 @@ def configuration(
 
 
 # Each DEB and RPM registers the signed Ohtia repository of its distribution (SPEC-001-038).
-REPOSITORY_URL = "https://packages.ohtia.com"
+# The release workflows publish the repositories at this address (config/release/repository.json).
+REPOSITORY_URL = json.loads((ROOT / "config/release/repository.json").read_text(encoding="utf-8"))[
+    "address"
+]
 REPOSITORY_ZONES = ("stable", "test")
 REPOSITORY_KEY = ROOT / "config/release/signing-key.asc"
 REPOSITORY_ZONE_VARIABLE = "OHTIA_REPOSITORY_ZONE"

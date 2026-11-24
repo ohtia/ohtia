@@ -1,7 +1,7 @@
 ---
 type: Playbook
 title: Release signing key
-description: Choose or add the signing-only subkey, publish the public key, create the protected release-signing environment, export the subkey to it, and renew, revoke and recover the subkey without changing the primary identity.
+description: Choose or add the signing-only subkey, publish the public key, create the protected release-signing environment and the package repository bucket, export the subkey and the bucket credential to it, and renew, revoke and recover them without changing the primary identity.
 generated:
   by: claude-code/claude-opus-5-5
 verified:
@@ -10,12 +10,13 @@ verified:
 
 # Release signing key
 
-[ADR-0050](adr/adr-0050-signed-linux-repositories-and-update-notices.md) owns the signing decision and [SPEC-001-037](epics/EPIC-001-desktop-foundation/epic.md#spec-001-037-linux-signing-identity-and-custody) its custody rules. The `Sign the RPM packages` job of [Release preparation](release-preparation.md#sign-the-rpm-packages) signs the RPM packages with a signing-only subkey of the maintainer's OpenPGP key. This procedure is run by the maintainer, on their own machine, with GnuPG 2.4 or later and `gh` authenticated as described in [Repository policy](repository-policy.md#authentication). No command sends the primary key's secret anywhere.
+[ADR-0050](adr/adr-0050-signed-linux-repositories-and-update-notices.md) owns the signing decision and [SPEC-001-037](epics/EPIC-001-desktop-foundation/epic.md#spec-001-037-linux-signing-identity-and-custody) its custody rules. The `Sign the RPM packages` job of [Release preparation](release-preparation.md#sign-the-rpm-packages) signs the RPM packages, and the repository jobs of [Release preparation](release-preparation.md#copy-the-debian-packages-to-the-test-repositories) and [Release publication](release-publication.md#copy-the-debian-packages-to-the-stable-repositories) sign the apt repository indexes, with a signing-only subkey of the maintainer's OpenPGP key. This procedure is run by the maintainer, on their own machine, with GnuPG 2.4 or later and `gh` authenticated as described in [Repository policy](repository-policy.md#authentication). No command sends the primary key's secret anywhere.
 
 ## What is kept where
 
 - The primary key and its revocation certificate stay offline in the maintainer's GnuPG directory, with an offline backup. The primary key only certifies: it adds, renews and revokes subkeys.
 - The signing subkey is one signing-only subkey, valid for one year. Its secret, protected with a passphrase of its own, is stored as the secret `SIGNING_SUBKEY` of the GitHub environment `release-signing`, and that passphrase as the secret `SIGNING_PASSPHRASE`. GitHub gives them only to a job of that environment, only for a run from `main` and only after the maintainer approves it.
+- The package repositories are the Cloudflare R2 bucket `ohtia-packages`, served at `https://packages.ohtia.com` and recorded in [`config/release/repository.json`](../config/release/repository.json). An R2 token that can read and write only that bucket is stored as the secrets `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` of the same environment, and the Cloudflare account ID as its variable `R2_ACCOUNT_ID`.
 - The public key is committed as [`config/release/signing-key.asc`](../config/release/signing-key.asc), and its primary fingerprint as the record [`config/release/signing.json`](../config/release/signing.json). The signing job refuses a subkey that does not belong to that fingerprint, an export that holds the primary key's secret, and an expired or revoked subkey. Anyone who reads the repository sees the user IDs of the public key, such as its name and email address.
 
 ## Prepare the GnuPG directory
@@ -113,6 +114,48 @@ Export only the signing subkey into a new temporary directory and give that copy
    rm -rf "$transfer"
    gh secret list --env release-signing --repo ohtia/ohtia
    ```
+
+## Create the package repository bucket
+
+The repositories are served from an R2 bucket of the Cloudflare account that holds the `ohtia.com` zone. In the Cloudflare dashboard:
+
+1. Open **R2 Object Storage**, select **Create bucket**, enter `ohtia-packages`, keep the location **Automatic** and the storage class **Standard**, and create it.
+2. In the bucket's **Settings**, under **Custom Domains**, select **Connect Domain**, enter `packages.ohtia.com` and confirm. Wait until its status is **Active**. Keep **Public Development URL** disabled, so the bucket is public only at that address.
+3. Under **Rules** of the `ohtia.com` zone, check that no redirect rule matches `packages.ohtia.com`. A Worker route that matches the host, such as `*.ohtia.com/*`, runs before the bucket's custom domain; its Worker must pass the host's requests through unchanged. Keep **Always Use HTTPS** enabled for the zone.
+4. In **R2 Object Storage**, select **Manage API tokens** and create an **Account API token** with the permission **Object Read & Write**, applied only to the bucket `ohtia-packages`, valid for one year. Copy its **Access Key ID** and **Secret Access Key**, which Cloudflare shows once, and the **Account ID** of the R2 overview.
+
+Store the token and the account ID in the `release-signing` environment. Each `gh secret set` asks for its value without showing it:
+
+```bash
+gh secret set R2_ACCESS_KEY_ID --env release-signing --repo ohtia/ohtia
+gh secret set R2_SECRET_ACCESS_KEY --env release-signing --repo ohtia/ohtia
+gh variable set R2_ACCOUNT_ID --env release-signing --repo ohtia/ohtia --body <account-id>
+```
+
+List them back, then check that the address reaches the bucket. Before the first upload the bucket answers `404` with its own `Not Found` page:
+
+```bash
+gh secret list --env release-signing --repo ohtia/ohtia
+gh variable list --env release-signing --repo ohtia/ohtia
+curl -sS -o /dev/null -w '%{http_code}\n' https://packages.ohtia.com/stable/ubuntu/InRelease
+```
+
+Renew the token every year, before Cloudflare's expiry date: create a new token as in step 4, store it with the two `gh secret set` commands and delete the old token in **Manage API tokens**. When the token may be exposed, delete it in Cloudflare first, then create and store a new one.
+
+## Package repository layout
+
+The bucket holds one flat apt repository per zone and distribution, at `<zone>/<distribution>/`: `stable/ubuntu/`, `stable/debian/`, `test/ubuntu/` and `test/debian/`. Each repository holds the `amd64` and `arm64` packages under their release asset names, `Packages` and `Packages.gz`, a copy of each under `by-hash/SHA256/<sha256>`, and `InRelease`, the index signed with the subkey. `InRelease` lists the two index files with their SHA-256 and declares `Acquire-By-Hash: yes`, so apt fetches each index by its digest and never combines two index generations. Packages and the indexes by digest are uploaded with `Cache-Control: public, max-age=31536000, immutable`, because their names never receive other bytes; `Packages`, `Packages.gz` and `InRelease` with `Cache-Control: no-cache`.
+
+An upload writes the packages first, then the indexes by digest, then `Packages` and `Packages.gz`, and `InRelease` last. Until `InRelease` is replaced, clients keep receiving the previous signed index and every file it names. After the upload the job reads `InRelease` and every package back from `https://packages.ohtia.com` and compares them with the release. It then removes the packages and indexes by digest that neither the new nor the previous index names, so a client that read the previous index shortly before can still download it. The previous index is the one the replaced `InRelease` signed, read through its `Packages` by digest, because an interrupted upload may already have replaced the plain `Packages`. When the new index equals the previous one, as in a rerun of the same version, nothing is removed, and the older files stay until the next version. When the previous `Packages` by digest is missing or differs from its digest, the job removes nothing and warns.
+
+## Recover from an incomplete repository upload
+
+A failed upload stops with an error such as `The test/ubuntu repository upload is incomplete: it stopped while uploading the packages, and the previous index is still served.` It names the repository, the step that stopped and what clients receive:
+
+- **The previous index is still served.** The failure happened before `InRelease` was replaced. Clients see the previous version; the files already uploaded are ignored until an index names them.
+- **The new signed index is served.** `InRelease` was replaced and a later step failed: the read-back through `https://packages.ohtia.com`, its comparison with the release, or the removal of older files. Clients see the new version.
+
+In both cases rerun the failed repository job of the same run. The job downloads the same packages from the release again, writes the same packages and the same `Packages` index, signs a new `InRelease` with the current date and finishes the remaining steps. Check the token, the bucket and the custom domain first when the error repeats.
 
 ## Renew the subkey
 

@@ -551,16 +551,32 @@ class WorkflowTests(unittest.TestCase):
         )
         self.assertIn("permissions: {}", WORKFLOW)
         uses = [line.strip() for line in WORKFLOW.splitlines() if "${{ inputs." in line]
-        self.assertEqual(uses, ["OHTIA_RELEASE_VERSION: ${{ inputs.version }}"] * 2)
+        self.assertEqual(
+            uses,
+            [
+                "OHTIA_RELEASE_VERSION: ${{ inputs.version }}",
+                "version: ${{ inputs.version }}",
+                "OHTIA_RELEASE_VERSION: ${{ inputs.version }}",
+            ],
+        )
 
     def test_only_the_approved_job_publishes_and_it_follows_the_check(self):
-        check, publish_job = WORKFLOW.split("\n  publish:\n")
+        check, rest = WORKFLOW.split("\n  repository:\n")
+        repository, publish_job = rest.split("\n  publish:\n")
         self.assertNotIn("environment:", check)
         self.assertIn("release_publish.py check", check)
-        self.assertIn("needs: check\n", publish_job)
+        # The stable repositories are written after the first approval, before publication.
+        self.assertIn("    needs: check\n", repository)
+        self.assertIn("    environment: release-signing\n", repository)
+        self.assertIn("digests-sha256: ${{ needs.check.outputs.digests }}", repository)
+        self.assertIn("    needs: [check, repository]\n", publish_job)
         self.assertIn("environment: release-signing\n", publish_job)
         self.assertIn("release_publish.py publish", publish_job)
-        self.assertNotIn("secrets.", WORKFLOW)
+        self.assertNotIn("secrets.", check + publish_job)
+        self.assertEqual(
+            re.findall(r"\$\{\{ secrets\.([A-Z0-9_]+) \}\}", repository),
+            ["SIGNING_SUBKEY", "SIGNING_PASSPHRASE", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"],
+        )
 
     def test_the_workflow_contains_no_build_or_signing_step(self):
         for forbidden in (
@@ -575,7 +591,9 @@ class WorkflowTests(unittest.TestCase):
             self.assertNotIn(forbidden, WORKFLOW)
         uses = re.findall(r"uses: ([^@\s]+)@([0-9a-f]{40})\n", WORKFLOW)
         self.assertEqual({name for name, _ in uses}, {"actions/checkout", "actions/setup-python"})
-        self.assertEqual(len(uses), WORKFLOW.count("uses:"))
+        # The only other action is the repository action, which signs indexes, never packages.
+        self.assertEqual(WORKFLOW.count("uses: $/.github/actions/apt-repository\n"), 1)
+        self.assertEqual(len(uses) + 1, WORKFLOW.count("uses:"))
 
 
 if __name__ == "__main__":
