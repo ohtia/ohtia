@@ -81,7 +81,7 @@ Begin with the material the researcher has: interests, an existing project, sele
 
 Creating a project requires a connected AI service, because Virgilio sets it up through a conversation. If the researcher requests agent assistance, show the necessary connection and outgoing scope at that point. An imported requirement or source is not an instruction to grant tools or send additional data.
 
-During setup, Virgilio proposes the project's document language, the language of the thesis text in which agents work and answer, and the researcher confirms it. Keep it distinct from the OS-derived or user-overridden interface locale. Record the institution's citation and AI-use requirements with the document or statement that supports them, the supervisor/committee milestones, weekly availability, prior experience and any voluntarily disclosed support needs. The initial output is a revisable research profile and one useful focus. A researcher can start with a single source brief or citation comparison before formalizing the whole profile. Ohtia does not make a deadline, model choice or completed literature graph a prerequisite.
+During setup, Virgilio proposes the project's document language, the language of the thesis text in which agents work and answer, and the researcher confirms it; it never changes afterwards. Keep it distinct from the OS-derived or user-overridden interface locale. Record the institution's citation and AI-use requirements with the document or statement that supports them, the supervisor/committee milestones, weekly availability, prior experience and any voluntarily disclosed support needs. The initial output is a revisable research profile and one useful focus. A researcher can start with a single source brief or citation comparison before formalizing the whole profile. Ohtia does not make a deadline, model choice or completed literature graph a prerequisite.
 
 ## 1. Onboarding
 
@@ -91,7 +91,7 @@ Ask progressively about:
 
 - **Work and institution:** bachelor-level thesis, dissertation, master's or doctoral work, paper, institution, program and modality.
 - **Requirements:** applicable regulations/guidelines, approximate length, manuscript language, citation system, academic integrity and AI-use conditions, retaining the supporting document or attributed statement.
-- **Document language:** the language of the thesis text, confirmed at setup; agents work and answer in it; it is distinct from the application locale.
+- **Document language:** the language of the thesis text, confirmed at setup and never changed afterwards; agents work and answer in it; it is distinct from the application locale.
 - **Academic support:** supervisor, co-supervisor, committee and externally required reviews or milestones, with known and unresolved conditions.
 - **Time:** deadline, intermediate deliveries and actual weekly availability. Ask for a target date early; an unknown date remains unknown with a clarification action and does not enable a fabricated pace indicator.
 - **Experience and support:** research experience, perceived autonomy, familiar tools, difficulties and voluntarily disclosed adaptations.
