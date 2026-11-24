@@ -254,6 +254,7 @@ def configuration(cell: dict, prepared: Path, output: Path, version: str) -> dic
     app = prepared / record["app"]
     tools = delivery.read(ROOT / "config/desktop/toolchain.json")["tools"]
     resources = ROOT / "tooling/quality-packaging"
+    icons = ROOT / "packages/main/app-icon"
     linux = cell["target"].startswith("linux-")
     config = {
         "appId": "org.ohtia.Ohtia",
@@ -277,6 +278,7 @@ def configuration(cell: dict, prepared: Path, output: Path, version: str) -> dic
             "target": cell["formats"] if linux else ["deb"],
             "executableName": "ohtia",
             "desktop": {"entry": {"Name": "Ohtia"}},
+            "icon": str(icons / "linux"),
             "category": "Development",
             "synopsis": "Desktop workspace for academic research",
         },
@@ -302,14 +304,17 @@ def configuration(cell: dict, prepared: Path, output: Path, version: str) -> dic
                 "xdg-utils",
             ],
         },
-        "win": {"target": ["nsis"], "signAndEditExecutable": False},
+        # Resource editing embeds the icon; the executable itself stays unsigned.
+        "win": {"target": ["nsis"], "signExecutable": False, "icon": str(icons / "icon.ico")},
         "nsis": {
             "oneClick": False,
             "perMachine": False,
             "allowElevation": False,
             "allowToChangeInstallationDirectory": True,
-            "createDesktopShortcut": False,
-            "createStartMenuShortcut": False,
+            "createDesktopShortcut": True,
+            "createStartMenuShortcut": True,
+            "installerIcon": str(icons / "icon.ico"),
+            "uninstallerIcon": str(icons / "icon.ico"),
         },
         "mac": {
             "target": ["dmg", "zip"],
@@ -317,6 +322,7 @@ def configuration(cell: dict, prepared: Path, output: Path, version: str) -> dic
             "hardenedRuntime": False,
             "notarize": False,
             "category": "public.app-category.education",
+            "icon": str(icons / "icon.icns"),
         },
         "publish": None,
     }
