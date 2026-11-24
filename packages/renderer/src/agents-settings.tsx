@@ -276,6 +276,13 @@ function SaveFeedback({
             : "connection-notice connection-attention"
         }
         role={phase === "rejected" ? "alert" : "status"}
+        data-settings-attention={
+          phase === "rejected"
+            ? "octagon-alert"
+            : phase === "conflict"
+              ? "git-compare"
+              : "triangle-alert"
+        }
       >
         <Icon
           name={
@@ -573,7 +580,11 @@ export function FirstModelChoice({
 function CatalogReadFailure({ locale, retry }: { locale: InterfaceLocale; retry: () => void }) {
   return (
     <div className="agent-choice-feedback">
-      <p className="connection-notice connection-attention" role="status">
+      <p
+        className="connection-notice connection-attention"
+        role="status"
+        data-settings-attention="triangle-alert"
+      >
         <Icon name="triangle-alert" />
         {message(locale, "settings.readFailed")}
       </p>
@@ -793,7 +804,7 @@ function PreferenceControls({
   return (
     <div className="agent-choice" role="group" aria-labelledby={id}>
       <div className="agent-choice-heading">
-        <h4 id={id}>
+        <h3 id={id}>
           {target === "default" ? (
             name
           ) : (
@@ -802,7 +813,7 @@ function PreferenceControls({
               locale={locale}
             />
           )}
-        </h4>
+        </h3>
         {settings.saveState?.target === target &&
           ["saving", "saved"].includes(settings.saveState.phase) && (
             <SaveFeedback state={settings.saveState} locale={locale} />
@@ -970,43 +981,18 @@ export function AgentsSettings({
   locale,
   connections,
   snapshots,
-  probeResults,
+  recoveryFocusId,
 }: {
-  readonly probeResults?: Readonly<
-    Record<string, Extract<ConnectionEvent, { kind: "probe_result" }>>
-  >;
   readonly port: FoundationPort;
   readonly settings: Settings;
   readonly locale: InterfaceLocale;
   readonly connections: readonly Service[];
   readonly snapshots: Readonly<Record<string, ConnectionSnapshot | undefined>>;
+  /** The element that receives focus when a recovery action leaves its notice. */
+  readonly recoveryFocusId: string;
 }) {
-  const id = useId();
-  const [refreshes, setRefreshes] = useState<Partial<Record<string, "updating" | "failed">>>({});
-  const now = useModelListClock(true);
-  const lastProbeResults = useRef(probeResults);
-  useEffect(() => {
-    const prior = lastProbeResults.current;
-    lastProbeResults.current = probeResults;
-    const results = Object.values(probeResults ?? {}).filter(
-      (result) => prior?.[result.connection] !== result,
-    );
-    if (!results.length) return;
-    setRefreshes((previous) => {
-      const next = { ...previous };
-      for (const { connection, outcome } of results) {
-        if (previous[connection] !== "updating") continue;
-        if (outcome === "unreachable") next[connection] = "failed";
-        else next[connection] = undefined;
-      }
-      return next;
-    });
-  }, [probeResults]);
   return (
-    <section aria-labelledby={id} className="agent-settings">
-      <h3 id={id} tabIndex={-1}>
-        {message(locale, "agents.title")}
-      </h3>
+    <div className="agent-settings">
       <p className="settings-info">
         <Icon name="info" />
         {message(locale, "agents.applies")}
@@ -1014,7 +1000,7 @@ export function AgentsSettings({
       <RecoveryFocusBoundary
         className="agent-focus-recovery"
         onRecover={() => {
-          document.getElementById(id)?.focus();
+          document.getElementById(recoveryFocusId)?.focus();
         }}
       >
         {settings.failed && (
@@ -1032,58 +1018,89 @@ export function AgentsSettings({
           {...{ target, settings, port, locale, connections, snapshots }}
         />
       ))}
-      {connections
-        .filter(({ id }) => snapshots[id]?.state === "connected")
-        .map((service) => {
-          const list = settings.data?.lists.find(
-            ({ connection, current }) => connection === service.id && current !== false,
-          );
-          const params = { service: service.displayName };
-          const state = refreshes[service.id];
-          return (
-            <div key={service.id} className="agent-choice">
-              {list &&
-                (service.id === openaiApiKeyConnection.id ? (
-                  <>
-                    <p>{message(locale, "agents.catalogUnlisted")}</p>
-                    <p>{catalogAge(locale, service.displayName, list.updatedAt, now)}</p>
-                  </>
-                ) : (
-                  <p>
-                    {message(locale, "agents.listAge", {
-                      ...params,
-                      age: relativeAge(locale, list.updatedAt, now),
-                    })}
-                  </p>
-                ))}
-              {state === "updating" && (
-                <p role="status">{message(locale, "agents.refreshing", params)}</p>
-              )}
-              {state === "failed" && (
-                <p className="connection-notice connection-attention" role="status">
-                  <Icon name="triangle-alert" />
-                  {message(locale, "agents.refreshFailed")}
-                </p>
-              )}
-              <button
-                type="button"
-                className="primitive-button"
-                aria-disabled={snapshots[service.id]?.probing || state === "updating" || undefined}
-                onClick={() => {
-                  if (snapshots[service.id]?.probing || state === "updating") return;
-                  setRefreshes((previous) => ({ ...previous, [service.id]: "updating" }));
-                  void port.probeConnection(service.id).result.then((outcome) => {
-                    if (!outcome.ok)
-                      setRefreshes((previous) => ({ ...previous, [service.id]: "failed" }));
-                  });
-                }}
-              >
-                <Icon name="list-restart" />
-                {message(locale, "agents.refresh", params)}
-              </button>
-            </div>
-          );
-        })}
-    </section>
+    </div>
+  );
+}
+
+/** The age and refresh action of one connected service's model list. */
+export function ModelListRefresh({
+  port,
+  settings,
+  locale,
+  service,
+  snapshot,
+  probeResult,
+}: {
+  readonly port: FoundationPort;
+  readonly settings: Settings;
+  readonly locale: InterfaceLocale;
+  readonly service: Service;
+  readonly snapshot: ConnectionSnapshot | undefined;
+  readonly probeResult?: Extract<ConnectionEvent, { kind: "probe_result" }> | undefined;
+}) {
+  const [state, setState] = useState<"updating" | "failed">();
+  const connected = snapshot?.state === "connected";
+  const now = useModelListClock(connected);
+  const lastProbeResult = useRef(probeResult);
+  useEffect(() => {
+    const prior = lastProbeResult.current;
+    lastProbeResult.current = probeResult;
+    if (!probeResult || prior === probeResult) return;
+    setState((previous) =>
+      previous !== "updating"
+        ? previous
+        : probeResult.outcome === "unreachable"
+          ? "failed"
+          : undefined,
+    );
+  }, [probeResult]);
+  if (!connected) return null;
+  const list = settings.data?.lists.find(
+    ({ connection, current }) => connection === service.id && current !== false,
+  );
+  const params = { service: service.displayName };
+  return (
+    <div className="agent-choice model-list-refresh">
+      {list &&
+        (service.id === openaiApiKeyConnection.id ? (
+          <>
+            <p>{message(locale, "agents.catalogUnlisted")}</p>
+            <p>{catalogAge(locale, service.displayName, list.updatedAt, now)}</p>
+          </>
+        ) : (
+          <p>
+            {message(locale, "agents.listAge", {
+              ...params,
+              age: relativeAge(locale, list.updatedAt, now),
+            })}
+          </p>
+        ))}
+      {state === "updating" && <p role="status">{message(locale, "agents.refreshing", params)}</p>}
+      {state === "failed" && (
+        <p
+          className="connection-notice connection-attention"
+          role="status"
+          data-settings-attention="triangle-alert"
+        >
+          <Icon name="triangle-alert" />
+          {message(locale, "agents.refreshFailed")}
+        </p>
+      )}
+      <button
+        type="button"
+        className="primitive-button"
+        aria-disabled={snapshot.probing || state === "updating" || undefined}
+        onClick={() => {
+          if (snapshot.probing || state === "updating") return;
+          setState("updating");
+          void port.probeConnection(service.id).result.then((outcome) => {
+            if (!outcome.ok) setState("failed");
+          });
+        }}
+      >
+        <Icon name="list-restart" />
+        {message(locale, "agents.refresh", params)}
+      </button>
+    </div>
   );
 }

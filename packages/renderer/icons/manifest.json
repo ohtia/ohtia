@@ -72,6 +72,12 @@
       "sha256": "f055c9b2cacf644d21b66d67792ff81774edd68dc73a5ca17480e79cb5d16cd5"
     },
     {
+      "name": "chevron-left",
+      "file": "chevron-left.svg",
+      "archive_member": "package/icons/chevron-left.svg",
+      "sha256": "f157826f2ae49cb74df90501d0183d84cfe52d5fd4d4ac5a58f8e38ddf49d361"
+    },
+    {
       "name": "circle-check",
       "file": "circle-check.svg",
       "archive_member": "package/icons/circle-check.svg",
@@ -318,6 +324,12 @@
       "sha256": "c1cb374ad0eacb479202429df9fecfdf0aabec3d254c8fb76305ff9637436272"
     },
     {
+      "name": "plug",
+      "file": "plug.svg",
+      "archive_member": "package/icons/plug.svg",
+      "sha256": "82b6a3555ea7c35ff3c10fea041fc4b84c318b11aa5fa4a64fe38b75cceffcbd"
+    },
+    {
       "name": "plus",
       "file": "plus.svg",
       "archive_member": "package/icons/plus.svg",
@@ -406,6 +418,12 @@
       "file": "user-round.svg",
       "archive_member": "package/icons/user-round.svg",
       "sha256": "011b29453d6392abbb8b175201d667c4f15df84812b694ef4e15e6491cda32fc"
+    },
+    {
+      "name": "users",
+      "file": "users.svg",
+      "archive_member": "package/icons/users.svg",
+      "sha256": "4465a8282a15897fcf70ee4ac7a752db10664051335d2c0967c9a7a903f13904"
     },
     {
       "name": "x",

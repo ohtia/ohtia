@@ -5,6 +5,7 @@ import { windowConnectionSubscription } from "./connection-subscription.js";
 import {
   AgentsSettings,
   FirstModelChoice,
+  ModelListRefresh,
   useAgentSettings,
   type AgentSettingsObserver,
 } from "./agents-settings.js";
@@ -18,7 +19,9 @@ import {
   useEffect,
   useCallback,
   useId,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -35,8 +38,10 @@ import {
   type CommandPlatform,
   type SimpleMessageKey,
 } from "@ohtia/contracts";
+import { flushSync } from "react-dom";
 import { Dialog } from "./layers.js";
-import { LucideGlyph as Icon } from "./iconography.js";
+import { LucideGlyph as Icon, type LucideName } from "./iconography.js";
+import { designMetrics } from "./design-tokens.js";
 import { OhtiaGlasses } from "./branding.js";
 import { CharacterPreview } from "./character.js";
 import { LanguagePanel } from "./language-panel.js";
@@ -56,11 +61,83 @@ import {
   type SettingValue,
 } from "./settings-controller.js";
 
-/** Add a section only when its owning feature supplies real controls and operations. */
+/** Add a page only when its owning feature supplies real controls and operations. */
 export interface SettingsSection {
   readonly id: string;
   readonly title: string;
+  readonly icon: LucideName;
   readonly content: ReactNode;
+}
+type SettingsTarget = SettingFeature | "layout" | "connections" | "agents";
+/** The page that owns each focus target; presentation features and layout share one page. */
+function targetPage(target: SettingsTarget): string {
+  return target === "connections" ? "services" : target === "agents" ? "agents" : "appearance";
+}
+/** Below the compact width class the list and one page replace each other. */
+const compactWidth = 600;
+/**
+ * The dialog is `component.settings.max-width` wide or the window minus `space.4` per side, so it
+ * is narrower than the compact class exactly when the window is narrower than this query's width.
+ * A media query answers before the first paint and observes no element whose size it changes.
+ */
+export const settingsNarrowQuery = `(width < ${String(compactWidth + 2 * designMetrics["space.4"])}px)`;
+/** Undefined while the dialog is closed. */
+function useNarrow(active: boolean): boolean | undefined {
+  const [narrow, setNarrow] = useState<boolean>();
+  useLayoutEffect(() => {
+    if (!active) {
+      setNarrow(undefined);
+      return;
+    }
+    const media = window.matchMedia(settingsNarrowQuery);
+    setNarrow(media.matches);
+    const changed = () => {
+      // Commit before the next paint so the dialog never shows a mixed layout.
+      flushSync(() => {
+        setNarrow(media.matches);
+      });
+    };
+    media.addEventListener("change", changed);
+    return () => {
+      media.removeEventListener("change", changed);
+    };
+  }, [active]);
+  return narrow;
+}
+const attentionOrder: readonly LucideName[] = ["octagon-alert", "triangle-alert", "git-compare"];
+/** The most severe unresolved preference notice that a page currently shows. */
+function usePageAttention(
+  element: RefObject<HTMLElement | null>,
+  active: boolean,
+): LucideName | undefined {
+  const [attention, setAttention] = useState<LucideName>();
+  useEffect(() => {
+    const target = element.current;
+    if (!active || !target) {
+      setAttention(undefined);
+      return;
+    }
+    const update = () => {
+      const shown = new Set(
+        [...target.querySelectorAll("[data-settings-attention]")].map((node) =>
+          node.getAttribute("data-settings-attention"),
+        ),
+      );
+      setAttention(attentionOrder.find((icon) => shown.has(icon)));
+    };
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(target, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["data-settings-attention"],
+    });
+    return () => {
+      observer.disconnect();
+    };
+  }, [element, active]);
+  return attention;
 }
 function useSystemPreference(query: string, active: boolean): boolean {
   const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
@@ -78,10 +155,7 @@ function useSystemPreference(query: string, active: boolean): boolean {
   }, [query, active]);
   return matches;
 }
-function focusSetting(
-  id: string,
-  feature: SettingFeature | "layout" | "connections" | "agents",
-): void {
+function focusSetting(id: string, feature: SettingsTarget): void {
   const group = document.getElementById(`${id}-${feature}-controls`);
   (
     group?.querySelector<HTMLElement>("input:checked") ??
@@ -113,7 +187,7 @@ export function SettingsDialog({
   readonly connections?: readonly ProviderDeclaration["connection"][];
   readonly observeResearch?: AgentSettingsObserver | undefined;
   readonly returnFocusRef?: Readonly<RefObject<HTMLElement | null>>;
-  readonly requestedFocus?: SettingFeature | "connections" | "agents" | undefined;
+  readonly requestedFocus?: SettingsTarget | undefined;
   readonly feedback?: ReactNode;
   readonly open: boolean;
   readonly onClose: () => void;
@@ -153,9 +227,42 @@ export function SettingsDialog({
     if (!open) setSnapshots({});
   }, [open]);
   const id = useId();
+  const [page, setPage] = useState("appearance");
+  const [view, setView] = useState<"list" | "page">("list");
+  const measured = useNarrow(open);
+  const narrow = measured === true;
+  const wasNarrow = useRef(measured);
   useEffect(() => {
-    if (open && requestedFocus) focusSetting(id, requestedFocus);
-  }, [open, requestedFocus, id]);
+    // Narrowing an open dialog keeps the page in use; opening narrow starts at the list.
+    if (wasNarrow.current === false && measured === true) setView("page");
+    wasNarrow.current = measured;
+  }, [measured]);
+  const handledFocus = useRef<SettingsTarget | undefined>(undefined);
+  /** A narrow view change moves focus to the element it reveals once that element is shown. */
+  const focusAfterView = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const target = focusAfterView.current;
+    if (!target) return;
+    focusAfterView.current = undefined;
+    document.getElementById(target)?.focus();
+  }, [page, view]);
+  useEffect(() => {
+    if (!open) {
+      handledFocus.current = undefined;
+      setPage("appearance");
+      setView("list");
+      return;
+    }
+    if (!requestedFocus || handledFocus.current === requestedFocus) return;
+    setPage(targetPage(requestedFocus));
+    setView("page");
+  }, [open, requestedFocus]);
+  useEffect(() => {
+    if (!open || !requestedFocus || handledFocus.current === requestedFocus) return;
+    if (page !== targetPage(requestedFocus) || (narrow && view !== "page")) return;
+    handledFocus.current = requestedFocus;
+    focusSetting(id, requestedFocus);
+  }, [open, requestedFocus, page, view, narrow, id]);
   const systemDark = useSystemPreference("(prefers-color-scheme: dark)", open);
   const reducedMotion = useSystemReducedMotion(open);
   const [reason, setReason] = useState<SimpleMessageKey>();
@@ -219,6 +326,41 @@ export function SettingsDialog({
   };
   const layout = workspaceState.preference;
   const count = workspacePanels.filter((panel) => layout.visible[panel]).length;
+  const agentsAvailable = typeof port.listAgentPreferences === "function";
+  const appearanceRef = useRef<HTMLDivElement>(null);
+  const servicesRef = useRef<HTMLDivElement>(null);
+  const agentsRef = useRef<HTMLDivElement>(null);
+  const attention: Record<string, LucideName | undefined> = {
+    appearance: usePageAttention(appearanceRef, open),
+    services: usePageAttention(servicesRef, open),
+    agents: usePageAttention(agentsRef, open && agentsAvailable),
+  };
+  const pages: readonly { id: string; title: string; icon: LucideName }[] = [
+    { id: "appearance", title: text("settings.section"), icon: "sun" },
+    { id: "services", title: message(locale, "connection.title"), icon: "plug" },
+    ...(agentsAvailable
+      ? [{ id: "agents", title: message(locale, "agents.title"), icon: "users" as const }]
+      : []),
+    ...sections.map(({ id: section, title, icon }) => ({ id: `section-${section}`, title, icon })),
+  ];
+  const showList = !narrow || view === "list";
+  const showPage = !narrow || view === "page";
+  const pageHeading = (pageId: string) => `${id}-${pageId}-page`;
+  const choosePage = (pageId: string) => {
+    setPage(pageId);
+    if (!narrow) return;
+    focusAfterView.current = pageHeading(pageId);
+    setView("page");
+  };
+  const backToList = () => {
+    focusAfterView.current = `${id}-${page}-nav`;
+    setView("list");
+  };
+  const pageTitle = (pageId: string, title: string) => (
+    <h2 id={pageHeading(pageId)} tabIndex={-1}>
+      {title}
+    </h2>
+  );
   return (
     <Dialog
       open={open}
@@ -240,11 +382,7 @@ export function SettingsDialog({
       className="command-dialog settings-dialog"
       bodyClassName="settings-dialog-body"
     >
-      <div className="settings-content">
-        <p className="settings-info">
-          <Icon name="info" />
-          {text("settings.immediate")}
-        </p>
+      <div className="settings-status">
         {!available && (
           <p className="settings-info" role="status">
             <Icon name="info" />
@@ -252,455 +390,530 @@ export function SettingsDialog({
           </p>
         )}
         {feedback}
-        <h2>{text("settings.section")}</h2>
-        {open && (
-          <LanguagePanel
-            port={port}
-            locale={locale}
-            available={available}
-            onLocale={() => {}}
-            controller={language}
-            headingLevel={3}
-          />
-        )}
-        <section aria-labelledby={`${id}-appearance`}>
-          <h3>
-            <span id={`${id}-appearance`}>{name("appearance")}</span>
-            {status("appearance")}
-          </h3>
-          <div
-            role="radiogroup"
-            aria-labelledby={`${id}-appearance`}
-            className="settings-theme-cards"
-            id={`${id}-appearance-controls`}
-          >
-            {appearances.map((value) => (
-              <label
-                key={value}
-                className="settings-theme-card"
-                data-selected={state.settings.appearance.draft === value}
-              >
-                <input
-                  type="radio"
-                  name={`${id}-theme`}
-                  value={value}
-                  aria-label={text(`command.theme.${value}`)}
-                  aria-describedby={`${id}-theme-${value}-help`}
-                  checked={state.settings.appearance.draft === value}
-                  aria-disabled={blocked("appearance")}
-                  onChange={() => {
-                    if (!blocked("appearance")) void controller.choose("appearance", value);
+      </div>
+      <div className="settings-layout" data-narrow={narrow}>
+        <nav className="settings-pages" aria-label={text("settings.pages")} hidden={!showList}>
+          <div className="settings-page-list">
+            {pages.map((entry) => {
+              const notice = attention[entry.id];
+              return (
+                <button
+                  key={entry.id}
+                  type="button"
+                  id={`${id}-${entry.id}-nav`}
+                  aria-current={entry.id === page ? "page" : undefined}
+                  aria-label={
+                    notice
+                      ? message(locale, "settings.pageAttention", { page: entry.title })
+                      : undefined
+                  }
+                  onClick={() => {
+                    choosePage(entry.id);
                   }}
-                />
-                <svg
-                  className="settings-theme-preview"
-                  viewBox="0 0 120 64"
-                  aria-hidden="true"
-                  focusable="false"
                 >
-                  <rect
-                    width="120"
-                    height="64"
-                    fill={
-                      value === "dark"
-                        ? "var(--ref-color-neutral-19)"
-                        : "var(--ref-color-neutral-98)"
-                    }
-                  />
-                  {value === "system" && (
-                    <rect x="60" width="60" height="64" fill="var(--ref-color-neutral-19)" />
+                  {entry.id === page && (
+                    <span className="settings-page-selection" aria-hidden="true" />
                   )}
-                  <g
-                    fill={
-                      value === "dark"
-                        ? "var(--ref-color-neutral-41)"
-                        : "var(--ref-color-neutral-88)"
-                    }
-                  >
-                    <rect x="4" y="4" width="112" height="8" />
-                    <rect x="4" y="16" width="24" height="44" />
-                    <rect x="32" y="16" width="52" height="44" />
-                    <rect x="88" y="16" width="28" height="44" />
-                  </g>
-                  {value === "system" && (
-                    <g fill="var(--ref-color-neutral-41)">
-                      <rect x="60" y="4" width="56" height="8" />
-                      <rect x="60" y="16" width="24" height="44" />
-                      <rect x="88" y="16" width="28" height="44" />
-                    </g>
-                  )}
-                </svg>
-                <span>
-                  <Icon
-                    name={value === "system" ? "monitor" : value === "light" ? "sun" : "moon"}
-                  />
-                  {text(`command.theme.${value}`)}
-                </span>
-                <small id={`${id}-theme-${value}-help`}>
-                  {text(
-                    value === "system"
-                      ? systemDark
-                        ? "settings.nowDark"
-                        : "settings.nowLight"
-                      : value === "light"
-                        ? "settings.alwaysLight"
-                        : "settings.alwaysDark",
-                  )}
-                </small>
-              </label>
-            ))}
+                  <Icon name={entry.icon} />
+                  <span>{entry.title}</span>
+                  {notice && <Icon name={notice} />}
+                </button>
+              );
+            })}
           </div>
-          {notices("appearance")}
-          <div
-            className="settings-zoom"
-            id={`${id}-zoom-controls`}
-            role="group"
-            aria-labelledby={`${id}-zoom`}
-          >
-            <h4>
-              <span id={`${id}-zoom`}>{name("zoom")}</span>
-              {status("zoom")}
-            </h4>
-            <div className="settings-zoom-actions">
-              <button
-                type="button"
-                aria-label={text("command.zoom.decrease")}
-                aria-disabled={blocked("zoom") || zoom === 75}
-                onClick={() => {
-                  zoomAction("decrease");
-                }}
-              >
-                <span aria-hidden="true">−</span>
-              </button>
-              <output aria-live="polite" aria-label={name("zoom")}>
-                {label("zoom", state.effectiveZoom)}
-              </output>
-              <button
-                type="button"
-                aria-label={text("command.zoom.increase")}
-                aria-disabled={blocked("zoom") || zoom === 400}
-                onClick={() => {
-                  zoomAction("increase");
-                }}
-              >
-                <Icon name="plus" />
-              </button>
-              <button
-                type="button"
-                aria-disabled={blocked("zoom") || zoom === 100}
-                onClick={() => {
-                  zoomAction("reset");
-                }}
-              >
-                {text("command.zoom.reset")}
-              </button>
-            </div>
-            <p>
-              {message(locale, "settings.zoomShortcuts", {
-                shortcuts: platform === "darwin" ? "⌘+, ⌘−, ⌘0" : "Ctrl++, Ctrl+−, Ctrl+0",
-              })}
+        </nav>
+        <div className="settings-content" hidden={!showPage}>
+          {narrow && (
+            <button type="button" className="settings-back" onClick={backToList}>
+              <Icon name="chevron-left" />
+              {text("settings.back")}
+            </button>
+          )}
+          <div className="settings-page" ref={appearanceRef} hidden={page !== "appearance"}>
+            {pageTitle("appearance", text("settings.section"))}
+            <p className="settings-info">
+              <Icon name="info" />
+              {text("settings.immediate")}
             </p>
-            {(state.settings.zoom.phase === "submitting" ||
-              (state.settings.zoom.phase === "uncertain" && !state.settings.zoom.canChoose)) && (
-              <p role="status">{text("settings.zoomPending")}</p>
+            {open && (
+              <LanguagePanel
+                port={port}
+                locale={locale}
+                available={available}
+                onLocale={() => {}}
+                controller={language}
+                headingLevel={3}
+              />
             )}
-            <SettingsZoomRefusalNotice
-              state={state}
-              controller={controller}
-              locale={locale}
-              onRecover={() => {
-                if (open) focusSetting(id, "zoom");
-              }}
-            />
-            {state.zoomReason && (
-              <p role="status">{message(locale, `command.reason.${state.zoomReason}`)}</p>
-            )}
-            {reason && <p role="status">{text(reason)}</p>}
-            {notices("zoom")}
-          </div>
-          <div className="settings-characters" id={`${id}-character-controls`}>
-            <h4>
-              <span id={`${id}-characters`}>{name("character")}</span>
-              {status("character")}
-            </h4>
-            <div className="settings-character-options">
-              <div role="radiogroup" aria-labelledby={`${id}-characters`}>
-                {characterPresentations.map((value) => (
+            <section aria-labelledby={`${id}-appearance`}>
+              <h3>
+                <span id={`${id}-appearance`}>{name("appearance")}</span>
+                {status("appearance")}
+              </h3>
+              <div
+                role="radiogroup"
+                aria-labelledby={`${id}-appearance`}
+                className="settings-theme-cards"
+                id={`${id}-appearance-controls`}
+              >
+                {appearances.map((value) => (
                   <label
                     key={value}
-                    className="settings-character-option"
-                    data-selected={state.settings.character.draft === value}
+                    className="settings-theme-card"
+                    data-selected={state.settings.appearance.draft === value}
                   >
                     <input
                       type="radio"
-                      name={`${id}-character`}
+                      name={`${id}-theme`}
                       value={value}
-                      aria-label={text(`settings.${value}`)}
-                      aria-describedby={`${id}-character-${value}-help`}
-                      checked={state.settings.character.draft === value}
-                      aria-disabled={blocked("character")}
+                      aria-label={text(`command.theme.${value}`)}
+                      aria-describedby={`${id}-theme-${value}-help`}
+                      checked={state.settings.appearance.draft === value}
+                      aria-disabled={blocked("appearance")}
                       onChange={() => {
-                        if (!blocked("character")) void controller.choose("character", value);
+                        if (!blocked("appearance")) void controller.choose("appearance", value);
                       }}
                     />
+                    <svg
+                      className="settings-theme-preview"
+                      viewBox="0 0 120 64"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <rect
+                        width="120"
+                        height="64"
+                        fill={
+                          value === "dark"
+                            ? "var(--ref-color-neutral-19)"
+                            : "var(--ref-color-neutral-98)"
+                        }
+                      />
+                      {value === "system" && (
+                        <rect x="60" width="60" height="64" fill="var(--ref-color-neutral-19)" />
+                      )}
+                      <g
+                        fill={
+                          value === "dark"
+                            ? "var(--ref-color-neutral-41)"
+                            : "var(--ref-color-neutral-88)"
+                        }
+                      >
+                        <rect x="4" y="4" width="112" height="8" />
+                        <rect x="4" y="16" width="24" height="44" />
+                        <rect x="32" y="16" width="52" height="44" />
+                        <rect x="88" y="16" width="28" height="44" />
+                      </g>
+                      {value === "system" && (
+                        <g fill="var(--ref-color-neutral-41)">
+                          <rect x="60" y="4" width="56" height="8" />
+                          <rect x="60" y="16" width="24" height="44" />
+                          <rect x="88" y="16" width="28" height="44" />
+                        </g>
+                      )}
+                    </svg>
                     <span>
-                      {text(`settings.${value}`)}
-                      <small id={`${id}-character-${value}-help`}>
-                        {text(`settings.${value}Help`)}
-                      </small>
+                      <Icon
+                        name={value === "system" ? "monitor" : value === "light" ? "sun" : "moon"}
+                      />
+                      {text(`command.theme.${value}`)}
                     </span>
+                    <small id={`${id}-theme-${value}-help`}>
+                      {text(
+                        value === "system"
+                          ? systemDark
+                            ? "settings.nowDark"
+                            : "settings.nowLight"
+                          : value === "light"
+                            ? "settings.alwaysLight"
+                            : "settings.alwaysDark",
+                      )}
+                    </small>
                   </label>
                 ))}
               </div>
-              <div className="settings-character-preview">
-                {state.settings.character.draft === "hidden" ? (
-                  <>
-                    <OhtiaGlasses />
-                    <span>{text("settings.symbolOnly")}</span>
-                  </>
-                ) : (
-                  open && (
-                    <CharacterPreview
-                      mode={state.settings.character.draft as "animated" | "static"}
-                      size={96}
-                    />
-                  )
-                )}
+              {notices("appearance")}
+            </section>
+            <section
+              className="settings-zoom"
+              id={`${id}-zoom-controls`}
+              aria-labelledby={`${id}-zoom`}
+            >
+              <h3>
+                <span id={`${id}-zoom`}>{name("zoom")}</span>
+                {status("zoom")}
+              </h3>
+              <div className="settings-zoom-actions">
+                <button
+                  type="button"
+                  aria-label={text("command.zoom.decrease")}
+                  aria-disabled={blocked("zoom") || zoom === 75}
+                  onClick={() => {
+                    zoomAction("decrease");
+                  }}
+                >
+                  <span aria-hidden="true">−</span>
+                </button>
+                <output aria-live="polite" aria-label={name("zoom")}>
+                  {label("zoom", state.effectiveZoom)}
+                </output>
+                <button
+                  type="button"
+                  aria-label={text("command.zoom.increase")}
+                  aria-disabled={blocked("zoom") || zoom === 400}
+                  onClick={() => {
+                    zoomAction("increase");
+                  }}
+                >
+                  <Icon name="plus" />
+                </button>
+                <button
+                  type="button"
+                  aria-disabled={blocked("zoom") || zoom === 100}
+                  onClick={() => {
+                    zoomAction("reset");
+                  }}
+                >
+                  {text("command.zoom.reset")}
+                </button>
               </div>
-            </div>
-            {reducedMotion && state.settings.character.draft === "animated" && (
-              <p className="settings-info">
-                <Icon name="info" />
-                {text("settings.reducedMotion")}
+              <p>
+                {message(locale, "settings.zoomShortcuts", {
+                  shortcuts: platform === "darwin" ? "⌘+, ⌘−, ⌘0" : "Ctrl++, Ctrl+−, Ctrl+0",
+                })}
               </p>
-            )}
-            {notices("character")}
-          </div>
-        </section>
-        <section id={`${id}-layout-controls`} aria-labelledby={`${id}-layout`}>
-          <h3>
-            <span id={`${id}-layout`}>{text("help.layout")}</span>
-            <span className="settings-save-state" role="status">
-              {workspaceState.persistence.save.state === "submitting" ? (
-                <>
-                  <Icon name="circle-dashed" />
-                  {text("saving")}
-                </>
-              ) : workspaceState.persistence.save.state === "confirmed" ? (
-                <>
-                  <Icon name="check" />
-                  {text("saved")}
-                </>
-              ) : null}
-            </span>
-          </h3>
-          {workspacePanels.map((panel) => (
-            <label className="settings-layout-option" key={panel}>
-              <input
-                type="checkbox"
-                checked={layout.visible[panel]}
+              {(state.settings.zoom.phase === "submitting" ||
+                (state.settings.zoom.phase === "uncertain" && !state.settings.zoom.canChoose)) && (
+                <p role="status">{text("settings.zoomPending")}</p>
+              )}
+              <SettingsZoomRefusalNotice
+                state={state}
+                controller={controller}
+                locale={locale}
+                onRecover={() => {
+                  if (open) focusSetting(id, "zoom");
+                }}
+              />
+              {state.zoomReason && (
+                <p role="status">{message(locale, `command.reason.${state.zoomReason}`)}</p>
+              )}
+              {reason && <p role="status">{text(reason)}</p>}
+              {notices("zoom")}
+            </section>
+            <section
+              className="settings-characters"
+              id={`${id}-character-controls`}
+              aria-labelledby={`${id}-characters`}
+            >
+              <h3>
+                <span id={`${id}-characters`}>{name("character")}</span>
+                {status("character")}
+              </h3>
+              <div className="settings-character-options">
+                <div role="radiogroup" aria-labelledby={`${id}-characters`}>
+                  {characterPresentations.map((value) => (
+                    <label
+                      key={value}
+                      className="settings-character-option"
+                      data-selected={state.settings.character.draft === value}
+                    >
+                      <input
+                        type="radio"
+                        name={`${id}-character`}
+                        value={value}
+                        aria-label={text(`settings.${value}`)}
+                        aria-describedby={`${id}-character-${value}-help`}
+                        checked={state.settings.character.draft === value}
+                        aria-disabled={blocked("character")}
+                        onChange={() => {
+                          if (!blocked("character")) void controller.choose("character", value);
+                        }}
+                      />
+                      <span>
+                        {text(`settings.${value}`)}
+                        <small id={`${id}-character-${value}-help`}>
+                          {text(`settings.${value}Help`)}
+                        </small>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <div className="settings-character-preview">
+                  {state.settings.character.draft === "hidden" ? (
+                    <>
+                      <OhtiaGlasses />
+                      <span>{text("settings.symbolOnly")}</span>
+                    </>
+                  ) : (
+                    open && (
+                      <CharacterPreview
+                        mode={state.settings.character.draft as "animated" | "static"}
+                        size={96}
+                      />
+                    )
+                  )}
+                </div>
+              </div>
+              {reducedMotion && state.settings.character.draft === "animated" && (
+                <p className="settings-info">
+                  <Icon name="info" />
+                  {text("settings.reducedMotion")}
+                </p>
+              )}
+              {notices("character")}
+            </section>
+            <section id={`${id}-layout-controls`} aria-labelledby={`${id}-layout`}>
+              <h3>
+                <span id={`${id}-layout`}>{text("help.layout")}</span>
+                <span className="settings-save-state" role="status">
+                  {workspaceState.persistence.save.state === "submitting" ? (
+                    <>
+                      <Icon name="circle-dashed" />
+                      {text("saving")}
+                    </>
+                  ) : workspaceState.persistence.save.state === "confirmed" ? (
+                    <>
+                      <Icon name="check" />
+                      {text("saved")}
+                    </>
+                  ) : null}
+                </span>
+              </h3>
+              {workspacePanels.map((panel) => (
+                <label className="settings-layout-option" key={panel}>
+                  <input
+                    type="checkbox"
+                    checked={layout.visible[panel]}
+                    aria-disabled={
+                      !available ||
+                      workspaceState.initializing ||
+                      workspaceState.persistence.save.state === "submitting" ||
+                      workspaceState.persistence.save.state === "uncertain" ||
+                      (count === 1 && layout.visible[panel])
+                    }
+                    onChange={() => {
+                      if (available) workspace.visibility(panel, undefined, true);
+                    }}
+                  />
+                  {text(`command.panels.${panel}`)}
+                </label>
+              ))}
+              {count === 1 && <p role="status">{text("command.reason.last_panel")}</p>}
+              <button
+                type="button"
                 aria-disabled={
                   !available ||
                   workspaceState.initializing ||
                   workspaceState.persistence.save.state === "submitting" ||
-                  workspaceState.persistence.save.state === "uncertain" ||
-                  (count === 1 && layout.visible[panel])
+                  workspaceState.persistence.save.state === "uncertain"
                 }
-                onChange={() => {
-                  if (available) workspace.visibility(panel, undefined, true);
+                onClick={() => {
+                  if (available) workspace.reset();
                 }}
-              />
-              {text(`command.panels.${panel}`)}
-            </label>
-          ))}
-          {count === 1 && <p role="status">{text("command.reason.last_panel")}</p>}
-          <button
-            type="button"
-            aria-disabled={
-              !available ||
-              workspaceState.initializing ||
-              workspaceState.persistence.save.state === "submitting" ||
-              workspaceState.persistence.save.state === "uncertain"
-            }
-            onClick={() => {
-              if (available) workspace.reset();
-            }}
-          >
-            <Icon name="rotate-ccw" />
-            {text("command.layout.reset")}
-          </button>
-          <p>{text("settings.layoutHelp")}</p>
-          <RecoveryFocusBoundary
-            onRecover={() => {
-              if (open) focusSetting(id, "layout");
-            }}
-          >
-            {workspaceState.persistence.save.state === "rejected" && (
-              <p className="language-danger" role="alert">
-                <Icon name="octagon-alert" />
-                {text("settings.layoutNotRemembered")}{" "}
-                <button
-                  type="button"
-                  aria-disabled={!available}
-                  onClick={() => {
-                    if (!available) return;
-                    if (open) focusSetting(id, "layout");
-                    void workspace.rememberLayout();
-                  }}
-                >
-                  {text("settings.language.tryAgain")}
-                </button>
-              </p>
-            )}
-            {workspaceState.persistence.save.state === "conflicting" && (
-              <p className="language-attention" role="status">
-                <Icon name="git-compare" />
-                {text("settings.layoutConflict")}{" "}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (open) focusSetting(id, "layout");
-                  }}
-                >
-                  {text("settings.language.chooseAgain")}
-                </button>
-              </p>
-            )}
-            {workspaceState.persistence.save.state === "uncertain" && (
-              <p className="language-attention" role="status">
-                <Icon name="triangle-alert" />
-                {message(locale, "settings.uncertain", { setting: text("help.layout") })}{" "}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (open) focusSetting(id, "layout");
-                    void workspace.reconcilePreferences();
-                  }}
-                >
-                  {text("settings.language.check")}
-                </button>
-              </p>
-            )}
-          </RecoveryFocusBoundary>
-        </section>
-        <SettingsReadFailureNotice
-          state={state}
-          controller={controller}
-          locale={locale}
-          onRecover={() => {
-            if (open) focusSetting(id, "appearance");
-          }}
-        />
-        {open && (
-          <div
-            id={`${id}-connections-controls`}
-            role="region"
-            tabIndex={-1}
-            aria-label={message(locale, "connection.title")}
-          >
-            {connections.length > 1 && <h3>{message(locale, "connection.title")}</h3>}
-            {connections.map((service) => (
-              <ConnectionsPanel
-                key={service.id}
-                connection={service.id}
-                kind={service.kind}
-                embedded={connections.length > 1}
-                subscribeConnection={subscribeConnection}
-                onProbeResult={(result) => {
-                  setProbeResults((prior) =>
-                    prior[result.connection] === result
-                      ? prior
-                      : { ...prior, [result.connection]: result },
-                  );
+              >
+                <Icon name="rotate-ccw" />
+                {text("command.layout.reset")}
+              </button>
+              <p>{text("settings.layoutHelp")}</p>
+              <RecoveryFocusBoundary
+                onRecover={() => {
+                  if (open) focusSetting(id, "layout");
                 }}
-                onConnection={(snapshot) => {
-                  setSnapshots((previous) => ({ ...previous, [service.id]: snapshot }));
-                }}
-                onCatalogRead={() => {
-                  if (!observeResearch && typeof port.listAgentPreferences === "function")
-                    void agentSettings.read();
-                }}
-                renderAfterState={(snapshot, justConnected) => (
-                  <FirstModelChoice
-                    {...{ snapshot, port, locale }}
-                    settings={agentSettings}
-                    showConnected={
-                      justConnected &&
-                      agentSettings.data?.preferences.some(
-                        (row) =>
-                          row.target === "default" && row.connection !== service.id && !!row.model,
-                      ) === true
-                    }
-                  />
+              >
+                {workspaceState.persistence.save.state === "rejected" && (
+                  <p
+                    className="language-danger"
+                    role="alert"
+                    data-settings-attention="octagon-alert"
+                  >
+                    <Icon name="octagon-alert" />
+                    {text("settings.layoutNotRemembered")}{" "}
+                    <button
+                      type="button"
+                      aria-disabled={!available}
+                      onClick={() => {
+                        if (!available) return;
+                        if (open) focusSetting(id, "layout");
+                        void workspace.rememberLayout();
+                      }}
+                    >
+                      {text("settings.language.tryAgain")}
+                    </button>
+                  </p>
                 )}
-                port={port}
+                {workspaceState.persistence.save.state === "conflicting" && (
+                  <p
+                    className="language-attention"
+                    role="status"
+                    data-settings-attention="git-compare"
+                  >
+                    <Icon name="git-compare" />
+                    {text("settings.layoutConflict")}{" "}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (open) focusSetting(id, "layout");
+                      }}
+                    >
+                      {text("settings.language.chooseAgain")}
+                    </button>
+                  </p>
+                )}
+                {workspaceState.persistence.save.state === "uncertain" && (
+                  <p
+                    className="language-attention"
+                    role="status"
+                    data-settings-attention="triangle-alert"
+                  >
+                    <Icon name="triangle-alert" />
+                    {message(locale, "settings.uncertain", { setting: text("help.layout") })}{" "}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (open) focusSetting(id, "layout");
+                        void workspace.reconcilePreferences();
+                      }}
+                    >
+                      {text("settings.language.check")}
+                    </button>
+                  </p>
+                )}
+              </RecoveryFocusBoundary>
+            </section>
+            <SettingsReadFailureNotice
+              state={state}
+              controller={controller}
+              locale={locale}
+              onRecover={() => {
+                if (open) focusSetting(id, "appearance");
+              }}
+            />
+            {open && (
+              <section className="project-memory-settings" aria-labelledby={`${id}-memory-title`}>
+                <h3 id={`${id}-memory-title`}>{text("settings.memoryText.title")}</h3>
+                {memoryLengthSettings.map((feature) => (
+                  <div
+                    key={feature}
+                    id={`${id}-${feature}-controls`}
+                    className="memory-length-settings"
+                  >
+                    <MemoryLengthField
+                      feature={feature}
+                      locale={locale}
+                      setting={state.settings[feature]}
+                      record={state.current?.[feature]}
+                      blocked={blocked(feature) || state.settings[feature].checkingReceipt}
+                      disabled={!available || !state.current}
+                      onChoose={(value) => {
+                        void controller.choose(feature, value);
+                      }}
+                      status={(visible) => status(feature, visible)}
+                    />
+                    {notices(feature)}
+                  </div>
+                ))}
+              </section>
+            )}
+          </div>
+          <div className="settings-page" ref={servicesRef} hidden={page !== "services"}>
+            {pageTitle("services", message(locale, "connection.title"))}
+            {open && (
+              <div id={`${id}-connections-controls`} tabIndex={-1}>
+                {connections.map((service) => (
+                  <section key={service.id} aria-labelledby={`${id}-${service.id}-service`}>
+                    <h3 id={`${id}-${service.id}-service`}>{service.displayName}</h3>
+                    <ConnectionsPanel
+                      connection={service.id}
+                      kind={service.kind}
+                      embedded
+                      subscribeConnection={subscribeConnection}
+                      onProbeResult={(result) => {
+                        setProbeResults((prior) =>
+                          prior[result.connection] === result
+                            ? prior
+                            : { ...prior, [result.connection]: result },
+                        );
+                      }}
+                      onConnection={(snapshot) => {
+                        setSnapshots((previous) => ({ ...previous, [service.id]: snapshot }));
+                      }}
+                      onCatalogRead={() => {
+                        if (!observeResearch && agentsAvailable) void agentSettings.read();
+                      }}
+                      renderAfterState={(snapshot, justConnected) => (
+                        <FirstModelChoice
+                          {...{ snapshot, port, locale }}
+                          settings={agentSettings}
+                          showConnected={
+                            justConnected &&
+                            agentSettings.data?.preferences.some(
+                              (row) =>
+                                row.target === "default" &&
+                                row.connection !== service.id &&
+                                !!row.model,
+                            ) === true
+                          }
+                        />
+                      )}
+                      port={port}
+                      locale={locale}
+                      available={available}
+                    />
+                    {agentsAvailable && (
+                      <ModelListRefresh
+                        port={port}
+                        settings={agentSettings}
+                        locale={locale}
+                        service={service}
+                        snapshot={snapshots[service.id]}
+                        probeResult={probeResults[service.id]}
+                      />
+                    )}
+                  </section>
+                ))}
+              </div>
+            )}
+            {open && limits && (
+              <LimitsPanel
+                controller={limits}
                 locale={locale}
                 available={available}
+                connections={connections
+                  .filter(({ id }) => snapshots[id]?.state === "connected")
+                  .map(({ id, displayName, kind }) => ({
+                    id,
+                    name: displayName,
+                    kind,
+                    limit: connectionInferenceLimits[id],
+                  }))}
               />
-            ))}
+            )}
           </div>
-        )}
-        {open && typeof port.listAgentPreferences === "function" && (
-          <div
-            id={`${id}-agents-controls`}
-            role="region"
-            tabIndex={-1}
-            aria-label={message(locale, "agents.title")}
-          >
-            <AgentsSettings
-              {...{ port, locale, connections, snapshots }}
-              settings={agentSettings}
-              probeResults={probeResults}
-            />
-          </div>
-        )}
-        {open && limits && (
-          <LimitsPanel
-            controller={limits}
-            locale={locale}
-            available={available}
-            connections={connections
-              .filter(({ id }) => snapshots[id]?.state === "connected")
-              .map(({ id, displayName, kind }) => ({
-                id,
-                name: displayName,
-                kind,
-                limit: connectionInferenceLimits[id],
-              }))}
-          />
-        )}
-        {open && (
-          <section className="project-memory-settings" aria-labelledby={`${id}-memory-title`}>
-            <h2 id={`${id}-memory-title`}>{text("memory.title")}</h2>
-            {memoryLengthSettings.map((feature) => (
-              <div
-                key={feature}
-                id={`${id}-${feature}-controls`}
-                className="memory-length-settings"
-              >
-                <MemoryLengthField
-                  feature={feature}
-                  locale={locale}
-                  setting={state.settings[feature]}
-                  record={state.current?.[feature]}
-                  blocked={blocked(feature) || state.settings[feature].checkingReceipt}
-                  disabled={!available || !state.current}
-                  onChoose={(value) => {
-                    void controller.choose(feature, value);
-                  }}
-                  status={(visible) => status(feature, visible)}
-                />
-                {notices(feature)}
-              </div>
-            ))}
-          </section>
-        )}
-        {sections.map((section) => (
-          <section key={section.id} aria-labelledby={`${id}-${section.id}`}>
-            <h3 id={`${id}-${section.id}`}>{section.title}</h3>
-            {section.content}
-          </section>
-        ))}
+          {agentsAvailable && (
+            <div className="settings-page" ref={agentsRef} hidden={page !== "agents"}>
+              {pageTitle("agents", message(locale, "agents.title"))}
+              {open && (
+                <div id={`${id}-agents-controls`} tabIndex={-1}>
+                  <AgentsSettings
+                    {...{ port, locale, connections, snapshots }}
+                    settings={agentSettings}
+                    recoveryFocusId={pageHeading("agents")}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+          {sections.map((section) => (
+            <div
+              key={section.id}
+              className="settings-page"
+              hidden={page !== `section-${section.id}`}
+            >
+              {pageTitle(`section-${section.id}`, section.title)}
+              {section.content}
+            </div>
+          ))}
+        </div>
       </div>
     </Dialog>
   );

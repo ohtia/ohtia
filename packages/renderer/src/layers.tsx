@@ -209,14 +209,27 @@ export function Dialog({
             return (group.find((candidate) => candidate.checked) ?? group[0]) === element;
           })
           .sort((left, right) => (left.tabIndex || Infinity) - (right.tabIndex || Infinity));
-        const index = sequential.indexOf(
-          event.currentTarget.ownerDocument.activeElement as HTMLElement,
-        );
-        const next = event.shiftKey
-          ? index <= 0
-            ? sequential.length - 1
-            : index - 1
-          : (index + 1) % sequential.length;
+        const active = event.currentTarget.ownerDocument.activeElement as HTMLElement;
+        const index = sequential.indexOf(active);
+        let next: number;
+        if (index < 0 && event.currentTarget.contains(active)) {
+          // A programmatically focused element, such as a heading, keeps its document position.
+          const after = sequential.findIndex(
+            (element) =>
+              (active.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+          );
+          next = event.shiftKey
+            ? (after < 0 ? sequential.length : after) - 1
+            : after < 0
+              ? 0
+              : after;
+          if (next < 0) next = sequential.length - 1;
+        } else
+          next = event.shiftKey
+            ? index <= 0
+              ? sequential.length - 1
+              : index - 1
+            : (index + 1) % sequential.length;
         event.preventDefault();
         sequential[next]?.focus();
       }}

@@ -12,7 +12,7 @@
   (Consultation), SPEC-003-028 (Contribution graphs, as they appear on screen), SPEC-003-031 (Virgilio:
   synthesis), SPEC-003-032 (Virgilio: plan proposal and approval), SPEC-003-033 (Plan progress, stop and
   finish), SPEC-003-034 (Handoff), SPEC-003-035 (Plan redirection), SPEC-003-006 and SPEC-003-007 (Settings ›
-  Connections), SPEC-003-036 (Attention signals), SPEC-003-037 (Project memory for agents), SPEC-003-038
+  AI services), SPEC-003-036 (Attention signals), SPEC-003-037 (Project memory for agents), SPEC-003-038
   (Project memory view and entries), SPEC-003-039 (Late usage and diagnostics: reply details), SPEC-003-040
   (Models and effort), SPEC-003-041 (Anthropic API key) and SPEC-003-042 (OpenAI API key) of
   docs/epics/EPIC-003-research-agents/epic.md with synthetic content, and the owner's mockup-review decisions on
@@ -164,6 +164,8 @@ SOFTWARE.
         --rail-width: 40px;
         --separator-line: 4px;
         --dialog-max-width: 480px;
+        --settings-max-width: 880px;
+        --settings-nav-width: 232px;
         --tooltip-max-width: 256px;
         --palette-max-width: 600px;
         --explorer-initial: 256px;
@@ -2932,9 +2934,55 @@ SOFTWARE.
         font-size: 14px;
       }
 
-      /* Settings › Connections and Settings › Agents. */
+      /* Settings › AI services and Settings › Agents. */
+      .dialog.dialog-settings {
+        width: min(var(--settings-max-width), calc(100% - 2 * var(--space-4)));
+      }
+      .settings-layout {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: var(--settings-nav-width) minmax(0, 1fr);
+      }
+      .settings-pages {
+        display: grid;
+        align-content: start;
+        gap: var(--space-2);
+        padding: var(--space-4) var(--space-3);
+        background: var(--surface-panel);
+        border-right: 1px solid var(--border-subtle);
+        border-bottom-left-radius: var(--radius-large);
+      }
+      .settings-page-button {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        min-height: var(--space-10);
+        padding: var(--space-2) var(--space-3);
+        border: 0;
+        border-radius: var(--radius-small);
+        background: transparent;
+        color: var(--content-primary);
+        font-family: inherit;
+        font-size: 14px;
+        line-height: 20px;
+        font-weight: 500;
+        text-align: left;
+      }
+      .settings-page-button[aria-current="page"] {
+        background: var(--surface-emphasis);
+        box-shadow: inset 2px 0 0 var(--content-primary);
+      }
       .dialog-settings .dialog-body {
-        padding-top: var(--space-3);
+        padding-top: var(--space-4);
+        background: var(--surface-page);
+        border-bottom-right-radius: var(--radius-large);
+      }
+      .page-title {
+        margin: 0 0 var(--space-3);
+        font-size: 20px;
+        line-height: 28px;
+        font-weight: 600;
       }
       .conn-state {
         font-size: 14px;
@@ -4223,7 +4271,7 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
                         </div>
                       </div>
                       <div class="notice-actions">
-                        <button class="button">Open Connections</button>
+                        <button class="button">Open AI services</button>
                       </div>
                     </div>
                   </div>
@@ -4508,13 +4556,13 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
                         <div class="notice-body">
                           <p>
                             ChatGPT doesn't allow this account to use its plan in Ohtia. Sign out in
-                            Settings › Connections, then choose “Sign in with another account”, or
+                            Settings › AI services, then choose “Sign in with another account”, or
                             connect another service.
                           </p>
                         </div>
                       </div>
                       <div class="notice-actions">
-                        <button class="button">Open Connections</button
+                        <button class="button">Open AI services</button
                         ><button
                           class="icon-button msg-action"
                           aria-label="Show details"
@@ -4539,12 +4587,12 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
                         <svg class="icon icon-16" data-i="octagon-alert"></svg>
                         <div class="notice-body">
                           <p>
-                            Your ChatGPT session expired. Sign in again in Settings › Connections.
+                            Your ChatGPT session expired. Sign in again in Settings › AI services.
                           </p>
                         </div>
                       </div>
                       <div class="notice-actions">
-                        <button class="button">Open Connections</button
+                        <button class="button">Open AI services</button
                         ><button class="button">Try again</button
                         ><button
                           class="icon-button msg-action"
@@ -5770,7 +5818,7 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
                   <div class="dialog-footer">
                     <button class="button focus-ring">
                       <svg class="icon icon-16" data-i="x"></svg>Close dialog</button
-                    ><button class="button button-primary">Open Connections</button>
+                    ><button class="button button-primary">Open AI services</button>
                   </div>
                 </div>
               </div>
@@ -7510,7 +7558,7 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
                           </div>
                         </div>
                         <div class="notice-actions">
-                          <button class="button">Open Connections</button>
+                          <button class="button">Open AI services</button>
                         </div>
                       </div>
                     </div>
@@ -8574,7 +8622,7 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
                     </p>
                     <p class="row-reason">
                       ChatGPT doesn't allow this account to use its plan in Ohtia. Sign out in
-                      Settings › Connections, then choose “Sign in with another account”, or connect
+                      Settings › AI services, then choose “Sign in with another account”, or connect
                       another service.
                     </p>
                   </li>
@@ -8645,7 +8693,7 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
                       <svg class="icon icon-16" data-i="unplug"></svg>Waiting: ChatGPT isn't
                       connected
                     </p>
-                    <div class="row-actions"><button class="button">Open Connections</button></div>
+                    <div class="row-actions"><button class="button">Open AI services</button></div>
                   </li>
                   <li class="plan-row">
                     <p class="row-state is-attention">
@@ -11194,14 +11242,14 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
       <div class="scrim"></div>
     </template>
 
-    <!-- 17. Settings › Connections. -->
+    <!-- 17. Settings › AI services. -->
     <section class="specimen" id="connections">
       <div class="variant" data-variant="main">
-        <h2 class="specimen-title">Settings › Connections, 1280 × 1000</h2>
+        <h2 class="specimen-title">Settings › AI services, 1280 × 1000</h2>
         <p class="specimen-note">
-          SPEC-003-007, SPEC-003-041 and SPEC-003-042. The Settings dialog body is scrolled to its
-          Connections section. ChatGPT is connected and was just tested; Anthropic is connected with
-          a key; the OpenAI key entry is open with the caret in its field.
+          SPEC-003-007, SPEC-003-041 and SPEC-003-042. The AI services page is open. ChatGPT is
+          connected and was just tested; Anthropic is connected with a key; the OpenAI key entry is
+          open with the caret in its field. Simultaneous work follows below the scrolled page.
         </p>
         <div class="frame" style="width: 1280px; height: 1000px">
           <div data-use="settings-backdrop"></div>
@@ -11217,57 +11265,97 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
                 <svg class="icon icon-20" data-i="x"></svg>
               </button>
             </div>
-            <div class="dialog-body">
-              <h2 class="section-label">Connections</h2>
-              <section class="group" aria-labelledby="c-chatgpt">
-                <div class="group-heading"><h3 id="c-chatgpt">ChatGPT</h3></div>
-                <p class="conn-state">Connected · <bdi>researcher@example.org</bdi></p>
-                <div class="conn-actions">
-                  <button class="button">Test connection</button
-                  ><button class="button">Sign out of ChatGPT</button>
-                </div>
-                <div class="notice notice-status" role="status">
-                  <svg class="icon icon-16" data-i="info"></svg>
-                  <div class="notice-body">
-                    <p>Your ChatGPT sign-in works.</p>
-                    <p>Models: GPT-6.1 Sol, GPT-6.1 Terra, and GPT-6 Luna</p>
-                    <p class="notice-small">
-                      ChatGPT doesn't say in advance whether your plan can be used in Ohtia. The
-                      first reply will show it.
-                    </p>
+            <div class="settings-layout">
+              <nav class="settings-pages" aria-label="Settings pages">
+                <button class="settings-page-button">
+                  <svg class="icon icon-20" data-i="sun"></svg
+                  ><span>Accessibility and appearance</span>
+                </button>
+                <button class="settings-page-button" aria-current="page">
+                  <svg class="icon icon-20" data-i="plug"></svg><span>AI services</span>
+                </button>
+                <button class="settings-page-button">
+                  <svg class="icon icon-20" data-i="users"></svg><span>Agents</span>
+                </button>
+              </nav>
+              <div class="dialog-body">
+                <h2 class="page-title">AI services</h2>
+                <section class="group" aria-labelledby="c-chatgpt">
+                  <div class="group-heading"><h3 id="c-chatgpt">ChatGPT</h3></div>
+                  <p class="conn-state">Connected · <bdi>researcher@example.org</bdi></p>
+                  <div class="conn-actions">
+                    <button class="button">Test connection</button
+                    ><button class="button">Sign out of ChatGPT</button>
                   </div>
-                </div>
-              </section>
-              <section class="group" aria-labelledby="c-anthropic">
-                <div class="group-heading"><h3 id="c-anthropic">Anthropic</h3></div>
-                <p class="conn-state">Anthropic · API key · Connected Nov 9, 2026</p>
-                <div class="conn-actions">
-                  <button class="button">Test connection</button
-                  ><button class="button">Replace key</button
-                  ><button class="button">Disconnect Anthropic</button>
-                </div>
-              </section>
-              <section class="group" aria-labelledby="c-openai">
-                <div class="group-heading"><h3 id="c-openai">OpenAI</h3></div>
-                <p class="conn-state">Not connected</p>
-                <p class="help">
-                  OpenAI charges this key's usage per token to the key's OpenAI account. It is
-                  separate from any subscription to OpenAI's apps.
-                </p>
-                <label class="field-label" for="key-openai">OpenAI API key</label>
-                <input
-                  class="text-input focus-ring"
-                  id="key-openai"
-                  type="password"
-                  value="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                  autocomplete="off"
-                  spellcheck="false"
-                />
-                <div class="conn-actions">
-                  <button class="button button-primary">Save key</button
-                  ><button class="button">Close key entry</button>
-                </div>
-              </section>
+                  <div class="notice notice-status" role="status">
+                    <svg class="icon icon-16" data-i="info"></svg>
+                    <div class="notice-body">
+                      <p>Your ChatGPT sign-in works.</p>
+                      <p>Models: GPT-6.1 Sol, GPT-6.1 Terra, and GPT-6 Luna</p>
+                      <p class="notice-small">
+                        ChatGPT doesn't say in advance whether your plan can be used in Ohtia. The
+                        first reply will show it.
+                      </p>
+                    </div>
+                  </div>
+                  <div class="model-line">
+                    <p class="help">Model list from ChatGPT, updated 5 min. ago</p>
+                    <button class="button">
+                      <svg class="icon icon-16" data-i="list-restart"></svg>Refresh ChatGPT model
+                      list
+                    </button>
+                  </div>
+                </section>
+                <section class="group" aria-labelledby="c-anthropic">
+                  <div class="group-heading"><h3 id="c-anthropic">Anthropic</h3></div>
+                  <p class="conn-state">Anthropic · API key · Connected Nov 9, 2026</p>
+                  <div class="conn-actions">
+                    <button class="button">Test connection</button
+                    ><button class="button">Replace key</button
+                    ><button class="button">Disconnect Anthropic</button>
+                  </div>
+                  <div class="model-line">
+                    <p class="help">Model list from Anthropic, updated 12 min. ago</p>
+                    <button class="button">
+                      <svg class="icon icon-16" data-i="list-restart"></svg>Refresh Anthropic model
+                      list
+                    </button>
+                  </div>
+                </section>
+                <section class="group" aria-labelledby="c-openai">
+                  <div class="group-heading"><h3 id="c-openai">OpenAI</h3></div>
+                  <p class="conn-state">Not connected</p>
+                  <p class="help">
+                    OpenAI charges this key's usage per token to the key's OpenAI account. It is
+                    separate from any subscription to OpenAI's apps.
+                  </p>
+                  <label class="field-label" for="key-openai">OpenAI API key</label>
+                  <input
+                    class="text-input focus-ring"
+                    id="key-openai"
+                    type="password"
+                    value="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                  <div class="conn-actions">
+                    <button class="button button-primary">Save key</button
+                    ><button class="button">Close key entry</button>
+                  </div>
+                </section>
+                <section class="group" aria-labelledby="c-limits">
+                  <div class="group-heading"><h3 id="c-limits">Simultaneous work</h3></div>
+                  <label class="field-label" for="c-limit">AI replies at the same time</label>
+                  <input class="text-input" id="c-limit" value="3" inputmode="numeric" />
+                  <p class="help">
+                    More replies at once can use more of your ChatGPT plan at the same time.
+                  </p>
+                  <p class="help">
+                    More replies at once can spend your Anthropic key's credit faster.
+                  </p>
+                  <p class="help">ChatGPT allows at most 3 replies at a time.</p>
+                </section>
+              </div>
             </div>
           </div>
         </div>
@@ -12199,13 +12287,13 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
                           <svg class="icon icon-16" data-i="octagon-alert"></svg>
                           <div class="notice-body">
                             <p>
-                              Anthropic no longer accepts this key. Replace it in Settings ›
-                              Connections.
+                              Anthropic no longer accepts this key. Replace it in Settings › AI
+                              services.
                             </p>
                           </div>
                         </div>
                         <div class="notice-actions">
-                          <button class="button">Open Connections</button
+                          <button class="button">Open AI services</button
                           ><button class="button">Try again</button
                           ><button
                             class="icon-button msg-action"
@@ -12223,13 +12311,13 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
                         <div class="notice-body">
                           <p>
                             Anthropic doesn't allow this key to make this request. Check the key's
-                            permissions in your Anthropic account, or replace it in Settings ›
-                            Connections.
+                            permissions in your Anthropic account, or replace it in Settings › AI
+                            services.
                           </p>
                         </div>
                       </div>
                       <div class="notice-actions">
-                        <button class="button">Open Connections</button
+                        <button class="button">Open AI services</button
                         ><button
                           class="icon-button msg-action"
                           aria-label="Show details"
@@ -12350,13 +12438,13 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
                           <svg class="icon icon-16" data-i="octagon-alert"></svg>
                           <div class="notice-body">
                             <p>
-                              OpenAI no longer accepts this key. Replace it in Settings ›
-                              Connections.
+                              OpenAI no longer accepts this key. Replace it in Settings › AI
+                              services.
                             </p>
                           </div>
                         </div>
                         <div class="notice-actions">
-                          <button class="button">Open Connections</button
+                          <button class="button">Open AI services</button
                           ><button class="button">Try again</button
                           ><button
                             class="icon-button msg-action"
@@ -12374,13 +12462,13 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
                         <div class="notice-body">
                           <p>
                             OpenAI doesn't allow this key to make this request. Check the key's
-                            permissions in your OpenAI account, or replace it in Settings ›
-                            Connections.
+                            permissions in your OpenAI account, or replace it in Settings › AI
+                            services.
                           </p>
                         </div>
                       </div>
                       <div class="notice-actions">
-                        <button class="button">Open Connections</button
+                        <button class="button">Open AI services</button
                         ><button
                           class="icon-button msg-action"
                           aria-label="Show details"
@@ -12683,9 +12771,9 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
       <div class="variant" data-variant="main">
         <h2 class="specimen-title">Settings › Agents, 1280 × 1240</h2>
         <p class="specimen-note">
-          SPEC-003-040. The Settings dialog body is scrolled to its Agents section. Virgilio
-          inherits the default model; Josefa uses her own model on the Anthropic key. ChatGPT
-          reports no effort levels, so its Effort controls are disabled with their reason.
+          SPEC-003-040. The Agents page is open. Virgilio inherits the default model; Josefa uses
+          her own model on the Anthropic key. ChatGPT reports no effort levels, so its Effort
+          controls are disabled with their reason.
         </p>
         <div class="frame" style="width: 1280px; height: 1240px">
           <div data-use="settings-backdrop"></div>
@@ -12701,115 +12789,119 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
                 <svg class="icon icon-20" data-i="x"></svg>
               </button>
             </div>
-            <div class="dialog-body">
-              <h2 class="section-label">Agents</h2>
-              <p class="help-line">
-                <svg class="icon icon-16" data-i="info"></svg
-                ><span
-                  >Changes apply to new replies. Replies already waiting keep their settings.</span
-                >
-              </p>
-              <section class="group" aria-labelledby="ag-default">
-                <div class="group-heading">
-                  <h3 id="ag-default">Default model</h3>
-                  <span class="save-state"
-                    ><svg class="icon icon-16" data-i="check"></svg>Saved</span
+            <div class="settings-layout">
+              <nav class="settings-pages" aria-label="Settings pages">
+                <button class="settings-page-button">
+                  <svg class="icon icon-20" data-i="sun"></svg
+                  ><span>Accessibility and appearance</span>
+                </button>
+                <button class="settings-page-button">
+                  <svg class="icon icon-20" data-i="plug"></svg><span>AI services</span>
+                </button>
+                <button class="settings-page-button" aria-current="page">
+                  <svg class="icon icon-20" data-i="users"></svg><span>Agents</span>
+                </button>
+              </nav>
+              <div class="dialog-body">
+                <h2 class="page-title">Agents</h2>
+                <p class="help-line">
+                  <svg class="icon icon-16" data-i="info"></svg
+                  ><span
+                    >Changes apply to new replies. Replies already waiting keep their
+                    settings.</span
                   >
-                </div>
-                <div class="select-steps">
-                  <div class="field field-wide">
-                    <label class="field-label" for="ag-d-s">Service</label
-                    ><select class="select" id="ag-d-s">
-                      <option>ChatGPT · researcher@example.org</option>
-                    </select>
+                </p>
+                <section class="group" aria-labelledby="ag-default">
+                  <div class="group-heading">
+                    <h3 id="ag-default">Default model</h3>
+                    <span class="save-state"
+                      ><svg class="icon icon-16" data-i="check"></svg>Saved</span
+                    >
                   </div>
-                  <div class="field">
-                    <label class="field-label" for="ag-d-m">Model</label
-                    ><select class="select" id="ag-d-m">
-                      <option>GPT-6.1 Sol</option>
-                    </select>
+                  <div class="select-steps">
+                    <div class="field field-wide">
+                      <label class="field-label" for="ag-d-s">Service</label
+                      ><select class="select" id="ag-d-s">
+                        <option>ChatGPT · researcher@example.org</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="ag-d-m">Model</label
+                      ><select class="select" id="ag-d-m">
+                        <option>GPT-6.1 Sol</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="ag-d-e">Effort</label
+                      ><select class="select" id="ag-d-e" disabled aria-describedby="ag-d-r">
+                        <option>Model default</option>
+                      </select>
+                      <p class="field-reason" id="ag-d-r">
+                        This model doesn't report effort levels.
+                      </p>
+                    </div>
                   </div>
-                  <div class="field">
-                    <label class="field-label" for="ag-d-e">Effort</label
-                    ><select class="select" id="ag-d-e" disabled aria-describedby="ag-d-r">
-                      <option>Model default</option>
-                    </select>
-                    <p class="field-reason" id="ag-d-r">This model doesn't report effort levels.</p>
+                </section>
+                <section class="group" aria-label="Virgilio">
+                  <div class="group-heading">
+                    <h3><span class="voice-label" data-agent="virgilio"></span></h3>
+                    <span class="save-state"
+                      ><svg class="icon icon-16" data-i="check"></svg>Saved</span
+                    >
                   </div>
-                </div>
-              </section>
-              <section class="group" aria-label="Virgilio">
-                <div class="group-heading">
-                  <h3><span class="voice-label" data-agent="virgilio"></span></h3>
-                  <span class="save-state"
-                    ><svg class="icon icon-16" data-i="check"></svg>Saved</span
-                  >
-                </div>
-                <div class="select-steps">
-                  <div class="field field-wide">
-                    <label class="field-label" for="ag-v-s">Service</label
-                    ><select class="select" id="ag-v-s">
-                      <option>ChatGPT · researcher@example.org</option>
-                    </select>
+                  <div class="select-steps">
+                    <div class="field field-wide">
+                      <label class="field-label" for="ag-v-s">Service</label
+                      ><select class="select" id="ag-v-s">
+                        <option>ChatGPT · researcher@example.org</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="ag-v-m">Model</label
+                      ><select class="select" id="ag-v-m">
+                        <option>Default · ChatGPT · GPT-6.1 Sol</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="ag-v-e">Effort</label
+                      ><select class="select" id="ag-v-e" disabled aria-describedby="ag-v-r">
+                        <option>Model default</option>
+                      </select>
+                      <p class="field-reason" id="ag-v-r">
+                        This model doesn't report effort levels.
+                      </p>
+                    </div>
                   </div>
-                  <div class="field">
-                    <label class="field-label" for="ag-v-m">Model</label
-                    ><select class="select" id="ag-v-m">
-                      <option>Default · ChatGPT · GPT-6.1 Sol</option>
-                    </select>
+                </section>
+                <section class="group" aria-label="Josefa">
+                  <div class="group-heading">
+                    <h3><span class="voice-label" data-agent="josefa"></span></h3>
+                    <span class="save-state"
+                      ><svg class="icon icon-16" data-i="check"></svg>Saved</span
+                    >
                   </div>
-                  <div class="field">
-                    <label class="field-label" for="ag-v-e">Effort</label
-                    ><select class="select" id="ag-v-e" disabled aria-describedby="ag-v-r">
-                      <option>Model default</option>
-                    </select>
-                    <p class="field-reason" id="ag-v-r">This model doesn't report effort levels.</p>
+                  <div class="select-steps">
+                    <div class="field field-wide">
+                      <label class="field-label" for="ag-j-s">Service</label
+                      ><select class="select" id="ag-j-s">
+                        <option>Anthropic · API key</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="ag-j-m">Model</label
+                      ><select class="select" id="ag-j-m">
+                        <option>Claude Opus 5.5</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="ag-j-e">Effort</label
+                      ><select class="select" id="ag-j-e">
+                        <option>high</option>
+                      </select>
+                    </div>
                   </div>
-                </div>
-              </section>
-              <section class="group" aria-label="Josefa">
-                <div class="group-heading">
-                  <h3><span class="voice-label" data-agent="josefa"></span></h3>
-                  <span class="save-state"
-                    ><svg class="icon icon-16" data-i="check"></svg>Saved</span
-                  >
-                </div>
-                <div class="select-steps">
-                  <div class="field field-wide">
-                    <label class="field-label" for="ag-j-s">Service</label
-                    ><select class="select" id="ag-j-s">
-                      <option>Anthropic · API key</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label class="field-label" for="ag-j-m">Model</label
-                    ><select class="select" id="ag-j-m">
-                      <option>Claude Opus 5.5</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label class="field-label" for="ag-j-e">Effort</label
-                    ><select class="select" id="ag-j-e">
-                      <option>high</option>
-                    </select>
-                  </div>
-                </div>
-              </section>
-              <section class="group" aria-label="Model lists">
-                <div class="model-line">
-                  <p class="help">Model list from ChatGPT, updated 5 min. ago</p>
-                  <button class="button">
-                    <svg class="icon icon-16" data-i="list-restart"></svg>Refresh ChatGPT model list
-                  </button>
-                </div>
-                <div class="model-line">
-                  <p class="help">Model list from Anthropic, updated 12 min. ago</p>
-                  <button class="button">
-                    <svg class="icon icon-16" data-i="list-restart"></svg>Refresh Anthropic model
-                    list
-                  </button>
-                </div>
-              </section>
+                </section>
+              </div>
             </div>
           </div>
         </div>
@@ -13018,7 +13110,7 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
               <h3 class="sheet-heading">Connecting a service</h3>
               <div class="cell">
                 <p class="state-name">
-                  <b>First connection</b> · no default yet; inline in the Connections row of the
+                  <b>First connection</b> · no default yet; inline in the AI services group of the
                   service just connected, below its state line and above its buttons, which stay
                   available (one dialog at a time); only while connected with a model in its list;
                   the list's first model preselected; focus on Model; no dismiss button: the row
@@ -13051,8 +13143,8 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
               </div>
               <div class="cell">
                 <p class="state-name">
-                  <b>A second service</b> · neutral status in its Connections row; agents keep their
-                  models
+                  <b>A second service</b> · neutral status in its AI services group; agents keep
+                  their models
                 </p>
                 <div class="settings-cell">
                   <section class="group">
@@ -13153,7 +13245,7 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
                           </div>
                         </div>
                         <div class="notice-actions">
-                          <button class="button">Open Connections</button
+                          <button class="button">Open AI services</button
                           ><button class="button">Open Agents settings</button>
                         </div>
                       </div>
@@ -13691,6 +13783,10 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
 
       // Lucide paths (24 px grid). Sources are listed in the header comment.
       const ICONS = {
+        sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
+        plug: '<path d="M12 22v-5"/><path d="M15 8V2"/><path d="M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z"/><path d="M9 8V2"/>',
+        users:
+          '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M16 3.128a4 4 0 0 1 0 7.744"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><circle cx="9" cy="7" r="4"/>',
         menu: '<path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/>',
         settings:
           '<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/>',

@@ -256,6 +256,11 @@ describe("integrated application authority", () => {
     await mount(t);
     await t.intent("settings.open");
     const dialog = container.querySelector(".settings-dialog[open]")!;
+    await act(async () =>
+      [...dialog.querySelectorAll<HTMLButtonElement>(".settings-pages button")]
+        .find(({ textContent }) => textContent === "AI services")!
+        .click(),
+    );
     const add = [...dialog.querySelectorAll("button")].find(
       ({ textContent }) => textContent === "Add " + service + " API key",
     );
@@ -858,7 +863,7 @@ it.each(["welcome", "context", "palette", "shortcut", "menu"] as const)(
     ).not.toHaveBeenCalled();
     await act(async () =>
       [...dialog.querySelectorAll("button")]
-        .find((button) => button.textContent === "Open Connections")!
+        .find((button) => button.textContent === "Open AI services")!
         .click(),
     );
     expect(container.querySelector(".settings-dialog[open]")).not.toBeNull();

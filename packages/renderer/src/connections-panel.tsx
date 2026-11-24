@@ -43,6 +43,7 @@ export function ConnectionsPanel({
   readonly connection?: string;
   readonly kind?: "subscription" | "api_key";
   readonly renderAfterState?: (snapshot: ConnectionSnapshot, justConnected: boolean) => ReactNode;
+  /** Inside a Settings service group, which supplies the service heading. */
   readonly embedded?: boolean;
   readonly onCatalogRead?: () => void;
   readonly onProbeResult?: (event: Extract<ConnectionEvent, { kind: "probe_result" }>) => void;
@@ -257,12 +258,11 @@ export function ConnectionsPanel({
     setRecovery((value) => value + 1);
   };
   const title = message(locale, "connection.title");
+  const Wrapper = embedded ? "div" : "section";
   if (!snapshot)
     return (
-      <section aria-labelledby={`${id}-title`}>
-        <h3 id={`${id}-title`} hidden={embedded}>
-          {title}
-        </h3>
+      <Wrapper {...(embedded ? {} : { "aria-labelledby": `${id}-title` })}>
+        {!embedded && <h3 id={`${id}-title`}>{title}</h3>}
         <p role="status">{!available || failed ? message(locale, "settings.unavailable") : ""}</p>
         {available && failed && (
           <div ref={actions} className="connection-actions">
@@ -276,7 +276,7 @@ export function ConnectionsPanel({
             </button>
           </div>
         )}
-      </section>
+      </Wrapper>
     );
   const service = snapshot.display_name;
   const email = snapshot.last_account_email;
@@ -346,12 +346,13 @@ export function ConnectionsPanel({
       : message(locale, "connection.notConnected");
   const disabled = !available || pending || failed;
   return (
-    <section className="settings-connections" aria-labelledby={`${id}-title`}>
-      <h3 id={`${id}-title`} hidden={embedded}>
-        {title}
-      </h3>
-      <div className="connection-row" aria-labelledby={`${id}-service`}>
-        <h4 id={`${id}-service`}>{service}</h4>
+    <Wrapper
+      className="settings-connections"
+      {...(embedded ? {} : { "aria-labelledby": `${id}-title` })}
+    >
+      {!embedded && <h3 id={`${id}-title`}>{title}</h3>}
+      <div className="connection-row" {...(embedded ? {} : { "aria-labelledby": `${id}-service` })}>
+        {!embedded && <h4 id={`${id}-service`}>{service}</h4>}
         {!!stateText && (
           <div
             className={attention ? "connection-notice connection-attention" : "connection-state"}
@@ -500,7 +501,7 @@ export function ConnectionsPanel({
           )}
         </div>
       </div>
-    </section>
+    </Wrapper>
   );
 }
 
