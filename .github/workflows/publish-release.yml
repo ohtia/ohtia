@@ -46,9 +46,45 @@ jobs:
           OHTIA_RELEASE_VERSION: ${{ inputs.version }}
         run: python3 scripts/release_publish.py check
 
+  repository:
+    name: Copy the Debian packages to the stable repositories
+    needs: check
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    # The approval page of this first protected job shows the checked version, commit and digests.
+    environment: release-signing
+    # One run at a time writes the package repositories of either workflow.
+    concurrency:
+      group: package-repositories
+      cancel-in-progress: false
+    permissions:
+      contents: write # Reads the release, which GitHub shows only to tokens with write access while it is unpublished. This job changes no release.
+    # This job holds the signing subkey and the bucket credential: it installs nothing and runs
+    # no project code; the action's tools come from the runner image.
+    steps:
+      - name: Check out the release records
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: config/release
+          persist-credentials: false
+
+      - name: Publish the stable apt repositories
+        uses: $/.github/actions/apt-repository
+        with:
+          zone: stable
+          version: ${{ inputs.version }}
+          commit: ${{ needs.check.outputs.commit }}
+          digests-sha256: ${{ needs.check.outputs.digests }}
+          github-token: ${{ github.token }}
+          signing-subkey: ${{ secrets.SIGNING_SUBKEY }}
+          signing-passphrase: ${{ secrets.SIGNING_PASSPHRASE }}
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+
   publish:
     name: Publish the release
-    needs: check
+    needs: [check, repository]
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     environment: release-signing

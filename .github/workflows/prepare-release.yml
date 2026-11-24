@@ -440,3 +440,39 @@ jobs:
           OHTIA_RELEASE_COMMIT: ${{ needs.check.outputs.commit }}
           OHTIA_RELEASE_VERSION: ${{ needs.check.outputs.version }}
         run: python3 scripts/release_prepare.py publish artifacts/release
+
+  repository:
+    name: Copy the Debian packages to the test repositories
+    needs: [check, release]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    # The environment admits only main and waits for the maintainer's approval of every run.
+    environment: release-signing
+    # One run at a time writes the package repositories of either workflow.
+    concurrency:
+      group: package-repositories
+      cancel-in-progress: false
+    permissions:
+      contents: write # Reads the unpublished release, which GitHub shows only to tokens with write access. This job changes no release.
+    # This job holds the signing subkey and the bucket credential: it installs nothing and runs
+    # no project code; the action's tools come from the runner image.
+    steps:
+      - name: Check out the release records
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: config/release
+          persist-credentials: false
+
+      - name: Publish the test apt repositories
+        uses: $/.github/actions/apt-repository
+        with:
+          zone: test
+          version: ${{ needs.check.outputs.version }}
+          commit: ${{ needs.check.outputs.commit }}
+          run-id: ${{ github.run_id }}
+          github-token: ${{ github.token }}
+          signing-subkey: ${{ secrets.SIGNING_SUBKEY }}
+          signing-passphrase: ${{ secrets.SIGNING_PASSPHRASE }}
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
