@@ -1344,6 +1344,13 @@ async function start(): Promise<void> {
         await shell.openExternal(projectLinks[payload as keyof typeof projectLinks]);
         return true;
       }
+      if (action === "open_notice_link" && typeof payload === "string") {
+        // The renderer names a component; only the URL in main's own bundled notices is opened.
+        const notice = aboutInformation().notices.find((entry) => entry.component === payload);
+        if (!notice) return false;
+        await shell.openExternal(notice.url);
+        return true;
+      }
       if (action === "copy_version" && isInterfaceLocale(payload))
         return await copyVersionInformation(aboutInformation(), payload, clipboard);
       if (

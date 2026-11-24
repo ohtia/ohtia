@@ -427,7 +427,9 @@ async function launch(
     if (fixturePath(file).endsWith("/licenses/Ohtia-LICENSE"))
       return "MIT License\n\nCopyright (c) 2026 Adrian Mastronardi & Mónica Pené\n";
     if (fixturePath(file).endsWith("/notices.json"))
-      return JSON.stringify([{ component: "React", license: "MIT" }]);
+      return JSON.stringify([
+        { component: "React", license: "MIT", url: "https://github.com/react/react" },
+      ]);
     if (fixturePath(file).endsWith("/inventory.json"))
       return JSON.stringify({ version: 1, files: {} });
     if (fixturePath(file).endsWith("/assets.json")) return JSON.stringify(assets);
@@ -1136,6 +1138,22 @@ it("admits the closed command broker on the actual sender, confirms localized co
     expect(await h.command("open_link", id)).toBe(false);
   for (const id of ["link.documentation", "link.report"] as const)
     expect(await h.command("perform", id)).toBe(true);
+  expect(await h.command("open_notice_link", "React")).toBe(true);
+  expect(electron.shell.openExternal).toHaveBeenLastCalledWith("https://github.com/react/react");
+  const opened = vi.mocked(electron.shell.openExternal).mock.calls.length;
+  for (const component of [
+    "https://example.invalid",
+    "react",
+    "Lucide",
+    "__proto__",
+    "",
+    undefined,
+    { component: "React" },
+  ])
+    expect(await h.command("open_notice_link", component)).toBe(false);
+  expect(electron.shell.openExternal).toHaveBeenCalledTimes(opened);
+  vi.mocked(electron.shell.openExternal).mockRejectedValueOnce(new Error("Browser unavailable"));
+  expect(await h.command("open_notice_link", "React")).toBe(false);
   vi.mocked(electron.shell.openExternal).mockRejectedValueOnce(new Error("Browser unavailable"));
   expect(await h.command("open_link", "report")).toBe(false);
   expect(await h.command("perform", "window.fullscreen")).toBe(true);

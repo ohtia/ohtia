@@ -28,9 +28,13 @@ export function CommandSpecimens() {
         license:
           "MIT License — synthetic catalog content; the installed dialog reads its bundled notice.",
         notices: [
-          { component: "IBM Plex Sans", license: "OFL-1.1" },
-          { component: "Noto Sans KR", license: "OFL-1.1" },
-          { component: "React", license: "MIT" },
+          { component: "IBM Plex Sans", license: "OFL-1.1", url: "https://github.com/IBM/plex" },
+          {
+            component: "Noto Sans KR",
+            license: "OFL-1.1",
+            url: "https://github.com/notofonts/noto-cjk",
+          },
+          { component: "React", license: "MIT", url: "https://github.com/react/react" },
         ],
       }),
       windowAction: async () => ({ status: "unavailable", reason: "handler_missing" }),
@@ -39,6 +43,7 @@ export function CommandSpecimens() {
       openExternalLink: async () => false,
       copyMessage: async () => false,
       openLink: async () => false,
+      openNoticeLink: async () => false,
     }),
     [copyFails, platform],
   );

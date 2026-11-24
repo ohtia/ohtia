@@ -196,7 +196,7 @@
       "minimum": 7
     },
     {
-      "selector": ".about-links a",
+      "selector": ".about-links a, .about-notices a",
       "foreground": "content.primary",
       "backgrounds": ["surface.page"],
       "minimum": 7
