@@ -112,6 +112,7 @@ async function launch(
   };
   const app = Object.assign(new EventEmitter(), {
     setName: vi.fn(),
+    setAppUserModelId: vi.fn(),
     enableSandbox: vi.fn(),
     commandLine: {
       appendSwitch: vi.fn(),
@@ -874,6 +875,19 @@ describe("broker composition with synthetic Electron adapters", () => {
     h.app.emit("before-quit", { preventDefault: vi.fn() });
     await vi.advanceTimersByTimeAsync(0);
     expect(h.motion.disposed).toBe(1);
+  });
+  it("shares the installer shortcut identity only in a packaged Windows application", async () => {
+    for (const [platform, mode, expected] of [
+      ["win32", "installed", 1],
+      ["win32", "development", 0],
+      ["linux", "installed", 0],
+      ["darwin", "installed", 0],
+    ] as const) {
+      const h = await launch({ platform, mode });
+      expect(h.app.setAppUserModelId).toHaveBeenCalledTimes(expected);
+      if (expected) expect(h.app.setAppUserModelId).toHaveBeenCalledWith("org.ohtia.Ohtia");
+      cleanups.splice(0).forEach((cleanup) => cleanup());
+    }
   });
   it("leaves Windows and macOS reduced motion to Chromium without a portal observer", async () => {
     for (const platform of ["win32", "darwin"] as const) {

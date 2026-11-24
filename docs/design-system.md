@@ -4,6 +4,8 @@ title: Ohtia design system
 description: Visual identity, tokens, symbol and character, typography, composition, accessibility, localization, component patterns and workspace icon mappings.
 generated:
   by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 tags:
   - design
   - accessibility
@@ -621,6 +623,8 @@ They are drawn on a 64 × 64 unit grid, with round-ended strokes. The [dimension
 - **Pupils:** radius 4.2, in `voice.ohtia.content`. At rest they are centered in the lenses; when moving, their centers travel at most 4.5 from each lens center.
 
 The glasses are used below 96 px: favicon, Ohtia icon, `VoiceLabel`, context bar and any other small location. Up to 24 px, including the favicon, use the [icon variant](#icon-variant); from 25 to 95 px, use the 64 × 64 piece with its fills. They are neither distorted nor rotated at rest, and their pupils stay within the specified range.
+
+The operating-system application icon applies the same thresholds and uses the full [character](#character) from 96 px. Its committed files in `packages/main/app-icon/` are the Linux hicolor PNGs (16 to 512 px), the Windows `.ico` (16 to 64 px and 256 px) and the macOS `.icns` (16 to 512 pt with their @2x images). They use the light rendering, because operating-system icons do not follow the interface theme; the icon variant is drawn in `voice.ohtia.content`. Windows and Linux choose an image by physical pixels, so at high display scaling a small icon shows the filled glasses. Packaging declares them; the development runtime keeps Electron's icon.
 
 #### Icon variant
 

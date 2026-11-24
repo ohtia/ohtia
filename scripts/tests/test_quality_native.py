@@ -8,6 +8,7 @@ import json
 import os
 import plistlib
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -231,7 +232,8 @@ for(const invalid of [undefined,'','%SystemDrive%',
             ):
                 config = native.configuration(cell, root, root / "output", "0.0.0-dev.123.2")
                 self.assertIsNone(config["publish"])
-                self.assertFalse(config["win"]["signAndEditExecutable"])
+                self.assertFalse(config["win"]["signExecutable"])
+                self.assertNotIn("signAndEditExecutable", config["win"])
                 self.assertFalse(config["nsis"]["perMachine"])
                 self.assertFalse(config["nsis"]["allowElevation"])
                 self.assertFalse(config["mac"]["notarize"])
@@ -244,6 +246,64 @@ for(const invalid of [undefined,'','%SystemDrive%',
                     )
                 self.assertEqual(config["extraMetadata"]["version"], "0.0.0-dev.123.2")
                 self.assertNotIn("update", json.dumps(config).lower())
+
+    def test_packages_declare_the_ohtia_application_icons(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "prepared.json").write_text(json.dumps({"app": "runtime/resources/app"}))
+            cell = {"target": "win32-x64", "profile": "", "formats": ["nsis"]}
+            config = native.configuration(cell, root, root / "output", "0.0.0-dev.123.2")
+        icons = native.ROOT / "packages/main/app-icon"
+        self.assertEqual(config["linux"]["icon"], str(icons / "linux"))
+        self.assertEqual(config["win"]["icon"], str(icons / "icon.ico"))
+        self.assertEqual(config["nsis"]["installerIcon"], str(icons / "icon.ico"))
+        self.assertEqual(config["nsis"]["uninstallerIcon"], str(icons / "icon.ico"))
+        self.assertTrue(config["nsis"]["createStartMenuShortcut"])
+        self.assertTrue(config["nsis"]["createDesktopShortcut"])
+        self.assertEqual(config["mac"]["icon"], str(icons / "icon.icns"))
+        linux = {}
+        for file in (icons / "linux").iterdir():
+            data = file.read_bytes()
+            self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
+            linux[file.name] = struct.unpack(">II", data[16:24])
+        self.assertEqual(
+            linux,
+            {f"{size}x{size}.png": (size, size) for size in (16, 24, 32, 48, 64, 128, 256, 512)},
+        )
+        ico = (icons / "icon.ico").read_bytes()
+        count = struct.unpack("<HHH", ico[:6])[2]
+        entries = [struct.unpack("<BBBBHHII", ico[6 + 16 * i : 22 + 16 * i]) for i in range(count)]
+        self.assertEqual([e[0] or 256 for e in entries], [16, 24, 32, 48, 64, 256])
+        for entry in entries:
+            png = ico[entry[7] : entry[7] + entry[6]]
+            self.assertEqual(struct.unpack(">II", png[16:24]), (entry[0] or 256,) * 2)
+        icns = (icons / "icon.icns").read_bytes()
+        self.assertEqual(icns[:4], b"icns")
+        self.assertEqual(struct.unpack(">I", icns[4:8])[0], len(icns))
+        kinds, offset = {}, 8
+        while offset < len(icns):
+            kind, length = (
+                icns[offset : offset + 4].decode(),
+                struct.unpack(">I", icns[offset + 4 : offset + 8])[0],
+            )
+            self.assertGreaterEqual(length, 32)
+            kinds[kind] = struct.unpack(">II", icns[offset + 24 : offset + 32])[0]
+            offset += length
+        self.assertEqual(
+            kinds,
+            {
+                "icp4": 16,
+                "ic11": 32,
+                "icp5": 32,
+                "ic12": 64,
+                "ic07": 128,
+                "ic13": 256,
+                "ic08": 256,
+                "ic14": 512,
+                "ic09": 512,
+                "ic10": 1024,
+            },
+        )
 
     def test_native_header_mismatch_refuses_smoke(self):
         with (

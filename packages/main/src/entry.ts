@@ -106,6 +106,9 @@ suppressDiagnosticCapture((discard) => {
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 app.setName("Ohtia");
+// Windows groups the taskbar button with the installer shortcuts only when both share the appId;
+// keep this value equal to the packaging appId in scripts/quality_native.py.
+if (process.platform === "win32" && app.isPackaged) app.setAppUserModelId("org.ohtia.Ohtia");
 app.enableSandbox();
 import { PresentationBroker } from "./presentation-broker.js";
 const presentationBroker = new PresentationBroker(() =>
