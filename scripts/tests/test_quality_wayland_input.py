@@ -164,28 +164,54 @@ class WaylandInputTests(unittest.TestCase):
         )
         self.assertEqual(observed[-1], ("Stop", None))
 
-    def test_welcome_can_consume_first_escape_before_observed_overview_dismisses(self):
-        observed = []
-        overview = iter([(True,), (True,), (True,), (False,), (False,)])
-        clock = iter(range(20))
+    def overview_session(self, active, observed=None, refuse_set=False, latency=0.0):
+        """Run cycle_window against a shell whose overview follows the inputs sent.
 
-        def send(_bus, _gio, _owner, _path, _interface, method, parameters=None):
+        A simulated clock advances by each sleep and by `latency` for every D-Bus call.
+        """
+        observed = [] if observed is None else observed
+        self.destinations = []
+        self.clock = 0.0
+
+        def sleep(seconds):
+            self.clock += seconds
+
+        def send(_bus, _gio, owner, path, interface, method, parameters=None):
+            self.clock += latency
             observed.append((method, parameters))
+            self.destinations.append((method, owner, path, interface))
+            if method == "Set" and refuse_set:
+                error = RuntimeError("org.freedesktop.DBus.Error.AccessDenied")
+                error.add_note(f"D-Bus operation: {interface}.{method}")
+                raise error
             if method == "CreateSession":
                 return ("/session/1",)
             if method == "Get":
-                return next(overview, (False,))
+                escapes = sum(
+                    1
+                    for name, value in observed
+                    if name == "NotifyKeyboardKeycode" and value == ("(ub)", (1, True))
+                )
+                hidden = any(name == "Set" for name, _ in observed)
+                return (active(escapes, hidden),)
             return ()
 
         with (
             patch.object(input_adapter, "call", side_effect=send),
-            patch.object(input_adapter.time, "monotonic", side_effect=lambda: next(clock)),
-            patch.object(input_adapter.time, "sleep"),
+            patch.object(input_adapter.time, "monotonic", side_effect=lambda: self.clock),
+            patch.object(input_adapter.time, "sleep", side_effect=sleep),
         ):
             input_adapter.cycle_window(
                 Mock(), self.gio, self.glib, {"remote": ":1.7", "shell": ":1.8"}
             )
-        keys = [parameters for method, parameters in observed if method == "NotifyKeyboardKeycode"]
+        return observed
+
+    def keys(self, observed):
+        return [parameters for method, parameters in observed if method == "NotifyKeyboardKeycode"]
+
+    def test_welcome_can_consume_first_escape_before_observed_overview_dismisses(self):
+        observed = self.overview_session(lambda escapes, hidden: escapes < 2)
+        keys = self.keys(observed)
         self.assertEqual(keys[:4], [("(ub)", (1, True)), ("(ub)", (1, False))] * 2)
         self.assertEqual(
             keys[4:],
@@ -196,7 +222,78 @@ class WaylandInputTests(unittest.TestCase):
                 ("(ub)", (56, False)),
             ],
         )
+        self.assertNotIn("Set", [method for method, _ in observed])
         self.assertEqual(observed[-1], ("Stop", None))
+
+    def test_an_overview_that_ignores_escape_is_hidden_through_the_shell(self):
+        observed = self.overview_session(lambda escapes, hidden: not hidden)
+        escapes = [k for k in self.keys(observed) if k == ("(ub)", (1, True))]
+        self.assertEqual(len(escapes), input_adapter.OVERVIEW_INPUTS + 1)
+        hide = next(parameters for method, parameters in observed if method == "Set")
+        self.assertEqual(hide, ("(ssv)", ("org.gnome.Shell", "OverviewActive", ("b", False))))
+        self.assertIn(
+            ("Set", ":1.8", "/org/gnome/Shell", "org.freedesktop.DBus.Properties"),
+            self.destinations,
+        )
+        self.assertIn(("(ub)", (56, True)), self.keys(observed))
+        self.assertEqual(observed[-1], ("Stop", None))
+
+    def test_an_overview_that_stays_active_fails_without_cycling(self):
+        observed = []
+        with self.assertRaisesRegex(
+            RuntimeError, "stayed active after 3 Escape inputs and the shell's hide request"
+        ):
+            self.overview_session(lambda escapes, hidden: True, observed)
+        self.assertNotIn(("(ub)", (56, True)), self.keys(observed))
+        self.assertEqual(observed[-1], ("Stop", None))
+
+    def test_a_refused_hide_request_names_the_inputs_and_still_stops(self):
+        observed = []
+        with self.assertRaises(RuntimeError) as raised:
+            self.overview_session(lambda escapes, hidden: True, observed, True)
+        message = input_adapter.failure_message(raised.exception)
+        self.assertIn("Properties.Set", message)
+        self.assertIn("after 3 Escape inputs", message)
+        self.assertLessEqual(len(message), 400)
+        self.assertNotIn(("(ub)", (56, True)), self.keys(observed))
+        self.assertEqual(observed[-1], ("Stop", None))
+
+    def test_a_slow_shell_still_receives_the_hide_request_within_the_deadline(self):
+        for latency in (0.2, 0.5, 0.9):
+            observed = []
+            with (
+                self.subTest(latency=latency),
+                self.assertRaisesRegex(RuntimeError, "and the shell's hide request"),
+            ):
+                self.overview_session(lambda escapes, hidden: True, observed, latency=latency)
+            self.assertIn("Set", [method for method, _ in observed])
+            self.assertEqual(observed[-1], ("Stop", None))
+            # Process startup and compositor verification are not simulated here.
+            self.assertLess(
+                self.clock,
+                input_adapter.OVERVIEW_DEADLINE_SECONDS
+                + input_adapter.OVERVIEW_WAIT_SECONDS
+                + 6 * latency,
+            )
+        hidden = self.overview_session(lambda escapes, hidden: not hidden, latency=0.2)
+        self.assertIn(("(ub)", (56, True)), self.keys(hidden))
+
+    def test_the_overview_dismissal_fits_the_caller_bound(self):
+        # The Escape waits fit before the hide reserve, which holds the hide request's
+        # wait and its call; the deadline leaves room within the 10 s caller bound.
+        escapes = input_adapter.OVERVIEW_INPUTS * input_adapter.OVERVIEW_WAIT_SECONDS
+        self.assertLessEqual(
+            escapes,
+            input_adapter.OVERVIEW_DEADLINE_SECONDS - input_adapter.OVERVIEW_HIDE_RESERVE_SECONDS,
+        )
+        self.assertLess(
+            input_adapter.OVERVIEW_WAIT_SECONDS, input_adapter.OVERVIEW_HIDE_RESERVE_SECONDS
+        )
+        self.assertLess(input_adapter.OVERVIEW_DEADLINE_SECONDS, 10)
+        caller = (
+            Path(__file__).resolve().parents[2] / "tooling/command-native-focus.mjs"
+        ).read_text()
+        self.assertIn("timeout: 10000", caller)
 
     def test_earliest_dbus_failure_survives_a_cleanup_failure_with_operation(self):
         bus = Mock()

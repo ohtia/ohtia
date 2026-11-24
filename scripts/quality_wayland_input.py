@@ -82,6 +82,18 @@ def verify_compositor(bus, gio, glib) -> dict:
     return owners
 
 
+# Escape inputs and the wait after each stop OVERVIEW_HIDE_RESERVE_SECONDS before the
+# deadline, leaving that time for the shell's hide request and its single wait, which follow
+# the Escapes and are bounded by their count of calls. With calls that answer well within their
+# 1 s bound, startup, the dismissal and cleanup end before the 10 s helper bound of
+# tooling/command-native-focus.mjs; at that bound the caller may stop the helper first,
+# which still fails without focusing the window.
+OVERVIEW_INPUTS = 3
+OVERVIEW_WAIT_SECONDS = 1.5
+OVERVIEW_DEADLINE_SECONDS = 7.0
+OVERVIEW_HIDE_RESERVE_SECONDS = 2.5
+
+
 def cycle_window(bus, gio, glib, owners) -> None:
     """Send and release Alt+Escape through Mutter, retaining its permission controls."""
     owner = owners["remote"]
@@ -126,19 +138,49 @@ def cycle_window(bus, gio, glib, owners) -> None:
                 glib.Variant("(ss)", ("org.gnome.Shell", "OverviewActive")),
             )[0]
 
+        end = time.monotonic() + OVERVIEW_DEADLINE_SECONDS
+        escapes_end = end - OVERVIEW_HIDE_RESERVE_SECONDS
+
+        def settle(seconds, limit):
+            deadline = min(time.monotonic() + seconds, limit)
+            while time.monotonic() < deadline and overview_active():
+                time.sleep(0.05)
+
         # GNOME starts in its overview, where window-cycling shortcuts are inactive.
         # Dismiss only an observed shell overview, never an application's open modal.
-        for attempt in range(2):
-            if not overview_active():
-                break
+        # A first-session WelcomeDialog can consume an Escape while the overview
+        # remains, and the overview stays active until its hide completes, so each input
+        # waits for the observed state before another is sent.
+        inputs = 0
+        while inputs < OVERVIEW_INPUTS and time.monotonic() < escapes_end and overview_active():
             keys(1)
-            # A first-session WelcomeDialog can consume the first Escape while
-            # the overview remains visible. Reobserve before a second bounded input.
-            deadline = time.monotonic() + 1
-            while overview_active() and time.monotonic() < deadline:
-                time.sleep(0.05)
+            inputs += 1
+            settle(OVERVIEW_WAIT_SECONDS, escapes_end)
         if overview_active():
-            raise RuntimeError("The headless GNOME overview did not dismiss after bounded input.")
+            # The hide request is always sent once, even if slow calls used up the
+            # reserve: a bounded count of calls, not the clock, limits what follows.
+            try:
+                # The shell's own hide request, still only for an observed overview.
+                call(
+                    bus,
+                    gio,
+                    owners["shell"],
+                    "/org/gnome/Shell",
+                    "org.freedesktop.DBus.Properties",
+                    "Set",
+                    glib.Variant(
+                        "(ssv)", ("org.gnome.Shell", "OverviewActive", glib.Variant("b", False))
+                    ),
+                )
+            except Exception as error:
+                error.add_note(f"after {inputs} Escape inputs")
+                raise
+            settle(OVERVIEW_WAIT_SECONDS, time.monotonic() + OVERVIEW_WAIT_SECONDS)
+            if overview_active():
+                raise RuntimeError(
+                    f"The headless GNOME overview stayed active after {inputs} Escape "
+                    "inputs and the shell's hide request."
+                )
         # Linux evdev keycodes: left Alt and Escape. This is compositor input,
         # not Chromium input and not physical keyboard-layout qualification.
         keys(56, 1)
