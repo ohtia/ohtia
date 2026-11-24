@@ -323,6 +323,12 @@ def main() -> int:
     evidence_output = None
     cleanup_ok = True
     try:
+        # Only hosted Ubuntu cells qualify against the test repository zone; the guest
+        # environment is fixed, so refuse the input instead of building for stable.
+        delivery.require(
+            "OHTIA_REPOSITORY_ZONE" not in os.environ,
+            "VM cells register only the stable repository; remove OHTIA_REPOSITORY_ZONE.",
+        )
         delivery.require(
             os.environ.get("GITHUB_ACTIONS") == "true"
             and os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted"

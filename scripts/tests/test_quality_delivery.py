@@ -124,6 +124,11 @@ class DeliveryTests(unittest.TestCase):
                     "application_version": self.plan["application_version"],
                     "native": native,
                     "suites": suites,
+                    **(
+                        {"repository": {"zone": "stable", "files": ["/etc/a", "/usr/b"]}}
+                        if format_id in {"deb", "rpm"}
+                        else {}
+                    ),
                 }
             linux = cell["target"].startswith("linux-")
             if linux:
@@ -260,6 +265,33 @@ class DeliveryTests(unittest.TestCase):
         delivery.write(file, changed)
         with self.assertRaises(delivery.DeliveryError):
             delivery.account(self.plan, self.output)
+
+    def test_linux_packages_require_their_repository_registration_evidence(self):
+        self.populate()
+        file = next(
+            f for f in self.output.glob("*/result.json") if "deb" in delivery.read(f)["packages"]
+        )
+        original = delivery.read(file)
+        for value in (
+            None,
+            {"zone": "prod", "files": ["/etc/a", "/usr/b"]},
+            {"zone": "stable", "files": ["/etc/a"]},
+            {"zone": "stable", "files": ["/usr/b", "/etc/a"]},
+            {"zone": "stable", "files": ["/etc/a", "/usr/b"], "extra": True},
+        ):
+            changed = copy.deepcopy(original)
+            if value is None:
+                changed["packages"]["deb"].pop("repository")
+            else:
+                changed["packages"]["deb"]["repository"] = value
+            delivery.write(file, changed)
+            with (
+                self.subTest(value=value),
+                self.assertRaisesRegex(delivery.DeliveryError, "repository registration"),
+            ):
+                delivery.account(self.plan, self.output)
+        delivery.write(file, original)
+        delivery.account(self.plan, self.output)
 
     def test_tampered_package_and_missing_smoke_case_fail(self):
         self.populate()

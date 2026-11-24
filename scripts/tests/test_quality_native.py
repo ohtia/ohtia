@@ -247,6 +247,140 @@ for(const invalid of [undefined,'','%SystemDrive%',
                 self.assertEqual(config["extraMetadata"]["version"], "0.0.0-dev.123.2")
                 self.assertNotIn("update", json.dumps(config).lower())
 
+    def test_each_linux_package_registers_only_its_distribution_repository(self):
+        key = (native.ROOT / "config/release/signing-key.asc").read_bytes()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cells = [
+                c
+                for c in delivery.cells(
+                    delivery.read(delivery.ROOT / "config/desktop/targets.json")
+                )
+                if c["target"].startswith("linux-")
+            ]
+            self.assertEqual(
+                {native.linux_profiles.distribution(c["profile"]) for c in cells},
+                {"ubuntu", "debian", "fedora"},
+            )
+            for cell in cells:
+                work = root / cell["id"]
+                work.mkdir()
+                (work / "prepared.json").write_text(json.dumps({"app": "runtime/resources/app"}))
+                config = native.configuration(cell, work, work / "output", "0.0.0-dev.123.2")
+                distribution = native.linux_profiles.distribution(cell["profile"])
+                kind = "rpm" if distribution == "fedora" else "deb"
+                mappings = dict(
+                    item.split("=", 1)[::-1] for item in config[kind]["fpm"] if "=" in item
+                )
+                other = config["deb" if kind == "rpm" else "rpm"]["fpm"]
+                self.assertFalse([item for item in other if "=" in item])
+                self.assertIn("--deb-no-default-config-files", config["deb"]["fpm"])
+                expected = native.repository_files(cell["profile"], "stable")
+                self.assertEqual(set(mappings), set(expected))
+                for installed, data in expected.items():
+                    source = Path(mappings[installed])
+                    self.assertEqual(source.read_bytes(), data)
+                    if os.name != "nt":
+                        self.assertEqual(source.stat().st_mode & 0o777, 0o644)
+                if kind == "deb":
+                    entry = expected["/etc/apt/sources.list.d/ohtia.sources"].decode()
+                    self.assertEqual(
+                        entry,
+                        "Types: deb\n"
+                        f"URIs: https://packages.ohtia.com/stable/{distribution}/\n"
+                        "Suites: ./\n"
+                        "Signed-By: /usr/share/keyrings/ohtia-archive-keyring.asc\n",
+                    )
+                    self.assertEqual(expected["/usr/share/keyrings/ohtia-archive-keyring.asc"], key)
+                else:
+                    entry = expected["/etc/yum.repos.d/ohtia.repo"].decode().splitlines()
+                    self.assertIn(
+                        "baseurl=https://packages.ohtia.com/stable/fedora/$releasever/", entry
+                    )
+                    for line in ("gpgcheck=1", "repo_gpgcheck=1", "enabled=1"):
+                        self.assertIn(line, entry)
+                    self.assertIn("gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-ohtia", entry)
+                    self.assertEqual(expected["/etc/pki/rpm-gpg/RPM-GPG-KEY-ohtia"], key)
+                    release = native.linux_profiles.version(cell["profile"])
+                    fpm = config["rpm"]["fpm"]
+                    self.assertEqual(fpm[fpm.index("--rpm-dist") + 1], "fc" + release)
+
+    def test_only_a_named_test_zone_changes_the_repository_address(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(native.repository_zone(), "stable")
+        with patch.dict(os.environ, {"OHTIA_REPOSITORY_ZONE": "test"}, clear=True):
+            self.assertEqual(native.repository_zone(), "test")
+        for zone in ("", "Stable", "../stable", "prod"):
+            with patch.dict(os.environ, {"OHTIA_REPOSITORY_ZONE": zone}, clear=True):
+                with self.assertRaisesRegex(delivery.DeliveryError, "zone"):
+                    native.repository_zone()
+            with self.assertRaisesRegex(delivery.DeliveryError, "zone"):
+                native.repository_files("ubuntu-26.04", zone)
+        for profile, address in (
+            ("ubuntu-26.04", "URIs: https://packages.ohtia.com/test/ubuntu/"),
+            ("debian-13", "URIs: https://packages.ohtia.com/test/debian/"),
+            ("fedora-45", "baseurl=https://packages.ohtia.com/test/fedora/$releasever/"),
+        ):
+            entry = next(iter(native.repository_files(profile, "test").values())).decode()
+            self.assertIn(address, entry.splitlines())
+            self.assertNotIn("/stable/", entry)
+
+    def test_installed_repository_files_must_be_exact_root_owned_and_listed(self):
+        cell = {"profile": "debian-13"}
+        files = native.repository_files("debian-13", "stable")
+        regular = os.stat_result((0o100644, 0, 0, 1, 0, 0, 0, 0, 0, 0))
+        listing = (
+            "'https://packages.ohtia.com/stable/debian/./InRelease' "
+            "packages.ohtia.com_stable_debian_._InRelease 0\n"
+        )
+
+        original = Path.read_bytes
+
+        def installed(expected, data=None):
+            return lambda self: (
+                (data or expected[self.as_posix()])
+                if self.as_posix() in expected
+                else original(self)
+            )
+
+        def check(stat_result=regular, data=None, listed=listing):
+            with (
+                patch.object(native.os, "lstat", return_value=stat_result),
+                patch.object(Path, "read_bytes", installed(files, data)),
+                patch.object(native, "command", return_value=listed) as command,
+            ):
+                result = native.verify_repository_registered(cell, "stable")
+            self.assertEqual(command.call_args.args[0], ["apt-get", "--print-uris", "update"])
+            return result
+
+        self.assertEqual(check(), {"zone": "stable", "files": sorted(files)})
+        for changed in (
+            {"stat_result": os.stat_result((0o100664, 0, 0, 1, 0, 0, 0, 0, 0, 0))},
+            {"stat_result": os.stat_result((0o100644, 0, 0, 1, 1000, 0, 0, 0, 0, 0))},
+            {"stat_result": os.stat_result((0o120777, 0, 0, 1, 0, 0, 0, 0, 0, 0))},
+            {"data": b"altered"},
+        ):
+            with self.assertRaisesRegex(delivery.DeliveryError, "root-owned 0644"):
+                check(**changed)
+        with self.assertRaisesRegex(delivery.DeliveryError, "apt does not list"):
+            check(listed=listing.replace("/debian/", "/ubuntu/"))
+        fedora = native.repository_files("fedora-45", "stable")
+        with (
+            patch.object(native.os, "lstat", return_value=regular),
+            patch.object(Path, "read_bytes", installed(fedora)),
+            patch.object(native, "command", return_value="repo id  repo name\nfedora  Fedora\n"),
+        ):
+            with self.assertRaisesRegex(delivery.DeliveryError, "dnf does not list"):
+                native.verify_repository_registered({"profile": "fedora-45"}, "stable")
+
+    def test_package_removal_must_remove_the_repository_files(self):
+        for profile in ("ubuntu-26.04", "fedora-44"):
+            with patch.object(native.os.path, "lexists", return_value=False):
+                native.verify_repository_removed({"profile": profile})
+            with patch.object(native.os.path, "lexists", return_value=True):
+                with self.assertRaisesRegex(delivery.DeliveryError, "left"):
+                    native.verify_repository_removed({"profile": profile})
+
     def test_packages_declare_the_ohtia_application_icons(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

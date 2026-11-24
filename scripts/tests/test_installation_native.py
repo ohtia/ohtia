@@ -18,6 +18,11 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import installation_native as native
 import installation_operator as operator
+import linux_profiles
+
+# RPM fixtures use the newest declared Fedora release and its distribution-tagged revision.
+FEDORA = linux_profiles.fedora()[-1]
+RPM_RELEASE = linux_profiles.native_release(FEDORA)
 
 
 @unittest.skipUnless(os.name == "posix", "POSIX internal Linux/macOS qualification helpers")
@@ -81,7 +86,7 @@ class InstallationTests(unittest.TestCase):
             "version": "0.0.0-dev.27.1",
             "migration_manifest_sha256": "a" * 64,
         }
-        self.cell = {"target": "linux-x64"}
+        self.cell = {"target": "linux-x64", "profile": "ubuntu-26.04"}
         (self.root / "trust").mkdir()
         self.trust = MagicMock(spec=Path)
         self.trust.resolve.return_value = self.trust
@@ -99,6 +104,9 @@ class InstallationTests(unittest.TestCase):
             self.file.rename(selected)
             self.file = selected
             self.record["file"] = str(selected)
+        if suffix == ".rpm":
+            self.cell["profile"] = FEDORA
+            self.record["entry"]["native_version"] = "0.0.0~dev.27.1-" + RPM_RELEASE
         with ExitStack() as stack:
             for name in ("check_installation_admission", "package_identity", "assert_quiescent"):
                 stack.enter_context(patch.object(native, name))
@@ -163,16 +171,22 @@ class InstallationTests(unittest.TestCase):
                 self.assertRaises(ValueError),
             ):
                 native.package_identity(self.file, self.cell, self.record["version"])
+        fedora = {**self.cell, "profile": FEDORA}
+        rpm = f"ohtia\n0\n0.0.0~dev.27.1-{RPM_RELEASE}\nx86_64"
+        with patch.object(native, "command", return_value=rpm):
+            native.package_identity(self.file.with_suffix(".rpm"), fedora, self.record["version"])
         for output in [
-            "ohtia\n1\n0.0.0~dev.27.1-1\nx86_64",
-            "ohtia\n0\n0.0.0~dev.27.1-1\naarch64",
+            rpm.replace("\n0\n", "\n1\n"),
+            rpm.replace("x86_64", "aarch64"),
+            # An RPM without its Fedora distribution tag belongs to no declared release.
+            "ohtia\n0\n0.0.0~dev.27.1-1\nx86_64",
         ]:
             with (
                 patch.object(native, "command", return_value=output),
                 self.assertRaises(ValueError),
             ):
                 native.package_identity(
-                    self.file.with_suffix(".rpm"), self.cell, self.record["version"]
+                    self.file.with_suffix(".rpm"), fedora, self.record["version"]
                 )
 
     def test_deb_dependency_plan_refuses_unrelated_install_removal_or_configuration(self):
@@ -295,8 +309,8 @@ class InstallationTests(unittest.TestCase):
     def test_rpm_repair_refuses_downgrade_and_reinstalls_only_same_registered_version(self):
         fingerprint = "a" * 40
         for current, ordering, success in (
-            ("0.0.0~dev.27.2-1", "-1", False),
-            ("0.0.0~dev.27.1-1", "0", True),
+            ("0.0.0~dev.27.2-" + RPM_RELEASE, "-1", False),
+            ("0.0.0~dev.27.1-" + RPM_RELEASE, "0", True),
         ):
             commands = []
 
@@ -1025,6 +1039,23 @@ if(!fs.existsSync(path.join(directory,'operation.lock'))) throw new Error('Ordin
             self.assertRaisesRegex(ValueError, "unconfigured"),
         ):
             operator.configured_package({"profile": "ubuntu-26.04"}, "0.0.0-dev.27.1")
+
+    def test_operator_expects_the_fedora_distribution_tag_of_the_installed_rpm(self):
+        for stdout, configured in (
+            ("0\n0.0.0~dev.27.1-" + RPM_RELEASE, True),
+            ("0\n0.0.0~dev.27.1-1", False),
+        ):
+            with patch.object(
+                operator.subprocess,
+                "run",
+                return_value=SimpleNamespace(returncode=0, stdout=stdout),
+            ) as run:
+                if configured:
+                    operator.configured_package({"profile": FEDORA}, "0.0.0-dev.27.1")
+                else:
+                    with self.assertRaisesRegex(ValueError, "different version"):
+                        operator.configured_package({"profile": FEDORA}, "0.0.0-dev.27.1")
+            self.assertEqual(run.call_args.args[0][:2], ["rpm", "-q"])
 
     def test_operator_store_inspection_uses_derived_descriptor_and_coupled_snapshot_outside_user_scratch(
         self,

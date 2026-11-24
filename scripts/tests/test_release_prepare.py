@@ -6,6 +6,7 @@ import copy
 import hashlib
 import io
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -1240,6 +1241,20 @@ class BuildTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(release_platforms.PlatformError, "runner"):
                     release_build.build("win32-x64", Path(directory) / "output")
+            construct.assert_not_called()
+
+    def test_a_release_build_refuses_any_repository_zone_before_packaging(self):
+        for zone in ("test", "stable"):
+            with (
+                tempfile.TemporaryDirectory() as directory,
+                patch.dict(os.environ, {"OHTIA_REPOSITORY_ZONE": zone}),
+                patch.object(release_build.workspace, "target_id", return_value="linux-x64"),
+                patch.object(release_build.quality_native, "construct_package") as construct,
+            ):
+                output = Path(directory) / "output"
+                with self.assertRaisesRegex(release_platforms.PlatformError, "stable repository"):
+                    release_build.build("linux-x64", output)
+                self.assertFalse(output.exists())
             construct.assert_not_called()
 
 

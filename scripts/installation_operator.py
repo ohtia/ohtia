@@ -14,6 +14,7 @@ import tempfile
 from pathlib import Path
 
 import installation_native as native
+import linux_profiles
 import quality_native
 import workspace
 
@@ -168,7 +169,10 @@ def approved_artifact(record, identity, cell):
         and approval["sha256"] == record["sha256"]
         and approval["bytes"] == record["bytes"]
         and approval["version"] == record["version"]
-        and record["entry"]["native_version"] == approval["version"].replace("-", "~", 1) + "-1"
+        and record["entry"]["native_version"]
+        == approval["version"].replace("-", "~", 1)
+        + "-"
+        + linux_profiles.native_release(cell["profile"])
         and approval["candidate"] == record["admission"]["candidate"]
         and approval["schema"] == record["entry"]["schema"]
         and approval["migration_manifest_sha256"] == record["migration_manifest_sha256"],
@@ -290,7 +294,7 @@ def copied_archive(file, expected, account, scratch, expected_bytes=None):
 
 def configured_package(cell, version):
     """Check native configuration independently of the unpacked payload bytes."""
-    expected = version.replace("-", "~", 1) + "-1"
+    expected = version.replace("-", "~", 1) + "-" + linux_profiles.native_release(cell["profile"])
     if cell["profile"].startswith("fedora-"):
         arguments = ["rpm", "-q", "--qf", "%{EPOCHNUM}\n%{VERSION}-%{RELEASE}\n", "ohtia"]
         wanted = "0\n" + expected

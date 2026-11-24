@@ -249,7 +249,9 @@ def host_matches(cell: dict, *, external_guard: dict | None = None) -> dict:
     }
 
 
-def configuration(cell: dict, prepared: Path, output: Path, version: str) -> dict:
+def configuration(
+    cell: dict, prepared: Path, output: Path, version: str, zone: str = "stable"
+) -> dict:
     record = delivery.read(prepared / "prepared.json")
     app = prepared / record["app"]
     tools = delivery.read(ROOT / "config/desktop/toolchain.json")["tools"]
@@ -352,6 +354,12 @@ def configuration(cell: dict, prepared: Path, output: Path, version: str) -> dic
             native_version,
             "--iteration",
             "1",
+            # Fedora's distribution tag names the release each RPM is built for, as in 1.fc<release>.
+            *(
+                ["--rpm-dist", "fc" + linux_profiles.version(cell["profile"])]
+                if linux_profiles.is_fedora(cell.get("profile", ""))
+                else []
+            ),
         ],
         "depends": [
             "gtk3",
@@ -365,7 +373,110 @@ def configuration(cell: dict, prepared: Path, output: Path, version: str) -> dic
             "policycoreutils",
         ],
     }
+    if linux and linux_profiles.PROFILE.fullmatch(cell.get("profile", "")):
+        # dpkg keeps files that FPM marks as configuration after removal; the entry is not one.
+        config["deb"]["fpm"].append("--deb-no-default-config-files")
+        mappings = write_repository_files(cell, output.parent / "repository", zone)
+        config[linux_profiles.package_format(cell["profile"])]["fpm"] += mappings
     return config
+
+
+# Each DEB and RPM registers the signed Ohtia repository of its distribution (SPEC-001-038).
+REPOSITORY_URL = "https://packages.ohtia.com"
+REPOSITORY_ZONES = ("stable", "test")
+REPOSITORY_KEY = ROOT / "config/release/signing-key.asc"
+REPOSITORY_ZONE_VARIABLE = "OHTIA_REPOSITORY_ZONE"
+
+
+def repository_zone() -> str:
+    """Return the repository zone a qualification build names; `stable` when it names none."""
+    zone = os.environ.get(REPOSITORY_ZONE_VARIABLE, "stable")
+    delivery.require(zone in REPOSITORY_ZONES, "Unknown Ohtia repository zone.")
+    return zone
+
+
+def repository_files(profile: str, zone: str) -> dict[str, bytes]:
+    """Return the installed path and exact bytes of each repository file of a Linux profile."""
+    delivery.require(zone in REPOSITORY_ZONES, "Unknown Ohtia repository zone.")
+    distribution = linux_profiles.distribution(profile)
+    key = REPOSITORY_KEY.read_bytes()
+    if distribution == "fedora":
+        entry = (
+            "[ohtia]\n"
+            "name=Ohtia\n"
+            f"baseurl={REPOSITORY_URL}/{zone}/fedora/$releasever/\n"
+            "enabled=1\n"
+            "gpgcheck=1\n"
+            "repo_gpgcheck=1\n"
+            "gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-ohtia\n"
+        )
+        return {
+            "/etc/yum.repos.d/ohtia.repo": entry.encode(),
+            "/etc/pki/rpm-gpg/RPM-GPG-KEY-ohtia": key,
+        }
+    # A flat apt repository: its Packages and signed InRelease sit directly at the address.
+    entry = (
+        "Types: deb\n"
+        f"URIs: {REPOSITORY_URL}/{zone}/{distribution}/\n"
+        "Suites: ./\n"
+        "Signed-By: /usr/share/keyrings/ohtia-archive-keyring.asc\n"
+    )
+    return {
+        "/etc/apt/sources.list.d/ohtia.sources": entry.encode(),
+        "/usr/share/keyrings/ohtia-archive-keyring.asc": key,
+    }
+
+
+def write_repository_files(cell: dict, directory: Path, zone: str) -> list[str]:
+    """Write the repository files with mode 0644 and return their FPM source=path mappings."""
+    directory.mkdir(parents=True, exist_ok=True)
+    mappings = []
+    for installed, data in repository_files(cell["profile"], zone).items():
+        source = directory / Path(installed).name
+        source.write_bytes(data)
+        source.chmod(0o644)
+        mappings.append(f"{source}={installed}")
+    return mappings
+
+
+def verify_repository_registered(cell: dict, zone: str) -> dict:
+    """Check the installed repository files and that the package manager lists the repository."""
+    files = repository_files(cell["profile"], zone)
+    for installed, data in files.items():
+        info = os.lstat(installed)
+        delivery.require(
+            stat.S_ISREG(info.st_mode)
+            and info.st_uid == 0
+            and info.st_gid == 0
+            and stat.S_IMODE(info.st_mode) == 0o644
+            and Path(installed).read_bytes() == data,
+            f"Repository file {installed} is not the packaged root-owned 0644 file.",
+        )
+    if linux_profiles.is_fedora(cell["profile"]):
+        listed = command(["dnf", "repo", "list", "--all"], capture=True)
+        delivery.require(
+            any(line.split()[:1] == ["ohtia"] for line in listed.splitlines()),
+            "dnf does not list the Ohtia repository.",
+        )
+    else:
+        # --print-uris names each configured index without downloading it.
+        address = f"{REPOSITORY_URL}/{zone}/{linux_profiles.distribution(cell['profile'])}/"
+        listed = command(["apt-get", "--print-uris", "update"], capture=True)
+        delivery.require(
+            any(
+                word.strip("'") in {address + "InRelease", address + "./InRelease"}
+                for word in listed.split()
+            ),
+            "apt does not list the Ohtia repository.",
+        )
+    return {"zone": zone, "files": sorted(files)}
+
+
+def verify_repository_removed(cell: dict) -> None:
+    for installed in repository_files(cell["profile"], "stable"):
+        delivery.require(
+            not os.path.lexists(installed), f"Package removal left {installed} in place."
+        )
 
 
 def fedora_before_install(cell: dict, directory: Path) -> Path:
@@ -387,12 +498,12 @@ def fedora_before_install(cell: dict, directory: Path) -> Path:
     return script
 
 
-def construct_package(cell: dict, work: Path, version: str) -> Path:
+def construct_package(cell: dict, work: Path, version: str, zone: str = "stable") -> Path:
     """Use the same unsigned package construction for hosted and external native probes."""
     work.mkdir()
     assembled = work / "assembled"
     desktop_runtime.assemble(cell["target"], assembled)
-    config = configuration(cell, assembled, work / "packages", version)
+    config = configuration(cell, assembled, work / "packages", version, zone)
     delivery.write(work / "builder.json", config)
     command([workspace.node_path(), "tooling/quality-package.mjs", work / "builder.json"])
     return work / "packages"
@@ -1029,7 +1140,8 @@ def main() -> int:
             result["os_packages"] = os_package_record(cell, output)
         delivery.write(output / "result.json", result)
         work = ROOT / "artifacts" / f"quality-{args.cell}"
-        construct_package(cell, work, planned["application_version"])
+        zone = repository_zone()
+        construct_package(cell, work, planned["application_version"], zone)
         allow_development_runtime(cell, work / "assembled")
         context = work / "context.json"
         command([workspace.node_path(), "tooling/quality-profile.mjs", "prepare", context])
@@ -1040,6 +1152,9 @@ def main() -> int:
             copied = output / package.name
             shutil.copyfile(package, copied)
             payload = unpack_package(package, kind, work / f"installed-{kind}")
+            repository = (
+                verify_repository_registered(cell, zone) if kind in {"deb", "rpm"} else None
+            )
             prepared = prepared_record(payload, cell)
             if kind in {"deb", "rpm"}:
                 delivery.write(work / "prepared.json", prepared)
@@ -1120,6 +1235,7 @@ def main() -> int:
                     "stable_preserved": True,
                     "evidence": delivery.artifact(native_file, output),
                 },
+                **({"repository": repository} if repository else {}),
             }
             delivery.write(output / "result.json", result)
             command([workspace.node_path(), "tooling/quality-profile.mjs", "retain", context])
@@ -1127,6 +1243,8 @@ def main() -> int:
                 command(["sudo", "dpkg", "--remove", "ohtia"])
             elif kind == "rpm":
                 command(["sudo", "rpm", "--erase", "ohtia"])
+            if kind in {"deb", "rpm"}:
+                verify_repository_removed(cell)
         delivery.require(
             delivery.plan(delivery.identity()) == planned,
             "Build changed its source or locked inputs.",

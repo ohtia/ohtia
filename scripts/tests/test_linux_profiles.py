@@ -41,6 +41,9 @@ class LinuxProfileTests(unittest.TestCase):
                 self.assertEqual(linux_profiles.package_tool(profile), tool)
         self.assertEqual(linux_profiles.kernel_marker("fedora-45"), ".fc45")
         self.assertEqual(linux_profiles.kernel_marker("debian-13"), "deb13")
+        self.assertEqual(linux_profiles.native_release("fedora-45"), "1.fc45")
+        for profile in ("ubuntu-26.04", "debian-13", "windows-11-25h2", ""):
+            self.assertEqual(linux_profiles.native_release(profile), "1")
         self.assertEqual(linux_profiles.os_release_name("fedora-45"), "Fedora 45")
         for invalid in ("fedora", "fedora-", "arch-1", "fedora-45-kde", "Fedora-45"):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
