@@ -174,6 +174,13 @@ def cloud_config(intent: dict, resources: dict, public_key: str) -> bytes:
         # The official KDE set installs without recommended or weak dependencies, never GNOME.
         commands += cycle.linux_desktop.kde_install_commands(profile, packages)
         packages = []
+        if fedora:
+            # The ARM instance has no GPU and no /dev/dri. Fedora 45's KWin 6.8 then starts
+            # without its compositor and crashes when a window requests activation. The
+            # kernel's virtual GEM provider, vgem, gives KWin a render node for its software
+            # OpenGL renderer; every Fedora KDE guest loads it so both releases run in the
+            # same environment. Debian 13 KDE passes without one.
+            commands.append(["modprobe", "vgem"])
     elif fedora:
         commands.append(
             ["dnf", "-y", "install", "--allowerasing", "fedora-release-identity-workstation"]

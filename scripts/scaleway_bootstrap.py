@@ -73,6 +73,7 @@ BOOTSTRAP_CODES = frozenset(
         "guest_installer_root_required",
         "guest_bootstrap_operation",
         "guest_required_command",
+        "guest_render_node",
     }
 )
 PROGRAMS = frozenset(
@@ -508,6 +509,14 @@ def prepare() -> None:
     commands = required_commands(guard["intent"]["build"]["cell"].get("desktop"))
     if not all(shutil.which(command) for command in commands):
         raise ValueError("guest_required_command")
+    # A Fedora KDE guest's KWin composites only with a render node, which cloud-init's
+    # `modprobe vgem` provides on this GPU-less instance; refuse readiness without one.
+    if (
+        fedora_profile(profile)
+        and guard["intent"]["build"]["cell"].get("desktop") == "kde"
+        and not any(Path("/dev/dri").glob("renderD*"))
+    ):
+        raise ValueError("guest_render_node")
     # Make completion contingent on an already armed shutdown timer and an ordinary locked account.
     if run("systemctl", "is-active", "ohtia-lease-expiry.timer") != "active":
         raise ValueError("guest_expiry_not_armed")

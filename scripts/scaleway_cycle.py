@@ -178,6 +178,7 @@ SAFE_FAILURE_CODES = frozenset(
         "guest_process_architecture",
         "guest_profile",
         "guest_required_command",
+        "guest_render_node",
         "guest_result_binding",
         "guest_sudo_permission",
         "guest_suite_digest",
