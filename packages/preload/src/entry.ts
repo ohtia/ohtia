@@ -336,6 +336,10 @@ const bridge: DesktopBridge = {
       typeof link === "string" && Object.hasOwn(projectLinks, link)
         ? commandBoolean("open_link", link)
         : Promise.resolve(false),
+    openNoticeLink: (component) =>
+      typeof component === "string" && component.length > 0 && component.length <= 65536
+        ? commandBoolean("open_notice_link", component)
+        : Promise.resolve(false),
   },
   system: {
     readMotion: () => motion.value,

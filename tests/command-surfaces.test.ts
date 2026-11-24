@@ -81,8 +81,8 @@ const info: AboutInformation = {
   copyright: "Copyright (c) 2026 Adrian Mastronardi & Mónica Pené",
   license: "MIT License\nSynthetic notice fixture",
   notices: [
-    { component: "React", license: "MIT" },
-    { component: "IBM Plex Sans", license: "OFL-1.1" },
+    { component: "React", license: "MIT", url: "https://github.com/react/react" },
+    { component: "IBM Plex Sans", license: "OFL-1.1", url: "https://github.com/IBM/plex" },
   ],
 };
 async function render(node: Parameters<Root["render"]>[0]) {
@@ -124,6 +124,7 @@ function harness(platform: "linux" | "win32" | "darwin" = "linux") {
     windowAction: vi.fn(async () => ({ status: "completed" as const })),
     perform: vi.fn(async () => true),
     openLink: vi.fn(async () => true),
+    openNoticeLink: vi.fn(async () => true),
   };
   return {
     bridge,
@@ -155,6 +156,14 @@ describe("local Help and About composition", () => {
     await click(button("Third-party notices", dialog));
     expect(dialog.querySelector("ul[aria-label]")!.getAttribute("tabindex")).toBe("0");
     expect(dialog.textContent).toContain("React · MIT");
+    const notice = [...dialog.querySelectorAll<HTMLAnchorElement>(".about-notices a")].find(
+      (link) => link.textContent === "React",
+    )!;
+    expect(notice.getAttribute("href")).toBe("https://github.com/react/react");
+    expect(notice.closest("li")!.textContent).toBe("React · MIT");
+    await click(notice);
+    expect(test.bridge.openNoticeLink).toHaveBeenCalledWith("React");
+    expect(test.bridge.openLink).not.toHaveBeenCalled();
     await click(button("Copy version information", dialog));
     expect(test.bridge.copyVersionInformation).toHaveBeenCalledWith("en-US");
     expect(dialog.querySelector(".about-copied")!.textContent).toBe("Copied");
@@ -221,6 +230,20 @@ describe("local Help and About composition", () => {
     );
     expect(container.textContent).not.toContain("synthetic private detail");
     await click(button("Close dialog", container.querySelector(".about-dialog")!));
+    vi.mocked(test.bridge.openNoticeLink).mockResolvedValueOnce(false);
+    await click(button("About Ohtia"));
+    let aboutDialog = container.querySelector(".about-dialog")!;
+    await click(button("Third-party notices", aboutDialog));
+    await click(aboutDialog.querySelector(".about-notices a")!);
+    expect(aboutDialog.textContent).toContain(message("en-US", "command.failed"));
+    await click(button("Close dialog", aboutDialog));
+    vi.mocked(test.bridge.openNoticeLink).mockRejectedValueOnce(new Error("link transport"));
+    await click(button("About Ohtia"));
+    aboutDialog = container.querySelector(".about-dialog")!;
+    await click(button("Third-party notices", aboutDialog));
+    await click(aboutDialog.querySelector(".about-notices a")!);
+    expect(aboutDialog.textContent).toContain(message("en-US", "command.failed"));
+    await click(button("Close dialog", aboutDialog));
     vi.mocked(test.bridge.openLink).mockResolvedValueOnce(false);
     await click(button("Ohtia help"));
     await click(container.querySelector(".help-dialog a")!);

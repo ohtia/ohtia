@@ -227,6 +227,13 @@ async function verifyProjectDestinations(application, page, about) {
     expect(
       await page.evaluate(() => window.ohtia.commands.openLink("unregistered-destination")),
     ).toBe(false);
+    const notices = await page.evaluate(async () => (await window.ohtia.commands.about()).notices);
+    const notice = notices.find((entry) => entry.component === "IBM Plex Sans");
+    expect(notice?.url).toBe("https://github.com/IBM/plex");
+    await about.getByRole("link", { name: notice.component, exact: true }).click();
+    expect(
+      await page.evaluate(() => window.ohtia.commands.openNoticeLink("unregistered-component")),
+    ).toBe(false);
     const destinations = await application.evaluate(
       () => globalThis.__ohtiaCommandLinks.destinations,
     );
@@ -234,6 +241,7 @@ async function verifyProjectDestinations(application, page, about) {
       projectLinks.repository,
       projectLinks.documentation,
       projectLinks.report,
+      notice.url,
     ]);
     return { destinations, browserSink: "controlled; system browser launch is not exercised" };
   } finally {
