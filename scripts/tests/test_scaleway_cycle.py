@@ -668,6 +668,76 @@ class CycleTests(unittest.TestCase):
                         publish.assert_not_called()
                         ready.assert_not_called()
 
+    def test_fedora_kde_guest_refuses_readiness_without_a_render_node(self):
+        resources = {kind: str(uuid.uuid4()) for kind in cycle.KINDS}
+        devices = [
+            {
+                "path": "/dev/synthetic-home",
+                "serial": "volume-" + resources["home"],
+                "type": "disk",
+                "size": cycle.policy()["storage"]["home_bytes"],
+            },
+            {"path": "/dev/synthetic-root", "serial": "volume-" + resources["root"]},
+        ]
+
+        def run(*args):
+            if args[0] == "id":
+                return "ohtia"
+            if args[0] == "lsblk":
+                return json.dumps({"blockdevices": devices})
+            if args[0] == "findmnt":
+                return "/dev/synthetic-root-partition"
+            if args[0] == "getenforce":
+                return "Enforcing"
+            if args[:2] == ("systemctl", "is-active"):
+                return "active"
+            return ""
+
+        for profile, desktop, nodes, ready in (
+            ("fedora-45", "kde", [], False),
+            ("fedora-45", "kde", [Path("/dev/dri/renderD128")], True),
+            ("fedora-44", "kde", [], False),
+            ("fedora-45", "gnome", [], True),
+        ):
+            with self.subTest(profile=profile, desktop=desktop, nodes=len(nodes)):
+                _, intent = fixtures(profile, desktop)
+                guard = MagicMock()
+                guard.lstat.return_value = Mock(
+                    st_mode=stat.S_IFREG | 0o644, st_uid=0, st_nlink=1, st_size=1024
+                )
+                guard.read_bytes.return_value = json.dumps(
+                    {
+                        "intent": intent,
+                        "resources": resources,
+                        "home_bytes": cycle.policy()["storage"]["home_bytes"],
+                    }
+                ).encode()
+                account = Mock(pw_uid=1001, pw_gid=1001, pw_dir="/home/ohtia")
+                with (
+                    patch.object(bootstrap, "GUARD", guard),
+                    patch.object(bootstrap.os, "getuid", return_value=0, create=True),
+                    patch.object(bootstrap.platform, "machine", return_value="aarch64"),
+                    patch.dict(sys.modules, {"pwd": Mock(getpwnam=Mock(return_value=account))}),
+                    patch.object(bootstrap, "run", side_effect=run),
+                    patch.object(bootstrap.os, "chown", create=True),
+                    patch.object(bootstrap.Path, "chmod"),
+                    patch.object(bootstrap.Path, "is_symlink", return_value=False),
+                    patch.object(bootstrap.Path, "glob", return_value=iter(nodes)),
+                    patch.object(bootstrap.Path, "touch") as touched,
+                    patch.object(bootstrap.os, "replace") as publish,
+                    patch.object(bootstrap.shutil, "which", return_value="/synthetic/command"),
+                ):
+                    if ready:
+                        bootstrap.prepare()
+                        publish.assert_called_once_with(guard.with_suffix.return_value, guard)
+                        touched.assert_called_once_with(exist_ok=False)
+                    else:
+                        with self.assertRaises(ValueError) as failure:
+                            bootstrap.prepare()
+                        self.assertEqual(str(failure.exception), "guest_render_node")
+                        publish.assert_not_called()
+                        touched.assert_not_called()
+
     def test_cloud_config_supplies_native_key_before_scaleway_refresh(self):
         public_key = self.key + " ohtia-qualification\n"
         resources = {kind: str(uuid.uuid4()) for kind in cycle.KINDS}
@@ -813,6 +883,27 @@ class CycleTests(unittest.TestCase):
                         self.assertIn("--no-install-recommends", command)
                     if "@kde-desktop" in command:
                         self.assertIn("--setopt=install_weak_deps=False", command)
+
+    def test_fedora_kde_guests_load_a_render_node_for_kwin(self):
+        resources = {kind: str(uuid.uuid4()) for kind in cycle.KINDS}
+        for profile, desktop, loaded in (
+            ("fedora-44", "kde", True),
+            ("fedora-45", "kde", True),
+            ("fedora-45", "gnome", False),
+            ("debian-13", "kde", False),
+        ):
+            with self.subTest(profile=profile, desktop=desktop):
+                _, intent = fixtures(profile, desktop)
+                value = json.loads(
+                    qualification.cloud_config(intent, resources, self.key)
+                    .decode()
+                    .split("\n", 1)[1]
+                )
+                runcmd = value["runcmd"]
+                self.assertEqual(["modprobe", "vgem"] in runcmd, loaded)
+                if loaded:
+                    prepare = next(i for i, c in enumerate(runcmd) if "prepare" in c)
+                    self.assertLess(runcmd.index(["modprobe", "vgem"]), prepare)
 
     def test_debian_cloud_config_uses_concrete_time64_packages(self):
         _, intent = fixtures("debian-13")
