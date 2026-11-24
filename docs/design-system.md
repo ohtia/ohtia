@@ -1162,7 +1162,7 @@ General AAA conformance is not claimed. W3C does not recommend requiring Level A
 These issues prevent a page from being declared conformant until resolved. They arise from decisions or formats Ohtia controls, so a statement of partial conformance due to third-party content does not apply.
 
 - **Quotations in another language within the manuscript.** `ohtia-markdown-v1` admits only the `id` attribute and cannot declare the language of a quotation or passage. An editor page containing such a passage does not meet criterion 3.1.2 and therefore does not conform to Level AA. Resolution requires a new version of the [draft format](draft-format.md).
-- **Unknown or inaccurate manuscript language.** The editor must declare the writing language retained with the manuscript revision, as defined in the [data model](data-model.md#draft_revisions). An unknown or inaccurate value cannot establish correct language identification. Changing document language never changes this value; correcting the manuscript-language declaration creates a new revision and does not translate existing passages. A differing language within the manuscript remains subject to the preceding mixed-language blocker.
+- **Unknown or inaccurate manuscript language.** The editor must declare the writing language retained with the manuscript revision, as defined in the [data model](data-model.md#draft_revisions). An unknown or inaccurate value cannot establish correct language identification. A differing language within the manuscript remains subject to the preceding mixed-language blocker.
 - **Provider authentication.** Criterion 3.3.8 depends on the connected provider's authentication flow and its integration. That flow must be verified before a conformance declaration covers it.
 
 ### Rules by area
@@ -1186,8 +1186,8 @@ Saving, processing progress, completion of a review pass and conflicts are annou
 
 The interface declares its resolved locale with region, for example `lang="es-MX"`. Each piece of content declares its own language, not the current value of a setting that can change:
 
-- Generated content declares the language in which it was generated, retained as part of its provenance according to the [product definition](product-definition.md#languages-and-accessibility). A subsequent change to the project's document language does not relabel it.
-- The manuscript declares the writing language retained with its exact revision, with region when known, for example `lang="es-AR"`. It never derives that language from the current project document language or interface locale. An unknown or inaccurate declaration is a [conformance blocker](#conformance-blockers); the [data model](data-model.md#draft_revisions) defines immutable manuscript-language metadata and explicit corrections.
+- Generated content declares the language in which it was generated, retained as part of its provenance according to the [product definition](product-definition.md#languages-and-accessibility).
+- The manuscript declares the writing language retained with its exact revision, with region when known, for example `lang="es-AR"`. It never derives that language from the current project document language or interface locale. An unknown or inaccurate declaration is a [conformance blocker](#conformance-blockers); the [data model](data-model.md#draft_revisions) defines immutable manuscript-language metadata.
 
 Source content and passages in another language declare the most precise known tag: if metadata indicates only the language, for example `de`, declare it without a region rather than inventing one. The `lang` attribute also determines font fallback, Korean line breaking and hyphenation. Content that may be written right to left, such as an Arabic or Hebrew quotation, is isolated with `dir="auto"` even though no interface locale uses that direction.
 

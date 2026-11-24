@@ -153,10 +153,9 @@ EPIC-002 establishes the Settings shell, shared preference controls and global l
 | Inference concurrency                         | Application                   | EPIC-003           |
 | View/delete/share-preview diagnostics         | Application                   | EPIC-004           |
 | Managed storage location and recovery         | Application                   | EPIC-004           |
-| Document language                             | Research project              | EPIC-003           |
 | Research profile                              | Research project              | EPIC-004           |
 | Source restrictions and project associations  | Material/project              | EPIC-005–EPIC-006  |
-| Manuscript language and delivery choices      | Manuscript/delivery           | EPIC-007, EPIC-014 |
+| Delivery choices                              | Manuscript/delivery           | EPIC-007, EPIC-014 |
 
 Application preferences use the typed SQLite records and separate broker-owned bootstrap locator in [ADR-0036][adr-0036]; the renderer has no independent preference-storage authority. Layout updates follow their per-window/last-accepted-write rules; confirmed locale, appearance and character choices apply across windows under their own contracts. Preferences remain distinct from research content and credentials. Interface language does not select analysis or manuscript language. A preference change preserves unsaved work and updates relevant windows; it never starts inference or clears paused/uncertain work.
 
