@@ -1,7 +1,7 @@
 ---
 type: Reference
 title: "Settings and presentation preferences"
-description: "Compose Settings with presentation, project memory and inference controls, durable receipts and window-owned layout."
+description: "Compose Settings with presentation, project memory, inference and update-check preferences, durable receipts and window-owned layout."
 ---
 
 # Settings and presentation preferences
@@ -35,6 +35,10 @@ The window-owned [LimitsController](../packages/renderer/src/limits-controller.t
 `limits.read`, `limits.replace` and `limits.receipt` use the existing named preference boundary. The last accepted write wins across windows, advances the execution-limit revision once and atomically records `operation_id`, `value` and `result_revision` in `execution_limits_receipts`. Replays and recorded receipts return that historical value and revision with the current running count; rejected values have no receipt. Local-processing policy stays unchanged. The service serializes replacement with task admission: lowering leaves running replies alone, and raising pumps only eligible queued work, preserving plan pauses, restart pauses and uncertain outcomes under [ADR-0051](adr/adr-0051-research-agent-task-execution.md#scheduling-and-required-limits).
 
 Settings observes the window’s single `research.subscribe` stream, including windows with no project. Limit changes and inference-activity notices trigger a reread; a sequence gap also rereads and recovers through the existing conversation subscription owner. The controller ignores older preference revisions while refreshing the live running count, and compares revisions only within their admitted service generation. Failure and uncertainty use the existing Settings messages; recovery actions sit outside notice boxes. These controls preserve explicit researcher choice and uncertainty (PRIN-001, PRIN-006 and PRIN-016).
+
+## Update check on startup
+
+The startup update check of [SPEC-001-040](epics/EPIC-001-desktop-foundation/epic.md#spec-001-040-update-check-and-notice-in-the-application) is a boolean preference in `update_check`, enabled when no record exists. `updateCheck.read`, `updateCheck.replace` and `updateCheck.receipt` use the named preference boundary with expected revisions and `update_check_receipts`; there is no first-run notice. An unreadable saved value reads as disabled until an explicit replacement. Main reads the preference whenever storage opens; the first successful read decides the startup check, which runs at most once per launch. When it is enabled, the [update broker](../packages/main/src/update-broker.ts) asks GitHub's latest-release endpoint once through the [bounded request](../packages/main/src/update-check.ts); the manual `update.check` works whatever the preference says. The request is a GET with only `Accept` and `User-Agent: Ohtia` headers, follows no redirect or proxy, and is bounded by `update_check_ms` and `update_check_response_bytes`. A failed startup check stays silent; a failed manual check reports its controlled failure. Only an installed build with a final version checks. A newer version exists only when the release is final and greater than the running version under SemVer precedence.
 
 ## Rendering and interaction
 

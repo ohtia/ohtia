@@ -142,5 +142,9 @@
   {
     "name": "0036_openai_usage_pauses",
     "sha256": "e32299f22032dd5bd59fdd32ed8a0958e3624ac32cb7dcbf10a6b12264dcae4c"
+  },
+  {
+    "name": "0037_update_check_preference",
+    "sha256": "f569c3c29cade3878b2945935f8173921378c18b90a1de82ad663f26aef5bec0"
   }
 ]

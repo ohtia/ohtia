@@ -2,6 +2,7 @@ import { isResearchId, type ResearchScope } from "./research-port.js";
 import type { CommandBridge } from "./commands.js";
 import { isInterfaceLocale } from "./locale.js";
 import { isIdentifier, type FoundationPort, type InterfaceLocale } from "./port.js";
+import type { UpdateStateNotice } from "./update-check.js";
 
 export const desktopDocument = "ohtia://app/index.html";
 /** Private fixed channels; these are never exposed as bridge arguments. */
@@ -17,6 +18,7 @@ export const desktopChannels = {
   commandIntent: "ohtia:command-intent",
   exitState: "ohtia:exit-state",
   systemMotion: "ohtia:system-motion",
+  updateState: "ohtia:update-state",
 } as const;
 /** ADR-0047: a native reduced-motion observation beside Chromium's own media query. */
 export const systemMotions = ["reduce", "no_preference", "unknown"] as const;
@@ -42,6 +44,13 @@ export function decodeSystemMotionNotice(value: unknown): SystemMotionNotice | u
 export interface SystemMotionBridge {
   readMotion(): SystemMotion;
   subscribeMotion(listener: (value: SystemMotion) => void): () => void;
+}
+/**
+ * SPEC-001-040: each later numbered update state main publishes. The first comes from
+ * `update.read`; a consumer keeps the state with the highest `sequence`.
+ */
+export interface UpdateBridge {
+  subscribeState(listener: (notice: UpdateStateNotice) => void): () => void;
 }
 export const bootstrapStates = [
   "missing",
@@ -158,6 +167,7 @@ export function decodeBootstrapSnapshot(value: unknown): BootstrapSnapshot | und
 export interface DesktopBridge {
   readonly commands: CommandBridge;
   readonly system: SystemMotionBridge;
+  readonly update: UpdateBridge;
   readonly foundation: FoundationPort;
   readonly bootstrap: {
     read(): Promise<BootstrapSnapshot>;

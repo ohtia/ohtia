@@ -278,7 +278,24 @@ export function createStatusService(
       await research?.dispatch(value, () => !!subscription?.cancelled);
       return;
     }
-    if (value.operation === "limits.read")
+    if (value.operation === "updateCheck.read")
+      emit({ ...value, kind: "result", payload: await storage.readUpdateCheck() });
+    else if (value.operation === "updateCheck.receipt")
+      emit({
+        ...value,
+        kind: "result",
+        payload: await storage.readUpdateCheckReceipt(value.payload.targetOperationId),
+      });
+    else if (value.operation === "updateCheck.replace")
+      emit({
+        ...value,
+        kind: "result",
+        payload: await storage.replaceUpdateCheck({
+          operationId: value.operationId,
+          ...value.payload,
+        }),
+      });
+    else if (value.operation === "limits.read")
       emit({ ...value, kind: "result", payload: await storage.readExecutionLimits() });
     else if (value.operation === "limits.receipt")
       emit({
@@ -726,6 +743,7 @@ export function createStatusService(
             isResearchMutation(value.operation) ||
               value.operation === "appearance.replace" ||
               value.operation === "limits.replace" ||
+              value.operation === "updateCheck.replace" ||
               value.operation === "locale.replace" ||
               value.operation === "layout.replace" ||
               value.operation === "bounds.replace" ||

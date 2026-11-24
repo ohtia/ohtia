@@ -746,6 +746,42 @@
       "scope": "Time after the last part before unused parts are discarded",
       "failure": "discard_unused_parts",
       "rationale": "An interrupted upload leaves nothing behind"
+    },
+    "update_check_response_bytes": {
+      "value": 262144,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 262144,
+        "maximum": 262144
+      },
+      "owner": "031",
+      "scope": "Complete body of one latest-release response from GitHub",
+      "failure": "update_check_failed",
+      "rationale": "About thirteen times the 0.2.0 response, which lists ten assets"
+    },
+    "update_check_ms": {
+      "value": 10000,
+      "unit": "millisecond",
+      "permitted": {
+        "minimum": 10000,
+        "maximum": 10000
+      },
+      "owner": "031",
+      "scope": "One update check, from the request until the complete response body",
+      "failure": "update_check_failed",
+      "rationale": "A slow network delays nothing else; the check runs once per launch"
+    },
+    "update_notes_bytes": {
+      "value": 16384,
+      "unit": "byte",
+      "permitted": {
+        "minimum": 16384,
+        "maximum": 16384
+      },
+      "owner": "031",
+      "scope": "Compact JSON of the release-note parts an update result carries",
+      "failure": "truncate_notes",
+      "rationale": "Half of the result bound, so the notes always fit beside the versions"
     }
   }
 }

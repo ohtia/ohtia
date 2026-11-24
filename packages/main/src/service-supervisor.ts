@@ -763,6 +763,7 @@ export class ServiceSupervisor {
           isResearchMutation(work.request.operation) ||
             work.request.operation === "appearance.replace" ||
             work.request.operation === "limits.replace" ||
+            work.request.operation === "updateCheck.replace" ||
             work.request.operation === "locale.replace" ||
             work.request.operation === "layout.replace" ||
             work.request.operation === "bounds.replace" ||

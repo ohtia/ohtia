@@ -111,10 +111,23 @@ import {
   objects as usagePauseObjects,
 } from "../packages/utility/src/migrations/0009_usage_limit_pauses.mjs";
 import { addColumns } from "../packages/utility/src/migrations/0034_agent_preferences.mjs";
+import { preferencesSchema as entryTextPreferencesSchema } from "../packages/utility/src/migrations/0033_entry_text_preference.mjs";
 
 const preferenceAttemptFields =
   attemptFields + ",usage_report_deadline_at,account_fingerprint,requested_effort,observed_effort";
+export const preUpdateCheckSql = `
+  DROP TABLE update_check_receipts;
+  ALTER TABLE application_preferences RENAME TO application_preferences_with_update_check;
+  ${entryTextPreferencesSchema};
+  INSERT INTO application_preferences SELECT * FROM application_preferences_with_update_check WHERE key<>'update_check';
+  DROP TABLE application_preferences_with_update_check;
+  DELETE FROM kysely_migration WHERE name='0037_update_check_preference';
+  DELETE FROM ohtia_migration_artifacts WHERE name='0037_update_check_preference';
+  PRAGMA user_version=36;
+`;
+
 export const preAnthropicOutcomesSql = `
+  ${preUpdateCheckSql}
   PRAGMA legacy_alter_table=ON;
   ALTER TABLE attempts RENAME TO attempts_with_anthropic_outcomes;
   ${addColumns(usageAttempts, effortColumns, ",\n    UNIQUE (task_id,attempt_number)")};

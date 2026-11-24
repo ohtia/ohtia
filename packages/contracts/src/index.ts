@@ -24,5 +24,6 @@ export * from "./provider-requests.js";
 export * from "./research.js";
 export * from "./project-types.js";
 export * from "./application-exit.js";
+export * from "./update-check.js";
 
 export * from "./research-port.js";

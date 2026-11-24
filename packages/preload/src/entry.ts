@@ -6,6 +6,7 @@ import {
   isExitDialogState,
   type ExitDialogState,
   decodeSystemMotionNotice,
+  decodeUpdateStateNotice,
   isCommandContext,
   isCommandIntent,
   isWindowCommandRequest,
@@ -30,6 +31,7 @@ import {
   type DesktopBridge,
   type SystemMotion,
   type SystemMotionNotice,
+  type UpdateStateNotice,
 } from "@ohtia/contracts";
 import { createFoundationPort } from "./foundation-port.js";
 
@@ -244,6 +246,22 @@ const systemMotion = (_event: unknown, input: unknown) => {
 };
 ipcRenderer.on(desktopChannels.systemMotion, systemMotion);
 acceptMotion(ipcRenderer.sendSync(desktopChannels.systemMotion));
+// Main numbers its update states; a stale or repeated push never reaches a listener.
+const updateListeners = new Set<(notice: UpdateStateNotice) => void>();
+let updateSequence = -1;
+const updateState = (_event: unknown, input: unknown) => {
+  const notice = decodeUpdateStateNotice(input);
+  if (!notice || notice.sequence <= updateSequence) return;
+  updateSequence = notice.sequence;
+  for (const listener of [...updateListeners]) {
+    try {
+      listener(notice);
+    } catch {
+      updateListeners.delete(listener);
+    }
+  }
+};
+ipcRenderer.on(desktopChannels.updateState, updateState);
 async function commandBoolean(action: string, payload: unknown): Promise<boolean> {
   const value: unknown = await ipcRenderer.invoke(desktopChannels.commands, action, payload);
   return value === true;
@@ -353,7 +371,24 @@ const bridge: DesktopBridge = {
       };
     },
   },
+  update: {
+    subscribeState(listener) {
+      if (typeof listener !== "function") throw new TypeError("Invalid update state listener.");
+      if (updateListeners.size >= portLimits.subscriptions_per_window)
+        throw new Error("Update state listener limit reached.");
+      updateListeners.add(listener);
+      return () => {
+        updateListeners.delete(listener);
+      };
+    },
+  },
   foundation: {
+    readUpdateCheck: () => connection.client.port.readUpdateCheck(),
+    replaceUpdateCheck: (change, generation) =>
+      connection.client.port.replaceUpdateCheck(change, generation),
+    readUpdateCheckReceipt: (id) => connection.client.port.readUpdateCheckReceipt(id),
+    readUpdate: () => connection.client.port.readUpdate(),
+    checkForUpdate: () => connection.client.port.checkForUpdate(),
     readExecutionLimits: () => connection.client.port.readExecutionLimits(),
     replaceExecutionLimits: (change, generation) =>
       connection.client.port.replaceExecutionLimits(change, generation),
@@ -492,7 +527,9 @@ window.addEventListener(
   () => {
     commandListeners.clear();
     motionListeners.clear();
+    updateListeners.clear();
     ipcRenderer.removeListener(desktopChannels.systemMotion, systemMotion);
+    ipcRenderer.removeListener(desktopChannels.updateState, updateState);
     ipcRenderer.removeListener(desktopChannels.commandIntent, commandIntent);
     for (const owner of localeOwners) owner.stream.dispose();
     localeOwners.clear();

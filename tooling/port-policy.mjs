@@ -42,6 +42,9 @@ export function generatePortPolicy(root) {
     "process_tree_count",
     "automatic_service_restarts",
     "locator_bytes",
+    "update_check_response_bytes",
+    "update_check_ms",
+    "update_notes_bytes",
   ];
   const limits = {};
   for (const name of names) {

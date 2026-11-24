@@ -117,6 +117,9 @@ BUDGET_UNITS = {
     "delivery_version_inventories": "inventory",
     "delivery_artifacts_per_inventory": "artifact",
     "delivery_cells": "cell",
+    "update_check_response_bytes": "byte",
+    "update_check_ms": "millisecond",
+    "update_notes_bytes": "byte",
 }
 REQUIRED_BUDGETS = set(BUDGET_UNITS)
 
@@ -709,7 +712,7 @@ def check_policy(record: dict[str, Any]) -> None:
             f"Invalid permitted range: {name}",
         )
         require(
-            budget.get("owner") in {"003", "004", "005", "006", "012", "013", "016", "018"},
+            budget.get("owner") in {"003", "004", "005", "006", "012", "013", "016", "018", "031"},
             f"Unknown resource owner: {name}",
         )
         for field in ("scope", "failure", "rationale"):

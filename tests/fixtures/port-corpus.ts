@@ -53,6 +53,79 @@ export const presentationSnapshot = {
   zoom: { schemaVersion: 1, revision: 2, value: 125, source: "saved" },
 };
 export const acceptedEnvelopes: readonly unknown[] = [
+  request({ operation: "updateCheck.read", payload: {} }),
+  request({ operation: "updateCheck.replace", payload: { expectedRevision: 0, value: false } }),
+  request({ operation: "updateCheck.replace", payload: { expectedRevision: 4, value: true } }),
+  request({ operation: "updateCheck.receipt", payload: { targetOperationId: "operation-1" } }),
+  request({ operation: "update.read", payload: {} }),
+  request({ operation: "update.check", payload: {} }),
+  {
+    ...request({ operation: "updateCheck.read" }),
+    kind: "result",
+    payload: { ok: true, value: { schemaVersion: 1, revision: 0, value: true, source: "default" } },
+  },
+  {
+    ...request({ operation: "updateCheck.read" }),
+    kind: "result",
+    payload: {
+      ok: true,
+      value: { schemaVersion: 1, revision: 2, value: false, source: "invalid_fallback" },
+    },
+  },
+  {
+    ...request({ operation: "updateCheck.replace" }),
+    kind: "result",
+    payload: { ok: true, value: { schemaVersion: 1, revision: 1, value: false, source: "saved" } },
+  },
+  {
+    ...request({ operation: "updateCheck.receipt" }),
+    kind: "result",
+    payload: {
+      ok: true,
+      value: {
+        state: "recorded",
+        outcome: {
+          ok: false,
+          error: {
+            code: "stale_revision",
+            nextAction: "refresh_preference",
+            parameters: { currentRevision: 2 },
+          },
+        },
+      },
+    },
+  },
+  {
+    ...request({ operation: "update.read" }),
+    kind: "result",
+    payload: {
+      ok: true,
+      value: {
+        sequence: 2,
+        state: {
+          installedVersion: "0.2.0",
+          check: "checked",
+          failure: null,
+          available: {
+            version: "0.3.0",
+            notes: ["## Changes\n\n- <b>Literal</b>"],
+            notesTruncated: false,
+          },
+        },
+      },
+    },
+  },
+  {
+    ...request({ operation: "update.check" }),
+    kind: "result",
+    payload: {
+      ok: true,
+      value: {
+        sequence: 0,
+        state: { installedVersion: "0.2.0", check: "failed", failure: "timeout", available: null },
+      },
+    },
+  },
   request({ operation: "sourceQuote.replace", payload: { expectedRevision: 0, value: 0 } }),
   request({
     operation: "sourceQuote.replace",
@@ -308,6 +381,14 @@ export const acceptedEnvelopes: readonly unknown[] = [
 });
 export const rejectedEnvelopes: readonly { name: string; value: unknown; code: string }[] = [
   ...[
+    ...["true", 1, null].map((value) =>
+      request({
+        operation: "updateCheck.replace",
+        payload: { expectedRevision: 0, value },
+      } as never),
+    ),
+    request({ operation: "update.check", payload: { force: true } } as never),
+    request({ operation: "update.read", payload: { url: "https://example.invalid" } } as never),
     ...(["sourceQuote.replace", "entryText.replace"] as const).flatMap((operation) =>
       [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, "0", null].map((value) =>
         request({ operation, payload: { expectedRevision: 0, value } } as never),
@@ -426,6 +507,44 @@ export const rejectedEnvelopes: readonly { name: string; value: unknown; code: s
 ];
 
 export const rejectedResultPayloads: readonly unknown[] = [
+  {
+    operation: "updateCheck.read",
+    value: { schemaVersion: 1, revision: 0, value: false, source: "default" },
+  },
+  {
+    operation: "updateCheck.read",
+    value: { schemaVersion: 1, revision: 3, value: true, source: "invalid_fallback" },
+  },
+  {
+    operation: "update.read",
+    value: {
+      sequence: 1,
+      state: { installedVersion: "0.2.0", check: "failed", failure: null, available: null },
+    },
+  },
+  {
+    operation: "update.read",
+    value: { installedVersion: "0.2.0", check: "idle", failure: null, available: null },
+  },
+  {
+    operation: "update.check",
+    value: {
+      sequence: -1,
+      state: { installedVersion: "0.2.0", check: "idle", failure: null, available: null },
+    },
+  },
+  {
+    operation: "update.check",
+    value: {
+      sequence: 3,
+      state: {
+        installedVersion: "0.2.0",
+        check: "checked",
+        failure: null,
+        available: { version: "0.3.0-rc.1", notes: [], notesTruncated: false },
+      },
+    },
+  },
   { operation: "appearance.read", value: { ...appearance, revision: 0 } },
   {
     operation: "appearance.read",

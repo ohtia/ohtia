@@ -48,6 +48,15 @@ import {
 import { isWorkspaceLayout, type WorkspaceLayout } from "./layout.js";
 import { isAppearance, type Appearance } from "./appearance.js";
 import { policyId, portLimits } from "./generated/resource-policy.js";
+import {
+  isSavedUpdateCheckRecord,
+  isUpdateCheckRecord,
+  isUpdateStateNotice,
+  type SavedUpdateCheckRecord,
+  type UpdateCheckChange,
+  type UpdateCheckRecord,
+  type UpdateStateNotice,
+} from "./update-check.js";
 export { policyId, portLimits } from "./generated/resource-policy.js";
 
 export const protocolVersion = 1;
@@ -310,10 +319,22 @@ export type ExecutionLimitsReceipt =
       readonly state: "recorded";
       readonly outcome: { readonly ok: true; readonly value: ExecutionLimitsRecord };
     };
+export type RecordedUpdateCheckOutcome =
+  | { readonly ok: true; readonly value: SavedUpdateCheckRecord }
+  | { readonly ok: false; readonly error: Extract<PortError, { readonly code: "stale_revision" }> };
+export type UpdateCheckReceipt =
+  | { readonly state: "not_found" | "pending" }
+  | { readonly state: "recorded"; readonly outcome: RecordedUpdateCheckOutcome };
 export function isInferenceLimit(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= 50;
 }
 export interface OperationInputs extends ResearchInputs {
+  "updateCheck.read": Record<string, never>;
+  "updateCheck.replace": { readonly expectedRevision: number; readonly value: boolean };
+  "updateCheck.receipt": { readonly targetOperationId: string };
+  /** Main answers these from its own state; they never reach the data service. */
+  "update.read": Record<string, never>;
+  "update.check": Record<string, never>;
   "limits.read": Record<string, never>;
   "limits.replace": { readonly value: number };
   "limits.receipt": { readonly targetOperationId: string };
@@ -366,6 +387,11 @@ export interface OperationInputs extends ResearchInputs {
   "appearance.subscribe": { readonly subscriptionId: string };
 }
 export interface OperationOutputs extends ResearchOutputs {
+  "updateCheck.read": UpdateCheckRecord;
+  "updateCheck.replace": SavedUpdateCheckRecord;
+  "updateCheck.receipt": UpdateCheckReceipt;
+  "update.read": UpdateStateNotice;
+  "update.check": UpdateStateNotice;
   "limits.read": ExecutionLimitsRecord;
   "limits.replace": ExecutionLimitsRecord;
   "limits.receipt": ExecutionLimitsReceipt;
@@ -482,6 +508,18 @@ export interface Subscription {
   dispose(): void;
 }
 export interface FoundationPort extends ResearchPort {
+  readUpdateCheck(): PortCall<UpdateCheckRecord>;
+  replaceUpdateCheck(
+    change: UpdateCheckChange,
+    expectedServiceGeneration?: string,
+  ): PortCall<SavedUpdateCheckRecord>;
+  readUpdateCheckReceipt(operationId: string): PortCall<UpdateCheckReceipt>;
+  readUpdate(): PortCall<UpdateStateNotice>;
+  /**
+   * Starts or joins a manual check and returns the numbered state, `checking` unless the build
+   * cannot check; the result arrives as a later update notice.
+   */
+  checkForUpdate(): PortCall<UpdateStateNotice>;
   readExecutionLimits(): PortCall<ExecutionLimitsRecord>;
   replaceExecutionLimits(
     change: ExecutionLimitsChange,
@@ -801,6 +839,11 @@ const memoryWriteErrors = [
 ] as const;
 const memoryTextErrors = ["memory_full", "entry_invalid", "parts_incomplete"] as const;
 export const operationErrorCodes = Object.freeze({
+  "updateCheck.read": [...readErrors, "preference_invalid"],
+  "updateCheck.replace": replaceErrors,
+  "updateCheck.receipt": readErrors,
+  "update.read": readErrors,
+  "update.check": readErrors,
   "limits.read": [...readErrors, "preference_invalid"],
   "limits.replace": replaceErrors.filter((code) => code !== "stale_revision"),
   "limits.receipt": readErrors,
@@ -1155,6 +1198,9 @@ function input(operation: Operation, value: Json | undefined): boolean {
         value.count > 0 &&
         value.count <= 128
       );
+    case "updateCheck.read":
+    case "update.read":
+    case "update.check":
     case "limits.read":
     case "presentation.read":
     case "zoom.apply":
@@ -1167,6 +1213,13 @@ function input(operation: Operation, value: Json | undefined): boolean {
       return exact(value, []);
     case "limits.replace":
       return exact(value, ["value"]) && isInferenceLimit(value.value);
+    case "updateCheck.replace":
+      return (
+        exact(value, ["expectedRevision", "value"]) &&
+        revision(value.expectedRevision) &&
+        value.expectedRevision < Number.MAX_SAFE_INTEGER &&
+        typeof value.value === "boolean"
+      );
     case "entryText.replace":
     case "sourceQuote.replace":
     case "character.replace":
@@ -1219,6 +1272,7 @@ function input(operation: Operation, value: Json | undefined): boolean {
         value.expectedRevision < Number.MAX_SAFE_INTEGER &&
         (value.value === "system" || oneOf(value.value, supportedLocales))
       );
+    case "updateCheck.receipt":
     case "limits.receipt":
     case "entryText.receipt":
     case "sourceQuote.receipt":
@@ -1239,6 +1293,11 @@ function input(operation: Operation, value: Json | undefined): boolean {
 function output(operation: Operation, value: Json | undefined): boolean {
   if (operation === "limits.read" || operation === "limits.replace") return executionLimits(value);
   if (operation === "limits.receipt") return receipt(value, executionLimits, []);
+  if (operation === "updateCheck.read") return isUpdateCheckRecord(value);
+  if (operation === "updateCheck.replace") return isSavedUpdateCheckRecord(value);
+  if (operation === "updateCheck.receipt") return receipt(value, isSavedUpdateCheckRecord);
+  if (operation === "update.read" || operation === "update.check")
+    return isUpdateStateNotice(value);
   if (isResearchOperation(operation)) return researchOutput(operation, value);
   switch (operation) {
     case "connection.read":
@@ -1397,6 +1456,11 @@ const identityKeys = [
   "operation",
 ];
 const operations: readonly Operation[] = [
+  "updateCheck.read",
+  "updateCheck.replace",
+  "updateCheck.receipt",
+  "update.read",
+  "update.check",
   "limits.read",
   "limits.replace",
   "limits.receipt",
@@ -1735,6 +1799,30 @@ export function decodeExecutionLimitsChange(raw: unknown): Outcome<ExecutionLimi
       isInferenceLimit(value.value)
     )
       return { ok: true, value: value as unknown as ExecutionLimitsChange };
+  } catch {
+    /* Reject without exposing caller data. */
+  }
+  return failure("invalid_message");
+}
+
+export function decodeUpdateCheckChange(raw: unknown): Outcome<UpdateCheckChange> {
+  try {
+    const value = boundedJson(raw);
+    if (
+      exact(value, ["operationId", "expectedRevision", "value"]) &&
+      isIdentifier(value.operationId) &&
+      revision(value.expectedRevision) &&
+      value.expectedRevision < Number.MAX_SAFE_INTEGER &&
+      typeof value.value === "boolean"
+    )
+      return {
+        ok: true,
+        value: {
+          operationId: value.operationId,
+          expectedRevision: value.expectedRevision,
+          value: value.value,
+        },
+      };
   } catch {
     /* Reject without exposing caller data. */
   }
