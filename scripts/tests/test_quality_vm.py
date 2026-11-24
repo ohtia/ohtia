@@ -234,6 +234,22 @@ class VirtualMachineTests(unittest.TestCase):
             command.assert_not_called()
             self.assertEqual(list(Path(temporary).iterdir()), [])
 
+    def test_vm_cells_refuse_the_repository_zone_they_cannot_forward(self):
+        hosted = {"GITHUB_ACTIONS": "true", "RUNNER_ENVIRONMENT": "github-hosted"}
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            patch.dict(os.environ, {**hosted, "OHTIA_REPOSITORY_ZONE": "test"}, clear=True),
+            patch.object(
+                sys, "argv", ["quality_vm.py", "linux-x64-fedora-44-gnome", temporary + "/output"]
+            ),
+            patch.object(vm, "run") as command,
+            redirect_stderr(io.StringIO()) as error,
+        ):
+            self.assertEqual(vm.main(), 1)
+            command.assert_not_called()
+            self.assertEqual(list(Path(temporary).iterdir()), [])
+        self.assertIn("OHTIA_REPOSITORY_ZONE", error.getvalue())
+
     def test_ssh_identity_is_scoped_to_the_new_local_guest(self):
         args = vm.ssh_arguments(Path("/key"), Path("/known-hosts"), 2222)
         self.assertIn("ohtia@127.0.0.1", args)

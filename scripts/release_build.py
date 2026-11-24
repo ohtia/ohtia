@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -37,6 +38,13 @@ def digest(file: Path) -> str:
 
 
 def build(target: str, output: Path) -> dict:
+    # Only a qualification build may point its packages at the test repository zone.
+    release_platforms.require(
+        quality_native.REPOSITORY_ZONE_VARIABLE not in os.environ,
+        "A release build always registers the stable repository; remove "
+        + quality_native.REPOSITORY_ZONE_VARIABLE
+        + ".",
+    )
     platforms = release_platforms.load()
     platform, declared = release_platforms.build_of(platforms, target)
     release_platforms.require(

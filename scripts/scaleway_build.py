@@ -97,6 +97,10 @@ def build(profile: str, desktop: str, output: Path) -> dict:
         ),
         "credentialed_builder",
     )
+    # ARM guests register only the stable repository; the test zone is a hosted Ubuntu input.
+    cycle.require(
+        quality_native.REPOSITORY_ZONE_VARIABLE not in os.environ, "repository_zone_unsupported"
+    )
     selected = cycle.cell(profile, desktop)
     cycle.require(not output.exists(), "fresh_build_output")
     output.mkdir(parents=True)

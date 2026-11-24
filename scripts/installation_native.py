@@ -619,7 +619,7 @@ def package_identity(file, cell, version):
             == [
                 "ohtia",
                 "0",
-                version.replace("-", "~", 1) + "-1",
+                version.replace("-", "~", 1) + "-" + linux_profiles.native_release(cell["profile"]),
                 {"x64": "x86_64", "arm64": "aarch64"}[arch],
             ],
             "Wrong RPM metadata.",
@@ -738,7 +738,8 @@ def install_staged(
             timeout=30,
         )
         require(installed.returncode in {0, 1}, "Native RPM installed version unavailable.")
-        expected_version = record["version"].replace("-", "~", 1) + "-1"
+        release = linux_profiles.native_release(cell["profile"])
+        expected_version = record["version"].replace("-", "~", 1) + "-" + release
         require(
             record["entry"]["native_version"] == expected_version,
             "Native RPM version differs from its selected artifact.",
@@ -752,7 +753,9 @@ def install_staged(
                 require(
                     len(version) <= 128
                     and re.fullmatch(
-                        r"[0-9]+(?:\.[0-9]+){2}(?:~(?:dev|beta)\.[0-9]+(?:\.[0-9]+)?)?-1", version
+                        r"[0-9]+(?:\.[0-9]+){2}(?:~(?:dev|beta)\.[0-9]+(?:\.[0-9]+)?)?-"
+                        + re.escape(release),
+                        version,
                     ),
                     "Unsupported native quality RPM version.",
                 )

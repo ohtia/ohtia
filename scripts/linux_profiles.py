@@ -62,6 +62,11 @@ def package_format(profile: str) -> str:
     return "rpm" if is_fedora(profile) else "deb"
 
 
+def native_release(profile: str) -> str:
+    """Return the package revision: `1`, with the Fedora distribution tag on RPM, as in `1.fc<release>`."""
+    return f"1.fc{version(profile)}" if is_fedora(profile) else "1"
+
+
 def package_tool(profile: str) -> str:
     """Return the low-level package query tool of a profile."""
     return "rpm" if is_fedora(profile) else "dpkg"

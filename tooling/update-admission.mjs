@@ -104,9 +104,11 @@ export function compareVersions(left, right) {
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
   return 0;
 }
-export function nativeVersion(version) {
+// Fedora RPMs carry the distribution tag of their release, as in 0.3.0-1.fc<release>.
+export function nativeVersion(version, profile = "") {
   versionParts(version);
-  return version.replace("-", "~") + "-1";
+  const fedora = /^fedora-([0-9]+)$/.exec(profile);
+  return version.replace("-", "~") + "-1" + (fedora ? `.fc${fedora[1]}` : "");
 }
 export function keyIdentity(pem) {
   const key = createPublicKey(pem);
@@ -159,7 +161,9 @@ function validatePackage(entry, version) {
   hash(entry.sha256);
   requireUpdate(
     entry.native_version ===
-      (entry.format === "deb" || entry.format === "rpm" ? nativeVersion(version) : version),
+      (entry.format === "deb" || entry.format === "rpm"
+        ? nativeVersion(version, entry.profile)
+        : version),
     "native_version",
   );
   exact(entry.schema, ["source_min", "source_max", "target"]);

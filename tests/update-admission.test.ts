@@ -286,6 +286,9 @@ describe("authenticated internal update admission", () => {
     }
     expect(compareVersions("0.1.0", "0.1.0")).toBe(0);
     expect(nativeVersion("0.1.0-beta.10")).toBe("0.1.0~beta.10-1");
+    // Fedora RPMs carry the distribution tag of the release named by their profile.
+    expect(nativeVersion("0.1.0-beta.10", "fedora-45")).toBe("0.1.0~beta.10-1.fc45");
+    expect(nativeVersion("0.1.0", "debian-13")).toBe("0.1.0-1");
     for (const version of [
       "01.0.0",
       "1.0.0+build.1",

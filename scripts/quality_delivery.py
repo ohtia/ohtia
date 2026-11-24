@@ -587,6 +587,18 @@ def account(expected: dict, directory: Path) -> dict:
         )
         for format_id, package in receipt["packages"].items():
             check_attachment(package["artifact"], partition)
+            if format_id in {"deb", "rpm"}:
+                repository = package.get("repository")
+                require(
+                    isinstance(repository, dict)
+                    and set(repository) == {"zone", "files"}
+                    and repository["zone"] in {"stable", "test"}
+                    and isinstance(repository["files"], list)
+                    and len(repository["files"]) == 2
+                    and repository["files"] == sorted(set(repository["files"]))
+                    and all(isinstance(file, str) for file in repository["files"]),
+                    "Missing installed repository registration evidence.",
+                )
             require(
                 package["application_version"] == expected["application_version"],
                 "Wrong development version.",

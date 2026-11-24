@@ -213,6 +213,8 @@ def smoke(output: Path) -> None:
         "build": value["intent"]["build"],
         "host": host,
         "os_packages": os_packages(),
+        # The installed package registered the stable repository of its distribution.
+        "repository": native.verify_repository_registered(selected, "stable"),
         "distribution_qualified": False,
         "publisher_signed": False,
     }

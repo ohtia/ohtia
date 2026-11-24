@@ -331,6 +331,7 @@ SAFE_FAILURE_CODES = frozenset(
         "recovery_status",
         "recovery_trigger",
         "recovery_wait_deadline",
+        "repository_zone_unsupported",
         "request_size",
         "resolution_bound",
         "resolution_conflict",

@@ -3574,6 +3574,20 @@ class PackageInventoryTests(unittest.TestCase):
 
 
 class HarnessTests(unittest.TestCase):
+    def test_an_arm_build_refuses_the_repository_zone_before_packaging(self):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict(os.environ, {"OHTIA_REPOSITORY_ZONE": "test"}),
+            patch.object(cycle, "source_context", return_value={"run_id": "1", "attempt": "1"}),
+            patch.object(build.quality_native, "construct_package") as construct,
+        ):
+            output = Path(directory) / "output"
+            with self.assertRaisesRegex(cycle.CycleError, "repository_zone_unsupported"):
+                build.build("debian-13", "gnome", output)
+            self.assertFalse(output.exists())
+        construct.assert_not_called()
+        self.assertIn("repository_zone_unsupported", cycle.SAFE_FAILURE_CODES)
+
     def test_development_state_never_reaches_the_guest(self):
         self.assertFalse(build.included(Path(".ohtia-dev/research/ohtia.db3")))
 
