@@ -93,11 +93,25 @@ try {
     bridge: Object.keys(window.ohtia),
     system: Object.keys(window.ohtia.system),
     motion: window.ohtia.system.readMotion(),
+    update: Object.keys(window.ohtia.update),
+    updateState: await window.ohtia.foundation.readUpdate().result,
   }));
   expect(initial.node).toBe("undefined");
   expect(initial.require).toBe("undefined");
-  expect(initial.bridge.sort()).toEqual(["bootstrap", "commands", "foundation", "system"]);
+  expect(initial.bridge.sort()).toEqual([
+    "bootstrap",
+    "commands",
+    "foundation",
+    "system",
+    "update",
+  ]);
   expect(initial.system.sort()).toEqual(["readMotion", "subscribeMotion"]);
+  expect(initial.update).toEqual(["subscribeState"]);
+  // SPEC-001-040: a development or qualification runtime never asks for a newer version.
+  expect(initial.updateState).toMatchObject({
+    ok: true,
+    value: { state: { check: "unavailable", failure: null, available: null } },
+  });
   expect(["reduce", "no_preference", "unknown"]).toContain(initial.motion);
   expect(initial.status).toMatchObject({
     ok: true,
