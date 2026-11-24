@@ -197,12 +197,20 @@ class SigningJobTests(unittest.TestCase):
         shutil.copyfile(ROOT / "config/release/platforms.json", release / "platforms.json")
         self.write_signing(self.primary, self.public)
         self.names = {}
+        self.packages = []
+        declaration = json.loads((release / "platforms.json").read_text(encoding="utf-8"))
         for target in TARGETS:
             folder = self.workspace / f"artifacts/release-inputs/release-{target}-500-1"
             folder.mkdir(parents=True)
-            rpm = f"ohtia-{VERSION}-{target}-fedora-44.rpm"
+            build = next(
+                b for p in declaration["platforms"] for b in p["builds"] if b["target"] == target
+            )
+            fedora = [p["profile"] for p in build["packages"] if p["format"] == "rpm"]
+            rpms = [(f"ohtia-{VERSION}-{target}-{profile}.rpm", profile) for profile in fedora]
             deb = f"ohtia-{VERSION}-{target}-debian-13.deb"
-            (folder / rpm).write_bytes(self.unsigned)
+            for rpm, _ in rpms:
+                (folder / rpm).write_bytes(self.unsigned)
+                self.packages.append(folder / rpm)
             (folder / deb).write_bytes(b"synthetic deb")
             assets = [
                 {
@@ -214,7 +222,7 @@ class SigningJobTests(unittest.TestCase):
                 }
                 for name, profile, content in (
                     (deb, "debian-13", b"synthetic deb"),
-                    (rpm, "fedora-44", self.unsigned),
+                    *((rpm, profile, self.unsigned) for rpm, profile in rpms),
                 )
             ]
             record = {
@@ -225,7 +233,7 @@ class SigningJobTests(unittest.TestCase):
                 "assets": assets,
             }
             (folder / "build.json").write_text(json.dumps(record), encoding="utf-8")
-            self.names[target] = folder / rpm
+            self.names[target] = folder / rpms[0][0]
         self.secrets = {"SIGNING_SUBKEY": self.subkey_export, "SIGNING_PASSPHRASE": PASSPHRASE}
         self.outputs = []
 
@@ -324,11 +332,12 @@ class SigningJobTests(unittest.TestCase):
         unsigned = hashlib.sha256(self.unsigned).hexdigest()
         self.assertEqual(
             [package["name"] for package in record["packages"]],
-            [path.name for path in sorted(self.names.values())],
+            sorted(path.name for path in self.packages),
         )
+        self.assertEqual(len(record["packages"]), 4)
         self.assertEqual(
             sorted(p.name for p in signed.iterdir()),
-            sorted([*(path.name for path in self.names.values()), "signing.json"]),
+            sorted([*(path.name for path in self.packages), "signing.json"]),
         )
         for package in record["packages"]:
             file = signed / package["name"]
