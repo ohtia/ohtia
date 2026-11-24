@@ -1915,7 +1915,7 @@ it.each(["not_eligible", "connection_expired", "request_rejected"])(
     );
     expect(container.querySelector(".voice-label")).toBeNull();
     const buttons = [...container.querySelectorAll("button")].map((b) => b.textContent);
-    if (outcomeReason !== "request_rejected") expect(buttons).toContain("Open Connections");
+    if (outcomeReason !== "request_rejected") expect(buttons).toContain("Open AI services");
     expect(buttons.includes("Try again")).toBe(outcomeReason !== "not_eligible");
   },
 );
@@ -2074,7 +2074,7 @@ it("announces a live notice transition once and stays silent for historical read
   });
   await render(harness.controller.snapshot(), harness.controller);
   expect(announced()).toEqual([
-    "Your ChatGPT session expired. Sign in again in Settings › Connections.",
+    "Your ChatGPT session expired. Sign in again in Settings › AI services.",
   ]);
   harness.items[harness.items.findIndex((item) => item.id === initial.id)] = {
     ...initial,
@@ -3891,7 +3891,7 @@ describe("plan decision card", () => {
     expect(waiting?.textContent).toContain("Waiting: Anthropic asked Ohtia to wait");
     await change(work({ state: "blocked", blockingReason: "connection_disabled" }));
     status(0, "unplug", "Waiting: ChatGPT isn’t connected");
-    await act(async () => buttonNamed("Open Connections").click());
+    await act(async () => buttonNamed("Open AI services").click());
     expect(h.onOpenConnections).toHaveBeenCalledOnce();
     await change(work({ state: "blocked", blockingReason: "usage_limit_reached" }));
     status(0, "circle-pause", "Paused: ChatGPT requests are paused");

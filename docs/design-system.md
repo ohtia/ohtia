@@ -4,8 +4,6 @@ title: Ohtia design system
 description: Visual identity, tokens, symbol and character, typography, composition, accessibility, localization, component patterns and workspace icon mappings.
 generated:
   by: claude-code/claude-opus-5-5
-verified:
-  by: human:AdrianMastronardi
 tags:
   - design
   - accessibility
@@ -518,7 +516,9 @@ The following component tokens prevent scattered visual values in primitives:
 - `component.rail.width`: 40 px; `component.rail.coarse`: 48 px. They preserve reopening and the footer of the hidden explorer.
 - `component.separator.line`: 4 px; `component.separator.guard`: 10 px and `component.separator.guard-coarse`: 20 px. They reserve the separator target within its neighbors without changing the distributable width.
 - `component.panel.header-minimum`: 48 px. Allows controls and growth for translations.
-- `component.dialog.max-width`: 480 px. Applies the Settings dialog's width limit, preserving at least `space.4` on each side of the window.
+- `component.dialog.max-width`: 480 px. Limits the width of command dialogs, preserving at least `space.4` on each side of the window.
+- `component.settings.max-width`: 880 px. Limits the Settings dialog's width, preserving at least `space.4` on each side of the window.
+- `component.settings.nav-width`: 232 px. Sets the width of the Settings page list beside the selected page.
 - `component.tooltip.max-width`: 256 px; `component.menu.max-width`: 384 px. Bound the help and action layers, which are also constrained to the viewport and positioned using CSSOM.
 - `component.palette.max-width`: 600 px. Bounds the command palette, which is also constrained to the viewport with at least `space.4` on each side.
 
@@ -600,6 +600,10 @@ Fixed mappings:
 | Agent work not written                       | `circle-minus`         |
 | Paused agent work                            | `circle-pause`         |
 | Waiting for a disconnected service           | `unplug`               |
+| Accessibility and appearance Settings page   | `sun`                  |
+| AI services Settings page                    | `plug`                 |
+| Agents Settings page                         | `users`                |
+| Back to the Settings page list               | `chevron-left`         |
 
 A state label never uses an icon that this table or the domain components map to another meaning.
 

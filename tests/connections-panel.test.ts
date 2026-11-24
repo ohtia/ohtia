@@ -20,6 +20,7 @@ import {
 import {
   AgentsSettings,
   FirstModelChoice,
+  ModelListRefresh,
   useAgentSettings,
 } from "../packages/renderer/src/agents-settings.js";
 import { ConnectionsPanel } from "../packages/renderer/src/connections-panel.js";
@@ -599,12 +600,12 @@ it("shows the OpenAI catalog date and refreshes account age on both settings sur
         locale: "en-GB",
         showConnected: false,
       }),
-      createElement(AgentsSettings, {
+      createElement(ModelListRefresh, {
         port,
         settings,
         locale: "en-GB",
-        connections: [openaiApiKeyConnection],
-        snapshots: { [connection]: snapshot },
+        service: openaiApiKeyConnection,
+        snapshot,
       }),
     );
   }
@@ -815,14 +816,29 @@ it("waits for a model choice before changing the service for an agent", async ()
     probeResults?: Record<string, Extract<ConnectionEvent, { kind: "probe_result" }>>;
   }) {
     const settings = useAgentSettings(port, true, observe);
-    return createElement(AgentsSettings, {
-      port,
-      settings,
-      locale: "en-US",
-      connections: services,
-      snapshots,
-      ...(probeResults ? { probeResults } : {}),
-    });
+    return createElement(
+      "div",
+      null,
+      createElement(AgentsSettings, {
+        port,
+        settings,
+        locale: "en-US",
+        connections: services,
+        snapshots,
+        recoveryFocusId: "agents-page",
+      }),
+      ...services.map((service) =>
+        createElement(ModelListRefresh, {
+          key: service.id,
+          port,
+          settings,
+          locale: "en-US",
+          service,
+          snapshot: snapshots[service.id],
+          probeResult: probeResults?.[service.id],
+        }),
+      ),
+    );
   }
   const container = document.body.appendChild(document.createElement("div"));
   const root = createRoot(container);
@@ -831,7 +847,7 @@ it("waits for a model choice before changing the service for an agent", async ()
     root.render(createElement(Host));
   });
   const josefa = [...container.querySelectorAll('[role="group"]')].find((group) =>
-    group.querySelector("h4")?.textContent?.includes("Josefa"),
+    group.querySelector("h3")?.textContent?.includes("Josefa"),
   )!;
   const [service, model, effort] = [...josefa.querySelectorAll("select")];
   expect(model!.selectedOptions[0]?.textContent).toBe("Default · ChatGPT · First model");

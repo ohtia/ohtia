@@ -369,7 +369,7 @@ describe("simultaneous work field", () => {
       expect(f.input().min).toBe("1");
       expect(f.input().max).toBe("50");
       expect(f.input().step).toBe("1");
-      expect(container.querySelector("h2")?.textContent).toBe(message(locale, "limits.section"));
+      expect(container.querySelector("h3")?.textContent).toBe(message(locale, "limits.section"));
       expect(document.getElementById(f.input().getAttribute("aria-describedby")!)).toBeTruthy();
       expect(container.textContent).not.toMatch(/\{[^}]+\}/);
     },

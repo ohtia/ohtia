@@ -243,6 +243,75 @@ export async function verifyPackagedSettings(application, page, second, output, 
   );
 }
 
+/** Reach every Settings page with the keyboard, beside the list and in the narrow list. */
+export async function verifyPageNavigation({
+  page,
+  dialog,
+  nativeWindow,
+  originalSize,
+  text,
+  phase,
+}) {
+  const nav = dialog.getByRole("navigation", { name: text("settings.pages"), exact: true });
+  const pages = nav.getByRole("button");
+  // A resize reaches the dialog asynchronously; wait for its measured layout before acting.
+  const layout = (narrow) =>
+    expect(dialog.locator(".settings-layout")).toHaveAttribute("data-narrow", String(narrow));
+  phase("settings-pages-wide-window", ".settings-dialog[open] .settings-pages");
+  // The preceding locale check leaves a 320px window, where the list and a page alternate.
+  await nativeWindow.evaluate((window) => window.setContentSize(1280, 800));
+  await layout(false);
+  await expect(nav).toBeVisible();
+  const titles = await pages.evaluateAll((buttons) =>
+    buttons.map((button) => button.querySelector("span:not(.settings-page-selection)").textContent),
+  );
+  expect(titles.slice(0, 2)).toEqual([text("settings.section"), text("connection.title")]);
+  phase("settings-pages-keyboard", ".settings-dialog[open] .settings-pages button");
+  await pages.first().focus();
+  for (const [index, title] of titles.entries()) {
+    if (index > 0) await page.keyboard.press("Tab");
+    await expect(pages.nth(index)).toBeFocused();
+    await page.keyboard.press(index % 2 ? "Space" : "Enter");
+    await expect(pages.nth(index)).toHaveAttribute("aria-current", "page");
+    await expect(pages.nth(index)).toBeFocused();
+    await expect(dialog.getByRole("heading", { level: 2, name: title, exact: true })).toBeVisible();
+  }
+  phase("settings-pages-narrow", ".settings-dialog[open] .settings-back");
+  await nativeWindow.evaluate((window) => window.setContentSize(560, 700));
+  await layout(true);
+  const back = dialog.getByRole("button", { name: text("settings.back"), exact: true });
+  await expect(back).toBeVisible();
+  await expect(nav).toBeHidden();
+  await back.focus();
+  await page.keyboard.press("Enter");
+  await expect(nav).toBeVisible();
+  await expect(pages.nth(titles.length - 1)).toBeFocused();
+  await pages.first().focus();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter");
+  const services = dialog.getByRole("heading", { level: 2, name: titles[1], exact: true });
+  await expect(services).toBeFocused();
+  await expect(nav).toBeHidden();
+  await page.keyboard.press("Shift+Tab");
+  await expect(back).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(pages.nth(1)).toBeFocused();
+  await pages.first().focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    dialog.getByRole("heading", { level: 2, name: titles[0], exact: true }),
+  ).toBeFocused();
+  // Return to the list, which every later width shows: beside the page or alone.
+  await page.keyboard.press("Shift+Tab");
+  await expect(back).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(pages.first()).toBeFocused();
+  phase("settings-pages-restore-window", ".settings-dialog[open] .settings-pages button");
+  await nativeWindow.evaluate((window, size) => window.setContentSize(...size), originalSize);
+  await expect(nav).toBeVisible();
+  await expect(pages.first()).toHaveAttribute("aria-current", "page");
+}
+
 async function verifySettings(application, page, second, output, phases, observeFailure, current) {
   const progressFile = path.join(output, "settings-progress.json");
   const phase = (name, selector = null) => {
@@ -329,6 +398,7 @@ async function verifySettings(application, page, second, output, phases, observe
   return withCommandCleanup(
     () =>
       observeFailure(async () => {
+        await verifyPageNavigation({ page, dialog, nativeWindow, originalSize, text, phase });
         phase("native-settings-menu");
         await focusNative(nativeWindow, "Settings native menu");
         await page.keyboard.press("Escape");
@@ -349,6 +419,9 @@ async function verifySettings(application, page, second, output, phases, observe
         phase("native-settings-shortcut");
         inputs.push(await nativeKey(page, nativeWindow, platform, ",", "Comma"));
         await expect(dialog).toBeVisible();
+        // Opening Settings in this 320px window starts at its page list.
+        phase("narrow-appearance-page", ".settings-dialog[open] .settings-pages button");
+        await dialog.getByRole("button", { name: text("settings.section"), exact: true }).click();
         phase("hide-character", '.settings-dialog[open] input[type="radio"][value="hidden"]');
         await dialog.locator('input[type="radio"][value="hidden"]').check();
         await expect

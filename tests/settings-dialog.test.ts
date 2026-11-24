@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-import { act, createElement as h, useSyncExternalStore, useState, useEffect } from "react";
+import {
+  act,
+  createElement as h,
+  useSyncExternalStore,
+  useState,
+  useEffect,
+  type ComponentProps,
+} from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -21,7 +28,7 @@ import {
   type SystemMotionBridge,
 } from "@ohtia/contracts";
 import { SystemMotionProvider } from "../packages/renderer/src/system-motion.js";
-import { SettingsDialog } from "../packages/renderer/src/settings-dialog.js";
+import { SettingsDialog, settingsNarrowQuery } from "../packages/renderer/src/settings-dialog.js";
 import { LanguageController } from "../packages/renderer/src/language-controller.js";
 import {
   WorkspaceController,
@@ -78,6 +85,10 @@ async function mount(
   motion?: SystemMotionBridge,
   override: Partial<FoundationPort> = {},
   connections?: readonly ProviderDeclaration["connection"][],
+  requestedFocus?:
+    | ComponentProps<typeof SettingsDialog>["requestedFocus"]
+    | { current: ComponentProps<typeof SettingsDialog>["requestedFocus"] },
+  feedback?: ComponentProps<typeof SettingsDialog>["feedback"],
 ) {
   const t = harness();
   const localeSnapshot = {
@@ -158,6 +169,13 @@ async function mount(
       workspaceState: workspaceState ?? liveState,
       platform: "linux",
       ...(connections ? { connections } : {}),
+      ...(feedback ? { feedback } : {}),
+      ...(requestedFocus
+        ? {
+            requestedFocus:
+              typeof requestedFocus === "object" ? requestedFocus.current : requestedFocus,
+          }
+        : {}),
     });
   }
   const render = async (open = true, workspaceState?: WorkspaceState, available = true) => {
@@ -168,6 +186,28 @@ async function mount(
   };
   await render();
   return { ...t, workspace, render, onClose, foundationPort: port };
+}
+/** Sets whether the window is narrow enough for the one-column Settings layout. */
+async function narrowWindow(matches: boolean) {
+  let entry = media.get(settingsNarrowQuery);
+  if (!entry) {
+    entry = { matches, listeners: new Set() };
+    media.set(settingsNarrowQuery, entry);
+  }
+  entry.matches = matches;
+  await act(async () => {
+    entry.listeners.forEach((listener) => listener());
+  });
+}
+/** Shows one Settings page through its button in the page list. */
+async function openPage(title: string) {
+  const button = [
+    ...container.querySelectorAll<HTMLButtonElement>("dialog[open] .settings-pages button"),
+  ].find((item) => item.textContent === title);
+  if (!button) throw new Error(`Missing Settings page: ${title}`);
+  await act(async () => {
+    button.click();
+  });
 }
 async function click(selector: string) {
   await act(async () => container.querySelector<HTMLElement>(selector)!.click());
@@ -283,13 +323,16 @@ describe("compact Settings dialog", () => {
       model_count: 1,
     } as const;
     await act(async () => receive?.({ ok: true, value: { ...connected, kind: "state" } }));
-    const row = [...container.querySelectorAll(".connection-row")].find(
-      (node) => node.querySelector("h4")?.textContent === "Anthropic",
+    await openPage("AI services");
+    const row = [...container.querySelectorAll(".settings-page section")].find(
+      (node) => node.querySelector("h3")?.textContent === "Anthropic",
     )!;
     expect(row.querySelector('[role="status"].connection-info')?.textContent).toContain(
       "Anthropic is connected. Agents keep their current models",
     );
+    expect(row.textContent).toContain("Refresh Anthropic model list");
     const agents = container.querySelector('[id$="-agents-controls"]')!;
+    expect(agents.textContent).not.toContain("model list");
     expect([...agents.querySelectorAll("select")][1]?.value).toBe("first");
     expect(replaceAgentPreference).not.toHaveBeenCalled();
     const reads = vi.mocked(listAgentPreferences).mock.calls.length;
@@ -361,6 +404,7 @@ describe("compact Settings dialog", () => {
     });
     expect(container.querySelector('[id$="-sourceQuote-controls"] input')).toBeTruthy();
     expect(container.querySelector('[id$="-entryText-controls"] input')).toBeTruthy();
+    await openPage("AI services");
     const group = container.querySelector(".connection-row .agent-choice")!;
     expect(group.querySelector("select")?.value).toBe(model.id);
     const submit = group.querySelector("button")!;
@@ -397,9 +441,14 @@ describe("compact Settings dialog", () => {
       expect(container.textContent).toContain(message(locale, "settings.immediate"));
       const quote = container.querySelector('[id$="-sourceQuote-controls"]');
       const entry = container.querySelector('[id$="-entryText-controls"]');
-      expect(container.querySelector(".project-memory-settings h2")?.textContent).toBe(
-        message(locale, "memory.title"),
+      expect(container.querySelector(".project-memory-settings h3")?.textContent).toBe(
+        message(locale, "settings.memoryText.title"),
       );
+      const nav = container.querySelector(`nav[aria-label="${message(locale, "settings.pages")}"]`);
+      expect([...nav!.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
+        message(locale, "settings.section"),
+        message(locale, "connection.title"),
+      ]);
       expect(quote?.querySelector("label")?.textContent).toBe(
         message(locale, "memory.sourceQuoteLength"),
       );
@@ -1073,6 +1122,7 @@ describe("Settings command composition", () => {
         ),
       ].find((button) => button.textContent === label)!;
     await intent("settings.open", 28);
+    await openPage("AI services");
     const rejectedLimit = deferred<ReturnType<typeof failure>>();
     replaceLimits.mockReturnValueOnce({ result: rejectedLimit.promise, cancel() {} } as never);
     await typeLimit("2");
@@ -1096,6 +1146,7 @@ describe("Settings command composition", () => {
     expect(limitsCurrent.max_concurrent_inference).toBe(2);
     expect(document.activeElement).toBe(container.querySelector(".command-entry-actions button"));
     await intent("settings.open", 29);
+    await openPage("AI services");
     const uncertainLimit = deferred<ReturnType<typeof failure>>();
     replaceLimits.mockReturnValueOnce({ result: uncertainLimit.promise, cancel() {} } as never);
     await typeLimit("3");
@@ -1127,6 +1178,7 @@ describe("Settings command composition", () => {
     expect(replaceLimits).toHaveBeenCalledTimes(3);
     expect(document.activeElement).toBe(container.querySelector(".command-entry-actions button"));
     await intent("settings.open", 30);
+    await openPage("AI services");
     replaceLimits.mockReturnValueOnce(call(failure("storage_failed")) as never);
     await typeLimit("4");
     await escapeSettings();
@@ -1736,4 +1788,197 @@ it("saves project memory quote length by keyboard or blur and preserves the conf
   });
   expect(entry.value).toBe("0");
   expect(input.value).toBe("1751");
+});
+
+describe("Settings pages", () => {
+  const pageButtons = () => [
+    ...container.querySelectorAll<HTMLButtonElement>("dialog[open] .settings-pages button"),
+  ];
+  const visiblePages = () =>
+    [...container.querySelectorAll<HTMLElement>(".settings-page")].filter((page) => !page.hidden);
+  it("shows one page at a time, marks it current and keeps focus in the page list", async () => {
+    await mount();
+    expect(pageButtons().map((button) => button.textContent)).toEqual([
+      "Accessibility and appearance",
+      "AI services",
+    ]);
+    expect(pageButtons()[0]?.getAttribute("aria-current")).toBe("page");
+    expect(visiblePages().map((page) => page.querySelector("h2")?.textContent)).toEqual([
+      "Accessibility and appearance",
+    ]);
+    const services = pageButtons()[1]!;
+    await act(async () => {
+      services.focus();
+      services.click();
+    });
+    expect(services.getAttribute("aria-current")).toBe("page");
+    expect(pageButtons()[0]?.hasAttribute("aria-current")).toBe(false);
+    expect(visiblePages().map((page) => page.querySelector("h2")?.textContent)).toEqual([
+      "AI services",
+    ]);
+    expect(document.activeElement).toBe(services);
+    expect(container.querySelector(".settings-back")).toBeNull();
+  });
+
+  it("keeps one level-one heading and never skips a heading level", async () => {
+    await mount();
+    const dialog = container.querySelector("dialog[open]")!;
+    expect(dialog.querySelectorAll("h1")).toHaveLength(1);
+    expect(dialog.querySelectorAll(".settings-page > h2")).toHaveLength(2);
+    let level = 0;
+    for (const heading of dialog.querySelectorAll("h1, h2, h3, h4, h5, h6")) {
+      const next = Number(heading.tagName.slice(1));
+      expect(next - level).toBeLessThanOrEqual(1);
+      level = next;
+    }
+    for (const section of dialog.querySelectorAll(".settings-page > section"))
+      expect(section.querySelector("h3")).not.toBeNull();
+  });
+
+  it.each([
+    ["connections", "AI services", '[id$="-connections-controls"]'],
+    ["zoom", "Accessibility and appearance", '[id$="-zoom-controls"]'],
+    ["sourceQuote", "Accessibility and appearance", '[id$="-sourceQuote-controls"]'],
+    ["layout", "Accessibility and appearance", '[id$="-layout-controls"]'],
+  ] as const)("opens the page that owns the %s focus target", async (target, title, owner) => {
+    await mount("en-US", undefined, {}, undefined, target);
+    const current = pageButtons().find((button) => button.getAttribute("aria-current"));
+    expect(current?.textContent).toBe(title);
+    expect(document.activeElement?.closest(owner)).not.toBeNull();
+  });
+
+  it("opens the Agents page for the agents focus target", async () => {
+    await mount(
+      "en-US",
+      undefined,
+      {
+        listAgentPreferences: () => call({ ok: true, value: { preferences: [], lists: [] } }),
+      } as Partial<FoundationPort>,
+      undefined,
+      "agents",
+    );
+    const current = pageButtons().find((button) => button.getAttribute("aria-current"));
+    expect(current?.textContent).toBe("Agents");
+    expect(document.activeElement?.closest('[id$="-agents-controls"]')).not.toBeNull();
+  });
+
+  it("follows a focus target that arrives while another page is open", async () => {
+    const focus: { current: ComponentProps<typeof SettingsDialog>["requestedFocus"] } = {
+      current: undefined,
+    };
+    const t = await mount("en-US", undefined, {}, undefined, focus);
+    await act(async () => {
+      pageButtons()[1]!.click();
+    });
+    focus.current = "zoom";
+    await t.render();
+    const current = pageButtons().find((button) => button.getAttribute("aria-current"));
+    expect(current?.textContent).toBe("Accessibility and appearance");
+    expect(document.activeElement?.closest('[id$="-zoom-controls"]')).not.toBeNull();
+  });
+
+  it("opens the target page instead of the list in a narrow dialog", async () => {
+    await narrowWindow(true);
+    await mount("en-US", undefined, {}, undefined, "connections");
+    expect(container.querySelector<HTMLElement>(".settings-pages")?.hidden).toBe(true);
+    expect(container.querySelector<HTMLElement>(".settings-content")?.hidden).toBe(false);
+    expect(document.activeElement?.closest('[id$="-connections-controls"]')).not.toBeNull();
+  });
+
+  it("keeps command feedback and the unavailable notice visible beside the narrow list", async () => {
+    await narrowWindow(true);
+    const feedback = h("p", { role: "alert" }, "Synthetic command failure");
+    const t = await mount("en-US", undefined, {}, undefined, undefined, feedback);
+    await t.render(true, undefined, false);
+    expect(container.querySelector<HTMLElement>(".settings-content")?.hidden).toBe(true);
+    const status = container.querySelector<HTMLElement>(".settings-status")!;
+    expect(status.closest("[hidden]")).toBeNull();
+    expect(status.textContent).toContain(message("en-US", "settings.unavailable"));
+    expect(status.querySelector('[role="alert"]')?.textContent).toBe("Synthetic command failure");
+  });
+
+  it("names a page that needs attention without moving focus", async () => {
+    const t = await mount();
+    const services = pageButtons()[1]!;
+    await act(async () => {
+      services.focus();
+      services.click();
+    });
+    t.port.replaceCharacter.mockReturnValueOnce(call(failure("storage_failed")));
+    await act(async () => {
+      await t.controller.choose("character", "static");
+    });
+    const appearance = pageButtons()[0]!;
+    expect(appearance.getAttribute("aria-label")).toBe(
+      message("en-US", "settings.pageAttention", { page: "Accessibility and appearance" }),
+    );
+    expect(appearance.querySelectorAll("svg")).toHaveLength(2);
+    expect(services.hasAttribute("aria-label")).toBe(false);
+    expect(document.activeElement).toBe(services);
+  });
+
+  it("replaces the page list with one page and Back in a narrow dialog", async () => {
+    await narrowWindow(true);
+    await mount();
+    const nav = container.querySelector<HTMLElement>(".settings-pages")!;
+    const content = container.querySelector<HTMLElement>(".settings-content")!;
+    expect(nav.hidden).toBe(false);
+    expect(content.hidden).toBe(true);
+    await act(async () => {
+      pageButtons()[1]!.click();
+    });
+    expect(nav.hidden).toBe(true);
+    expect(content.hidden).toBe(false);
+    expect(document.activeElement?.textContent).toBe("AI services");
+    expect(document.activeElement?.tagName).toBe("H2");
+    const heading = document.activeElement as HTMLElement;
+    // The dialog's focus loop admits only rendered controls; jsdom lays nothing out.
+    const rects = vi.spyOn(Element.prototype, "getClientRects").mockImplementation(function (
+      this: Element,
+    ) {
+      return (this.closest("[hidden]") ? [] : [{}]) as unknown as DOMRectList;
+    });
+    const tab = (shiftKey: boolean) =>
+      act(async () => {
+        document.activeElement!.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Tab", shiftKey, bubbles: true, cancelable: true }),
+        );
+      });
+    await tab(false);
+    expect(
+      heading.compareDocumentPosition(document.activeElement!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(document.activeElement?.closest(".settings-page")?.contains(heading)).toBe(true);
+    await act(async () => {
+      heading.focus();
+    });
+    await tab(true);
+    rects.mockRestore();
+    const back = container.querySelector<HTMLButtonElement>(".settings-back")!;
+    expect(document.activeElement).toBe(back);
+    expect(back.textContent).toBe(message("en-US", "settings.back"));
+    await act(async () => {
+      back.click();
+    });
+    expect(nav.hidden).toBe(false);
+    expect(content.hidden).toBe(true);
+    expect(document.activeElement).toBe(pageButtons()[1]);
+  });
+
+  it("keeps the page in use when an open dialog becomes narrow", async () => {
+    await mount();
+    const language = container.querySelector<HTMLSelectElement>(
+      'select[aria-describedby="language-help"]',
+    )!;
+    await act(async () => {
+      language.focus();
+    });
+    await narrowWindow(true);
+    expect(container.querySelector<HTMLElement>(".settings-pages")?.hidden).toBe(true);
+    expect(container.querySelector<HTMLElement>(".settings-content")?.hidden).toBe(false);
+    expect(document.activeElement).toBe(language);
+    await narrowWindow(false);
+    expect(container.querySelector<HTMLElement>(".settings-pages")?.hidden).toBe(false);
+    expect(document.activeElement).toBe(language);
+  });
 });

@@ -1233,6 +1233,41 @@
       "backgrounds": ["surface.page"],
       "minimum": 7,
       "foreground": "content.primary"
+    },
+    {
+      "selector": ".settings-pages",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.panel"],
+      "minimum": 7
+    },
+    {
+      "selector": ".settings-layout:not([data-narrow=\"true\"]) .settings-pages",
+      "backgrounds": ["surface.panel"],
+      "minimum": 3,
+      "decorativeBorders": "border.subtle"
+    },
+    {
+      "selector": ".settings-pages button",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.panel", "surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".settings-pages button:hover, .settings-pages button[aria-current=\"page\"]",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.emphasis"],
+      "minimum": 7
+    },
+    {
+      "selector": ".settings-page-selection",
+      "backgrounds": ["surface.panel", "surface.emphasis"],
+      "minimum": 3
+    },
+    {
+      "selector": ".settings-content .settings-back",
+      "foreground": "content.primary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
     }
   ],
   "overlays": [

@@ -122,7 +122,7 @@ export function LanguagePanel({
       </select>
       <p id="language-help">{text("settings.language.help")}</p>
       {state.current?.record.source === "invalid_fallback" && (
-        <p className="language-danger" role="alert">
+        <p className="language-danger" role="alert" data-settings-attention="octagon-alert">
           {text("locale_fallback")}{" "}
           <button
             type="button"
@@ -140,7 +140,7 @@ export function LanguagePanel({
         </p>
       )}
       {state.phase === "rejected" && (
-        <p className="language-danger" role="alert">
+        <p className="language-danger" role="alert" data-settings-attention="octagon-alert">
           <Icon name="octagon-alert" />
           {message(locale, "settings.language.rejected", { value: label })}{" "}
           <button
@@ -155,7 +155,7 @@ export function LanguagePanel({
         </p>
       )}
       {state.phase === "uncertain" && (
-        <p className="language-attention" role="status">
+        <p className="language-attention" role="status" data-settings-attention="triangle-alert">
           <Icon name="triangle-alert" />
           {text(
             state.canChoose ? "settings.language.recovered" : "settings.language.uncertain",
@@ -183,7 +183,7 @@ export function LanguagePanel({
         </p>
       )}
       {state.phase === "conflict" && !state.readFailed && conflictReady && (
-        <p className="language-attention" role="status">
+        <p className="language-attention" role="status" data-settings-attention="git-compare">
           <Icon name="git-compare" />
           {text("settings.language.conflict")}{" "}
           <button
@@ -197,7 +197,7 @@ export function LanguagePanel({
         </p>
       )}
       {state.displayFailed && (
-        <p className="language-attention" role="status">
+        <p className="language-attention" role="status" data-settings-attention="triangle-alert">
           <Icon name="triangle-alert" />
           {text("settings.language.applyFailed")}{" "}
           <button
@@ -212,7 +212,7 @@ export function LanguagePanel({
         </p>
       )}
       {state.readFailed && (
-        <p className="language-danger" role="alert">
+        <p className="language-danger" role="alert" data-settings-attention="octagon-alert">
           {text("settings.language.readFailed")}{" "}
           <button
             type="button"

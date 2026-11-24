@@ -113,7 +113,7 @@ export function SettingsNotices({
   return (
     <RecoveryFocusBoundary onRecover={onRecover}>
       {setting.phase === "rejected" && (
-        <p className="language-danger" role="alert">
+        <p className="language-danger" role="alert" data-settings-attention="octagon-alert">
           <Icon name="octagon-alert" />
           {message(locale, "settings.rejected", {
             setting: name(feature),
@@ -131,7 +131,7 @@ export function SettingsNotices({
         </p>
       )}
       {setting.phase === "uncertain" && (
-        <p className="language-attention" role="status">
+        <p className="language-attention" role="status" data-settings-attention="triangle-alert">
           <Icon name="triangle-alert" />
           {setting.canChoose
             ? text("settings.language.recovered")
@@ -159,7 +159,7 @@ export function SettingsNotices({
         </p>
       )}
       {setting.phase === "conflict" && !state.readFailed && (
-        <p className="language-attention" role="status">
+        <p className="language-attention" role="status" data-settings-attention="git-compare">
           <Icon name="git-compare" />
           {message(locale, "settings.conflict", { setting: name(feature) })}{" "}
           <button type="button" onClick={onChooseAgain}>
@@ -168,7 +168,7 @@ export function SettingsNotices({
         </p>
       )}
       {setting.displayFailed && (
-        <p className="language-attention" role="status">
+        <p className="language-attention" role="status" data-settings-attention="triangle-alert">
           <Icon name="triangle-alert" />
           {message(
             locale,
@@ -196,7 +196,7 @@ export function SettingsNotices({
         </p>
       )}
       {current?.source === "invalid_fallback" && (
-        <p className="language-danger" role="alert">
+        <p className="language-danger" role="alert" data-settings-attention="octagon-alert">
           <Icon name="octagon-alert" />
           {message(locale, "settings.fallback", { setting: name(feature) })}
         </p>
@@ -219,7 +219,7 @@ export function SettingsZoomRefusalNotice({
   return (
     <RecoveryFocusBoundary onRecover={onRecover}>
       {state.zoomBusy && (
-        <p role="status" className="language-attention">
+        <p role="status" className="language-attention" data-settings-attention="triangle-alert">
           <Icon name="triangle-alert" />
           {message(locale, "settings.zoomUnavailable")}{" "}
           <button
@@ -250,7 +250,7 @@ export function SettingsReadFailureNotice({
   return (
     <RecoveryFocusBoundary onRecover={onRecover}>
       {state.readFailed && (
-        <p role="alert" className="language-danger">
+        <p role="alert" className="language-danger" data-settings-attention="octagon-alert">
           <Icon name="octagon-alert" />
           {message(locale, "settings.readFailed")}{" "}
           <button

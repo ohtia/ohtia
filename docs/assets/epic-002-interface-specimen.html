@@ -132,6 +132,8 @@ SOFTWARE.
         --rail-width: 40px;
         --separator-line: 4px;
         --dialog-max-width: 480px;
+        --settings-max-width: 880px;
+        --settings-nav-width: 232px;
         --tooltip-max-width: 256px;
         --palette-max-width: 600px;
         --explorer-initial: 256px;
@@ -650,6 +652,73 @@ SOFTWARE.
       }
       .dialog-tall {
         bottom: var(--space-10);
+      }
+      .dialog-settings {
+        width: min(var(--settings-max-width), calc(100% - 2 * var(--space-4)));
+      }
+      .settings-layout {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: var(--settings-nav-width) minmax(0, 1fr);
+      }
+      .settings-pages {
+        display: grid;
+        align-content: start;
+        gap: var(--space-1);
+        padding: var(--space-4) var(--space-3);
+        background: var(--surface-panel);
+        border-right: 1px solid var(--border-subtle);
+        border-bottom-left-radius: var(--radius-large);
+      }
+      .settings-page-button {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        min-height: var(--space-10);
+        padding: var(--space-2) var(--space-3);
+        border: 0;
+        border-radius: var(--radius-small);
+        background: transparent;
+        color: var(--content-primary);
+        font-family: inherit;
+        font-size: 14px;
+        line-height: 20px;
+        font-weight: 500;
+        text-align: left;
+      }
+      .settings-page-button[aria-current="page"] {
+        background: var(--surface-emphasis);
+        box-shadow: inset 2px 0 0 var(--content-primary);
+      }
+      .dialog-settings .dialog-body {
+        background: var(--surface-page);
+        border-bottom-right-radius: var(--radius-large);
+      }
+      .page-title {
+        margin: 0 0 var(--space-3);
+        font-size: 20px;
+        line-height: 28px;
+        font-weight: 600;
+      }
+      .memory-field .field-label {
+        flex: 1 1 auto;
+      }
+      .memory-field {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+      }
+      .number-field {
+        width: 100%;
+        box-sizing: border-box;
+        min-height: 24px;
+        padding: var(--space-2) var(--space-3);
+        color: var(--content-primary);
+        background: var(--surface-panel);
+        border: 1px solid var(--border-control);
+        border-radius: var(--radius-medium);
+        font: inherit;
       }
       .dialog-header {
         flex: none;
@@ -2183,12 +2252,12 @@ SOFTWARE.
       </div>
     </section>
     <section class="specimen" id="settings">
-      <h2 class="specimen-title">Settings: Accessibility and appearance</h2>
+      <h2 class="specimen-title">Settings: Accessibility and appearance page</h2>
       <p class="specimen-note">
-        SPEC-002-010 and SPEC-002-025. Shown at full height; in a shorter window the dialog body
-        scrolls internally.
+        SPEC-002-010 and SPEC-002-025. Shown at full height; in a shorter window the page scrolls
+        internally beside the page list.
       </p>
-      <div class="frame" style="width: 1280px; height: 1480px">
+      <div class="frame" style="width: 1280px; height: 1640px">
         <div class="window" inert aria-hidden="true">
           <header class="titlebar titlebar-win">
             <button
@@ -2383,7 +2452,7 @@ SOFTWARE.
           </div>
         </div>
         <div class="scrim"></div>
-        <div class="dialog" role="dialog" aria-modal="true" aria-label="Settings">
+        <div class="dialog dialog-settings" role="dialog" aria-modal="true" aria-label="Settings">
           <div class="dialog-header">
             <h1 class="dialog-title">Settings</h1>
             <button class="icon-button" aria-label="Close Settings" title="Close · Esc">
@@ -2393,199 +2462,283 @@ SOFTWARE.
               </svg>
             </button>
           </div>
-          <div class="dialog-body">
-            <p class="help-line">
-              <svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 16v-4" />
-                <path d="M12 8h.01" /></svg
-              ><span
-                >Changes are saved immediately. Language, appearance, zoom and characters apply to
-                every Ohtia window.</span
-              >
-            </p>
-            <h2 class="section-label">Accessibility and appearance</h2>
-            <section class="group">
-              <div class="group-heading">
-                <h3>Language</h3>
-                <span class="save-state"
-                  ><svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M20 6 9 17l-5-5" /></svg
-                  >Saved</span
-                >
-              </div>
-              <label class="field-label" for="interface-language">Interface language</label
-              ><select id="interface-language" class="select">
-                <option>Use system language · now English (United States)</option>
-                <option lang="en-US">English (United States)</option>
-                <option lang="en-GB">English (United Kingdom)</option>
-                <option lang="en-AU">English (Australia)</option>
-                <option lang="en-CA">English (Canada)</option>
-                <option lang="es-ES">Español (España)</option>
-                <option lang="es-MX">Español (México)</option>
-                <option lang="es-AR">Español (Argentina)</option>
-                <option lang="pt-BR">Português (Brasil)</option>
-                <option lang="pt-PT">Português (Portugal)</option>
-                <option lang="fr-FR">Français (France)</option>
-                <option lang="fr-CA">Français (Canada)</option>
-                <option lang="fr-BE">Français (Belgique)</option>
-                <option lang="de-DE">Deutsch (Deutschland)</option>
-                <option lang="de-AT">Deutsch (Österreich)</option>
-                <option lang="de-CH">Deutsch (Schweiz)</option>
-                <option lang="it-IT">Italiano (Italia)</option>
-                <option lang="nl-NL">Nederlands (Nederland)</option>
-                <option lang="nl-BE">Nederlands (België)</option>
-                <option lang="sv-SE">Svenska (Sverige)</option>
-                <option lang="da-DK">Dansk (Danmark)</option>
-                <option lang="nb-NO">Norsk bokmål (Norge)</option>
-                <option lang="fi-FI">Suomi (Suomi)</option>
-                <option lang="ca-AD">Català (Andorra)</option>
-                <option lang="ca-ES">Català (Espanya)</option>
-                <option lang="ko-KR">한국어 (대한민국)</option>
-              </select>
-              <p class="help">
-                Changing the language does not translate your documents or change the language of
-                analyses.
-              </p>
-            </section>
-            <section class="group">
-              <div class="group-heading">
-                <h3>Appearance</h3>
-                <span class="save-state"
-                  ><svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M20 6 9 17l-5-5" /></svg
-                  >Saved</span
-                >
-              </div>
-              <div class="theme-cards" role="radiogroup" aria-label="Theme">
-                <button class="theme-card is-on" role="radio" aria-checked="true">
-                  <span class="theme-preview theme-preview-system" aria-hidden="true"
-                    ><i class="pv-bar"></i><i class="pv-side"></i><i class="pv-line"></i
-                    ><i class="pv-line short"></i></span
-                  ><span class="theme-label"
-                    ><svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
-                      <rect width="20" height="14" x="2" y="3" rx="2" />
-                      <line x1="8" x2="16" y1="21" y2="21" />
-                      <line x1="12" x2="12" y1="17" y2="21" /></svg
-                    >System</span
-                  ><span class="caption"><span data-effective-theme>Now: light</span></span></button
-                ><button class="theme-card" role="radio" aria-checked="false">
-                  <span class="theme-preview theme-preview-light" aria-hidden="true"
-                    ><i class="pv-bar"></i><i class="pv-side"></i><i class="pv-line"></i
-                    ><i class="pv-line short"></i></span
-                  ><span class="theme-label"
-                    ><svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
-                      <circle cx="12" cy="12" r="4" />
-                      <path d="M12 2v2" />
-                      <path d="M12 20v2" />
-                      <path d="m4.93 4.93 1.41 1.41" />
-                      <path d="m17.66 17.66 1.41 1.41" />
-                      <path d="M2 12h2" />
-                      <path d="M20 12h2" />
-                      <path d="m6.34 17.66-1.41 1.41" />
-                      <path d="m19.07 4.93-1.41 1.41" /></svg
-                    >Light</span
-                  ><span class="caption">Warm paper</span></button
-                ><button class="theme-card" role="radio" aria-checked="false">
-                  <span class="theme-preview theme-preview-dark" aria-hidden="true"
-                    ><i class="pv-bar"></i><i class="pv-side"></i><i class="pv-line"></i
-                    ><i class="pv-line short"></i></span
-                  ><span class="theme-label"
-                    ><svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
-                      <path
-                        d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"
-                      /></svg
-                    >Dark</span
-                  ><span class="caption">Less glare</span>
-                </button>
-              </div>
-              <span class="field-label" id="zoom-label">Interface zoom</span>
-              <div class="zoom-control" role="group" aria-labelledby="zoom-label">
-                <button class="button square" aria-label="Decrease zoom">
-                  <svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M5 12h14" />
-                  </svg></button
-                ><output class="zoom-value" aria-live="polite">110%</output
-                ><button class="button square" aria-label="Increase zoom">
-                  <svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M5 12h14" />
-                    <path d="M12 5v14" />
-                  </svg></button
-                ><button class="button">Actual size</button>
-              </div>
-              <p class="help">
-                Shortcuts: <kbd class="kbd">Ctrl++</kbd> <kbd class="kbd">Ctrl+-</kbd>
-                <kbd class="kbd">Ctrl+0</kbd>
-              </p>
-              <span class="field-label" id="characters-label">Characters</span>
-              <div class="characters">
-                <div class="radio-group" role="radiogroup" aria-labelledby="characters-label">
-                  <button class="radio-option is-on" role="radio" aria-checked="true">
-                    <span class="radio-dot" aria-hidden="true"></span
-                    ><span
-                      ><span class="option-label">Animated</span
-                      ><span class="caption"
-                        >Brief animations at important moments, without loops or sound.</span
-                      ></span
-                    ></button
-                  ><button class="radio-option" role="radio" aria-checked="false">
-                    <span class="radio-dot" aria-hidden="true"></span
-                    ><span
-                      ><span class="option-label">Static</span
-                      ><span class="caption">One still pose, without motion.</span></span
-                    ></button
-                  ><button class="radio-option" role="radio" aria-checked="false">
-                    <span class="radio-dot" aria-hidden="true"></span
-                    ><span
-                      ><span class="option-label">Hidden</span
-                      ><span class="caption"
-                        >No illustration. Contributor names and symbols remain.</span
-                      ></span
-                    >
-                  </button>
-                </div>
-                <div class="character-preview" aria-hidden="true">
-                  <img src="ohtia/illustration.png" alt="" width="96" height="96" />
-                </div>
-              </div>
-              <p class="note">
+          <div class="settings-layout">
+            <nav class="settings-pages" aria-label="Settings pages">
+              <button class="settings-page-button" aria-current="page">
+                <svg class="icon icon-20" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="4" />
+                  <path d="M12 2v2" />
+                  <path d="M12 20v2" />
+                  <path d="m4.93 4.93 1.41 1.41" />
+                  <path d="m17.66 17.66 1.41 1.41" />
+                  <path d="M2 12h2" />
+                  <path d="M20 12h2" />
+                  <path d="m6.34 17.66-1.41 1.41" />
+                  <path d="m19.07 4.93-1.41 1.41" /></svg
+                ><span>Accessibility and appearance</span>
+              </button>
+              <button class="settings-page-button">
+                <svg class="icon icon-20" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 22v-5" />
+                  <path d="M15 8V2" />
+                  <path d="M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z" />
+                  <path d="M9 8V2" /></svg
+                ><span>AI services</span>
+              </button>
+              <button class="settings-page-button">
+                <svg class="icon icon-20" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <path d="M16 3.128a4 4 0 0 1 0 7.744" />
+                  <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                  <circle cx="9" cy="7" r="4" /></svg
+                ><span>Agents</span>
+              </button>
+            </nav>
+            <div class="dialog-body">
+              <h2 class="page-title">Accessibility and appearance</h2>
+              <p class="help-line">
                 <svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
                   <circle cx="12" cy="12" r="10" />
                   <path d="M12 16v-4" />
                   <path d="M12 8h.01" /></svg
                 ><span
-                  >Your system asks to reduce motion: the character stays still while that setting
-                  is on.</span
+                  >Changes are saved immediately. Language, appearance, zoom and characters apply to
+                  every Ohtia window.</span
                 >
               </p>
-            </section>
-            <section class="group">
-              <div class="group-heading">
-                <h3>Workspace layout</h3>
-                <span class="save-state"
-                  ><svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M20 6 9 17l-5-5" /></svg
-                  >Saved</span
-                >
-              </div>
-              <div class="checkboxes">
-                <label class="checkbox"><input type="checkbox" checked /> Project contents</label
-                ><label class="checkbox"><input type="checkbox" checked /> Documents</label
-                ><label class="checkbox"><input type="checkbox" checked /> Chat</label>
-              </div>
-              <div>
-                <button class="button">
+              <section class="group">
+                <div class="group-heading">
+                  <h3>Language</h3>
+                  <span class="save-state"
+                    ><svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M20 6 9 17l-5-5" /></svg
+                    >Saved</span
+                  >
+                </div>
+                <label class="field-label" for="interface-language">Interface language</label
+                ><select id="interface-language" class="select">
+                  <option>Use system language · now English (United States)</option>
+                  <option lang="en-US">English (United States)</option>
+                  <option lang="en-GB">English (United Kingdom)</option>
+                  <option lang="en-AU">English (Australia)</option>
+                  <option lang="en-CA">English (Canada)</option>
+                  <option lang="es-ES">Español (España)</option>
+                  <option lang="es-MX">Español (México)</option>
+                  <option lang="es-AR">Español (Argentina)</option>
+                  <option lang="pt-BR">Português (Brasil)</option>
+                  <option lang="pt-PT">Português (Portugal)</option>
+                  <option lang="fr-FR">Français (France)</option>
+                  <option lang="fr-CA">Français (Canada)</option>
+                  <option lang="fr-BE">Français (Belgique)</option>
+                  <option lang="de-DE">Deutsch (Deutschland)</option>
+                  <option lang="de-AT">Deutsch (Österreich)</option>
+                  <option lang="de-CH">Deutsch (Schweiz)</option>
+                  <option lang="it-IT">Italiano (Italia)</option>
+                  <option lang="nl-NL">Nederlands (Nederland)</option>
+                  <option lang="nl-BE">Nederlands (België)</option>
+                  <option lang="sv-SE">Svenska (Sverige)</option>
+                  <option lang="da-DK">Dansk (Danmark)</option>
+                  <option lang="nb-NO">Norsk bokmål (Norge)</option>
+                  <option lang="fi-FI">Suomi (Suomi)</option>
+                  <option lang="ca-AD">Català (Andorra)</option>
+                  <option lang="ca-ES">Català (Espanya)</option>
+                  <option lang="ko-KR">한국어 (대한민국)</option>
+                </select>
+                <p class="help">
+                  Changing the language does not translate your documents or change the language of
+                  analyses.
+                </p>
+              </section>
+              <section class="group">
+                <div class="group-heading">
+                  <h3>Appearance</h3>
+                  <span class="save-state"
+                    ><svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M20 6 9 17l-5-5" /></svg
+                    >Saved</span
+                  >
+                </div>
+                <div class="theme-cards" role="radiogroup" aria-label="Theme">
+                  <button class="theme-card is-on" role="radio" aria-checked="true">
+                    <span class="theme-preview theme-preview-system" aria-hidden="true"
+                      ><i class="pv-bar"></i><i class="pv-side"></i><i class="pv-line"></i
+                      ><i class="pv-line short"></i></span
+                    ><span class="theme-label"
+                      ><svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
+                        <rect width="20" height="14" x="2" y="3" rx="2" />
+                        <line x1="8" x2="16" y1="21" y2="21" />
+                        <line x1="12" x2="12" y1="17" y2="21" /></svg
+                      >System</span
+                    ><span class="caption"
+                      ><span data-effective-theme>Now: light</span></span
+                    ></button
+                  ><button class="theme-card" role="radio" aria-checked="false">
+                    <span class="theme-preview theme-preview-light" aria-hidden="true"
+                      ><i class="pv-bar"></i><i class="pv-side"></i><i class="pv-line"></i
+                      ><i class="pv-line short"></i></span
+                    ><span class="theme-label"
+                      ><svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="12" r="4" />
+                        <path d="M12 2v2" />
+                        <path d="M12 20v2" />
+                        <path d="m4.93 4.93 1.41 1.41" />
+                        <path d="m17.66 17.66 1.41 1.41" />
+                        <path d="M2 12h2" />
+                        <path d="M20 12h2" />
+                        <path d="m6.34 17.66-1.41 1.41" />
+                        <path d="m19.07 4.93-1.41 1.41" /></svg
+                      >Light</span
+                    ><span class="caption">Warm paper</span></button
+                  ><button class="theme-card" role="radio" aria-checked="false">
+                    <span class="theme-preview theme-preview-dark" aria-hidden="true"
+                      ><i class="pv-bar"></i><i class="pv-side"></i><i class="pv-line"></i
+                      ><i class="pv-line short"></i></span
+                    ><span class="theme-label"
+                      ><svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"
+                        /></svg
+                      >Dark</span
+                    ><span class="caption">Less glare</span>
+                  </button>
+                </div>
+              </section>
+              <section class="group">
+                <div class="group-heading">
+                  <h3 id="zoom-label">Interface zoom</h3>
+                  <span class="save-state"
+                    ><svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M20 6 9 17l-5-5" /></svg
+                    >Saved</span
+                  >
+                </div>
+                <div class="zoom-control" role="group" aria-labelledby="zoom-label">
+                  <button class="button square" aria-label="Decrease zoom">
+                    <svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M5 12h14" />
+                    </svg></button
+                  ><output class="zoom-value" aria-live="polite">110%</output
+                  ><button class="button square" aria-label="Increase zoom">
+                    <svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M5 12h14" />
+                      <path d="M12 5v14" />
+                    </svg></button
+                  ><button class="button">Actual size</button>
+                </div>
+                <p class="help">
+                  Shortcuts: <kbd class="kbd">Ctrl++</kbd> <kbd class="kbd">Ctrl+-</kbd>
+                  <kbd class="kbd">Ctrl+0</kbd>
+                </p>
+              </section>
+              <section class="group">
+                <div class="group-heading">
+                  <h3 id="characters-label">Characters</h3>
+                  <span class="save-state"
+                    ><svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M20 6 9 17l-5-5" /></svg
+                    >Saved</span
+                  >
+                </div>
+                <div class="characters">
+                  <div class="radio-group" role="radiogroup" aria-labelledby="characters-label">
+                    <button class="radio-option is-on" role="radio" aria-checked="true">
+                      <span class="radio-dot" aria-hidden="true"></span
+                      ><span
+                        ><span class="option-label">Animated</span
+                        ><span class="caption"
+                          >Brief animations at important moments, without loops or sound.</span
+                        ></span
+                      ></button
+                    ><button class="radio-option" role="radio" aria-checked="false">
+                      <span class="radio-dot" aria-hidden="true"></span
+                      ><span
+                        ><span class="option-label">Static</span
+                        ><span class="caption">One still pose, without motion.</span></span
+                      ></button
+                    ><button class="radio-option" role="radio" aria-checked="false">
+                      <span class="radio-dot" aria-hidden="true"></span
+                      ><span
+                        ><span class="option-label">Hidden</span
+                        ><span class="caption"
+                          >No illustration. Contributor names and symbols remain.</span
+                        ></span
+                      >
+                    </button>
+                  </div>
+                  <div class="character-preview" aria-hidden="true">
+                    <img src="ohtia/illustration.png" alt="" width="96" height="96" />
+                  </div>
+                </div>
+                <p class="note">
                   <svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                    <path d="M3 3v5h5" /></svg
-                  >Reset layout
-                </button>
-              </div>
-              <p class="help">
-                Applies to this window and to windows opened later. Other open windows keep their
-                arrangement.
-              </p>
-            </section>
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 16v-4" />
+                    <path d="M12 8h.01" /></svg
+                  ><span
+                    >Your system asks to reduce motion: the character stays still while that setting
+                    is on.</span
+                  >
+                </p>
+              </section>
+              <section class="group">
+                <div class="group-heading">
+                  <h3>Workspace layout</h3>
+                  <span class="save-state"
+                    ><svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M20 6 9 17l-5-5" /></svg
+                    >Saved</span
+                  >
+                </div>
+                <div class="checkboxes">
+                  <label class="checkbox"><input type="checkbox" checked /> Project contents</label
+                  ><label class="checkbox"><input type="checkbox" checked /> Documents</label
+                  ><label class="checkbox"><input type="checkbox" checked /> Chat</label>
+                </div>
+                <div>
+                  <button class="button">
+                    <svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                      <path d="M3 3v5h5" /></svg
+                    >Reset layout
+                  </button>
+                </div>
+                <p class="help">
+                  Applies to this window and to windows opened later. Other open windows keep their
+                  arrangement.
+                </p>
+              </section>
+              <section class="group">
+                <div class="group-heading"><h3>Project memory text</h3></div>
+                <div class="memory-field">
+                  <div class="group-heading">
+                    <label class="field-label" for="quote-length"
+                      >Source quote length (characters)</label
+                    >
+                    <span class="save-state"
+                      ><svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M20 6 9 17l-5-5" /></svg
+                      >Saved</span
+                    >
+                  </div>
+                  <input class="number-field" id="quote-length" value="144" inputmode="numeric" />
+                  <p class="help">Enter 0 to show the full source message.</p>
+                </div>
+                <div class="memory-field">
+                  <div class="group-heading">
+                    <label class="field-label" for="entry-length"
+                      >Entry text length (characters)</label
+                    >
+                    <span class="save-state"
+                      ><svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M20 6 9 17l-5-5" /></svg
+                      >Saved</span
+                    >
+                  </div>
+                  <input class="number-field" id="entry-length" value="288" inputmode="numeric" />
+                  <p class="help">Enter 0 to show the full entry text.</p>
+                </div>
+              </section>
+            </div>
           </div>
         </div>
       </div>

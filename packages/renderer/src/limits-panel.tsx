@@ -62,7 +62,7 @@ export function LimitsPanel({
   const shown = /^\d+$/.test(draft) && isInferenceLimit(Number(draft)) ? Number(draft) : saved;
   return (
     <section className="limits-panel" aria-labelledby={`${id}-title`}>
-      <h2 id={`${id}-title`}>{message(locale, "limits.section")}</h2>
+      <h3 id={`${id}-title`}>{message(locale, "limits.section")}</h3>
       <div className="settings-group-heading">
         <label htmlFor={`${id}-field`}>{name}</label>
         <span className="settings-save-state" role="status">
@@ -184,7 +184,7 @@ function LimitsNotices({
     <RecoveryFocusBoundary onRecover={onRecover}>
       {state.phase === "rejected" && (
         <>
-          <p className="language-danger" role="alert">
+          <p className="language-danger" role="alert" data-settings-attention="octagon-alert">
             <Icon name="octagon-alert" />
             {message(locale, "settings.rejected", {
               setting: name,
@@ -206,7 +206,7 @@ function LimitsNotices({
       )}
       {state.phase === "uncertain" && (
         <>
-          <p className="language-attention" role="status">
+          <p className="language-attention" role="status" data-settings-attention="triangle-alert">
             <Icon name="triangle-alert" />
             {state.canChoose
               ? message(locale, "settings.language.recovered")
@@ -238,7 +238,7 @@ function LimitsNotices({
       )}
       {available && state.readFailed && (
         <>
-          <p className="language-danger" role="alert">
+          <p className="language-danger" role="alert" data-settings-attention="octagon-alert">
             <Icon name="octagon-alert" />
             {message(locale, "settings.readFailed")}
           </p>
