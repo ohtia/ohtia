@@ -992,7 +992,17 @@ class WorkflowTests(unittest.TestCase):
         jobs = job_blocks(WORKFLOW)
         self.assertEqual(
             list(jobs),
-            ["check", "notes", "linux", "windows", "macos", "sign", "release", "repository"],
+            [
+                "check",
+                "notes",
+                "linux",
+                "windows",
+                "macos",
+                "sign",
+                "release",
+                "metadata",
+                "repository",
+            ],
         )
         for platform in release_platforms.load():
             block = jobs[platform["id"]]
@@ -1019,14 +1029,16 @@ class WorkflowTests(unittest.TestCase):
             "    permissions:\n      contents: write\n      id-token: write\n      attestations: write\n    steps:",
             jobs["release"],
         )
-        self.assertEqual(WORKFLOW.count("contents: write"), 2)
-        # The repository job writes only to the bucket; it needs write access to read the
-        # unpublished release, which GitHub hides from read-only tokens.
-        self.assertEqual(
-            re.findall(r"^    permissions:\n((?:      .+\n)+)", jobs["repository"], re.MULTILINE),
-            ["      contents: write\n"],
-        )
-        self.assertIn("    needs: [check, release]\n", jobs["repository"])
+        self.assertEqual(WORKFLOW.count("contents: write"), 3)
+        # The metadata and repository jobs write only to an artifact and the bucket; they need
+        # write access to read the unpublished release, which GitHub hides from read-only tokens.
+        for name in ("metadata", "repository"):
+            self.assertEqual(
+                re.findall(r"^    permissions:\n((?:      .+\n)+)", jobs[name], re.MULTILINE),
+                ["      contents: write\n"],
+            )
+        self.assertIn("    needs: [check, release]\n", jobs["metadata"])
+        self.assertIn("    needs: [check, release, metadata]\n", jobs["repository"])
         # The release waits for the notes, every platform and the signing; a failure skips it.
         self.assertIn("    needs: [check, notes, linux, windows, macos, sign]\n", jobs["release"])
         self.assertNotIn("if:", jobs["release"])
@@ -1136,9 +1148,9 @@ class WorkflowTests(unittest.TestCase):
         uses = re.findall(r"uses: (\S+)", WORKFLOW)
         self.assertTrue(uses)
         # The repository job runs the action of the run commit; every other action is pinned.
-        self.assertEqual(uses.count("$/.github/actions/apt-repository"), 1)
+        self.assertEqual(uses.count("$/.github/actions/package-repositories"), 2)
         for action in uses:
-            if action != "$/.github/actions/apt-repository":
+            if action != "$/.github/actions/package-repositories":
                 self.assertRegex(action, r"^actions/[a-z-]+@[0-9a-f]{40}$")
         self.assertEqual(
             WORKFLOW.count("persist-credentials: false"), WORKFLOW.count("actions/checkout@")

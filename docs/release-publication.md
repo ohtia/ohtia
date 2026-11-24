@@ -10,7 +10,7 @@ verified:
 
 # Release publication
 
-The [release policy](release-policy.md#public-publication-and-promotion) owns publication authorization, and [SPEC-001-039](epics/EPIC-001-desktop-foundation/epic.md#spec-001-039-publish-release-workflow) the workflow. This procedure runs the manual [publish-release workflow](../.github/workflows/publish-release.yml) on a release prepared by [Release preparation](release-preparation.md). The workflow never builds or signs a package. It copies the Ubuntu and Debian packages to the `stable` apt repositories, from which installed systems receive updates; the Fedora packages are installed from the release page.
+The [release policy](release-policy.md#public-publication-and-promotion) owns publication authorization, and [SPEC-001-039](epics/EPIC-001-desktop-foundation/epic.md#spec-001-039-publish-release-workflow) the workflow. This procedure runs the manual [publish-release workflow](../.github/workflows/publish-release.yml) on a release prepared by [Release preparation](release-preparation.md). The workflow never builds or signs a package. It copies the Ubuntu, Debian and Fedora packages to the `stable` package repositories, from which installed systems receive updates.
 
 ## Before running the workflow
 
@@ -34,11 +34,11 @@ The `Check the prepared release` job reads the unpublished release and changes n
 
 The summary on the run page, `https://github.com/ohtia/ohtia/actions/runs/<run-id>`, then shows the version, the reserved commit, the release, the SHA-256 of the current body and of the body that will be published, and the length and SHA-256 of every asset and of `release-digests.json`, marking the unsigned packages that publication removes.
 
-## Copy the Debian packages to the stable repositories
+## Copy the Linux packages to the stable repositories
 
-The `Copy the Debian packages to the stable repositories` job is the first that waits for your approval in the protected `release-signing` environment of [Release signing key](release-signing.md). Compare the summary with the prepared release and the release you intend to publish, then select **Review deployments** on the run page, select `release-signing` and then **Approve and deploy**. **Reject** fails the run before any change.
+The `Build the dnf metadata of the stable repositories` job runs after the check, without secrets, as the preparation's metadata job does, bound to the checked digest file. The `Copy the Linux packages to the stable repositories` job is the first that waits for your approval in the protected `release-signing` environment of [Release signing key](release-signing.md). Compare the summary with the prepared release and the release you intend to publish, then select **Review deployments** on the run page, select `release-signing` and then **Approve and deploy**. **Reject** fails the run before any change.
 
-It runs [the apt repository action](../.github/actions/apt-repository/action.yml) as the preparation's test-repository job does, for the `stable` zone: it downloads `release-digests.json` and refuses one whose SHA-256 differs from the checked digest file, downloads and checks every Debian package that file lists, without comparing them with the platform declaration of the current `main`, builds and signs both indexes, uploads them to `https://packages.ohtia.com/stable/ubuntu/` and `https://packages.ohtia.com/stable/debian/` and reads them back. From then on, systems with an Ohtia package installed are offered the version through apt. A failure is reported as [Recover from an incomplete repository upload](release-signing.md#recover-from-an-incomplete-repository-upload) describes; the release stays unpublished.
+It runs [the package repository action](../.github/actions/package-repositories/action.yml) as the preparation's test-repository job does, for the `stable` zone: it downloads `release-digests.json` and refuses one whose SHA-256 differs from the checked digest file, downloads and checks every Debian and Fedora package that file lists, without comparing them with the platform declaration of the current `main`, checks the dnf metadata, builds and signs every index, uploads them to `https://packages.ohtia.com/stable/ubuntu/`, `https://packages.ohtia.com/stable/debian/` and `https://packages.ohtia.com/stable/fedora/<release>/` and reads them back. From then on, systems with an Ohtia package installed are offered the version through apt or dnf. A failure is reported as [Recover from an incomplete repository upload](release-signing.md#recover-from-an-incomplete-repository-upload) describes; the release stays unpublished.
 
 ## Approve the publication
 

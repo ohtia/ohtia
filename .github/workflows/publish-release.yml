@@ -46,9 +46,55 @@ jobs:
           OHTIA_RELEASE_VERSION: ${{ inputs.version }}
         run: python3 scripts/release_publish.py check
 
-  repository:
-    name: Copy the Debian packages to the stable repositories
+  metadata:
+    name: Build the dnf metadata of the stable repositories
     needs: check
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      contents: write # Reads the release, which GitHub shows only to tokens with write access while it is unpublished. This job changes no release.
+    outputs:
+      artifact: ${{ steps.name.outputs.artifact }}
+    # This job holds no secret; it installs createrepo_c, which the runner image lacks, so the
+    # protected repository job only checks and signs its metadata.
+    steps:
+      - name: Check out the release records
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: config/release
+          persist-credentials: false
+
+      - name: Install the dnf metadata builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y createrepo-c
+
+      - name: Build the dnf metadata
+        uses: $/.github/actions/package-repositories
+        with:
+          stage: metadata
+          zone: stable
+          version: ${{ inputs.version }}
+          commit: ${{ needs.check.outputs.commit }}
+          digests-sha256: ${{ needs.check.outputs.digests }}
+          github-token: ${{ github.token }}
+
+      - name: Name the metadata of this attempt
+        id: name
+        run: echo "artifact=dnf-metadata-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+
+      - name: Retain the dnf metadata
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.name.outputs.artifact }}
+          path: ${{ runner.temp }}/package-repositories/dnf-metadata/
+          if-no-files-found: error
+          # A repository job can wait for approval or be rerun for up to 30 days.
+          retention-days: 30
+
+  repository:
+    name: Copy the Linux packages to the stable repositories
+    needs: [check, metadata]
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     # The approval page of this first protected job shows the checked version, commit and digests.
@@ -68,14 +114,23 @@ jobs:
           sparse-checkout: config/release
           persist-credentials: false
 
-      - name: Publish the stable apt repositories
-        uses: $/.github/actions/apt-repository
+      - name: Download the dnf metadata
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
+          name: ${{ needs.metadata.outputs.artifact }}
+          path: ${{ runner.temp }}/dnf-metadata
+          digest-mismatch: error
+
+      - name: Publish the stable package repositories
+        uses: $/.github/actions/package-repositories
+        with:
+          stage: publish
           zone: stable
           version: ${{ inputs.version }}
           commit: ${{ needs.check.outputs.commit }}
           digests-sha256: ${{ needs.check.outputs.digests }}
           github-token: ${{ github.token }}
+          dnf-metadata: ${{ runner.temp }}/dnf-metadata
           signing-subkey: ${{ secrets.SIGNING_SUBKEY }}
           signing-passphrase: ${{ secrets.SIGNING_PASSPHRASE }}
           r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
