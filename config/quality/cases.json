@@ -3666,6 +3666,7 @@
     "test_macos_contributor.MacosContributorTests.test_timeout_stops_setup_grandchild_before_retry_guidance",
     "test_macos_contributor.MacosContributorTests.test_unqualified_macos_family_is_refused",
     "test_package_scripts.PackageScriptExecutionTests.test_debian_preinstall_refuses_wrong_distribution_or_version",
+    "test_package_scripts.PackageScriptExecutionTests.test_fedora_label_check_prints_only_mismatches",
     "test_package_scripts.PackageScriptExecutionTests.test_payload_checks_refuse_wrong_file_types_and_symlinks",
     "test_package_scripts.PackageScriptSourceTests.test_package_scripts_do_not_chain_test_commands_with_and",
     "test_package_workspace.PackageArchiveTests.test_development_state_stays_out_of_the_library_archive",

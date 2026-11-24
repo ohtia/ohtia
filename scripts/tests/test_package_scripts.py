@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -78,6 +79,35 @@ class PackageScriptExecutionTests(unittest.TestCase):
                 with self.subTest(script=script, path=path, kind=kind):
                     self.assert_guard(script, first, second, override=(path, kind))
 
+    def test_fedora_label_check_prints_only_mismatches(self):
+        verified = f"./{EXECUTABLE} verified.\n./{SOURCE} verified.\n"
+        mismatch = (
+            f"./{ROOT}/locales has context unconfined_u:object_r:user_home_t:s0, "
+            "should be system_u:object_r:usr_t:s0\n"
+        )
+        error = f"matchpathcon(./{ROOT}/missing) failed: No such file or directory\n"
+        source = (PACKAGING / "after-fedora.sh").read_text(encoding="utf-8")
+        for status, stdout, stderr, expected in (
+            (0, verified, "", ""),
+            (1, verified + mismatch + verified, error, mismatch + error),
+        ):
+            with self.subTest(status=status):
+                # The check is the only find call with -exec. Its output goes through the script.
+                commands = f"""
+matchpathcon() {{
+  case "$1 $2" in "-V ./{ROOT}") ;; *) return 2;; esac
+  printf '%s' {shlex.quote(stdout)}
+  printf '%s' {shlex.quote(stderr)} >&2
+  return {status}
+}}
+find() {{ case " $* " in *" -exec matchpathcon -V {{}} + "*) matchpathcon -V "$1";; esac; }}
+"""
+                result = self.run_script("after-fedora.sh", source, commands=commands)
+                self.assertEqual(result.stdout, "")
+                self.assertEqual(result.stderr, expected)
+                self.assertNotIn(" verified.", result.stderr)
+                self.assertEqual(result.returncode, status)
+
     def assert_guard(
         self, script, first, second, *, distribution="debian", version="13", override=None
     ):
@@ -92,6 +122,18 @@ class PackageScriptExecutionTests(unittest.TestCase):
             f"{first_check}{between}{second_check}"
             f"printf '%s\\n' 'passed package check'\n{after}"
         )
+        result = self.run_script(script, source, distribution, version, override)
+
+        expected_failure = override is not None or (distribution, version) != ("debian", "13")
+        self.assertEqual(result.stderr, "")
+        self.assertEqual(
+            result.stdout, ENTERED_CHECK if expected_failure else ENTERED_CHECK + PASSED_CHECK
+        )
+        self.assertEqual(result.returncode, 1 if expected_failure else 0)
+
+    def run_script(
+        self, script, source, distribution="debian", version="13", override=None, commands=""
+    ):
         path_assignment = "PATH=/usr/sbin:/usr/bin:/sbin:/bin"
         self.assertIn(path_assignment, source)
         source = source.replace(path_assignment, "PATH=./no-host-commands")
@@ -103,8 +145,8 @@ class PackageScriptExecutionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = Path(temporary)
             self.prepare_host(fixture, script, distribution, version, override)
-            result = subprocess.run(
-                ["/bin/sh", "-c", HOST_COMMANDS + source],
+            return subprocess.run(
+                ["/bin/sh", "-c", HOST_COMMANDS + commands + source],
                 cwd=fixture,
                 env={},
                 capture_output=True,
@@ -112,13 +154,6 @@ class PackageScriptExecutionTests(unittest.TestCase):
                 timeout=10,
                 check=False,
             )
-
-        expected_failure = override is not None or (distribution, version) != ("debian", "13")
-        self.assertEqual(result.stderr, "")
-        self.assertEqual(
-            result.stdout, ENTERED_CHECK if expected_failure else ENTERED_CHECK + PASSED_CHECK
-        )
-        self.assertEqual(result.returncode, 1 if expected_failure else 0)
 
     def prepare_host(self, fixture, script, distribution, version, override):
         files = {

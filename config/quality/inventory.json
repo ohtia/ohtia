@@ -359,6 +359,11 @@
       "reason": "POSIX package-script execution with synthetic filesystem and host commands"
     },
     {
+      "id": "test_package_scripts.PackageScriptExecutionTests.test_fedora_label_check_prints_only_mismatches",
+      "platforms": ["win32"],
+      "reason": "POSIX package-script execution with synthetic filesystem and host commands"
+    },
+    {
       "id": "test_package_scripts.PackageScriptExecutionTests.test_payload_checks_refuse_wrong_file_types_and_symlinks",
       "platforms": ["win32"],
       "reason": "POSIX package-script execution with synthetic filesystem and host commands"
