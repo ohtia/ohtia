@@ -20,6 +20,10 @@
             {
               "profile": "fedora-44",
               "format": "rpm"
+            },
+            {
+              "profile": "fedora-45",
+              "format": "rpm"
             }
           ]
         },
@@ -37,6 +41,10 @@
             },
             {
               "profile": "fedora-44",
+              "format": "rpm"
+            },
+            {
+              "profile": "fedora-45",
               "format": "rpm"
             }
           ]

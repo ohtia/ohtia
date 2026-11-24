@@ -482,20 +482,22 @@ class AssemblyTests(unittest.TestCase):
     def test_complete_builds_produce_the_digest_file_and_testing_heading(self):
         record = self.assemble(self.root / "release")
         names = [asset["name"] for asset in record["assets"]]
-        self.assertEqual(len(names), 10)
+        self.assertEqual(len(names), 12)
         self.assertEqual(
-            {asset["name"]: asset["authentication"] for asset in record["assets"][:6]},
+            {asset["name"]: asset["authentication"] for asset in record["assets"][:8]},
             {
                 "ohtia-0.3.0-linux-x64-ubuntu-26.04.deb": "repository",
                 "ohtia-0.3.0-linux-x64-debian-13.deb": "repository",
                 "ohtia-0.3.0-linux-x64-fedora-44.rpm": "embedded",
+                "ohtia-0.3.0-linux-x64-fedora-45.rpm": "embedded",
                 "ohtia-0.3.0-linux-arm64-ubuntu-26.04.deb": "repository",
                 "ohtia-0.3.0-linux-arm64-debian-13.deb": "repository",
                 "ohtia-0.3.0-linux-arm64-fedora-44.rpm": "embedded",
+                "ohtia-0.3.0-linux-arm64-fedora-45.rpm": "embedded",
             },
         )
-        self.assertEqual(names[6:], UNSIGNED)
-        self.assertEqual({asset["authentication"] for asset in record["assets"][6:]}, {"unsigned"})
+        self.assertEqual(names[8:], UNSIGNED)
+        self.assertEqual({asset["authentication"] for asset in record["assets"][8:]}, {"unsigned"})
         written = json.loads((self.root / "release" / prepare.DIGESTS).read_text())
         self.assertEqual(written, record)
         self.assertEqual(record["source"], {"commit": "c" * 40, "tree": "d" * 40})
@@ -1124,9 +1126,11 @@ class DeclarationTests(unittest.TestCase):
                 ("ohtia-0.3.0-linux-x64-ubuntu-26.04.deb", "repository"),
                 ("ohtia-0.3.0-linux-x64-debian-13.deb", "repository"),
                 ("ohtia-0.3.0-linux-x64-fedora-44.rpm", "embedded"),
+                ("ohtia-0.3.0-linux-x64-fedora-45.rpm", "embedded"),
                 ("ohtia-0.3.0-linux-arm64-ubuntu-26.04.deb", "repository"),
                 ("ohtia-0.3.0-linux-arm64-debian-13.deb", "repository"),
                 ("ohtia-0.3.0-linux-arm64-fedora-44.rpm", "embedded"),
+                ("ohtia-0.3.0-linux-arm64-fedora-45.rpm", "embedded"),
                 ("ohtia-0.3.0-win32-x64-unsigned.exe", "unsigned"),
                 ("ohtia-0.3.0-win32-arm64-unsigned.exe", "unsigned"),
                 ("ohtia-0.3.0-darwin-arm64-unsigned.dmg", "unsigned"),
@@ -1209,7 +1213,12 @@ class BuildTests(unittest.TestCase):
                 record = release_build.build("linux-arm64", output)
         self.assertEqual(
             [(cell["profile"], cell["formats"]) for cell, _ in constructed],
-            [("ubuntu-26.04", ["deb"]), ("debian-13", ["deb"]), ("fedora-44", ["rpm"])],
+            [
+                ("ubuntu-26.04", ["deb"]),
+                ("debian-13", ["deb"]),
+                ("fedora-44", ["rpm"]),
+                ("fedora-45", ["rpm"]),
+            ],
         )
         self.assertEqual({version for _, version in constructed}, {"0.3.0"})
         self.assertEqual(record["source"], {"commit": "f" * 40, "tree": "f" * 40})
@@ -1219,6 +1228,7 @@ class BuildTests(unittest.TestCase):
                 "ohtia-0.3.0-linux-arm64-ubuntu-26.04.deb",
                 "ohtia-0.3.0-linux-arm64-debian-13.deb",
                 "ohtia-0.3.0-linux-arm64-fedora-44.rpm",
+                "ohtia-0.3.0-linux-arm64-fedora-45.rpm",
             ],
         )
 
