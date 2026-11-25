@@ -2978,6 +2978,32 @@ SOFTWARE.
         background: var(--surface-page);
         border-bottom-right-radius: var(--radius-large);
       }
+      .agent-row {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+        border-top: 1px solid var(--border-subtle);
+        padding-top: var(--space-3);
+      }
+      .agent-row-heading {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--space-2);
+      }
+      .agent-row-heading h4 {
+        flex: 1 1 12rem;
+        margin: 0;
+        font-size: 16px;
+        line-height: 24px;
+        font-weight: 600;
+      }
+      .agent-summary {
+        margin: 0;
+        font-size: 14px;
+        line-height: 21px;
+        color: var(--content-secondary);
+      }
       .page-title {
         margin: 0 0 var(--space-3);
         font-size: 20px;
@@ -12771,9 +12797,9 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
       <div class="variant" data-variant="main">
         <h2 class="specimen-title">Settings › Agents, 1280 × 1240</h2>
         <p class="specimen-note">
-          SPEC-003-040. The Agents page is open. Virgilio inherits the default model; Josefa uses
-          her own model on the Anthropic key. ChatGPT reports no effort levels, so its Effort
-          controls are disabled with their reason.
+          SPEC-003-040. The Agents page is open with Josefa's row opened by Change. Virgilio
+          inherits the default model; Josefa uses her own model on the Anthropic key. ChatGPT
+          reports no effort levels, so its Effort controls are disabled with their reason.
         </p>
         <div class="frame" style="width: 1280px; height: 1240px">
           <div data-use="settings-backdrop"></div>
@@ -12842,62 +12868,57 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
                     </div>
                   </div>
                 </section>
-                <section class="group" aria-label="Virgilio">
-                  <div class="group-heading">
-                    <h3><span class="voice-label" data-agent="virgilio"></span></h3>
-                    <span class="save-state"
-                      ><svg class="icon icon-16" data-i="check"></svg>Saved</span
-                    >
+                <section class="group agent-rows" aria-labelledby="ag-each">
+                  <div class="group-heading"><h3 id="ag-each">Each agent</h3></div>
+                  <div class="agent-row">
+                    <div class="agent-row-heading">
+                      <h4><span class="voice-label" data-agent="virgilio"></span></h4>
+                      <button
+                        class="button"
+                        aria-expanded="false"
+                        aria-controls="ag-v-choices"
+                        aria-label="Change model for Virgilio"
+                      >
+                        Change
+                      </button>
+                    </div>
+                    <p class="agent-summary">Default · ChatGPT · GPT-6.1 Sol</p>
                   </div>
-                  <div class="select-steps">
-                    <div class="field field-wide">
-                      <label class="field-label" for="ag-v-s">Service</label
-                      ><select class="select" id="ag-v-s">
-                        <option>ChatGPT · researcher@example.org</option>
-                      </select>
+                  <div class="agent-row">
+                    <div class="agent-row-heading">
+                      <h4><span class="voice-label" data-agent="josefa"></span></h4>
+                      <span class="save-state"
+                        ><svg class="icon icon-16" data-i="check"></svg>Saved</span
+                      >
+                      <button
+                        class="button"
+                        aria-expanded="true"
+                        aria-controls="ag-j-choices"
+                        aria-label="Change model for Josefa"
+                      >
+                        Change
+                      </button>
                     </div>
-                    <div class="field">
-                      <label class="field-label" for="ag-v-m">Model</label
-                      ><select class="select" id="ag-v-m">
-                        <option>Default · ChatGPT · GPT-6.1 Sol</option>
-                      </select>
-                    </div>
-                    <div class="field">
-                      <label class="field-label" for="ag-v-e">Effort</label
-                      ><select class="select" id="ag-v-e" disabled aria-describedby="ag-v-r">
-                        <option>Model default</option>
-                      </select>
-                      <p class="field-reason" id="ag-v-r">
-                        This model doesn't report effort levels.
-                      </p>
-                    </div>
-                  </div>
-                </section>
-                <section class="group" aria-label="Josefa">
-                  <div class="group-heading">
-                    <h3><span class="voice-label" data-agent="josefa"></span></h3>
-                    <span class="save-state"
-                      ><svg class="icon icon-16" data-i="check"></svg>Saved</span
-                    >
-                  </div>
-                  <div class="select-steps">
-                    <div class="field field-wide">
-                      <label class="field-label" for="ag-j-s">Service</label
-                      ><select class="select" id="ag-j-s">
-                        <option>Anthropic · API key</option>
-                      </select>
-                    </div>
-                    <div class="field">
-                      <label class="field-label" for="ag-j-m">Model</label
-                      ><select class="select" id="ag-j-m">
-                        <option>Claude Opus 5.5</option>
-                      </select>
-                    </div>
-                    <div class="field">
-                      <label class="field-label" for="ag-j-e">Effort</label
-                      ><select class="select" id="ag-j-e">
-                        <option>high</option>
-                      </select>
+                    <p class="agent-summary">Anthropic · API key · Claude Opus 5.5 · high</p>
+                    <div class="select-steps" id="ag-j-choices" role="group" aria-label="Josefa">
+                      <div class="field field-wide">
+                        <label class="field-label" for="ag-j-s">Service</label
+                        ><select class="select" id="ag-j-s">
+                          <option>Anthropic · API key</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label class="field-label" for="ag-j-m">Model</label
+                        ><select class="select" id="ag-j-m">
+                          <option>Claude Opus 5.5</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label class="field-label" for="ag-j-e">Effort</label
+                        ><select class="select" id="ag-j-e">
+                          <option>high</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
                 </section>
@@ -12919,6 +12940,50 @@ rates.groupby("heat_band")["absence_rate"].mean()</code></pre>
         <div class="frame" style="width: 800px; height: 900px; background: var(--surface-page)">
           <div class="sheet">
             <div class="sheet-column">
+              <h3 class="sheet-heading">Agent rows</h3>
+              <div class="cell">
+                <p class="state-name">
+                  <b>Closed</b> · the confirmed choice; "Change" shows the agent's selects
+                </p>
+                <div class="agent-row">
+                  <div class="agent-row-heading">
+                    <h4><span class="voice-label" data-agent="virgilio"></span></h4>
+                    <button
+                      class="button"
+                      aria-expanded="false"
+                      aria-label="Change model for Virgilio"
+                    >
+                      Change
+                    </button>
+                  </div>
+                  <p class="agent-summary">Default · ChatGPT · GPT-6.1 Sol</p>
+                </div>
+              </div>
+              <div class="cell">
+                <p class="state-name">
+                  <b>Kept open</b> · no usable model; "Change" cannot close the row until a model is
+                  chosen
+                </p>
+                <div class="agent-row">
+                  <div class="agent-row-heading">
+                    <h4><span class="voice-label" data-agent="josefa"></span></h4>
+                    <button
+                      class="button"
+                      aria-expanded="true"
+                      aria-disabled="true"
+                      aria-label="Change model for Josefa"
+                    >
+                      Change
+                    </button>
+                  </div>
+                  <p class="agent-summary">Choose a model</p>
+                  <div class="field">
+                    <select class="select" aria-label="Model">
+                      <option>Choose a model</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
               <h3 class="sheet-heading">Selects</h3>
               <div class="cell">
                 <p class="state-name">

@@ -40,7 +40,8 @@ type RowAction = {
   readonly restart?: Connection;
 };
 type RowProgress = Status & {
-  readonly agentsSettings?: true;
+  /** The agent whose Settings row the action opens. */
+  readonly agentsSettings?: ReplyAgent;
   readonly formattedLabel?: ReactNode;
   readonly reason?: string;
   readonly providerLine?: ReactNode;
@@ -293,7 +294,7 @@ function taskProgress(
       return {
         label: message(locale, "plan.progress.failed"),
         icon: billing ? "triangle-alert" : "octagon-alert",
-        ...(task.outcomeReason === "model_unavailable" ? { agentsSettings: true } : {}),
+        ...(task.outcomeReason === "model_unavailable" ? { agentsSettings: task.agentId } : {}),
         ...(notice ? { reason: notice.text } : {}),
         ...(notice?.providerMessage && service
           ? {
@@ -325,7 +326,7 @@ function taskProgress(
             ? message(locale, "agents.planWaiting", { agent: contributorNames[task.agentId] })
             : message(locale, "plan.progress.waitingToStart"),
           icon: "triangle-alert",
-          ...(task.modelUnavailable !== false ? { agentsSettings: true as const } : {}),
+          ...(task.modelUnavailable !== false ? { agentsSettings: task.agentId } : {}),
         };
       if (task.blockingReason === "restart_paused") return restartPause(locale, pauses);
       if (task.blockingReason === "connection_disabled" && service)
@@ -537,7 +538,7 @@ export function PlanProgress({
   readonly root: RefObject<HTMLDivElement | null>;
   readonly revealResult: (id: string) => void;
   readonly onOpenConnections?: () => void;
-  readonly onOpenAgents?: () => void;
+  readonly onOpenAgents?: (agent?: ReplyAgent) => void;
   readonly contributionHeading: (node: Contribution) => ReactNode;
   readonly requestDetails: (node: Contribution) => ReactNode;
   readonly synthesisHeading: ReactNode;
@@ -679,7 +680,9 @@ export function PlanProgress({
             )}
             {status.agentsSettings &&
               onOpenAgents &&
-              button(message(locale, "agents.open"), onOpenAgents)}
+              button(message(locale, "agents.open"), () => {
+                onOpenAgents(status.agentsSettings);
+              })}
             {status.icon === "unplug" &&
               onOpenConnections &&
               button(message(locale, "taskNotice.openConnections"), onOpenConnections)}

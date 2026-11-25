@@ -3,6 +3,7 @@ import { contributorNames, VoiceLabel } from "./contributor-identity.js";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import {
   agentPreferenceTargets,
+  type ReplyAgent,
   formatDate,
   openaiApiKeyConnection,
   openaiCatalogCheckedOn,
@@ -623,7 +624,9 @@ function PreferenceControls({
   locale,
   connections,
   snapshots,
+  requested = false,
 }: {
+  readonly requested?: boolean;
   readonly target: AgentPreferenceTarget;
   readonly settings: Settings;
   readonly port: FoundationPort;
@@ -801,24 +804,33 @@ function PreferenceControls({
       : model;
     target?.focus();
   };
-  return (
-    <div className="agent-choice" role="group" aria-labelledby={id}>
-      <div className="agent-choice-heading">
-        <h3 id={id}>
-          {target === "default" ? (
-            name
-          ) : (
-            <VoiceLabel
-              identity={{ kind: "ai", contributor: target, definitionVersion: "1" }}
-              locale={locale}
-            />
-          )}
-        </h3>
-        {settings.saveState?.target === target &&
-          ["saving", "saved"].includes(settings.saveState.phase) && (
-            <SaveFeedback state={settings.saveState} locale={locale} />
-          )}
-      </div>
+  const externalNotice = external && (
+    <p className="connection-notice connection-info" role="status">
+      <Icon name="info" />
+      {message(locale, "settings.changed", { setting: externalSetting, value: externalValue })}
+    </p>
+  );
+  // Availability concerns the confirmed choice. Only its own settled list can judge it; while a
+  // service is drafted, a save is pending or the list is updating, the last judgement stands.
+  const judged = draft === undefined && !pending && !!models && !catalog.updating;
+  const listed = !!saved?.model && !!models?.some((entry) => entry.id === saved.model);
+  // The last judgement belongs to the choice it judged; another confirmed choice is still unknown.
+  const choiceKey = `${saved?.connection ?? ""}\u0000${saved?.model ?? ""}`;
+  const [lastJudgement, setLastJudgement] = useState<{ key: string; listed: boolean }>();
+  useEffect(() => {
+    if (judged) setLastJudgement({ key: choiceKey, listed });
+  }, [judged, listed, choiceKey]);
+  const usable =
+    !settings.data ||
+    (!!saved?.model &&
+      (judged ? listed : lastJudgement?.key === choiceKey ? lastJudgement.listed : true));
+  const savedState =
+    settings.saveState?.target === target &&
+    ["saving", "saved"].includes(settings.saveState.phase) ? (
+      <SaveFeedback state={settings.saveState} locale={locale} />
+    ) : null;
+  const choices = (
+    <>
       <label>
         {message(locale, "agents.service")}
         <select
@@ -829,6 +841,7 @@ function PreferenceControls({
             const chosen = event.target.value;
             setDraft(chosen === saved?.connection ? undefined : chosen);
           }}
+          data-agent-service={target}
         >
           <option value="" disabled>
             {message(locale, "agents.chooseService")}
@@ -920,12 +933,7 @@ function PreferenceControls({
       <RecoveryFocusBoundary className="agent-focus-recovery" onRecover={focusChoice}>
         {catalog.failed && <CatalogReadFailure locale={locale} retry={catalog.retry} />}
       </RecoveryFocusBoundary>
-      {external && (
-        <p className="connection-notice connection-info" role="status">
-          <Icon name="info" />
-          {message(locale, "settings.changed", { setting: externalSetting, value: externalValue })}
-        </p>
-      )}
+      {target === "default" && externalNotice}
       {effortReason && <small id={id + "-effort"}>{effortReason}</small>}
       <RecoveryFocusBoundary className="agent-focus-recovery" onRecover={focusChoice}>
         {settings.saveState?.target === target &&
@@ -944,6 +952,158 @@ function PreferenceControls({
             />
           )}
       </RecoveryFocusBoundary>
+    </>
+  );
+  if (target === "default")
+    return (
+      <div className="agent-choice" role="group" aria-labelledby={id}>
+        <div className="agent-choice-heading">
+          <h3 id={id}>{name}</h3>
+          {savedState}
+        </div>
+        {choices}
+      </div>
+    );
+  return (
+    <AgentRow
+      {...{ id, locale, settings, savedState, requested, usable, catalogFailed: catalog.failed }}
+      target={target}
+      externalNotice={externalNotice}
+      summary={agentSummary(settings.data, target, connections, snapshots, locale)}
+    >
+      {choices}
+    </AgentRow>
+  );
+}
+
+/** The confirmed choice of one agent, as its Service, Model and Effort selects would show it. */
+function agentSummary(
+  data: AgentPreferences | undefined,
+  target: AgentPreferenceTarget,
+  connections: readonly Service[],
+  snapshots: Readonly<Record<string, ConnectionSnapshot | undefined>>,
+  locale: InterfaceLocale,
+): string {
+  const row = preference(data, target);
+  const defaults = preference(data, "default");
+  const effort = row?.effort ?? null;
+  const withEffort = (text: string) => (effort ? text + " · " + effort : text);
+  if (!row || row.inherit) {
+    if (!defaults?.model) return message(locale, "agents.chooseModel");
+    const service = connections.find((item) => item.id === defaults.connection);
+    // The same label as the Model select's inherited option.
+    return withEffort(
+      defaults.modelName && service
+        ? message(locale, "agents.inherit", {
+            service: service.displayName,
+            model: defaults.modelName,
+          })
+        : message(locale, "agents.useDefault"),
+    );
+  }
+  if (!row.model) return message(locale, "agents.chooseModel");
+  const service = connections.find((item) => item.id === row.connection);
+  const model = row.modelName ?? row.model;
+  // An unlisted service has no label in its select, so only the model is named.
+  return withEffort(
+    service
+      ? message(locale, "agents.summary", {
+          // A disconnected service is named as its Service select names it.
+          service:
+            snapshots[service.id]?.state === "connected"
+              ? serviceLabel(service, snapshots[service.id], locale)
+              : service.displayName,
+          model,
+        })
+      : model,
+  );
+}
+
+/** One agent's summary row; its selects open below it on request or while it needs attention. */
+function AgentRow({
+  id,
+  target,
+  locale,
+  settings,
+  savedState,
+  externalNotice,
+  summary,
+  usable,
+  catalogFailed,
+  requested,
+  children,
+}: {
+  readonly id: string;
+  readonly target: ReplyAgent;
+  readonly externalNotice: ReactNode;
+  readonly locale: InterfaceLocale;
+  readonly settings: Settings;
+  readonly savedState: ReactNode;
+  readonly summary: string;
+  readonly usable: boolean;
+  readonly catalogFailed: boolean;
+  readonly requested: boolean;
+  readonly children: ReactNode;
+}) {
+  const phase = settings.saveState?.target === target ? settings.saveState.phase : undefined;
+  const forced =
+    phase === "rejected" ||
+    phase === "uncertain" ||
+    phase === "conflict" ||
+    catalogFailed ||
+    !usable;
+  const [open, setOpen] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    // A condition that kept the row open leaves it open once it ends.
+    if (forced) setOpen(true);
+  }, [forced]);
+  useEffect(() => {
+    // A named agent's row stays open after its request until the researcher closes it.
+    if (requested) setOpen(true);
+    else setDismissed(false);
+  }, [requested]);
+  const expanded = open || forced || (requested && !dismissed);
+  const name = contributorNames[target];
+  return (
+    <div className="agent-row" data-agent-row={target}>
+      <div className="agent-row-heading">
+        <h4 id={id}>
+          <VoiceLabel
+            identity={{ kind: "ai", contributor: target, definitionVersion: "1" }}
+            locale={locale}
+          />
+        </h4>
+        {savedState}
+        <button
+          type="button"
+          className="primitive-button"
+          aria-expanded={expanded}
+          aria-controls={id + "-choices"}
+          aria-label={message(locale, "agents.changeFor", { agent: name })}
+          aria-disabled={forced || undefined}
+          onClick={() => {
+            if (forced) return;
+            if (expanded) {
+              setOpen(false);
+              if (requested) setDismissed(true);
+            } else setOpen(true);
+          }}
+        >
+          {message(locale, "agents.change")}
+        </button>
+      </div>
+      <p className="agent-summary">{summary}</p>
+      {externalNotice}
+      <div
+        id={id + "-choices"}
+        className="agent-choice"
+        role="group"
+        aria-labelledby={id}
+        hidden={!expanded}
+      >
+        {children}
+      </div>
     </div>
   );
 }
@@ -982,6 +1142,7 @@ export function AgentsSettings({
   connections,
   snapshots,
   recoveryFocusId,
+  openAgent,
 }: {
   readonly port: FoundationPort;
   readonly settings: Settings;
@@ -990,7 +1151,10 @@ export function AgentsSettings({
   readonly snapshots: Readonly<Record<string, ConnectionSnapshot | undefined>>;
   /** The element that receives focus when a recovery action leaves its notice. */
   readonly recoveryFocusId: string;
+  /** An agent named by the notice that opened Settings; its row starts open. */
+  readonly openAgent?: ReplyAgent | undefined;
 }) {
+  const each = useId();
   return (
     <div className="agent-settings">
       <p className="settings-info">
@@ -1012,12 +1176,22 @@ export function AgentsSettings({
           />
         )}
       </RecoveryFocusBoundary>
-      {agentPreferenceTargets.map((target) => (
-        <PreferenceControls
-          key={target}
-          {...{ target, settings, port, locale, connections, snapshots }}
-        />
-      ))}
+      <PreferenceControls
+        target="default"
+        {...{ settings, port, locale, connections, snapshots }}
+      />
+      <section className="agent-rows" aria-labelledby={each}>
+        <h3 id={each}>{message(locale, "agents.each")}</h3>
+        {agentPreferenceTargets
+          .filter((target) => target !== "default")
+          .map((target) => (
+            <PreferenceControls
+              key={target}
+              requested={target === openAgent}
+              {...{ target, settings, port, locale, connections, snapshots }}
+            />
+          ))}
+      </section>
     </div>
   );
 }

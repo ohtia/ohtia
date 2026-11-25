@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  agentPreferenceTargets,
   message,
   openaiApiKeyConnection,
   supportedLocales,
@@ -846,9 +847,22 @@ it("waits for a model choice before changing the service for an agent", async ()
   await act(async () => {
     root.render(createElement(Host));
   });
-  const josefa = [...container.querySelectorAll('[role="group"]')].find((group) =>
-    group.querySelector("h3")?.textContent?.includes("Josefa"),
-  )!;
+  const josefa = container.querySelector<HTMLElement>('[data-agent-row="josefa"]')!;
+  const summary = () => josefa.querySelector(".agent-summary")?.textContent;
+  expect(summary()).toBe("Default · ChatGPT · First model");
+  const change = josefa.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+  expect(change.textContent).toBe("Change");
+  expect(change.getAttribute("aria-label")).toBe("Change model for Josefa");
+  expect(change.getAttribute("aria-expanded")).toBe("false");
+  const choices = document.getElementById(change.getAttribute("aria-controls")!)!;
+  expect(choices.hidden).toBe(true);
+  await act(async () => {
+    change.focus();
+    change.click();
+  });
+  expect(change.getAttribute("aria-expanded")).toBe("true");
+  expect(choices.hidden).toBe(false);
+  expect(document.activeElement).toBe(change);
   const [service, model, effort] = [...josefa.querySelectorAll("select")];
   expect(model!.selectedOptions[0]?.textContent).toBe("Default · ChatGPT · First model");
   expect(effort!.disabled).toBe(true);
@@ -898,6 +912,7 @@ it("waits for a model choice before changing the service for an agent", async ()
   await act(async () => {
     changedRead.resolve({ ok: true, value: preferences });
   });
+  expect(summary()).toBe("Anthropic · API key · Other model");
   expect(model!.getAttribute("aria-disabled")).toBeNull();
   expect(effort!.disabled).toBe(false);
   expect([...effort!.options].map(({ text }) => text)).toEqual(["Model default", "high"]);
@@ -1338,3 +1353,388 @@ it.each(["anthropic_api_key", "openai_api_key"])(
     expect(f.disconnect).toHaveBeenCalledExactlyOnceWith(connection);
   },
 );
+
+describe("agent rows in Settings › Agents", () => {
+  const call = <T>(value: T) => ({
+    result: Promise.resolve({ ok: true as const, value }),
+    cancel() {},
+  });
+  const services = [
+    { id: "chatgpt", displayName: "ChatGPT", kind: "subscription", usageUrl: null },
+    { id: "anthropic", displayName: "Anthropic", kind: "api_key", usageUrl: null },
+  ] as const;
+  const connected = (connection: string, display_name: string) => ({
+    ...initial,
+    connection,
+    display_name,
+    state: "connected" as const,
+    account_email: connection === "chatgpt" ? "researcher@example.org" : null,
+    model_list_revision: 1,
+    model_count: 1,
+  });
+  const snapshots = {
+    chatgpt: connected("chatgpt", "ChatGPT"),
+    anthropic: connected("anthropic", "Anthropic"),
+  };
+  const row = (target: AgentPreferences["preferences"][number]["target"], fields: object) =>
+    ({
+      target,
+      revision: 1,
+      connection: null,
+      model: null,
+      modelName: null,
+      effort: null,
+      inherit: true,
+      source: "researcher",
+      seedPending: false,
+      ...fields,
+    }) as AgentPreferences["preferences"][number];
+  const defaultRow = row("default", {
+    connection: "chatgpt",
+    model: "first",
+    modelName: "First model",
+    inherit: false,
+  });
+  function render(
+    initialPreferences: AgentPreferences["preferences"],
+    options: {
+      openAgent?: "virgilio" | "josefa" | { current: "virgilio" | "josefa" | undefined };
+      replace?: FoundationPort["replaceAgentPreference"];
+    } = {},
+  ) {
+    let preferences: AgentPreferences = {
+      preferences: initialPreferences,
+      lists: services.map(({ id, kind }) => ({
+        connection: id,
+        kind,
+        count: 1,
+        list_revision: 1,
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      })),
+    };
+    let notify: ((target?: string, revision?: number) => void) | undefined;
+    // A stable observer, like the window's research subscription, keeps the hook's effect still.
+    const observe = (listener: (target?: never, revision?: number) => void) => {
+      notify = listener as (target?: string, revision?: number) => void;
+      return () => {
+        notify = undefined;
+      };
+    };
+    const port = {
+      listAgentPreferences: () => call(preferences),
+      replaceAgentPreference:
+        options.replace ??
+        (() => ({ result: Promise.resolve(failure("storage_failed")), cancel() {} })),
+      listProviderModels: (input: ProviderModelPageInput) => {
+        const models =
+          input.connection === "chatgpt"
+            ? [{ id: "first", name: "First model", effortSupport: "unknown" }]
+            : [
+                {
+                  id: "opus",
+                  name: "Claude Opus 5.5",
+                  effortSupport: "supported",
+                  effortLevels: [{ name: "high", supported: true }],
+                },
+              ];
+        return call({
+          connection: input.connection,
+          list_revision: input.list_revision,
+          nextCursor: models.length,
+          hasMore: false,
+          models,
+        });
+      },
+    } as unknown as FoundationPort;
+    function Host({ open }: { open: boolean }) {
+      const settings = useAgentSettings(port, true, observe);
+      return open
+        ? createElement(AgentsSettings, {
+            port,
+            settings,
+            locale: "en-US",
+            connections: services,
+            snapshots,
+            recoveryFocusId: "agents-page",
+            openAgent:
+              typeof options.openAgent === "object" ? options.openAgent.current : options.openAgent,
+          })
+        : null;
+    }
+    const container = document.body.appendChild(document.createElement("div"));
+    const root = createRoot(container);
+    roots.push(root);
+    return {
+      container,
+      mount: (open = true) => act(async () => root.render(createElement(Host, { open }))),
+      update: async (next: AgentPreferences["preferences"], target?: string) => {
+        preferences = { ...preferences, preferences: next };
+        const revision = next.find((item) => item.target === target)?.revision;
+        await act(async () => notify?.(target, revision));
+      },
+      agent: (target: string) => {
+        const element = container.querySelector<HTMLElement>(`[data-agent-row="${target}"]`)!;
+        const button = element.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+        return {
+          element,
+          button,
+          summary: () => element.querySelector(".agent-summary")?.textContent,
+          choices: () => document.getElementById(button.getAttribute("aria-controls")!)!,
+        };
+      },
+    };
+  }
+
+  it("keeps the default open and lists each agent once, in order, as a closed summary row", async () => {
+    const t = render([
+      defaultRow,
+      row("josefa", {
+        connection: "anthropic",
+        model: "opus",
+        modelName: "Claude Opus 5.5",
+        effort: "high",
+        inherit: false,
+      }),
+    ]);
+    await t.mount();
+    const rows = [...t.container.querySelectorAll<HTMLElement>("[data-agent-row]")];
+    expect(rows.map((element) => element.dataset.agentRow)).toEqual(
+      agentPreferenceTargets.filter((target) => target !== "default"),
+    );
+    expect(t.container.querySelector(".agent-rows > h3")?.textContent).toBe("Each agent");
+    const defaults = t.container.querySelector<HTMLElement>(".agent-settings > .agent-choice")!;
+    expect(defaults.querySelector("h3")?.textContent).toBe("Default model");
+    expect(defaults.querySelectorAll("select")).toHaveLength(3);
+    expect(defaults.querySelector("button[aria-expanded]")).toBeNull();
+    const virgilio = t.agent("virgilio");
+    expect(virgilio.element.querySelector(".voice-label svg")).not.toBeNull();
+    expect(virgilio.summary()).toBe("Default · ChatGPT · First model");
+    expect(virgilio.button.getAttribute("aria-expanded")).toBe("false");
+    expect(virgilio.choices().hidden).toBe(true);
+    expect(t.agent("josefa").summary()).toBe("Anthropic · API key · Claude Opus 5.5 · high");
+    await act(async () => {
+      virgilio.button.focus();
+      virgilio.button.click();
+    });
+    expect(virgilio.button.getAttribute("aria-expanded")).toBe("true");
+    expect(t.agent("josefa").button.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => {
+      virgilio.button.click();
+    });
+    expect(virgilio.button.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(virgilio.button);
+    await act(async () => {
+      virgilio.button.click();
+    });
+    await t.mount(false);
+    await t.mount(true);
+    expect(t.agent("virgilio").button.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("keeps a row without a usable model open until the researcher closes it after a choice", async () => {
+    const t = render([row("default", {}), row("josefa", {})]);
+    await t.mount();
+    const josefa = t.agent("josefa");
+    expect(josefa.summary()).toBe("Choose a model");
+    expect(josefa.button.getAttribute("aria-expanded")).toBe("true");
+    expect(josefa.button.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => {
+      josefa.button.click();
+    });
+    expect(josefa.button.getAttribute("aria-expanded")).toBe("true");
+    await t.update([defaultRow, row("josefa", { revision: 2 })]);
+    expect(josefa.summary()).toBe("Default · ChatGPT · First model");
+    expect(josefa.button.getAttribute("aria-disabled")).toBeNull();
+    expect(josefa.button.getAttribute("aria-expanded")).toBe("true");
+    await act(async () => {
+      josefa.button.click();
+    });
+    expect(josefa.button.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("opens a row whose save was rejected and keeps it open", async () => {
+    const t = render([defaultRow, row("josefa", {})]);
+    await t.mount();
+    const josefa = t.agent("josefa");
+    await act(async () => {
+      josefa.button.click();
+    });
+    const model = josefa.element.querySelectorAll("select")[1]!;
+    await act(async () => {
+      model.value = "first";
+      model.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(josefa.element.querySelector('[role="alert"]')).not.toBeNull();
+    expect(josefa.button.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => {
+      josefa.button.click();
+    });
+    expect(josefa.button.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("starts with the row of the agent a notice named open", async () => {
+    const t = render([defaultRow, row("josefa", {})], { openAgent: "josefa" });
+    await t.mount();
+    expect(t.agent("josefa").button.getAttribute("aria-expanded")).toBe("true");
+    expect(t.agent("virgilio").button.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => {
+      t.agent("josefa").button.click();
+    });
+    expect(t.agent("josefa").button.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("shows another window's change on a closed row", async () => {
+    const t = render([defaultRow, row("josefa", {})]);
+    await t.mount();
+    const josefa = t.agent("josefa");
+    expect(josefa.button.getAttribute("aria-expanded")).toBe("false");
+    await t.update(
+      [
+        defaultRow,
+        row("josefa", {
+          revision: 2,
+          connection: "anthropic",
+          model: "opus",
+          modelName: "Claude Opus 5.5",
+          inherit: false,
+        }),
+      ],
+      "josefa",
+    );
+    const notice = josefa.element.querySelector<HTMLElement>(".connection-info")!;
+    expect(notice.textContent).toContain("Another window changed");
+    expect(notice.closest("[hidden]")).toBeNull();
+    expect(josefa.button.getAttribute("aria-expanded")).toBe("false");
+    expect(josefa.summary()).toBe("Anthropic · API key · Claude Opus 5.5");
+  });
+
+  it("judges availability by the confirmed choice while another service is drafted", async () => {
+    const t = render([defaultRow, row("virgilio", {})]);
+    await t.mount();
+    const virgilio = t.agent("virgilio");
+    await act(async () => {
+      virgilio.button.click();
+    });
+    const service = virgilio.element.querySelectorAll("select")[0]!;
+    await act(async () => {
+      service.value = "anthropic";
+      service.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(virgilio.button.getAttribute("aria-disabled")).toBeNull();
+    expect(virgilio.summary()).toBe("Default · ChatGPT · First model");
+    await act(async () => {
+      virgilio.button.click();
+    });
+    expect(virgilio.button.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("keeps a row open when its confirmed model is missing from the loaded list", async () => {
+    const t = render([
+      defaultRow,
+      row("josefa", {
+        connection: "anthropic",
+        model: "retired",
+        modelName: "Retired model",
+        inherit: false,
+      }),
+    ]);
+    await t.mount();
+    const josefa = t.agent("josefa");
+    expect(josefa.summary()).toBe("Anthropic · API key · Retired model");
+    expect(josefa.button.getAttribute("aria-expanded")).toBe("true");
+    expect(josefa.button.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("summarizes an inherited effort override and an unlisted service as its selects name them", async () => {
+    const t = render([
+      defaultRow,
+      row("virgilio", { effort: "high" }),
+      row("josefa", {
+        connection: "retired_service",
+        model: "m",
+        modelName: "Model M",
+        inherit: false,
+      }),
+    ]);
+    await t.mount();
+    expect(t.agent("virgilio").summary()).toBe("Default · ChatGPT · First model · high");
+    expect(t.agent("josefa").summary()).toBe("Model M");
+  });
+
+  it("keeps a requested row open after the request moves to another target", async () => {
+    const request: { current: "virgilio" | "josefa" | undefined } = { current: "josefa" };
+    const t = render([defaultRow], { openAgent: request });
+    await t.mount();
+    expect(t.agent("josefa").button.getAttribute("aria-expanded")).toBe("true");
+    request.current = undefined;
+    await t.mount();
+    expect(t.agent("josefa").button.getAttribute("aria-expanded")).toBe("true");
+    await act(async () => {
+      t.agent("josefa").button.click();
+    });
+    expect(t.agent("josefa").button.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("keeps a row with a missing confirmed model forced open while another service is drafted", async () => {
+    const t = render([
+      defaultRow,
+      row("josefa", {
+        connection: "anthropic",
+        model: "retired",
+        modelName: "Retired model",
+        inherit: false,
+      }),
+    ]);
+    await t.mount();
+    const josefa = t.agent("josefa");
+    expect(josefa.button.getAttribute("aria-disabled")).toBe("true");
+    const service = josefa.element.querySelectorAll("select")[0]!;
+    await act(async () => {
+      service.value = "chatgpt";
+      service.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(josefa.button.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => {
+      josefa.button.click();
+    });
+    expect(josefa.button.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("judges a changed confirmed choice afresh and lets a recovered row close", async () => {
+    const missing = row("josefa", {
+      connection: "anthropic",
+      model: "retired",
+      modelName: "Retired model",
+      inherit: false,
+    });
+    const t = render([defaultRow, missing]);
+    await t.mount();
+    const josefa = t.agent("josefa");
+    expect(josefa.button.getAttribute("aria-disabled")).toBe("true");
+    await t.update(
+      [
+        defaultRow,
+        {
+          ...missing,
+          revision: 2,
+          connection: "retired_service",
+          model: "m",
+          modelName: "Model M",
+        },
+      ],
+      "josefa",
+    );
+    expect(josefa.summary()).toBe("Model M");
+    expect(josefa.button.getAttribute("aria-disabled")).toBeNull();
+    expect(josefa.button.getAttribute("aria-expanded")).toBe("true");
+    await t.update(
+      [defaultRow, { ...missing, revision: 3, model: "opus", modelName: "Claude Opus 5.5" }],
+      "josefa",
+    );
+    expect(josefa.button.getAttribute("aria-disabled")).toBeNull();
+    await act(async () => {
+      josefa.button.click();
+    });
+    expect(josefa.button.getAttribute("aria-expanded")).toBe("false");
+  });
+});

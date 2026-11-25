@@ -37,6 +37,7 @@ import {
   type InterfaceLocale,
   type CommandPlatform,
   type SimpleMessageKey,
+  type ReplyAgent,
 } from "@ohtia/contracts";
 import { flushSync } from "react-dom";
 import { Dialog } from "./layers.js";
@@ -68,10 +69,14 @@ export interface SettingsSection {
   readonly icon: LucideName;
   readonly content: ReactNode;
 }
-type SettingsTarget = SettingFeature | "layout" | "connections" | "agents";
+type SettingsTarget = SettingFeature | "layout" | "connections" | "agents" | `agents:${ReplyAgent}`;
 /** The page that owns each focus target; presentation features and layout share one page. */
 function targetPage(target: SettingsTarget): string {
-  return target === "connections" ? "services" : target === "agents" ? "agents" : "appearance";
+  return target === "connections"
+    ? "services"
+    : target.startsWith("agents")
+      ? "agents"
+      : "appearance";
 }
 /** Below the compact width class the list and one page replace each other. */
 const compactWidth = 600;
@@ -156,6 +161,14 @@ function useSystemPreference(query: string, active: boolean): boolean {
   return matches;
 }
 function focusSetting(id: string, feature: SettingsTarget): void {
+  if (feature.startsWith("agents:")) {
+    // A named agent's row opens with its request; focus starts at its Service select.
+    document
+      .getElementById(`${id}-agents-controls`)
+      ?.querySelector<HTMLElement>(`[data-agent-service="${feature.slice("agents:".length)}"]`)
+      ?.focus();
+    return;
+  }
   const group = document.getElementById(`${id}-${feature}-controls`);
   (
     group?.querySelector<HTMLElement>("input:checked") ??
@@ -898,6 +911,11 @@ export function SettingsDialog({
                     {...{ port, locale, connections, snapshots }}
                     settings={agentSettings}
                     recoveryFocusId={pageHeading("agents")}
+                    openAgent={
+                      requestedFocus?.startsWith("agents:")
+                        ? (requestedFocus.slice("agents:".length) as ReplyAgent)
+                        : undefined
+                    }
                   />
                 </div>
               )}

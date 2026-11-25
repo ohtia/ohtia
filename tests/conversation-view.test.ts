@@ -1350,7 +1350,7 @@ describe("task notices", () => {
     const open = buttonNamed("Open Agents settings");
     expect(open?.closest(".conversation-notice")).toBeNull();
     await act(async () => open.click());
-    expect(onOpenAgents).toHaveBeenCalledOnce();
+    expect(onOpenAgents).toHaveBeenCalledExactlyOnceWith("virgilio");
 
     const disconnected = { ...missing, blockingReason: "connection_disabled" };
     await show(disconnected, { onOpenAgents, onOpenConnections });
@@ -4080,7 +4080,7 @@ describe("plan decision card", () => {
     );
     expect(container.textContent).toContain("Waiting: Josefa has no usable model");
     await act(async () => buttonNamed("Open Agents settings").click());
-    expect(f.onOpenAgents).toHaveBeenCalledOnce();
+    expect(f.onOpenAgents).toHaveBeenCalledExactlyOnceWith("josefa");
 
     const synthesis = work({ ...unavailable, agentId: "virgilio", modelUnavailable: true });
     f.update({ outcome: "partial", continuation: continuation(synthesis) });
@@ -4088,6 +4088,7 @@ describe("plan decision card", () => {
     expect(container.textContent).toContain("Waiting: Virgilio has no usable model");
     await act(async () => buttonNamed("Open Agents settings").click());
     expect(f.onOpenAgents).toHaveBeenCalledTimes(2);
+    expect(f.onOpenAgents).toHaveBeenLastCalledWith("virgilio");
     f.update({
       outcome: "partial",
       continuation: continuation(

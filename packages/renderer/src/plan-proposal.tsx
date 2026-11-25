@@ -70,7 +70,7 @@ export function PlanProposal({
   readonly pauses?: PauseCounts;
   readonly revealResult: (id: string) => void;
   readonly onOpenConnections?: () => void;
-  readonly onOpenAgents?: () => void;
+  readonly onOpenAgents?: (agent?: ReplyAgent) => void;
 }) {
   const {
     readPlanCard,
