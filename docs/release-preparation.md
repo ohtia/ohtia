@@ -1,7 +1,7 @@
 ---
 type: Playbook
 title: Release preparation
-description: Build and sign the packages of a version for every declared platform, reserve the version and store the packages with attestations in an unpublished GitHub Release.
+description: Build and sign the packages of a version for every declared platform, reserve the version, store the packages with attestations in an unpublished GitHub Release and qualify their delivery through the test repository.
 generated:
   by: claude-code/claude-opus-5-5
 verified:
@@ -99,6 +99,26 @@ The `Copy the Linux packages to the test repositories` job starts after the meta
 
 The job downloads `release-digests.json` of the unpublished release and refuses one that does not describe the checked version, the selected commit and this run. It downloads every Debian and Fedora package the digest file lists, and refuses a missing package, one that differs from its digest, a Debian package not authenticated by the repository, a Fedora package without its own signature and a list without every declared package. It builds the `Packages` index of the Ubuntu and of the Debian packages, and checks the metadata job's `repodata/` by parsing it as XML: it must cover exactly the Fedora releases, `repomd.xml` must describe exactly the primary, filelists and other data, each matching its digest, and the data must list exactly the release's Fedora packages by name, epoch, version, release, architecture, digest and location, as their own headers state them. The metadata job runs on the same runner image and Ubuntu archive that this job's tools come from, so this job trusts its output as much as those tools: the check refuses metadata that does not describe the release, not metadata crafted on a compromised runner. It signs each apt index as `InRelease` and each `repomd.xml` as `repomd.xml.asc` with the subkey, with the same checks of the subkey as the signing job, and verifies each signature against a key ring that holds only the committed public key. It then uploads the repositories to the `test` zone, `https://packages.ohtia.com/test/ubuntu/`, `https://packages.ohtia.com/test/debian/` and `https://packages.ohtia.com/test/fedora/<release>/`, reads them back from that address and removes older files, as [Package repository layout](release-signing.md#package-repository-layout) describes. Its log names a refusal as `Repository refused:` or `Signing refused:` followed by the reason.
 
+## Qualify repository delivery
+
+The `Qualify repository delivery (linux-x64-ubuntu-26-04-gnome)` job starts after the repository job and runs the complete scenario of [SPEC-001-041](epics/EPIC-001-desktop-foundation/epic.md#spec-001-041-native-qualification-of-repository-delivery) on a fresh `ubuntu-26.04` runner, in a private GNOME Wayland session. It holds no secret, and its token only reads the repository. It checks out the selected commit, installs the desktop of the cell as the CI does and runs [the qualification harness](../scripts/repository_qualification.py), which takes these steps:
+
+1. It builds version A from the selected commit with the development version `<version>-dev.<run-id>.<attempt>`. The package registers the `test` zone, and apt orders its version below the prepared version.
+2. It installs A from its package file with `dpkg` and checks the registered source entry, the key and the loaded AppArmor allowance.
+3. It starts Ohtia, opens a new store and saves the appearance setting.
+4. It updates through apt with the registered entry as the only source. apt reads the signed index of the `test` zone, and the job refuses a plan that does more than replace the `ohtia` package with the prepared version.
+5. It compares the package apt downloaded with the digest that the unpublished release records for the Ubuntu x86-64 DEB, and checks the installed files with `dpkg --verify`.
+6. It checks that the updated package registers the `stable` zone and its AppArmor allowance. It starts Ohtia again and checks the saved appearance, the running version and the renderer sandbox.
+7. It checks the synthetic stable store sentinels of the runner and that no tag names version A.
+
+The job deletes package A at the end; A never reaches a release, a tag or an artifact. It retains its report for 90 days as the artifact `repository-qualification-<cell>-<run-id>-<attempt>`. There, `result.json` names the host and its runner image, the release package, the digest of A and the result and observations of each step, and `installed-a/` and `installed-b/` hold the application receipts and process observations of each version. Download the report with:
+
+```bash
+gh run download <run-id> --repo ohtia/ohtia --name repository-qualification-linux-x64-ubuntu-26-04-gnome-<run-id>-<attempt>
+```
+
+A failure fails the run and leaves the release unpublished; the log names the cause after `Repository qualification failed:`. Publication does not read this result, so check that the job passed before publishing.
+
 ## Release notes
 
 The `Write the first release notes` job reads the merged pull requests with a read-only token and writes the first notes text with [the release notes tooling](../scripts/release_notes.py). It covers the pull requests merged since the highest published `v<version>` tag in the history of the selected commit, or the whole history when there is none; a `reserved/v<version>` tag never counts. A merge commit belongs to the merged pull request whose head is its second parent, whatever its subject. Each pull request contributes its `ohtia-note` block, collected with the [change-note tooling](change-notes.md#pr-capture). A user-impact note becomes one line, `- <task>: <result> (#<pull request>)`, under the section of its kind, in this order: `Breaking Changes and Notices` for deprecations and removals, `Security`, `Features` for capabilities and improvements, and `Bug Fixes` for corrections. Its migration, reinstall, removed-support, format-adapter, privacy-transfer and security-urgency disclosures open `Breaking Changes and Notices`, one line each, `- <task>: <disclosure>`. Notes with the same `change_id` form one line with the latest text, the pull request numbers and the disclosures of the range and of its unfinished notes since its last announcement; a change announced by an earlier release is not repeated. Notes marked `unfinished`, notes with `impact: none` and known limitations are left out. GitHub refuses a release body longer than 125,000 characters, so the job refuses notes longer than 120,000 characters, leaving room for the unsigned-packages section. Note text appears literally: Markdown characters are escaped, and mentions, issue and commit references, URLs, email addresses, math and emoji codes appear as code.
@@ -121,7 +141,7 @@ To retry the same run, re-run all its jobs, never only the failed jobs, because 
 gh run rerun <run-id>
 ```
 
-When only the `Build the dnf metadata of the test repositories` job or the `Copy the Linux packages to the test repositories` job failed, re-run the failed jobs with **Re-run failed jobs** or `gh run rerun <run-id> --failed`: they read the unpublished release and continue as [Recover from an incomplete repository upload](release-signing.md#recover-from-an-incomplete-repository-upload) describes. Re-running all jobs of such a run is refused, because the unpublished release already holds its assets.
+When only the `Build the dnf metadata of the test repositories` job, the `Copy the Linux packages to the test repositories` job or the qualification job failed, re-run the failed jobs with **Re-run failed jobs** or `gh run rerun <run-id> --failed`. The two repository jobs read the unpublished release and continue as [Recover from an incomplete repository upload](release-signing.md#recover-from-an-incomplete-repository-upload) describes; a rerun of the qualification job builds a new version A for its attempt and passes only while the `test` zone still holds this release, because another run's repository job replaces it. Re-running all jobs of such a run is refused, because the unpublished release already holds its assets.
 
 A rerun builds and signs again, so the signing job waits for your approval again. It continues while the reserved tag, if one exists, points to the same commit and names the same run, and the unpublished release holds no asset yet. Otherwise it refuses.
 

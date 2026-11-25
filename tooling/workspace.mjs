@@ -162,6 +162,10 @@ const commands = {
     await commands.build();
     run(python, ["scripts/quality_native.py", ...process.argv.slice(3)]);
   },
+  async "quality:repository"() {
+    await commands.build();
+    run(python, ["scripts/repository_qualification.py", ...process.argv.slice(3)]);
+  },
   "quality:native"() {
     run(process.execPath, ["tooling/quality.mjs", "native", ...process.argv.slice(3)]);
   },

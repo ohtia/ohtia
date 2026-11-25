@@ -41,6 +41,39 @@ class QualityDisplayTests(unittest.TestCase):
                 self.assertEqual(display.main(), 0)
                 (plasma if chosen == "plasma" else gnome).assert_called_once()
                 (gnome if chosen == "plasma" else plasma).assert_not_called()
+                self.assertEqual(
+                    (plasma if chosen == "plasma" else gnome).call_args.args[1],
+                    ["quality:build", cell, "out"],
+                )
+
+    def test_runs_only_a_declared_task_in_the_session(self):
+        hosted = {"GITHUB_ACTIONS": "true", "RUNNER_ENVIRONMENT": "github-hosted"}
+        cell = "linux-x64-ubuntu-26-04-gnome"
+        with (
+            patch.dict(os.environ, hosted),
+            patch.object(
+                sys, "argv", ["quality_display.py", "--task", "quality:repository", cell, "out"]
+            ),
+            patch.object(display.os, "getuid", return_value=1000),
+            patch.object(display, "gnome", return_value=0) as gnome,
+        ):
+            self.assertEqual(display.main(), 0)
+        self.assertEqual(gnome.call_args.args[1], ["quality:repository", cell, "out"])
+        for arguments in (
+            ["--task", "check", cell, "out"],
+            ["--task", "quality:repository", cell],
+            ["--task"],
+        ):
+            with (
+                self.subTest(arguments=arguments),
+                patch.dict(os.environ, hosted),
+                patch.object(sys, "argv", ["quality_display.py", *arguments]),
+                patch.object(display.os, "getuid", return_value=1000),
+                patch.object(display, "gnome", return_value=0) as gnome,
+                self.assertRaises(SystemExit),
+            ):
+                display.main()
+            gnome.assert_not_called()
 
     def test_refuses_outside_a_fresh_unprivileged_hosted_vm(self):
         with (
@@ -62,7 +95,7 @@ class QualityDisplayTests(unittest.TestCase):
             patch.object(display, "quality_build") as build,
         ):
             with self.assertRaisesRegex(SystemExit, "synthetic readiness failure"):
-                display.plasma(directory)
+                display.plasma(directory, ["quality:build", "cell", "out"])
         build.assert_not_called()
 
 

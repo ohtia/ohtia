@@ -1002,6 +1002,7 @@ class WorkflowTests(unittest.TestCase):
                 "release",
                 "metadata",
                 "repository",
+                "qualification",
             ],
         )
         for platform in release_platforms.load():
@@ -1026,7 +1027,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("    permissions:\n      contents: read\n    outputs:", jobs["check"])
         self.assertIn("release_prepare.py check source", jobs["check"])
         self.assertIn(
-            "    permissions:\n      contents: write\n      id-token: write\n      attestations: write\n    steps:",
+            "    permissions:\n      contents: write\n      id-token: write\n      attestations: write\n    outputs:",
             jobs["release"],
         )
         self.assertEqual(WORKFLOW.count("contents: write"), 3)
@@ -1123,6 +1124,47 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("--resign", block)
         self.assertIn('rpmkeys --dbpath "$keyring" --import config/release/signing-key.asc', block)
         self.assertIn("name: signed-${{ github.run_id }}-${{ github.run_attempt }}", block)
+
+    def test_qualification_updates_to_the_release_bytes_in_a_read_only_job(self):
+        jobs = job_blocks(WORKFLOW)
+        block = jobs["qualification"]
+        # It starts once the test repositories hold the prepared version, and fails the run.
+        self.assertIn("    needs: [check, release, repository]\n", block)
+        self.assertNotIn("if:", block.split("    steps:", 1)[0])
+        self.assertEqual(
+            re.findall(r"^    permissions:\n((?:      .+\n)+)", block, re.MULTILINE),
+            ["      contents: read\n"],
+        )
+        self.assertNotIn("secrets.", block)
+        self.assertNotIn("token", block)
+        self.assertNotIn("environment:", block)
+        self.assertEqual(
+            re.findall(
+                r"^          - cell: ([a-z0-9-]+)\n            runner: ([a-z0-9.-]+)\n",
+                block,
+                re.MULTILINE,
+            ),
+            [("linux-x64-ubuntu-26-04-gnome", "ubuntu-26.04")],
+        )
+        self.assertIn("ref: ${{ needs.check.outputs.commit }}", block)
+        self.assertIn("OHTIA_RELEASE_DIGESTS: ${{ needs.release.outputs.digests }}", block)
+        self.assertIn(
+            "dbus-run-session -- python3 scripts/quality_display.py --task quality:repository \\\n"
+            '            "$OHTIA_QUALITY_CELL" artifacts/repository-qualification',
+            block,
+        )
+        self.assertIn(
+            "name: repository-qualification-${{ matrix.cell }}-${{ github.run_id }}-${{ github.run_attempt }}",
+            block,
+        )
+        self.assertIn("        if: always()\n", block)
+        # The release job passes the digest file it checked against the uploaded assets.
+        release = jobs["release"]
+        self.assertIn("      digests: ${{ steps.digests.outputs.digests }}\n", release)
+        self.assertLess(
+            release.index("release_prepare.py publish"),
+            release.index("jq -c . artifacts/release/release-digests.json"),
+        )
 
     def test_pull_request_notes_are_read_in_a_read_only_job(self):
         block = job_blocks(WORKFLOW)["notes"]

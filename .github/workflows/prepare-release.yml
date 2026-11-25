@@ -383,6 +383,8 @@ jobs:
       contents: write # Creates the reserved/v<version> tag and the unpublished release with its assets.
       id-token: write # Requests the OIDC token that signs the build attestations.
       attestations: write # Stores the build attestations.
+    outputs:
+      digests: ${{ steps.digests.outputs.digests }}
     steps:
       - name: Check out the workflow revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -440,6 +442,11 @@ jobs:
           OHTIA_RELEASE_COMMIT: ${{ needs.check.outputs.commit }}
           OHTIA_RELEASE_VERSION: ${{ needs.check.outputs.version }}
         run: python3 scripts/release_prepare.py publish artifacts/release
+
+      - name: Pass the digest file to the qualification
+        id: digests
+        # The publish step checked that the release holds these assets with these digests.
+        run: echo "digests=$(jq -c . artifacts/release/release-digests.json)" >> "$GITHUB_OUTPUT"
 
   metadata:
     name: Build the dnf metadata of the test repositories
@@ -531,3 +538,58 @@ jobs:
           r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
           r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+
+  qualification:
+    name: Qualify repository delivery (${{ matrix.cell }})
+    needs: [check, release, repository]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cell: linux-x64-ubuntu-26-04-gnome
+            runner: ubuntu-26.04
+    steps:
+      - name: Check out the selected source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.check.outputs.commit }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.8"
+
+      - name: Prepare native Linux dependencies
+        timeout-minutes: 15
+        env:
+          OHTIA_QUALITY_CELL: ${{ matrix.cell }}
+        run: |
+          sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,RUNNER_TEMP \
+            python3 scripts/ci_linux_dependencies.py "$OHTIA_QUALITY_CELL" display-session
+
+      - name: Set up the frozen workspace
+        run: python3 scripts/workspace.py setup
+
+      - name: Install version A and update it to the prepared version through the test repository
+        env:
+          OHTIA_QUALITY_CELL: ${{ matrix.cell }}
+          OHTIA_RELEASE_COMMIT: ${{ needs.check.outputs.commit }}
+          OHTIA_RELEASE_VERSION: ${{ needs.check.outputs.version }}
+          OHTIA_RELEASE_DIGESTS: ${{ needs.release.outputs.digests }}
+        run: |
+          dbus-run-session -- python3 scripts/quality_display.py --task quality:repository \
+            "$OHTIA_QUALITY_CELL" artifacts/repository-qualification
+
+      - name: Retain the qualification report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: repository-qualification-${{ matrix.cell }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/repository-qualification/
+          if-no-files-found: error
+          retention-days: 90

@@ -17,7 +17,14 @@ if (
   throw new Error("Use fresh native evidence inside inspected scratch.");
 fs.mkdirSync(output, { mode: 0o700 });
 const previous = previousFile ? JSON.parse(fs.readFileSync(previousFile)) : null;
-const receipt = { version: 1, status: "failed", cases: [], previous: previous?.saved ?? null };
+const receipt = {
+  version: 1,
+  status: "failed",
+  cases: [],
+  previous: previous?.saved ?? null,
+  // The version each start of the installed application reports from its main process.
+  running_versions: [],
+};
 let application;
 async function start() {
   application = await _electron.launch({
@@ -40,6 +47,7 @@ async function start() {
     })
     .toBe("storage_ready");
   await recordReadyNativeProcesses(application, output);
+  receipt.running_versions.push(await application.evaluate(({ app }) => app.getVersion()));
   // Keep the ready runtime observable for the independent native OS sampler.
   await new Promise((resolve) => setTimeout(resolve, 1000));
   return page;
