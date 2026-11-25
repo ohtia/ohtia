@@ -23,28 +23,32 @@ def cell_desktop(cell_id: str) -> str:
     return cell["desktop"]
 
 
-def quality_build(env: dict[str, str]) -> int:
+# The workspace tasks that run inside the session: the quality build and repository qualification.
+TASKS = ("quality:build", "quality:repository")
+
+
+def quality_build(env: dict[str, str], task: list[str]) -> int:
     return subprocess.run(
-        [sys.executable, "scripts/workspace.py", "run", "quality:build", *sys.argv[1:]],
+        [sys.executable, "scripts/workspace.py", "run", *task],
         env=env,
         check=False,
         timeout=3600,
     ).returncode
 
 
-def plasma(directory: str) -> int:
+def plasma(directory: str, task: list[str]) -> int:
     """KDE cells use the shared Plasma launcher on this job's private bus."""
     with (Path(directory) / "compositor.log").open("wb") as log:
         try:
             with plasma_session.session(
                 {**os.environ, "LIBGL_ALWAYS_SOFTWARE": "1"}, Path(directory), log
             ) as env:
-                return quality_build(env)
+                return quality_build(env, task)
         except plasma_session.PlasmaError as error:
             raise SystemExit(f"Native KDE Plasma Wayland session failed: {error}") from None
 
 
-def gnome(directory: str) -> int:
+def gnome(directory: str, task: list[str]) -> int:
     env = {
         **os.environ,
         "XDG_RUNTIME_DIR": directory,
@@ -73,7 +77,7 @@ def gnome(directory: str) -> int:
                 time.sleep(0.2)
             else:
                 raise SystemExit("Native GNOME Wayland did not become ready.")
-            return quality_build(env)
+            return quality_build(env, task)
         finally:
             child.terminate()
             try:
@@ -84,16 +88,23 @@ def gnome(directory: str) -> int:
 
 
 def main() -> int:
+    """Run `<cell> <output>` as the quality build, or `--task <task> <cell> <output>`."""
+    arguments = sys.argv[1:]
+    name = "quality:build"
+    if arguments[:1] == ["--task"] and len(arguments) > 1:
+        name, arguments = arguments[1], arguments[2:]
     if (
-        len(sys.argv) != 3
+        name not in TASKS
+        or len(arguments) != 2
         or os.environ.get("GITHUB_ACTIONS") != "true"
         or os.environ.get("RUNNER_ENVIRONMENT") != "github-hosted"
         or os.getuid() == 0
     ):
         raise SystemExit("Use one declared Wayland cell in a fresh unprivileged hosted VM.")
-    desktop = cell_desktop(sys.argv[1])
+    desktop = cell_desktop(arguments[0])
+    task = [name, *arguments]
     with tempfile.TemporaryDirectory(prefix="ohtia-wayland-", dir=Path.home()) as directory:
-        return plasma(directory) if desktop == "kde" else gnome(directory)
+        return plasma(directory, task) if desktop == "kde" else gnome(directory, task)
 
 
 if __name__ == "__main__":

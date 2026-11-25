@@ -160,6 +160,7 @@
     "scripts/tests/test_release_prepare.py",
     "scripts/tests/test_release_publish.py",
     "scripts/tests/test_release_signing.py",
+    "scripts/tests/test_repository_qualification.py",
     "scripts/tests/test_scaleway_cycle.py",
     "scripts/tests/test_scaleway_preflight.py",
     "scripts/tests/test_scaleway_progress.py",
@@ -794,6 +795,11 @@
     },
     {
       "id": "test_quality_display.QualityDisplayTests.test_dispatches_each_desktop_to_its_own_session",
+      "platforms": ["win32"],
+      "reason": "Hosted Linux display-session dispatch uses the POSIX account identity; Windows cells use the workspace launcher."
+    },
+    {
+      "id": "test_quality_display.QualityDisplayTests.test_runs_only_a_declared_task_in_the_session",
       "platforms": ["win32"],
       "reason": "Hosted Linux display-session dispatch uses the POSIX account identity; Windows cells use the workspace launcher."
     },
