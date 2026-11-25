@@ -1218,6 +1218,13 @@ it("admits the closed command broker on the actual sender, confirms localized co
   expect(await h.command("open_notice_link", "React")).toBe(false);
   vi.mocked(electron.shell.openExternal).mockRejectedValueOnce(new Error("Browser unavailable"));
   expect(await h.command("open_link", "report")).toBe(false);
+  // SPEC-001-040: without a known desktop, Linux only explains the system update.
+  const launched = vi.mocked(electron.shell.openExternal).mock.calls.length;
+  expect(await h.command("update_route")).toBe("system");
+  expect(await h.command("open_update_route")).toBe(false);
+  expect(await h.command("update_route", "download_page")).toBe(false);
+  expect(await h.command("open_update_route", "https://example.invalid")).toBe(false);
+  expect(electron.shell.openExternal).toHaveBeenCalledTimes(launched);
   expect(await h.command("perform", "window.fullscreen")).toBe(true);
   expect(h.window.setFullScreen).toHaveBeenCalledWith(true);
   const edits = {

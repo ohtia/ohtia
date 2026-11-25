@@ -8,6 +8,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type RefObject,
   type RefCallback,
 } from "react";
@@ -35,6 +36,8 @@ import { separatorRange } from "./workspace-geometry.js";
 import { OhtiaBrand } from "./branding.js";
 import { LucideGlyph, type LucideName } from "./iconography.js";
 import { Tooltip } from "./layers.js";
+import type { UpdateController, UpdateSnapshot } from "./update-controller.js";
+import { availableVersion, useHeldWhileWriting } from "./update-surfaces.js";
 
 const panelIcons = {
   explorer: "panel-left",
@@ -87,12 +90,21 @@ export interface WorkspaceChromeProps {
   readonly zoom?: number;
   readonly layoutFailure?: boolean;
   readonly onDismissLayoutFailure?: () => void;
+  /** SPEC-001-040: the window's update state; the title bar shows a newer version from it. */
+  readonly updates?: UpdateController | undefined;
+  /**
+   * True while the researcher writes in the manuscript editor. The update button neither appears
+   * nor changes then; it shows the current state once writing stops.
+   */
+  readonly writing?: boolean;
   /** Share this exact window authority with Settings; disposal revokes the binding. */
   readonly onWorkspaceChange?: (
     workspace: WorkspaceController | undefined,
     state?: WorkspaceState,
   ) => void;
 }
+const noUpdateSubscription = () => () => {};
+const noUpdateSnapshot = (): UpdateSnapshot | undefined => undefined;
 function focusedPanel(root: HTMLElement | null): WorkspacePanel | undefined {
   const active = root?.ownerDocument.activeElement;
   const value =
@@ -220,7 +232,17 @@ export function WorkspaceChrome({
   layoutFailure = false,
   onDismissLayoutFailure,
   onWorkspaceChange,
+  updates,
+  writing = false,
 }: WorkspaceChromeProps) {
+  const updateSnapshot = useSyncExternalStore(
+    updates?.subscribe ?? noUpdateSubscription,
+    updates?.snapshot ?? noUpdateSnapshot,
+  );
+  const newerVersion = useHeldWhileWriting(
+    availableVersion(updateSnapshot?.notice?.state),
+    writing,
+  );
   const root = useRef<HTMLDivElement>(null);
   const controller = useRef<WorkspaceController | undefined>(undefined);
   const availability = useRef(available);
@@ -805,6 +827,15 @@ export function WorkspaceChrome({
             <ShortcutControl id="project.new" commands={commands} locale={locale} icon="plus" />
           </div>
           <span className="workspace-drag-space" aria-hidden="true" />
+          {newerVersion && (
+            <ShortcutControl
+              id="update.check"
+              commands={commands}
+              locale={locale}
+              icon="download"
+              label={message(locale, "update.button", { version: newerVersion })}
+            />
+          )}
           {!narrow && zoomIndicator}
           {!narrow && (
             <div

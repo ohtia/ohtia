@@ -44,6 +44,8 @@ export function CommandSpecimens() {
       copyMessage: async () => false,
       openLink: async () => false,
       openNoticeLink: async () => false,
+      updateRoute: async () => "system" as const,
+      openUpdateRoute: async () => false,
     }),
     [copyFails, platform],
   );

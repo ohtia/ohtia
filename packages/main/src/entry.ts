@@ -10,6 +10,7 @@ import type { DevelopmentCommand } from "./development-command.js";
 import { ConnectionBroker } from "./connection-broker.js";
 import { UpdateBroker } from "./update-broker.js";
 import { requestLatestRelease } from "./update-check.js";
+import { isExecutable, launchDetached, openUpdateRoute, updateRoute } from "./update-route.js";
 import { nativeCredentialStore } from "./native-credentials.js";
 declare const __OHTIA_DEVELOPMENT_BUILD__: boolean;
 import {
@@ -205,6 +206,13 @@ const updates = new UpdateBroker({
       if (!window.isDestroyed()) window.webContents.send(desktopChannels.updateState, notice);
   },
 });
+const updateHost = {
+  platform: process.platform,
+  desktop: process.env.XDG_CURRENT_DESKTOP,
+  executable: isExecutable,
+  launch: launchDetached,
+  openBrowser: (url: string) => shell.openExternal(url),
+};
 const publisher = new LocatorPublisher();
 const windows = new Map<
   BrowserWindow,
@@ -1320,6 +1328,9 @@ async function start(): Promise<void> {
         });
       }
       if (action === "about" && payload === undefined) return aboutInformation();
+      if (action === "update_route" && payload === undefined) return updateRoute(updateHost);
+      if (action === "open_update_route" && payload === undefined)
+        return await openUpdateRoute(updateHost);
       const messageDiagnostic = (event_name: DiagnosticEventName) => {
         void diagnostics?.append({ event_name });
       };

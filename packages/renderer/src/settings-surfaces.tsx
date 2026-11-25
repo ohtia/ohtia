@@ -15,7 +15,11 @@ import {
   type LocaleSnapshot,
   type CommandId,
   type CommandReason,
+  type UpdateBridge,
 } from "@ohtia/contracts";
+import { UpdateController } from "./update-controller.js";
+import { UpdateCheckController } from "./update-check-controller.js";
+import { UpdateCheckSetting } from "./update-check-setting.js";
 import { useCharacterMode } from "./character.js";
 import { CommandSurfaces } from "./command-surfaces.js";
 import { CommandController } from "./command-controller.js";
@@ -40,6 +44,7 @@ export interface WorkspaceSettingsBinding {
     workspace: WorkspaceController | undefined,
     state?: WorkspaceState,
   ) => void;
+  readonly updates: UpdateController | undefined;
 }
 
 /** Window-lifetime settings and command ownership, shared with the actual workspace when composed. */
@@ -54,7 +59,10 @@ export function SettingsSurfaces({
   composeWorkspace = false,
   research,
   newProject,
+  update,
 }: {
+  /** SPEC-001-040: main's update pushes; without them the window offers no update command. */
+  readonly update?: UpdateBridge;
   readonly children?: (
     commands: CommandController | undefined,
     binding: WorkspaceSettingsBinding,
@@ -72,6 +80,26 @@ export function SettingsSurfaces({
   readonly onLocale: (snapshot: LocaleSnapshot) => void;
 }) {
   const limits = useMemo(() => new LimitsController(port, () => crypto.randomUUID()), [port]);
+  const updates = useMemo(
+    () => (update ? new UpdateController(update, port, bridge) : undefined),
+    [update, port, bridge],
+  );
+  const updateCheck = useMemo(
+    () => (update ? new UpdateCheckController(port, () => crypto.randomUUID()) : undefined),
+    [update, port],
+  );
+  useEffect(
+    () => () => {
+      updateCheck?.dispose();
+    },
+    [updateCheck],
+  );
+  useEffect(() => {
+    updates?.start();
+    return () => {
+      updates?.dispose();
+    };
+  }, [updates]);
   const ownResearch = useMemo(
     () => (research ? undefined : new ConversationController(port)),
     [port, research],
@@ -348,6 +376,7 @@ export function SettingsSurfaces({
                       setLayoutFailure(false);
                     },
                     onWorkspaceChange,
+                    updates,
                   },
                   () => {
                     setRequestedFocus("connections");
@@ -365,6 +394,7 @@ export function SettingsSurfaces({
         bridge={bridge}
         locale={locale}
         decoration={decoration}
+        {...(updates ? { updates } : {})}
         registerHandlers={register}
         renderFeedback={(openSettings, inDialog) => (
           <>
@@ -409,6 +439,24 @@ export function SettingsSurfaces({
                 language={language}
                 controller={controller}
                 limits={limits}
+                {...(updateCheck
+                  ? {
+                      sections: [
+                        {
+                          id: "updates",
+                          title: message(locale, "settings.updates"),
+                          icon: "download" as const,
+                          content: open && (
+                            <UpdateCheckSetting
+                              controller={updateCheck}
+                              locale={locale}
+                              available={available}
+                            />
+                          ),
+                        },
+                      ],
+                    }
+                  : {})}
                 workspace={workspace}
                 workspaceState={layoutState ?? workspace.state}
                 platform={platform}

@@ -30,6 +30,7 @@ export const safeAreaDialogs = Object.freeze([
   Object.freeze({ command: "shortcuts.open", selector: ".shortcuts-dialog[open]" }),
   Object.freeze({ command: "help.open", selector: ".help-dialog[open]" }),
   Object.freeze({ command: "about.open", selector: ".about-dialog[open]" }),
+  Object.freeze({ command: "update.check", selector: ".update-dialog[open]" }),
 ]);
 
 /**

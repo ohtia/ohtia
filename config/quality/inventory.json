@@ -74,6 +74,8 @@
     "tests/system-motion.test.ts",
     "tests/update-admission.test.ts",
     "tests/update-check.test.ts",
+    "tests/update-notice.test.ts",
+    "tests/update-route.test.ts",
     "tests/utility-entry.test.ts",
     "tests/window-state.test.ts",
     "tests/workspace-chrome.test.ts",

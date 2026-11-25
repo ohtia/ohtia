@@ -179,6 +179,7 @@ export function presentationReason(
       "project.new",
       "conversation.new",
       "about.open",
+      "update.check",
       "help.open",
       "settings.open",
       "palette.open",

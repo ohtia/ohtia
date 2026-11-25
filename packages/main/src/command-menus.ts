@@ -326,6 +326,7 @@ export class CommandMenus {
         ? [
             group("application", [
               item("about.open"),
+              item("update.check"),
               separator,
               item("settings.open"),
               separator,
@@ -382,7 +383,7 @@ export class CommandMenus {
         item("link.report"),
         separator,
         item("version.copy"),
-        ...(!mac ? [item("about.open")] : []),
+        ...(!mac ? [item("update.check"), item("about.open")] : []),
       ]),
     ];
   }

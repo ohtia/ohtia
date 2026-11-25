@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   useMemo,
+  useSyncExternalStore,
   type RefObject,
   type ReactNode,
 } from "react";
@@ -35,7 +36,10 @@ import { CommandPalette, KeyboardShortcutsDialog } from "./command-discovery.js"
 import { Button } from "./controls.js";
 import { OhtiaBrand, StaticCharacterIllustration } from "./branding.js";
 import { LucideGlyph } from "./iconography.js";
+import type { UpdateController, UpdateSnapshot } from "./update-controller.js";
+import { AboutUpdate, UpdateDialog } from "./update-surfaces.js";
 
+type Surface = "about" | "help" | "settings" | "palette" | "shortcuts" | "update";
 const menuButtonSelector =
   '[data-workspace-command="menu.open"], [data-command-id="menu.open"] button';
 function currentMenuButton(): HTMLButtonElement | undefined {
@@ -44,6 +48,8 @@ function currentMenuButton(): HTMLButtonElement | undefined {
   );
 }
 
+const noSubscription = () => () => {};
+const noUpdate = (): UpdateSnapshot | undefined => undefined;
 export type DecorationState = "static" | "animated" | "hidden";
 type CopyState = { phase: "idle" | "pending" | "copied" | "failed"; attempt: number };
 function CopyFeedback({
@@ -132,10 +138,14 @@ export function AboutDialog({
   feedback,
   returnFocusRef,
   copyDisabledReason,
+  update,
+  onOpenUpdateRoute = () => {},
 }: {
   open: boolean;
   locale: InterfaceLocale;
   info?: AboutInformation;
+  update?: UpdateSnapshot;
+  onOpenUpdateRoute?: () => void;
   failed?: boolean;
   actionFailed?: boolean;
   copyDisabledReason?: string;
@@ -204,6 +214,7 @@ export function AboutDialog({
               <CopyFeedback copy={copy} locale={locale} manualAvailable />
             </div>
           </div>
+          <AboutUpdate locale={locale} snapshot={update} onOpenRoute={onOpenUpdateRoute} />
           <ProjectLinks locale={locale} onOpen={onOpenLink} />
           <p>MIT · {info.copyright}</p>
           <details>
@@ -371,7 +382,10 @@ export function CommandSurfaces({
   renderFeedback,
   children,
   returnFocusRef,
+  updates,
 }: {
+  /** SPEC-001-040: the window's update state; without it no update command is registered. */
+  updates?: UpdateController;
   returnFocusRef?: Readonly<RefObject<HTMLElement | null>>;
   children?: (controller: CommandController | undefined) => ReactNode;
   bridge: CommandBridge;
@@ -391,12 +405,16 @@ export function CommandSurfaces({
   decoration?: DecorationState;
   manuscriptVisible?: boolean;
 }) {
+  const update = useSyncExternalStore(
+    updates?.subscribe ?? noSubscription,
+    updates?.snapshot ?? noUpdate,
+  );
   const settingsRenderer = useRef(renderSettings);
   settingsRenderer.current = renderSettings;
   const settingsAvailable = !!renderSettings;
   const [controller, setController] = useState<CommandController>();
   const [, setSnapshot] = useState<CommandSnapshot>();
-  const [surface, setSurface] = useState<"about" | "help" | "settings" | "palette" | "shortcuts">();
+  const [surface, setSurface] = useState<Surface>();
   const [paletteSnapshot, setPaletteSnapshot] = useState<CommandSnapshot>();
   const inspectingOrigin = useRef(false);
   const [info, setInfo] = useState<AboutInformation>();
@@ -428,7 +446,7 @@ export function CommandSurfaces({
     live: true,
     incarnation: 0,
     localeEpoch: 0,
-    surface: undefined as "about" | "help" | "settings" | "palette" | "shortcuts" | undefined,
+    surface: undefined as Surface | undefined,
     locale,
     exitOpen: false,
     composing: false,
@@ -511,7 +529,7 @@ export function CommandSurfaces({
       current.current.composingTarget = undefined;
       update();
     };
-    const open = (next: "about" | "help" | "settings" | "palette" | "shortcuts") => {
+    const open = (next: Surface) => {
       modalTrigger.current =
         document.activeElement instanceof HTMLElement ? document.activeElement : null;
       current.current.incarnation++;
@@ -637,6 +655,7 @@ export function CommandSurfaces({
         registry.register("about.open", {
           state: () => state("about.open"),
           run: async () => {
+            updates?.clearFailures();
             open("about");
             setInfo(undefined);
             setLoadFailed(false);
@@ -651,6 +670,15 @@ export function CommandSurfaces({
             return true;
           },
         });
+        if (updates)
+          registry.register("update.check", {
+            state: () => state("update.check"),
+            run: async () => {
+              updates.clearFailures();
+              open("update");
+              return await updates.check();
+            },
+          });
         if (settingsAvailable)
           registry.register("settings.open", {
             state: () => state("settings.open"),
@@ -913,7 +941,7 @@ export function CommandSurfaces({
       document.removeEventListener("compositionstart", composition);
       document.removeEventListener("compositionend", composition);
     };
-  }, [bridge, registerHandlers, settingsAvailable]);
+  }, [bridge, registerHandlers, settingsAvailable, updates]);
   useEffect(() => {
     let live = true;
     let pushed = false;
@@ -984,13 +1012,20 @@ export function CommandSurfaces({
         if (current.current.live && incarnation === current.current.incarnation) setFailure(true);
       });
   };
+  const openUpdateRoute = () => {
+    void updates?.openRoute();
+  };
   const openSettings = () => {
     if (surface) handoff("settings.open");
     else invoke("settings.open");
   };
   const windowFeedback = renderFeedback?.(openSettings, false);
   const dialogFeedback =
-    surface === "help" || surface === "about" || surface === "palette" || surface === "shortcuts"
+    surface === "help" ||
+    surface === "about" ||
+    surface === "update" ||
+    surface === "palette" ||
+    surface === "shortcuts"
       ? renderFeedback?.(openSettings, true)
       : undefined;
   const copyReason = controller?.entry("version.copy").reason;
@@ -1189,7 +1224,28 @@ export function CommandSurfaces({
         onClose={close}
         onOpenLink={openLink}
         onOpenNoticeLink={openNoticeLink}
+        {...(update ? { update } : {})}
+        onOpenUpdateRoute={openUpdateRoute}
       />
+      {updates && (
+        <UpdateDialog
+          returnFocusRef={modalReturnFocus}
+          feedback={
+            <>
+              {commandFeedback}
+              {surface === "update" && dialogFeedback}
+            </>
+          }
+          open={surface === "update"}
+          locale={locale}
+          snapshot={update}
+          onCheck={() => {
+            void updates.check();
+          }}
+          onOpenRoute={openUpdateRoute}
+          onClose={close}
+        />
+      )}
     </>
   );
 }

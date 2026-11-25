@@ -36,6 +36,8 @@ import {
 } from "../packages/renderer/src/workspace-controller.js";
 import { LayoutPreferences } from "../packages/renderer/src/layout-preferences.js";
 import { harness, call, deferred } from "./fixtures/settings.js";
+import { UpdateCheckController } from "../packages/renderer/src/update-check-controller.js";
+import { UpdateCheckSetting } from "../packages/renderer/src/update-check-setting.js";
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root;
 let container: HTMLDivElement;
@@ -89,6 +91,7 @@ async function mount(
     | ComponentProps<typeof SettingsDialog>["requestedFocus"]
     | { current: ComponentProps<typeof SettingsDialog>["requestedFocus"] },
   feedback?: ComponentProps<typeof SettingsDialog>["feedback"],
+  sections?: ComponentProps<typeof SettingsDialog>["sections"],
 ) {
   const t = harness();
   const localeSnapshot = {
@@ -170,6 +173,7 @@ async function mount(
       platform: "linux",
       ...(connections ? { connections } : {}),
       ...(feedback ? { feedback } : {}),
+      ...(sections ? { sections } : {}),
       ...(requestedFocus
         ? {
             requestedFocus:
@@ -678,6 +682,19 @@ describe("Settings command composition", () => {
     );
     const port = {
       ...t.port,
+      readUpdate: () =>
+        call({
+          ok: true as const,
+          value: {
+            sequence: 0,
+            state: { installedVersion: "0.2.0", check: "idle", failure: null, available: null },
+          },
+        }),
+      readUpdateCheck: () =>
+        call({
+          ok: true as const,
+          value: { schemaVersion: 1, revision: 0, value: true, source: "default" },
+        }),
       readExecutionLimits: () => call({ ok: true as const, value: limitsCurrent }),
       subscribeResearch: (_scope: unknown, receive: NonNullable<typeof researchNotice>) => {
         researchNotice = receive;
@@ -755,12 +772,14 @@ describe("Settings command composition", () => {
       copyVersionInformation: vi.fn(),
       perform: vi.fn(),
       openLink: vi.fn(),
+      updateRoute: async () => "software_centre" as const,
     } as unknown as import("@ohtia/contracts").CommandBridge;
     await act(async () =>
       root.render(
         h(SettingsSurfaces, {
           port,
           bridge,
+          update: { subscribeState: () => () => {} },
           locale: "en-US",
           available: true,
           onLocale: vi.fn(),
@@ -800,6 +819,12 @@ describe("Settings command composition", () => {
     expect(container.querySelector("dialog[open]")?.textContent).toContain(
       "Accessibility and appearance",
     );
+    await openPage("Updates");
+    expect(
+      container.querySelector<HTMLInputElement>("dialog[open] .update-check-setting input")
+        ?.checked,
+    ).toBe(true);
+    await openPage("Accessibility and appearance");
     await intent("zoom.increase", 2);
     expect(t.port.adjustZoom).toHaveBeenCalledWith(expect.any(String), "increase", "service-1");
     await intent("theme.dark", 3);
@@ -1952,6 +1977,60 @@ describe("Settings pages", () => {
     expect(appearance.querySelectorAll("svg")).toHaveLength(2);
     expect(services.hasAttribute("aria-label")).toBe(false);
     expect(document.activeElement).toBe(services);
+  });
+
+  it("names an added page, such as Updates, while its own notice needs attention", async () => {
+    const replaceUpdateCheck = vi.fn(() => call(failure("storage_failed")));
+    const updatePort = {
+      readUpdateCheck: () =>
+        call({
+          ok: true as const,
+          value: {
+            schemaVersion: 1 as const,
+            revision: 0,
+            value: true,
+            source: "default" as const,
+          },
+        }),
+      replaceUpdateCheck,
+      readUpdateCheckReceipt: vi.fn(),
+    } as unknown as FoundationPort;
+    const updateCheck = new UpdateCheckController(updatePort, () => "update-operation");
+    disposals.push(() => {
+      updateCheck.dispose();
+    });
+    await mount("en-US", undefined, {}, undefined, undefined, undefined, [
+      {
+        id: "updates",
+        title: message("en-US", "settings.updates"),
+        icon: "download",
+        content: h(UpdateCheckSetting, {
+          controller: updateCheck,
+          locale: "en-US",
+          available: true,
+        }),
+      },
+    ]);
+    const updates = pageButtons().at(-1)!;
+    expect(updates.textContent).toBe("Updates");
+    expect(updates.hasAttribute("aria-label")).toBe(false);
+    await openPage("Updates");
+    expect(
+      container.querySelector("dialog[open] .settings-page:not([hidden]) h2")?.textContent,
+    ).toBe("Updates");
+    await act(async () => {
+      container.querySelector<HTMLInputElement>(".update-check-setting input")!.click();
+    });
+    expect(replaceUpdateCheck).toHaveBeenCalledOnce();
+    expect(updates.getAttribute("aria-label")).toBe(
+      message("en-US", "settings.pageAttention", { page: "Updates" }),
+    );
+    expect(container.querySelector(".update-check-setting [role=alert]")?.textContent).toBe(
+      message("en-US", "settings.updateCheckRejected"),
+    );
+    expect(container.querySelector<HTMLInputElement>(".update-check-setting input")!.checked).toBe(
+      true,
+    );
   });
 
   it("replaces the page list with one page and Back in a narrow dialog", async () => {

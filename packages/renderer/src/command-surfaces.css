@@ -142,6 +142,52 @@
 .about-dialog details {
   margin-block-end: var(--space-3);
 }
+.update-status {
+  margin-block-start: var(--space-0);
+}
+.update-dialog .about-version {
+  margin-block: var(--space-4);
+}
+.update-dialog .about-version dl {
+  margin-block-end: var(--space-0);
+}
+.update-notes-section h3 {
+  font-size: var(--type-ui-subheading-size);
+  line-height: 1.5;
+  margin-block: var(--space-4) var(--space-2);
+}
+/* Notes are literal text: line breaks are kept, long words wrap and the list scrolls. */
+.update-notes {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-block-size: min(calc(var(--space-16) * 3), 40dvh);
+  overflow: auto;
+  padding: var(--space-3);
+  border: var(--border-width-default) solid var(--border-subtle);
+  border-radius: var(--radius-medium);
+  user-select: text;
+}
+.update-route {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  margin-block: var(--space-4);
+}
+.update-route > p {
+  margin-block: var(--space-0);
+}
+.about-update {
+  margin-block: var(--space-4);
+}
+.about-update > p {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  margin-block: var(--space-0);
+}
+.about-update > p svg {
+  flex: none;
+}
 .command-danger {
   background: var(--danger-surface);
   color: var(--danger-content);
@@ -379,6 +425,7 @@
 }
 @media (max-height: 150px) {
   .about-dialog,
+  .update-dialog,
   .help-dialog,
   .command-palette,
   .shortcuts-dialog {
@@ -394,7 +441,8 @@
     scroll-padding: calc(var(--focus-width) + var(--focus-offset));
   }
   /* A window-controls band can occupy the top margin, so the notices list leaves more room. */
-  .about-notices {
+  .about-notices,
+  .update-notes {
     max-block-size: min(calc(var(--space-16) * 3), 30dvh);
   }
   /* Fit the focused search and a wrapped option together at extreme zoom heights. */
