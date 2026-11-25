@@ -1,3 +1,4 @@
+import { projectTitleError } from "@ohtia/contracts";
 import { projectTypes, type ProviderTool, type ProviderToolCall } from "@ohtia/contracts";
 import type { LanguageRegistry } from "./research.js";
 
@@ -102,14 +103,8 @@ export function setupInvalidReason(
   values: SetupValues,
   registry: LanguageRegistry | (() => LanguageRegistry),
 ): SetupInvalidReason | null {
-  if (!values.title) return "title_empty";
-  if (
-    values.title.trim() !== values.title ||
-    /^\p{White_Space}|\p{White_Space}$/u.test(values.title)
-  )
-    return "title_whitespace";
-  if (Array.from(values.title).length > 200) return "title_too_long";
-  if (values.title.includes("\0") || malformedScalar.test(values.title)) return "title_invalid";
+  const titleError = projectTitleError(values.title);
+  if (titleError) return titleError;
   if (!/^[a-zA-Z]{2,3}(?:-[a-zA-Z]{4})?(?:-[a-zA-Z]{2}|-[0-9]{3})?$/.test(values.document_language))
     return "language_malformed";
   return (typeof registry === "function" ? registry() : registry).canonical(

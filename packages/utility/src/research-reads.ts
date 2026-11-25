@@ -37,6 +37,7 @@ import {
   bytes,
   conversationRecord,
   conversationSummaries,
+  projectRecord,
   identifier,
   type ConversationRow,
   type ResearchSchema,
@@ -707,6 +708,14 @@ export async function readResearch(
         ? { ok: true, value }
         : failure("invalid_service_result");
     }
+    case "project.read": {
+      const row = await db
+        .selectFrom("projects")
+        .selectAll()
+        .where("id", "=", bytes(request.payload.projectId))
+        .executeTakeFirst();
+      return row ? { ok: true, value: projectRecord(row) } : failure("record_not_found");
+    }
     case "project.list": {
       const { cursor, count } = request.payload;
       let query = db.selectFrom("projects").selectAll();
@@ -732,15 +741,7 @@ export async function readResearch(
       });
       for (const row of rows.slice(0, count)) {
         const item = {
-          id: identifier(row.id),
-          projectType: row.project_type,
-          title: row.title,
-          documentLanguage: row.document_language,
-          isDevelopment: row.is_development === 1,
-          setupConfirmedAt: row.setup_confirmed_at,
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
-          lastOpenedAt: row.last_opened_at,
+          ...projectRecord(row),
           needsAttention: attention.has(identifier(row.id)),
         };
         const hasMore = items.length + 1 < rows.length;
@@ -988,13 +989,20 @@ export async function researchRevisions(
   scope: ResearchScope,
 ): Promise<readonly Extract<ResearchEvent, { kind: "changed" | "planChanged" }>[]> {
   const result: Extract<ResearchEvent, { kind: "changed" | "planChanged" }>[] = [];
-  for (const row of await db.selectFrom("projects").select(["id", "setup_confirmed_at"]).execute())
+  for (const row of await db
+    .selectFrom("projects")
+    .select(["id", "setup_confirmed_at", "title_revision"])
+    .execute()) {
+    const id = identifier(row.id);
     result.push({
       kind: "changed",
       record: "project",
-      id: identifier(row.id),
+      id,
       revision: row.setup_confirmed_at ? 2 : 1,
     });
+    if (scope.projectId === id)
+      result.push({ kind: "changed", record: "projectTitle", id, revision: row.title_revision });
+  }
   for (const row of await db
     .selectFrom("usage_limit_pauses")
     .select(["id", "resumed_at"])

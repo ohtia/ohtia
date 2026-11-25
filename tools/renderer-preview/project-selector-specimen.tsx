@@ -29,6 +29,7 @@ export function ProjectSelectorSpecimen() {
             : index === 2
               ? "Redes de cuidado en Rosario 연구 ".repeat(5)
               : `Thesis ${String(index + 1)}`,
+        titleRevision: 1,
         documentLanguage: index < 2 ? null : "es-AR",
         isDevelopment: false,
         setupConfirmedAt: index < 2 ? null : "2026-11-17T10:00:00.000Z",
@@ -103,6 +104,14 @@ export function ProjectSelectorSpecimen() {
                     },
                   },
             ),
+          }),
+          readProject: () => ({
+            cancel() {},
+            result: Promise.resolve(failure("unauthorized")),
+          }),
+          renameProject: () => ({
+            cancel() {},
+            result: Promise.resolve(failure("unauthorized")),
           }),
           openProject: (_operationId, { projectId }) => ({
             cancel() {},

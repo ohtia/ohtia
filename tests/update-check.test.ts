@@ -607,7 +607,7 @@ describe("SPEC-001-040 startup preference through the settings store", () => {
     db.close();
     await store.open();
     const upgraded = raw();
-    expect(upgraded.pragma("user_version", { simple: true })).toBe(37);
+    expect(upgraded.pragma("user_version", { simple: true })).toBe(38);
     upgraded.close();
     expect(await store.readAppearance()).toMatchObject({ ok: true, value: { value: "dark" } });
     expect(await store.readUpdateCheck()).toMatchObject({ ok: true, value: { source: "default" } });

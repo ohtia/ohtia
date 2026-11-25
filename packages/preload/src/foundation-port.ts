@@ -594,6 +594,8 @@ export function createFoundationPort(
   const port: FoundationPort = Object.freeze<FoundationPort>({
     createProject: (id) => call("project.create", {}, id),
     openProject: (id, input) => call("project.open", input, id),
+    renameProject: (id, input) => call("project.rename", input, id),
+    readProject: (input) => call("project.read", input),
     confirmProjectSetup: (id, input) => call("project.confirmSetup", input, id),
     rejectProjectSetup: (id, input) => call("project.rejectSetup", input, id),
     startConversation: (id, input) => call("conversation.start", input, id),

@@ -221,7 +221,9 @@ const windows = new Map<
     openConversation?: { projectId: string; conversationId: string };
     navigateConversation?: NonNullable<BootstrapSnapshot["navigateConversation"]>;
     restoreLastProject: boolean;
+    researchProjectId?: string | null;
     researchSelection?: string;
+    researchSubscription?: string;
     workspace: boolean;
     boundsSaved: boolean;
     presentable: boolean;
@@ -502,6 +504,9 @@ function detach(window: BrowserWindow): void {
   state.detach?.();
   delete state.detach;
   delete state.frame;
+  delete state.researchSelection;
+  delete state.researchProjectId;
+  delete state.researchSubscription;
   service?.disposeWindow(state.generation);
   connections?.disposeWindow(state.generation);
 }
@@ -1170,7 +1175,17 @@ async function start(): Promise<void> {
       if (acceptance) acceptance.rejectedEnvelope++;
       return;
     }
+    const windowState = windows.get(window);
     if (authority.value.kind === "cancel" || authority.value.kind === "unsubscribe") {
+      const control = authority.value;
+      if (
+        control.kind === "unsubscribe" &&
+        windowState?.researchSubscription === control.subscriptionId
+      ) {
+        delete windowState.researchSubscription;
+        delete windowState.researchSelection;
+        delete windowState.researchProjectId;
+      }
       if (!connections?.control(authority.value)) service?.control(authority.value);
       return;
     }
@@ -1189,8 +1204,11 @@ async function start(): Promise<void> {
       accepted.ok && accepted.value.request.operation === "research.subscribe"
         ? accepted.value.request
         : undefined;
-    const windowState = windows.get(window);
-    if (selection && windowState) windowState.researchSelection = selection.requestId;
+    if (selection && windowState) {
+      windowState.researchSelection = selection.requestId;
+      windowState.researchSubscription = selection.payload.subscriptionId;
+      delete windowState.researchProjectId;
+    }
     const frame = event.senderFrame;
     const deliver = (reply: string) => {
       if (
@@ -1208,6 +1226,7 @@ async function start(): Promise<void> {
             decoded.value.payload.ok
           ) {
             const scope = selection.payload;
+            windowState.researchProjectId = scope.projectId;
             if (scope.projectId && scope.conversationId)
               windowState.openConversation = {
                 projectId: scope.projectId,
@@ -1224,6 +1243,20 @@ async function start(): Promise<void> {
         const reply = encodeEnvelope({ ...authority.value, kind: "result", payload: accepted });
         if (reply.ok) deliver(reply.value);
       }
+      return;
+    }
+    const request = accepted.value.request;
+    if (
+      (request.operation === "project.rename" || request.operation === "project.read") &&
+      windowState?.researchProjectId !== request.payload.projectId
+    ) {
+      const reply = encodeEnvelope({
+        ...request,
+        kind: "result",
+        payload: failure("unauthorized"),
+      });
+      accepted.value.release();
+      if (reply.ok) deliver(reply.value);
       return;
     }
     if (

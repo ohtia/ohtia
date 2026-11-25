@@ -43,6 +43,7 @@ const project = (n: number): ProjectSummary => ({
   id: id(n),
   projectType: "thesis",
   title: null,
+  titleRevision: 1,
   documentLanguage: null,
   isDevelopment: false,
   setupConfirmedAt: null,
@@ -852,4 +853,102 @@ it("keeps closed-notice actions present when Tab leaves the combobox", async () 
     expect.arrayContaining(["Reload projects", "Dismiss"]),
   );
   f.controller.dispose();
+});
+
+it("preserves rename input and operation identity across competing revisions and A to B to A", async () => {
+  const f = fixture(2);
+  const first = {
+    ...f.projects[0]!,
+    title: "Working title",
+    setupConfirmedAt: f.projects[0]!.createdAt,
+  };
+  const other = {
+    ...f.projects[1]!,
+    title: "Other thesis",
+    setupConfirmedAt: f.projects[1]!.createdAt,
+  };
+  const latest = { ...first, title: "Other session title", titleRevision: 2 };
+  const pending = deferred<Awaited<ReturnType<FoundationPort["renameProject"]>["result"]>>();
+  const rename = vi
+    .fn<FoundationPort["renameProject"]>()
+    .mockReturnValueOnce({ result: pending.promise, cancel() {} })
+    .mockReturnValueOnce(call(failure("uncertain")))
+    .mockReturnValueOnce(
+      call({
+        ok: false,
+        error: {
+          code: "stale_revision",
+          nextAction: "refresh_preference",
+          parameters: { currentRevision: 2 },
+        },
+      }),
+    )
+    .mockReturnValueOnce(
+      call({
+        ok: true,
+        value: {
+          resultId: first.id,
+          titleChange: { title: "My draft", titleRevision: 3 },
+        },
+      }),
+    );
+  Object.assign(f.port, {
+    renameProject: rename,
+    readProject: vi
+      .fn<FoundationPort["readProject"]>()
+      .mockReturnValueOnce(call(failure("storage_failed")))
+      .mockReturnValueOnce(call({ ok: true, value: latest }))
+      .mockReturnValueOnce(call(failure("storage_failed"))),
+  });
+  const c = f.controller;
+  c.prepareRename(first);
+  expect(c.beginRename()).toBe(true);
+  c.editRename("My draft");
+  const previous = c.saveRename();
+  await c.open(other.id);
+  c.prepareRename(other);
+  expect(c.beginRename()).toBe(true);
+  expect(c.snapshot().rename?.text).toBe("Other thesis");
+  await c.open(first.id);
+  c.prepareRename(first);
+  expect(c.beginRename()).toBe(true);
+  expect(c.snapshot().rename).toMatchObject({ text: "My draft", notice: "uncertain", busy: false });
+  pending.resolve({
+    ok: true,
+    value: {
+      resultId: first.id,
+      titleChange: { title: "My draft", titleRevision: 2 },
+    },
+  });
+  await previous;
+  expect(c.snapshot().renameSaved).toBe(0);
+  expect(c.snapshot().rename?.text).toBe("My draft");
+  await c.saveRename();
+  expect(c.snapshot().rename?.notice).toBe("uncertain");
+  await c.saveRename();
+  expect(c.snapshot().rename).toMatchObject({
+    text: "My draft",
+    notice: "stale",
+    needsRevision: true,
+  });
+  expect(rename.mock.calls[2]).toEqual(rename.mock.calls[0]);
+  await c.saveRename();
+  expect(c.snapshot().rename).toMatchObject({
+    text: "My draft",
+    notice: "readFailed",
+    needsRevision: true,
+  });
+  await c.saveRename();
+  expect(rename).toHaveBeenCalledTimes(3);
+  expect(c.snapshot().rename).toMatchObject({
+    text: "My draft",
+    confirmedTitle: latest.title,
+    expectedTitleRevision: 2,
+  });
+  await c.saveRename();
+  expect(rename.mock.calls[3]?.[0]).not.toBe(rename.mock.calls[0]?.[0]);
+  expect(c.snapshot()).toMatchObject({ rename: null, renameSaved: 1, renameRefreshFailed: true });
+  expect(c.project(first.id)).toMatchObject({ title: "My draft", titleRevision: 3 });
+  expect(f.selected.at(-1)?.projectId).toBe(first.id);
+  c.dispose();
 });

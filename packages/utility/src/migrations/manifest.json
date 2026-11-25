@@ -146,5 +146,9 @@
   {
     "name": "0037_update_check_preference",
     "sha256": "f569c3c29cade3878b2945935f8173921378c18b90a1de82ad663f26aef5bec0"
+  },
+  {
+    "name": "0038_project_title_revision",
+    "sha256": "10021a648d0094148819c8a5920c29f635b6166a79d2b7a3f8d8ce0519f89ff5"
   }
 ]

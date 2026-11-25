@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { message, type InterfaceLocale, type ProjectRecord } from "@ohtia/contracts";
 import type { ProjectController, ProjectState } from "./project-controller.js";
@@ -8,6 +8,7 @@ import { Tooltip } from "./layers.js";
 import "./project-selector.css";
 
 export function ProjectSelector({
+  buttonRef,
   controller,
   state,
   current,
@@ -16,6 +17,7 @@ export function ProjectSelector({
   locale,
   attentionProjects,
 }: {
+  readonly buttonRef?: RefObject<HTMLButtonElement | null>;
   readonly controller: ProjectController;
   readonly state: ProjectState;
   readonly current: ProjectRecord | undefined;
@@ -31,7 +33,8 @@ export function ProjectSelector({
   const error = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLDivElement>(null);
   const popup = useRef<HTMLDivElement>(null);
-  const button = useRef<HTMLButtonElement>(null);
+  const localButton = useRef<HTMLButtonElement>(null);
+  const button = buttonRef ?? localButton;
   const pendingMore = useRef<number | null>(null);
   const initialHighlight = useRef(true);
   const firstPageRevision = useRef(state.firstPageRevision);

@@ -7,13 +7,14 @@ import type {
 import { nextPosition, type TaskSchema, type TaskTransaction } from "./tasks.js";
 import fs from "node:fs";
 import * as crypto from "node:crypto";
-import { type Generated, type Kysely, sql } from "kysely";
+import { type Generated, type Kysely, type Selectable, sql } from "kysely";
 import {
   isUsagePauseConnection,
   failure,
   isConnectionId,
   isPlanConnections,
   validResearcherMessage,
+  projectTitleError,
   validConversationTitle,
   isIdentifier,
   isConversationAgent,
@@ -34,6 +35,7 @@ export interface ProjectRow {
   id: Uint8Array;
   project_type: "thesis";
   title: string | null;
+  title_revision: Generated<number>;
   document_language: string | null;
   is_development: number;
   setup_confirmed_at: string | null;
@@ -95,6 +97,14 @@ export interface ResearchSchema extends TaskSchema, MemorySchema, AgentPreferenc
     title_attempt_id: Generated<Uint8Array | null>;
   };
   messages: MessageRow;
+  project_title_history: {
+    operation_id: string;
+    project_id: Uint8Array;
+    previous_title: string;
+    title: string;
+    previous_revision: number;
+    title_revision: number;
+  };
   command_receipts: {
     operation_id: string;
     command: ResearchCommand["command"];
@@ -238,11 +248,12 @@ export class LanguageRegistry {
       .join("-");
   }
 }
-function project(row: ProjectRow): ProjectRecord {
+export function projectRecord(row: Selectable<ProjectRow>): ProjectRecord {
   return {
     id: identifier(row.id),
     projectType: row.project_type,
     title: row.title,
+    titleRevision: row.title_revision,
     documentLanguage: row.document_language,
     isDevelopment: row.is_development === 1,
     setupConfirmedAt: row.setup_confirmed_at,
@@ -317,6 +328,7 @@ const payloadKeys = {
   "usagePause.resume": ["connection"],
   "task.continueAll": [],
   "task.cancelAll": [],
+  "project.rename": ["projectId", "title", "expectedTitleRevision"],
   "project.confirmSetup": ["proposalId"],
   "project.rejectSetup": ["proposalId"],
   "conversation.start": ["projectId", "content"],
@@ -381,6 +393,7 @@ export async function applyResearchCommand(
     return failure("invalid_message");
   const now = new Date().toISOString();
   let result: Uint8Array;
+  let titleChange: Omit<ResearchSchema["project_title_history"], "operation_id"> | undefined;
   switch (input.command) {
     case "agentPreference.replace": {
       const saved = await replaceAgentPreference(db, tasks.context.connections, input.payload);
@@ -661,6 +674,43 @@ export async function applyResearchCommand(
       }
       break;
     }
+    case "project.rename": {
+      const { projectId, title, expectedTitleRevision } = input.payload;
+      if (
+        !isEntityId(projectId) ||
+        !Number.isSafeInteger(expectedTitleRevision) ||
+        expectedTitleRevision < 1
+      )
+        return failure("invalid_message");
+      if (typeof title !== "string" || projectTitleError(title)) return failure("name_invalid");
+      result = bytes(projectId);
+      const project = await db
+        .selectFrom("projects")
+        .select(["title", "title_revision", "setup_confirmed_at"])
+        .where("id", "=", result)
+        .where("project_type", "=", "thesis")
+        .executeTakeFirst();
+      if (!project) return failure("record_not_found");
+      if (!project.setup_confirmed_at || project.title === null) return failure("project_in_setup");
+      if (project.title_revision !== expectedTitleRevision)
+        return staleRevision(project.title_revision);
+      const revision = expectedTitleRevision + Number(project.title !== title);
+      if (!Number.isSafeInteger(revision)) return failure("limit_reached");
+      if (revision !== expectedTitleRevision)
+        await db
+          .updateTable("projects")
+          .set({ title, title_revision: revision })
+          .where("id", "=", result)
+          .execute();
+      titleChange = {
+        project_id: result,
+        previous_title: project.title,
+        title,
+        previous_revision: expectedTitleRevision,
+        title_revision: revision,
+      };
+      break;
+    }
     case "project.confirmSetup":
     case "project.rejectSetup": {
       if (!isEntityId(input.payload.proposalId)) return failure("invalid_message");
@@ -837,16 +887,34 @@ export async function applyResearchCommand(
       created_at: now,
     })
     .execute();
+  if (titleChange)
+    await db
+      .insertInto("project_title_history")
+      .values({ ...titleChange, operation_id: input.operationId })
+      .execute();
   return {
     ok: true,
-    value: await researchReceiptResult(db, { command: input.command, result_id: result }),
+    value: await researchReceiptResult(db, {
+      command: input.command,
+      result_id: result,
+      operation_id: input.operationId,
+    }),
   };
 }
 export async function researchReceiptResult(
   db: Kysely<ResearchSchema>,
-  receipt: Pick<ResearchSchema["command_receipts"], "command" | "result_id">,
+  receipt: Pick<ResearchSchema["command_receipts"], "command" | "result_id" | "operation_id">,
 ): Promise<ResearchResult> {
   const resultId = identifier(receipt.result_id);
+  if (receipt.command === "project.rename") {
+    const row = await db
+      .selectFrom("project_title_history")
+      .select(["title", "title_revision"])
+      .where("operation_id", "=", receipt.operation_id)
+      .where("project_id", "=", receipt.result_id)
+      .executeTakeFirstOrThrow();
+    return { resultId, titleChange: { title: row.title, titleRevision: row.title_revision } };
+  }
   if (receipt.command !== "plan.finish" && receipt.command !== "plan.cancel") return { resultId };
   const { outcome } = await db
     .selectFrom("interventions")
@@ -889,7 +957,7 @@ export async function listProjects(
     .orderBy("last_opened_at", "desc")
     .orderBy("id", "desc")
     .execute();
-  return { ok: true, value: rows.map(project) };
+  return { ok: true, value: rows.map(projectRecord) };
 }
 export async function listConversations(
   db: Kysely<ResearchSchema>,

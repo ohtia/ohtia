@@ -1336,6 +1336,25 @@ it("carries persisted research through the sandbox entry and revokes scoped stre
         proposalId: await proposeSetup(fixture.store, fixture.raw, projectId),
       }),
     );
+    const projectScope = port.subscribeResearch({ projectId, conversationId: null }, () => {});
+    await expectValue({ result: projectScope.ready });
+    const renamed = await expectValue(
+      port.renameProject("entry-rename-project", {
+        projectId,
+        title: "Synthetic renamed thesis",
+        expectedTitleRevision: 1,
+      }),
+    );
+    expect(renamed).toEqual({
+      resultId: projectId,
+      titleChange: { title: "Synthetic renamed thesis", titleRevision: 2 },
+    });
+    expect(await expectValue(port.readProject({ projectId }))).toMatchObject({
+      id: projectId,
+      title: "Synthetic renamed thesis",
+      titleRevision: 2,
+    });
+    projectScope.dispose();
     const started = await expectValue(
       port.startConversation("entry-start", { projectId, content: "Synthetic question" }),
     );

@@ -5,6 +5,11 @@ import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import { _electron, expect } from "@playwright/test";
 import { openWorkspaceSettings, verifyWorkspaceComposition } from "./command-workspace.mjs";
+import {
+  createProjectRenameFixture,
+  confirmProjectRenameFixture,
+  verifyPackagedProjectRename,
+} from "./project-rename-acceptance.mjs";
 import { verifyPackagedSettings } from "./settings-acceptance.mjs";
 import { runStorageComponent } from "./storage-component-runner.mjs";
 import {
@@ -774,6 +779,15 @@ try {
     restored,
     sourceRevision: checkpointManifest.sourceRevision,
   });
+  enterPhase("prepare-project-rename-fixtures");
+  const projects = await createProjectRenameFixture(page);
+  await application.close();
+  application = undefined;
+  confirmProjectRenameFixture(databaseFile, projects);
+  page = await start();
+  await open(page);
+  enterPhase("verify-packaged-project-rename", ".project-selector-button");
+  record("packaged-project-rename", await verifyPackagedProjectRename(application, page, projects));
   await application.close();
   application = undefined;
   verifyStableSentinels(launch.profile);

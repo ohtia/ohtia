@@ -1,11 +1,50 @@
 import {
+  projectTitleError,
+  type CommandReason,
+  type Outcome,
+  type RenameProjectResult,
+  type ResearchInputs,
   type FoundationPort,
   type ProjectRecord,
   type ProjectCursor,
   type ResearchScope,
 } from "@ohtia/contracts";
 
+export interface ProjectRenameDraft {
+  readonly projectId: string;
+  readonly text: string;
+  readonly expectedTitleRevision: number;
+  readonly busy: boolean;
+  readonly intent?:
+    | {
+        readonly operationId: string;
+        readonly input: ResearchInputs["project.rename"];
+      }
+    | undefined;
+  readonly needsRevision?: boolean | undefined;
+  readonly confirmedTitle?: string | undefined;
+  readonly notice?: "invalid" | "stale" | "uncertain" | "failed" | "readFailed" | undefined;
+}
+
+export function latestProject(
+  current: ProjectRecord | undefined,
+  incoming: ProjectRecord | undefined,
+): ProjectRecord | undefined {
+  if (!incoming) return current;
+  if (!current || current.id !== incoming.id) return incoming;
+  if (
+    current.setupConfirmedAt &&
+    (!incoming.setupConfirmedAt || current.titleRevision > incoming.titleRevision)
+  )
+    return current;
+  return incoming;
+}
+
 export interface ProjectState {
+  readonly rename: ProjectRenameDraft | null;
+  readonly renameSaved: number;
+  readonly renameRefreshFailed: boolean;
+  readonly renameRefreshFailures: number;
   readonly items: readonly ProjectRecord[];
   readonly next: ProjectCursor | null;
   readonly loading: boolean;
@@ -20,6 +59,10 @@ export interface ProjectState {
 /** Window-local selection; selecting a project neither owns nor stops durable work. */
 export class ProjectController {
   private state: ProjectState = {
+    rename: null,
+    renameSaved: 0,
+    renameRefreshFailed: false,
+    renameRefreshFailures: 0,
     items: [],
     next: null,
     loading: false,
@@ -33,6 +76,10 @@ export class ProjectController {
   };
   private readonly listeners = new Set<() => void>();
   private readonly conversations = new Map<string, string | null>();
+  private readonly renameDrafts = new Map<string, ProjectRenameDraft>();
+  private renameProject: ProjectRecord | undefined;
+  private pendingTitleRefresh: { projectId: string; titleRevision: number } | undefined;
+  private renameRefreshing = false;
   private listEpoch = 0;
   private selectionEpoch = 0;
   private restoreEpoch: number | undefined;
@@ -51,7 +98,7 @@ export class ProjectController {
   constructor(
     private readonly port: Pick<
       FoundationPort,
-      "listProjects" | "listConversations" | "openProject"
+      "listProjects" | "listConversations" | "openProject" | "renameProject" | "readProject"
     >,
     private readonly select: (scope: ResearchScope) => void,
   ) {}
@@ -74,10 +121,229 @@ export class ProjectController {
   project(id: string | null): ProjectRecord | undefined {
     return id ? this.knownProjects.get(id) : undefined;
   }
+  forgetProjectRecords(): void {
+    this.advanceSelection();
+    this.renameProject = undefined;
+    this.knownProjects.clear();
+    this.projectExists = false;
+    this.listEpoch++;
+    this.update({
+      items: [],
+      next: null,
+      hasProjects: false,
+      failed: false,
+      failedMore: false,
+      loading: false,
+      loadingMore: false,
+    });
+    if (this.hasListed) void this.load();
+  }
+  prepareRename = (project: ProjectRecord | undefined): void => {
+    const previous = this.renameProject;
+    this.renameProject = project;
+    const pending = this.pendingTitleRefresh;
+    if (
+      this.state.renameRefreshFailed &&
+      pending &&
+      project &&
+      project.id === pending.projectId &&
+      project.titleRevision >= pending.titleRevision
+    ) {
+      this.pendingTitleRefresh = undefined;
+      this.update({ renameRefreshFailed: false });
+      return;
+    }
+    if (previous === project) return;
+    if (
+      !previous ||
+      !project ||
+      previous.id !== project.id ||
+      Boolean(previous.setupConfirmedAt) !== Boolean(project.setupConfirmedAt)
+    )
+      this.update({});
+  };
+  renameReason = (): CommandReason | undefined =>
+    !this.renameProject
+      ? "no_project"
+      : !this.renameProject.setupConfirmedAt
+        ? "project_in_setup"
+        : this.state.rename
+          ? "modal_open"
+          : undefined;
+  beginRename = (): boolean => {
+    const project = this.renameProject;
+    if (!project || project.title === null || this.renameReason()) return false;
+    const draft = this.renameDrafts.get(project.id) ?? {
+      projectId: project.id,
+      text: project.title,
+      expectedTitleRevision: project.titleRevision,
+      busy: false,
+    };
+    this.update({ rename: draft });
+    return true;
+  };
+  editRename = (text: string): void => {
+    const draft = this.state.rename;
+    if (!draft || draft.busy || draft.intent) return;
+    this.update({
+      rename: { ...draft, text, notice: draft.notice === "invalid" ? undefined : draft.notice },
+    });
+  };
+  closeRename = (): void => {
+    const draft = this.state.rename;
+    if (!draft || draft.busy) return;
+    if (draft.intent) this.renameDrafts.set(draft.projectId, draft);
+    else this.renameDrafts.delete(draft.projectId);
+    this.update({ rename: null });
+  };
+  private advanceSelection(): number {
+    const draft = this.state.rename;
+    if (draft)
+      this.renameDrafts.set(draft.projectId, {
+        ...draft,
+        busy: false,
+        ...(draft.intent ? { notice: "uncertain" } : {}),
+      });
+    this.pendingTitleRefresh = undefined;
+    this.renameRefreshing = false;
+    const epoch = ++this.selectionEpoch;
+    this.update({ rename: null, renameRefreshFailed: false });
+    return epoch;
+  }
+  private cacheProject(project: ProjectRecord): ProjectRecord {
+    const latest = latestProject(this.knownProjects.get(project.id), project) ?? project;
+    this.knownProjects.set(project.id, latest);
+    return latest;
+  }
+  private showProjectTitle(project: ProjectRecord, patch: Partial<ProjectState>): void {
+    const latest = this.cacheProject(project);
+    this.update({
+      ...patch,
+      items: this.state.items.map((row) => latestProject(latest, row) ?? row),
+    });
+  }
+  saveRename = async (): Promise<void> => {
+    const draft = this.state.rename;
+    const project = this.renameProject;
+    if (!draft || draft.busy || !project || project.id !== draft.projectId) return;
+    if (!draft.needsRevision && projectTitleError(draft.text)) {
+      this.update({ rename: { ...draft, notice: "invalid" } });
+      return;
+    }
+    const epoch = this.selectionEpoch;
+    const current = () => !this.disposed && this.selectionEpoch === epoch;
+    if (draft.needsRevision) {
+      this.update({ rename: { ...draft, busy: true } });
+      const latest = await this.readTitle(draft.projectId);
+      if (!current()) return;
+      if (latest && latest.title !== null) {
+        this.showProjectTitle(latest, {
+          rename: {
+            ...draft,
+            expectedTitleRevision: latest.titleRevision,
+            confirmedTitle: latest.title,
+            needsRevision: false,
+            notice: "stale",
+          },
+        });
+      } else this.update({ rename: { ...draft, notice: "readFailed" } });
+      return;
+    }
+    const intent = draft.intent ?? {
+      operationId: crypto.randomUUID(),
+      input: {
+        projectId: draft.projectId,
+        title: draft.text,
+        expectedTitleRevision: draft.expectedTitleRevision,
+      },
+    };
+    this.update({ rename: { ...draft, intent, busy: true, notice: undefined } });
+    let result: Outcome<RenameProjectResult> | undefined;
+    try {
+      result = await this.port.renameProject(intent.operationId, intent.input).result;
+    } catch {
+      // Transport failure can occur after the service commits the operation.
+    }
+    if (!current()) return;
+    if (result?.ok) {
+      const confirmed = { ...project, ...result.value.titleChange };
+      this.renameDrafts.delete(draft.projectId);
+      this.showProjectTitle(confirmed, {
+        rename: null,
+        renameSaved: this.state.renameSaved + 1,
+        renameRefreshFailed: false,
+      });
+      if (current()) await this.refreshTitleAt(confirmed.id, confirmed.titleRevision);
+      return;
+    }
+    const code = result?.error.code;
+    const uncertain =
+      !code ||
+      code === "uncertain" ||
+      code === "invalid_service_result" ||
+      (draft.intent !== undefined &&
+        code !== "stale_revision" &&
+        code !== "operation_conflict" &&
+        code !== "name_invalid" &&
+        code !== "record_not_found" &&
+        code !== "project_in_setup" &&
+        code !== "limit_reached");
+    this.update({
+      rename: {
+        ...draft,
+        intent: uncertain ? intent : undefined,
+        needsRevision: code === "stale_revision",
+        notice: uncertain
+          ? "uncertain"
+          : code === "stale_revision"
+            ? "stale"
+            : code === "name_invalid"
+              ? "invalid"
+              : "failed",
+      },
+    });
+  };
+  private async readTitle(projectId: string): Promise<ProjectRecord | undefined> {
+    try {
+      const result = await this.port.readProject({ projectId }).result;
+      return result.ok ? result.value : undefined;
+    } catch {
+      return;
+    }
+  }
+  noteProjectTitle(projectId: string, titleRevision: number): void {
+    if (this.disposed || (this.project(projectId)?.titleRevision ?? 0) >= titleRevision) return;
+    void this.refreshTitleAt(projectId, titleRevision);
+  }
+  private refreshTitleAt(projectId: string, titleRevision: number): Promise<void> {
+    const pending = this.pendingTitleRefresh;
+    if (!pending || pending.projectId !== projectId || pending.titleRevision < titleRevision)
+      this.pendingTitleRefresh = { projectId, titleRevision };
+    return this.refreshTitle();
+  }
+  refreshTitle = async (): Promise<void> => {
+    const pending = this.pendingTitleRefresh;
+    if (!pending || this.renameRefreshing) return;
+    const epoch = this.selectionEpoch;
+    this.renameRefreshing = true;
+    const project = await this.readTitle(pending.projectId);
+    if (this.disposed || epoch !== this.selectionEpoch) return;
+    this.renameRefreshing = false;
+    if (this.pendingTitleRefresh !== pending) return this.refreshTitle();
+    if (project && project.titleRevision >= pending.titleRevision) {
+      this.pendingTitleRefresh = undefined;
+      this.showProjectTitle(project, { renameRefreshFailed: false });
+      return;
+    }
+    this.update({
+      renameRefreshFailed: true,
+      renameRefreshFailures: this.state.renameRefreshFailures + 1,
+    });
+  };
   beginCreation = (): number => {
     this.restoreEpoch = undefined;
     this.update({ openingFailed: null });
-    return ++this.selectionEpoch;
+    return this.advanceSelection();
   };
   adopt(scope: ResearchScope, expectedRevision = this.selectionEpoch): boolean {
     if (this.disposed) return false;
@@ -86,9 +352,10 @@ export class ProjectController {
       return false;
     }
     const refresh = this.hasListed;
-    ++this.selectionEpoch;
+    this.advanceSelection();
     this.restoreEpoch = undefined;
     ++this.listEpoch;
+    this.renameProject = undefined;
     this.remember(scope);
     this.projectExists = true;
     this.update({ hasProjects: true, openingFailed: null, loading: refresh, loadingMore: false });
@@ -147,9 +414,10 @@ export class ProjectController {
       } while (next && items.length < 40);
       if (!more && items.length === 0 && this.projectExists)
         throw new Error("Project list changed during the read.");
-      for (const project of items) this.knownProjects.set(project.id, project);
+      for (const project of items) this.cacheProject(project);
+      const confirmedItems = items.map((row) => this.knownProjects.get(row.id) ?? row);
       this.update({
-        items: more ? [...this.state.items, ...items] : items,
+        items: more ? [...this.state.items, ...confirmedItems] : confirmedItems,
         next,
         hasProjects: this.projectExists || more || items.length > 0,
         loading: false,
@@ -173,7 +441,7 @@ export class ProjectController {
   };
   open = async (projectId: string): Promise<void> => {
     if (this.disposed) return;
-    const epoch = ++this.selectionEpoch;
+    const epoch = this.advanceSelection();
     this.restoreEpoch = undefined;
     this.update({ openingFailed: null });
     try {
@@ -186,6 +454,8 @@ export class ProjectController {
         conversationId = page.value.items[0].id;
       }
       if (this.isDisposed() || epoch !== this.selectionEpoch) return;
+      this.advanceSelection();
+      this.renameProject = undefined;
       this.remember({ projectId, conversationId });
       this.select({ projectId, conversationId });
       void this.recordOpening(projectId);
