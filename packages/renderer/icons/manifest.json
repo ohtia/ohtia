@@ -168,6 +168,12 @@
       "sha256": "bc4edbaaea7f39131cfcd05dda9f34725c7c3b61eea0f2cd8c4ef2912df6db65"
     },
     {
+      "name": "download",
+      "file": "download.svg",
+      "archive_member": "package/icons/download.svg",
+      "sha256": "43cce5657df4a6534a522a4c9feb8b8374bc36ad741a6918b74d4925373031fb"
+    },
+    {
       "name": "external-link",
       "file": "external-link.svg",
       "archive_member": "package/icons/external-link.svg",

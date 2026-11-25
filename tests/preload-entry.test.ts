@@ -906,6 +906,21 @@ it("keeps named command bridge inputs/results bounded and strips native event au
     "open_notice_link",
     "React",
   );
+  expect(await h.bridge.commands.openUpdateRoute()).toBe(true);
+  expect(h.ipcRenderer.invoke).toHaveBeenLastCalledWith(
+    desktopChannels.commands,
+    "open_update_route",
+    undefined,
+  );
+  h.ipcRenderer.invoke.mockResolvedValueOnce("software_centre" as never);
+  expect(await h.bridge.commands.updateRoute()).toBe("software_centre");
+  expect(h.ipcRenderer.invoke).toHaveBeenLastCalledWith(
+    desktopChannels.commands,
+    "update_route",
+    undefined,
+  );
+  h.ipcRenderer.invoke.mockResolvedValueOnce("https://example.invalid" as never);
+  await expect(h.bridge.commands.updateRoute()).rejects.toThrow(/update route/);
   h.ipcRenderer.invoke.mockResolvedValueOnce({} as never);
   await expect(h.bridge.commands.about()).rejects.toThrow(/About information/);
   const about = {

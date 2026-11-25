@@ -110,6 +110,8 @@ export function WorkspaceSpecimen({
       copyMessage: async () => false,
       openLink: async () => false,
       openNoticeLink: async () => false,
+      updateRoute: async () => "system" as const,
+      openUpdateRoute: async () => false,
       windowAction: async () => ({ status: "unavailable", reason: "handler_missing" }),
       perform: async () => false,
     };

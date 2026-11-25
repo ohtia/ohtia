@@ -176,6 +176,7 @@ export const iconMappings = {
   "Accessibility and appearance Settings page": "sun",
   "AI services Settings page": "plug",
   "Agents Settings page": "users",
+  "Updates Settings page, newer version": "download",
   "Back to the Settings page list": "chevron-left",
   "Supported by examined content": "circle-dot",
   "Partially supported": "contrast",

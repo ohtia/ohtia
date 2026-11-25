@@ -69,6 +69,7 @@ describe("window-controls safe area", () => {
       "shortcuts.open",
       "help.open",
       "about.open",
+      "update.check",
     ]);
     expect(dialogSafeAreaViewports).toContainEqual({
       width: 320,

@@ -4,6 +4,8 @@ title: Ohtia design system
 description: Visual identity, tokens, symbol and character, typography, composition, accessibility, localization, component patterns and workspace icon mappings.
 generated:
   by: claude-code/claude-opus-5-5
+verified:
+  by: human:AdrianMastronardi
 tags:
   - design
   - accessibility
@@ -603,6 +605,7 @@ Fixed mappings:
 | Accessibility and appearance Settings page   | `sun`                  |
 | AI services Settings page                    | `plug`                 |
 | Agents Settings page                         | `users`                |
+| Updates Settings page, newer version         | `download`             |
 | Back to the Settings page list               | `chevron-left`         |
 
 A state label never uses an icon that this table or the domain components map to another meaning.

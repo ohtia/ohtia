@@ -109,6 +109,31 @@ function useNarrow(active: boolean): boolean | undefined {
   }, [active]);
   return narrow;
 }
+/** A page added through `SettingsSection` reports its notices to the page list like the others. */
+function SectionPage({
+  open,
+  hidden,
+  onAttention,
+  children,
+}: {
+  readonly open: boolean;
+  readonly hidden: boolean;
+  readonly onAttention: (notice: LucideName | undefined) => void;
+  readonly children: ReactNode;
+}) {
+  const element = useRef<HTMLDivElement>(null);
+  const notice = usePageAttention(element, open);
+  const report = useRef(onAttention);
+  report.current = onAttention;
+  useEffect(() => {
+    report.current(notice);
+  }, [notice]);
+  return (
+    <div className="settings-page" ref={element} hidden={hidden}>
+      {children}
+    </div>
+  );
+}
 const attentionOrder: readonly LucideName[] = ["octagon-alert", "triangle-alert", "git-compare"];
 /** The most severe unresolved preference notice that a page currently shows. */
 function usePageAttention(
@@ -343,10 +368,16 @@ export function SettingsDialog({
   const appearanceRef = useRef<HTMLDivElement>(null);
   const servicesRef = useRef<HTMLDivElement>(null);
   const agentsRef = useRef<HTMLDivElement>(null);
+  const [sectionAttention, setSectionAttention] = useState<
+    Readonly<Record<string, LucideName | undefined>>
+  >({});
   const attention: Record<string, LucideName | undefined> = {
     appearance: usePageAttention(appearanceRef, open),
     services: usePageAttention(servicesRef, open),
     agents: usePageAttention(agentsRef, open && agentsAvailable),
+    ...Object.fromEntries(
+      sections.map((section) => [`section-${section.id}`, sectionAttention[section.id]]),
+    ),
   };
   const pages: readonly { id: string; title: string; icon: LucideName }[] = [
     { id: "appearance", title: text("settings.section"), icon: "sun" },
@@ -922,14 +953,21 @@ export function SettingsDialog({
             </div>
           )}
           {sections.map((section) => (
-            <div
+            <SectionPage
               key={section.id}
-              className="settings-page"
+              open={open}
               hidden={page !== `section-${section.id}`}
+              onAttention={(notice) => {
+                setSectionAttention((previous) =>
+                  previous[section.id] === notice
+                    ? previous
+                    : { ...previous, [section.id]: notice },
+                );
+              }}
             >
               {pageTitle(`section-${section.id}`, section.title)}
               {section.content}
-            </div>
+            </SectionPage>
           ))}
         </div>
       </div>

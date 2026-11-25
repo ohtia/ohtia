@@ -38,6 +38,7 @@ export const commandIds = [
   "link.documentation",
   "link.report",
   "version.copy",
+  "update.check",
   "about.open",
 ] as const;
 export type CommandId = (typeof commandIds)[number];
@@ -295,8 +296,18 @@ export const projectLinks = {
   repository: "https://github.com/ohtia/ohtia",
   documentation: "https://github.com/ohtia/ohtia/blob/main/docs/index.md",
   report: "https://github.com/ohtia/ohtia/issues/new/choose",
+  /** SPEC-001-040: where Windows and macOS users get a newer version. */
+  download: "https://www.ohtia.com/#download",
 } as const;
 export type ProjectLink = keyof typeof projectLinks;
+/**
+ * SPEC-001-040: how this system updates Ohtia. Linux opens its software centre when one is known,
+ * otherwise only explains that the system updates Ohtia; Windows and macOS open the download page.
+ */
+export const updateRoutes = ["software_centre", "system", "download_page"] as const;
+export type UpdateRoute = (typeof updateRoutes)[number];
+export const isUpdateRoute = (value: unknown): value is UpdateRoute =>
+  updateRoutes.some((route) => route === value);
 export type NativeCommand =
   | "window.close"
   | "application.quit"
@@ -393,6 +404,9 @@ export interface CommandBridge {
   copyVersionInformation(locale: InterfaceLocale): Promise<boolean>;
   openLink(link: ProjectLink): Promise<boolean>;
   openNoticeLink(component: string): Promise<boolean>;
+  /** SPEC-001-040: main resolves the route from the platform; the renderer never names a target. */
+  updateRoute(): Promise<UpdateRoute>;
+  openUpdateRoute(): Promise<boolean>;
   openExternalLink(url: string): Promise<boolean>;
   copyMessage(messageId: string): Promise<boolean>;
 }

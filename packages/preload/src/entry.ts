@@ -13,6 +13,7 @@ import {
   isWindowCommandResult,
   isCommandSnapshot,
   isAboutInformation,
+  isUpdateRoute,
   isNativeCommand,
   isInterfaceLocale,
   projectLinks,
@@ -340,6 +341,16 @@ const bridge: DesktopBridge = {
       if (!isAboutInformation(value)) throw new Error("Invalid About information.");
       return value;
     },
+    async updateRoute() {
+      const value: unknown = await ipcRenderer.invoke(
+        desktopChannels.commands,
+        "update_route",
+        undefined,
+      );
+      if (!isUpdateRoute(value)) throw new Error("Invalid update route.");
+      return value;
+    },
+    openUpdateRoute: () => commandBoolean("open_update_route", undefined),
     copyVersionInformation: (locale) =>
       isInterfaceLocale(locale) ? commandBoolean("copy_version", locale) : Promise.resolve(false),
     perform: (command) =>

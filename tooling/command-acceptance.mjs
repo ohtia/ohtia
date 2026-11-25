@@ -142,6 +142,7 @@ async function verifyNativeInventory(application, locale, platform) {
       ? [
           group("application", [
             "about.open",
+            "update.check",
             "settings.open",
             "role:services",
             "role:hide",
@@ -186,7 +187,7 @@ async function verifyNativeInventory(application, locale, platform) {
       "link.documentation",
       "link.report",
       "version.copy",
-      ...(!mac ? ["about.open"] : []),
+      ...(!mac ? ["update.check", "about.open"] : []),
     ]),
   ]);
   expect(observed.rows.map((row) => row.id).sort()).toEqual(
