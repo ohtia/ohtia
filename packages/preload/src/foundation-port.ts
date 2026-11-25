@@ -716,6 +716,7 @@ export function createFoundationPort(
     },
     readLayoutReceipt: (operationId) => call("layout.receipt", { targetOperationId: operationId }),
     readStatus: () => call("status.read", {}),
+    readManagedStoreLocation: () => call("managedStore.readLocation", {}),
     readLocale: () => call("locale.read", {}),
     replaceLocale: (change, expectedServiceGeneration) => {
       const decoded = decodeLocaleChange(change);

@@ -478,6 +478,8 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
         update={bridge.update}
         locale={bootstrap.locale}
         available={bootstrap.state === "storage_ready"}
+        storageState={bootstrap.state}
+        serviceGeneration={bootstrap.serviceGeneration}
         onLocale={applyLocale.current}
         returnFocusRef={returnFocus}
       >

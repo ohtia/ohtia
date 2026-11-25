@@ -1,5 +1,7 @@
 // Non-shipping native acceptance; each run retains complete failed and passing observations.
 import fs from "node:fs";
+import os from "node:os";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
@@ -213,10 +215,177 @@ async function component(mode, directory, expectedInterruption = false) {
     env: launch.env,
   });
 }
+async function verifyManagedStoreLocation(page, locale) {
+  const directory = launch.profile.research_root;
+  const locator = path.join(
+    launch.profile.configuration_root,
+    "Ohtia",
+    "settings",
+    "data-location.json",
+  );
+  const original = fs.readFileSync(locator);
+  const dialog = page.getByRole("dialog", { name: message(locale, "settings.title"), exact: true });
+  const title = message(locale, "location");
+  const heading = dialog.getByRole("heading", { name: title, exact: true });
+  const status = dialog.locator(".settings-page:not([hidden]) [role=status]");
+  const check = dialog.getByRole("button", {
+    name: message(locale, "settings.storage.check"),
+    exact: true,
+  });
+  const shownPath = dialog.locator(".managed-store-directory");
+  const read = () => page.evaluate(() => window.ohtia.foundation.readManagedStoreLocation().result);
+  const available = { ok: true, value: { state: "available", directory } };
+  const refused = (reason) => ({ ok: true, value: { state: "unavailable", reason } });
+  const assertReason = async (reason, text = reason) => {
+    expect(await read()).toEqual(refused(reason));
+    await page.keyboard.press("Enter");
+    await expect(status).toHaveText(message(locale, text));
+    await expect(shownPath).toHaveCount(0);
+    await expect(check).toBeFocused();
+  };
+
+  await openWorkspaceSettings(page);
+  const locationPage = dialog.getByRole("button", { name: title, exact: true });
+  await locationPage.focus();
+  await page.keyboard.press("Enter");
+  await expect(locationPage).toBeFocused();
+  await expect(heading).toBeVisible();
+  await expect(shownPath).toHaveText(directory);
+  await expect(dialog.getByText(message(locale, "settings.storage.sensitivity"))).toBeVisible();
+  await page.keyboard.press("Tab");
+  await expect(
+    dialog.getByRole("button", { name: message(locale, "settings.updates"), exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(check).toBeFocused();
+  expect(await read()).toEqual(available);
+
+  const size = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+  await withCommandCleanup(
+    async () => {
+      await resizeNativeViewport(page, { width: 320, height: 600 });
+      for (const [colorScheme, forcedColors] of [
+        ["light", "none"],
+        ["dark", "none"],
+        ["light", "active"],
+      ]) {
+        await page.emulateMedia({ colorScheme, forcedColors });
+        await expect(shownPath).toBeVisible();
+        expect(
+          await dialog
+            .locator(".settings-content")
+            .evaluate((el) => el.scrollWidth <= el.clientWidth),
+        ).toBe(true);
+        await expect(check).toBeFocused();
+      }
+    },
+    async () => {
+      await page.emulateMedia({ colorScheme: null, forcedColors: null });
+      await resizeNativeViewport(page, size);
+    },
+  );
+
+  await withCommandCleanup(
+    async () => {
+      fs.unlinkSync(locator);
+      await assertReason("missing", "settings.storage.locatorMissing");
+      expect(fs.existsSync(locator)).toBe(false);
+
+      const records = [
+        ["{", "locator_invalid"],
+        [
+          JSON.stringify({
+            version: 1,
+            data_directory: `${directory}${path.sep}..${path.sep}${path.basename(directory)}`,
+          }),
+          "path_rejected",
+        ],
+        [
+          JSON.stringify({ version: 1, data_directory: launch.profile.stable_roots.store.root }),
+          "path_rejected",
+        ],
+      ];
+      for (const [record, reason] of records) {
+        fs.writeFileSync(locator, record, { mode: 0o600 });
+        await assertReason(reason);
+        expect(fs.readFileSync(locator, "utf8")).toBe(record);
+      }
+      fs.writeFileSync(locator, original);
+      const user = os.userInfo().username;
+      const icacls =
+        process.platform === "win32"
+          ? path.join(launch.env.SystemRoot, "System32", "icacls.exe")
+          : undefined;
+      for (const [target, reason, text, probe] of [
+        [locator, "locator_unreadable", "locator_unreadable", () => fs.readFileSync(locator)],
+        [
+          directory,
+          "location_display_unavailable",
+          "settings.storage.unavailable",
+          () => fs.opendirSync(directory).closeSync(),
+        ],
+      ]) {
+        const mode = fs.statSync(target).mode & 0o777;
+        await withCommandCleanup(
+          async () => {
+            if (icacls)
+              execFileSync(icacls, [target, "/deny", `${user}:(RD)`], { stdio: "ignore" });
+            // Deny reading while preserving any existing search and write permissions.
+            else fs.chmodSync(target, mode & ~0o444);
+            expect(probe).toThrow();
+            await assertReason(reason, text);
+          },
+          () => {
+            if (icacls) execFileSync(icacls, [target, "/remove:d", user], { stdio: "ignore" });
+            else fs.chmodSync(target, mode);
+          },
+        );
+      }
+    },
+    () => fs.writeFileSync(locator, original, { mode: 0o600 }),
+  );
+  await page.keyboard.press("Enter");
+  await expect(shownPath).toHaveText(directory);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  expect(fs.readFileSync(locator)).toEqual(original);
+  verifyStableSentinels(launch.profile);
+}
+
 try {
   let page = await start();
+  const beforeAdmission = await page.evaluate(
+    () => window.ohtia.foundation.readManagedStoreLocation().result,
+  );
+  expect(beforeAdmission.ok).toBe(true);
+  expect(beforeAdmission.value.state).toBe("unavailable");
+  expect(beforeAdmission.value).not.toHaveProperty("directory");
   const locale = await open(page);
   const text = (key) => message(locale, key);
+  enterPhase("inspect-managed-store-location", ".settings-dialog[open]");
+  const unqualified = path.join(output, "unqualified");
+  fs.mkdirSync(unqualified);
+  const unqualifiedFile = path.join(unqualified, "runtime-profile.json");
+  fs.writeFileSync(
+    unqualifiedFile,
+    JSON.stringify({
+      ...launch.profile,
+      manual_checks: { ...launch.profile.manual_checks, local_owned_unsynchronized_volumes: false },
+    }),
+    { flag: "wx", mode: 0o600 },
+  );
+  expect(() => admittedLaunch(unqualifiedFile, prepared)).toThrow(/Isolation admission refused/);
+  await verifyManagedStoreLocation(page, locale);
+  record("inspect-managed-store-location", {
+    unqualifiedProfileRejectedBeforeLaunch: true,
+    unavailableBeforeAdmission: true,
+    matchesAdmittedNativeDirectory: true,
+    refusedLocators: ["missing", "malformed", "noncanonical", "alternate", "read-denied"],
+    unreadableResearchDirectoryRefused: true,
+    stableSentinelsUnchanged: true,
+    keyboardAndNarrowReflow: true,
+    media: ["light", "dark", "forced-colors"],
+  });
   enterPhase("subscribe-appearance");
   await page.evaluate(async () => {
     window.__storageAppearanceEvents = [];

@@ -10,6 +10,7 @@ import {
   defaultSourceQuoteLength,
   message,
   type FoundationPort,
+  type BootstrapState,
   type CommandBridge,
   type InterfaceLocale,
   type LocaleSnapshot,
@@ -27,6 +28,7 @@ import { type SettingFeature, SettingsController } from "./settings-controller.j
 import { LucideGlyph as Icon } from "./iconography.js";
 import { RecoveryFocusBoundary, SettingsFeedback } from "./settings-notices.js";
 import { SettingsDialog } from "./settings-dialog.js";
+import { ManagedStoreSetting } from "./managed-store-setting.js";
 import { LanguageController } from "./language-controller.js";
 import { LayoutPreferences } from "./layout-preferences.js";
 import { WorkspaceController, type WorkspaceState } from "./workspace-controller.js";
@@ -53,6 +55,8 @@ export function SettingsSurfaces({
   bridge,
   locale,
   available,
+  storageState,
+  serviceGeneration,
   onLocale,
   children,
   returnFocusRef,
@@ -77,6 +81,8 @@ export function SettingsSurfaces({
   readonly bridge: CommandBridge;
   readonly locale: InterfaceLocale;
   readonly available: boolean;
+  readonly storageState: BootstrapState;
+  readonly serviceGeneration: string | undefined;
   readonly onLocale: (snapshot: LocaleSnapshot) => void;
 }) {
   const limits = useMemo(() => new LimitsController(port, () => crypto.randomUUID()), [port]);
@@ -439,9 +445,23 @@ export function SettingsSurfaces({
                 language={language}
                 controller={controller}
                 limits={limits}
-                {...(updateCheck
-                  ? {
-                      sections: [
+                sections={[
+                  {
+                    id: "storage",
+                    title: message(locale, "location"),
+                    icon: "folder-archive",
+                    content: (active: boolean) =>
+                      active && (
+                        <ManagedStoreSetting
+                          port={port}
+                          locale={locale}
+                          storageState={storageState}
+                          serviceGeneration={serviceGeneration}
+                        />
+                      ),
+                  },
+                  ...(updateCheck
+                    ? [
                         {
                           id: "updates",
                           title: message(locale, "settings.updates"),
@@ -454,9 +474,9 @@ export function SettingsSurfaces({
                             />
                           ),
                         },
-                      ],
-                    }
-                  : {})}
+                      ]
+                    : []),
+                ]}
                 workspace={workspace}
                 workspaceState={layoutState ?? workspace.state}
                 platform={platform}

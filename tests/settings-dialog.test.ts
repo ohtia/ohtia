@@ -782,6 +782,8 @@ describe("Settings command composition", () => {
           update: { subscribeState: () => () => {} },
           locale: "en-US",
           available: true,
+          storageState: "storage_ready",
+          serviceGeneration: "service-1",
           onLocale: vi.fn(),
         }),
       ),
@@ -1233,6 +1235,8 @@ describe("Settings command composition", () => {
           bridge,
           locale: "en-US",
           available: true,
+          storageState: "storage_ready",
+          serviceGeneration: "service-1",
           onLocale: vi.fn(),
           children: (_commands, _binding, _openConnections, openAgents) =>
             h("button", { id: "open-agents", onClick: openAgents }, "Open Agents settings"),

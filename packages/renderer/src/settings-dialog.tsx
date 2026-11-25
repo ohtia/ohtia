@@ -67,7 +67,7 @@ export interface SettingsSection {
   readonly id: string;
   readonly title: string;
   readonly icon: LucideName;
-  readonly content: ReactNode;
+  readonly content: ReactNode | ((active: boolean) => ReactNode);
 }
 type SettingsTarget = SettingFeature | "layout" | "connections" | "agents" | `agents:${ReplyAgent}`;
 /** The page that owns each focus target; presentation features and layout share one page. */
@@ -392,8 +392,7 @@ export function SettingsDialog({
   const pageHeading = (pageId: string) => `${id}-${pageId}-page`;
   const choosePage = (pageId: string) => {
     setPage(pageId);
-    if (!narrow) return;
-    focusAfterView.current = pageHeading(pageId);
+    if (narrow) focusAfterView.current = pageHeading(pageId);
     setView("page");
   };
   const backToList = () => {
@@ -966,7 +965,9 @@ export function SettingsDialog({
               }}
             >
               {pageTitle(`section-${section.id}`, section.title)}
-              {section.content}
+              {typeof section.content === "function"
+                ? section.content(open && showPage && page === `section-${section.id}`)
+                : section.content}
             </SectionPage>
           ))}
         </div>

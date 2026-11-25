@@ -85,6 +85,8 @@ import {
 import {
   canonicalProspective,
   readLocator,
+  readManagedStoreLocation,
+  managedStoreRootIdentity,
   validateDataDirectory,
   LocatorPublisher,
   posixLocatorIO,
@@ -349,6 +351,7 @@ let admissionFallback: BootstrapState = "storage_failed";
 let localeFallback = false;
 let generation = randomUUID();
 let bootstrapState: BootstrapState = "missing";
+let admittedStoreRoot: string | undefined;
 let quitting = false;
 const isQuitting = () => quitting;
 let cleanExit = false;
@@ -716,6 +719,10 @@ function startService(mode?: "open" | "retry" | "restore" | "blocked"): void {
     }
   }
   const storageMode = mode === "open" && locator.state === "missing" ? "create" : mode;
+  admittedStoreRoot = undefined;
+  const admitsStorage =
+    mode !== "blocked" && (locator.state === "missing" || locator.state === "located");
+  const openingRoot = admitsStorage ? managedStoreRootIdentity(context.research_root) : undefined;
   generation = randomUUID();
   windowTheme.reset();
   updateWindowThemes();
@@ -875,6 +882,7 @@ function startService(mode?: "open" | "retry" | "restore" | "blocked"): void {
               state.workspace = true;
               state.boundsSaved = false;
             }
+          admittedStoreRoot = openingRoot;
           bootstrapState = "storage_ready";
           developmentCommand?.flush();
           updateWindowThemes();
@@ -885,7 +893,7 @@ function startService(mode?: "open" | "retry" | "restore" | "blocked"): void {
         }
       });
     },
-    mode !== "blocked" && ["missing", "located"].includes(locator.state),
+    admitsStorage,
     (event, correlation) => {
       void diagnostics?.append(event, correlation ?? serviceGeneration);
     },
@@ -1248,6 +1256,19 @@ async function start(): Promise<void> {
         payload: { ok: true, value: { announce: !layoutFailureAnnounced } },
       });
       layoutFailureAnnounced = true;
+      accepted.value.release();
+      if (reply.ok) deliver(reply.value);
+      return;
+    }
+    if (accepted.value.request.operation === "managedStore.readLocation") {
+      const reply = encodeEnvelope({
+        ...accepted.value.request,
+        kind: "result",
+        payload: {
+          ok: true,
+          value: readManagedStoreLocation(settings, context, bootstrapState, admittedStoreRoot),
+        },
+      });
       accepted.value.release();
       if (reply.ok) deliver(reply.value);
       return;

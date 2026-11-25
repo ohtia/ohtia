@@ -36,6 +36,10 @@ import {
 } from "../packages/main/dist/index.js";
 import { createStatusService, initializeStorage } from "../packages/utility/dist/index.js";
 import { request } from "./fixtures/port-corpus.js";
+import {
+  managedStoreRootIdentity,
+  readManagedStoreLocation,
+} from "../packages/main/src/locator.js";
 
 const temporary: string[] = [];
 afterEach(() => {
@@ -285,6 +289,82 @@ describe("fixed locator and pending-location safety", () => {
     );
     for (const directory of [profile.home, settings, path.dirname(settings), alias])
       expect(() => validateDataDirectory(directory, settings, profile)).toThrow();
+  });
+  it("projects only the admitted fixed directory and preserves refused locators", () => {
+    const { profile, settings } = fixture();
+    const directory = profile.research_root;
+    const locator = path.join(settings, "data-location.json");
+    fs.mkdirSync(settings, { recursive: true });
+    const admitted = managedStoreRootIdentity(directory);
+    expect(admitted).toBeDefined();
+    const inspect = () => readManagedStoreLocation(settings, profile, "storage_ready", admitted);
+    const save = (value: string) => fs.writeFileSync(locator, value);
+    const valid = JSON.stringify({ version: 1, data_directory: directory });
+    save(valid);
+    expect(readManagedStoreLocation(settings, profile, "located", admitted)).toEqual({
+      state: "unavailable",
+      reason: "located",
+    });
+    expect(readManagedStoreLocation(settings, profile, "publication_uncertain", admitted)).toEqual({
+      state: "unavailable",
+      reason: "publication_uncertain",
+    });
+    expect(readManagedStoreLocation(settings, profile, "missing", undefined)).toEqual({
+      state: "unavailable",
+      reason: "pending_create",
+    });
+    expect(readManagedStoreLocation(settings, profile, "storage_ready", undefined)).toEqual({
+      state: "unavailable",
+      reason: "path_rejected",
+    });
+    expect(managedStoreRootIdentity(locator)).toBeUndefined();
+    expect(inspect()).toEqual({ state: "available", directory });
+
+    const denied =
+      process.platform === "win32" ? vi.spyOn(fs, "opendirSync") : vi.spyOn(fs, "accessSync");
+    denied.mockImplementationOnce(() => {
+      throw Object.assign(new Error("Synthetic directory access denial"), { code: "EACCES" });
+    });
+    try {
+      expect(inspect()).toEqual({ state: "unavailable", reason: "location_display_unavailable" });
+      expect(denied).toHaveBeenCalledWith(
+        directory,
+        ...(process.platform === "win32" ? [] : [fs.constants.R_OK | fs.constants.X_OK]),
+      );
+    } finally {
+      denied.mockRestore();
+    }
+
+    const canonicalAlias = `${directory}${path.sep}..${path.sep}${path.basename(directory)}`;
+    for (const [record, reason] of [
+      ["{", "locator_invalid"],
+      [JSON.stringify({ version: 1, data_directory: canonicalAlias }), "path_rejected"],
+      [
+        JSON.stringify({ version: 1, data_directory: profile.stable_roots.store.root }),
+        "path_rejected",
+      ],
+    ] as const) {
+      save(record);
+      expect(inspect()).toEqual({ state: "unavailable", reason });
+      expect(fs.readFileSync(locator, "utf8")).toBe(record);
+    }
+    fs.unlinkSync(locator);
+    expect(inspect()).toEqual({ state: "unavailable", reason: "missing" });
+    expect(fs.existsSync(locator)).toBe(false);
+    const sentinel = path.join(profile.stable_roots.store.root, "sentinel.txt");
+    fs.writeFileSync(sentinel, "synthetic stable sentinel");
+    fs.linkSync(sentinel, locator);
+    expect(inspect()).toEqual({ state: "unavailable", reason: "locator_unreadable" });
+    fs.unlinkSync(locator);
+
+    save(valid);
+    fs.renameSync(directory, `${directory}-original`);
+    expect(managedStoreRootIdentity(directory)).toBeUndefined();
+    expect(inspect()).toEqual({ state: "unavailable", reason: "path_rejected" });
+    fs.mkdirSync(directory);
+    expect(inspect()).toEqual({ state: "unavailable", reason: "path_rejected" });
+    expect(fs.readdirSync(directory)).toEqual([]);
+    expect(fs.readFileSync(locator, "utf8")).toBe(valid);
   });
   it("publishes only after successful store validation and preserves the previous record on pre-replace failure", async () => {
     const { profile, settings } = fixture();
