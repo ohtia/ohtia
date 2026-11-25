@@ -10,6 +10,15 @@ from pathlib import Path
 home = Path("/home/ohtia")
 env = {**os.environ, **json.loads((home / "environment.json").read_text())}
 source = home / "source"
+# The workspace task the host selected and the directory it writes its reports to.
+TASKS = {
+    "quality:build": "artifacts/quality-result",
+    "quality:repository": "artifacts/repository-qualification",
+}
+task = env.get("OHTIA_GUEST_TASK", "quality:build")
+if task not in TASKS:
+    raise SystemExit("The guest task must be a declared workspace task.")
+reports = TASKS[task]
 # The cell identifier ends with its desktop: <target>-<profile>-<desktop>.
 desktop = env["OHTIA_QUALITY_VM"].rsplit("-", 1)[-1]
 if desktop not in {"gnome", "kde"}:
@@ -17,7 +26,12 @@ if desktop not in {"gnome", "kde"}:
 subprocess.run(
     ["git", "clone", "--no-checkout", str(home / "source.bundle"), str(source)], check=True
 )
-subprocess.run(["git", "checkout", "--detach", env["GITHUB_SHA"]], cwd=source, check=True)
+# Repository qualification names the release commit; the quality build checks out the event's.
+subprocess.run(
+    ["git", "checkout", "--detach", env.get("OHTIA_SOURCE_COMMIT", env["GITHUB_SHA"])],
+    cwd=source,
+    check=True,
+)
 env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
 # This account belongs only to this fresh guest. Use its standard user bus so
 # D-Bus and systemd activation address the same GNOME session and services.
@@ -168,7 +182,7 @@ def retain_session_diagnostics(output: Path) -> None:
 subprocess.run(["python3", "scripts/workspace.py", "setup"], cwd=source, env=env, check=True)
 if desktop == "kde":
     # Plasma runs on its own private bus through the shared launcher, never the user's GNOME path.
-    output = source / "artifacts" / "quality-result"
+    output = source / reports
     runtime = Path(tempfile.mkdtemp(prefix="kde-", dir=home))
     plasma_log = home / "plasma.log"
     plasma_env = {key: value for key, value in env.items() if key != "DBUS_SESSION_BUS_ADDRESS"}
@@ -189,9 +203,9 @@ if desktop == "kde":
                 "python3",
                 "scripts/workspace.py",
                 "run",
-                "quality:build",
+                task,
                 env["OHTIA_QUALITY_VM"],
-                "artifacts/quality-result",
+                reports,
             ],
             cwd=source,
             env=plasma_env,
@@ -352,9 +366,9 @@ with (home / "gnome.log").open("x+b") as log:
                 "python3",
                 "scripts/workspace.py",
                 "run",
-                "quality:build",
+                task,
                 env["OHTIA_QUALITY_VM"],
-                "artifacts/quality-result",
+                reports,
             ],
             cwd=source,
             env=env,
@@ -394,7 +408,7 @@ with (home / "gnome.log").open("x+b") as log:
                     raise
                 print(f"Guest compositor cleanup failed: {type(error).__name__}", file=sys.stderr)
             finally:
-                output = source / "artifacts" / "quality-result"
+                output = source / reports
                 try:
                     log.flush()
                     diagnostic = os.pread(log.fileno(), 2 * 1024 * 1024, 0)

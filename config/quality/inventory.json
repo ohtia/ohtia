@@ -804,6 +804,11 @@
       "reason": "Hosted Linux display-session dispatch uses the POSIX account identity; Windows cells use the workspace launcher."
     },
     {
+      "id": "test_quality_vm.VirtualMachineTests.test_guest_runs_repository_qualification_on_the_release_commit",
+      "platforms": ["win32"],
+      "reason": "Linux guest compositor, Unix-domain socket and user-service ownership fixture; Windows is not a Linux VM host."
+    },
+    {
       "id": "test_quality_vm.VirtualMachineTests.test_kde_guest_runs_the_quality_build_in_the_shared_plasma_launcher",
       "platforms": ["win32"],
       "reason": "Linux guest compositor, Unix-domain socket and user-service ownership fixture; Windows is not a Linux VM host."

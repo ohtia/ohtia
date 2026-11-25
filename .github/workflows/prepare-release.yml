@@ -543,20 +543,47 @@ jobs:
     name: Qualify repository delivery (${{ matrix.cell }})
     needs: [check, release, repository]
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 120
+    timeout-minutes: 150
     permissions:
       contents: read
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
         include:
           - cell: linux-x64-ubuntu-26-04-gnome
             runner: ubuntu-26.04
+            launcher: display-session
+          - cell: linux-x64-ubuntu-26-04-kde
+            runner: ubuntu-26.04
+            launcher: display-session
+          - cell: linux-x64-debian-13-gnome
+            runner: ubuntu-26.04
+            launcher: kvm
+          - cell: linux-x64-debian-13-kde
+            runner: ubuntu-26.04
+            launcher: kvm
+          - cell: linux-x64-fedora-44-gnome
+            runner: ubuntu-26.04
+            launcher: kvm
+          - cell: linux-x64-fedora-44-kde
+            runner: ubuntu-26.04
+            launcher: kvm
+          - cell: linux-x64-fedora-45-gnome
+            runner: ubuntu-26.04
+            launcher: kvm
+          - cell: linux-x64-fedora-45-kde
+            runner: ubuntu-26.04
+            launcher: kvm
     steps:
-      - name: Check out the selected source
+      - name: Check out the selected source with full Git history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.check.outputs.commit }}
+          # A KVM guest receives a bundle of this checkout, which needs complete history.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Python
@@ -568,22 +595,37 @@ jobs:
         timeout-minutes: 15
         env:
           OHTIA_QUALITY_CELL: ${{ matrix.cell }}
+          OHTIA_QUALITY_LAUNCHER: ${{ matrix.launcher }}
         run: |
           sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,RUNNER_TEMP \
-            python3 scripts/ci_linux_dependencies.py "$OHTIA_QUALITY_CELL" display-session
+            python3 scripts/ci_linux_dependencies.py "$OHTIA_QUALITY_CELL" "$OHTIA_QUALITY_LAUNCHER"
+
+      - name: Prepare native VM acceleration
+        if: matrix.launcher == 'kvm'
+        run: |
+          test -c /dev/kvm
+          sudo setfacl -m "u:$(id -u):rw" /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
 
       - name: Set up the frozen workspace
+        if: matrix.launcher != 'kvm'
         run: python3 scripts/workspace.py setup
 
-      - name: Install version A and update it to the prepared version through the test repository
+      - name: Install the packages and update to the prepared version through the test repository
         env:
           OHTIA_QUALITY_CELL: ${{ matrix.cell }}
+          OHTIA_QUALITY_LAUNCHER: ${{ matrix.launcher }}
           OHTIA_RELEASE_COMMIT: ${{ needs.check.outputs.commit }}
           OHTIA_RELEASE_VERSION: ${{ needs.check.outputs.version }}
           OHTIA_RELEASE_DIGESTS: ${{ needs.release.outputs.digests }}
         run: |
-          dbus-run-session -- python3 scripts/quality_display.py --task quality:repository \
-            "$OHTIA_QUALITY_CELL" artifacts/repository-qualification
+          case "$OHTIA_QUALITY_LAUNCHER" in
+            kvm) python3 scripts/quality_vm.py --task quality:repository \
+              "$OHTIA_QUALITY_CELL" artifacts/repository-qualification ;;
+            display-session) dbus-run-session -- python3 scripts/quality_display.py \
+              --task quality:repository "$OHTIA_QUALITY_CELL" artifacts/repository-qualification ;;
+            *) echo "Unknown native cell launcher." >&2; exit 1 ;;
+          esac
 
       - name: Retain the qualification report
         if: always()
