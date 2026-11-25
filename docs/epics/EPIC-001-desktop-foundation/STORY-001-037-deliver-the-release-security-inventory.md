@@ -3,7 +3,7 @@ type: Story
 title: "STORY-001-037 — Deliver the release security inventory"
 description: "Deliver the security inventory for the release boundary and release output R37 to the remaining EPIC stories."
 generated:
-  by: claude-code/claude-fable-5-2
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 tags: ["story", "comp:docs", "comp:tooling"]
@@ -28,7 +28,7 @@ Record the applicability and evidence of the security controls of the release fl
 
 ## Tasks
 
-- [ ] Start after STORY-001-036 is merged and its output Q36, the twelve-cell qualification record, is on the base branch.
+- [ ] Start after STORY-001-036 is merged and its output Q36, the sixteen-cell qualification record, is on the base branch.
 - [ ] Write the inventory under ADR-0000 and SPEC-001-026 for the protected environment, reserved tags, workflow ref admission, signing job, repositories and update check.
 - [ ] Read back the live environment protection rules and the tag ruleset and attach the readback, distinguishing it from synthetic tests.
 - [ ] State in the report that R37 replaces I13, C15 and F16 for STORY-001-017, STORY-001-019 and STORY-001-020.
@@ -37,7 +37,7 @@ Record the applicability and evidence of the security controls of the release fl
 
 - [ ] Every control in the inventory names its requirement identifier, applicability or exclusion reason, enforcing implementation and positive and negative evidence.
 - [ ] Live readback shows the `main`-only rule and required reviewer on `release-signing` and the protection of `reserved/v*` and `v*` tags.
-- [ ] The report links the qualification record of each of the twelve Linux cells and states that macOS and Windows remain ineligible for distribution.
+- [ ] The report links the qualification record of each of the sixteen Linux cells and states that macOS and Windows remain ineligible for distribution.
 - [ ] STORY-001-022 to STORY-001-036 are integrated and their checks pass on the base branch.
 
 ## Quality checklist
