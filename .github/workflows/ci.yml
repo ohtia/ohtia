@@ -74,6 +74,12 @@ jobs:
       - name: Scan committed history for secrets
         run: python3 scripts/workspace.py run hooks:history
 
+      - name: Install the package repository test tools
+        # The repository tests run createrepo_c and dnf, which the runner image lacks.
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y createrepo-c dnf
+
       - name: Run full test suite and quality checks
         run: python3 scripts/workspace.py run check
 

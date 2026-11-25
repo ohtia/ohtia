@@ -29,7 +29,9 @@
         "jq",
         "rpm",
         "dpkg-dev",
-        "gpgv"
+        "gpgv",
+        "createrepo-c",
+        "dnf"
       ],
       "desktops": {
         "gnome": ["gnome-shell", "gnome-session"],
@@ -74,7 +76,9 @@
         "jq",
         "rpm",
         "dpkg-dev",
-        "gpgv"
+        "gpgv",
+        "createrepo-c",
+        "dnf"
       ],
       "desktops": {
         "gnome": ["gnome-shell", "gnome-session"],
@@ -123,7 +127,8 @@
         "jq",
         "rpm-sign",
         "dpkg-dev",
-        "apt"
+        "apt",
+        "createrepo_c"
       ],
       "desktops": {
         "gnome": ["gnome-shell", "gnome-session"],
@@ -172,7 +177,8 @@
         "jq",
         "rpm-sign",
         "dpkg-dev",
-        "apt"
+        "apt",
+        "createrepo_c"
       ],
       "desktops": {
         "gnome": ["gnome-shell", "gnome-session"],

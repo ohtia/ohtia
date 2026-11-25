@@ -1,0 +1,624 @@
+name: Publish the package repositories
+description: >-
+  Copy the Linux packages of an unpublished or published release to one zone of the signed
+  Ubuntu and Debian apt repositories and Fedora dnf repositories (SPEC-001-038). The metadata
+  stage, without secrets, builds the dnf metadata with createrepo_c, which its job installs. The
+  publish stage uses only the runner image's tools (gh, jq, dpkg-scanpackages, gzip, rpm,
+  python3, gpg, gpgv, aws and curl) and runs no project code, because its signing step holds the
+  release subkey and its upload step holds the bucket credential.
+
+inputs:
+  stage:
+    description: metadata builds the dnf metadata; publish signs and uploads every repository
+    required: true
+  zone:
+    description: Repository zone, stable or test
+    required: true
+  version:
+    description: Version of the release, such as 0.3.0
+    required: true
+  commit:
+    description: Commit the release was prepared from
+    required: true
+  run-id:
+    description: Run that must have prepared the release; empty when the digests input binds it
+    required: false
+    default: ""
+  digests-sha256:
+    description: SHA-256 of the approved release-digests.json; empty when the run-id input binds it
+    required: false
+    default: ""
+  github-token:
+    description: Token that can read the unpublished release
+    required: true
+  dnf-metadata:
+    description: Directory of the metadata stage's dnf metadata, for the publish stage
+    required: false
+    default: ""
+  signing-subkey:
+    description: Exported signing-only subkey of the release key, for the publish stage
+    required: false
+    default: ""
+  signing-passphrase:
+    description: Passphrase of the signing subkey, for the publish stage
+    required: false
+    default: ""
+  r2-access-key-id:
+    description: Access key ID of the bucket-limited R2 token, for the publish stage
+    required: false
+    default: ""
+  r2-secret-access-key:
+    description: Secret access key of the bucket-limited R2 token, for the publish stage
+    required: false
+    default: ""
+  r2-account-id:
+    description: Cloudflare account ID that owns the bucket, for the publish stage
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Fetch the Linux packages of the release
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        OHTIA_REPOSITORY_STAGE: ${{ inputs.stage }}
+        OHTIA_REPOSITORY_ZONE: ${{ inputs.zone }}
+        OHTIA_RELEASE_VERSION: ${{ inputs.version }}
+        OHTIA_RELEASE_COMMIT: ${{ inputs.commit }}
+        OHTIA_RELEASE_RUN_ID: ${{ inputs.run-id }}
+        OHTIA_RELEASE_DIGESTS_SHA256: ${{ inputs.digests-sha256 }}
+      run: |
+        set -euo pipefail
+        refuse() { echo "Repository refused: $1" >&2; exit 1; }
+        work="$RUNNER_TEMP/package-repositories"
+        [[ "$OHTIA_REPOSITORY_STAGE" == metadata || "$OHTIA_REPOSITORY_STAGE" == publish ]] || refuse "The stage must be metadata or publish."
+        [[ "$OHTIA_REPOSITORY_ZONE" == stable || "$OHTIA_REPOSITORY_ZONE" == test ]] || refuse "The zone must be stable or test."
+        [[ "$OHTIA_RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || refuse "The version is not a final version."
+        [[ "$OHTIA_RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || refuse "The commit is not a full commit SHA."
+        [[ -n "$OHTIA_RELEASE_RUN_ID$OHTIA_RELEASE_DIGESTS_SHA256" ]] || refuse "Neither a run nor approved digests bind the release."
+        [[ -z "$OHTIA_RELEASE_DIGESTS_SHA256" || "$OHTIA_RELEASE_DIGESTS_SHA256" =~ ^[0-9a-f]{64}$ ]] || refuse "The approved digests are not a SHA-256."
+        [[ -z "$OHTIA_RELEASE_RUN_ID" || "$OHTIA_RELEASE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || refuse "The run ID is invalid."
+        [[ ! -e "$work" ]] || refuse "Use a fresh runner directory."
+        mkdir -m 700 "$work" "$work/downloads"
+        # Unpublished releases are listed only to a token with write access; the tag names the version.
+        gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$work/releases.json"
+        jq -e --arg tag "v$OHTIA_RELEASE_VERSION" '[.[][] | select(.tag_name == $tag)] | length == 1' "$work/releases.json" > /dev/null \
+          || refuse "There is not exactly one release of $OHTIA_RELEASE_VERSION."
+        jq --arg tag "v$OHTIA_RELEASE_VERSION" '[.[][] | select(.tag_name == $tag)][0]' "$work/releases.json" > "$work/release.json"
+        jq -e --arg version "$OHTIA_RELEASE_VERSION" --arg commit "$OHTIA_RELEASE_COMMIT" \
+          '.name == $version and .target_commitish == $commit and .prerelease == false' "$work/release.json" > /dev/null \
+          || refuse "The release of $OHTIA_RELEASE_VERSION does not have its prepared title and commit."
+        # Download one uploaded asset by name, refusing a missing asset or one of another length.
+        fetch() {
+          local name=$1 bytes=$2 destination=$3 id
+          id=$(jq -r --arg name "$name" --argjson bytes "$bytes" \
+            '[.assets[] | select(.name == $name and .size == $bytes and .state == "uploaded")] | if length == 1 then .[0].id else "" end' "$work/release.json")
+          [[ "$id" =~ ^[0-9]+$ ]] || refuse "The release has no uploaded $name of $bytes bytes."
+          gh api -H "Accept: application/octet-stream" "repos/$GITHUB_REPOSITORY/releases/assets/$id" < /dev/null > "$destination"
+          [[ "$(stat -c %s "$destination")" == "$bytes" ]] || refuse "$name differs from the release."
+        }
+        digests_bytes=$(jq -r '[.assets[] | select(.name == "release-digests.json")] | if length == 1 then .[0].size else "" end' "$work/release.json")
+        [[ "$digests_bytes" =~ ^[1-9][0-9]*$ && "$digests_bytes" -le 1048576 ]] || refuse "The release has no valid release-digests.json."
+        fetch release-digests.json "$digests_bytes" "$work/release-digests.json"
+        if [[ -n "$OHTIA_RELEASE_DIGESTS_SHA256" ]]; then
+          [[ "$(sha256sum "$work/release-digests.json" | cut -d ' ' -f 1)" == "$OHTIA_RELEASE_DIGESTS_SHA256" ]] \
+            || refuse "release-digests.json differs from the approved digests."
+        fi
+        jq -e --arg version "$OHTIA_RELEASE_VERSION" --arg commit "$OHTIA_RELEASE_COMMIT" --arg run "$OHTIA_RELEASE_RUN_ID" \
+          '.schema_version == 1 and .version == $version and .source.commit == $commit and ($run == "" or (.workflow.run_id | tostring) == $run)' \
+          "$work/release-digests.json" > /dev/null || refuse "release-digests.json does not describe this release."
+        # The metadata stage needs only the Fedora packages; the publish stage needs every package.
+        formats=rpm
+        [[ "$OHTIA_REPOSITORY_STAGE" == metadata ]] || formats="deb rpm"
+        : > "$work/packages.tsv"
+        : > "$work/rpm-packages.tsv"
+        for format in $formats; do
+          jq -r --arg format "$format" '.assets[] | select(.format == $format) | [.name, .profile, .sha256, (.bytes | tostring), .authentication] | @tsv' \
+            "$work/release-digests.json" > "$work/entries-$format.tsv"
+          [[ -s "$work/entries-$format.tsv" ]] || refuse "release-digests.json lists no $format package."
+          # Preparation runs from the release's own commit, whose declaration the digest file must
+          # match. Publication runs from the current main, so the approved digest file decides.
+          if [[ -z "$OHTIA_RELEASE_DIGESTS_SHA256" ]]; then
+            expected=$(jq --arg format "$format" '[.platforms[] | select(.id == "linux") | .builds[].packages[] | select(.format == $format)] | length' config/release/platforms.json)
+            [[ "$(grep -c . "$work/entries-$format.tsv")" -eq "$expected" ]] || refuse "release-digests.json does not list every declared $format package."
+          fi
+          while IFS=$'\t' read -r name profile sha256 bytes authentication; do
+            [[ "$name" =~ ^ohtia-[A-Za-z0-9._~-]+\.$format$ && "$sha256" =~ ^[0-9a-f]{64}$ && "$bytes" =~ ^[1-9][0-9]*$ ]] \
+              || refuse "release-digests.json holds an invalid $format package."
+            if [[ "$format" == deb ]]; then
+              [[ "$authentication" == repository ]] || refuse "$name is not authenticated by the repository."
+              [[ "$profile" =~ ^(ubuntu|debian)-[0-9]+(\.[0-9]+)?$ ]] || refuse "$name names no Ubuntu or Debian profile."
+              distribution=${profile%%-*}
+              # One flat repository per distribution holds the packages of a single profile.
+              if [[ -e "$work/profile-$distribution" ]]; then
+                [[ "$(cat "$work/profile-$distribution")" == "$profile" ]] || refuse "Two $distribution profiles would share one repository."
+              else
+                printf '%s' "$profile" > "$work/profile-$distribution"
+              fi
+              directory="$work/packages/$distribution"
+              list="$work/packages.tsv"
+            else
+              # Each Fedora release has its own repository, because each RPM refuses other releases.
+              [[ "$authentication" == embedded ]] || refuse "$name does not carry its own signature."
+              [[ "$profile" =~ ^fedora-[1-9][0-9]*$ ]] || refuse "$name names no Fedora profile."
+              distribution=${profile#fedora-}
+              directory="$work/rpm/$distribution"
+              list="$work/rpm-packages.tsv"
+            fi
+            mkdir -p "$directory"
+            file="$directory/$name"
+            [[ ! -e "$file" ]] || refuse "release-digests.json repeats $name."
+            fetch "$name" "$bytes" "$file"
+            [[ "$(sha256sum "$file" | cut -d ' ' -f 1)" == "$sha256" ]] || refuse "$name differs from release-digests.json."
+            printf '%s\t%s\t%s\n' "$distribution" "$name" "$sha256" >> "$list"
+          done < "$work/entries-$format.tsv"
+        done
+
+    - name: Build the dnf metadata
+      if: inputs.stage == 'metadata'
+      shell: bash
+      run: |
+        set -euo pipefail
+        refuse() { echo "Repository refused: $1" >&2; exit 1; }
+        work="$RUNNER_TEMP/package-repositories"
+        command -v createrepo_c > /dev/null || refuse "createrepo_c is not installed."
+        for directory in "$work"/rpm/*/; do
+          release=$(basename "$directory")
+          output="$work/dnf-metadata/$release"
+          mkdir -p "$output"
+          # The metadata lists the packages by their release asset names, beside the repodata.
+          createrepo_c --quiet --no-database --checksum sha256 --general-compress-type gz \
+            --outputdir "$output" "$directory" > /dev/null
+          [[ -f "$output/repodata/repomd.xml" ]] || refuse "createrepo_c wrote no repomd.xml for Fedora $release."
+        done
+
+    - name: Build the apt indexes
+      if: inputs.stage == 'publish'
+      shell: bash
+      run: |
+        set -euo pipefail
+        refuse() { echo "Repository refused: $1" >&2; exit 1; }
+        work="$RUNNER_TEMP/package-repositories"
+        for directory in "$work"/packages/*/; do
+          distribution=$(basename "$directory")
+          index="$work/index/$distribution"
+          mkdir -p "$index/by-hash/SHA256"
+          # A flat repository: each Filename is ./<package>, beside the index.
+          (cd "$directory" && dpkg-scanpackages --hash sha256 --multiversion . 2> /dev/null) > "$index/Packages"
+          count=$(awk -F '\t' -v d="$distribution" '$1 == d' "$work/packages.tsv" | wc -l)
+          [[ "$(grep -c '^Package: ' "$index/Packages")" -eq "$count" ]] || refuse "The $distribution index does not list every package."
+          [[ "$(grep -c '^Package: ohtia$' "$index/Packages")" -eq "$count" ]] || refuse "The $distribution index lists another package."
+          while IFS=$'\t' read -r _ name sha256; do
+            grep -qxF "Filename: ./$name" "$index/Packages" && grep -qxF "SHA256: $sha256" "$index/Packages" \
+              || refuse "The $distribution index does not record $name with its digest."
+          done < <(awk -F '\t' -v d="$distribution" '$1 == d' "$work/packages.tsv")
+          gzip -9nc "$index/Packages" > "$index/Packages.gz"
+          architectures=$(sed -n 's/^Architecture: //p' "$index/Packages" | sort -u | paste -sd ' ')
+          {
+            printf 'Origin: Ohtia\nLabel: Ohtia\n'
+            printf 'Date: %s\n' "$(LC_ALL=C date -Ru)"
+            printf 'Architectures: %s\n' "$architectures"
+            printf 'Acquire-By-Hash: yes\nSHA256:\n'
+            for file in Packages Packages.gz; do
+              printf ' %s %s %s\n' "$(sha256sum "$index/$file" | cut -d ' ' -f 1)" "$(stat -c %s "$index/$file")" "$file"
+            done
+          } > "$index/Release"
+          # apt fetches each index by its digest, so a client never mixes two index generations.
+          for file in Packages Packages.gz; do
+            cp "$index/$file" "$index/by-hash/SHA256/$(sha256sum "$index/$file" | cut -d ' ' -f 1)"
+          done
+        done
+
+    - name: Check the dnf metadata against the release
+      if: inputs.stage == 'publish'
+      shell: bash
+      env:
+        OHTIA_DNF_METADATA: ${{ inputs.dnf-metadata }}
+      run: |
+        set -euo pipefail
+        refuse() { echo "Repository refused: $1" >&2; exit 1; }
+        work="$RUNNER_TEMP/package-repositories"
+        metadata="$OHTIA_DNF_METADATA"
+        [[ -n "$metadata" && -d "$metadata" && ! -L "$metadata" ]] || refuse "The dnf metadata directory is missing."
+        releases=$(cut -f 1 "$work/rpm-packages.tsv" | sort -u)
+        [[ "$(find "$metadata" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)" == "$releases" ]] \
+          || refuse "The dnf metadata does not cover exactly the Fedora releases of the release."
+        rpmdb="$work/rpmdb"
+        mkdir -p "$rpmdb"
+        for release in $releases; do
+          index="$work/dnf/$release"
+          mkdir -p "$index/repodata"
+          awk -F '\t' -v r="$release" '$1 == r { print $3 "\t" $2 }' "$work/rpm-packages.tsv" | sort > "$work/expected-$release.tsv"
+          # The metadata job runs on the same runner image and Ubuntu archive this job's tools come
+          # from, so its output is trusted as much as those tools. This check refuses a mismatch:
+          # exactly the primary, filelists and other data, each matching its digest, and exactly
+          # the release's RPMs by name, version, architecture, digest and location.
+          python3 -I - "$metadata/$release" "$index" "$work/rpm/$release" "$work/expected-$release.tsv" \
+            "$work/repomd-$release.tsv" "$work/primary-$release.tsv" "$rpmdb" "$release" <<'PYTHON'
+        import gzip, hashlib, os, re, subprocess, sys
+        import xml.etree.ElementTree as ET
+
+        source, index, packages, expected_file, repomd_out, primary_out, rpmdb, release = sys.argv[1:]
+        REPO, COMMON, RPM = (
+            "{http://linux.duke.edu/metadata/repo}",
+            "{http://linux.duke.edu/metadata/common}",
+            "{http://linux.duke.edu/metadata/rpm}",
+        )
+        FILELISTS, OTHER = "{http://linux.duke.edu/metadata/filelists}", "{http://linux.duke.edu/metadata/other}"
+
+        def refuse(message):
+            print(f"Repository refused: The Fedora {release} {message}", file=sys.stderr)
+            sys.exit(1)
+
+        def regular(path):
+            if not os.path.isfile(path) or os.path.islink(path):
+                refuse(f"metadata lacks {os.path.relpath(path, source)}.")
+            with open(path, "rb") as stream:
+                return stream.read()
+
+        def parse(data, what):
+            if b"<!DOCTYPE" in data or b"<!ENTITY" in data:
+                refuse(f"{what} declares a document type or entity.")
+            try:
+                return ET.fromstring(data)
+            except ET.ParseError:
+                refuse(f"{what} is not well-formed XML.")
+
+        def header(file, query):
+            result = subprocess.run(
+                ["rpm", "--dbpath", rpmdb, "-qp", *query, file],
+                capture_output=True, text=True, check=False,
+            )
+            if result.returncode:
+                refuse(f"package {os.path.basename(file)} cannot be read.")
+            return result.stdout
+
+        repomd_data = regular(os.path.join(source, "repodata/repomd.xml"))
+        repomd = parse(repomd_data, "repomd.xml")
+        if repomd.tag != REPO + "repomd":
+            refuse("repomd.xml is not repository metadata.")
+        data = {}
+        for element in repomd.findall(REPO + "data"):
+            kind = element.get("type")
+            checksum = element.find(REPO + "checksum")
+            location = element.find(REPO + "location")
+            if kind not in ("primary", "filelists", "other") or kind in data:
+                refuse(f"repomd.xml names unexpected {kind} data.")
+            if checksum is None or checksum.get("type") != "sha256" or location is None:
+                refuse(f"repomd.xml describes its {kind} data without a SHA-256 and a location.")
+            href = location.get("href", "")
+            if not re.fullmatch(rf"repodata/[0-9a-f]{{64}}-{kind}\.xml\.gz", href):
+                refuse(f"repomd.xml names an invalid {kind} file.")
+            content = regular(os.path.join(source, href))
+            if hashlib.sha256(content).hexdigest() != (checksum.text or "").strip():
+                refuse(f"{kind} file differs from repomd.xml.")
+            data[kind] = (checksum.text.strip(), href, content)
+        if set(data) != {"primary", "filelists", "other"} or len(repomd) != len(
+            [child for child in repomd if child.tag in (REPO + "data", REPO + "revision")]
+        ):
+            refuse("repomd.xml does not describe exactly the primary, filelists and other data.")
+
+        expected = {}
+        with open(expected_file, encoding="utf-8") as stream:
+            for line in stream:
+                sha256, name = line.rstrip("\n").split("\t")
+                expected[name] = sha256
+        documents = {kind: parse(gzip.decompress(content), f"{kind} data") for kind, (_, _, content) in data.items()}
+        primary = documents["primary"]
+        listed = primary.findall(COMMON + "package")
+        if (
+            primary.tag != COMMON + "metadata"
+            or len(primary) != len(listed)
+            or primary.get("packages") != str(len(expected))
+            or len(listed) != len(expected)
+        ):
+            refuse("metadata does not list exactly the release's RPMs.")
+        found = {}
+        for package in listed:
+            location = package.find(COMMON + "location")
+            checksum = package.find(COMMON + "checksum")
+            name = location.get("href") if location is not None else None
+            if name not in expected or name in found or checksum is None or checksum.get("pkgid") != "YES" \
+                    or checksum.get("type") != "sha256" or (checksum.text or "").strip() != expected[name]:
+                refuse("metadata does not list exactly the release's RPMs.")
+            file = os.path.join(packages, name)
+            epoch, version, rel, arch, rpm_name = header(
+                file, ["--qf", "%{EPOCHNUM}\t%{VERSION}\t%{RELEASE}\t%{ARCH}\t%{NAME}"]
+            ).split("\t")
+            stated = package.find(COMMON + "version")
+            if (
+                package.get("type") != "rpm"
+                or package.findtext(COMMON + "name") != rpm_name
+                or rpm_name != "ohtia"
+                or package.findtext(COMMON + "arch") != arch
+                or stated is None
+                or (stated.get("epoch"), stated.get("ver"), stated.get("rel")) != (epoch, version, rel)
+            ):
+                refuse(f"metadata describes {name} unlike its header.")
+            found[name] = checksum.text.strip()
+        for kind, namespace in (("filelists", FILELISTS), ("other", OTHER)):
+            document = documents[kind]
+            listed = document.findall(namespace + "package")
+            pkgids = [package.get("pkgid") for package in listed]
+            if document.get("packages") != str(len(found)) or len(document) != len(listed) \
+                    or len(listed) != len(found) or sorted(pkgids) != sorted(found.values()):
+                refuse(f"{kind} data does not describe exactly the release's RPMs.")
+
+        os.makedirs(os.path.join(index, "repodata"), exist_ok=True)
+        with open(os.path.join(index, "repodata/repomd.xml"), "wb") as stream:
+            stream.write(repomd_data)
+        with open(repomd_out, "w", encoding="utf-8") as stream:
+            for kind in ("primary", "filelists", "other"):
+                sha256, href, content = data[kind]
+                with open(os.path.join(index, href), "wb") as target:
+                    target.write(content)
+                stream.write(f"{kind}\t{sha256}\t{href}\n")
+        with open(primary_out, "w", encoding="utf-8") as stream:
+            for name in sorted(found, key=lambda n: (found[n], n)):
+                stream.write(f"{found[name]}\t{name}\n")
+        PYTHON
+          # The written list is the release's own list of RPMs.
+          sort -o "$work/primary-$release.tsv" "$work/primary-$release.tsv"
+          cmp -s "$work/primary-$release.tsv" "$work/expected-$release.tsv" \
+            || refuse "The Fedora $release metadata does not list exactly the release's RPMs."
+        done
+
+    - name: Sign the repository indexes with the release subkey
+      if: inputs.stage == 'publish'
+      shell: bash
+      env:
+        SIGNING_SUBKEY: ${{ inputs.signing-subkey }}
+        SIGNING_PASSPHRASE: ${{ inputs.signing-passphrase }}
+      run: |
+        set -euo pipefail
+        refuse() { echo "Signing refused: $1" >&2; exit 1; }
+        work="$RUNNER_TEMP/package-repositories"
+        # Lists "kind:validity:capabilities:secret:fingerprint" for each key of a colon listing.
+        keys() { awk -F: '$1 ~ /^(pub|sub|sec|ssb)$/ { line = $1 ":" $2 ":" $12 ":" $15; next } $1 == "fpr" && line != "" { print line ":" $10; line = "" }'; }
+        fingerprint=$(jq -r 'select(.schema_version == 1) | .fingerprint' config/release/signing.json) \
+          || refuse "The signing record cannot be read."
+        [[ "$fingerprint" =~ ^[0-9A-F]{40}$ ]] || refuse "The signing record holds no primary fingerprint."
+        committed=$(gpg --batch --with-colons --show-keys config/release/signing-key.asc | keys) \
+          || refuse "The committed public key cannot be read."
+        [[ "$(grep -c '^pub:' <<< "$committed")" -eq 1 && "$(grep '^pub:' <<< "$committed" | cut -d : -f 5)" == "$fingerprint" ]] \
+          || refuse "The committed public key is not the recorded primary key."
+        export GNUPGHOME="$work/gnupg"
+        mkdir -m 700 "$GNUPGHOME"
+        passphrase="$work/passphrase"
+        # The imported subkey and its passphrase leave the runner before any later step runs.
+        trap 'rm -f "$passphrase"; gpgconf --kill all; rm -rf "$GNUPGHOME"' EXIT
+        printf '%s\n' "$SIGNING_SUBKEY" | gpg --batch --quiet --import 2> /dev/null || refuse "The signing subkey cannot be imported."
+        imported=$(gpg --batch --with-colons --list-secret-keys | keys)
+        [[ "$(grep -c '^sec:' <<< "$imported")" -eq 1 && "$(grep '^sec:' <<< "$imported" | cut -d : -f 5)" == "$fingerprint" ]] \
+          || refuse "The signing subkey does not belong to the recorded primary key."
+        [[ "$(grep '^sec:' <<< "$imported" | cut -d : -f 4)" == "#" ]] \
+          || refuse "The import holds the secret primary key; export only the signing subkey."
+        usable=$(grep -E '^ssb:[^erid:]?:[^:]*s[^:]*:\+:' <<< "$imported" | cut -d : -f 5 || true)
+        [[ "$(grep -c . <<< "$usable")" -eq 1 ]] || refuse "The import holds no single valid signing subkey."
+        grep -Eq "^sub:[^erid:]?:[^:]*s[^:]*:[^:]*:$usable$" <<< "$committed" \
+          || refuse "The signing subkey is not a valid signing subkey of the committed public key."
+        (umask 077 && printf '%s' "$SIGNING_PASSPHRASE" > "$passphrase")
+        for index in "$work"/index/*/; do
+          gpg --batch --quiet --pinentry-mode loopback --passphrase-file "$passphrase" --local-user "$usable!" \
+            --digest-algo SHA512 --clearsign --output "$index/InRelease" "$index/Release" 2> /dev/null \
+            || refuse "gpg could not sign the $(basename "$index") index."
+        done
+        for index in "$work"/dnf/*/; do
+          gpg --batch --quiet --pinentry-mode loopback --passphrase-file "$passphrase" --local-user "$usable!" \
+            --digest-algo SHA512 --armor --detach-sign --output "$index/repodata/repomd.xml.asc" "$index/repodata/repomd.xml" 2> /dev/null \
+            || refuse "gpg could not sign the Fedora $(basename "$index") metadata."
+        done
+
+    - name: Verify the index signatures against the committed key
+      if: inputs.stage == 'publish'
+      shell: bash
+      run: |
+        set -euo pipefail
+        refuse() { echo "Signing refused: $1" >&2; exit 1; }
+        work="$RUNNER_TEMP/package-repositories"
+        # A key ring that holds only the committed public key, as the installed packages register it.
+        gpg --batch --dearmor < config/release/signing-key.asc > "$work/keyring.gpg"
+        for index in "$work"/index/*/; do
+          gpgv --keyring "$work/keyring.gpg" --output "$work/signed-text" "$index/InRelease" 2> /dev/null \
+            || refuse "The $(basename "$index") index signature does not verify with the committed key."
+          cmp -s "$work/signed-text" "$index/Release" || refuse "The $(basename "$index") InRelease does not sign its Release."
+          rm "$work/signed-text"
+        done
+        for index in "$work"/dnf/*/; do
+          gpgv --keyring "$work/keyring.gpg" "$index/repodata/repomd.xml.asc" "$index/repodata/repomd.xml" 2> /dev/null \
+            || refuse "The Fedora $(basename "$index") metadata signature does not verify with the committed key."
+        done
+
+    - name: Upload the package repositories
+      if: inputs.stage == 'publish'
+      shell: bash
+      env:
+        OHTIA_REPOSITORY_ZONE: ${{ inputs.zone }}
+        AWS_ACCESS_KEY_ID: ${{ inputs.r2-access-key-id }}
+        AWS_SECRET_ACCESS_KEY: ${{ inputs.r2-secret-access-key }}
+        R2_ACCOUNT_ID: ${{ inputs.r2-account-id }}
+        AWS_DEFAULT_REGION: auto
+        # R2 accepts the S3 API without the CLI's default request and response checksums.
+        AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+        AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+      run: |
+        set -Eeuo pipefail
+        refuse() { echo "Repository refused: $1" >&2; exit 1; }
+        work="$RUNNER_TEMP/package-repositories"
+        [[ "$OHTIA_REPOSITORY_ZONE" == stable || "$OHTIA_REPOSITORY_ZONE" == test ]] || refuse "The zone must be stable or test."
+        [[ "$R2_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]] || refuse "The R2 account ID is invalid."
+        bucket=$(jq -r 'select(.schema_version == 1) | .bucket' config/release/repository.json)
+        address=$(jq -r 'select(.schema_version == 1) | .address' config/release/repository.json)
+        [[ "$bucket" =~ ^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$ && "$address" =~ ^https://[a-z0-9.-]+$ ]] || refuse "The repository record is invalid."
+        endpoint="https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+        s3() { aws --endpoint-url "$endpoint" --no-cli-pager "$@" < /dev/null; }
+        immutable="public, max-age=31536000, immutable"
+        phase="" prefix="" served="the previous index is still served"
+        # A failed upload names the stopped repository and what clients can still read.
+        trap 'echo "::error::The $prefix repository upload is incomplete: it stopped while $phase, and $served. Rerun the job to finish it." >&2' ERR
+        for index in "$work"/index/*/; do
+          distribution=$(basename "$index")
+          prefix="$OHTIA_REPOSITORY_ZONE/$distribution"
+          served="the previous index is still served"
+          phase="reading the previous index"
+          previous="$work/previous/$distribution"
+          mkdir -p "$previous"
+          s3 s3api list-objects-v2 --bucket "$bucket" --prefix "$prefix/" --output json > "$work/objects-$distribution.json"
+          # The previous generation is the one its signed index names: its Packages is read from
+          # by-hash, because the plain Packages may already belong to an interrupted upload.
+          retained=yes
+          if jq -e --arg key "$prefix/InRelease" '[.Contents[]?.Key] | index($key)' "$work/objects-$distribution.json" > /dev/null; then
+            s3 s3 cp --only-show-errors "s3://$bucket/$prefix/InRelease" "$previous/InRelease"
+            previous_hash=$(awk '/^SHA256:/ { s = 1; next } /^[^ ]/ { s = 0 } s && NF == 3 && $3 == "Packages" { print $1 }' "$previous/InRelease")
+            if [[ "$previous_hash" =~ ^[0-9a-f]{64}$ ]] \
+              && jq -e --arg key "$prefix/by-hash/SHA256/$previous_hash" '[.Contents[]?.Key] | index($key)' "$work/objects-$distribution.json" > /dev/null; then
+              s3 s3 cp --only-show-errors "s3://$bucket/$prefix/by-hash/SHA256/$previous_hash" "$previous/Packages"
+              [[ "$(sha256sum "$previous/Packages" | cut -d ' ' -f 1)" == "$previous_hash" ]] || retained=no
+            else
+              retained=no
+            fi
+            # A rerun of the same index has the generation before it still on disk: keep it.
+            [[ "$previous_hash" != "$(sha256sum "$index/Packages" | cut -d ' ' -f 1)" ]] || retained=same
+          fi
+          # Packages first, then the indexes by digest, the plain indexes, and the signed index last.
+          phase="uploading the packages"
+          while IFS=$'\t' read -r _ name _; do
+            s3 s3 cp --only-show-errors --cache-control "$immutable" --content-type application/vnd.debian.binary-package \
+              "$work/packages/$distribution/$name" "s3://$bucket/$prefix/$name"
+          done < <(awk -F '\t' -v d="$distribution" '$1 == d' "$work/packages.tsv")
+          phase="uploading the indexes by digest"
+          for file in "$index"by-hash/SHA256/*; do
+            s3 s3 cp --only-show-errors --cache-control "$immutable" --content-type application/octet-stream \
+              "$file" "s3://$bucket/$prefix/by-hash/SHA256/$(basename "$file")"
+          done
+          phase="uploading the indexes"
+          s3 s3 cp --only-show-errors --cache-control no-cache --content-type text/plain "$index/Packages" "s3://$bucket/$prefix/Packages"
+          s3 s3 cp --only-show-errors --cache-control no-cache --content-type application/gzip "$index/Packages.gz" "s3://$bucket/$prefix/Packages.gz"
+          phase="uploading the signed index"
+          s3 s3 cp --only-show-errors --cache-control no-cache --content-type text/plain "$index/InRelease" "s3://$bucket/$prefix/InRelease"
+          served="the new signed index is served"
+          # Read back through the public address: the bytes clients receive are the release's bytes.
+          phase="reading the repository back from $address"
+          curl -fsS --retry 3 -H "Cache-Control: no-cache" "$address/$prefix/InRelease?run=$GITHUB_RUN_ID" -o "$work/served-InRelease"
+          cmp -s "$work/served-InRelease" "$index/InRelease" || { phase="comparing the served signed index"; false; }
+          while IFS=$'\t' read -r _ name sha256; do
+            curl -fsS --retry 3 "$address/$prefix/$name" -o "$work/served-package"
+            [[ "$(sha256sum "$work/served-package" | cut -d ' ' -f 1)" == "$sha256" ]] || { phase="comparing the served $name"; false; }
+            rm "$work/served-package"
+          done < <(awk -F '\t' -v d="$distribution" '$1 == d' "$work/packages.tsv")
+          # Keep the packages and indexes of the new and the previous index for clients between them.
+          phase="removing packages that neither index names"
+          if [[ "$retained" == no ]]; then
+            echo "::warning::The previous $prefix index names no readable Packages by digest; no file was removed."
+          elif [[ "$retained" == same ]]; then
+            echo "The previous $prefix index is this index; older files stay until the next version."
+          else
+            {
+              sed -n 's|^Filename: \./||p' "$index/Packages" "$previous/Packages" 2> /dev/null || true
+              for release in "$index/InRelease" "$previous/InRelease"; do
+                if [[ -f "$release" ]]; then
+                  awk '/^SHA256:/ { s = 1; next } /^[^ ]/ { s = 0 } s && NF == 3 { print "by-hash/SHA256/" $1 }' "$release"
+                fi
+              done
+            } | sort -u > "$work/keep-$distribution"
+            jq -r --arg prefix "$prefix/" '.Contents[]?.Key | select(startswith($prefix)) | ltrimstr($prefix)' "$work/objects-$distribution.json" \
+              | grep -E '^(ohtia-[A-Za-z0-9._~-]+\.deb|by-hash/SHA256/[0-9a-f]{64})$' | sort -u \
+              | comm -23 - "$work/keep-$distribution" > "$work/remove-$distribution" || true
+            while read -r key; do
+              s3 s3 rm --only-show-errors "s3://$bucket/$prefix/$key"
+            done < "$work/remove-$distribution"
+          fi
+          echo "The $prefix repository serves $(grep -c '^Package: ' "$index/Packages") packages at $address/$prefix/."
+        done
+        # Lists "type<TAB>sha256<TAB>href" for each data file of a repomd.xml.
+        repomd() { awk '/<data type="/ { match($0, /type="[^"]+"/); t = substr($0, RSTART + 6, RLENGTH - 7); c = ""; h = "" }
+          t != "" && c == "" && /<checksum type="sha256">/ { c = $0; sub(/.*<checksum type="sha256">/, "", c); sub(/<.*/, "", c) }
+          t != "" && /<location href="/ { h = $0; sub(/.*<location href="/, "", h); sub(/".*/, "", h) }
+          /<\/data>/ { print t "\t" c "\t" h; t = "" }' "$1"; }
+        # Lists "sha256<TAB>href" for each package of a primary.xml.
+        primary() { awk '/<package type="rpm">/ { c = ""; h = "" }
+          /<checksum type="sha256" pkgid="YES">/ { c = $0; sub(/.*pkgid="YES">/, "", c); sub(/<.*/, "", c) }
+          /<location href="/ { h = $0; sub(/.*<location href="/, "", h); sub(/".*/, "", h) }
+          /<\/package>/ { print c "\t" h }'; }
+        for index in "$work"/dnf/*/; do
+          release=$(basename "$index")
+          prefix="$OHTIA_REPOSITORY_ZONE/fedora/$release"
+          served="the previous metadata is still served"
+          phase="reading the previous metadata"
+          previous="$work/previous/fedora-$release"
+          mkdir -p "$previous"
+          s3 s3api list-objects-v2 --bucket "$bucket" --prefix "$prefix/" --output json > "$work/objects-fedora-$release.json"
+          has() { jq -e --arg key "$prefix/$1" '[.Contents[]?.Key] | index($key)' "$work/objects-fedora-$release.json" > /dev/null; }
+          # The previous generation is the one the served repomd.xml names; its primary data keeps
+          # its own digest in its name, so an interrupted upload never replaced it.
+          retained=yes previous_sha256="" previous_href=""
+          : > "$previous/repomd.tsv"
+          : > "$previous/primary.tsv"
+          if has repodata/repomd.xml; then
+            s3 s3 cp --only-show-errors "s3://$bucket/$prefix/repodata/repomd.xml" "$previous/repomd.xml"
+            repomd "$previous/repomd.xml" > "$previous/repomd.tsv"
+            read -r _ previous_sha256 previous_href < <(awk -F '\t' '$1 == "primary"' "$previous/repomd.tsv") || true
+            if [[ "$previous_href" =~ ^repodata/[0-9a-f]{64}-primary\.xml\.gz$ ]] && has "$previous_href"; then
+              s3 s3 cp --only-show-errors "s3://$bucket/$prefix/$previous_href" "$previous/primary"
+              if [[ "$(sha256sum "$previous/primary" | cut -d ' ' -f 1)" == "$previous_sha256" ]]; then
+                zcat "$previous/primary" | primary | sort > "$previous/primary.tsv"
+                if [[ ! -s "$previous/primary.tsv" ]]; then
+                  retained=no
+                # A rerun of the same packages has the generation before it still on disk: keep it.
+                elif cmp -s "$previous/primary.tsv" "$work/primary-$release.tsv"; then
+                  retained=same
+                fi
+              else
+                retained=no
+              fi
+            else
+              retained=no
+            fi
+          fi
+          phase="uploading the packages"
+          while IFS=$'\t' read -r _ name _; do
+            s3 s3 cp --only-show-errors --cache-control "$immutable" --content-type application/x-rpm \
+              "$work/rpm/$release/$name" "s3://$bucket/$prefix/$name"
+          done < <(awk -F '\t' -v r="$release" '$1 == r' "$work/rpm-packages.tsv")
+          phase="uploading the metadata files"
+          while IFS=$'\t' read -r _ _ href; do
+            s3 s3 cp --only-show-errors --cache-control "$immutable" --content-type application/octet-stream \
+              "$index/$href" "s3://$bucket/$prefix/$href"
+          done < "$work/repomd-$release.tsv"
+          # repomd.xml and its signature are written last, one right after the other.
+          phase="uploading the signed metadata"
+          s3 s3 cp --only-show-errors --cache-control no-cache --content-type text/xml "$index/repodata/repomd.xml" "s3://$bucket/$prefix/repodata/repomd.xml"
+          served="the new metadata may be served without its signature"
+          s3 s3 cp --only-show-errors --cache-control no-cache --content-type text/plain "$index/repodata/repomd.xml.asc" "s3://$bucket/$prefix/repodata/repomd.xml.asc"
+          served="the new signed metadata is served"
+          phase="reading the repository back from $address"
+          for file in repomd.xml repomd.xml.asc; do
+            curl -fsS --retry 3 -H "Cache-Control: no-cache" "$address/$prefix/repodata/$file?run=$GITHUB_RUN_ID" -o "$work/served-metadata"
+            cmp -s "$work/served-metadata" "$index/repodata/$file" || { phase="comparing the served $file"; false; }
+          done
+          while IFS=$'\t' read -r _ name sha256; do
+            curl -fsS --retry 3 "$address/$prefix/$name" -o "$work/served-package"
+            [[ "$(sha256sum "$work/served-package" | cut -d ' ' -f 1)" == "$sha256" ]] || { phase="comparing the served $name"; false; }
+            rm "$work/served-package"
+          done < <(awk -F '\t' -v r="$release" '$1 == r' "$work/rpm-packages.tsv")
+          phase="removing packages that neither metadata names"
+          if [[ "$retained" == no ]]; then
+            echo "::warning::The previous $prefix metadata names no readable primary data; no file was removed."
+          elif [[ "$retained" == same ]]; then
+            echo "The previous $prefix metadata lists the same packages; older files stay until the next version."
+          else
+            {
+              cut -f 2 "$work/primary-$release.tsv" "$previous/primary.tsv"
+              cut -f 3 "$work/repomd-$release.tsv" "$previous/repomd.tsv"
+            } | sort -u > "$work/keep-fedora-$release"
+            jq -r --arg prefix "$prefix/" '.Contents[]?.Key | select(startswith($prefix)) | ltrimstr($prefix)' "$work/objects-fedora-$release.json" \
+              | grep -E '^(ohtia-[A-Za-z0-9._~-]+\.rpm|repodata/[0-9a-f]{64}-[a-z_]+\.xml(\.gz|\.zst)?)$' | sort -u \
+              | comm -23 - "$work/keep-fedora-$release" > "$work/remove-fedora-$release" || true
+            while read -r key; do
+              s3 s3 rm --only-show-errors "s3://$bucket/$prefix/$key"
+            done < "$work/remove-fedora-$release"
+          fi
+          echo "The $prefix repository serves $(grep -c . "$work/primary-$release.tsv") packages at $address/$prefix/."
+        done

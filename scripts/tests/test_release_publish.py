@@ -556,17 +556,23 @@ class WorkflowTests(unittest.TestCase):
             [
                 "OHTIA_RELEASE_VERSION: ${{ inputs.version }}",
                 "version: ${{ inputs.version }}",
+                "version: ${{ inputs.version }}",
                 "OHTIA_RELEASE_VERSION: ${{ inputs.version }}",
             ],
         )
 
     def test_only_the_approved_job_publishes_and_it_follows_the_check(self):
-        check, rest = WORKFLOW.split("\n  repository:\n")
+        check, rest = WORKFLOW.split("\n  metadata:\n")
+        metadata, rest = rest.split("\n  repository:\n")
         repository, publish_job = rest.split("\n  publish:\n")
         self.assertNotIn("environment:", check)
+        # The dnf metadata is built without secrets, after the check and before the approval.
+        self.assertIn("    needs: check\n", metadata)
+        self.assertNotIn("environment:", metadata)
+        self.assertNotIn("secrets.", metadata)
         self.assertIn("release_publish.py check", check)
         # The stable repositories are written after the first approval, before publication.
-        self.assertIn("    needs: check\n", repository)
+        self.assertIn("    needs: [check, metadata]\n", repository)
         self.assertIn("    environment: release-signing\n", repository)
         self.assertIn("digests-sha256: ${{ needs.check.outputs.digests }}", repository)
         self.assertIn("    needs: [check, repository]\n", publish_job)
@@ -590,10 +596,18 @@ class WorkflowTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, WORKFLOW)
         uses = re.findall(r"uses: ([^@\s]+)@([0-9a-f]{40})\n", WORKFLOW)
-        self.assertEqual({name for name, _ in uses}, {"actions/checkout", "actions/setup-python"})
+        self.assertEqual(
+            {name for name, _ in uses},
+            {
+                "actions/checkout",
+                "actions/setup-python",
+                "actions/upload-artifact",
+                "actions/download-artifact",
+            },
+        )
         # The only other action is the repository action, which signs indexes, never packages.
-        self.assertEqual(WORKFLOW.count("uses: $/.github/actions/apt-repository\n"), 1)
-        self.assertEqual(len(uses) + 1, WORKFLOW.count("uses:"))
+        self.assertEqual(WORKFLOW.count("uses: $/.github/actions/package-repositories\n"), 2)
+        self.assertEqual(len(uses) + 2, WORKFLOW.count("uses:"))
 
 
 if __name__ == "__main__":
