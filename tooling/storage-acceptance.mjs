@@ -757,16 +757,17 @@ try {
   enterPhase("open-settings", ".settings-dialog[open]");
   await openWorkspaceSettings(page);
   enterPhase("restore-korean-locale", 'select[aria-describedby="language-help"]');
+  const restoredLocale = "ko-KR";
   const restoredLocaleControl = page.locator('select[aria-describedby="language-help"]');
-  await restoredLocaleControl.selectOption("ko-KR");
-  await expect(page.locator("html")).toHaveAttribute("lang", "ko-KR");
+  await restoredLocaleControl.selectOption(restoredLocale);
+  await expect(page.locator("html")).toHaveAttribute("lang", restoredLocale);
   await expect
     .poll(
       async () =>
         (await page.evaluate(() => window.ohtia.foundation.readLocale().result)).value?.record
           .value,
     )
-    .toBe("ko-KR");
+    .toBe(restoredLocale);
   await resizeNativeViewport(page, { width: 320, height: 600 });
   enterPhase("capture-restored-korean-reflow", ".settings-dialog[open]");
   await page.screenshot({ path: path.join(output, "locale-ko-320.png"), fullPage: true });
@@ -787,7 +788,10 @@ try {
   page = await start();
   await open(page);
   enterPhase("verify-packaged-project-rename", ".project-selector-button");
-  record("packaged-project-rename", await verifyPackagedProjectRename(application, page, projects));
+  record(
+    "packaged-project-rename",
+    await verifyPackagedProjectRename(application, page, projects, restoredLocale),
+  );
   await application.close();
   application = undefined;
   verifyStableSentinels(launch.profile);

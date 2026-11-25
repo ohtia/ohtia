@@ -47,7 +47,7 @@ export function confirmProjectRenameFixture(file, projects) {
 async function selectProject(page, title) {
   const selector = page.locator(".project-selector-button");
   if ((await selector.locator("bdi").textContent()) !== title) {
-    await selector.click();
+    await selector.press("Enter");
     await page
       .getByRole("option")
       .filter({ has: page.getByText(title, { exact: true }) })
@@ -56,8 +56,7 @@ async function selectProject(page, title) {
   await expect(selector.locator("bdi")).toHaveText(title);
 }
 
-export async function verifyPackagedProjectRename(application, first, projects) {
-  const locale = await first.locator("html").getAttribute("lang");
+export async function verifyPackagedProjectRename(application, first, projects, locale) {
   const text = (key) => message(locale, key);
   const selector = first.locator(".project-selector-button");
   const [projectId, otherProjectId] = projects;
@@ -66,6 +65,8 @@ export async function verifyPackagedProjectRename(application, first, projects) 
   const second = await next;
   await selectProject(first, originalTitle);
   await selectProject(second, originalTitle);
+  await expect(first.locator("html")).toHaveAttribute("lang", locale);
+  await expect(second.locator("html")).toHaveAttribute("lang", locale);
   const trigger = (page) =>
     page.getByRole("button", { name: text("command.project.rename"), exact: true });
   await expect(trigger(first)).toBeEnabled();
