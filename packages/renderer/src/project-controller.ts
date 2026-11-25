@@ -78,7 +78,8 @@ export class ProjectCollections {
   openConversation(projectId: string, id: string): boolean {
     const { conversations } = this.snapshot();
     if (
-      conversations?.projectId !== projectId ||
+      !conversations ||
+      conversations.projectId !== projectId ||
       conversations.status !== "ready" ||
       !conversations.items.some((item) => item.id === id)
     )
