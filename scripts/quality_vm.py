@@ -1,4 +1,8 @@
-"""Run one pinned x64 distribution guest with mandatory KVM on a hosted Ubuntu VM."""
+"""Run one pinned x64 distribution guest with mandatory KVM on a hosted Ubuntu VM.
+
+The guest runs the quality build of a CI event by default, or, with `--task quality:repository`,
+the repository qualification of a prepared version from the prepare-release workflow.
+"""
 
 from __future__ import annotations
 
@@ -313,18 +317,37 @@ def root_disk_arguments(disk: Path) -> list[str]:
     ]
 
 
+# Each guest task and the guest directory its reports are copied back from.
+TASKS = {
+    "quality:build": "artifacts/quality-result",
+    "quality:repository": "artifacts/repository-qualification",
+}
+# The release inputs repository qualification reads; the prepare-release job supplies them.
+RELEASE_VARIABLES = ("OHTIA_RELEASE_VERSION", "OHTIA_RELEASE_COMMIT", "OHTIA_RELEASE_DIGESTS")
+
+
+def repository_cell(cell_id: str) -> dict:
+    """Return a declared KVM cell of the quality inventory, which repository qualification uses."""
+    cells = delivery.read(ROOT / "config/quality/build-targets.json")["cells"]
+    found = [cell for cell in cells if cell["id"] == cell_id]
+    delivery.require(len(found) == 1, "Unknown native VM cell.")
+    return found[0]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--task", choices=sorted(TASKS), default="quality:build")
     parser.add_argument("cell")
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
+    repository = args.task == "quality:repository"
     child = None
     attempt = None
     evidence_output = None
     cleanup_ok = True
     try:
-        # Only hosted Ubuntu cells qualify against the test repository zone; the guest
-        # environment is fixed, so refuse the input instead of building for stable.
+        # The zone is not forwarded to the guest: repository qualification names the test
+        # zone itself, so refuse the input instead of silently building for stable.
         delivery.require(
             "OHTIA_REPOSITORY_ZONE" not in os.environ,
             "VM cells register only the stable repository; remove OHTIA_REPOSITORY_ZONE.",
@@ -342,8 +365,17 @@ def main() -> int:
             release.get("ID") == "ubuntu" and release.get("VERSION_ID") == "26.04",
             "Use the declared Ubuntu 26.04 VM host.",
         )
-        planned = delivery.plan(delivery.identity())
-        cell = next(item for item in planned["cells"] if item["id"] == args.cell)
+        if repository:
+            # A prepare-release run has no quality plan; it qualifies the checked-out release.
+            planned = None
+            cell = repository_cell(args.cell)
+            identity = {
+                "run_id": int(os.environ["GITHUB_RUN_ID"]),
+                "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+            }
+        else:
+            planned = delivery.plan(delivery.identity())
+            cell = next(item for item in planned["cells"] if item["id"] == args.cell)
         policy = delivery.read(ROOT / "config/quality/virtual-machines.json")
         guest = policy["guests"][cell["profile"]]
         delivery.require(
@@ -379,7 +411,7 @@ def main() -> int:
             )
         )
         (attempt / "meta-data").write_text(
-            json.dumps(guest_metadata(args.cell, planned["identity"]))
+            json.dumps(guest_metadata(args.cell, identity if repository else planned["identity"]))
         )
         seed = attempt / "seed.iso"
         run(["cloud-localds", seed, attempt / "user-data", attempt / "meta-data"])
@@ -401,6 +433,13 @@ def main() -> int:
             "GITHUB_SHA",
         )
         environment = {name: os.environ[name] for name in names}
+        if repository:
+            environment.update({name: os.environ[name] for name in RELEASE_VARIABLES})
+            # The guest checks out the bundled release commit, which a hash input can select.
+            environment["OHTIA_SOURCE_COMMIT"] = delivery.git("rev-parse", "HEAD")
+            if "RUNNER_NAME" in os.environ:
+                environment["RUNNER_NAME"] = os.environ["RUNNER_NAME"]
+        environment["OHTIA_GUEST_TASK"] = args.task
         environment.update(
             {
                 "GITHUB_EVENT_PATH": "/home/ohtia/event.json",
@@ -496,7 +535,7 @@ def main() -> int:
                     scp
                     + [
                         "-r",
-                        "ohtia@127.0.0.1:/home/ohtia/source/artifacts/quality-result/*",
+                        f"ohtia@127.0.0.1:/home/ohtia/source/{TASKS[args.task]}/*",
                         str(args.output),
                     ],
                     timeout=180,
@@ -515,7 +554,7 @@ def main() -> int:
                         "limitations": "Native x64 nested VM; virtual software graphics and powered cloud storage are not physical hardware/power-loss evidence. ARM guests remain outside this delivery.",
                     },
                 )
-                delivery.require(result.returncode == 0, "Guest native quality suite failed.")
+                delivery.require(result.returncode == 0, f"Guest {args.task} failed.")
                 qmp(monitor, "system_powerdown")
                 try:
                     child.wait(timeout=30)
@@ -523,7 +562,7 @@ def main() -> int:
                     child.terminate()
                     child.wait(timeout=10)
                 delivery.require(
-                    delivery.plan(delivery.identity()) == planned,
+                    repository or delivery.plan(delivery.identity()) == planned,
                     "VM execution changed its source inputs.",
                 )
     except (

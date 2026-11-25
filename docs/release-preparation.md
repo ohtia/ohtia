@@ -101,23 +101,27 @@ The job downloads `release-digests.json` of the unpublished release and refuses 
 
 ## Qualify repository delivery
 
-The `Qualify repository delivery (linux-x64-ubuntu-26-04-gnome)` job starts after the repository job and runs the complete scenario of [SPEC-001-041](epics/EPIC-001-desktop-foundation/epic.md#spec-001-041-native-qualification-of-repository-delivery) on a fresh `ubuntu-26.04` runner, in a private GNOME Wayland session. It holds no secret, and its token only reads the repository. It checks out the selected commit, installs the desktop of the cell as the CI does and runs [the qualification harness](../scripts/repository_qualification.py), which takes these steps:
+The `Qualify repository delivery (<cell>)` jobs start after the repository job and run [SPEC-001-041](epics/EPIC-001-desktop-foundation/epic.md#spec-001-041-native-qualification-of-repository-delivery) on the eight x86-64 Linux cells of the [quality inventory](../config/quality/build-targets.json), each on a fresh `ubuntu-26.04` runner. The Ubuntu cells run on the runner itself, in a private GNOME or KDE Plasma Wayland session; the Debian and Fedora cells run in the same KVM guests as the CI. The jobs hold no secret, and their token only reads the repository. Each job checks out the selected commit and runs [the qualification harness](../scripts/repository_qualification.py).
 
-1. It builds version A from the selected commit with the development version `<version>-dev.<run-id>.<attempt>`. The package registers the `test` zone, and apt orders its version below the prepared version.
-2. It installs A from its package file with `dpkg` and checks the registered source entry, the key and the loaded AppArmor allowance.
+On the four GNOME cells, the harness runs the complete scenario:
+
+1. It builds version A from the selected commit with the development version `<version>-dev.<run-id>.<attempt>`. The package registers the `test` zone, and the package manager orders its version below the prepared version.
+2. It installs A from its package file, with `dpkg` or `rpm`, and checks the registered source entry or repository file, the key and the distribution's policy state: the loaded AppArmor allowance on Ubuntu, AppArmor with unprivileged user namespaces and no allowance on Debian, and enforcing SELinux with the expected labels under `/opt/ohtia` on Fedora.
 3. It starts Ohtia, opens a new store and saves the appearance setting.
-4. It updates through apt with the registered entry as the only source. apt reads the signed index of the `test` zone, and the job refuses a plan that does more than replace the `ohtia` package with the prepared version.
-5. It compares the package apt downloaded with the digest that the unpublished release records for the Ubuntu x86-64 DEB, and checks the installed files with `dpkg --verify`.
-6. It checks that the updated package registers the `stable` zone and its AppArmor allowance. It starts Ohtia again and checks the saved appearance, the running version and the renderer sandbox.
-7. It checks the synthetic stable store sentinels of the runner and that no tag names version A.
+4. It updates through apt or dnf with the registered entry as the only source. The package manager checks the signed index or metadata of the `test` zone. apt must plan nothing but replacing the `ohtia` package with the prepared version; dnf must change no other installed package.
+5. It compares the downloaded package with the digest that the unpublished release records for the cell's package; dnf's download is compared before it is installed. It checks the installed files with `dpkg --verify` or `rpm -V`.
+6. It checks that the updated package registers the `stable` zone and the same policy state. It starts Ohtia again and checks the saved appearance, the running version and the renderer sandbox.
+7. It checks the synthetic stable store sentinels and that no tag names version A.
 
-The job deletes package A at the end; A never reaches a release, a tag or an artifact. It retains its report for 90 days as the artifact `repository-qualification-<cell>-<run-id>-<attempt>`. There, `result.json` names the host and its runner image, the release package, the digest of A and the result and observations of each step, and `installed-a/` and `installed-b/` hold the application receipts and process observations of each version. Download the report with:
+On the four KDE cells, the harness runs the short scenario. It downloads the cell's package from the `test` zone and compares it with the release digest; it installs that file, importing the committed release key on Fedora first; and it checks the registered `stable` entry, the policy state, the running version, the renderer sandbox and the stable store sentinels. A KDE cell and its GNOME counterpart install the same package bytes, so both record the same digest.
+
+The jobs delete package A at the end; A never reaches a release, a tag or an artifact. Each job retains its report for 90 days as the artifact `repository-qualification-<cell>-<run-id>-<attempt>`. There, `result.json` names the scenario, the host and its runner image or guest, the release package, the digest of A on a GNOME cell and the result and observations of each step; `installed-a/` and `installed-b/` hold the application receipts and process observations of each version, and a KVM cell adds `virtual-machine.json` and the guest's logs. Download a report with:
 
 ```bash
-gh run download <run-id> --repo ohtia/ohtia --name repository-qualification-linux-x64-ubuntu-26-04-gnome-<run-id>-<attempt>
+gh run download <run-id> --repo ohtia/ohtia --name repository-qualification-<cell>-<run-id>-<attempt>
 ```
 
-A failure fails the run and leaves the release unpublished; the log names the cause after `Repository qualification failed:`. Publication does not read this result, so check that the job passed before publishing.
+A failure fails the run and leaves the release unpublished; the log names the cause after `Repository qualification failed:`. Publication does not read these results, so check that every qualification job passed before publishing.
 
 ## Release notes
 
@@ -141,7 +145,7 @@ To retry the same run, re-run all its jobs, never only the failed jobs, because 
 gh run rerun <run-id>
 ```
 
-When only the `Build the dnf metadata of the test repositories` job, the `Copy the Linux packages to the test repositories` job or the qualification job failed, re-run the failed jobs with **Re-run failed jobs** or `gh run rerun <run-id> --failed`. The two repository jobs read the unpublished release and continue as [Recover from an incomplete repository upload](release-signing.md#recover-from-an-incomplete-repository-upload) describes; a rerun of the qualification job builds a new version A for its attempt and passes only while the `test` zone still holds this release, because another run's repository job replaces it. Re-running all jobs of such a run is refused, because the unpublished release already holds its assets.
+When only the `Build the dnf metadata of the test repositories` job, the `Copy the Linux packages to the test repositories` job or qualification jobs failed, re-run the failed jobs with **Re-run failed jobs** or `gh run rerun <run-id> --failed`. The two repository jobs read the unpublished release and continue as [Recover from an incomplete repository upload](release-signing.md#recover-from-an-incomplete-repository-upload) describes; a rerun of a qualification job uses its attempt for version A on a GNOME cell and passes only while the `test` zone still holds this release, because another run's repository job replaces it. Re-running all jobs of such a run is refused, because the unpublished release already holds its assets.
 
 A rerun builds and signs again, so the signing job waits for your approval again. It continues while the reserved tag, if one exists, points to the same commit and names the same run, and the unpublished release holds no asset yet. Otherwise it refuses.
 

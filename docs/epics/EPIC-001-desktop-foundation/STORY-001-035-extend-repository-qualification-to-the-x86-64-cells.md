@@ -36,7 +36,7 @@ Extend the harness to Debian and Fedora and run the remaining seven x86-64 cells
 
 - [ ] Completion gate: Native hosts output NH is observed for the seven cells: each run executes natively on its admitted environment.
 - [ ] The Debian and Fedora GNOME cells pass the complete scenario, with Debian's namespace policy and Fedora's enforcing SELinux observed after the update.
-- [ ] Each KDE cell installs the package, starts Ohtia and shows the update button, and records the same digest as its GNOME counterpart.
+- [ ] Each KDE cell installs the package, starts Ohtia with the installed version, and records the same digest as its GNOME counterpart.
 
 ## Quality checklist
 

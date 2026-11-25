@@ -7,6 +7,7 @@ import json
 import os
 import runpy
 import shlex
+import shutil
 import socket
 import subprocess
 import sys
@@ -930,6 +931,161 @@ class VirtualMachineTests(unittest.TestCase):
                 self.assertEqual((output / "plasma.log").stat().st_size, 2 * 1024 * 1024)
                 self.assertEqual((output / "user-session.log").stat().st_size, 64 * 1024)
                 self.assertTrue((output / "selinux-audit.json").is_file())
+
+    def test_repository_task_passes_the_release_without_a_quality_plan(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in ("build-targets.json", "virtual-machines.json"):
+                (root / "config/quality").mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(
+                    delivery.ROOT / "config/quality" / name, root / "config/quality" / name
+                )
+            output = root / "artifacts/repository-qualification"
+            event = root / "event.json"
+            event.write_text("{}")
+            release = {
+                "OHTIA_RELEASE_VERSION": "0.2.2",
+                "OHTIA_RELEASE_COMMIT": "c" * 40,
+                "OHTIA_RELEASE_DIGESTS": '{"schema_version": 1}',
+            }
+            hosted = {
+                "GITHUB_ACTIONS": "true",
+                "RUNNER_ENVIRONMENT": "github-hosted",
+                "GITHUB_EVENT_PATH": str(event),
+                "GITHUB_EVENT_NAME": "workflow_dispatch",
+                "GITHUB_REPOSITORY": "ohtia/ohtia",
+                "GITHUB_REF": "refs/heads/main",
+                "GITHUB_RUN_ID": "7",
+                "GITHUB_RUN_ATTEMPT": "1",
+                "GITHUB_SHA": "d" * 40,
+                "RUNNER_NAME": "synthetic",
+            }
+
+            def command(arguments, **options):
+                arguments = [str(argument) for argument in arguments]
+                if arguments[0] == "ssh-keygen":
+                    Path(arguments[arguments.index("-f") + 1] + ".pub").write_text("ssh-ed25519 A")
+                return subprocess.CompletedProcess(arguments, 0)
+
+            with (
+                patch.object(vm, "ROOT", root),
+                patch.dict(os.environ, {**hosted, **release}, clear=True),
+                patch.object(vm.platform, "machine", return_value="x86_64"),
+                patch.object(
+                    vm.platform,
+                    "freedesktop_os_release",
+                    return_value={"ID": "ubuntu", "VERSION_ID": "26.04"},
+                ),
+                patch.object(vm.Path, "is_char_device", return_value=True),
+                patch.object(vm.os, "access", return_value=True),
+                patch.object(delivery, "plan", side_effect=AssertionError("no quality plan")),
+                patch.object(delivery, "git", return_value="c" * 40),
+                patch.object(
+                    vm.shutil, "disk_usage", return_value=SimpleNamespace(free=30 * 1024**3)
+                ),
+                patch.object(
+                    vm, "download", side_effect=lambda record, file: file.write_bytes(b"")
+                ),
+                patch.object(vm, "run", side_effect=command),
+                patch.object(vm.subprocess, "Popen", side_effect=OSError("synthetic stop")),
+                patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "quality_vm.py",
+                        "--task",
+                        "quality:repository",
+                        "linux-x64-debian-13-gnome",
+                        str(output),
+                    ],
+                ),
+            ):
+                self.assertEqual(vm.main(), 1)
+            environment = json.loads(
+                (root / "artifacts/linux-x64-debian-13-gnome/environment.json").read_text()
+            )
+            self.assertEqual({key: environment[key] for key in release}, release)
+            self.assertEqual(environment["OHTIA_SOURCE_COMMIT"], "c" * 40)
+            self.assertEqual(environment["OHTIA_GUEST_TASK"], "quality:repository")
+            self.assertEqual(environment["OHTIA_QUALITY_VM"], "linux-x64-debian-13-gnome")
+            result = json.loads((output / "result.json").read_text())
+            self.assertEqual((result["status"], result["plan"]), ("failed", None))
+
+    def test_guest_runs_repository_qualification_on_the_release_commit(self):
+        for task, expected in (
+            ("quality:repository", "artifacts/repository-qualification"),
+            ("quality:release", None),
+        ):
+            with self.subTest(task=task), tempfile.TemporaryDirectory() as temporary:
+                home = Path(temporary)
+                source = home / "source"
+                source.mkdir()
+                runtime = home / "runtime"
+                runtime.mkdir()
+                (home / "environment.json").write_text(
+                    json.dumps(
+                        {
+                            "GITHUB_SHA": "run-commit",
+                            "OHTIA_SOURCE_COMMIT": "release-commit",
+                            "OHTIA_GUEST_TASK": task,
+                            "OHTIA_QUALITY_VM": "linux-x64-fedora-44-kde",
+                        }
+                    )
+                )
+                real_path = Path
+
+                def guest_path(value):
+                    if value == "/home/ohtia":
+                        return home
+                    if value == f"/run/user/{os.getuid()}":
+                        return runtime
+                    return real_path(value)
+
+                calls = []
+
+                def command(arguments, **options):
+                    arguments = [str(argument) for argument in arguments]
+                    calls.append(arguments)
+                    if arguments[0] == "dbus-run-session":
+                        log = real_path(arguments[arguments.index("--log") + 1])
+                        log.write_bytes(b"p")
+                    stdout = options.get("stdout")
+                    if arguments[0] in {"/usr/bin/journalctl", "/usr/bin/sudo"}:
+                        stdout.write(b"x")
+                    return subprocess.CompletedProcess(
+                        arguments, 0, stdout="active\n" if options.get("text") else b""
+                    )
+
+                with socket.socket(socket.AF_UNIX) as user_bus:
+                    user_bus.bind(str(runtime / "bus"))
+                    with (
+                        patch.dict(os.environ, {}, clear=True),
+                        patch("pathlib.Path", side_effect=guest_path),
+                        patch("subprocess.run", side_effect=command),
+                        self.assertRaises(SystemExit) as finished,
+                    ):
+                        runpy.run_path(
+                            str(delivery.ROOT / "tooling/quality-packaging/guest-run.py")
+                        )
+                if expected is None:
+                    # An undeclared task is refused before the source is cloned.
+                    self.assertNotEqual(finished.exception.code, 0)
+                    self.assertEqual(calls, [])
+                    continue
+                self.assertEqual(finished.exception.code, 0)
+                self.assertIn(["git", "checkout", "--detach", "release-commit"], calls)
+                launched = next(call for call in calls if call[0] == "dbus-run-session")
+                self.assertEqual(
+                    launched[-5:],
+                    [
+                        "scripts/workspace.py",
+                        "run",
+                        "quality:repository",
+                        "linux-x64-fedora-44-kde",
+                        expected,
+                    ],
+                )
+                self.assertTrue((source / expected / "plasma.log").is_file())
 
     def test_kde_guests_install_the_official_set_without_gnome_or_recommendations(self):
         for profile, identity in (

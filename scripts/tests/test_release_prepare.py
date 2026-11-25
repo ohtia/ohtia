@@ -1138,21 +1138,43 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("secrets.", block)
         self.assertNotIn("token", block)
         self.assertNotIn("environment:", block)
+        # The matrix covers the x86-64 Linux cells of the quality inventory with their launchers.
+        inventory = json.loads(
+            (ROOT / "config/quality/build-targets.json").read_text(encoding="utf-8")
+        )["cells"]
         self.assertEqual(
             re.findall(
-                r"^          - cell: ([a-z0-9-]+)\n            runner: ([a-z0-9.-]+)\n",
+                r"^          - cell: ([a-z0-9-]+)\n            runner: ([a-z0-9.-]+)\n"
+                r"            launcher: ([a-z-]+)\n",
                 block,
                 re.MULTILINE,
             ),
-            [("linux-x64-ubuntu-26-04-gnome", "ubuntu-26.04")],
+            [
+                (cell["id"], cell["runner"], cell["launcher"])
+                for cell in sorted(
+                    (cell for cell in inventory if cell["target"] == "linux-x64"),
+                    key=lambda cell: (
+                        cell["profile"] != "ubuntu-26.04",
+                        cell["profile"],
+                        cell["desktop"],
+                    ),
+                )
+            ],
         )
         self.assertIn("ref: ${{ needs.check.outputs.commit }}", block)
         self.assertIn("OHTIA_RELEASE_DIGESTS: ${{ needs.release.outputs.digests }}", block)
         self.assertIn(
-            "dbus-run-session -- python3 scripts/quality_display.py --task quality:repository \\\n"
-            '            "$OHTIA_QUALITY_CELL" artifacts/repository-qualification',
+            "kvm) python3 scripts/quality_vm.py --task quality:repository \\\n"
+            '              "$OHTIA_QUALITY_CELL" artifacts/repository-qualification ;;',
             block,
         )
+        self.assertIn(
+            "display-session) dbus-run-session -- python3 scripts/quality_display.py \\\n"
+            '              --task quality:repository "$OHTIA_QUALITY_CELL" artifacts/repository-qualification ;;',
+            block,
+        )
+        self.assertIn("        if: matrix.launcher == 'kvm'\n", block)
+        self.assertIn("          fetch-depth: 0\n", block)
         self.assertIn(
             "name: repository-qualification-${{ matrix.cell }}-${{ github.run_id }}-${{ github.run_attempt }}",
             block,
