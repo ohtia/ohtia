@@ -76,6 +76,7 @@
     "tests/application-exit.test.ts::reports unavailable task authority without pretending there are zero running replies::case-0",
     "tests/application-exit.test.ts::restores dispatch after a rejected exit handshake or a cancellation acknowledgement timeout::case-0",
     "tests/application-root.test.ts::announces a creation failure with its description, preserves the open workspace and retries the same operation::case-0",
+    "tests/application-root.test.ts::browses scoped project collections through late reads, retry and pagination::case-0",
     "tests/application-root.test.ts::does not include the previous project's replies in the next project's announcement::case-0",
     "tests/application-root.test.ts::ignores delayed bootstrap acknowledgements after A to B to A while preserving explicit development navigation::case-0",
     "tests/application-root.test.ts::integrated application authority > composes the real bounded port with corpus failures, old generations and fresh-ID stream recovery without disturbing private input::case-0",

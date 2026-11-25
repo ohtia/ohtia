@@ -233,6 +233,44 @@
   font-size: var(--type-ui-body-small-size);
   line-height: var(--type-ui-body-small-height);
 }
+.project-explorer {
+  padding: var(--space-3) var(--space-2);
+}
+.project-explorer-title {
+  padding-inline: var(--space-2);
+  margin-block-end: var(--space-2);
+  font-weight: var(--type-ui-label-weight);
+}
+.project-explorer-list {
+  margin: var(--space-0);
+  padding: var(--space-0);
+}
+.project-explorer-list > li {
+  display: block;
+}
+.project-explorer-control {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  inline-size: 100%;
+  justify-content: start;
+  text-align: start;
+  white-space: normal;
+}
+.project-explorer-control svg {
+  flex-shrink: 0;
+}
+.project-explorer-control bdi {
+  min-inline-size: var(--space-0);
+}
+.project-explorer-group {
+  margin-inline-start: var(--space-3);
+  padding: var(--space-1);
+}
+.project-explorer-status {
+  font-size: var(--type-ui-body-small-size);
+  line-height: var(--type-ui-body-small-height);
+}
 .workspace-welcome {
   line-height: var(--type-ui-body-height);
   display: flex;
