@@ -259,6 +259,15 @@
       },
       "effective_model_evidence": "The implementing Claude Code session's system context states the exact model ID claude-opus-5-5.",
       "human_linguistic_review": null
+    },
+    {
+      "scope": "history.noConversations and workspace.materials messages in every supported locale for STORY-004-001",
+      "producer": {
+        "agent": "codex",
+        "effective_model": null
+      },
+      "effective_model_evidence": "The runtime identifies the GPT-6 family without a confirmed effective model identifier.",
+      "human_linguistic_review": null
     }
   ]
 }
