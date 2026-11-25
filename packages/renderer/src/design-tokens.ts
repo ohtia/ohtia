@@ -12,6 +12,7 @@ export const designMetrics = {
   "component.separator.guard": 10,
   "component.separator.guard-coarse": 20,
   "component.separator.line": 4,
+  "component.settings.max-height": 1080,
   "component.settings.max-width": 880,
   "component.settings.nav-width": 232,
   "component.target.coarse": 44,
