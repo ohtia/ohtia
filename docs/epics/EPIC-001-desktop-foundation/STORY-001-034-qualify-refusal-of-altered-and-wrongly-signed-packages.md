@@ -1,9 +1,9 @@
 ---
 type: Story
 title: "STORY-001-034 — Qualify refusal of altered and wrongly signed packages"
-description: "Prove that the package manager refuses altered packages and invalid signatures and leaves the installed version working."
+description: "Prove once, locally, that each package manager refuses altered packages and invalid signatures and leaves the installed version in place."
 generated:
-  by: claude-code/claude-fable-5-2
+  by: claude-code/claude-opus-5-5
 verified:
   by: human:AdrianMastronardi
 tags: ["story", "comp:tooling"]
@@ -19,7 +19,7 @@ applicable_blocks: ["SPEC-001-041"]
 
 ## Description
 
-Add the refusal scenario to the harness and run it on the first cell.
+Prove once, on a local machine, that apt on Ubuntu 26.04 and Debian 13 and dnf on Fedora 44 and Fedora 45 refuse altered packages and invalid signatures.
 
 ## Applicable specification
 
@@ -28,14 +28,15 @@ Add the refusal scenario to the harness and run it on the first cell.
 ## Tasks
 
 - [ ] Start after STORY-001-033 is merged and its output H33, the qualification harness, is on the base branch.
-- [ ] Add fixtures to the `test` zone: a package altered after indexing and an index with an invalid signature.
-- [ ] Run the update attempt against each fixture and record the package manager's refusal and the installed state.
+- [ ] Build the fixtures locally from the signed `test` index and packages: a package altered after indexing, an index with an invalid signature, an index signed with another key and, on Fedora, an RPM signed with another key.
+- [ ] Run the update attempt against each fixture through an entry that keeps the packaged key, with a control run against the unchanged index, and record the package manager's refusal and the installed state.
 
 ## Acceptance criteria
 
-- [ ] `apt` refuses the altered package and the invalid index with a signature or hash error, and version A stays installed.
-- [ ] Ohtia starts after each refusal and shows the saved value.
-- [ ] The fixtures are removed from the `test` zone after the run and the removal is recorded.
+- [ ] apt on Ubuntu 26.04 and Debian 13 and dnf on Fedora 44 and Fedora 45 refuse the altered package and the invalid index with a signature or digest error, and version A stays installed.
+- [ ] dnf on Fedora 44 and Fedora 45 refuses an RPM signed with another key.
+- [ ] The control run accepts the unchanged index and downloads the package with the release digest.
+- [ ] No fixture is written to the package repositories, and the results are recorded in this issue.
 
 ## Quality checklist
 

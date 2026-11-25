@@ -28,14 +28,14 @@ Run the same scenarios on the ARM64 cells and complete the sixteen-cell record.
 ## Tasks
 
 - [ ] Start after STORY-001-035 is merged and its output X35, the harness for all three distributions, is on the base branch.
-- [ ] Run the complete and refusal scenarios on `linux-arm64-ubuntu-26-04-gnome`, `linux-arm64-debian-13-gnome`, `linux-arm64-fedora-44-gnome` and `linux-arm64-fedora-45-gnome`.
+- [ ] Run the complete scenario on `linux-arm64-ubuntu-26-04-gnome`, `linux-arm64-debian-13-gnome`, `linux-arm64-fedora-44-gnome` and `linux-arm64-fedora-45-gnome`.
 - [ ] Run the short scenario on the four ARM64 KDE cells with the same package bytes as each GNOME counterpart.
 - [ ] Request the maintainer's authorization for each paid ephemeral Scaleway guest before allocating it, and record cleanup, duration and cost.
 
 ## Acceptance criteria
 
 - [ ] Completion gate: Native hosts output NH is observed for the eight cells: each run executes natively on ARM64, never under emulation.
-- [ ] The four ARM64 GNOME cells pass the complete and refusal scenarios and the four KDE cells pass the short scenario with matching digests.
+- [ ] The four ARM64 GNOME cells pass the complete scenario and the four KDE cells pass the short scenario with matching digests.
 - [ ] Cleanup confirms that no Scaleway resource remains after each guest run.
 - [ ] The combined record covers all sixteen Linux cells with the package digest each one installed.
 
