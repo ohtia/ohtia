@@ -385,7 +385,7 @@
       "decorativeBorders": "border.subtle"
     },
     {
-      "selector": ".agent-settings .agent-choice",
+      "selector": ".agent-settings > .agent-choice,\n.agent-row",
       "backgrounds": ["surface.page"],
       "minimum": 3,
       "decorativeBorders": "border.subtle"
@@ -1266,6 +1266,12 @@
     {
       "selector": ".settings-content .settings-back",
       "foreground": "content.primary",
+      "backgrounds": ["surface.page"],
+      "minimum": 7
+    },
+    {
+      "selector": ".agent-summary",
+      "foreground": "content.secondary",
       "backgrounds": ["surface.page"],
       "minimum": 7
     }

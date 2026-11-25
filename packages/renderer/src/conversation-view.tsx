@@ -22,6 +22,7 @@ import {
   type InterfaceLocale,
   type SynthesisSource,
   isSynthesisSources,
+  type ReplyAgent,
 } from "@ohtia/contracts";
 import { MessageMarkdown } from "./research-presentation.js";
 import { contributorNames, VoiceLabel } from "./contributor-identity.js";
@@ -123,7 +124,7 @@ export function ConversationView({
   readonly commands: Pick<CommandBridge, "copyMessage" | "openExternalLink"> &
     Partial<Pick<CommandBridge, "openLink">>;
   readonly onOpenConnections?: () => void;
-  readonly onOpenAgents?: () => void;
+  readonly onOpenAgents?: (agent?: ReplyAgent) => void;
   readonly sharedReplyAnnouncements?: boolean;
   readonly onOpenMemory?: () => void;
   readonly onAddMemory?: (source: { messageId: string; researcherText?: string }) => void;

@@ -1862,6 +1862,43 @@ describe("Settings pages", () => {
     expect(document.activeElement?.closest('[id$="-agents-controls"]')).not.toBeNull();
   });
 
+  it("opens the named agent's row with focus on its Service select", async () => {
+    const preferences = {
+      preferences: [
+        {
+          target: "default",
+          revision: 1,
+          connection: "chatgpt",
+          model: "first",
+          modelName: "First model",
+          effort: null,
+          inherit: false,
+          source: "researcher",
+          seedPending: false,
+        },
+      ],
+      lists: [],
+    };
+    await mount(
+      "en-US",
+      undefined,
+      {
+        listAgentPreferences: () => call({ ok: true, value: preferences }),
+      } as Partial<FoundationPort>,
+      undefined,
+      "agents:josefa",
+    );
+    const current = pageButtons().find((button) => button.getAttribute("aria-current"));
+    expect(current?.textContent).toBe("Agents");
+    const expanded = (agent: string) =>
+      container
+        .querySelector(`[data-agent-row="${agent}"] button[aria-expanded]`)
+        ?.getAttribute("aria-expanded");
+    expect(expanded("josefa")).toBe("true");
+    expect(expanded("virgilio")).toBe("false");
+    expect(document.activeElement).toBe(container.querySelector('[data-agent-service="josefa"]'));
+  });
+
   it("follows a focus target that arrives while another page is open", async () => {
     const focus: { current: ComponentProps<typeof SettingsDialog>["requestedFocus"] } = {
       current: undefined,

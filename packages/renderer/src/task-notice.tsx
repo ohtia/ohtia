@@ -10,6 +10,7 @@ import {
   type PauseCounts,
   type CommandBridge,
   isUsagePauseConnection,
+  type ReplyAgent,
 } from "@ohtia/contracts";
 import { useReplyDetails, type DetailsSource } from "./reply-details.js";
 import { contributorNames, VoiceLabel } from "./contributor-identity.js";
@@ -318,7 +319,7 @@ export function TaskNotice({
   readonly controller: Pick<ConversationController, "performTaskAction">;
   readonly commands: Pick<CommandBridge, "openLink">;
   readonly onOpenConnections?: () => void;
-  readonly onOpenAgents?: () => void;
+  readonly onOpenAgents?: (agent?: ReplyAgent) => void;
   readonly announce?: (signature: string) => boolean;
 }) {
   const disclosure = useReplyDetails(locale, details);
@@ -607,7 +608,13 @@ export function TaskNotice({
             (task.blockingReason === "connection_disabled" &&
               !task.consultation &&
               !task.synthesis)) && (
-            <button type="button" className="primitive-button" onClick={onOpenAgents}>
+            <button
+              type="button"
+              className="primitive-button"
+              onClick={() => {
+                onOpenAgents(task.agentId);
+              }}
+            >
               {message(locale, "agents.open")}
             </button>
           )}

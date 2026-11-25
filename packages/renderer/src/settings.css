@@ -550,7 +550,7 @@
   font: inherit;
 }
 
-.agent-settings .agent-choice + .agent-choice {
+.agent-settings > .agent-choice + .agent-choice {
   margin-block-start: var(--space-4);
 }
 
@@ -566,11 +566,38 @@
   gap: var(--space-2);
 }
 
-.agent-settings .agent-choice {
+.agent-settings > .agent-choice,
+.agent-row {
   border-block-start: var(--border-width-default) solid var(--border-subtle);
   padding-block-start: var(--space-3);
 }
 
+.agent-rows {
+  display: grid;
+  gap: var(--space-3);
+}
+.agent-row {
+  display: grid;
+  gap: var(--space-2);
+  min-inline-size: var(--space-0);
+}
+.agent-row-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.agent-row-heading > h4 {
+  flex: 1 1 12rem;
+  min-inline-size: var(--space-0);
+}
+.agent-row .agent-choice {
+  padding-block-start: var(--space-2);
+}
+.agent-summary {
+  color: var(--content-secondary);
+  overflow-wrap: anywhere;
+}
 .agent-choice-feedback {
   display: grid;
   justify-items: start;

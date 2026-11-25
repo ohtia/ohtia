@@ -1,4 +1,4 @@
-import type { AgentPreferenceTarget } from "@ohtia/contracts";
+import { isReplyAgent, type AgentPreferenceTarget, type ReplyAgent } from "@ohtia/contracts";
 import type { NewProjectController } from "./new-project-controller.js";
 import { LimitsFeedback } from "./limits-panel.js";
 import { LimitsController } from "./limits-controller.js";
@@ -59,7 +59,7 @@ export function SettingsSurfaces({
     commands: CommandController | undefined,
     binding: WorkspaceSettingsBinding,
     openConnections: () => void,
-    openAgents: () => void,
+    openAgents: (agent?: ReplyAgent) => void,
   ) => ReactNode;
   readonly composeWorkspace?: boolean;
   readonly research?: ConversationController;
@@ -110,7 +110,9 @@ export function SettingsSurfaces({
     [],
   );
   const [layoutFailure, setLayoutFailure] = useState(false);
-  const [requestedFocus, setRequestedFocus] = useState<SettingFeature | "connections" | "agents">();
+  const [requestedFocus, setRequestedFocus] = useState<
+    SettingFeature | "connections" | "agents" | `agents:${ReplyAgent}`
+  >();
   const sourceResearch = research ?? ownResearch;
   const observeAgentSettings = useCallback(
     (refresh: (target?: AgentPreferenceTarget, revision?: number) => void) =>
@@ -351,8 +353,9 @@ export function SettingsSurfaces({
                     setRequestedFocus("connections");
                     void commands?.invoke("settings.open");
                   },
-                  () => {
-                    setRequestedFocus("agents");
+                  (agent?: ReplyAgent) => {
+                    // Only a known agent selects a row; anything else, such as an event, opens the page.
+                    setRequestedFocus(isReplyAgent(agent) ? `agents:${agent}` : "agents");
                     void commands?.invoke("settings.open");
                   },
                 ),
