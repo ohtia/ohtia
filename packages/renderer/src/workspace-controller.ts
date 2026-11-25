@@ -165,6 +165,10 @@ export class WorkspaceController {
     this.emit();
     return { applied: true, focus };
   }
+  reveal(panel: WorkspacePanel): void {
+    if (this.geometry.mode === "narrow") this.select(panel);
+    else if (!this.geometry.visible[panel]) this.visibility(panel);
+  }
   visibility(panel: WorkspacePanel, focused?: WorkspacePanel, fromSettings = false): LayoutAction {
     if (this.unavailable || (this.geometry.mode !== "wide" && !fromSettings))
       return { applied: false, reason: "unavailable" };

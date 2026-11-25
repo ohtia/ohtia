@@ -1,6 +1,6 @@
 import { contributorNames } from "./contributor-identity.js";
 import { useId, useSyncExternalStore } from "react";
-import { latestProject, ProjectController } from "./project-controller.js";
+import { latestProject, ProjectCollections, ProjectController } from "./project-controller.js";
 import { ProjectSelector } from "./project-selector.js";
 import { NewProjectController } from "./new-project-controller.js";
 import { ProjectRename, ProjectRenameStatus } from "./project-rename.js";
@@ -70,7 +70,7 @@ export function ApplicationRoot({ bridge }: { readonly bridge: DesktopBridge }) 
 function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
   const [createdProject, setCreatedProject] = useState<string>();
   const [memoryDrafts] = useState(() => new ProjectMemoryDrafts());
-  const { conversation, projects } = useMemo(() => {
+  const { collections, conversation, projects } = useMemo(() => {
     const conversation = new ConversationController(bridge.foundation, undefined, (scope) => {
       projects.rememberStarted(scope);
     });
@@ -78,7 +78,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
       setCreatedProject(undefined);
       conversation.open(scope);
     });
-    return { conversation, projects };
+    return { collections: new ProjectCollections(conversation), conversation, projects };
   }, [bridge.foundation]);
   const conversationState = useSyncExternalStore(conversation.subscribe, conversation.snapshot);
   const history = useSyncExternalStore(
@@ -575,6 +575,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                 <WorkspaceChrome
                   {...binding}
                   chatActivity={activity.chat}
+                  collections={collections}
                   {...(activeProject?.setupConfirmedAt && currentProjectId
                     ? {
                         memory: (
@@ -583,7 +584,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                             locale={bootstrap.locale}
                             projectId={currentProjectId}
                             port={bridge.foundation}
-                            observe={conversation.observe}
+                            observe={collections.observeMemory}
                             drafts={memoryDrafts}
                             sourceQuoteLength={sourceQuoteLength}
                             entryTextLength={entryTextLength}

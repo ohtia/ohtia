@@ -1293,6 +1293,185 @@ it.each([true, false])(
   },
 );
 
+it("browses scoped project collections through late reads, retry and pagination", async () => {
+  const t = raceFixture();
+  const [a, b, c] = t.ids as [string, string, string];
+  const names = ["한글로 쓴 연구 제목", "A".repeat(120), "Research notes — ملاحظات علمية"];
+  const date = "2026-11-17T10:00:00.000Z";
+  const row = (projectId: string, id: string, title: string): ConversationSummary => ({
+    id,
+    projectId,
+    title,
+    createdAt: date,
+    updatedAt: date,
+    revision: 1,
+    agentId: "virgilio",
+    latestAt: date,
+    ownerRevision: 1,
+    ownerPosition: null,
+    latestPrefix: "",
+    latestTruncated: false,
+    latestLanguage: null,
+    status: null,
+    latestReplyTaskId: null,
+    runningTask: null,
+  });
+  const rows = [
+    row(b, b, "Current conversation"),
+    ...Array.from({ length: 50 }, (_, n) =>
+      row(
+        b,
+        `019a8000-0000-7000-8000-${String(200 - n).padStart(12, "0")}`,
+        `Conversation ${n + 1}`,
+      ),
+    ),
+  ];
+  const late = deferred<Outcome<ResearchOutputs["conversation.list"]>>();
+  let firstAttempt = true;
+  let failSecondPage = true;
+  let failEmptyProject = true;
+  function page(
+    items: ConversationSummary[],
+    next: { latestAt: string; id: string } | null = null,
+  ) {
+    return call({ ok: true, value: { items, next, hasMore: next !== null } });
+  }
+  const listConversations = vi.fn(
+    ({ projectId, cursor, count }: Parameters<FoundationPort["listConversations"]>[0]) => {
+      if (projectId === a) {
+        if (count > 1 && failEmptyProject) {
+          failEmptyProject = false;
+          return call(failure("storage_failed"));
+        }
+        return page([]);
+      }
+      if (count === 1) return page([row(projectId, projectId, "Current conversation")]);
+      if (projectId === c) return call(failure("service_unavailable"));
+      if (firstAttempt) {
+        firstAttempt = false;
+        return { result: late.promise, cancel() {} };
+      }
+      if (!cursor) return page(rows.slice(0, 50), { latestAt: date, id: rows[49]!.id });
+      if (failSecondPage) {
+        failSecondPage = false;
+        return call(failure("storage_failed"));
+      }
+      return page(rows.slice(50));
+    },
+  );
+  Object.assign(t.port, {
+    listProjects: () =>
+      call({
+        ok: true,
+        value: {
+          items: t.ids.map((id, n) => ({
+            id,
+            projectType: "thesis",
+            title: names[n],
+            documentLanguage: ["ko-KR", "en-US", "en-US"][n],
+            isDevelopment: false,
+            setupConfirmedAt: date,
+            createdAt: date,
+            updatedAt: date,
+            lastOpenedAt: date,
+          })),
+          next: null,
+          hasMore: false,
+        },
+      }),
+    listConversations,
+    readConversations: ({ projectId, ids }: Parameters<FoundationPort["readConversations"]>[0]) =>
+      call({
+        ok: true,
+        value: {
+          items: ids.map(
+            (id) =>
+              rows.find((item) => item.id === id) ?? row(projectId, id, "Current conversation"),
+          ),
+          remaining: [],
+        },
+      }),
+    listMemory: () =>
+      call({
+        ok: true,
+        value: { projectId: b, entries: [], next: null, active: 0, bytes: 0, revision: 0 },
+      }),
+    readConnection: () => call({ ok: true, value: { state: "disconnected" } }),
+  });
+  vi.mocked(t.bridge.bootstrap.read).mockResolvedValue({
+    version: 1,
+    locale: "en-US",
+    state: "storage_ready",
+    openConversation: { projectId: b, conversationId: b },
+  });
+  await mount(t);
+  const explorer = container.querySelector(".project-explorer")!;
+  const button = (label: string) => {
+    const element = [...explorer.querySelectorAll<HTMLButtonElement>("button")].find(
+      (candidate) =>
+        [...candidate.childNodes]
+          .filter(
+            (node) => !(node instanceof Element && node.getAttribute("aria-hidden") === "true"),
+          )
+          .map((node) => node.textContent)
+          .join("") === label,
+    );
+    expect(element, label).toBeDefined();
+    return element!;
+  };
+  const press = async (label: string) => {
+    const target = button(label);
+    await act(async () => {
+      target.focus();
+      target.click();
+    });
+  };
+  const title = () => explorer.querySelector(".project-explorer-title bdi");
+  const current = () => explorer.querySelector('[aria-current="true"] bdi')?.textContent;
+  expect(title()?.textContent).toBe(names[1]);
+  expect(current()).toBeUndefined();
+  await press("Conversations");
+  expect(explorer.textContent).toContain("Loading conversations…");
+  await selectRaceProject(0);
+  expect(title()?.textContent).toBe(names[0]);
+  await press("Conversations");
+  expect(explorer.querySelector('[role="alert"]')?.textContent).toContain("couldn’t load");
+  await press("Reload conversations");
+  expect(document.activeElement).toBe(button("Conversations"));
+  expect(explorer.textContent).toContain("No conversations yet.");
+  await selectRaceProject(1);
+  expect(current()).toBe("Current conversation");
+  await act(async () =>
+    late.resolve({
+      ok: true,
+      value: { items: [row(b, b, "Stale response")], next: null, hasMore: false },
+    }),
+  );
+  expect(explorer.textContent).not.toContain("Stale response");
+  await press("Sources and documents");
+  expect(button("Sources and documents").getAttribute("aria-expanded")).toBe("false");
+  expect(button("Conversations").getAttribute("aria-expanded")).toBe("true");
+  await press("Load older conversations");
+  expect(explorer.querySelector('[role="alert"]')?.textContent).toContain("couldn’t load older");
+  expect(current()).toBe("Current conversation");
+  await press("Load older conversations");
+  expect(document.activeElement).toBe(button("Conversations"));
+  expect(current()).toBe("Current conversation");
+  await press("Conversation 50");
+  expect(current()).toBe("Conversation 50");
+  await press("Project memory");
+  expect(
+    container.querySelector('[role="tabpanel"]:not([hidden]) .project-memory')?.textContent,
+  ).toContain("Nothing saved yet");
+  expect(current()).toBe("Conversation 50");
+  await selectRaceProject(2);
+  expect(title()?.textContent).toBe(names[2]);
+  await press("Conversations");
+  expect(explorer.textContent).toContain("Conversations are unavailable");
+  expect(explorer.textContent).not.toContain("Conversation 50");
+  expect(button("Sources and documents").getAttribute("aria-expanded")).toBe("true");
+});
+
 it("opens history in the chat panel, restores its draft, and reveals a lazy conversation from the registry", async () => {
   const t = raceFixture();
   const projectId = t.ids[0]!;

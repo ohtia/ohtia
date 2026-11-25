@@ -9,6 +9,90 @@ import {
   type ProjectCursor,
   type ResearchScope,
 } from "@ohtia/contracts";
+import type { ConversationController } from "./conversation-controller.js";
+import type { HistoryState } from "./conversation-history-controller.js";
+
+interface ProjectCollectionsSnapshot {
+  readonly scope: ResearchScope;
+  readonly conversations: HistoryState | undefined;
+}
+
+/** Project-scoped presentation of the existing conversation and memory collections. */
+export class ProjectCollections {
+  private state: ProjectCollectionsSnapshot | undefined;
+
+  constructor(
+    private readonly conversation: Pick<
+      ConversationController,
+      "snapshot" | "subscribe" | "history" | "switchConversation" | "observe"
+    >,
+  ) {}
+
+  snapshot = (): ProjectCollectionsSnapshot => {
+    const { scope } = this.conversation.snapshot();
+    const history = this.conversation.history.snapshot();
+    const conversations =
+      scope.projectId && history.projectId === scope.projectId ? history : undefined;
+    if (
+      this.state &&
+      this.state.scope.projectId === scope.projectId &&
+      this.state.scope.conversationId === scope.conversationId &&
+      this.state.conversations === conversations
+    )
+      return this.state;
+    return (this.state = { scope, conversations });
+  };
+
+  subscribe = (listener: () => void): (() => void) => {
+    let current = this.snapshot();
+    const update = () => {
+      const next = this.snapshot();
+      if (next !== current) {
+        current = next;
+        listener();
+      }
+    };
+    const stopSelection = this.conversation.subscribe(update);
+    const stopHistory = this.conversation.history.subscribe(update);
+    return () => {
+      stopSelection();
+      stopHistory();
+    };
+  };
+
+  observeMemory: ConversationController["observe"] = (listener) =>
+    this.conversation.observe((notice) => {
+      if (
+        notice === "ready" ||
+        !notice.ok ||
+        (notice.value.kind === "changed" &&
+          notice.value.record === "memory" &&
+          notice.value.id === this.conversation.snapshot().scope.projectId)
+      )
+        listener(notice);
+    });
+
+  loadConversations(projectId: string, action: "initial" | "retry" | "older"): void {
+    if (this.snapshot().conversations?.projectId !== projectId) return;
+    const { history } = this.conversation;
+    if (action === "initial") history.ensureLoaded();
+    else if (action === "retry") history.reload();
+    else history.loadOlder();
+  }
+
+  openConversation(projectId: string, id: string): boolean {
+    const { conversations } = this.snapshot();
+    if (
+      !conversations ||
+      conversations.projectId !== projectId ||
+      conversations.status !== "ready" ||
+      !conversations.items.some((item) => item.id === id)
+    )
+      return false;
+    this.conversation.switchConversation(id);
+    return true;
+  }
+}
 
 export interface ProjectRenameDraft {
   readonly projectId: string;
@@ -450,8 +534,8 @@ export class ProjectController {
         const page = await this.port.listConversations({ projectId, cursor: null, count: 1 })
           .result;
         if (this.isDisposed() || epoch !== this.selectionEpoch) return;
-        if (!page.ok || !page.value.items[0]) throw new Error("Project conversation unavailable.");
-        conversationId = page.value.items[0].id;
+        if (!page.ok) throw new Error("Project conversation unavailable.");
+        conversationId = page.value.items[0]?.id ?? null;
       }
       if (this.isDisposed() || epoch !== this.selectionEpoch) return;
       this.advanceSelection();

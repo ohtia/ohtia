@@ -38,6 +38,8 @@ import { LucideGlyph, type LucideName } from "./iconography.js";
 import { Tooltip } from "./layers.js";
 import type { UpdateController, UpdateSnapshot } from "./update-controller.js";
 import { availableVersion, useHeldWhileWriting } from "./update-surfaces.js";
+import type { ProjectCollections } from "./project-controller.js";
+import { ProjectExplorer } from "./project-explorer.js";
 
 const panelIcons = {
   explorer: "panel-left",
@@ -63,6 +65,7 @@ export interface WorkspaceWindowInsets {
 export interface WorkspaceChromeProps {
   readonly chat?: ReactNode;
   readonly memory?: ReactNode;
+  readonly collections?: ProjectCollections;
   readonly memoryRequest?: number;
   readonly revealSourceRequest?: object;
   readonly projectSelector?: ReactNode;
@@ -208,6 +211,7 @@ export function WorkspaceChrome({
   chat,
   memory,
   memoryRequest,
+  collections,
   revealSourceRequest,
   chatTitle,
   chatActivity,
@@ -282,8 +286,7 @@ export function WorkspaceChrome({
     if (!projectScope) return;
     const layout = controller.current;
     if (!layout) return;
-    if (layout.state.geometry.mode === "narrow") layout.select("documents");
-    else if (!layout.state.geometry.visible.documents) layout.visibility("documents");
+    layout.reveal("documents");
     setMemoryTabs((previous) => new Map(previous).set(projectScope, true));
     setFocusMemory(true);
   }, [projectScope]);
@@ -327,8 +330,7 @@ export function WorkspaceChrome({
     )
       return;
     handledSourceRequest.current = revealSourceRequest;
-    if (layout.state.geometry.mode === "narrow") layout.select("chat");
-    else if (!layout.state.geometry.visible.chat) layout.visibility("chat");
+    layout.reveal("chat");
   }, [preferences, revealSourceRequest, state]);
 
   function selectDocumentTab(active: boolean) {
@@ -1093,6 +1095,16 @@ export function WorkspaceChrome({
                         <ShortcutControl id="about.open" commands={commands} locale={locale} text />
                       </div>
                     </div>
+                  ) : panel === "explorer" && collections ? (
+                    <ProjectExplorer
+                      collections={collections}
+                      project={project}
+                      locale={locale}
+                      memoryAvailable={!!memory}
+                      memorySelected={memorySelected}
+                      openMemory={openMemory}
+                      revealChat={() => controller.current?.reveal("chat")}
+                    />
                   ) : panel === "explorer" && memory ? (
                     <>
                       <button

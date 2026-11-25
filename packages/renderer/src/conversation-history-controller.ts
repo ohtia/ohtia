@@ -5,7 +5,7 @@ import {
   type FoundationPort,
 } from "@ohtia/contracts";
 
-interface HistoryState {
+export interface HistoryState {
   readonly projectId: string | null;
   readonly visible: boolean;
   readonly status: "loading" | "ready" | "failed" | "unavailable";
@@ -83,11 +83,13 @@ export class ConversationHistoryController {
   show = (): void => {
     if (!this.state.projectId || this.state.visible) return;
     this.update({ visible: true });
-    if (!this.initialized) {
-      this.initialized = true;
-      if (this.active) this.reload();
-      else this.update({ status: this.connectionProblem ?? "loading" });
-    }
+    this.ensureLoaded();
+  };
+  ensureLoaded = (): void => {
+    if (!this.state.projectId || this.initialized) return;
+    this.initialized = true;
+    if (this.active) this.reload();
+    else this.update({ status: this.connectionProblem ?? "loading" });
   };
   hide = (): void => {
     if (this.state.visible) this.update({ visible: false });
@@ -227,9 +229,19 @@ export class ConversationHistoryController {
         if (!result.ok) throw Object.assign(new Error("Conversation read failed."), result.error);
         if (result.value.remaining.length >= remaining.length)
           throw new Error("Conversation read made no progress.");
-        for (const item of result.value.items) output.set(item.id, item);
+        this.collect(projectId, result.value.items, output);
         remaining = [...result.value.remaining];
       }
+    }
+  }
+  private collect(
+    projectId: string,
+    items: readonly ConversationSummary[],
+    output: Map<string, ConversationSummary>,
+  ): void {
+    for (const item of items) {
+      if (item.projectId !== projectId) throw new Error("Invalid conversation scope.");
+      output.set(item.id, item);
     }
   }
   private async page(
@@ -246,7 +258,7 @@ export class ConversationHistoryController {
       const { items, next } = result.value;
       if (next && (!items.length || (cursor && compareConversations(next, cursor) >= 0)))
         throw new Error("Conversation page made no progress.");
-      for (const item of items) output.set(item.id, item);
+      this.collect(projectId, items, output);
       count -= items.length;
       cursor = next;
     } while (cursor && count > 0);
