@@ -2,6 +2,7 @@
 type: Specification
 title: "Product roadmap"
 description: "Desktop research capabilities, delivery sequence, dependencies and readiness conditions for Ohtia."
+generated: { by: codex/gpt-6.2-sol }
 sources:
   - id: electron-platforms
     resource: "https://github.com/electron/electron/blob/main/README.md#platform-support"
@@ -39,7 +40,7 @@ The construction order is **desktop foundation → basic interface → agents an
 
 ### Research workflows
 
-The first detailed construction route is the seven-stage thesis workflow A–G. Its [existing paper adaptation](thesis-workflow.md#iteration-and-reentry) also supports entering with a narrow question, existing sources or results and using only the relevant artifacts. EPIC-004–014 must verify both a new thesis journey and a paper entering with existing work. Neither route imposes seven manuscript chapters or requires replaying completed academic stages.
+The first detailed construction route is the seven-stage thesis workflow A–G. Its [existing paper adaptation](thesis-workflow.md#iteration-and-reentry) also supports entering with a narrow question, existing sources or results and using only the relevant artifacts. EPIC-004–014 verify the thesis journey, including entry with existing thesis work where applicable. Verify the paper journey from the first delivery that adopts and implements a scientific-paper project type. Neither route imposes seven manuscript chapters or requires replaying completed academic stages.
 
 Dedicated workflows for other academic document types, publication-specific routes and additional interchange/output formats are described under [Future features](#future-features). They require their own task, milestone and fidelity contracts rather than inheriting full support from the availability of an editor or export format.
 
@@ -223,7 +224,7 @@ Role definitions and conversation routing are available from EPIC-003. Research 
 
 **Screens and first stories:** conversational/progressive onboarding of a project created in EPIC-003; inspectable profile synthesis; Navigator's first stage/focus/actions view; simple researcher notes and an initial manuscript slice; Settings storage/recovery and Diagnostics. Record work/institution, supported requirements, citation/AI-use conditions, the project's document language, confirmed at setup, academic support, deadlines, availability, experience/support needs and existing material with its actual attribution. Unknowns stay explicit. Add the initial canonical manuscript subset for title/paragraph writing and durable revision saving, then extend it in EPIC-007.
 
-**Done when:** the researcher can correct and review the exact profile version, confirm a first focus and reopen the project with notes, writing and decisions intact. No long questionnaire or model choice is required for local use. Deadline questions occur early; missing dates do not produce a pace metric. Implement transactional receipts, UUID constraints, expected versions, exclusive schema migrations and verified checkpoint recovery before their first persistent use. Failed saves preserve recoverable input. Integrate relevant character events through committed, current findings only: one animation per batch, at most one deferred Navigator presentation while a manuscript was visible, static recovery and immediate cancellation in nonanimated/reduced-motion modes. Verify workspace project/form/tab cases V04–V06 and V09, and V05's conversation actions, with real project ownership and the integrated user-facing flows; EPIC-003 verifies the project-switching and history cases V08 and V13. Project switching rejects obsolete responses and disposes scoped subscriptions.
+**Done when:** the researcher can correct and review the exact profile version, confirm a first focus and reopen the project with notes, writing and decisions intact. No long questionnaire or model choice is required for local use. Deadline questions occur early; missing dates do not produce a pace metric. Implement transactional receipts, UUID constraints, expected versions, exclusive schema migrations and verified checkpoint recovery before their first persistent use. Failed saves preserve recoverable input. Integrate relevant character events through committed, current findings only: one animation per batch, at most one deferred Navigator presentation for an eligible source-contradiction event while a manuscript was visible, static recovery and immediate cancellation in nonanimated/reduced-motion modes. Verify workspace project/form/tab cases V04–V06 and V09, and V05's conversation actions, with real project ownership and the integrated user-facing flows; EPIC-003 verifies the project-switching and history cases V08 and V13. Project switching rejects obsolete responses and disposes scoped subscriptions.
 
 **Review milestone:** the researcher confirms profile accuracy and focus or leaves identified questions unresolved. Imported requirements and model reformulations retain separate origins. Institutional approval is a separate evidenced event.
 
@@ -379,7 +380,7 @@ Role definitions and conversation routing are available from EPIC-003. Research 
 
 **Experience:** the researcher installs, updates and recovers the delivered capability set graphically on the declared tested Windows/macOS/Linux matrix.
 
-**First stories:** use EPIC-001's existing environment, packaging, signing/update and release infrastructure to qualify the integrated selected research scope. Reconcile the tested OS/version/CPU/filesystem/hardware matrix and measured budgets with the declared baseline, assemble the verified fonts/converters and graphical optional-runtime setup paths introduced with their consumers, and exercise first use and the full A–G journey, a paper entering with existing work and delivery/feedback on final release artifacts across all required OS/CPU combinations. Requalify affected mechanisms when integration changes them; constructing the pipeline, choosing its installer/update mechanisms and contributor setup belong to EPIC-001.
+**First stories:** use EPIC-001's existing environment, packaging, signing/update and release infrastructure to qualify the integrated selected research scope. Reconcile the tested OS/version/CPU/filesystem/hardware matrix and measured budgets with the declared baseline, assemble the verified fonts/converters and graphical optional-runtime setup paths introduced with their consumers, and exercise first use and the full A–G journey, delivery and feedback on final release artifacts across all required OS/CPU combinations. Include a paper entering with existing work when the declared delivery scope includes the implemented scientific-paper project type. Requalify affected mechanisms when integration changes them; constructing the pipeline, choosing its installer/update mechanisms and contributor setup belong to EPIC-001.
 
 **Done when:** identify source commit, locks/components/tools, schema compatibility, target and final signed artifact digest after all transformations. Promote those exact bytes without rebuilding and verify actual installation/update interruption and compatible rollback. Exercise native pickers, credentials, IME/clipboard, process shutdown, migrations, offline work and disabled providers. Verify real keyboard/assistive journeys and record actual artifact/OS/tool omissions. Live repository policy and current CI workflow/run/tested-SHA provenance are separate required evidence from local tests.
 
@@ -420,7 +421,9 @@ The following table names outputs needed to integrate each delivery. These are d
 
 The integration graph is acyclic. Academic reentry changes current research versions rather than adding an implementation dependency from an earlier epic to a later one. EPIC-016 is a later product increment, without being a prerequisite for EPIC-015 integrated qualification.
 
-Build shared infrastructure progressively with its first consumer: minimal data/IPC, bootstrap/preference persistence, safe migration admission, contributor setup and build/release infrastructure in EPIC-001; preference controls and menu commands in EPIC-002; project records with the user-facing create, open and switch flows, task/attempt/intervention authority and connection controls in EPIC-003; the rest of the user-facing project lifecycle, profile/manuscript revisions and researcher-facing recovery in EPIC-004; retained objects, parser isolation and search admission in EPIC-005; formal source/review/version-dependency records in EPIC-006; full manuscript AST/editor fidelity in EPIC-007. Every schema transition, including those introduced before EPIC-004, uses the verified migration/checkpoint boundary. Subsequent product stories extend these same boundaries. A feature may not bypass a mandatory control because its wider subsystem is scheduled later.
+Build shared infrastructure progressively with its first consumer: minimal data/IPC, bootstrap/preference persistence, safe migration admission, contributor setup and build/release infrastructure in EPIC-001; preference controls and menu commands in EPIC-002; project records with the user-facing create, open and switch flows, task/attempt/intervention authority and connection controls in EPIC-003; project rename and window-scoped close, profile/manuscript revisions and researcher-facing recovery in EPIC-004; retained objects, parser isolation and search admission in EPIC-005; formal source/review/version-dependency records in EPIC-006; full manuscript AST/editor fidelity in EPIC-007. Every schema transition, including those introduced before EPIC-004, uses the verified migration/checkpoint boundary. Subsequent product stories extend these same boundaries. A feature may not bypass a mandatory control because its wider subsystem is scheduled later.
+
+Project archiving and deletion belong to a separate project lifecycle delivery after the active-work, retention and erasure contracts are agreed. A deletion guarantee requires verification of managed checkpoints, databases and retained copies.
 
 Parallel implementation follows agreed output contracts. Shared migrations, AST grammar, lockfiles, IPC schemas, catalogs and CI inventories need an integrating owner. Native tests, provider accounts and review capacity can constrain parallel work. Each consuming epic owns combined verification with its shared components before completion.
 
@@ -494,7 +497,7 @@ Cloud collaboration, mobile/tablet delivery, bibliography-manager synchronizatio
 | Workflow F descriptive cut/results/coverage                | EPIC-011                                      |
 | Workflow G theory, alternatives and supported answer       | EPIC-012                                      |
 | Writing/review throughout; external feedback               | EPIC-004, EPIC-007, EPIC-013, EPIC-014        |
-| Navigator, reentry, papers and reviewed transitions        | EPIC-004–EPIC-012                             |
+| Navigator, thesis reentry and reviewed transitions         | EPIC-004–EPIC-012                             |
 | Visual identity, menus, layout and preference controls     | EPIC-002; every screen owner                  |
 | Bootstrap, preference persistence and contributor setup    | EPIC-001; controls EPIC-002–004               |
 | Character controls, event batches and contributor identity | EPIC-002–004; each consumer                   |
@@ -528,7 +531,7 @@ These assignments identify where each document's requirements first become obser
 | Canonical document                                         | Delivery ownership                                                 |
 | ---------------------------------------------------------- | ------------------------------------------------------------------ |
 | [Product definition][product]                              | All epics; PRIN-001–016 remain acceptance conditions               |
-| [Thesis workflow][workflow]                                | EPIC-004–014; A–G, reentry, papers and milestone decisions         |
+| [Thesis workflow][workflow]                                | EPIC-004–014; A–G, thesis reentry and milestone decisions          |
 | [Exploration–Action Framework][exploration]                | EPIC-004–012; stage notation, adequate inputs and returns          |
 | [System architecture][architecture]                        | EPIC-001; operational consumers EPIC-003–016                       |
 | [Frontend architecture][frontend]                          | EPIC-001–004; each later screen and native journey                 |
