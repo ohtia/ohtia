@@ -1,4 +1,4 @@
-/* global clearTimeout */
+/* global clearTimeout, document, getComputedStyle, innerHeight */
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -7,6 +7,7 @@ import { focusNative, withCommandCleanup } from "./command-native-focus.mjs";
 import { invokeNativeMenu } from "./command-acceptance.mjs";
 import { message, rendererCancelsCommandKeys } from "../packages/contracts/dist/index.js";
 import { withNativeFailureObservation } from "./native-failure-observation.mjs";
+import { setNativeViewport } from "./design-viewport.mjs";
 import {
   observeRendererCommandKey,
   releaseRendererCommandKey,
@@ -243,6 +244,43 @@ export async function verifyPackagedSettings(application, page, second, output, 
   );
 }
 
+/**
+ * The dialog's box and the height it must have: the window height minus its block margins, up to
+ * component.settings.max-height, whatever the selected page holds. While the page list is shown,
+ * `listGap` is the distance from its bottom edge to the dialog's inner bottom edge.
+ */
+function settingsBox(dialog) {
+  return dialog.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    const list = element.querySelector(".settings-pages");
+    const listBox = list?.checkVisibility() ? list.getBoundingClientRect() : null;
+    const maximum = parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue(
+        "--component-settings-max-height",
+      ),
+    );
+    const available = innerHeight - parseFloat(style.marginTop) - parseFloat(style.marginBottom);
+    return {
+      box: { x: box.x, y: box.y, width: box.width, height: box.height },
+      expectedHeight: Math.min(maximum, available),
+      maximum,
+      listGap: listBox && box.bottom - parseFloat(style.borderBottomWidth) - listBox.bottom,
+    };
+  });
+}
+/** Every measured box is the first one, has the expected height and any shown list fills it. */
+function expectStableSettingsBox(measures) {
+  const [first] = measures;
+  expect(first.maximum).toBeGreaterThan(0);
+  expect(Math.abs(first.box.height - first.expectedHeight)).toBeLessThanOrEqual(1);
+  for (const measure of measures) {
+    expect(measure.box).toEqual(first.box);
+    if (measure.listGap !== null) expect(Math.abs(measure.listGap)).toBeLessThanOrEqual(1);
+  }
+  return first;
+}
+
 /** Reach every Settings page with the keyboard, beside the list and in the narrow list. */
 export async function verifyPageNavigation({
   page,
@@ -258,8 +296,10 @@ export async function verifyPageNavigation({
   const layout = (narrow) =>
     expect(dialog.locator(".settings-layout")).toHaveAttribute("data-narrow", String(narrow));
   phase("settings-pages-wide-window", ".settings-dialog[open] .settings-pages");
+  // Exact sizes settle the whole viewport before boxes are compared between pages.
+  const zoomFactor = await nativeWindow.evaluate((window) => window.webContents.getZoomFactor());
   // The preceding locale check leaves a 320px window, where the list and a page alternate.
-  await nativeWindow.evaluate((window) => window.setContentSize(1280, 800));
+  await setNativeViewport(page, nativeWindow, { width: 1280, height: 800, zoomFactor });
   await layout(false);
   await expect(nav).toBeVisible();
   const titles = await pages.evaluateAll((buttons) =>
@@ -268,6 +308,7 @@ export async function verifyPageNavigation({
   expect(titles.slice(0, 2)).toEqual([text("settings.section"), text("connection.title")]);
   phase("settings-pages-keyboard", ".settings-dialog[open] .settings-pages button");
   await pages.first().focus();
+  const wide = [];
   for (const [index, title] of titles.entries()) {
     if (index > 0) await page.keyboard.press("Tab");
     await expect(pages.nth(index)).toBeFocused();
@@ -275,9 +316,31 @@ export async function verifyPageNavigation({
     await expect(pages.nth(index)).toHaveAttribute("aria-current", "page");
     await expect(pages.nth(index)).toBeFocused();
     await expect(dialog.getByRole("heading", { level: 2, name: title, exact: true })).toBeVisible();
+    wide.push(await settingsBox(dialog));
   }
+  expectStableSettingsBox(wide);
+  phase("settings-pages-height-limit", ".settings-dialog[open]");
+  // At half the current zoom the window offers twice its CSS height, beyond the height limit.
+  await withCommandCleanup(
+    async () => {
+      await setNativeViewport(page, nativeWindow, {
+        width: 1280,
+        height: 800,
+        zoomFactor: zoomFactor / 2,
+      });
+      const tall = [];
+      for (const index of titles.keys()) {
+        await pages.nth(index).click();
+        await expect(pages.nth(index)).toHaveAttribute("aria-current", "page");
+        tall.push(await settingsBox(dialog));
+      }
+      const limited = expectStableSettingsBox(tall);
+      expect(limited.expectedHeight).toBe(limited.maximum);
+    },
+    () => setNativeViewport(page, nativeWindow, { width: 1280, height: 800, zoomFactor }),
+  );
   phase("settings-pages-narrow", ".settings-dialog[open] .settings-back");
-  await nativeWindow.evaluate((window) => window.setContentSize(560, 700));
+  await setNativeViewport(page, nativeWindow, { width: 560, height: 700, zoomFactor });
   await layout(true);
   const back = dialog.getByRole("button", { name: text("settings.back"), exact: true });
   await expect(back).toBeVisible();
@@ -305,6 +368,18 @@ export async function verifyPageNavigation({
   await page.keyboard.press("Shift+Tab");
   await expect(back).toBeFocused();
   await page.keyboard.press("Enter");
+  await expect(pages.first()).toBeFocused();
+  phase("settings-pages-narrow-height", ".settings-dialog[open]");
+  // The list alone and every page share one box; the first page is current again at the end.
+  const narrow = [await settingsBox(dialog)];
+  for (const index of [...titles.keys()].reverse()) {
+    await pages.nth(index).click();
+    await expect(nav).toBeHidden();
+    narrow.push(await settingsBox(dialog));
+    await back.click();
+    await expect(nav).toBeVisible();
+  }
+  expectStableSettingsBox(narrow);
   await expect(pages.first()).toBeFocused();
   phase("settings-pages-restore-window", ".settings-dialog[open] .settings-pages button");
   await nativeWindow.evaluate((window, size) => window.setContentSize(...size), originalSize);

@@ -241,6 +241,7 @@
   --component-panel-header-minimum: 48px;
   --component-dialog-max-width: 480px;
   --component-settings-max-width: 880px;
+  --component-settings-max-height: 1080px;
   --component-settings-nav-width: 232px;
   --component-tooltip-max-width: 256px;
   --component-menu-max-width: 384px;

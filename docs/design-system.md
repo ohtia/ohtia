@@ -520,6 +520,7 @@ The following component tokens prevent scattered visual values in primitives:
 - `component.panel.header-minimum`: 48 px. Allows controls and growth for translations.
 - `component.dialog.max-width`: 480 px. Limits the width of command dialogs, preserving at least `space.4` on each side of the window.
 - `component.settings.max-width`: 880 px. Limits the Settings dialog's width, preserving at least `space.4` on each side of the window.
+- `component.settings.max-height`: 1080 px. Limits the Settings dialog's height; below it the dialog takes the window height minus its block margins, so its height never depends on the selected page.
 - `component.settings.nav-width`: 232 px. Sets the width of the Settings page list beside the selected page.
 - `component.tooltip.max-width`: 256 px; `component.menu.max-width`: 384 px. Bound the help and action layers, which are also constrained to the viewport and positioned using CSSOM.
 - `component.palette.max-width`: 600 px. Bounds the command palette, which is also constrained to the viewport with at least `space.4` on each side.
