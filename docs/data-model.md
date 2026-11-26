@@ -1,7 +1,7 @@
 ---
 type: Specification
 title: "Data model"
-description: "Source entities, research-project relationships, and versions of project titles, thesis profiles and Markdown manuscripts in SQLite."
+description: "Source entities, research-project relationships, and versioned project titles, thesis profiles, stage decisions and Markdown manuscripts in SQLite."
 sources:
   - id: biblatex
     resource: "https://www.ctan.org/tex-archive/macros/latex/contrib/biblatex/"
@@ -196,6 +196,16 @@ Every field may be explicitly `unknown` or `inapplicable`. A missing key represe
 Supported origins are a researcher statement, a description of supporting material, an exact same-project conversation message revision, and explicit adoption of a stored proposal. A description preserves what the researcher reported about the material. The utility resolves message links to saved researcher messages or complete agent replies and checks project ownership. A stored proposal has its own UUIDv7, project, completed producing attempt, base profile revision, field and proposed value. Adoption matches that project, attempt, field, value and base. A later edit to a list can preserve already adopted items with their original provenance. Adopting a value records a researcher action and the agent's contribution. It grants no institutional approval or broader evidence coverage.
 
 Each text fact, milestone title and material description is limited to 2 KiB UTF-8. Each list is limited to 16 items. The complete canonical revision body, including its provenance and schema version, is limited to 32 KiB UTF-8. A rejected request leaves confirmed history intact. The receipt contains the exact revision identity, predecessor, sequence and changed fields. See [the bounded application port](application-port.md#research-operations-and-text-parts) for the scoped reads, save and receipt.
+
+## Research stages and decisions
+
+A setup-confirmed thesis has a separate decision sequence for each stage. The registry uses the identifiers `onboarding`, `topic_problem`, `literature`, `methodology`, `investigate`, `describe` and `interpret`. An empty sequence reads as `not-started` at revision zero. The latest entry or reopening reads as `in-progress`, and the latest recorded milestone completion reads as `done`. The scoped snapshot reports whether entry and reopening are available, gives the current profile revision if present, and identifies the most recent project-wide entry or reopening. Onboarding supports entry and reopening. The later stages report that their workflows are unavailable.
+
+Each append-only decision stores its UUIDv7, project, stage, committed stage revision, predecessor, project-wide order, operation identifier, preceding state, transition, researcher as the observed local actor, application-observed timestamp, reason, profile revision, supporting artifact versions and remaining conditions. The read projection includes the preceding revision number as the expected revision. The profile reference may be empty before the first profile is saved. An artifact reference resolves to a saved researcher conversation message or a complete agent reply within the same project at its immutable message revision. The port admits up to 16 distinct artifact links, up to eight conditions of 256 UTF-8 bytes each, a nonblank reason of up to 1,024 UTF-8 bytes and, for reopening, a nonblank next-review condition of up to 512 UTF-8 bytes.
+
+The first entry expects an empty stage sequence. Reopening expects the exact current stage revision and a reference to its recorded completion. Both compare the selected profile revision with the current profile inside the transaction. A reopening points to the prior completion and exposes that decision’s profile revision and artifact versions as affected outputs alongside the next-review condition. The earlier decision retains its exact evidence and coverage. Reopening records a new human decision and preserves the underlying artifacts and profile revisions. The [version-bound research review decision](adr/adr-0035-version-bound-research-review.md) governs how confirmation applies to those versions.
+
+SQLite enforces the project/stage predecessor, per-project and per-stage order, profile and artifact ownership, immutable history and matching receipt. The utility commits the decision, artifact links and receipt together. The operation identity binds the original payload without the window subscription. A replay returns the original decision, and a changed payload conflicts. The scoped port exposes the snapshot through `stage.read` and one exact revision through `stage.history`. The explicit `stage.transition` command and `stage.receipt` use the same intent. A `researchStage` subscription event carries the project-wide decision sequence after a commit.
 
 ## Manuscripts and revisions
 

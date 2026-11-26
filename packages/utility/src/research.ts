@@ -84,8 +84,20 @@ import {
   type ThesisProfileSchema,
 } from "./thesis-profile.js";
 
+import {
+  applyStageTransition,
+  stageReceiptResult,
+  stageTransitionHash,
+  type ResearchStageSchema,
+} from "./research-stage.js";
+
 export interface ResearchSchema
-  extends TaskSchema, MemorySchema, AgentPreferenceSchema, ThesisProfileSchema {
+  extends
+    TaskSchema,
+    MemorySchema,
+    AgentPreferenceSchema,
+    ThesisProfileSchema,
+    ResearchStageSchema {
   intervention_events: PlanEventRow;
   continuations: ContinuationRow;
   intervention_limits: InterventionLimitsRow;
@@ -295,6 +307,7 @@ const payloadKeys = {
   "task.cancelAll": [],
   "project.rename": ["projectId", "title", "expectedTitleRevision"],
   "profile.save": ["projectId", "expectedRevision", "patch"],
+  "stage.transition": ["projectId", "stageId", "expectedRevision", "decision"],
   "project.confirmSetup": ["proposalId"],
   "project.rejectSetup": ["proposalId"],
   "conversation.start": ["projectId", "content"],
@@ -327,9 +340,11 @@ export async function applyResearchCommand(
     hash =
       input.command === "profile.save"
         ? Buffer.from(profileSaveHash(input.payload), "hex")
-        : payloadHash
-          ? Buffer.from(payloadHash, "hex")
-          : crypto.createHash("sha256").update(canonicalJson(input.payload)).digest();
+        : input.command === "stage.transition"
+          ? Buffer.from(stageTransitionHash(input.payload), "hex")
+          : payloadHash
+            ? Buffer.from(payloadHash, "hex")
+            : crypto.createHash("sha256").update(canonicalJson(input.payload)).digest();
   } catch {
     return failure("invalid_message");
   }
@@ -643,6 +658,12 @@ export async function applyResearchCommand(
       }
       break;
     }
+    case "stage.transition": {
+      const recorded = await applyStageTransition(db, input.payload, input.operationId, now);
+      if (!recorded.ok) return recorded;
+      result = recorded.value;
+      break;
+    }
     case "profile.save": {
       const saved = await saveProfile(db, input.payload, input.operationId);
       if (!saved.ok) return saved;
@@ -883,6 +904,8 @@ export async function researchReceiptResult(
   receipt: Pick<ResearchSchema["command_receipts"], "command" | "result_id" | "operation_id">,
 ): Promise<ResearchResult> {
   const resultId = identifier(receipt.result_id);
+  if (receipt.command === "stage.transition")
+    return stageReceiptResult(db, receipt.operation_id, receipt.result_id);
   if (receipt.command === "profile.save")
     return profileReceiptResult(db, receipt.operation_id, receipt.result_id);
   if (receipt.command === "project.rename") {

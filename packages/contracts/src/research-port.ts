@@ -48,6 +48,21 @@ import {
   type ProfileSaveResult,
 } from "./thesis-profile.js";
 
+import {
+  isResearchStage,
+  isStageDecision,
+  isStageSnapshot,
+  isStageTransition,
+  isStageTransitionResult,
+  type ResearchStageId,
+  type StageDecision,
+  type StageReceiptResult,
+  type StageSnapshot,
+  type StageTransitionPayload,
+  type StageTransitionResult,
+} from "./research-stage.js";
+import { canonicalJson } from "./canonical-json.js";
+
 export const researchOperations = [
   "agentPreference.list",
   "agentPreference.replace",
@@ -65,6 +80,10 @@ export const researchOperations = [
   "profile.stagePart",
   "profile.save",
   "profile.receipt",
+  "stage.read",
+  "stage.history",
+  "stage.transition",
+  "stage.receipt",
   "project.confirmSetup",
   "project.rejectSetup",
   "conversation.start",
@@ -647,6 +666,7 @@ export type ResearchEvent =
         | "project"
         | "projectTitle"
         | "profile"
+        | "researchStage"
         | "conversation"
         | "timeline"
         | "usagePause"
@@ -672,18 +692,25 @@ export const researcherMessageLimit = 20_000;
 export function validResearcherMessage(text: string): boolean {
   return text.trim().length > 0 && Array.from(text).length <= researcherMessageLimit;
 }
-interface ProfileScope {
+interface ProjectResearchScope {
   readonly projectId: string;
   readonly subscriptionId: string;
 }
-type SaveProfileInput = ProfileScope & {
+type SaveProfileInput = ProjectResearchScope & {
   readonly expectedRevision: number;
   readonly patch: string | TextDescriptor;
 };
 export interface ResearchInputs {
-  "profile.read": ProfileScope & { readonly revisionId: string | null };
-  "profile.stagePart": ProfileScope & TextPart;
-  "profile.readPart": ProfileScope & { readonly revisionId: string; readonly index: number };
+  "stage.read": ProjectResearchScope & { readonly stageId: ResearchStageId };
+  "stage.history": ResearchInputs["stage.read"] & { readonly revision: number };
+  "stage.transition": ProjectResearchScope & StageTransitionPayload;
+  "stage.receipt": ResearchInputs["stage.transition"] & { readonly operationId: string };
+  "profile.read": ProjectResearchScope & { readonly revisionId: string | null };
+  "profile.stagePart": ProjectResearchScope & TextPart;
+  "profile.readPart": ProjectResearchScope & {
+    readonly revisionId: string;
+    readonly index: number;
+  };
   "profile.save": SaveProfileInput;
   "profile.receipt": SaveProfileInput & { readonly operationId: string };
   "agentPreference.list": { readonly operationId?: string };
@@ -769,6 +796,10 @@ export interface ResearchInputs {
   "reply.readParts": { readonly taskId: string; readonly fromSequence: number };
 }
 export interface ResearchOutputs {
+  "stage.read": StageSnapshot;
+  "stage.history": StageDecision;
+  "stage.transition": StageTransitionResult;
+  "stage.receipt": StageReceiptResult;
   "profile.read": ProfileReadResult;
   "profile.readPart": {
     readonly projectId: string;
@@ -836,6 +867,13 @@ export interface ResearchOutputs {
   "reply.details": ReplyDetails;
 }
 export interface ResearchPort {
+  readResearchStage(input: ResearchInputs["stage.read"]): PortCall<StageSnapshot>;
+  readStageDecision(input: ResearchInputs["stage.history"]): PortCall<StageDecision>;
+  transitionResearchStage(
+    operationId: string,
+    input: ResearchInputs["stage.transition"],
+  ): PortCall<StageTransitionResult>;
+  readStageReceipt(input: ResearchInputs["stage.receipt"]): PortCall<StageReceiptResult>;
   readThesisProfile(input: ResearchInputs["profile.read"]): PortCall<ProfileReadResult>;
   readThesisProfilePart(
     input: ResearchInputs["profile.readPart"],
@@ -1001,6 +1039,7 @@ export function isResearchMutation(value: string): value is WindowResearchComman
     "project.open",
     "project.rename",
     "profile.save",
+    "stage.transition",
     "project.confirmSetup",
     "project.rejectSetup",
     "conversation.start",
@@ -1185,8 +1224,12 @@ function cursor(value: unknown): boolean {
     isResearchId(value.id)
   );
 }
-export function profileScope(request: Request): ProfileScope | undefined {
+export function projectResearchScope(request: Request): ProjectResearchScope | undefined {
   switch (request.operation) {
+    case "stage.read":
+    case "stage.history":
+    case "stage.transition":
+    case "stage.receipt":
     case "profile.read":
     case "profile.readPart":
     case "profile.stagePart":
@@ -1337,6 +1380,31 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
       );
     case "project.create":
       return exact(value, []);
+    case "stage.read":
+    case "stage.history":
+      return (
+        exact(
+          value,
+          operation === "stage.read"
+            ? ["projectId", "subscriptionId", "stageId"]
+            : ["projectId", "subscriptionId", "stageId", "revision"],
+        ) &&
+        isResearchId(value.projectId) &&
+        opaque(value.subscriptionId) &&
+        isResearchStage(value.stageId) &&
+        (operation === "stage.read" || integer(value.revision))
+      );
+    case "stage.transition":
+      return (
+        obj(value) && opaque(value.subscriptionId) && isStageTransition(value, ["subscriptionId"])
+      );
+    case "stage.receipt":
+      return (
+        obj(value) &&
+        opaque(value.subscriptionId) &&
+        opaque(value.operationId) &&
+        isStageTransition(value, ["subscriptionId", "operationId"])
+      );
     case "profile.read":
       return (
         exact(value, ["projectId", "subscriptionId", "revisionId"]) &&
@@ -2014,6 +2082,21 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
       value.versions.length <= memoryPageSize &&
       value.versions.every(isMemoryVersion)
     );
+  if (operation === "stage.read") return isStageSnapshot(value);
+  if (operation === "stage.history") return isStageDecision(value);
+  if (operation === "stage.transition") return isStageTransitionResult(value);
+  if (operation === "stage.receipt")
+    return (
+      exact(value, ["projectId", "stageId", "operationId", "receipt"]) &&
+      isResearchId(value.projectId) &&
+      isResearchStage(value.stageId) &&
+      opaque(value.operationId) &&
+      (value.receipt === null ||
+        (isStageTransitionResult(value.receipt) &&
+          value.receipt.stageDecision.projectId === value.projectId &&
+          value.receipt.stageDecision.stageId === value.stageId &&
+          value.receipt.stageDecision.operationId === value.operationId))
+    );
   if (operation === "profile.read") return profileReadResult(value);
   if (operation === "profile.readPart")
     return (
@@ -2632,6 +2715,7 @@ export function isResearchEvent(value: unknown): value is ResearchEvent {
       "project",
       "projectTitle",
       "profile",
+      "researchStage",
       "conversation",
       "timeline",
       "usagePause",
@@ -2643,11 +2727,36 @@ export function isResearchEvent(value: unknown): value is ResearchEvent {
   );
 }
 
+function stageDecisionMatches(
+  input: Record<string, unknown>,
+  decision: unknown,
+  operationId: unknown,
+): boolean {
+  if (!isStageDecision(decision) || !obj(input.decision) || !obj(input.decision.transition))
+    return false;
+  const { transition, profileRevisionId, reason, artifacts, remainingConditions } = input.decision;
+  return (
+    decision.projectId === input.projectId &&
+    decision.stageId === input.stageId &&
+    decision.operationId === operationId &&
+    decision.expectedRevision === input.expectedRevision &&
+    decision.kind === transition.kind &&
+    decision.profileRevisionId === profileRevisionId &&
+    decision.reason === reason &&
+    canonicalJson(decision.artifacts) === canonicalJson(artifacts) &&
+    canonicalJson(decision.remainingConditions) === canonicalJson(remainingConditions) &&
+    (decision.kind !== "reopen" ||
+      (decision.reviewedDecisionId === transition.reviewedDecisionId &&
+        decision.nextReviewCondition === transition.nextReviewCondition))
+  );
+}
+
 /** Cross-check successful research responses against the admitted request, after schema validation. */
 export function researchResultMatches(
   operation: ResearchOperation,
   input: unknown,
   output: unknown,
+  operationId?: string,
 ): boolean {
   if (!obj(input) || !obj(output)) return false;
   if (operation === "plan.finish" || operation === "plan.cancel")
@@ -2707,6 +2816,23 @@ export function researchResultMatches(
       )
     );
   }
+  if (operation === "stage.read" || operation === "stage.history")
+    return (
+      output.projectId === input.projectId &&
+      output.stageId === input.stageId &&
+      (operation === "stage.read" || output.revision === input.revision)
+    );
+  if (operation === "stage.transition")
+    return stageDecisionMatches(input, output.stageDecision, operationId);
+  if (operation === "stage.receipt")
+    return (
+      output.projectId === input.projectId &&
+      output.stageId === input.stageId &&
+      output.operationId === input.operationId &&
+      (output.receipt === null ||
+        (obj(output.receipt) &&
+          stageDecisionMatches(input, output.receipt.stageDecision, input.operationId)))
+    );
   if (operation === "profile.read")
     return (
       output.projectId === input.projectId &&

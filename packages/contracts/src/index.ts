@@ -29,3 +29,4 @@ export * from "./update-check.js";
 export * from "./research-port.js";
 export * from "./canonical-json.js";
 export * from "./thesis-profile.js";
+export * from "./research-stage.js";

@@ -62,6 +62,13 @@ import {
   readProfileReceipt,
 } from "./thesis-profile.js";
 
+import {
+  readStage,
+  readStageHistory,
+  readStageReceipt,
+  stageProjectOrder,
+} from "./research-stage.js";
+
 /** Test the actual envelope as well as its payload: containers, node count, strings and bytes compose. */
 export function fitsResearchResult(request: Request, value: unknown): boolean {
   return encodeEnvelope({ ...request, kind: "result", payload: { ok: true, value } }).ok;
@@ -714,6 +721,12 @@ export async function readResearch(
         ? { ok: true, value }
         : failure("invalid_service_result");
     }
+    case "stage.read":
+      return readStage(db, request.payload);
+    case "stage.history":
+      return readStageHistory(db, request.payload);
+    case "stage.receipt":
+      return readStageReceipt(db, request.payload);
     case "profile.read":
       return readProfile(db, request.payload);
     case "profile.readPart":
@@ -1019,6 +1032,14 @@ export async function researchRevisions(
     const revision = await currentProfileNumber(db, bytes(scope.projectId));
     if (revision !== undefined)
       result.push({ kind: "changed", record: "profile", id: scope.projectId, revision });
+    const order = await stageProjectOrder(db, bytes(scope.projectId));
+    if (order > 0)
+      result.push({
+        kind: "changed",
+        record: "researchStage",
+        id: scope.projectId,
+        revision: order,
+      });
   }
   for (const row of await db
     .selectFrom("usage_limit_pauses")

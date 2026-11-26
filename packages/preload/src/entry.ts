@@ -407,6 +407,11 @@ const bridge: DesktopBridge = {
     createProject: (id) => connection.client.port.createProject(id),
     openProject: (id, input) => connection.client.port.openProject(id, input),
     renameProject: (id, input) => connection.client.port.renameProject(id, input),
+    readResearchStage: (input) => connection.client.port.readResearchStage(input),
+    readStageDecision: (input) => connection.client.port.readStageDecision(input),
+    transitionResearchStage: (id, input) =>
+      connection.client.port.transitionResearchStage(id, input),
+    readStageReceipt: (input) => connection.client.port.readStageReceipt(input),
     readThesisProfile: (input) => connection.client.port.readThesisProfile(input),
     readThesisProfilePart: (input) => connection.client.port.readThesisProfilePart(input),
     stageThesisProfilePart: (id, input) => connection.client.port.stageThesisProfilePart(id, input),

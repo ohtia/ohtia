@@ -53,7 +53,7 @@ import {
   desktopDocument,
   encodeEnvelope,
   decodeText,
-  profileScope,
+  projectResearchScope,
   failure,
   isBootstrapAction,
   message,
@@ -1246,11 +1246,11 @@ async function start(): Promise<void> {
       return;
     }
     const request = accepted.value.request;
-    const profile = profileScope(request);
+    const projectScope = projectResearchScope(request);
     if (
-      (profile &&
-        (windowState.researchProjectId !== profile.projectId ||
-          windowState.researchSubscription !== profile.subscriptionId)) ||
+      (projectScope &&
+        (windowState.researchProjectId !== projectScope.projectId ||
+          windowState.researchSubscription !== projectScope.subscriptionId)) ||
       ((request.operation === "project.rename" || request.operation === "project.read") &&
         windowState.researchProjectId !== request.payload.projectId)
     ) {
