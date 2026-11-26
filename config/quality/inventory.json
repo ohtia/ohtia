@@ -160,6 +160,7 @@
     "scripts/tests/test_release_prepare.py",
     "scripts/tests/test_release_publish.py",
     "scripts/tests/test_release_signing.py",
+    "scripts/tests/test_repository_guest.py",
     "scripts/tests/test_repository_qualification.py",
     "scripts/tests/test_scaleway_cycle.py",
     "scripts/tests/test_scaleway_preflight.py",

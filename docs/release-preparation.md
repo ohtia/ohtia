@@ -101,9 +101,9 @@ The job downloads `release-digests.json` of the unpublished release and refuses 
 
 ## Qualify repository delivery
 
-The `Qualify repository delivery (<cell>)` jobs start after the repository job and run [SPEC-001-041](epics/EPIC-001-desktop-foundation/epic.md#spec-001-041-native-qualification-of-repository-delivery) on the eight x86-64 Linux cells of the [quality inventory](../config/quality/build-targets.json), each on a fresh `ubuntu-26.04` runner. The Ubuntu cells run on the runner itself, in a private GNOME or KDE Plasma Wayland session; the Debian and Fedora cells run in the same KVM guests as the CI. The jobs hold no secret, and their token only reads the repository. Each job checks out the selected commit and runs [the qualification harness](../scripts/repository_qualification.py).
+The `Qualify repository delivery (<cell>)` jobs start after the repository job and run [SPEC-001-041](epics/EPIC-001-desktop-foundation/epic.md#spec-001-041-native-qualification-of-repository-delivery) on the ten Linux cells of the [quality inventory](../config/quality/build-targets.json): the eight x86-64 cells, each on a fresh `ubuntu-26.04` runner, and the Ubuntu ARM64 GNOME and KDE cells, each on a fresh `ubuntu-26.04-arm` runner. The Ubuntu cells run on the runner itself, in a private GNOME or KDE Plasma Wayland session; the Debian and Fedora cells run in the same KVM guests as the CI. The jobs hold no secret, and their token only reads the repository. Each job checks out the selected commit and runs [the qualification harness](../scripts/repository_qualification.py).
 
-On the four GNOME cells, the harness runs the complete scenario:
+On the five GNOME cells, the harness runs the complete scenario:
 
 1. It builds version A from the selected commit with the development version `<version>-dev.<run-id>.<attempt>`. The package registers the `test` zone, and the package manager orders its version below the prepared version.
 2. It installs A from its package file, with `dpkg` or `rpm`, and checks the registered source entry or repository file, the key and the distribution's policy state: the loaded AppArmor allowance on Ubuntu, AppArmor with unprivileged user namespaces and no allowance on Debian, and enforcing SELinux with the expected labels under `/opt/ohtia` on Fedora.
@@ -113,7 +113,7 @@ On the four GNOME cells, the harness runs the complete scenario:
 6. It checks that the updated package registers the `stable` zone and the same policy state. It starts Ohtia again and checks the saved appearance, the running version and the renderer sandbox.
 7. It checks the synthetic stable store sentinels and that no tag names version A.
 
-On the four KDE cells, the harness runs the short scenario. It downloads the cell's package from the `test` zone and compares it with the release digest; it installs that file, importing the committed release key on Fedora first; and it checks the registered `stable` entry, the policy state, the running version, the renderer sandbox and the stable store sentinels. A KDE cell and its GNOME counterpart install the same package bytes, so both record the same digest.
+On the five KDE cells, the harness runs the short scenario. It downloads the cell's package from the `test` zone and compares it with the release digest; it installs that file, importing the committed release key on Fedora first; and it checks the registered `stable` entry, the policy state, the running version, the renderer sandbox and the stable store sentinels. A KDE cell and its GNOME counterpart install the same package bytes, so both record the same digest.
 
 The jobs delete package A at the end; A never reaches a release, a tag or an artifact. Each job retains its report for 90 days as the artifact `repository-qualification-<cell>-<run-id>-<attempt>`. There, `result.json` names the scenario, the host and its runner image or guest, the release package, the digest of A on a GNOME cell and the result and observations of each step; `installed-a/` and `installed-b/` hold the application receipts and process observations of each version, and a KVM cell adds `virtual-machine.json` and the guest's logs. Download a report with:
 
@@ -122,6 +122,27 @@ gh run download <run-id> --repo ohtia/ohtia --name repository-qualification-<cel
 ```
 
 A failure fails the run and leaves the release unpublished; the log names the cause after `Repository qualification failed:`. Publication does not read these results, so check that every qualification job passed before publishing.
+
+## Qualify the ARM64 guest cells
+
+The Debian and Fedora ARM64 cells, `linux-arm64-<profile>-<desktop>` for each profile of the [Scaleway policy](../config/installation/scaleway.json) and each desktop, run on paid guests that the maintainer creates after the qualification jobs pass, so they are not jobs of the workflow. [The guest tool](../scripts/repository_guest.py) prepares each guest as the CI prepares its KVM guests and runs the same repository qualification there; the GNOME cells run the complete scenario and the KDE cells the short scenario. A guest serves exactly one cell: the tool refuses a guest that already has Ohtia or its test account.
+
+For each cell:
+
+1. Create a server of the policy's ARM instance type and zone, `BASIC2-A8C-32G` in `nl-ams-1`, from the base image of the cell's distribution, with 32 GB of disk, a public IPv4 and root SSH access through one Ed25519 key. Install no desktop.
+2. From a clean checkout of the selected commit, download the digest file of the unpublished release, then prepare the guest and run the cell, replacing `<cell>`, `<address>`, `<key>`, `<version>`, `<run-id>` and `<attempt>` with the cell, the guest's IPv4, the private key file, the release version and the prepare-release run and attempt:
+
+   ```bash
+   git checkout --detach reserved/v<version>
+   gh release download v<version> --repo ohtia/ohtia --pattern release-digests.json --dir artifacts/guests
+   python3 scripts/repository_guest.py provision <cell> <address> <key>
+   OHTIA_RELEASE_VERSION=<version> GITHUB_RUN_ID=<run-id> GITHUB_RUN_ATTEMPT=<attempt> \
+     python3 scripts/repository_guest.py run <cell> <address> <key> artifacts/guests/release-digests.json artifacts/guests/<cell>/report
+   ```
+
+3. Delete the server, its volumes and its IPv4, and confirm in the provider console that none remains.
+
+`provision` connects as root and installs the CI guest's desktop and packages, the ARM64 additions of the Scaleway guests and a locked `ohtia` account with administrative authority. `run` bundles the checkout, which must be the release commit named in the digest file, and runs `guest-run.py` as `ohtia`. The report directory holds the same `result.json` and receipts as a qualification job, and `guest.json` with the guest's address, the commit, the run and the guest's exit. Both commands admit the host key the guest first presents and keep it in `artifacts/guests/<cell>/known_hosts`. Record each cell's result, its guest's creation and deletion times and the confirmed cleanup with the release's qualification evidence.
 
 ## Release notes
 
