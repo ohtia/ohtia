@@ -107,7 +107,7 @@ try {
     "system",
     "update",
   ]);
-  expect(initial.diagnostics).toEqual(["readPage"]);
+  expect(initial.diagnostics.sort()).toEqual(["deleteLogs", "readPage"]);
   expect(initial.system.sort()).toEqual(["readMotion", "subscribeMotion"]);
   expect(initial.update).toEqual(["subscribeState"]);
   // SPEC-001-040: a development or qualification runtime never asks for a newer version.
