@@ -230,6 +230,42 @@
   gap: var(--space-2);
 }
 
+.diagnostic-bundle {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.diagnostic-bundle form,
+.diagnostic-bundle fieldset {
+  display: grid;
+  gap: var(--space-2);
+  min-inline-size: 0;
+  margin-inline: 0;
+}
+
+.diagnostic-bundle fieldset {
+  margin-block-start: var(--space-2);
+}
+
+.diagnostic-bundle label.diagnostic-slot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.diagnostic-bundle input[type="datetime-local"] {
+  min-inline-size: 0;
+  inline-size: 100%;
+}
+
+.diagnostic-bundle pre {
+  margin-block: 0;
+  padding: var(--space-2);
+  max-block-size: 16rem;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
 .diagnostic-entries {
   margin-block: var(--space-0);
   padding-inline: var(--space-6) var(--space-0);

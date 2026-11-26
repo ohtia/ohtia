@@ -313,6 +313,15 @@
       },
       "effective_model_evidence": "The active implementation rollout, matched to the runtime thread identifier, records gpt-6.2-sol in turn_context.",
       "human_linguistic_review": null
+    },
+    {
+      "scope": "diagnostics.bundle.* messages for STORY-004-021 in every supported locale",
+      "producer": {
+        "agent": "codex",
+        "effective_model": "gpt-6.2-sol"
+      },
+      "effective_model_evidence": "The active implementation rollout, matched to the runtime thread identifier, records gpt-6.2-sol in turn_context.",
+      "human_linguistic_review": null
     }
   ]
 }

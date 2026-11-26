@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { LanguageController } from "../packages/renderer/src/language-controller.js";
 import {
   desktopChannels,
+  diagnosticBundleHeader,
+  diagnosticBundleFooter,
   decodeText,
   portLimits,
   failure,
@@ -72,6 +74,54 @@ describe("sandbox preload composition", () => {
     const h = await load(session);
     expect(h.error).toBeInstanceOf(Error);
     expect(h.contextBridge.exposeInMainWorld).not.toHaveBeenCalled();
+  });
+  it("validates bundle requests and keeps the native picker open beyond an ordinary IPC deadline", async () => {
+    const { ipcRenderer, bridge } = await load();
+    const id = "00000000-0000-4000-8000-000000000001";
+    const from = "2000-01-01T00:00:00.000Z";
+    const range = { from, through: from };
+    const request = { action: "prepare", id, slots: 2, ...range } as const;
+    const save = { action: "save", token: id } as const;
+    expect(await bridge.diagnostics.bundle({ ...save, path: "/private" } as never)).toEqual({
+      status: "invalid_request",
+    });
+    expect(ipcRenderer.invoke).not.toHaveBeenCalled();
+    const preview = {
+      status: "preview",
+      token: id,
+      json: diagnosticBundleHeader(range) + diagnosticBundleFooter,
+      invalid: 0,
+      unsupported: 0,
+    };
+    ipcRenderer.invoke.mockResolvedValueOnce(preview as never);
+    expect(await bridge.diagnostics.bundle(request)).toEqual(preview);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(desktopChannels.diagnosticsBundle, request);
+    ipcRenderer.invoke.mockResolvedValueOnce({ ...preview, json: "PRIVATE" } as never);
+    expect(await bridge.diagnostics.bundle(request)).toEqual({ status: "unavailable" });
+    ipcRenderer.invoke.mockResolvedValueOnce(preview as never);
+    expect(await bridge.diagnostics.bundle(save)).toEqual({ status: "uncertain" });
+    for (const status of ["saved", "uncertain", "cancelled"]) {
+      ipcRenderer.invoke.mockResolvedValueOnce({ status } as never);
+      expect(await bridge.diagnostics.bundle(request)).toEqual({ status: "unavailable" });
+    }
+    ipcRenderer.invoke.mockResolvedValueOnce({ status: "stale" } as never);
+    expect(await bridge.diagnostics.bundle({ action: "discard", id })).toEqual({ status: "stale" });
+    ipcRenderer.invoke.mockResolvedValueOnce({ status: "cancelled" } as never);
+    expect(await bridge.diagnostics.bundle(save)).toEqual({ status: "cancelled" });
+
+    let resolve!: (result: unknown) => void;
+    ipcRenderer.invoke.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }) as never,
+    );
+    const settled = vi.fn();
+    const saving = bridge.diagnostics.bundle(save).then(settled);
+    await vi.advanceTimersByTimeAsync(portLimits.request_deadline_ms + 1);
+    expect(settled).not.toHaveBeenCalled();
+    resolve({ status: "saved" });
+    await saving;
+    expect(settled).toHaveBeenCalledWith({ status: "saved" });
   });
   it("passes only closed diagnostic requests and validated projections through the named channel", async () => {
     const { ipcRenderer, bridge } = await load();

@@ -2,11 +2,18 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import childProcess from "node:child_process";
-import { EventEmitter } from "node:events";
+import { once, EventEmitter } from "node:events";
+import type { DiagnosticBundleResult } from "@ohtia/contracts";
+import { DiagnosticBundleFlow } from "../packages/main/src/diagnostic-bundle.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   portLimits,
   diagnosticCatalog,
+  diagnosticBundleHeader,
+  diagnosticBundleFooter,
+  diagnosticBundleRecord,
+  decodeDiagnosticBundleRequest,
+  decodeDiagnosticBundleResult,
   dataServiceExitCodes,
   diagnosticLimits,
   decodeDiagnosticEvent,
@@ -394,6 +401,7 @@ describe("broker-owned bounded diagnostic files", { timeout: nativeAclCaseTimeou
     const { writer, root } = fixture();
     vi.useFakeTimers();
     const children: EventEmitter[] = [];
+    let exitCode = 1;
     const spawn = vi.spyOn(childProcess, "spawn").mockImplementation(() => {
       const child = new EventEmitter();
       Object.assign(child, {
@@ -403,8 +411,9 @@ describe("broker-owned bounded diagnostic files", { timeout: nativeAclCaseTimeou
         }),
       });
       children.push(child);
+      const code = exitCode;
       setTimeout(() => {
-        child.emit("close", 1);
+        child.emit("close", code);
       }, 6000);
       return child as unknown as ReturnType<typeof childProcess.spawn>;
     });
@@ -451,6 +460,38 @@ describe("broker-owned bounded diagnostic files", { timeout: nativeAclCaseTimeou
         status: "unavailable",
       });
       expect(spawn).toHaveBeenCalledTimes(2);
+
+      const exportWriter = fixture();
+      exitCode = 0;
+      const ready = exportWriter.writer.initializeLogs();
+      await vi.advanceTimersByTimeAsync(12_000);
+      expect(await ready).toMatchObject({ ok: true });
+      const staging = path.join(exportWriter.root, "empty.pending");
+      const created = exportWriter.writer.createBundleTemporary(staging);
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(await created).toBe(true);
+      expect(spawn.mock.calls.at(-1)?.[1]?.join(" ")).toContain('"CreateNew"');
+      expect(spawn.mock.calls.at(-1)?.[2]).toMatchObject({
+        env: { OHTIA_DIAGNOSTIC_ACL_PATH: staging, OHTIA_DIAGNOSTIC_ACL_OPERATION: "create" },
+      });
+      const accepted = exportWriter.writer.verifyBundleTemporary(staging);
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(await accepted).toBe(true);
+      expect(spawn.mock.calls.at(-1)?.[2]).toMatchObject({
+        env: { OHTIA_DIAGNOSTIC_ACL_PATH: staging, OHTIA_DIAGNOSTIC_ACL_OPERATION: "verify" },
+      });
+      exitCode = 1;
+      const rejectedCreation = expect(
+        exportWriter.writer.createBundleTemporary(staging),
+      ).rejects.toThrow("Diagnostic bundle staging unavailable.");
+      await vi.advanceTimersByTimeAsync(6000);
+      await rejectedCreation;
+      const rejected = exportWriter.writer.verifyBundleTemporary(staging);
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(await rejected).toBe(false);
+      expect(await exportWriter.writer.append(started)).toMatchObject({ ok: true });
+      await exportWriter.writer.close();
+      expect(await exportWriter.writer.verifyBundleTemporary(staging)).toBe(false);
     } finally {
       Object.defineProperty(process, "platform", descriptor);
       if (previousSystem === undefined) delete process.env.SystemRoot;
@@ -950,4 +991,491 @@ it("revokes an expired quit's authority before a late bounds drain can stop a se
   await Promise.resolve();
   expect(stop).not.toHaveBeenCalled();
   vi.useRealTimers();
+});
+
+describe("reviewed diagnostic bundles", () => {
+  const id = "00000000-0000-4000-8000-000000000001";
+  const replacement = "00000000-0000-4000-8000-000000000002";
+  const correlation = "00000000-0000-4000-8000-000000000003";
+  const before = "2000-01-01T00:00:00.000Z";
+  const after = "2000-01-01T00:00:00.002Z";
+  const selection = { slots: 3, from: before, through: time };
+  const event = (version: string, observed = time) =>
+    makeDiagnosticRecord(
+      { ...started, timestamp: after, duration_ms: 0 },
+      version,
+      observed,
+      correlation,
+    )!;
+  const line = (record: unknown) => JSON.stringify(record) + "\n";
+
+  function destination(writer: DiagnosticWriter, ...protectedRoots: string[]) {
+    return {
+      protectedRoots,
+      createTemporary: (file: string) => writer.createBundleTemporary(file),
+      verifyTemporary: (file: string) => writer.verifyBundleTemporary(file),
+    };
+  }
+
+  it("admits closed requests and revalidates the entire preview through the wire", () => {
+    const request = { action: "prepare", id, ...selection };
+    expect(decodeDiagnosticBundleRequest(request)).toEqual(request);
+    for (const invalid of [
+      { ...request, slots: 0 },
+      { ...request, slots: 32 },
+      { ...request, slots: 1.5 },
+      { ...request, from: after },
+      { ...request, through: "2000-01-01" },
+      { ...request, id: marker },
+      { ...request, path: marker },
+      { action: "save", token: id, json: marker },
+      { action: "discard", id, path: marker },
+    ])
+      expect(decodeDiagnosticBundleRequest(invalid)).toBeUndefined();
+
+    const record = diagnosticBundleRecord(event("0.0.0-test"));
+    const json = diagnosticBundleHeader(selection) + "    " + line(record) + "  ]\n}\n";
+    const preview = { status: "preview", token: id, json, invalid: 1, unsupported: 2 };
+    expect(decodeDiagnosticBundleResult(preview)).toEqual(preview);
+    for (const invalid of [
+      { ...preview, json: json + marker },
+      {
+        ...preview,
+        json: json.replace('"schema_version": 1', '"schema_version": 2, "schema_version": 1'),
+      },
+      { ...preview, json: json.replace('"INFO"', '"ERROR"') },
+      {
+        ...preview,
+        json: json.replace('"observed_timestamp":"' + time, '"observed_timestamp":"' + after),
+      },
+      {
+        ...preview,
+        json: json.replace(
+          '"ohtia.component"',
+          '"ohtia.correlation.id":"' + correlation + '","ohtia.component"',
+        ),
+      },
+      { ...preview, json: " ".repeat(diagnosticLimits.bundleBytes + 1) },
+      { ...preview, invalid: -1 },
+      { ...preview, status: "saved" },
+      { ...preview, status: "too_large" },
+    ])
+      expect(decodeDiagnosticBundleResult(invalid)).toBeUndefined();
+  });
+
+  it(
+    "saves the exact ordered and filtered snapshot after managed rotation",
+    async () => {
+      const { writer, root, active, logs } = fixture();
+      expect((await writer.initializeLogs()).ok).toBe(true);
+      const newest = event("0.0.0-active");
+      const sameTime = event("0.0.0-active-second");
+      const earliest = event("0.0.0-earliest", before);
+      const older = event("0.0.0-archive");
+      const archive = path.join(logs, "ohtia.1.jsonl");
+      const activeLines =
+        line(newest) +
+        line(sameTime) +
+        line(event("0.0.0-excluded", after)) +
+        line({ ...newest, prompt: marker }) +
+        line({ schema_version: 2, response: marker });
+      const padding = diagnosticLimits.fileBytes - Buffer.byteLength(activeLines);
+      // Oversized lines count as refused, including at the input bound.
+      fs.writeFileSync(active, activeLines + "x".repeat(padding - 1) + "\n");
+      fs.writeFileSync(archive, line(older) + line(earliest), { mode: 0o600, flag: "wx" });
+      fs.writeFileSync(path.join(logs, "ohtia.2.jsonl"), line(event("0.0.0-unselected")));
+      const flow = new DiagnosticBundleFlow<string>();
+      const prepared = await flow.prepare(
+        "owner",
+        id,
+        () => true,
+        (current) => writer.prepareBundle(selection, current),
+      );
+      expect(prepared.status).toBe("preview");
+      if (prepared.status !== "preview") throw new Error("Bundle unavailable.");
+      expect(decodeDiagnosticBundleResult(prepared)).toEqual(prepared);
+      expect(prepared).toMatchObject({ invalid: 2, unsupported: 1 });
+      expect(JSON.parse(prepared.json)).toEqual({
+        schema_version: 1,
+        range: { from: before, through: time },
+        records: [earliest, newest, sameTime, older].map(diagnosticBundleRecord),
+      });
+      expect(prepared.json).not.toContain(correlation);
+      expect(prepared.json).not.toContain(marker);
+      expect(prepared.json).not.toContain(root);
+      const file = path.join(root, "reviewed 研究.json");
+      fs.writeFileSync(file, "previous");
+      const pick = vi.fn(async () => file);
+      expect(
+        await flow.save("other-window", prepared.token, pick, destination(writer, logs)),
+      ).toEqual({
+        status: "stale",
+      });
+      expect(pick).not.toHaveBeenCalled();
+      expect((await writer.append(started)).ok).toBe(true);
+      expect(fs.statSync(archive).size).toBe(diagnosticLimits.fileBytes);
+      expect(await flow.save("owner", prepared.token, pick, destination(writer, logs))).toEqual({
+        status: "saved",
+      });
+      expect(fs.readFileSync(file)).toEqual(Buffer.from(prepared.json, "utf8"));
+      expect(await flow.save("owner", prepared.token, pick, destination(writer, logs))).toEqual({
+        status: "stale",
+      });
+    },
+    nativeAclCaseTimeout,
+  );
+
+  it(
+    "refuses oversized snapshots, keeps refused counts and offers the narrower range",
+    async () => {
+      const { writer, active, logs } = fixture();
+      expect((await writer.initializeLogs()).ok).toBe(true);
+      const record = event("0.0.0-test");
+      fs.writeFileSync(active, line(record).repeat(5000) + line({ schema_version: 2 }) + marker);
+      await expect(writer.prepareBundle(selection, () => true)).resolves.toEqual({
+        status: "too_large",
+        invalid: 1,
+        unsupported: 1,
+      });
+      await expect(
+        writer.prepareBundle({ ...selection, through: before }, () => true),
+      ).resolves.toMatchObject({
+        status: "preview",
+        invalid: 1,
+        unsupported: 1,
+      });
+      let checks = 0;
+      await expect(writer.prepareBundle(selection, () => checks++ === 0)).resolves.toEqual({
+        status: "stale",
+      });
+      await expect(writer.prepareBundle(selection, () => false)).resolves.toEqual({
+        status: "stale",
+      });
+      fs.truncateSync(active, diagnosticLimits.fileBytes + 1);
+      await expect(writer.prepareBundle(selection, () => true)).resolves.toEqual({
+        status: "invalid_file",
+      });
+      fs.writeFileSync(active, line(record).repeat(65));
+      const cursor = (await writer.read(0)).continuation;
+      expect(cursor).toBeDefined();
+      const deniedRead = vi.spyOn(fs, "readSync").mockImplementationOnce(() => {
+        throw new Error(marker);
+      });
+      await expect(writer.prepareBundle(selection, () => true)).resolves.toEqual({
+        status: "unavailable",
+      });
+      deniedRead.mockRestore();
+      await expect(writer.read(0, cursor)).resolves.toMatchObject({ status: "ready" });
+      fs.mkdirSync(path.join(logs, "ohtia.1.jsonl"));
+      await expect(writer.prepareBundle(selection, () => true)).resolves.toEqual({
+        status: "unavailable",
+      });
+      await expect(writer.read(0, cursor)).resolves.toMatchObject({ status: "ready" });
+    },
+    nativeAclCaseTimeout,
+  );
+
+  it(
+    "admits exactly 1 MiB of UTF-8 and refuses the next byte",
+    async () => {
+      const { writer, active } = fixture();
+      expect((await writer.initializeLogs()).ok).toBe(true);
+      const base = "0.0.0-test";
+      const short = event(base);
+      const bytesPerLine = Buffer.byteLength(JSON.stringify(diagnosticBundleRecord(short))) + 6;
+      const remaining =
+        diagnosticLimits.bundleBytes -
+        Buffer.byteLength(diagnosticBundleHeader(selection) + diagnosticBundleFooter) +
+        1;
+      const count = Math.floor(remaining / bytesPerLine);
+      const remainder = remaining % bytesPerLine;
+      const half = Math.floor(remainder / 3);
+      const prefix =
+        line(short).repeat(count - 3) +
+        line(event(base + "x".repeat(half))) +
+        line(event(base + "x".repeat(half)));
+      const last = base + "x".repeat(remainder - 2 * half);
+      fs.writeFileSync(active, prefix + line(event(last)));
+      const exact = await writer.prepareBundle(selection, () => true);
+      expect(exact.status).toBe("preview");
+      if (exact.status !== "preview") throw new Error("Expected the exact boundary.");
+      expect(Buffer.byteLength(exact.json)).toBe(diagnosticLimits.bundleBytes);
+      fs.writeFileSync(active, prefix + line(event(last + "x")));
+      await expect(writer.prepareBundle(selection, () => true)).resolves.toEqual({
+        status: "too_large",
+        invalid: 0,
+        unsupported: 0,
+      });
+    },
+    nativeAclCaseTimeout,
+  );
+
+  function token(prepared: DiagnosticBundleResult): string {
+    if (prepared.status !== "preview") throw new Error("Bundle unavailable.");
+    return prepared.token;
+  }
+
+  it(
+    "revokes a held picker on replacement, cancellation and window disposal",
+    async () => {
+      const { writer, root } = fixture();
+      const flow = new DiagnosticBundleFlow<string>();
+      const prepare = (key: string) =>
+        flow.prepare(
+          "owner",
+          key,
+          () => true,
+          (current) => writer.prepareBundle(selection, current),
+        );
+      const file = path.join(root, "stale.json");
+      fs.writeFileSync(file, "previous");
+      const interrupted = new EventEmitter();
+      const scanning = flow.prepare(
+        "owner",
+        id,
+        () => true,
+        async () => {
+          await once(interrupted, "release");
+          return { status: "unavailable" };
+        },
+      );
+      await expect(prepare(replacement)).resolves.toEqual({ status: "busy" });
+      expect(flow.discard("owner", id)).toEqual({ status: "cancelled" });
+      interrupted.emit("release");
+      await expect(scanning).resolves.toEqual({ status: "stale" });
+      await expect(
+        flow.prepare(
+          "owner",
+          id,
+          () => true,
+          async () => ({ status: "busy" }),
+        ),
+      ).resolves.toEqual({ status: "busy" });
+      await expect(
+        flow.prepare(
+          "owner",
+          id,
+          () => true,
+          async () => {
+            throw new Error(marker);
+          },
+        ),
+      ).resolves.toEqual({ status: "unavailable" });
+      const prepared = token(await prepare(id));
+      const events = new EventEmitter();
+      const save = flow.save(
+        "owner",
+        prepared,
+        async () => {
+          const [selected] = (await once(events, "pick")) as [string];
+          return selected;
+        },
+        destination(writer),
+      );
+      expect(
+        await flow.prepare(
+          "other",
+          id,
+          () => true,
+          async () => ({ status: "unavailable" }),
+        ),
+      ).toEqual({ status: "busy" });
+      const next = token(await prepare(replacement));
+      await expect(
+        flow.save("owner", next, async () => file, destination(writer)),
+      ).resolves.toEqual({
+        status: "busy",
+      });
+      events.emit("pick", file);
+      await expect(save).resolves.toEqual({ status: "stale" });
+      expect(fs.readFileSync(file, "utf8")).toBe("previous");
+      await expect(
+        flow.save("owner", next, async () => undefined, destination(writer)),
+      ).resolves.toEqual({
+        status: "cancelled",
+      });
+      await expect(
+        flow.save("owner", next, async () => file, destination(writer)),
+      ).resolves.toEqual({
+        status: "stale",
+      });
+
+      const newer = token(await prepare(id));
+      expect(newer).not.toBe(prepared);
+      await expect(
+        flow.save("owner", prepared, async () => file, destination(writer)),
+      ).resolves.toEqual({
+        status: "stale",
+      });
+      const disposed = flow.save(
+        "owner",
+        newer,
+        async () => {
+          const [selected] = (await once(events, "pick")) as [string];
+          return selected;
+        },
+        destination(writer),
+      );
+      flow.discard("owner");
+      events.emit("pick", file);
+      await expect(disposed).resolves.toEqual({ status: "stale" });
+      expect(fs.readFileSync(file, "utf8")).toBe("previous");
+    },
+    nativeAclCaseTimeout,
+  );
+
+  it(
+    "leaves protected paths and previous files intact and removes failed staging files",
+    async () => {
+      const { writer, root, logs } = fixture();
+      const flow = new DiagnosticBundleFlow<string>();
+      const prepare = () =>
+        flow.prepare(
+          "owner",
+          id,
+          () => true,
+          (current) => writer.prepareBundle(selection, current),
+        );
+      const protectedFile = path.join(logs, "forbidden.json");
+      const protectedToken = token(await prepare());
+      expect(
+        await flow.save(
+          "owner",
+          protectedToken,
+          async () => protectedFile,
+          destination(writer, logs),
+        ),
+      ).toEqual({
+        status: "unavailable",
+      });
+      expect(fs.existsSync(protectedFile)).toBe(false);
+      const selected = path.join(root, "previous.json");
+      fs.writeFileSync(selected, "previous");
+      const original = fs.renameSync;
+      const rename = vi.spyOn(fs, "renameSync").mockImplementation((source, destination) => {
+        if (destination === selected) throw new Error(marker);
+        original(source, destination);
+      });
+      const selectedToken = token(await prepare());
+      expect(
+        await flow.save("owner", selectedToken, async () => selected, destination(writer, logs)),
+      ).toEqual({
+        status: "unavailable",
+      });
+      expect(rename).toHaveBeenCalledWith(expect.stringMatching(/\.pending$/), selected);
+      expect(fs.readFileSync(selected, "utf8")).toBe("previous");
+      expect(fs.readdirSync(root).sort()).toEqual(["logs", "previous.json"]);
+
+      const denied = token(await prepare());
+      const verifyTemporary = vi.fn(async (file: string) => {
+        expect(path.dirname(file)).toBe(root);
+        expect(fs.statSync(file).size).toBe(0);
+        return false;
+      });
+      await expect(
+        flow.save("owner", denied, async () => selected, {
+          protectedRoots: [logs],
+          createTemporary: async () => false,
+          verifyTemporary,
+        }),
+      ).resolves.toEqual({ status: "unavailable" });
+      expect(verifyTemporary).toHaveBeenCalledOnce();
+
+      const revoked = token(await prepare());
+      const events = new EventEmitter();
+      const saving = flow.save("owner", revoked, async () => selected, {
+        protectedRoots: [logs],
+        createTemporary: async () => false,
+        verifyTemporary: async (file) => {
+          const release = once(events, "release");
+          events.emit("staged", file);
+          await release;
+          return true;
+        },
+      });
+      const [staged] = (await once(events, "staged")) as [string];
+      expect(fs.statSync(staged).size).toBe(0);
+      expect(flow.discard("owner", id)).toEqual({ status: "cancelled" });
+      const draining = flow.drain();
+      events.emit("release");
+      await draining;
+      await expect(saving).resolves.toEqual({ status: "stale" });
+      expect(fs.readFileSync(selected, "utf8")).toBe("previous");
+      expect(fs.readdirSync(root).sort()).toEqual(["logs", "previous.json"]);
+
+      const refused = token(await prepare());
+      await expect(
+        flow.save("owner", refused, async () => "../relative.json", destination(writer)),
+      ).resolves.toEqual({ status: "unavailable" });
+      const folder = token(await prepare());
+      const existingDirectory = path.join(root, "outside");
+      fs.mkdirSync(existingDirectory);
+      await expect(
+        flow.save("owner", folder, async () => existingDirectory, destination(writer)),
+      ).resolves.toEqual({ status: "unavailable" });
+      expect(fs.statSync(existingDirectory).isDirectory()).toBe(true);
+      const securelyCreated = token(await prepare());
+      const createdFile = path.join(root, "created.json");
+      await expect(
+        flow.save("owner", securelyCreated, async () => createdFile, {
+          protectedRoots: [logs],
+          createTemporary: async (file) => {
+            fs.writeFileSync(file, "", { mode: 0o600, flag: "wx" });
+            return true;
+          },
+          verifyTemporary: async (file) => fs.statSync(file).size === 0,
+        }),
+      ).resolves.toEqual({ status: "saved" });
+      expect(JSON.parse(fs.readFileSync(createdFile, "utf8"))).toMatchObject({ schema_version: 1 });
+      const unexpectedContent = token(await prepare());
+      await expect(
+        flow.save("owner", unexpectedContent, async () => selected, {
+          protectedRoots: [logs],
+          createTemporary: async (file) => {
+            fs.writeFileSync(file, "unexpected staging content", { mode: 0o600, flag: "wx" });
+            return true;
+          },
+          verifyTemporary: async () => true,
+        }),
+      ).resolves.toEqual({ status: "unavailable" });
+      expect(fs.readFileSync(selected, "utf8")).toBe("previous");
+      expect(fs.readdirSync(root).sort()).toEqual([
+        "created.json",
+        "logs",
+        "outside",
+        "previous.json",
+      ]);
+
+      for (const leftover of [false, true]) {
+        const failedCreation = token(await prepare());
+        let temporary: string | undefined;
+        await expect(
+          flow.save("owner", failedCreation, async () => selected, {
+            protectedRoots: [logs],
+            createTemporary: async (file) => {
+              temporary = file;
+              if (leftover) fs.writeFileSync(file, "", { mode: 0o600, flag: "wx" });
+              throw new Error(marker);
+            },
+            verifyTemporary: async () => true,
+          }),
+        ).resolves.toEqual({ status: leftover ? "uncertain" : "unavailable" });
+        expect(fs.readFileSync(selected, "utf8")).toBe("previous");
+        expect(fs.existsSync(temporary!)).toBe(leftover);
+        if (leftover) expect(fs.statSync(temporary!).size).toBe(0);
+      }
+      const late = token(await prepare());
+      await expect(
+        flow.save(
+          "owner",
+          late,
+          async () => {
+            throw new Error(marker);
+          },
+          destination(writer),
+        ),
+      ).resolves.toEqual({ status: "unavailable" });
+    },
+    nativeAclCaseTimeout,
+  );
 });

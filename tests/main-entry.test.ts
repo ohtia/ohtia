@@ -98,6 +98,7 @@ async function launch(
     configuration_root: "/synthetic/home/.config",
     research_root: "/synthetic/home/ohtia",
     scratch_root: "/synthetic/home/scratch",
+    stable_roots: {},
   };
   const state = {
     locator: options.locator ?? "missing",
@@ -252,11 +253,16 @@ async function launch(
     protocol: { handle: vi.fn() },
   };
   const session = { fromPartition: vi.fn(() => nativeSession) };
-  const dialog = { showErrorBox: vi.fn(), showMessageBox: vi.fn(async () => ({})) };
+  const dialog = {
+    showErrorBox: vi.fn(),
+    showMessageBox: vi.fn(async () => ({})),
+    showSaveDialog: vi.fn(async () => ({ canceled: true })),
+  };
   const protocol = { registerSchemesAsPrivileged: vi.fn() };
   const children: ReturnType<typeof child>[] = [];
   const diagnosticWriters: { readonly version: string }[] = [];
   const diagnosticRead = vi.fn();
+  const diagnosticPrepare = vi.fn();
   const diagnosticDelete = vi.fn();
   const diagnosticAppend = vi.fn<(event: DiagnosticEvent, correlation?: string) => Promise<void>>(
     async () => {},
@@ -456,6 +462,7 @@ async function launch(
       }
       reservedPermissionProcesses = 0;
       read = diagnosticRead;
+      prepareBundle = diagnosticPrepare;
       deleteLogs = diagnosticDelete;
       append = diagnosticAppend;
       close = vi.fn(async () => undefined);
@@ -549,6 +556,7 @@ async function launch(
     children,
     diagnosticWriters,
     diagnosticRead,
+    diagnosticPrepare,
     diagnosticDelete,
     diagnosticAppend,
     supervisors,
@@ -831,6 +839,61 @@ describe("broker composition with synthetic Electron adapters", () => {
     for (const result of await Promise.all(pending))
       expect(result).toEqual({ status: "uncertain" });
     expect(await handle(h.event(), request)).toEqual({ status: "ready", deleted: 1 });
+  });
+  it("gates the diagnostic picker by trusted window and revokes a disposed owner's preview", async () => {
+    const h = await launch({ mode: "installed" });
+    const handle = h.ipcMain.handle.mock.calls.find(
+      ([channel]) => channel === h.constants.desktopChannels.diagnosticsBundle,
+    )![1];
+    const id = "00000000-0000-4000-8000-000000000009";
+    const from = "2000-01-01T00:00:00.000Z";
+    const prepare = { action: "prepare", id, slots: 31, from, through: from };
+    const save = { action: "save", token: id };
+    expect(await handle(h.event(), prepare)).toEqual({ status: "unavailable" });
+    expect((await h.action("open_storage")).state).toBe("storage_opening");
+    expect(
+      await handle({ ...h.event(), senderFrame: { url: h.constants.desktopDocument } }, prepare),
+    ).toEqual({ status: "unavailable" });
+    expect(await handle(h.event(), { ...save, path: "/synthetic/private" })).toEqual({
+      status: "invalid_request",
+    });
+    expect(await handle(h.event(), prepare, "extra")).toEqual({ status: "invalid_request" });
+    expect(h.diagnosticPrepare).not.toHaveBeenCalled();
+    const preview = { status: "preview", json: "...", invalid: 0, unsupported: 0 };
+    h.diagnosticPrepare.mockResolvedValue(preview);
+    const prepared = await handle(h.event(), prepare);
+    expect(prepared).toMatchObject(preview);
+    expect(h.constants.isCanonicalUuid(prepared.token)).toBe(true);
+    save.token = prepared.token;
+    await h.action("new_window");
+    const other = h.Window.all.at(-1)!;
+    expect(other).not.toBe(h.window);
+    expect(await handle(h.event(other), save)).toEqual({ status: "stale" });
+    expect(await handle(h.event(other), { action: "discard", id })).toEqual({
+      status: "stale",
+    });
+    expect(h.dialog.showSaveDialog).not.toHaveBeenCalled();
+    let cancel!: (value: { canceled: boolean }) => void;
+    h.dialog.showSaveDialog.mockReturnValueOnce(
+      new Promise((resolve) => {
+        cancel = resolve;
+      }),
+    );
+    const saving = handle(h.event(), save);
+    expect(h.dialog.showSaveDialog).toHaveBeenCalledExactlyOnceWith(
+      h.window,
+      expect.objectContaining({ defaultPath: "ohtia-diagnostics.json" }),
+    );
+    h.window.emit("closed");
+    cancel({ canceled: true });
+    expect(await saving).toEqual({ status: "stale" });
+    const next = await handle(h.event(other), prepare);
+    expect(next).toMatchObject(preview);
+    expect(next.token).not.toBe(prepared.token);
+    expect(await handle(h.event(other), save)).toEqual({ status: "stale" });
+    save.token = next.token;
+    expect(await handle(h.event(other), save)).toEqual({ status: "cancelled" });
+    expect(await handle(h.event(other), save)).toEqual({ status: "stale" });
   });
   it("correlates service and provider diagnostics to the current generation", async () => {
     const h = await launch({ mode: "installed" });

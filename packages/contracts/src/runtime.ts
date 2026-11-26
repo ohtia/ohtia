@@ -16,6 +16,7 @@ export const desktopChannels = {
   reply: "ohtia:foundation-result",
   diagnosticsRead: "ohtia:diagnostics-read",
   diagnosticsDelete: "ohtia:diagnostics-delete",
+  diagnosticsBundle: "ohtia:diagnostics-bundle",
   bootstrap: "ohtia:bootstrap",
   commands: "ohtia:commands",
   commandIntent: "ohtia:command-intent",

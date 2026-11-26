@@ -21,6 +21,7 @@
   "graphical_cases": [
     "settings-bounded-diagnostic-viewer",
     "settings-confirmed-diagnostic-deletion",
+    "settings-reviewed-diagnostic-bundle",
     "broker-startup-and-worker-events",
     "logging-failure-preserves-save",
     "automatic-capture-private-markers",

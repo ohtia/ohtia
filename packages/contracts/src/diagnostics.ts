@@ -3,6 +3,7 @@ export const diagnosticLimits = Object.freeze({
   fileBytes: 5 * 1024 * 1024,
   files: 5,
   recordBytes: 8192,
+  bundleBytes: 1024 * 1024,
   pending: 64,
   readRecords: 64,
   permissionProcesses: 2,
@@ -785,6 +786,191 @@ export type DiagnosticDeleteResult =
 export interface DiagnosticsBridge {
   readPage(request: DiagnosticReadRequest): Promise<DiagnosticReadResult>;
   deleteLogs(request: DiagnosticDeleteRequest): Promise<DiagnosticDeleteResult>;
+  bundle(request: DiagnosticBundleRequest): Promise<DiagnosticBundleResult>;
+}
+
+export interface DiagnosticBundleRange {
+  readonly from: string;
+  readonly through: string;
+}
+
+export type DiagnosticBundleSelection = DiagnosticBundleRange & { readonly slots: number };
+
+export type DiagnosticBundleRequest =
+  | (DiagnosticBundleSelection & { readonly action: "prepare"; readonly id: string })
+  | { readonly action: "save"; readonly token: string }
+  | { readonly action: "discard"; readonly id: string };
+
+interface DiagnosticBundleCounts {
+  readonly invalid: number;
+  readonly unsupported: number;
+}
+
+type DiagnosticBundleSnapshot = DiagnosticBundleCounts & {
+  readonly status: "preview";
+  readonly json: string;
+};
+
+export type DiagnosticBundlePreview = DiagnosticBundleSnapshot & { readonly token: string };
+
+export type DiagnosticBundleScanResult =
+  | DiagnosticBundleSnapshot
+  | (DiagnosticBundleCounts & { readonly status: "too_large" })
+  | { readonly status: "unavailable" | "busy" | "stale" | "invalid_file" };
+
+const bundleStatuses = [
+  "unavailable",
+  "busy",
+  "stale",
+  "invalid_file",
+  "invalid_request",
+  "saved",
+  "cancelled",
+  "uncertain",
+] as const;
+
+export type DiagnosticBundleResult =
+  | DiagnosticBundlePreview
+  | Exclude<DiagnosticBundleScanResult, DiagnosticBundleSnapshot>
+  | { readonly status: (typeof bundleStatuses)[number] };
+
+export function decodeDiagnosticBundleRequest(input: unknown): DiagnosticBundleRequest | undefined {
+  try {
+    const value = object(input, ["action", "id", "token", "slots", "from", "through"], ["action"]);
+    if (!value) return;
+    const { action, id, token, slots, from, through } = value;
+    if (action === "prepare") {
+      if (
+        Object.keys(value).length === 5 &&
+        isCanonicalUuid(id) &&
+        typeof slots === "number" &&
+        Number.isInteger(slots) &&
+        slots > 0 &&
+        slots < 2 ** diagnosticLimits.files &&
+        isDiagnosticTime(from) &&
+        isDiagnosticTime(through) &&
+        from <= through
+      )
+        return { action, id, slots, from, through };
+    } else if (Object.keys(value).length === 2) {
+      if (action === "save" && isCanonicalUuid(token)) return { action, token };
+      if (action === "discard" && isCanonicalUuid(id)) return { action, id };
+    }
+  } catch {
+    return;
+  }
+}
+
+export function diagnosticBundleRecord(record: DiagnosticRecord) {
+  const attrs = record.attributes;
+  return {
+    observed_timestamp: record.observed_timestamp,
+    ...(record.timestamp === undefined ? {} : { timestamp: record.timestamp }),
+    severity_text: record.severity_text,
+    event_name: record.event_name,
+    resource: {
+      "service.name": record.resource["service.name"],
+      "service.version": record.resource["service.version"],
+    },
+    attributes: {
+      "ohtia.component": attrs["ohtia.component"],
+      "ohtia.operation": attrs["ohtia.operation"],
+      "ohtia.outcome": attrs["ohtia.outcome"],
+      ...(attrs["ohtia.error.code"] === undefined
+        ? {}
+        : { "ohtia.error.code": attrs["ohtia.error.code"] }),
+      ...(attrs["ohtia.duration_ms"] === undefined
+        ? {}
+        : { "ohtia.duration_ms": attrs["ohtia.duration_ms"] }),
+    },
+  };
+}
+
+// A record occupies one line so the exact serialized preview can be read as text.
+export function diagnosticBundleHeader({ from, through }: DiagnosticBundleRange): string {
+  return `{
+  "schema_version": 1,
+  "range": ${JSON.stringify({ from, through })},
+  "records": [\n`;
+}
+
+export const diagnosticBundleFooter = "  ]\n}\n";
+
+function isDiagnosticBundleJson(json: unknown): json is string {
+  if (typeof json !== "string" || json.length > diagnosticLimits.bundleBytes) return false;
+  const value = object(
+    JSON.parse(json) as unknown,
+    ["schema_version", "range", "records"],
+    ["schema_version", "range", "records"],
+  );
+  if (!value || value.schema_version !== 1 || !Array.isArray(value.records)) return false;
+  const range = object(value.range, ["from", "through"], ["from", "through"]);
+  if (
+    !range ||
+    !isDiagnosticTime(range.from) ||
+    !isDiagnosticTime(range.through) ||
+    range.from > range.through
+  )
+    return false;
+  let offset = 0;
+  const matches = (text: string): boolean => {
+    if (!json.startsWith(text, offset)) return false;
+    offset += text.length;
+    return true;
+  };
+  if (!matches(diagnosticBundleHeader({ from: range.from, through: range.through }))) return false;
+  let previous = range.from;
+  for (const [index, raw] of (value.records as unknown[]).entries()) {
+    const item = object(
+      raw,
+      ["observed_timestamp", "timestamp", "severity_text", "event_name", "resource", "attributes"],
+      ["event_name"],
+    );
+    if (!item || !name(item.event_name)) return false;
+    const record = decodeDiagnosticRecord({
+      ...item,
+      schema_version: 1,
+      severity_number: diagnosticSeverities[diagnosticCatalog[item.event_name].severity],
+    });
+    if (!record.ok) return false;
+    const projected = diagnosticBundleRecord(record.value);
+    if (projected.observed_timestamp < previous || projected.observed_timestamp > range.through)
+      return false;
+    previous = projected.observed_timestamp;
+    const separator = index === value.records.length - 1 ? "\n" : ",\n";
+    if (!matches("    " + JSON.stringify(projected) + separator)) return false;
+  }
+  // Comparing the complete canonical encoding also excludes duplicate fields and non-ASCII input.
+  return matches(diagnosticBundleFooter) && offset === json.length;
+}
+
+export function decodeDiagnosticBundleResult(input: unknown): DiagnosticBundleResult | undefined {
+  try {
+    const value = object(input, ["status", "json", "invalid", "unsupported", "token"], ["status"]);
+    if (!value) return;
+    const { status, json, invalid, unsupported, token } = value;
+    if (status === "preview" || status === "too_large") {
+      if (
+        typeof invalid !== "number" ||
+        !Number.isSafeInteger(invalid) ||
+        invalid < 0 ||
+        typeof unsupported !== "number" ||
+        !Number.isSafeInteger(unsupported) ||
+        unsupported < 0 ||
+        invalid + unsupported > diagnosticLimits.files * diagnosticLimits.fileBytes
+      )
+        return;
+      if (status === "preview" && isCanonicalUuid(token) && isDiagnosticBundleJson(json))
+        return { status, token, json, invalid, unsupported };
+      if (status === "too_large" && Object.keys(value).length === 3)
+        return { status, invalid, unsupported };
+      return;
+    }
+    const known = bundleStatuses.find((candidate) => candidate === status);
+    if (known && Object.keys(value).length === 1) return { status: known };
+  } catch {
+    return;
+  }
 }
 
 export function decodeDiagnosticDeleteRequest(input: unknown): DiagnosticDeleteRequest | undefined {
