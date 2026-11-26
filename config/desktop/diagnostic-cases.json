@@ -19,6 +19,7 @@
     "sweeps private reply markers across dispatch, details, research records and diagnostic output"
   ],
   "graphical_cases": [
+    "settings-bounded-diagnostic-viewer",
     "broker-startup-and-worker-events",
     "logging-failure-preserves-save",
     "automatic-capture-private-markers",

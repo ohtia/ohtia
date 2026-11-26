@@ -48,6 +48,8 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   suppressDiagnosticCapture,
   type DiagnosticEventName,
+  decodeDiagnosticReadRequest,
+  type DiagnosticReadResult,
   diagnosticLimits,
   desktopChannels,
   desktopDocument,
@@ -1512,6 +1514,53 @@ async function start(): Promise<void> {
       reservation.value();
     }
   });
+  ipcMain.handle(
+    desktopChannels.diagnosticsRead,
+    async (event, input: unknown, ...extra: unknown[]): Promise<DiagnosticReadResult> => {
+      const window = trusted(event);
+      const frame = event.senderFrame;
+      const writer = diagnostics;
+      if (!window || !frame || !writer) return { status: "unavailable" };
+      const request = extra.length === 0 && decodeDiagnosticReadRequest(input);
+      if (!request) return { status: "invalid_request" };
+      const reservation = requestBudget.reserve(frame);
+      if (!reservation.ok) return { status: "busy" };
+      try {
+        const page = await writer.read(request.slot, request.continuation);
+        if (
+          window.isDestroyed() ||
+          frame !== event.senderFrame ||
+          trusted(event) !== window ||
+          diagnostics !== writer
+        )
+          return { status: "unavailable" };
+        if (!page.ok) {
+          switch (page.status) {
+            case "busy":
+            case "stale":
+              return { status: page.status };
+            case "invalid_record":
+              return { status: "invalid_file" };
+            default:
+              return { status: "unavailable" };
+          }
+        }
+        return {
+          status: "ready",
+          entries: page.records.map((record) => ({
+            time: record.timestamp ?? record.observed_timestamp,
+            severity: record.severity_text,
+            event: record.event_name,
+          })),
+          invalid: page.invalid,
+          unsupported: page.unsupported,
+          ...(page.continuation ? { continuation: page.continuation } : {}),
+        };
+      } finally {
+        reservation.value();
+      }
+    },
+  );
   ipcMain.handle(
     desktopChannels.bootstrap,
     async (event, action: unknown, ...args: unknown[]): Promise<BootstrapSnapshot> => {

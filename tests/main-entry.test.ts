@@ -256,6 +256,7 @@ async function launch(
   const protocol = { registerSchemesAsPrivileged: vi.fn() };
   const children: ReturnType<typeof child>[] = [];
   const diagnosticWriters: { readonly version: string }[] = [];
+  const diagnosticRead = vi.fn();
   const diagnosticAppend = vi.fn<(event: DiagnosticEvent, correlation?: string) => Promise<void>>(
     async () => {},
   );
@@ -453,6 +454,7 @@ async function launch(
         diagnosticWriters.push(options);
       }
       reservedPermissionProcesses = 0;
+      read = diagnosticRead;
       append = diagnosticAppend;
       close = vi.fn(async () => undefined);
     },
@@ -544,6 +546,7 @@ async function launch(
     utilityProcess,
     children,
     diagnosticWriters,
+    diagnosticRead,
     diagnosticAppend,
     supervisors,
     publish,
@@ -696,6 +699,80 @@ describe("broker composition with synthetic Electron adapters", () => {
     for (const call of h.utilityProcess.fork.mock.calls) expect(call[1][4]).toBe("0.3.0-dev.7.2");
     expect(h.diagnosticWriters.map((options) => options.version)).toEqual(["0.3.0-dev.7.2"]);
     expect(await h.command("about")).toMatchObject({ version: "0.3.0-dev.7.2" });
+  });
+  it("admits bounded diagnostic reads independently of storage and revokes late frame results", async () => {
+    const h = await launch({ mode: "installed" });
+    const handle = h.ipcMain.handle.mock.calls.find(
+      ([channel]) => channel === h.constants.desktopChannels.diagnosticsRead,
+    )![1];
+    const request = { slot: 0 };
+    expect(await handle(h.event(), request)).toEqual({ status: "unavailable" });
+    expect((await h.action("open_storage")).state).toBe("storage_opening");
+    expect(
+      await handle({ ...h.event(), senderFrame: { url: h.constants.desktopDocument } }, request),
+    ).toEqual({ status: "unavailable" });
+    expect(await handle(h.event(), { ...request, path: "/synthetic/private" })).toEqual({
+      status: "invalid_request",
+    });
+    expect(await handle(h.event(), request, "extra")).toEqual({ status: "invalid_request" });
+    expect(h.diagnosticRead).not.toHaveBeenCalled();
+
+    const time = "2026-01-01T00:00:00.000Z";
+    const observed = "2026-01-01T00:00:01.000Z";
+    const event = "ohtia.application.started";
+    const continuation = { token: "a".repeat(64), offset: 100 };
+    const record = h.constants.makeDiagnosticRecord(
+      { event_name: event, timestamp: time },
+      "0.0.0-test",
+      observed,
+    )!;
+    const first = {
+      ok: true,
+      records: [record, { ...record, timestamp: undefined }],
+      invalid: 60,
+      unsupported: 2,
+      continuation,
+    };
+    h.diagnosticRead.mockResolvedValueOnce(first);
+    expect(await handle(h.event(), { slot: 1, continuation })).toEqual({
+      status: "ready",
+      entries: [
+        { time, severity: "INFO", event },
+        { time: observed, severity: "INFO", event },
+      ],
+      invalid: 60,
+      unsupported: 2,
+      continuation,
+    });
+    expect(h.diagnosticRead).toHaveBeenLastCalledWith(1, continuation);
+    h.diagnosticRead.mockResolvedValueOnce({ ...first, continuation: undefined });
+    expect(await handle(h.event(), request)).not.toHaveProperty("continuation");
+
+    for (const [status, expected] of [
+      ["busy", "busy"],
+      ["stale", "stale"],
+      ["invalid_record", "invalid_file"],
+      ["closed", "unavailable"],
+    ]) {
+      h.diagnosticRead.mockResolvedValueOnce({ ok: false, status });
+      expect(await handle(h.event(), request)).toEqual({ status: expected });
+    }
+
+    let release!: (value: typeof first) => void;
+    const pending = new Promise<typeof first>((resolve) => {
+      release = resolve;
+    });
+    h.diagnosticRead.mockReturnValue(pending);
+    const reads = Array.from({ length: h.constants.portLimits.pending_per_window }, () =>
+      handle(h.event(), request),
+    );
+    expect(await handle(h.event(), request)).toEqual({ status: "busy" });
+    const oldFrame = h.window.webContents.mainFrame;
+    h.window.webContents.mainFrame = { ...oldFrame };
+    release(first);
+    for (const result of await Promise.all(reads))
+      expect(result).toEqual({ status: "unavailable" });
+    expect(await handle(h.event(), request)).toMatchObject({ status: "ready" });
   });
   it("correlates service and provider diagnostics to the current generation", async () => {
     const h = await launch({ mode: "installed" });

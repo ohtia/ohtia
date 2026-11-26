@@ -1,13 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createHmac, randomBytes } from "node:crypto";
 import childProcess from "node:child_process";
 import {
   diagnosticCatalog,
   diagnosticLimits,
   diagnosticSeverities,
+  decodeDiagnosticReadRequest,
   decodeDiagnosticLine,
   makeDiagnosticRecord,
   isArtifactVersion,
+  type DiagnosticContinuation,
   type DiagnosticRecord,
   type DiagnosticSeverity,
 } from "@ohtia/contracts";
@@ -18,6 +21,7 @@ export type DiagnosticStatus =
   | "oversized_record"
   | "busy"
   | "unavailable"
+  | "stale"
   | "closed"
   | "confirmation_required";
 export interface DiagnosticResult {
@@ -28,7 +32,7 @@ export interface DiagnosticPage extends DiagnosticResult {
   readonly records: readonly DiagnosticRecord[];
   readonly invalid: number;
   readonly unsupported: number;
-  readonly nextOffset?: number;
+  readonly continuation?: DiagnosticContinuation;
 }
 export interface DiagnosticWriterOptions {
   readonly root: string;
@@ -48,6 +52,7 @@ function missing(error: unknown): boolean {
 export class DiagnosticWriter {
   private tail: Promise<unknown> = Promise.resolve();
   private pending = 0;
+  private readKey = randomBytes(32);
   private initialized = false;
   private permissionFailed = false;
   private helperCount = 0;
@@ -252,6 +257,7 @@ export class DiagnosticWriter {
     }
   }
   private async initialize(): Promise<void> {
+    this.readKey = randomBytes(32);
     try {
       fs.mkdirSync(this.directory, { mode: 0o700 });
     } catch (error) {
@@ -337,6 +343,7 @@ export class DiagnosticWriter {
       async () => {
         const active = path.join(this.directory, filename(0));
         if (this.stat(active).size + bytes.length > diagnosticLimits.fileBytes) {
+          this.readKey = randomBytes(32);
           this.remove(path.join(this.directory, filename(4)));
           for (let slot = 3; slot >= 0; slot--) {
             const from = path.join(this.directory, filename(slot));
@@ -366,32 +373,45 @@ export class DiagnosticWriter {
       (status) => this.reject(status),
     );
   }
-  /** Named slots and byte offsets, never paths or raw payloads. Reads are bounded pages. */
-  read(slot: number, offset = 0): Promise<DiagnosticPage> {
+  private continuation(slot: number, stat: fs.BigIntStats, offset: number): DiagnosticContinuation {
+    // Some filesystems report change time as birth time, which changes on append.
+    const identity = [slot, stat.dev, stat.ino, offset].join(":");
+    return { offset, token: createHmac("sha256", this.readKey).update(identity).digest("hex") };
+  }
+
+  read(slot: number, continuation?: DiagnosticContinuation): Promise<DiagnosticPage> {
     const refused = (status: DiagnosticStatus): DiagnosticPage => ({
       ...this.reject(status),
       records: [],
       invalid: 0,
       unsupported: 0,
     });
-    if (
-      !Number.isInteger(slot) ||
-      slot < 0 ||
-      slot >= diagnosticLimits.files ||
-      !Number.isSafeInteger(offset) ||
-      offset < 0 ||
-      offset > diagnosticLimits.fileBytes
-    )
-      return Promise.resolve(refused("invalid_record"));
+    const request = decodeDiagnosticReadRequest({
+      slot,
+      ...(continuation === undefined ? {} : { continuation }),
+    });
+    if (!request) return Promise.resolve(refused("invalid_record"));
     return this.enqueue(() => {
-      const file = path.join(this.directory, filename(slot));
-      if (!fs.existsSync(file))
-        return { ...this.result("ready"), records: [], invalid: 0, unsupported: 0 };
-      const fd = this.open(file, fs.constants.O_RDONLY);
-      let bytes: Buffer;
+      const file = path.join(this.directory, filename(request.slot));
+      const cursor = request.continuation;
+      const offset = cursor?.offset ?? 0;
+      let fd: number;
       try {
-        const size = fs.fstatSync(fd).size;
-        if (size > diagnosticLimits.fileBytes || offset > size) return refused("invalid_record");
+        fd = this.open(file, fs.constants.O_RDONLY);
+      } catch (error) {
+        if (!missing(error)) return refused("unavailable");
+        if (cursor) return refused("stale");
+        return { ...this.result("ready"), records: [], invalid: 0, unsupported: 0 };
+      }
+      let bytes: Buffer;
+      let stat: fs.BigIntStats;
+      try {
+        stat = fs.fstatSync(fd, { bigint: true });
+        if (cursor && this.continuation(request.slot, stat, offset).token !== cursor.token)
+          return refused("stale");
+        if (stat.size > BigInt(diagnosticLimits.fileBytes)) return refused("invalid_record");
+        const size = Number(stat.size);
+        if (cursor && offset >= size) return refused("stale");
         bytes = Buffer.alloc(size);
         let count = 0;
         while (count < size) {
@@ -403,32 +423,31 @@ export class DiagnosticWriter {
       } finally {
         fs.closeSync(fd);
       }
-      if (offset > 0 && bytes[offset - 1] !== 10) return refused("invalid_record");
+      if (cursor && (offset >= bytes.length || bytes[offset - 1] !== 10)) return refused("stale");
       const records: DiagnosticRecord[] = [];
-      let invalid = 0,
-        unsupported = 0,
-        scanned = 0,
-        start = offset;
-      while (start < bytes.length && scanned < diagnosticLimits.readRecords) {
-        const end = bytes.indexOf(10, start);
-        if (end < 0) {
-          invalid++;
-          start = bytes.length;
-          break;
-        }
-        const decoded = decodeDiagnosticLine(bytes.subarray(start, end));
+      let invalid = 0;
+      let unsupported = 0;
+      let end = cursor?.offset ?? bytes.length;
+      if (end > 0 && bytes[end - 1] !== 10) {
+        // Count an incomplete tail once, then continue with the last complete record.
+        invalid++;
+        end = bytes.lastIndexOf(10) + 1;
+      }
+      for (let scanned = invalid; end > 0 && scanned < diagnosticLimits.readRecords; scanned++) {
+        const newline = end - 1;
+        const start = newline === 0 ? 0 : bytes.lastIndexOf(10, newline - 1) + 1;
+        const decoded = decodeDiagnosticLine(bytes.subarray(start, newline));
         if (decoded.ok) records.push(decoded.value);
         else if (decoded.code === "unsupported_schema") unsupported++;
         else invalid++;
-        start = end + 1;
-        scanned++;
+        end = start;
       }
       return {
         ...this.result("ready"),
         records,
         invalid,
         unsupported,
-        ...(start < bytes.length ? { nextOffset: start } : {}),
+        ...(end > 0 ? { continuation: this.continuation(request.slot, stat, end) } : {}),
       };
     }, refused);
   }
@@ -438,6 +457,7 @@ export class DiagnosticWriter {
       return Promise.resolve({ ...this.result("confirmation_required"), deleted });
     return this.enqueue(
       async () => {
+        this.readKey = randomBytes(32);
         for (let slot = 0; slot < diagnosticLimits.files; slot++)
           if (this.remove(path.join(this.directory, filename(slot)))) deleted++;
         await this.createActive();

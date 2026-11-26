@@ -73,6 +73,48 @@ describe("sandbox preload composition", () => {
     expect(h.error).toBeInstanceOf(Error);
     expect(h.contextBridge.exposeInMainWorld).not.toHaveBeenCalled();
   });
+  it("passes only closed diagnostic requests and validated projections through the named channel", async () => {
+    const { ipcRenderer, bridge } = await load();
+    const read = bridge.diagnostics.readPage;
+    const token = "a".repeat(64);
+    for (const invalid of [
+      null,
+      {},
+      { slot: -1 },
+      { slot: 5 },
+      { slot: "0" },
+      { slot: 0.5 },
+      { slot: 1, path: "/synthetic/private" },
+      { slot: 1, continuation: undefined },
+      { slot: 1, continuation: { token, offset: 0, extra: true } },
+      new Proxy(
+        {},
+        {
+          ownKeys() {
+            throw new Error("synthetic refusal");
+          },
+        },
+      ),
+    ])
+      expect(await read(invalid as never)).toEqual({ status: "invalid_request" });
+    expect(ipcRenderer.invoke).not.toHaveBeenCalled();
+    const request = { slot: 1, continuation: { token, offset: 123 } };
+    const result = {
+      status: "ready",
+      entries: [
+        { time: "2026-01-01T00:00:00.000Z", severity: "INFO", event: "ohtia.application.started" },
+      ],
+      invalid: 1,
+      unsupported: 0,
+    };
+    ipcRenderer.invoke.mockResolvedValueOnce(result as never);
+    expect(await read(request)).toEqual(result);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(desktopChannels.diagnosticsRead, request);
+    ipcRenderer.invoke.mockResolvedValueOnce({ ...result, path: "/synthetic/private" } as never);
+    expect(await read({ slot: 0 })).toEqual({ status: "unavailable" });
+    ipcRenderer.invoke.mockRejectedValueOnce(new Error("synthetic private failure"));
+    expect(await read({ slot: 0 })).toEqual({ status: "unavailable" });
+  });
   it("correlates model pages and agent preference receipts on the fixed desktop port", async () => {
     const { ipcRenderer, bridge } = await load();
     const port = bridge.foundation;

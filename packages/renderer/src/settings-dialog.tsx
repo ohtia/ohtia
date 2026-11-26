@@ -387,8 +387,9 @@ export function SettingsDialog({
       : []),
     ...sections.map(({ id: section, title, icon }) => ({ id: `section-${section}`, title, icon })),
   ];
-  const showList = !narrow || view === "list";
-  const showPage = !narrow || view === "page";
+  // Retain the selected page while the wide layout switches to a single column.
+  const showPage = !narrow || view === "page" || wasNarrow.current === false;
+  const showList = !narrow || !showPage;
   const pageHeading = (pageId: string) => `${id}-${pageId}-page`;
   const choosePage = (pageId: string) => {
     setPage(pageId);

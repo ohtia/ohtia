@@ -527,6 +527,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
         composeWorkspace={workspaceMounted.current}
         bridge={bridge.commands}
         port={bridge.foundation}
+        diagnostics={bridge.diagnostics}
         update={bridge.update}
         locale={bootstrap.locale}
         available={bootstrap.state === "storage_ready"}

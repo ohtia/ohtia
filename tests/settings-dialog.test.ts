@@ -217,6 +217,122 @@ async function click(selector: string) {
   await act(async () => container.querySelector<HTMLElement>(selector)!.click());
 }
 describe("compact Settings dialog", () => {
+  it("pages bounded diagnostic entries and refreshes the selected archive after failures", async () => {
+    const { DiagnosticsPanel } = await import("../packages/renderer/src/diagnostics-panel.js");
+    const first = deferred<import("@ohtia/contracts").DiagnosticReadResult>();
+    const continuation = { token: "a".repeat(64), offset: 100 };
+    const entry = {
+      time: "2026-01-01T00:00:00.000Z",
+      severity: "INFO",
+      event: "ohtia.application.started",
+    } as const;
+    const readPage = vi
+      .fn<import("@ohtia/contracts").DiagnosticsBridge["readPage"]>()
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce({ status: "busy" })
+      .mockResolvedValueOnce({
+        status: "ready",
+        entries: [],
+        invalid: 2,
+        unsupported: 62,
+        continuation,
+      })
+      .mockResolvedValueOnce({ status: "busy" })
+      .mockResolvedValueOnce({
+        status: "ready",
+        entries: [entry],
+        invalid: 0,
+        unsupported: 0,
+        continuation,
+      })
+      .mockResolvedValueOnce({ status: "stale" })
+      .mockResolvedValueOnce({ status: "ready", entries: [], invalid: 0, unsupported: 0 })
+      .mockRejectedValueOnce(new Error("synthetic private message"));
+    const bridge = { readPage };
+    await mount("en-US", undefined, {}, undefined, undefined, undefined, [
+      {
+        id: "diagnostics",
+        title: "Diagnostics",
+        icon: "file-text",
+        content: (active: boolean) => active && h(DiagnosticsPanel, { bridge, locale: "en-US" }),
+      },
+    ]);
+    expect(readPage).not.toHaveBeenCalled();
+    expect(container.querySelector(".diagnostics-panel")).toBeNull();
+    await openPage("Diagnostics");
+    const panel = container.querySelector(".diagnostics-panel")!;
+    const [refresh, next] = panel.querySelectorAll("button");
+    await act(async () => refresh.click());
+    expect(readPage).toHaveBeenCalledExactlyOnceWith({ slot: 0 });
+    expect(panel.textContent).toContain("Loading logs");
+    await act(async () =>
+      first.resolve({ status: "ready", entries: [entry], invalid: 0, unsupported: 0 }),
+    );
+    expect(panel.querySelector("time")?.dateTime).toBe(entry.time);
+    expect(panel.querySelector("li")?.textContent).toContain("INFO");
+    expect(panel.querySelector("code")?.textContent).toBe(entry.event);
+    expect(next.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => next.click());
+    expect(readPage).toHaveBeenCalledTimes(1);
+
+    const selector = panel.querySelector("select")!;
+    await act(async () => {
+      selector.value = "2";
+      selector.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(readPage).toHaveBeenLastCalledWith({ slot: 2 });
+    expect(panel.textContent).toContain("The logs are busy.");
+    expect(next.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => refresh.click());
+    expect(readPage).toHaveBeenLastCalledWith({ slot: 2 });
+    expect(selector.value).toBe("2");
+    expect(panel.textContent).toContain("Invalid records skipped: 2.");
+    expect(panel.textContent).toContain("Unsupported records skipped: 62.");
+    await act(async () => {
+      next.focus();
+      next.click();
+    });
+    expect(panel.textContent).toContain("The logs are busy.");
+    expect(document.activeElement).toBe(next);
+    await act(async () => next.click());
+    expect(readPage).toHaveBeenLastCalledWith({ slot: 2, continuation });
+    expect(panel.textContent).toContain("Page 2");
+    await act(async () => next.click());
+    expect(panel.textContent).toContain("The logs changed.");
+    expect(document.activeElement).toBe(refresh);
+    expect(panel.querySelector("li")).toBeNull();
+    await act(async () => refresh.click());
+    expect(readPage).toHaveBeenLastCalledWith({ slot: 2 });
+    expect(selector.value).toBe("2");
+    expect(panel.textContent).toContain("Page 1");
+    await act(async () => refresh.click());
+    expect(panel.textContent).toContain("The log could not be read.");
+    expect(panel.textContent).not.toContain("synthetic private message");
+    const abandoned = deferred<import("@ohtia/contracts").DiagnosticReadResult>();
+    readPage
+      .mockReturnValueOnce(abandoned.promise)
+      .mockResolvedValueOnce({ status: "ready", entries: [], invalid: 0, unsupported: 0 });
+    await act(async () => refresh.click());
+    await openPage(message("en-US", "settings.section"));
+    expect(container.querySelector(".diagnostics-panel")).toBeNull();
+    await openPage("Diagnostics");
+    const reopened = container.querySelector(".diagnostics-panel")!;
+    expect(readPage).toHaveBeenLastCalledWith({ slot: 0 });
+    expect(reopened.textContent).toContain("No supported events on this page.");
+    await act(async () => abandoned.resolve({ status: "stale" }));
+    expect(reopened.textContent).toContain("No supported events on this page.");
+
+    const readsBeforeResize = readPage.mock.calls.length;
+    await narrowWindow(true);
+    expect(container.querySelector(".diagnostics-panel")).toBe(reopened);
+    expect(readPage).toHaveBeenCalledTimes(readsBeforeResize);
+    await click(".settings-back");
+    expect(container.querySelector(".diagnostics-panel")).toBeNull();
+    expect(readPage).toHaveBeenCalledTimes(readsBeforeResize);
+    readPage.mockResolvedValueOnce({ status: "ready", entries: [], invalid: 0, unsupported: 0 });
+    await openPage("Diagnostics");
+    expect(readPage).toHaveBeenCalledTimes(readsBeforeResize + 1);
+  });
   it("keeps the default model when another service connects and refreshes its catalog", async () => {
     const other = {
       id: "anthropic",

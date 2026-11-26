@@ -195,6 +195,9 @@ function fixture() {
       })),
       openLink: vi.fn(async () => true),
     },
+    diagnostics: {
+      readPage: vi.fn(async () => ({ status: "unavailable" })),
+    },
     system: { readMotion: () => "unknown", subscribeMotion: () => () => {} },
   } as unknown as DesktopBridge;
   return {
@@ -297,6 +300,23 @@ describe("integrated application authority", () => {
     await notify(id, "disconnected");
     expect(limits.textContent).not.toContain(cost);
     expect(limits.textContent).toContain(plan);
+  });
+
+  it("loads diagnostics when the Settings page opens during graphical bootstrap", async () => {
+    const t = fixture();
+    vi.mocked(t.bridge.bootstrap.read).mockResolvedValue({
+      version: 1,
+      locale: "en-US",
+      state: "pending_create",
+    });
+    await mount(t);
+    await t.intent("settings.open");
+    expect(t.bridge.diagnostics.readPage).not.toHaveBeenCalled();
+    await click('.settings-pages button[id$="-section-diagnostics-nav"]');
+    expect(t.bridge.diagnostics.readPage).toHaveBeenCalledExactlyOnceWith({ slot: 0 });
+    expect(container.querySelector(".diagnostics-panel [role=status]")?.textContent).toBe(
+      "The log could not be read.",
+    );
   });
 
   it("keeps the open Settings dialog, input focus and reading position when storage becomes available in another window", async () => {
