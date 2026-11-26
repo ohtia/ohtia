@@ -789,7 +789,9 @@ try {
   page = await start();
   await open(page);
   enterPhase("verify-packaged-thesis-profile", ".project-selector-button");
-  record("packaged-thesis-profile", await verifyPackagedThesisProfile(application, page, projects));
+  const research = await verifyPackagedThesisProfile(application, page, projects);
+  record("packaged-thesis-profile", research.profile);
+  record("packaged-research-stage", research.stage);
   enterPhase("verify-packaged-project-rename", ".project-selector-button");
   record(
     "packaged-project-rename",

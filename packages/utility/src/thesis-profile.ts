@@ -56,7 +56,7 @@ export function profileSaveHash(input: Pick<ResearchInputs["profile.save"], keyo
   );
 }
 
-async function confirmedThesis(
+export async function confirmedThesis(
   db: Kysely<ResearchSchema>,
   projectId: string,
 ): Promise<Outcome<Buffer>> {
@@ -79,6 +79,15 @@ async function currentRevision(db: Kysely<ResearchSchema>, project: Uint8Array) 
     .selectAll("r")
     .where("h.project_id", "=", project)
     .executeTakeFirst();
+}
+
+export async function currentProfileIdentity(db: Kysely<ResearchSchema>, project: Uint8Array) {
+  const row = await db
+    .selectFrom("thesis_profile_heads")
+    .select("revision_id")
+    .where("project_id", "=", project)
+    .executeTakeFirst();
+  return row ? identifier(row.revision_id) : null;
 }
 
 export async function currentProfileNumber(db: Kysely<ResearchSchema>, project: Uint8Array) {
@@ -110,6 +119,22 @@ function storedProfile(encoded: string): ProfileContent {
   return decoded;
 }
 
+export async function messageArtifactExists(
+  db: Kysely<ResearchSchema>,
+  project: Uint8Array,
+  messageId: string,
+): Promise<boolean> {
+  const message = await db
+    .selectFrom("messages as m")
+    .innerJoin("conversations as c", "c.id", "m.conversation_id")
+    .select("m.id")
+    .where("m.id", "=", bytes(messageId))
+    .where("c.project_id", "=", project)
+    .where((eb) => eb.or([eb("m.author_kind", "=", "researcher"), eb("m.ending", "=", "complete")]))
+    .executeTakeFirst();
+  return !!message;
+}
+
 async function verifyOrigins(
   db: Kysely<ResearchSchema>,
   project: Uint8Array,
@@ -122,19 +147,11 @@ async function verifyOrigins(
     if (fact?.state !== "known") continue;
     for (const item of "items" in fact ? fact.items : [fact]) {
       const origin = item.origin;
-      if (origin.kind === "artifact_version") {
-        const message = await db
-          .selectFrom("messages as m")
-          .innerJoin("conversations as c", "c.id", "m.conversation_id")
-          .select("m.id")
-          .where("m.id", "=", bytes(origin.id))
-          .where("c.project_id", "=", project)
-          .where((eb) =>
-            eb.or([eb("m.author_kind", "=", "researcher"), eb("m.ending", "=", "complete")]),
-          )
-          .executeTakeFirst();
-        if (!message) return false;
-      }
+      if (
+        origin.kind === "artifact_version" &&
+        !(await messageArtifactExists(db, project, origin.id))
+      )
+        return false;
       if (origin.kind === "adopted_proposal") {
         const proposal = await db
           .selectFrom("thesis_profile_proposals")

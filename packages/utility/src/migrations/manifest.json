@@ -154,5 +154,9 @@
   {
     "name": "0039_thesis_profile",
     "sha256": "ffea5ddb5b692fad4cc4725932a490c2cd1e9e2ca397ad16b40a5ad5d4f31fa2"
+  },
+  {
+    "name": "0040_research_stages",
+    "sha256": "97cfa55494a633023dd705a5a27becc1cd2217e1084d884d207c88d0d87622b2"
   }
 ]

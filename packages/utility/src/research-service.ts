@@ -4,7 +4,7 @@ import {
   isResearchMutation,
   isResearchOperation,
   policyId,
-  profileScope,
+  projectResearchScope,
   type Request,
   type ResearchCommand,
   type ResearchEvent,
@@ -14,6 +14,7 @@ import {
 import { canonicalJson } from "./research.js";
 import { TextStaging } from "./research-text.js";
 import { profileSaveHash } from "./thesis-profile.js";
+import { stageTransitionHash, stageTransitionPayload } from "./research-stage.js";
 import { fitsResearchResult } from "./research-reads.js";
 import type { DurableStore } from "./storage.js";
 import type { DurableProvider } from "./durable-provider.js";
@@ -225,12 +226,10 @@ export class ResearchService {
         return true;
       }
     }
-    const scope = profileScope(request);
-    if (
-      scope &&
-      this.streams.get(`${request.windowGeneration}/${scope.subscriptionId}`)?.scope.projectId !==
-        scope.projectId
-    ) {
+    const scope = projectResearchScope(request);
+    const scopeKey = scope && `${request.windowGeneration}/${scope.subscriptionId}`;
+    const selected = scopeKey ? this.streams.get(scopeKey) : undefined;
+    if (scope && selected?.scope.projectId !== scope.projectId) {
       respond(failure("unauthorized"));
       return true;
     }
@@ -246,16 +245,26 @@ export class ResearchService {
       return true;
     }
     if (isResearchMutation(request.operation)) {
-      let payload: unknown = request.payload;
+      const stagePayload =
+        request.operation === "stage.transition"
+          ? stageTransitionPayload(request.payload)
+          : undefined;
+      let payload: unknown = stagePayload ?? request.payload;
       const payloadHash =
         request.operation === "profile.save"
           ? profileSaveHash(request.payload)
-          : createHash("sha256").update(canonicalJson(payload)).digest("hex");
+          : stagePayload
+            ? stageTransitionHash(stagePayload)
+            : createHash("sha256").update(canonicalJson(payload)).digest("hex");
       const receipt = await this.storage.readResearchReceipt(
         request.operationId,
         request.operation,
         payloadHash,
       );
+      if (stagePayload && scopeKey && this.streams.get(scopeKey) !== selected) {
+        respond(failure("stale_generation"));
+        return true;
+      }
       if (!receipt.ok || receipt.value) {
         this.staging.discard(request.windowGeneration, request.operationId, scope?.subscriptionId);
         respond(receipt);
@@ -340,7 +349,11 @@ export class ResearchService {
         });
       }
       try {
-        if (request.operation !== "project.rename" && request.operation !== "profile.save")
+        if (
+          request.operation !== "project.rename" &&
+          request.operation !== "profile.save" &&
+          request.operation !== "stage.transition"
+        )
           await this.provider.pump();
         await this.publish();
       } catch {

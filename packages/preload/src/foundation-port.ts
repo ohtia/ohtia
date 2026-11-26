@@ -6,7 +6,7 @@ import {
   isResearchMutation,
   isResearchOperation,
   researchResultMatches,
-  profileScope,
+  projectResearchScope,
   decodeAppearanceChange,
   decodeUpdateCheckChange,
   decodePresentationChange,
@@ -279,13 +279,16 @@ export function createFoundationPort(
       );
       return;
     }
-    const scope = profileScope(entry.request);
+    const scope = projectResearchScope(entry.request);
     if (
       scope &&
       entry.request.operation !== "profile.save" &&
       !streams.get(scope.subscriptionId)?.active
     ) {
-      settle(entry, failure("stale_generation"));
+      settle(
+        entry,
+        failure(entry.request.operation === "stage.transition" ? "uncertain" : "stale_generation"),
+      );
       return;
     }
     if (message.payload.ok) {
@@ -295,12 +298,16 @@ export function createFoundationPort(
           entry.request.operation,
           entry.request.payload,
           message.payload.value,
+          entry.request.operationId,
         )
       ) {
         settle(
           entry,
           failure(
-            entry.request.operation === "profile.save" ? "uncertain" : "invalid_service_result",
+            entry.request.operation === "profile.save" ||
+              entry.request.operation === "stage.transition"
+              ? "uncertain"
+              : "invalid_service_result",
           ),
         );
         return;
@@ -610,6 +617,10 @@ export function createFoundationPort(
     createProject: (id) => call("project.create", {}, id),
     openProject: (id, input) => call("project.open", input, id),
     renameProject: (id, input) => call("project.rename", input, id),
+    readResearchStage: (input) => call("stage.read", input),
+    readStageDecision: (input) => call("stage.history", input),
+    transitionResearchStage: (id, input) => call("stage.transition", input, id),
+    readStageReceipt: (input) => call("stage.receipt", input),
     readThesisProfile: (input) => call("profile.read", input),
     readThesisProfilePart: (input) => call("profile.readPart", input),
     stageThesisProfilePart: (id, input) => call("profile.stagePart", input, id),
