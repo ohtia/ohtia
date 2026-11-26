@@ -12,6 +12,7 @@ import { recordReadyNativeProcesses } from "./desktop-native-observation.mjs";
 import { invokeNativeMenu } from "./command-acceptance.mjs";
 import { focusNative, withCommandCleanup } from "./command-native-focus.mjs";
 import { setNativeViewport } from "./design-viewport.mjs";
+import { verifyDiagnosticBundle } from "./diagnostic-bundle-acceptance.mjs";
 import {
   decodeDiagnosticLine,
   diagnosticLimits,
@@ -39,6 +40,7 @@ const receipt = {
   limitations: [
     "Controlled interruption is distinct from physical power loss.",
     "Manual assistive and human linguistic acceptance remain separate.",
+    "Bundle publication uses a controlled save-picker reply; native chooser interaction is separate.",
   ],
 };
 const saveReceipt = () =>
@@ -219,7 +221,9 @@ async function verifySettingsDeletion(application, page, locale, activeRecord, d
   const before = await readStore();
   const text = (key, values = {}) => message(locale, key, values);
   const dialog = page.getByRole("dialog", { name: text("settings.title"), exact: true });
-  const trigger = dialog.locator(".diagnostics-actions button[aria-expanded]");
+  const trigger = dialog
+    .getByRole("button", { name: text("diagnostics.delete"), exact: true })
+    .first();
   const group = dialog.getByRole("group", { name: text("diagnostics.delete"), exact: true });
   const cancel = group.getByRole("button", { name: text("checkpoint_cancel"), exact: true });
   const confirm = group.getByRole("button", { name: text("diagnostics.delete"), exact: true });
@@ -740,6 +744,8 @@ try {
   record("settings-bounded-diagnostic-viewer");
   await verifySettingsDeletion(application, page, locale, logs()[0], logDirectory);
   record("settings-confirmed-diagnostic-deletion");
+  await verifyDiagnosticBundle(application, page, locale, logs()[0], logDirectory, marker, output);
+  record("settings-reviewed-diagnostic-bundle", { chooser: "controlled_response" });
   const quitOffsets = new Map();
   for (let slot = 0; slot < 5; slot++) {
     const file = path.join(logDirectory, slot === 0 ? "ohtia.jsonl" : `ohtia.${slot}.jsonl`);

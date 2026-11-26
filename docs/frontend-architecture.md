@@ -101,7 +101,7 @@ Closing the last window and choosing Quit use [the application-exit flow](adr/ad
 
 **Settings → Diagnostics** opens the read-only log viewer on the active diagnostic file and offers access to retained archives. **Delete logs** requires explicit confirmation. Use named broker operations to read/delete the managed logs; the renderer receives validated event data and never an arbitrary filesystem API. Present event values as text, with UTC time, severity and controlled event name visible. Use the ADR's version-aware decoder and display bounded unsupported/invalid-record diagnostics instead of arbitrary raw payloads. Load bounded portions of the retained files so inspection keeps the interface responsive.
 
-Apply the storage, rotation and privacy rules in [ADR-0013](adr/adr-0013-private-content-free-structured-logging.md). Explain that deletion removes technical diagnostics and leaves research history intact. Refresh the viewer after deletion as new events arrive; show access, logging and partial-deletion failures accurately. Sharing a diagnostic bundle requires an explicit preview and user action.
+Apply the storage, rotation and privacy rules in [ADR-0013](adr/adr-0013-private-content-free-structured-logging.md). Explain that deletion removes technical diagnostics and leaves research history intact. Refresh the viewer after deletion as new events arrive; show access, logging and partial-deletion failures accurately. Sharing a diagnostic bundle requires an explicit preview and user action through the [reviewed local save flow](diagnostics.md#save-a-reviewed-diagnostic-bundle).
 
 ## Localization and accessibility
 

@@ -15,6 +15,7 @@ import {
   failure,
   staleRevision,
   type FoundationPort,
+  type DiagnosticsBridge,
   type AgentPreferences,
   type ConnectionEvent,
   type ProviderDeclaration,
@@ -249,7 +250,7 @@ describe("compact Settings dialog", () => {
       .mockResolvedValueOnce({ status: "stale" })
       .mockResolvedValueOnce({ status: "ready", entries: [], invalid: 0, unsupported: 0 })
       .mockRejectedValueOnce(new Error("synthetic private message"));
-    const bridge = { readPage, deleteLogs: vi.fn() };
+    const bridge = { readPage, deleteLogs: vi.fn(), bundle: vi.fn() };
     function Viewer() {
       const deletionControl = useDiagnosticDeletion();
       return h(DiagnosticsPanel, { bridge, locale: "en-US", deletionControl });
@@ -344,6 +345,124 @@ describe("compact Settings dialog", () => {
     readPage.mockResolvedValueOnce({ status: "ready", entries: [], invalid: 0, unsupported: 0 });
     await openPage("Diagnostics");
     expect(readPage).toHaveBeenCalledTimes(readsBeforeResize + 1);
+  });
+  it("reviews exact diagnostic text, saves the broker token and discards a changed or closed preview", async () => {
+    const { DiagnosticBundlePanel } =
+      await import("../packages/renderer/src/diagnostic-bundle-panel.js");
+    const token = "00000000-0000-4000-8000-000000000001";
+    const json = '{"schema_version":1}\n';
+    const bundle = vi.fn<DiagnosticsBridge["bundle"]>().mockImplementation(async (request) => {
+      if (request.action === "prepare")
+        return { status: "preview", token, json, invalid: 1, unsupported: 2 };
+      return { status: request.action === "save" ? "saved" : "cancelled" };
+    });
+    await act(async () => {
+      root.render(
+        h(DiagnosticBundlePanel, {
+          locale: "en-US",
+          blocked: false,
+          bridge: { bundle, readPage: vi.fn(), deleteLogs: vi.fn() },
+        }),
+      );
+    });
+    const trigger = container.querySelector("button")!;
+    await act(async () => trigger.click());
+    const input = container.querySelector<HTMLElement>('input[name="slot"]')!;
+    expect(document.activeElement).toBe(input);
+    expect(container.querySelectorAll("fieldset input[type=checkbox]")).toHaveLength(5);
+    expect(container.querySelector("fieldset input[type=datetime-local]")).toBeNull();
+    const submit = async () => {
+      const button = container.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+      await act(async () => {
+        button.focus();
+        button.click();
+      });
+    };
+    const preparing = deferred<import("@ohtia/contracts").DiagnosticBundleResult>();
+    bundle.mockReturnValueOnce(preparing.promise);
+    const date = container.querySelector<HTMLInputElement>('input[name="through"]')!;
+    await act(async () => {
+      date.focus();
+      date.form!.requestSubmit();
+    });
+    expect(date.disabled).toBe(true);
+    // jsdom keeps focus on a disabled input. Simulate Chromium returning it to the body.
+    const temporary = document.createElement("button");
+    document.body.append(temporary);
+    temporary.focus();
+    temporary.remove();
+    expect(document.activeElement).toBe(document.body);
+    await act(async () =>
+      preparing.resolve({ status: "preview", token, json, invalid: 1, unsupported: 2 }),
+    );
+    const first = bundle.mock.calls[0][0];
+    expect(first).toMatchObject({ action: "prepare", slots: 31 });
+    const preview = container.querySelector("pre")!;
+    expect(preview.textContent).toBe(json);
+    expect(preview.getAttribute("role")).toBe("region");
+    expect(preview.getAttribute("aria-label")).toBe("Preview bundle");
+    expect(document.activeElement).toBe(preview);
+    expect(container.querySelector('[role="status"]')?.textContent).toContain(
+      "Invalid records skipped: 1.",
+    );
+    await act(async () => input.click());
+    expect(bundle).toHaveBeenLastCalledWith({
+      action: "discard",
+      id: "id" in first ? first.id : "",
+    });
+    expect(container.querySelector("pre")).toBeNull();
+    bundle.mockRejectedValueOnce(new Error("Private fixture error."));
+    await submit();
+    expect(container.textContent).toContain("The diagnostic bundle operation was unavailable.");
+    expect(container.textContent).not.toContain("Private fixture error.");
+    bundle.mockResolvedValueOnce({ status: "too_large", invalid: 2, unsupported: 1 });
+    await submit();
+    expect(container.textContent).toContain("Choose a narrower UTC range.");
+    expect(container.querySelector("pre")).toBeNull();
+    await submit();
+    expect(bundle).toHaveBeenLastCalledWith(
+      expect.objectContaining({ action: "prepare", slots: 30 }),
+    );
+    const save = [...container.querySelectorAll("button")].find(
+      (item) => item.textContent === "Save diagnostic bundle",
+    )!;
+    bundle.mockResolvedValueOnce({ status: "busy" });
+    await act(async () => {
+      save.focus();
+      save.click();
+    });
+    expect(container.querySelector("pre")?.textContent).toBe(json);
+    expect(container.textContent).toContain("The logs are busy.");
+    const retry = [...container.querySelectorAll("button")].find(
+      (item) => item.textContent === "Save diagnostic bundle",
+    )!;
+    await act(async () => {
+      retry.focus();
+      retry.click();
+    });
+    expect(bundle).toHaveBeenCalledWith({ action: "save", token });
+    expect(container.textContent).toContain("Diagnostic bundle saved.");
+    expect(document.activeElement).toBe(container.querySelector('[role="status"]'));
+    const slots = [...container.querySelectorAll<HTMLInputElement>('input[name="slot"]')];
+    await act(async () => {
+      for (const slot of slots) if (slot.checked) slot.click();
+    });
+    const previousCalls = bundle.mock.calls.length;
+    await submit();
+    expect(bundle).toHaveBeenCalledTimes(previousCalls);
+    expect(container.textContent).toContain("Select at least one log file");
+    await act(async () => {
+      slots[0].click();
+    });
+    await submit();
+    await act(async () => {
+      container
+        .querySelector("pre")!
+        .dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(bundle).toHaveBeenLastCalledWith(expect.objectContaining({ action: "discard" }));
+    expect(container.querySelector("form")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
   it("keeps the default model when another service connects and refreshes its catalog", async () => {
     const other = {

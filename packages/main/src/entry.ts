@@ -48,6 +48,8 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   suppressDiagnosticCapture,
   type DiagnosticEventName,
+  decodeDiagnosticBundleRequest,
+  type DiagnosticBundleResult,
   decodeDiagnosticDeleteRequest,
   type DiagnosticDeleteResult,
   decodeDiagnosticReadRequest,
@@ -110,6 +112,7 @@ import {
 } from "./storage-activation.js";
 import { RuntimeNotices, type RuntimeError } from "./error-notices.js";
 
+import { DiagnosticBundleFlow } from "./diagnostic-bundle.js";
 import { DiagnosticWriter } from "./diagnostic-writer.js";
 import { stopBrokerServices, recoverDiagnosticsAfterShutdown } from "./shutdown.js";
 
@@ -328,6 +331,7 @@ function saveWindowBounds(window: BrowserWindow): void {
 }
 
 let diagnostics: DiagnosticWriter | undefined;
+const diagnosticBundle = new DiagnosticBundleFlow<BrowserWindow>();
 function openDiagnostics(): DiagnosticWriter {
   return new DiagnosticWriter({
     root: context.research_root,
@@ -533,6 +537,7 @@ function attach(window: BrowserWindow) {
   return state;
 }
 function detach(window: BrowserWindow): void {
+  diagnosticBundle.discard(window);
   const state = windows.get(window);
   if (!state) return;
   state.detach?.();
@@ -1596,6 +1601,57 @@ async function start(): Promise<void> {
     },
   );
   ipcMain.handle(
+    desktopChannels.diagnosticsBundle,
+    async (event, input: unknown, ...extra: unknown[]): Promise<DiagnosticBundleResult> => {
+      const window = trusted(event);
+      const frame = event.senderFrame;
+      if (!window || !frame) return { status: "unavailable" };
+      const request = extra.length === 0 && decodeDiagnosticBundleRequest(input);
+      if (!request) return { status: "invalid_request" };
+      if (request.action === "discard") return diagnosticBundle.discard(window, request.id);
+
+      const writer = diagnostics;
+      if (!writer) return { status: "unavailable" };
+      const reservation = requestBudget.reserve(frame);
+      if (!reservation.ok) return { status: "busy" };
+      try {
+        if (request.action === "prepare") {
+          const admitted = () =>
+            !window.isDestroyed() &&
+            trusted(event) === window &&
+            event.senderFrame === frame &&
+            diagnostics === writer;
+          return await diagnosticBundle.prepare(window, request.id, admitted, (current) =>
+            writer.prepareBundle(request, current),
+          );
+        }
+        return await diagnosticBundle.save(
+          window,
+          request.token,
+          async () => {
+            const picked = await dialog.showSaveDialog(window, {
+              title: message(locale, "diagnostics.bundle.save"),
+              defaultPath: "ohtia-diagnostics.json",
+              filters: [{ name: "JSON", extensions: ["json"] }],
+            });
+            return picked.canceled ? undefined : picked.filePath;
+          },
+          {
+            protectedRoots: [
+              context.research_root,
+              path.join(context.configuration_root, "Ohtia"),
+              ...Object.values(context.stable_roots).map(({ root }) => root),
+            ],
+            createTemporary: (file) => writer.createBundleTemporary(file),
+            verifyTemporary: (file) => writer.verifyBundleTemporary(file),
+          },
+        );
+      } finally {
+        reservation.value();
+      }
+    },
+  );
+  ipcMain.handle(
     desktopChannels.bootstrap,
     async (event, action: unknown, ...args: unknown[]): Promise<BootstrapSnapshot> => {
       const window = trusted(event);
@@ -1771,6 +1827,7 @@ app.on("before-quit", (event) => {
       async () => {
         await windowPreferences.drain();
         await credentials?.drain();
+        await diagnosticBundle.drain();
       },
       () => !systemShutdown,
     );

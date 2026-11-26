@@ -8,6 +8,11 @@ import {
   diagnosticSeverities,
   decodeDiagnosticReadRequest,
   decodeDiagnosticLine,
+  diagnosticBundleFooter,
+  diagnosticBundleHeader,
+  diagnosticBundleRecord,
+  type DiagnosticBundleSelection,
+  type DiagnosticBundleScanResult,
   makeDiagnosticRecord,
   isArtifactVersion,
   type DiagnosticContinuation,
@@ -138,7 +143,11 @@ export class DiagnosticWriter {
         throw new Error("Diagnostic directory identity changed.");
     }
   }
-  private async restrict(file: string, directory: boolean): Promise<void> {
+  private async restrict(
+    file: string,
+    directory: boolean,
+    operation: "restrict" | "create" | "verify" = "restrict",
+  ): Promise<void> {
     if (this.closing) throw new Error("Diagnostic writer closed.");
     if (process.platform !== "win32") {
       const stat = fs.lstatSync(file);
@@ -155,17 +164,26 @@ export class DiagnosticWriter {
     const script = [
       '$ErrorActionPreference="Stop";',
       "$p=$env:OHTIA_DIAGNOSTIC_ACL_PATH;",
+      "$operation=$env:OHTIA_DIAGNOSTIC_ACL_OPERATION;",
       "$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User;",
-      "$directory=[System.IO.Directory]::Exists($p);",
+      '$directory=($operation -eq "restrict") -and [System.IO.Directory]::Exists($p);',
       '$inherit=if($directory){[System.Security.AccessControl.InheritanceFlags]"ContainerInherit,ObjectInherit"}else{[System.Security.AccessControl.InheritanceFlags]::None};',
       "function Read-OhtiaAcl(){if($directory){return [System.IO.Directory]::GetAccessControl($p)}else{return [System.IO.File]::GetAccessControl($p)}};",
       "function Test-OhtiaAcl($value){$rules=@($value.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier]));",
       'return ($value.AreAccessRulesProtected -and $value.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -eq $sid.Value -and $rules.Count -eq 1 -and $rules[0].IdentityReference.Value -eq $sid.Value -and $rules[0].AccessControlType -eq "Allow" -and $rules[0].FileSystemRights -eq "FullControl" -and $rules[0].InheritanceFlags -eq $inherit -and $rules[0].PropagationFlags -eq [System.Security.AccessControl.PropagationFlags]::None)};',
+      '$rule=[System.Security.AccessControl.FileSystemAccessRule]::new($sid,"FullControl",$inherit,"None","Allow");',
+      // Start with the protected ACL so no other account can acquire a read handle on the empty file.
+      'if($operation -eq "create"){',
+      "$security=[System.Security.AccessControl.FileSecurity]::new();",
+      "$security.SetAccessRuleProtection($true,$false); $security.SetOwner($sid); $security.AddAccessRule($rule);",
+      '$handle=[System.IO.FileStream]::new($p,"CreateNew","FullControl","None",4096,"None",$security);',
+      'try{try{if(!(Test-OhtiaAcl ($handle.GetAccessControl()))){throw "Diagnostic ACL unavailable."}}finally{$handle.Dispose()}}catch{[System.IO.File]::Delete($p); throw};',
+      "exit 0};",
       "$acl=Read-OhtiaAcl; if(Test-OhtiaAcl $acl){exit 0};",
+      'if($operation -eq "verify"){exit 1};',
       "$acl.SetAccessRuleProtection($true,$false);",
       "foreach($r in @($acl.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier]))){$acl.RemoveAccessRuleSpecific($r)};",
       "$acl.SetOwner($sid);",
-      '$rule=[System.Security.AccessControl.FileSystemAccessRule]::new($sid,"FullControl",$inherit,"None","Allow");',
       "$acl.AddAccessRule($rule);",
       "if($directory){[System.IO.Directory]::SetAccessControl($p,$acl)}else{[System.IO.File]::SetAccessControl($p,$acl)};",
       "$check=Read-OhtiaAcl; if(!(Test-OhtiaAcl $check)){exit 1}",
@@ -178,7 +196,11 @@ export class DiagnosticWriter {
           path.join(system, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
           ["-NoProfile", "-NonInteractive", "-Command", script],
           {
-            env: { ...process.env, OHTIA_DIAGNOSTIC_ACL_PATH: file },
+            env: {
+              ...process.env,
+              OHTIA_DIAGNOSTIC_ACL_PATH: file,
+              OHTIA_DIAGNOSTIC_ACL_OPERATION: operation,
+            },
             stdio: "ignore",
             timeout: 15000,
             windowsHide: true,
@@ -200,7 +222,7 @@ export class DiagnosticWriter {
         });
       });
     } catch {
-      this.permissionFailed = true;
+      if (operation === "restrict") this.permissionFailed = true;
       throw new Error("Diagnostic ACL unavailable.");
     }
   }
@@ -451,6 +473,123 @@ export class DiagnosticWriter {
       };
     }, refused);
   }
+  /** POSIX staging is created exclusively by the broker. Windows needs its ACL at creation. */
+  async createBundleTemporary(file: string): Promise<boolean> {
+    if (process.platform !== "win32") return false;
+    if (!(await this.bundleTemporaryPermission(file, "create")))
+      throw new Error("Diagnostic bundle staging unavailable.");
+    return true;
+  }
+
+  verifyBundleTemporary(file: string): Promise<boolean> {
+    if (process.platform !== "win32") return Promise.resolve(true);
+    return this.bundleTemporaryPermission(file, "verify");
+  }
+
+  private bundleTemporaryPermission(
+    file: string,
+    operation: "create" | "verify",
+  ): Promise<boolean> {
+    return this.enqueue(
+      async () => {
+        try {
+          await this.restrict(file, false, operation);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      () => false,
+    );
+  }
+
+  prepareBundle(
+    selection: DiagnosticBundleSelection,
+    current: () => boolean,
+  ): Promise<DiagnosticBundleScanResult> {
+    const scannable = () => current() && !this.closing;
+    return this.enqueue<DiagnosticBundleScanResult>(
+      async () => {
+        const header = diagnosticBundleHeader(selection);
+        let length = Buffer.byteLength(header + diagnosticBundleFooter);
+        const records: { observed: string; line: string }[] = [];
+        let invalid = 0;
+        let unsupported = 0;
+        let scanned = 0;
+        for (let slot = 0; slot < diagnosticLimits.files; slot++) {
+          if (!(selection.slots & (1 << slot))) continue;
+          if (!scannable()) return { status: "stale" };
+          this.checkRoot();
+          let fd: number;
+          try {
+            fd = this.open(path.join(this.directory, filename(slot)), fs.constants.O_RDONLY);
+          } catch (error) {
+            if (missing(error)) continue;
+            return { status: "unavailable" };
+          }
+          let bytes: Buffer;
+          try {
+            try {
+              const size = fs.fstatSync(fd).size;
+              if (size > diagnosticLimits.fileBytes) return { status: "invalid_file" };
+              bytes = Buffer.alloc(size);
+              let count = 0;
+              while (count < size) {
+                const read = fs.readSync(fd, bytes, count, size - count, count);
+                if (!read) return { status: "unavailable" };
+                count += read;
+              }
+            } finally {
+              fs.closeSync(fd);
+            }
+          } catch {
+            return { status: "unavailable" };
+          }
+
+          // Scanning in slot and byte-offset order makes stable sort preserve the ties.
+          for (let start = 0; start < bytes.length;) {
+            if (++scanned % 128 === 0) {
+              await new Promise<void>((resolve) => {
+                setImmediate(resolve);
+              });
+              if (!scannable()) return { status: "stale" };
+            }
+            const end = bytes.indexOf(10, start);
+            if (end < 0) {
+              invalid++;
+              break;
+            }
+            const decoded = decodeDiagnosticLine(bytes.subarray(start, end));
+            start = end + 1;
+            if (!decoded.ok) {
+              if (decoded.code === "unsupported_schema") unsupported++;
+              else invalid++;
+              continue;
+            }
+            const observed = decoded.value.observed_timestamp;
+            if (
+              observed < selection.from ||
+              observed > selection.through ||
+              length > diagnosticLimits.bundleBytes
+            )
+              continue;
+            const line = "    " + JSON.stringify(diagnosticBundleRecord(decoded.value));
+            length += Buffer.byteLength(line) + (records.length === 0 ? 1 : 2);
+            if (length <= diagnosticLimits.bundleBytes) records.push({ observed, line });
+            else records.length = 0;
+          }
+        }
+        if (length > diagnosticLimits.bundleBytes)
+          return { status: "too_large", invalid, unsupported };
+        records.sort((a, b) => (a.observed < b.observed ? -1 : a.observed > b.observed ? 1 : 0));
+        const lines = records.map(({ line }) => line).join(",\n");
+        const json = header + (lines ? lines + "\n" : "") + diagnosticBundleFooter;
+        return { status: "preview", json, invalid, unsupported };
+      },
+      (status) => ({ status: status === "busy" ? status : "unavailable" }),
+    );
+  }
+
   deleteLogs(confirmed: unknown): Promise<DiagnosticResult & { readonly deleted: number }> {
     let deleted = 0;
     if (confirmed !== true)

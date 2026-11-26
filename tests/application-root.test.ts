@@ -198,6 +198,7 @@ function fixture() {
     diagnostics: {
       readPage: vi.fn(async () => ({ status: "unavailable" })),
       deleteLogs: vi.fn(async () => ({ status: "unavailable" })),
+      bundle: vi.fn(async () => ({ status: "unavailable" })),
     },
     system: { readMotion: () => "unknown", subscribeMotion: () => () => {} },
   } as unknown as DesktopBridge;

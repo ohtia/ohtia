@@ -1,6 +1,8 @@
 import { isExternalMessageLink } from "@ohtia/contracts";
 import { contextBridge, ipcRenderer } from "electron";
 import {
+  decodeDiagnosticBundleRequest,
+  decodeDiagnosticBundleResult,
   decodeDiagnosticDeleteRequest,
   decodeDiagnosticDeleteResult,
   type DiagnosticDeleteResult,
@@ -393,6 +395,31 @@ const bridge: DesktopBridge = {
     },
   },
   diagnostics: {
+    async bundle(request) {
+      const input = decodeDiagnosticBundleRequest(request);
+      if (!input) return { status: "invalid_request" };
+      const failure = input.action === "save" ? "uncertain" : "unavailable";
+      try {
+        const result: unknown = await ipcRenderer.invoke(desktopChannels.diagnosticsBundle, input);
+        const decoded = decodeDiagnosticBundleResult(result);
+        if (!decoded) return { status: failure };
+        switch (decoded.status) {
+          case "preview":
+          case "too_large":
+          case "invalid_file":
+            return input.action === "prepare" ? decoded : { status: failure };
+          case "saved":
+          case "uncertain":
+            return input.action === "save" ? decoded : { status: failure };
+          case "cancelled":
+            return input.action === "prepare" ? { status: failure } : decoded;
+          default:
+            return decoded;
+        }
+      } catch {
+        return { status: failure };
+      }
+    },
     async readPage(request) {
       const input = decodeDiagnosticReadRequest(request);
       if (!input) return { status: "invalid_request" };

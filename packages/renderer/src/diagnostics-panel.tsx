@@ -10,6 +10,7 @@ import {
   type InterfaceLocale,
   type SimpleMessageKey,
 } from "@ohtia/contracts";
+import { DiagnosticBundlePanel } from "./diagnostic-bundle-panel.js";
 
 type Page = Extract<DiagnosticReadResult, { status: "ready" }>;
 
@@ -225,6 +226,7 @@ export function DiagnosticsPanel({
           <p>{message(locale, "diagnostics.unsupported", { count: page.unsupported })}</p>
         )}
       </div>
+      <DiagnosticBundlePanel bridge={bridge} locale={locale} blocked={confirming || deleting} />
       {!!page?.entries.length && (
         <ol className="diagnostic-entries" aria-label={text("diagnostics.events")}>
           {page.entries.map((entry, index) => (
