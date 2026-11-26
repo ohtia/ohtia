@@ -1,6 +1,7 @@
 // Non-shipping verification using Electron's actual isolated preload and utility process.
 import { expect } from "@playwright/test";
 import { desktopChannels, encodeProfileContent } from "../packages/contracts/dist/index.js";
+import { verifyPackagedResearchStage } from "./research-stage-acceptance.mjs";
 import { originalTitle, otherTitle, selectProject } from "./project-rename-acceptance.mjs";
 
 export async function verifyPackagedThesisProfile(application, page, projects) {
@@ -101,7 +102,16 @@ export async function verifyPackagedThesisProfile(application, page, projects) {
       ok: true,
       value: { projectId, receipt: result.saved.value },
     });
-    return { unsetProfile: true, scopedRead: true, exactRevision: true, durableReceipt: true };
+    const stage = await verifyPackagedResearchStage(page, {
+      projectId,
+      otherProjectId,
+      subscriptionId,
+      profileRevisionId: result.saved.value.resultId,
+    });
+    return {
+      profile: { unsetProfile: true, scopedRead: true, exactRevision: true, durableReceipt: true },
+      stage,
+    };
   } finally {
     await native.evaluate((window) => {
       window.thesisProfileEvidence?.restore();

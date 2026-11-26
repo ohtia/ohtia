@@ -212,6 +212,7 @@ export interface ResearchPayloads {
     readonly title: string;
     readonly expectedTitleRevision: number;
   };
+  readonly "stage.transition": import("./research-stage.js").StageTransitionPayload;
   readonly "project.confirmSetup": { readonly proposalId: string };
   readonly "project.rejectSetup": { readonly proposalId: string };
   readonly "conversation.start": {
@@ -240,6 +241,7 @@ export interface ResearchResult {
   readonly outcome?: PlanOutcome;
   readonly titleChange?: ProjectTitleChange;
   readonly profileChange?: import("./thesis-profile.js").ProfileChange;
+  readonly stageDecision?: import("./research-stage.js").StageTransitionResult["stageDecision"];
 }
 interface ProjectTitleChange {
   readonly title: string;
@@ -286,6 +288,7 @@ export const researchCommands = [
   "project.open",
   "project.rename",
   "profile.save",
+  "stage.transition",
   "project.confirmSetup",
   "project.rejectSetup",
   "conversation.start",

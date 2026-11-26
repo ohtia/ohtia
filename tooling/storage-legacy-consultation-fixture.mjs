@@ -1,3 +1,4 @@
+import { objects as thesisProfile } from "../packages/utility/src/migrations/0039_thesis_profile.mjs";
 import { objects as projectTitle } from "../packages/utility/src/migrations/0038_project_title_revision.mjs";
 import { objects as beforeProjectTitle } from "../packages/utility/src/migrations/0034_agent_preferences.mjs";
 import {
@@ -117,7 +118,19 @@ import { preferencesSchema as entryTextPreferencesSchema } from "../packages/uti
 
 const preferenceAttemptFields =
   attemptFields + ",usage_report_deadline_at,account_fingerprint,requested_effort,observed_effort";
+export const preResearchStageSql = `
+  DROP TRIGGER research_stage_receipt_scope;
+  DROP TABLE research_stage_artifacts;
+  DROP TABLE research_stage_decisions;
+  DROP TRIGGER receipts_commands;
+  ${thesisProfile.receipts_commands};
+  DELETE FROM kysely_migration WHERE name='0040_research_stages';
+  DELETE FROM ohtia_migration_artifacts WHERE name='0040_research_stages';
+  PRAGMA user_version=39;
+`;
+
 export const preThesisProfileSql = `
+  ${preResearchStageSql}
   DROP TRIGGER thesis_profile_receipt_scope;
   DROP TABLE thesis_profile_proposals;
   DROP TABLE thesis_profile_heads;

@@ -61,6 +61,7 @@
     "tests/renderer.test.ts",
     "tests/research-port.test.ts",
     "tests/research-presentation.test.ts",
+    "tests/research-stage.test.ts",
     "tests/research-storage.test.ts",
     "tests/restart-suspension.test.ts",
     "tests/runtime-modes.test.ts",

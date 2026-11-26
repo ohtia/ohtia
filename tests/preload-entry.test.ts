@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { LanguageController } from "../packages/renderer/src/language-controller.js";
 import {
   desktopChannels,
+  decodeText,
   portLimits,
   failure,
   type DesktopBridge,
@@ -1313,10 +1314,25 @@ it("carries persisted research through the sandbox entry and revokes scoped stre
   const { digest } = await import("../packages/utility/src/research-text.js");
   const fixture = storageFixture();
   await fixture.store.open();
+  let holdStageReply = false;
+  let heldStageReply: string | undefined;
   const service = createStatusService(
     "service-1",
     "en-US",
-    (text) => h.ipcRenderer.emit(desktopChannels.reply, {}, text),
+    (text) => {
+      if (holdStageReply) {
+        const reply = decodeText(text);
+        if (
+          reply.ok &&
+          reply.value.kind === "result" &&
+          reply.value.operation === "stage.transition"
+        ) {
+          heldStageReply = text;
+          return;
+        }
+      }
+      h.ipcRenderer.emit(desktopChannels.reply, {}, text);
+    },
     fixture.store,
     undefined,
     "development",
@@ -1355,7 +1371,8 @@ it("carries persisted research through the sandbox entry and revokes scoped stre
         proposalId: await proposeSetup(fixture.store, fixture.raw, projectId),
       }),
     );
-    const projectScope = port.subscribeResearch({ projectId, conversationId: null }, () => {});
+    const stageListener = vi.fn();
+    const projectScope = port.subscribeResearch({ projectId, conversationId: null }, stageListener);
     const { subscriptionId } = await expectValue({ result: projectScope.ready });
     const profileScope = { projectId, subscriptionId };
     const operationId = "entry-profile-save";
@@ -1394,6 +1411,59 @@ it("carries persisted research through the sandbox entry and revokes scoped stre
       projectId,
       receipt: savedProfile,
     });
+    const stageScope = { ...profileScope, stageId: "onboarding" } as const;
+    const stageInput = {
+      ...stageScope,
+      expectedRevision: 0,
+      decision: {
+        profileRevisionId: savedProfile.resultId,
+        reason: "Confirmed entry with partial context.",
+        transition: { kind: "enter" },
+        artifacts: [],
+        remainingConditions: ["Check requirements."],
+      },
+    } as const;
+    expect(await expectValue(port.readResearchStage(stageScope))).toMatchObject({
+      stageId: "onboarding",
+      revision: 0,
+      enter: "available",
+      profileRevisionId: savedProfile.resultId,
+    });
+    const stageOperation = "entry-onboarding";
+    const entry = await expectValue(port.transitionResearchStage(stageOperation, stageInput));
+    expect(entry.stageDecision).toMatchObject({
+      actor: "researcher",
+      operationId: stageOperation,
+      revision: 1,
+    });
+    expect(await expectValue(port.readStageDecision({ ...stageScope, revision: 1 }))).toEqual(
+      entry.stageDecision,
+    );
+    expect(
+      await expectValue(port.readStageReceipt({ ...stageInput, operationId: stageOperation })),
+    ).toMatchObject({
+      receipt: entry,
+    });
+    expect(
+      await port.transitionResearchStage("invalid-stage", {
+        ...stageInput,
+        decision: { ...stageInput.decision, reason: " " },
+      }).result,
+    ).toEqual(failure("invalid_message"));
+    expect(
+      await port.readResearchStage({ ...stageScope, subscriptionId: "obsolete" }).result,
+    ).toEqual(failure("stale_generation"));
+    await vi.waitFor(() =>
+      expect(stageListener).toHaveBeenCalledWith({
+        ok: true,
+        value: {
+          kind: "changed",
+          record: "researchStage",
+          id: projectId,
+          revision: 1,
+        },
+      }),
+    );
     const renamed = await expectValue(
       port.renameProject("entry-rename-project", {
         projectId,
@@ -1410,7 +1480,33 @@ it("carries persisted research through the sandbox entry and revokes scoped stre
       title: "Synthetic renamed thesis",
       titleRevision: 2,
     });
+    const alternate = await expectValue(port.createProject("entry-stage-alternate-project"));
+    holdStageReply = true;
+    const late = port.transitionResearchStage(stageOperation, stageInput);
+    await service.drain();
+    expect(heldStageReply).toBeDefined();
     projectScope.dispose();
+    const alternateScope = port.subscribeResearch(
+      { projectId: alternate.resultId, conversationId: null },
+      () => {},
+    );
+    await expectValue({ result: alternateScope.ready });
+    alternateScope.dispose();
+    const renewedScope = port.subscribeResearch({ projectId, conversationId: null }, () => {});
+    const renewed = await expectValue({ result: renewedScope.ready });
+    holdStageReply = false;
+    h.ipcRenderer.emit(desktopChannels.reply, {}, heldStageReply);
+    expect(await late.result).toEqual(failure("uncertain"));
+    expect(
+      await expectValue(
+        port.readStageReceipt({
+          ...stageInput,
+          operationId: stageOperation,
+          subscriptionId: renewed.subscriptionId,
+        }),
+      ),
+    ).toMatchObject({ receipt: entry });
+    renewedScope.dispose();
     const started = await expectValue(
       port.startConversation("entry-start", { projectId, content: "Synthetic question" }),
     );

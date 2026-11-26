@@ -133,6 +133,7 @@ export function inspectWorkspace(root) {
             "migrations/0037_update_check_preference.mjs",
             "migrations/0038_project_title_revision.mjs",
             "migrations/0039_thesis_profile.mjs",
+            "migrations/0040_research_stages.mjs",
             "migrations/0015_project_setup.mjs",
             "migrations/0009_usage_limit_pauses.mjs",
             "migrations/0005_presentation_receipts.mjs",

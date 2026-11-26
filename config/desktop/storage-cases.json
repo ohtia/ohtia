@@ -47,7 +47,8 @@
     "inspect-managed-store-location",
     "integrated-application-root",
     "packaged-project-rename",
-    "packaged-thesis-profile"
+    "packaged-thesis-profile",
+    "packaged-research-stage"
   ],
   "interruption_points": ["checkpoint", "before", "after", "intent-before", "intent-after"]
 }

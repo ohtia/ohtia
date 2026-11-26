@@ -324,6 +324,10 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
         "readDestination",
         "renameProject",
         "readProject",
+        "readResearchStage",
+        "readStageDecision",
+        "transitionResearchStage",
+        "readStageReceipt",
         "readThesisProfile",
         "readThesisProfilePart",
         "saveThesisProfile",
@@ -538,6 +542,40 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
       },
     });
     expect(await saved.result).toEqual(failure("uncertain"));
+    const stage = c.port.transitionResearchStage("stage-start", {
+      projectId,
+      subscriptionId,
+      stageId: "onboarding",
+      expectedRevision: 0,
+      decision: {
+        profileRevisionId: null,
+        reason: "Confirmed start.",
+        artifacts: [],
+        remainingConditions: [],
+        transition: { kind: "enter" },
+      },
+    });
+    c.respond({
+      resultId: revisionId,
+      stageDecision: {
+        projectId,
+        stageId: "onboarding",
+        decisionId: revisionId,
+        operationId: "stage-start",
+        expectedRevision: 0,
+        revision: 1,
+        kind: "enter",
+        precedingState: "not-started",
+        state: "in-progress",
+        actor: "researcher",
+        observedAt: "2026-01-01T11:00:00.000Z",
+        profileRevisionId: null,
+        reason: "Different from the submitted intent.",
+        artifacts: [],
+        remainingConditions: [],
+      },
+    });
+    expect(await stage.result).toEqual(failure("uncertain"));
     c.dispose();
   });
   it("times out at the canonical deadline and cancellation never claims rollback", async () => {
