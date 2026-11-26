@@ -5,6 +5,7 @@ import path from "node:path";
 import { _electron, expect } from "@playwright/test";
 import { admittedLaunch } from "./desktop-launch.mjs";
 import { recordReadyNativeProcesses } from "./desktop-native-observation.mjs";
+import { openWorkspaceSettings } from "./command-workspace.mjs";
 import { verifyStableSentinels } from "../packages/main/dist/index.js";
 import { message } from "../packages/contracts/dist/index.js";
 const [profileFile, preparedDirectory, output, previousFile] = process.argv.slice(2);
@@ -64,10 +65,13 @@ try {
   });
   const bootstrap = await page.evaluate(() => window.ohtia.bootstrap.read());
   const selected = before.value.value === "dark" ? "light" : "dark";
-  await page
-    .getByRole("combobox", { name: message(bootstrap.locale, "appearance"), exact: true })
-    .selectOption(selected);
-  await page.getByRole("button", { name: message(bootstrap.locale, "save"), exact: true }).click();
+  // The appearance lives in Settings, opened from the workspace; a choice saves at once.
+  await expect(page.locator(".workspace-window")).toBeVisible();
+  await openWorkspaceSettings(page);
+  await expect(
+    page.getByRole("dialog", { name: message(bootstrap.locale, "settings.title"), exact: true }),
+  ).toBeVisible();
+  await page.locator(`.settings-dialog[open] input[type="radio"][value="${selected}"]`).check();
   await expect
     .poll(
       async () =>

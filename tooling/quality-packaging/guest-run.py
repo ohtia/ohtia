@@ -108,7 +108,7 @@ def retain_session_diagnostics(output: Path) -> None:
             f"Guest user-session diagnostics could not be retained: {type(error).__name__}",
             file=sys.stderr,
         )
-    if env["OHTIA_QUALITY_VM"].startswith("linux-x64-fedora-"):
+    if "-fedora-" in env["OHTIA_QUALITY_VM"]:
         try:
             service = subprocess.run(
                 ["/usr/bin/systemctl", "is-active", "auditd"],

@@ -559,6 +559,12 @@ jobs:
           - cell: linux-x64-ubuntu-26-04-kde
             runner: ubuntu-26.04
             launcher: display-session
+          - cell: linux-arm64-ubuntu-26-04-gnome
+            runner: ubuntu-26.04-arm
+            launcher: display-session
+          - cell: linux-arm64-ubuntu-26-04-kde
+            runner: ubuntu-26.04-arm
+            launcher: display-session
           - cell: linux-x64-debian-13-gnome
             runner: ubuntu-26.04
             launcher: kvm

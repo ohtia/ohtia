@@ -67,19 +67,24 @@ Conf ohtia (0.2.2-1 Ohtia:packages.ohtia.com [amd64])
 
 
 class RepositoryQualificationTests(unittest.TestCase):
-    def test_covers_the_x86_64_linux_cells_of_the_quality_inventory(self):
+    def test_covers_the_declared_linux_cells_of_the_inventory_and_policy(self):
         cells = json.loads((qualification.ROOT / "config/quality/build-targets.json").read_text())[
             "cells"
         ]
-        declared = [cell["id"] for cell in cells if cell["target"] == "linux-x64"]
-        self.assertEqual(len(declared), 8)
+        declared = [cell["id"] for cell in cells if cell["target"].startswith("linux-")]
+        self.assertEqual(len(declared), 10)
         for cell_id in declared:
             with self.subTest(cell=cell_id):
                 cell = qualification.declared_cell(cell_id)
                 self.assertIn(cell["launcher"], {"display-session", "kvm"})
         fedora = qualification.declared_cell("linux-x64-fedora-45-kde")
         self.assertEqual((fedora["desktop"], fedora["formats"]), ("kde", ["rpm"]))
-        for other in ("linux-arm64-ubuntu-26-04-gnome", "win32-x64-windows-server-2025", "unknown"):
+        arm = qualification.declared_cell("linux-arm64-ubuntu-26-04-kde")
+        self.assertEqual((arm["runner"], arm["launcher"]), ("ubuntu-26.04-arm", "display-session"))
+        # The Scaleway policy's ARM64 profiles run on disposable guests.
+        guest = qualification.declared_cell("linux-arm64-fedora-44-gnome")
+        self.assertEqual((guest["launcher"], guest["filesystem"]), ("guest", "btrfs"))
+        for other in ("linux-arm64-fedora-43-gnome", "win32-x64-windows-server-2025", "unknown"):
             with self.subTest(cell=other), self.assertRaises(ValueError):
                 qualification.declared_cell(other)
 

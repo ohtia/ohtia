@@ -1138,7 +1138,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("secrets.", block)
         self.assertNotIn("token", block)
         self.assertNotIn("environment:", block)
-        # The matrix covers the x86-64 Linux cells of the quality inventory with their launchers.
+        # The matrix covers the Linux cells of the quality inventory with their launchers.
         inventory = json.loads(
             (ROOT / "config/quality/build-targets.json").read_text(encoding="utf-8")
         )["cells"]
@@ -1152,10 +1152,11 @@ class WorkflowTests(unittest.TestCase):
             [
                 (cell["id"], cell["runner"], cell["launcher"])
                 for cell in sorted(
-                    (cell for cell in inventory if cell["target"] == "linux-x64"),
+                    (cell for cell in inventory if cell["target"].startswith("linux-")),
                     key=lambda cell: (
                         cell["profile"] != "ubuntu-26.04",
                         cell["profile"],
+                        cell["target"] != "linux-x64",
                         cell["desktop"],
                     ),
                 )
