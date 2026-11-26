@@ -23,3 +23,5 @@ export async function inspectSqliteEngine(): Promise<string> {
 export { DurableStore, type StorageOptions, type EngineIdentity } from "./storage.js";
 
 export { initializeStorage, type AdmissionStore } from "./storage-lifecycle.js";
+
+export { parseManuscript, serializeManuscript, type ManuscriptIdentity } from "./manuscript.js";

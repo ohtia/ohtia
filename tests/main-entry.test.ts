@@ -518,7 +518,8 @@ async function launch(
   const bootstrap = ipcMain.handle.mock.calls.find(
     ([channel]) => channel === constants.desktopChannels.bootstrap,
   )?.[1];
-  const action = async (value: string, selected = window) => bootstrap(event(selected), value);
+  const action = async (value: string, selected = window, ...args: unknown[]) =>
+    bootstrap(event(selected), value, ...args);
   const command = async (action: string, payload?: unknown, selected = window) =>
     ipcMain.handle.mock.calls.find(
       ([channel]) => channel === constants.desktopChannels.commands,
@@ -1043,25 +1044,84 @@ describe("broker composition with synthetic Electron adapters", () => {
   );
   it("retains recovery gates and refuses a second pending storage action", async () => {
     const h = await launch();
+    const checkpoint = {
+      operation: "19dfd574-ee10-4aef-935c-c66afbf0cb6a",
+      sourceRevision: 0,
+      targetRevision: 40,
+      release: "0.0.0-test",
+      bytes: 4096,
+      sha256: "0".repeat(64),
+    };
+    await expect(h.action("restore_checkpoint")).rejects.toThrow(/admission refused/);
+    await expect(h.action("read", undefined, checkpoint.operation)).rejects.toThrow(
+      /admission refused/,
+    );
     h.supervisors[0].storageChanged({
       generation: h.supervisors[0].generation,
       state: "recovery_required",
+      checkpoint,
     });
+    const snapshot = await h.action("read");
+    expect(snapshot.checkpoint).toMatchObject({
+      operation: checkpoint.operation,
+      release: checkpoint.release,
+      bytes: checkpoint.bytes,
+      sourceRevision: checkpoint.sourceRevision,
+      targetRevision: checkpoint.targetRevision,
+    });
+    expect(snapshot.checkpoint).not.toHaveProperty("sha256");
     await h.action("open_storage");
+    expect(await h.action("restore_checkpoint", undefined, checkpoint.operation)).toMatchObject({
+      state: "recovery_required",
+      notice: "recovery_stale",
+    });
     expect(h.utilityProcess.fork).toHaveBeenCalledOnce();
-    await h.action("restore_checkpoint");
-    expect(h.utilityProcess.fork.mock.calls[1][1][3]).toBe("restore");
+
+    h.state.throwRecover = true;
+    expect(
+      await h.action("restore_checkpoint", undefined, snapshot.checkpoint.verification),
+    ).toMatchObject({ state: "recovery_required", notice: "recovery_uncertain" });
+    h.state.throwRecover = false;
+    await h.action("restore_checkpoint", undefined, snapshot.checkpoint.verification);
+    expect(h.utilityProcess.fork.mock.calls[1][1].slice(3)).toEqual([
+      "restore",
+      checkpoint.release,
+      checkpoint.operation,
+      checkpoint.sha256,
+    ]);
+    expect(
+      await h.action("restore_checkpoint", undefined, snapshot.checkpoint.verification),
+    ).toMatchObject({ state: "storage_opening", notice: "recovery_busy" });
     await h.action("retry_service");
     expect(h.utilityProcess.fork).toHaveBeenCalledTimes(2);
+
     const current = h.supervisors.at(-1)!;
-    current.storageChanged({ generation: current.generation, state: "retry_required" });
+    current.stateChanged("unavailable");
+    expect(await h.action("read")).toMatchObject({
+      state: "recovery_required",
+      notice: "recovery_uncertain",
+    });
+    current.storageChanged({
+      generation: current.generation,
+      state: "retry_required",
+      checkpointProblem: "checkpoint_missing",
+      restoreFailure: "recovery_failed",
+    });
+    expect(await h.action("read")).toMatchObject({
+      state: "retry_required",
+      checkpointProblem: "checkpoint_missing",
+      notice: "recovery_failed",
+    });
+    expect((await h.action("read")).checkpoint).toBeUndefined();
     await h.action("retry_service");
     expect(h.utilityProcess.fork.mock.calls[2][1][3]).toBe("retry");
   });
   it("keeps invalid locator phases closed while allowing later repair", async () => {
     const h = await launch({ locator: "locator_invalid" });
     expect((await h.action("read")).state).toBe("locator_invalid");
-    await h.action("restore_checkpoint");
+    expect(
+      await h.action("restore_checkpoint", undefined, "19dfd574-ee10-4aef-935c-c66afbf0cb6a"),
+    ).toMatchObject({ state: "locator_invalid", notice: "recovery_unavailable" });
     expect(h.utilityProcess.fork).toHaveBeenCalledOnce();
     h.state.locator = "located";
     await h.action("retry_service");

@@ -28,6 +28,7 @@ import {
   type SimpleMessageKey,
   type LocaleSnapshot,
   type BootstrapSnapshot,
+  type BootstrapNotice,
   type DesktopBridge,
   type FoundationStatus,
   type PortCall,
@@ -35,6 +36,7 @@ import {
 import { ShortcutControl } from "./workspace-chrome.js";
 import { CommandButton } from "./command-surfaces.js";
 import { SettingsSurfaces } from "./settings-surfaces.js";
+import { CheckpointRecovery, checkpointStatus } from "./checkpoint-recovery.js";
 import { OhtiaBrand } from "./branding.js";
 import { WorkspaceChrome } from "./workspace-chrome.js";
 import { SystemMotionProvider } from "./system-motion.js";
@@ -337,6 +339,11 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
     [],
   );
   const [failed, setFailed] = useState(false);
+  const [restoreFeedback, setRestoreFeedback] = useState<{
+    readonly notice: BootstrapNotice;
+    readonly state: BootstrapSnapshot["state"];
+    readonly verification: string | undefined;
+  }>();
   const [announcement, setAnnouncement] = useState(0);
   const notice = useRef<HTMLParagraphElement>(null);
   const appliedLocale = useRef<LocaleSnapshot | undefined>(undefined);
@@ -388,6 +395,14 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
         document.title = message(next.locale, "title");
       }
       prepareWorkspaceFocus(next);
+      setRestoreFeedback((feedback) =>
+        feedback &&
+        !next.notice &&
+        feedback.state === next.state &&
+        feedback.verification === next.checkpoint?.verification
+          ? feedback
+          : undefined,
+      );
       setBootstrap((current) =>
         !appliedLocale.current || !current ? next : { ...next, locale: current.locale },
       );
@@ -408,26 +423,39 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
       call?.cancel();
     };
   }, [bridge]);
-  const locationNotice = bootstrap?.notice === "locale_fallback" ? undefined : bootstrap?.notice;
+  const locationNotice =
+    restoreFeedback?.notice ??
+    (bootstrap?.notice === "locale_fallback" ? undefined : bootstrap?.notice);
   useEffect(() => {
     if (
       (failed || bootstrapFailure(bootstrap?.state) || locationNotice) &&
       !document.querySelector("dialog[open]")
     )
       notice.current?.focus();
-  }, [failed, bootstrap?.state, locationNotice, announcement]);
+  }, [failed, bootstrap?.state, bootstrap?.checkpoint?.verification, locationNotice, announcement]);
   if (!bootstrap) return null;
   if (bootstrap.state === "storage_ready") workspaceMounted.current = true;
   const workspaceReady = bootstrap.state === "storage_ready";
   const text = (key: SimpleMessageKey) => message(bootstrap.locale, key);
-  async function action(method: keyof DesktopBridge["bootstrap"], trigger: HTMLButtonElement) {
-    if (busy) return;
+  async function action(operation: () => Promise<BootstrapSnapshot>, restoring = false) {
+    if (busy || !bootstrap) return;
     setBusy(true);
     setFailed(false);
-    const focusOutcome =
-      method === "openStorage" || method === "restoreCheckpoint" || method === "retryService";
+    setRestoreFeedback(undefined);
     try {
-      const value = await bridge.bootstrap[method]();
+      const value = await operation();
+      if (
+        restoring &&
+        (value.notice === "recovery_busy" ||
+          value.notice === "recovery_stale" ||
+          value.notice === "recovery_unavailable" ||
+          value.notice === "shutdown_uncertain")
+      )
+        setRestoreFeedback({
+          notice: value.notice,
+          state: value.state,
+          verification: value.checkpoint?.verification,
+        });
       prepareWorkspaceFocus(value);
       flushSync(() => {
         if (!appliedLocale.current) {
@@ -439,16 +467,26 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
         );
       });
       if (bootstrapFailure(value.state) || value.notice) setAnnouncement((value) => value + 1);
-      else if (focusOutcome) {
+      else if (!document.querySelector("dialog[open]")) {
         const target = value.state === "storage_ready" ? workspaceReturn.current : notice.current;
         target?.focus();
-      } else trigger.focus();
+      }
     } catch {
-      setFailed(true);
+      if (restoring)
+        setRestoreFeedback({
+          notice: "recovery_uncertain",
+          state: bootstrap.state,
+          verification: bootstrap.checkpoint?.verification,
+        });
+      else setFailed(true);
+      setAnnouncement((value) => value + 1);
     } finally {
       setBusy(false);
     }
   }
+  const restore = (verification: string) =>
+    void action(() => bridge.bootstrap.restoreCheckpoint(verification), true);
+  const retry = () => void action(() => bridge.bootstrap.retryService());
   return (
     <div className="workspace-window foundation-window">
       <span
@@ -496,6 +534,21 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
         serviceGeneration={bootstrap.serviceGeneration}
         onLocale={applyLocale.current}
         returnFocusRef={returnFocus}
+        recovery={
+          <CheckpointRecovery
+            snapshot={bootstrap}
+            busy={busy}
+            notice={
+              failed
+                ? "startup_failed"
+                : locationNotice === "resource_failure"
+                  ? undefined
+                  : locationNotice
+            }
+            onRestore={restore}
+            onRetry={retry}
+          />
+        }
       >
         {(
           commands,
@@ -869,44 +922,31 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                       : "status"
                   }
                 >
-                  {text(failed ? "startup_failed" : (locationNotice ?? bootstrap.state))}
+                  {text(
+                    failed ? "startup_failed" : (locationNotice ?? checkpointStatus(bootstrap)),
+                  )}
                 </p>
+                {locationNotice && bootstrap.checkpointProblem && (
+                  <p>{text(bootstrap.checkpointProblem)}</p>
+                )}
                 {bootstrap.state !== "storage_ready" && <p>{text("storage_disclosure")}</p>}
                 {["pending_create", "located"].includes(bootstrap.state) && (
                   <button
                     type="button"
                     aria-disabled={busy}
-                    onClick={(event) => {
-                      void action("openStorage", event.currentTarget);
-                    }}
+                    onClick={() => void action(() => bridge.bootstrap.openStorage())}
                   >
                     {text("open_storage")}
                   </button>
                 )}
-                {bootstrap.state === "recovery_required" && (
-                  <button
-                    type="button"
-                    aria-disabled={busy}
-                    onClick={(event) => {
-                      void action("restoreCheckpoint", event.currentTarget);
-                    }}
-                  >
-                    {text("restore_checkpoint")}
-                  </button>
-                )}
+                <CheckpointRecovery
+                  snapshot={bootstrap}
+                  busy={busy}
+                  startupNotice={notice}
+                  onRestore={restore}
+                  onRetry={retry}
+                />
               </section>
-              <div className="actions">
-                <button
-                  type="button"
-                  aria-disabled={busy || bootstrap.state === "storage_opening"}
-                  onClick={(event) => {
-                    if (bootstrap.state === "storage_opening") return;
-                    void action("retryService", event.currentTarget);
-                  }}
-                >
-                  {text("retry")}
-                </button>
-              </div>
             </main>
           </>
         )}

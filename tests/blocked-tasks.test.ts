@@ -690,6 +690,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
         JSON.stringify({
           version: 1,
           operation: "edge-recovery",
+          release: f.options.release,
           source:
             sourceKind === "notices"
               ? 15
@@ -743,6 +744,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
         JSON.stringify({
           version: 1,
           operation: "exhausted-recovery",
+          release: exhausted.options.release,
           source:
             sourceKind === "notices"
               ? 15
@@ -771,6 +773,7 @@ describe.each(["legacy", "limits", "composer", "setup", "notices"])(
         JSON.stringify({
           version: 1,
           operation: "synthetic-recovery",
+          release: f.options.release,
           source:
             sourceKind === "notices"
               ? 15
@@ -1028,7 +1031,13 @@ describe("reply control composed with connection and usage pauses", () => {
       if (recovery) {
         fs.writeFileSync(
           path.join(f.root, "migration-pending.json"),
-          JSON.stringify({ version: 1, operation: "composed-recovery", source: 9, target: 40 }),
+          JSON.stringify({
+            version: 1,
+            operation: "composed-recovery",
+            release: f.options.release,
+            source: 9,
+            target: 40,
+          }),
         );
         await f.store.retry();
         seedDefaultModel(f.raw, "test-model");

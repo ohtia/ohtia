@@ -1,11 +1,9 @@
 ---
 type: Specification
 title: "Draft format"
-description: "Manuscript Markdown profile with citations, mathematics, tables, figures, cross-references and stable anchors."
+description: "Manuscript Markdown profile with citations, mathematics, tables, figures, cross-references, stable anchors and a bounded title and paragraph codec."
 generated:
-  by: codex/gpt-6.1-sol
-verified:
-  by: human:AdrianMastronardi
+  by: codex/gpt-6.2-sol
 sources:
   - id: pandoc-manual
     resource: "https://github.com/jgm/pandoc/blob/main/MANUAL.txt"
@@ -67,7 +65,7 @@ ohtia_draft_format: ohtia-markdown-v1
 ohtia_draft_id: draft_01a14fbd-d779-7014-a580-95cd6274b134
 ```
 
-Both keys are required; duplicate keys and any other header keys are not allowed in v1. `ohtia_draft_id` stably identifies the manuscript within the project: it is `draft_` followed by the canonical textual representation of the internal draft-record identifier defined in [ADR-0008](adr/adr-0008-uuidv7-entity-identifiers.md). The identifier is not a credential and grants no access.
+The canonical header uses literal lines containing three hyphens before and after these keys. Both keys are required; duplicate keys and any other header keys are not allowed in v1. `ohtia_draft_id` stably identifies the manuscript within the project: it is `draft_` followed by the canonical textual representation of the internal draft-record identifier defined in [ADR-0008](adr/adr-0008-uuidv7-entity-identifiers.md). The identifier is not a credential and grants no access.
 
 The save actor, save dates, SQLite revision identities, comments, bibliography and export settings remain in the database. They are not duplicated as editable manuscript metadata. This rule does not remove author names that form part of the text or bibliographic citations.
 
@@ -98,6 +96,36 @@ The block may contain nested elements belonging to its structure, such as paragr
 Editing or moving a unit preserves its identifier. Duplicating it assigns a new one. When splitting a block, the first part keeps the identifier and the others receive new ones; when merging blocks, the first block's identifier is kept and retired identifiers are recorded. Deleting content does not allow its identifier to be reused for different content.
 
 Comments are stored in the database with the manuscript revision, identifier and examined passage. A position within that passage does not replace those data. Keeping an identifier does not confirm that a comment remains current after an edit; historical reviews are not silently relocated.
+
+## Title and paragraph codec
+
+The trusted TypeScript codec admits the subset defined by [STORY-004-012](epics/EPIC-004-onboarding/STORY-004-012-validate-canonical-manuscript.md). It preserves the researcher's Unicode text, the order and stable identities of its units, and the distinction between ordinary and explicit line breaks (PRIN-002, PRIN-004 and PRIN-013). The portable AST carries the version, the unprefixed draft UUID, an optional title, and ordered paragraphs. Each paragraph holds text lines with a soft or hard break after each nonfinal line. The final line has no break.
+
+The header occupies the first four lines in the order shown above. Each following unit starts after one blank line. The optional title comes first and uses a single line of the form `# Text {#sec_suffix}`. Each paragraph occupies one `::: {#blk_suffix .ohtia-block}` wrapper with one or more consecutive nonempty text lines, followed immediately by `:::`. A header by itself is the empty document. An empty working paragraph has no text lines and is omitted on serialization. It still requires a valid, unique ID.
+
+An ordinary LF within a paragraph is a soft break. Exactly two ASCII spaces before that LF make it a hard break. Blank body lines, indentation, other leading or trailing ASCII spaces, a hard break after the final text line, tabs, ASCII control characters other than structural LF, and Unicode surrogate code points are refused. The text uses UTF-8 without a byte-order mark before the header, with LF and a final newline. Unicode is preserved without normalization.
+
+A backslash followed by any ASCII punctuation represents that literal character. The codec gives potentially ambiguous markers a single spelling by escaping them in serialized text. Escape asterisks outside a pair of ASCII spaces, underscores outside alphanumeric words, opening brackets, backticks, dollar signs, at signs, backslashes, and the introducers of attributes, character references and other angle-bracket constructs. For a paragraph, escape the marker at the start of a line if it could open a heading, quote, list, fence, table or similar block. Each hash in a title's closing hash run is also escaped. Bare tags such as `<script>`, in-word underscores such as `variable_name`, and separated asterisks such as `2 * 3` are literal text. Unescaped `*findings*`, `[findings](target)`, `[@key]` and `$x$` are unsupported serialized constructs. In this example, each `␠` stands for one ASCII space. The first line has an ordinary break and the second has an explicit break.
+
+<!-- prettier-ignore -->
+```markdown
+---
+ohtia_draft_format: ohtia-markdown-v1
+ohtia_draft_id: draft_01a14fbd-d779-7014-a580-95cd6274b134
+---
+
+# Observations {#sec_title}
+
+::: {#blk_example .ohtia-block}
+Literal \*findings\* and variable_name.
+Start a new visible line here.␠␠
+Then continue the same paragraph.
+:::
+```
+
+The codec limits the complete serialization to 128 KiB, the serialized document to 256 paragraph blocks, and each serialized title or paragraph body to 8 KiB, measured in UTF-8. The title and body limits exclude structural prefixes, attributes, wrapper lines and the final LF of each unit. Within the body, inter-line LF and the two spaces for hard breaks count. Escapes count toward all applicable byte limits. The working AST accepts up to 257 paragraph entries to accommodate an empty UI paragraph at the serialized block limit.
+
+The trusted caller supplies the expected draft ID and can provide IDs unavailable in the revision context, such as IDs owned by another manuscript or retired before the revision being saved. The codec validates the prefix, suffix, uniqueness and availability of supplied IDs and preserves them on success. Each refusal returns one typed diagnostic with a bounded location and no manuscript text. Parsing never changes input bytes. Serialization either returns the complete document or returns a refusal with the caller's working AST still available. A successful canonical round trip preserves the AST with empty working paragraphs omitted.
 
 ## Bibliographic citations
 

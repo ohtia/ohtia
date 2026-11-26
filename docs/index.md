@@ -26,7 +26,7 @@ okf_version: "0.2"
 - [Workspace chrome API](workspace-chrome.md) — Compose the first-run workspace with controlled commands, deterministic layout, accessible resizing and qualified window insets.
 - [Workspace layout](workspace-layout.md) — Deterministic workspace geometry, accessible panel controls, project memory navigation, desktop layout preferences and interaction acceptance scenarios.
 - [Data model](data-model.md) — Source entities, research-project relationships, and versioned project titles, thesis profiles, stage decisions and Markdown manuscripts in SQLite.
-- [Draft format](draft-format.md) — Manuscript Markdown profile with citations, mathematics, tables, figures, cross-references and stable anchors.
+- [Draft format](draft-format.md) — Manuscript Markdown profile with citations, mathematics, tables, figures, cross-references, stable anchors and a bounded title and paragraph codec.
 
 ## Architecture choices
 
@@ -40,7 +40,7 @@ okf_version: "0.2"
 - [Scaleway qualification access preflight](scaleway-access.md) — Check protected GitHub Actions read access and ARM image compatibility without creating cloud resources or claiming native qualification.
 - [Ephemeral ARM installation qualification](scaleway-qualification.md) — Define protected authority, bounded diagnostics and recovery for unsigned native ARM qualification on ephemeral Scaleway leases.
 - [Isolated desktop runtime](desktop-runtime.md) — Admit ordinary and qualified native contexts, open configured storage safely, and verify supervised window and service lifecycles.
-- [Durable foundation storage](storage.md) — Persist project titles and opening order, conversation agents and title provenance, preferences, research tasks and setup proposals with durable receipts, recovery, bounded transfers and pause-count invalidation.
+- [Durable foundation storage](storage.md) — Persist project titles and opening order, conversation agents and title provenance, preferences, research tasks and setup proposals with durable receipts, bounded transfers, pause-count invalidation and verified migration recovery through startup and Settings.
 - [Desktop foundation contract](desktop-foundation-contract.md) — Native target and distribution qualification inputs, pinned candidate metadata, numeric resource policy and evidence ownership for the desktop foundation.
 - [Bounded foundation application port](application-port.md) — Versioned application configuration, managed store inspection, service recovery, provider connections and bounded research operations across the desktop boundary.
 - [Foundation security applicability](foundation-security.md) — Versioned security applicability, enforcing boundaries and reproducible evidence obligations for the desktop foundation.

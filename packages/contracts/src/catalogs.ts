@@ -987,6 +987,23 @@ export const messageContracts = {
   restore_checkpoint: {
     params: {},
   },
+  migration_recovery: { params: {} },
+  checkpoint_identifier: { params: { id: "string" } },
+  checkpoint_details: {
+    params: { release: "string", source: "number", target: "number", bytes: "number" },
+  },
+  checkpoint_rollback: { params: {} },
+  checkpoint_confirmation: { params: {} },
+  checkpoint_cancel: { params: {} },
+  checkpoint_missing: { params: {} },
+  checkpoint_invalid: { params: {} },
+  checkpoint_incompatible: { params: {} },
+  checkpoint_unreadable: { params: {} },
+  recovery_busy: { params: {} },
+  recovery_stale: { params: {} },
+  recovery_failed: { params: {} },
+  recovery_uncertain: { params: {} },
+  recovery_unavailable: { params: {} },
   open_storage: {
     params: {},
   },

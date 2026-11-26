@@ -7,6 +7,20 @@ import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const checkpoint = {
+  operation: "19dfd574-ee10-4aef-935c-c66afbf0cb6a",
+  sha256: "a".repeat(64),
+  sourceRevision: 0,
+  targetRevision: 40,
+  release: "0.3.0-dev.4.2",
+  bytes: 4096,
+};
+const recoveryProjections = {
+  recovery_required: { checkpoint },
+  retry_required: { checkpointProblem: "checkpoint_missing" },
+  storage_failed: {},
+};
+
 const originalArgs = process.argv;
 const originalParent = Object.getOwnPropertyDescriptor(process, "parentPort");
 const temporary: string[] = [];
@@ -32,12 +46,14 @@ async function launch(
     locale?: string;
     /** The packaged application version argument; null omits it. */
     release?: string | null;
+    restoreArguments?: readonly string[];
     parent?: boolean;
     admission?: string;
     runtime?: (root: string) => string;
     storage?: string;
     closeFailure?: boolean;
     openFailure?: "recovery_required" | "retry_required" | "storage_failed";
+    restoreFailure?: boolean;
   } = {},
 ) {
   vi.resetModules();
@@ -119,6 +135,7 @@ async function launch(
       : [
           options.mode ?? "create",
           ...(options.release === null ? [] : [options.release ?? "0.3.0-dev.4.2"]),
+          ...(options.restoreArguments ?? []),
         ]),
   ];
   const exit = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
@@ -136,9 +153,14 @@ async function launch(
       if (options.openFailure) throw new Error("Synthetic private failure text");
     });
     retry = vi.fn(async () => {});
-    restorePending = vi.fn(async () => {});
+    restorePending = vi.fn(async () => {
+      if (options.restoreFailure) throw new Error("Synthetic filesystem error");
+    });
     savedLocale = vi.fn(async () => ({ choice: "ko-KR", invalid: false }));
-    recoveryState = vi.fn(() => options.openFailure ?? "recovery_required");
+    recoveryState = vi.fn(() => {
+      const state = options.openFailure ?? "recovery_required";
+      return { state, ...recoveryProjections[state] };
+    });
     close = vi.fn(async () => {
       if (options.closeFailure) throw new Error("Synthetic close failure");
     });
@@ -358,7 +380,12 @@ describe("utility process composition with isolated synthetic files", () => {
   it.each(["create", "open", "retry", "restore", "blocked"])(
     "initializes %s and keeps storage activation separate from service readiness",
     async (mode) => {
-      const h = await launch({ mode });
+      const h = await launch({
+        mode,
+        ...(mode === "restore"
+          ? { restoreArguments: [checkpoint.operation, checkpoint.sha256] }
+          : {}),
+      });
       expect(h.exit).not.toHaveBeenCalled();
       const messages = h.parent.postMessage.mock.calls.map(([value]) => JSON.parse(value));
       expect(messages[0]).toEqual({ kind: "ready", generation: h.generation });
@@ -373,6 +400,11 @@ describe("utility process composition with isolated synthetic files", () => {
         expect(messages[1].state).toBe(
           mode === "restore" ? "checkpoint_restored" : "storage_ready",
         );
+        if (mode === "restore")
+          expect(h.stores[0].restorePending).toHaveBeenCalledWith({
+            operation: checkpoint.operation,
+            sha256: checkpoint.sha256,
+          });
       }
       h.parent.emit("message", {
         data: JSON.stringify({
@@ -414,7 +446,12 @@ describe("utility process composition with isolated synthetic files", () => {
     const h = await launch({ openFailure: state });
     const messages = h.parent.postMessage.mock.calls.map(([value]) => JSON.parse(value));
     expect(messages[0]).toEqual({ kind: "ready", generation: h.generation });
-    expect(messages[1]).toEqual({ kind: "storage", generation: h.generation, state });
+    expect(messages[1]).toEqual({
+      kind: "storage",
+      generation: h.generation,
+      state,
+      ...recoveryProjections[state],
+    });
     expect(messages[2]).toEqual({
       kind: "diagnostic",
       generation: h.generation,
@@ -428,6 +465,26 @@ describe("utility process composition with isolated synthetic files", () => {
     expect(JSON.stringify(messages)).not.toContain("Synthetic private failure text");
     expect(h.service.activate).not.toHaveBeenCalled();
     expect(h.exit).not.toHaveBeenCalled();
+  });
+  it("requires a bounded checkpoint verification before restoring and reports filesystem failure", async () => {
+    const invalid = await launch({
+      mode: "restore",
+      restoreArguments: [checkpoint.operation, "/private"],
+    });
+    expect(invalid.exit).toHaveBeenCalledWith(1);
+    expect(invalid.stores).toHaveLength(0);
+    const failed = await launch({
+      mode: "restore",
+      restoreArguments: [checkpoint.operation, checkpoint.sha256],
+      restoreFailure: true,
+    });
+    const messages = failed.parent.postMessage.mock.calls.map(([value]) => JSON.parse(value));
+    expect(messages[1]).toMatchObject({
+      state: "recovery_required",
+      restoreFailure: "recovery_failed",
+    });
+    expect(JSON.stringify(messages)).not.toContain("Synthetic filesystem error");
+    expect(failed.service.activate).not.toHaveBeenCalled();
   });
   it("maps runtime and service failures to distinct exit codes", async () => {
     const h = await launch({ mode: "blocked" });
