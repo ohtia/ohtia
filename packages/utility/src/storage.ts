@@ -289,6 +289,12 @@ import {
   preferencesSchema as updateCheckPreferencesSchema,
   receiptsSchema as updateCheckReceiptsSchema,
 } from "./migrations/0037_update_check_preference.mjs";
+import {
+  up as projectTitleMigration,
+  titleRevision as projectTitleRevisionColumn,
+  historySchema as projectTitleHistorySchema,
+  objects as projectTitleObjects,
+} from "./migrations/0038_project_title_revision.mjs";
 
 interface PresentationReceiptRow extends Omit<Receipt, "value"> {
   feature: PresentationFeature;
@@ -440,6 +446,7 @@ const names = [
   "0035_anthropic_outcomes",
   "0036_openai_usage_pauses",
   "0037_update_check_preference",
+  "0038_project_title_revision",
 ] as const;
 const target = names.length;
 const targetName = migrationTarget();
@@ -674,6 +681,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 31 ? ["usage_reports"] : []),
     ...(revision >= 34 ? Object.keys(agentPreferenceTables) : []),
     ...(revision >= 37 ? ["update_check_receipts"] : []),
+    ...(revision >= 38 ? ["project_title_history"] : []),
   ].sort();
   if (JSON.stringify(tables.map((row) => row.name)) !== JSON.stringify(expected))
     throw new Error("Unexpected source schema.");
@@ -813,7 +821,10 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
               ? name === "projects"
                 ? definition.replace(
                     ",\n    CHECK ((title",
-                    ", " + openingColumns.opened + ",\n    CHECK ((title",
+                    ", " +
+                      openingColumns.opened +
+                      (revision >= 38 ? ", " + projectTitleRevisionColumn : "") +
+                      ",\n    CHECK ((title",
                   )
                 : definition.slice(0, -1) + ", " + openingColumns.error + ")"
               : revision >= 18 && name === "conversations"
@@ -913,6 +924,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
     ...(revision >= 11 ? Object.entries(runTables) : []),
     ...(revision >= 13 ? [["execution_limits_receipts", executionLimitsReceiptsSchema]] : []),
     ...(revision >= 37 ? [["update_check_receipts", updateCheckReceiptsSchema]] : []),
+    ...(revision >= 38 ? [["project_title_history", projectTitleHistorySchema]] : []),
     ...(revision >= 27 ? Object.entries(handoffTables) : []),
     ...(revision >= 31 ? [["usage_reports", usageReports]] : []),
     ...(revision >= 34
@@ -973,6 +985,7 @@ function compatibility(db: Database.Database, artifacts: readonly Artifact[]): n
                 ...(revision >= 34 ? agentPreferenceObjects : {}),
                 ...(revision >= 35 ? anthropicObjects : {}),
                 ...(revision >= 36 ? openaiUsageObjects : {}),
+                ...(revision >= 38 ? projectTitleObjects : {}),
               }
             : researchObjects,
         ).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1399,6 +1412,7 @@ export class DurableStore {
                 "0035_anthropic_outcomes": { up: anthropicOutcomes },
                 "0036_openai_usage_pauses": { up: openaiUsagePauses },
                 "0037_update_check_preference": { up: updateCheckPreference },
+                "0038_project_title_revision": { up: projectTitleMigration },
               }),
           },
         });
@@ -2894,6 +2908,7 @@ export class DurableStore {
       return;
     }
     const events = {
+      "project.read": "ohtia.project.read",
       "project.list": "ohtia.project.listed",
       "projectAttention.list": "ohtia.project_attention.listed",
       "conversation.list": "ohtia.conversation.listed",
@@ -3065,6 +3080,7 @@ export class DurableStore {
         "development.createProject": { event_name: "ohtia.project.created" },
         "development.sendToJosefa": { event_name: "ohtia.development.josefa_message_appended" },
         "project.create": { event_name: "ohtia.project.created" },
+        "project.rename": { event_name: "ohtia.project.renamed" },
         "project.open": { event_name: "ohtia.project.opened" },
         "project.confirmSetup": { event_name: "ohtia.project.setup_confirmed" },
         "project.rejectSetup": { event_name: "ohtia.project.setup_rejected" },

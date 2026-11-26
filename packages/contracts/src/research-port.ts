@@ -2,12 +2,14 @@ import type {
   ConversationRecord,
   FinishPlanResult,
   ProjectRecord,
+  RenameProjectResult,
   ResearchPayloads,
   ResearchResult,
 } from "./research.js";
 import {
   handoffInvalidReasons,
   type HandoffInvalidReason,
+  projectTitleError,
   planOutcomes,
   planInvalidReasons,
   planChangeInvalidReasons,
@@ -46,6 +48,8 @@ export const researchOperations = [
   "handoff.selection",
   "project.create",
   "project.open",
+  "project.rename",
+  "project.read",
   "project.confirmSetup",
   "project.rejectSetup",
   "conversation.start",
@@ -625,7 +629,13 @@ export type ResearchEvent =
   | {
       readonly kind: "changed";
       readonly record:
-        "project" | "conversation" | "timeline" | "usagePause" | "executionLimits" | "memory";
+        | "project"
+        | "projectTitle"
+        | "conversation"
+        | "timeline"
+        | "usagePause"
+        | "executionLimits"
+        | "memory";
       readonly id: string;
       readonly revision: number;
     }
@@ -700,6 +710,8 @@ export interface ResearchInputs {
   );
   "project.create": ResearchPayloads["project.create"];
   "project.open": ResearchPayloads["project.open"];
+  "project.rename": ResearchPayloads["project.rename"];
+  "project.read": { readonly projectId: string };
   "project.confirmSetup": ResearchPayloads["project.confirmSetup"];
   "project.rejectSetup": ResearchPayloads["project.rejectSetup"];
   "conversation.start": Omit<ResearchPayloads["conversation.start"], "content"> & {
@@ -765,6 +777,8 @@ export interface ResearchOutputs {
   "destination.read": { readonly destination: MessageDestination | null };
   "project.create": ResearchResult;
   "project.open": ResearchResult;
+  "project.rename": RenameProjectResult;
+  "project.read": ProjectRecord;
   "project.confirmSetup": ResearchResult;
   "project.rejectSetup": ResearchResult;
   "conversation.start": ResearchResult;
@@ -872,6 +886,11 @@ export interface ResearchPort {
   ): PortCall<ResearchOutputs["destination.read"]>;
   createProject(operationId: string): PortCall<ResearchResult>;
   openProject(operationId: string, input: ResearchInputs["project.open"]): PortCall<ResearchResult>;
+  renameProject(
+    operationId: string,
+    input: ResearchInputs["project.rename"],
+  ): PortCall<RenameProjectResult>;
+  readProject(input: ResearchInputs["project.read"]): PortCall<ProjectRecord>;
   confirmProjectSetup(
     operationId: string,
     input: ResearchInputs["project.confirmSetup"],
@@ -926,6 +945,7 @@ export function isResearchMutation(value: string): value is WindowResearchComman
     "handoff.return",
     "project.create",
     "project.open",
+    "project.rename",
     "project.confirmSetup",
     "project.rejectSetup",
     "conversation.start",
@@ -1205,7 +1225,15 @@ export function researchInput(operation: ResearchOperation, value: unknown): boo
     case "project.create":
       return exact(value, []);
     case "project.open":
+    case "project.read":
       return exact(value, ["projectId"]) && isResearchId(value.projectId);
+    case "project.rename":
+      return (
+        exact(value, ["projectId", "title", "expectedTitleRevision"]) &&
+        isResearchId(value.projectId) &&
+        typeof value.title === "string" &&
+        integer(value.expectedTitleRevision)
+      );
     case "planEvent.list":
       return (
         exact(value, ["planId", "afterSequence"]) &&
@@ -1386,28 +1414,30 @@ function conversation(value: unknown): boolean {
 function projectCursor(value: unknown): boolean {
   return exact(value, ["lastOpenedAt", "id"]) && date(value.lastOpenedAt) && isResearchId(value.id);
 }
-function project(value: unknown): boolean {
+function project(value: unknown, summary: boolean): boolean {
   return (
     exact(value, [
       "id",
       "projectType",
       "title",
+      "titleRevision",
       "documentLanguage",
       "isDevelopment",
       "setupConfirmedAt",
       "lastOpenedAt",
-      "needsAttention",
+      ...(summary ? ["needsAttention"] : []),
       "createdAt",
       "updatedAt",
     ]) &&
     isResearchId(value.id) &&
     value.projectType === "thesis" &&
+    integer(value.titleRevision) &&
     nullable(value.title, (x) => typeof x === "string") &&
     nullable(value.documentLanguage, (x) => typeof x === "string") &&
     typeof value.isDevelopment === "boolean" &&
     nullable(value.setupConfirmedAt, date) &&
     date(value.lastOpenedAt) &&
-    typeof value.needsAttention === "boolean" &&
+    (!summary || typeof value.needsAttention === "boolean") &&
     date(value.createdAt) &&
     date(value.updatedAt)
   );
@@ -1822,6 +1852,16 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
       value.versions.length <= memoryPageSize &&
       value.versions.every(isMemoryVersion)
     );
+  if (operation === "project.read") return project(value, false);
+  if (operation === "project.rename")
+    return (
+      exact(value, ["resultId", "titleChange"]) &&
+      isResearchId(value.resultId) &&
+      exact(value.titleChange, ["title", "titleRevision"]) &&
+      typeof value.titleChange.title === "string" &&
+      projectTitleError(value.titleChange.title) === null &&
+      integer(value.titleChange.titleRevision)
+    );
   if (isResearchMutation(operation))
     return exact(value, ["resultId"]) && isResearchId(value.resultId);
   if (operation === "research.subscribe")
@@ -1925,7 +1965,7 @@ export function researchOutput(operation: ResearchOperation, value: unknown): bo
     );
   const valid =
     operation === "project.list"
-      ? project
+      ? (value: unknown) => project(value, true)
       : operation.startsWith("conversation.")
         ? conversation
         : item;
@@ -2405,9 +2445,15 @@ export function isResearchEvent(value: unknown): value is ResearchEvent {
     exact(value, ["kind", "record", "id", "revision"]) &&
     value.kind === "changed" &&
     typeof value.record === "string" &&
-    ["project", "conversation", "timeline", "usagePause", "executionLimits", "memory"].includes(
-      value.record,
-    ) &&
+    [
+      "project",
+      "projectTitle",
+      "conversation",
+      "timeline",
+      "usagePause",
+      "executionLimits",
+      "memory",
+    ].includes(value.record) &&
     (isResearchId(value.id) || (value.record === "executionLimits" && opaque(value.id))) &&
     integer(value.revision)
   );
@@ -2475,6 +2521,16 @@ export function researchResultMatches(
         ({ position }, index) =>
           position > (messages[index - 1]?.position ?? (input.after as number)),
       )
+    );
+  }
+  if (operation === "project.read") return output.id === input.projectId;
+  if (operation === "project.rename") {
+    const { title, titleRevision } = (output as unknown as RenameProjectResult).titleChange;
+    return (
+      output.resultId === input.projectId &&
+      title === input.title &&
+      (titleRevision === input.expectedTitleRevision ||
+        titleRevision === Number(input.expectedTitleRevision) + 1)
     );
   }
   if (operation === "project.open") return output.resultId === input.projectId;

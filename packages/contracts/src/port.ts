@@ -1033,6 +1033,17 @@ export const operationErrorCodes = Object.freeze({
     "uncertain",
     "operation_conflict",
   ],
+  "project.rename": [
+    ...researchMutationErrors,
+    "record_not_found",
+    "project_in_setup",
+    "name_invalid",
+    "stale_revision",
+    "limit_reached",
+    "uncertain",
+    "operation_conflict",
+  ],
+  "project.read": [...readErrors, "record_not_found"],
   "project.confirmSetup": [
     ...researchMutationErrors,
     "record_not_found",

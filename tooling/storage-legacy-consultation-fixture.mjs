@@ -1,3 +1,4 @@
+import { objects as beforeProjectTitle } from "../packages/utility/src/migrations/0034_agent_preferences.mjs";
 import {
   tables as durableTaskTables,
   objects as durableTaskObjects,
@@ -115,7 +116,19 @@ import { preferencesSchema as entryTextPreferencesSchema } from "../packages/uti
 
 const preferenceAttemptFields =
   attemptFields + ",usage_report_deadline_at,account_fingerprint,requested_effort,observed_effort";
+export const preProjectTitleSql = `
+  DROP TRIGGER projects_title_revision;
+  DROP TABLE project_title_history;
+  ALTER TABLE projects DROP COLUMN title_revision;
+  DROP TRIGGER receipts_commands;
+  ${beforeProjectTitle.receipts_commands};
+  DELETE FROM kysely_migration WHERE name='0038_project_title_revision';
+  DELETE FROM ohtia_migration_artifacts WHERE name='0038_project_title_revision';
+  PRAGMA user_version=37;
+`;
+
 export const preUpdateCheckSql = `
+  ${preProjectTitleSql}
   DROP TABLE update_check_receipts;
   ALTER TABLE application_preferences RENAME TO application_preferences_with_update_check;
   ${entryTextPreferencesSchema};

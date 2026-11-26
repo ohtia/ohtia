@@ -8,6 +8,7 @@ export type CommandPlatform = "win32" | "linux" | "darwin";
 export type CommandGroup = "general" | "panels" | "appearance" | "edit";
 export const commandIds = [
   "project.new",
+  "project.rename",
   "conversation.new",
   "settings.open",
   "palette.open",

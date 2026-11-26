@@ -131,3 +131,22 @@
     border-color: Highlight;
   }
 }
+
+.project-rename-form {
+  display: grid;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+.project-rename-form input {
+  inline-size: 100%;
+  min-inline-size: 0;
+  min-block-size: var(--component-target-minimum);
+  padding: var(--space-2);
+}
+.project-rename-form p {
+  margin-block: var(--space-2) 0;
+}
+.project-rename-refresh {
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}

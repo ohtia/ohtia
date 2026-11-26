@@ -1,8 +1,9 @@
 import { contributorNames } from "./contributor-identity.js";
 import { useId, useSyncExternalStore } from "react";
-import { ProjectCollections, ProjectController } from "./project-controller.js";
+import { latestProject, ProjectCollections, ProjectController } from "./project-controller.js";
 import { ProjectSelector } from "./project-selector.js";
 import { NewProjectController } from "./new-project-controller.js";
+import { ProjectRename, ProjectRenameStatus } from "./project-rename.js";
 import { Dialog } from "./layers.js";
 import { ConversationController, knownConversationAgent } from "./conversation-controller.js";
 import {
@@ -154,13 +155,11 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
   useEffect(
     () =>
       conversation.observe((notice) => {
-        if (
-          notice !== "ready" &&
-          notice.ok &&
-          notice.value.kind === "changed" &&
-          notice.value.record === "project"
-        )
-          projects.noteProject();
+        if (notice === "ready" || !notice.ok || notice.value.kind !== "changed") return;
+        const { record, id, revision } = notice.value;
+        if (record === "project") projects.noteProject();
+        if (record === "projectTitle" && id === conversation.snapshot().scope.projectId)
+          projects.noteProjectTitle(id, revision);
       }),
     [conversation, projects],
   );
@@ -219,8 +218,18 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
       });
     });
   }
-  const activeProject =
-    conversationState.project ?? projects.project(conversationState.scope.projectId);
+  const activeProject = latestProject(
+    conversationState.project,
+    projects.project(conversationState.scope.projectId),
+  );
+  const renameReturn = useRef<HTMLButtonElement>(null);
+  const renameProject =
+    activeProject?.id === currentProjectId && conversationState.researchScopeReady
+      ? activeProject
+      : undefined;
+  useLayoutEffect(() => {
+    projects.prepareRename(renameProject);
+  }, [projects, renameProject]);
   const projectDescriptionId = useId();
   const newProjectState = useSyncExternalStore(newProject.subscribe, newProject.snapshot);
   const [projectDialogBlocked, setProjectDialogBlocked] = useState(false);
@@ -276,6 +285,10 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
     if (navigation)
       bootstrapSelection.revision = Math.max(bootstrapSelection.revision, navigation.revision);
     bootstrapSelection.restored = true;
+    if (recovered) {
+      conversation.forgetProjectRecords();
+      projects.forgetProjectRecords();
+    }
     if (scope) projects.adopt(scope);
     else {
       const acknowledged =
@@ -471,6 +484,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
       </span>
       <SettingsSurfaces
         research={conversation}
+        projects={projects}
         newProject={newProject}
         composeWorkspace={workspaceMounted.current}
         bridge={bridge.commands}
@@ -488,6 +502,14 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
           openAgents,
         ) => (
           <>
+            <ProjectRename
+              controller={projects}
+              available={renameProject !== undefined}
+              draft={projectState.rename}
+              language={activeProject?.documentLanguage}
+              locale={bootstrap.locale}
+              returnFocusRef={renameReturn}
+            />
             <Dialog
               role={newProjectState.dialog === "failed" ? "alertdialog" : "dialog"}
               descriptionId={projectDescriptionId}
@@ -590,6 +612,7 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                   onChatVisibility={onChatVisibility}
                   projectSelector={
                     <ProjectSelector
+                      buttonRef={renameReturn}
                       controller={projects}
                       state={projectState}
                       attentionProjects={activity.projects}
@@ -600,6 +623,14 @@ function ApplicationContent({ bridge }: { readonly bridge: DesktopBridge }) {
                         conversationState.status === "unavailable"
                       }
                       locale={bootstrap.locale}
+                    />
+                  }
+                  projectNotice={
+                    <ProjectRenameStatus
+                      controller={projects}
+                      state={projectState}
+                      locale={bootstrap.locale}
+                      returnFocusRef={renameReturn}
                     />
                   }
                   hasProjects={projectState.hasProjects}

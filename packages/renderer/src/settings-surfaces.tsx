@@ -1,4 +1,5 @@
 import { isReplyAgent, type AgentPreferenceTarget, type ReplyAgent } from "@ohtia/contracts";
+import type { ProjectController } from "./project-controller.js";
 import type { NewProjectController } from "./new-project-controller.js";
 import { LimitsFeedback } from "./limits-panel.js";
 import { LimitsController } from "./limits-controller.js";
@@ -58,6 +59,7 @@ export function SettingsSurfaces({
   returnFocusRef,
   composeWorkspace = false,
   research,
+  projects,
   newProject,
   update,
 }: {
@@ -71,6 +73,7 @@ export function SettingsSurfaces({
   ) => ReactNode;
   readonly composeWorkspace?: boolean;
   readonly research?: ConversationController;
+  readonly projects?: ProjectController;
   readonly newProject?: NewProjectController;
   readonly returnFocusRef?: ComponentProps<typeof CommandSurfaces>["returnFocusRef"];
   readonly port: FoundationPort;
@@ -274,6 +277,22 @@ export function SettingsSurfaces({
           }),
         );
       }
+      if (projects) {
+        stops.push(
+          registry.register("project.rename", {
+            state: () => {
+              const unavailable =
+                reason("project.rename") ??
+                (!storageAvailable.current ? "busy" : projects.renameReason());
+              return unavailable ? { reason: unavailable } : {};
+            },
+            run: projects.beginRename,
+          }),
+          projects.subscribe(() => {
+            registry.changed();
+          }),
+        );
+      }
       if (research) {
         let lastReason = research.newConversationReason();
         stops.push(
@@ -354,7 +373,7 @@ export function SettingsSurfaces({
         for (const stop of stops) stop();
       };
     },
-    [controller, newProject, research],
+    [controller, newProject, projects, research],
   );
   const decoration = useCharacterMode(state.current?.character.value ?? "static");
   return (

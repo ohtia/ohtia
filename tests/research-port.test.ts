@@ -66,13 +66,21 @@ async function harness(model?: string, connection?: string) {
   let id = 0;
   const sent: string[] = [];
   const lost = vi.fn();
+  let lostAcknowledgement: string | undefined;
   const service = createStatusService(
     "service",
     "en-US",
     (text) => {
       sent.push(text);
       const envelope = decodeText(text);
-      if (envelope.ok) listeners.get(envelope.value.windowGeneration)?.(text);
+      if (envelope.ok) {
+        const output = envelope.value;
+        if (output.kind === "result" && output.operationId === lostAcknowledgement) {
+          lostAcknowledgement = undefined;
+          return;
+        }
+        listeners.get(output.windowGeneration)?.(text);
+      }
     },
     fixture.store,
     lost,
@@ -123,6 +131,9 @@ async function harness(model?: string, connection?: string) {
     service,
     client,
     openWindow,
+    dropAcknowledgement: (operationId: string) => {
+      lostAcknowledgement = operationId;
+    },
     port: client.port,
     sent,
     projectId: project.resultId,
@@ -1469,7 +1480,7 @@ it("carries project opening and tuple-cursor batches through the actual window p
     value(await h.port.createProject(`selector-${String(index)}`).result);
   const db = h.raw();
   db.prepare(
-    "UPDATE projects SET title=?,document_language='ko',setup_confirmed_at=created_at,last_opened_at='2026-11-17T00:00:00.000Z'",
+    "UPDATE projects SET title=?,document_language='ko',setup_confirmed_at=created_at,last_opened_at='2026-11-17T00:00:00.000Z',title_revision=title_revision+(setup_confirmed_at IS NOT NULL)",
   ).run("한".repeat(200));
   db.close();
   let fragmented = false;
@@ -2833,4 +2844,70 @@ it("settles usage from a quarantined dispatch only after storage admission", asy
     db.close();
   }
   expect(h.lost).not.toHaveBeenCalled();
+});
+
+it("checks active thesis scope in each session and reconciles a lost rename acknowledgement", async () => {
+  const h = await harness();
+  const other = h.openWindow("window-two").port;
+  const otherProject = value(await other.createProject("another-project").result).resultId;
+  const scope = { projectId: h.projectId, conversationId: h.conversationId };
+  const events: Outcome<ResearchEvent>[] = [];
+  const first = h.port.subscribeResearch(scope, () => {});
+  const second = other.subscribeResearch(scope, (event) => events.push(event));
+  value(await first.ready);
+  value(await second.ready);
+
+  const payload = { projectId: h.projectId, title: "Title B", expectedTitleRevision: 1 };
+  const crossScope = { ...payload, projectId: otherProject };
+  expect(await h.port.renameProject("wrong-thesis", crossScope).result).toEqual(
+    failure("unauthorized"),
+  );
+  expect(await h.port.readProject({ projectId: otherProject }).result).toEqual(
+    failure("unauthorized"),
+  );
+  h.dropAcknowledgement("lost-rename");
+  const saved = h.port.renameProject("lost-rename", payload);
+  await h.service.drain();
+  saved.cancel();
+  expect(await saved.result).toEqual(failure("uncertain"));
+  expect(
+    await other.renameProject("competing", { ...payload, title: "Competing title" }).result,
+  ).toMatchObject({ ok: false, error: { code: "stale_revision" } });
+  expect(value(await other.readProject({ projectId: h.projectId }).result)).toMatchObject({
+    title: "Title B",
+    titleRevision: 2,
+  });
+  await vi.waitFor(() =>
+    expect(events).toContainEqual({
+      ok: true,
+      value: { kind: "changed", record: "projectTitle", id: h.projectId, revision: 2 },
+    }),
+  );
+  value(
+    await other.renameProject("return-title", {
+      ...payload,
+      title: "Research",
+      expectedTitleRevision: 2,
+    }).result,
+  );
+  expect(value(await h.port.renameProject("lost-rename", payload).result)).toEqual({
+    resultId: h.projectId,
+    titleChange: { title: "Title B", titleRevision: 2 },
+  });
+  expect(value(await h.port.readProject({ projectId: h.projectId }).result)).toMatchObject({
+    title: "Research",
+    titleRevision: 3,
+  });
+  first.dispose();
+  const switched = h.port.subscribeResearch(
+    { projectId: otherProject, conversationId: null },
+    () => {},
+  );
+  value(await switched.ready);
+  expect(await h.port.renameProject("lost-rename", payload).result).toEqual(
+    failure("unauthorized"),
+  );
+  expect(
+    await h.port.renameProject("unconfirmed", { ...payload, projectId: otherProject }).result,
+  ).toEqual(failure("project_in_setup"));
 });
