@@ -197,6 +197,7 @@ export const diagnosticCatalog = Object.freeze({
     "success",
     [],
   ),
+  "ohtia.profile.saved": event("data_service", "profile.save", "INFO", "success", []),
   "ohtia.project.renamed": event("data_service", "project.rename", "INFO", "success", []),
   "ohtia.project.read": event("data_service", "project.read", "DEBUG", "success", []),
   "ohtia.project.opened": event("data_service", "project.open", "INFO", "success", []),

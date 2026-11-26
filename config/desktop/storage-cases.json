@@ -45,7 +45,8 @@
     "admission-crash-preserves-recovery-phase",
     "packaged-settings-presentation",
     "integrated-application-root",
-    "packaged-project-rename"
+    "packaged-project-rename",
+    "packaged-thesis-profile"
   ],
   "interruption_points": ["checkpoint", "before", "after", "intent-before", "intent-after"]
 }

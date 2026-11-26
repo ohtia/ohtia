@@ -2584,10 +2584,11 @@ it("binds message-copy scope only to the latest service-admitted research subscr
     return service.dispatch.mock.calls.at(-1)[0];
   };
   const request = (
-    operation: "project.rename" | "project.read",
+    operation: "project.rename" | "project.read" | "profile.read",
     requestId: string,
     target: string,
     allowed = false,
+    subscriptionId = "scope-1",
   ) => {
     const event = { ...h.event(), returnValue: undefined as any };
     h.ipcMain.emit(h.constants.desktopChannels.session, event);
@@ -2602,7 +2603,9 @@ it("binds message-copy scope only to the latest service-admitted research subscr
       payload:
         operation === "project.read"
           ? { projectId: target }
-          : { projectId: target, title: "Working title", expectedTitleRevision: 1 },
+          : operation === "profile.read"
+            ? { projectId: target, subscriptionId, revisionId: null }
+            : { projectId: target, title: "Working title", expectedTitleRevision: 1 },
     });
     if (!envelope.ok) throw new Error("Invalid project fixture");
     const before = service.dispatch.mock.calls.length;
@@ -2637,6 +2640,7 @@ it("binds message-copy scope only to the latest service-admitted research subscr
     accepted.releaseSubscription();
   };
   reply(first);
+  request("profile.read", "on-first-selection", projectId, true);
   request("project.rename", "active-project", projectId, true);
   request("project.read", "wrong-project", conversationId);
   expect(await h.action("read")).toMatchObject({ openConversation: { projectId, conversationId } });
@@ -2651,6 +2655,8 @@ it("binds message-copy scope only to the latest service-admitted research subscr
   expect(await h.action("read")).not.toHaveProperty("openConversation");
   const current = subscribe("scope-5", { projectId, conversationId: null });
   reply(current);
+  request("profile.read", "stale-profile-selection", projectId);
+  request("profile.read", "renewed-profile-selection", projectId, true, "scope-5");
   request("project.read", "project-only-scope", projectId, true);
   const unsubscribe = h.constants.encodeEnvelope({
     protocol: 1,
@@ -2663,6 +2669,7 @@ it("binds message-copy scope only to the latest service-admitted research subscr
   if (!unsubscribe.ok) throw new Error("Invalid unsubscribe fixture");
   h.ipcMain.emit(h.constants.desktopChannels.port, h.event(), unsubscribe.value);
   request("project.rename", "revoked-project", projectId);
+  request("profile.read", "revoked-profile-selection", projectId, false, "scope-5");
 });
 
 it("restores a project only in the application's first window and keeps new windows project-free", async () => {

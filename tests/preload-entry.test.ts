@@ -1290,7 +1290,7 @@ it("carries persisted research through the sandbox entry and revokes scoped stre
   vi.useRealTimers();
   const { storageFixture } = await import("./fixtures/storage.js");
   const { createStatusService } = await import("../packages/utility/src/status-service.js");
-  const { splitText } = await import("../packages/contracts/src/index.js");
+  const { encodeProfileContent, splitText } = await import("../packages/contracts/src/index.js");
   const { digest } = await import("../packages/utility/src/research-text.js");
   const fixture = storageFixture();
   await fixture.store.open();
@@ -1337,7 +1337,44 @@ it("carries persisted research through the sandbox entry and revokes scoped stre
       }),
     );
     const projectScope = port.subscribeResearch({ projectId, conversationId: null }, () => {});
-    await expectValue({ result: projectScope.ready });
+    const { subscriptionId } = await expectValue({ result: projectScope.ready });
+    const profileScope = { projectId, subscriptionId };
+    const operationId = "entry-profile-save";
+    const patch = encodeProfileContent({
+      schemaVersion: 1,
+      fields: { topic: { state: "unknown" } },
+    });
+    expect(
+      await expectValue(
+        port.stageThesisProfilePart("entry-profile-staging", {
+          ...profileScope,
+          index: 1,
+          count: 2,
+          bytes: 4097,
+          sha256: digest("a".repeat(4097)),
+          text: "a".repeat(4096),
+        }),
+      ),
+    ).toEqual({ accepted: true });
+    const input = { ...profileScope, expectedRevision: 0, patch };
+    const savedProfile = await expectValue(port.saveThesisProfile(operationId, input));
+    const readProfile = { ...profileScope, revisionId: savedProfile.resultId };
+    expect(await expectValue(port.readThesisProfile(readProfile))).toMatchObject({
+      projectId,
+      profile: { content: patch },
+    });
+    expect(
+      await expectValue(port.readThesisProfilePart({ ...readProfile, index: 1 })),
+    ).toMatchObject({
+      revisionId: savedProfile.resultId,
+      text: patch,
+    });
+    expect(
+      await expectValue(port.readThesisProfileReceipt({ ...input, operationId })),
+    ).toMatchObject({
+      projectId,
+      receipt: savedProfile,
+    });
     const renamed = await expectValue(
       port.renameProject("entry-rename-project", {
         projectId,

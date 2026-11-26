@@ -44,7 +44,7 @@ export function confirmProjectRenameFixture(file, projects) {
   }
 }
 
-async function selectProject(page, title) {
+export async function selectProject(page, title) {
   const selector = page.locator(".project-selector-button");
   if ((await selector.locator("bdi").textContent()) !== title) {
     await selector.press("Enter");

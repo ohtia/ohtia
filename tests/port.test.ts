@@ -324,6 +324,11 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
         "readDestination",
         "renameProject",
         "readProject",
+        "readThesisProfile",
+        "readThesisProfilePart",
+        "saveThesisProfile",
+        "stageThesisProfilePart",
+        "readThesisProfileReceipt",
         "confirmProjectSetup",
         "rejectProjectSetup",
         "createProject",
@@ -477,6 +482,30 @@ describe("P3 bounded named bridge with deterministic transport peers", () => {
     const versioned = c.port.readStatus();
     c.respond(status, c.sent.length - 1, { protocol: 2 });
     expect(await versioned.result).toEqual(failure("unsupported_version"));
+    const projectId = "019a8000-0000-7000-8000-000000000001";
+    const revisionId = "019a8000-0000-7000-8000-000000000002";
+    const differentProject = "019a8000-0000-7000-8000-000000000003";
+    const research = c.port.subscribeResearch({ projectId, conversationId: null }, () => {});
+    const { subscriptionId } = c.sent.at(-1)!.payload;
+    c.respond({ subscriptionId });
+    expect(await research.ready).toEqual({ ok: true, value: { subscriptionId } });
+    const profile = c.port.readThesisProfile({ projectId, subscriptionId, revisionId: null });
+    c.respond({ projectId: differentProject, profile: null });
+    expect(await profile.result).toEqual(failure("invalid_service_result"));
+    const saved = c.port.saveThesisProfile("profile-save", {
+      projectId,
+      subscriptionId,
+      expectedRevision: 0,
+      patch: '{"fields":{"topic":{"state":"unknown"}},"schemaVersion":1}',
+    });
+    c.respond({
+      resultId: revisionId,
+      profileChange: {
+        projectId: differentProject,
+        revision: { revisionId, revision: 1, previousRevisionId: null, changedFields: ["topic"] },
+      },
+    });
+    expect(await saved.result).toEqual(failure("uncertain"));
     c.dispose();
   });
   it("times out at the canonical deadline and cancellation never claims rollback", async () => {

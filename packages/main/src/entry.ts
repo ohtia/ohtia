@@ -53,6 +53,7 @@ import {
   desktopDocument,
   encodeEnvelope,
   decodeText,
+  profileScope,
   failure,
   isBootstrapAction,
   message,
@@ -480,12 +481,12 @@ function trusted(event: IpcMainEvent | IpcMainInvokeEvent): BrowserWindow | unde
     return;
   return window;
 }
-function attach(window: BrowserWindow): boolean {
+function attach(window: BrowserWindow) {
   const state = windows.get(window);
   if (!state) return false;
   const frame = window.webContents.mainFrame;
   if (frame.url !== desktopDocument) return false;
-  if (state.frame === frame && state.detach) return true;
+  if (state.frame === frame && state.detach) return state;
   state.detach?.();
   const permit = admission.attach({
     frame,
@@ -496,7 +497,7 @@ function attach(window: BrowserWindow): boolean {
   if (!permit.ok) return false;
   state.frame = frame;
   state.detach = permit.value;
-  return true;
+  return state;
 }
 function detach(window: BrowserWindow): void {
   const state = windows.get(window);
@@ -1148,11 +1149,10 @@ async function start(): Promise<void> {
   });
   ipcMain.on(desktopChannels.session, (event) => {
     const window = trusted(event);
-    const state = window ? windows.get(window) : undefined;
-    event.returnValue =
-      window && state && attach(window)
-        ? { windowGeneration: state.generation, serviceGeneration: generation }
-        : null;
+    const state = window && attach(window);
+    event.returnValue = state
+      ? { windowGeneration: state.generation, serviceGeneration: generation }
+      : null;
   });
   ipcMain.on(desktopChannels.systemMotion, (event) => {
     event.returnValue = trusted(event) ? systemMotion : null;
@@ -1160,7 +1160,8 @@ async function start(): Promise<void> {
   ipcMain.on(desktopChannels.port, (event, text: unknown) => {
     if (acceptance) acceptance.received++;
     const window = trusted(event);
-    if (!window || !attach(window) || !event.senderFrame) {
+    const windowState = window && attach(window);
+    if (!window || !windowState || !event.senderFrame) {
       void diagnostics?.append({ event_name: "ohtia.port.rejected", error_code: "frame_rejected" });
       if (acceptance) acceptance.rejectedFrame++;
       return;
@@ -1175,12 +1176,11 @@ async function start(): Promise<void> {
       if (acceptance) acceptance.rejectedEnvelope++;
       return;
     }
-    const windowState = windows.get(window);
     if (authority.value.kind === "cancel" || authority.value.kind === "unsubscribe") {
       const control = authority.value;
       if (
         control.kind === "unsubscribe" &&
-        windowState?.researchSubscription === control.subscriptionId
+        windowState.researchSubscription === control.subscriptionId
       ) {
         delete windowState.researchSubscription;
         delete windowState.researchSelection;
@@ -1204,7 +1204,7 @@ async function start(): Promise<void> {
       accepted.ok && accepted.value.request.operation === "research.subscribe"
         ? accepted.value.request
         : undefined;
-    if (selection && windowState) {
+    if (selection) {
       windowState.researchSelection = selection.requestId;
       windowState.researchSubscription = selection.payload.subscriptionId;
       delete windowState.researchProjectId;
@@ -1217,7 +1217,7 @@ async function start(): Promise<void> {
         frame.url === desktopDocument &&
         windows.get(window)?.frame === frame
       ) {
-        if (selection && windowState?.researchSelection === selection.requestId) {
+        if (selection && windowState.researchSelection === selection.requestId) {
           const decoded = decodeText(reply);
           if (
             decoded.ok &&
@@ -1246,9 +1246,13 @@ async function start(): Promise<void> {
       return;
     }
     const request = accepted.value.request;
+    const profile = profileScope(request);
     if (
-      (request.operation === "project.rename" || request.operation === "project.read") &&
-      windowState?.researchProjectId !== request.payload.projectId
+      (profile &&
+        (windowState.researchProjectId !== profile.projectId ||
+          windowState.researchSubscription !== profile.subscriptionId)) ||
+      ((request.operation === "project.rename" || request.operation === "project.read") &&
+        windowState.researchProjectId !== request.payload.projectId)
     ) {
       const reply = encodeEnvelope({
         ...request,
